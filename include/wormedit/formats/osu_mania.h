@@ -38,13 +38,9 @@ enum class osu_mania_parse_diagnostic_code_t {
     timing_quantization,
 };
 
-struct osu_mania_parse_diagnostic_t {
-    diagnostic_severity_t severity{diagnostic_severity_t::error};
-    osu_mania_parse_diagnostic_code_t code{osu_mania_parse_diagnostic_code_t::malformed_field};
-    std::string message;
-    std::size_t source_order{};
-    std::optional<std::size_t> byte_offset;
-};
+using osu_mania_parse_diagnostic_t =
+    text_parse_diagnostic_t<osu_mania_parse_diagnostic_code_t,
+                            osu_mania_parse_diagnostic_code_t::malformed_field>;
 
 struct osu_mania_parse_options_t {
     std::size_t max_source_bytes{16U * 1024U * 1024U};
@@ -78,12 +74,9 @@ enum class osu_mania_write_diagnostic_code_t {
     output_limit,
 };
 
-struct osu_mania_write_diagnostic_t {
-    diagnostic_severity_t severity{diagnostic_severity_t::error};
-    osu_mania_write_diagnostic_code_t code{osu_mania_write_diagnostic_code_t::invalid_document};
-    std::string message;
-    std::string field;
-};
+using osu_mania_write_diagnostic_t =
+    text_write_diagnostic_t<osu_mania_write_diagnostic_code_t,
+                            osu_mania_write_diagnostic_code_t::invalid_document>;
 
 struct osu_mania_write_options_t {
     // When omitted, retain an imported supported profile; newly authored

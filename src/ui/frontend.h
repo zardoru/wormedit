@@ -1959,12 +1959,7 @@ typedef enum WormUiPlayerPreviewVisualDiagnostic {
     WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_VIDEO_DECODE_FAILED,
 } WormUiPlayerPreviewVisualDiagnostic;
 
-typedef struct WormUiPlayerPreviewRect {
-    double left;
-    double top;
-    double right;
-    double bottom;
-} WormUiPlayerPreviewRect;
+typedef WormUiComposeRect WormUiPlayerPreviewRect;
 
 typedef struct WormUiPlayerPreviewLaneView {
     uint64_t lane_id;

@@ -263,9 +263,7 @@ void render_layer_color_editor(const LayersPanel& panel, const WormUiComposeSema
     const auto allowed = layer_editor_allowed(panel, layer);
     if (!allowed) nk_widget_disable_begin(context);
     nk_layout_row_dynamic(context, 110, 1);
-    const auto value = nk_color_picker(context,
-        nk_colorf{state.semantic_layer_color.r, state.semantic_layer_color.g,
-                  state.semantic_layer_color.b, state.semantic_layer_color.a}, NK_RGBA);
+    const auto value = nk_color_picker(context, state.semantic_layer_color, NK_RGBA);
     state.semantic_layer_color = {value.r, value.g, value.b, value.a};
     nk_layout_row_dynamic(context, 24, 2);
     const auto apply = nk_button_label(context, "Apply");

@@ -19,12 +19,8 @@ enum class sound_slice_error_code_t {
     capacity_exceeded,
 };
 
-struct sound_slice_diagnostic_t {
-    diagnostic_severity_t severity{diagnostic_severity_t::error};
-    sound_slice_error_code_t code{sound_slice_error_code_t::invalid_document};
-    std::string message;
-    std::optional<object_id_t> object;
-};
+using sound_slice_diagnostic_t =
+    object_diagnostic_t<sound_slice_error_code_t, sound_slice_error_code_t::invalid_document>;
 
 // One BMSON-derived slice. All channel events at the same musical row share
 // this source range and therefore have slice polyphony one. restart records

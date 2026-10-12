@@ -1,4 +1,5 @@
 #pragma once
+#include <wormedit/core/proposal_apply_result.h>
 
 #include <wormedit/core/command.h>
 #include <wormedit/core/document.h>
@@ -67,15 +68,7 @@ struct channel_map_proposal_t {
     friend class channel_map_proposal_access_t;
 };
 
-struct channel_map_apply_result_t {
-    channel_map_issue_t issue{channel_map_issue_t::none};
-    std::string message;
-    document_command_result_t command;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return issue == channel_map_issue_t::none && static_cast<bool>(command);
-    }
-};
+using channel_map_apply_result_t = proposal_apply_result_t<channel_map_issue_t>;
 
 // Each replacement names one lane in the selected layout segment. The final map,
 // including all replacements, is validated as a whole so simultaneous swaps work.

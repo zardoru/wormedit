@@ -1,6 +1,6 @@
 # Status: resume checklist
 
-Next: [T-596 Alias layout-identical types and share dialog slots](../../docs/chart-editor-plan/tasks/type-consolidation.md#t-596-alias-layout-identical-types-and-share-dialog-slots). T-591–T-595 are complete. Continue T-596–T-598 in order, one gated commit per card; stop before T-599 and the optional action-type rename. Preserve flagged behavior differences. Claude owns Xvfb verification.
+Next: [T-597 Share arithmetic and text utilities and format contexts](../../docs/chart-editor-plan/tasks/type-consolidation.md#t-597-share-arithmetic-and-text-utilities-and-format-contexts). T-591–T-596 are complete. Continue T-597–T-598 in order, one gated commit per card; stop before T-599 and the optional action-type rename. Preserve flagged behavior differences. Claude owns Xvfb verification.
 
 Completed **T-582** (2026-10-12): stamped menu commands and shared Quantize/bookmark/same-sound/BGM/loop/measure paths; orphan BGM and workspace loop paths retired. Build, **3,457/3,457** full serial CTest, **444/444** event checks, default clang-tidy with no new/increased complexity, documentation and whitespace gates pass. Isolated Xvfb Compose screenshot inspected. [Card and evidence](../../docs/chart-editor-plan/tasks/gesture-consolidation.md#t-582-route-menu-verbs-through-registered-commands).
 

@@ -1,4 +1,5 @@
 #pragma once
+#include "sys/sdl_session_results.h"
 
 #include <wormedit/audio/audition_session.h>
 
@@ -22,15 +23,8 @@ enum class sdl_audition_start_status_t {
     device_failed,
 };
 
-struct sdl_audition_start_result_t {
-    sdl_audition_start_status_t status{sdl_audition_start_status_t::unavailable};
-    std::optional<audio::audition_session_start_result_t> session;
-    std::string message;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == sdl_audition_start_status_t::started;
-    }
-};
+using sdl_audition_start_result_t =
+    sdl_session_start_result_t<sdl_audition_start_status_t, audio::audition_session_start_result_t>;
 
 enum class sdl_audition_service_status_t {
     ready,

@@ -26,12 +26,8 @@ enum class bms_write_diagnostic_code_t {
     unrepresentable_text,
 };
 
-struct bms_write_diagnostic_t {
-    diagnostic_severity_t severity{diagnostic_severity_t::error};
-    bms_write_diagnostic_code_t code{bms_write_diagnostic_code_t::invalid_document};
-    std::string message;
-    std::string path;
-};
+using bms_write_diagnostic_t =
+    path_diagnostic_t<bms_write_diagnostic_code_t, bms_write_diagnostic_code_t::invalid_document>;
 
 enum class bms_branch_policy_t {
     preserve_tree,

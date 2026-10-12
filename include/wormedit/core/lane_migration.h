@@ -1,4 +1,5 @@
 #pragma once
+#include <wormedit/core/proposal_apply_result.h>
 
 #include <wormedit/core/command.h>
 #include <wormedit/core/lane_profiles.h>
@@ -74,15 +75,7 @@ struct lane_migration_proposal_t {
     friend class lane_migration_proposal_access_t;
 };
 
-struct lane_migration_apply_result_t {
-    lane_migration_issue_t issue{lane_migration_issue_t::none};
-    std::string message;
-    document_command_result_t command;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return issue == lane_migration_issue_t::none && static_cast<bool>(command);
-    }
-};
+using lane_migration_apply_result_t = proposal_apply_result_t<lane_migration_issue_t>;
 
 // An empty mapping requests the display-order default. A supplied mapping must
 // name every source lane; null targets explicitly drop that lane's notes.

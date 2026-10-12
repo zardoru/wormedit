@@ -24,13 +24,9 @@ enum class bms_branch_selection_diagnostic_code_t {
     selection_mismatch,
 };
 
-struct bms_branch_selection_diagnostic_t {
-    diagnostic_severity_t severity{diagnostic_severity_t::error};
-    bms_branch_selection_diagnostic_code_t code{
-        bms_branch_selection_diagnostic_code_t::invalid_selection};
-    std::string message;
-    std::string path;
-};
+using bms_branch_selection_diagnostic_t =
+    path_diagnostic_t<bms_branch_selection_diagnostic_code_t,
+                      bms_branch_selection_diagnostic_code_t::invalid_selection>;
 
 struct bms_branch_selection_request_t {
     std::optional<chart_id_t> chart;

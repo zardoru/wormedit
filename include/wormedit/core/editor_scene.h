@@ -1,4 +1,5 @@
 #pragma once
+#include <wormedit/core/geometry.h>
 
 #include <wormedit/core/grid.h>
 #include <wormedit/core/interaction.h>
@@ -85,14 +86,7 @@ struct editor_field_scene_index_t {
     std::vector<editor_field_scene_layout_source_t> layouts;
 };
 
-struct editor_field_rect_t {
-    double left{};
-    double top{};
-    double right{};
-    double bottom{};
-
-    auto operator==(const editor_field_rect_t&) const -> bool = default;
-};
+using editor_field_rect_t = rect_t;
 
 struct editor_field_layout_band_t {
     std::uint64_t begin_row{};

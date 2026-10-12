@@ -35,12 +35,8 @@ enum class audition_resolve_code_t {
     capacity_exceeded,
 };
 
-struct audition_resolve_diagnostic_t {
-    diagnostic_severity_t severity{diagnostic_severity_t::error};
-    audition_resolve_code_t code{audition_resolve_code_t::missing_object};
-    std::string message;
-    std::optional<object_id_t> object;
-};
+using audition_resolve_diagnostic_t =
+    object_diagnostic_t<audition_resolve_code_t, audition_resolve_code_t::missing_object>;
 
 struct preview_bindings_resolve_result_t {
     std::uint64_t document_revision{};

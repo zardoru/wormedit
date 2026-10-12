@@ -1,4 +1,5 @@
 #pragma once
+#include "ui/nuklear/file_dialog_slot.h"
 
 #include "ui/frontend.h"
 
@@ -119,11 +120,7 @@ void worm_ui_nuklear_set_metadata_drop_target(
 [[nodiscard]] auto worm_ui_nuklear_metadata_drop_target(float x, float y)
     -> WormUiMetadataDropTarget;
 
-struct worm_ui_nuklear_metadata_file_dialog_result_t {
-    std::string path;
-    std::string error;
-    bool canceled{};
-};
+using worm_ui_nuklear_metadata_file_dialog_result_t = wormedit::ui::file_dialog_result_t;
 
 struct worm_ui_nuklear_metadata_rational_t {
     std::int64_t numerator{};

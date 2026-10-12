@@ -31,12 +31,8 @@ enum class timing_error_code_t {
     locked_anchor_conflict,
 };
 
-struct timing_diagnostic_t {
-    diagnostic_severity_t severity{diagnostic_severity_t::error};
-    timing_error_code_t code{timing_error_code_t::invalid_document};
-    std::string message;
-    std::optional<object_id_t> object;
-};
+using timing_diagnostic_t =
+    object_diagnostic_t<timing_error_code_t, timing_error_code_t::invalid_document>;
 
 enum class timing_boundary_side_t {
     // Arrival at the musical row, before a delay at that row.

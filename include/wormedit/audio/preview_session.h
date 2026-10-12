@@ -1,4 +1,5 @@
 #pragma once
+#include <wormedit/audio/session_render.h>
 
 #include <wormedit/audio/playhead_snapshot.h>
 #include <wormedit/audio/preview_bridge.h>
@@ -60,11 +61,7 @@ enum class preview_session_render_status_t {
     transport_failed,
 };
 
-struct preview_session_render_result_t {
-    preview_session_render_status_t status{preview_session_render_status_t::stopped};
-    std::uint64_t first_timeline_frame{};
-    transport_mix_result_t mix;
-};
+using preview_session_render_result_t = session_render_result_t<preview_session_render_status_t>;
 
 struct preview_loop_region_t {
     std::uint64_t begin_frame{};

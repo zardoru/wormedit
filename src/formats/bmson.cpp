@@ -1,5 +1,6 @@
-#include <wormedit/core/lane_profiles.h>
+#include "id_source.h"
 #include <wormedit/core/bgm_packing.h>
+#include <wormedit/core/lane_profiles.h>
 #include <wormedit/formats/bmson.h>
 
 #include <nlohmann/json.hpp>
@@ -434,10 +435,7 @@ struct raw_visual_event_t {
     std::string spelling;
 };
 
-struct id_source_t {
-    std::uint64_t next{1};
-    template <typename id_t> auto take() -> id_t { return id_t{next++}; }
-};
+using format_detail::id_source_t;
 
 auto provenance(std::string source_field, std::string spelling, std::size_t order = 0)
     -> source_provenance_t {

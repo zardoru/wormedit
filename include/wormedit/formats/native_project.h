@@ -18,12 +18,9 @@ enum class native_project_diagnostic_code_t {
     serialization_failure,
 };
 
-struct native_project_diagnostic_t {
-    diagnostic_severity_t severity{diagnostic_severity_t::error};
-    native_project_diagnostic_code_t code{native_project_diagnostic_code_t::malformed_json};
-    std::string message;
-    std::string path;
-};
+using native_project_diagnostic_t =
+    path_diagnostic_t<native_project_diagnostic_code_t,
+                      native_project_diagnostic_code_t::malformed_json>;
 
 struct native_project_limits_t {
     std::size_t maximum_source_bytes{64U * 1024U * 1024U};

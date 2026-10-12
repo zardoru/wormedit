@@ -84,13 +84,9 @@ enum class bms_branch_statement_edit_diagnostic_code_t {
     unsupported_song_shape,
 };
 
-struct bms_branch_statement_edit_diagnostic_t {
-    diagnostic_severity_t severity{diagnostic_severity_t::error};
-    bms_branch_statement_edit_diagnostic_code_t code{
-        bms_branch_statement_edit_diagnostic_code_t::provenance_mismatch};
-    std::string message;
-    std::string path;
-};
+using bms_branch_statement_edit_diagnostic_t =
+    path_diagnostic_t<bms_branch_statement_edit_diagnostic_code_t,
+                      bms_branch_statement_edit_diagnostic_code_t::provenance_mismatch>;
 
 struct bms_branch_statement_edit_t {
     // BMS-family documents contain one chart, but callers editing a multi-chart

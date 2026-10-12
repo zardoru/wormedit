@@ -30,13 +30,9 @@ enum class stepmania_parse_diagnostic_code_t {
     division_limit,
 };
 
-struct stepmania_parse_diagnostic_t {
-    diagnostic_severity_t severity{diagnostic_severity_t::error};
-    stepmania_parse_diagnostic_code_t code{stepmania_parse_diagnostic_code_t::malformed_tag};
-    std::string message;
-    std::size_t source_order{};
-    std::optional<std::size_t> byte_offset;
-};
+using stepmania_parse_diagnostic_t =
+    text_parse_diagnostic_t<stepmania_parse_diagnostic_code_t,
+                            stepmania_parse_diagnostic_code_t::malformed_tag>;
 
 struct stepmania_parse_options_t {
     stepmania_profile_t profile{stepmania_profile_t::sm};
@@ -81,12 +77,9 @@ enum class stepmania_write_diagnostic_code_t {
     invalid_note_layout,
 };
 
-struct stepmania_write_diagnostic_t {
-    diagnostic_severity_t severity{diagnostic_severity_t::error};
-    stepmania_write_diagnostic_code_t code{stepmania_write_diagnostic_code_t::invalid_document};
-    std::string message;
-    std::string field;
-};
+using stepmania_write_diagnostic_t =
+    text_write_diagnostic_t<stepmania_write_diagnostic_code_t,
+                            stepmania_write_diagnostic_code_t::invalid_document>;
 
 struct stepmania_write_options_t {
     stepmania_profile_t profile{stepmania_profile_t::sm};

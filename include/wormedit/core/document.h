@@ -929,12 +929,36 @@ enum class diagnostic_code_t {
     dropped_feature,
 };
 
-struct diagnostic_t {
+template <class Code, Code DefaultCode> struct object_diagnostic_t {
     diagnostic_severity_t severity{diagnostic_severity_t::error};
-    diagnostic_code_t code{diagnostic_code_t::invalid_id};
+    Code code{DefaultCode};
     std::string message;
     std::optional<object_id_t> object;
 };
+
+template <class Code, Code DefaultCode> struct path_diagnostic_t {
+    diagnostic_severity_t severity{diagnostic_severity_t::error};
+    Code code{DefaultCode};
+    std::string message;
+    std::string path;
+};
+
+template <class Code, Code DefaultCode> struct text_parse_diagnostic_t {
+    diagnostic_severity_t severity{diagnostic_severity_t::error};
+    Code code{DefaultCode};
+    std::string message;
+    std::size_t source_order{};
+    std::optional<std::size_t> byte_offset;
+};
+
+template <class Code, Code DefaultCode> struct text_write_diagnostic_t {
+    diagnostic_severity_t severity{diagnostic_severity_t::error};
+    Code code{DefaultCode};
+    std::string message;
+    std::string field;
+};
+
+using diagnostic_t = object_diagnostic_t<diagnostic_code_t, diagnostic_code_t::invalid_id>;
 
 using diagnostic_list_t = std::vector<diagnostic_t>;
 

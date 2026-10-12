@@ -1,4 +1,5 @@
 #pragma once
+#include "ui/nuklear/file_dialog_slot.h"
 
 #include "ui/frontend.h"
 #include "ui/nuklear/compose_drag_capture.h"
@@ -181,13 +182,6 @@ inline auto worm_ui_nuklear_compose_zoom_anchor(double visual_y, double height,
                                                bool downscroll) noexcept -> double {
     return downscroll ? height - visual_y : visual_y;
 }
-
-struct worm_ui_nuklear_compose_color_t {
-    float r{};
-    float g{};
-    float b{};
-    float a{};
-};
 
 struct worm_ui_nuklear_lane_hold_t {
     std::uint32_t scancode{};
@@ -462,7 +456,7 @@ struct worm_ui_nuklear_compose_state_t {
     std::array<char, WORM_UI_COMPOSE_NOTE_LABEL_BYTES + 1> note_label{};
     std::array<char, 129> label_search{};
     std::array<char, WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY> semantic_layer_name{};
-    worm_ui_nuklear_compose_color_t semantic_layer_color{};
+    nk_colorf semantic_layer_color{};
     bool semantic_layer_color_editor_visible{};
     bool semantic_layer_name_editor_visible{};
     bool semantic_layer_name_focus_pending{};
@@ -724,11 +718,7 @@ void worm_ui_nuklear_inline_timing_update(worm_ui_nuklear_compose_state_t& state
                                                          const char* text,
                                                          WormUiWorkspaceAction& action) -> bool;
 
-struct worm_ui_nuklear_compose_file_dialog_result_t {
-    std::string path;
-    std::string error;
-    bool canceled{};
-};
+using worm_ui_nuklear_compose_file_dialog_result_t = wormedit::ui::file_dialog_result_t;
 
 [[nodiscard]] auto worm_ui_nuklear_compose_file_dialog_begin()
     -> std::optional<std::uint64_t>;

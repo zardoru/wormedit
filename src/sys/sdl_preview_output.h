@@ -1,4 +1,5 @@
 #pragma once
+#include "sys/sdl_session_results.h"
 
 #include <wormedit/audio/preview_session.h>
 #include <wormedit/audio/playback_rate.h>
@@ -25,15 +26,8 @@ enum class sdl_preview_start_status_t {
     device_failed,
 };
 
-struct sdl_preview_start_result_t {
-    sdl_preview_start_status_t status{sdl_preview_start_status_t::unavailable};
-    std::optional<audio::preview_session_start_result_t> session;
-    std::string message;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == sdl_preview_start_status_t::started;
-    }
-};
+using sdl_preview_start_result_t =
+    sdl_session_start_result_t<sdl_preview_start_status_t, audio::preview_session_start_result_t>;
 
 enum class sdl_preview_service_status_t {
     ready,

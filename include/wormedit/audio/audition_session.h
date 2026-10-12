@@ -1,4 +1,5 @@
 #pragma once
+#include <wormedit/audio/session_render.h>
 
 #include <wormedit/audio/audition_pump.h>
 #include <wormedit/audio/playhead_snapshot.h>
@@ -38,11 +39,7 @@ enum class audition_session_render_status_t {
     transport_failed,
 };
 
-struct audition_session_render_result_t {
-    audition_session_render_status_t status{audition_session_render_status_t::stopped};
-    std::uint64_t first_timeline_frame{};
-    transport_mix_result_t mix;
-};
+using audition_session_render_result_t = session_render_result_t<audition_session_render_status_t>;
 
 // Owns one active click-preview timeline above the transport bridge. start()
 // checks resident PCM before publishing; streamed priming remains pending until

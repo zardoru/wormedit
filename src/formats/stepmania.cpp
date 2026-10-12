@@ -1,3 +1,4 @@
+#include "id_source.h"
 #include <wormedit/formats/stepmania.h>
 
 #include <wormedit/core/measure.h>
@@ -44,12 +45,7 @@ struct failure_t {
     std::optional<std::size_t> offset;
 };
 
-struct id_source_t {
-    std::uint64_t next{1};
-    template <typename id_t> auto take() -> id_t {
-        return id_t{next++};
-    }
-};
+using format_detail::id_source_t;
 
 [[noreturn]] auto fail(stepmania_parse_diagnostic_code_t code, std::string message,
                        std::size_t order, std::optional<std::size_t> offset = {}) -> void {

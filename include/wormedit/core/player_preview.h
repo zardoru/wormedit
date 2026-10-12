@@ -1,4 +1,5 @@
 #pragma once
+#include <wormedit/core/geometry.h>
 
 #include <wormedit/core/bga_preview.h>
 #include <wormedit/core/editor_scene.h>
@@ -68,14 +69,7 @@ struct player_preview_index_result_t {
     }
 };
 
-struct player_preview_rect_t {
-    double left{};
-    double top{};
-    double right{};
-    double bottom{};
-
-    auto operator==(const player_preview_rect_t&) const -> bool = default;
-};
+using player_preview_rect_t = rect_t;
 
 struct player_preview_lane_geometry_t {
     lane_id_t lane;

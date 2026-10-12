@@ -90,8 +90,8 @@ TEST_CASE("every built-in command ID has a typed representation", "[unit][sys][c
             return wormedit::command_invocation_result_t{};
         });
     for (const auto& command : registry.commands) {
-        INFO(command.id.value);
-        CHECK(parse_application_command(command.id.value).has_value());
+        INFO(command.definition.id.value);
+        CHECK(parse_application_command(command.definition.id.value).has_value());
     }
 }
 
@@ -1266,18 +1266,18 @@ void check_note_kind_command_shortcut(const wormedit::command_registry_t& regist
                                       std::string_view name, std::size_t index) {
     using namespace wormedit;
     const auto id = "edit.note_kind_" + std::string(name);
-    const auto registration = std::ranges::find_if(registry.commands,
-        [&](const auto& entry) { return entry.id.value == id; });
+    const auto registration = std::ranges::find_if(
+        registry.commands, [&](const auto& entry) { return entry.definition.id.value == id; });
     REQUIRE(registration != registry.commands.end());
     if (index < 2) {
-        CHECK(registration->default_shortcuts.empty());
+        CHECK(registration->definition.default_shortcuts.empty());
         return;
     }
-    REQUIRE(registration->default_shortcuts.size() == 1);
-    CHECK(registration->default_shortcuts.front().key ==
-        static_cast<shortcut_key_t>(static_cast<unsigned>(shortcut_key_t::digit_2) + index));
-    CHECK(registration->default_shortcuts.front().modifiers ==
-        static_cast<shortcut_modifiers_t>(shortcut_modifier_t::alt));
+    REQUIRE(registration->definition.default_shortcuts.size() == 1);
+    CHECK(registration->definition.default_shortcuts.front().key ==
+          static_cast<shortcut_key_t>(static_cast<unsigned>(shortcut_key_t::digit_2) + index));
+    CHECK(registration->definition.default_shortcuts.front().modifiers ==
+          static_cast<shortcut_modifiers_t>(shortcut_modifier_t::alt));
 }
 } // namespace
 

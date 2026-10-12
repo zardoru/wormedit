@@ -918,9 +918,15 @@ auto update_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_
     const auto target = position.value_or(state.pending_note_move_gesture->preview_position);
     const auto lane = input.lane_id ? std::optional{object_id_t{input.lane_id}} : std::nullopt;
     const auto releasing = input.kind == WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_RELEASE;
-    const auto result = releasing
-        ? dispatch_editor_action(history, state, release_note_move_gesture_action_t{target, {}, false, lane, virtual_row})
-        : dispatch_editor_action(history, state, update_note_move_gesture_action_t{target, {}, false, lane, virtual_row});
+    const auto result = dispatch_editor_action(
+        history, state,
+        update_note_move_gesture_action_t{target,
+                                          {},
+                                          false,
+                                          lane,
+                                          virtual_row,
+                                          releasing ? editor_gesture_phase_t::commit
+                                                    : editor_gesture_phase_t::update});
     if (!result.accepted)
         return result.diagnostics.empty() ? "Selected-object move could not be applied."
                                           : result.diagnostics.front().message;
@@ -1483,11 +1489,10 @@ auto update_alt_pointer_gesture(const WormUiComposeInputAction& input,
     }
     const auto releasing = input.kind == WORM_UI_COMPOSE_INPUT_ALT_POINTER_RELEASE;
     if (state.pending_note_duration_gesture) {
-        result = releasing
-                     ? dispatch_editor_action(history, state,
-                                              release_note_duration_gesture_action_t{*position})
-                     : dispatch_editor_action(history, state,
-                                              update_note_duration_gesture_action_t{*position});
+        result = dispatch_editor_action(history, state,
+                                        update_note_duration_gesture_action_t{
+                                            *position, releasing ? editor_gesture_phase_t::commit
+                                                                 : editor_gesture_phase_t::update});
         accepted = releasing ? (result.document_changed ? "Note duration committed."
                                                         : "Note resize released.")
                              : "Note resize preview updated.";
@@ -1777,8 +1782,14 @@ auto dispatch_note_move_gesture(const WormUiComposeInputAction& input,
         accepted = "Selected-note move preview updated.";
     } else {
         result = dispatch_editor_action(
-            history, state, release_note_move_gesture_action_t{*position, target ? target->lane : lane_id_t{},
-                input.note_move_to_bgm, input.lane_id ? std::optional{object_id_t{input.lane_id}} : std::nullopt});
+            history, state,
+            update_note_move_gesture_action_t{
+                .reference_position = *position,
+                .reference_lane = target ? target->lane : lane_id_t{},
+                .to_bgm = input.note_move_to_bgm,
+                .preferred_bgm_lane =
+                    input.lane_id ? std::optional{object_id_t{input.lane_id}} : std::nullopt,
+                .phase = wormedit::editor_gesture_phase_t::commit});
         accepted =
             result.document_changed ? "Selected notes moved." : "Selected-note move released.";
     }
@@ -1859,10 +1870,12 @@ auto dispatch_compose_selection_input(const WormUiComposeInputAction& input,
             accepted = "Area selection preview updated.";
             break;
         case WORM_UI_COMPOSE_INPUT_AREA_SELECTION_RELEASE:
-            result = dispatch_editor_action(
-                history, state,
-                commit_editor_area_selection_action_t{
-                    input.x_pixels, input_source_y(input.y_pixels), true});
+            result = dispatch_editor_action(history, state,
+                                            update_editor_area_selection_action_t{
+                                                .x_pixels = input.x_pixels,
+                                                .y_pixels = input_source_y(input.y_pixels),
+                                                .pointer_captured = true,
+                                                .phase = wormedit::editor_gesture_phase_t::commit});
             accepted = "Area selection committed.";
             break;
         case WORM_UI_COMPOSE_INPUT_SPACE_RANGE_SELECTION:

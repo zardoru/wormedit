@@ -286,8 +286,10 @@ TEST_CASE("semantic layer membership is bounded, atomic, and leaves gameplay dat
 
     const auto assigned = apply_semantic_layer_edit(
         history, 4,
-        assign_notes_to_semantic_layer_action_t{
-            chart_id_t{2}, layer_id_t{7}, {object_id_t{20}, object_id_t{21}}});
+        semantic_layer_membership_edit_t{.chart = chart_id_t{2},
+                                         .layer = layer_id_t{7},
+                                         .notes = {object_id_t{20}, object_id_t{21}},
+                                         .operation = wormedit::membership_operation_t::assign});
     REQUIRE(assigned);
     auto& chart = history.document.charts.front();
     CHECK(note_by_id(chart, object_id_t{20}).semantic_layers == std::vector{layer_id_t{7}});
@@ -304,15 +306,20 @@ TEST_CASE("semantic layer membership is bounded, atomic, and leaves gameplay dat
 
     const auto assign_no_op = apply_semantic_layer_edit(
         history, 5,
-        assign_notes_to_semantic_layer_action_t{
-            chart_id_t{2}, layer_id_t{7}, {object_id_t{20}, object_id_t{21}}});
+        semantic_layer_membership_edit_t{.chart = chart_id_t{2},
+                                         .layer = layer_id_t{7},
+                                         .notes = {object_id_t{20}, object_id_t{21}},
+                                         .operation = wormedit::membership_operation_t::assign});
     CHECK_FALSE(assign_no_op.applied);
     CHECK(assign_no_op.diagnostics.empty());
     CHECK(history.document.revision == 5);
 
     const auto removed = apply_semantic_layer_edit(
         history, 5,
-        remove_notes_from_semantic_layer_action_t{chart_id_t{2}, layer_id_t{7}, {object_id_t{20}}});
+        semantic_layer_membership_edit_t{.chart = chart_id_t{2},
+                                         .layer = layer_id_t{7},
+                                         .notes = {object_id_t{20}},
+                                         .operation = wormedit::membership_operation_t::remove});
     REQUIRE(removed);
     CHECK(note_by_id(history.document.charts.front(), object_id_t{20}).semantic_layers.empty());
     CHECK(note_by_id(history.document.charts.front(), object_id_t{21}).semantic_layers ==
@@ -320,8 +327,10 @@ TEST_CASE("semantic layer membership is bounded, atomic, and leaves gameplay dat
 
     const auto toggled = apply_semantic_layer_edit(
         history, 6,
-        toggle_semantic_layer_membership_action_t{
-            chart_id_t{2}, layer_id_t{7}, {object_id_t{20}, object_id_t{21}}});
+        semantic_layer_membership_edit_t{.chart = chart_id_t{2},
+                                         .layer = layer_id_t{7},
+                                         .notes = {object_id_t{20}, object_id_t{21}},
+                                         .operation = wormedit::membership_operation_t::toggle});
     REQUIRE(toggled);
     CHECK(note_by_id(history.document.charts.front(), object_id_t{20}).semantic_layers ==
           std::vector{layer_id_t{7}});
@@ -340,9 +349,12 @@ TEST_CASE("semantic layer membership edits notes and BGM events in one undo step
           "[unit][core][semantic-layer-editor][bgm]") {
     auto history = make_document_history(semantic_layer_bgm_song());
     const auto assigned = apply_semantic_layer_edit(
-        history, 4, assign_notes_to_semantic_layer_action_t{
-            .chart = chart_id_t{2}, .layer = layer_id_t{7}, .notes = {object_id_t{21}},
-            .bgm_events = {object_id_t{23}}});
+        history, 4,
+        semantic_layer_membership_edit_t{.chart = chart_id_t{2},
+                                         .layer = layer_id_t{7},
+                                         .notes = {object_id_t{21}},
+                                         .bgm_events = {object_id_t{23}},
+                                         .operation = wormedit::membership_operation_t::assign});
     REQUIRE(assigned);
     REQUIRE(history.undo.size() == 1);
     CHECK(mixed_layer_membership(history.document.charts.front(), {layer_id_t{7}}));
@@ -355,9 +367,12 @@ TEST_CASE("stale mixed semantic layer edit leaves note and BGM untouched",
           "[unit][core][semantic-layer-editor][bgm][stale]") {
     auto history = make_document_history(semantic_layer_bgm_song());
     const auto stale = apply_semantic_layer_edit(
-        history, 3, assign_notes_to_semantic_layer_action_t{
-            .chart = chart_id_t{2}, .layer = layer_id_t{7}, .notes = {object_id_t{21}},
-            .bgm_events = {object_id_t{23}}});
+        history, 3,
+        semantic_layer_membership_edit_t{.chart = chart_id_t{2},
+                                         .layer = layer_id_t{7},
+                                         .notes = {object_id_t{21}},
+                                         .bgm_events = {object_id_t{23}},
+                                         .operation = wormedit::membership_operation_t::assign});
     CHECK_FALSE(stale);
     CHECK(history.document.revision == 4);
     CHECK(history.undo.empty());
@@ -527,7 +542,10 @@ TEST_CASE("locked layers block membership and deletion until unlocked",
 
     const auto assign_locked = apply_semantic_layer_edit(
         history, 4,
-        assign_notes_to_semantic_layer_action_t{chart_id_t{2}, layer_id_t{7}, {object_id_t{21}}});
+        semantic_layer_membership_edit_t{.chart = chart_id_t{2},
+                                         .layer = layer_id_t{7},
+                                         .notes = {object_id_t{21}},
+                                         .operation = wormedit::membership_operation_t::assign});
     CHECK_FALSE(assign_locked);
     CHECK(has_code(assign_locked, diagnostic_code_t::unsupported_feature));
     const auto delete_locked = apply_semantic_layer_edit(
@@ -547,7 +565,10 @@ TEST_CASE("locked layers block membership and deletion until unlocked",
             false}));
     REQUIRE(apply_semantic_layer_edit(
         history, 5,
-        assign_notes_to_semantic_layer_action_t{chart_id_t{2}, layer_id_t{7}, {object_id_t{21}}}));
+        semantic_layer_membership_edit_t{.chart = chart_id_t{2},
+                                         .layer = layer_id_t{7},
+                                         .notes = {object_id_t{21}},
+                                         .operation = wormedit::membership_operation_t::assign}));
     const auto in_use = apply_semantic_layer_edit(
         history, 6, delete_semantic_layer_action_t{chart_id_t{2}, layer_id_t{7}});
     CHECK_FALSE(in_use);
@@ -636,24 +657,34 @@ TEST_CASE(
 
     const auto duplicate_selection = apply_semantic_layer_edit(
         history, revision,
-        assign_notes_to_semantic_layer_action_t{
-            chart_id_t{2}, layer_id_t{7}, {object_id_t{20}, object_id_t{20}}});
+        semantic_layer_membership_edit_t{.chart = chart_id_t{2},
+                                         .layer = layer_id_t{7},
+                                         .notes = {object_id_t{20}, object_id_t{20}},
+                                         .operation = wormedit::membership_operation_t::assign});
     CHECK_FALSE(duplicate_selection);
     CHECK(has_code(duplicate_selection, diagnostic_code_t::duplicate_id));
     const auto unknown_note = apply_semantic_layer_edit(
         history, revision,
-        assign_notes_to_semantic_layer_action_t{chart_id_t{2}, layer_id_t{7}, {object_id_t{99}}});
+        semantic_layer_membership_edit_t{.chart = chart_id_t{2},
+                                         .layer = layer_id_t{7},
+                                         .notes = {object_id_t{99}},
+                                         .operation = wormedit::membership_operation_t::assign});
     CHECK_FALSE(unknown_note);
     CHECK(has_code(unknown_note, diagnostic_code_t::invalid_id));
     const auto unknown_layer = apply_semantic_layer_edit(
         history, revision,
-        assign_notes_to_semantic_layer_action_t{chart_id_t{2}, layer_id_t{99}, {object_id_t{20}}});
+        semantic_layer_membership_edit_t{.chart = chart_id_t{2},
+                                         .layer = layer_id_t{99},
+                                         .notes = {object_id_t{20}},
+                                         .operation = wormedit::membership_operation_t::assign});
     CHECK_FALSE(unknown_layer);
     CHECK(has_code(unknown_layer, diagnostic_code_t::invalid_id));
     const auto note_capped = apply_semantic_layer_edit(
         history, revision,
-        assign_notes_to_semantic_layer_action_t{
-            chart_id_t{2}, layer_id_t{7}, {object_id_t{20}, object_id_t{21}}},
+        semantic_layer_membership_edit_t{.chart = chart_id_t{2},
+                                         .layer = layer_id_t{7},
+                                         .notes = {object_id_t{20}, object_id_t{21}},
+                                         .operation = wormedit::membership_operation_t::assign},
         {.maximum_note_selection = 1});
     CHECK_FALSE(note_capped);
     CHECK(has_code(note_capped, diagnostic_code_t::invalid_resolution));
@@ -694,7 +725,10 @@ TEST_CASE("semantic layer assignment indexes a fifty-thousand-note chart once",
     const auto started = std::chrono::steady_clock::now();
     const auto applied = apply_semantic_layer_edit(
         history, 4,
-        assign_notes_to_semantic_layer_action_t{chart_id_t{2}, layer_id_t{7}, std::move(selected)});
+        semantic_layer_membership_edit_t{.chart = chart_id_t{2},
+                                         .layer = layer_id_t{7},
+                                         .notes = std::move(selected),
+                                         .operation = wormedit::membership_operation_t::assign});
     const auto elapsed = std::chrono::steady_clock::now() - started;
     REQUIRE(applied);
     CHECK(history.document.charts.front().measures.front().notes.size() == 50'000);

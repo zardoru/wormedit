@@ -90,18 +90,14 @@ struct format_metadata_target_t {
     format_family_t family{format_family_t::native_project};
 };
 
-struct insert_format_metadata_field_action_t {
-    format_metadata_target_t target;
-    std::size_t index{};
-    std::string name;
-    std::string value;
-};
+enum class format_metadata_field_mode_t { insert, replace };
 
-struct replace_format_metadata_field_action_t {
+struct edit_format_metadata_field_action_t {
     format_metadata_target_t target;
     std::size_t index{};
     std::string name;
     std::string value;
+    format_metadata_field_mode_t mode{format_metadata_field_mode_t::insert};
 };
 
 struct erase_format_metadata_field_action_t {
@@ -111,8 +107,7 @@ struct erase_format_metadata_field_action_t {
 
 using metadata_edit_action_t =
     std::variant<set_song_metadata_action_t, set_chart_metadata_action_t,
-                 set_output_group_path_action_t,
-                 insert_format_metadata_field_action_t, replace_format_metadata_field_action_t,
+                 set_output_group_path_action_t, edit_format_metadata_field_action_t,
                  erase_format_metadata_field_action_t>;
 
 // Applies one mutation through document history. New fields may be inserted in

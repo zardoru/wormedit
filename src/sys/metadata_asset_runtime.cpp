@@ -134,8 +134,9 @@ auto link_imported_metadata_audio(
         });
         (void)wormedit::apply_workspace_action(
             workspace, history.document, history.document.revision,
-            wormedit::workspace_select_audio_asset_action_t{
-                music != resources.end() ? music->asset : request.asset});
+            wormedit::workspace_select_asset_action_t{
+                .asset = music != resources.end() ? music->asset : request.asset,
+                .slot = wormedit::workspace_asset_slot_t::audio});
         status = request.export_copy
                      ? "Audio staged in export assets and set as the song audio."
                      : "Audio copied into project assets and set as the song audio.";

@@ -125,11 +125,11 @@ struct workspace_set_focus_action_t {
 struct workspace_clear_focus_action_t {
     workspace_tab_t tab{workspace_tab_t::setup};
 };
-struct workspace_select_audio_asset_action_t {
+enum class workspace_asset_slot_t { audio, visual };
+
+struct workspace_select_asset_action_t {
     std::optional<asset_id_t> asset;
-};
-struct workspace_select_visual_asset_action_t {
-    std::optional<asset_id_t> asset;
+    workspace_asset_slot_t slot{workspace_asset_slot_t::audio};
 };
 struct workspace_select_clip_action_t {
     std::optional<clip_id_t> clip;
@@ -147,8 +147,7 @@ struct workspace_set_loop_action_t {
 using workspace_action_t =
     std::variant<workspace_switch_tab_action_t, workspace_select_chart_action_t,
                  workspace_set_comparison_charts_action_t, workspace_set_focus_action_t,
-                 workspace_clear_focus_action_t, workspace_select_audio_asset_action_t,
-                 workspace_select_visual_asset_action_t,
+                 workspace_clear_focus_action_t, workspace_select_asset_action_t,
                  workspace_select_clip_action_t, workspace_seek_action_t,
                  workspace_set_playing_action_t, workspace_set_loop_action_t>;
 

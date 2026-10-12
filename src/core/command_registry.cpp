@@ -12,6 +12,9 @@
 
 namespace wormedit {
 namespace {
+auto command_id_of(const command_t& command) -> const command_id_t& {
+    return command.definition.id;
+}
 
 using json = nlohmann::json;
 
@@ -81,55 +84,56 @@ auto warning(diagnostic_code_t code, std::string message) -> diagnostic_t {
 [[nodiscard]] auto valid_registration(const command_registration_t& registration)
     -> diagnostic_list_t {
     diagnostic_list_t diagnostics;
-    if (!valid_stable_text(registration.id.value, maximum_command_id_bytes)) {
+    if (!valid_stable_text(registration.definition.id.value, maximum_command_id_bytes)) {
         diagnostics.push_back(
             error(diagnostic_code_t::invalid_id, "command ID must be bounded stable ASCII text"));
     }
-    if (registration.display_name.empty() ||
-        registration.display_name.size() > maximum_command_display_name_bytes) {
+    if (registration.definition.display_name.empty() ||
+        registration.definition.display_name.size() > maximum_command_display_name_bytes) {
         diagnostics.push_back(error(diagnostic_code_t::invalid_binding,
                                     "command display name is empty or exceeds its byte limit"));
     }
-    if (!valid_stable_text(registration.localization_key, maximum_localization_key_bytes)) {
+    if (!valid_stable_text(registration.definition.localization_key,
+                           maximum_localization_key_bytes)) {
         diagnostics.push_back(error(diagnostic_code_t::invalid_binding,
                                     "command localization key must be bounded stable ASCII text"));
     }
-    if (registration.focus_context.size() > maximum_focus_context_bytes) {
+    if (registration.definition.focus_context.size() > maximum_focus_context_bytes) {
         diagnostics.push_back(error(diagnostic_code_t::invalid_binding,
                                     "command focus context exceeds its byte limit"));
     }
-    if (!valid_chord_list(registration.default_shortcuts) ||
+    if (!valid_chord_list(registration.definition.default_shortcuts) ||
         (registration.current_shortcuts && !valid_chord_list(*registration.current_shortcuts))) {
         diagnostics.push_back(
             error(diagnostic_code_t::invalid_binding,
                   "command shortcuts are invalid, duplicated, or exceed the cap"));
     }
-    if (static_cast<unsigned int>(registration.category) >
+    if (static_cast<unsigned int>(registration.definition.category) >
             static_cast<unsigned int>(command_category_t::tools) ||
-        static_cast<unsigned int>(registration.focus_scope) >
+        static_cast<unsigned int>(registration.definition.focus_scope) >
             static_cast<unsigned int>(command_focus_scope_t::ime) ||
-        static_cast<unsigned int>(registration.repeat_policy) >
+        static_cast<unsigned int>(registration.definition.repeat_policy) >
             static_cast<unsigned int>(command_repeat_policy_t::allow)) {
         diagnostics.push_back(error(diagnostic_code_t::invalid_binding,
                                     "command metadata contains an unknown enum value"));
         return diagnostics;
     }
 
-    const auto scope = registration.focus_scope;
+    const auto scope = registration.definition.focus_scope;
     if ((scope == command_focus_scope_t::global || scope == command_focus_scope_t::modal ||
          scope == command_focus_scope_t::text_entry || scope == command_focus_scope_t::ime) &&
-        (registration.tab || registration.lane)) {
+        (registration.definition.tab || registration.definition.lane)) {
         diagnostics.push_back(error(diagnostic_code_t::invalid_binding,
                                     "global and focus-only commands cannot target a tab or lane"));
     }
     if ((scope == command_focus_scope_t::tab || scope == command_focus_scope_t::workspace) &&
-        registration.lane) {
+        registration.definition.lane) {
         diagnostics.push_back(error(diagnostic_code_t::invalid_binding,
                                     "tab and workspace commands cannot target a lane"));
     }
     if ((scope == command_focus_scope_t::modal || scope == command_focus_scope_t::text_entry ||
          scope == command_focus_scope_t::ime) &&
-        (registration.lane || registration.tab)) {
+        (registration.definition.lane || registration.definition.tab)) {
         diagnostics.push_back(
             error(diagnostic_code_t::invalid_binding,
                   "modal, text, and IME commands cannot target a chart tab or lane"));
@@ -180,19 +184,22 @@ auto warning(diagnostic_code_t code, std::string message) -> diagnostic_t {
 
 [[nodiscard]] auto eligible(const command_t& command, const command_focus_t& focus) -> bool {
     if (focus.ime_composition_active) {
-        return command.focus_scope == command_focus_scope_t::ime &&
-               (command.focus_context.empty() || command.focus_context == focus.ime_context);
+        return command.definition.focus_scope == command_focus_scope_t::ime &&
+               (command.definition.focus_context.empty() ||
+                command.definition.focus_context == focus.ime_context);
     }
     if (focus.modal_active) {
-        return command.focus_scope == command_focus_scope_t::modal &&
-               (command.focus_context.empty() || command.focus_context == focus.modal_context);
+        return command.definition.focus_scope == command_focus_scope_t::modal &&
+               (command.definition.focus_context.empty() ||
+                command.definition.focus_context == focus.modal_context);
     }
     if (focus.text_entry_active) {
-        return command.focus_scope == command_focus_scope_t::text_entry &&
-               (command.focus_context.empty() || command.focus_context == focus.text_entry_context);
+        return command.definition.focus_scope == command_focus_scope_t::text_entry &&
+               (command.definition.focus_context.empty() ||
+                command.definition.focus_context == focus.text_entry_context);
     }
 
-    switch (command.focus_scope) {
+    switch (command.definition.focus_scope) {
     case command_focus_scope_t::global:
         return true;
     case command_focus_scope_t::workspace:
@@ -201,14 +208,15 @@ auto warning(diagnostic_code_t code, std::string message) -> diagnostic_t {
         }
         // Tab commands on the workspace bar target a destination tab. They run
         // only when that destination is actually visible.
-        return !command.tab || is_visible(focus, *command.tab);
+        return !command.definition.tab || is_visible(focus, *command.definition.tab);
     case command_focus_scope_t::tab:
         return focus.workspace_active && focus.active_tab && is_visible(focus, *focus.active_tab) &&
-               (!command.tab || *command.tab == *focus.active_tab);
+               (!command.definition.tab || *command.definition.tab == *focus.active_tab);
     case command_focus_scope_t::lane:
         return focus.workspace_active && focus.active_tab && is_visible(focus, *focus.active_tab) &&
-               focus.focused_lane && (!command.tab || *command.tab == *focus.active_tab) &&
-               (!command.lane || *command.lane == *focus.focused_lane);
+               focus.focused_lane &&
+               (!command.definition.tab || *command.definition.tab == *focus.active_tab) &&
+               (!command.definition.lane || *command.definition.lane == *focus.focused_lane);
     case command_focus_scope_t::modal:
     case command_focus_scope_t::text_entry:
     case command_focus_scope_t::ime:
@@ -243,26 +251,27 @@ auto warning(diagnostic_code_t code, std::string message) -> diagnostic_t {
         return scope == command_focus_scope_t::modal ||
                scope == command_focus_scope_t::text_entry || scope == command_focus_scope_t::ime;
     };
-    if (restricted(left.focus_scope) || restricted(right.focus_scope)) {
-        return left.focus_scope == right.focus_scope &&
-               (left.focus_context.empty() || right.focus_context.empty() ||
-                left.focus_context == right.focus_context);
+    if (restricted(left.definition.focus_scope) || restricted(right.definition.focus_scope)) {
+        return left.definition.focus_scope == right.definition.focus_scope &&
+               (left.definition.focus_context.empty() || right.definition.focus_context.empty() ||
+                left.definition.focus_context == right.definition.focus_context);
     }
 
-    if (left.focus_scope == command_focus_scope_t::global ||
-        right.focus_scope == command_focus_scope_t::global) {
+    if (left.definition.focus_scope == command_focus_scope_t::global ||
+        right.definition.focus_scope == command_focus_scope_t::global) {
         return true;
     }
-    if (left.focus_scope == command_focus_scope_t::workspace ||
-        right.focus_scope == command_focus_scope_t::workspace) {
+    if (left.definition.focus_scope == command_focus_scope_t::workspace ||
+        right.definition.focus_scope == command_focus_scope_t::workspace) {
         return true;
     }
-    if (left.tab && right.tab && left.tab != right.tab) {
+    if (left.definition.tab && right.definition.tab &&
+        left.definition.tab != right.definition.tab) {
         return false;
     }
-    if (left.focus_scope == command_focus_scope_t::lane &&
-        right.focus_scope == command_focus_scope_t::lane && left.lane && right.lane &&
-        left.lane != right.lane) {
+    if (left.definition.focus_scope == command_focus_scope_t::lane &&
+        right.definition.focus_scope == command_focus_scope_t::lane && left.definition.lane &&
+        right.definition.lane && left.definition.lane != right.definition.lane) {
         return false;
     }
     return true;
@@ -291,7 +300,7 @@ auto warning(diagnostic_code_t code, std::string message) -> diagnostic_t {
                         });
                 });
             if (collides) {
-                pairs.push_back({.first = left.id, .second = right.id});
+                pairs.push_back({.first = left.definition.id, .second = right.definition.id});
             }
         }
     }
@@ -344,23 +353,21 @@ auto add_builtin(command_registry_t& registry, command_invoker_t invoker, std::s
                  std::vector<shortcut_chord_t> shortcuts = {}, bool mutation = false,
                  std::optional<workspace_tab_t> tab = std::nullopt,
                  std::optional<bool> checked = std::nullopt) -> void {
-    command_registration_t registration{
-        .id = {std::move(id)},
-        .display_name = std::move(display),
-        .localization_key = "command." + id,
-        .category = category,
-        .focus_scope = scope,
-        .tab = tab,
-        .default_shortcuts = std::move(shortcuts),
-        .enabled = true,
-        .checked = checked,
-        .mutation = mutation,
-    };
+    command_registration_t registration{.definition = {.id = {std::move(id)},
+                                                       .display_name = std::move(display),
+                                                       .localization_key = "command." + id,
+                                                       .category = category,
+                                                       .focus_scope = scope,
+                                                       .tab = tab,
+                                                       .default_shortcuts = std::move(shortcuts),
+                                                       .enabled = true,
+                                                       .checked = checked,
+                                                       .mutation = mutation}};
     // The ID was moved into the registration. Rebuild the key from its stable
     // value before binding the generic application/controller invoker.
-    registration.localization_key = "command." + registration.id.value;
+    registration.definition.localization_key = "command." + registration.definition.id.value;
     if (invoker) {
-        registration.invoke = [invoker](const command_invocation_context_t& context) {
+        registration.definition.invoke = [invoker](const command_invocation_context_t& context) {
             return invoker(context);
         };
     }
@@ -394,51 +401,37 @@ auto register_command(command_registry_t& registry, command_registration_t regis
             error(diagnostic_code_t::invalid_resolution, "command registry is at its entry cap"));
         return result;
     }
-    if (find_command(registry, registration.id)) {
+    if (find_command(registry, registration.definition.id)) {
         result.diagnostics.push_back(
             error(diagnostic_code_t::duplicate_id, "command ID is already registered"));
         return result;
     }
 
-    auto current = registration.current_shortcuts.value_or(registration.default_shortcuts);
-    registry.commands.push_back({
-        .id = std::move(registration.id),
-        .display_name = std::move(registration.display_name),
-        .localization_key = std::move(registration.localization_key),
-        .category = registration.category,
-        .focus_scope = registration.focus_scope,
-        .tab = registration.tab,
-        .lane = registration.lane,
-        .focus_context = std::move(registration.focus_context),
-        .default_shortcuts = std::move(registration.default_shortcuts),
-        .current_shortcuts = std::move(current),
-        .enabled = registration.enabled,
-        .checked = registration.checked,
-        .mutation = registration.mutation,
-        .repeat_policy = registration.repeat_policy,
-        .invoke = std::move(registration.invoke),
-    });
+    auto current =
+        registration.current_shortcuts.value_or(registration.definition.default_shortcuts);
+    registry.commands.push_back({.definition = std::move(registration.definition),
+                                 .current_shortcuts = std::move(current)});
     result.applied = true;
     return result;
 }
 
 auto find_command(const command_registry_t& registry, const command_id_t& id) noexcept
     -> const command_t* {
-    const auto found = std::ranges::find(registry.commands, id, &command_t::id);
+    const auto found = std::ranges::find(registry.commands, id, command_id_of);
     return found == registry.commands.end() ? nullptr : &*found;
 }
 
 auto update_command_state(command_registry_t& registry, const command_id_t& id, bool enabled,
                           std::optional<bool> checked) -> command_registry_result_t {
     command_registry_result_t result;
-    const auto found = std::ranges::find(registry.commands, id, &command_t::id);
+    const auto found = std::ranges::find(registry.commands, id, command_id_of);
     if (found == registry.commands.end()) {
         result.diagnostics.push_back(
             error(diagnostic_code_t::invalid_id, "cannot update state for an unknown command"));
         return result;
     }
-    found->enabled = enabled;
-    found->checked = checked;
+    found->definition.enabled = enabled;
+    found->definition.checked = checked;
     result.applied = true;
     return result;
 }
@@ -463,7 +456,7 @@ auto remap_command(command_registry_t& registry, const command_id_t& id,
                                            "replacement shortcuts are invalid or exceed the cap"));
         return result;
     }
-    const auto found = std::ranges::find(registry.commands, id, &command_t::id);
+    const auto found = std::ranges::find(registry.commands, id, command_id_of);
     if (found == registry.commands.end()) {
         result.diagnostics.push_back(
             error(diagnostic_code_t::invalid_id, "cannot remap an unknown command"));
@@ -479,9 +472,9 @@ auto make_shortcut_profile(const command_registry_t& registry, std::string profi
     -> shortcut_profile_t {
     shortcut_profile_t profile{.id = std::move(profile_id)};
     for (const auto& command : registry.commands) {
-        if (command.current_shortcuts != command.default_shortcuts) {
+        if (command.current_shortcuts != command.definition.default_shortcuts) {
             profile.bindings.push_back(
-                {.command = command.id, .shortcuts = command.current_shortcuts});
+                {.command = command.definition.id, .shortcuts = command.current_shortcuts});
         }
     }
     return profile;
@@ -511,10 +504,10 @@ auto apply_shortcut_profile(command_registry_t& registry, const shortcut_profile
 
     auto proposed = registry.commands;
     for (auto& command : proposed) {
-        command.current_shortcuts = command.default_shortcuts;
+        command.current_shortcuts = command.definition.default_shortcuts;
     }
     for (const auto& binding : profile.bindings) {
-        const auto command = std::ranges::find(proposed, binding.command, &command_t::id);
+        const auto command = std::ranges::find(proposed, binding.command, command_id_of);
         command->current_shortcuts = binding.shortcuts;
     }
     registry.commands = std::move(proposed);
@@ -630,7 +623,7 @@ auto shortcut_candidates(const command_registry_t& registry, const shortcut_even
     std::vector<const command_t*> candidates;
     candidates.reserve(registry.commands.size());
     for (const auto& command : registry.commands) {
-        if (restricted && command.focus_scope != *restricted) {
+        if (restricted && command.definition.focus_scope != *restricted) {
             continue;
         }
         if (eligible(command, focus) && has_binding(command, event.chord, primary_modifier)) {
@@ -667,41 +660,42 @@ auto dispatch_shortcut(const command_registry_t& registry, const shortcut_event_
     }
 
     std::ranges::sort(candidates, [](const command_t* left, const command_t* right) {
-        if (scope_rank(left->focus_scope) != scope_rank(right->focus_scope)) {
-            return scope_rank(left->focus_scope) < scope_rank(right->focus_scope);
+        if (scope_rank(left->definition.focus_scope) != scope_rank(right->definition.focus_scope)) {
+            return scope_rank(left->definition.focus_scope) <
+                   scope_rank(right->definition.focus_scope);
         }
-        return left->id < right->id;
+        return left->definition.id < right->definition.id;
     });
-    const auto best_rank = scope_rank(candidates.front()->focus_scope);
+    const auto best_rank = scope_rank(candidates.front()->definition.focus_scope);
     const auto peers = static_cast<std::size_t>(
         std::ranges::count_if(candidates, [best_rank](const command_t* command) {
-            return scope_rank(command->focus_scope) == best_rank;
+            return scope_rank(command->definition.focus_scope) == best_rank;
         }));
     if (peers > 1) {
         result.status = command_dispatch_status_t::conflict;
         for (const auto* candidate : candidates) {
-            if (scope_rank(candidate->focus_scope) == best_rank) {
+            if (scope_rank(candidate->definition.focus_scope) == best_rank) {
                 result.diagnostics.push_back(
                     warning(diagnostic_code_t::duplicate_binding,
                             "shortcut dispatch is ambiguous at this focus scope: '" +
-                                candidate->id.value + "'"));
+                                candidate->definition.id.value + "'"));
             }
         }
         return result;
     }
 
     const auto& command = *candidates.front();
-    result.command = command.id;
-    if (!command.enabled) {
+    result.command = command.definition.id;
+    if (!command.definition.enabled) {
         result.status = command_dispatch_status_t::disabled;
         return result;
     }
-    if (event.auto_repeat && command.mutation &&
-        command.repeat_policy == command_repeat_policy_t::suppress_mutations) {
+    if (event.auto_repeat && command.definition.mutation &&
+        command.definition.repeat_policy == command_repeat_policy_t::suppress_mutations) {
         result.status = command_dispatch_status_t::repeat_suppressed;
         return result;
     }
-    if (!command.invoke) {
+    if (!command.definition.invoke) {
         result.status = command_dispatch_status_t::rejected;
         result.diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,
                                            "command has no controller invocation handler"));
@@ -709,12 +703,12 @@ auto dispatch_shortcut(const command_registry_t& registry, const shortcut_event_
     }
 
     const command_invocation_context_t context{
-        .command = command.id,
+        .command = command.definition.id,
         .focus = focus,
         .shortcut = event.chord,
         .auto_repeat = event.auto_repeat,
     };
-    const auto invocation = command.invoke(context);
+    const auto invocation = command.definition.invoke(context);
     result.diagnostics = invocation.diagnostics;
     result.status = invocation.accepted && !has_errors(invocation.diagnostics)
                         ? command_dispatch_status_t::invoked
@@ -741,9 +735,9 @@ auto invoke_command(const command_registry_t& registry, const command_id_t& id,
             error(diagnostic_code_t::invalid_id, "cannot invoke an unknown command"));
         return result;
     }
-    result.command = command->id;
+    result.command = command->definition.id;
     const auto restricted = restricted_focus_scope(focus);
-    if (restricted && command->focus_scope != *restricted) {
+    if (restricted && command->definition.focus_scope != *restricted) {
         result.status = command_dispatch_status_t::focus_consumed;
         return result;
     }
@@ -751,18 +745,18 @@ auto invoke_command(const command_registry_t& registry, const command_id_t& id,
         result.status = command_dispatch_status_t::focus_consumed;
         return result;
     }
-    if (!command->enabled) {
+    if (!command->definition.enabled) {
         result.status = command_dispatch_status_t::disabled;
         return result;
     }
-    if (!command->invoke) {
+    if (!command->definition.invoke) {
         result.status = command_dispatch_status_t::rejected;
         result.diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,
                                            "command has no controller invocation handler"));
         return result;
     }
-    const command_invocation_context_t context{.command = command->id, .focus = focus};
-    const auto invocation = command->invoke(context);
+    const command_invocation_context_t context{.command = command->definition.id, .focus = focus};
+    const auto invocation = command->definition.invoke(context);
     result.diagnostics = invocation.diagnostics;
     result.status = invocation.accepted && !has_errors(invocation.diagnostics)
                         ? command_dispatch_status_t::invoked

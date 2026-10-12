@@ -69,7 +69,7 @@ void update_item(NSMenuItem* item, const wormedit::ui::workspace_menu_item_t& mo
     const auto* command = model.command_id && current_registry
         ? wormedit::find_command(*current_registry, {model.command_id}) : nullptr;
     if (!command) return;
-    item.enabled = item.enabled && command->enabled;
+    item.enabled = item.enabled && command->definition.enabled;
     if (command->current_shortcuts.empty()) return;
     const auto& chord = command->current_shortcuts.front();
     item.keyEquivalent = menu_text(native_key(chord.key).c_str());

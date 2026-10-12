@@ -256,8 +256,8 @@ auto apply_metadata_action(metadata_edit_context_t& context,
     group.relative_output_path = path;
 }
 
-auto apply_metadata_field(metadata_edit_context_t& context, format_metadata_t& group,
-                          const insert_format_metadata_field_action_t& edit) -> void {
+auto insert_metadata_field(metadata_edit_context_t& context, format_metadata_t& group,
+                           const edit_format_metadata_field_action_t& edit) -> void {
     if (!validate_field(edit.name, edit.value, context.limits, context.result.diagnostics)) return;
     if (group.ordered_fields.size() >= context.limits.maximum_fields_per_group) {
         context.result.diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,
@@ -275,8 +275,8 @@ auto apply_metadata_field(metadata_edit_context_t& context, format_metadata_t& g
     context.changed = true;
 }
 
-auto apply_metadata_field(metadata_edit_context_t& context, format_metadata_t& group,
-                          const replace_format_metadata_field_action_t& edit) -> void {
+auto replace_metadata_field(metadata_edit_context_t& context, format_metadata_t& group,
+                            const edit_format_metadata_field_action_t& edit) -> void {
     if (!validate_field(edit.name, edit.value, context.limits, context.result.diagnostics)) return;
     if (edit.index >= group.ordered_fields.size()) {
         context.result.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
@@ -291,6 +291,14 @@ auto apply_metadata_field(metadata_edit_context_t& context, format_metadata_t& g
     group.ordered_fields[edit.index] = replacement;
     for (const auto& field : mirrored)
         field.group->ordered_fields[field.index] = replacement;
+}
+
+auto apply_metadata_field(metadata_edit_context_t& context, format_metadata_t& group,
+                          const edit_format_metadata_field_action_t& edit) -> void {
+    if (edit.mode == format_metadata_field_mode_t::insert)
+        insert_metadata_field(context, group, edit);
+    else
+        replace_metadata_field(context, group, edit);
 }
 
 auto apply_metadata_field(metadata_edit_context_t& context, format_metadata_t& group,
@@ -327,12 +335,7 @@ auto apply_format_metadata_action(metadata_edit_context_t& context, const Edit& 
 }
 
 auto apply_metadata_operation(metadata_edit_context_t& context,
-                              const insert_format_metadata_field_action_t& edit) -> void {
-    apply_format_metadata_action(context, edit);
-}
-
-auto apply_metadata_operation(metadata_edit_context_t& context,
-                              const replace_format_metadata_field_action_t& edit) -> void {
+                              const edit_format_metadata_field_action_t& edit) -> void {
     apply_format_metadata_action(context, edit);
 }
 

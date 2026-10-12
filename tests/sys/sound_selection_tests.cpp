@@ -199,8 +199,8 @@ TEST_CASE("same sound select command has a remappable primary Shift A binding", 
     });
     const auto* command = find_command(registry, {"selection.select_same_sound_chart"});
     REQUIRE(command);
-    REQUIRE(command->default_shortcuts.size() == 1);
-    const auto chord = command->default_shortcuts.front();
+    REQUIRE(command->definition.default_shortcuts.size() == 1);
+    const auto chord = command->definition.default_shortcuts.front();
     expect_sound(chord.key == shortcut_key_t::a);
     expect_sound((chord.modifiers & static_cast<shortcut_modifiers_t>(shortcut_modifier_t::shift)) != 0);
     command_focus_t focus;

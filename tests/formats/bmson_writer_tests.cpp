@@ -201,8 +201,12 @@ TEST_CASE("BMSON writer persists editable info metadata through export and reloa
     REQUIRE(genre_index < song_group.ordered_fields.size());
     REQUIRE(wormedit::apply_metadata_edit(
         history, history.document.revision,
-        wormedit::replace_format_metadata_field_action_t{
-            song_target, genre_index, "info.genre", "\"electronic\""}));
+        wormedit::edit_format_metadata_field_action_t{
+            .target = song_target,
+            .index = genre_index,
+            .name = "info.genre",
+            .value = "\"electronic\"",
+            .mode = wormedit::format_metadata_field_mode_t::replace}));
     const auto& chart_group = history.document.charts.front().metadata.format_groups.front();
     CHECK(chart_group.ordered_fields[genre_index].second == "\"electronic\"");
     const auto rank_index = find_field(chart_group, "info.judge_rank");
@@ -211,19 +215,31 @@ TEST_CASE("BMSON writer persists editable info metadata through export and reloa
     REQUIRE(total_index < chart_group.ordered_fields.size());
     REQUIRE(wormedit::apply_metadata_edit(
         history, history.document.revision,
-        wormedit::replace_format_metadata_field_action_t{
-            chart_target, rank_index, "info.judge_rank", "115.5"}));
+        wormedit::edit_format_metadata_field_action_t{
+            .target = chart_target,
+            .index = rank_index,
+            .name = "info.judge_rank",
+            .value = "115.5",
+            .mode = wormedit::format_metadata_field_mode_t::replace}));
     REQUIRE(wormedit::apply_metadata_edit(
         history, history.document.revision,
-        wormedit::replace_format_metadata_field_action_t{
-            song_target, total_index, "info.total", "220"}));
+        wormedit::edit_format_metadata_field_action_t{
+            .target = song_target,
+            .index = total_index,
+            .name = "info.total",
+            .value = "220",
+            .mode = wormedit::format_metadata_field_mode_t::replace}));
     const auto append_info = [&](std::string name, std::string value) {
         const auto count = history.document.charts.front().metadata.format_groups.front()
                                .ordered_fields.size();
         return wormedit::apply_metadata_edit(
             history, history.document.revision,
-            wormedit::insert_format_metadata_field_action_t{
-                chart_target, count, std::move(name), std::move(value)});
+            wormedit::edit_format_metadata_field_action_t{
+                .target = chart_target,
+                .index = count,
+                .name = std::move(name),
+                .value = std::move(value),
+                .mode = wormedit::format_metadata_field_mode_t::insert});
     };
     REQUIRE(append_info("info.subtitle", "\"A new subtitle\""));
     REQUIRE(append_info("info.subartists", "[\"music:Guest\",\"chart:Mapper\"]"));
@@ -259,8 +275,12 @@ TEST_CASE("BMSON writer persists editable info metadata through export and reloa
     REQUIRE(reopened_genre_index < reopened_song_group.ordered_fields.size());
     REQUIRE(wormedit::apply_metadata_edit(
         resumed, resumed.document.revision,
-        wormedit::replace_format_metadata_field_action_t{
-            song_target, reopened_genre_index, "info.genre", "\"post-save genre\""}));
+        wormedit::edit_format_metadata_field_action_t{
+            .target = song_target,
+            .index = reopened_genre_index,
+            .name = "info.genre",
+            .value = "\"post-save genre\"",
+            .mode = wormedit::format_metadata_field_mode_t::replace}));
     CHECK(resumed.document.charts.front().metadata.format_groups.front()
               .ordered_fields[reopened_genre_index].second == "\"post-save genre\"");
     const auto after_reopen = wormedit::write_bmson(resumed.document);
@@ -273,8 +293,12 @@ TEST_CASE("BMSON writer persists editable info metadata through export and reloa
     REQUIRE(subtitle_index < invalid_group.ordered_fields.size());
     REQUIRE(wormedit::apply_metadata_edit(
         invalid, invalid.document.revision,
-        wormedit::replace_format_metadata_field_action_t{
-            chart_target, subtitle_index, "info.subtitle", "unquoted subtitle"}));
+        wormedit::edit_format_metadata_field_action_t{
+            .target = chart_target,
+            .index = subtitle_index,
+            .name = "info.subtitle",
+            .value = "unquoted subtitle",
+            .mode = wormedit::format_metadata_field_mode_t::replace}));
     const auto invalid_export = wormedit::write_bmson(invalid.document);
     CHECK_FALSE(invalid_export.json);
     REQUIRE_FALSE(invalid_export.diagnostics.empty());

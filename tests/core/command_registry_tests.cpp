@@ -30,17 +30,15 @@ auto make_invoker(std::shared_ptr<std::vector<command_id_t>> calls) -> command_i
 
 auto registration(std::string id, command_focus_scope_t scope, shortcut_chord_t shortcut,
                   command_invoker_t invoke, bool mutation = false) -> command_registration_t {
-    return {
-        .id = {id},
-        .display_name = id,
-        .localization_key = "command." + id,
-        .category = command_category_t::edit,
-        .focus_scope = scope,
-        .default_shortcuts = {shortcut},
-        .enabled = true,
-        .mutation = mutation,
-        .invoke = std::move(invoke),
-    };
+    return {.definition = {.id = {id},
+                           .display_name = id,
+                           .localization_key = "command." + id,
+                           .category = command_category_t::edit,
+                           .focus_scope = scope,
+                           .default_shortcuts = {shortcut},
+                           .enabled = true,
+                           .mutation = mutation,
+                           .invoke = std::move(invoke)}};
 }
 
 auto focus_for_compose() -> command_focus_t {
@@ -105,16 +103,16 @@ TEST_CASE("registry stores stable metadata and shares typed invocation for menus
                      {.key = shortcut_key_t::a,
                       .modifiers = shortcut_modifier_t::primary | shortcut_modifier_t::shift},
                      make_invoker(calls), true);
-    add.checked = false;
+    add.definition.checked = false;
     REQUIRE(register_command(registry, std::move(add)).applied);
 
     const auto* command = find_command(registry, command_id_t{"edit.sample"});
     REQUIRE(command);
-    CHECK(command->display_name == "edit.sample");
-    CHECK(command->localization_key == "command.edit.sample");
-    CHECK(command->category == command_category_t::edit);
-    CHECK(command->current_shortcuts == command->default_shortcuts);
-    CHECK(command->checked == false);
+    CHECK(command->definition.display_name == "edit.sample");
+    CHECK(command->definition.localization_key == "command.edit.sample");
+    CHECK(command->definition.category == command_category_t::edit);
+    CHECK(command->current_shortcuts == command->definition.default_shortcuts);
+    CHECK(command->definition.checked == false);
 
     auto shortcut = dispatch_shortcut(
         registry,
@@ -131,7 +129,7 @@ TEST_CASE("registry stores stable metadata and shares typed invocation for menus
     CHECK((*calls)[1] == command_id_t{"edit.sample"});
 
     REQUIRE(update_command_state(registry, command_id_t{"edit.sample"}, true, true).applied);
-    CHECK(find_command(registry, command_id_t{"edit.sample"})->checked == true);
+    CHECK(find_command(registry, command_id_t{"edit.sample"})->definition.checked == true);
 }
 
 TEST_CASE("dispatcher honors global, workspace, active-tab, then lane precedence",
@@ -144,14 +142,14 @@ TEST_CASE("dispatcher honors global, workspace, active-tab, then lane precedence
                              registration("a.global", command_focus_scope_t::global, key, invoke))
                 .applied);
     auto workspace = registration("b.workspace", command_focus_scope_t::workspace, key, invoke);
-    workspace.tab = workspace_tab_t::compose;
+    workspace.definition.tab = workspace_tab_t::compose;
     REQUIRE(register_command(registry, std::move(workspace)).applied);
     auto tab = registration("c.tab", command_focus_scope_t::tab, key, invoke);
-    tab.tab = workspace_tab_t::compose;
+    tab.definition.tab = workspace_tab_t::compose;
     REQUIRE(register_command(registry, std::move(tab)).applied);
     auto lane = registration("d.lane", command_focus_scope_t::lane, key, invoke);
-    lane.lane = lane_id_t{7};
-    lane.tab = workspace_tab_t::compose;
+    lane.definition.lane = lane_id_t{7};
+    lane.definition.tab = workspace_tab_t::compose;
     REQUIRE(register_command(registry, std::move(lane)).applied);
 
     auto focus = focus_for_compose();
@@ -190,11 +188,11 @@ TEST_CASE("modal text and IME focus consume unrelated shortcuts and hidden tabs 
                 .applied);
     auto text =
         registration("text.complete", command_focus_scope_t::text_entry, key, make_invoker(calls));
-    text.focus_context = "metadata.title";
+    text.definition.focus_context = "metadata.title";
     REQUIRE(register_command(registry, std::move(text)).applied);
     auto modal =
         registration("modal.accept", command_focus_scope_t::modal, key, make_invoker(calls));
-    modal.focus_context = "confirm.delete";
+    modal.definition.focus_context = "confirm.delete";
     REQUIRE(register_command(registry, std::move(modal)).applied);
     auto ime = registration("ime.commit", command_focus_scope_t::ime, key, make_invoker(calls));
     REQUIRE(register_command(registry, std::move(ime)).applied);
@@ -226,7 +224,7 @@ TEST_CASE("modal text and IME focus consume unrelated shortcuts and hidden tabs 
     REQUIRE(calls->size() == 3);
 
     auto hidden = registration("tab.hidden", command_focus_scope_t::tab, key, make_invoker(calls));
-    hidden.tab = workspace_tab_t::timing;
+    hidden.definition.tab = workspace_tab_t::timing;
     REQUIRE(register_command(registry, std::move(hidden)).applied);
     focus = focus_for_compose();
     result =
@@ -240,7 +238,7 @@ TEST_CASE("modal text and IME focus consume unrelated shortcuts and hidden tabs 
 
     auto open_timing = registration("workspace.open_timing", command_focus_scope_t::workspace, key,
                                     make_invoker(calls));
-    open_timing.tab = workspace_tab_t::timing;
+    open_timing.definition.tab = workspace_tab_t::timing;
     REQUIRE(register_command(registry, std::move(open_timing)).applied);
     focus.visible_tabs = {workspace_tab_t::compose};
     REQUIRE(update_command_state(registry, command_id_t{"edit.global"}, true, std::nullopt));
@@ -257,9 +255,9 @@ TEST_CASE("equal-priority conflicts are diagnosed and do not invoke an arbitrary
     const shortcut_chord_t key{.key = shortcut_key_t::k};
     command_registry_t registry;
     auto first = registration("edit.first", command_focus_scope_t::tab, key, invoke, true);
-    first.tab = workspace_tab_t::compose;
+    first.definition.tab = workspace_tab_t::compose;
     auto second = registration("edit.second", command_focus_scope_t::tab, key, invoke, true);
-    second.tab = workspace_tab_t::compose;
+    second.definition.tab = workspace_tab_t::compose;
     REQUIRE(register_command(registry, std::move(first)).applied);
     REQUIRE(register_command(registry, std::move(second)).applied);
 
@@ -363,13 +361,13 @@ TEST_CASE("malformed profiles, unknown chords, and all configured bounds are rej
     CHECK_FALSE(register_command(registry, std::move(invalid_id)).applied);
     auto too_many =
         registration("too.many", command_focus_scope_t::global, {.key = shortcut_key_t::a}, {});
-    too_many.default_shortcuts.assign(maximum_shortcuts_per_command + 1,
-                                      {.key = shortcut_key_t::a});
+    too_many.definition.default_shortcuts.assign(maximum_shortcuts_per_command + 1,
+                                                 {.key = shortcut_key_t::a});
     CHECK_FALSE(register_command(registry, std::move(too_many)).applied);
 
     auto duplicate = registration("duplicate.chord", command_focus_scope_t::global,
                                   {.key = shortcut_key_t::a}, {});
-    duplicate.default_shortcuts.push_back({.key = shortcut_key_t::a});
+    duplicate.definition.default_shortcuts.push_back({.key = shortcut_key_t::a});
     CHECK_FALSE(register_command(registry, std::move(duplicate)).applied);
 
     for (std::size_t i = 0; i < maximum_registered_commands; ++i) {
@@ -387,7 +385,7 @@ TEST_CASE("malformed profiles, unknown chords, and all configured bounds are rej
     command_registry_t enum_registry;
     auto invalid_enum =
         registration("invalid.enum", command_focus_scope_t::global, {.key = shortcut_key_t::a}, {});
-    invalid_enum.repeat_policy = static_cast<command_repeat_policy_t>(255);
+    invalid_enum.definition.repeat_policy = static_cast<command_repeat_policy_t>(255);
     const auto invalid_registration = register_command(enum_registry, std::move(invalid_enum));
     CHECK_FALSE(invalid_registration.applied);
     CHECK(has_code(invalid_registration.diagnostics, diagnostic_code_t::invalid_binding));
@@ -417,11 +415,10 @@ TEST_CASE("default registry seeds discoverable editor commands and visible tab r
 
     const auto* new_chart = find_command(registry, command_id_t{"document.new_chart"});
     REQUIRE(new_chart);
-    REQUIRE(new_chart->default_shortcuts.size() == 1);
-    CHECK(new_chart->default_shortcuts.front() ==
+    REQUIRE(new_chart->definition.default_shortcuts.size() == 1);
+    CHECK(new_chart->definition.default_shortcuts.front() ==
           shortcut_chord_t{.key = shortcut_key_t::n,
                            .modifiers = shortcut_modifier_t::primary | shortcut_modifier_t::shift});
-
 
     auto focus = focus_for_compose();
     const auto switch_tab = dispatch_shortcut(registry, {.chord = {.key = shortcut_key_t::f3}},
@@ -442,10 +439,10 @@ TEST_CASE("Go To Bookmark is bound to Ctrl Shift G without changing Ctrl G",
         std::make_shared<std::vector<command_id_t>>()));
     const auto* command = find_command(registry, command_id_t{"navigation.go_to_bookmark"});
     REQUIRE(command);
-    REQUIRE(command->default_shortcuts.size() == 1);
-    CHECK(command->default_shortcuts.front() == shortcut_chord_t{
-        .key = shortcut_key_t::g,
-        .modifiers = shortcut_modifier_t::primary | shortcut_modifier_t::shift});
+    REQUIRE(command->definition.default_shortcuts.size() == 1);
+    CHECK(command->definition.default_shortcuts.front() ==
+          shortcut_chord_t{.key = shortcut_key_t::g,
+                           .modifiers = shortcut_modifier_t::primary | shortcut_modifier_t::shift});
     const auto focus = focus_for_compose();
     const auto chord = dispatch_shortcut(registry,
         {.chord = {.key = shortcut_key_t::g,
@@ -479,11 +476,13 @@ auto save_binding_dispatches_for_primary(const command_registry_t& registry,
 
 auto save_command_has_primary_binding(const command_registry_t& registry) -> bool {
     const auto* command = find_command(registry, command_id_t{"document.save_project"});
-    return command && command->mutation && command->default_shortcuts.size() == 1 &&
-           command->default_shortcuts.front() == shortcut_chord_t{
-               .key = shortcut_key_t::s,
-               .modifiers = static_cast<shortcut_modifiers_t>(shortcut_modifier_t::primary),
-           };
+    return command && command->definition.mutation &&
+           command->definition.default_shortcuts.size() == 1 &&
+           command->definition.default_shortcuts.front() ==
+               shortcut_chord_t{
+                   .key = shortcut_key_t::s,
+                   .modifiers = static_cast<shortcut_modifiers_t>(shortcut_modifier_t::primary),
+               };
 }
 
 TEST_CASE("Save command uses platform Primary and suppresses held-key repeats",
@@ -546,10 +545,12 @@ TEST_CASE("Playback rate shortcuts have no registry conflicts", "[unit][commands
     const auto* faster = find_command(registry, command_id_t{"transport.rate_faster"});
     REQUIRE(slower);
     REQUIRE(faster);
-    CHECK(slower->default_shortcuts.front().modifiers == static_cast<shortcut_modifiers_t>(shortcut_modifier_t::primary));
-    CHECK(faster->default_shortcuts.front().modifiers == static_cast<shortcut_modifiers_t>(shortcut_modifier_t::primary));
-    CHECK(slower->default_shortcuts.front().key == shortcut_key_t::f11);
-    CHECK(faster->default_shortcuts.front().key == shortcut_key_t::f12);
+    CHECK(slower->definition.default_shortcuts.front().modifiers ==
+          static_cast<shortcut_modifiers_t>(shortcut_modifier_t::primary));
+    CHECK(faster->definition.default_shortcuts.front().modifiers ==
+          static_cast<shortcut_modifiers_t>(shortcut_modifier_t::primary));
+    CHECK(slower->definition.default_shortcuts.front().key == shortcut_key_t::f11);
+    CHECK(faster->definition.default_shortcuts.front().key == shortcut_key_t::f12);
 }
 
 TEST_CASE("Tap timing registry metadata is nonmutating and initially disabled", "[unit][commands]") {
@@ -560,9 +561,10 @@ TEST_CASE("Tap timing registry metadata is nonmutating and initially disabled", 
     const auto* assistant = find_command(registry, {"timing.tap_assistant"});
     REQUIRE(tap);
     REQUIRE(assistant);
-    CHECK_FALSE((tap->mutation || assistant->mutation || tap->enabled));
-    REQUIRE(tap->default_shortcuts.size() == 1);
-    CHECK(tap->default_shortcuts.front().key == shortcut_key_t::t);
+    CHECK_FALSE(
+        (tap->definition.mutation || assistant->definition.mutation || tap->definition.enabled));
+    REQUIRE(tap->definition.default_shortcuts.size() == 1);
+    CHECK(tap->definition.default_shortcuts.front().key == shortcut_key_t::t);
 }
 
 TEST_CASE("Tap timing dispatch accepts workspace taps and rejects text entry", "[unit][commands]") {
@@ -910,9 +912,10 @@ TEST_CASE("Command menu defaults to primary Shift P and respects text focus",
     });
     const auto* command = find_command(registry, {"workspace.command_menu"});
     REQUIRE(command);
-    REQUIRE(command->default_shortcuts.size() == 1);
-    CHECK(command->default_shortcuts[0] == shortcut_chord_t{
-        shortcut_key_t::p, shortcut_modifier_t::primary | shortcut_modifier_t::shift});
+    REQUIRE(command->definition.default_shortcuts.size() == 1);
+    CHECK(command->definition.default_shortcuts[0] ==
+          shortcut_chord_t{shortcut_key_t::p,
+                           shortcut_modifier_t::primary | shortcut_modifier_t::shift});
     CHECK(invoke_command(registry, {"workspace.command_menu"}, {}).status == command_dispatch_status_t::invoked);
     CHECK(invoke_command(registry, {"workspace.command_menu"}, {.text_entry_active = true}).status ==
           command_dispatch_status_t::focus_consumed);

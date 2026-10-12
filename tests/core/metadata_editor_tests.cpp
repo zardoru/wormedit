@@ -224,16 +224,24 @@ TEST_CASE("format metadata keeps duplicate occurrences and source identities ali
     auto history = make_document_history(metadata_song());
     const format_metadata_target_t song_bms{std::nullopt, format_family_t::bms};
 
-    REQUIRE(apply_metadata_edit(
-        history, 4,
-        replace_format_metadata_field_action_t{song_bms, 1, "SUBARTIST", "second guest"}));
+    REQUIRE(apply_metadata_edit(history, 4,
+                                edit_format_metadata_field_action_t{
+                                    .target = song_bms,
+                                    .index = 1,
+                                    .name = "SUBARTIST",
+                                    .value = "second guest",
+                                    .mode = wormedit::format_metadata_field_mode_t::replace}));
     const auto& replaced = history.document.metadata.format_groups.front();
     CHECK(replaced.ordered_fields[1] == std::pair<std::string, std::string>{"SUBARTIST", "second guest"});
     CHECK(replaced.ordered_field_source_orders == std::vector<std::size_t>{10, 11, 12});
 
-    REQUIRE(apply_metadata_edit(
-        history, 5,
-        insert_format_metadata_field_action_t{song_bms, 3, "SUBARTIST", "third guest"}));
+    REQUIRE(apply_metadata_edit(history, 5,
+                                edit_format_metadata_field_action_t{
+                                    .target = song_bms,
+                                    .index = 3,
+                                    .name = "SUBARTIST",
+                                    .value = "third guest",
+                                    .mode = wormedit::format_metadata_field_mode_t::insert}));
     const auto& inserted = history.document.metadata.format_groups.front();
     REQUIRE(inserted.ordered_fields.size() == 4);
     CHECK(inserted.ordered_fields[1].first == "SUBARTIST");
@@ -246,9 +254,13 @@ TEST_CASE("format metadata keeps duplicate occurrences and source identities ali
     CHECK(erased.ordered_field_source_orders == std::vector<std::size_t>{11, 12});
 
     const format_metadata_target_t chart_osu{chart_id_t{2}, format_family_t::osu_mania};
-    REQUIRE(apply_metadata_edit(
-        history, 7,
-        insert_format_metadata_field_action_t{chart_osu, 0, "Difficulty.Version", "Insane"}));
+    REQUIRE(apply_metadata_edit(history, 7,
+                                edit_format_metadata_field_action_t{
+                                    .target = chart_osu,
+                                    .index = 0,
+                                    .name = "Difficulty.Version",
+                                    .value = "Insane",
+                                    .mode = wormedit::format_metadata_field_mode_t::insert}));
     const auto& chart_groups = history.document.charts.front().metadata.format_groups;
     REQUIRE(chart_groups.size() == 1);
     CHECK(chart_groups.front().family == format_family_t::osu_mania);
@@ -267,14 +279,26 @@ TEST_CASE("metadata edits reject stale, unsafe, over-cap, and provenance-breakin
     CHECK(has_error(stale));
     CHECK(history.document.metadata.title == "Old title");
 
-    const auto before_prefix = apply_metadata_edit(
-        history, 4, insert_format_metadata_field_action_t{song_bms, 1, "GENRE", "test"});
+    const auto before_prefix =
+        apply_metadata_edit(history, 4,
+                            edit_format_metadata_field_action_t{
+                                .target = song_bms,
+                                .index = 1,
+                                .name = "GENRE",
+                                .value = "test",
+                                .mode = wormedit::format_metadata_field_mode_t::insert});
     CHECK_FALSE(before_prefix.applied);
     CHECK(has_error(before_prefix));
 
     const std::string invalid_utf8{"\xc3\x28", 2};
-    const auto invalid = apply_metadata_edit(
-        history, 4, replace_format_metadata_field_action_t{song_bms, 0, "SUBTITLE", invalid_utf8});
+    const auto invalid =
+        apply_metadata_edit(history, 4,
+                            edit_format_metadata_field_action_t{
+                                .target = song_bms,
+                                .index = 0,
+                                .name = "SUBTITLE",
+                                .value = invalid_utf8,
+                                .mode = wormedit::format_metadata_field_mode_t::replace});
     CHECK_FALSE(invalid.applied);
     CHECK(has_error(invalid));
 
@@ -317,8 +341,13 @@ TEST_CASE("metadata edits synchronize scoped copies of one retained source field
     auto history = make_document_history(std::move(song));
     const format_metadata_target_t song_bms{std::nullopt, format_family_t::bms};
 
-    REQUIRE(apply_metadata_edit(
-        history, 4, replace_format_metadata_field_action_t{song_bms, 1, "SUBARTIST", "updated"}));
+    REQUIRE(apply_metadata_edit(history, 4,
+                                edit_format_metadata_field_action_t{
+                                    .target = song_bms,
+                                    .index = 1,
+                                    .name = "SUBARTIST",
+                                    .value = "updated",
+                                    .mode = wormedit::format_metadata_field_mode_t::replace}));
     CHECK(history.document.metadata.format_groups.front().ordered_fields[1].second == "updated");
     CHECK(history.document.charts.front().metadata.format_groups.front().ordered_fields[1].second ==
           "updated");

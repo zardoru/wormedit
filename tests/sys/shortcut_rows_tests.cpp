@@ -27,18 +27,16 @@ auto shift_modifier() -> shortcut_modifiers_t {
 }
 
 auto command(std::string id, std::vector<shortcut_chord_t> shortcuts) -> command_registration_t {
-    return {
-        .id = {id},
-        .display_name = id,
-        .localization_key = "command." + id,
-        .category = command_category_t::edit,
-        .focus_scope = command_focus_scope_t::global,
-        .default_shortcuts = std::move(shortcuts),
-        .enabled = true,
-        .invoke = [](const command_invocation_context_t&) {
-            return command_invocation_result_t{.accepted = true};
-        },
-    };
+    return {.definition = {.id = {id},
+                           .display_name = id,
+                           .localization_key = "command." + id,
+                           .category = command_category_t::edit,
+                           .focus_scope = command_focus_scope_t::global,
+                           .default_shortcuts = std::move(shortcuts),
+                           .enabled = true,
+                           .invoke = [](const command_invocation_context_t&) {
+                               return command_invocation_result_t{.accepted = true};
+                           }}};
 }
 
 auto event(std::uint16_t usage, shortcut_modifiers_t modifiers, bool repeat = false,

@@ -1023,8 +1023,8 @@ auto apply_action(workspace_action_context_t& context, const workspace_clear_foc
     }
 }
 
-auto apply_action(workspace_action_context_t& context,
-                  const workspace_select_audio_asset_action_t& action) -> void {
+auto apply_audio_selection(workspace_action_context_t& context,
+                           const workspace_select_asset_action_t& action) -> void {
     if (action.asset.has_value() &&
         (!*action.asset || find_audio_asset(context.document, *action.asset) == nullptr)) {
         context.reject(diagnostic_code_t::invalid_id,
@@ -1035,8 +1035,8 @@ auto apply_action(workspace_action_context_t& context,
     }
 }
 
-auto apply_action(workspace_action_context_t& context,
-                  const workspace_select_visual_asset_action_t& action) -> void {
+auto apply_visual_selection(workspace_action_context_t& context,
+                            const workspace_select_asset_action_t& action) -> void {
     if (action.asset &&
         (!*action.asset ||
          std::ranges::none_of(context.document.visual_assets, [&](const auto& asset) {
@@ -1047,6 +1047,14 @@ auto apply_action(workspace_action_context_t& context,
     } else {
         context.proposal.selected_visual_asset = action.asset;
     }
+}
+
+auto apply_action(workspace_action_context_t& context,
+                  const workspace_select_asset_action_t& action) -> void {
+    if (action.slot == workspace_asset_slot_t::visual)
+        apply_visual_selection(context, action);
+    else
+        apply_audio_selection(context, action);
 }
 
 auto apply_action(workspace_action_context_t& context, const workspace_select_clip_action_t& action)

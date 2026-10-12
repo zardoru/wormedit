@@ -83,27 +83,35 @@ void append_bounded_diagnostic(std::vector<native_project_storage_diagnostic_t>&
     truncated = truncated || diagnostic_truncated;
 }
 
+auto recovery_action_kind(const native_project_recovery_target_action_t& request)
+    -> native_project_recovery_action_t {
+    switch (request.kind) {
+    case native_project_recovery_target_kind_t::inspect:
+        return native_project_recovery_action_t::inspect_read_only;
+    case native_project_recovery_target_kind_t::discard:
+        return native_project_recovery_action_t::discard;
+    case native_project_recovery_target_kind_t::quarantine:
+        return native_project_recovery_action_t::quarantine;
+    }
+    return native_project_recovery_action_t::quarantine;
+}
+auto recovery_action_kind(const recover_native_project_recovery_action_t&)
+    -> native_project_recovery_action_t {
+    return native_project_recovery_action_t::recover_into_session;
+}
+auto recovery_action_kind(const save_as_native_project_recovery_action_t&)
+    -> native_project_recovery_action_t {
+    return native_project_recovery_action_t::save_as_new_project;
+}
+struct recovery_action_kind_visitor_t {
+    template <class Action>
+    auto operator()(const Action& action) const -> native_project_recovery_action_t {
+        return recovery_action_kind(action);
+    }
+};
 auto action_kind(const native_project_recovery_controller_action_t& action)
     -> native_project_recovery_action_t {
-    return std::visit(
-        [](const auto& request) -> native_project_recovery_action_t {
-            using request_t = std::remove_cvref_t<decltype(request)>;
-            if constexpr (std::is_same_v<request_t, inspect_native_project_recovery_action_t>) {
-                return native_project_recovery_action_t::inspect_read_only;
-            } else if constexpr (std::is_same_v<request_t,
-                                                recover_native_project_recovery_action_t>) {
-                return native_project_recovery_action_t::recover_into_session;
-            } else if constexpr (std::is_same_v<request_t,
-                                                save_as_native_project_recovery_action_t>) {
-                return native_project_recovery_action_t::save_as_new_project;
-            } else if constexpr (std::is_same_v<request_t,
-                                                discard_native_project_recovery_action_t>) {
-                return native_project_recovery_action_t::discard;
-            } else {
-                return native_project_recovery_action_t::quarantine;
-            }
-        },
-        action);
+    return std::visit(recovery_action_kind_visitor_t{}, action);
 }
 
 auto action_target(const native_project_recovery_controller_action_t& action)

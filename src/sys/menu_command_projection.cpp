@@ -30,12 +30,12 @@ void project_menu_commands(const command_registry_t& registry, WormUiWorkspaceVi
         auto& row = view.menu_commands[view.menu_command_count++];
         row = {};
         std::snprintf(row.id, sizeof(row.id), "%s", id);
-        std::snprintf(row.label, sizeof(row.label), "%s", command->display_name.c_str());
+        std::snprintf(row.label, sizeof(row.label), "%s", command->definition.display_name.c_str());
         const auto shortcut = command->current_shortcuts.empty() ? std::string{}
             : menu_shortcut(command->current_shortcuts.front(), primary);
         std::snprintf(row.shortcut, sizeof(row.shortcut), "%s", shortcut.c_str());
-        row.enabled = command->enabled;
-        row.checked = command->checked.value_or(false);
+        row.enabled = command->definition.enabled;
+        row.checked = command->definition.checked.value_or(false);
     }
 }
 }

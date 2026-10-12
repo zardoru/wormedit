@@ -84,25 +84,14 @@ struct reorder_semantic_layers_action_t {
     std::vector<layer_id_t> ordered_layers;
 };
 
-struct assign_notes_to_semantic_layer_action_t {
-    chart_id_t chart;
-    layer_id_t layer;
-    std::vector<object_id_t> notes;
-    std::vector<object_id_t> bgm_events;
-};
+enum class membership_operation_t { assign, remove, toggle };
 
-struct remove_notes_from_semantic_layer_action_t {
+struct semantic_layer_membership_edit_t {
     chart_id_t chart;
     layer_id_t layer;
     std::vector<object_id_t> notes;
     std::vector<object_id_t> bgm_events;
-};
-
-struct toggle_semantic_layer_membership_action_t {
-    chart_id_t chart;
-    layer_id_t layer;
-    std::vector<object_id_t> notes;
-    std::vector<object_id_t> bgm_events;
+    membership_operation_t operation{membership_operation_t::assign};
 };
 
 struct clear_semantic_layer_membership_action_t {
@@ -124,9 +113,8 @@ struct replace_notes_semantic_layer_action_t {
 using semantic_layer_edit_action_t =
     std::variant<insert_semantic_layer_action_t, update_semantic_layer_action_t,
                  delete_semantic_layer_action_t, reorder_semantic_layers_action_t,
-                 assign_notes_to_semantic_layer_action_t, remove_notes_from_semantic_layer_action_t,
-                 toggle_semantic_layer_membership_action_t,
-                 clear_semantic_layer_membership_action_t, replace_notes_semantic_layer_action_t>;
+                 semantic_layer_membership_edit_t, clear_semantic_layer_membership_action_t,
+                 replace_notes_semantic_layer_action_t>;
 
 // Applies one layer edit through shared document history. Layer IDs are stable,
 // nonzero, chart-local values. Membership actions affect only the explicitly

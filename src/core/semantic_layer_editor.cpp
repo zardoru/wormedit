@@ -270,8 +270,6 @@ auto layer_membership_note_count(const chart_document_t& chart, layer_id_t layer
     return count;
 }
 
-enum class membership_operation_t { assign, remove, toggle };
-
 auto apply_membership(chart_document_t& chart, layer_id_t layer_id,
                       const std::vector<object_id_t>& note_ids, membership_operation_t operation,
                       const semantic_layer_edit_limits_t& limits, document_command_result_t& result)
@@ -750,15 +748,8 @@ auto semantic_edit_label(membership_operation_t operation = membership_operation
     }
 }
 
-template <typename edit_t>
-auto membership_operation(const edit_t&) -> membership_operation_t {
-    if constexpr (std::is_same_v<edit_t, assign_notes_to_semantic_layer_action_t>) {
-        return membership_operation_t::assign;
-    } else if constexpr (std::is_same_v<edit_t, remove_notes_from_semantic_layer_action_t>) {
-        return membership_operation_t::remove;
-    } else {
-        return membership_operation_t::toggle;
-    }
+auto membership_operation(const semantic_layer_membership_edit_t& edit) -> membership_operation_t {
+    return edit.operation;
 }
 
 template <typename edit_t>

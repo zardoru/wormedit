@@ -81,8 +81,11 @@ inline auto finish_compose_layer_paint(document_history_t& history,
     editor_interaction_state_t& state, object_id_t note,
     std::optional<object_id_t> bgm_event = std::nullopt) -> editor_interaction_result_t {
     auto result = dispatch_editor_action(history, state,
-        end_semantic_layer_paint_gesture_action_t{
-            .note = note, .pointer_captured = true, .bgm_event = bgm_event});
+                                         update_semantic_layer_paint_gesture_action_t{
+                                             .note = note,
+                                             .pointer_captured = true,
+                                             .bgm_event = bgm_event,
+                                             .phase = wormedit::editor_gesture_phase_t::commit});
     if (!result.accepted)
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
     return result;

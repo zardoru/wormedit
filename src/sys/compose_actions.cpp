@@ -874,8 +874,10 @@ std::optional<std::string> commit_primary_music(compose_action_context_t& contex
         return std::ranges::find(r.roles, resource_role_t::music) != r.roles.end();
     });
     if (music != context.history.document.resources.end())
-        (void)apply_workspace_action(context.workspace, context.history.document,
-            context.history.document.revision, workspace_select_audio_asset_action_t{music->asset});
+        (void)apply_workspace_action(
+            context.workspace, context.history.document, context.history.document.revision,
+            workspace_select_asset_action_t{.asset = music->asset,
+                                            .slot = wormedit::workspace_asset_slot_t::audio});
     return compose_action_success(context, "Song audio set to " + path.filename().string() + ".", notification_source_t::import_);
 }
 
@@ -901,11 +903,15 @@ std::optional<std::string> commit_resource_import(
     if (!rebound) return compose_mutation_rebind_failure(context, rebound,
         "External file linked as a resource.", "Resource imported, but workspace rebinding failed.", notification_source_t::import_);
     if (role == resource_role_t::bga)
-        (void)apply_workspace_action(context.workspace, context.history.document,
-            context.history.document.revision, workspace_select_visual_asset_action_t{imported});
+        (void)apply_workspace_action(
+            context.workspace, context.history.document, context.history.document.revision,
+            workspace_select_asset_action_t{.asset = imported,
+                                            .slot = wormedit::workspace_asset_slot_t::visual});
     else
-        (void)apply_workspace_action(context.workspace, context.history.document,
-            context.history.document.revision, workspace_select_audio_asset_action_t{imported});
+        (void)apply_workspace_action(
+            context.workspace, context.history.document, context.history.document.revision,
+            workspace_select_asset_action_t{.asset = imported,
+                                            .slot = wormedit::workspace_asset_slot_t::audio});
     return compose_action_success(context, "External file linked as a resource.", notification_source_t::import_);
 }
 

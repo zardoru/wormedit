@@ -177,13 +177,13 @@ struct begin_note_duration_gesture_action_t {
     object_id_t reference_note;
 };
 
+enum class editor_gesture_phase_t { update, commit };
+
 struct update_note_duration_gesture_action_t {
     local_position_t reference_end;
+    editor_gesture_phase_t phase{editor_gesture_phase_t::update};
 };
 
-struct release_note_duration_gesture_action_t {
-    local_position_t reference_end;
-};
 
 // Translate the selected notes and BGM events by the snapped delta between the
 // reference head and this position. A nonzero reference lane supplies a
@@ -202,17 +202,9 @@ struct update_note_move_gesture_action_t {
     std::optional<object_id_t> preferred_bgm_lane;
     // Absolute destination in the unmaterialized BMS tail (BGM reference only).
     std::optional<std::uint64_t> virtual_bgm_row;
+    editor_gesture_phase_t phase{editor_gesture_phase_t::update};
 };
 
-struct release_note_move_gesture_action_t {
-    local_position_t reference_position;
-    lane_id_t reference_lane{};
-    bool to_bgm{};
-    // For a BGM reference, the ordinary event's preferred source lane; linked stems keep their lane.
-    std::optional<object_id_t> preferred_bgm_lane;
-    // Absolute destination in the unmaterialized BMS tail (BGM reference only).
-    std::optional<std::uint64_t> virtual_bgm_row;
-};
 
 struct note_paint_target_t {
     lane_id_t lane;
@@ -321,13 +313,9 @@ struct update_editor_area_selection_action_t {
     double x_pixels{};
     double y_pixels{};
     bool pointer_captured{true};
+    editor_gesture_phase_t phase{editor_gesture_phase_t::update};
 };
 
-struct commit_editor_area_selection_action_t {
-    double x_pixels{};
-    double y_pixels{};
-    bool pointer_captured{true};
-};
 
 struct cancel_editor_area_selection_action_t {};
 
@@ -376,19 +364,14 @@ struct begin_semantic_layer_paint_gesture_action_t {
     semantic_layer_paint_mode_t mode{semantic_layer_paint_mode_t::add};
 };
 
+// A zero note commits an existing stroke only in the commit phase.
 struct update_semantic_layer_paint_gesture_action_t {
     object_id_t note;
     bool pointer_captured{true};
     std::optional<object_id_t> bgm_event;
+    editor_gesture_phase_t phase{editor_gesture_phase_t::update};
 };
 
-struct end_semantic_layer_paint_gesture_action_t {
-    // Zero commits the currently captured stroke without appending a final
-    // target, allowing pointer release in empty field space.
-    object_id_t note;
-    bool pointer_captured{true};
-    std::optional<object_id_t> bgm_event;
-};
 
 struct paint_cell_key_t {
     lane_id_t lane;
@@ -464,42 +447,47 @@ struct scroll_editor_view_action_t {
 
 using editor_ui_action_t = std::variant<
     move_edit_cursor_action_t, page_edit_cursor_action_t, jump_edit_cursor_action_t,
-    select_bms_canvas_measure_action_t,
-    cycle_edit_snap_action_t, place_tap_action_t, place_virtual_bms_tap_action_t,
-    place_virtual_bms_hold_action_t,
-    begin_hold_action_t, update_hold_preview_action_t,
-    commit_hold_action_t, begin_lane_key_hold_gesture_action_t,
+    select_bms_canvas_measure_action_t, cycle_edit_snap_action_t, place_tap_action_t,
+    place_virtual_bms_tap_action_t, place_virtual_bms_hold_action_t, begin_hold_action_t,
+    update_hold_preview_action_t, commit_hold_action_t, begin_lane_key_hold_gesture_action_t,
     release_lane_key_hold_gesture_action_t, begin_alt_pointer_hold_gesture_action_t,
     update_alt_pointer_hold_gesture_action_t, release_alt_pointer_hold_gesture_action_t,
     begin_note_duration_gesture_action_t, update_note_duration_gesture_action_t,
-    release_note_duration_gesture_action_t, begin_note_move_gesture_action_t,
-    update_note_move_gesture_action_t, release_note_move_gesture_action_t,
+    begin_note_move_gesture_action_t, update_note_move_gesture_action_t,
     begin_note_paint_gesture_action_t, update_note_paint_gesture_action_t,
     end_note_paint_gesture_action_t, begin_semantic_layer_paint_gesture_action_t,
-    update_semantic_layer_paint_gesture_action_t, end_semantic_layer_paint_gesture_action_t,
-    begin_editor_area_selection_action_t, update_editor_area_selection_action_t,
-    commit_editor_area_selection_action_t, cancel_editor_area_selection_action_t,
+    update_semantic_layer_paint_gesture_action_t, begin_editor_area_selection_action_t,
+    update_editor_area_selection_action_t, cancel_editor_area_selection_action_t,
     space_range_selection_action_t, cancel_editor_gesture_action_t, select_editor_notes_action_t,
-    select_editor_objects_action_t, delete_editor_selection_action_t,
-    select_editor_lane_action_t, assign_selected_objects_to_lane_action_t,
-    adjust_editor_zoom_action_t, scroll_editor_view_action_t, set_edit_snap_action_t>;
+    select_editor_objects_action_t, delete_editor_selection_action_t, select_editor_lane_action_t,
+    assign_selected_objects_to_lane_action_t, adjust_editor_zoom_action_t,
+    scroll_editor_view_action_t, set_edit_snap_action_t>;
 
 // Exact, revision-bound result that a pending hold would publish. The source
 // anchor/moving endpoint stay on pending_hold_t so controllers can update the
 // gesture, while renderers use this normalized result for destructive merge
 // previews without reimplementing collision policy.
-struct pending_hold_placement_preview_t {
+using hold_preview_removals_t = std::shared_ptr<const std::vector<object_id_t>>;
+inline auto equal_hold_removals(const std::vector<object_id_t>& left,
+                                const std::vector<object_id_t>& right) -> bool {
+    return left == right;
+}
+inline auto equal_hold_removals(const hold_preview_removals_t& left,
+                                const hold_preview_removals_t& right) -> bool {
+    return (!left && !right) || (left && right && *left == *right);
+}
+template <class Removals> struct hold_placement_t {
     local_position_t head;
     std::optional<local_position_t> tail;
-    std::shared_ptr<const std::vector<object_id_t>> removals;
+    Removals removals;
     bool adds_note{};
 
-    auto operator==(const pending_hold_placement_preview_t& other) const -> bool {
+    auto operator==(const hold_placement_t& other) const -> bool {
         return head == other.head && tail == other.tail && adds_note == other.adds_note &&
-               ((!removals && !other.removals) ||
-                (removals && other.removals && *removals == *other.removals));
+               equal_hold_removals(removals, other.removals);
     }
 };
+using pending_hold_placement_preview_t = hold_placement_t<hold_preview_removals_t>;
 
 struct pending_hold_t {
     local_position_t position;

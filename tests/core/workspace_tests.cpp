@@ -194,8 +194,12 @@ TEST_CASE("workspace tabs retain chart, transport, and isolated logical focus",
         workspace, song,
         workspace_set_focus_action_t{workspace_tab_t::metadata, "metadata.events", object_id_t{5}}));
     REQUIRE(apply(workspace, song, workspace_select_chart_action_t{chart_id_t{2}}));
-    REQUIRE(apply(workspace, song, workspace_select_audio_asset_action_t{asset_id_t{20}}));
-    REQUIRE(apply(workspace, song, workspace_select_visual_asset_action_t{asset_id_t{21}}));
+    REQUIRE(apply(workspace, song,
+                  workspace_select_asset_action_t{
+                      .asset = asset_id_t{20}, .slot = wormedit::workspace_asset_slot_t::audio}));
+    REQUIRE(apply(workspace, song,
+                  workspace_select_asset_action_t{
+                      .asset = asset_id_t{21}, .slot = wormedit::workspace_asset_slot_t::visual}));
     CHECK(workspace.selected_visual_asset == asset_id_t{21});
     REQUIRE(apply(workspace, song, workspace_seek_action_t{640}));
     REQUIRE(apply(workspace, song, workspace_set_playing_action_t{true}));
@@ -246,10 +250,16 @@ TEST_CASE("workspace rejects stale revisions and rebinds stable context atomical
     REQUIRE(bound);
     auto& workspace = *bound.workspace;
     REQUIRE(apply(workspace, song, workspace_select_chart_action_t{chart_id_t{2}}));
-    REQUIRE(apply(workspace, song, workspace_select_audio_asset_action_t{asset_id_t{20}}));
-    REQUIRE(apply(workspace, song, workspace_select_visual_asset_action_t{asset_id_t{21}}));
-    CHECK_FALSE(apply(workspace, song,
-                      workspace_select_visual_asset_action_t{asset_id_t{20}}));
+    REQUIRE(apply(workspace, song,
+                  workspace_select_asset_action_t{
+                      .asset = asset_id_t{20}, .slot = wormedit::workspace_asset_slot_t::audio}));
+    REQUIRE(apply(workspace, song,
+                  workspace_select_asset_action_t{
+                      .asset = asset_id_t{21}, .slot = wormedit::workspace_asset_slot_t::visual}));
+    CHECK_FALSE(
+        apply(workspace, song,
+              workspace_select_asset_action_t{.asset = asset_id_t{20},
+                                              .slot = wormedit::workspace_asset_slot_t::visual}));
     CHECK(workspace.selected_visual_asset == asset_id_t{21});
     REQUIRE(apply(workspace, song, workspace_seek_action_t{700}));
     REQUIRE(apply(
@@ -349,10 +359,13 @@ TEST_CASE("metadata workspace exposes bounded ordered song and difficulty format
     CHECK(metadata.format_fields[4].family == format_family_t::stepmania);
 
     auto history = make_document_history(song);
-    REQUIRE(apply_metadata_edit(
-        history, history.document.revision,
-        replace_format_metadata_field_action_t{
-            {std::nullopt, format_family_t::bms}, 1, "SUBARTIST", "edited primary group"}));
+    REQUIRE(apply_metadata_edit(history, history.document.revision,
+                                edit_format_metadata_field_action_t{
+                                    .target = {std::nullopt, format_family_t::bms},
+                                    .index = 1,
+                                    .name = "SUBARTIST",
+                                    .value = "edited primary group",
+                                    .mode = wormedit::format_metadata_field_mode_t::replace}));
     CHECK(history.document.metadata.format_groups[1].ordered_fields[1].second ==
           "edited primary group");
     CHECK(history.document.metadata.format_groups[2].ordered_fields.front().second ==
@@ -411,7 +424,9 @@ TEST_CASE("workspace validates stable identities, focus targets, and resource ca
     CHECK(workspace.selected_chart == chart_id_t{1});
 
     const auto zero_asset =
-        apply(workspace, song, workspace_select_audio_asset_action_t{asset_id_t{}});
+        apply(workspace, song,
+              workspace_select_asset_action_t{.asset = asset_id_t{},
+                                              .slot = wormedit::workspace_asset_slot_t::audio});
     CHECK_FALSE(zero_asset);
     CHECK_FALSE(workspace.transport.audio_asset.has_value());
 
@@ -470,7 +485,9 @@ TEST_CASE("transport range and compose summary caps reject partial updates",
     auto bound = make_workspace_controller(song, {.maximum_summary_items = 1});
     REQUIRE(bound);
     auto& workspace = *bound.workspace;
-    REQUIRE(apply(workspace, song, workspace_select_audio_asset_action_t{asset_id_t{20}}));
+    REQUIRE(apply(workspace, song,
+                  workspace_select_asset_action_t{
+                      .asset = asset_id_t{20}, .slot = wormedit::workspace_asset_slot_t::audio}));
     REQUIRE(apply(workspace, song, workspace_seek_action_t{1'000}));
     const auto out_of_range = apply(workspace, song, workspace_seek_action_t{1'001});
     CHECK_FALSE(out_of_range);

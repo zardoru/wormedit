@@ -178,7 +178,7 @@ struct command_invocation_result_t {
 using command_invoker_t =
     std::function<command_invocation_result_t(const command_invocation_context_t&)>;
 
-struct command_registration_t {
+struct command_definition_t {
     command_id_t id;
     std::string display_name;
     std::string localization_key;
@@ -188,8 +188,6 @@ struct command_registration_t {
     std::optional<lane_id_t> lane;
     std::string focus_context;
     std::vector<shortcut_chord_t> default_shortcuts;
-    // Omitted means “use defaults”; an explicit empty vector means unbound.
-    std::optional<std::vector<shortcut_chord_t>> current_shortcuts;
     bool enabled{true};
     std::optional<bool> checked;
     bool mutation{};
@@ -197,22 +195,14 @@ struct command_registration_t {
     command_invoker_t invoke;
 };
 
+struct command_registration_t {
+    command_definition_t definition;
+    // Omitted means use defaults; an explicit empty vector means unbound.
+    std::optional<std::vector<shortcut_chord_t>> current_shortcuts;
+};
 struct command_t {
-    command_id_t id;
-    std::string display_name;
-    std::string localization_key;
-    command_category_t category{command_category_t::edit};
-    command_focus_scope_t focus_scope{command_focus_scope_t::global};
-    std::optional<workspace_tab_t> tab;
-    std::optional<lane_id_t> lane;
-    std::string focus_context;
-    std::vector<shortcut_chord_t> default_shortcuts;
+    command_definition_t definition;
     std::vector<shortcut_chord_t> current_shortcuts;
-    bool enabled{true};
-    std::optional<bool> checked;
-    bool mutation{};
-    command_repeat_policy_t repeat_policy{command_repeat_policy_t::suppress_mutations};
-    command_invoker_t invoke;
 };
 
 struct command_registry_t {

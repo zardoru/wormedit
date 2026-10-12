@@ -67,7 +67,8 @@ auto tagged_audio_creates_selectable_project() -> bool {
     if (workspace.history.dirty || !workspace.selected_chart) return false;
     const auto selected = apply_workspace_action(
         workspace, history.document, history.document.revision,
-        workspace_select_audio_asset_action_t{asset_id_t{6}});
+        workspace_select_asset_action_t{.asset = asset_id_t{6},
+                                        .slot = wormedit::workspace_asset_slot_t::audio});
     return selected && workspace.transport.audio_asset == asset_id_t{6};
 }
 

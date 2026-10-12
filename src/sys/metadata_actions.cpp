@@ -170,17 +170,23 @@ auto dispatch_format_edit(const WormUiWorkspaceAction& action, document_history_
     if (action.metadata_edit == WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD) {
         if (!action.metadata_format_name || !action.metadata_format_value)
             return {notification_severity_t::warning, "Format metadata replacement payload is incomplete."};
-        edit = replace_format_metadata_field_action_t{target, action.metadata_format_index,
-                                                      action.metadata_format_name,
-                                                      action.metadata_format_value};
+        edit = edit_format_metadata_field_action_t{
+            .target = target,
+            .index = action.metadata_format_index,
+            .name = action.metadata_format_name,
+            .value = action.metadata_format_value,
+            .mode = wormedit::format_metadata_field_mode_t::replace};
     } else if (action.metadata_edit == WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD) {
         edit = erase_format_metadata_field_action_t{target, action.metadata_format_index};
     } else {
         if (!action.metadata_format_name || !action.metadata_format_value)
             return {notification_severity_t::warning, "Format metadata insertion payload is incomplete."};
-        edit = insert_format_metadata_field_action_t{target, action.metadata_format_index,
-                                                     action.metadata_format_name,
-                                                     action.metadata_format_value};
+        edit = edit_format_metadata_field_action_t{
+            .target = target,
+            .index = action.metadata_format_index,
+            .name = action.metadata_format_name,
+            .value = action.metadata_format_value,
+            .mode = wormedit::format_metadata_field_mode_t::insert};
     }
     return publish_metadata_edit(
         apply_metadata_edit(history, action.metadata_document_revision, edit), workspace, history);

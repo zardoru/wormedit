@@ -25,8 +25,11 @@ struct native_project_recovery_action_target_t {
     auto operator==(const native_project_recovery_action_target_t&) const -> bool = default;
 };
 
-struct inspect_native_project_recovery_action_t {
+enum class native_project_recovery_target_kind_t { inspect, discard, quarantine };
+
+struct native_project_recovery_target_action_t {
     native_project_recovery_action_target_t target;
+    native_project_recovery_target_kind_t kind{native_project_recovery_target_kind_t::inspect};
 };
 
 struct recover_native_project_recovery_action_t {
@@ -39,18 +42,9 @@ struct save_as_native_project_recovery_action_t {
     std::filesystem::path destination;
 };
 
-struct discard_native_project_recovery_action_t {
-    native_project_recovery_action_target_t target;
-};
-
-struct quarantine_native_project_recovery_action_t {
-    native_project_recovery_action_target_t target;
-};
-
 using native_project_recovery_controller_action_t =
-    std::variant<inspect_native_project_recovery_action_t, recover_native_project_recovery_action_t,
-                 save_as_native_project_recovery_action_t, discard_native_project_recovery_action_t,
-                 quarantine_native_project_recovery_action_t>;
+    std::variant<native_project_recovery_target_action_t, recover_native_project_recovery_action_t,
+                 save_as_native_project_recovery_action_t>;
 
 struct native_project_recovery_banner_row_t {
     native_project_recovery_action_target_t target;

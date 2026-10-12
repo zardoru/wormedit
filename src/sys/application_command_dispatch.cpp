@@ -982,8 +982,11 @@ auto semantic_layer_membership_command(command_context_t& context) -> command_re
         edit = replace_notes_semantic_layer_action_t{
             state->chart, *app.semantic_layer_target, state->selected_notes};
     else if (kind == command_kind_t::semantic_layer_remove)
-        edit = remove_notes_from_semantic_layer_action_t{
-            state->chart, *app.semantic_layer_target, state->selected_notes};
+        edit =
+            semantic_layer_membership_edit_t{.chart = state->chart,
+                                             .layer = *app.semantic_layer_target,
+                                             .notes = state->selected_notes,
+                                             .operation = wormedit::membership_operation_t::remove};
     else
         edit = replace_notes_semantic_layer_action_t{
             state->chart, *app.semantic_layer_target, state->selected_notes, true};

@@ -1935,7 +1935,8 @@ void post_shortcut_rejection(wormedit::notification_sink_t& notifications,
     // A controller posts its own rejection once. Registry-level failures have
     // no controller, so the input boundary owns their notification.
     const auto* command = result.command ? wormedit::find_command(registry, *result.command) : nullptr;
-    if (result.status == wormedit::command_dispatch_status_t::rejected && command && command->invoke)
+    if (result.status == wormedit::command_dispatch_status_t::rejected && command &&
+        command->definition.invoke)
         return;
     if (result.diagnostics.empty())
         notifications.post(wormedit::notification_severity_t::warning,
@@ -1974,7 +1975,9 @@ void project_command_menu(const wormedit::command_registry_t& registry, WormUiWo
         static_cast<std::size_t>(WORM_UI_COMMAND_MENU_CAPACITY));
     for (std::size_t i = 0; i < view.command_menu_count; ++i) {
         const auto& command = registry.commands[i];
-        view.command_menu_rows[i] = {command.id.value.c_str(), command.display_name.c_str(), command.enabled};
+        view.command_menu_rows[i] = {command.definition.id.value.c_str(),
+                                     command.definition.display_name.c_str(),
+                                     command.definition.enabled};
     }
 }
 
@@ -2309,8 +2312,8 @@ auto dispatch_sound_resource_selection(const WormUiWorkspaceAction& action,
             wormedit::notification_source_t::input, "Sound resource selected; no audio asset is available.");
     const auto applied = wormedit::apply_workspace_action(
         workspace, history.document, history.document.revision,
-        wormedit::workspace_select_audio_asset_action_t{
-            asset});
+        wormedit::workspace_select_asset_action_t{.asset = asset,
+                                                  .slot = wormedit::workspace_asset_slot_t::audio});
     return post_workspace_selection_feedback(notifications, applied,
         "Audio asset selected; waveform analysis scheduled.", "Audio asset selection rejected.");
 }
@@ -2327,8 +2330,9 @@ auto dispatch_workspace_selection_action(const WormUiWorkspaceAction& action,
     case WORM_UI_WORKSPACE_ACTION_SELECT_VISUAL_ASSET: {
         const auto applied = wormedit::apply_workspace_action(
             workspace, history.document, history.document.revision,
-            wormedit::workspace_select_visual_asset_action_t{
-                wormedit::asset_id_t{action.visual_asset_id}});
+            wormedit::workspace_select_asset_action_t{
+                .asset = wormedit::asset_id_t{action.visual_asset_id},
+                .slot = wormedit::workspace_asset_slot_t::visual});
         return post_workspace_selection_feedback(notifications, applied,
             "Image asset selected.", "Image asset selection rejected.");
     }
@@ -3005,10 +3009,10 @@ void create_audio_project_session(Context& context, const char* path,
         remember_snap_denominator(context.application_command_state_ref, chart.id,
             context.application_command_state_ref.editor_preferences.default_snap);
     const auto selected = wormedit::apply_workspace_action(
-        context.workspace_ref, context.history_ref.document,
-        context.history_ref.document.revision,
-        wormedit::workspace_select_audio_asset_action_t{
-            context.history_ref.document.audio_assets.front().id});
+        context.workspace_ref, context.history_ref.document, context.history_ref.document.revision,
+        wormedit::workspace_select_asset_action_t{
+            .asset = context.history_ref.document.audio_assets.front().id,
+            .slot = wormedit::workspace_asset_slot_t::audio});
     post_project_feedback(context,
         selected ? wormedit::notification_severity_t::success : wormedit::notification_severity_t::warning,
         wormedit::notification_source_t::import_, selected

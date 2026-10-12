@@ -93,8 +93,10 @@ auto dispatch_sound_usage_action(const WormUiWorkspaceAction& action,
         return rejection("The sound usage chart cannot be opened.");
 
     if (!found->position) {
-        if (!apply_workspace_action(next_workspace, history.document, revision,
-                                    workspace_select_audio_asset_action_t{usage.asset}))
+        if (!apply_workspace_action(
+                next_workspace, history.document, revision,
+                workspace_select_asset_action_t{.asset = usage.asset,
+                                                .slot = wormedit::workspace_asset_slot_t::audio}))
             return rejection("The sound source is no longer available.");
         workspace = std::move(next_workspace);
         return {.accepted = true,

@@ -78,8 +78,9 @@ TEST_CASE("recovery controller exposes backend-neutral bounded rows and typed ac
                             native_project_recovery_action_t::save_as_new_project) !=
           backup_row.available_actions.end());
 
-    const auto inspected =
-        controller.dispatch(inspect_native_project_recovery_action_t{.target = backup_row.target});
+    const auto inspected = controller.dispatch(native_project_recovery_target_action_t{
+        .target = backup_row.target,
+        .kind = wormedit::native_project_recovery_target_kind_t::inspect});
     REQUIRE(inspected.accepted);
     REQUIRE(inspected.action_result.has_value());
     REQUIRE(inspected.action_result->applied);
@@ -89,8 +90,9 @@ TEST_CASE("recovery controller exposes backend-neutral bounded rows and typed ac
 
     auto mismatched_target = backup_row.target;
     mismatched_target.candidate_index = primary_row.target.candidate_index;
-    const auto mismatched =
-        controller.dispatch(inspect_native_project_recovery_action_t{.target = mismatched_target});
+    const auto mismatched = controller.dispatch(native_project_recovery_target_action_t{
+        .target = mismatched_target,
+        .kind = wormedit::native_project_recovery_target_kind_t::inspect});
     CHECK_FALSE(mismatched.accepted);
     CHECK_FALSE(mismatched.action_result.has_value());
     CHECK(mismatched.has_errors());
@@ -98,14 +100,16 @@ TEST_CASE("recovery controller exposes backend-neutral bounded rows and typed ac
 
     auto out_of_range_target = backup_row.target;
     out_of_range_target.row_index = view.rows.size();
-    const auto out_of_range = controller.dispatch(
-        discard_native_project_recovery_action_t{.target = out_of_range_target});
+    const auto out_of_range = controller.dispatch(native_project_recovery_target_action_t{
+        .target = out_of_range_target,
+        .kind = wormedit::native_project_recovery_target_kind_t::discard});
     CHECK_FALSE(out_of_range.accepted);
     CHECK_FALSE(out_of_range.action_result.has_value());
     CHECK(read_text(backup) == backup_before);
 
-    const auto unavailable =
-        controller.dispatch(discard_native_project_recovery_action_t{.target = primary_row.target});
+    const auto unavailable = controller.dispatch(native_project_recovery_target_action_t{
+        .target = primary_row.target,
+        .kind = wormedit::native_project_recovery_target_kind_t::discard});
     CHECK_FALSE(unavailable.accepted);
     CHECK_FALSE(unavailable.action_result.has_value());
     CHECK(read_text(primary) == primary_before);
@@ -154,15 +158,17 @@ TEST_CASE("recovery controller exposes backend-neutral bounded rows and typed ac
     auto new_scan = scan_project(primary);
     const auto& refreshed = controller.replace_scan(std::move(new_scan));
     CHECK(refreshed.scan_generation == old_generation + 1);
-    const auto stale =
-        controller.dispatch(discard_native_project_recovery_action_t{.target = backup_row.target});
+    const auto stale = controller.dispatch(native_project_recovery_target_action_t{
+        .target = backup_row.target,
+        .kind = wormedit::native_project_recovery_target_kind_t::discard});
     CHECK_FALSE(stale.accepted);
     CHECK_FALSE(stale.action_result.has_value());
     CHECK(read_text(backup) == backup_before);
 
     const auto refreshed_backup = refreshed.rows[1];
-    const auto discarded = controller.dispatch(
-        discard_native_project_recovery_action_t{.target = refreshed_backup.target});
+    const auto discarded = controller.dispatch(native_project_recovery_target_action_t{
+        .target = refreshed_backup.target,
+        .kind = wormedit::native_project_recovery_target_kind_t::discard});
     REQUIRE(discarded.accepted);
     REQUIRE(discarded.action_result.has_value());
     REQUIRE(discarded.action_result->applied);
@@ -172,8 +178,9 @@ TEST_CASE("recovery controller exposes backend-neutral bounded rows and typed ac
     CHECK(read_text(primary) == primary_before);
     CHECK_FALSE(controller.view().banner_visible);
     CHECK(controller.view().rows.empty());
-    const auto repeated = controller.dispatch(
-        discard_native_project_recovery_action_t{.target = refreshed_backup.target});
+    const auto repeated = controller.dispatch(native_project_recovery_target_action_t{
+        .target = refreshed_backup.target,
+        .kind = wormedit::native_project_recovery_target_kind_t::discard});
     CHECK_FALSE(repeated.accepted);
     CHECK_FALSE(repeated.action_result.has_value());
 }
@@ -205,15 +212,17 @@ TEST_CASE("recovery controller exposes corrupt-candidate quarantine and scan gen
     auto next_view_scan = scan_project(primary);
     const auto& next_view = controller.replace_scan(std::move(next_view_scan));
     CHECK(next_view.scan_generation == first_generation + 1);
-    const auto stale_quarantine = controller.dispatch(
-        quarantine_native_project_recovery_action_t{.target = corrupt_row.target});
+    const auto stale_quarantine = controller.dispatch(native_project_recovery_target_action_t{
+        .target = corrupt_row.target,
+        .kind = wormedit::native_project_recovery_target_kind_t::quarantine});
     CHECK_FALSE(stale_quarantine.accepted);
     CHECK(std::filesystem::exists(backup));
     CHECK(read_text(backup) == backup_before);
 
     const auto current_corrupt_row = next_view.rows[1];
-    const auto quarantined = controller.dispatch(
-        quarantine_native_project_recovery_action_t{.target = current_corrupt_row.target});
+    const auto quarantined = controller.dispatch(native_project_recovery_target_action_t{
+        .target = current_corrupt_row.target,
+        .kind = wormedit::native_project_recovery_target_kind_t::quarantine});
     REQUIRE(quarantined.accepted);
     REQUIRE(quarantined.action_result.has_value());
     REQUIRE(quarantined.action_result->applied);
@@ -267,8 +276,9 @@ TEST_CASE("recovery controller bounds rows, labels, diagnostics, and candidate a
     CHECK(rejected.diagnostics.size() == 1);
     CHECK(rejected.diagnostics.front().code ==
           native_project_storage_diagnostic_code_t::resource_limit);
-    const auto no_active_scan = restrictive.dispatch(
-        inspect_native_project_recovery_action_t{.target = view.rows.front().target});
+    const auto no_active_scan = restrictive.dispatch(native_project_recovery_target_action_t{
+        .target = view.rows.front().target,
+        .kind = wormedit::native_project_recovery_target_kind_t::inspect});
     CHECK_FALSE(no_active_scan.accepted);
     CHECK(no_active_scan.has_errors());
 }

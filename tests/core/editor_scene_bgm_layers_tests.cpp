@@ -98,9 +98,11 @@ auto update_bgm_paint(document_history_t& history, editor_interaction_state_t& s
 
 auto end_bgm_paint(document_history_t& history, editor_interaction_state_t& state)
     -> editor_interaction_result_t {
-    return dispatch_editor_action(
-        history, state,
-        end_semantic_layer_paint_gesture_action_t{.note = object_id_t{}, .pointer_captured = true});
+    return dispatch_editor_action(history, state,
+                                  update_semantic_layer_paint_gesture_action_t{
+                                      .note = object_id_t{},
+                                      .pointer_captured = true,
+                                      .phase = wormedit::editor_gesture_phase_t::commit});
 }
 
 auto bgm_width_chart() -> chart_document_t {

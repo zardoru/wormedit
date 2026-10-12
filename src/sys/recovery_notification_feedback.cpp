@@ -47,12 +47,14 @@ auto recovery_action_request(
     using namespace wormedit;
     switch (action.kind) {
     case WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT:
-        return inspect_native_project_recovery_action_t{.target = target};
+        return native_project_recovery_target_action_t{
+            .target = target, .kind = wormedit::native_project_recovery_target_kind_t::inspect};
     case WORM_UI_WORKSPACE_ACTION_RECOVERY_RECOVER:
         if (!history.undo.empty() || !history.redo.empty()) {
             error = "The current workspace changed after recovery discovery; save or restart "
                     "before replacing it with a recovery candidate.";
-            return inspect_native_project_recovery_action_t{.target = target};
+            return native_project_recovery_target_action_t{
+                .target = target, .kind = wormedit::native_project_recovery_target_kind_t::inspect};
         }
         return recover_native_project_recovery_action_t{
             .target = target,
@@ -71,18 +73,22 @@ auto recovery_action_request(
         const std::string destination(action.recovery_save_as_destination, end);
         if (destination.empty()) {
             error = "Choose a new project path before using Save as.";
-            return inspect_native_project_recovery_action_t{.target = target};
+            return native_project_recovery_target_action_t{
+                .target = target, .kind = wormedit::native_project_recovery_target_kind_t::inspect};
         }
         return save_as_native_project_recovery_action_t{
             .target = target, .destination = std::filesystem::path{destination}};
     }
     case WORM_UI_WORKSPACE_ACTION_RECOVERY_DISCARD:
-        return discard_native_project_recovery_action_t{.target = target};
+        return native_project_recovery_target_action_t{
+            .target = target, .kind = wormedit::native_project_recovery_target_kind_t::discard};
     case WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE:
-        return quarantine_native_project_recovery_action_t{.target = target};
+        return native_project_recovery_target_action_t{
+            .target = target, .kind = wormedit::native_project_recovery_target_kind_t::quarantine};
     default:
         error = "Invalid recovery action.";
-        return inspect_native_project_recovery_action_t{.target = target};
+        return native_project_recovery_target_action_t{
+            .target = target, .kind = wormedit::native_project_recovery_target_kind_t::inspect};
     }
 }
 

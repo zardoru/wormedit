@@ -37,9 +37,10 @@ auto sample_shortcut(wormedit::shortcut_key_t key) -> wormedit::shortcut_chord_t
 auto sample_registry() -> wormedit::command_registry_t {
     using namespace wormedit;
     command_registry_t registry;
-    registry.commands.push_back({.id = {"edit.sample"},
-                                 .default_shortcuts = {sample_shortcut(shortcut_key_t::a)},
-                                 .current_shortcuts = {sample_shortcut(shortcut_key_t::a)}});
+    registry.commands.push_back(
+        {.definition = {.id = {"edit.sample"},
+                        .default_shortcuts = {sample_shortcut(shortcut_key_t::a)}},
+         .current_shortcuts = {sample_shortcut(shortcut_key_t::a)}});
     return registry;
 }
 
@@ -117,7 +118,8 @@ TEST_CASE("startup diagnostics have bounded count and message size",
     for (std::size_t index = 0; index < 6; ++index) {
         auto id = "edit.sample" + std::to_string(index);
         registry.commands.push_back(
-            {.id = {std::move(id)}, .default_shortcuts = {shared}, .current_shortcuts = {shared}});
+            {.definition = {.id = {std::move(id)}, .default_shortcuts = {shared}},
+             .current_shortcuts = {shared}});
     }
 
     const auto result = load_shortcut_profile_for_startup(path, registry);

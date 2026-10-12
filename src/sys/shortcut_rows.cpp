@@ -106,8 +106,10 @@ void project_shortcut_rows(const command_registry_t& registry,
     out.rows.clear();
     for (std::size_t index = 0; index < count; ++index) {
         const auto& command = registry.commands[index];
-        out.commands.push_back(command.id);
-        out.labels.push_back(command.display_name.empty() ? command.id.value : command.display_name);
+        out.commands.push_back(command.definition.id);
+        out.labels.push_back(command.definition.display_name.empty()
+                                 ? command.definition.id.value
+                                 : command.definition.display_name);
         out.chords.push_back(chord_list_text(command.current_shortcuts));
     }
     for (std::size_t index = 0; index < count; ++index) {

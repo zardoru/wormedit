@@ -718,7 +718,10 @@ TEST_CASE("dragging a stem tap moves its slice point and leaves the audio where 
     REQUIRE(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{note_id}));
     const auto next_measure = history.document.charts.front().measures[1].id;
     const auto released = dispatch_editor_action(
-        history, state, release_note_move_gesture_action_t{{next_measure, 0}, lane});
+        history, state,
+        update_note_move_gesture_action_t{.reference_position = {next_measure, 0},
+                                          .reference_lane = lane,
+                                          .phase = wormedit::editor_gesture_phase_t::commit});
     REQUIRE(released);
     REQUIRE(released.document_changed);
 

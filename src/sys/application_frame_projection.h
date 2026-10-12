@@ -67,7 +67,7 @@ struct application_frame_projection_context_t {
 #endif
 };
 
-[[nodiscard]] auto project_application_frame(
-    application_frame_projection_context_t context) -> flattened_workspace_t;
+[[nodiscard]] auto project_application_frame(const application_frame_projection_context_t& context)
+    -> flattened_workspace_t;
 
 } // namespace wormedit::sys

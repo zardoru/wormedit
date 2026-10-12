@@ -1,4 +1,5 @@
 #include "sys/compose_waveform_overlays.h"
+#include "sys/frontend_geometry.h"
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include <wormedit/core/bpm_editor.h>
@@ -66,17 +67,14 @@ auto proposed_visible_source_rows(const wormedit::timing_index_t& original,
 }
 
 struct proposed_grid_context_t {
+    const compose_chart_scope_t<>& scope;
     flattened_workspace_t& flattened;
     const compose_scene_cache_t& cache;
-    const wormedit::chart_document_t& chart;
     const wormedit::timing_index_t& original;
     const wormedit::timing_index_t& proposed;
     const wormedit::editor_interaction_state_t& interaction;
-    const wormedit::editor_interaction_view_model_t& source_view;
     const wormedit::editor_field_scene_t& source_scene;
     std::pair<std::uint64_t, std::uint64_t> rows;
-    double pixels_per_row;
-    bool downscroll;
 
     auto view() const -> WormUiComposeView& { return flattened.view.compose; }
     auto preview_rects() -> std::vector<WormUiComposeTimingPreviewRectView>& {
@@ -90,22 +88,18 @@ struct proposed_grid_context_t {
             original, proposed, {row, {}}, interaction.viewport_scroll_pixels,
             view().pixels_per_standard_measure);
         if (!projected) return std::nullopt;
-        return compose_source_y(*projected, view().viewport_height_pixels, downscroll);
+        return compose_source_y(*projected, view().viewport_height_pixels, scope.downscroll);
     }
     auto old_y(std::uint64_t row) const -> double {
-        return compose_project_y(row, pixels_per_row, interaction.viewport_scroll_pixels,
-                                 view().viewport_height_pixels, downscroll);
-    }
-    auto convert(const wormedit::editor_field_rect_t& rect) const -> WormUiComposeRect {
-        return {rect.left, rect.top, rect.right, rect.bottom};
+        return compose_project_y(row, scope.pixels_per_row, interaction.viewport_scroll_pixels,
+                                 view().viewport_height_pixels, scope.downscroll);
     }
     auto projected_geometry_y(double old_screen_y) const -> std::optional<double> {
-        const auto source_y = compose_source_y(old_screen_y, source_view.viewport_height_pixels,
-                                               downscroll);
-        const auto row = (static_cast<long double>(source_y) +
-                          source_view.viewport_scroll_pixels) *
-                         original.divisions_per_standard_measure /
-                         view().pixels_per_standard_measure;
+        const auto source_y = compose_source_y(
+            old_screen_y, scope.interaction_view.viewport_height_pixels, scope.downscroll);
+        const auto row =
+            (static_cast<long double>(source_y) + scope.interaction_view.viewport_scroll_pixels) *
+            original.divisions_per_standard_measure / view().pixels_per_standard_measure;
         if (!std::isfinite(row) || row < 0.0L || row > original.total_rows)
             return std::nullopt;
         constexpr std::uint64_t fractional_scale = 1'000'000;
@@ -120,7 +114,7 @@ struct proposed_grid_context_t {
             original, proposed, {whole, {fractional, fractional_scale}},
             interaction.viewport_scroll_pixels, view().pixels_per_standard_measure);
         if (!projected) return std::nullopt;
-        return compose_source_y(*projected, view().viewport_height_pixels, downscroll);
+        return compose_source_y(*projected, view().viewport_height_pixels, scope.downscroll);
     }
 };
 
@@ -134,7 +128,7 @@ void append_proposed_grid_lines(proposed_grid_context_t& projection) {
             projection.view().pixels_per_standard_measure);
         if (!projected) continue;
         const auto y = compose_source_y(*projected, projection.view().viewport_height_pixels,
-                                        projection.downscroll);
+                                        projection.scope.downscroll);
         if (y < 0.0 || y > projection.view().viewport_height_pixels) continue;
         std::uint32_t measure_number{};
         if (line.kind == wormedit::editor_grid_line_kind_t::measure) {
@@ -184,13 +178,13 @@ void append_note_and_bgm_preview_rects(proposed_grid_context_t& projection) {
         if (source == projection.cache.index->note_indices_by_id.end() || note.proposal_ghost)
             continue;
         const auto& indexed = projection.cache.index->notes[source->second];
-        append_preview_rect(projection, projection.convert(note.bounds),
+        append_preview_rect(projection, to_frontend_rect(note.bounds),
                             note.tail ? indexed.end_row : indexed.begin_row, 0);
     }
     for (const auto& event : projection.source_scene.bgm_events) {
         const auto row = projection.cache.bgm_rows_by_id.find(event.event.value);
         if (row != projection.cache.bgm_rows_by_id.end())
-            append_preview_rect(projection, projection.convert(event.bounds), row->second, 1);
+            append_preview_rect(projection, to_frontend_rect(event.bounds), row->second, 1);
     }
 }
 
@@ -203,21 +197,25 @@ void append_hold_preview_rect(proposed_grid_context_t& projection,
     }
     const auto top = projection.projected_geometry_y(hold.bounds.top);
     const auto bottom = projection.projected_geometry_y(hold.bounds.bottom);
-    const auto old_top_source = compose_source_y(hold.bounds.top,
-        projection.source_view.viewport_height_pixels, projection.downscroll);
-    const auto old_bottom_source = compose_source_y(hold.bounds.bottom,
-        projection.source_view.viewport_height_pixels, projection.downscroll);
-    const auto old_top = compose_source_y(old_top_source + projection.source_view.viewport_scroll_pixels -
-        projection.interaction.viewport_scroll_pixels, projection.view().viewport_height_pixels,
-        projection.downscroll);
-    const auto old_bottom = compose_source_y(old_bottom_source + projection.source_view.viewport_scroll_pixels -
-        projection.interaction.viewport_scroll_pixels, projection.view().viewport_height_pixels,
-        projection.downscroll);
+    const auto old_top_source =
+        compose_source_y(hold.bounds.top, projection.scope.interaction_view.viewport_height_pixels,
+                         projection.scope.downscroll);
+    const auto old_bottom_source = compose_source_y(
+        hold.bounds.bottom, projection.scope.interaction_view.viewport_height_pixels,
+        projection.scope.downscroll);
+    const auto old_top =
+        compose_source_y(old_top_source + projection.scope.interaction_view.viewport_scroll_pixels -
+                             projection.interaction.viewport_scroll_pixels,
+                         projection.view().viewport_height_pixels, projection.scope.downscroll);
+    const auto old_bottom = compose_source_y(
+        old_bottom_source + projection.scope.interaction_view.viewport_scroll_pixels -
+            projection.interaction.viewport_scroll_pixels,
+        projection.view().viewport_height_pixels, projection.scope.downscroll);
     if (!top || !bottom || std::abs(*bottom - *top) < 0.5 ||
         (std::abs(*top - old_top) < 0.5 && std::abs(*bottom - old_bottom) < 0.5) ||
         std::max(*top, *bottom) < 0.0 ||
         std::min(*top, *bottom) > projection.view().viewport_height_pixels) return;
-    auto bounds = projection.convert(hold.bounds);
+    auto bounds = to_frontend_rect(hold.bounds);
     bounds.top = std::min(*top, *bottom);
     bounds.bottom = std::max(*top, *bottom);
     if (std::abs(bounds.top) > 10000000.0 || std::abs(bounds.bottom) > 10000000.0) return;
@@ -269,7 +267,7 @@ void append_standard_event_markers(proposed_grid_context_t& projection,
 }
 
 void append_pause_markers(proposed_grid_context_t& projection) {
-    const auto& pauses = projection.chart.pauses;
+    const auto& pauses = projection.scope.chart_scope.chart.pauses;
     for (std::size_t index = 0; index < pauses.size(); ++index) {
         const auto lane = pauses[index].kind == wormedit::pause_kind_t::stop
                               ? WORM_UI_TIMING_LANE_STOP : WORM_UI_TIMING_LANE_DELAY;
@@ -279,7 +277,7 @@ void append_pause_markers(proposed_grid_context_t& projection) {
 }
 
 void append_warp_markers(proposed_grid_context_t& projection) {
-    const auto& warps = projection.chart.warps;
+    const auto& warps = projection.scope.chart_scope.chart.warps;
     for (std::size_t index = 0; index < warps.size(); ++index)
         append_proposed_marker(projection, warps[index].span.begin, warps[index].id.value,
                                warps[index].provenance.source_order, index,
@@ -287,7 +285,7 @@ void append_warp_markers(proposed_grid_context_t& projection) {
 }
 
 void append_anchor_markers(proposed_grid_context_t& projection) {
-    const auto& anchors = projection.chart.timing_anchors;
+    const auto& anchors = projection.scope.chart_scope.chart.timing_anchors;
     for (std::size_t index = 0; index < anchors.size(); ++index)
         append_proposed_marker(projection, anchors[index].position, anchors[index].id.value,
                                index, index, WORM_UI_TIMING_LANE_ANCHOR);
@@ -319,12 +317,16 @@ void layout_proposed_marker_overlaps(proposed_grid_context_t& projection) {
 void append_proposed_markers(proposed_grid_context_t& projection) {
     auto& markers = projection.preview_markers();
     markers.clear();
-    append_standard_event_markers(projection, projection.chart.bpms, WORM_UI_TIMING_LANE_BPM);
-    append_standard_event_markers(projection, projection.chart.scrolls, WORM_UI_TIMING_LANE_SCROLL);
-    append_standard_event_markers(projection, projection.chart.speeds, WORM_UI_TIMING_LANE_SPEED);
+    append_standard_event_markers(projection, projection.scope.chart_scope.chart.bpms,
+                                  WORM_UI_TIMING_LANE_BPM);
+    append_standard_event_markers(projection, projection.scope.chart_scope.chart.scrolls,
+                                  WORM_UI_TIMING_LANE_SCROLL);
+    append_standard_event_markers(projection, projection.scope.chart_scope.chart.speeds,
+                                  WORM_UI_TIMING_LANE_SPEED);
     append_pause_markers(projection);
     append_warp_markers(projection);
-    append_standard_event_markers(projection, projection.chart.kiai, WORM_UI_TIMING_LANE_KIAI);
+    append_standard_event_markers(projection, projection.scope.chart_scope.chart.kiai,
+                                  WORM_UI_TIMING_LANE_KIAI);
     append_anchor_markers(projection);
     layout_proposed_marker_overlaps(projection);
 }
@@ -398,9 +400,10 @@ void project_compose_proposed_grid(flattened_workspace_t& flattened,
         view.truncated = true;
         return;
     }
-    proposed_grid_context_t projection{flattened, cache, chart, original, proposed, interaction,
-                                       source_view, *composed.scene, *rows, pixels_per_row,
-                                       downscroll};
+    const compose_chart_scope_t<> scope{
+        {chart, cache.index->measures}, source_view, downscroll, pixels_per_row};
+    proposed_grid_context_t projection{scope,    flattened,   cache,           original,
+                                       proposed, interaction, *composed.scene, *rows};
     append_proposed_grid_lines(projection);
     append_note_and_bgm_preview_rects(projection);
     append_hold_preview_rects(projection);

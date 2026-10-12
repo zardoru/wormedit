@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/interaction_context.h"
+
 #include "sys/workspace_projection.h"
 #include "sys/compose_navigation_travel.h"
 #include "common/static_interval_index.h"
@@ -60,11 +62,12 @@ struct compose_bga_move_preview_input_t {
 };
 
 // Shared pointer cell resolution for idle paint previews and note placement.
-[[nodiscard]] auto resolve_compose_paint_cell(
-    const wormedit::chart_document_t& chart, const wormedit::editor_hit_test_index_t& index,
-    const wormedit::editor_interaction_view_model_t& view, double x, double y,
-    double field_left, double field_width, bool downscroll, std::uint64_t snap,
-    const dead_span_projection_t* dead_spans = nullptr)
+[[nodiscard]] auto resolve_compose_paint_cell(const wormedit::chart_document_t& chart,
+                                              const wormedit::editor_hit_test_index_t& index,
+                                              const wormedit::editor_interaction_view_model_t& view,
+                                              double x, double y, double field_left,
+                                              double field_width, bool downscroll,
+                                              std::uint64_t snap)
     -> std::optional<wormedit::editor_hit_target_t>;
 
 inline constexpr double compose_measure_rail_width_pixels{wormedit::ui::compose_measure_rail_width};
@@ -639,6 +642,37 @@ auto toggle_compose_audio_offset_lock(const WormUiWorkspaceAction& action,
 void populate_compose_keysound_fallbacks(flattened_workspace_t& flattened,
                                          const wormedit::document_history_t& history,
                                          const std::filesystem::path& asset_base);
+
+// References to the live synchronous projection inputs; never retained by caches.
+struct compose_frame_inputs_t {
+    flattened_workspace_t& flattened;
+    wormedit::document_history_t& history;
+    compose_scene_cache_t& cache;
+    std::optional<wormedit::editor_interaction_state_t>& retained_state;
+    application_command_state_t& application_state;
+    const wormedit::timing_lane_pseudonote_preview_t* const& timing_stage;
+    const std::span<const wormedit::local_position_t>& comparison_rows;
+    const compose_bga_move_preview_input_t* const& bga_move_preview;
+
+    auto view() const -> WormUiComposeView& {
+        return flattened.view.compose;
+    }
+};
+
+// Constness differs between inspection and final interaction publication, not geometry.
+template <class View = const wormedit::editor_interaction_view_model_t>
+struct compose_chart_scope_t {
+    wormedit::chart_scope_t chart_scope;
+    View& interaction_view;
+    bool downscroll;
+    double pixels_per_row;
+};
+inline auto compose_pixels_per_row(const wormedit::chart_document_t& chart,
+                                   const wormedit::editor_interaction_view_model_t& view)
+    -> double {
+    return view.pixels_per_standard_measure /
+           static_cast<double>(chart.divisions_per_standard_measure);
+}
 
 void populate_compose_view(flattened_workspace_t& flattened,
                            wormedit::document_history_t& history,

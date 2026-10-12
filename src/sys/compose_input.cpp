@@ -1367,10 +1367,7 @@ struct compose_input_context_t {
                 y_pixels, field_left_pixels, field_width_pixels,
                 compose_field_downscroll(
                     chart, environment.application_command_state_ref.editor_preferences),
-                wormedit::edit_snap_denominator(chart, state),
-                environment.compose_scene_cache_ref.dead_spans
-                    ? &*environment.compose_scene_cache_ref.dead_spans
-                    : nullptr);
+                wormedit::edit_snap_denominator(chart, state));
         return wormedit::hit_test_editor(
             chart, *environment.compose_scene_cache_ref.hit_test_index, view,
             {.x_pixels = x_pixels,

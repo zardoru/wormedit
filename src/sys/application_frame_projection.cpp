@@ -108,8 +108,7 @@ auto prepare_frame_stems(const application_frame_projection_context_t& context,
 
 } // namespace
 
-
-auto project_application_frame(application_frame_projection_context_t context)
+auto project_application_frame(const application_frame_projection_context_t& context)
     -> flattened_workspace_t {
     frame_phase_scope_t frame_projection(frame_phase_t::workspace);
     flattened_workspace_t flattened;

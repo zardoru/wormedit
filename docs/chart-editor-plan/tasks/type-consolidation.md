@@ -129,12 +129,12 @@ Read `AGENTS.md` and `docs/chart-editor-plan/tasks.md` before taking a card. Exe
 
 ## T-595 Consolidate projection inputs and geometry conversion
 
-- **Status:** ready
+- **Status:** done
 - **Findings closed:** PC1, PC2, PC3, PC4, PC5, PC6, TW2 (sys side).
 - **Stale-plan audit:** Confirm PC1 context overlap, PC3 quantize signatures and PC6 pixels-per-row formulas including scene-path values; preserve any non-equivalent formula. Re-grep named symbols; confirm A leads before editing and record dropped claims. Do not chase rejected findings.
 - **Outcome:** Pass stack-only frame inputs and phase/chart scopes by reference, one quantize scope/map alias and one frontend rectangle converter.
 - **Read first:** `docs/audits/type-redundancy-2026-10-12.md`, `src/sys/compose_view.h`, `src/sys/compose_view.cpp`, `src/sys/compose_waveform_overlays.h`, `src/sys/compose_waveform_overlays.cpp`.
-- **Files owned:** `src/sys/compose_view.h`, `src/sys/compose_view.cpp`, `src/sys/compose_waveform_overlays.h`, `src/sys/compose_waveform_overlays.cpp`, `src/sys/application_frame_projection.h`, `src/sys/application_frame_projection.cpp`, `src/sys/player_preview_presenter.cpp`, `docs/chart-editor-plan/tasks/type-consolidation.md`, `memory/chart-editor-status/resume.md`.
+- **Files owned:** `src/sys/compose_view.h`, `src/sys/compose_view.cpp`, `src/sys/compose_waveform_overlays.h`, `src/sys/compose_waveform_overlays.cpp`, `src/sys/application_frame_projection.h`, `src/sys/application_frame_projection.cpp`, `src/sys/player_preview_presenter.cpp`, `src/sys/frontend_geometry.h`, `src/sys/compose_input.cpp`, `tests/sys/application_commands_tests.cpp`, `docs/chart-editor-plan/tasks/type-consolidation.md`, `memory/chart-editor-status/resume.md`.
 - **Steps:**
   1. Create compose_frame_inputs_t and compose_chart_scope_t, retaining the before/after-interaction phase split and frame-owned pointer lifetimes.
   2. Consolidate quantize parameters with a reference scope and named lane-order map alias; remove dead_spans parameter and callers.
@@ -146,9 +146,15 @@ Read `AGENTS.md` and `docs/chart-editor-plan/tasks.md` before taking a card. Exe
 - **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build <source>` for every touched source, with no new/increased violations. Record exact command statuses and output tails; validate production paths with existing event/registered-command tests and relevant core/format fixtures. Claude performs the Xvfb smoke check.
 - **Out of scope:** Product semantics changes; necessary complexity and rejected audit claims; measure-index caching across nested mutation; native schema serializer redesign; god-struct grouping before T-599 approval; optional editor_ui_action_t rename without approval; unrelated work.
 
+- **Stale-plan evidence (2026-10-12):** PC1 overlaps are confirmed, but BGM-only projection owns a temporary interaction state, retained static scenes use a different flattened output, and proposed timing overlays use a separate expanded source view. Preserve those phase boundaries; share frame inputs in the interactive/static phases and chart geometry scope with the overlay phase. PC3 functions thread exactly the same index/request/lane map/scale/scroll geometry. PC6 confirms equivalent standalone double formulas; retain evaluation at each original point through a named helper rather than caching across phase changes. The audio-marker path divides in long double, and content-height formulas multiply before dividing: both retain their original precision and operation order. Scene-specific supplied scales remain explicit. PC4 dead_spans is unused in the definition and all three callers. PC2 view references are each their phase's flattened.view.compose.
+- **Supporting ownership:** Coordinator approves frontend_geometry.h, compose_input.cpp and the existing application command fixture before removing the unused argument and sharing the ABI converter. No gesture routing changes are authorized by this extension.
+
+- **Completion (2026-10-12):** Shared reference-only compose frame inputs and chart geometry scopes retain interactive, BGM-only, static-cache and proposed-overlay phase lifetimes. Quantize uses one scope and lane-map alias; the unused dead-spans argument is removed. Application projection takes its context by reference. One rectangle converter serves Compose, overlays and player preview. Equivalent standalone double scales share one helper; long-double audio and multiply-before-divide height formulas retain their precision/order. No added allocations or retained frame references.
+- **Gate evidence:** Build exit 0: `[100%] Built target wormedit` (`/tmp/type-T-595-build-verified.log`). Full serial CTest exit 0: `100% tests passed out of 3517`; `Total Test time (real) = 301.06 sec` (`/tmp/type-T-595-ctest.log`). Event harness exit 0: `100% tests passed out of 500`; `Total Test time (real) = 20.16 sec` (`/tmp/type-T-595-events.log`). Documentation exit 0: `100% tests passed out of 1`; `Total Test time (real) = 0.14 sec` (`/tmp/type-T-595-docs.log`). Default clang-tidy exits 0 on all five touched sources (`/tmp/type-T-595-tidy/`); HEAD baseline confirms compose_surface_height 26 and build_speed_graph 29 unchanged. No new/increased violations. `git diff --check` passes. Xvfb remains with Claude.
+
 ## T-596 Alias layout-identical types and share dialog slots
 
-- **Status:** blocked-on T-595
+- **Status:** ready
 - **Findings closed:** TW1, TW2 (core side), TW3, TW6, TW7.
 - **Stale-plan audit:** Confirm every A twin field-by-field (TW1/TW6/TW7), including order/defaults/enums; drop non-identical candidates or retain typed adapters. Re-grep named symbols; confirm A leads before editing and record dropped claims. Do not chase rejected findings.
 - **Outcome:** Reduce duplicate type definitions using templates/aliases and one dialog slot implementation without changing domain enums, ABI layout or session classes.

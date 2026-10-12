@@ -1,4 +1,5 @@
 #include "sys/player_preview_presenter.h"
+#include "sys/frontend_geometry.h"
 
 #include <wormedit/core/bga_preview.h>
 #include <wormedit/core/command.h>
@@ -155,9 +156,6 @@ auto evaluate_storyboards(const song_document_t& document,
     return true;
 }
 
-auto convert_rect(const player_preview_rect_t& rect) -> WormUiPlayerPreviewRect {
-    return {.left = rect.left, .top = rect.top, .right = rect.right, .bottom = rect.bottom};
-}
 
 void append_scene_geometry(const player_preview_scene_t& scene,
                            std::vector<WormUiPlayerPreviewLaneView>& lanes,
@@ -169,43 +167,45 @@ void append_scene_geometry(const player_preview_scene_t& scene,
                          .role = static_cast<std::uint8_t>(lane.role),
                          .glyph = static_cast<std::uint8_t>(lane.glyph),
                          .display_order = lane.display_order,
-                         .bounds = convert_rect(lane.bounds)});
+                         .bounds = to_frontend_rect<WormUiPlayerPreviewRect>(lane.bounds)});
     }
     for (const auto& receptor : scene.receptors) {
         receptors.push_back({.lane_id = receptor.lane.value,
                              .glyph = static_cast<std::uint8_t>(receptor.glyph),
-                             .bounds = convert_rect(receptor.bounds)});
+                             .bounds = to_frontend_rect<WormUiPlayerPreviewRect>(receptor.bounds)});
     }
     for (const auto& hold : scene.hold_bodies) {
-        holds.push_back({.note_id = hold.note.value,
-                         .lane_id = hold.lane.value,
-                         .semantic_color_visible = hold.semantic_color.has_value(),
-                         .semantic_red = static_cast<std::uint8_t>(
-                             hold.semantic_color ? hold.semantic_color->red : 0),
-                         .semantic_green = static_cast<std::uint8_t>(
-                             hold.semantic_color ? hold.semantic_color->green : 0),
-                         .semantic_blue = static_cast<std::uint8_t>(
-                             hold.semantic_color ? hold.semantic_color->blue : 0),
-                         .semantic_alpha = static_cast<std::uint8_t>(
-                             hold.semantic_color ? hold.semantic_color->alpha : 0),
-                         .bounds = convert_rect(hold.bounds)});
+        holds.push_back(
+            {.note_id = hold.note.value,
+             .lane_id = hold.lane.value,
+             .semantic_color_visible = hold.semantic_color.has_value(),
+             .semantic_red =
+                 static_cast<std::uint8_t>(hold.semantic_color ? hold.semantic_color->red : 0),
+             .semantic_green =
+                 static_cast<std::uint8_t>(hold.semantic_color ? hold.semantic_color->green : 0),
+             .semantic_blue =
+                 static_cast<std::uint8_t>(hold.semantic_color ? hold.semantic_color->blue : 0),
+             .semantic_alpha =
+                 static_cast<std::uint8_t>(hold.semantic_color ? hold.semantic_color->alpha : 0),
+             .bounds = to_frontend_rect<WormUiPlayerPreviewRect>(hold.bounds)});
     }
     for (const auto& note : scene.note_endpoints) {
-        notes.push_back({.note_id = note.note.value,
-                         .lane_id = note.lane.value,
-                         .kind = static_cast<std::uint8_t>(note.kind),
-                         .glyph = static_cast<std::uint8_t>(note.glyph),
-                         .tail = note.tail,
-                         .semantic_color_visible = note.semantic_color.has_value(),
-                         .semantic_red = static_cast<std::uint8_t>(
-                             note.semantic_color ? note.semantic_color->red : 0),
-                         .semantic_green = static_cast<std::uint8_t>(
-                             note.semantic_color ? note.semantic_color->green : 0),
-                         .semantic_blue = static_cast<std::uint8_t>(
-                             note.semantic_color ? note.semantic_color->blue : 0),
-                         .semantic_alpha = static_cast<std::uint8_t>(
-                             note.semantic_color ? note.semantic_color->alpha : 0),
-                         .bounds = convert_rect(note.bounds)});
+        notes.push_back(
+            {.note_id = note.note.value,
+             .lane_id = note.lane.value,
+             .kind = static_cast<std::uint8_t>(note.kind),
+             .glyph = static_cast<std::uint8_t>(note.glyph),
+             .tail = note.tail,
+             .semantic_color_visible = note.semantic_color.has_value(),
+             .semantic_red =
+                 static_cast<std::uint8_t>(note.semantic_color ? note.semantic_color->red : 0),
+             .semantic_green =
+                 static_cast<std::uint8_t>(note.semantic_color ? note.semantic_color->green : 0),
+             .semantic_blue =
+                 static_cast<std::uint8_t>(note.semantic_color ? note.semantic_color->blue : 0),
+             .semantic_alpha =
+                 static_cast<std::uint8_t>(note.semantic_color ? note.semantic_color->alpha : 0),
+             .bounds = to_frontend_rect<WormUiPlayerPreviewRect>(note.bounds)});
     }
 }
 

@@ -5,11 +5,10 @@
 #include "sys/compose_semantic_layer_commands.h"
 
 #include "sys/compose_bookmark_commands.h"
-#include "sys/compose_clipboard_selection.h"
+#include <wormedit/core/chart_clipboard.h>
 #include "sys/compose_input.h"
 #include "sys/compose_sound_selection.h"
 #include "sys/compose_scroll_geometry.h"
-#include "sys/compose_timing_delete.h"
 #include "sys/compose_view.h"
 #include "sys/external_player.h"
 #include "sys/transport_player_actions.h"
@@ -380,19 +379,20 @@ auto clipboard_commands(command_context_t& context) -> std::optional<command_res
     if (!state)
         return reject_application_command(context.sink, "Clipboard requires the active Compose chart.",
             notification_severity_t::warning, notification_source_t::edit);
-    const auto widened = wormedit::sys::with_kiai_span_selection(
-        context.history, *state, context.application_state.kiai_selected_head);
-    auto copied = wormedit::copy_chart_selection(context.history.document, widened,
-                                                 context.history.document.revision);
+    const wormedit::selection_delete_options_t options{
+        .kiai_head = wormedit::object_id_t{context.application_state.kiai_selected_head},
+        .recipe = wormedit::recipe_id_t{context.application_state.recipe_selected},
+        .timing_locked = context.application_state.timing_locked};
+    if (options.recipe)
+        return reject_application_command(context.sink, "SV recipes cannot be copied to the chart clipboard.",
+            notification_severity_t::warning, notification_source_t::edit);
+    auto copied = kind == command_kind_t::edit_cut
+        ? wormedit::cut_chart_selection(context.history, *state, context.history.document.revision, options)
+        : wormedit::copy_chart_selection(context.history.document, *state,
+                                         context.history.document.revision, options.kiai_head);
     if (!copied) return reject_application_command(context.sink, std::move(copied.error),
         notification_severity_t::warning, notification_source_t::edit);
-    if (kind == command_kind_t::edit_cut) {
-        const auto error = wormedit::sys::delete_cut_selection(
-            context.history, *state, context.application_state.kiai_selected_head,
-            context.application_state.timing_locked);
-        if (!error.empty()) return reject_application_command(context.sink, error,
-            notification_severity_t::warning, notification_source_t::edit);
-    }
+    if (kind == command_kind_t::edit_cut) context.application_state.kiai_selected_head = 0;
     context.application_state.chart_clipboard = std::move(copied.clipboard);
     post_command_message(context.sink, notification_severity_t::success,
         notification_source_t::edit, kind == command_kind_t::edit_cut ? "Selection cut." : "Selection copied.");
@@ -407,26 +407,15 @@ auto edit_commands(command_context_t& context) -> std::optional<command_result_t
     if (!state)
         return reject_application_command(context.sink, "Delete requires the active Compose chart.",
             notification_severity_t::warning, notification_source_t::edit);
-    // Timing markers (SV, BPM, stops, ...) are deleted through the timing controller.
-    const auto timing = wormedit::sys::delete_selected_timing_markers(
-        context.history, *state, context.application_state.timing_locked);
-    if (timing.handled) {
-        if (!timing.command.applied)
-            return reject_application_command(
-                context.sink, timing.command.diagnostics.empty()
-                                    ? "Timing markers were not deleted."
-                                    : timing.command.diagnostics.front().message,
-                timing.command.diagnostics.empty() ? notification_severity_t::warning
-                    : notification_severity(timing.command.diagnostics.front().severity),
-                notification_source_t::edit);
-        post_command_message(context.sink, notification_severity_t::success,
-                             notification_source_t::edit, "Timing markers deleted.");
-        const auto rebound = context.rebind();
-        if (!rebound.accepted) return rebound;
-        return command_result_t{.accepted = true};
+    const auto result = wormedit::delete_selection_all(context.history, *state,
+        context.history.document.revision,
+        {.kiai_head = wormedit::object_id_t{context.application_state.kiai_selected_head},
+         .recipe = wormedit::recipe_id_t{context.application_state.recipe_selected},
+         .timing_locked = context.application_state.timing_locked});
+    if (result.document_changed) {
+        context.application_state.kiai_selected_head = 0;
+        context.application_state.recipe_selected = 0;
     }
-    const auto result = wormedit::dispatch_editor_action(
-        context.history, *state, wormedit::delete_editor_selection_action_t{});
     auto accepted = accept_editor_command(
         result, context.sink,
         result.document_changed ? "Selection deleted." : "No object at the cursor.",

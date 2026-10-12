@@ -435,8 +435,10 @@ TEST_CASE("Delete dispatcher commits stem conversion and ordinary deletion as on
     f.state.selected_notes.push_back(object_id_t{2});
     f.state.selected_objects.push_back({editor_selection_object_kind_t::note, object_id_t{2}});
     REQUIRE(validate_document(f.history.document).empty());
-    const auto status = f.input(WORM_UI_COMPOSE_INPUT_DELETE_SELECTION);
-    INFO(status);
+    f.optional_state = f.state;
+    const auto result = invoke_application_command({.kind = application_command_kind_t::edit_delete},
+        f.history, f.workspace, f.optional_state, f.timing_stage, f.application, f.sink);
+    check_mixed_input(result.accepted);
     const auto& deleted = f.history.document.charts.front();
     check_mixed_input(deleted.measures.front().notes.empty());
     REQUIRE(deleted.measures.front().bgm_events.size() == 1);

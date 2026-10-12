@@ -725,6 +725,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             sys/audio_waveform_projection_tests.cpp
             ../src/sys/compose_sound_actions.cpp
             ../src/sys/application_command_dispatch.cpp
+            ../src/sys/application_commands.cpp
             ../src/sys/transport_player_actions.cpp
             ../src/sys/application_defaults.cpp
             ../src/sys/waveform_view_projection.cpp

@@ -47,12 +47,24 @@ struct chart_clipboard_result_t {
 };
 
 [[nodiscard]] auto copy_chart_selection(const song_document_t& document,
-    const editor_interaction_state_t& state, std::uint64_t expected_revision)
-    -> chart_clipboard_result_t;
+    const editor_interaction_state_t& state, std::uint64_t expected_revision,
+    object_id_t kiai_head = {}) -> chart_clipboard_result_t;
+
+struct selection_delete_options_t {
+    object_id_t kiai_head;
+    recipe_id_t recipe;
+    bool timing_locked{};
+    std::string label{"Delete selection"};
+};
+
+// Stage all selected families, then publish once. Failure preserves history and selection.
+[[nodiscard]] auto delete_selection_all(document_history_t& history,
+    editor_interaction_state_t& state, std::uint64_t expected_revision,
+    const selection_delete_options_t& options = {}) -> editor_interaction_result_t;
 
 [[nodiscard]] auto cut_chart_selection(document_history_t& history,
-    editor_interaction_state_t& state, std::uint64_t expected_revision)
-    -> chart_clipboard_result_t;
+    editor_interaction_state_t& state, std::uint64_t expected_revision,
+    selection_delete_options_t options = {}) -> chart_clipboard_result_t;
 
 struct chart_paste_stem_event_t {
     object_id_t channel;

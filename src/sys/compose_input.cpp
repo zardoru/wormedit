@@ -6,7 +6,7 @@
 #include "sys/compose_minimap_navigation.h"
 #include "sys/compose_playhead_skip.h"
 #include "sys/compose_scroll_geometry.h"
-#include "sys/compose_timing_delete.h"
+#include <wormedit/core/chart_clipboard.h>
 
 #include <wormedit/core/dead_span_rules.h>
 #include <wormedit/core/snap.h>
@@ -740,10 +740,6 @@ auto dispatch_compose_cursor_input(const WormUiComposeInputAction& input,
         result = dispatch_editor_action(
             history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
         accepted = "Edit cursor moved forward.";
-        break;
-    case WORM_UI_COMPOSE_INPUT_DELETE_SELECTION:
-        result = dispatch_editor_action(history, state, delete_editor_selection_action_t{});
-        accepted = result.document_changed ? "Selection deleted." : "No object at the cursor.";
         break;
     default:
         return {};
@@ -2761,40 +2757,6 @@ auto run_compose_recipe_command(std::uint64_t id, std::uint8_t command,
     return std::nullopt;
 }
 
-// Deletes the selected Kiai area. Returns false when no area is selected.
-auto delete_selected_compose_kiai_span(compose_input_context_t& context,
-                                       wormedit::editor_interaction_result_t& result,
-                                       std::string_view& accepted) -> bool {
-    using namespace wormedit;
-    const auto head = context.application_state.kiai_selected_head;
-    const auto* chart = context.chart();
-    if (head == 0 || !chart || context.application_state.timing_locked) return false;
-    const auto edited = apply_marker_edit(
-        context.history, context.history.document.revision,
-        edit_kiai_span_action_t{.chart = chart->id, .edit = {.head = object_id_t{head}}});
-    context.application_state.kiai_selected_head = 0;
-    result.accepted = edited.applied;
-    result.document_changed = edited.applied;
-    result.diagnostics = edited.diagnostics;
-    accepted = edited.applied ? "Kiai area deleted." : "No Kiai area to delete.";
-    return true;
-}
-
-// Deletes the selected timing markers as one command. Returns false when none is selected.
-auto delete_selected_compose_timing_markers(compose_input_context_t& context,
-                                            wormedit::editor_interaction_result_t& result,
-                                            std::string_view& accepted) -> bool {
-    const auto outcome = wormedit::sys::delete_selected_timing_markers(
-        context.history, context.state, context.application_state.timing_locked);
-    if (!outcome.handled) return false;
-    result.accepted = outcome.command.applied;
-    result.document_changed = outcome.command.applied;
-    result.diagnostics = outcome.command.diagnostics;
-    accepted = outcome.command.applied ? "Selected timing markers deleted."
-                                       : "Timing markers were not deleted.";
-    return true;
-}
-
 auto place_note_from_pointer(const WormUiComposeInputAction& input,
                               compose_input_context_t& context,
                               const auto& target,
@@ -3734,18 +3696,18 @@ auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
             wormedit::notification_severity_t::warning, wormedit::notification_source_t::input);
     if (const auto to_bgm = dispatch_note_to_bgm_input(input, context, result, accepted))
         return *to_bgm;
-    if (input.kind == WORM_UI_COMPOSE_INPUT_DELETE_SELECTION &&
-        delete_selected_compose_kiai_span(context, result, accepted))
-        return compose_input_family_result_t::continue_with_result();
-    if (input.kind == WORM_UI_COMPOSE_INPUT_DELETE_SELECTION &&
-        delete_selected_compose_timing_markers(context, result, accepted))
-        return compose_input_family_result_t::continue_with_result();
-    if (input.kind == WORM_UI_COMPOSE_INPUT_DELETE_SELECTION &&
-        context.application_state.recipe_selected != 0) {
-        const auto id = context.application_state.recipe_selected;
-        if (const auto error = run_compose_recipe_command(id, 2, context, result, accepted))
-            return compose_input_family_result_t::continue_with_result();
-        context.application_state.recipe_selected = 0;
+    // Legacy compatibility input: no UI emits it; never build a second Delete request.
+    if (input.kind == WORM_UI_COMPOSE_INPUT_DELETE_SELECTION) {
+        result = wormedit::delete_selection_all(context.history, context.state,
+            context.history.document.revision,
+            {.kiai_head = wormedit::object_id_t{context.application_state.kiai_selected_head},
+             .recipe = wormedit::recipe_id_t{context.application_state.recipe_selected},
+             .timing_locked = context.application_state.timing_locked});
+        if (result.document_changed) {
+            context.application_state.kiai_selected_head = 0;
+            context.application_state.recipe_selected = 0;
+        }
+        accepted = result.document_changed ? "Selection deleted." : "No object at the cursor.";
         return compose_input_family_result_t::continue_with_result();
     }
     const auto keyboard =

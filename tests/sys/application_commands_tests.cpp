@@ -2379,3 +2379,177 @@ TEST_CASE("Project export command opens from every project tab without Compose d
 }
 
 #endif
+
+#ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+namespace {
+void selection_require(bool value) { REQUIRE(value); }
+void selection_check(bool value) { CHECK(value); }
+auto invoke_selection_command(TimingInsertFixture& f, std::string id) -> wormedit::command_dispatch_result_t {
+    using namespace wormedit;
+    const auto registry = make_default_editor_command_registry([&](const command_invocation_context_t& context) {
+        const auto parsed = parse_application_command(context.command.value);
+        if (!parsed) return command_invocation_result_t{};
+        return f.invoke(parsed->kind);
+    });
+    return invoke_command(registry, {std::move(id)}, {.workspace_active = true,
+        .active_tab = workspace_tab_t::compose, .visible_tabs = {workspace_tab_t::compose}});
+}
+void add_selection_spans(TimingInsertFixture& f) {
+    using namespace wormedit;
+    auto& chart = f.fixture.history.document.charts.front();
+    chart.kiai = {{.id = object_id_t{200}, .position = {measure_id_t{1}, 240}, .enabled = true},
+                  {.id = object_id_t{201}, .position = {measure_id_t{1}, 480}, .enabled = false}};
+    chart.sv_recipes = {{.id = recipe_id_t{300}, .name = "Selection recipe",
+        .range = {{measure_id_t{1}, 0}, {measure_id_t{1}, 480}}, .output = sv_recipe_output_t::sv,
+        .curve = sv_recipe_curve_t::linear, .parameters = {.value_from = {1, 1}, .value_to = {2, 1}}}};
+    f.application_state.kiai_selected_head = 200;
+}
+}
+
+TEST_CASE("Registered Delete removes mixed notes timing Kiai and recipe with one Undo",
+          "[sys][application_commands][gesture-delete]") {
+    using namespace wormedit;
+    TimingInsertFixture f;
+    add_selection_spans(f);
+    f.application_state.recipe_selected = 300;
+    f.compose_state->selected_objects.push_back({editor_selection_object_kind_t::bpm_event, object_id_t{102}});
+    const auto original = write_native_project(f.fixture.history.document).bytes;
+    selection_require(original.has_value());
+    selection_require(static_cast<bool>(invoke_selection_command(f, "edit.delete")));
+    const auto& chart = f.fixture.history.document.charts.front();
+    selection_check(chart.measures.front().notes.size() == 2);
+    selection_check(chart.bpms.size() == 1);
+    selection_check(chart.kiai.empty());
+    selection_check(chart.sv_recipes.empty());
+    selection_check(f.application_state.kiai_selected_head == 0);
+    selection_check(f.application_state.recipe_selected == 0);
+    selection_check(f.fixture.history.undo.size() == 1);
+    selection_require(undo_document_command(f.fixture.history));
+    selection_check(write_native_project(f.fixture.history.document).bytes == original);
+}
+
+TEST_CASE("Registered Cut rejects a late stem deletion without publishing timing or clipboard",
+          "[sys][application_commands][gesture-delete]") {
+    using namespace wormedit;
+    TimingInsertFixture f;
+    add_selection_spans(f);
+    auto& history = f.fixture.history;
+    auto& chart = history.document.charts.front();
+    chart.source_family = format_family_t::bmson;
+    history.document.audio_assets = {{.id = asset_id_t{5}, .stream = {48000, 2, 480000, true}}};
+    history.document.resources = {{.id = resource_id_t{6}, .asset = asset_id_t{5}, .roles = {resource_role_t::bgm}}};
+    chart.bgm_source_lanes = {{.id = object_id_t{22}, .stem_channel = object_id_t{30}}};
+    chart.sound_channels = {{.id = object_id_t{30}, .name = "Stem",
+        .source_clip = {.id = clip_id_t{32}, .source = asset_id_t{5}, .end_frame = 480000},
+        .events = {{.id = object_id_t{31}, .position = {measure_id_t{1}, 0}, .playable = false},
+                   {.id = object_id_t{34}, .position = {measure_id_t{1}, 720}, .continuation = true, .playable = false}}}};
+    chart.measures.front().bgm_events = {{.id = object_id_t{33}, .position = {measure_id_t{1}, 0},
+        .source_lane = object_id_t{22}, .sound = resource_id_t{6}, .sound_channel_event = object_id_t{31}},
+        {.id = object_id_t{35}, .position = {measure_id_t{1}, 720}, .source_lane = object_id_t{22},
+         .sound = resource_id_t{6}, .sound_channel_event = object_id_t{34}}};
+    f.compose_state->selected_notes.clear();
+    f.compose_state->selected_objects = {{editor_selection_object_kind_t::bgm_event, object_id_t{33}},
+        {editor_selection_object_kind_t::bgm_event, object_id_t{35}},
+        {editor_selection_object_kind_t::bpm_event, object_id_t{102}}};
+    f.application_state.chart_clipboard = chart_clipboard_t{song_id_t{999}, chart_id_t{999}, {}};
+    selection_require(validate_document(history.document).empty());
+    auto metadata_edit = history.document;
+    metadata_edit.metadata.title = "Redo must survive rejection";
+    selection_require(static_cast<bool>(commit_document_command(history, std::move(metadata_edit), "Metadata edit")));
+    selection_require(undo_document_command(history));
+    selection_require(history.redo.size() == 1);
+    const auto redo_bytes = write_native_project(history.redo.front().after).bytes;
+    const auto original = write_native_project(history.document).bytes;
+    const auto selected = f.compose_state->selected_objects;
+    const auto next_revision = history.next_revision;
+    selection_check(!invoke_selection_command(f, "edit.cut"));
+    selection_check(write_native_project(history.document).bytes == original);
+    selection_check(history.undo.empty());
+    selection_check(history.next_revision == next_revision);
+    selection_require(history.redo.size() == 1);
+    selection_check(write_native_project(history.redo.front().after).bytes == redo_bytes);
+    selection_check(f.compose_state->selected_objects == selected);
+    selection_check(f.application_state.kiai_selected_head == 200);
+    selection_require(f.application_state.chart_clipboard.has_value());
+    selection_check(f.application_state.chart_clipboard->source_song == song_id_t{999});
+}
+#endif
+
+#ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+TEST_CASE("Registered Delete handles a span-only Kiai or recipe selection",
+          "[sys][application_commands][gesture-delete]") {
+    using namespace wormedit;
+    const bool recipe = GENERATE(false, true);
+    TimingInsertFixture f;
+    add_selection_spans(f);
+    f.compose_state->selected_notes.clear(); f.compose_state->selected_objects.clear();
+    f.application_state.kiai_selected_head = recipe ? 0 : 200;
+    f.application_state.recipe_selected = recipe ? 300 : 0;
+    const auto original = write_native_project(f.fixture.history.document).bytes;
+    selection_require(static_cast<bool>(invoke_selection_command(f, "edit.delete")));
+    const auto& chart = f.fixture.history.document.charts.front();
+    selection_check(chart.kiai.empty() == !recipe);
+    selection_check(chart.sv_recipes.empty() == recipe);
+    selection_check(chart.measures.front().notes.size() == 3);
+    selection_check(f.fixture.history.undo.size() == 1);
+    selection_require(undo_document_command(f.fixture.history));
+    selection_check(write_native_project(f.fixture.history.document).bytes == original);
+}
+
+TEST_CASE("Registered Cut publishes mixed copied objects with one Undo and Redo",
+          "[sys][application_commands][gesture-delete]") {
+    using namespace wormedit;
+    TimingInsertFixture f;
+    add_selection_spans(f);
+    f.compose_state->selected_objects.push_back({editor_selection_object_kind_t::bpm_event, object_id_t{102}});
+    const auto original = write_native_project(f.fixture.history.document).bytes;
+    selection_require(static_cast<bool>(invoke_selection_command(f, "edit.cut")));
+    selection_require(f.application_state.chart_clipboard.has_value());
+    selection_check(f.application_state.chart_clipboard->objects.size() == 4);
+    selection_check(f.application_state.kiai_selected_head == 0);
+    const auto& chart = f.fixture.history.document.charts.front();
+    selection_check(chart.measures.front().notes.size() == 2);
+    selection_check(chart.bpms.size() == 1);
+    selection_check(chart.kiai.empty());
+    selection_check(chart.sv_recipes.size() == 1);
+    selection_check(f.fixture.history.undo.size() == 1);
+    const auto cut = write_native_project(f.fixture.history.document).bytes;
+    selection_require(undo_document_command(f.fixture.history));
+    selection_check(write_native_project(f.fixture.history.document).bytes == original);
+    selection_require(redo_document_command(f.fixture.history));
+    selection_check(write_native_project(f.fixture.history.document).bytes == cut);
+}
+
+TEST_CASE("Registered Delete and Cut reject locked mixed selection atomically",
+          "[sys][application_commands][gesture-delete]") {
+    using namespace wormedit;
+    const auto id = GENERATE("edit.delete", "edit.cut");
+    TimingInsertFixture f;
+    add_selection_spans(f);
+    f.application_state.timing_locked = true;
+    f.application_state.chart_clipboard = chart_clipboard_t{song_id_t{999}, chart_id_t{999}, {}};
+    f.compose_state->selected_objects.push_back({editor_selection_object_kind_t::bpm_event, object_id_t{102}});
+    const auto original = write_native_project(f.fixture.history.document).bytes;
+    const auto selection = f.compose_state->selected_objects;
+    selection_check(!invoke_selection_command(f, id));
+    selection_check(write_native_project(f.fixture.history.document).bytes == original);
+    selection_check(f.fixture.history.undo.empty());
+    selection_check(f.compose_state->selected_objects == selection);
+    selection_check(f.application_state.kiai_selected_head == 200);
+    selection_check(f.application_state.chart_clipboard->source_song == song_id_t{999});
+}
+
+TEST_CASE("Registered Cut rejects unsupported recipe clipboard without dropping selected notes",
+          "[sys][application_commands][gesture-delete]") {
+    using namespace wormedit;
+    TimingInsertFixture f;
+    add_selection_spans(f);
+    f.application_state.recipe_selected = 300;
+    const auto original = write_native_project(f.fixture.history.document).bytes;
+    selection_check(!invoke_selection_command(f, "edit.cut"));
+    selection_check(f.latest_message().find("SV recipes cannot be copied") != std::string::npos);
+    selection_check(write_native_project(f.fixture.history.document).bytes == original);
+    selection_check(f.fixture.history.undo.empty());
+    selection_check(f.application_state.recipe_selected == 300);
+}
+#endif

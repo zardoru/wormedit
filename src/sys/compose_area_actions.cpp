@@ -1,4 +1,5 @@
 #include "sys/compose_area_actions.h"
+#include <wormedit/core/chart_clipboard.h>
 #include <algorithm>
 #include <ranges>
 #include <utility>
@@ -187,7 +188,8 @@ std::string delete_compose_area_contents(area_action_context_t& context,
     if (!supported_area_contents(*selected))
         return area_rejection(context, "Area deletion supports notes and BGM only; the area contains other objects.");
     const auto result =
-        dispatch_editor_action(context.history, *selected, delete_editor_selection_action_t{});
+        delete_selection_all(context.history, *selected, context.history.document.revision,
+                             {.timing_locked = context.timing_locked});
     if (result.accepted) {
         context.state.selected_notes = std::move(selected->selected_notes);
         context.state.selected_objects = std::move(selected->selected_objects);

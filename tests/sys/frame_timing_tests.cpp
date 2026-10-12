@@ -2314,6 +2314,20 @@ auto kiai_screen_y(compose_test_fixture_t& fixture, std::uint64_t row) -> double
     const bool downscroll = compose_field_downscroll(chart, fixture.application.editor_preferences);
     return compose_source_y(*y, view->viewport_height_pixels, downscroll);
 }
+auto invoke_span_delete_command(compose_test_fixture_t& fixture) -> command_dispatch_result_t {
+    notification_center_t center;
+    notification_sink_t sink{center};
+    std::optional<timing_lane_pseudonote_preview_t> timing;
+    const auto registry = make_default_editor_command_registry([&](const command_invocation_context_t& context) {
+        const auto command = parse_application_command(context.command.value);
+        if (!command) return command_invocation_result_t{};
+        return invoke_application_command(*command, fixture.history, *fixture.binding.workspace,
+            fixture.interaction, timing, fixture.application, sink);
+    });
+    return invoke_command(registry, {"edit.delete"}, {.workspace_active = true,
+        .active_tab = workspace_tab_t::compose, .visible_tabs = {workspace_tab_t::compose}});
+}
+
 auto kiai_input(compose_test_fixture_t& fixture, WormUiComposeInputKind kind, std::uint64_t head,
                 std::uint8_t edge = WORM_UI_SPAN_HANDLE_BEGIN, double y = 0.0,
                 double anchor_y = 0.0) -> WormUiWorkspaceAction {
@@ -2379,8 +2393,7 @@ TEST_CASE("Kiai edge drags edit the area, Delete removes the selected area and s
     auto select = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_SELECT, 9001);
     CHECK(dispatch_paste_action(fixture, select) == "Kiai area selected.");
     CHECK(fixture.application.kiai_selected_head == 9001);
-    auto remove = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_DELETE_SELECTION, 0);
-    CHECK(dispatch_paste_action(fixture, remove) == "Kiai area deleted.");
+    CHECK(static_cast<bool>(invoke_span_delete_command(fixture)));
     CHECK(kiai_areas(fixture).empty());
     CHECK(fixture.application.kiai_selected_head == 0);
     CHECK(fixture.history.undo.size() == 3);
@@ -2496,8 +2509,7 @@ TEST_CASE("Delete removes the selected SV recipe and the area menu adds one over
     compose_test_fixture_t fixture{recipe_test_song()};
     fixture.project();
     fixture.application.recipe_selected = 7001;
-    auto remove = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_DELETE_SELECTION, 0);
-    CHECK(dispatch_paste_action(fixture, remove) == "SV recipe deleted.");
+    CHECK(static_cast<bool>(invoke_span_delete_command(fixture)));
     CHECK(fixture.history.document.charts.front().sv_recipes.empty());
     CHECK(fixture.application.recipe_selected == 0);
     REQUIRE(undo_document_command(fixture.history));

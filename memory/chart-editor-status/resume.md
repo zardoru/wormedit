@@ -1,6 +1,6 @@
 # Status: resume checklist
 
-Next: [T-581 Unify Delete and Cut selection mutations](../../docs/chart-editor-plan/tasks/gesture-consolidation.md#t-581-unify-delete-and-cut-selection-mutations). T-580 is complete; continue T-581–T-590 in order; T-583 stops for the Stop/Delay placement decision. NV7 is a T-506 follow-up, with unrelated navigation work preserved.
+Next: [T-582 Route menu verbs through registered commands](../../docs/chart-editor-plan/tasks/gesture-consolidation.md#t-582-route-menu-verbs-through-registered-commands). T-580–T-581 are complete; continue T-582–T-590 in order; T-583 stops for the Stop/Delay placement decision. NV7 is a T-506 follow-up, with unrelated navigation work preserved.
 
 Completed **T-574 follow-up, T-578 and T-579** (2026-10-11; committed with implementation):
 BGM stem heads now double-click to arm outside the playable field. Mouse paint

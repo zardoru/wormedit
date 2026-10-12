@@ -1,11 +1,8 @@
-#include "sys/compose_clipboard_selection.h"
-
 #include <wormedit/core/chart_clipboard.h>
 
 #include <catch2/catch_test_macros.hpp>
 
 using namespace wormedit;
-using namespace wormedit::sys;
 
 namespace {
 auto clipboard_timing_song() -> song_document_t {
@@ -35,16 +32,16 @@ TEST_CASE("A selected Kiai area and speed marker are copied and cut together",
     state.selected_objects = {{editor_selection_object_kind_t::speed_event, object_id_t{2}}};
     std::uint64_t kiai_head = 3;
 
-    const auto widened = with_kiai_span_selection(history, state, kiai_head);
-    const auto copied = copy_chart_selection(history.document, widened, history.document.revision);
+    const auto copied = copy_chart_selection(history.document, state, history.document.revision,
+                                              object_id_t{kiai_head});
     REQUIRE(static_cast<bool>(copied));
     CHECK(copied.clipboard->objects.size() == 3);
 
     const auto undo_before = history.undo.size();
-    const auto error = delete_cut_selection(history, state, kiai_head, false);
-    CHECK(error.empty());
+    const auto cut = cut_chart_selection(history, state, history.document.revision,
+                                          {.kiai_head = object_id_t{kiai_head}});
+    CHECK(cut.error.empty());
     CHECK(history.undo.size() == undo_before + 1);
-    CHECK(kiai_head == 0);
     const auto& chart = history.document.charts.front();
     CHECK(chart.speeds.empty());
     CHECK(chart.kiai.empty());

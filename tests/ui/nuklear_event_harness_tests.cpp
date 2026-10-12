@@ -1,3 +1,4 @@
+#include "sys/compose_area_actions.h"
 #include "nuklear_event_harness.h"
 #include "ui/nuklear/audio_state.h"
 #include "ui/nuklear/compose_area_menu.h"
@@ -6767,4 +6768,49 @@ TEST_CASE("A production lane chord survives its own revision refresh but cancels
     const auto second_up = key_event(SDL_EVENT_KEY_UP, SDLK_2, SDL_SCANCODE_2);
     (void)f.dispatch(f.harness.frame(std::span{&second_up, 1}));
     expect_draw(f.history.undo.size() == 2);
+}
+
+TEST_CASE("Production area Delete enablement agrees with its scoped dispatch",
+          "[frontend-state][event-harness][gesture-delete][area]") {
+    const bool timing = GENERATE(false, true);
+    note_menu_fixture_t fixture;
+    auto song = t422_song();
+    if (timing) song.charts.front().bpms.push_back({.id = object_id_t{400},
+        .position = {measure_id_t{1}, 240}, .beats_per_minute = {150, 1}});
+    auto history = make_document_history(std::move(song));
+    const std::array snaps{std::uint64_t{4}};
+    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 120}, snaps, 4);
+    section_import_require(setup.state.has_value());
+    auto state = *setup.state;
+    state.retained_selection_range = position_span_t{{measure_id_t{1}, 120}, {measure_id_t{2}, 0}};
+    const auto& chart = history.document.charts.front();
+    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    auto& view = fixture.harness.view().compose;
+    view.project_id = history.document.id.value; view.chart_id = state.chart.value;
+    view.document_revision = history.document.revision;
+    view.area_range_available = true; view.area_rows_per_measure = 960; view.area_canvas_rows = 9600;
+    view.area_range_begin_row = 120; view.area_range_end_row = 960;
+    view.area_delete_supported = compose_area_delete_supported(chart, index, state);
+    expect_draw(view.area_delete_supported == !timing);
+    expect_draw(view.area_delete_supported == compose_area_delete_supported(history, state));
+    (void)fixture.harness.frame();
+    WormUiTestingRect viewport{};
+    section_import_require(worm_ui_frontend_compose_viewport_for_testing(&viewport));
+    const auto y = viewport.y + static_cast<float>(compose_area_y(view, 540) *
+        viewport.height / view.viewport_height_pixels);
+    (void)right_click_at(fixture.harness, 900, y);
+    (void)fixture.harness.frame();
+    const auto target = fixture.harness.drawn_text_center("Delete contents");
+    section_import_require(target.has_value());
+    const auto actions = click_at(fixture.harness, target->first, target->second);
+    const auto emitted = std::ranges::find_if(actions, [](const auto& snapshot) {
+        return snapshot.get().compose_action == WORM_UI_COMPOSE_ACTION_AREA_DELETE;
+    });
+    expect_draw((emitted != actions.end()) == !timing);
+    if (emitted == actions.end()) return;
+    const auto status = dispatch_compose_area_action(emitted->get(), history, state);
+    section_import_require(status.has_value());
+    expect_draw(*status == "Selected area contents deleted.");
+    expect_draw(history.undo.size() == 1);
+    expect_draw(history.document.charts.front().measures.front().notes.empty());
 }

@@ -2,6 +2,10 @@
 
 #include <wormedit/core/sound_slice.h>
 #include <wormedit/core/timing.h>
+#include <wormedit/core/kiai_spans.h>
+#include <wormedit/core/marker_editor.h>
+#include <wormedit/core/sv_recipe.h>
+#include <wormedit/core/timing_lane_controller.h>
 
 #include <algorithm>
 #include <numeric>
@@ -49,6 +53,24 @@ auto selected_objects(const editor_interaction_state_t& state)
     for (const auto id : state.selected_notes)
         selected.insert({editor_selection_object_kind_t::note, id});
     return selected;
+}
+
+auto selected_kiai_boundaries(const song_document_t& document,
+                              const editor_interaction_state_t& state, object_id_t head)
+    -> std::optional<std::vector<editor_selection_object_t>> {
+    if (!head) return std::vector<editor_selection_object_t>{};
+    const auto chart = std::ranges::find(document.charts, state.chart, &chart_document_t::id);
+    if (chart == document.charts.end()) return std::nullopt;
+    const auto indexed = build_measure_index(*chart);
+    const auto* index = std::get_if<measure_index_t>(&indexed);
+    if (!index) return std::nullopt;
+    for (const auto& span : kiai_spans_of(*chart, *index)) {
+        if (span.head != head) continue;
+        std::vector<editor_selection_object_t> result{{editor_selection_object_kind_t::kiai_event, span.head}};
+        if (!span.open_ended) result.push_back({editor_selection_object_kind_t::kiai_event, span.tail});
+        return result;
+    }
+    return std::nullopt;
 }
 
 // The BMSON stem point behind a semantic object, if it has one.
@@ -167,11 +189,14 @@ auto collect(chart_clipboard_t& clipboard, const chart_document_t& chart,
 
 auto copy_chart_selection(const song_document_t& document,
                           const editor_interaction_state_t& state,
-                          std::uint64_t expected_revision) -> chart_clipboard_result_t {
+                          std::uint64_t expected_revision, object_id_t kiai_head) -> chart_clipboard_result_t {
     if (document.revision != expected_revision) return {{}, "The document has changed."};
     const auto chart = std::ranges::find(document.charts, state.chart, &chart_document_t::id);
     if (chart == document.charts.end()) return {{}, "The selected chart no longer exists."};
     auto selected = selected_objects(state);
+    const auto boundaries = selected_kiai_boundaries(document, state, kiai_head);
+    if (!boundaries) return {{}, "The selected Kiai area no longer exists."};
+    selected.insert(boundaries->begin(), boundaries->end());
     if (selected.empty()) return {{}, "Select notes, BGM events or timing objects to copy."};
     if (selected.size() > maximum_objects) return {{}, "The clipboard object limit was exceeded."};
     const auto indexed = build_measure_index(*chart);
@@ -193,17 +218,105 @@ auto copy_chart_selection(const song_document_t& document,
     return {std::move(clipboard), {}};
 }
 
-auto cut_chart_selection(document_history_t& history, editor_interaction_state_t& state,
-                         std::uint64_t expected_revision) -> chart_clipboard_result_t {
-    auto result = copy_chart_selection(history.document, state, expected_revision);
-    if (!result) return result;
+namespace {
+auto selection_error(std::string message) -> editor_interaction_result_t {
+    return {.diagnostics = {{.severity = diagnostic_severity_t::error,
+        .code = diagnostic_code_t::unsupported_feature, .message = std::move(message)}}};
+}
+
+auto selection_timing_lane(editor_selection_object_kind_t kind) -> std::optional<timing_lane_kind_t> {
+    using selection_t = editor_selection_object_kind_t;
+    switch (kind) {
+    case selection_t::bpm_event: return timing_lane_kind_t::bpm;
+    case selection_t::scroll_event: return timing_lane_kind_t::scroll;
+    case selection_t::speed_event: return timing_lane_kind_t::speed;
+    case selection_t::stop_event: return timing_lane_kind_t::stop;
+    case selection_t::delay_event: return timing_lane_kind_t::delay;
+    case selection_t::warp_event: return timing_lane_kind_t::warp;
+    case selection_t::kiai_event: return timing_lane_kind_t::kiai;
+    case selection_t::timing_anchor: return timing_lane_kind_t::anchor;
+    default: return std::nullopt;
+    }
+}
+
+auto stage_selection_spans(document_history_t& staged, editor_interaction_state_t& state,
+                           const selection_delete_options_t& options,
+                           const std::vector<editor_selection_object_t>& boundaries) -> diagnostic_list_t {
+    if (options.timing_locked && (options.kiai_head || options.recipe))
+        return selection_error("Timing is locked.").diagnostics;
+    if (options.kiai_head) {
+        const auto edited = apply_marker_edit(staged, staged.document.revision,
+            edit_kiai_span_action_t{.chart = state.chart, .edit = {.head = options.kiai_head}});
+        if (!edited) return edited.diagnostics;
+        std::erase_if(state.selected_objects, [&](const auto& object) {
+            return std::ranges::find(boundaries, object) != boundaries.end();
+        });
+    }
+    if (options.recipe) {
+        const auto edited = apply_sv_recipe_edit(staged, staged.document.revision,
+            delete_sv_recipe_action_t{state.chart, options.recipe});
+        if (!edited) return edited.diagnostics;
+    }
+    return {};
+}
+
+auto stage_selection_timing(document_history_t& staged, editor_interaction_state_t& state,
+                            bool timing_locked) -> diagnostic_list_t {
+    std::vector<timing_lane_event_ref_t> timing;
+    std::vector<editor_selection_object_t> other;
+    for (const auto& object : state.selected_objects) {
+        if (const auto lane = selection_timing_lane(object.kind)) timing.push_back({*lane, object.id});
+        else other.push_back(object);
+    }
+    if (timing.empty()) return {};
+    const auto deleted = delete_timing_lane_event_group(staged, state.chart, timing,
+                                                       staged.document.revision, timing_locked);
+    if (!deleted) return deleted.diagnostics;
+    state.selected_objects = std::move(other);
+    return {};
+}
+} // namespace
+
+auto delete_selection_all(document_history_t& history, editor_interaction_state_t& state,
+                          std::uint64_t expected_revision, const selection_delete_options_t& options)
+    -> editor_interaction_result_t {
+    if (history.document.revision != expected_revision) return selection_error("The document has changed.");
+    if (has_pending_editor_gesture(state)) return selection_error("Finish or cancel the active gesture first.");
+    const auto boundaries = selected_kiai_boundaries(history.document, state, options.kiai_head);
+    if (!boundaries) return selection_error("The selected Kiai area no longer exists.");
     auto proposed_state = state;
     const auto selected = selected_objects(state);
     proposed_state.selected_objects.assign(selected.begin(), selected.end());
-    const auto deleted = dispatch_editor_action(history, proposed_state,
-                                                delete_editor_selection_action_t{});
-    if (!deleted) return {{}, "The selection could not be cut."};
+    proposed_state.selected_notes.clear();
+    const bool explicit_selection = !selected.empty() || options.kiai_head || options.recipe;
+    auto staged = make_document_history(history.document, 1);
+    auto diagnostics = stage_selection_spans(staged, proposed_state, options, *boundaries);
+    if (!diagnostics.empty()) return {.diagnostics = std::move(diagnostics)};
+    diagnostics = stage_selection_timing(staged, proposed_state, options.timing_locked);
+    if (!diagnostics.empty()) return {.diagnostics = std::move(diagnostics)};
+    if (!explicit_selection || !proposed_state.selected_objects.empty()) {
+        const auto deleted = dispatch_editor_action(staged, proposed_state, delete_editor_selection_action_t{});
+        if (!deleted) return deleted;
+    }
+    if (staged.undo.empty()) return {.accepted = true};
+    const auto committed = commit_document_command(history, std::move(staged.document), options.label);
+    if (!committed) return {.diagnostics = committed.diagnostics};
+    proposed_state.selected_notes.clear();
+    proposed_state.selected_objects.clear();
     state = std::move(proposed_state);
+    return {.accepted = true, .document_changed = true, .diagnostics = committed.diagnostics};
+}
+
+auto cut_chart_selection(document_history_t& history, editor_interaction_state_t& state,
+                         std::uint64_t expected_revision, selection_delete_options_t options)
+    -> chart_clipboard_result_t {
+    if (options.recipe) return {{}, "SV recipes cannot be copied to the chart clipboard."};
+    auto result = copy_chart_selection(history.document, state, expected_revision, options.kiai_head);
+    if (!result) return result;
+    options.label = "Cut selection";
+    const auto deleted = delete_selection_all(history, state, expected_revision, options);
+    if (!deleted) return {{}, deleted.diagnostics.empty() ? "The selection could not be cut."
+                                                        : deleted.diagnostics.front().message};
     return result;
 }
 

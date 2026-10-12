@@ -1,4 +1,5 @@
 #include "wormedit/config.h"
+#include "ui/nuklear/catalog_confirmation.h"
 #include "ui/workspace_menu.h"
 #include "ui/nuklear/menu_bar.h"
 #if defined(WORMEDIT_HAS_MACOS_MENU)
@@ -795,8 +796,8 @@ static bool capture_tap_timing_key(const SDL_KeyboardEvent& event) {
 
 WormUiMetadataDropTarget worm_ui_frontend_metadata_drop_target(uint32_t window_id, float x,
                                                                 float y) {
-    if (!g_context || !g_window ||
-        (window_id != 0 && window_id != SDL_GetWindowID(g_window)) || !std::isfinite(x) ||
+    if (!g_context ||
+        (window_id != 0 && (!g_window || window_id != SDL_GetWindowID(g_window))) || !std::isfinite(x) ||
         !std::isfinite(y))
         return {};
     return worm_ui_nuklear_metadata_drop_target(x, y);
@@ -867,6 +868,10 @@ bool worm_ui_frontend_stage_sound_slot_batch(uint64_t project, uint64_t chart, u
     uint16_t first_slot, const WormUiSoundSlotImportItem* items, size_t count, const char* reason) {
     auto& state = worm_ui_nuklear_compose_state();
     if (!state.keysound_slots_mode) return false;
+    if (wormedit::ui::nuklear::slot_review_active(state) || state.keysound_pending_file) {
+        state.keysound_slot_feedback = "Finish the current WAV slot review before choosing another file.";
+        return false;
+    }
     worm_ui_sound_slot_batch_stage(state.keysound_slot_batch, project, chart, revision,
                                    first_slot, items, count, reason);
     return true;
@@ -881,6 +886,10 @@ bool worm_ui_frontend_stage_sound_slot_file_at(uint64_t project, uint64_t chart,
     uint64_t revision, uint16_t slot, uint64_t occupied_resource, const char* path) {
     auto& state = worm_ui_nuklear_compose_state();
     if (!state.keysound_slots_mode) return false;
+    if (wormedit::ui::nuklear::slot_review_active(state) || state.keysound_pending_file) {
+        state.keysound_slot_feedback = "Finish the current WAV slot review before choosing another file.";
+        return false;
+    }
     if (!path || slot == 0 || slot > 1295 || state.keysound_slots_project != project ||
         state.keysound_slots_chart != chart || state.keysound_slots_revision != revision) {
         state.keysound_slot_feedback = "The selected WAV slot is no longer available.";
@@ -917,15 +926,15 @@ bool worm_ui_frontend_stage_sound_slot_file(uint64_t project, uint64_t chart, ui
 }
 
 bool worm_ui_frontend_bga_list_contains(uint32_t window_id, float x, float y) {
-    if (!g_window || (window_id && SDL_GetWindowID(g_window) != window_id)) return false;
+    if (!g_context || (window_id && (!g_window || SDL_GetWindowID(g_window) != window_id))) return false;
     const auto& state = worm_ui_nuklear_compose_state();
     return state.bga_list_valid && x >= state.bga_list_x && y >= state.bga_list_y &&
         x < state.bga_list_x + state.bga_list_width && y < state.bga_list_y + state.bga_list_height;
 }
 
 bool worm_ui_frontend_sound_list_contains(uint32_t window_id, float x, float y) {
-    if (!g_context || !g_window ||
-        (window_id != 0 && window_id != SDL_GetWindowID(g_window)) || !std::isfinite(x) ||
+    if (!g_context ||
+        (window_id != 0 && (!g_window || window_id != SDL_GetWindowID(g_window))) || !std::isfinite(x) ||
         !std::isfinite(y))
         return false;
     const auto& audio = worm_ui_nuklear_audio_state();

@@ -1773,17 +1773,11 @@ auto is_bms_wav_identity(const target_resource_identity_t& identity) -> bool {
         });
 }
 
-struct wav_slot_owner_t {
-    resource_id_t resource;
-    bool ambiguous{};
-};
-
-auto find_wav_slot_owner(const song_document_t& song, std::size_t value) -> wav_slot_owner_t {
-    wav_slot_owner_t result;
+auto find_wav_slot_owner(const song_document_t& song, std::size_t value) -> bms_wav_slot_owner_t {
+    bms_wav_slot_owner_t result;
     for (const auto& resource : song.resources) {
         const auto owns_slot = std::ranges::any_of(resource.target_identities, [value](const auto& id) {
-            if (!is_bms_wav_identity(id)) return false;
-            return decode_supported_wav_identifier(id.identifier) == value;
+            return bms_wav_slot_value(id) == value;
         });
         if (!owns_slot) continue;
         if (result.resource && result.resource != resource.id) result.ambiguous = true;
@@ -1903,10 +1897,20 @@ auto import_slot_batch_entry(document_history_t& draft, import_resource_asset_ac
     }
     target->asset = temporary.asset;
     target->missing = false;
+    if (!file.name.empty()) target->name = file.name;
     return true;
 }
 
 } // namespace
+
+auto bms_wav_slot_value(const target_resource_identity_t& identity) -> std::optional<std::size_t> {
+    if (!is_bms_wav_identity(identity)) return std::nullopt;
+    return decode_supported_wav_identifier(identity.identifier);
+}
+
+auto bms_wav_slot_owner(const song_document_t& document, std::size_t slot) -> bms_wav_slot_owner_t {
+    return find_wav_slot_owner(document, slot);
+}
 
 auto apply_bms_wav_slot_assignment(document_history_t& history,
                                    std::uint64_t expected_revision,
@@ -1941,37 +1945,9 @@ auto apply_bms_wav_slot_assignment(document_history_t& history,
     }
 
     auto draft = make_document_history(history.document, 1, false);
-    auto imported_action = action.imported_file;
-    imported_action.allocate_bms_identifier = false;
-    const auto imported = apply_resource_asset_import(draft, draft.document.revision,
-                                                      imported_action);
-    if (!imported) {
-        result.diagnostics = imported.diagnostics;
-        return result;
-    }
-    if (!owner.resource) {
-        if (!replace_imported_resource_with_exact_slot(draft, action.identifier, result)) return result;
-        return commit_document_command(history, std::move(draft.document), "Assign BMS WAV slot");
-    }
-
-    const auto temporary = draft.document.resources.back();
-    std::erase_if(draft.document.resources, [&temporary](const auto& resource) {
-        return resource.id == temporary.id;
-    });
-    const auto target = std::ranges::find(draft.document.resources, owner.resource,
-                                          &resource_entry_t::id);
-    if (target == draft.document.resources.end()) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "occupied BMS WAV slot sound disappeared during import");
-        return result;
-    }
-    if (target->asset == temporary.asset && !target->missing &&
-        (imported_action.name.empty() || target->name == imported_action.name)) return result;
-    target->asset = temporary.asset;
-    target->missing = false;
-    if (!imported_action.name.empty()) target->name = imported_action.name;
+    if (!import_slot_batch_entry(draft, action.imported_file, *value, owner.resource, result)) return result;
     return commit_document_command(history, std::move(draft.document),
-                                    "Replace BMS WAV slot sound");
+        owner.resource ? "Replace BMS WAV slot sound" : "Assign BMS WAV slot");
 }
 
 auto apply_bms_wav_slot_batch_assignment(document_history_t& history,

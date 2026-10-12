@@ -3,6 +3,7 @@
 #include "wormedit/core/document.h"
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/compose_resources.h"
+#include "ui/nuklear/catalog_confirmation.h"
 #include "ui/nuklear/compose_panel_internal.h"
 #include <wormedit/core/interaction.h>
 #include "ui/nuklear/chrome.h"
@@ -35,7 +36,7 @@ auto grouped_count(std::size_t value) -> std::string {
         text.insert(position - 3, ",");
     return text;
 }
-struct Picker { std::mutex mutex; bool open{}; std::vector<std::string> paths; };
+struct Picker { std::mutex mutex; bool open{}; wormedit::ui::chrome::PopupContextStamp origin; std::vector<std::string> paths; };
 Picker picker;
 auto advance_eligible(const WormUiComposeView& view, std::uint64_t resource_id) -> bool {
     return view.bga_advance_ids &&
@@ -49,8 +50,12 @@ void SDLCALL picked(void*, const char* const* paths, int) {
     for (std::size_t index = 0; paths && paths[index] && index < WORM_UI_SOUND_DROP_CAPACITY; ++index)
         picker.paths.emplace_back(paths[index]);
 }
-void open_picker() {
-    { std::lock_guard lock{picker.mutex}; if (picker.open) return; picker.open = true; }
+void open_picker(const WormUiComposeView& view) {
+    { std::lock_guard lock{picker.mutex};
+      if (picker.open) return;
+      picker.open = true;
+      picker.origin = wormedit::ui::nuklear::catalog_context(view);
+      picker.paths.clear(); }
     static const SDL_DialogFileFilter filter{"Images", "png;jpg;jpeg;bmp;gif;tga;ppm"};
     SDL_ShowOpenFileDialog(picked, nullptr, SDL_GetKeyboardFocus(), &filter, 1, nullptr, true);
 }
@@ -66,9 +71,16 @@ auto raise(WormUiWorkspaceAction& action, const WormUiComposeView& view,
 void import_picked(WormUiWorkspaceAction& action, const WormUiComposeView& view,
                    worm_ui_nuklear_compose_state_t& state) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
+    wormedit::ui::chrome::PopupContextStamp origin;
     { std::lock_guard lock{picker.mutex};
       if (picker.paths.empty()) return;
-      state.bga_staged_paths = std::move(picker.paths); picker.paths.clear(); }
+      state.bga_staged_paths = std::move(picker.paths); picker.paths.clear();
+      origin = picker.origin; }
+    if (!wormedit::ui::chrome::popup_context_matches(origin,
+            wormedit::ui::nuklear::catalog_context(view))) {
+        state.bga_staged_paths.clear();
+        return;
+    }
     state.bga_staged_path_pointers.clear();
     for (const auto& path : state.bga_staged_paths) state.bga_staged_path_pointers.push_back(path.c_str());
     if (!raise(action, view, WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES)) return;
@@ -146,7 +158,7 @@ void toolbar(nk_context* context, const WormUiComposeView& view, worm_ui_nuklear
     if (IconButton{Glyph::chevron_right, "Advance after place: arm the next available BGA shown",
                    state.bga_auto_increment_on_place}.render(context))
         state.bga_auto_increment_on_place = !state.bga_auto_increment_on_place;
-    if (DrawnIconButton{icons::plus, "Add BGA images (or drop images here)"}.render(context)) open_picker();
+    if (DrawnIconButton{icons::plus, "Add BGA images (or drop images here)"}.render(context)) open_picker(view);
     if (DrawnIconButton{icons::trash, "Remove unused BGA resources"}.render(context))
         (void)raise(action, view, WORM_UI_COMPOSE_ACTION_REMOVE_UNUSED_BGA);
     if (DrawnIconButton{icons::select_all, "Select every BGA shown"}.render(context))
@@ -157,11 +169,8 @@ void toolbar(nk_context* context, const WormUiComposeView& view, worm_ui_nuklear
                        state.bga_sort_by_id}.render(context)) state.bga_sort_by_id = !state.bga_sort_by_id;
         if (IconButton{Glyph::rotate_ccw, "Renumber BMS IDs by name"}.render(context))
         {
-            state.bga_renumber_confirmation_open = true;
-            state.bga_renumber_project = view.project_id;
-            state.bga_renumber_chart = view.chart_id;
-            state.bga_renumber_revision = view.document_revision;
-            state.bga_renumber_resources = state.bga_selection.selected;
+            wormedit::ui::nuklear::open_catalog_confirmation(
+                wormedit::ui::nuklear::catalog_confirmation(state, true), view, state.bga_selection.selected);
         }
     }
 }
@@ -174,46 +183,16 @@ void raise_bga_renumber(const WormUiComposeView& view, worm_ui_nuklear_compose_s
     action.compose_sound_resource_count = state.bga_staged_ids.size();
     action.compose_renumber_all = all;
     action.compose_renumber_bga = true;
-    state.bga_renumber_confirmation_open = false;
-    state.bga_renumber_release_pending = true;
-    state.bga_renumber_resources.clear();
+    wormedit::ui::nuklear::close_catalog_confirmation(
+        wormedit::ui::nuklear::catalog_confirmation(state, true));
 }
 void renumber_confirmation(nk_context* context, const WormUiComposeView& view,
-                           worm_ui_nuklear_compose_state_t& state,
-                           WormUiWorkspaceAction& action) {
-    if (!state.bga_renumber_confirmation_open) return;
-    const auto bounds = nk_rect(0, 60, std::min(360.0f, nk_window_get_content_region(context).w), 204);
-    if (!view.bga_ids_available || state.bga_renumber_project != view.project_id ||
-        state.bga_renumber_chart != view.chart_id ||
-        state.bga_renumber_revision != view.document_revision) {
-        state.bga_renumber_confirmation_open = false;
-        state.bga_renumber_release_pending = true;
-        state.bga_renumber_resources.clear();
-        wormedit::ui::chrome::dismiss_popup(context, "Renumber BMP IDs", bounds);
-        return;
-    }
-    if (!nk_popup_begin(context, NK_POPUP_STATIC, "Renumber BMP IDs",
-                        NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR,
-                        bounds)) {
-        state.bga_renumber_confirmation_open = false;
-        state.bga_renumber_release_pending = true;
-        state.bga_renumber_resources.clear();
-        return;
-    }
-    nk_layout_row_dynamic(context, 66, 1);
-    nk_label_wrap(context, "Renumber BMP IDs in natural name order? Choose selected images or all BGA.");
-    nk_layout_row_dynamic(context, 28, 2);
-    if (!state.bga_renumber_resources.empty() && nk_button_label(context, "Selected"))
-        raise_bga_renumber(view, state, action, false);
-    if (nk_button_label(context, "All BGA")) raise_bga_renumber(view, state, action, true);
-    if (nk_button_label(context, "Cancel")) {
-        state.bga_renumber_confirmation_open = false;
-        state.bga_renumber_release_pending = true;
-        state.bga_renumber_resources.clear();
-    }
-    if (!state.bga_renumber_confirmation_open) nk_popup_close(context);
-    nk_popup_end(context);
+                           worm_ui_nuklear_compose_state_t& state, WormUiWorkspaceAction& action) {
+    const auto choice = wormedit::ui::nuklear::render_catalog_confirmation(context, view,
+        wormedit::ui::nuklear::catalog_confirmation(state, true), true);
+    if (choice) raise_bga_renumber(view, state, action, *choice);
 }
+
 constexpr float bga_row_height = 22.0f;
 
 void draw_bga_resource_row(nk_context* context, const WormUiComposeView& view,

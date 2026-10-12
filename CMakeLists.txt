@@ -488,6 +488,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/application_edit_helpers.cpp
         src/sys/application_frame_projection.cpp
         src/sys/application_frame_services.cpp
+        src/sys/resource_drop_router.cpp
         src/sys/frame_pacing.cpp
         src/sys/sound_drop_transaction.cpp
         src/sys/application_startup.cpp

@@ -2626,7 +2626,7 @@ void reset_project_runtime_state(Context& context) {
     context.timing_grid_ref = {};
     context.compose_viewport_input_ref.escape();
     context.compose_navigation_input_ref.cancel();
-    context.metadata_drop_ref.clear_paths();
+    context.metadata_drop_ref = {};
     wormedit::sys::reset_application_project_edit_state(context.application_command_state_ref);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     post_audio_inventory_feedback(
@@ -3140,15 +3140,6 @@ auto dispatch_clipboard_menu(Context& context, const WormUiWorkspaceAction& acti
     return true;
 }
 
-void import_dropped_bga(bool loaded, wormedit::document_history_t& history,
-    wormedit::workspace_controller_t& workspace, std::vector<std::string>& paths, wormedit::notification_sink_t& notifications) {
-    if (paths.empty()) return;
-    if (loaded && workspace.selected_chart)
-        static_cast<void>(wormedit::sys::import_bga_files(history, workspace, *workspace.selected_chart, paths, notifications));
-    else notifications.post(wormedit::notification_severity_t::warning, wormedit::notification_source_t::import_,
-        "Open a project and select a difficulty before adding images.");
-    paths.clear();
-}
 
 void project_bga_dock(wormedit::sys::bga_dock_runtime_t& runtime,
     const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
@@ -3239,7 +3230,7 @@ auto stage_dropped_sound_slots(const wormedit::song_document_t& document,
         staged ? "Sound staged for the selected WAV slot." : "The WAV slots target is no longer active.");
 }
 
-void import_dropped_keysounds(bool session_loaded, wormedit::document_history_t& history,
+void import_dropped_resources(bool session_loaded, wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace,
     std::vector<wormedit::sys::sound_drop_batch_t>& batches, wormedit::notification_sink_t& notifications) {
     WormUiKeysoundDockRequest dock{};
@@ -3255,12 +3246,14 @@ void import_dropped_keysounds(bool session_loaded, wormedit::document_history_t&
             origin.project_id != history.document.id.value ||
             origin.chart_id != workspace.selected_chart->value || origin.revision != history.document.revision ||
             origin.tab != static_cast<WormUiWorkspaceTab>(workspace.active_tab) ||
-            origin.slots_mode != slots_mode) {
+            (origin.target != wormedit::sys::resource_drop_target_t::bga && origin.slots_mode != slots_mode)) {
             notifications.post(wormedit::notification_severity_t::warning, wormedit::notification_source_t::import_,
-                "The sound drop target changed; drop the files again.");
+                "The resource drop target changed; drop the files again.");
             continue;
         }
-        if (origin.slots_mode)
+        if (origin.target == wormedit::sys::resource_drop_target_t::bga)
+            static_cast<void>(wormedit::sys::import_bga_files(history, workspace, *workspace.selected_chart, batch.paths, notifications));
+        else if (origin.slots_mode)
             static_cast<void>(stage_dropped_sound_slots(history.document, *workspace.selected_chart, origin.first_slot, batch.paths, notifications));
         else static_cast<void>(stage_sound_import(history.document, *workspace.selected_chart, batch.paths, notifications));
     }
@@ -4230,8 +4223,7 @@ int main(int argc, char** argv) {
     std::string pending_audio_project_path;
     std::string pending_chart_project_path;
     wormedit::sys::sound_drop_transaction_t sound_drop_transaction;
-    std::vector<wormedit::sys::sound_drop_batch_t> pending_sound_batches;
-    std::vector<std::string> pending_bga_paths;
+    std::vector<wormedit::sys::sound_drop_batch_t> pending_resource_batches;
     wormedit::sys::bga_dock_runtime_t bga_dock_runtime;
     std::string pending_bms_encoding_path;
     std::filesystem::path active_project_path =
@@ -4549,15 +4541,14 @@ int main(int argc, char** argv) {
             if (!wormedit::sys::poll_frontend_events(
                     window, metadata_drop, workspace, history, asset_base,
                     can_offer_audio_project_drop(session_loaded, fresh_blank_project, history),
-                    pending_audio_project_path, pending_chart_project_path, sound_drop_transaction, pending_sound_batches, pending_bga_paths,
+                    pending_audio_project_path, pending_chart_project_path, sound_drop_transaction, pending_resource_batches,
                     notification_sink))
                 confirm_unsaved_changes(pending_close, close_target_t::application, workspace_frame_action_context,
                     program_preferences.preferences.general.confirm_unsaved_close);
         }
         {
             wormedit::sys::frame_phase_scope_t drops(wormedit::sys::frame_phase_t::events_drops);
-            import_dropped_keysounds(session_loaded, history, workspace, pending_sound_batches, notification_sink);
-            import_dropped_bga(session_loaded, history, workspace, pending_bga_paths, notification_sink);
+            import_dropped_resources(session_loaded, history, workspace, pending_resource_batches, notification_sink);
             dispatch_dropped_chart_project(workspace_frame_action_context,
                 pending_chart_project_path, pending_close,
                 program_preferences.preferences.general.confirm_unsaved_close);

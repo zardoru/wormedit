@@ -27,15 +27,17 @@ void metadata_drop_state_t::clear_lane_profile_preview() {
     lane_profile_preview.reset();
 }
 
-void metadata_drop_state_t::discard_if_stale(std::uint64_t current_revision,
+void metadata_drop_state_t::discard_if_stale(std::uint64_t current_project, std::uint64_t current_revision,
                                              std::uint64_t current_chart_id) {
     if ((!music_path.empty() || !output_path.empty()) &&
-        (music_revision != current_revision || chart_id != current_chart_id))
+        (project_id != current_project || music_revision != current_revision || chart_id != current_chart_id))
         clear_paths();
-    if (channel_map_preview && (channel_map_preview->revision != current_revision ||
+    if (channel_map_preview && (channel_map_preview->song.value != current_project ||
+                                channel_map_preview->revision != current_revision ||
                                 channel_map_preview->chart.value != current_chart_id))
         clear_channel_map_preview();
-    if (lane_profile_preview && (lane_profile_preview->revision != current_revision ||
+    if (lane_profile_preview && (lane_profile_preview->song.value != current_project ||
+                                 lane_profile_preview->revision != current_revision ||
                                  lane_profile_preview->chart.value != current_chart_id))
         clear_lane_profile_preview();
 }
@@ -83,6 +85,7 @@ void metadata_drop_state_t::handle_file_drop(
         music_path.assign(dropped);
         music_target = target;
     }
+    project_id = history.document.id.value;
     music_revision = history.document.revision;
     chart_id = workspace.selected_chart ? workspace.selected_chart->value : 0;
 }

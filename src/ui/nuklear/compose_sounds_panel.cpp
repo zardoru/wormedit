@@ -1,5 +1,6 @@
 #include "ui/nuklear/compose_sounds_panel.h"
 #include "ui/nuklear/compose_resources.h"
+#include "ui/nuklear/catalog_confirmation.h"
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/compose_bmson_tab.h"
 #include "ui/nuklear/sound_import_state.h"
@@ -227,55 +228,58 @@ void process_pending_slot_file(const SoundsPanel& panel) {
     state.keysound_pending_path.clear();
 }
 
+void consume_slot_picker_result(const SoundsPanel& panel, const picker_target_t& target) {
+    auto& state = *panel.state;
+    if (state.keysound_staged_paths.empty()) return;
+    if (!wormedit::ui::chrome::popup_context_matches(
+            {target.project, target.chart, target.revision}, wormedit::ui::nuklear::catalog_context(*panel.view)) ||
+        !state.keysound_slots_mode || target.slot == 0 || target.slot > 1295) {
+        state.keysound_slot_feedback = "The WAV slot target changed; choose the files again.";
+        state.keysound_staged_paths.clear();
+        return;
+    }
+    if (state.keysound_staged_paths.size() > 1) {
+        raise_sound_slot_batch_stage(panel, target.slot);
+        return;
+    }
+    const auto path = state.keysound_staged_paths.front();
+    state.keysound_staged_paths.clear();
+    (void)worm_ui_frontend_stage_sound_slot_file_at(target.project, target.chart, target.revision,
+        target.slot, target.occupied_resource, path.c_str());
+    process_pending_slot_file(panel);
+}
+
 void import_picked_files(const SoundsPanel& panel) {
     auto& state = *panel.state;
     if (panel.action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     picker_target_t target{};
-    if (take_picker_result(state.keysound_staged_paths, target)) {
-        if (target.slots_mode) {
-            if (state.keysound_staged_paths.empty()) return;
-            if (target.project != panel.view->project_id ||
-                target.chart != panel.view->chart_id ||
-                target.revision != panel.view->document_revision ||
-                !state.keysound_slots_mode || target.slot == 0 || target.slot > 1295) {
-                state.keysound_slot_feedback = "The WAV slot target changed; choose the files again.";
-                state.keysound_staged_paths.clear();
-                return;
-            }
-            if (state.keysound_staged_paths.size() > 1) {
-                raise_sound_slot_batch_stage(panel, target.slot);
-                return;
-            }
-            if (state.keysound_staged_paths.size() != 1) {
-                state.keysound_slot_feedback = "Choose at least one audio file.";
-                return;
-            }
-            state.keysound_pending_project = target.project;
-            state.keysound_pending_chart = target.chart;
-            state.keysound_pending_revision = target.revision;
-            state.keysound_pending_slot = target.slot;
-            state.keysound_pending_occupied_resource = target.occupied_resource;
-            state.keysound_pending_path = state.keysound_staged_paths.front();
-            state.keysound_pending_file = true;
-        } else if (target.project != panel.view->project_id ||
-                   target.chart != panel.view->chart_id ||
-                   target.revision != panel.view->document_revision ||
-                   state.keysound_slots_mode) {
-            state.keysound_slot_feedback = "The project, chart, revision, or mode changed while the picker was open.";
-            state.keysound_staged_paths.clear();
-            return;
-        } else if (!state.keysound_staged_paths.empty()) {
-            state.keysound_staged_path_pointers.clear();
-            for (const auto& path : state.keysound_staged_paths)
-                state.keysound_staged_path_pointers.push_back(path.c_str());
-            (void)raise(panel, WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES);
-            panel.action->compose_import_paths = state.keysound_staged_path_pointers.data();
-            panel.action->compose_import_path_count = state.keysound_staged_path_pointers.size();
-            return;
-        }
-        state.keysound_staged_paths.clear();
+    if (!take_picker_result(state.keysound_staged_paths, target)) {
+        process_pending_slot_file(panel);
+        return;
     }
-    process_pending_slot_file(panel);
+    if (wormedit::ui::nuklear::slot_review_active(state)) {
+        state.keysound_slot_feedback = "Finish the current WAV slot review before choosing another file.";
+        state.keysound_staged_paths.clear();
+        return;
+    }
+    if (target.slots_mode) {
+        consume_slot_picker_result(panel, target);
+        return;
+    }
+    if (!wormedit::ui::chrome::popup_context_matches(
+            {target.project, target.chart, target.revision}, wormedit::ui::nuklear::catalog_context(*panel.view)) ||
+        state.keysound_slots_mode) {
+        state.keysound_slot_feedback = "The project, chart, revision, or mode changed while the picker was open.";
+        state.keysound_staged_paths.clear();
+        return;
+    }
+    if (state.keysound_staged_paths.empty()) return;
+    state.keysound_staged_path_pointers.clear();
+    for (const auto& path : state.keysound_staged_paths)
+        state.keysound_staged_path_pointers.push_back(path.c_str());
+    (void)raise(panel, WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES);
+    panel.action->compose_import_paths = state.keysound_staged_path_pointers.data();
+    panel.action->compose_import_path_count = state.keysound_staged_path_pointers.size();
 }
 
 // ---- Selection state kept in step with the document ----
@@ -592,11 +596,8 @@ void render_id_sort_controls(const SoundsPanel& panel) {
         state.keysound_sort_by_id = !state.keysound_sort_by_id;
     if (toolbar_button(context, true,
                        IconButton{Glyph::rotate_ccw, "Renumber BMS IDs by name"})) {
-        state.keysound_renumber_confirmation_open = true;
-        state.keysound_renumber_project = panel.view->project_id;
-        state.keysound_renumber_chart = panel.view->chart_id;
-        state.keysound_renumber_revision = panel.view->document_revision;
-        state.keysound_renumber_resources = state.keysound_selection.selected;
+        wormedit::ui::nuklear::open_catalog_confirmation(
+            wormedit::ui::nuklear::catalog_confirmation(state, false), *panel.view, state.keysound_selection.selected);
     }
 }
 
@@ -749,47 +750,14 @@ void raise_sound_renumber(const SoundsPanel& panel, bool all) {
     panel.action->compose_sound_resource_count = state.keysound_staged_ids.size();
     panel.action->compose_renumber_all = all;
     panel.action->compose_renumber_bga = false;
-    state.keysound_renumber_confirmation_open = false;
-    state.keysound_renumber_release_pending = true;
-    state.keysound_renumber_resources.clear();
+    wormedit::ui::nuklear::close_catalog_confirmation(
+        wormedit::ui::nuklear::catalog_confirmation(state, false));
 }
 
 void render_sound_renumber_confirmation(const SoundsPanel& panel) {
-    auto& state = *panel.state;
-    if (!state.keysound_renumber_confirmation_open) return;
-    auto* context = panel.context;
-    const auto region = nk_window_get_content_region(context);
-    const auto bounds = nk_rect(0, 60, std::min(360.0f, region.w), 204);
-    if (!panel.view->keysound_ids_available ||
-        state.keysound_renumber_project != panel.view->project_id ||
-        state.keysound_renumber_chart != panel.view->chart_id ||
-        state.keysound_renumber_revision != panel.view->document_revision) {
-        state.keysound_renumber_confirmation_open = false;
-        state.keysound_renumber_release_pending = true;
-        state.keysound_renumber_resources.clear();
-        wormedit::ui::chrome::dismiss_popup(context, "Renumber WAV IDs", bounds);
-        return;
-    }
-    if (!nk_popup_begin(context, NK_POPUP_STATIC, "Renumber WAV IDs",
-                        NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, bounds)) {
-        state.keysound_renumber_confirmation_open = false;
-        state.keysound_renumber_release_pending = true;
-        state.keysound_renumber_resources.clear();
-        return;
-    }
-    nk_layout_row_dynamic(context, 66, 1);
-    nk_label_wrap(context, "Renumber WAV IDs in natural name order? Choose the selected sounds or the whole list.");
-    nk_layout_row_dynamic(context, 28, 2);
-    if (!state.keysound_renumber_resources.empty() && nk_button_label(context, "Selected"))
-        raise_sound_renumber(panel, false);
-    if (nk_button_label(context, "All sounds")) raise_sound_renumber(panel, true);
-    if (nk_button_label(context, "Cancel")) {
-        state.keysound_renumber_confirmation_open = false;
-        state.keysound_renumber_release_pending = true;
-        state.keysound_renumber_resources.clear();
-    }
-    if (!state.keysound_renumber_confirmation_open) nk_popup_close(context);
-    nk_popup_end(context);
+    const auto choice = wormedit::ui::nuklear::render_catalog_confirmation(panel.context, *panel.view,
+        wormedit::ui::nuklear::catalog_confirmation(*panel.state, false), false);
+    if (choice) raise_sound_renumber(panel, *choice);
 }
 
 void close_sound_slot_confirmation(const SoundsPanel& panel) {

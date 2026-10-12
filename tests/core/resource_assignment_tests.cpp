@@ -859,7 +859,7 @@ TEST_CASE("BMS WAV slot batches replace occupied resources only when confirmed",
     const auto& replaced = history.document.resources.front();
     CHECK(replaced.id == before.resources.front().id);
     CHECK(replaced.asset != before.resources.front().asset);
-    CHECK(replaced.name == before.resources.front().name);
+    CHECK(replaced.name == "Replacement");
     CHECK(replaced.sound_kind == before.resources.front().sound_kind);
     CHECK(replaced.tags == before.resources.front().tags);
     CHECK(replaced.sound_group == before.resources.front().sound_group);

@@ -29,6 +29,17 @@ struct bms_identifier_capacity_t {
                                            std::string_view name_space)
     -> bms_identifier_capacity_t;
 
+// Shared case-insensitive WAV namespace and base-36 slot matching for review
+// and commit. Zero and malformed identifiers never occupy a supported slot.
+[[nodiscard]] auto bms_wav_slot_value(const target_resource_identity_t& identity)
+    -> std::optional<std::size_t>;
+struct bms_wav_slot_owner_t {
+    resource_id_t resource;
+    bool ambiguous{};
+};
+[[nodiscard]] auto bms_wav_slot_owner(const song_document_t& document, std::size_t slot)
+    -> bms_wav_slot_owner_t;
+
 struct renumber_bms_identifiers_action_t {
     std::string name_space;
     // Empty means every resource of this namespace's kind.

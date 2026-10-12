@@ -133,23 +133,9 @@ auto sound_count_text(std::size_t count) -> std::string {
 }
 
 auto bms_wav_identifier_value(const resource_entry_t& resource) -> std::optional<std::size_t> {
-    constexpr auto base = std::size_t{36};
-    const auto digit = [base](unsigned char value) -> int {
-        if (value >= 'a' && value <= 'z')
-            value = static_cast<unsigned char>(value - ('a' - 'A'));
-        if (value >= '0' && value <= '9') return value - '0';
-        if (value >= 'A' && value <= 'Z') return value - 'A' + 10;
-        return -1;
-    };
-    const auto identities = std::span{resource.target_identities};
-    const auto identity = std::ranges::find_if(identities, [](const auto& item) {
-        return item.family == format_family_t::bms && item.namespace_name == "WAV";
-    });
-    if (identity == identities.end() || identity->identifier.size() != 2) return std::nullopt;
-    const auto high = digit(static_cast<unsigned char>(identity->identifier[0]));
-    const auto low = digit(static_cast<unsigned char>(identity->identifier[1]));
-    if (high < 0 || low < 0) return std::nullopt;
-    return static_cast<std::size_t>(high) * base + static_cast<std::size_t>(low);
+    for (const auto& identity : resource.target_identities)
+        if (const auto value = bms_wav_slot_value(identity)) return value;
+    return std::nullopt;
 }
 
 struct slot_owner_t {
@@ -158,38 +144,11 @@ struct slot_owner_t {
     bool ambiguous{};
 };
 
-auto resource_has_wav_slot(const resource_entry_t& resource, std::size_t wanted) -> bool {
-    constexpr auto base = std::size_t{36};
-    const auto digit = [](unsigned char value) -> int {
-        if (value >= 'a' && value <= 'z')
-            value = static_cast<unsigned char>(value - ('a' - 'A'));
-        if (value >= '0' && value <= '9') return value - '0';
-        if (value >= 'A' && value <= 'Z') return value - 'A' + 10;
-        return -1;
-    };
-    for (const auto& identity : resource.target_identities) {
-        if (identity.family != format_family_t::bms || identity.namespace_name != "WAV" ||
-            identity.identifier.size() != 2) continue;
-        const auto high = digit(static_cast<unsigned char>(identity.identifier[0]));
-        const auto low = digit(static_cast<unsigned char>(identity.identifier[1]));
-        if (high >= 0 && low >= 0 && static_cast<std::size_t>(high) * base +
-            static_cast<std::size_t>(low) == wanted) return true;
-    }
-    return false;
-}
-
 auto slot_owner(const song_document_t& document, std::size_t slot) -> slot_owner_t {
-    auto owner = slot_owner_t{};
-    for (const auto& resource : document.resources) {
-        if (!resource_has_wav_slot(resource, slot)) continue;
-        if (owner.id != 0 && owner.id != resource.id.value) {
-            owner.ambiguous = true;
-            continue;
-        }
-        owner.id = resource.id.value;
-        owner.name = resource.name;
-    }
-    return owner;
+    const auto owner = bms_wav_slot_owner(document, slot);
+    const auto entry = std::ranges::find(document.resources, owner.resource, &resource_entry_t::id);
+    return {owner.resource.value, entry == document.resources.end() ? "" : entry->name,
+            owner.ambiguous};
 }
 
 void set_first_error(std::string& reason, std::string next) {

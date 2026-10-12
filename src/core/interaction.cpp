@@ -1325,6 +1325,70 @@ struct note_move_plan_t {
     std::optional<song_document_t> staged_bgm_document;
 };
 
+struct moved_stem_events_t {
+    std::vector<std::size_t> channels;
+    std::vector<object_id_t> events;
+
+    [[nodiscard]] auto contains(object_id_t id) const -> bool {
+        return std::ranges::find(events, id) != events.end();
+    }
+};
+
+// Gives each moved tap's retained slice event the tap's new position (and lane, when playable).
+auto move_linked_sound_events(chart_document_t& chart, const note_move_plan_t& plan) -> moved_stem_events_t {
+    moved_stem_events_t moved;
+    for (const auto& candidate : plan.moved) {
+        const auto* note = find_note(chart, candidate.id);
+        if (!note || !note->sound_channel_event) continue;
+        for (std::size_t index = 0; index < chart.sound_channels.size(); ++index) {
+            auto& events = chart.sound_channels[index].events;
+            const auto event = std::ranges::find(events, *note->sound_channel_event, &sound_channel_event_t::id);
+            if (event == events.end()) continue;
+            event->position = candidate.position;
+            event->end = candidate.end_position;
+            if (event->playable) event->lane = candidate.lane;
+            moved.channels.push_back(index);
+            moved.events.push_back(event->id);
+        }
+    }
+    std::ranges::sort(moved.channels);
+    moved.channels.erase(std::unique(moved.channels.begin(), moved.channels.end()), moved.channels.end());
+    return moved;
+}
+
+// Taps moved together may share a row; landing on a row another tap holds is refused.
+auto landed_on_taken_row(const sound_channel_t& channel, const moved_stem_events_t& moved) -> const sound_channel_event_t* {
+    for (const auto& event : channel.events) {
+        if (!moved.contains(event.id)) continue;
+        const auto taken = std::ranges::any_of(channel.events, [&](const auto& other) {
+            return !moved.contains(other.id) && other.position == event.position && other.playable == event.playable;
+        });
+        if (taken) return &event;
+    }
+    return nullptr;
+}
+
+// A BMSON tap that stands for a stem point drags its retained slice event along: the audio stays
+// anchored at the stem's last restart, so moving a continuation only moves where the stem is cut,
+// while moving a restart moves the audio. The move is refused when it lands on a row another tap
+// of the stem holds, or when the stem's slices could no longer be derived.
+auto sync_linked_sound_events(chart_document_t& chart, const note_move_plan_t& plan,
+                              const song_document_t& document) -> std::optional<diagnostic_t> {
+    const auto moved = move_linked_sound_events(chart, plan);
+    for (const auto index : moved.channels) {
+        const auto& channel = chart.sound_channels[index];
+        if (const auto* taken = landed_on_taken_row(channel, moved))
+            return error(diagnostic_code_t::collision, "another point of this stem is already on that row", taken->id);
+        const auto asset = std::ranges::find(document.audio_assets, channel.source_clip.source, &audio_asset_t::id);
+        if (asset == document.audio_assets.end() || asset->stream.sample_rate == 0) continue;
+        if (!derive_sound_channel_slices(chart, channel, asset->stream.sample_rate, asset->stream.frame_count))
+            return error(diagnostic_code_t::invalid_resolution,
+                         "moving this point would leave the stem with unusable slices", channel.id);
+    }
+    return std::nullopt;
+}
+
+
 struct note_move_parameters_t {
     const note_t* reference{};
     local_position_t snapped_position;
@@ -2555,6 +2619,26 @@ auto validate_assignment_intervals(std::span<const assignment_interval_t> interv
     return std::nullopt;
 }
 
+auto apply_note_lane_assignment_document(document_history_t& history, chart_id_t chart_id,
+    std::span<const assignment_candidate_t> candidates, lane_id_t lane, std::string label)
+    -> document_command_result_t {
+    auto proposed = history.document;
+    auto* chart = find_chart(proposed, chart_id);
+    note_move_plan_t plan;
+    plan.moved.reserve(candidates.size());
+    for (const auto& candidate : candidates) {
+        auto* note = find_note(*chart, candidate.note->id);
+        if (!note) return {.revision = history.document.revision,
+            .diagnostics = {error(diagnostic_code_t::invalid_id, "lane assignment target disappeared")}};
+        plan.moved.push_back({.id = note->id, .lane = lane, .position = note->position,
+                              .end_position = note->end});
+        note->lane = lane;
+    }
+    if (const auto failure = sync_linked_sound_events(*chart, plan, history.document))
+        return {.revision = history.document.revision, .diagnostics = {*failure}};
+    return commit_document_command(history, std::move(proposed), std::move(label));
+}
+
 auto assign_selected_notes_to_lane(lane_assignment_context_t context,
                                    const assign_selected_objects_to_lane_action_t& action)
     -> editor_interaction_result_t {
@@ -2581,32 +2665,14 @@ auto assign_selected_notes_to_lane(lane_assignment_context_t context,
             .chart = context.state.chart,
             .object = {editor_selection_object_kind_t::note, candidates.front().note->id}};
     }
-    auto proposed = context.history.document;
-    auto* chart = find_chart(proposed, context.state.chart);
-    bool changed = false;
-    std::size_t assigned_count{};
-    for (auto& measure : chart->measures) {
-        for (auto& note : measure.notes) {
-            if (!assigned_ids.contains(note.id.value))
-                continue;
-            changed = changed || note.lane != action.lane;
-            note.lane = action.lane;
-            ++assigned_count;
-        }
-    }
-    if (assigned_count != candidates.size()) {
-        return diagnostic_result(context.history, context.state,
-                                 {error(diagnostic_code_t::invalid_id,
-                                        "lane assignment could not resolve every selected note")});
-    }
+    const auto changed = std::ranges::any_of(candidates, [&](const auto& candidate) {
+        return candidate.note->lane != action.lane;
+    });
     if (changed) {
-        auto command = commit_document_command(
-            context.history, std::move(proposed),
-            action.successive ? "Assign next selected note to lane"
-                              : "Assign selected notes to lane");
-        if (!command)
-            return diagnostic_result(context.history, context.state,
-                                     std::move(command.diagnostics));
+        auto command = apply_note_lane_assignment_document(context.history, context.state.chart,
+            candidates, action.lane, action.successive ? "Assign next selected note to lane"
+                                                     : "Assign selected notes to lane");
+        if (!command) return diagnostic_result(context.history, context.state, std::move(command.diagnostics));
     }
     if (audition)
         audition->document_revision = context.history.document.revision;
@@ -5359,69 +5425,6 @@ auto note_move_changes(const chart_document_t& chart, const note_move_plan_t& pl
             note->end != candidate.end_position) return true;
     }
     return false;
-}
-
-struct moved_stem_events_t {
-    std::vector<std::size_t> channels;
-    std::vector<object_id_t> events;
-
-    [[nodiscard]] auto contains(object_id_t id) const -> bool {
-        return std::ranges::find(events, id) != events.end();
-    }
-};
-
-// Gives each moved tap's retained slice event the tap's new position (and lane, when playable).
-auto move_linked_sound_events(chart_document_t& chart, const note_move_plan_t& plan) -> moved_stem_events_t {
-    moved_stem_events_t moved;
-    for (const auto& candidate : plan.moved) {
-        const auto* note = find_note(chart, candidate.id);
-        if (!note || !note->sound_channel_event) continue;
-        for (std::size_t index = 0; index < chart.sound_channels.size(); ++index) {
-            auto& events = chart.sound_channels[index].events;
-            const auto event = std::ranges::find(events, *note->sound_channel_event, &sound_channel_event_t::id);
-            if (event == events.end()) continue;
-            event->position = candidate.position;
-            event->end = candidate.end_position;
-            if (event->playable) event->lane = candidate.lane;
-            moved.channels.push_back(index);
-            moved.events.push_back(event->id);
-        }
-    }
-    std::ranges::sort(moved.channels);
-    moved.channels.erase(std::unique(moved.channels.begin(), moved.channels.end()), moved.channels.end());
-    return moved;
-}
-
-// Taps moved together may share a row; landing on a row another tap holds is refused.
-auto landed_on_taken_row(const sound_channel_t& channel, const moved_stem_events_t& moved) -> const sound_channel_event_t* {
-    for (const auto& event : channel.events) {
-        if (!moved.contains(event.id)) continue;
-        const auto taken = std::ranges::any_of(channel.events, [&](const auto& other) {
-            return !moved.contains(other.id) && other.position == event.position && other.playable == event.playable;
-        });
-        if (taken) return &event;
-    }
-    return nullptr;
-}
-
-// A BMSON tap that stands for a stem point drags its retained slice event along: the audio stays
-// anchored at the stem's last restart, so moving a continuation only moves where the stem is cut,
-// while moving a restart moves the audio. The move is refused when it lands on a row another tap
-// of the stem holds, or when the stem's slices could no longer be derived.
-auto sync_linked_sound_events(chart_document_t& chart, const note_move_plan_t& plan,
-                              const song_document_t& document) -> std::optional<diagnostic_t> {
-    const auto moved = move_linked_sound_events(chart, plan);
-    for (const auto index : moved.channels) {
-        const auto& channel = chart.sound_channels[index];
-        if (const auto* taken = landed_on_taken_row(channel, moved))
-            return error(diagnostic_code_t::collision, "another point of this stem is already on that row", taken->id);
-        const auto asset = std::ranges::find(document.audio_assets, channel.source_clip.source, &audio_asset_t::id);
-        if (asset == document.audio_assets.end() || asset->stream.sample_rate == 0) continue;
-        if (!derive_sound_channel_slices(chart, channel, asset->stream.sample_rate, asset->stream.frame_count))
-            return error(diagnostic_code_t::invalid_resolution,
-                         "moving this point would leave the stem with unusable slices", channel.id);
-    }
-    return std::nullopt;
 }
 
 auto relocate_moved_notes(chart_document_t& chart, const note_move_plan_t& plan,

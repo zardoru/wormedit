@@ -368,6 +368,7 @@ struct metadata_text_fixture_t {
         workspace.active_tab = wormedit::workspace_tab_t::metadata;
         workspace.selected_chart = wormedit::chart_id_t{1};
         workspace.transport.audio_asset = wormedit::asset_id_t{7};
+        drop.project_id = history.document.id.value;
         drop.chart_id = 1;
         drop.music_revision = history.document.revision;
         drop.music_path = "/tmp/a-long-dropped-audio-source.wav";

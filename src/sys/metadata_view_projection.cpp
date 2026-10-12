@@ -271,11 +271,12 @@ void populate_metadata_view_projection(
     const wormedit::workspace_controller_t& workspace,
     const std::filesystem::path& asset_base, metadata_drop_state_t& metadata_drop,
     runtime::metadata_asset_t& metadata_asset_runtime) {
+    metadata_drop.discard_if_stale(history.document.id.value, history.document.revision,
+        workspace.selected_chart ? workspace.selected_chart->value : 0);
     if (!flattened.view.metadata.visible)
         return;
 
     auto& metadata = flattened.view.metadata;
-    metadata_drop.discard_if_stale(history.document.revision, metadata.chart_id);
     metadata.project_directory = metadata_frame_text(flattened, asset_base.generic_string());
     metadata.import_copy_pending = metadata_asset_runtime.import_pending();
     if (!asset_base.empty()) {

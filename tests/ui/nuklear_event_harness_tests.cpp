@@ -13,6 +13,9 @@
 #include "ui/nuklear/sound_import_runtime.h"
 #include "sys/compose_input.h"
 #include "sys/compose_navigation.h"
+#include "sys/resource_drop_router.h"
+#include "sys/compose_sound_actions.h"
+#include "sys/metadata_actions.h"
 #include "sys/compose_sound_selection.h"
 #include "sys/compose_view.h"
 
@@ -7889,4 +7892,248 @@ TEST_CASE("Production marquee selects a BGA tile through shared projected geomet
     const auto object = editor_selection_object_t{editor_selection_object_kind_t::bga_event, object_id_t{501}};
     expect_t422(std::ranges::find(f.interaction->selected_objects, object) != f.interaction->selected_objects.end());
     expect_t422(f.history.undo.empty());
+}
+
+TEST_CASE("BGA file drops share retained POSITION and reject changed origins",
+          "[frontend-state][event-harness][resource-drop-consolidation]") {
+    const auto changed_project = GENERATE(false, true);
+    nuklear_event_harness_t harness{1280, 900};
+    expect_t422(harness.ready());
+    auto& state = worm_ui_nuklear_compose_state();
+    state.bga_panel_visible = true;
+    (void)harness.frame();
+    expect_t422(state.bga_list_valid);
+    sound_drop_transaction_t transaction;
+    sound_drop_origin_t origin{.project_id = 1, .chart_id = 1, .revision = 1,
+        .tab = WORM_UI_WORKSPACE_TAB_COMPOSE};
+    SDL_Event event{};
+    event.type = SDL_EVENT_DROP_BEGIN;
+    expect_t422(!handle_resource_drop(event, origin, transaction).consumed);
+    event.type = SDL_EVENT_DROP_POSITION;
+    event.drop.x = state.bga_list_x + 10;
+    event.drop.y = state.bga_list_y + 10;
+    expect_t422(worm_ui_frontend_bga_list_contains(0, event.drop.x, event.drop.y));
+    expect_t422(!handle_resource_drop(event, origin, transaction).consumed);
+    event.type = SDL_EVENT_DROP_FILE;
+    event.drop.x = event.drop.y = 0;
+    event.drop.data = "/tmp/drop-image.png";
+    const auto first = handle_resource_drop(event, origin, transaction);
+    expect_t422(first.consumed && !first.completed);
+    event.drop.data = "/tmp/drop-image-two.png";
+    expect_t422(handle_resource_drop(event, origin, transaction).consumed);
+    if (changed_project) ++origin.project_id;
+    event.type = SDL_EVENT_DROP_COMPLETE;
+    event.drop.data = nullptr;
+    const auto result = handle_resource_drop(event, origin, transaction);
+    expect_t422(result.consumed && result.completed.has_value());
+    expect_t422(result.completed->accepted() == !changed_project);
+    expect_t422(result.completed->origin.project_id == 1);
+    expect_t422(result.completed->origin.target == resource_drop_target_t::bga);
+    expect_t422(result.completed->paths == std::vector<std::string>{"/tmp/drop-image.png", "/tmp/drop-image-two.png"});
+    expect_t422(!transaction.active());
+}
+
+TEST_CASE("WAV slot confirmation retains its first file and rejects another staged request",
+          "[frontend-state][event-harness][resource-import-consolidation]") {
+    nuklear_event_harness_t harness{1280, 900};
+    const sound_slots_fixture_t fixture;
+    configure_sound_slots(harness, fixture);
+    stage_sound_slot(harness);
+    (void)harness.frame();
+    auto& state = worm_ui_nuklear_compose_state();
+    expect_t422(state.keysound_slot_confirmation_open);
+    const auto& view = harness.view().compose;
+    expect_t422(!worm_ui_frontend_stage_sound_slot_file_at(view.project_id, view.chart_id,
+        view.document_revision, 2, 501, "/tmp/replacement-two.wav"));
+    (void)harness.frame();
+    expect_t422(state.keysound_slot_confirmation_path == "/tmp/slot-picked.wav");
+}
+
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+TEST_CASE("WAV single and reviewed batch replacements share naming and case-insensitive occupancy",
+          "[frontend-state][event-harness][resource-import-consolidation]") {
+    const auto batch = GENERATE(false, true);
+    const auto lowercase_namespace = GENERATE(false, true);
+    const auto stale = GENERATE(false, true);
+    auto song = t422_song();
+    song.charts.front().source_family = format_family_t::bms;
+    song.resources.front().name = "Old slot name";
+    song.resources.front().target_identities = {{.family = format_family_t::bms, .identifier = "01", .namespace_name = lowercase_namespace ? "wav" : "WAV"}};
+    t422_fixture_t f{std::move(song)};
+    sound_slots_fixture_t slots;
+    slots.sounds[0].resource_id = 1;
+    slots.sounds[0].slot = "01";
+    slots.slots[0] = {.number = 1, .slot = "01", .resource_id = 1, .name = "Old slot name", .placeable = true};
+    configure_sound_slots(f.harness, slots);
+    const auto path = (std::filesystem::path{WORMEDIT_SOURCE_ROOT} / "tests/fixtures/audio/keysound-g4.ogg").string();
+    const auto& view = f.harness.view().compose;
+    if (batch) {
+        const std::array paths{path};
+        const auto prepared = prepare_sound_slot_batch(f.history.document, chart_id_t{1}, 1, paths);
+        expect_t422(prepared.reason.empty() && prepared.items.size() == 1);
+        expect_t422(prepared.items.front().occupied_resource_id == 1);
+        const auto& item = prepared.items.front();
+        const std::array items{WormUiSoundSlotImportItem{path.c_str(), item.name.c_str(),
+            item.occupied_resource_id, item.occupied_name.c_str(), item.ambiguous}};
+        expect_t422(worm_ui_frontend_stage_sound_slot_batch(view.project_id, view.chart_id,
+            view.document_revision, 1, items.data(), items.size(), ""));
+    } else {
+        expect_t422(worm_ui_frontend_stage_sound_slot_file_at(view.project_id, view.chart_id,
+            view.document_revision, 1, 1, path.c_str()));
+    }
+    (void)f.harness.frame();
+    (void)f.harness.frame();
+    if (batch) {
+        const auto replacement = f.harness.drawn_text_center("Replace");
+        expect_t422(replacement.has_value());
+        (void)click_at(f.harness, replacement->first, replacement->second);
+    }
+    const auto choice = f.harness.drawn_text_center(batch ? "Assign files" : "Replace");
+    expect_t422(choice.has_value());
+    const auto frames = click_at(f.harness, choice->first, choice->second);
+    const auto emitted = std::ranges::find_if(frames, [](const auto& frame) {
+        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT ||
+               frame.get().compose_action == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH;
+    });
+    expect_t422(emitted != frames.end());
+    if (stale) {
+        expect_t422(static_cast<bool>(apply_resource_sound_metadata(f.history, f.history.document.revision,
+            {.resource = resource_id_t{1}, .kind = sound_kind_t::keysound, .name = "Concurrent change"})));
+        const auto revision = f.history.document.revision;
+        expect_t422(dispatch_compose_sound_action(emitted->get(), f.history, *f.binding.workspace,
+            chart_id_t{1}, f.application, f.sink).has_value());
+        expect_t422(f.history.document.revision == revision && f.history.undo.size() == 1);
+        expect_t422(f.history.document.resources.front().name == "Concurrent change");
+        expect_t422(f.history.document.resources.front().asset == asset_id_t{1});
+        return;
+    }
+    expect_t422(dispatch_compose_sound_action(emitted->get(), f.history, *f.binding.workspace,
+        chart_id_t{1}, f.application, f.sink).has_value());
+    expect_t422(f.history.undo.size() == 1);
+    expect_t422(f.history.document.resources.front().id == resource_id_t{1});
+    CAPTURE(batch, lowercase_namespace, f.history.document.resources.front().name);
+    expect_t422(f.history.document.resources.front().name == "keysound-g4.ogg");
+    expect_t422(f.history.document.resources.size() == 1);
+    expect_t422(static_cast<bool>(undo_document_command(f.history)));
+    expect_t422(f.history.document.resources.front().name == "Old slot name");
+    expect_t422(f.history.document.resources.front().asset == asset_id_t{1});
+}
+
+#endif
+
+TEST_CASE("Lane key assignment synchronizes the linked BMSON source through the drag resolver",
+          "[frontend-state][event-harness][resource-import-consolidation]") {
+    auto song = placement_stem_song();
+    auto& chart = song.charts.front();
+    chart.sound_channels.front().events.front().playable = true;
+    chart.sound_channels.front().events.front().lane = lane_id_t{1};
+    chart.measures.front().bgm_events.clear();
+    chart.measures.front().notes = {{.id = object_id_t{500}, .position = {measure_id_t{1}, 0},
+        .lane = lane_id_t{1}, .sound = resource_id_t{1}, .sound_channel_event = object_id_t{400}}};
+    t422_fixture_t f{std::move(song)};
+    f.interaction->selected_notes = {object_id_t{500}};
+    f.interaction->selected_objects = {{editor_selection_object_kind_t::note, object_id_t{500}}};
+    f.project();
+    const auto status = t422_lane_press(f, SDL_KMOD_NONE);
+    INFO(status);
+    expect_t422(f.history.undo.size() == 1);
+    const auto& changed = f.history.document.charts.front();
+    expect_t422(changed.measures.front().notes.front().lane == lane_id_t{2});
+    expect_t422(changed.sound_channels.front().events.front().lane == lane_id_t{2});
+}
+
+TEST_CASE("Metadata key-count preview retires when project identity changes with matching revision",
+          "[frontend-state][event-harness][resource-import-consolidation]") {
+    auto history = make_document_history(t422_song());
+    auto binding = make_workspace_controller(history);
+    expect_t422(binding.workspace.has_value());
+    task_scheduler_t scheduler{1, 1};
+    runtime::metadata_asset_t assets;
+    metadata_drop_state_t drop;
+    nuklear_event_harness_t harness{1280, 1400};
+    expect_t422(harness.ready());
+    auto& view = harness.view();
+    view.active_tab = WORM_UI_WORKSPACE_TAB_METADATA;
+    view.compose.visible = false;
+    auto& metadata = view.metadata;
+    metadata.visible = metadata.has_chart = metadata.chart_fields_editable = true;
+    metadata.chart_id = 1;
+    metadata.document_revision = history.document.revision;
+    metadata.chart_name = metadata.chart_author = "";
+    metadata.chart_divisions_per_standard_measure = 960;
+    const std::array choices{WormUiMetadataLaneProfileChoice{"1 key", true, ""}};
+    metadata.lane_profile_choices = choices.data();
+    metadata.lane_profile_choice_count = choices.size();
+    (void)harness.frame();
+    const auto button = harness.drawn_text_center("Preview key count");
+    expect_t422(button.has_value());
+    SDL_Event motion{};
+    motion.type = SDL_EVENT_MOUSE_MOTION;
+    motion.motion.x = button->first;
+    motion.motion.y = button->second;
+    SDL_Event press{};
+    press.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+    press.button.button = SDL_BUTTON_LEFT;
+    press.button.down = true;
+    press.button.x = button->first;
+    press.button.y = button->second;
+    const auto down = harness.frame(std::array{motion, press});
+    press.type = SDL_EVENT_MOUSE_BUTTON_UP;
+    press.button.down = false;
+    const auto up = harness.frame(std::array{motion, press});
+    const auto& action = down.get().metadata_edit != WORM_UI_METADATA_EDIT_NONE ? down.get() : up.get();
+    expect_t422(action.metadata_edit == WORM_UI_METADATA_EDIT_PREVIEW_LANE_PROFILE);
+    expect_t422(dispatch_metadata_action(action, history, *binding.workspace, false,
+        drop, assets, {}, scheduler, false, false).has_value());
+    expect_t422(drop.lane_profile_preview.has_value());
+    history.document.id = song_id_t{2};
+    view.project_id = history.document.id.value;
+    metadata.lane_profile_apply_enabled = true;
+    (void)harness.frame();
+    const auto apply_button = harness.drawn_text_center("Apply key count");
+    expect_t422(apply_button.has_value());
+    const auto apply_frames = click_at(harness, apply_button->first, apply_button->second);
+    const auto apply = std::ranges::find_if(apply_frames, [](const auto& frame) {
+        return frame.get().metadata_edit == WORM_UI_METADATA_EDIT_APPLY_LANE_PROFILE;
+    });
+    expect_t422(apply != apply_frames.end());
+    expect_t422(dispatch_metadata_action(apply->get(), history, *binding.workspace, false,
+        drop, assets, {}, scheduler, false, false).has_value());
+    expect_t422(!drop.lane_profile_preview.has_value());
+    expect_t422(history.undo.empty());
+}
+
+TEST_CASE("WAV and BMP renumber toolbar gestures share stamped confirmation",
+          "[frontend-state][event-harness][resource-import-consolidation]") {
+    const auto bga = GENERATE(false, true);
+    const auto stale = GENERATE(false, true);
+    nuklear_event_harness_t harness{1600, 1100};
+    expect_t422(harness.ready());
+    auto& view = harness.view().compose;
+    view.keysounds_available = view.keysound_ids_available = view.bga_ids_available = true;
+    (void)harness.frame();
+    auto& state = worm_ui_nuklear_compose_state();
+    state.sounds_panel_visible = !bga;
+    state.bga_panel_visible = bga;
+    (void)harness.frame();
+    const auto x = bga ? state.bga_list_x + 6 * 38 + 17 : state.sound_list_x + 9 * 29 + 13;
+    const auto y = bga ? state.bga_list_y + 24 + 13 : state.sound_list_y + 52 + 13;
+    (void)click_at(harness, x, y);
+    expect_t422(bga ? state.bga_renumber_confirmation_open : state.keysound_renumber_confirmation_open);
+    if (stale) {
+        ++view.project_id;
+        const auto retired = harness.frame();
+        expect_t422(!(bga ? state.bga_renumber_confirmation_open : state.keysound_renumber_confirmation_open));
+        expect_t422(retired.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+        return;
+    }
+    const auto button = harness.drawn_text_center(bga ? "All BGA" : "All sounds");
+    expect_t422(button.has_value());
+    const auto frames = click_at(harness, button->first, button->second);
+    const auto emitted = std::ranges::find_if(frames, [](const auto& frame) {
+        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS;
+    });
+    expect_t422(emitted != frames.end());
+    expect_t422(emitted->get().compose_renumber_bga == bga && emitted->get().compose_renumber_all);
+    expect_t422(emitted->get().compose_input_project_id == view.project_id);
 }

@@ -1,6 +1,7 @@
 #include "sys/application_frame_services.h"
 
 #include "sys/project_open.h"
+#include "sys/resource_drop_router.h"
 #include "sys/frame_pacing.h"
 
 #include "ui/frontend.h"
@@ -57,7 +58,7 @@ auto offer_dropped_chart_project(const SDL_Event& event, SDL_Window* window,
     return true;
 }
 
-auto collect_dropped_sound(const SDL_Event& event, SDL_Window* window,
+auto collect_dropped_resources(const SDL_Event& event, SDL_Window* window,
                            const workspace_controller_t& workspace,
                            const document_history_t& history,
                            sound_drop_transaction_t& transaction,
@@ -72,30 +73,11 @@ auto collect_dropped_sound(const SDL_Event& event, SDL_Window* window,
         .window_id = SDL_GetWindowID(window),
         .slots_mode = workspace.active_tab == workspace_tab_t::compose && dock.slots_mode,
         .first_slot = dock.selected_slot};
-    const bool drop_event = event.type == SDL_EVENT_DROP_BEGIN ||
-        event.type == SDL_EVENT_DROP_POSITION || event.type == SDL_EVENT_DROP_FILE ||
-        event.type == SDL_EVENT_DROP_COMPLETE;
-    const auto over_list = drop_event &&
-        worm_ui_frontend_sound_list_contains(event.drop.windowID, event.drop.x, event.drop.y);
-    auto result = transaction.handle(event, origin, over_list);
+    auto result = handle_resource_drop(event, origin, transaction);
     if (result.completed) batches.push_back(std::move(*result.completed));
     return result.consumed;
 }
 
-auto collect_dropped_bga(const SDL_Event& event, SDL_Window* window,
-                         const workspace_controller_t& workspace,
-                         std::vector<std::string>& paths, notification_sink_t& notifications) -> bool {
-    if (event.type != SDL_EVENT_DROP_FILE || !event.drop.data ||
-        workspace.active_tab != workspace_tab_t::compose ||
-        (event.drop.windowID && event.drop.windowID != SDL_GetWindowID(window)) ||
-        !worm_ui_frontend_bga_list_contains(event.drop.windowID, event.drop.x, event.drop.y)) return false;
-    const std::string_view path{event.drop.data};
-    if (path.size() >= WORM_UI_PROJECT_PATH_CAPACITY || !std::filesystem::path{path}.is_absolute())
-        notifications.post(notification_severity_t::warning, notification_source_t::import_, "Drop absolute local image files within the path limit.");
-    else if (paths.size() < WORM_UI_SOUND_DROP_CAPACITY) paths.emplace_back(path);
-    else notifications.post(notification_severity_t::warning, notification_source_t::import_, "Image drop batch is full.");
-    return true;
-}
 
 } // namespace
 
@@ -107,8 +89,7 @@ auto poll_frontend_events(WormWindow& window, metadata_drop_state_t& metadata_dr
                           std::string& pending_audio_project_path,
                           std::string& pending_chart_project_path,
                           sound_drop_transaction_t& sound_drop_transaction,
-                          std::vector<sound_drop_batch_t>& pending_sound_batches,
-                          std::vector<std::string>& pending_bga_paths,
+                          std::vector<sound_drop_batch_t>& pending_resource_batches,
                           notification_sink_t& notifications) -> bool {
     bool running = true;
     SDL_Event event;
@@ -116,16 +97,14 @@ auto poll_frontend_events(WormWindow& window, metadata_drop_state_t& metadata_dr
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
             running = false;
-        const bool sound_drop = collect_dropped_sound(event, window.handle, workspace,
-                                                      history, sound_drop_transaction, pending_sound_batches);
-        const bool bga_drop = !sound_drop && collect_dropped_bga(event, window.handle, workspace,
-                                                              pending_bga_paths, notifications);
-        const bool project_chart_drop = !bga_drop && !sound_drop && offer_dropped_chart_project(
+        const bool sound_drop = collect_dropped_resources(event, window.handle, workspace,
+                                                      history, sound_drop_transaction, pending_resource_batches);
+        const bool project_chart_drop = !sound_drop && offer_dropped_chart_project(
             event, window.handle, pending_chart_project_path, notifications);
-        const bool project_audio_drop = !bga_drop && !sound_drop && !project_chart_drop &&
+        const bool project_audio_drop = !sound_drop && !project_chart_drop &&
             offer_dropped_audio_project(
             event, window.handle, offer_audio_project_drop, pending_audio_project_path, notifications);
-        if (!bga_drop && !sound_drop && !project_chart_drop && !project_audio_drop)
+        if (!sound_drop && !project_chart_drop && !project_audio_drop)
             metadata_drop.handle_file_drop(event, window.handle, workspace, history,
                                            asset_base, notifications);
         worm_ui_frontend_handle_event(&event);

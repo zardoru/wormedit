@@ -23,6 +23,7 @@ struct metadata_drop_state_t {
     WormUiMetadataDropTarget music_target{};
     std::string output_path;
     std::size_t output_group_index{};
+    std::uint64_t project_id{};
     std::uint64_t music_revision{};
     std::uint64_t chart_id{};
     // Sealed channel-map preview from the last Preview action. Apply consumes exactly this proposal.
@@ -35,7 +36,8 @@ struct metadata_drop_state_t {
     void clear_lane_profile_preview();
     void clear_music();
     void clear_output();
-    void discard_if_stale(std::uint64_t current_revision, std::uint64_t current_chart_id);
+    void discard_if_stale(std::uint64_t current_project, std::uint64_t current_revision,
+                          std::uint64_t current_chart_id);
     void publish(WormUiMetadataView& view) const;
     void handle_file_drop(const SDL_Event& event, SDL_Window* window_handle,
                           const workspace_controller_t& workspace,

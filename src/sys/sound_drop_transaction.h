@@ -12,6 +12,8 @@
 
 namespace wormedit::sys {
 
+enum class resource_drop_target_t { none, sounds, bga };
+
 struct sound_drop_origin_t {
     std::uint64_t project_id{};
     std::uint64_t chart_id{};
@@ -20,6 +22,7 @@ struct sound_drop_origin_t {
     std::uint32_t window_id{};
     bool slots_mode{};
     std::uint16_t first_slot{};
+    resource_drop_target_t target{resource_drop_target_t::none};
 };
 
 struct sound_drop_batch_t {
@@ -36,12 +39,18 @@ struct sound_drop_event_result_t {
 };
 
 // Retains one SDL file-drop transaction across event polls. The caller reports
-// whether the latest drop position lies over the Sounds list. A new BEGIN
+// which resource list the latest drop position lies over. A new BEGIN
 // returns the previous claimed batch as rejected if it had not completed.
 class sound_drop_transaction_t {
   public:
     [[nodiscard]] auto handle(const SDL_Event& event, const sound_drop_origin_t& current_origin,
-                              bool position_over_sound_list) -> sound_drop_event_result_t;
+                              resource_drop_target_t position_target) -> sound_drop_event_result_t;
+    // Existing sound-only callers use the same transaction implementation.
+    [[nodiscard]] auto handle(const SDL_Event& event, const sound_drop_origin_t& origin,
+                              bool over_sound_list) -> sound_drop_event_result_t {
+        return handle(event, origin, over_sound_list ? resource_drop_target_t::sounds
+                                                   : resource_drop_target_t::none);
+    }
     [[nodiscard]] auto cancel() -> std::optional<sound_drop_batch_t>;
     [[nodiscard]] auto active() const noexcept -> bool { return active_; }
     [[nodiscard]] auto claimed() const noexcept -> bool { return claimed_; }
@@ -54,9 +63,9 @@ class sound_drop_transaction_t {
     [[nodiscard]] auto handle_begin(const SDL_Event& event,
                                    const sound_drop_origin_t& origin) -> sound_drop_event_result_t;
     [[nodiscard]] auto handle_position(const SDL_Event& event,
-                                       bool over_sound_list) -> sound_drop_event_result_t;
+                                       resource_drop_target_t target) -> sound_drop_event_result_t;
     [[nodiscard]] auto handle_file(const SDL_Event& event,
-                                  bool over_sound_list) -> sound_drop_event_result_t;
+                                  resource_drop_target_t target) -> sound_drop_event_result_t;
     [[nodiscard]] auto handle_complete(const SDL_Event& event,
                                        const sound_drop_origin_t& origin) -> sound_drop_event_result_t;
     void reset();
@@ -65,7 +74,7 @@ class sound_drop_transaction_t {
     bool claimed_{};
     bool saw_file_{};
     bool positioned_{};
-    bool position_over_sound_list_{};
+    resource_drop_target_t position_target_{resource_drop_target_t::none};
     bool origin_changed_{};
     sound_drop_origin_t origin_{};
     std::vector<std::string> paths_;

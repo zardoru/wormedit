@@ -819,7 +819,7 @@ auto apply_duration_resize_plan(document_history_t&, editor_interaction_state_t&
 auto apply_note_move_plan(document_history_t&, editor_interaction_state_t&, const note_move_plan_t&)
     -> editor_interaction_result_t;
 
-auto dispatch_nested_action(editor_edit_context_t& context, const editor_ui_action_t& action)
+auto dispatch_nested_action(editor_edit_context_t& context, const editor_interaction_action_t& action)
     -> editor_interaction_result_t {
     return dispatch_editor_action(context.history, context.state, action);
 }
@@ -1795,7 +1795,7 @@ auto select_editor_objects(editor_edit_context_t& context,
 
 
 auto virtual_cursor_action_allowed(const editor_interaction_state_t& state,
-                                   const editor_ui_action_t& action) -> bool {
+                                   const editor_interaction_action_t& action) -> bool {
     return std::holds_alternative<move_edit_cursor_action_t>(action) ||
         std::holds_alternative<page_edit_cursor_action_t>(action) ||
         std::holds_alternative<jump_edit_cursor_action_t>(action) ||
@@ -1856,7 +1856,7 @@ auto select_editor_lane(document_history_t& history, editor_interaction_state_t&
 
 auto validate_virtual_cursor_action(const document_history_t& history,
                                     const editor_interaction_state_t& state,
-                                    const editor_ui_action_t& action)
+                                    const editor_interaction_action_t& action)
     -> std::optional<editor_interaction_result_t> {
     if (!state.virtual_bms_cursor_row || virtual_cursor_action_allowed(state, action))
         return std::nullopt;
@@ -1897,16 +1897,16 @@ auto arm_note_kind(const document_history_t& history, editor_interaction_state_t
 
 namespace {
 auto dispatch_editor_action_impl(document_history_t& history, editor_interaction_state_t& state,
-                                 const editor_ui_action_t& action) -> editor_interaction_result_t;
+                                 const editor_interaction_action_t& action) -> editor_interaction_result_t;
 } // namespace
 
-template <class Action> auto committing_action(const editor_ui_action_t& action) -> bool {
+template <class Action> auto committing_action(const editor_interaction_action_t& action) -> bool {
     const auto* update = std::get_if<Action>(&action);
     return update && update->phase == editor_gesture_phase_t::commit;
 }
 
 auto terminal_editor_gesture_action(const editor_interaction_state_t& state,
-                                    const editor_ui_action_t& action) -> bool {
+                                    const editor_interaction_action_t& action) -> bool {
     return std::holds_alternative<commit_hold_action_t>(action) ||
            std::holds_alternative<place_virtual_bms_hold_action_t>(action) ||
            std::holds_alternative<release_alt_pointer_hold_gesture_action_t>(action) ||
@@ -1921,7 +1921,7 @@ auto terminal_editor_gesture_action(const editor_interaction_state_t& state,
 }
 
 auto dispatch_editor_action(document_history_t& history, editor_interaction_state_t& state,
-                            const editor_ui_action_t& action) -> editor_interaction_result_t {
+                            const editor_interaction_action_t& action) -> editor_interaction_result_t {
     if (auto canceled = handle_editor_cancellation(history, state, action))
         return *canceled;
     if (editor_gestures_stale(state, history.document.revision)) {
@@ -2264,7 +2264,7 @@ struct editor_action_visitor_t {
 };
 
 auto dispatch_editor_action_impl(document_history_t& history, editor_interaction_state_t& state,
-                                 const editor_ui_action_t& action) -> editor_interaction_result_t {
+                                 const editor_interaction_action_t& action) -> editor_interaction_result_t {
     if (auto rejected = validate_active_gesture_action(history, state, action))
         return *rejected;
     if (auto rejected = validate_virtual_cursor_action(history, state, action))

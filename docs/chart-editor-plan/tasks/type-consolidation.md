@@ -2,7 +2,7 @@
 
 [Back to executable task cards](../tasks.md). Source: [read-only audit](../../audits/type-redundancy-2026-10-12.md).
 
-Read `AGENTS.md` and `docs/chart-editor-plan/tasks.md` before taking a card. Execute T-591–T-598 in order on main, one commit per card. Include the unmodified source audit with T-591. T-599 and the optional AV4 rename require user decisions. Visual Xvfb checks are delegated to Claude by the user; they are not part of this agent’s gate. All refactors preserve behavior and per-frame/per-event allocation characteristics.
+Read `AGENTS.md` and `docs/chart-editor-plan/tasks.md` before taking a card. Execute T-591–T-598 in order on main, one commit per card. Include the unmodified source audit with T-591. T-599 requires a user decision; the user approved the optional AV4 rename as T-600 (2026-10-12). Visual Xvfb checks are delegated to Claude by the user; they are not part of this agent’s gate. All refactors preserve behavior and per-frame/per-event allocation characteristics.
 
 ## T-591 Share core helpers and retire proven dead fields
 
@@ -246,7 +246,7 @@ Read `AGENTS.md` and `docs/chart-editor-plan/tasks.md` before taking a card. Exe
 - **Read first:** `docs/audits/type-redundancy-2026-10-12.md`, `src/ui/frontend.h`, `src/ui/nuklear/compose_state.h`, `src/sys/compose_view.h`, `src/sys/application_commands.h`.
 - **Files owned:** `src/ui/frontend.h`, `src/ui/nuklear/compose_state.h`, `src/sys/compose_view.h`, `src/sys/application_commands.h`, `docs/chart-editor-plan/tasks/type-consolidation.md`, `memory/chart-editor-status/resume.md`.
 - **Steps:**
-  1. STOP: obtain the user decision for inline god-struct grouping before any implementation. The optional editor_ui_action_t rename (AV4) is a separate decision.
+  1. STOP: obtain the user decision for inline god-struct grouping before any implementation. The separate AV4 rename decision was approved and completed in T-600.
   2. After approval, inventory layout/lifetime/ownership constraints and propose concrete groups before migrating callers.
   3. Preserve C ABI field order/capacities and independent view, persistent UI state and retained-cache lifetimes.
   4. Run the complete gate, record actual output tails and commit only this card to main. Advance resume after completion.
@@ -254,3 +254,25 @@ Read `AGENTS.md` and `docs/chart-editor-plan/tasks.md` before taking a card. Exe
 - **Reject/failure behavior:** Existing validation, atomic rejection, cancellation, stale-work handling and diagnostic severity/messages remain unchanged. No new mutation or partial publication on failure.
 - **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build <source>` for every touched source, with no new/increased violations. Record exact command statuses and output tails; validate production paths with existing event/registered-command tests and relevant core/format fixtures. Claude performs the Xvfb smoke check.
 - **Out of scope:** Product semantics changes; necessary complexity and rejected audit claims; measure-index caching across nested mutation; native schema serializer redesign; god-struct grouping before T-599 approval; optional editor_ui_action_t rename without approval; unrelated work.
+
+## T-600 Rename the editor interaction action type
+
+- **Status:** done
+- **Findings closed:** AV4.
+- **Stale-plan audit:** Confirmed the variant declaration in interaction.h and exact identifier references in six source/test files after T-598. The proposed spelling is unused. This confirms the A lead; no behavior defect is claimed. The user authorized the sed approach on 2026-10-12.
+- **Outcome:** Name the core action variant editor_interaction_action_t consistently with its dispatcher result and interaction ownership.
+- **Read first:** `docs/audits/type-redundancy-2026-10-12.md`, `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `src/core/interaction_internal.h`, `src/core/interaction_gesture_lifecycle.cpp`.
+- **Files owned:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `src/core/interaction_internal.h`, `src/core/interaction_gesture_lifecycle.cpp`, `src/sys/compose_input_internal.h`, `tests/core/interaction_tests.cpp`, `docs/chart-editor-plan/tasks/type-consolidation.md`, `docs/chart-editor-plan/tasks.md`, `memory/chart-editor-status/resume.md`.
+- **Steps:**
+  1. Replace only exact editor_ui_action_t identifiers with editor_interaction_action_t in source and tests using sed; preserve the read-only audit and historical evidence.
+  2. Confirm every changed source byte is explained by that replacement, with no remaining old identifier or compatibility alias in source/tests.
+  3. Run the full gate and record actual output tails. Commit the card to main, then stop before T-599.
+- **Invariants:** Variant alternatives, order, dispatch, diagnostics, lifetimes and allocation behavior remain identical. No C ABI changes or new functions.
+- **Reject/failure behavior:** Existing validation, cancellation, atomic rejection and Undo remain unchanged.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build` on the three changed translation units and compose_input.cpp as the changed sys header consumer. No new/increased violations. Confirm exact replacement against HEAD for all six files and run `git diff --check`. Xvfb remains with Claude.
+- **Out of scope:** T-599 god-struct grouping, additional type renames, product semantics, changes to the read-only audit or historical completion evidence.
+
+- **Mechanical verification:** Replaced 27 exact identifiers in six source/test files with sed. Comparing each file against HEAD confirms the entire source diff equals only editor_ui_action_t → editor_interaction_action_t; no old identifier remains in include/src/tests. The read-only audit and historical completion evidence remain intact.
+- **Build and tidy evidence:** Build exit 0: `[100%] Built target wormedit_frontend_event_harness_tests` (`/tmp/type-T-600-build.log`). Default clang-tidy exits 0 on interaction.cpp, interaction_gesture_lifecycle.cpp, interaction_tests.cpp and compose_input.cpp (`/tmp/type-T-600-tidy/`). The two core sources have no warnings; all 75 test complexity warnings exactly match the T-593 inventory, and the input consumer retains only build_speed_graph 29. No new/increased violations.
+
+- **Completion and test evidence (2026-10-12):** The action variant, dispatch signatures and private/test consumers now consistently use editor_interaction_action_t, with no compatibility alias or semantics changes. Full serial CTest exit 0: `100% tests passed out of 3517`; `Total Test time (real) = 300.69 sec` (`/tmp/type-T-600-ctest.log`). Event harness exit 0: `100% tests passed out of 500`; `Total Test time (real) = 20.33 sec` (`/tmp/type-T-600-events.log`). Documentation exit 0: `100% tests passed out of 1`; `Total Test time (real) = 0.14 sec` (`/tmp/type-T-600-docs.log`). `git diff --check` passes. No new tests mirror this spelling-only change; existing production-path regression coverage is unchanged. Xvfb remains delegated to Claude. Resume stops at T-599; no god-struct grouping is implemented.

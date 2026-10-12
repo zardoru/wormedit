@@ -1,6 +1,6 @@
 # Status: resume checklist
 
-Next: [T-599 Group large structs by purpose — decision required](../../docs/chart-editor-plan/tasks/type-consolidation.md#t-599-group-large-structs-by-purpose--decision-required). T-591–T-598 are complete, one gated commit per card. STOP before T-599 god-struct grouping and the optional editor_ui_action_t rename; both require a user decision. Preserve the flagged behavior differences recorded on the cards. Claude owns Xvfb verification and the user-approved T-593 macOS adapter check.
+Next: [T-599 Group large structs by purpose — decision required](../../docs/chart-editor-plan/tasks/type-consolidation.md#t-599-group-large-structs-by-purpose--decision-required). T-591–T-598 and the user-approved T-600 rename are complete, one gated commit per card. STOP before T-599 god-struct grouping; it requires a user decision. Preserve the flagged behavior differences recorded on the cards. Claude owns Xvfb verification and the user-approved T-593 macOS adapter check.
 
 Completed **T-582** (2026-10-12): stamped menu commands and shared Quantize/bookmark/same-sound/BGM/loop/measure paths; orphan BGM and workspace loop paths retired. Build, **3,457/3,457** full serial CTest, **444/444** event checks, default clang-tidy with no new/increased complexity, documentation and whitespace gates pass. Isolated Xvfb Compose screenshot inspected. [Card and evidence](../../docs/chart-editor-plan/tasks/gesture-consolidation.md#t-582-route-menu-verbs-through-registered-commands).
 

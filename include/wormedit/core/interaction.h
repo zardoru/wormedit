@@ -445,7 +445,7 @@ struct scroll_editor_view_action_t {
     editor_field_scroll_direction_t direction{editor_field_scroll_direction_t::up};
 };
 
-using editor_ui_action_t = std::variant<
+using editor_interaction_action_t = std::variant<
     move_edit_cursor_action_t, page_edit_cursor_action_t, jump_edit_cursor_action_t,
     select_bms_canvas_measure_action_t, cycle_edit_snap_action_t, place_tap_action_t,
     place_virtual_bms_tap_action_t, place_virtual_bms_hold_action_t, begin_hold_action_t,
@@ -1192,7 +1192,7 @@ auto clear_editor_double_click_state(editor_double_click_state_t& state) -> void
 // commit_document_command so validation, undo, and redo share one boundary.
 [[nodiscard]] auto dispatch_editor_action(document_history_t& history,
                                           editor_interaction_state_t& state,
-                                          const editor_ui_action_t& action)
+                                          const editor_interaction_action_t& action)
     -> editor_interaction_result_t;
 
 // Typed objects are authoritative; legacy note-only callers fall back to their note list.

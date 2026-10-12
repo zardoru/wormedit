@@ -1307,11 +1307,11 @@ auto place_note_from_pointer(const WormUiComposeInputAction& input,
     result = dispatch_editor_action(
         context.environment.history_ref, context.state,
         context.state.pending_hold
-            ? editor_ui_action_t{commit_hold_action_t{
+            ? editor_interaction_action_t{commit_hold_action_t{
                   target.position,
                   compose_stem_geometry(context.environment.history_ref, context.state,
                                         context.environment.compose_scene_cache_ref, sound)}}
-            : editor_ui_action_t{place_tap_action_t{
+            : editor_interaction_action_t{place_tap_action_t{
                   target.position, sound,
                   compose_stem_geometry(context.environment.history_ref, context.state,
                                         context.environment.compose_scene_cache_ref, sound)}});

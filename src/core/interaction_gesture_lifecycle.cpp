@@ -1306,7 +1306,7 @@ auto recovered_editor_view(document_history_t& history, editor_interaction_state
 namespace wormedit {
 using namespace interaction_detail;
 auto handle_editor_cancellation(document_history_t& history, editor_interaction_state_t& state,
-                                const editor_ui_action_t& action)
+                                const editor_interaction_action_t& action)
     -> std::optional<editor_interaction_result_t> {
     if (const auto* cancel = std::get_if<cancel_editor_gesture_action_t>(&action)) {
         switch (cancel->reason) {
@@ -1336,7 +1336,7 @@ auto handle_editor_cancellation(document_history_t& history, editor_interaction_
 
 namespace wormedit {
 using namespace interaction_detail;
-auto keyboard_hold_action_allowed(const editor_ui_action_t& action) -> bool {
+auto keyboard_hold_action_allowed(const editor_interaction_action_t& action) -> bool {
     return gesture_action_is<move_edit_cursor_action_t, page_edit_cursor_action_t,
                              scroll_editor_view_action_t, begin_lane_key_hold_gesture_action_t,
                              release_lane_key_hold_gesture_action_t,
@@ -1347,7 +1347,7 @@ auto keyboard_hold_action_allowed(const editor_ui_action_t& action) -> bool {
 namespace wormedit {
 using namespace interaction_detail;
 auto hold_gesture_action_allowed(const editor_interaction_state_t& state,
-                                 const editor_ui_action_t& action) -> bool {
+                                 const editor_interaction_action_t& action) -> bool {
     if (!state.pending_hold || !state.pending_hold->gesture_source)
         return true;
     if (*state.pending_hold->gesture_source == hold_gesture_source_t::keyboard_lane)
@@ -1360,7 +1360,7 @@ auto hold_gesture_action_allowed(const editor_interaction_state_t& state,
 namespace wormedit {
 using namespace interaction_detail;
 auto gesture_action_allowed(editor_gesture_kind_t kind, const editor_interaction_state_t& state,
-                            const editor_ui_action_t& action) -> bool {
+                            const editor_interaction_action_t& action) -> bool {
     switch (kind) {
     case editor_gesture_kind_t::hold:
         return hold_gesture_action_allowed(state, action);
@@ -1419,7 +1419,7 @@ namespace wormedit {
 using namespace interaction_detail;
 auto validate_active_gesture_action(const document_history_t& history,
                                     const editor_interaction_state_t& state,
-                                    const editor_ui_action_t& action)
+                                    const editor_interaction_action_t& action)
     -> std::optional<editor_interaction_result_t> {
     std::optional<editor_gesture_kind_t> blocked;
     visit_editor_gestures(state, [&](auto kind, const auto& field) {

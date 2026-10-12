@@ -232,7 +232,7 @@ auto parallel_hold_result(bool release_newest_first)
     -> std::optional<std::array<parallel_hold_signature_t, 2>> {
     auto history = make_document_history(make_song());
     auto state = make_state(history);
-    const auto apply = [&](const editor_ui_action_t& action) {
+    const auto apply = [&](const editor_interaction_action_t& action) {
         return static_cast<bool>(dispatch_editor_action(history, state, action));
     };
     if (!apply(begin_lane_key_hold_gesture_action_t{lane_id_t{1}}) ||

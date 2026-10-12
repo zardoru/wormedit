@@ -877,7 +877,7 @@ auto apply_duration_resize_plan(document_history_t&, editor_interaction_state_t&
                                 const duration_resize_plan_t&) -> editor_interaction_result_t;
 auto apply_note_move_plan(document_history_t&, editor_interaction_state_t&, const note_move_plan_t&)
     -> editor_interaction_result_t;
-auto dispatch_nested_action(editor_edit_context_t& context, const editor_ui_action_t& action)
+auto dispatch_nested_action(editor_edit_context_t& context, const editor_interaction_action_t& action)
     -> editor_interaction_result_t;
 auto cancel_pointer_gesture(editor_edit_context_t& context) -> editor_interaction_result_t;
 auto make_duration_plan(editor_edit_context_t& context, std::vector<object_id_t> targets,
@@ -1238,23 +1238,23 @@ auto commit_area_selection_gesture(area_selection_context_t& context, double x_p
 auto recovered_editor_view(document_history_t& history, editor_interaction_state_t& state)
     -> editor_interaction_result_t;
 auto handle_editor_cancellation(document_history_t& history, editor_interaction_state_t& state,
-                                const editor_ui_action_t& action)
+                                const editor_interaction_action_t& action)
     -> std::optional<editor_interaction_result_t>;
-template <class... Actions> auto gesture_action_is(const editor_ui_action_t& action) -> bool {
+template <class... Actions> auto gesture_action_is(const editor_interaction_action_t& action) -> bool {
     return (std::holds_alternative<Actions>(action) || ...);
 }
-auto keyboard_hold_action_allowed(const editor_ui_action_t& action) -> bool;
+auto keyboard_hold_action_allowed(const editor_interaction_action_t& action) -> bool;
 auto hold_gesture_action_allowed(const editor_interaction_state_t& state,
-                                 const editor_ui_action_t& action) -> bool;
+                                 const editor_interaction_action_t& action) -> bool;
 auto gesture_action_allowed(editor_gesture_kind_t kind, const editor_interaction_state_t& state,
-                            const editor_ui_action_t& action) -> bool;
+                            const editor_interaction_action_t& action) -> bool;
 auto gesture_finish_message(editor_gesture_kind_t kind) -> const char*;
 auto validate_active_gesture_action(const document_history_t& history,
                                     const editor_interaction_state_t& state,
-                                    const editor_ui_action_t& action)
+                                    const editor_interaction_action_t& action)
     -> std::optional<editor_interaction_result_t>;
 auto virtual_cursor_action_allowed(const editor_interaction_state_t& state,
-                                   const editor_ui_action_t& action) -> bool;
+                                   const editor_interaction_action_t& action) -> bool;
 auto interaction_view_result(const document_history_t& history,
                              const editor_interaction_state_t& state, bool changed)
     -> editor_interaction_result_t;
@@ -1276,6 +1276,6 @@ auto select_editor_lane(document_history_t& history, editor_interaction_state_t&
     -> editor_interaction_result_t;
 auto validate_virtual_cursor_action(const document_history_t& history,
                                     const editor_interaction_state_t& state,
-                                    const editor_ui_action_t& action)
+                                    const editor_interaction_action_t& action)
     -> std::optional<editor_interaction_result_t>;
 } // namespace wormedit

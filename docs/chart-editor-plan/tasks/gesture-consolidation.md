@@ -80,14 +80,15 @@ NV7 is also tracked as a T-506 follow-up; preserve unrelated navigation edits.
 
 ## T-583 Unify authored and virtual row placement
 
-- **Status:** ready
+- **Status:** blocked-on-user
 - **Findings closed:** RC3, HC5, HC6, HC7, HC8, HC9, HC10, HC11, GH-1.
 - **Stale-plan audit:** Re-grep the named symbols in the audit against current main before editing. Confirm each A lead (HC6, HC8, HC9, HC10, HC11) through the production emitter first; drop non-reproducing leads from this card and record evidence. Check the entire outcome before declaring already implemented.
+- **Read-only re-check:** `update_hold_preview_action_t` is internally emitted by `update_hold_gesture`; its lack of a direct UI emitter is not evidence that it is unused. `resize_note_durations_action_t` has no source emitter outside its core dispatcher. HC6 still needs an actual workflow repro: `resolve_virtual_tap_target` requires an unauthored destination, so a subsequent click after materialization normally uses the authored path. No T-583 implementation or finding closure is claimed yet.
 - **Outcome:** Unify authored and virtual row placement so all supported production entry points share lifecycle, validation and failure behavior.
 - **Read first:** `docs/audits/gesture-redundancy-2026-10-11.md`, `src/core/interaction.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_dead_spans.cpp`.
 - **Files owned:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_dead_spans.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/core/interaction_tests.cpp`, `tests/sys/frame_timing_tests.cpp`, `docs/chart-editor-plan/tasks/gesture-consolidation.md`, `memory/chart-editor-status/resume.md`.
 - **Steps:**
-  1. User decision (2026-10-12): define a shared row-based Stop/Delay exclusion. Resolve it from the snapped authored row for every placement emitter, independent of the visual pixel band; preserve adjacent rows and hold tails. Re-check the current rule before implementation.
+  1. STOP pending exact-row semantics. User chose a shared row-based Stop/Delay exclusion (2026-10-12). The re-check found `include/wormedit/core/dead_span_rules.h` explicitly keeps the event row valid because pauses have no interior chart rows. Clarify whether to preserve that event row or block new playable heads exactly on it; keep the rule independent of the visual pixel band and preserve adjacent rows and hold tails.
   2. Implement resolve_row_placement shared by authored/virtual click and key paths, one stem/decoded-geometry resolver, and begin-time kind/layers/sound capture.
   3. Retire unused hold actions after checking production emitters, keep the unified keyboard-hold owner null-safe, and test Roll, same-row release, continuation/restart, collisions and empty-space release through actual emitters.
   4. Add regression tests entering through the production event harness or registered command; never use an input kind no UI emits (RC6).

@@ -1,6 +1,6 @@
 # Status: resume checklist
 
-Next: [T-583 Unify authored and virtual row placement](../../docs/chart-editor-plan/tasks/gesture-consolidation.md#t-583-unify-authored-and-virtual-row-placement). T-580–T-582 are complete; continue T-583–T-590 in order. User chose a shared row-based Stop/Delay exclusion on 2026-10-12. NV7 remains a T-506 navigation follow-up (T-587); unrelated navigation work is preserved.
+Next: [T-583 Unify authored and virtual row placement](../../docs/chart-editor-plan/tasks/gesture-consolidation.md#t-583-unify-authored-and-virtual-row-placement). T-580–T-582 are complete. T-583 is blocked on the pending exact-row semantics question: user chose a shared row-based Stop/Delay exclusion, but the current core contract keeps the event row valid (pauses have no interior chart rows). Preserve that row or block playable heads exactly on it is still unanswered. Then continue T-583–T-590 in order. NV7 remains a T-506 navigation follow-up (T-587); unrelated navigation work is preserved.
 
 Completed **T-582** (2026-10-12): stamped menu commands and shared Quantize/bookmark/same-sound/BGM/loop/measure paths; orphan BGM and workspace loop paths retired. Build, **3,457/3,457** full serial CTest, **444/444** event checks, default clang-tidy with no new/increased complexity, documentation and whitespace gates pass. Isolated Xvfb Compose screenshot inspected. [Card and evidence](../../docs/chart-editor-plan/tasks/gesture-consolidation.md#t-582-route-menu-verbs-through-registered-commands).
 

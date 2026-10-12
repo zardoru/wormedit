@@ -1,3 +1,5 @@
+#include "../core/checked_math.h"
+#include "../core/text_util.h"
 #include <wormedit/core/bms_profile_detection.h>
 #include <wormedit/core/numeric_text.h>
 #include <wormedit/formats/bms.h>
@@ -88,13 +90,7 @@ auto trim_ascii(std::string_view value) -> std::string_view {
     return value;
 }
 
-auto path_from_utf8(std::string_view value) -> std::filesystem::path {
-    std::u8string utf8;
-    utf8.reserve(value.size());
-    std::ranges::transform(value, std::back_inserter(utf8),
-                           [](char character) { return static_cast<char8_t>(character); });
-    return std::filesystem::path(std::move(utf8));
-}
+using text_util::path_from_utf8;
 
 auto utf8_error_offset(std::string_view text) -> std::optional<std::size_t> {
     std::size_t index{};
@@ -720,16 +716,7 @@ auto is_long_note_channel(std::string_view channel) -> bool {
     return channel.size() == 2 && (channel.front() == '5' || channel.front() == '6');
 }
 
-auto checked_lcm(std::uint64_t left, std::uint64_t right) -> std::optional<std::uint64_t> {
-    if (left == 0 || right == 0) {
-        return std::nullopt;
-    }
-    const auto reduced = left / std::gcd(left, right);
-    if (reduced > std::numeric_limits<std::uint64_t>::max() / right) {
-        return std::nullopt;
-    }
-    return reduced * right;
-}
+using checked_math::checked_lcm;
 
 auto resolution_for_slots(std::uint64_t current_resolution, const measure_definition_t& measure,
                           std::size_t pair_count) -> std::optional<std::uint64_t> {

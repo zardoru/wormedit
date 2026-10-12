@@ -1,5 +1,6 @@
 #include "sys/metadata_actions.h"
 #include "sys/application_dispatch_context.h"
+#include "wormedit/core/numeric_text.h"
 
 #include "sys/application_edit_helpers.h"
 #include "ui/frontend.h"
@@ -37,12 +38,7 @@ auto diagnostic_feedback(const diagnostic_t& diagnostic) -> metadata_edit_feedba
 }
 
 auto parse_unsigned(const char* text) -> std::optional<std::uint64_t> {
-    if (!text || text[0] == '\0')
-        return std::nullopt;
-    const auto* end = text + std::strlen(text);
-    std::uint64_t value{};
-    const auto parsed = std::from_chars(text, end, value);
-    return parsed.ec == std::errc{} && parsed.ptr == end ? std::optional{value} : std::nullopt;
+    return wormedit::parse_integer<std::uint64_t>(text);
 }
 
 auto publish_metadata_edit(document_command_result_t result,

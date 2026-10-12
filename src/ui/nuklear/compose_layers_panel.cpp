@@ -1,7 +1,8 @@
 #include "ui/nuklear/compose_layers_panel.h"
 #include "ui/nuklear/chrome.h"
-#include "ui/nuklear/popup_lifecycle.h"
+#include "ui/nuklear/compose_action_stamp.h"
 #include "ui/nuklear/lucide_icons.h"
+#include "ui/nuklear/popup_lifecycle.h"
 #include "ui/nuklear/theme.h"
 #include "ui/nuklear/tooltip.h"
 #include "ui/nuklear/vector_icons.h"
@@ -29,11 +30,8 @@ struct LayersPanel {
 };
 
 auto raise(const LayersPanel& panel, WormUiComposeActionKind kind, std::uint64_t id = 0) -> bool {
-    if (panel.action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return false;
-    panel.action->compose_action = kind;
-    panel.action->compose_input_project_id = panel.view->project_id;
-    panel.action->compose_input_chart_id = panel.view->chart_id;
-    panel.action->compose_input_document_revision = panel.view->document_revision;
+    if (!wormedit::ui::raise_compose_action(*panel.action, *panel.view, kind))
+        return false;
     panel.action->compose_semantic_layer_id = id;
     return true;
 }

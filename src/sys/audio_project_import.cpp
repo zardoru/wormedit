@@ -1,4 +1,5 @@
 #include "sys/audio_project_import.h"
+#include "core/text_util.h"
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include <wormedit/audio/decoder.h>
@@ -66,38 +67,7 @@ void append_utf8(std::string& output, std::uint32_t codepoint) {
     }
 }
 
-auto utf8_width(std::uint8_t lead) -> std::size_t {
-    if (lead < 0x80U) return 1;
-    if (lead >= 0xc2U && lead <= 0xdfU) return 2;
-    if (lead >= 0xe0U && lead <= 0xefU) return 3;
-    if (lead >= 0xf0U && lead <= 0xf4U) return 4;
-    return 0;
-}
-
-auto valid_utf8_character(std::string_view text, std::size_t index,
-                          std::size_t width) -> bool {
-    if (width == 0 || width > text.size() - index) return false;
-    if (width == 1) return true;
-    const auto lead = byte_at(text, index);
-    std::uint32_t codepoint = lead & (width == 2 ? 0x1fU : width == 3 ? 0x0fU : 0x07U);
-    for (std::size_t part = 1; part < width; ++part) {
-        const auto next = byte_at(text, index + part);
-        if ((next & 0xc0U) != 0x80U) return false;
-        codepoint = (codepoint << 6U) | (next & 0x3fU);
-    }
-    const auto minimum = width == 2 ? 0x80U : width == 3 ? 0x800U : 0x10000U;
-    return codepoint >= minimum && codepoint <= 0x10ffffU &&
-           (codepoint < 0xd800U || codepoint > 0xdfffU);
-}
-
-auto valid_utf8(std::string_view text) -> bool {
-    for (std::size_t index = 0; index < text.size();) {
-        const auto width = utf8_width(byte_at(text, index));
-        if (!valid_utf8_character(text, index, width)) return false;
-        index += width;
-    }
-    return true;
-}
+using text_util::valid_utf8;
 
 auto trim_text(std::string value) -> std::string {
     const auto first = value.find_first_not_of(" \t\r\n\0", 0, 5);

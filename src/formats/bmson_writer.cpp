@@ -1,3 +1,5 @@
+#include "../core/checked_math.h"
+#include "../core/text_util.h"
 #include <wormedit/formats/bmson.h>
 
 #include <wormedit/core/sv_recipe.h>
@@ -34,21 +36,9 @@ struct write_failure_t {
     throw write_failure_t{code, std::move(message), std::move(path)};
 }
 
-auto checked_multiply(std::uint64_t left, std::uint64_t right,
-                      std::uint64_t& result) -> bool {
-    if (right != 0 && left > std::numeric_limits<std::uint64_t>::max() / right) {
-        return false;
-    }
-    result = left * right;
-    return true;
-}
+using checked_math::checked_multiply;
 
-auto checked_add(std::uint64_t left, std::uint64_t right,
-                 std::uint64_t& result) -> bool {
-    if (left > std::numeric_limits<std::uint64_t>::max() - right) return false;
-    result = left + right;
-    return true;
-}
+using checked_math::checked_add;
 
 auto absolute_position(const measure_index_t& index, local_position_t position,
                        bool allow_measure_end = false) -> std::optional<std::uint64_t> {
@@ -76,8 +66,7 @@ auto to_pulse(const bmson_grid_t& grid, std::uint64_t row,
 }
 
 auto path_utf8(const std::filesystem::path& path) -> std::string {
-    const auto value = path.generic_u8string();
-    return {reinterpret_cast<const char*>(value.data()), value.size()};
+    return text_util::path_utf8(path);
 }
 
 auto is_safe_relative_path(std::string_view value) -> bool {

@@ -1,3 +1,4 @@
+#include "../core/text_util.h"
 #include <wormedit/formats/native_project.h>
 
 #include <wormedit/core/lane_profiles.h>
@@ -478,17 +479,11 @@ constexpr std::uint32_t native_project_format_version = 1;
 constexpr std::uint32_t native_project_schema_version = 6;
 
 auto path_to_utf8(const std::filesystem::path& path) -> std::string {
-    const auto encoded = path.generic_u8string();
-    return {encoded.begin(), encoded.end()};
+    return text_util::path_utf8(path);
 }
 
 auto path_from_utf8(const std::string& path) -> std::filesystem::path {
-    std::u8string encoded;
-    encoded.reserve(path.size());
-    for (const auto byte : path) {
-        encoded.push_back(static_cast<char8_t>(static_cast<unsigned char>(byte)));
-    }
-    return std::filesystem::path{encoded};
+    return text_util::path_from_utf8(path);
 }
 
 constexpr std::string_view hex_digits = "0123456789abcdef";

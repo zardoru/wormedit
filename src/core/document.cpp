@@ -1,4 +1,5 @@
 #include "interaction_geometry.h"
+#include "text_util.h"
 #include <wormedit/core/document.h>
 #include <wormedit/core/sv_recipe.h>
 
@@ -1523,12 +1524,7 @@ auto validate_song_resources(document_validation_work_t& work) -> void {
 }
 
 auto ascii_fold(std::string_view text) -> std::string {
-    std::string folded(text);
-    for (auto& character : folded) {
-        const auto value = static_cast<unsigned char>(character);
-        if (value >= 'A' && value <= 'Z') character = static_cast<char>(value + ('a' - 'A'));
-    }
-    return folded;
+    return text_util::ascii_fold(std::string{text});
 }
 
 auto validate_song_sound_groups(const song_document_t& song, diagnostic_list_t& diagnostics)

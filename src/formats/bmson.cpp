@@ -1,3 +1,4 @@
+#include "../core/text_util.h"
 #include "id_source.h"
 #include <wormedit/core/bgm_packing.h>
 #include <wormedit/core/lane_profiles.h>
@@ -42,45 +43,8 @@ struct json_member_t {
     json_value_t second;
 };
 
-auto valid_utf8(std::string_view source) -> std::optional<std::size_t> {
-    std::size_t at{};
-    while (at < source.size()) {
-        const auto first = static_cast<unsigned char>(source[at]);
-        if (first <= 0x7fU) {
-            ++at;
-            continue;
-        }
-        std::size_t count{};
-        std::uint32_t point{};
-        if (first >= 0xc2U && first <= 0xdfU) {
-            count = 2;
-            point = first & 0x1fU;
-        } else if (first >= 0xe0U && first <= 0xefU) {
-            count = 3;
-            point = first & 0x0fU;
-        } else if (first >= 0xf0U && first <= 0xf4U) {
-            count = 4;
-            point = first & 0x07U;
-        } else {
-            return at;
-        }
-        if (count > source.size() - at) {
-            return at;
-        }
-        for (std::size_t index = 1; index < count; ++index) {
-            const auto next = static_cast<unsigned char>(source[at + index]);
-            if ((next & 0xc0U) != 0x80U) {
-                return at + index;
-            }
-            point = (point << 6U) | (next & 0x3fU);
-        }
-        if ((count == 3 && point < 0x800U) || (count == 4 && point < 0x10000U) ||
-            (point >= 0xd800U && point <= 0xdfffU) || point > 0x10ffffU) {
-            return at;
-        }
-        at += count;
-    }
-    return std::nullopt;
+auto valid_utf8(std::string_view text) -> std::optional<std::size_t> {
+    return text_util::invalid_utf8_offset(text);
 }
 
 struct json_policy_error_t {
@@ -364,14 +328,7 @@ auto required_bpm(const json_value_t& value, std::string path) -> signed_rationa
     return *exact;
 }
 
-auto path_from_utf8(std::string_view value) -> std::filesystem::path {
-    std::u8string text;
-    text.reserve(value.size());
-    std::ranges::transform(value, std::back_inserter(text), [](char character) {
-        return static_cast<char8_t>(character);
-    });
-    return std::filesystem::path(std::move(text));
-}
+using text_util::path_from_utf8;
 
 auto rational_length(std::uint64_t pulses, std::uint64_t divisions) -> rational_t {
     const auto divisor = std::gcd(pulses, divisions);

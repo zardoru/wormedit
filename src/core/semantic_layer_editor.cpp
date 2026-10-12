@@ -1,3 +1,5 @@
+#include "../core/text_util.h"
+#include "checked_math.h"
 #include <wormedit/core/semantic_layer_editor.h>
 
 #include <algorithm>
@@ -16,58 +18,15 @@
 namespace wormedit {
 namespace {
 
-auto valid_utf8(std::string_view text) -> bool {
-    for (std::size_t index = 0; index < text.size();) {
-        const auto lead = static_cast<unsigned char>(text[index]);
-        if (lead <= 0x7fU) {
-            ++index;
-            continue;
-        }
-        std::size_t width{};
-        std::uint32_t codepoint{};
-        if ((lead & 0xe0U) == 0xc0U) {
-            width = 2;
-            codepoint = lead & 0x1fU;
-        } else if ((lead & 0xf0U) == 0xe0U) {
-            width = 3;
-            codepoint = lead & 0x0fU;
-        } else if ((lead & 0xf8U) == 0xf0U) {
-            width = 4;
-            codepoint = lead & 0x07U;
-        } else {
-            return false;
-        }
-        if (width > text.size() - index) {
-            return false;
-        }
-        for (std::size_t offset = 1; offset < width; ++offset) {
-            const auto continuation = static_cast<unsigned char>(text[index + offset]);
-            if ((continuation & 0xc0U) != 0x80U) {
-                return false;
-            }
-            codepoint = (codepoint << 6U) | (continuation & 0x3fU);
-        }
-        const auto minimum = width == 2 ? 0x80U : width == 3 ? 0x800U : 0x10000U;
-        if (codepoint < minimum || codepoint > 0x10ffffU ||
-            (codepoint >= 0xd800U && codepoint <= 0xdfffU)) {
-            return false;
-        }
-        index += width;
-    }
-    return true;
-}
+using text_util::valid_utf8;
 
 auto valid_name(std::string_view name, const semantic_layer_edit_limits_t& limits) -> bool {
     return !name.empty() && name.size() <= limits.maximum_name_bytes &&
            name.find('\0') == std::string_view::npos && valid_utf8(name);
 }
 
-auto add_size(std::size_t& total, std::size_t amount, std::size_t maximum) -> bool {
-    if (total > maximum || amount > maximum - total) {
-        return false;
-    }
-    total += amount;
-    return true;
+auto add_size(std::size_t& total, std::size_t value, std::size_t maximum) -> bool {
+    return checked_math::account_size(total, value, maximum);
 }
 
 auto validate_layer_names(const chart_document_t& chart, const semantic_layer_edit_limits_t& limits,

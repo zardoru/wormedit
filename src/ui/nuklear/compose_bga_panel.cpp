@@ -1,26 +1,27 @@
 #include "ui/nuklear/compose_bga_panel.h"
-#include "ui/nuklear/tooltip.h"
-#include "wormedit/core/document.h"
-#include "ui/nuklear/compose_state.h"
-#include "ui/nuklear/compose_resources.h"
 #include "ui/nuklear/catalog_confirmation.h"
-#include "ui/nuklear/compose_panel_internal.h"
-#include <wormedit/core/interaction.h>
 #include "ui/nuklear/chrome.h"
+#include "ui/nuklear/compose_action_stamp.h"
+#include "ui/nuklear/compose_panel_internal.h"
+#include "ui/nuklear/compose_resources.h"
+#include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/popup_lifecycle.h"
 #include "ui/nuklear/theme.h"
+#include "ui/nuklear/tooltip.h"
 #include "ui/nuklear/vector_icons.h"
+#include "wormedit/core/document.h"
 #include <SDL3/SDL.h>
-#include <nuklear.h>
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
+#include <nuklear.h>
 #include <span>
 #include <string>
 #include <unordered_map>
+#include <wormedit/core/interaction.h>
 namespace {
 using wormedit::ui::chrome::IconButton;
 using wormedit::ui::chrome::DrawnIconButton;
@@ -61,12 +62,7 @@ void open_picker(const WormUiComposeView& view) {
 }
 auto raise(WormUiWorkspaceAction& action, const WormUiComposeView& view,
            WormUiComposeActionKind kind) -> bool {
-    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return false;
-    action.compose_action = kind;
-    action.compose_input_project_id = view.project_id;
-    action.compose_input_chart_id = view.chart_id;
-    action.compose_input_document_revision = view.document_revision;
-    return true;
+    return wormedit::ui::raise_compose_action(action, view, kind);
 }
 void import_picked(WormUiWorkspaceAction& action, const WormUiComposeView& view,
                    worm_ui_nuklear_compose_state_t& state) {

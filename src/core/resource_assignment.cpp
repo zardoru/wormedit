@@ -1,8 +1,9 @@
 #include "chart_object_ids.h"
-#include <wormedit/core/resource_assignment.h>
-#include <wormedit/core/natural_order.h>
-#include <wormedit/core/semantic_layer_editor.h>
+#include "text_util.h"
 #include <wormedit/core/measure_editor.h>
+#include <wormedit/core/natural_order.h>
+#include <wormedit/core/resource_assignment.h>
+#include <wormedit/core/semantic_layer_editor.h>
 #include <wormedit/core/snap.h>
 #include <wormedit/core/virtual_canvas.h>
 
@@ -2017,12 +2018,7 @@ auto apply_resource_asset_relink(document_history_t& history, std::uint64_t expe
 
 namespace {
 
-auto ascii_fold(std::string text) -> std::string {
-    for (auto& character : text) {
-        if (character >= 'A' && character <= 'Z') character = static_cast<char>(character + 32);
-    }
-    return text;
-}
+using text_util::ascii_fold;
 
 auto normalized_resource_name(std::string_view name) -> std::optional<std::string> {
     const auto first = name.find_first_not_of(" \t\r\n");

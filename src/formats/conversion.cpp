@@ -28,6 +28,11 @@
 namespace wormedit {
 namespace {
 
+struct conversion_context_t {
+    const conversion_request_t& request;
+    const conversion_limits_t& limits;
+    conversion_result_t& result;
+};
 auto byte_span(std::string_view bytes) -> std::span<const std::byte> {
     return {reinterpret_cast<const std::byte*>(bytes.data()), bytes.size()};
 }
@@ -46,49 +51,52 @@ auto result_has_errors(const conversion_result_t& result) -> bool {
     });
 }
 
-auto selected_chart_ids(const song_document_t& song, const conversion_request_t& request,
-                        conversion_result_t& result) -> std::vector<chart_id_t> {
-    if (request.chart && !request.charts.empty()) {
-        add_diagnostic(result, diagnostic_severity_t::error,
+auto selected_chart_ids(conversion_context_t& context, const song_document_t& song)
+    -> std::vector<chart_id_t> {
+    if (context.request.chart && !context.request.charts.empty()) {
+        add_diagnostic(context.result, diagnostic_severity_t::error,
                        conversion_diagnostic_code_t::invalid_request, conversion_stage_t::request,
-                       request.target, request.chart,
+                       context.request.target, context.request.chart,
                        "Select either one chart or an ordered chart set");
         return {};
     }
-    if (!request.charts.empty()) {
+    if (!context.request.charts.empty()) {
         std::unordered_set<std::uint64_t> seen;
-        for (const auto id : request.charts) {
+        for (const auto id : context.request.charts) {
             const auto count = std::ranges::count(song.charts, id, &chart_document_t::id);
             if (!id || !seen.insert(id.value).second || count != 1) {
-                add_diagnostic(result, diagnostic_severity_t::error,
+                add_diagnostic(context.result, diagnostic_severity_t::error,
                                conversion_diagnostic_code_t::invalid_request,
-                               conversion_stage_t::request, request.target, id,
+                               conversion_stage_t::request, context.request.target, id,
                                "Chart set contains a duplicate, missing, or ambiguous identity");
                 return {};
             }
         }
-        return request.charts;
+        return context.request.charts;
     }
-    if (request.chart) {
-        const auto count = std::ranges::count(song.charts, *request.chart, &chart_document_t::id);
+    if (context.request.chart) {
+        const auto count =
+            std::ranges::count(song.charts, *context.request.chart, &chart_document_t::id);
         if (count != 1) {
-            add_diagnostic(result, diagnostic_severity_t::error,
+            add_diagnostic(context.result, diagnostic_severity_t::error,
                            conversion_diagnostic_code_t::chart_not_found,
-                           conversion_stage_t::request, request.target, request.chart,
+                           conversion_stage_t::request, context.request.target,
+                           context.request.chart,
                            count == 0 ? "Conversion chart was not found"
                                       : "Conversion chart identity is ambiguous");
             return {};
         }
-        return {*request.chart};
+        return {*context.request.chart};
     }
     std::vector<chart_id_t> ids;
     ids.reserve(song.charts.size());
     for (const auto& chart : song.charts)
         ids.push_back(chart.id);
     if (ids.empty())
-        add_diagnostic(result, diagnostic_severity_t::error,
+        add_diagnostic(context.result, diagnostic_severity_t::error,
                        conversion_diagnostic_code_t::chart_not_found, conversion_stage_t::request,
-                       request.target, std::nullopt, "Conversion requires at least one chart");
+                       context.request.target, std::nullopt,
+                       "Conversion requires at least one chart");
     return ids;
 }
 
@@ -177,8 +185,7 @@ auto valid_staged_relative_path(const std::filesystem::path& staged_path) -> boo
            !std::ranges::any_of(path, [](unsigned char c) { return c < 0x20 || c == 0x7f; });
 }
 
-auto prepare_staged_assets(song_document_t& prepared, const conversion_request_t& request,
-                           conversion_result_t& result) -> bool {
+auto prepare_staged_assets(conversion_context_t& context, song_document_t& prepared) -> bool {
     std::unordered_map<std::uint64_t, std::size_t> known_assets;
     known_assets.reserve(prepared.audio_assets.size() + prepared.visual_assets.size());
     for (const auto& asset : prepared.audio_assets) {
@@ -188,17 +195,18 @@ auto prepare_staged_assets(song_document_t& prepared, const conversion_request_t
         ++known_assets[asset.id.value];
     }
     std::unordered_map<std::uint64_t, std::filesystem::path> paths_by_id;
-    paths_by_id.reserve(request.staged_assets.size());
+    paths_by_id.reserve(context.request.staged_assets.size());
     std::unordered_set<std::string> paths;
-    for (const auto& staged : request.staged_assets) {
+    for (const auto& staged : context.request.staged_assets) {
         const auto path = staged.relative_path.generic_string();
         if (!staged.asset || !valid_staged_relative_path(staged.relative_path) ||
             known_assets[staged.asset.value] != 1 ||
             !paths_by_id.emplace(staged.asset.value, staged.relative_path).second ||
             !paths.insert(path).second) {
-            add_diagnostic(result, diagnostic_severity_t::error,
+            add_diagnostic(context.result, diagnostic_severity_t::error,
                            conversion_diagnostic_code_t::invalid_request,
-                           conversion_stage_t::request, request.target, request.chart,
+                           conversion_stage_t::request, context.request.target,
+                           context.request.chart,
                            "Staged asset mapping has an invalid, duplicate, or unknown path");
             return false;
         }
@@ -221,30 +229,29 @@ auto prepare_staged_assets(song_document_t& prepared, const conversion_request_t
     return true;
 }
 
-auto apply_quantization(song_document_t& prepared, const conversion_request_t& request,
-                        const std::vector<chart_id_t>& charts,
-                        conversion_result_t& result) -> bool {
-    if (!request.quantization->objects.empty() && charts.size() != 1) {
-        add_diagnostic(result, diagnostic_severity_t::error,
-                       conversion_diagnostic_code_t::invalid_request,
-                       conversion_stage_t::transform, request.target, std::nullopt,
+auto apply_quantization(conversion_context_t& context, song_document_t& prepared,
+                        const std::vector<chart_id_t>& charts) -> bool {
+    if (!context.request.quantization->objects.empty() && charts.size() != 1) {
+        add_diagnostic(context.result, diagnostic_severity_t::error,
+                       conversion_diagnostic_code_t::invalid_request, conversion_stage_t::transform,
+                       context.request.target, std::nullopt,
                        "Object-scoped quantization requires one selected chart");
         return false;
     }
     for (const auto chart_id : charts) {
         const auto found = std::ranges::find(prepared.charts, chart_id, &chart_document_t::id);
         if (found == prepared.charts.end()) {
-            add_diagnostic(result, diagnostic_severity_t::error,
+            add_diagnostic(context.result, diagnostic_severity_t::error,
                            conversion_diagnostic_code_t::chart_not_found,
-                           conversion_stage_t::transform, request.target, chart_id,
+                           conversion_stage_t::transform, context.request.target, chart_id,
                            "Quantization chart was not found in the detached document");
             return false;
         }
-        auto quantized = quantize_chart_exact(*found, *request.quantization);
+        auto quantized = quantize_chart_exact(*found, *context.request.quantization);
         for (const auto& diagnostic : quantized.diagnostics) {
-            add_diagnostic(result, diagnostic.severity,
+            add_diagnostic(context.result, diagnostic.severity,
                            conversion_diagnostic_code_t::transform_failed,
-                           conversion_stage_t::transform, request.target, chart_id,
+                           conversion_stage_t::transform, context.request.target, chart_id,
                            diagnostic.message);
         }
         if (!quantized) {
@@ -252,19 +259,18 @@ auto apply_quantization(song_document_t& prepared, const conversion_request_t& r
         }
         const auto moved = quantized.resolution_moves.size() + quantized.quantized_moves.size();
         *found = std::move(*quantized.chart);
-        add_diagnostic(result, diagnostic_severity_t::info,
+        add_diagnostic(context.result, diagnostic_severity_t::info,
                        conversion_diagnostic_code_t::target_diagnostic,
-                       conversion_stage_t::transform, request.target, chart_id,
+                       conversion_stage_t::transform, context.request.target, chart_id,
                        "Quantization prepared " + std::to_string(moved) + " exact movement(s)");
     }
     return true;
 }
 
-auto prepare_document(const song_document_t& song, const conversion_request_t& request,
-                      const std::vector<chart_id_t>& charts, conversion_result_t& result)
-    -> std::optional<song_document_t> {
+auto prepare_document(conversion_context_t& context, const song_document_t& song,
+                      const std::vector<chart_id_t>& charts) -> std::optional<song_document_t> {
     auto prepared = song;
-    if (!request.charts.empty() && request.target == format_family_t::stepmania) {
+    if (!context.request.charts.empty() && context.request.target == format_family_t::stepmania) {
         std::vector<chart_document_t> selected;
         selected.reserve(charts.size());
         for (const auto id : charts) {
@@ -273,12 +279,12 @@ auto prepare_document(const song_document_t& song, const conversion_request_t& r
         }
         prepared.charts = std::move(selected);
     }
-    if (!request.staged_assets.empty() && !prepare_staged_assets(prepared, request, result)) {
+    if (!context.request.staged_assets.empty() && !prepare_staged_assets(context, prepared)) {
         return std::nullopt;
     }
-    if (!request.quantization)
+    if (!context.request.quantization)
         return prepared;
-    if (!apply_quantization(prepared, request, charts, result)) {
+    if (!apply_quantization(context, prepared, charts)) {
         return std::nullopt;
     }
     return prepared;
@@ -439,17 +445,21 @@ auto sliced_bgm_timestamp_error(const chart_document_t& chart) -> long double {
     return maximum;
 }
 
-void report_slice_timestamp_loss(const chart_document_t& chart, const conversion_request_t& request,
-    conversion_result_t& result) {
-    if (request.target != format_family_t::osu_mania || request.target_profile == "lazer-v128") return;
+void report_slice_timestamp_loss(conversion_context_t& context, const chart_document_t& chart) {
+    if (context.request.target != format_family_t::osu_mania ||
+        context.request.target_profile == "lazer-v128")
+        return;
     const auto error = sliced_bgm_timestamp_error(chart);
     if (error < 1e-9L) return;
-    const auto severity = request.loss_policy == loss_policy_t::allow
-        ? diagnostic_severity_t::info : diagnostic_severity_t::warning;
-    add_diagnostic(result, severity, conversion_diagnostic_code_t::target_diagnostic,
-        conversion_stage_t::transform, request.target, chart.id,
+    const auto severity = context.request.loss_policy == loss_policy_t::allow
+                              ? diagnostic_severity_t::info
+                              : diagnostic_severity_t::warning;
+    add_diagnostic(
+        context.result, severity, conversion_diagnostic_code_t::target_diagnostic,
+        conversion_stage_t::transform, context.request.target, chart.id,
         "Stable-v14 autoplay sample timestamps round to integer milliseconds; maximum offset " +
-        std::to_string(static_cast<double>(error)) + " ms (at most 0.5 ms)", "Events.Sample", true);
+            std::to_string(static_cast<double>(error)) + " ms (at most 0.5 ms)",
+        "Events.Sample", true);
 }
 
 void prepare_osu_slice_layout(chart_document_t& chart) {
@@ -485,14 +495,16 @@ auto add_bms_silent_binding(song_document_t& song, const std::vector<chart_id_t>
     return true;
 }
 
-auto prepare_bms_slice_resources(song_document_t& song, const std::vector<chart_id_t>& charts,
-    const conversion_request_t& request, conversion_result_t& result,
-    std::unordered_set<std::uint64_t>& silent_resources) -> bool {
-    if (request.target != format_family_t::bms) return true;
-    if (!add_bms_silent_binding(song, charts, result, silent_resources)) {
-        add_diagnostic(result, diagnostic_severity_t::error,
-            conversion_diagnostic_code_t::transform_failed, conversion_stage_t::transform,
-            request.target, {}, "Generated silence asset/resource ID capacity exceeded");
+auto prepare_bms_slice_resources(conversion_context_t& context, song_document_t& song,
+                                 const std::vector<chart_id_t>& charts,
+                                 std::unordered_set<std::uint64_t>& silent_resources) -> bool {
+    if (context.request.target != format_family_t::bms)
+        return true;
+    if (!add_bms_silent_binding(song, charts, context.result, silent_resources)) {
+        add_diagnostic(context.result, diagnostic_severity_t::error,
+                       conversion_diagnostic_code_t::transform_failed,
+                       conversion_stage_t::transform, context.request.target, {},
+                       "Generated silence asset/resource ID capacity exceeded");
         return false;
     }
     const auto used = referenced_slice_export_resources(song, charts);
@@ -502,9 +514,11 @@ auto prepare_bms_slice_resources(song_document_t& song, const std::vector<chart_
     });
     constexpr std::size_t capacity = 1295;
     if (static_cast<std::size_t>(count) <= capacity) return true;
-    add_diagnostic(result, diagnostic_severity_t::error,
-        conversion_diagnostic_code_t::transform_failed, conversion_stage_t::transform,
-        request.target, {}, "needs " + std::to_string(count) + " sounds, BMS holds " + std::to_string(capacity));
+    add_diagnostic(context.result, diagnostic_severity_t::error,
+                   conversion_diagnostic_code_t::transform_failed, conversion_stage_t::transform,
+                   context.request.target, {},
+                   "needs " + std::to_string(count) + " sounds, BMS holds " +
+                       std::to_string(capacity));
     return false;
 }
 
@@ -528,18 +542,19 @@ void map_bms_slice_lanes(lane_layout_t& source, const lane_layout_t& target) {
     source.profile_id = target.profile_id;
 }
 
-auto prepare_bms_slice_layout(chart_document_t& chart, const conversion_request_t& request,
-    conversion_result_t& result) -> bool {
+auto prepare_bms_slice_layout(conversion_context_t& context, chart_document_t& chart) -> bool {
     for (auto& segment : chart.lane_layouts) {
         const auto profiles = built_in_bms_lane_profiles();
         const auto found = std::ranges::find_if(profiles, [&](const auto& descriptor) {
-            return (request.target_profile.empty() || descriptor.profile.layout.profile_id == request.target_profile) &&
-                compatible_bms_layout(segment.layout, descriptor.profile.layout);
+            return (context.request.target_profile.empty() ||
+                    descriptor.profile.layout.profile_id == context.request.target_profile) &&
+                   compatible_bms_layout(segment.layout, descriptor.profile.layout);
         });
         if (found == profiles.end()) {
-            add_diagnostic(result, diagnostic_severity_t::error,
-                conversion_diagnostic_code_t::transform_failed, conversion_stage_t::transform,
-                request.target, chart.id, "BMSON lane layout has no compatible BMS channel profile");
+            add_diagnostic(context.result, diagnostic_severity_t::error,
+                           conversion_diagnostic_code_t::transform_failed,
+                           conversion_stage_t::transform, context.request.target, chart.id,
+                           "BMSON lane layout has no compatible BMS channel profile");
             return false;
         }
         map_bms_slice_lanes(segment.layout, found->profile.layout);
@@ -552,46 +567,53 @@ auto target_slices_stems(format_family_t target) -> bool {
            target == format_family_t::stepmania;
 }
 
-auto prepare_slice_exports(song_document_t& prepared, const conversion_request_t& request,
-                           const std::vector<chart_id_t>& charts, conversion_result_t& result) -> bool {
-    if (!target_slices_stems(request.target)) return true;
-    auto options = request.slice_options;
+auto prepare_slice_exports(conversion_context_t& context, song_document_t& prepared,
+                           const std::vector<chart_id_t>& charts) -> bool {
+    if (!target_slices_stems(context.request.target))
+        return true;
+    auto options = context.request.slice_options;
     shared_slices_t shared;
     for (const auto id : charts) {
         auto chart = std::ranges::find(prepared.charts, id, &chart_document_t::id);
         if (chart->source_family != format_family_t::bmson) continue;
-        auto plan = build_slice_span_plan(prepared, id, request.slice_sources, options);
+        auto plan = build_slice_span_plan(prepared, id, context.request.slice_sources, options);
         if (!plan) {
             for (const auto& diagnostic : plan.diagnostics)
-                add_diagnostic(result, diagnostic_severity_t::error,
-                    conversion_diagnostic_code_t::transform_failed, conversion_stage_t::transform,
-                    request.target, id, diagnostic.message);
+                add_diagnostic(context.result, diagnostic_severity_t::error,
+                               conversion_diagnostic_code_t::transform_failed,
+                               conversion_stage_t::transform, context.request.target, id,
+                               diagnostic.message);
             return false;
         }
         const auto available = std::numeric_limits<std::uint64_t>::max() -
             std::max(next_slice_asset(prepared), next_slice_resource(prepared));
         if (plan.spans.size() > available) {
-            add_diagnostic(result, diagnostic_severity_t::error,
-                conversion_diagnostic_code_t::transform_failed, conversion_stage_t::transform,
-                request.target, id, "Generated slice asset/resource ID capacity exceeded");
+            add_diagnostic(context.result, diagnostic_severity_t::error,
+                           conversion_diagnostic_code_t::transform_failed,
+                           conversion_stage_t::transform, context.request.target, id,
+                           "Generated slice asset/resource ID capacity exceeded");
             return false;
         }
         slice_span_plan_t render_plan;
         const auto resources = append_slice_resources(prepared, plan, shared, render_plan);
         apply_slice_bindings(*chart, plan, resources);
-        if (request.target == format_family_t::osu_mania || request.target == format_family_t::stepmania)
+        if (context.request.target == format_family_t::osu_mania ||
+            context.request.target == format_family_t::stepmania)
             prepare_osu_slice_layout(*chart);
-        else if (!prepare_bms_slice_layout(*chart, request, result)) return false;
-        report_slice_timestamp_loss(*chart, request, result);
+        else if (!prepare_bms_slice_layout(context, *chart))
+            return false;
+        report_slice_timestamp_loss(context, *chart);
         for (const auto& span : plan.spans) options.occupied_filenames.push_back(span.filename);
-        if (!render_plan.spans.empty()) result.slice_plans.push_back(std::move(render_plan));
+        if (!render_plan.spans.empty())
+            context.result.slice_plans.push_back(std::move(render_plan));
     }
     if (std::ranges::any_of(charts, [&](const auto id) {
             return selected_chart(prepared, id)->source_family == format_family_t::bmson;
         })) {
         std::unordered_set<std::uint64_t> silent_resources;
-        if (!prepare_bms_slice_resources(prepared, charts, request, result, silent_resources)) return false;
-        prepare_retained_slice_assets(prepared, charts, shared, silent_resources, result);
+        if (!prepare_bms_slice_resources(context, prepared, charts, silent_resources))
+            return false;
+        prepare_retained_slice_assets(prepared, charts, shared, silent_resources, context.result);
     }
     return true;
 }
@@ -603,15 +625,14 @@ auto contains_bms_tree(const song_document_t& song, const std::vector<chart_id_t
     });
 }
 
-auto validate_reimport(const conversion_output_t& output, const conversion_request_t& request,
-                       const stepmania_export_policy_result_t* stepmania_options,
-                       conversion_result_t& result) -> bool {
+auto validate_reimport(conversion_context_t& context, const conversion_output_t& output,
+                       const stepmania_export_policy_result_t* stepmania_options) -> bool {
     switch (output.target) {
     case format_family_t::native_project: {
         const auto parsed = parse_native_project(output.bytes);
         if (parsed.song && !parsed.has_errors())
             return true;
-        append_target_diagnostics(result, parsed.diagnostics, output.target, output.chart,
+        append_target_diagnostics(context.result, parsed.diagnostics, output.target, output.chart,
                                   loss_policy_t::warn);
         break;
     }
@@ -619,15 +640,15 @@ auto validate_reimport(const conversion_output_t& output, const conversion_reque
         bms_parse_options_t options;
         options.file_extension = output.suggested_filename.substr(
             output.suggested_filename.find_last_of('.'));
-        if (!request.target_profile.empty())
-            options.lane_profile_id = request.target_profile;
-        if (request.encoding && *request.encoding != text_encoding_t::ascii &&
-            *request.encoding != text_encoding_t::utf8)
-            options.encoding_override = request.encoding;
+        if (!context.request.target_profile.empty())
+            options.lane_profile_id = context.request.target_profile;
+        if (context.request.encoding && *context.request.encoding != text_encoding_t::ascii &&
+            *context.request.encoding != text_encoding_t::utf8)
+            options.encoding_override = context.request.encoding;
         const auto parsed = parse_bms_bytes(byte_span(output.bytes), std::move(options));
         if (parsed.song && !parsed.has_errors())
             return true;
-        append_target_diagnostics(result, parsed.diagnostics, output.target, output.chart,
+        append_target_diagnostics(context.result, parsed.diagnostics, output.target, output.chart,
                                   loss_policy_t::warn);
         break;
     }
@@ -642,7 +663,7 @@ auto validate_reimport(const conversion_output_t& output, const conversion_reque
              .source_implementation_profile = write.target_implementation_profile});
         if (parsed.song && !parsed.has_errors())
             return true;
-        append_target_diagnostics(result, parsed.diagnostics, output.target, output.chart,
+        append_target_diagnostics(context.result, parsed.diagnostics, output.target, output.chart,
                                   loss_policy_t::warn);
         break;
     }
@@ -650,7 +671,7 @@ auto validate_reimport(const conversion_output_t& output, const conversion_reque
         const auto parsed = parse_osu_mania_bytes(byte_span(output.bytes));
         if (parsed.song && !parsed.has_errors())
             return true;
-        append_target_diagnostics(result, parsed.diagnostics, output.target, output.chart,
+        append_target_diagnostics(context.result, parsed.diagnostics, output.target, output.chart,
                                   loss_policy_t::warn);
         break;
     }
@@ -658,7 +679,7 @@ auto validate_reimport(const conversion_output_t& output, const conversion_reque
         const auto parsed = parse_bmson_bytes(byte_span(output.bytes));
         if (parsed.song && !parsed.has_errors())
             return true;
-        append_target_diagnostics(result, parsed.diagnostics, output.target, output.chart,
+        append_target_diagnostics(context.result, parsed.diagnostics, output.target, output.chart,
                                   loss_policy_t::warn);
         break;
     }
@@ -666,274 +687,271 @@ auto validate_reimport(const conversion_output_t& output, const conversion_reque
     case format_family_t::quaver:
         break;
     }
-    add_diagnostic(result, diagnostic_severity_t::error,
-                   conversion_diagnostic_code_t::reimport_failed,
-                   conversion_stage_t::reimport, output.target, output.chart,
+    add_diagnostic(context.result, diagnostic_severity_t::error,
+                   conversion_diagnostic_code_t::reimport_failed, conversion_stage_t::reimport,
+                   output.target, output.chart,
                    "Serialized conversion output did not pass bounded reimport validation",
                    output.suggested_filename);
     return false;
 }
 
-auto validate_request_policies(const song_document_t& song,
-                               const conversion_request_t& request,
-                               conversion_limits_t limits, conversion_result_t& result) -> bool {
+auto validate_request_policies(conversion_context_t& context, const song_document_t& song) -> bool {
     const auto reject = [&](conversion_diagnostic_code_t code, std::string message) {
-        add_diagnostic(result, diagnostic_severity_t::error, code, conversion_stage_t::request,
-                       request.target, request.chart, std::move(message));
+        add_diagnostic(context.result, diagnostic_severity_t::error, code,
+                       conversion_stage_t::request, context.request.target, context.request.chart,
+                       std::move(message));
         return false;
     };
-    if (limits.maximum_outputs == 0 || limits.maximum_total_output_bytes == 0 ||
-        limits.maximum_filename_bytes < 16) {
+    if (context.limits.maximum_outputs == 0 || context.limits.maximum_total_output_bytes == 0 ||
+        context.limits.maximum_filename_bytes < 16) {
         return reject(conversion_diagnostic_code_t::invalid_request,
                       "Conversion limits must permit outputs, bytes, and bounded filenames");
     }
-    if (request.target != format_family_t::stepmania && request.stepmania) {
+    if (context.request.target != format_family_t::stepmania && context.request.stepmania) {
         return reject(conversion_diagnostic_code_t::invalid_request,
                       "StepMania export policy was supplied for a different target");
     }
-    if (request.target != format_family_t::bms && request.encoding) {
+    if (context.request.target != format_family_t::bms && context.request.encoding) {
         return reject(conversion_diagnostic_code_t::invalid_request,
                       "Output text encoding is currently a BMS-family policy");
     }
-    if (request.target == format_family_t::native_project &&
-        (request.chart || !request.charts.empty())) {
+    if (context.request.target == format_family_t::native_project &&
+        (context.request.chart || !context.request.charts.empty())) {
         return reject(conversion_diagnostic_code_t::invalid_request,
                       "Native project conversion preserves the whole project; chart selection "
                       "is not applicable");
     }
-    if (!request.staged_assets.empty() && request.target != format_family_t::bms &&
-        request.target != format_family_t::bmson && request.target != format_family_t::osu_mania &&
-        request.target != format_family_t::stepmania) {
+    if (!context.request.staged_assets.empty() && context.request.target != format_family_t::bms &&
+        context.request.target != format_family_t::bmson &&
+        context.request.target != format_family_t::osu_mania &&
+        context.request.target != format_family_t::stepmania) {
         return reject(conversion_diagnostic_code_t::invalid_request,
                       "This target does not yet serialize staged resource paths");
     }
-    if (request.staged_assets.size() > song.audio_assets.size() + song.visual_assets.size()) {
+    if (context.request.staged_assets.size() >
+        song.audio_assets.size() + song.visual_assets.size()) {
         return reject(conversion_diagnostic_code_t::invalid_request,
                       "Staged asset mapping exceeds the document asset count");
     }
-    if (request.target == format_family_t::midi || request.target == format_family_t::quaver) {
+    if (context.request.target == format_family_t::midi ||
+        context.request.target == format_family_t::quaver) {
         return reject(conversion_diagnostic_code_t::unsupported_target,
                       "The selected conversion target has no paired writer yet");
     }
     return true;
 }
 
-auto validate_selected_target(const song_document_t& song, const conversion_request_t& request,
-                              const std::vector<chart_id_t>& charts,
-                              conversion_limits_t limits, conversion_result_t& result) -> bool {
-    if (charts.size() > limits.maximum_outputs && request.target != format_family_t::stepmania &&
-        request.target != format_family_t::native_project) {
-        add_diagnostic(result, diagnostic_severity_t::error,
-                       conversion_diagnostic_code_t::output_limit,
-                       conversion_stage_t::request, request.target, request.chart,
+auto validate_selected_target(conversion_context_t& context, const song_document_t& song,
+                              const std::vector<chart_id_t>& charts) -> bool {
+    if (charts.size() > context.limits.maximum_outputs &&
+        context.request.target != format_family_t::stepmania &&
+        context.request.target != format_family_t::native_project) {
+        add_diagnostic(context.result, diagnostic_severity_t::error,
+                       conversion_diagnostic_code_t::output_limit, conversion_stage_t::request,
+                       context.request.target, context.request.chart,
                        "Conversion output count exceeds its configured limit");
         return false;
     }
-    if (request.target == format_family_t::bms ||
-        request.target == format_family_t::native_project || !contains_bms_tree(song, charts)) {
+    if (context.request.target == format_family_t::bms ||
+        context.request.target == format_family_t::native_project ||
+        !contains_bms_tree(song, charts)) {
         return true;
     }
-    if (request.branches != branch_projection_t::active_projection) {
-        add_diagnostic(result, diagnostic_severity_t::error,
-                       conversion_diagnostic_code_t::invalid_request,
-                       conversion_stage_t::request, request.target, request.chart,
+    if (context.request.branches != branch_projection_t::active_projection) {
+        add_diagnostic(context.result, diagnostic_severity_t::error,
+                       conversion_diagnostic_code_t::invalid_request, conversion_stage_t::request,
+                       context.request.target, context.request.chart,
                        "The target cannot preserve a BMS branch tree; select active projection "
                        "explicitly");
         return false;
     }
-    const auto severity = request.loss_policy == loss_policy_t::allow
+    const auto severity = context.request.loss_policy == loss_policy_t::allow
                               ? diagnostic_severity_t::info
                               : diagnostic_severity_t::warning;
-    add_diagnostic(result, severity, conversion_diagnostic_code_t::target_diagnostic,
-                   conversion_stage_t::transform, request.target, request.chart,
+    add_diagnostic(context.result, severity, conversion_diagnostic_code_t::target_diagnostic,
+                   conversion_stage_t::transform, context.request.target, context.request.chart,
                    "BMS control flow will be flattened to its active materialized projection",
                    "branches", true);
     return true;
 }
 
-void append_conversion_output(conversion_result_t& result, const song_document_t& prepared,
-                              const conversion_request_t& request, conversion_limits_t limits,
+void append_conversion_output(conversion_context_t& context, const song_document_t& prepared,
                               std::optional<chart_id_t> chart, std::string extension,
                               std::optional<std::string> bytes,
                               const chart_document_t* chart_document) {
     if (!bytes) {
         return;
     }
-    const auto filename = filename_for(prepared, chart_document, extension, limits);
+    const auto filename = filename_for(prepared, chart_document, extension, context.limits);
     if (!filename) {
-        add_diagnostic(result, diagnostic_severity_t::error,
-                       conversion_diagnostic_code_t::output_limit,
-                       conversion_stage_t::serialize, request.target, chart,
+        add_diagnostic(context.result, diagnostic_severity_t::error,
+                       conversion_diagnostic_code_t::output_limit, conversion_stage_t::serialize,
+                       context.request.target, chart,
                        "Conversion filename cannot fit its configured byte limit");
         return;
     }
-    result.outputs.push_back({request.target, chart, *filename, std::move(*bytes), false});
+    context.result.outputs.push_back(
+        {context.request.target, chart, *filename, std::move(*bytes), false});
 }
 
-void write_native_output(const song_document_t& prepared, const conversion_request_t& request,
-                         conversion_limits_t limits, conversion_result_t& result) {
-    if (!request.target_profile.empty() && request.target_profile != "1") {
-        add_diagnostic(result, diagnostic_severity_t::error,
+void write_native_output(conversion_context_t& context, const song_document_t& prepared) {
+    if (!context.request.target_profile.empty() && context.request.target_profile != "1") {
+        add_diagnostic(context.result, diagnostic_severity_t::error,
                        conversion_diagnostic_code_t::unknown_target_profile,
-                       conversion_stage_t::request, request.target, std::nullopt,
-                       "Unknown native-project target profile: " + request.target_profile);
+                       conversion_stage_t::request, context.request.target, std::nullopt,
+                       "Unknown native-project target profile: " + context.request.target_profile);
     }
-    if (result_has_errors(result)) {
+    if (result_has_errors(context.result)) {
         return;
     }
     const auto written = write_native_project(prepared);
-    append_target_diagnostics(result, written.diagnostics, request.target, std::nullopt,
-                              request.loss_policy);
-    append_conversion_output(result, prepared, request, limits, std::nullopt, ".wormedit",
-                             written.bytes, nullptr);
+    append_target_diagnostics(context.result, written.diagnostics, context.request.target,
+                              std::nullopt, context.request.loss_policy);
+    append_conversion_output(context, prepared, std::nullopt, ".wormedit", written.bytes, nullptr);
 }
 
-void write_bms_outputs(const song_document_t& prepared, const conversion_request_t& request,
-                       const std::vector<chart_id_t>& charts, conversion_limits_t limits,
-                       conversion_result_t& result) {
+void write_bms_outputs(conversion_context_t& context, const song_document_t& prepared,
+                       const std::vector<chart_id_t>& charts) {
     for (const auto chart_id : charts) {
         bms_write_options_t options;
         options.chart = chart_id;
-        options.preserve_unchanged_source = request.staged_assets.empty();
-        options.branch_policy = request.branches == branch_projection_t::preserve_tree
+        options.preserve_unchanged_source = context.request.staged_assets.empty();
+        options.branch_policy = context.request.branches == branch_projection_t::preserve_tree
                                     ? bms_branch_policy_t::preserve_tree
                                     : bms_branch_policy_t::flatten_active;
-        options.output_encoding = request.encoding;
-        if (!request.target_profile.empty() &&
+        options.output_encoding = context.request.encoding;
+        if (!context.request.target_profile.empty() &&
             selected_chart(prepared, chart_id)->source_family != format_family_t::bmson) {
-            options.lane_profile_id = request.target_profile;
+            options.lane_profile_id = context.request.target_profile;
         }
         const auto written = write_bms(prepared, std::move(options));
-        append_target_diagnostics(result, written.diagnostics, request.target, chart_id,
-                                  request.loss_policy);
+        append_target_diagnostics(context.result, written.diagnostics, context.request.target,
+                                  chart_id, context.request.loss_policy);
         const auto* chart = selected_chart(prepared, chart_id);
-        const auto profile = request.target_profile.empty() && chart->source_family == format_family_t::bmson &&
-            !chart->lane_layouts.empty() ? chart->lane_layouts.front().layout.profile_id : request.target_profile;
-        append_conversion_output(result, prepared, request, limits, chart_id,
-                                 std::string(bms_extension(profile)), written.bytes, chart);
+        const auto profile = context.request.target_profile.empty() &&
+                                     chart->source_family == format_family_t::bmson &&
+                                     !chart->lane_layouts.empty()
+                                 ? chart->lane_layouts.front().layout.profile_id
+                                 : context.request.target_profile;
+        append_conversion_output(context, prepared, chart_id, std::string(bms_extension(profile)),
+                                 written.bytes, chart);
     }
 }
 
-auto resolve_stepmania_options(const conversion_request_t& request, conversion_result_t& result)
+auto resolve_stepmania_options(conversion_context_t& context)
     -> std::optional<stepmania_export_policy_result_t> {
-    if (!request.target_profile.empty()) {
-        add_diagnostic(result, diagnostic_severity_t::error,
+    if (!context.request.target_profile.empty()) {
+        add_diagnostic(context.result, diagnostic_severity_t::error,
                        conversion_diagnostic_code_t::unknown_target_profile,
-                       conversion_stage_t::request, request.target, request.chart,
+                       conversion_stage_t::request, context.request.target, context.request.chart,
                        "StepMania target profiles use the typed export policy");
         return std::nullopt;
     }
-    if (!request.stepmania) {
-        add_diagnostic(result, diagnostic_severity_t::error,
-                       conversion_diagnostic_code_t::invalid_request,
-                       conversion_stage_t::request, request.target, request.chart,
+    if (!context.request.stepmania) {
+        add_diagnostic(context.result, diagnostic_severity_t::error,
+                       conversion_diagnostic_code_t::invalid_request, conversion_stage_t::request,
+                       context.request.target, context.request.chart,
                        "StepMania conversion requires explicit file, syntax, and implementation "
                        "choices");
         return std::nullopt;
     }
-    auto resolved = resolve_stepmania_export_policy(*request.stepmania);
+    auto resolved = resolve_stepmania_export_policy(*context.request.stepmania);
     if (!resolved) {
-        add_diagnostic(result, diagnostic_severity_t::error,
+        add_diagnostic(context.result, diagnostic_severity_t::error,
                        conversion_diagnostic_code_t::unknown_target_profile,
-                       conversion_stage_t::request, request.target, request.chart,
+                       conversion_stage_t::request, context.request.target, context.request.chart,
                        resolved.message);
         return std::nullopt;
     }
     return resolved;
 }
 
-auto write_stepmania_output(const song_document_t& prepared,
-                            const conversion_request_t& request, conversion_limits_t limits,
-                            conversion_result_t& result)
+auto write_stepmania_output(conversion_context_t& context, const song_document_t& prepared)
     -> std::optional<stepmania_export_policy_result_t> {
-    auto resolved = resolve_stepmania_options(request, result);
+    auto resolved = resolve_stepmania_options(context);
     if (!resolved.has_value()) {
         return std::nullopt;
     }
     auto options = *resolved->options;
-    options.chart = request.chart;
+    options.chart = context.request.chart;
     const auto written = write_stepmania(prepared, std::move(options));
-    append_target_diagnostics(result, written.diagnostics, request.target, request.chart,
-                              request.loss_policy);
-    const auto extension = request.stepmania->file_profile == stepmania_profile_t::sm ? ".sm"
-                                                                                       : ".ssc";
-    append_conversion_output(result, prepared, request, limits, request.chart, extension,
-                             written.text,
-                             request.chart ? selected_chart(prepared, *request.chart) : nullptr);
+    append_target_diagnostics(context.result, written.diagnostics, context.request.target,
+                              context.request.chart, context.request.loss_policy);
+    const auto extension =
+        context.request.stepmania->file_profile == stepmania_profile_t::sm ? ".sm" : ".ssc";
+    append_conversion_output(
+        context, prepared, context.request.chart, extension, written.text,
+        context.request.chart ? selected_chart(prepared, *context.request.chart) : nullptr);
     return resolved;
 }
 
-auto osu_profile(const conversion_request_t& request, conversion_result_t& result)
-    -> std::optional<osu_mania_file_profile_t> {
-    if (request.target_profile.empty()) {
+auto osu_profile(conversion_context_t& context) -> std::optional<osu_mania_file_profile_t> {
+    if (context.request.target_profile.empty()) {
         return std::nullopt;
     }
-    if (request.target_profile == "stable-v14") {
+    if (context.request.target_profile == "stable-v14") {
         return osu_mania_file_profile_t::stable_v14;
     }
-    if (request.target_profile == "lazer-v128") {
+    if (context.request.target_profile == "lazer-v128") {
         return osu_mania_file_profile_t::lazer_v128;
     }
-    add_diagnostic(result, diagnostic_severity_t::error,
+    add_diagnostic(context.result, diagnostic_severity_t::error,
                    conversion_diagnostic_code_t::unknown_target_profile,
-                   conversion_stage_t::request, request.target, request.chart,
-                   "Unknown osu!mania target profile: " + request.target_profile);
+                   conversion_stage_t::request, context.request.target, context.request.chart,
+                   "Unknown osu!mania target profile: " + context.request.target_profile);
     return std::nullopt;
 }
 
-void write_osu_outputs(const song_document_t& prepared, const conversion_request_t& request,
-                       const std::vector<chart_id_t>& charts, conversion_limits_t limits,
-                       conversion_result_t& result) {
-    const auto profile = osu_profile(request, result);
-    if (!request.target_profile.empty() && !profile.has_value()) {
+void write_osu_outputs(conversion_context_t& context, const song_document_t& prepared,
+                       const std::vector<chart_id_t>& charts) {
+    const auto profile = osu_profile(context);
+    if (!context.request.target_profile.empty() && !profile.has_value()) {
         return;
     }
     for (const auto chart_id : charts) {
         const auto written = write_osu_mania(prepared, {.profile = profile, .chart = chart_id});
-        append_target_diagnostics(result, written.diagnostics, request.target, chart_id,
-                                  request.loss_policy);
-        append_conversion_output(result, prepared, request, limits, chart_id, ".osu", written.text,
+        append_target_diagnostics(context.result, written.diagnostics, context.request.target,
+                                  chart_id, context.request.loss_policy);
+        append_conversion_output(context, prepared, chart_id, ".osu", written.text,
                                  selected_chart(prepared, chart_id));
     }
 }
 
-void write_bmson_outputs(const song_document_t& prepared, const conversion_request_t& request,
-                         const std::vector<chart_id_t>& charts, conversion_limits_t limits,
-                         conversion_result_t& result) {
-    if (!request.target_profile.empty() && request.target_profile != "1.0") {
-        add_diagnostic(result, diagnostic_severity_t::error,
+void write_bmson_outputs(conversion_context_t& context, const song_document_t& prepared,
+                         const std::vector<chart_id_t>& charts) {
+    if (!context.request.target_profile.empty() && context.request.target_profile != "1.0") {
+        add_diagnostic(context.result, diagnostic_severity_t::error,
                        conversion_diagnostic_code_t::unknown_target_profile,
-                       conversion_stage_t::request, request.target, request.chart,
-                       "Unknown BMSON target profile: " + request.target_profile);
+                       conversion_stage_t::request, context.request.target, context.request.chart,
+                       "Unknown BMSON target profile: " + context.request.target_profile);
         return;
     }
     for (const auto chart_id : charts) {
         const auto written = write_bmson(prepared, {.chart = chart_id});
-        append_target_diagnostics(result, written.diagnostics, request.target, chart_id,
-                                  request.loss_policy);
-        append_conversion_output(result, prepared, request, limits, chart_id, ".bmson",
-                                 written.json, selected_chart(prepared, chart_id));
+        append_target_diagnostics(context.result, written.diagnostics, context.request.target,
+                                  chart_id, context.request.loss_policy);
+        append_conversion_output(context, prepared, chart_id, ".bmson", written.json,
+                                 selected_chart(prepared, chart_id));
     }
 }
 
-auto serialize_conversion(const song_document_t& prepared, const conversion_request_t& request,
-                          const std::vector<chart_id_t>& charts, conversion_limits_t limits,
-                          conversion_result_t& result)
+auto serialize_conversion(conversion_context_t& context, const song_document_t& prepared,
+                          const std::vector<chart_id_t>& charts)
     -> std::optional<stepmania_export_policy_result_t> {
-    switch (request.target) {
+    switch (context.request.target) {
     case format_family_t::native_project:
-        write_native_output(prepared, request, limits, result);
+        write_native_output(context, prepared);
         break;
     case format_family_t::bms:
-        write_bms_outputs(prepared, request, charts, limits, result);
+        write_bms_outputs(context, prepared, charts);
         break;
     case format_family_t::stepmania:
-        return write_stepmania_output(prepared, request, limits, result);
+        return write_stepmania_output(context, prepared);
     case format_family_t::osu_mania:
-        write_osu_outputs(prepared, request, charts, limits, result);
+        write_osu_outputs(context, prepared, charts);
         break;
     case format_family_t::bmson:
-        write_bmson_outputs(prepared, request, charts, limits, result);
+        write_bmson_outputs(context, prepared, charts);
         break;
     case format_family_t::midi:
     case format_family_t::quaver:
@@ -942,45 +960,44 @@ auto serialize_conversion(const song_document_t& prepared, const conversion_requ
     return std::nullopt;
 }
 
-auto validate_conversion_outputs(conversion_result_t& result, const conversion_request_t& request,
-                                 conversion_limits_t limits,
+auto validate_conversion_outputs(conversion_context_t& context,
                                  const stepmania_export_policy_result_t* stepmania_options)
     -> bool {
-    if (result_has_errors(result)) {
-        result.outputs.clear();
+    if (result_has_errors(context.result)) {
+        context.result.outputs.clear();
         return false;
     }
-    if (request.loss_policy == loss_policy_t::reject &&
-        std::ranges::any_of(result.diagnostics, &conversion_diagnostic_t::loss)) {
-        add_diagnostic(result, diagnostic_severity_t::error,
-                       conversion_diagnostic_code_t::loss_rejected,
-                       conversion_stage_t::serialize, request.target, request.chart,
+    if (context.request.loss_policy == loss_policy_t::reject &&
+        std::ranges::any_of(context.result.diagnostics, &conversion_diagnostic_t::loss)) {
+        add_diagnostic(context.result, diagnostic_severity_t::error,
+                       conversion_diagnostic_code_t::loss_rejected, conversion_stage_t::serialize,
+                       context.request.target, context.request.chart,
                        "Conversion produced a loss diagnostic under the reject policy");
-        result.outputs.clear();
+        context.result.outputs.clear();
         return false;
     }
-    if (result.outputs.empty()) {
-        add_diagnostic(result, diagnostic_severity_t::error,
+    if (context.result.outputs.empty()) {
+        add_diagnostic(context.result, diagnostic_severity_t::error,
                        conversion_diagnostic_code_t::target_diagnostic,
-                       conversion_stage_t::serialize, request.target, request.chart,
+                       conversion_stage_t::serialize, context.request.target, context.request.chart,
                        "Target writer produced no conversion output");
         return false;
     }
     std::size_t total_bytes{};
-    for (const auto& output : result.outputs) {
-        if (output.bytes.size() > limits.maximum_total_output_bytes - total_bytes) {
-            add_diagnostic(result, diagnostic_severity_t::error,
+    for (const auto& output : context.result.outputs) {
+        if (output.bytes.size() > context.limits.maximum_total_output_bytes - total_bytes) {
+            add_diagnostic(context.result, diagnostic_severity_t::error,
                            conversion_diagnostic_code_t::output_limit,
-                           conversion_stage_t::serialize, request.target, output.chart,
+                           conversion_stage_t::serialize, context.request.target, output.chart,
                            "Conversion output set exceeds its configured byte limit");
-            result.outputs.clear();
+            context.result.outputs.clear();
             return false;
         }
         total_bytes += output.bytes.size();
     }
-    for (auto& output : result.outputs) {
-        if (!validate_reimport(output, request, stepmania_options, result)) {
-            result.outputs.clear();
+    for (auto& output : context.result.outputs) {
+        if (!validate_reimport(context, output, stepmania_options)) {
+            context.result.outputs.clear();
             return false;
         }
         output.reimport_validated = true;
@@ -1017,28 +1034,27 @@ auto conversion_needs_slice_spans(const song_document_t& song, const conversion_
 auto convert_document(const song_document_t& song, const conversion_request_t& request,
                       conversion_limits_t limits) -> conversion_result_t {
     conversion_result_t result;
-    if (!validate_request_policies(song, request, limits, result)) {
+    conversion_context_t context{request, limits, result};
+    if (!validate_request_policies(context, song)) {
         return result;
     }
-    const auto charts = selected_chart_ids(song, request, result);
-    if (result_has_errors(result) || !validate_selected_target(song, request, charts, limits, result)) {
+    const auto charts = selected_chart_ids(context, song);
+    if (result_has_errors(result) || !validate_selected_target(context, song, charts)) {
         return result;
     }
-    auto prepared = prepare_document(song, request, charts, result);
+    auto prepared = prepare_document(context, song, charts);
     if (!prepared || result_has_errors(result)) {
         result.outputs.clear();
         return result;
     }
-    if (!prepare_slice_exports(*prepared, request, charts, result)) {
+    if (!prepare_slice_exports(context, *prepared, charts)) {
         result.slice_plans.clear();
         result.asset_copies.clear();
         result.silent_files.clear();
         return result;
     }
-    auto stepmania_options =
-        serialize_conversion(*prepared, request, charts, limits, result);
-    if (!validate_conversion_outputs(result, request, limits,
-                                     stepmania_options ? &*stepmania_options : nullptr)) {
+    auto stepmania_options = serialize_conversion(context, *prepared, charts);
+    if (!validate_conversion_outputs(context, stepmania_options ? &*stepmania_options : nullptr)) {
         result.slice_plans.clear();
         result.asset_copies.clear();
         result.silent_files.clear();

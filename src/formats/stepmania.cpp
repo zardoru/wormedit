@@ -1,3 +1,5 @@
+#include "../core/checked_math.h"
+#include "../core/text_util.h"
 #include "id_source.h"
 #include <wormedit/formats/stepmania.h>
 
@@ -53,15 +55,7 @@ using format_detail::id_source_t;
 }
 
 auto trim(std::string_view text) -> std::string_view {
-    while (!text.empty() && (text.front() == ' ' || text.front() == '\t' || text.front() == '\r' ||
-                             text.front() == '\n')) {
-        text.remove_prefix(1);
-    }
-    while (!text.empty() && (text.back() == ' ' || text.back() == '\t' || text.back() == '\r' ||
-                             text.back() == '\n')) {
-        text.remove_suffix(1);
-    }
-    return text;
+    return text_util::trim(text, " \t\r\n");
 }
 
 auto upper_ascii(std::string_view text) -> std::string {
@@ -73,49 +67,12 @@ auto upper_ascii(std::string_view text) -> std::string {
     return result;
 }
 
-auto valid_utf8(std::string_view source) -> std::optional<std::size_t> {
-    std::size_t at{};
-    while (at < source.size()) {
-        const auto first = static_cast<unsigned char>(source[at]);
-        if (first <= 0x7fU) {
-            ++at;
-            continue;
-        }
-        std::size_t count{};
-        std::uint32_t point{};
-        if (first >= 0xc2U && first <= 0xdfU) {
-            count = 2;
-            point = first & 0x1fU;
-        } else if (first >= 0xe0U && first <= 0xefU) {
-            count = 3;
-            point = first & 0x0fU;
-        } else if (first >= 0xf0U && first <= 0xf4U) {
-            count = 4;
-            point = first & 0x07U;
-        } else
-            return at;
-        if (count > source.size() - at)
-            return at;
-        for (std::size_t i = 1; i < count; ++i) {
-            const auto next = static_cast<unsigned char>(source[at + i]);
-            if ((next & 0xc0U) != 0x80U)
-                return at + i;
-            point = (point << 6U) | (next & 0x3fU);
-        }
-        if ((count == 3 && point < 0x800U) || (count == 4 && point < 0x10000U) ||
-            (point >= 0xd800U && point <= 0xdfffU) || point > 0x10ffffU)
-            return at;
-        at += count;
-    }
-    return std::nullopt;
+auto valid_utf8(std::string_view text) -> std::optional<std::size_t> {
+    return text_util::invalid_utf8_offset(text);
 }
 
 auto parse_unsigned(std::string_view text, std::uint64_t& value) -> bool {
-    text = trim(text);
-    if (text.empty())
-        return false;
-    const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
-    return parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size();
+    return wormedit::parse_integer(trim(text), value);
 }
 
 auto decimal_rational(std::string_view text) -> std::optional<signed_rational_t> {
@@ -126,12 +83,10 @@ auto decimal_rational(std::string_view text) -> std::optional<signed_rational_t>
 }
 
 auto checked_lcm(std::uint64_t left, std::uint64_t right) -> std::optional<std::uint64_t> {
+    // Preserve StepMania's existing zero-input result; other domains reject zero.
     if (left == 0 || right == 0)
         return std::uint64_t{0};
-    const auto factor = left / std::gcd(left, right);
-    if (factor > std::numeric_limits<std::uint64_t>::max() / right)
-        return std::nullopt;
-    return factor * right;
+    return checked_math::checked_lcm(left, right);
 }
 
 auto multiply_divide_exact(std::uint64_t value, std::uint64_t multiplier, std::uint64_t divisor)
@@ -506,11 +461,7 @@ auto stepmania_relative_path(std::string_view value) -> std::optional<std::files
          ((normalized[0] >= 'A' && normalized[0] <= 'Z') ||
           (normalized[0] >= 'a' && normalized[0] <= 'z')) && normalized[1] == ':'))
         return std::nullopt;
-    std::u8string utf8;
-    utf8.reserve(normalized.size());
-    for (const auto character : normalized)
-        utf8.push_back(static_cast<char8_t>(character));
-    auto path = std::filesystem::path(std::move(utf8));
+    auto path = text_util::path_from_utf8(normalized);
     if (path.is_absolute() || path.has_root_name() || path.has_root_directory() ||
         path.filename().empty() ||
         std::ranges::any_of(path, [](const auto& component) { return component == ".."; }))
@@ -989,13 +940,20 @@ struct timing_parser_t {
     std::vector<bpm_entry_t> source_bpm_rows;
 };
 
-void parse_timing_fields(const std::vector<field_t>& song_fields,
-                         const std::vector<field_t>& chart_fields, stepmania_profile_t profile,
-                         chart_document_t& chart, id_source_t& ids, std::size_t& event_total,
-                         const stepmania_parse_options_t& options,
-                         std::vector<stepmania_parse_diagnostic_t>& diagnostics) {
-    timing_parser_t{song_fields, chart_fields, profile, chart, ids, event_total, options,
-                    diagnostics}.parse_all();
+struct stepmania_parse_state_t {
+    const stepmania_parse_options_t& options;
+    id_source_t& ids;
+    std::size_t& total_events;
+    keysound_context_t& keysounds;
+    std::vector<stepmania_parse_diagnostic_t>& diagnostics;
+    const stepmania_profile_t& profile;
+    const std::shared_ptr<const std::vector<std::byte>>& source_bytes;
+};
+void parse_timing_fields(stepmania_parse_state_t& context, const std::vector<field_t>& song_fields,
+                         const std::vector<field_t>& chart_fields, chart_document_t& chart) {
+    timing_parser_t{song_fields, chart_fields,         context.profile, chart,
+                    context.ids, context.total_events, context.options, context.diagnostics}
+        .parse_all();
 }
 
 struct pending_hold_t {
@@ -1019,27 +977,30 @@ auto note_provenance(stepmania_profile_t profile, std::string spelling,
             "NOTES", std::move(spelling), field.order};
 }
 
-void append_hold_tail(chart_document_t& chart, const lane_layout_t& layout,
-                      std::uint32_t lane_index,
-                      local_position_t position, std::map<std::uint32_t, pending_hold_t>& open_holds,
-                      id_source_t& ids, stepmania_profile_t profile, const field_t& field) {
+void append_hold_tail(stepmania_parse_state_t& context, chart_document_t& chart,
+                      const lane_layout_t& layout, std::uint32_t lane_index,
+                      local_position_t position,
+                      std::map<std::uint32_t, pending_hold_t>& open_holds, const field_t& field) {
     const auto found = open_holds.find(lane_index);
     if (found == open_holds.end())
         fail(stepmania_parse_diagnostic_code_t::invalid_hold,
              "Hold tail has no matching head in its lane", field.order, field.offset);
-    chart.measures[found->second.measure_index].notes.push_back({
-        .id=ids.take<object_id_t>(), .position=found->second.position,
-        .lane=layout.lanes[lane_index].id, .kind=found->second.kind, .end=position,
-        .sound=found->second.sound.resource,
-        .provenance=note_provenance(profile, "hold" + found->second.sound.suffix, field)});
+    chart.measures[found->second.measure_index].notes.push_back(
+        {.id = context.ids.take<object_id_t>(),
+         .position = found->second.position,
+         .lane = layout.lanes[lane_index].id,
+         .kind = found->second.kind,
+         .end = position,
+         .sound = found->second.sound.resource,
+         .provenance =
+             note_provenance(context.profile, "hold" + found->second.sound.suffix, field)});
     open_holds.erase(found);
 }
 
-void append_note_symbol(chart_document_t& chart, const lane_layout_t& layout,
-                        std::size_t measure_index, std::uint32_t lane_index, char symbol,
-                        local_position_t position,
-                        std::map<std::uint32_t, pending_hold_t>& open_holds,
-                        id_source_t& ids, stepmania_profile_t profile, const field_t& field,
+void append_note_symbol(stepmania_parse_state_t& context, chart_document_t& chart,
+                        const lane_layout_t& layout, std::size_t measure_index,
+                        std::uint32_t lane_index, char symbol, local_position_t position,
+                        std::map<std::uint32_t, pending_hold_t>& open_holds, const field_t& field,
                         note_cell_sound_t sound) {
     if (symbol == '0') return;
     if (symbol == '2' || symbol == '4') {
@@ -1052,14 +1013,17 @@ void append_note_symbol(chart_document_t& chart, const lane_layout_t& layout,
         return;
     }
     if (symbol == '3') {
-        append_hold_tail(chart, layout, lane_index, position, open_holds,
-                         ids, profile, field);
+        append_hold_tail(context, chart, layout, lane_index, position, open_holds, field);
         return;
     }
-    chart.measures[measure_index].notes.push_back({
-        .id=ids.take<object_id_t>(), .position=position, .lane=layout.lanes[lane_index].id,
-        .kind=note_kind_for_symbol(symbol), .sound=sound.resource,
-        .provenance=note_provenance(profile, std::string(1, symbol) + sound.suffix, field)});
+    chart.measures[measure_index].notes.push_back(
+        {.id = context.ids.take<object_id_t>(),
+         .position = position,
+         .lane = layout.lanes[lane_index].id,
+         .kind = note_kind_for_symbol(symbol),
+         .sound = sound.resource,
+         .provenance =
+             note_provenance(context.profile, std::string(1, symbol) + sound.suffix, field)});
 }
 
 // Resolves a cell's `[n]` suffix. An index outside #KEYSOUNDS keeps the note
@@ -1106,31 +1070,32 @@ struct autokeysound_cell_t {
 
 // A `K` cell plays its keysound without being judged, so it becomes a BGM event.
 // One that would play nothing imports as nothing.
-void append_autokeysound(chart_document_t& chart, const autokeysound_cell_t& cell,
-                         id_source_t& ids, stepmania_profile_t profile, const field_t& field,
-                         std::vector<stepmania_parse_diagnostic_t>& diagnostics) {
+void append_autokeysound(stepmania_parse_state_t& context, chart_document_t& chart,
+                         const autokeysound_cell_t& cell, const field_t& field) {
     if (!cell.sound.resource) {
         if (cell.sound.suffix.empty())
-            append_keysound_warning(diagnostics, field,
-                "Autokeysound in measure " + std::to_string(cell.measure + 1) + " row " +
-                std::to_string(cell.line) + " has no keysound index and plays nothing");
+            append_keysound_warning(context.diagnostics, field,
+                                    "Autokeysound in measure " + std::to_string(cell.measure + 1) +
+                                        " row " + std::to_string(cell.line) +
+                                        " has no keysound index and plays nothing");
         return;
     }
-    const auto lane = autokeysound_lane(chart, cell.slot, ids, field.order);
-    chart.measures[cell.measure].bgm_events.push_back({
-        .id = ids.take<object_id_t>(), .position = cell.position, .source_lane = lane,
-        .sound = cell.sound.resource, .structural_slot = cell.slot,
-        .provenance = note_provenance(profile, "K" + cell.sound.suffix + " column " +
-                                                   std::to_string(cell.column), field)});
+    const auto lane = autokeysound_lane(chart, cell.slot, context.ids, field.order);
+    chart.measures[cell.measure].bgm_events.push_back(
+        {.id = context.ids.take<object_id_t>(),
+         .position = cell.position,
+         .source_lane = lane,
+         .sound = cell.sound.resource,
+         .structural_slot = cell.slot,
+         .provenance = note_provenance(
+             context.profile, "K" + cell.sound.suffix + " column " + std::to_string(cell.column),
+             field)});
 }
 
-void append_note_map_rows(chart_document_t& chart, const std::vector<std::vector<note_row_t>>& rows,
+void append_note_map_rows(stepmania_parse_state_t& context, chart_document_t& chart,
+                          const std::vector<std::vector<note_row_t>>& rows,
                           std::uint32_t lane_count, const lane_layout_t& layout,
-                          id_source_t& ids, std::size_t& total_events,
-                          const stepmania_parse_options_t& options,
-                          stepmania_profile_t profile, const field_t& note_field,
-                          const keysound_context_t& keysounds,
-                          std::vector<stepmania_parse_diagnostic_t>& diagnostics) {
+                          const field_t& note_field) {
     std::map<std::uint32_t, pending_hold_t> open_holds;
     for (std::size_t measure = 0; measure < rows.size(); ++measure) {
         for (const auto& row : rows[measure]) {
@@ -1140,21 +1105,23 @@ void append_note_map_rows(chart_document_t& chart, const std::vector<std::vector
             std::size_t autokeysounds_in_row{};
             for (std::uint32_t lane = 0; lane < lane_count; ++lane) {
                 if (row.symbols[lane] == '0') continue;
-                if (++total_events > options.max_events)
+                if (++context.total_events > context.options.max_events)
                     fail(stepmania_parse_diagnostic_code_t::event_limit,
                          "StepMania file exceeds the configured event limit",
                          note_field.order, note_field.offset);
-                auto sound = cell_sound(keysounds, row, lane, measure, note_field, diagnostics);
+                auto sound = cell_sound(context.keysounds, row, lane, measure, note_field,
+                                        context.diagnostics);
                 if (row.symbols[lane] == 'K') {
                     const bool plays = sound.resource.has_value();
-                    append_autokeysound(chart, {measure, row.line, lane, autokeysounds_in_row,
-                                                position, std::move(sound)},
-                                        ids, profile, note_field, diagnostics);
+                    append_autokeysound(
+                        context, chart,
+                        {measure, row.line, lane, autokeysounds_in_row, position, std::move(sound)},
+                        note_field);
                     if (plays) ++autokeysounds_in_row;
                     continue;
                 }
-                append_note_symbol(chart, layout, measure, lane, row.symbols[lane], position,
-                                   open_holds, ids, profile, note_field, std::move(sound));
+                append_note_symbol(context, chart, layout, measure, lane, row.symbols[lane],
+                                   position, open_holds, note_field, std::move(sound));
             }
         }
     }
@@ -1204,16 +1171,11 @@ void extend_note_measures(std::vector<measure_chunk_t>& measures, std::uint64_t 
                             .definition={{1, 1}, meter_t{4, 4}}});
 }
 
-auto parse_one_chart(const chart_source_t& source, const std::vector<field_t>& song_fields,
-                     stepmania_profile_t profile,
-                     const std::shared_ptr<const std::vector<std::byte>>& source_bytes,
-                     const stepmania_parse_options_t& options, std::size_t chart_index,
-                     id_source_t& ids, std::size_t& total_events,
-                     keysound_context_t& keysounds,
-                     std::vector<stepmania_parse_diagnostic_t>& diagnostics)
+auto parse_one_chart(stepmania_parse_state_t& context, const chart_source_t& source,
+                     const std::vector<field_t>& song_fields, std::size_t chart_index)
     -> chart_document_t {
     const auto [step_type, description, difficulty, meter_text, radar] =
-        parse_note_source(source, profile, chart_index);
+        parse_note_source(source, context.profile, chart_index);
     const auto lane_count = note_column_count(step_type);
     const auto* note_field = last_field(source.fields, "NOTES");
     if (!lane_count)
@@ -1225,17 +1187,18 @@ auto parse_one_chart(const chart_source_t& source, const std::vector<field_t>& s
     chart.id = chart_id_t{chart_index + 1};
     chart.source_family = format_family_t::stepmania;
     chart.divisions_per_standard_measure = default_divisions_per_standard_measure;
-    if (chart.divisions_per_standard_measure > options.max_divisions_per_standard_measure)
+    if (chart.divisions_per_standard_measure > context.options.max_divisions_per_standard_measure)
         fail(stepmania_parse_diagnostic_code_t::division_limit,
              "Default StepMania editor grid exceeds the configured division limit", chart_index,
              note_field->offset);
     const auto* chart_name = last_field(source.fields, "CHARTNAME");
     chart.metadata.name = chart_name ? std::string(trim(chart_name->value)) : description;
-    const auto* credit = last_field(profile == stepmania_profile_t::ssc
-                                        ? source.fields : song_fields, "CREDIT");
+    const auto* credit = last_field(
+        context.profile == stepmania_profile_t::ssc ? source.fields : song_fields, "CREDIT");
     if (credit) chart.metadata.author = std::string(trim(credit->value));
-    chart.metadata.format_groups.push_back(as_metadata_group(source.fields, profile, source_bytes));
-    if (profile == stepmania_profile_t::sm) {
+    chart.metadata.format_groups.push_back(
+        as_metadata_group(source.fields, context.profile, context.source_bytes));
+    if (context.profile == stepmania_profile_t::sm) {
         const auto order = (note_field ? note_field->order : chart_index) *
                            sm_source_order_stride;
         auto& group = chart.metadata.format_groups.back();
@@ -1249,32 +1212,32 @@ auto parse_one_chart(const chart_source_t& source, const std::vector<field_t>& s
     }
     if (const auto rating = decimal_rational(meter_text); rating && rating->numerator >= 0)
         chart.metadata.rating = *rating;
-    parse_timing_fields(song_fields, source.fields, profile, chart, ids, total_events,
-                        options, diagnostics);
+    parse_timing_fields(context, song_fields, source.fields, chart);
 
     std::string_view note_map = note_field->value;
-    if (profile == stepmania_profile_t::sm) {
+    if (context.profile == stepmania_profile_t::sm) {
         const auto colon = note_field->value.rfind(':');
         if (colon == std::string::npos)
             fail(stepmania_parse_diagnostic_code_t::invalid_notes,
                  "SM #NOTES is missing its note map", note_field->order, note_field->offset);
         note_map = std::string_view(note_field->value).substr(colon + 1);
     }
-    const auto rows = parse_row_map(note_map, *lane_count,
-                                    chart.divisions_per_standard_measure,
-                                    options.max_measures, options.max_events, note_field->order);
-    auto layout = make_layout(step_type, *lane_count, ids);
+    const auto rows =
+        parse_row_map(note_map, *lane_count, chart.divisions_per_standard_measure,
+                      context.options.max_measures, context.options.max_events, note_field->order);
+    auto layout = make_layout(step_type, *lane_count, context.ids);
     if (const auto input = default_input_profile_for(layout)) chart.input_profile = *input;
-    chart.lane_layouts.push_back({.id=ids.take<object_id_t>(),
-                                  .position={measure_id_t{1}, 0}, .layout=layout});
+    chart.lane_layouts.push_back({.id = context.ids.take<object_id_t>(),
+                                  .position = {measure_id_t{1}, 0},
+                                  .layout = layout});
     auto measures = make_note_measures(rows.size());
     chart.measures = measures;
-    register_referenced_keysounds(keysounds, rows);
-    append_note_map_rows(chart, rows, *lane_count, layout, ids, total_events,
-                         options, profile, *note_field, keysounds, diagnostics);
+    register_referenced_keysounds(context.keysounds, rows);
+    append_note_map_rows(context, chart, rows, *lane_count, layout, *note_field);
     measures = std::move(chart.measures);
     const auto max_measure = maximum_timing_measure(chart, measures.size());
-    extend_note_measures(measures, max_measure, options.max_measures, chart_index, *note_field);
+    extend_note_measures(measures, max_measure, context.options.max_measures, chart_index,
+                         *note_field);
     chart.measures = std::move(measures);
     return chart;
 }
@@ -1410,9 +1373,10 @@ auto parse_stepmania_document(std::span<const std::byte> bytes, std::string_view
     std::size_t total_events{};
     keysound_context_t keysounds{read_keysound_list(song_fields, options.profile, diagnostics),
                                  song, ids, options, {}, {}};
+    stepmania_parse_state_t context{
+        options, ids, total_events, keysounds, diagnostics, options.profile, source_bytes};
     for (std::size_t index = 0; index < charts.size(); ++index)
-        song.charts.push_back(parse_one_chart(charts[index], song_fields, options.profile,
-            source_bytes, options, index, ids, total_events, keysounds, diagnostics));
+        song.charts.push_back(parse_one_chart(context, charts[index], song_fields, index));
     append_duplicate_song_field_warnings(song_fields, diagnostics);
     return song;
 }

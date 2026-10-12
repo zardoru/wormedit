@@ -1,3 +1,4 @@
+#include "../core/checked_math.h"
 #include <wormedit/core/timing.h>
 
 #include "timing_arithmetic.h"
@@ -28,19 +29,9 @@ auto timing_fingerprint(const chart_document_t& chart) -> std::uint64_t;
 void fingerprint_mix(std::uint64_t& fingerprint, std::uint64_t value);
 void fingerprint_position(std::uint64_t& fingerprint, local_position_t position);
 
-auto magnitude(std::int64_t value) noexcept -> std::uint64_t {
-    if (value >= 0) {
-        return static_cast<std::uint64_t>(value);
-    }
-    return static_cast<std::uint64_t>(-(value + 1)) + 1;
-}
+using checked_math::magnitude;
 
-auto checked_multiply(std::uint64_t left, std::uint64_t right) -> std::optional<std::uint64_t> {
-    if (left != 0 && right > std::numeric_limits<std::uint64_t>::max() / left) {
-        return std::nullopt;
-    }
-    return left * right;
-}
+using checked_math::checked_multiply;
 
 auto normalized(signed_rational_t value) -> std::optional<signed_rational_t> {
     if (value.denominator == 0) {

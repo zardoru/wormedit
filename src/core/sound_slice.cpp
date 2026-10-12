@@ -1,3 +1,4 @@
+#include "../core/checked_math.h"
 #include <wormedit/core/sound_slice.h>
 
 #include <algorithm>
@@ -12,31 +13,11 @@ constexpr auto maximum_i64_magnitude =
     static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
 constexpr auto minimum_i64_magnitude = maximum_i64_magnitude + 1;
 
-auto magnitude(std::int64_t value) noexcept -> std::uint64_t {
-    return value >= 0 ? static_cast<std::uint64_t>(value)
-                      : static_cast<std::uint64_t>(-(value + 1)) + 1;
-}
+using checked_math::magnitude;
 
-auto checked_multiply(std::uint64_t left, std::uint64_t right)
-    -> std::optional<std::uint64_t> {
-    if (left != 0 && right > std::numeric_limits<std::uint64_t>::max() / left) {
-        return std::nullopt;
-    }
-    return left * right;
-}
+using checked_math::checked_multiply;
 
-auto checked_signed_multiply(std::int64_t value, std::uint64_t factor)
-    -> std::optional<std::int64_t> {
-    const auto absolute = magnitude(value);
-    const auto limit = value < 0 ? minimum_i64_magnitude : maximum_i64_magnitude;
-    if (absolute != 0 && factor > limit / absolute) return std::nullopt;
-    const auto product = absolute * factor;
-    if (value < 0 && product == minimum_i64_magnitude) {
-        return std::numeric_limits<std::int64_t>::min();
-    }
-    return value < 0 ? -static_cast<std::int64_t>(product)
-                     : static_cast<std::int64_t>(product);
-}
+using checked_math::checked_signed_multiply;
 
 auto subtract_exact(signed_rational_t left, signed_rational_t right)
     -> std::optional<signed_rational_t> {

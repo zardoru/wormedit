@@ -1,14 +1,15 @@
 #include "ui/nuklear/compose_sounds_panel.h"
-#include "ui/nuklear/compose_resources.h"
 #include "ui/nuklear/catalog_confirmation.h"
-#include "ui/nuklear/compose_panel_internal.h"
-#include "ui/nuklear/compose_bmson_tab.h"
-#include "ui/nuklear/sound_import_state.h"
-#include "ui/nuklear/tooltip.h"
 #include "ui/nuklear/chrome.h"
-#include "ui/nuklear/popup_lifecycle.h"
+#include "ui/nuklear/compose_action_stamp.h"
+#include "ui/nuklear/compose_bmson_tab.h"
+#include "ui/nuklear/compose_panel_internal.h"
+#include "ui/nuklear/compose_resources.h"
 #include "ui/nuklear/lucide_icons.h"
+#include "ui/nuklear/popup_lifecycle.h"
+#include "ui/nuklear/sound_import_state.h"
 #include "ui/nuklear/theme.h"
+#include "ui/nuklear/tooltip.h"
 #include "ui/nuklear/vector_icons.h"
 
 #include "wormedit/nuklear_config.h"
@@ -141,12 +142,7 @@ auto bms_slot_label(std::uint16_t number) -> std::string {
 // ---- Actions ----
 
 auto raise(const SoundsPanel& panel, WormUiComposeActionKind kind) -> bool {
-    if (panel.action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return false;
-    panel.action->compose_action = kind;
-    panel.action->compose_input_project_id = panel.view->project_id;
-    panel.action->compose_input_chart_id = panel.view->chart_id;
-    panel.action->compose_input_document_revision = panel.view->document_revision;
-    return true;
+    return wormedit::ui::raise_compose_action(*panel.action, *panel.view, kind);
 }
 
 void stage_selection(const SoundsPanel& panel) {

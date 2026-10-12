@@ -1,3 +1,4 @@
+#include "../core/text_util.h"
 #include <wormedit/formats/native_project_storage.h>
 
 #include <nlohmann/json.hpp>
@@ -59,18 +60,10 @@ auto to_version(const song_document_t& song) -> native_project_document_version_
 }
 
 auto path_to_utf8(const std::filesystem::path& path) -> std::string {
-    const auto encoded = path.generic_u8string();
-    return {encoded.begin(), encoded.end()};
+    return text_util::path_utf8(path);
 }
 
-auto path_from_utf8(std::string_view path) -> std::filesystem::path {
-    std::u8string encoded;
-    encoded.reserve(path.size());
-    for (const auto byte : path) {
-        encoded.push_back(static_cast<char8_t>(static_cast<unsigned char>(byte)));
-    }
-    return std::filesystem::path{encoded};
-}
+using text_util::path_from_utf8;
 
 auto bounded_message(std::string message) -> std::string {
     if (message.size() > maximum_diagnostic_message_bytes) {

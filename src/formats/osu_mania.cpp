@@ -1,6 +1,8 @@
+#include "../core/text_util.h"
 #include <wormedit/formats/osu_mania.h>
 
 #include <wormedit/core/rational.h>
+#include <wormedit/core/numeric_text.h>
 #include <wormedit/core/sv_recipe.h>
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/timing.h>
@@ -701,59 +703,15 @@ auto parse_embedded_storyboard(const std::vector<source_line_t>& lines,
 inline constexpr long double barline_alignment_tolerance_ms = 1.0L;
 
 auto trim(std::string_view text) -> std::string_view {
-    while (!text.empty() && (text.front() == ' ' || text.front() == '\t' || text.front() == '\r')) {
-        text.remove_prefix(1);
-    }
-    while (!text.empty() && (text.back() == ' ' || text.back() == '\t' || text.back() == '\r')) {
-        text.remove_suffix(1);
-    }
-    return text;
+    return text_util::trim(text, " \t\r");
 }
 
-auto valid_utf8(std::string_view source) -> std::optional<std::size_t> {
-    std::size_t at{};
-    while (at < source.size()) {
-        const auto first = static_cast<unsigned char>(source[at]);
-        if (first <= 0x7fU) {
-            ++at;
-            continue;
-        }
-        std::size_t count{};
-        std::uint32_t point{};
-        if (first >= 0xc2U && first <= 0xdfU) {
-            count = 2;
-            point = first & 0x1fU;
-        } else if (first >= 0xe0U && first <= 0xefU) {
-            count = 3;
-            point = first & 0x0fU;
-        } else if (first >= 0xf0U && first <= 0xf4U) {
-            count = 4;
-            point = first & 0x07U;
-        } else {
-            return at;
-        }
-        if (count > source.size() - at)
-            return at;
-        for (std::size_t offset = 1; offset < count; ++offset) {
-            const auto next = static_cast<unsigned char>(source[at + offset]);
-            if ((next & 0xc0U) != 0x80U)
-                return at + offset;
-            point = (point << 6U) | (next & 0x3fU);
-        }
-        if ((count == 3 && point < 0x800U) || (count == 4 && point < 0x10000U) ||
-            (point >= 0xd800U && point <= 0xdfffU) || point > 0x10ffffU)
-            return at;
-        at += count;
-    }
-    return std::nullopt;
+auto valid_utf8(std::string_view text) -> std::optional<std::size_t> {
+    return text_util::invalid_utf8_offset(text);
 }
 
-template <typename value_t> auto parse_integer(std::string_view text, value_t& value) -> bool {
-    text = trim(text);
-    if (text.empty())
-        return false;
-    const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
-    return parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size();
+template <class Integer> auto parse_integer(std::string_view text, Integer& value) -> bool {
+    return wormedit::parse_integer(trim(text), value);
 }
 
 auto parse_number(std::string_view text, long double& value) -> bool {
@@ -809,13 +767,7 @@ auto split_csv(std::string_view line) -> std::optional<std::vector<std::string>>
     return fields;
 }
 
-auto path_from_utf8(std::string_view value) -> std::filesystem::path {
-    std::u8string utf8;
-    utf8.reserve(value.size());
-    for (const auto character : value)
-        utf8.push_back(static_cast<char8_t>(character));
-    return std::filesystem::path(std::move(utf8));
-}
+using text_util::path_from_utf8;
 
 auto safe_relative_path(std::string_view value) -> std::optional<std::filesystem::path> {
     if (value.empty() || value.find('\0') != std::string_view::npos)
@@ -1883,8 +1835,7 @@ auto rational_value(signed_rational_t value) -> std::optional<long double> {
 }
 
 auto path_utf8(const std::filesystem::path& path) -> std::string {
-    const auto value = path.generic_u8string();
-    return {reinterpret_cast<const char*>(value.data()), value.size()};
+    return text_util::path_utf8(path);
 }
 
 auto writer_safe_text(std::string_view value) -> bool {

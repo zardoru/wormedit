@@ -1,3 +1,5 @@
+#include "../core/checked_math.h"
+#include "../core/text_util.h"
 #include <wormedit/formats/bms_writer.h>
 
 #include <wormedit/core/bms_branch_projection.h>
@@ -279,44 +281,7 @@ auto generated_or_channel_token(std::string_view token) -> bool {
            is_base36(upper[4]);
 }
 
-auto valid_utf8(std::string_view text) -> bool {
-    std::size_t index{};
-    while (index < text.size()) {
-        const auto first = static_cast<unsigned char>(text[index]);
-        if (first <= 0x7fU) {
-            ++index;
-            continue;
-        }
-        std::size_t width{};
-        std::uint32_t codepoint{};
-        if (first >= 0xc2U && first <= 0xdfU) {
-            width = 2;
-            codepoint = first & 0x1fU;
-        } else if (first >= 0xe0U && first <= 0xefU) {
-            width = 3;
-            codepoint = first & 0x0fU;
-        } else if (first >= 0xf0U && first <= 0xf4U) {
-            width = 4;
-            codepoint = first & 0x07U;
-        } else {
-            return false;
-        }
-        if (width > text.size() - index)
-            return false;
-        for (std::size_t offset = 1; offset < width; ++offset) {
-            const auto next = static_cast<unsigned char>(text[index + offset]);
-            if ((next & 0xc0U) != 0x80U)
-                return false;
-            codepoint = (codepoint << 6U) | (next & 0x3fU);
-        }
-        if ((width == 3 && codepoint < 0x800U) || (width == 4 && codepoint < 0x10000U) ||
-            (codepoint >= 0xd800U && codepoint <= 0xdfffU) || codepoint > 0x10ffffU) {
-            return false;
-        }
-        index += width;
-    }
-    return true;
-}
+using text_util::valid_utf8;
 
 auto retained_source_bytes(const song_document_t& song, const chart_document_t& chart)
     -> std::shared_ptr<const std::vector<std::byte>> {
@@ -429,14 +394,7 @@ auto parse_positive_timing_value(std::string_view text) -> std::optional<signed_
                              parsed.value->denominator};
 }
 
-auto checked_lcm(std::uint64_t left, std::uint64_t right) -> std::optional<std::uint64_t> {
-    if (left == 0 || right == 0)
-        return std::nullopt;
-    const auto reduced = left / std::gcd(left, right);
-    if (right > std::numeric_limits<std::uint64_t>::max() / reduced)
-        return std::nullopt;
-    return reduced * right;
-}
+using checked_math::checked_lcm;
 
 struct note_slot_t {
     std::uint64_t numerator{};

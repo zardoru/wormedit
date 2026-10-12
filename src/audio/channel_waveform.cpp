@@ -1,3 +1,4 @@
+#include "../core/checked_math.h"
 #include <wormedit/audio/channel_waveform.h>
 
 #include <algorithm>
@@ -10,10 +11,7 @@
 namespace wormedit::audio {
 namespace {
 
-auto magnitude(std::int64_t value) -> std::uint64_t {
-    return value >= 0 ? static_cast<std::uint64_t>(value)
-                      : static_cast<std::uint64_t>(-(value + 1)) + 1;
-}
+using checked_math::magnitude;
 
 auto normalized(signed_rational_t value) -> std::optional<signed_rational_t> {
     if (value.denominator == 0)
@@ -31,18 +29,7 @@ auto normalized(signed_rational_t value) -> std::optional<signed_rational_t> {
     return value;
 }
 
-auto checked_signed_multiply(std::int64_t value, std::uint64_t factor)
-    -> std::optional<std::int64_t> {
-    constexpr auto maximum = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
-    const auto limit = value < 0 ? maximum + 1U : maximum;
-    const auto absolute = magnitude(value);
-    if (absolute != 0 && factor > limit / absolute)
-        return std::nullopt;
-    const auto product = absolute * factor;
-    if (value < 0 && product == maximum + 1U)
-        return std::numeric_limits<std::int64_t>::min();
-    return value < 0 ? -static_cast<std::int64_t>(product) : static_cast<std::int64_t>(product);
-}
+using checked_math::checked_signed_multiply;
 
 auto add_exact(signed_rational_t left, signed_rational_t right)
     -> std::optional<signed_rational_t> {

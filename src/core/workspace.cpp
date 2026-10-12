@@ -1,3 +1,4 @@
+#include "checked_math.h"
 #include <wormedit/core/workspace.h>
 
 #include <algorithm>
@@ -269,11 +270,7 @@ auto make_chart_option(const chart_document_t& chart) -> workspace_chart_option_
 }
 
 auto checked_add(std::size_t& total, std::size_t value) -> bool {
-    if (value > std::numeric_limits<std::size_t>::max() - total) {
-        return false;
-    }
-    total += value;
-    return true;
+    return checked_math::account_size(total, value);
 }
 
 auto enforce_summary_cap(std::size_t value, const workspace_controller_t& workspace,

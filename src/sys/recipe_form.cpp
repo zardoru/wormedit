@@ -1,5 +1,6 @@
-#include "sys/projection_notification_feedback.h"
 #include "sys/recipe_form.h"
+#include "sys/projection_notification_feedback.h"
+#include "wormedit/core/numeric_text.h"
 
 #include <wormedit/core/sv_recipe.h>
 
@@ -13,19 +14,11 @@ namespace wormedit::sys {
 namespace {
 
 auto parse_unsigned(const char* text) -> std::optional<std::uint64_t> {
-    if (!text || text[0] == '\0') return std::nullopt;
-    const auto* end = text + std::strlen(text);
-    std::uint64_t value{};
-    const auto parsed = std::from_chars(text, end, value);
-    return parsed.ec == std::errc{} && parsed.ptr == end ? std::optional{value} : std::nullopt;
+    return wormedit::parse_integer<std::uint64_t>(text);
 }
 
 auto parse_signed(const char* text) -> std::optional<std::int64_t> {
-    if (!text || text[0] == '\0') return std::nullopt;
-    const auto* end = text + std::strlen(text);
-    std::int64_t value{};
-    const auto parsed = std::from_chars(text, end, value);
-    return parsed.ec == std::errc{} && parsed.ptr == end ? std::optional{value} : std::nullopt;
+    return wormedit::parse_integer<std::int64_t>(text);
 }
 
 auto parse_signed_rational(const WormUiTimingRecipeRationalText& text)

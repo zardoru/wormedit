@@ -1,3 +1,4 @@
+#include "../core/checked_math.h"
 #include <wormedit/core/measure.h>
 
 #include <charconv>
@@ -46,17 +47,7 @@ auto parse_unsigned(std::string_view text, std::uint64_t& value) -> unsigned_par
     return unsigned_parse_error_t::none;
 }
 
-auto checked_multiply(
-    std::uint64_t left,
-    std::uint64_t right,
-    std::uint64_t& value) -> bool
-{
-    if (left != 0 && right > maximum / left) {
-        return false;
-    }
-    value = left * right;
-    return true;
-}
+using checked_math::checked_multiply;
 
 auto normalize(std::uint64_t numerator, std::uint64_t denominator) -> rational_t
 {

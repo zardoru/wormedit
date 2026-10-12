@@ -1,3 +1,6 @@
+#include "checked_math.h"
+#include "text_util.h"
+#include "wormedit/core/numeric_text.h"
 #include <wormedit/core/storyboard.h>
 
 #include <algorithm>
@@ -16,14 +19,7 @@
 namespace wormedit {
 namespace {
 
-auto checked_add_i64(std::int64_t left, std::int64_t right, std::int64_t& output) noexcept -> bool {
-    if ((right > 0 && left > std::numeric_limits<std::int64_t>::max() - right) ||
-        (right < 0 && left < std::numeric_limits<std::int64_t>::min() - right)) {
-        return false;
-    }
-    output = left + right;
-    return true;
-}
+using checked_math::checked_add;
 
 auto checked_add_unsigned_i64(std::int64_t base, std::uint64_t offset,
                               std::int64_t& output) noexcept -> bool {
@@ -143,14 +139,8 @@ auto parse_opcode(std::string_view name) noexcept -> std::optional<storyboard_op
     return std::nullopt;
 }
 
-auto trim(std::string_view value) noexcept -> std::string_view {
-    while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
-        value.remove_prefix(1);
-    }
-    while (!value.empty() && (value.back() == ' ' || value.back() == '\t')) {
-        value.remove_suffix(1);
-    }
-    return value;
+auto trim(std::string_view text) noexcept -> std::string_view {
+    return text_util::trim(text, " \t");
 }
 
 auto split_csv(std::string_view line) -> std::vector<std::string> {
@@ -179,13 +169,9 @@ auto split_csv(std::string_view line) -> std::vector<std::string> {
     return fields;
 }
 
-template <typename integer_t>
-auto parse_integer(std::string_view text, integer_t& value) noexcept -> bool {
-    text = trim(text);
-    if (text.empty())
-        return false;
-    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
-    return error == std::errc{} && end == text.data() + text.size();
+template <class Integer>
+auto parse_integer(std::string_view text, Integer& value) noexcept -> bool {
+    return wormedit::parse_integer(trim(text), value);
 }
 
 auto parse_double(std::string_view text, double& value) noexcept -> bool {
@@ -373,7 +359,7 @@ auto extent_of_node(const storyboard_node_t& node, std::size_t depth, std::size_
     std::int64_t repeated{};
     std::int64_t child_extent{};
     if (!checked_mul_nonnegative(period, node.loop_iteration_count, repeated) ||
-        !checked_add_i64(node.loop_start_time_ms, repeated, child_extent)) {
+        !checked_add(node.loop_start_time_ms, repeated, child_extent)) {
         return storyboard_diagnostic_code_t::time_overflow;
     }
     extent = std::max<std::int64_t>(0, child_extent);
@@ -572,8 +558,8 @@ void evaluate_command_node(const storyboard_node_t& node, std::int64_t parent_st
     }
     std::int64_t start{};
     std::int64_t end{};
-    if (!checked_add_i64(parent_start_ms, command.start_time_ms, start) ||
-        !checked_add_i64(parent_start_ms, command.end_time_ms, end)) {
+    if (!checked_add(parent_start_ms, command.start_time_ms, start) ||
+        !checked_add(parent_start_ms, command.end_time_ms, end)) {
         set_evaluation_error(context, storyboard_diagnostic_code_t::time_overflow,
                              "storyboard command time overflowed");
         return;
@@ -624,7 +610,7 @@ auto loop_window(const storyboard_node_t& node, std::int64_t parent_start_ms,
                  std::int64_t query_time_ms, std::size_t depth, evaluation_context_t& context)
     -> std::optional<loop_evaluation_window_t> {
     std::int64_t loop_start{};
-    if (!checked_add_i64(parent_start_ms, node.loop_start_time_ms, loop_start)) {
+    if (!checked_add(parent_start_ms, node.loop_start_time_ms, loop_start)) {
         set_evaluation_error(context, storyboard_diagnostic_code_t::time_overflow,
                              "storyboard loop start overflowed");
         return std::nullopt;
@@ -645,7 +631,7 @@ auto loop_window(const storyboard_node_t& node, std::int64_t parent_start_ms,
     if (period > 0) {
         std::int64_t repeated{};
         if (!checked_mul_nonnegative(period, node.loop_iteration_count, repeated) ||
-            !checked_add_i64(loop_start, repeated, loop_end)) {
+            !checked_add(loop_start, repeated, loop_end)) {
             set_evaluation_error(context, storyboard_diagnostic_code_t::time_overflow,
                                  "storyboard loop end overflowed");
             return std::nullopt;
@@ -658,7 +644,7 @@ auto loop_window(const storyboard_node_t& node, std::int64_t parent_start_ms,
     std::int64_t offset{};
     std::int64_t iteration_start{};
     if (!checked_mul_nonnegative(period, iteration, offset) ||
-        !checked_add_i64(loop_start, offset, iteration_start)) {
+        !checked_add(loop_start, offset, iteration_start)) {
         set_evaluation_error(context, storyboard_diagnostic_code_t::time_overflow,
                              "storyboard loop iteration time overflowed");
         return std::nullopt;
@@ -670,8 +656,8 @@ auto loop_window(const storyboard_node_t& node, std::int64_t parent_start_ms,
     if (period > 0 && iteration > 0) {
         std::int64_t previous_offset{};
         if (!checked_mul_nonnegative(period, iteration - 1, previous_offset) ||
-            !checked_add_i64(loop_start, previous_offset, window.previous_start) ||
-            !checked_add_i64(window.previous_start, period, window.previous_end)) {
+            !checked_add(loop_start, previous_offset, window.previous_start) ||
+            !checked_add(window.previous_start, period, window.previous_end)) {
             set_evaluation_error(context, storyboard_diagnostic_code_t::time_overflow,
                                  "storyboard prior loop iteration time overflowed");
             return std::nullopt;
@@ -1307,7 +1293,7 @@ auto schedule_node_times(const storyboard_node_t& node, storyboard_schedule_opti
     std::int64_t end_time{};
     if (error.has_value() ||
         !checked_mul_nonnegative(period, node.loop_iteration_count, repeated) ||
-        !checked_add_i64(node.loop_start_time_ms, repeated, end_time)) {
+        !checked_add(node.loop_start_time_ms, repeated, end_time)) {
         result.diagnostics.push_back(
             {error.value_or(storyboard_diagnostic_code_t::time_overflow), 0,
              "storyboard loop duration overflowed"});

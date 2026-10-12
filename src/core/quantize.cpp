@@ -1,3 +1,4 @@
+#include "../core/checked_math.h"
 #include "interaction_geometry.h"
 #include <wormedit/core/quantize.h>
 
@@ -30,25 +31,9 @@ auto error(diagnostic_list_t& diagnostics, diagnostic_code_t code, std::string m
     });
 }
 
-auto checked_multiply(std::uint64_t left, std::uint64_t right, std::uint64_t& result) -> bool {
-    if (left != 0 && right > maximum / left) {
-        return false;
-    }
-    result = left * right;
-    return true;
-}
+using checked_math::checked_multiply;
 
-auto checked_lcm(std::uint64_t left, std::uint64_t right) -> std::optional<std::uint64_t> {
-    if (left == 0 || right == 0) {
-        return std::nullopt;
-    }
-    const auto reduced = left / std::gcd(left, right);
-    std::uint64_t result{};
-    if (!checked_multiply(reduced, right, result)) {
-        return std::nullopt;
-    }
-    return result;
-}
+using checked_math::checked_lcm;
 
 auto required_authored_resolution(const chart_document_t& chart, std::uint64_t divisions)
     -> std::optional<std::uint64_t> {

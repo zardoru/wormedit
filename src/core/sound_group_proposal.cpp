@@ -1,3 +1,4 @@
+#include "text_util.h"
 #include <wormedit/core/sound_group_proposal.h>
 
 #include <wormedit/core/natural_order.h>
@@ -10,14 +11,8 @@
 namespace wormedit {
 namespace {
 
-auto ascii_fold(std::string_view value) -> std::string {
-    auto result = std::string(value);
-    for (auto& character : result) {
-        if (character >= 'A' && character <= 'Z') {
-            character = static_cast<char>(character + ('a' - 'A'));
-        }
-    }
-    return result;
+auto ascii_fold(std::string_view text) -> std::string {
+    return text_util::ascii_fold(std::string{text});
 }
 
 auto filename_part(std::string_view name) -> std::string_view {

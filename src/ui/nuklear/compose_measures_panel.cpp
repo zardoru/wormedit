@@ -1,12 +1,13 @@
 #include "ui/nuklear/compose_measures_panel.h"
 #include "ui/nuklear/chrome.h"
+#include "ui/nuklear/compose_action_stamp.h"
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/tooltip.h"
 #include <SDL3/SDL.h>
-#include <nuklear.h>
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <nuklear.h>
 #include <span>
 
 namespace {
@@ -14,11 +15,8 @@ constexpr float row_height = 26.0f;
 
 auto raise(WormUiWorkspaceAction& action, const WormUiComposeView& view,
            WormUiComposeActionKind kind) -> bool {
-    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return false;
-    action.compose_action = kind;
-    action.compose_input_chart_id = view.chart_id;
-    action.compose_input_document_revision = view.document_revision;
-    return true;
+    return wormedit::ui::raise_compose_action(action, view, kind,
+                                              wormedit::ui::compose_project_stamp_t::preserve);
 }
 
 auto ids_of(const WormUiComposeView& view) -> std::span<const std::uint64_t> {

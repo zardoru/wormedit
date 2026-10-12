@@ -1,3 +1,4 @@
+#include "../core/text_util.h"
 #include <wormedit/core/note_label_editor.h>
 
 #include <algorithm>
@@ -11,45 +12,7 @@
 namespace wormedit {
 namespace {
 
-auto valid_utf8(std::string_view text) -> bool {
-    for (std::size_t index = 0; index < text.size();) {
-        const auto lead = static_cast<unsigned char>(text[index]);
-        std::size_t trailing{};
-        std::uint32_t codepoint{};
-        if (lead <= 0x7fU) {
-            trailing = 0;
-            codepoint = lead;
-        } else if (lead >= 0xc2U && lead <= 0xdfU) {
-            trailing = 1;
-            codepoint = lead & 0x1fU;
-        } else if (lead >= 0xe0U && lead <= 0xefU) {
-            trailing = 2;
-            codepoint = lead & 0x0fU;
-        } else if (lead >= 0xf0U && lead <= 0xf4U) {
-            trailing = 3;
-            codepoint = lead & 0x07U;
-        } else {
-            return false;
-        }
-        if (index + trailing >= text.size()) {
-            return false;
-        }
-        for (std::size_t offset = 1; offset <= trailing; ++offset) {
-            const auto byte = static_cast<unsigned char>(text[index + offset]);
-            if ((byte & 0xc0U) != 0x80U) {
-                return false;
-            }
-            codepoint = (codepoint << 6U) | (byte & 0x3fU);
-        }
-        if ((trailing == 1 && codepoint < 0x80U) || (trailing == 2 && codepoint < 0x800U) ||
-            (trailing == 3 && codepoint < 0x10000U) ||
-            (codepoint >= 0xd800U && codepoint <= 0xdfffU) || codepoint > 0x10ffffU) {
-            return false;
-        }
-        index += trailing + 1;
-    }
-    return true;
-}
+using text_util::valid_utf8;
 
 struct requested_note_index_t {
     std::unordered_map<std::uint64_t, std::size_t> occurrences;

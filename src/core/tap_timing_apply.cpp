@@ -1,3 +1,4 @@
+#include "../core/checked_math.h"
 #include <wormedit/core/tap_timing_apply.h>
 
 #include <wormedit/core/bpm_editor.h>
@@ -22,10 +23,7 @@ void reject(tap_timing_apply_proposal_result_t& result, diagnostic_code_t code,
     result.diagnostics.push_back(error(code, message));
 }
 
-auto magnitude(std::int64_t value) -> std::uint64_t {
-    return value < 0 ? static_cast<std::uint64_t>(-(value + 1)) + 1
-                     : static_cast<std::uint64_t>(value);
-}
+using checked_math::magnitude;
 
 auto selected_bpm(const tap_tempo_estimate_t& estimate, tap_bpm_choice_t choice)
     -> std::optional<signed_rational_t> {

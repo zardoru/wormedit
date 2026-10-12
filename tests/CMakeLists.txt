@@ -537,6 +537,8 @@ endif()
 
 if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
     add_executable(wormedit_frontend_event_harness_tests
+        ../src/sys/external_player.cpp
+        ../src/sys/resource_job_state.cpp
         ui/compose_stem_lane_render_tests.cpp
         ui/nuklear_event_harness.cpp
         ui/nuklear_event_harness_tests.cpp
@@ -664,6 +666,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     endif()
 
     add_executable(wormedit_frame_timing_tests
+        ../src/sys/external_player.cpp
         ../src/ui/nuklear/components.cpp
         sys/bga_lane_projection_tests.cpp
         sys/compose_hover_timing_tests.cpp
@@ -760,6 +763,7 @@ endif()
 
 if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     add_executable(wormedit_frame_projection_arena_tests
+        ../src/sys/external_player.cpp
         sys/frame_projection_arena_tests.cpp
         sys/resource_notification_tests.cpp
         ../src/sys/resource_job_state.cpp

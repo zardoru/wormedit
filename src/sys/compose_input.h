@@ -1,5 +1,7 @@
 #pragma once
 
+#include "sys/application_dispatch_context.h"
+
 #include "sys/compose_view.h"
 
 #include <wormedit/core/editor_navigation_input.h>
@@ -37,15 +39,9 @@ auto dispatch_compose_bgm_mix_inputs(WormUiWorkspaceAction& action,
     application_command_state_t& application,
     const wormedit::notification_sink_t* notifications = nullptr) -> std::string;
 auto dispatch_compose_input_action(WormUiWorkspaceAction& ui_action,
-                                   wormedit::document_history_t& history,
-                                   wormedit::workspace_controller_t& workspace,
+                                   application_dispatch_context_t& environment,
                                    wormedit::editor_interaction_state_t& state,
-                                   wormedit::viewport_input_controller_t& viewport_input,
-                                   wormedit::editor_navigation_input_controller_t& navigation_input,
-                                   application_command_state_t& application_state,
-                                   compose_scene_cache_t& scene_cache,
-                                   double viewport_delta_seconds,
-                                   const wormedit::notification_sink_t* notifications = nullptr)
+                                   double viewport_delta_seconds, bool post_notifications = true)
     -> std::string;
 auto selected_bmson_waveform_source(
     compose_scene_cache_t& cache, const wormedit::chart_document_t& chart,

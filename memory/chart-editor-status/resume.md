@@ -1,6 +1,6 @@
 # Status: resume checklist
 
-Next: [T-594 Share application dispatch environment](../../docs/chart-editor-plan/tasks/type-consolidation.md#t-594-share-application-dispatch-environment). T-591–T-593 are complete. Continue T-594–T-598 in order, one gated commit per card; stop before T-599 and the optional action-type rename. Preserve flagged behavior differences. Claude owns Xvfb verification.
+Next: [T-595 Consolidate projection inputs and geometry conversion](../../docs/chart-editor-plan/tasks/type-consolidation.md#t-595-consolidate-projection-inputs-and-geometry-conversion). T-591–T-594 are complete. Continue T-595–T-598 in order, one gated commit per card; stop before T-599 and the optional action-type rename. Preserve flagged behavior differences. Claude owns Xvfb verification.
 
 Completed **T-582** (2026-10-12): stamped menu commands and shared Quantize/bookmark/same-sound/BGM/loop/measure paths; orphan BGM and workspace loop paths retired. Build, **3,457/3,457** full serial CTest, **444/444** event checks, default clang-tidy with no new/increased complexity, documentation and whitespace gates pass. Isolated Xvfb Compose screenshot inspected. [Card and evidence](../../docs/chart-editor-plan/tasks/gesture-consolidation.md#t-582-route-menu-verbs-through-registered-commands).
 

@@ -1,3 +1,4 @@
+#include "../sys/application_dispatch_fixture.h"
 #include "sys/application_defaults.h"
 #include "sys/compose_input.h"
 

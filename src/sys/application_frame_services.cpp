@@ -1,4 +1,5 @@
 #include "sys/application_frame_services.h"
+#include "sys/application_dispatch_context.h"
 
 #include "sys/project_open.h"
 #include "sys/resource_drop_router.h"
@@ -81,16 +82,17 @@ auto collect_dropped_resources(const SDL_Event& event, SDL_Window* window,
 
 } // namespace
 
-auto poll_frontend_events(WormWindow& window, metadata_drop_state_t& metadata_drop,
-                          const workspace_controller_t& workspace,
-                          const document_history_t& history,
-                          const std::filesystem::path& asset_base,
-                          bool offer_audio_project_drop,
-                          std::string& pending_audio_project_path,
-                          std::string& pending_chart_project_path,
+auto poll_frontend_events(WormWindow& window, application_dispatch_context_t& environment,
+                          bool offer_audio_project_drop, std::string& pending_chart_project_path,
                           sound_drop_transaction_t& sound_drop_transaction,
-                          std::vector<sound_drop_batch_t>& pending_resource_batches,
-                          notification_sink_t& notifications) -> bool {
+                          std::vector<sound_drop_batch_t>& pending_resource_batches) -> bool {
+    auto& metadata_drop = environment.metadata_drop_ref;
+    auto& workspace = environment.workspace_ref;
+    auto& history = environment.history_ref;
+    auto& asset_base = environment.asset_base_ref;
+    auto& notifications = environment.notification_sink_ref;
+    auto& pending_audio_project_path = environment.pending_audio_project_path_ref;
+
     bool running = true;
     SDL_Event event;
     worm_ui_frontend_begin_input();

@@ -1,4 +1,5 @@
 #include "sys/metadata_actions.h"
+#include "sys/application_dispatch_context.h"
 
 #include "sys/application_edit_helpers.h"
 #include "ui/frontend.h"
@@ -392,13 +393,19 @@ auto lane_profile_family_targets(const chart_document_t& chart) -> std::vector<l
     return lane_profile_family_targets_impl(chart);
 }
 
-auto dispatch_metadata_action(
-    const WormUiWorkspaceAction& action, document_history_t& history,
-    workspace_controller_t& workspace, bool timing_locked,
-    metadata_drop_state_t& metadata_drop, runtime::metadata_asset_t& metadata_asset_runtime,
-    const std::filesystem::path& asset_base, task_scheduler_t& resource_copy_scheduler,
-    bool resource_copy_busy, bool export_busy,
-    std::optional<notification_sink_t> notifications) -> std::optional<std::string> {
+auto dispatch_metadata_action(const WormUiWorkspaceAction& action,
+                              application_dispatch_context_t& environment, bool timing_locked,
+                              bool resource_copy_busy, bool export_busy, bool post_notifications)
+    -> std::optional<std::string> {
+    auto& history = environment.history_ref;
+    auto& workspace = environment.workspace_ref;
+    auto& metadata_drop = environment.metadata_drop_ref;
+    auto& metadata_asset_runtime = environment.metadata_asset_runtime_ref;
+    auto& asset_base = environment.asset_base_ref;
+    auto& resource_copy_scheduler = environment.resource_copy_scheduler_ref;
+    const std::optional<notification_sink_t> notifications =
+        post_notifications ? std::optional{environment.notification_sink_ref} : std::nullopt;
+
     if (action.metadata_edit != WORM_UI_METADATA_EDIT_NONE) {
         auto feedback = dispatch_metadata_edit(action, history, workspace, timing_locked, metadata_drop);
         if (notifications) notifications->post(feedback.severity, notification_source_t::edit, feedback.message);

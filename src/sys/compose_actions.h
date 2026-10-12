@@ -1,5 +1,7 @@
 #pragma once
 
+#include "sys/application_dispatch_context.h"
+
 #include "sys/compose_input.h"
 #include "sys/metadata_drop_state.h"
 #include "sys/metadata_asset_runtime.h"
@@ -16,25 +18,14 @@ auto invoke_compose_quantize_command(bool toggle_preview, wormedit::document_his
     wormedit::editor_interaction_state_t& state, application_command_state_t& application,
     std::optional<wormedit::notification_sink_t> notifications = {}) -> bool;
 
-auto dispatch_compose_view_action(
-    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
-    wormedit::workspace_controller_t& workspace, wormedit::editor_interaction_state_t& state,
-    double viewport_height, application_command_state_t& application_state,
-    const std::filesystem::path& asset_base, wormedit::task_scheduler_t& resource_copy_scheduler,
-    runtime::resource_copy_t& resource_copy_runtime,
-    runtime::output_group_export_t& export_runtime, bool metadata_import_busy,
-    std::optional<wormedit::notification_sink_t> notifications = {}) -> std::string;
+auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
+                                  application_dispatch_context_t& environment,
+                                  wormedit::editor_interaction_state_t& state,
+                                  double viewport_height, bool metadata_import_busy,
+                                  bool post_notifications = true) -> std::string;
 
-auto dispatch_compose_workspace_action(
-    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
-    wormedit::workspace_controller_t& workspace,
-    std::optional<wormedit::editor_interaction_state_t>& interaction_state,
-    double viewport_height, application_command_state_t& application_state,
-    const std::filesystem::path& asset_base,
-    wormedit::task_scheduler_t& resource_copy_scheduler,
-    runtime::resource_copy_t& resource_copy_runtime,
-    runtime::output_group_export_t& export_runtime, bool metadata_import_busy,
-    metadata_drop_state_t& metadata_drop, runtime::metadata_asset_t& metadata_asset_runtime,
-    wormedit::notification_sink_t notifications) -> bool;
+auto dispatch_compose_workspace_action(const WormUiWorkspaceAction& action,
+                                       application_dispatch_context_t& environment,
+                                       double viewport_height, bool metadata_import_busy) -> bool;
 
 } // namespace wormedit::sys

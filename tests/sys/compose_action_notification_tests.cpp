@@ -1,3 +1,4 @@
+#include "../sys/application_dispatch_fixture.h"
 #include "sys/application_command_dispatch.h"
 #include "sys/compose_actions.h"
 #include "sys/compose_area_actions.h"

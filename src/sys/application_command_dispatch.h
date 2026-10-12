@@ -1,5 +1,7 @@
 #pragma once
 
+#include "sys/application_dispatch_context.h"
+
 #include "sys/application_commands.h"
 #include "sys/compose_view.h"
 
@@ -49,12 +51,8 @@ inline auto compose_menu_command_is_current(const WormUiWorkspaceAction& action,
 // External-player, play/pause, play-from-start, and cancel/restore callbacks own
 // publication at their typed producer bridge. Their returned text is retained for
 // legacy callers; this dispatcher does not classify or repost that prose.
-auto invoke_application_command(
-    application_command_t command, wormedit::document_history_t& history,
-    wormedit::workspace_controller_t& workspace,
-    std::optional<wormedit::editor_interaction_state_t>& compose_state,
-    std::optional<wormedit::timing_lane_pseudonote_preview_t>& timing_stage,
-    application_command_state_t& application_state, notification_sink_t& sink)
+auto invoke_application_command(application_command_t command,
+                                application_dispatch_context_t& environment)
     -> wormedit::command_invocation_result_t;
 
 } // namespace wormedit::sys

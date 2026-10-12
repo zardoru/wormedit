@@ -1,9 +1,10 @@
-#include "sys/transport_player_actions.h"
-#include "sys/application_commands.h"
+#include "../sys/application_dispatch_fixture.h"
 #include "sys/application_command_dispatch.h"
+#include "sys/application_commands.h"
 #include "sys/compose_minimap_navigation.h"
 #include "sys/compose_semantic_layer_commands.h"
 #include "sys/compose_sound_actions.h"
+#include "sys/transport_player_actions.h"
 
 #include <wormedit/core/command_registry.h>
 #include <wormedit/core/timing_lane_controller.h>

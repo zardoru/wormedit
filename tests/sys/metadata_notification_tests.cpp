@@ -1,9 +1,10 @@
+#include "../sys/application_dispatch_fixture.h"
 #include "sys/metadata_actions.h"
 #include "ui/frontend.h"
+#include <catch2/catch_test_macros.hpp>
 #include <wormedit/core/chart_editor.h>
 #include <wormedit/core/format_field_schema.h>
 #include <wormedit/core/lane_profiles.h>
-#include <catch2/catch_test_macros.hpp>
 
 #include <array>
 

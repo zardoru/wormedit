@@ -1,5 +1,6 @@
-#include "sys/waveform_view_projection.h"
+#include "../sys/application_dispatch_fixture.h"
 #include "sys/compose_input.h"
+#include "sys/waveform_view_projection.h"
 
 #include <wormedit/core/timing.h>
 

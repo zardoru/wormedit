@@ -16,15 +16,6 @@
 namespace wormedit {
 namespace {
 
-auto error(diagnostic_code_t code, std::string message) -> diagnostic_t {
-    return {.severity = diagnostic_severity_t::error, .code = code, .message = std::move(message)};
-}
-
-auto reject(document_command_result_t& result, diagnostic_code_t code, std::string message)
-    -> void {
-    result.diagnostics.push_back(error(code, std::move(message)));
-}
-
 auto valid_utf8(std::string_view text) -> bool {
     for (std::size_t index = 0; index < text.size();) {
         const auto lead = static_cast<unsigned char>(text[index]);

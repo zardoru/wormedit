@@ -1,3 +1,4 @@
+#include "interaction_geometry.h"
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/snap.h>
 
@@ -13,14 +14,6 @@
 
 namespace wormedit {
 namespace {
-
-auto error(diagnostic_code_t code, std::string message,
-           std::optional<object_id_t> object = std::nullopt) -> diagnostic_t {
-    return {.severity = diagnostic_severity_t::error,
-            .code = code,
-            .message = std::move(message),
-            .object = object};
-}
 
 auto rational_label(signed_rational_t value) -> std::string {
     return std::to_string(value.numerator) +
@@ -42,34 +35,6 @@ auto note_kind_label(note_kind_t kind) -> std::string_view {
     case note_kind_t::fake: return "Fake note";
     }
     return "Note";
-}
-
-auto position_at(const measure_index_t& index, std::uint64_t absolute)
-    -> std::optional<local_position_t> {
-    return position_at_absolute_row(index, absolute);
-}
-
-auto effective_layout(const chart_document_t& chart, const measure_index_t& index,
-                      local_position_t position) -> const lane_layout_t* {
-    const auto event_row = absolute_row(index, position);
-    if (!event_row)
-        return nullptr;
-    const lane_layout_segment_t* selected{};
-    std::uint64_t selected_row{};
-    for (const auto& segment : chart.lane_layouts) {
-        const auto segment_row = absolute_row(index, segment.position);
-        if (segment_row && *segment_row <= *event_row &&
-            (selected == nullptr || *segment_row >= selected_row)) {
-            selected = &segment;
-            selected_row = *segment_row;
-        }
-    }
-    return selected == nullptr ? nullptr : &selected->layout;
-}
-
-auto editable_lane(const lane_definition_t& lane) -> bool {
-    return lane.role != lane_role_t::autoplay && lane.role != lane_role_t::invisible &&
-           lane.role != lane_role_t::mine;
 }
 
 auto snapped_position(const chart_document_t& chart, const measure_index_t& index,
@@ -954,6 +919,5 @@ auto register_editor_object_click(editor_double_click_state_t& state,
 auto clear_editor_double_click_state(editor_double_click_state_t& state) -> void {
     state.previous_click.reset();
 }
-
 
 } // namespace wormedit

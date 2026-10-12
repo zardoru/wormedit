@@ -8,13 +8,6 @@
 namespace wormedit {
 namespace {
 
-void reject(document_command_result_t& result, diagnostic_code_t code, std::string message) {
-    result.diagnostics.push_back({.severity = diagnostic_severity_t::error,
-                                  .code = code,
-                                  .message = std::move(message),
-                                  .object = std::nullopt});
-}
-
 auto largest_object_id(const chart_document_t& chart) -> std::uint64_t {
     std::uint64_t largest{};
     const auto scan = [&](const auto& values) {

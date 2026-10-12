@@ -1,3 +1,4 @@
+#include "chart_object_ids.h"
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/natural_order.h>
 #include <wormedit/core/semantic_layer_editor.h>
@@ -20,9 +21,7 @@
 namespace wormedit {
 namespace {
 
-void reject(document_command_result_t& result, diagnostic_code_t code, std::string message);
 auto has_role(const resource_entry_t& resource, resource_role_t role) -> bool;
-auto next_chart_object_id(const chart_document_t& chart) -> std::optional<object_id_t>;
 
 auto resolve_bga_resource_kind(const song_document_t& document, resource_id_t id,
                                visual_event_kind_t requested, document_command_result_t& result)
@@ -172,7 +171,7 @@ auto commit_bga_stroke_targets(document_history_t& history, std::size_t chart_of
     for (const auto& target : targets)
         if (occupied.emplace(target.row, target.lane).second) additions.push_back(target);
     if (additions.empty()) return unchanged;
-    const auto first_id = next_chart_object_id(history.document.charts[chart_offset]);
+    const auto first_id = next_chart_object_id(history.document.charts[chart_offset], 1'000'000).id;
     if (!first_id || additions.size() - 1 >
             std::numeric_limits<std::uint64_t>::max() - first_id->value) {
         reject(unchanged, diagnostic_code_t::invalid_id,
@@ -275,14 +274,6 @@ auto first_free_bms_start(const std::vector<bool>& occupied, std::size_t count)
     return std::nullopt;
 }
 
-void reject(document_command_result_t& result, diagnostic_code_t code, std::string message) {
-    result.diagnostics.push_back(
-        {.severity = diagnostic_severity_t::error,
-         .code = code,
-         .message = std::move(message),
-         .object = std::nullopt});
-}
-
 auto has_role(const resource_entry_t& resource, resource_role_t role) -> bool {
     return std::ranges::find(resource.roles, role) != resource.roles.end();
 }
@@ -299,41 +290,6 @@ void append_chart_reference_counts(const chart_document_t& chart,
     for (const auto& event : chart.bga_events) ++counts[event.resource.value];
     for (const auto& channel : chart.sound_channels)
         retained[channel.source_clip.source.value] += channel.events.size();
-}
-
-auto next_chart_object_id(const chart_document_t& chart) -> std::optional<object_id_t> {
-    std::uint64_t largest{};
-    std::size_t count{};
-    const auto scan = [&](const auto& values) {
-        for (const auto& value : values) {
-            largest = std::max(largest, value.id.value);
-            ++count;
-        }
-    };
-    scan(chart.bgm_source_lanes);
-    scan(chart.lane_layouts);
-    scan(chart.bpms);
-    scan(chart.pauses);
-    scan(chart.warps);
-    scan(chart.scrolls);
-    scan(chart.speeds);
-    scan(chart.kiai);
-    scan(chart.timing_anchors);
-    scan(chart.bookmarks);
-    scan(chart.sections);
-    scan(chart.bga_events);
-    scan(chart.sound_channels);
-    for (const auto& channel : chart.sound_channels) {
-        scan(channel.events);
-    }
-    for (const auto& measure : chart.measures) {
-        scan(measure.notes);
-        scan(measure.bgm_events);
-    }
-    if (count >= 1'000'000 || largest == std::numeric_limits<std::uint64_t>::max()) {
-        return std::nullopt;
-    }
-    return object_id_t{largest + 1};
 }
 
 auto snap_placement_position(const chart_document_t& chart, const measure_index_t& index,
@@ -573,7 +529,7 @@ auto resolve_placement_target(const song_document_t& document,
                "resource placement row is outside the chart");
         return std::nullopt;
     }
-    const auto first_id = next_chart_object_id(*chart);
+    const auto first_id = next_chart_object_id(*chart, 1'000'000).id;
     if (!first_id) {
         reject(result, diagnostic_code_t::invalid_id,
                "resource placement chart object limit or ID space is exhausted");
@@ -911,7 +867,7 @@ auto commit_bgm_stroke_draw(document_history_t& history, std::size_t chart_offse
         }
     }
     if (additions.empty()) return unchanged;
-    const auto first_id = next_chart_object_id(source);
+    const auto first_id = next_chart_object_id(source, 1'000'000).id;
     if (!first_id || additions.size() - 1 >
                         std::numeric_limits<std::uint64_t>::max() - first_id->value) {
         reject(unchanged, diagnostic_code_t::invalid_id,
@@ -1008,7 +964,7 @@ auto occupied_bgm_lanes_at(const chart_document_t& chart, local_position_t posit
 
 auto create_bgm_source_lane(chart_document_t& chart, document_command_result_t& result)
     -> object_id_t {
-    const auto new_id = next_chart_object_id(chart);
+    const auto new_id = next_chart_object_id(chart, 1'000'000).id;
     if (!new_id || chart.bgm_source_lanes.size() >= 1'000'000) {
         reject(result, diagnostic_code_t::invalid_id, "BGM source lane ID space is exhausted");
         return {};

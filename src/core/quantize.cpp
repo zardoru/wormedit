@@ -1,3 +1,4 @@
+#include "interaction_geometry.h"
 #include <wormedit/core/quantize.h>
 
 #include "quantize_geometry.h"
@@ -250,23 +251,13 @@ auto validate_musical_spans(const chart_document_t& chart, const detail::quantiz
     }
 }
 
-auto effective_layout(const chart_document_t& chart, const detail::quantize_geometry_t& index,
-                      local_position_t position) -> const lane_layout_t* {
-    const auto event_row = index.absolute(position);
-    if (!event_row.has_value()) {
-        return nullptr;
-    }
-    const lane_layout_t* selected{};
-    std::uint64_t selected_row{};
-    for (const auto& segment : chart.lane_layouts) {
-        const auto segment_row = index.absolute(segment.position);
-        if (segment_row.has_value() && *segment_row <= *event_row &&
-            (selected == nullptr || *segment_row >= selected_row)) {
-            selected = &segment.layout;
-            selected_row = *segment_row;
-        }
-    }
-    return selected;
+struct quantize_row_resolver_t {
+    const detail::quantize_geometry_t& index;
+    auto operator()(local_position_t position) const -> std::optional<std::uint64_t> { return index.absolute(position); }
+};
+auto effective_quantize_layout(const chart_document_t& chart, const detail::quantize_geometry_t& index,
+                               local_position_t position) -> const lane_layout_t* {
+    return effective_layout_by_row(chart, position, quantize_row_resolver_t{index});
 }
 
 auto validate_layout_effects(const chart_document_t& chart, const detail::quantize_geometry_t& index,
@@ -281,7 +272,7 @@ auto validate_layout_effects(const chart_document_t& chart, const detail::quanti
     }
 
     const auto lane_is_active = [&](local_position_t position, lane_id_t lane) {
-        const auto* layout = effective_layout(chart, index, position);
+        const auto* layout = effective_quantize_layout(chart, index, position);
         return layout != nullptr &&
                std::ranges::any_of(layout->lanes,
                                    [lane](const auto& candidate) { return candidate.id == lane; });

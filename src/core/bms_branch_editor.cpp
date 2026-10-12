@@ -42,11 +42,6 @@ void add_block_error(document_command_result_t& result, std::string message) {
                                   .message = std::move(message)});
 }
 
-auto chart_for_block(const song_document_t& song, chart_id_t id) -> const chart_document_t* {
-    const auto found = std::ranges::find(song.charts, id, &chart_document_t::id);
-    return found == song.charts.end() ? nullptr : &*found;
-}
-
 auto retained_bms_bytes(const song_document_t& song, const chart_document_t& chart)
     -> std::optional<std::vector<std::byte>> {
     auto written = write_bms(song, {.chart = chart.id,
@@ -911,7 +906,6 @@ auto remove_block(document_history_t& history, const chart_document_t& chart,
                              "Remove empty BMS branch block");
 }
 
-
 struct leaf_swap_t {
     const bms_control_node_t* block{};
     const bms_control_node_t* upper{};
@@ -1150,7 +1144,7 @@ auto apply_bms_branch_block_create_command(document_history_t& history,
         add_block_error(result, "BMS branch block creation revision is stale");
         return result;
     }
-    const auto* chart = chart_for_block(history.document, request.chart);
+    const auto* chart = find_chart(history.document, request.chart);
     if (chart == nullptr) {
         add_block_error(result, "selected BMS chart no longer exists");
         return result;
@@ -1168,7 +1162,7 @@ auto apply_bms_branch_block_remove_command(document_history_t& history,
         add_block_error(result, "BMS branch block removal revision is stale");
         return result;
     }
-    const auto* chart = chart_for_block(history.document, request.chart);
+    const auto* chart = find_chart(history.document, request.chart);
     if (chart == nullptr) {
         add_block_error(result, "selected BMS chart no longer exists");
         return result;
@@ -1185,7 +1179,7 @@ auto apply_bms_branch_leaf_move_command(document_history_t& history, std::uint64
         add_block_error(result, "BMS branch leaf move revision is stale");
         return result;
     }
-    const auto* chart = chart_for_block(history.document, request.chart);
+    const auto* chart = find_chart(history.document, request.chart);
     if (chart == nullptr) {
         add_block_error(result, "selected BMS chart no longer exists");
         return result;

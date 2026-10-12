@@ -1,3 +1,5 @@
+#include "position_validation.h"
+#include "chart_object_ids.h"
 #include <wormedit/core/timing_anchor_editor.h>
 
 #include <algorithm>
@@ -10,95 +12,9 @@
 namespace wormedit {
 namespace {
 
-auto error(diagnostic_code_t code, std::string message) -> diagnostic_t {
-    return {.severity = diagnostic_severity_t::error, .code = code, .message = std::move(message)};
-}
-
-auto reject(document_command_result_t& result, diagnostic_code_t code, std::string message)
-    -> void {
-    result.diagnostics.push_back(error(code, std::move(message)));
-}
-
 auto validate_position(const chart_document_t& chart, local_position_t position,
                        document_command_result_t& result) -> bool {
-    const auto measures = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(measures)) {
-        result.diagnostics = std::get<diagnostic_list_t>(measures);
-        return false;
-    }
-    if (!absolute_row(std::get<measure_index_t>(measures), position).has_value()) {
-        reject(result, diagnostic_code_t::row_out_of_range,
-               "timing anchor position is outside the selected chart's measure geometry");
-        return false;
-    }
-    return true;
-}
-
-template <typename callback_t>
-auto visit_chart_object_ids(const chart_document_t& chart, callback_t&& callback) -> bool {
-    const auto visit = [&callback](const auto& values) {
-        for (const auto& value : values) {
-            if (!callback(value.id)) {
-                return false;
-            }
-        }
-        return true;
-    };
-    if (!visit(chart.bgm_source_lanes) || !visit(chart.lane_layouts) || !visit(chart.bpms) ||
-        !visit(chart.pauses) || !visit(chart.warps) || !visit(chart.scrolls) ||
-        !visit(chart.speeds) || !visit(chart.kiai) || !visit(chart.timing_anchors) ||
-        !visit(chart.bookmarks) || !visit(chart.sections) || !visit(chart.bga_events) ||
-        !visit(chart.sound_channels)) {
-        return false;
-    }
-    for (const auto& measure : chart.measures) {
-        if (!visit(measure.notes) || !visit(measure.bgm_events)) {
-            return false;
-        }
-    }
-    for (const auto& channel : chart.sound_channels) {
-        if (!visit(channel.events)) {
-            return false;
-        }
-    }
-    return true;
-}
-
-struct object_id_allocation_t {
-    std::optional<object_id_t> id;
-    bool over_limit{};
-};
-
-auto next_chart_object_id(const chart_document_t& chart, std::size_t maximum_chart_objects)
-    -> object_id_allocation_t {
-    std::size_t object_count{};
-    std::uint64_t maximum_id{};
-    const auto within_limit = visit_chart_object_ids(chart, [&](object_id_t id) {
-        if (object_count >= maximum_chart_objects) {
-            return false;
-        }
-        ++object_count;
-        maximum_id = std::max(maximum_id, id.value);
-        return true;
-    });
-    if (!within_limit || object_count >= maximum_chart_objects) {
-        return {.over_limit = true};
-    }
-    if (maximum_id == std::numeric_limits<std::uint64_t>::max()) {
-        return {};
-    }
-    return {.id = object_id_t{maximum_id + 1}};
-}
-
-auto chart_object_id_count(const chart_document_t& chart, object_id_t sought) -> std::size_t {
-    std::size_t count{};
-    (void)visit_chart_object_ids(chart, [&](object_id_t id) {
-        if (id == sought) {
-            ++count;
-        }
-        return count < 2;
-    });
-    return count;
+    return validate_chart_position(chart, position, result.diagnostics, "timing anchor");
 }
 
 auto unique_anchor(chart_document_t& chart, object_id_t id, document_command_result_t& result)
@@ -108,7 +24,7 @@ auto unique_anchor(chart_document_t& chart, object_id_t id, document_command_res
                "timing anchor command uses the reserved zero object ID");
         return nullptr;
     }
-    const auto id_count = chart_object_id_count(chart, id);
+    const auto id_count = chart_object_id_count(chart, id, 2);
     if (id_count == 0) {
         reject(result, diagnostic_code_t::invalid_id,
                "timing anchor command refers to an unknown anchor");

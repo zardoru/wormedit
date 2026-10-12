@@ -938,6 +938,11 @@ struct diagnostic_t {
 
 using diagnostic_list_t = std::vector<diagnostic_t>;
 
+[[nodiscard]] auto error(diagnostic_code_t code, std::string message,
+                         std::optional<object_id_t> object = std::nullopt) -> diagnostic_t;
+[[nodiscard]] auto find_chart(const song_document_t& document, chart_id_t id) -> const chart_document_t*;
+[[nodiscard]] auto find_chart(song_document_t& document, chart_id_t id) -> chart_document_t*;
+
 struct conversion_report_t {
     diagnostic_list_t diagnostics;
     std::size_t preserved_fields{};

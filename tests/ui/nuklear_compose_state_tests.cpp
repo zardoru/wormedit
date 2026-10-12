@@ -200,12 +200,10 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     state.label_project_id = 42;
     state.label_chart_id = 42;
     state.note_label[0] = 'x';
-    state.semantic_layer_name_revision = 42;
     state.semantic_layer_color_editor_visible = true;
     state.inspector_visible = false;
     state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
     state.resource_search[0] = 'x';
-    state.resource_import_path[0] = '/';
     state.armed_resource_id = 42;
     state.auto_increment_on_place = true;
     state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::replace;
@@ -233,12 +231,10 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     CHECK(state.label_project_id == std::numeric_limits<std::uint64_t>::max());
     CHECK(state.label_chart_id == std::numeric_limits<std::uint64_t>::max());
     CHECK(state.note_label[0] == '\0');
-    CHECK(state.semantic_layer_name_revision == std::numeric_limits<std::uint64_t>::max());
     CHECK_FALSE(state.semantic_layer_color_editor_visible);
     CHECK(state.inspector_visible);
     CHECK(state.resource_filter == worm_ui_nuklear_compose_resource_filter_t::sample);
     CHECK(state.resource_search[0] == '\0');
-    CHECK(state.resource_import_path[0] == '\0');
     CHECK(state.armed_resource_id == 0);
     CHECK_FALSE(state.auto_increment_on_place);
     CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);

@@ -4453,9 +4453,7 @@ auto selected_chart(const wormedit::document_history_t& history,
     if (!workspace.selected_chart) {
         return nullptr;
     }
-    const auto found = std::ranges::find(history.document.charts, *workspace.selected_chart,
-                                         &wormedit::chart_document_t::id);
-    return found == history.document.charts.end() ? nullptr : &*found;
+    return wormedit::find_chart(history.document, *workspace.selected_chart);
 }
 
 auto visible_semantic_layer_by_id(const wormedit::chart_document_t& chart, wormedit::layer_id_t id)
@@ -4464,6 +4462,5 @@ auto visible_semantic_layer_by_id(const wormedit::chart_document_t& chart, worme
         std::ranges::find(chart.semantic_layers, id, &wormedit::semantic_layer_t::id);
     return found != chart.semantic_layers.end() && found->visible ? &*found : nullptr;
 }
-
 
 } // namespace wormedit::sys

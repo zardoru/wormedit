@@ -462,9 +462,6 @@ struct worm_ui_nuklear_compose_state_t {
     std::array<char, WORM_UI_COMPOSE_NOTE_LABEL_BYTES + 1> note_label{};
     std::array<char, 129> label_search{};
     std::array<char, WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY> semantic_layer_name{};
-    std::uint64_t semantic_layer_name_id{};
-    std::uint64_t semantic_layer_name_revision{std::numeric_limits<std::uint64_t>::max()};
-    std::uint64_t semantic_layer_color_id{};
     worm_ui_nuklear_compose_color_t semantic_layer_color{};
     bool semantic_layer_color_editor_visible{};
     bool semantic_layer_name_editor_visible{};
@@ -639,8 +636,6 @@ struct worm_ui_nuklear_compose_state_t {
     std::array<char, 96> resource_search{};
     std::size_t export_group_document_index{};
     bool export_overwrite{};
-    std::array<char, WORM_UI_COMPOSE_IMPORT_PATH_BYTES + 1> resource_import_path{};
-    std::array<char, 256> resource_import_error{};
     std::uint64_t armed_resource_id{};
     std::uint64_t resource_selection_chart_id{};
     std::uint64_t resource_selection_object_id{};

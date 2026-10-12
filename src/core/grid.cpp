@@ -19,10 +19,6 @@ struct row_offset_t {
     rational_t fraction{0, 1};
 };
 
-auto error(diagnostic_code_t code, std::string message) -> diagnostic_t {
-    return {.severity = diagnostic_severity_t::error, .code = code, .message = std::move(message)};
-}
-
 auto add_checked(std::uint64_t left, std::uint64_t right, std::uint64_t& result) -> bool {
     if (right > maximum - left) {
         return false;

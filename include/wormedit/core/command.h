@@ -35,6 +35,9 @@ struct document_command_result_t {
     }
 };
 
+void reject(document_command_result_t& result, diagnostic_code_t code, std::string message,
+            std::optional<object_id_t> object = std::nullopt);
+
 // Folds the newest `count` undo records into one so a multi-command gesture undoes in a single
 // step. Does nothing for fewer than two records or when older ones were already trimmed away.
 void merge_recent_undo_records(document_history_t& history, std::size_t count, std::string label);

@@ -1,3 +1,4 @@
+#include "interaction_geometry.h"
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/virtual_canvas.h>
 
@@ -13,19 +14,6 @@
 
 namespace wormedit {
 namespace {
-
-auto error(diagnostic_code_t code, std::string message,
-           std::optional<object_id_t> object = std::nullopt) -> diagnostic_t {
-    return {.severity = diagnostic_severity_t::error,
-            .code = code,
-            .message = std::move(message),
-            .object = object};
-}
-
-auto editable_lane(const lane_definition_t& lane) -> bool {
-    return lane.role != lane_role_t::autoplay && lane.role != lane_role_t::invisible &&
-           lane.role != lane_role_t::mine;
-}
 
 auto layout_at_row(const editor_field_scene_index_t& index, std::uint64_t row)
     -> const editor_field_scene_layout_source_t* {

@@ -27,10 +27,6 @@ constexpr shortcut_modifiers_t actual_modifiers =
     static_cast<shortcut_modifiers_t>(shortcut_modifier_t::alt) |
     static_cast<shortcut_modifiers_t>(shortcut_modifier_t::meta);
 
-auto error(diagnostic_code_t code, std::string message) -> diagnostic_t {
-    return {.severity = diagnostic_severity_t::error, .code = code, .message = std::move(message)};
-}
-
 auto warning(diagnostic_code_t code, std::string message) -> diagnostic_t {
     return {
         .severity = diagnostic_severity_t::warning, .code = code, .message = std::move(message)};

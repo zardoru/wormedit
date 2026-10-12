@@ -1,3 +1,5 @@
+#include "position_validation.h"
+#include "chart_object_ids.h"
 #include <wormedit/core/timing_lane_controller.h>
 
 #include <wormedit/core/bpm_editor.h>
@@ -17,20 +19,12 @@
 
 namespace wormedit {
 namespace {
-
-auto error(diagnostic_code_t code, std::string message) -> diagnostic_t {
-    return {.severity = diagnostic_severity_t::error, .code = code, .message = std::move(message)};
-}
+using wormedit::reject;
 
 auto reject(timing_lane_pseudonote_preview_t& preview, diagnostic_code_t code, std::string message)
     -> void {
     preview.valid = false;
     preview.diagnostics = {error(code, std::move(message))};
-}
-
-auto chart_for(const song_document_t& song, chart_id_t id) -> const chart_document_t* {
-    const auto found = std::ranges::find(song.charts, id, &chart_document_t::id);
-    return found == song.charts.end() ? nullptr : &*found;
 }
 
 auto is_fixed_initial_bpm(const chart_document_t& chart, object_id_t event) -> bool {
@@ -48,35 +42,6 @@ auto is_fixed_initial_bpm(const chart_document_t& chart, object_id_t event) -> b
         }
     }
     return initial != nullptr && initial->id == event;
-}
-
-auto chart_object_id_count(const chart_document_t& chart, object_id_t sought) -> std::size_t {
-    std::size_t count{};
-    const auto scan = [&](const auto& values) {
-        for (const auto& value : values) {
-            if (value.id == sought && ++count == 2) {
-                return false;
-            }
-        }
-        return true;
-    };
-    if (!scan(chart.bgm_source_lanes) || !scan(chart.lane_layouts) || !scan(chart.bpms) ||
-        !scan(chart.pauses) || !scan(chart.warps) || !scan(chart.scrolls) || !scan(chart.speeds) ||
-        !scan(chart.kiai) || !scan(chart.timing_anchors) || !scan(chart.bookmarks) ||
-        !scan(chart.sections) || !scan(chart.bga_events) || !scan(chart.sound_channels)) {
-        return count;
-    }
-    for (const auto& measure : chart.measures) {
-        if (!scan(measure.notes) || !scan(measure.bgm_events)) {
-            return count;
-        }
-    }
-    for (const auto& channel : chart.sound_channels) {
-        if (!scan(channel.events)) {
-            return count;
-        }
-    }
-    return count;
 }
 
 auto load_existing_event(const chart_document_t& chart, timing_lane_kind_t kind, object_id_t event,
@@ -358,18 +323,7 @@ auto prepare_timing_group_moves(const document_history_t& history, const chart_d
 
 auto validate_position(const chart_document_t& chart, local_position_t position,
                        diagnostic_list_t& diagnostics, std::string_view name) -> bool {
-    const auto measures = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(measures)) {
-        diagnostics = std::get<diagnostic_list_t>(measures);
-        return false;
-    }
-    if (!absolute_row(std::get<measure_index_t>(measures), position).has_value()) {
-        diagnostics.push_back(error(
-            diagnostic_code_t::row_out_of_range,
-            std::string(name) + " position is outside the selected chart's measure geometry"));
-        return false;
-    }
-    return true;
+    return validate_chart_position(chart, position, diagnostics, name);
 }
 
 auto valid_pause_unit(pause_unit_t unit) -> bool {
@@ -484,7 +438,7 @@ auto initial_status(timing_lane_pseudonote_preview_t& preview, const document_hi
         preview.status = timing_lane_pseudonote_status_t::rejected;
         return false;
     }
-    const auto* chart = chart_for(history.document, preview.chart);
+    const auto* chart = find_chart(history.document, preview.chart);
     if (chart == nullptr) {
         reject(preview, diagnostic_code_t::invalid_id,
                "timing pseudo-note refers to an unknown chart");
@@ -721,14 +675,14 @@ auto begin_existing_timing_lane_pseudonote(const document_history_t& history, ch
         preview.status = timing_lane_pseudonote_status_t::rejected;
         return preview;
     }
-    const auto* target_chart = chart_for(history.document, chart);
+    const auto* target_chart = find_chart(history.document, chart);
     if (target_chart == nullptr) {
         reject(preview, diagnostic_code_t::invalid_id,
                "existing timing event refers to an unknown chart");
         preview.status = timing_lane_pseudonote_status_t::rejected;
         return preview;
     }
-    const auto id_count = chart_object_id_count(*target_chart, event);
+    const auto id_count = chart_object_id_count(*target_chart, event, 2);
     if (id_count == 0) {
         reject(preview, diagnostic_code_t::invalid_id,
                "existing timing event refers to an unknown object");
@@ -760,7 +714,7 @@ auto update_timing_lane_pseudonote(const document_history_t& history,
     if (cancel_for_revision_or_lock(history, preview, timing_locked)) {
         return false;
     }
-    const auto* chart = chart_for(history.document, preview.chart);
+    const auto* chart = find_chart(history.document, preview.chart);
     if (chart == nullptr) {
         reject(preview, diagnostic_code_t::invalid_id,
                "timing pseudo-note refers to an unknown chart");
@@ -796,7 +750,7 @@ auto move_existing_timing_lane_pseudonote(const document_history_t& history,
     if (cancel_for_revision_or_lock(history, preview, timing_locked)) {
         return false;
     }
-    const auto* chart = chart_for(history.document, preview.chart);
+    const auto* chart = find_chart(history.document, preview.chart);
     if (chart == nullptr || !existing_target_matches(*chart, preview)) {
         reject(preview, diagnostic_code_t::invalid_id,
                "existing timing event no longer matches the staged target");
@@ -839,7 +793,7 @@ auto move_timing_lane_event_group(document_history_t& history, chart_id_t chart_
                                     "timing group must contain 1 to 4096 events")};
         return result;
     }
-    const auto* chart = chart_for(history.document, chart_id);
+    const auto* chart = find_chart(history.document, chart_id);
     if (chart == nullptr) {
         result.diagnostics = {error(diagnostic_code_t::invalid_id,
                                     "timing group move refers to an unknown chart")};
@@ -896,7 +850,7 @@ auto confirm_timing_lane_pseudonote(document_history_t& history,
         result.diagnostics = preview.diagnostics;
         return result;
     }
-    const auto* chart = chart_for(history.document, preview.chart);
+    const auto* chart = find_chart(history.document, preview.chart);
     if (chart == nullptr) {
         reject(preview, diagnostic_code_t::invalid_id,
                "timing pseudo-note refers to an unknown chart");
@@ -974,7 +928,7 @@ auto delete_existing_timing_lane_event(document_history_t& history, chart_id_t c
         return result;
     }
     if (kind == timing_lane_kind_t::bpm &&
-        is_fixed_initial_bpm(*chart_for(history.document, chart), event)) {
+        is_fixed_initial_bpm(*find_chart(history.document, chart), event)) {
         result.diagnostics = {error(diagnostic_code_t::unsupported_feature,
                                     "the initial BPM cannot be deleted")};
         return result;
@@ -1054,7 +1008,7 @@ auto delete_timing_lane_event_group(document_history_t& history, chart_id_t char
                                     "timing group must contain 1 to 4096 events")};
         return result;
     }
-    const auto* chart = chart_for(history.document, chart_id);
+    const auto* chart = find_chart(history.document, chart_id);
     if (chart == nullptr) {
         result.diagnostics = {error(diagnostic_code_t::invalid_id,
                                     "timing group deletion refers to an unknown chart")};

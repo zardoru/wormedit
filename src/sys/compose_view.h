@@ -76,7 +76,6 @@ inline constexpr double compose_maximum_playable_field_width_pixels{640.0};
 inline constexpr double compose_minimum_bgm_pane_width_pixels{96.0};
 inline constexpr std::array<std::uint64_t, 18> chart_snap_preferences{4, 5, 8, 6, 10, 12, 16, 20, 24, 32, 40, 48, 60, 64, 80, 96, 160, 320};
 
-
 struct bmson_draft_audition_request_t {
     wormedit::chart_id_t chart;
     std::uint64_t revision{};
@@ -477,7 +476,6 @@ struct application_command_state_t : application_command_services_t {
     std::vector<wormedit::layer_id_t> required_semantic_layer_filters;
     std::vector<wormedit::layer_id_t> excluded_semantic_layer_filters;
     std::optional<wormedit::chart_id_t> semantic_layer_palette_chart;
-    std::optional<wormedit::layer_id_t> semantic_layer_palette_target;
     std::size_t semantic_layer_palette_page{};
     std::size_t semantic_layer_first_row{};
     std::size_t semantic_layer_row_count{32};
@@ -594,7 +592,6 @@ struct compose_horizontal_layout_t {
     double bgm_pane_width_pixels{};
     double bga_pane_width_pixels{};
 };
-
 
 auto compose_surface_height(int window_height, const WormUiWorkspaceView& view) -> double;
 auto compose_mode_family(const wormedit::lane_layout_t& layout) -> wormedit::editor_mode_family_t;

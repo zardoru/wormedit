@@ -1,3 +1,4 @@
+#include "sys/projection_notification_feedback.h"
 #pragma once
 
 #include <wormedit/core/command.h>
@@ -16,14 +17,6 @@ class workspace_edit_feedback_t {
         auto operator==(const stamp_t&) const -> bool = default;
     };
     std::optional<stamp_t> failed_;
-    static auto severity(diagnostic_severity_t value) -> notification_severity_t {
-        switch (value) {
-        case diagnostic_severity_t::info: return notification_severity_t::info;
-        case diagnostic_severity_t::warning: return notification_severity_t::warning;
-        case diagnostic_severity_t::error: return notification_severity_t::error;
-        }
-        return notification_severity_t::error;
-    }
 
 public:
     void rebind(workspace_controller_t& workspace, const document_history_t& history,
@@ -43,7 +36,7 @@ public:
             notifications.post(notification_severity_t::error, notification_source_t::document,
                                "Workspace could not follow the latest document edit.");
         else
-            notifications.post(severity(rebound.diagnostics.front().severity),
+            notifications.post(projection_diagnostic_severity(rebound.diagnostics.front().severity),
                                notification_source_t::document, rebound.diagnostics.front().message);
     }
 };

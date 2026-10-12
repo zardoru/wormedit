@@ -1,3 +1,4 @@
+#include "chart_object_ids.h"
 #include <wormedit/core/marker_navigation.h>
 
 #include <algorithm>
@@ -17,14 +18,6 @@ auto has_marker_navigation_targets(const chart_document_t& chart) -> bool {
 }
 
 namespace {
-
-auto error(diagnostic_code_t code, std::string message,
-           std::optional<object_id_t> object = std::nullopt) -> diagnostic_t {
-    return {.severity = diagnostic_severity_t::error,
-            .code = code,
-            .message = std::move(message),
-            .object = object};
-}
 
 void reject(diagnostic_list_t& diagnostics, diagnostic_code_t code, std::string message,
             std::optional<object_id_t> object = std::nullopt) {
@@ -70,47 +63,6 @@ auto validate_chart_query(const song_document_t& song, std::uint64_t expected_re
     return query;
 }
 
-template <typename callback_t>
-auto visit_chart_object_ids(const chart_document_t& chart, callback_t&& callback) -> bool {
-    const auto visit = [&callback](const auto& values) {
-        for (const auto& value : values) {
-            if (!callback(value.id)) {
-                return false;
-            }
-        }
-        return true;
-    };
-    if (!visit(chart.bgm_source_lanes) || !visit(chart.lane_layouts) || !visit(chart.bpms) ||
-        !visit(chart.pauses) || !visit(chart.warps) || !visit(chart.scrolls) ||
-        !visit(chart.speeds) || !visit(chart.kiai) || !visit(chart.timing_anchors) ||
-        !visit(chart.bookmarks) || !visit(chart.sections) || !visit(chart.bga_events) ||
-        !visit(chart.sound_channels)) {
-        return false;
-    }
-    for (const auto& measure : chart.measures) {
-        if (!visit(measure.notes) || !visit(measure.bgm_events)) {
-            return false;
-        }
-    }
-    for (const auto& channel : chart.sound_channels) {
-        if (!visit(channel.events)) {
-            return false;
-        }
-    }
-    return true;
-}
-
-auto chart_object_id_count(const chart_document_t& chart, object_id_t sought) -> std::size_t {
-    auto count = std::size_t{};
-    (void)visit_chart_object_ids(chart, [&](object_id_t id) {
-        if (id == sought) {
-            ++count;
-        }
-        return count < 2;
-    });
-    return count;
-}
-
 using measure_lookup_t = std::unordered_map<std::uint64_t, const measure_index_entry_t*>;
 
 auto build_measure_lookup(const measure_index_t& measures) -> measure_lookup_t {
@@ -122,7 +74,7 @@ auto build_measure_lookup(const measure_index_t& measures) -> measure_lookup_t {
     return lookup;
 }
 
-auto validate_position(const measure_lookup_t& measures, local_position_t position,
+auto resolve_marker_position_row(const measure_lookup_t& measures, local_position_t position,
                        std::optional<object_id_t> object, diagnostic_list_t& diagnostics)
     -> std::optional<std::uint64_t> {
     const auto measure = measures.find(position.measure.value);
@@ -212,7 +164,7 @@ void consider_bookmark(marker_search_t<coordinate_t>& search,
                    "beat-anchored bookmark has inconsistent position fields", bookmark.id);
             return;
         }
-        const auto row = validate_position(*search.measures, *bookmark.position,
+        const auto row = resolve_marker_position_row(*search.measures, *bookmark.position,
                                            bookmark.id, search.diagnostics);
         if (row) search.consider(*row, {.object = bookmark.id,
             .kind = marker_navigation_kind_t::bookmark, .source_order = bookmark.id.value,
@@ -242,9 +194,9 @@ void consider_beat_section(marker_search_t<coordinate_t>& search, const section_
                "beat-anchored section has inconsistent span fields", section.id);
         return;
     }
-    const auto begin = validate_position(*search.measures, section.beat_span->begin,
+    const auto begin = resolve_marker_position_row(*search.measures, section.beat_span->begin,
                                          section.id, search.diagnostics);
-    const auto end = validate_position(*search.measures, section.beat_span->end,
+    const auto end = resolve_marker_position_row(*search.measures, section.beat_span->end,
                                        section.id, search.diagnostics);
     if (!begin || !end) return;
     if (*end <= *begin) {
@@ -418,7 +370,7 @@ void collect_projected_audio_markers(marker_search_t<std::uint64_t>& search,
 
 auto validate_selected_marker(const chart_document_t& chart, const marker_navigation_item_t& item,
                               marker_navigation_result_t& result) -> bool {
-    const auto count = chart_object_id_count(chart, item.object);
+    const auto count = chart_object_id_count(chart, item.object, 2);
     if (count == 0) {
         reject(result.diagnostics, diagnostic_code_t::invalid_id,
                "selected marker ID is not present in the chart object index", item.object);
@@ -506,7 +458,7 @@ auto navigate_markers(const song_document_t& song, std::uint64_t expected_revisi
     const auto& measures = std::get<measure_index_t>(built);
     const auto measure_lookup = build_measure_lookup(measures);
     const auto cursor_row =
-        validate_position(measure_lookup, beat_cursor, std::nullopt, result.diagnostics);
+        resolve_marker_position_row(measure_lookup, beat_cursor, std::nullopt, result.diagnostics);
     if (!cursor_row.has_value()) {
         result.status = marker_navigation_status_t::invalid_request;
         return result;
@@ -552,7 +504,7 @@ auto resolve_section_selection(const song_document_t& song, std::uint64_t expect
                "section selection ID is ambiguous", section_id);
         return result;
     }
-    if (chart_object_id_count(*query.chart, section_id) != 1) {
+    if (chart_object_id_count(*query.chart, section_id, 2) != 1) {
         reject(result.diagnostics, diagnostic_code_t::duplicate_id,
                "section selection ID is ambiguous across chart objects", section_id);
         return result;
@@ -583,9 +535,9 @@ auto resolve_section_selection(const song_document_t& song, std::uint64_t expect
     const auto& measures = std::get<measure_index_t>(built);
     const auto measure_lookup = build_measure_lookup(measures);
     const auto begin =
-        validate_position(measure_lookup, found->beat_span->begin, section_id, result.diagnostics);
+        resolve_marker_position_row(measure_lookup, found->beat_span->begin, section_id, result.diagnostics);
     const auto end =
-        validate_position(measure_lookup, found->beat_span->end, section_id, result.diagnostics);
+        resolve_marker_position_row(measure_lookup, found->beat_span->end, section_id, result.diagnostics);
     if (!begin.has_value() || !end.has_value()) {
         return result;
     }

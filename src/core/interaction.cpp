@@ -1,3 +1,4 @@
+#include "interaction_geometry.h"
 #include <wormedit/core/interaction_gestures.h>
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/snap.h>
@@ -70,28 +71,6 @@ auto combine_editor_area_selection(const editor_interaction_state_t& state,
 
 namespace {
 
-auto error(diagnostic_code_t code, std::string message,
-           std::optional<object_id_t> object = std::nullopt) -> diagnostic_t {
-    return {
-        .severity = diagnostic_severity_t::error,
-        .code = code,
-        .message = std::move(message),
-        .object = object,
-    };
-}
-
-auto find_chart(const song_document_t& song, chart_id_t id) -> const chart_document_t* {
-    const auto found =
-        std::ranges::find_if(song.charts, [id](const auto& chart) { return chart.id == id; });
-    return found == song.charts.end() ? nullptr : &*found;
-}
-
-auto find_chart(song_document_t& song, chart_id_t id) -> chart_document_t* {
-    const auto found =
-        std::ranges::find_if(song.charts, [id](const auto& chart) { return chart.id == id; });
-    return found == song.charts.end() ? nullptr : &*found;
-}
-
 auto bms_branch_source_orders(const chart_document_t& chart)
     -> std::unordered_set<std::size_t> {
     std::unordered_set<std::size_t> orders;
@@ -114,11 +93,6 @@ auto bms_branch_source_orders(const chart_document_t& chart)
     };
     visit(visit, *chart.bms_control_tree, false);
     return orders;
-}
-
-auto position_at(const measure_index_t& index, std::uint64_t absolute)
-    -> std::optional<local_position_t> {
-    return position_at_absolute_row(index, absolute);
 }
 
 struct hold_row_plan_t {
@@ -307,30 +281,6 @@ auto normalized_position_span(const measure_index_t& index, local_position_t fir
                                     : position_span_t{second, first};
 }
 
-auto effective_layout(const chart_document_t& chart, const measure_index_t& index,
-                      local_position_t position) -> const lane_layout_t* {
-    const auto event_row = absolute_row(index, position);
-    if (!event_row.has_value()) {
-        return nullptr;
-    }
-    const lane_layout_segment_t* selected{};
-    std::uint64_t selected_row{};
-    for (const auto& segment : chart.lane_layouts) {
-        const auto segment_row = absolute_row(index, segment.position);
-        if (segment_row.has_value() && *segment_row <= *event_row &&
-            (selected == nullptr || *segment_row >= selected_row)) {
-            selected = &segment;
-            selected_row = *segment_row;
-        }
-    }
-    return selected == nullptr ? nullptr : &selected->layout;
-}
-
-auto editable_lane(const lane_definition_t& lane) -> bool {
-    return lane.role != lane_role_t::autoplay && lane.role != lane_role_t::invisible &&
-           lane.role != lane_role_t::mine;
-}
-
 auto notes_from_objects(const std::vector<editor_selection_object_t>& objects)
     -> std::vector<object_id_t> {
     std::vector<object_id_t> notes;
@@ -377,28 +327,6 @@ auto transition_lane(const chart_document_t& chart, const measure_index_t& index
     const auto* target = effective_layout(chart, index, to);
     return source && target ? editor_lane_across_presented_layouts(*source, *target, current, sides)
                             : std::nullopt;
-}
-
-auto maximum_viewport_scroll(const chart_document_t& chart, const measure_index_t& index,
-                             double scale, double viewport_height,
-                             double end_fraction = editor_cursor_edge_margin_fraction) -> std::optional<double> {
-    auto total_rows = index.total_rows;
-    if (chart_has_virtual_tail(chart)) {
-        const auto canvas = build_virtual_canvas(chart);
-        if (!std::holds_alternative<virtual_canvas_t>(canvas)) {
-            return std::nullopt;
-        }
-        total_rows = std::get<virtual_canvas_t>(canvas).total_rows;
-    }
-    const auto content_height = static_cast<double>(total_rows) * scale /
-                                static_cast<double>(chart.divisions_per_standard_measure);
-    if (!std::isfinite(content_height) || content_height < 0.0 || !std::isfinite(viewport_height) ||
-        viewport_height <= 0.0) {
-        return std::nullopt;
-    }
-    if (!editor_viewport_margins_valid(editor_cursor_edge_margin_fraction, end_fraction))
-        return std::nullopt;
-    return editor_maximum_viewport_scroll(content_height, viewport_height, end_fraction);
 }
 
 auto minimum_viewport_scroll(double viewport_height) -> double {
@@ -1387,7 +1315,6 @@ auto sync_linked_sound_events(chart_document_t& chart, const note_move_plan_t& p
     }
     return std::nullopt;
 }
-
 
 struct note_move_parameters_t {
     const note_t* reference{};
@@ -3703,7 +3630,6 @@ auto keyboard_entry_occupant(const chart_document_t& chart, const measure_index_
     return found;
 }
 
-
 struct prepared_keyboard_entry_t {
     song_document_t document;
     std::optional<object_id_t> created;
@@ -5841,15 +5767,6 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
 
     };
 
-
-
-
-
-
-
-
-
-
     const auto handle_begin_semantic_layer_paint_gesture = [&](const begin_semantic_layer_paint_gesture_action_t& typed_action) -> editor_interaction_result_t {
 
         return begin_semantic_layer_paint_gesture(typed_action.layer, typed_action.note,
@@ -5972,7 +5889,6 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
 
     case 10: return handle_commit_hold(std::get<commit_hold_action_t>(action));
 
-
     case 11: return handle_begin_lane_key_hold_gesture(std::get<begin_lane_key_hold_gesture_action_t>(action));
 
     case 12: return handle_release_lane_key_hold_gesture(std::get<release_lane_key_hold_gesture_action_t>(action));
@@ -6024,7 +5940,6 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
     case 35: return handle_select_editor_objects(std::get<select_editor_objects_action_t>(action));
 
     case 36: return handle_delete_editor_selection(std::get<delete_editor_selection_action_t>(action));
-
 
     case 37: return handle_select_editor_lane(std::get<select_editor_lane_action_t>(action));
 

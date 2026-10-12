@@ -12,14 +12,6 @@
 namespace wormedit {
 namespace {
 
-auto error(diagnostic_code_t code, std::string message,
-           std::optional<object_id_t> object = std::nullopt) -> diagnostic_t {
-    return {.severity = diagnostic_severity_t::error,
-            .code = code,
-            .message = std::move(message),
-            .object = object};
-}
-
 auto normalize(rational_t value) -> rational_t {
     const auto divisor = std::gcd(value.numerator, value.denominator);
     return {value.numerator / divisor, value.denominator / divisor};

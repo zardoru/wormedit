@@ -190,11 +190,6 @@ auto count_affected_notes(const chart_document_t& chart, const lane_layout_segme
     return count;
 }
 
-auto find_chart(const song_document_t& song, chart_id_t chart)
-    -> std::vector<chart_document_t>::const_iterator {
-    return std::ranges::find(song.charts, chart, &chart_document_t::id);
-}
-
 auto find_segment(const chart_document_t& chart, object_id_t segment)
     -> std::vector<lane_layout_segment_t>::const_iterator {
     return std::ranges::find(chart.lane_layouts, segment, &lane_layout_segment_t::id);
@@ -312,7 +307,7 @@ auto propose_bms_channel_map_edit(const song_document_t& song,
         return proposal;
     }
     const auto chart = find_chart(song, chart_id);
-    if (chart == song.charts.end()) {
+    if (chart == nullptr) {
         fail(proposal, channel_map_issue_t::chart_not_found, "The selected chart no longer exists.");
         return proposal;
     }

@@ -1,3 +1,5 @@
+#include "position_validation.h"
+#include "chart_object_ids.h"
 #include <wormedit/core/scroll_speed_editor.h>
 
 #include <algorithm>
@@ -9,15 +11,6 @@
 
 namespace wormedit {
 namespace {
-
-auto error(diagnostic_code_t code, std::string message) -> diagnostic_t {
-    return {.severity = diagnostic_severity_t::error, .code = code, .message = std::move(message)};
-}
-
-auto reject(document_command_result_t& result, diagnostic_code_t code, std::string message)
-    -> void {
-    result.diagnostics.push_back(error(code, std::move(message)));
-}
 
 auto validate_scroll_value(signed_rational_t multiplier, document_command_result_t& result)
     -> bool {
@@ -42,108 +35,7 @@ auto validate_speed_values(signed_rational_t multiplier, rational_t transition_b
 
 auto validate_position(const chart_document_t& chart, local_position_t position,
                        document_command_result_t& result) -> bool {
-    const auto measures = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(measures)) {
-        result.diagnostics = std::get<diagnostic_list_t>(measures);
-        return false;
-    }
-    if (!absolute_row(std::get<measure_index_t>(measures), position).has_value()) {
-        reject(result, diagnostic_code_t::row_out_of_range,
-               "scroll/speed event position is outside the selected chart's measure geometry");
-        return false;
-    }
-    return true;
-}
-
-struct object_id_allocation_t {
-    std::optional<object_id_t> id;
-    bool over_limit{};
-    bool exhausted{};
-};
-
-auto next_chart_object_id(const chart_document_t& chart, std::size_t maximum_chart_objects)
-    -> object_id_allocation_t {
-    std::size_t object_count{};
-    std::uint64_t maximum_id{};
-    bool over_limit{};
-    const auto record = [&](object_id_t id) {
-        if (object_count >= maximum_chart_objects) {
-            over_limit = true;
-            return false;
-        }
-        ++object_count;
-        maximum_id = std::max(maximum_id, id.value);
-        return true;
-    };
-    const auto scan = [&record](const auto& values) {
-        for (const auto& value : values) {
-            if (!record(value.id)) {
-                return false;
-            }
-        }
-        return true;
-    };
-
-    auto within_limit =
-        scan(chart.bgm_source_lanes) && scan(chart.lane_layouts) && scan(chart.bpms) &&
-        scan(chart.pauses) && scan(chart.warps) && scan(chart.scrolls) && scan(chart.speeds) &&
-        scan(chart.kiai) && scan(chart.timing_anchors) && scan(chart.bookmarks) &&
-        scan(chart.sections) && scan(chart.bga_events) && scan(chart.sound_channels);
-    if (within_limit) {
-        for (const auto& measure : chart.measures) {
-            if (!scan(measure.notes) || !scan(measure.bgm_events)) {
-                within_limit = false;
-                break;
-            }
-        }
-    }
-    if (within_limit) {
-        for (const auto& channel : chart.sound_channels) {
-            if (!scan(channel.events)) {
-                within_limit = false;
-                break;
-            }
-        }
-    }
-    if (!within_limit || object_count >= maximum_chart_objects) {
-        return {.over_limit = true};
-    }
-    if (maximum_id == std::numeric_limits<std::uint64_t>::max()) {
-        return {.exhausted = true};
-    }
-    return {.id = object_id_t{maximum_id + 1}};
-}
-
-auto chart_object_id_count(const chart_document_t& chart, object_id_t sought) -> std::size_t {
-    auto count = std::size_t{};
-    const auto scan = [&](const auto& values) {
-        for (const auto& value : values) {
-            if (value.id == sought) {
-                ++count;
-            }
-        }
-    };
-    scan(chart.bgm_source_lanes);
-    scan(chart.lane_layouts);
-    scan(chart.bpms);
-    scan(chart.pauses);
-    scan(chart.warps);
-    scan(chart.scrolls);
-    scan(chart.speeds);
-    scan(chart.kiai);
-    scan(chart.timing_anchors);
-    scan(chart.bookmarks);
-    scan(chart.sections);
-    scan(chart.bga_events);
-    scan(chart.sound_channels);
-    for (const auto& measure : chart.measures) {
-        scan(measure.notes);
-        scan(measure.bgm_events);
-    }
-    for (const auto& channel : chart.sound_channels) {
-        scan(channel.events);
-    }
-    return count;
+    return validate_chart_position(chart, position, result.diagnostics, "scroll/speed event");
 }
 
 template <typename event_t>

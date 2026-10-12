@@ -9,15 +9,12 @@
 #include <utility>
 
 namespace wormedit {
-namespace {
-
-auto error(diagnostic_code_t code, std::string message) -> diagnostic_t {
-    return {
-        .severity = diagnostic_severity_t::error,
-        .code = code,
-        .message = std::move(message),
-    };
+void reject(document_command_result_t& result, diagnostic_code_t code, std::string message,
+            std::optional<object_id_t> object) {
+    result.diagnostics.push_back(error(code, std::move(message), object));
 }
+
+namespace {
 
 void trim_undo_history(document_history_t& history) {
     if (history.undo.size() <= history.maximum_undo_entries) {

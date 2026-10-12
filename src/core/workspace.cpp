@@ -23,14 +23,6 @@ auto index_of(workspace_tab_t tab) noexcept -> std::optional<std::size_t> {
     return index;
 }
 
-auto error(diagnostic_code_t code, std::string message) -> diagnostic_t {
-    return {
-        .severity = diagnostic_severity_t::error,
-        .code = code,
-        .message = std::move(message),
-    };
-}
-
 auto add_error(diagnostic_list_t& diagnostics, diagnostic_code_t code, std::string message)
     -> void {
     diagnostics.push_back(error(code, std::move(message)));
@@ -145,12 +137,6 @@ auto binding_diagnostics(const song_document_t& document, const workspace_limits
         ++cache->build_count;
     }
     return cache->diagnostics;
-}
-
-auto find_chart(const song_document_t& document, chart_id_t id) -> const chart_document_t* {
-    const auto found =
-        std::ranges::find_if(document.charts, [id](const auto& chart) { return chart.id == id; });
-    return found == document.charts.end() ? nullptr : &*found;
 }
 
 auto find_audio_asset(const song_document_t& document, asset_id_t id) -> const audio_asset_t* {

@@ -1,3 +1,4 @@
+#include "interaction_geometry.h"
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/snap.h>
 
@@ -11,41 +12,6 @@
 
 namespace wormedit {
 namespace {
-
-auto error(diagnostic_code_t code, std::string message,
-           std::optional<object_id_t> object = std::nullopt) -> diagnostic_t {
-    return {.severity = diagnostic_severity_t::error,
-            .code = code,
-            .message = std::move(message),
-            .object = object};
-}
-
-auto position_at(const measure_index_t& index, std::uint64_t absolute)
-    -> std::optional<local_position_t> {
-    return position_at_absolute_row(index, absolute);
-}
-
-auto editable_lane(const lane_definition_t& lane) -> bool {
-    return lane.role != lane_role_t::autoplay && lane.role != lane_role_t::invisible &&
-           lane.role != lane_role_t::mine;
-}
-
-auto effective_layout(const chart_document_t& chart, const measure_index_t& index,
-                      local_position_t position) -> const lane_layout_t* {
-    const auto row = absolute_row(index, position);
-    if (!row)
-        return nullptr;
-    const lane_layout_segment_t* selected{};
-    std::uint64_t selected_row{};
-    for (const auto& segment : chart.lane_layouts) {
-        const auto candidate = absolute_row(index, segment.position);
-        if (candidate && *candidate <= *row && (selected == nullptr || *candidate >= selected_row)) {
-            selected = &segment;
-            selected_row = *candidate;
-        }
-    }
-    return selected == nullptr ? nullptr : &selected->layout;
-}
 
 auto find_active_lane(const chart_document_t& chart, const measure_index_t& index,
                       local_position_t position, lane_id_t id) -> const lane_definition_t* {
@@ -75,24 +41,6 @@ auto scope_accepts(editor_selection_scope_t scope, editor_selection_object_kind_
     case editor_selection_object_kind_t::section: return scope.timing;
     }
     return false;
-}
-
-auto maximum_viewport_scroll(const chart_document_t& chart, const measure_index_t& index,
-                             double scale, double viewport_height) -> std::optional<double> {
-    auto total_rows = index.total_rows;
-    if (chart_has_virtual_tail(chart)) {
-        const auto canvas = build_virtual_canvas(chart);
-        const auto* built = std::get_if<virtual_canvas_t>(&canvas);
-        if (!built)
-            return std::nullopt;
-        total_rows = built->total_rows;
-    }
-    const auto content_height = static_cast<double>(total_rows) * scale /
-                                static_cast<double>(chart.divisions_per_standard_measure);
-    if (!std::isfinite(content_height) || content_height < 0.0 || !std::isfinite(viewport_height) ||
-        viewport_height <= 0.0)
-        return std::nullopt;
-    return editor_maximum_viewport_scroll(content_height, viewport_height);
 }
 
 auto minimum_viewport_scroll(double viewport_height) -> double {
@@ -559,7 +507,5 @@ auto editor_objects_in_area_selection(const chart_document_t& chart,
     selected.erase(std::unique(selected.begin(), selected.end()), selected.end());
     return selected;
 }
-
-
 
 } // namespace wormedit

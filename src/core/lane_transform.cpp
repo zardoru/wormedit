@@ -16,14 +16,6 @@ namespace {
 using lane_chooser_t =
     std::function<std::optional<lane_id_t>(const lane_layout_t&, lane_id_t)>;
 
-void reject(document_command_result_t& result, diagnostic_code_t code, std::string message,
-            std::optional<object_id_t> object = std::nullopt) {
-    result.diagnostics.push_back({.severity = diagnostic_severity_t::error,
-                                  .code = code,
-                                  .message = std::move(message),
-                                  .object = object});
-}
-
 auto layout_at(const chart_document_t& chart, const measure_index_t& index,
                local_position_t position) -> const lane_layout_t* {
     const auto row = absolute_row(index, position);

@@ -1864,7 +1864,6 @@ typedef enum WormUiTimingPauseUnit {
     WORM_UI_TIMING_PAUSE_BEATS,
 } WormUiTimingPauseUnit;
 
-
 // Renderer-neutral scalar projection of the timing pane. SPEEDS spans are
 // evaluated by the timing core before crossing this private C boundary.
 typedef struct WormUiTimingView {
@@ -3064,9 +3063,7 @@ typedef struct WormUiWorkspaceAction {
     size_t compose_sound_resource_count;
     const WormUiSoundGroupAssignment* compose_sound_group_assignments;
     size_t compose_sound_group_assignment_count;
-    uint64_t compose_sound_group_id;
     bool compose_sound_group_keep_ids_together;
-    char compose_sound_group_name[65];
     bool compose_sound_overwrite_note_layers;
     /* Renumber WAV or BMP identifiers for the selected resources, or all in the namespace. */
     bool compose_renumber_all;

@@ -1,3 +1,4 @@
+#include "interaction_geometry.h"
 #include <wormedit/core/document.h>
 #include <wormedit/core/sv_recipe.h>
 
@@ -14,6 +15,20 @@
 #include <unordered_set>
 
 namespace wormedit {
+
+auto error(diagnostic_code_t code, std::string message, std::optional<object_id_t> object) -> diagnostic_t {
+    return {.severity = diagnostic_severity_t::error, .code = code,
+            .message = std::move(message), .object = object};
+}
+auto find_chart(const song_document_t& document, chart_id_t id) -> const chart_document_t* {
+    const auto found = std::ranges::find(document.charts, id, &chart_document_t::id);
+    return found == document.charts.end() ? nullptr : &*found;
+}
+auto find_chart(song_document_t& document, chart_id_t id) -> chart_document_t* {
+    const auto found = std::ranges::find(document.charts, id, &chart_document_t::id);
+    return found == document.charts.end() ? nullptr : &*found;
+}
+
 namespace {
 
 constexpr auto maximum = std::numeric_limits<std::uint64_t>::max();
@@ -623,25 +638,6 @@ auto position_row_or_diagnostic(const measure_index_t& index, local_position_t p
         return std::nullopt;
     }
     return row;
-}
-
-auto effective_layout(const chart_document_t& chart, const measure_index_t& index,
-                      local_position_t position) -> const lane_layout_t* {
-    const auto* selected = static_cast<const lane_layout_t*>(nullptr);
-    auto selected_row = std::uint64_t{};
-    const auto event_row = absolute_row(index, position);
-    if (!event_row.has_value()) {
-        return nullptr;
-    }
-    for (const auto& segment : chart.lane_layouts) {
-        const auto segment_row = absolute_row(index, segment.position);
-        if (segment_row.has_value() && *segment_row <= *event_row &&
-            (selected == nullptr || *segment_row >= selected_row)) {
-            selected = &segment.layout;
-            selected_row = *segment_row;
-        }
-    }
-    return selected;
 }
 
 auto lane_is_active(const chart_document_t& chart, const measure_index_t& index,

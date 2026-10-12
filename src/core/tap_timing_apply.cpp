@@ -15,17 +15,10 @@
 
 namespace wormedit {
 namespace {
-
-auto error(diagnostic_code_t code, const char* message) -> diagnostic_t {
-    return {.severity = diagnostic_severity_t::error, .code = code, .message = message};
-}
+using wormedit::reject;
 
 void reject(tap_timing_apply_proposal_result_t& result, diagnostic_code_t code,
             const char* message) {
-    result.diagnostics.push_back(error(code, message));
-}
-
-void reject(document_command_result_t& result, diagnostic_code_t code, const char* message) {
     result.diagnostics.push_back(error(code, message));
 }
 

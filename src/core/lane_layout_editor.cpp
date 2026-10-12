@@ -1,3 +1,4 @@
+#include "chart_object_ids.h"
 #include <wormedit/core/lane_layout_editor.h>
 
 #include <algorithm>
@@ -10,40 +11,6 @@
 
 namespace wormedit {
 namespace {
-
-void reject(document_command_result_t& result, diagnostic_code_t code, std::string message) {
-    result.diagnostics.push_back({.severity = diagnostic_severity_t::error,
-                                  .code = code,
-                                  .message = std::move(message),
-                                  .object = {}});
-}
-
-auto next_chart_object_id(const chart_document_t& chart) -> std::optional<object_id_t> {
-    std::uint64_t largest{};
-    const auto scan = [&](const auto& values) {
-        for (const auto& value : values) largest = std::max(largest, value.id.value);
-    };
-    scan(chart.bgm_source_lanes);
-    scan(chart.lane_layouts);
-    scan(chart.bpms);
-    scan(chart.pauses);
-    scan(chart.warps);
-    scan(chart.scrolls);
-    scan(chart.speeds);
-    scan(chart.kiai);
-    scan(chart.timing_anchors);
-    scan(chart.bookmarks);
-    scan(chart.sections);
-    scan(chart.bga_events);
-    scan(chart.sound_channels);
-    for (const auto& channel : chart.sound_channels) scan(channel.events);
-    for (const auto& measure : chart.measures) {
-        scan(measure.notes);
-        scan(measure.bgm_events);
-    }
-    if (largest == std::numeric_limits<std::uint64_t>::max()) return std::nullopt;
-    return object_id_t{largest + 1};
-}
 
 struct located_segment_t {
     std::uint64_t row{};
@@ -135,7 +102,7 @@ void apply_edit(layout_edit_context_t& context, const insert_lane_layout_action_
                "a lane layout segment already starts at this position");
         return;
     }
-    const auto id = next_chart_object_id(context.chart);
+    const auto id = next_chart_object_id(context.chart).id;
     if (!id) {
         reject(context.result, diagnostic_code_t::invalid_id, "object ID sequence is exhausted");
         return;

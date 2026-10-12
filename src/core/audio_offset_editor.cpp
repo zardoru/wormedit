@@ -73,19 +73,10 @@ auto add_frame_delta(signed_rational_t offset, std::int64_t frames, std::uint32_
     return signed_rational_t{reduced_numerator, *denominator / reduction};
 }
 
-auto error(diagnostic_code_t code, std::string message) -> diagnostic_t {
-    return {.severity = diagnostic_severity_t::error, .code = code, .message = std::move(message)};
-}
-
 auto reject_drag(diagnostic_code_t code, std::string message) -> audio_offset_drag_result_t {
     audio_offset_drag_result_t result;
     result.diagnostics.push_back(error(code, std::move(message)));
     return result;
-}
-
-auto find_chart(const song_document_t& document, chart_id_t chart) -> const chart_document_t* {
-    const auto found = std::ranges::find(document.charts, chart, &chart_document_t::id);
-    return found == document.charts.end() ? nullptr : &*found;
 }
 
 } // namespace

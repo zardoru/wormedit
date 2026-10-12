@@ -19,14 +19,6 @@
 namespace wormedit {
 namespace {
 
-auto error(diagnostic_code_t code, std::string message) -> diagnostic_t {
-    return {.severity = diagnostic_severity_t::error, .code = code, .message = std::move(message)};
-}
-
-void reject(document_command_result_t& result, diagnostic_code_t code, std::string message) {
-    result.diagnostics.push_back(error(code, std::move(message)));
-}
-
 auto validate_definition(const chart_document_t& chart, const measure_definition_t& definition,
                          const measure_edit_limits_t& limits, document_command_result_t& result)
     -> bool {

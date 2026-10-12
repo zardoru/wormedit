@@ -17,11 +17,6 @@ struct ordered_row_t {
     std::optional<long double> absolute_row;
 };
 
-auto find_chart(const song_document_t& document, chart_id_t id) -> const chart_document_t* {
-    const auto found = std::ranges::find(document.charts, id, &chart_document_t::id);
-    return found == document.charts.end() ? nullptr : &*found;
-}
-
 auto row_for_position(const measure_index_t& measures, local_position_t position)
     -> std::optional<std::uint64_t> {
     const auto found = std::ranges::find(measures.entries, position.measure,

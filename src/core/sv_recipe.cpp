@@ -1,3 +1,4 @@
+#include "chart_object_ids.h"
 #include <wormedit/core/snap.h>
 #include <wormedit/core/sv_recipe.h>
 #include <wormedit/core/span_manipulation.h>
@@ -16,14 +17,11 @@
 
 namespace wormedit {
 namespace {
+using wormedit::reject;
 
 constexpr long double maximum_parameter_magnitude = 1'000'000.0L;
 constexpr long double maximum_curve_output = 1'000'000'000.0L;
 constexpr std::uint64_t maximum_parameter_denominator = 1'000'000'000ULL;
-
-auto error(diagnostic_code_t code, std::string message) -> diagnostic_t {
-    return {.severity = diagnostic_severity_t::error, .code = code, .message = std::move(message)};
-}
 
 void reject(diagnostic_list_t& diagnostics, diagnostic_code_t code, std::string message) {
     diagnostics.push_back(error(code, std::move(message)));
@@ -301,39 +299,6 @@ auto next_recipe_id(const song_document_t& song) -> std::optional<recipe_id_t> {
     return recipe_id_t{maximum + 1};
 }
 
-auto next_chart_object_id(const chart_document_t& chart) -> std::optional<object_id_t> {
-    std::uint64_t maximum{};
-    const auto scan = [&](const auto& values) {
-        for (const auto& value : values) {
-            maximum = std::max(maximum, value.id.value);
-        }
-    };
-    scan(chart.bgm_source_lanes);
-    scan(chart.lane_layouts);
-    scan(chart.bpms);
-    scan(chart.pauses);
-    scan(chart.warps);
-    scan(chart.scrolls);
-    scan(chart.speeds);
-    scan(chart.kiai);
-    scan(chart.timing_anchors);
-    scan(chart.bookmarks);
-    scan(chart.sections);
-    scan(chart.bga_events);
-    scan(chart.sound_channels);
-    for (const auto& channel : chart.sound_channels) {
-        scan(channel.events);
-    }
-    for (const auto& measure : chart.measures) {
-        scan(measure.notes);
-        scan(measure.bgm_events);
-    }
-    if (maximum == std::numeric_limits<std::uint64_t>::max()) {
-        return std::nullopt;
-    }
-    return object_id_t{maximum + 1};
-}
-
 auto export_rational(double value) -> std::optional<signed_rational_t> {
     constexpr std::uint64_t denominator = 1'000'000'000ULL;
     const auto scaled = static_cast<long double>(value) * static_cast<long double>(denominator);
@@ -347,11 +312,6 @@ auto export_rational(double value) -> std::optional<signed_rational_t> {
                                          : static_cast<std::uint64_t>(numerator);
     const auto divisor = std::gcd(magnitude, denominator);
     return signed_rational_t{numerator / static_cast<std::int64_t>(divisor), denominator / divisor};
-}
-
-auto chart_by_id(const song_document_t& song, chart_id_t id) -> const chart_document_t* {
-    const auto found = std::ranges::find(song.charts, id, &chart_document_t::id);
-    return found == song.charts.end() ? nullptr : &*found;
 }
 
 auto recipe_by_id(const chart_document_t& chart, recipe_id_t id) -> const sv_recipe_t* {
@@ -955,7 +915,7 @@ void reject_draft(sv_recipe_draft_t& draft, diagnostic_code_t code, std::string 
 
 auto draft_chart_for(const document_history_t& history, const sv_recipe_draft_t& draft)
     -> const chart_document_t* {
-    return chart_by_id(history.document, draft.chart);
+    return find_chart(history.document, draft.chart);
 }
 
 auto draft_is_current(const document_history_t& history, sv_recipe_draft_t& draft,
@@ -1006,7 +966,7 @@ auto begin_sv_recipe_draft(const document_history_t& history, chart_id_t chart_i
                      "SV recipe editing is unavailable while timing is locked", true);
         return draft;
     }
-    const auto* chart = chart_by_id(history.document, chart_id);
+    const auto* chart = find_chart(history.document, chart_id);
     if (chart == nullptr || !chart_id) {
         reject_draft(draft, diagnostic_code_t::invalid_id,
                      "SV recipe draft refers to an unknown chart", true);
@@ -1036,7 +996,7 @@ auto begin_existing_sv_recipe_draft(const document_history_t& history, chart_id_
                      "SV recipe editing is unavailable while timing is locked", true);
         return draft;
     }
-    const auto* chart = chart_by_id(history.document, chart_id);
+    const auto* chart = find_chart(history.document, chart_id);
     if (chart == nullptr || !chart_id || !recipe_id) {
         reject_draft(draft, diagnostic_code_t::invalid_id,
                      "SV recipe draft refers to an unknown chart or recipe", true);
@@ -1321,7 +1281,7 @@ auto bake_sv_recipes_for_export(const chart_document_t& chart) -> sv_recipe_expo
         return result;
     }
     const auto& index = std::get<measure_index_t>(built_index);
-    const auto first_id = next_chart_object_id(baked);
+    const auto first_id = next_chart_object_id(baked, std::numeric_limits<std::size_t>::max()).id;
     if (!first_id) {
         reject(result.diagnostics, diagnostic_code_t::invalid_id,
                "SV export bake cannot allocate transient event IDs");
@@ -1354,7 +1314,7 @@ auto begin_sv_recipe_range_drag(const document_history_t& history, chart_id_t ch
                     "SV recipe range dragging is unavailable while timing is locked", true);
         return drag;
     }
-    const auto* chart = chart_by_id(history.document, chart_id);
+    const auto* chart = find_chart(history.document, chart_id);
     if (!chart || !recipe_id) {
         reject_drag(drag, diagnostic_code_t::invalid_id,
                     "SV recipe range drag refers to an unknown chart or recipe", true);
@@ -1398,7 +1358,7 @@ auto update_sv_recipe_range_drag(const document_history_t& history, sv_recipe_ra
                     true);
         return false;
     }
-    const auto* chart = chart_by_id(history.document, drag.chart);
+    const auto* chart = find_chart(history.document, drag.chart);
     const auto* recipe = chart ? recipe_by_id(*chart, drag.recipe) : nullptr;
     if (!chart || !recipe) {
         reject_drag(drag, diagnostic_code_t::invalid_id,

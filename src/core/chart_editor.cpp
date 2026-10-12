@@ -159,14 +159,10 @@ auto reject(const document_history_t& history, std::string message) -> document_
         .message = std::move(message)}}};
 }
 
-auto find_chart(const song_document_t& document, chart_id_t id) {
-    return std::ranges::find(document.charts, id, &chart_document_t::id);
-}
-
 auto check_chart(const document_history_t& history, std::uint64_t revision, chart_id_t id)
     -> std::optional<document_command_result_t> {
     if (history.document.revision != revision) return reject(history, "chart command revision is stale");
-    if (find_chart(history.document, id) == history.document.charts.end())
+    if (find_chart(history.document, id) == nullptr)
         return reject(history, "chart command refers to an unknown chart");
     return std::nullopt;
 }
@@ -304,7 +300,7 @@ auto output_group_error(const song_document_t& doc, std::optional<std::size_t> i
         return "Use an output directory for multiple chart files.";
     std::vector<chart_id_t> seen;
     for (const auto chart : group.charts) {
-        if (find_chart(doc, chart) == doc.charts.end()) return "Output group contains an unknown chart.";
+        if (find_chart(doc, chart) == nullptr) return "Output group contains an unknown chart.";
         if (std::ranges::find(seen, chart) != seen.end()) return "Output group repeats a chart.";
         seen.push_back(chart);
     }

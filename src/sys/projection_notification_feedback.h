@@ -7,6 +7,11 @@
 
 namespace wormedit::sys {
 
+// Sys feedback entry point: map core diagnostics here, then publish via a notification_sink_t.
+inline void set_feedback_severity(notification_severity_t* output, notification_severity_t value) {
+    if (output) *output = value;
+}
+
 enum class projection_feedback_kind_t {
     layer_palette, audio_bookmark, beat_bookmark_position, beat_bookmark_geometry,
     audio_section, beat_section_position, beat_section_geometry, measure_geometry,

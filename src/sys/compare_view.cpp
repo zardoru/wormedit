@@ -14,12 +14,6 @@ auto difficulty_name(const wormedit::chart_document_t& chart) -> const std::stri
     return chart.metadata.name;
 }
 
-auto find_chart(const wormedit::song_document_t& document, wormedit::chart_id_t id)
-    -> const wormedit::chart_document_t* {
-    const auto found = std::ranges::find(document.charts, id, &wormedit::chart_document_t::id);
-    return found == document.charts.end() ? nullptr : &*found;
-}
-
 auto diagnostic_position(const wormedit::song_document_t& document,
                          wormedit::object_id_t id)
     -> wormedit::sys::notification_history_target_t {

@@ -1,3 +1,4 @@
+#include "sys/projection_notification_feedback.h"
 #include "sys/compose_selection_transform.h"
 
 #include <wormedit/core/lane_profile_switch.h>
@@ -9,33 +10,15 @@
 namespace wormedit::sys {
 namespace {
 
-void set_feedback_severity(notification_severity_t* output, notification_severity_t value) {
-    if (output) *output = value;
-}
-auto diagnostic_feedback_severity(diagnostic_severity_t value) -> notification_severity_t {
-    switch (value) {
-    case diagnostic_severity_t::info: return notification_severity_t::info;
-    case diagnostic_severity_t::warning: return notification_severity_t::warning;
-    case diagnostic_severity_t::error: return notification_severity_t::error;
-    }
-    return notification_severity_t::error;
-}
-
 auto command_status(const document_command_result_t& result, const char* applied,
                     const char* unchanged, notification_severity_t* severity) -> std::string {
     if (!result.diagnostics.empty() && !result.applied) {
-        set_feedback_severity(severity, diagnostic_feedback_severity(result.diagnostics.front().severity));
+        set_feedback_severity(severity, projection_diagnostic_severity(result.diagnostics.front().severity));
         return result.diagnostics.front().message;
     }
     set_feedback_severity(severity, result.applied ? notification_severity_t::success
                                                  : notification_severity_t::info);
     return result.applied ? applied : unchanged;
-}
-
-auto chart_for(const document_history_t& history, const editor_interaction_state_t& state)
-    -> const chart_document_t* {
-    const auto found = std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
-    return found == history.document.charts.end() ? nullptr : &*found;
 }
 
 auto shift_selection(document_history_t& history, const editor_interaction_state_t& state,
@@ -77,7 +60,7 @@ auto apply_selection_transform(document_history_t& history, const editor_interac
     set_feedback_severity(severity, notification_severity_t::warning);
     const auto notes = editor_quantize_selection(state).notes;
     if (notes.empty()) return "Select notes before transforming them.";
-    const auto* chart = chart_for(history, state);
+    const auto* chart = find_chart(history.document, state.chart);
     if (!chart) return "The selected difficulty is no longer available.";
     const auto revision = history.document.revision;
     switch (transform) {

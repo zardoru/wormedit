@@ -1,3 +1,5 @@
+#include "position_validation.h"
+#include "chart_object_ids.h"
 #include <wormedit/core/marker_editor.h>
 
 #include <algorithm>
@@ -9,15 +11,6 @@
 
 namespace wormedit {
 namespace {
-
-auto error(diagnostic_code_t code, std::string message) -> diagnostic_t {
-    return {.severity = diagnostic_severity_t::error, .code = code, .message = std::move(message)};
-}
-
-auto reject(document_command_result_t& result, diagnostic_code_t code, std::string message)
-    -> void {
-    result.diagnostics.push_back(error(code, std::move(message)));
-}
 
 auto valid_utf8(std::string_view text) -> bool {
     for (std::size_t index = 0; index < text.size();) {
@@ -91,74 +84,6 @@ auto marker_text_fits(const chart_document_t& chart, const marker_edit_limits_t&
     return true;
 }
 
-template <typename callback_t>
-auto visit_chart_object_ids(const chart_document_t& chart, callback_t&& callback) -> bool {
-    const auto visit = [&callback](const auto& values) {
-        for (const auto& value : values) {
-            if (!callback(value.id)) {
-                return false;
-            }
-        }
-        return true;
-    };
-    if (!visit(chart.bgm_source_lanes) || !visit(chart.lane_layouts) || !visit(chart.bpms) ||
-        !visit(chart.pauses) || !visit(chart.warps) || !visit(chart.scrolls) ||
-        !visit(chart.speeds) || !visit(chart.kiai) || !visit(chart.timing_anchors) ||
-        !visit(chart.bookmarks) || !visit(chart.sections) || !visit(chart.bga_events) ||
-        !visit(chart.sound_channels)) {
-        return false;
-    }
-    for (const auto& measure : chart.measures) {
-        if (!visit(measure.notes) || !visit(measure.bgm_events)) {
-            return false;
-        }
-    }
-    for (const auto& channel : chart.sound_channels) {
-        if (!visit(channel.events)) {
-            return false;
-        }
-    }
-    return true;
-}
-
-struct object_id_allocation_t {
-    std::optional<object_id_t> id;
-    bool over_limit{};
-    bool exhausted{};
-};
-
-auto next_chart_object_id(const chart_document_t& chart, std::size_t maximum_chart_objects)
-    -> object_id_allocation_t {
-    std::size_t count{};
-    std::uint64_t maximum_id{};
-    const auto visit = visit_chart_object_ids(chart, [&](object_id_t id) {
-        if (count >= maximum_chart_objects) {
-            return false;
-        }
-        ++count;
-        maximum_id = std::max(maximum_id, id.value);
-        return true;
-    });
-    if (!visit || count >= maximum_chart_objects) {
-        return {.over_limit = true};
-    }
-    if (maximum_id == std::numeric_limits<std::uint64_t>::max()) {
-        return {.exhausted = true};
-    }
-    return {.id = object_id_t{maximum_id + 1}};
-}
-
-auto chart_object_id_count(const chart_document_t& chart, object_id_t sought) -> std::size_t {
-    auto count = std::size_t{};
-    (void)visit_chart_object_ids(chart, [&](object_id_t id) {
-        if (id == sought) {
-            ++count;
-        }
-        return true;
-    });
-    return count;
-}
-
 auto validate_chart_object_id(const chart_document_t& chart, object_id_t id,
                               document_command_result_t& result, std::string_view type) -> bool {
     if (!id) {
@@ -183,14 +108,8 @@ auto validate_chart_object_id(const chart_document_t& chart, object_id_t id,
 auto validate_position(const chart_document_t& chart, local_position_t position,
                        const measure_index_t& index, document_command_result_t& result,
                        std::string_view description) -> bool {
-    if (!absolute_row(index, position).has_value()) {
-        reject(result, diagnostic_code_t::row_out_of_range,
-               std::string(description) +
-                   " position is outside the selected chart's measure geometry");
-        return false;
-    }
     (void)chart;
-    return true;
+    return validate_chart_position(index, position, result.diagnostics, description);
 }
 
 auto build_index(const chart_document_t& chart, document_command_result_t& result)

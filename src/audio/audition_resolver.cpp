@@ -12,7 +12,6 @@
 namespace wormedit::audio {
 namespace {
 
-
 auto error(audition_resolve_code_t code, std::string message,
            std::optional<object_id_t> object = std::nullopt) -> audition_resolve_diagnostic_t {
     return {.severity = diagnostic_severity_t::error,
@@ -384,11 +383,6 @@ class audition_resolver_index_t {
     std::map<fused_group_key_t, std::vector<std::size_t>> fused_groups_;
     std::vector<std::optional<channel_slice_cache_t>> slice_cache_;
 };
-
-auto find_chart(const song_document_t& song, chart_id_t chart) -> const chart_document_t* {
-    const auto found = std::ranges::find(song.charts, chart, &chart_document_t::id);
-    return found == song.charts.end() ? nullptr : &*found;
-}
 
 auto reference_sound_event(const chart_document_t& chart, object_id_t reference_bgm_event)
     -> std::optional<object_id_t> {

@@ -10,14 +10,6 @@
 namespace wormedit {
 namespace {
 
-auto error(diagnostic_code_t code, std::string message,
-           std::optional<object_id_t> object = std::nullopt) -> diagnostic_t {
-    return {.severity = diagnostic_severity_t::error,
-            .code = code,
-            .message = std::move(message),
-            .object = object};
-}
-
 auto timing_error(const timing_diagnostic_t& source) -> diagnostic_t {
     auto code = diagnostic_code_t::invalid_rational;
     if (source.code == timing_error_code_t::position_out_of_range) {

@@ -1,0 +1,189 @@
+# Type and signature consolidation
+
+[Back to executable task cards](../tasks.md). Source: [read-only audit](../../audits/type-redundancy-2026-10-12.md).
+
+Read `AGENTS.md` and `docs/chart-editor-plan/tasks.md` before taking a card. Execute T-591–T-598 in order on main, one commit per card. Include the unmodified source audit with T-591. T-599 and the optional AV4 rename require user decisions. Visual Xvfb checks are delegated to Claude by the user; they are not part of this agent’s gate. All refactors preserve behavior and per-frame/per-event allocation characteristics.
+
+## T-591 Share core helpers and retire proven dead fields
+
+- **Status:** done
+- **Findings closed:** HL1, HL2, HL3, HL6, HL8, CS2, GS2.
+- **Stale-plan audit:** Re-grep error/reject overloads, chart lookup variants, layout/ID/position helpers, severity mappings and all eight GS2 fields. Confirm A leads HL1/HL8; retain differing diagnostics and marker-navigation row semantics. Reclassify write-only fields using current reads and tests. Re-grep named symbols; confirm A leads before editing and record dropped claims. Do not chase rejected findings.
+- **Outcome:** Use one implementation of identical core helpers and sys severity mapping; delete only the eight proven dead GS2 fields and document all unfinished-feature questions.
+- **Read first:** `docs/audits/type-redundancy-2026-10-12.md`, `include/wormedit/core/document.h`, `include/wormedit/core/command.h`, `src/core/document.cpp`, `src/core/command.cpp`.
+- **Files owned:** `include/wormedit/core/document.h`, `include/wormedit/core/command.h`, `src/core/document.cpp`, `src/core/command.cpp`, `src/core/interaction.cpp`, `src/core/interaction_cursor.cpp`, `src/core/interaction_selection.cpp`, `src/core/interaction_hit_test.cpp`, `src/core/quantize.cpp`, `src/core/editor_scene.cpp`, `src/core/timing_anchor_editor.cpp`, `src/core/scroll_speed_editor.cpp`, `src/core/pause_warp_editor.cpp`, `src/core/marker_editor.cpp`, `src/core/timing_lane_controller.cpp`, `src/core/bpm_editor.cpp`, `src/core/lane_layout_editor.cpp`, `src/core/resource_assignment.cpp`, `src/core/sv_recipe.cpp`, `src/sys/projection_notification_feedback.h`, `src/sys/workspace_edit_feedback.h`, `src/sys/compose_label_search.cpp`, `src/sys/compose_measure_commands.cpp`, `src/sys/compose_selection_transform.cpp`, `src/sys/recipe_form.cpp`, `src/ui/nuklear/compose_state.h`, `src/ui/frontend.h`, `src/sys/compose_view.h`, `docs/chart-editor-plan/tasks/type-consolidation.md`, `memory/chart-editor-status/resume.md`, `docs/audits/type-redundancy-2026-10-12.md`, `src/audio/audition_resolver.cpp`, `src/core/audio_offset_editor.cpp`, `src/core/bgm_columns.cpp`, `src/core/channel_map_editor.cpp`, `src/core/chart_compare.cpp`, `src/core/chart_editor.cpp`, `src/core/chart_object_ids.h`, `src/core/command_registry.cpp`, `src/core/grid.cpp`, `src/core/interaction_geometry.h`, `src/core/lane_transform.cpp`, `src/core/marker_navigation.cpp`, `src/core/measure_editor.cpp`, `src/core/metadata_editor.cpp`, `src/core/note_label_editor.cpp`, `src/core/player_preview.cpp`, `src/core/position_validation.h`, `src/core/semantic_layer_editor.cpp`, `src/core/tap_timing_apply.cpp`, `src/core/workspace.cpp`, `src/sys/bookmark_chooser_projection.cpp`, `src/sys/compare_view.cpp`, `src/sys/compose_bookmark_commands.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `src/core/bms_branch_editor.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_input.h`.
+- **Steps:**
+  1. Inventory every signature/body and confirm equivalence before merging. Record caller ownership extensions before editing additional helper users.
+  2. Migrate shared diagnostic_t error and document-command reject atomically, removing all local competing definitions; retain different result-domain overloads.
+  3. Centralize chart lookup, layout/editable-lane/row/scroll helpers, object-ID visitation/allocation/counting and geometry validation while preserving exact versus capped counts and diagnostic messages.
+  4. Use the existing sys feedback mapping as the documented entry point. Delete only the eight confirmed dead fields; record questions for write-only feature fields without deleting or wiring them.
+  5. Run the complete gate, record actual output tails and commit only this card to main. Advance resume after completion.
+- **Invariants:** Behavior, diagnostics, ordering, Undo, strong IDs, C ABI field order/capacities and frame-owned pointers remain unchanged except the explicitly listed dead GS2 fields. Contexts are stack-only reference bundles built once per dispatch/frame and passed by reference; no added std::function, heap allocation, virtual dispatch or large value copies. Every affected function stays at or below complexity 25 through named function extraction; do not move branches into lambdas to satisfy the metric.
+- **Reject/failure behavior:** Existing validation, atomic rejection, cancellation, stale-work handling and diagnostic severity/messages remain unchanged. No new mutation or partial publication on failure.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build <source>` for every touched source, with no new/increased violations. Record exact command statuses and output tails; validate production paths with existing event/registered-command tests and relevant core/format fixtures. Claude performs the Xvfb smoke check.
+- **Out of scope:** Product semantics changes; necessary complexity and rejected audit claims; measure-index caching across nested mutation; native schema serializer redesign; god-struct grouping before T-599 approval; optional editor_ui_action_t rename without approval; unrelated work.
+
+- **Supporting ownership:** Coordinator-approved all diagnostic/chart helper callers inventoried by signature, internal geometry/object-ID/position headers, and the existing UI reset fixture. All these paths are required for atomic helper migration.
+
+- **Stale-plan evidence:** HL1 signatures/bodies confirm 28 diagnostic_t constructors and matching diagnostic-code document-command rejection copies; other result/enum overloads stay distinct. HL8 builders use the same geometry rule but family-specific message text; the marker navigation helper instead returns a row with different error codes and is renamed, not merged. GS2's eight fields have no production accesses; two have obsolete UI-reset fixture probes, which are removed with the fields. Several write-only claims are stale: quantize_q_bound and source_playhead_* have production UI readers; WAV/BMP renumber stamps are read by the shared catalog confirmation helper added in T-589. Keep them. Other write-only feature fields and test-probe counters are retained pending the question below.
+- **Preserved-behavior question:** Should semantic-layer paging, graph bounds, selected visual asset projection, BGA drag anchor, quantize preset selection, visual_asset_id and interaction lane-name/move-availability fields gain UI consumers or be retired? They may represent unfinished features. This card preserves them and the cache test probes. No feature is silently implemented or deleted.
+- **Supporting ownership (lookup aliases):** `src/core/bms_branch_editor.cpp`, `src/sys/compose_input.cpp` and `src/sys/compose_input.h` are approved for routing equivalent lookup aliases through the common find_chart; the public selected-chart adapter retains workspace validation.
+
+- **Completion (2026-10-12):** Shared diagnostic construction/rejection atomically, chart lookup (including equivalent aliases), geometry helpers, object-ID visitor/allocation/count and position validation. Preserve bounded/unbounded allocation, exact/capped counts and family-specific messages. One sys feedback mapping; only the eight GS2 fields removed. Existing domain adapters and unfinished-feature fields remain. The source audit is committed unchanged with this card.
+- **Gate evidence (actual tails, all exit 0):**
+  - Build: `[100%] Built target wormedit_frontend_event_harness_tests` (`/tmp/type-T-591-build-final.log`).
+  - Full serial CTest: `100% tests passed out of 3517`; `Total Test time (real) = 299.23 sec` (`/tmp/type-T-591-ctest.log`).
+  - Event harness: `100% tests passed out of 500`; `Total Test time (real) = 19.92 sec` (`/tmp/type-T-591-events.log`).
+  - Documentation: `100% tests passed out of 1`; `Total Test time (real) = 0.13 sec` (`/tmp/type-T-591-docs.log`).
+  - Default clang-tidy: all 44 touched C++ sources exit 0 (`/tmp/type-T-591-tidy/`). Representative helper-consumer tail: `3 warnings generated. Suppressed 3 warnings (3 with check filters).` Existing untouched `build_speed_graph` remains 29; existing doctest-generated functions remain 112/28/44/56/48 (only two obsolete reset assertions removed). No new/increased project violation; dependency-header warnings unchanged. `git diff --check` passes. Xvfb remains delegated to Claude.
+
+## T-592 Consolidate core editing context and typed dispatch
+
+- **Status:** ready
+- **Findings closed:** EC1, EC2, EC3, EC4, EC5, EC6, CS4.
+- **Stale-plan audit:** Confirm EC5 nested dispatch rebuilds and CS4 duplicated resource index against current source; drop stale claims with evidence. Inventory all dispatch alternatives and callback contexts. Re-grep named symbols; confirm A leads before editing and record dropped claims. Do not chase rejected findings.
+- **Outcome:** Build one stack-only editor_edit_context_t and dispatch with std::visit to named free handlers; unrelated contexts and forwarding closures are never constructed.
+- **Read first:** `docs/audits/type-redundancy-2026-10-12.md`, `src/core/interaction.cpp`, `src/core/interaction_cursor.h`, `src/core/interaction_cursor.cpp`, `src/core/resource_assignment.cpp`.
+- **Files owned:** `src/core/interaction.cpp`, `src/core/interaction_cursor.h`, `src/core/interaction_cursor.cpp`, `src/core/resource_assignment.cpp`, `include/wormedit/core/interaction.h`, `src/core/interaction_context.h`, `docs/chart-editor-plan/tasks/type-consolidation.md`, `memory/chart-editor-status/resume.md`.
+- **Steps:**
+  1. Introduce chart_scope_t and editor_edit_context_t as references only, with feature contexts referring to the common context and carrying only extras.
+  2. Replace std::function forwarding members and duplicated cancel hooks with named functions taking editor_edit_context_t&.
+  3. Replace the handle_* lambda table and action.index() switch with exhaustive std::visit over named free handlers. Construct feature state only inside the selected handler.
+  4. Keep make_view/index rebuild after nested mutations. Remove the duplicate entry lookup and only confirmed identical resource index work. Exercise nested cancellation/mutation and all action families.
+  5. Run the complete gate, record actual output tails and commit only this card to main. Advance resume after completion.
+- **Invariants:** Behavior, diagnostics, ordering, Undo, strong IDs, C ABI field order/capacities and frame-owned pointers remain unchanged except the explicitly listed dead GS2 fields. Contexts are stack-only reference bundles built once per dispatch/frame and passed by reference; no added std::function, heap allocation, virtual dispatch or large value copies. Every affected function stays at or below complexity 25 through named function extraction; do not move branches into lambdas to satisfy the metric.
+- **Reject/failure behavior:** Existing validation, atomic rejection, cancellation, stale-work handling and diagnostic severity/messages remain unchanged. No new mutation or partial publication on failure.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build <source>` for every touched source, with no new/increased violations. Record exact command statuses and output tails; validate production paths with existing event/registered-command tests and relevant core/format fixtures. Claude performs the Xvfb smoke check.
+- **Out of scope:** Product semantics changes; necessary complexity and rejected audit claims; measure-index caching across nested mutation; native schema serializer redesign; god-struct grouping before T-599 approval; optional editor_ui_action_t rename without approval; unrelated work.
+
+## T-593 Consolidate action payload vocabulary
+
+- **Status:** blocked-on T-592
+- **Findings closed:** AV1, AV2, AV3, AV5, TW4, TW5.
+- **Stale-plan audit:** Confirm AV3 field-edit payload equivalence and AV5 small action candidates; keep distinctions with different semantics. Re-grep the orphan toggle and command/hold shapes. Re-grep named symbols; confirm A leads before editing and record dropped claims. Do not chase rejected findings.
+- **Outcome:** Use shared update/commit payloads and membership/metadata modes, command_definition_t and one hold plan/preview shape without changing emitted behavior.
+- **Read first:** `docs/audits/type-redundancy-2026-10-12.md`, `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `include/wormedit/core/semantic_layer_editor.h`, `src/core/semantic_layer_editor.cpp`.
+- **Files owned:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `include/wormedit/core/semantic_layer_editor.h`, `src/core/semantic_layer_editor.cpp`, `include/wormedit/core/metadata_editor.h`, `src/core/metadata_editor.cpp`, `include/wormedit/core/command_registry.h`, `src/core/command_registry.cpp`, `src/sys/compose_input.cpp`, `src/sys/metadata_actions.cpp`, `docs/chart-editor-plan/tasks/type-consolidation.md`, `memory/chart-editor-status/resume.md`.
+- **Steps:**
+  1. Merge only identical update/terminal pairs using a phase enum; preserve distinct begin payloads and all per-family delete actions.
+  2. Promote membership operation, remove the production-orphan toggle variant and avoid assign-then-reassign vector copies. Merge confirmed field/audio/recovery payload twins with modes while preserving validation.
+  3. Share command definition between registration/storage and build hold removals once in the shared preview/plan. Migrate all production callers and affected tests atomically.
+  4. Retain editor_ui_action_t spelling; the optional rename requires a separate user decision.
+  5. Run the complete gate, record actual output tails and commit only this card to main. Advance resume after completion.
+- **Invariants:** Behavior, diagnostics, ordering, Undo, strong IDs, C ABI field order/capacities and frame-owned pointers remain unchanged except the explicitly listed dead GS2 fields. Contexts are stack-only reference bundles built once per dispatch/frame and passed by reference; no added std::function, heap allocation, virtual dispatch or large value copies. Every affected function stays at or below complexity 25 through named function extraction; do not move branches into lambdas to satisfy the metric.
+- **Reject/failure behavior:** Existing validation, atomic rejection, cancellation, stale-work handling and diagnostic severity/messages remain unchanged. No new mutation or partial publication on failure.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build <source>` for every touched source, with no new/increased violations. Record exact command statuses and output tails; validate production paths with existing event/registered-command tests and relevant core/format fixtures. Claude performs the Xvfb smoke check.
+- **Out of scope:** Product semantics changes; necessary complexity and rejected audit claims; measure-index caching across nested mutation; native schema serializer redesign; god-struct grouping before T-599 approval; optional editor_ui_action_t rename without approval; unrelated work.
+
+## T-594 Share application dispatch environment
+
+- **Status:** blocked-on T-593
+- **Findings closed:** AC1, AC2, AC3, AC4.
+- **Stale-plan audit:** Confirm overlapping AC2 contexts and every AC4 hop validation/notification before changing signatures. Preserve meaningful hops. Re-grep named symbols; confirm A leads before editing and record dropped claims. Do not chase rejected findings.
+- **Outcome:** Build one stack-only application_dispatch_context_t of explicitly named reference types per synchronous frame; downstream dispatchers pass it by reference and retain only event extras.
+- **Read first:** `docs/audits/type-redundancy-2026-10-12.md`, `src/sys/application_dispatch_context.h`, `src/sys/main.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_input.h`.
+- **Files owned:** `src/sys/application_dispatch_context.h`, `src/sys/main.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_input.h`, `src/sys/compose_actions.cpp`, `src/sys/compose_actions.h`, `src/sys/application_command_dispatch.cpp`, `src/sys/application_command_dispatch.h`, `src/sys/metadata_actions.cpp`, `src/sys/metadata_actions.h`, `src/sys/application_frame_services.cpp`, `src/sys/application_frame_services.h`, `src/sys/project_chart_runtime.cpp`, `src/sys/project_chart_runtime.h`, `docs/chart-editor-plan/tasks/type-consolidation.md`, `memory/chart-editor-status/resume.md`.
+- **Steps:**
+  1. Name the live frame environment with concrete reference types and replace the local decltype member bag.
+  2. Build it once per frame; remove repeated environment parameters from compose/input/registered-command/project/export/metadata/event dispatchers.
+  3. Point event-specific contexts at the shared environment; retain geometry/request extras and the separate command_invocation_context_t snapshot.
+  4. Audit every callback/worker capture to ensure no frame context escapes synchronous dispatch. Keep all validation and notification hops.
+  5. Run the complete gate, record actual output tails and commit only this card to main. Advance resume after completion.
+- **Invariants:** Behavior, diagnostics, ordering, Undo, strong IDs, C ABI field order/capacities and frame-owned pointers remain unchanged except the explicitly listed dead GS2 fields. Contexts are stack-only reference bundles built once per dispatch/frame and passed by reference; no added std::function, heap allocation, virtual dispatch or large value copies. Every affected function stays at or below complexity 25 through named function extraction; do not move branches into lambdas to satisfy the metric.
+- **Reject/failure behavior:** Existing validation, atomic rejection, cancellation, stale-work handling and diagnostic severity/messages remain unchanged. No new mutation or partial publication on failure.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build <source>` for every touched source, with no new/increased violations. Record exact command statuses and output tails; validate production paths with existing event/registered-command tests and relevant core/format fixtures. Claude performs the Xvfb smoke check.
+- **Out of scope:** Product semantics changes; necessary complexity and rejected audit claims; measure-index caching across nested mutation; native schema serializer redesign; god-struct grouping before T-599 approval; optional editor_ui_action_t rename without approval; unrelated work.
+
+## T-595 Consolidate projection inputs and geometry conversion
+
+- **Status:** blocked-on T-594
+- **Findings closed:** PC1, PC2, PC3, PC4, PC5, PC6, TW2 (sys side).
+- **Stale-plan audit:** Confirm PC1 context overlap, PC3 quantize signatures and PC6 pixels-per-row formulas including scene-path values; preserve any non-equivalent formula. Re-grep named symbols; confirm A leads before editing and record dropped claims. Do not chase rejected findings.
+- **Outcome:** Pass stack-only frame inputs and phase/chart scopes by reference, one quantize scope/map alias and one frontend rectangle converter.
+- **Read first:** `docs/audits/type-redundancy-2026-10-12.md`, `src/sys/compose_view.h`, `src/sys/compose_view.cpp`, `src/sys/compose_waveform_overlays.h`, `src/sys/compose_waveform_overlays.cpp`.
+- **Files owned:** `src/sys/compose_view.h`, `src/sys/compose_view.cpp`, `src/sys/compose_waveform_overlays.h`, `src/sys/compose_waveform_overlays.cpp`, `src/sys/application_frame_projection.h`, `src/sys/application_frame_projection.cpp`, `src/sys/player_preview_presenter.cpp`, `docs/chart-editor-plan/tasks/type-consolidation.md`, `memory/chart-editor-status/resume.md`.
+- **Steps:**
+  1. Create compose_frame_inputs_t and compose_chart_scope_t, retaining the before/after-interaction phase split and frame-owned pointer lifetimes.
+  2. Consolidate quantize parameters with a reference scope and named lane-order map alias; remove dead_spans parameter and callers.
+  3. Pass application frame projection context by const reference and deduplicate only proven identical pixels-per-row calculations.
+  4. Share rectangle conversion at the sys ABI boundary without changing layout or capacities.
+  5. Run the complete gate, record actual output tails and commit only this card to main. Advance resume after completion.
+- **Invariants:** Behavior, diagnostics, ordering, Undo, strong IDs, C ABI field order/capacities and frame-owned pointers remain unchanged except the explicitly listed dead GS2 fields. Contexts are stack-only reference bundles built once per dispatch/frame and passed by reference; no added std::function, heap allocation, virtual dispatch or large value copies. Every affected function stays at or below complexity 25 through named function extraction; do not move branches into lambdas to satisfy the metric.
+- **Reject/failure behavior:** Existing validation, atomic rejection, cancellation, stale-work handling and diagnostic severity/messages remain unchanged. No new mutation or partial publication on failure.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build <source>` for every touched source, with no new/increased violations. Record exact command statuses and output tails; validate production paths with existing event/registered-command tests and relevant core/format fixtures. Claude performs the Xvfb smoke check.
+- **Out of scope:** Product semantics changes; necessary complexity and rejected audit claims; measure-index caching across nested mutation; native schema serializer redesign; god-struct grouping before T-599 approval; optional editor_ui_action_t rename without approval; unrelated work.
+
+## T-596 Alias layout-identical types and share dialog slots
+
+- **Status:** blocked-on T-595
+- **Findings closed:** TW1, TW2 (core side), TW3, TW6, TW7.
+- **Stale-plan audit:** Confirm every A twin field-by-field (TW1/TW6/TW7), including order/defaults/enums; drop non-identical candidates or retain typed adapters. Re-grep named symbols; confirm A leads before editing and record dropped claims. Do not chase rejected findings.
+- **Outcome:** Reduce duplicate type definitions using templates/aliases and one dialog slot implementation without changing domain enums, ABI layout or session classes.
+- **Read first:** `docs/audits/type-redundancy-2026-10-12.md`, `include/wormedit/core/document.h`, `include/wormedit/core/timing.h`, `include/wormedit/core/interaction.h`, `include/wormedit/core/player_preview.h`.
+- **Files owned:** `include/wormedit/core/document.h`, `include/wormedit/core/timing.h`, `include/wormedit/core/interaction.h`, `include/wormedit/core/player_preview.h`, `src/ui/frontend.h`, `src/ui/nuklear/compose_state.cpp`, `src/ui/nuklear/metadata_state.cpp`, `src/ui/nuklear/file_dialog_slot.h`, `src/audio/session_render.h`, `src/formats/stepmania.cpp`, `src/formats/bmson.cpp`, `docs/chart-editor-plan/tasks/type-consolidation.md`, `memory/chart-editor-status/resume.md`.
+- **Steps:**
+  1. Add object/path/text diagnostic templates with old domain names as aliases; keep code enums, fs::path storage diagnostics and format locations distinct.
+  2. Alias identical core rectangle shapes and only layout-identical ABI structs.
+  3. Share mutex-protected dialog slot begin/complete/take/open lifecycle; preserve asynchronous ownership and result lifetimes.
+  4. Share confirmed audio result/status, color, apply-result and ID-source twins while retaining session classes and strong IDs.
+  5. Run the complete gate, record actual output tails and commit only this card to main. Advance resume after completion.
+- **Invariants:** Behavior, diagnostics, ordering, Undo, strong IDs, C ABI field order/capacities and frame-owned pointers remain unchanged except the explicitly listed dead GS2 fields. Contexts are stack-only reference bundles built once per dispatch/frame and passed by reference; no added std::function, heap allocation, virtual dispatch or large value copies. Every affected function stays at or below complexity 25 through named function extraction; do not move branches into lambdas to satisfy the metric.
+- **Reject/failure behavior:** Existing validation, atomic rejection, cancellation, stale-work handling and diagnostic severity/messages remain unchanged. No new mutation or partial publication on failure.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build <source>` for every touched source, with no new/increased violations. Record exact command statuses and output tails; validate production paths with existing event/registered-command tests and relevant core/format fixtures. Claude performs the Xvfb smoke check.
+- **Out of scope:** Product semantics changes; necessary complexity and rejected audit claims; measure-index caching across nested mutation; native schema serializer redesign; god-struct grouping before T-599 approval; optional editor_ui_action_t rename without approval; unrelated work.
+
+## T-597 Share arithmetic and text utilities and format contexts
+
+- **Status:** blocked-on T-596
+- **Findings closed:** HL4, HL5, HL7, FM1, FM2.
+- **Stale-plan audit:** Confirm arithmetic signatures/overflow/zero behavior, per-format whitespace fixtures, Unicode/path helpers, UI raise stamps and parser/conversion parameter bundles. Re-grep named symbols; confirm A leads before editing and record dropped claims. Do not chase rejected findings.
+- **Outcome:** Share equivalent helpers and stack-only format contexts while explicitly preserving every format quirk and existing stamp behavior.
+- **Read first:** `docs/audits/type-redundancy-2026-10-12.md`, `src/core/checked_math.h`, `src/core/text_util.h`, `include/wormedit/core/numeric_text.h`, `src/formats/stepmania.cpp`.
+- **Files owned:** `src/core/checked_math.h`, `src/core/text_util.h`, `include/wormedit/core/numeric_text.h`, `src/formats/stepmania.cpp`, `src/formats/bmson.cpp`, `src/formats/osu_mania.cpp`, `src/formats/conversion.cpp`, `src/ui/nuklear/compose_measures_panel.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/compose_sounds_panel.cpp`, `docs/chart-editor-plan/tasks/type-consolidation.md`, `memory/chart-editor-status/resume.md`.
+- **Steps:**
+  1. Centralize checked math without touching timing_arithmetic 128-bit math; preserve StepMania checked_lcm zero at its call site and record the product question.
+  2. Share Unicode/path/ASCII/integer helpers only where equivalent. Characterize trim whitespace per format before merging; keep explicit whitespace parameters and strict BMS clipboard/overflow-enum parsing. Record the whitespace question.
+  3. Share UI raise/stamp helpers with an explicit policy that preserves the measures panel missing project stamp; record whether that difference should change in future.
+  4. Introduce reference-only StepMania parser and conversion contexts, built once per parse/conversion and passed by reference; preserve fixtures byte-for-byte.
+  5. Run the complete gate, record actual output tails and commit only this card to main. Advance resume after completion.
+- **Invariants:** Behavior, diagnostics, ordering, Undo, strong IDs, C ABI field order/capacities and frame-owned pointers remain unchanged except the explicitly listed dead GS2 fields. Contexts are stack-only reference bundles built once per dispatch/frame and passed by reference; no added std::function, heap allocation, virtual dispatch or large value copies. Every affected function stays at or below complexity 25 through named function extraction; do not move branches into lambdas to satisfy the metric.
+- **Reject/failure behavior:** Existing validation, atomic rejection, cancellation, stale-work handling and diagnostic severity/messages remain unchanged. No new mutation or partial publication on failure.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build <source>` for every touched source, with no new/increased violations. Record exact command statuses and output tails; validate production paths with existing event/registered-command tests and relevant core/format fixtures. Claude performs the Xvfb smoke check.
+- **Out of scope:** Product semantics changes; necessary complexity and rejected audit claims; measure-index caching across nested mutation; native schema serializer redesign; god-struct grouping before T-599 approval; optional editor_ui_action_t rename without approval; unrelated work.
+
+## T-598 Split type and dispatch families into navigable files
+
+- **Status:** blocked-on T-597
+- **Findings closed:** MC1, MC2, MC3.
+- **Stale-plan audit:** Confirm current family boundaries after T-591–T-597, names and build wiring. Extract cohesive families without changing logic. Re-grep named symbols; confirm A leads before editing and record dropped claims. Do not chase rejected findings.
+- **Outcome:** Keep umbrella/coordinator entry points while moving C ABI surfaces and core/sys action families to clear files.
+- **Read first:** `docs/audits/type-redundancy-2026-10-12.md`, `src/ui/frontend.h`, `src/core/interaction.cpp`, `src/core/interaction_selection.cpp`, `src/sys/compose_view.cpp`.
+- **Files owned:** `src/ui/frontend.h`, `src/core/interaction.cpp`, `src/core/interaction_selection.cpp`, `src/sys/compose_view.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_actions.cpp`, `src/sys/main.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, `docs/chart-editor-plan/tasks/type-consolidation.md`, `memory/chart-editor-status/resume.md`.
+- **Steps:**
+  1. Split frontend.h into per-surface C headers with the umbrella retained and unchanged field order/capacities.
+  2. Move placement, move/resize and gesture lifecycle families after editing-context consolidation; retain coordinator/dispatcher entry points.
+  3. Move cohesive projection/input/action/main families after application/projection contexts, preserving linkage, initialization and synchronous lifetimes.
+  4. Update build wiring and compile the umbrella as C and C++; compare moved bodies to establish no logic changes.
+  5. Run the complete gate, record actual output tails and commit only this card to main. Advance resume after completion.
+- **Invariants:** Behavior, diagnostics, ordering, Undo, strong IDs, C ABI field order/capacities and frame-owned pointers remain unchanged except the explicitly listed dead GS2 fields. Contexts are stack-only reference bundles built once per dispatch/frame and passed by reference; no added std::function, heap allocation, virtual dispatch or large value copies. Every affected function stays at or below complexity 25 through named function extraction; do not move branches into lambdas to satisfy the metric.
+- **Reject/failure behavior:** Existing validation, atomic rejection, cancellation, stale-work handling and diagnostic severity/messages remain unchanged. No new mutation or partial publication on failure.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build <source>` for every touched source, with no new/increased violations. Record exact command statuses and output tails; validate production paths with existing event/registered-command tests and relevant core/format fixtures. Claude performs the Xvfb smoke check.
+- **Out of scope:** Product semantics changes; necessary complexity and rejected audit claims; measure-index caching across nested mutation; native schema serializer redesign; god-struct grouping before T-599 approval; optional editor_ui_action_t rename without approval; unrelated work.
+
+## T-599 Group large structs by purpose — decision required
+
+- **Status:** blocked-on-user
+- **Findings closed:** GS1.
+- **Stale-plan audit:** Re-grep current god-struct fields and exclusive lifecycle sets only after an explicit user decision. Re-grep named symbols; confirm A leads before editing and record dropped claims. Do not chase rejected findings.
+- **Outcome:** Decision-gated inline POD grouping of large structs; no implementation is authorized in this batch.
+- **Read first:** `docs/audits/type-redundancy-2026-10-12.md`, `src/ui/frontend.h`, `src/ui/nuklear/compose_state.h`, `src/sys/compose_view.h`, `src/sys/application_commands.h`.
+- **Files owned:** `src/ui/frontend.h`, `src/ui/nuklear/compose_state.h`, `src/sys/compose_view.h`, `src/sys/application_commands.h`, `docs/chart-editor-plan/tasks/type-consolidation.md`, `memory/chart-editor-status/resume.md`.
+- **Steps:**
+  1. STOP: obtain the user decision for inline god-struct grouping before any implementation. The optional editor_ui_action_t rename (AV4) is a separate decision.
+  2. After approval, inventory layout/lifetime/ownership constraints and propose concrete groups before migrating callers.
+  3. Preserve C ABI field order/capacities and independent view, persistent UI state and retained-cache lifetimes.
+  4. Run the complete gate, record actual output tails and commit only this card to main. Advance resume after completion.
+- **Invariants:** Behavior, diagnostics, ordering, Undo, strong IDs, C ABI field order/capacities and frame-owned pointers remain unchanged except the explicitly listed dead GS2 fields. Contexts are stack-only reference bundles built once per dispatch/frame and passed by reference; no added std::function, heap allocation, virtual dispatch or large value copies. Every affected function stays at or below complexity 25 through named function extraction; do not move branches into lambdas to satisfy the metric.
+- **Reject/failure behavior:** Existing validation, atomic rejection, cancellation, stale-work handling and diagnostic severity/messages remain unchanged. No new mutation or partial publication on failure.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build <source>` for every touched source, with no new/increased violations. Record exact command statuses and output tails; validate production paths with existing event/registered-command tests and relevant core/format fixtures. Claude performs the Xvfb smoke check.
+- **Out of scope:** Product semantics changes; necessary complexity and rejected audit claims; measure-index caching across nested mutation; native schema serializer redesign; god-struct grouping before T-599 approval; optional editor_ui_action_t rename without approval; unrelated work.

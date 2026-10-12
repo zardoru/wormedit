@@ -1,6 +1,7 @@
 #include "sys/compose_quantize_request.h"
 #include <wormedit/core/bmson_lane_mode.h>
 #include "sys/compose_actions.h"
+#include "sys/compose_navigation.h"
 #include "sys/compose_bookmark_commands.h"
 #include "sys/bookmark_rename_commands.h"
 #include "sys/compose_semantic_layer_commands.h"
@@ -242,45 +243,10 @@ auto dispatch_compose_bookmark_action(compose_action_context_t& context) -> std:
 }
 
 std::optional<std::string> dispatch_compose_measure_navigation(compose_action_context_t& context) {
-    using namespace wormedit;
-    if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE)
-        return std::nullopt;
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(context,
-            "Finish or cancel the active Compose gesture before going to a measure.");
-    const auto chart = std::ranges::find(context.history.document.charts, context.state.chart,
-                                         &chart_document_t::id);
-    if (chart == context.history.document.charts.end())
-        return compose_action_warning(context, "The selected difficulty is no longer available.");
-    const auto number = context.action.compose_measure_number;
-    editor_interaction_result_t result;
-    if (chart_has_virtual_tail(*chart)) {
-        // BMS measures are numbered from #000; other charts count from 1.
-        const auto is_bms = chart->source_family == format_family_t::bms;
-        if (!is_bms && number == 0)
-            return compose_action_warning(context, "The requested measure is outside this chart.");
-        const auto canvas_number = is_bms ? number : number - 1;
-        if (canvas_number >= virtual_tail_measure_limit(*chart))
-            return compose_action_warning(context, is_bms
-                ? "The requested BMS measure is outside #000-#999."
-                : "The requested measure is outside this chart.");
-        // Reuse virtual-canvas navigation without changing the current selection.
-        auto candidate = context.state;
-        result = dispatch_editor_action(context.history, candidate,
-                                         select_bms_canvas_measure_action_t{
-                                             static_cast<std::size_t>(canvas_number)});
-        if (result.accepted) {
-            restore_cursor_pose(context.state, capture_cursor_pose(candidate));
-            context.state.active_lane = candidate.active_lane;
-        }
-    } else {
-        if (number == 0 || number > chart->measures.size())
-            return compose_action_warning(context, "The requested measure is outside this chart.");
-        result = dispatch_editor_action(context.history, context.state,
-            jump_edit_cursor_action_t{{chart->measures[static_cast<std::size_t>(number - 1)].id, 0},
-                                     context.history.document.revision});
-    }
-    return compose_interaction_feedback(context, result, "Compose cursor moved to the requested measure.");
+    if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE) return std::nullopt;
+    const auto outcome = navigate_compose_measure(context.history, context.state, context.application_state,
+                                                 context.action.compose_measure_number);
+    return compose_bookmark_navigation_feedback(context, outcome);
 }
 
 std::optional<std::string> dispatch_compose_bgm_column_count(compose_action_context_t& context) {
@@ -538,13 +504,7 @@ auto toggle_compose_scroll_direction(compose_action_context_t& context) -> std::
 }
 
 auto reset_compose_view(compose_action_context_t& context) -> std::string {
-    using namespace wormedit;
-    const auto factor = default_pixels_per_standard_measure / context.state.pixels_per_standard_measure;
-    auto result = dispatch_editor_action(context.history, context.state,
-        adjust_editor_zoom_action_t{.factor = factor, .anchor_screen_y_pixels = std::nullopt});
-    if (result)
-        result = dispatch_editor_action(context.history, context.state,
-            scroll_editor_view_action_t{-context.state.viewport_scroll_pixels});
+    const auto result = reset_compose_navigation_view(context.history, context.state);
     return compose_interaction_feedback(context, result, "Compose field view reset.");
 }
 

@@ -1,3 +1,4 @@
+#include "sys/compose_navigation.h"
 #include <wormedit/core/interaction_gestures.h>
 #include "sys/compose_input.h"
 #include "sys/compose_sound_selection.h"
@@ -610,7 +611,7 @@ auto dispatch_compose_navigation_input(const WormUiComposeInputAction&,
     -> compose_input_family_result_t;
 auto dispatch_compose_cursor_input(const WormUiComposeInputAction&, wormedit::document_history_t&,
                                    wormedit::editor_interaction_state_t&,
-                                   wormedit::editor_interaction_result_t&, std::string_view&)
+                                   application_command_state_t&, const wormedit::notification_sink_t*)
     -> compose_input_family_result_t;
 // A placement that created a note auditions it while the click-audition preference is on.
 void audition_created_note(bool enabled, const wormedit::document_history_t& history,
@@ -657,7 +658,7 @@ auto dispatch_compose_keyboard_input(
     case WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_BACKWARD:
     case WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD:
     case WORM_UI_COMPOSE_INPUT_DELETE_SELECTION:
-        return dispatch_compose_cursor_input(input, history, state, result, accepted);
+        return dispatch_compose_cursor_input(input, history, state, application, notifications);
     case WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS:
     {
         auto pressed = dispatch_compose_lane_key_press(input, history, state, application, scene_cache, result, accepted);
@@ -727,24 +728,17 @@ auto dispatch_compose_navigation_input(
 auto dispatch_compose_cursor_input(const WormUiComposeInputAction& input,
                                    wormedit::document_history_t& history,
                                    wormedit::editor_interaction_state_t& state,
-                                   wormedit::editor_interaction_result_t& result,
-                                   std::string_view& accepted) -> compose_input_family_result_t {
+                                   application_command_state_t& application,
+                                   const wormedit::notification_sink_t* notifications)
+    -> compose_input_family_result_t {
     using namespace wormedit;
-    switch (input.kind) {
-    case WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_BACKWARD:
-        result = dispatch_editor_action(
-            history, state, move_edit_cursor_action_t{interaction_direction_t::backward});
-        accepted = "Edit cursor moved backward.";
-        break;
-    case WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD:
-        result = dispatch_editor_action(
-            history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
-        accepted = "Edit cursor moved forward.";
-        break;
-    default:
-        return {};
-    }
-    return compose_input_family_result_t::continue_with_result();
+    if (input.kind != WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_BACKWARD &&
+        input.kind != WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD) return {};
+    editor_navigation_action_batch_t batch;
+    batch.actions[batch.count++] = input.kind == WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD
+        ? editor_navigation_action_t::cursor_forward : editor_navigation_action_t::cursor_backward;
+    return compose_input_family_result_t::continue_batch(
+        dispatch_compose_navigation_actions(batch, history, state, &application, notifications));
 }
 
 auto note_paint_sound(const WormUiComposeInputAction& input)
@@ -2259,9 +2253,7 @@ auto seek_compose_waveform(const WormUiComposeInputAction& input, compose_input_
     const auto target = static_cast<double>(row * state.pixels_per_standard_measure /
                                                 timing.divisions_per_standard_measure -
                                             state.viewport_height_pixels * 0.5);
-    result =
-        dispatch_editor_action(context.history, context.state,
-                               scroll_editor_view_action_t{target - state.viewport_scroll_pixels});
+    result = scroll_compose_navigation_view(context.history, context.state, target);
     accepted = "Compose waveform overview navigated.";
     return std::nullopt;
 }
@@ -2281,33 +2273,21 @@ auto click_compose_waveform(const WormUiComposeInputAction& input, compose_input
         cache.waveform_overview_sample_rate, audio::output_sample_rate, *cache.marker_timing_index, cache.index->measures,
         edit_snap_denominator(*context.input_chart, context.state), end);
     if (!target) return compose_input_family_result_t{"Waveform overview seek is unavailable."};
-    const auto& application = context.application_state;
-    const bool playing = application.transport_preview_playing && application.transport_preview_playing();
-    const bool paused = application.transport_preview_paused && application.transport_preview_paused();
-    const bool seeks = playing || (paused && (input.overview_primary != application.minimap_click_moves_paused_playhead));
-    const auto status = navigate_compose_minimap_transport(context.application_state, target->frame,
-                                                          false, input.overview_primary);
-    result = move_compose_minimap_cursor(context.history, context.state, cache.index->measures,
-                                         *cache.marker_timing_index, *target);
-    if (!result.accepted)
-        return compose_input_family_result_t::stop_with_feedback(
-            compose_result_status(result, "Waveform cursor moved."),
-            result.diagnostics.empty() ? notification_severity_t::warning
-                : input_notification_severity(result.diagnostics.front().severity),
-            notification_source_t::input);
-    retain_compose_minimap_start(context.application_state, context.history, context.state,
-                                 *target, *cache.marker_timing_index);
+    const auto position = local_position_for_row(cache.index->measures, target->snapped_row);
+    if (!position) return compose_input_family_result_t{"Waveform cursor position is unavailable."};
+    const auto outcome = navigate_compose_position(context.history, context.state,
+        context.application_state, {.position = *position, .preview_frame = target->frame,
+            .minimap = true, .primary = input.overview_primary}, context.history.document.revision);
+    result.accepted = outcome.accepted;
+    result.diagnostics = outcome.diagnostics;
+    if (outcome.accepted) retain_compose_minimap_start(context.application_state, context.history,
+        context.state, *target, *cache.marker_timing_index);
     accepted = "Compose waveform position moved.";
-    if (!status.empty()) {
-        auto feedback = compose_input_family_result_t::stop_with_feedback(status,
-            seeks && !application.transport_seek ? notification_severity_t::warning
-                                                : notification_severity_t::hint,
-            notification_source_t::input);
-        feedback.notification_posted = seeks && application.transport_seek &&
-                                       application.transport_seek_posts_feedback;
-        return feedback;
-    }
-    return std::nullopt;
+    auto feedback = compose_input_family_result_t::stop_with_feedback(outcome.status,
+        outcome.accepted ? notification_severity_t::hint : notification_severity_t::warning,
+        notification_source_t::input);
+    feedback.notification_posted = outcome.feedback_posted;
+    return feedback;
 }
 
 auto focus_compose_note_label(const WormUiComposeInputAction& input,
@@ -4108,26 +4088,16 @@ void apply_compose_viewport_scroll(const wormedit::viewport_scroll_action_t& scr
     // Convert displacement to chart direction before routing it to the viewport or playhead.
     const auto chart_delta = compose_wheel_scroll_delta(scroll.delta_y_pixels, downscroll);
     if (is_preview_playing(context.application_state)) {
-        // Playback uses the same direction, skipping by one quarter-note beat.
-        const auto outcome = skip_playing_playhead(
-            context.application_state, *context.input_chart,
-            context.state.active_snap_denominator, playhead_skip_unit_t::beat,
-            chart_delta > 0.0 ? 1.0 : -1.0);
-        status = outcome.status;
-        if (!(outcome.accepted && context.application_state.transport_seek_posts_feedback))
-            post_input_feedback(context.notifications,
-                                outcome.accepted ? notification_severity_t::hint
-                                                 : notification_severity_t::warning,
-                                notification_source_t::input, status);
+        editor_navigation_action_batch_t batch;
+        batch.actions[batch.count++] = chart_delta > 0.0 ? editor_navigation_action_t::cursor_forward
+                                                       : editor_navigation_action_t::cursor_backward;
+        status = dispatch_compose_navigation_actions(batch, context.history, context.state,
+                                                     &context.application_state, context.notifications);
         return;
     }
-    const auto result = dispatch_editor_action(
-        context.history, context.state,
-        scroll_editor_view_action_t{
-            chart_delta,
-            compose_cursor_screen_anchor(context.state.viewport_height_pixels, downscroll),
-            downscroll ? editor_field_scroll_direction_t::down
-                       : editor_field_scroll_direction_t::up});
+    const auto result = scroll_compose_navigation_view(context.history, context.state,
+        context.state.viewport_scroll_pixels + chart_delta,
+        downscroll ? editor_field_scroll_direction_t::down : editor_field_scroll_direction_t::up);
     status = compose_result_status(result, "Compose field scrolled.");
     const auto severity = result.accepted
                               ? notification_severity_t::hint

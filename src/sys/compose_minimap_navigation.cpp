@@ -1,3 +1,4 @@
+#include "sys/compose_navigation.h"
 #include "sys/compose_minimap_navigation.h"
 #include "sys/compose_scroll_geometry.h"
 #include <wormedit/audio/decoder.h>
@@ -67,15 +68,10 @@ auto move_compose_minimap_cursor(document_history_t& history, editor_interaction
                                                &measure_index_entry_t::absolute_begin_row);
     if (after == measures.entries.begin()) return {};
     const auto& measure = *std::prev(after);
-    auto result = dispatch_editor_action(history, state, jump_edit_cursor_action_t{
-        {measure.id, target.snapped_row - measure.absolute_begin_row}, history.document.revision});
-    if (!result.accepted) return result;
-    const auto scroll = static_cast<double>(target.absolute_row) * state.pixels_per_standard_measure /
-        timing.divisions_per_standard_measure - state.viewport_height_pixels * editor_cursor_edge_margin_fraction;
-    // This scroll must preserve the explicit floor-snap cursor. A fixed-anchor
-    // scroll would round it again and could enter the virtual BMS tail.
-    return dispatch_editor_action(history, state, scroll_editor_view_action_t{
-        scroll - state.viewport_scroll_pixels});
+    (void)timing;
+    return move_compose_navigation_cursor(history, state,
+        {.position = {measure.id, target.snapped_row - measure.absolute_begin_row}},
+        history.document.revision);
 }
 auto seek_stopped_compose_transport(document_history_t& history,
     editor_interaction_state_t& state, const compose_scene_cache_t& cache,
@@ -127,13 +123,7 @@ auto compose_minimap_start_frame(application_command_state_t& application,
 auto navigate_compose_minimap_transport(application_command_state_t& state,
     std::uint64_t frame, bool shift, bool primary) -> std::string {
     if (shift) return {};
-    const bool playing = state.transport_preview_playing && state.transport_preview_playing();
-    const bool paused = state.transport_preview_paused && state.transport_preview_paused();
-    if (playing || (paused && (primary != state.minimap_click_moves_paused_playhead))) {
-        state.invalidate_playing_seek_records();
-        return state.transport_seek ? state.transport_seek(frame) : "Chart preview seek is unavailable.";
-    }
-    if (paused && state.transport_stop) state.transport_stop();
-    return {};
+    return apply_compose_navigation_transport(state,
+        compose_navigation_transport_policy(state, true, primary), frame).status;
 }
 }

@@ -1,3 +1,4 @@
+#include "sys/compose_navigation.h"
 #include "sys/compose_bookmark_commands.h"
 #include <wormedit/core/snap.h>
 
@@ -42,26 +43,6 @@ auto beat_position_for_audio_milliseconds(const chart_document_t& chart,
     const auto row = static_cast<std::uint64_t>(query.absolute_row->numerator) /
                      query.absolute_row->denominator;
     return local_position_for_row(std::get<measure_index_t>(measures), row);
-}
-
-auto seek_playhead_to(const chart_document_t& chart, application_command_state_t& application,
-                      local_position_t position, std::string& status) -> bool {
-    const auto built = build_measure_index(chart);
-    const auto timing = build_timing_index(chart, {.allow_bounded_clock = true});
-    if (!std::holds_alternative<measure_index_t>(built) || !timing.index) {
-        status = "Bookmark time could not be resolved.";
-        return false;
-    }
-    const auto end = application.transport_preview_end_frame
-                         ? application.transport_preview_end_frame() : std::nullopt;
-    const auto frame = bookmark_preview_frame(*timing.index, std::get<measure_index_t>(built),
-                                              position, end);
-    if (!frame || !application.transport_seek) {
-        status = "Chart preview seek is unavailable.";
-        return false;
-    }
-    status = application.transport_seek(*frame);
-    return true;
 }
 
 } // namespace
@@ -181,20 +162,12 @@ auto navigate_beat_bookmark(document_history_t& history, editor_interaction_stat
                               : marker.diagnostics.front().message,
                 .diagnostics = marker.diagnostics};
     const auto target = *marker.item->beat_position;
-    if (playing) {
-        std::string status;
-        application.last_playhead_skip.reset();
-        const auto sought = seek_playhead_to(*chart, application, target, status);
-        record_playing_seek(*chart, state.chart, application, target, sought);
-        return {.accepted = sought, .status = std::move(status), .feedback_posted = sought && application.transport_seek_posts_feedback};
-    }
-    const auto jumped = dispatch_editor_action(history, state,
-        jump_edit_cursor_action_t{target, marker.document_revision});
-    return {.accepted = jumped.accepted,
-            .status = jumped.accepted ? (previous ? "Moved to the previous bookmark."
-                                                  : "Moved to the next bookmark.")
-                                      : "Bookmark navigation was rejected.",
-            .diagnostics = jumped.diagnostics};
+    auto outcome = navigate_compose_position(history, state, application,
+        {.position = target}, marker.document_revision);
+    if (playing) record_playing_seek(*chart, state.chart, application, target, outcome.accepted);
+    else if (outcome.accepted) outcome.status = previous
+        ? "Moved to the previous bookmark." : "Moved to the next bookmark.";
+    return outcome;
 }
 
 auto navigate_to_bookmark(document_history_t& history, editor_interaction_state_t& state,
@@ -210,39 +183,20 @@ auto navigate_to_bookmark(document_history_t& history, editor_interaction_state_
     const auto bookmark = std::ranges::find(chart->bookmarks, bookmark_id, &bookmark_t::id);
     if (bookmark == chart->bookmarks.end())
         return fail("Bookmark is no longer available.");
+    compose_navigation_target_t target;
     if (bookmark->anchor == marker_anchor_t::beat && bookmark->position) {
-        if (is_playing(application)) {
-            std::string status;
-            const auto sought = seek_playhead_to(*chart, application, *bookmark->position, status);
-            return {.accepted = sought, .status = std::move(status), .feedback_posted = sought && application.transport_seek_posts_feedback};
+        target.position = *bookmark->position;
+    } else if (bookmark->anchor == marker_anchor_t::audio_time && bookmark->audio_milliseconds) {
+        target.audio_milliseconds = bookmark->audio_milliseconds;
+        if (!is_playing(application)) {
+            const auto position = beat_position_for_audio_milliseconds(*chart, *bookmark->audio_milliseconds);
+            if (!position) return fail("Audio-time bookmark has no musical position in this chart.");
+            target.position = *position;
         }
-        const auto jumped = dispatch_editor_action(history, state,
-            jump_edit_cursor_action_t{*bookmark->position, expected_revision});
-        return {.accepted = jumped.accepted,
-                .status = jumped.accepted ? "Moved to the selected bookmark."
-                                          : "Bookmark navigation was rejected.",
-                .diagnostics = jumped.diagnostics};
-    }
-    if (bookmark->anchor != marker_anchor_t::audio_time ||
-        !bookmark->audio_milliseconds)
-        return fail("Bookmark has no navigable position.");
-    if (is_playing(application)) {
-        if (!application.transport_seek_audio_milliseconds)
-            return fail("Audio-time bookmark seek is unavailable.");
-        return {.accepted = true,
-                .status = application.transport_seek_audio_milliseconds(
-                    *bookmark->audio_milliseconds),
-                .feedback_posted = application.transport_seek_posts_feedback};
-    }
-    const auto position = beat_position_for_audio_milliseconds(*chart,
-                                                               *bookmark->audio_milliseconds);
-    if (!position) return fail("Audio-time bookmark has no musical position in this chart.");
-    const auto jumped = dispatch_editor_action(history, state,
-        jump_edit_cursor_action_t{*position, expected_revision});
-    return {.accepted = jumped.accepted,
-            .status = jumped.accepted ? "Moved to the selected bookmark."
-                                      : "Bookmark navigation was rejected.",
-            .diagnostics = jumped.diagnostics};
+    } else return fail("Bookmark has no navigable position.");
+    auto outcome = navigate_compose_position(history, state, application, target, expected_revision);
+    if (outcome.accepted && !is_playing(application)) outcome.status = "Moved to the selected bookmark.";
+    return outcome;
 }
 
 auto add_beat_bookmark_here(document_history_t& history, editor_interaction_state_t& state,

@@ -46,7 +46,11 @@ struct compose_navigation_travel_t {
     void advance(wormedit::editor_interaction_state_t& state, std::uint64_t document_revision,
                  bool playing, double delta_seconds) noexcept {
         if (!target) return;
-        if (playing || !owns_cursor(state) || chart != state.chart || revision != document_revision ||
+        if (playing) {
+            finish(state, document_revision);
+            return;
+        }
+        if (!owns_cursor(state) || chart != state.chart || revision != document_revision ||
             scale != state.pixels_per_standard_measure ||
             expected_scroll != state.viewport_scroll_pixels ||
             !std::isfinite(*target) || !std::isfinite(scale) || scale <= 0.0) {

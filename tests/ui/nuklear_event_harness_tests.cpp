@@ -12,6 +12,7 @@
 #include "ui/nuklear/setup_panel.h"
 #include "ui/nuklear/sound_import_runtime.h"
 #include "sys/compose_input.h"
+#include "sys/compose_navigation.h"
 #include "sys/compose_sound_selection.h"
 #include "sys/compose_view.h"
 
@@ -7531,4 +7532,210 @@ TEST_CASE("Production Alt drag from playable field cannot turn into Anchor inser
     expect_t422(f.harness.frame(std::span{&up, 1}, SDL_KMOD_ALT).get().timing_stage_action ==
                  WORM_UI_TIMING_STAGE_NONE);
     expect_t422(f.history.undo.empty());
+}
+
+TEST_CASE("Production Page travel settles its owned destination when playback starts",
+          "[frontend-state][event-harness][navigation-consolidation]") {
+    t422_fixture_t f{t422_song()};
+    f.interaction->pixels_per_standard_measure = 1536;
+    f.application.editor_preferences.scroll_directions.fill(1);
+    f.project(); (void)f.harness.frame();
+    const auto page = key_event(SDL_EVENT_KEY_DOWN, SDLK_PAGEDOWN, SDL_SCANCODE_PAGEDOWN);
+    (void)f.dispatch(f.harness.frame(std::span{&page, 1}));
+    expect_t422(f.cache.navigation_travel.target.has_value());
+    const auto destination = *f.cache.navigation_travel.target;
+    const auto cursor = f.interaction->cursor;
+    const auto previous_scroll = f.interaction->viewport_scroll_pixels;
+    expect_t422(previous_scroll != destination);
+    f.application.transport_preview_playing = [] { return true; };
+    f.project();
+    (void)f.dispatch(f.harness.frame());
+    expect_t422(!f.cache.navigation_travel.target);
+    expect_t422(f.interaction->viewport_scroll_pixels == destination);
+    expect_t422(f.interaction->cursor == cursor);
+    expect_t422(f.history.undo.empty());
+}
+
+TEST_CASE("Production arrow and Alt wheel share stopped paused and playing step policy",
+          "[frontend-state][event-harness][navigation-consolidation]") {
+    const auto mode = GENERATE(0, 1, 2);
+    const auto arrow = GENERATE(false, true);
+    t422_fixture_t f{t422_song()};
+    f.application.transport_preview_playing = [=] { return mode == 2; };
+    f.application.transport_preview_paused = [=] { return mode == 1; };
+    int seeks = 0;
+    f.application.transport_seek = [&](std::uint64_t) { ++seeks; return std::string{}; };
+    f.application.preview_playhead_absolute_row = 480;
+    f.application.edit_snap_enabled = true;
+    f.application.requested_snap_denominators[1] = 16;
+    f.interaction->active_snap_denominator = 16;
+    f.application.editor_preferences.scroll_directions.fill(1);
+    place_cursor_at(*f.interaction, {measure_id_t{1}, 480});
+    f.project(); (void)f.harness.frame();
+    const auto previous_cursor = f.interaction->cursor;
+    const auto viewport = compose_canvas_viewport_for_testing();
+    expect_t422(viewport.has_value());
+    SDL_Event event = key_event(SDL_EVENT_KEY_DOWN, SDLK_DOWN, SDL_SCANCODE_DOWN);
+    if (!arrow) {
+        event = {}; event.type = SDL_EVENT_MOUSE_WHEEL; event.wheel.y = -1;
+        event.wheel.mouse_x = viewport->x + viewport->width / 2;
+        event.wheel.mouse_y = viewport->y + viewport->height / 2;
+    }
+    const auto frame = f.harness.frame(std::span{&event, 1}, arrow ? SDL_KMOD_NONE : SDL_KMOD_ALT);
+    CAPTURE(mode, arrow, frame.get().compose_input_count, f.interaction->active_snap_denominator);
+    expect_t422(frame.get().compose_input_count > 0);
+    (void)f.dispatch(frame);
+    expect_t422(seeks == (mode == 2 ? 1 : 0));
+    expect_t422(f.application.preview_playhead_absolute_row == (mode == 2 ? 720 : 480));
+    CAPTURE(f.interaction->cursor.row, f.interaction->cursor.measure.value, previous_cursor.row);
+    expect_t422(f.interaction->cursor == (mode == 2 ? previous_cursor : local_position_t{previous_cursor.measure, previous_cursor.row + 60}));
+    expect_t422(f.history.undo.empty());
+}
+
+namespace {
+void prepare_navigation_overview(t422_fixture_t& f, WormUiComposeWaveformOverviewRowView& row) {
+    auto& v = f.harness.view().compose;
+    v.bgm_bar_reserved = true; v.bgm_bar_rows = &row; v.bgm_bar_row_count = 1;
+    v.bgm_bar_begin_fraction = 0; v.bgm_bar_end_fraction = 1;
+    v.waveform_overview_visible_begin_fraction = 0.1;
+    v.waveform_overview_visible_end_fraction = 0.3;
+    v.selected_audio_asset_id = 1;
+    v.waveform_overview_total_frames = 192000;
+    v.waveform_overview_sample_rate = 48000;
+    f.cache.waveform_overview_total_frames = 192000;
+    f.cache.waveform_overview_sample_rate = 48000;
+    (void)f.harness.frame();
+}
+}
+
+TEST_CASE("Production overview drag synchronizes the fixed edit cursor anchor",
+          "[frontend-state][event-harness][navigation-consolidation]") {
+    t422_fixture_t f{t422_song()};
+    f.interaction->pixels_per_standard_measure = 1536;
+    f.project();
+    WormUiComposeWaveformOverviewRowView row{};
+    prepare_navigation_overview(f, row);
+    const auto cursor = f.interaction->cursor;
+    const auto previous_scroll = f.interaction->viewport_scroll_pixels;
+    const std::array press{motion_event(351, 120), button_event(true, 351, 120)};
+    (void)f.dispatch(f.harness.frame(press));
+    const auto capture = worm_ui_nuklear_compose_state().waveform_overview_capture;
+    expect_t422(capture.width > 0);
+    const auto x = static_cast<float>(capture.left + capture.width * 0.8);
+    const auto move = motion_event(x, 120);
+    const auto frame = f.harness.frame(std::span{&move, 1});
+    expect_t422(frame.get().compose_input_count == 1);
+    expect_t422(frame.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_SEEK);
+    (void)f.dispatch(frame);
+    expect_t422(f.interaction->viewport_scroll_pixels != previous_scroll);
+    expect_t422(f.interaction->cursor != cursor);
+    expect_t422(f.history.undo.empty());
+}
+
+TEST_CASE("Production Escape and modal open clear the fractional Alt wheel navigation latch",
+          "[frontend-state][event-harness][navigation-consolidation]") {
+    const auto modal = GENERATE(false, true);
+    nuklear_event_harness_t h;
+    (void)h.frame();
+    SDL_Event wheel{};
+    wheel.type = SDL_EVENT_MOUSE_WHEEL; wheel.wheel.y = 0.125f;
+    wheel.wheel.mouse_x = 480; wheel.wheel.mouse_y = 400;
+    expect_t422(h.frame(std::span{&wheel, 1}, SDL_KMOD_ALT).get().compose_input_count == 1);
+    expect_t422(worm_ui_nuklear_compose_state().alt_wheel_last_event_ms.has_value());
+    const auto cancel = modal ? key_event(SDL_EVENT_KEY_DOWN, SDLK_G, SDL_SCANCODE_G)
+                              : key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+    (void)h.frame(std::span{&cancel, 1}, modal ? SDL_KMOD_CTRL : SDL_KMOD_ALT);
+    expect_t422(!worm_ui_nuklear_compose_state().alt_wheel_last_event_ms);
+    if (modal) {
+        expect_t422(worm_ui_nuklear_compose_state().go_to_measure_open);
+        const auto escape = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+        (void)h.frame(std::span{&escape, 1});
+    }
+    wheel.wheel.y = -0.125f;
+    expect_t422(h.frame(std::span{&wheel, 1}, SDL_KMOD_ALT).get().compose_input_count == 1);
+}
+
+TEST_CASE("Production Go to measure modal shares playing position navigation",
+          "[frontend-state][event-harness][navigation-measure]") {
+    const auto mode = GENERATE(0, 1, 2, 3);
+    t422_fixture_t f{t422_song()};
+    int seeks = 0;
+    f.application.transport_preview_playing = [=] { return mode >= 2; };
+    f.application.transport_preview_paused = [=] { return mode == 1; };
+    if (mode != 3) f.application.transport_seek = [&](std::uint64_t) { ++seeks; return std::string{}; };
+    f.project(); (void)f.harness.frame();
+    const auto previous = f.interaction->cursor;
+    const auto go = key_event(SDL_EVENT_KEY_DOWN, SDLK_G, SDL_SCANCODE_G);
+    (void)f.harness.frame(std::span{&go, 1}, SDL_KMOD_CTRL);
+    expect_t422(worm_ui_nuklear_compose_state().go_to_measure_open);
+    SDL_Event text{}; text.type = SDL_EVENT_TEXT_INPUT; text.text.text = "2";
+    (void)f.harness.frame(std::span{&text, 1});
+    const auto enter = key_event(SDL_EVENT_KEY_DOWN, SDLK_RETURN, SDL_SCANCODE_RETURN);
+    const auto frame = f.harness.frame(std::span{&enter, 1});
+    expect_t422(frame.get().compose_action == WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE);
+    expect_t422(frame.get().compose_measure_number == 2);
+    const auto outcome = navigate_compose_measure(f.history, *f.interaction, f.application,
+                                                 frame.get().compose_measure_number);
+    expect_t422(outcome.accepted == (mode != 3));
+    expect_t422(seeks == (mode == 2 ? 1 : 0));
+    expect_t422((f.interaction->cursor == previous) == (mode >= 2));
+    expect_t422(f.history.undo.empty());
+}
+
+TEST_CASE("Production Reset editor view menu keeps cursor synchronized with its viewport",
+          "[frontend-state][event-harness][navigation-reset]") {
+    t422_fixture_t f{t422_song()};
+    place_cursor_at(*f.interaction, {measure_id_t{2}, 720});
+    f.interaction->viewport_scroll_pixels = 1200;
+    f.interaction->pixels_per_standard_measure = 768;
+    f.project(); (void)f.harness.frame();
+    const auto previous = f.interaction->cursor;
+    const auto view = f.harness.drawn_text_center("View");
+    expect_t422(view.has_value());
+    (void)click_at(f.harness, view->first, view->second);
+    const auto reset = f.harness.drawn_text_center("Reset editor view");
+    expect_t422(reset.has_value());
+    const auto frames = click_at(f.harness, reset->first, reset->second);
+    expect_t422(std::ranges::any_of(frames, [](const auto& frame) {
+        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_RESET_VIEW;
+    }));
+    const auto result = reset_compose_navigation_view(f.history, *f.interaction);
+    expect_t422(result.accepted);
+    expect_t422(f.interaction->viewport_scroll_pixels == 0);
+    expect_t422(f.interaction->cursor != previous);
+    expect_t422(f.history.undo.empty());
+}
+
+TEST_CASE("Production overview clicks preserve playing paused and stopped preferences",
+          "[frontend-state][event-harness][navigation-minimap]") {
+    const auto mode = GENERATE(0, 1, 2, 3);
+    const auto primary = GENERATE(false, true);
+    t422_fixture_t f{t422_song()};
+    bool paused = mode == 1 || mode == 2;
+    int seeks = 0, stops = 0;
+    std::uint64_t sought_frame = 0;
+    f.application.transport_preview_playing = [=] { return mode == 3; };
+    f.application.transport_preview_paused = [&] { return paused; };
+    f.application.transport_seek = [&](std::uint64_t frame) {
+        sought_frame = frame; ++seeks; return std::string{};
+    };
+    f.application.transport_stop = [&] { ++stops; paused = false; };
+    f.application.minimap_click_moves_paused_playhead = mode == 2;
+    f.project();
+    WormUiComposeWaveformOverviewRowView row{};
+    prepare_navigation_overview(f, row);
+    const auto previous = f.interaction->cursor;
+    const std::array press{motion_event(351, 120), button_event(true, 351, 120)};
+    (void)f.dispatch(f.harness.frame(press, primary ? SDL_KMOD_CTRL : SDL_KMOD_NONE));
+    const auto up = button_event(false, 351, 120);
+    const auto frame = f.harness.frame(std::span{&up, 1}, primary ? SDL_KMOD_CTRL : SDL_KMOD_NONE);
+    const auto* click = find_compose_input(std::vector{frame}, WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_CLICK);
+    expect_t422(click != nullptr);
+    (void)f.dispatch(frame);
+    const auto seeks_expected = mode == 3 || ((mode == 1 || mode == 2) && (primary != (mode == 2)));
+    expect_t422(seeks == (seeks_expected ? 1 : 0));
+    expect_t422(stops == ((mode == 1 || mode == 2) && !seeks_expected ? 1 : 0));
+    expect_t422(f.interaction->cursor != previous);
+    expect_t422(f.history.undo.empty());
+    if (seeks_expected) expect_t422(sought_frame > 0 && sought_frame % 24000 != 0);
 }

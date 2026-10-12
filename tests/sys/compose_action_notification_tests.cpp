@@ -1638,7 +1638,7 @@ TEST_CASE("Measure travel cancels on external scroll zoom revision chart and pla
     const auto previous = state.viewport_scroll_pixels;
     travel.advance(state, interrupt == 3 ? 2 : 1, interrupt == 4, 0.02);
     check_action(!travel.target);
-    check_action(state.viewport_scroll_pixels == previous);
+    check_action(state.viewport_scroll_pixels == (interrupt == 4 ? 128 : previous));
 }
 
 TEST_CASE("Playback wheel skips one beat in chart direction independently of snap",

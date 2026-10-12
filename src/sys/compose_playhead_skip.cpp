@@ -1,3 +1,4 @@
+#include "sys/compose_navigation.h"
 #include "sys/compose_playhead_skip.h"
 
 #include <wormedit/core/snap.h>
@@ -120,8 +121,7 @@ auto skip_playing_playhead(application_command_state_t& application, const chart
     if (!application.preview_playhead_absolute_row)
         return {.status = "The playhead row is not available yet."};
     const auto built = build_measure_index(chart);
-    const auto timing = build_timing_index(chart, {.allow_bounded_clock = true});
-    if (!std::holds_alternative<measure_index_t>(built) || !timing.index)
+    if (!std::holds_alternative<measure_index_t>(built))
         return {.status = "The playhead could not be moved."};
     const auto& measures = std::get<measure_index_t>(built);
     const auto forward = amount > 0.0;
@@ -134,19 +134,15 @@ auto skip_playing_playhead(application_command_state_t& application, const chart
         application.last_playhead_skip.reset();
         return {.status = "The playhead could not be moved."};
     }
-    const auto end = application.transport_preview_end_frame
-                         ? application.transport_preview_end_frame() : std::nullopt;
-    const auto frame = bookmark_preview_frame(*timing.index, measures, *position, end);
-    if (!frame || !application.transport_seek) {
+    auto outcome = seek_compose_navigation_position(chart, application, {.position = *position});
+    if (!outcome.accepted) {
         application.last_playhead_skip.reset();
-        return {.status = "Chart preview seek is unavailable."};
+        return outcome;
     }
-    application.last_playing_bookmark_seek.reset();
-    auto status = application.transport_seek(*frame);
     // Chain several skips of one frame from where this one landed.
     application.preview_playhead_absolute_row = static_cast<double>(*row);
     application.last_playhead_skip = {chart.id, *row, forward, playing_seek_now(application)};
-    return {.accepted = true, .status = std::move(status)};
+    return outcome;
 }
 
 } // namespace wormedit::sys

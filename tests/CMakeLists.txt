@@ -30,6 +30,7 @@ add_executable(wormedit_core_tests
     ../src/sys/transport_player_actions.cpp
     ../src/sys/compose_minimap_navigation.cpp
     ../src/sys/compose_bookmark_commands.cpp
+    ../src/sys/compose_navigation.cpp
     ../src/sys/bookmark_rename_commands.cpp
     ../src/sys/compose_playhead_skip.cpp
     ../src/sys/compose_bgm_bar.cpp
@@ -593,6 +594,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/compose_area_actions.cpp
         ../src/sys/compose_bgm_bar.cpp
         ../src/sys/compose_bookmark_commands.cpp
+        ../src/sys/compose_navigation.cpp
         ../src/sys/compose_dead_spans.cpp
         ../src/sys/compose_input.cpp
         ../src/sys/compose_kiai_spans.cpp
@@ -737,6 +739,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/compose_note_to_bgm.cpp
             ../src/sys/compose_minimap_navigation.cpp
             ../src/sys/compose_bookmark_commands.cpp
+            ../src/sys/compose_navigation.cpp
             ../src/sys/compose_playhead_skip.cpp
             ../src/sys/compose_bgm_bar.cpp)
         target_compile_definitions(wormedit_frame_timing_tests PRIVATE WORMEDIT_HAS_AUDIO_DECODER=1

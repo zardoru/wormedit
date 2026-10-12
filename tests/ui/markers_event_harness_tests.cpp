@@ -162,7 +162,7 @@ TEST_CASE("the Bookmarks add icon adds an unnamed bookmark and delete needs a se
         CHECK(frame.get().compose_action != WORM_UI_COMPOSE_ACTION_DELETE_BEAT_BOOKMARK);
     bool added = false;
     for (const auto& frame : click(fixture.harness, add->first, add->second))
-        added = added || frame.get().compose_action == WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK;
+        added = added || std::string_view{frame.get().menu_command_id} == "markers.add_bookmark";
     CHECK(added);
 }
 

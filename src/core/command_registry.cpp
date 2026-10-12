@@ -889,6 +889,14 @@ auto make_default_editor_command_registry(command_invoker_t invoker) -> command_
                 command_category_t::transport, command_focus_scope_t::tab,
                 {chord(shortcut_key_t::space,
                        static_cast<shortcut_modifiers_t>(shortcut_modifier_t::shift))}, true, compose);
+    add_builtin(registry, invoker, "transport.toggle_loop_selection", "Toggle Selection Loop",
+                command_category_t::transport, command_focus_scope_t::tab, {}, true, compose);
+    add_builtin(registry, invoker, "measures.insert_before", "Insert Measure Before",
+                command_category_t::edit, command_focus_scope_t::tab, {}, true, compose);
+    add_builtin(registry, invoker, "measures.insert_after", "Insert Measure After",
+                command_category_t::edit, command_focus_scope_t::tab, {}, true, compose);
+    add_builtin(registry, invoker, "measures.remove_empty", "Remove Empty Measure",
+                command_category_t::edit, command_focus_scope_t::tab, {}, true, compose);
     add_builtin(registry, invoker, "transport.stop", "Stop", command_category_t::transport,
                 workspace, {});
 

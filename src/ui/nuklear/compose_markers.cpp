@@ -1,3 +1,4 @@
+#include "ui/nuklear/compose_menu_command.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/compose_markers.h"
 #include "ui/nuklear/compose_note_label_inline.h"
@@ -313,9 +314,8 @@ void handle_bookmark_row(const WormUiComposeView& view, WormUiWorkspaceAction& a
 void apply_bookmark_header(const WormUiComposeView& view, WormUiWorkspaceAction& action,
                            const header_clicks_t& clicks) {
     request_marker_navigation(action, clicks.previous, clicks.next);
-    if (clicks.add && raise_compose(action, WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK)) {
-        action.compose_bookmark_id = 0;
-        action.compose_marker_label[0] = '\0';
+    if (clicks.add) {
+        emit_compose_menu_command(action, view, "markers.add_bookmark");
         state.bookmark_id = 0;
     } else if (clicks.remove && selected_bookmark(view) &&
                raise_compose(action, WORM_UI_COMPOSE_ACTION_DELETE_BEAT_BOOKMARK)) {

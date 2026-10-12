@@ -1,3 +1,4 @@
+#include "sys/application_command_dispatch.h"
 #include "sys/compose_area_actions.h"
 #include "nuklear_event_harness.h"
 #include "ui/nuklear/audio_state.h"
@@ -4596,50 +4597,25 @@ auto t424_song() -> wormedit::song_document_t {
     return song;
 }
 
-auto t424_registry(t422_fixture_t& fixture) -> wormedit::command_registry_t {
-    return wormedit::make_default_editor_command_registry([&](const auto& invocation) {
-        WormUiWorkspaceAction action{};
-        action.compose_input_count = 1;
-        action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_NOTE_MOVE_TO_BGM,
-            .successive = invocation.command.value == "edit.move_next_to_bgm"};
-        action.compose_input_project_id = fixture.history.document.id.value;
-        action.compose_input_chart_id = 1;
-        action.compose_input_document_revision = fixture.history.document.revision;
-        action.compose_input_viewport_width_pixels = fixture.harness.view().compose.viewport_width_pixels;
-        const auto status = fixture.dispatch_action(action);
-        UNSCOPED_INFO(status);
-        return wormedit::command_invocation_result_t{.accepted = status == "Notes moved to the BGM area."};
-    });
-}
 }
 
-TEST_CASE("Backquote moves all selected BMS notes and Shift Backquote consumes chart order",
+TEST_CASE("Backquote shortcuts invoke the registered BGM verbs without legacy inputs",
           "[frontend-state][event-harness][t424]") {
-    t422_fixture_t fixture{t424_song()};
-    auto registry = t424_registry(fixture);
+    nuklear_event_harness_t harness;
+    std::string invoked;
+    const auto registry = wormedit::make_default_editor_command_registry([&](const auto& context) {
+        invoked = context.command.value;
+        return wormedit::command_invocation_result_t{.accepted = true};
+    });
     const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_GRAVE, SDL_SCANCODE_GRAVE);
     const auto release = key_event(SDL_EVENT_KEY_UP, SDLK_GRAVE, SDL_SCANCODE_GRAVE);
-    for (const auto expected : {101ULL, 102ULL, 103ULL}) {
-        const auto snapshot = fixture.harness.frame(std::span{&press, 1}, SDL_KMOD_SHIFT);
-        const auto routed = route_harness_shortcut(snapshot.get(), registry);
-        expect_t422(routed.status == wormedit::command_dispatch_status_t::invoked);
-        expect_t422(t422_note(fixture.history, expected) == nullptr);
-        fixture.project();
-        (void)fixture.harness.frame(std::span{&release, 1});
+    for (const auto mods : {SDL_KMOD_NONE, SDL_KMOD_SHIFT}) {
+        const auto frame = harness.frame(std::span{&press, 1}, mods);
+        expect_t422(frame.get().compose_input_count == 0);
+        expect_t422(route_harness_shortcut(frame.get(), registry).status == wormedit::command_dispatch_status_t::invoked);
+        expect_t422(invoked == (mods == SDL_KMOD_NONE ? "edit.move_to_bgm" : "edit.move_next_to_bgm"));
+        (void)harness.frame(std::span{&release, 1});
     }
-    expect_t422(fixture.interaction->selected_notes.empty());
-    expect_t422(fixture.interaction->selected_objects.empty());
-    expect_t422(fixture.history.undo.size() == 3);
-    for (int index = 0; index < 3; ++index)
-        expect_t422(wormedit::undo_document_command(fixture.history));
-    fixture.interaction->selected_notes = {wormedit::object_id_t{103}, wormedit::object_id_t{101}, wormedit::object_id_t{102}};
-    fixture.interaction->selected_objects.clear();
-    fixture.project();
-    const auto all = fixture.harness.frame(std::span{&press, 1});
-    expect_t422(route_harness_shortcut(all.get(), registry).status == wormedit::command_dispatch_status_t::invoked);
-    expect_t422(fixture.interaction->selected_objects.size() == 3);
-    expect_t422(fixture.history.undo.size() == 1);
-    expect_t422(wormedit::undo_document_command(fixture.history));
 }
 
 TEST_CASE("Note menu exposes the BGM action with its projected shortcut and disabled gate",
@@ -4910,12 +4886,10 @@ TEST_CASE("Area menu loops a committed selection and rejects virtual or unavaila
     bool emitted{};
     for (const auto& snapshot : click_at(fixture.harness, center->first, center->second)) {
         const auto& action = snapshot.get();
-        if (action.kind != WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_LOOP_SELECTION) continue;
+        if (std::string_view{action.menu_command_id} != "transport.loop_selection") continue;
         emitted = true;
-        check_layer_menu(action.transport_loop_enabled);
-        check_layer_menu(action.transport_loop_chart_id == view.chart_id);
-        check_layer_menu(action.transport_loop_document_revision == view.document_revision);
-        check_layer_menu(action.transport_loop_begin_row == 0 && action.transport_loop_end_row == 9600);
+        check_layer_menu(action.compose_input_chart_id == view.chart_id);
+        check_layer_menu(action.compose_input_document_revision == view.document_revision);
         check_layer_menu(action.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     }
     check_layer_menu(emitted == (output_available && !virtual_range));
@@ -6813,4 +6787,88 @@ TEST_CASE("Production area Delete enablement agrees with its scoped dispatch",
     expect_draw(*status == "Selected area contents deleted.");
     expect_draw(history.undo.size() == 1);
     expect_draw(history.document.charts.front().measures.front().notes.empty());
+}
+
+TEST_CASE("Area Quantize activates the registered verb instead of a fallback grid",
+          "[frontend-state][event-harness][gesture-verbs]") {
+    note_menu_fixture_t f;
+    auto& v = f.harness.view().compose;
+    v.area_range_available = true;
+    v.area_rows_per_measure = 960;
+    v.area_canvas_rows = v.area_range_end_row = 9600;
+    (void)f.harness.frame();
+    (void)right_click_at(f.harness, 900, 400);
+    const auto point = f.harness.drawn_text_center("Quantize selection");
+    REQUIRE(point);
+    bool emitted{};
+    for (const auto& frame : click_at(f.harness, point->first, point->second))
+        if (std::string_view{frame.get().menu_command_id} == "edit.apply_quantize") {
+            emitted = true;
+            auto action = frame.get();
+            auto history = wormedit::make_document_history(t422_song());
+            const auto binding = wormedit::make_workspace_controller(history);
+            auto workspace = *binding.workspace;
+            workspace.active_tab = wormedit::workspace_tab_t::compose;
+            check_layer_menu(action.compose_menu_command);
+            check_layer_menu(wormedit::sys::compose_menu_command_is_current(action, history, workspace));
+            ++history.document.revision;
+            check_layer_menu(!wormedit::sys::compose_menu_command_is_current(action, history, workspace));
+            --history.document.revision;
+            action.shortcut_ime_composition_active = true;
+            check_layer_menu(!wormedit::sys::compose_menu_command_is_current(action, history, workspace));
+        }
+    check_layer_menu(emitted);
+}
+
+TEST_CASE("Timing focus projects the same Move to BGM capability as its command",
+          "[frontend-state][event-harness][gesture-verbs]") {
+    t422_fixture_t f{t424_song()};
+    expect_t422(f.harness.view().compose.move_to_bgm_available);
+    f.application.compose_timing_focus = true;
+    f.project();
+    (void)f.harness.frame();
+    expect_t422(!f.harness.view().compose.move_to_bgm_available);
+}
+
+TEST_CASE("Measure insert buttons emit the registered guarded verb",
+          "[frontend-state][event-harness][gesture-verbs]") {
+    nuklear_event_harness_t harness{1600, 2600};
+    worm_ui_nuklear_compose_state().inspector_visible = true;
+    (void)harness.frame();
+    const auto tree = harness.drawn_text_center("Measure at cursor");
+    REQUIRE(tree);
+    (void)click_at(harness, tree->first, tree->second);
+    const auto point = harness.drawn_text_center("Insert measure before");
+    REQUIRE(point);
+    bool emitted{};
+    for (const auto& frame : click_at(harness, point->first, point->second))
+        emitted |= std::string_view{frame.get().menu_command_id} == "measures.insert_before";
+    check_layer_menu(emitted);
+}
+
+TEST_CASE("Actual same-sound clicks reject a note without a sound without clearing selection",
+          "[frontend-state][event-harness][gesture-verbs]") {
+    auto song = t422_song();
+    for (auto& note : song.charts.front().measures.front().notes)
+        if (note.id == wormedit::object_id_t{101}) note.sound.reset();
+    t422_fixture_t f{std::move(song)};
+    const auto selected = f.interaction->selected_notes;
+    const auto point = t422_note_screen_center(f, 101);
+    REQUIRE(point);
+#if defined(__APPLE__)
+    const auto primary = SDL_KMOD_GUI;
+#else
+    const auto primary = SDL_KMOD_CTRL;
+#endif
+    const auto mods = static_cast<SDL_Keymod>(primary | SDL_KMOD_SHIFT);
+    const std::array down{motion_event(point->first, point->second), button_event(true, point->first, point->second)};
+    const auto pressed = f.harness.frame(down, mods);
+    const std::array up{button_event(false, point->first, point->second)};
+    const auto released = f.harness.frame(up, mods);
+    const auto& action = pressed.get().compose_input_count ? pressed : released;
+    expect_t422(action.get().compose_input_count == 1);
+    expect_t422(action.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_VISIBLE);
+    expect_t422(f.dispatch(action) == "Hover a note or select a sound first");
+    expect_t422(f.interaction->selected_notes == selected);
+    expect_t422(f.history.undo.empty());
 }

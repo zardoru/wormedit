@@ -2875,16 +2875,15 @@ auto select_compose_same_sound(const WormUiComposeInputAction& input, compose_in
     using namespace wormedit;
     const auto* chart = context.chart();
     if (!chart || !context.input_is_current()) return "Sound selection source is stale.";
-    const auto key = input.resource_id
-        ? sound_selection_resource_key(context.history.document, *chart, resource_id_t{input.resource_id})
-        : sound_selection_object_key(context.history.document, *chart, object_id_t{input.object_id});
-    std::vector<editor_selection_object_t> objects;
-    if (key) objects = compose_same_sound_objects(context.history.document, *chart, context.state,
-        context.application_state, std::span{&*key, 1}, input.kind == WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_VISIBLE);
     const auto mode = context.selection_mode(input.selection_mode);
     if (!mode) return "Sound selection mode is invalid.";
+    auto request = compose_same_sound_request(context.history.document, *chart, context.state,
+        context.application_state, input.kind == WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_VISIBLE, *mode,
+        input.resource_id ? std::nullopt : std::optional{object_id_t{input.object_id}},
+        input.resource_id ? std::optional{resource_id_t{input.resource_id}} : std::nullopt);
+    if (const auto* error = std::get_if<std::string>(&request)) return *error;
     result = dispatch_editor_action(context.history, context.state,
-        select_editor_objects_action_t{std::move(objects), *mode, false});
+        std::get<select_editor_objects_action_t>(std::move(request)));
     accepted = "Matching sounds selected.";
     return std::nullopt;
 }
@@ -3550,7 +3549,6 @@ auto compose_input_edits_notes(WormUiComposeInputKind kind) -> bool {
     case WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW:
     case WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE:
     case WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART:
-    case WORM_UI_COMPOSE_INPUT_NOTE_MOVE_TO_BGM:
     case WORM_UI_COMPOSE_INPUT_BGM_MOVE_TO_LANE:
         return true;
     default:
@@ -3619,27 +3617,10 @@ auto input_result_severity(const WormUiComposeInputAction& input,
     }
 }
 
-// UI translation only: core owns ordering, validation and the resulting selection.
-auto move_selected_notes_to_bgm_input(compose_input_context_t& context,
-    wormedit::editor_interaction_result_t& result, std::string_view& accepted,
-    std::optional<wormedit::object_id_t> lane, bool successive) -> bool {
-    if (!context.input_is_current()) return false;
-    const auto outcome = wormedit::move_editor_selection_to_bgm(context.history,
-        context.history.document.revision, context.state, lane, successive);
-    if (!outcome.handled) return false;
-    result.accepted = outcome.command.applied;
-    result.document_changed = outcome.command.applied;
-    result.diagnostics = outcome.command.diagnostics;
-    accepted = outcome.command.applied ? "Notes moved to the BGM area."
-                                       : "The notes could not be moved to the BGM area.";
-    return true;
-}
-
 // Explicit note/BGM conversion and the drop of BGM events on the playfield.
 auto dispatch_note_to_bgm_input(const WormUiComposeInputAction& input, compose_input_context_t& context,
                                 wormedit::editor_interaction_result_t& result, std::string_view& accepted)
     -> std::optional<compose_input_family_result_t> {
-    using wormedit::object_id_t;
     if (input.kind == WORM_UI_COMPOSE_INPUT_BGM_MOVE_TO_LANE) {
         // A drop on the playfield assigns the selected objects through the shared core action.
         const auto dragged = input.object_id != 0 ? std::optional<wormedit::object_id_t>{wormedit::object_id_t{input.object_id}}
@@ -3658,11 +3639,7 @@ auto dispatch_note_to_bgm_input(const WormUiComposeInputAction& input, compose_i
             : "The selected objects could not move to that lane.";
         return compose_input_family_result_t::continue_with_result();
     }
-    if (input.kind != WORM_UI_COMPOSE_INPUT_NOTE_MOVE_TO_BGM) return std::nullopt;
-    const auto lane = input.lane_id != 0 ? std::optional<object_id_t>{object_id_t{input.lane_id}} : std::nullopt;
-    if (!move_selected_notes_to_bgm_input(context, result, accepted, lane, input.successive))
-        return compose_input_family_result_t{"Select playable notes before moving them to the BGM area."};
-    return compose_input_family_result_t::continue_with_result();
+    return std::nullopt;
 }
 
 // A lane key at a cursor inside a Warp would place a playable head in skipped rows. Holds that

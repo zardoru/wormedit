@@ -1,3 +1,4 @@
+#include "ui/nuklear/compose_menu_command.h"
 #include "ui/nuklear/compose_toolbar.h"
 #include "ui/nuklear/tooltip.h"
 #include <cstdio>
@@ -88,12 +89,7 @@ static void render_loop_selection_button(const ComposeToolbarContext& toolbar) {
         action->kind == WORM_UI_WORKSPACE_ACTION_NONE;
     if (!can_toggle) nk_widget_disable_end(toolbar.context);
     if (clicked) {
-        action->kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_LOOP_SELECTION;
-        action->transport_loop_chart_id = view.chart_id;
-        action->transport_loop_document_revision = view.document_revision;
-        action->transport_loop_begin_row = view.area_range_available ? view.area_range_begin_row : 0;
-        action->transport_loop_end_row = view.area_range_available ? view.area_range_end_row : 0;
-        action->transport_loop_enabled = !view.transport_loop_selection_enabled;
+        emit_compose_menu_command(*action, view, "transport.toggle_loop_selection");
     }
 }
 

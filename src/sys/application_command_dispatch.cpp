@@ -235,14 +235,29 @@ auto metronome_command(command_context_t& context) -> std::optional<command_resu
     return command_result_t{.accepted = true};
 }
 
-auto split_measure_command(command_context_t& context) -> std::optional<command_result_t> {
-    if (context.command.kind != command_kind_t::measures_split_at_cursor) return std::nullopt;
+auto cursor_measure_operation(command_kind_t kind) -> std::optional<cursor_measure_command_t> {
+    switch (kind) {
+    case command_kind_t::measures_insert_before: return cursor_measure_command_t::insert_before;
+    case command_kind_t::measures_insert_after: return cursor_measure_command_t::insert_after;
+    case command_kind_t::measures_remove_empty: return cursor_measure_command_t::remove_empty;
+    default: return std::nullopt;
+    }
+}
+
+auto measure_command(command_context_t& context) -> std::optional<command_result_t> {
+    const auto operation = cursor_measure_operation(context.command.kind);
+    if (!operation && context.command.kind != command_kind_t::measures_split_at_cursor) return std::nullopt;
     auto* state = context.compose();
-    if (!state || editor_interaction_has_pending_gesture(*state) || context.application_state.paste_session)
-        return reject_application_command(context.sink, "Finish the current gesture before splitting a measure.",
+    if (!state) return reject_application_command(context.sink, "Measure editing requires the active Compose chart.",
+        notification_severity_t::warning, notification_source_t::edit);
+    if (const auto error = compose_measure_edit_rejection(context.history, *state,
+            context.application_state.paste_session.has_value(), context.history.document.revision))
+        return reject_application_command(context.sink, *error,
             notification_severity_t::warning, notification_source_t::edit);
     auto severity = notification_severity_t::warning;
-    const auto message = apply_cursor_measure_split(context.history, *state, &severity);
+    const auto message = operation
+        ? apply_cursor_measure_command(context.history, *state, *operation, &severity)
+        : apply_cursor_measure_split(context.history, *state, &severity);
     post_command_message(context.sink, severity, notification_source_t::edit, message);
     if (severity == notification_severity_t::warning) return command_result_t{};
     return context.rebind();
@@ -250,15 +265,27 @@ auto split_measure_command(command_context_t& context) -> std::optional<command_
 
 auto loop_selection_command(command_context_t& context) -> std::optional<command_result_t> {
     using namespace wormedit;
-    if (context.command.kind != command_kind_t::transport_loop_selection) return std::nullopt;
+    const bool toggle = context.command.kind == command_kind_t::transport_toggle_loop_selection;
+    if (!toggle && context.command.kind != command_kind_t::transport_loop_selection) return std::nullopt;
+    const bool disable = toggle && context.application_state.transport_loop_selection_active &&
+        context.application_state.transport_loop_selection_active();
     const auto* state = context.compose();
     const auto chart = std::ranges::find(context.history.document.charts,
         state ? state->chart : chart_id_t{}, &chart_document_t::id);
     if (!state || chart == context.history.document.charts.end() ||
-        !state->retained_selection_range || editor_interaction_has_pending_gesture(*state) ||
+        (!disable && !state->retained_selection_range) || editor_interaction_has_pending_gesture(*state) ||
         context.application_state.paste_session || !context.application_state.transport_set_loop_selection)
         return reject_application_command(context.sink, "Select a committed area to loop playback.",
             notification_severity_t::warning, notification_source_t::audio);
+    if (disable) {
+        if (!context.application_state.transport_set_loop_selection(state->chart,
+                context.history.document.revision, 0, 0, false))
+            return reject_application_command(context.sink, "Loop selection is unavailable or expired.",
+                notification_severity_t::warning, notification_source_t::audio);
+        post_command_message(context.sink, notification_severity_t::success,
+            notification_source_t::audio, "Loop selection disabled.");
+        return command_result_t{.accepted = true};
+    }
     const auto indexed = build_measure_index(*chart);
     const auto* measures = std::get_if<measure_index_t>(&indexed);
     const auto begin = measures ? absolute_row(*measures, state->retained_selection_range->begin) : std::nullopt;
@@ -335,9 +362,7 @@ auto note_to_bgm_command(command_context_t& context) -> std::optional<command_re
     const auto found = std::ranges::find(context.history.document.charts,
                                          state ? state->chart : chart_id_t{}, &chart_document_t::id);
     const auto* chart = found == context.history.document.charts.end() ? nullptr : &*found;
-    if (!state || !chart || chart->source_family != format_family_t::bms ||
-        editor_interaction_has_pending_gesture(*state) || context.application_state.paste_session ||
-        !wormedit::ui::compose_notes_editable(compose_mode_of(context.application_state)))
+    if (!state || !chart || !compose_move_to_bgm_available(*chart, *state, context.application_state))
         return reject_application_command(context.sink, "Move to BGM requires selected notes on an editable BMS chart.",
                                           notification_severity_t::hint, notification_source_t::edit);
     const auto moved = move_editor_selection_to_bgm(context.history, context.history.document.revision, *state,
@@ -435,14 +460,13 @@ auto same_sound_command(command_context_t& context) -> command_result_t {
     if (!state || !chart)
         return reject_application_command(context.sink, "Hover a note or select a sound first",
             notification_severity_t::hint, notification_source_t::edit);
-    const auto keys = compose_sound_selection_keys(context.history.document, *chart, *state, context.application_state);
-    if (keys.empty())
-        return reject_application_command(context.sink, "Hover a note or select a sound first",
+    auto request = compose_same_sound_request(context.history.document, *chart, *state,
+        context.application_state, false, editor_area_selection_mode_t::add);
+    if (const auto* error = std::get_if<std::string>(&request))
+        return reject_application_command(context.sink, *error,
             notification_severity_t::hint, notification_source_t::edit);
-    auto objects = compose_same_sound_objects(context.history.document, *chart, *state,
-        context.application_state, keys, false);
     return accept_editor_command(dispatch_editor_action(context.history, *state,
-        select_editor_objects_action_t{std::move(objects), editor_area_selection_mode_t::add, false}),
+        std::get<select_editor_objects_action_t>(std::move(request))),
         context.sink, "Matching sounds added to selection.", notification_severity_t::success, notification_source_t::edit);
 }
 
@@ -697,7 +721,8 @@ auto bookmark_commands(command_context_t& context) -> std::optional<command_resu
         return reject_application_command(context.sink,
             "Bookmark commands require the active Compose chart.", notification_severity_t::warning,
             notification_source_t::input);
-    if (kind == command_kind_t::markers_add_bookmark && editor_interaction_has_pending_gesture(*state))
+    if (kind == command_kind_t::markers_add_bookmark &&
+        (editor_interaction_has_pending_gesture(*state) || context.application_state.paste_session))
         return reject_application_command(context.sink,
             "Finish or cancel the active Compose gesture before editing bookmarks.",
             notification_severity_t::warning, notification_source_t::edit);
@@ -1001,7 +1026,7 @@ auto invoke_application_command(
     if (auto result = history_command(context)) return *result;
     if (auto result = select_tool_command(context)) return *result;
     if (auto result = note_kind_command(context)) return *result;
-    if (auto result = split_measure_command(context)) return *result;
+    if (auto result = measure_command(context)) return *result;
     if (auto result = loop_selection_command(context)) return *result;
     if (auto result = transport_command(context)) return *result;
     if (auto result = external_player_command(context)) return *result;

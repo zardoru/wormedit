@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/notifications.h>
+#include "sys/compose_view.h"
 
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/measure_editor.h>
@@ -11,6 +12,16 @@
 #include <string_view>
 
 namespace wormedit::sys {
+
+inline auto compose_measure_edit_rejection(const document_history_t& history,
+    const editor_interaction_state_t& state, bool paste_active, std::uint64_t expected_revision)
+    -> std::optional<std::string> {
+    if (editor_interaction_has_pending_gesture(state) || paste_active)
+        return "Finish or cancel the active Compose gesture before editing measures.";
+    if (history.document.revision != expected_revision)
+        return "Measure edit ignored because the document changed.";
+    return std::nullopt;
+}
 
 [[nodiscard]] auto apply_cursor_measure_split(document_history_t& history,
     editor_interaction_state_t& state, notification_severity_t* severity = nullptr) -> std::string;

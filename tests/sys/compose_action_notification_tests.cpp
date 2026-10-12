@@ -1,3 +1,4 @@
+#include "sys/application_command_dispatch.h"
 #include "sys/compose_actions.h"
 #include "sys/compose_area_actions.h"
 #include "sys/compose_input.h"
@@ -110,6 +111,19 @@ struct action_notification_fixture_t {
         return dispatch_compose_workspace_action(value, history, workspace, interaction, 800,
             application, asset_base, scheduler, resource_copy, export_runtime, false, drop,
             metadata, sink);
+    }
+    auto invoke_registered(const char* id) -> bool {
+        std::optional<editor_interaction_state_t> interaction = state;
+        std::optional<timing_lane_pseudonote_preview_t> timing;
+        const auto registry = make_default_editor_command_registry([&](const auto& request) {
+            const auto command = parse_application_command(request.command.value);
+            return command ? invoke_application_command(*command, history, workspace, interaction,
+                timing, application, sink) : command_invocation_result_t{};
+        });
+        const auto result = invoke_command(registry, {id}, {.workspace_active = true,
+            .active_tab = workspace_tab_t::compose, .visible_tabs = {workspace_tab_t::compose}});
+        state = *interaction;
+        return static_cast<bool>(result);
     }
     auto entries() -> std::vector<notification_entry_t> {
         center.drain_inbox(notification_time_t{});
@@ -652,7 +666,7 @@ TEST_CASE("Compose workspace boundary publishes branch validation without mutati
 TEST_CASE("Compose measure helpers publish their actual edit and validation outcomes", "[compose-action-notifications]") {
     action_notification_fixture_t fixture;
     SECTION("insert mutation") {
-        check_action(fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_INSERT_MEASURE_AFTER)) == "Measure inserted.");
+        check_action(fixture.invoke_registered("measures.insert_after"));
         const auto entries = fixture.entries();
         require_action(entries.size() == 1);
         check_action(entries.front().severity == notification_severity_t::success);
@@ -1392,7 +1406,6 @@ TEST_CASE("Draw BGM production stroke commits once and erase removes the lane on
     check_action(count() == 0);
 }
 
-#include "sys/application_command_dispatch.h"
 
 TEST_CASE("Quantize grid and editing snap are one shared grid",
           "[unit][sys][compose-action][quantize-snap]") {

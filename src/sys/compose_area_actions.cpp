@@ -1,3 +1,4 @@
+#include "sys/compose_quantize_request.h"
 #include "sys/compose_area_actions.h"
 #include <wormedit/core/chart_clipboard.h>
 #include <algorithm>
@@ -66,24 +67,10 @@ std::string quantize_compose_area_selection(area_action_context_t& context,
                                             const wormedit::chart_document_t& chart) {
     using namespace wormedit;
     const auto& action = context.action;
-    if (action.compose_quantize_space > static_cast<std::uint8_t>(quantization_space_t::authored_measure) ||
-        action.compose_quantize_tie > static_cast<std::uint8_t>(quantization_tie_t::reject) ||
-        action.compose_quantize_holds > static_cast<std::uint8_t>(quantization_hold_t::both_endpoints))
-        return area_rejection(context, "Selection quantization has invalid settings.");
-    const auto legacy_request = action.compose_quantize_divisions == 0;
-    const auto divisions = legacy_request ? context.state.active_snap_denominator
-                                          : action.compose_quantize_divisions;
-    const auto request = quantize_request_t{.divisions = divisions,
-                                            .space = static_cast<quantization_space_t>(
-                                                action.compose_quantize_space),
-                                            .tie = static_cast<quantization_tie_t>(
-                                                action.compose_quantize_tie),
-                                            .holds = legacy_request
-                                                         ? quantization_hold_t::both_endpoints
-                                                         : static_cast<quantization_hold_t>(
-                                                               action.compose_quantize_holds),
-                                            .selection = editor_quantize_selection(context.state)};
-    const auto result = apply_quantize_command(context.history, context.state.chart, request);
+    auto request = quantize_request_from_action(action, {});
+    if (!request) return area_rejection(context, "Selection quantization has invalid settings.");
+    request->selection = editor_quantize_selection(context.state);
+    const auto result = apply_quantize_command(context.history, context.state.chart, *request);
     if (!result.command.diagnostics.empty() && !result.command.applied)
         return area_diagnostic(context, result.command.diagnostics.front());
     return result.command.applied

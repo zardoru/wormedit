@@ -1,3 +1,4 @@
+#include "ui/nuklear/compose_menu_command.h"
 #include "ui/nuklear/bmson_lane_mode_ui.h"
 #include "ui/nuklear/compose_note_menu.h"
 #include "ui/nuklear/compose_panel_internal.h"
@@ -190,7 +191,7 @@ void render_bgm_action(nk_context* context, const WormUiComposeView& view,
                   view.move_to_bgm_shortcut);
     if (chrome::context_menu_button(context, bgm_label,
             view.move_to_bgm_available ? nullptr : "Requires selected playable notes on an editable BMS chart")) {
-        std::snprintf(action.menu_command_id, sizeof(action.menu_command_id), "%s", "edit.move_to_bgm");
+        emit_compose_menu_command(action, view, "edit.move_to_bgm");
         chrome::context_menu_close(menu.popup);
     }
     if (!view.move_to_bgm_available) {

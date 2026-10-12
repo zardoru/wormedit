@@ -68,20 +68,7 @@ auto toggle_metronome_status(application_command_state_t& state,
         state.transport_metronome_enabled ? "Metronome enabled." : "Metronome disabled.");
 }
 
-auto set_loop_selection_status(const WormUiWorkspaceAction& action,
-                               application_command_state_t& state,
-                               const std::optional<notification_sink_t>& notifications) -> std::string {
-    if (!state.transport_set_loop_selection ||
-        !state.transport_set_loop_selection(
-            wormedit::chart_id_t{action.transport_loop_chart_id},
-            action.transport_loop_document_revision,
-            action.transport_loop_begin_row, action.transport_loop_end_row,
-            action.transport_loop_enabled))
-        return publish_transport_feedback(notifications, notification_severity_t::warning,
-                                           "Loop selection is unavailable or expired.");
-    return publish_transport_feedback(notifications, notification_severity_t::success,
-        action.transport_loop_enabled ? "Loop selection enabled." : "Loop selection disabled.");
-}
+
 
 } // namespace
 
@@ -105,8 +92,6 @@ auto dispatch_transport_player_action(
         application_state.transport_keep_pitch = action.transport_keep_pitch;
         return publish_transport_feedback(notifications, notification_severity_t::success,
             action.transport_keep_pitch ? "Keep pitch enabled." : "Keep pitch disabled.");
-    case WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_LOOP_SELECTION:
-        return set_loop_selection_status(action, application_state, notifications);
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE:
         if (application_state.transport_play_pause) return application_state.transport_play_pause();
         return publish_transport_feedback(notifications, notification_severity_t::warning, "Chart preview is unavailable.");

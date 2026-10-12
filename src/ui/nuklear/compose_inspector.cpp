@@ -1,3 +1,4 @@
+#include "ui/nuklear/compose_menu_command.h"
 #include "ui/nuklear/compose_inspector.h"
 #include "ui/nuklear/compose_toolbar.h"
 #include "ui/nuklear/meter_state.h"
@@ -329,7 +330,7 @@ void render_measure_removal_control(const ComposeInspectorContext& inspector) {
                                         .revision = view->document_revision};
         return;
     }
-    action->compose_action = WORM_UI_COMPOSE_ACTION_REMOVE_EMPTY_MEASURE;
+    emit_compose_menu_command(*action, *view, "measures.remove_empty");
     action->compose_input_chart_id = view->chart_id;
     action->compose_input_document_revision = view->document_revision;
 }
@@ -340,17 +341,15 @@ void render_compose_measure_section(const ComposeInspectorContext& inspector) {
     auto* action = inspector.action;
     if (!nk_tree_push(context, NK_TREE_TAB, "Measure at cursor", NK_MINIMIZED)) return;
     if (!view->scene_available) nk_widget_disable_begin(context);
-    const auto entry = [&](const char* title, WormUiComposeActionKind kind) {
+    const auto entry = [&](const char* title, const char* command) {
         nk_layout_row_dynamic(context, 24, 1);
         if (!nk_button_label(context, title) ||
             action->compose_action != WORM_UI_COMPOSE_ACTION_NONE)
             return;
-        action->compose_action = kind;
-        action->compose_input_chart_id = view->chart_id;
-        action->compose_input_document_revision = view->document_revision;
+        emit_compose_menu_command(*action, *view, command);
     };
-    entry("Insert measure before", WORM_UI_COMPOSE_ACTION_INSERT_MEASURE_BEFORE);
-    entry("Insert measure after", WORM_UI_COMPOSE_ACTION_INSERT_MEASURE_AFTER);
+    entry("Insert measure before", "measures.insert_before");
+    entry("Insert measure after", "measures.insert_after");
     render_measure_removal_control(inspector);
     render_measure_removal_confirmation(inspector);
     render_compose_meter_control(inspector);

@@ -1,3 +1,4 @@
+#include "sys/compose_note_to_bgm.h"
 #include <wormedit/core/interaction_gestures.h>
 #include "sys/compose_sound_selection.h"
 #include "sys/frame_timing.h"
@@ -4414,10 +4415,7 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
     flattened.compose.interaction_view = interaction_view;
     view.same_sound_selection_available = compose_sound_selection_available(history.document, chart,
         *retained_state, application_state);
-    view.move_to_bgm_available = chart.source_family == wormedit::format_family_t::bms &&
-        !editor_interaction_has_pending_gesture(*retained_state) && !application_state.paste_session &&
-        (!retained_state->selected_notes.empty() || std::ranges::any_of(retained_state->selected_objects,
-            [](const auto& object) { return object.kind == editor_selection_object_kind_t::note; }));
+    view.move_to_bgm_available = compose_move_to_bgm_available(chart, *retained_state, application_state);
     view.bms_measure_labels = chart.source_family == wormedit::format_family_t::bms;
     view.bmson_tools_available = chart.source_family == wormedit::format_family_t::bmson;
     populate_lane_profile_choices(view, chart, interaction_view.cursor);

@@ -1,6 +1,8 @@
 # Status: resume checklist
 
-Next: [T-582 Route menu verbs through registered commands](../../docs/chart-editor-plan/tasks/gesture-consolidation.md#t-582-route-menu-verbs-through-registered-commands). T-580–T-581 are complete; continue T-582–T-590 in order; T-583 stops for the Stop/Delay placement decision. NV7 is a T-506 follow-up, with unrelated navigation work preserved.
+Next: [T-583 Unify authored and virtual row placement](../../docs/chart-editor-plan/tasks/gesture-consolidation.md#t-583-unify-authored-and-virtual-row-placement). T-580–T-582 are complete; continue T-583–T-590 in order. User chose a shared row-based Stop/Delay exclusion on 2026-10-12. NV7 remains a T-506 navigation follow-up (T-587); unrelated navigation work is preserved.
+
+Completed **T-582** (2026-10-12): stamped menu commands and shared Quantize/bookmark/same-sound/BGM/loop/measure paths; orphan BGM and workspace loop paths retired. Build, **3,457/3,457** full serial CTest, **444/444** event checks, default clang-tidy with no new/increased complexity, documentation and whitespace gates pass. Isolated Xvfb Compose screenshot inspected. [Card and evidence](../../docs/chart-editor-plan/tasks/gesture-consolidation.md#t-582-route-menu-verbs-through-registered-commands).
 
 Completed **T-574 follow-up, T-578 and T-579** (2026-10-11; committed with implementation):
 BGM stem heads now double-click to arm outside the playable field. Mouse paint

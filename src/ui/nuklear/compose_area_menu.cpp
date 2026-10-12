@@ -1,3 +1,4 @@
+#include "ui/nuklear/compose_menu_command.h"
 #include "sys/compose_scroll_geometry.h"
 #include "ui/nuklear/compose_area_menu.h"
 #include "ui/nuklear/chrome.h"
@@ -154,9 +155,11 @@ void render_menu(nk_context* context, const WormUiComposeView& view,
         return;
     }
     constexpr const char* materialize = "Materialize the selected measures first";
-    menu_entry(context, "Quantize selection",
-               reason_unless(view.selected_note_count + view.selected_bgm_event_count != 0, "Select notes or BGM first"),
-               WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE, action);
+    if (chrome::context_menu_item(menu, context, "Quantize selection",
+            reason_unless(view.selected_note_count + view.selected_bgm_event_count != 0, "Select notes or BGM first"))) {
+        emit_compose_menu_command(action, view, "edit.apply_quantize");
+        consumed = true;
+    }
     render_sound_layer_entry(context, view, action);
     menu_entry(context, "Create section",
                reason_unless(view.beat_section_selection_span_available, materialize),
@@ -166,12 +169,7 @@ void render_menu(nk_context* context, const WormUiComposeView& view,
     if (chrome::context_menu_item(menu, context, "Loop playback",
             reason_unless(can_loop, view.area_range_virtual ? materialize :
                           "Selection looping requires audio output and a nonempty area"))) {
-        action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_LOOP_SELECTION;
-        action.transport_loop_chart_id = view.chart_id;
-        action.transport_loop_document_revision = view.document_revision;
-        action.transport_loop_begin_row = view.area_range_begin_row;
-        action.transport_loop_end_row = view.area_range_end_row;
-        action.transport_loop_enabled = true;
+        emit_compose_menu_command(action, view, "transport.loop_selection");
         consumed = true;
     }
     menu_entry(context, "Delete contents",

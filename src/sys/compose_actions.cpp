@@ -1,3 +1,4 @@
+#include "sys/compose_quantize_request.h"
 #include <wormedit/core/bmson_lane_mode.h>
 #include "sys/compose_actions.h"
 #include "sys/compose_bookmark_commands.h"
@@ -1819,10 +1820,6 @@ auto make_beat_bookmark_edit(compose_action_context_t& context,
     -> std::variant<wormedit::marker_edit_action_t, std::string> {
     using namespace wormedit;
     const auto operation = context.action.compose_action;
-    if (operation == WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK)
-        return marker_edit_action_t{insert_bookmark_action_t{
-            context.state.chart, context.action.compose_marker_label, marker_anchor_t::beat,
-            context.state.cursor, std::nullopt}};
     if (!context.action.compose_bookmark_id)
         return "Choose a beat-anchored bookmark before editing it.";
     const auto found = std::ranges::find(chart.bookmarks,
@@ -1842,8 +1839,7 @@ std::optional<std::string> edit_beat_bookmark(compose_action_context_t& context)
     using namespace wormedit;
     const auto operation = context.action.compose_action;
     if (context.state.virtual_bms_cursor_row &&
-        (operation == WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK ||
-         operation == WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION))
+        operation == WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION)
         return compose_action_warning(context, "Bookmarks can only go inside existing measures. Add measures up to the cursor first.");
     if (editor_interaction_has_pending_gesture(context.state))
         return compose_action_warning(context, "Finish or cancel the active Compose gesture before editing bookmarks.");
@@ -1854,9 +1850,7 @@ std::optional<std::string> edit_beat_bookmark(compose_action_context_t& context)
     const auto applied = apply_marker_edit(context.history,
         context.action.compose_input_document_revision,
         std::get<marker_edit_action_t>(std::move(built)));
-    const auto success = operation == WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK
-        ? "Bookmark added at the Compose cursor."
-        : operation == WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK ? "Bookmark renamed."
+    const auto success = operation == WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK ? "Bookmark renamed."
         : operation == WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION
             ? "Bookmark moved to the Compose cursor." : "Bookmark deleted.";
     const auto unchanged = operation == WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK
@@ -1867,7 +1861,6 @@ std::optional<std::string> edit_beat_bookmark(compose_action_context_t& context)
 
 std::optional<std::string> dispatch_compose_beat_bookmark_action(compose_action_context_t& context) {
     switch (context.action.compose_action) {
-    case WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK:
     case WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK:
     case WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION:
     case WORM_UI_COMPOSE_ACTION_DELETE_BEAT_BOOKMARK:
@@ -1967,23 +1960,10 @@ std::string transform_selected_notes(compose_action_context_t& context,
     return publish_compose_feedback(context, std::move(status), severity, notification_source_t::edit);
 }
 
-auto cursor_measure_command_for(WormUiComposeActionKind kind)
-    -> std::optional<cursor_measure_command_t> {
-    switch (kind) {
-    case WORM_UI_COMPOSE_ACTION_INSERT_MEASURE_BEFORE: return cursor_measure_command_t::insert_before;
-    case WORM_UI_COMPOSE_ACTION_INSERT_MEASURE_AFTER: return cursor_measure_command_t::insert_after;
-    case WORM_UI_COMPOSE_ACTION_REMOVE_EMPTY_MEASURE: return cursor_measure_command_t::remove_empty;
-    case WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS:
-        return cursor_measure_command_t::remove_with_contents;
-    default: return std::nullopt;
-    }
-}
-
 std::string edit_cursor_measure(compose_action_context_t& context, cursor_measure_command_t command) {
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(context, "Finish or cancel the active Compose gesture before editing measures.");
-    if (context.history.document.revision != context.action.compose_input_document_revision)
-        return compose_action_warning(context, "Measure edit ignored because the document changed.");
+    if (const auto error = compose_measure_edit_rejection(context.history, context.state,
+            context.application_state.paste_session.has_value(), context.action.compose_input_document_revision))
+        return compose_action_warning(context, *error);
     auto severity = notification_severity_t::warning;
     auto status = apply_cursor_measure_command(context.history, context.state, command, &severity);
     const auto rebound = rebind_workspace(context.workspace, context.history);
@@ -2127,8 +2107,8 @@ std::optional<std::string> dispatch_compose_marker_action(compose_action_context
         context.application_state.recipe_preview.reset();
         return compose_action_hint(context, "SV recipe preview cleared.");
     }
-    if (const auto measure_command = cursor_measure_command_for(context.action.compose_action))
-        return edit_cursor_measure(context, *measure_command);
+    if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS)
+        return edit_cursor_measure(context, cursor_measure_command_t::remove_with_contents);
     if (const auto transform = selection_transform_for(context.action.compose_action))
         return transform_selected_notes(context, *transform);
     switch (context.action.compose_action) {
@@ -2139,7 +2119,6 @@ std::optional<std::string> dispatch_compose_marker_action(compose_action_context
     case WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL:
     case WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL:
         return edit_selected_note_labels(context);
-    case WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK:
     case WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK:
     case WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION:
     case WORM_UI_COMPOSE_ACTION_DELETE_BEAT_BOOKMARK:
@@ -3185,28 +3164,6 @@ std::string dispatch_bms_branch_block_action(
     return success;
 }
 
-auto quantize_request_from_action(const WormUiWorkspaceAction& action,
-                                 std::uint64_t fallback_divisions,
-                                 const std::vector<wormedit::object_id_t>& objects)
-    -> std::optional<wormedit::quantize_request_t> {
-    using namespace wormedit;
-    if (action.compose_quantize_space > static_cast<std::uint8_t>(quantization_space_t::authored_measure) ||
-        action.compose_quantize_tie > static_cast<std::uint8_t>(quantization_tie_t::reject) ||
-        action.compose_quantize_holds > static_cast<std::uint8_t>(quantization_hold_t::both_endpoints))
-        return std::nullopt;
-    const auto legacy = action.compose_quantize_divisions == 0;
-    const auto divisions = legacy ? fallback_divisions : action.compose_quantize_divisions;
-    if (divisions == 0) return std::nullopt;
-    return quantize_request_t{.divisions = divisions,
-                              .space = static_cast<quantization_space_t>(action.compose_quantize_space),
-                              .tie = static_cast<quantization_tie_t>(action.compose_quantize_tie),
-                              .collisions = quantization_collision_t::reject,
-                              .holds = legacy ? quantization_hold_t::both_endpoints
-                                              : static_cast<quantization_hold_t>(action.compose_quantize_holds),
-                              .allow_resolution_promotion = false,
-                              .objects = objects};
-}
-
 auto quantize_settings_valid(const wormedit::quantize_request_t& request) -> bool {
     using namespace wormedit;
     return request.divisions != 0 &&
@@ -3240,8 +3197,7 @@ void share_quantize_grid_with_snap(compose_action_context_t& context, std::uint6
 auto apply_quantize_settings_from_action(compose_action_context_t& context)
     -> std::optional<std::string> {
     auto& editor = quantize_editor_for(context);
-    const auto request = quantize_request_from_action(context.action,
-        context.state.active_snap_denominator, {});
+    const auto request = quantize_request_from_action(context.action, {});
     if (!request) return compose_action_warning(context,
         "Quantization settings must use a positive grid and supported policies.");
     editor.request = *request;
@@ -3288,8 +3244,7 @@ auto save_quantize_preset(compose_action_context_t& context) -> std::string {
     using namespace wormedit;
     const auto length = strnlen(context.action.compose_quantize_preset_name,
                                 sizeof(context.action.compose_quantize_preset_name));
-    const auto request = quantize_request_from_action(context.action,
-        context.state.active_snap_denominator, {});
+    const auto request = quantize_request_from_action(context.action, {});
     if (const auto error = validate_quantize_preset_save(context, length, request))
         return compose_action_warning(context, *error);
     auto proposed = context.history.document;
@@ -3452,13 +3407,19 @@ auto dispatch_compose_area_with_quantize_report(
     application_command_state_t& application_state,
     std::optional<notification_sink_t> notifications) -> std::optional<std::string> {
     using namespace wormedit;
+    if (action.compose_action == WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE &&
+        (application_state.compose_timing_focus || application_state.paste_session ||
+         editor_interaction_has_pending_gesture(state))) {
+        const std::string message = "Quantize requires an idle active Compose chart.";
+        if (notifications) notifications->post(notification_severity_t::warning, notification_source_t::input, message);
+        return message;
+    }
     const auto revision = history.document.revision;
     std::optional<quantize_preview_t> report;
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE) {
         const auto chart = std::ranges::find(history.document.charts, state.chart,
                                              &chart_document_t::id);
-        auto request = quantize_request_from_action(action, state.active_snap_denominator,
-                                                          state.selected_notes);
+        auto request = quantize_request_from_action(action, state.selected_notes);
         if (chart != history.document.charts.end() && request) {
             request->objects.clear();
             request->selection = editor_quantize_selection(state);

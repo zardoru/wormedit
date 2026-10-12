@@ -135,7 +135,6 @@ typedef enum WormUiWorkspaceActionKind {
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK,
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE,
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH,
-    WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_LOOP_SELECTION,
     WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET,
     WORM_UI_WORKSPACE_ACTION_SELECT_SOUND_RESOURCE,
     WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE,
@@ -2701,7 +2700,6 @@ typedef enum WormUiComposeInputKind {
        snapped row, in the channel of the marker named by object_id. */
     /* The selected playable notes were dropped on the BGM area; lane_id is the BGM source lane
        under the pointer (0 for none). BMSON stem taps return to their stem's lane. */
-    WORM_UI_COMPOSE_INPUT_NOTE_MOVE_TO_BGM,
     /* A BGM event was dropped on the playable field: lane_id is the playfield lane under the
        pointer and object_id the dragged event. It keeps its row and becomes a tap. */
     WORM_UI_COMPOSE_INPUT_BGM_MOVE_TO_LANE,
@@ -2899,6 +2897,7 @@ typedef struct WormUiTimingTarget {
 
 typedef struct WormUiWorkspaceAction {
     char menu_command_id[96];
+    bool compose_menu_command;
     WormUiClipboardAction clipboard;
     WormUiNotificationAction notifications;
     WormUiOptionsAction options;
@@ -2930,11 +2929,6 @@ typedef struct WormUiWorkspaceAction {
     bool hover_source_frame_valid;
     uint64_t hover_source_total_frames;
     uint32_t hover_source_sample_rate;
-    uint64_t transport_loop_chart_id;
-    uint64_t transport_loop_document_revision;
-    uint64_t transport_loop_begin_row;
-    uint64_t transport_loop_end_row;
-    bool transport_loop_enabled;
     uint8_t transport_rate_index;
     bool transport_keep_pitch;
     uint64_t audio_asset_id;

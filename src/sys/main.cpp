@@ -1,3 +1,4 @@
+#include "sys/compose_note_to_bgm.h"
 #include "sys/compose_sound_selection.h"
 #if defined(WORMEDIT_HAS_MACOS_MENU)
 #include "sys/macos_menu.h"
@@ -1735,12 +1736,8 @@ void refresh_semantic_membership_commands(wormedit::command_registry_t& registry
 auto bgm_move_enabled(const wormedit::chart_document_t* chart,
                        const std::optional<wormedit::editor_interaction_state_t>& state,
                        bool ready, bool pending, const application_command_state_t& application) -> bool {
-    if (!ready || pending || !chart || chart->source_family != wormedit::format_family_t::bms ||
-        application.paste_session || !wormedit::ui::compose_notes_editable(compose_mode_of(application)))
-        return false;
-    return !state->selected_notes.empty() || std::ranges::any_of(state->selected_objects, [](const auto& object) {
-        return object.kind == wormedit::editor_selection_object_kind_t::note;
-    });
+    return ready && !pending && chart && state &&
+        wormedit::sys::compose_move_to_bgm_available(*chart, *state, application);
 }
 
 void attach_bgm_shortcut(WormUiComposeView& view, const wormedit::command_registry_t& registry) {
@@ -2004,13 +2001,14 @@ void dispatch_menu_command(WormUiWorkspaceAction& action,
          action.compose_input_chart_id != (workspace.selected_chart ? workspace.selected_chart->value : 0) ||
          action.compose_input_document_revision != history.document.revision ||
          static_cast<int>(action.tab) != static_cast<int>(workspace.active_tab))) return;
+    if (!wormedit::sys::compose_menu_command_is_current(action, history, workspace)) return;
     // SDL forwards key events before AppKit invokes key equivalents. Retire that
     // same chord so a menu shortcut cannot run the registry command twice.
     if (!action.command_menu_invoked) consume_menu_shortcut(action, registry);
     refresh_application_command_states(registry, history, workspace, compose, application);
     auto focus = application_command_focus(action, workspace);
     // Activation closes the palette; its own search field must not consume the command.
-    if (action.command_menu_invoked) focus.text_entry_active = false;
+    if (action.command_menu_invoked || action.compose_menu_command) focus.text_entry_active = false;
     const auto result = wormedit::invoke_command(registry, {command_id}, focus);
     if (!result.diagnostics.empty()) post_shortcut_rejection(notifications, registry, result);
 }

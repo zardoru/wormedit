@@ -35,6 +35,17 @@ auto accept_editor_command(const wormedit::editor_interaction_result_t& result,
                            notification_severity_t accepted_severity,
                            notification_source_t source) -> wormedit::command_invocation_result_t;
 
+// Stamped Compose activations must be checked before refreshing/invoking the registry.
+inline auto compose_menu_command_is_current(const WormUiWorkspaceAction& action,
+    const document_history_t& history, const workspace_controller_t& workspace) -> bool {
+    return !action.compose_menu_command ||
+        (action.shortcut_window_focused && !action.shortcut_ime_composition_active &&
+         workspace.active_tab == workspace_tab_t::compose &&
+         action.compose_input_project_id == history.document.id.value &&
+         workspace.selected_chart && action.compose_input_chart_id == workspace.selected_chart->value &&
+         action.compose_input_document_revision == history.document.revision);
+}
+
 // External-player, play/pause, play-from-start, and cancel/restore callbacks own
 // publication at their typed producer bridge. Their returned text is retained for
 // legacy callers; this dispatcher does not classify or repost that prose.

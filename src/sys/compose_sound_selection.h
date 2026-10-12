@@ -3,6 +3,7 @@
 #include "sys/compose_view.h"
 #include <algorithm>
 #include <cmath>
+#include <variant>
 #include <wormedit/core/sound_selection.h>
 
 namespace wormedit::sys {
@@ -70,4 +71,26 @@ inline auto compose_same_sound_objects(const wormedit::song_document_t& song,
                                                 ? application.semantic_layer_target
                                                 : std::nullopt});
 }
+// The menu supplies its clicked source; shortcuts use hover/selection/dock order.
+// Scope changes the query range, never the guards or empty-source behavior.
+inline auto compose_same_sound_request(const song_document_t& song, const chart_document_t& chart,
+    const editor_interaction_state_t& state, const application_command_state_t& application,
+    bool visible, editor_area_selection_mode_t mode, std::optional<object_id_t> object = std::nullopt,
+    std::optional<resource_id_t> resource = std::nullopt)
+    -> std::variant<select_editor_objects_action_t, std::string> {
+    if (editor_interaction_has_pending_gesture(state) || application.paste_session)
+        return "Finish or cancel the active Compose gesture before selecting sounds.";
+    std::vector<sound_selection_key_t> keys;
+    if (object || resource) {
+        const auto key = resource ? sound_selection_resource_key(song, chart, *resource)
+                                  : sound_selection_object_key(song, chart, *object);
+        if (key) keys.push_back(*key);
+    } else {
+        keys = compose_sound_selection_keys(song, chart, state, application);
+    }
+    if (keys.empty()) return "Hover a note or select a sound first";
+    return select_editor_objects_action_t{
+        compose_same_sound_objects(song, chart, state, application, keys, visible), mode, false};
+}
+
 } // namespace wormedit::sys

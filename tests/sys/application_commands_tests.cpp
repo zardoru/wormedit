@@ -1103,6 +1103,8 @@ TEST_CASE("Compose area actions reject stale sources and extreme rows atomically
 TEST_CASE("Compose area quantization changes selected notes only", "[unit][sys][commands]") {
     AreaFixture fixture;
     fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE;
+    fixture.action.compose_quantize_divisions = fixture.state.active_snap_denominator;
+    fixture.action.compose_quantize_holds = static_cast<std::uint8_t>(wormedit::quantization_hold_t::both_endpoints);
     CHECK(fixture.dispatch() == "Selected objects quantized.");
     const auto& chart = fixture.history.document.charts.front();
     CHECK(chart.measures.front().notes[0].position.row == 240);
@@ -1212,6 +1214,8 @@ TEST_CASE("Compose area quantization rejects ambiguous identities without edits"
     const auto revision = fixture.history.document.revision;
     const auto position = chart.measures.front().notes.front().position;
     fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE;
+    fixture.action.compose_quantize_divisions = fixture.state.active_snap_denominator;
+    fixture.action.compose_quantize_holds = static_cast<std::uint8_t>(wormedit::quantization_hold_t::both_endpoints);
     CHECK(fixture.dispatch().find("reuses an object ID") != std::string::npos);
     CHECK(fixture.history.document.revision == revision);
     CHECK(chart.measures.front().notes.front().position == position);
@@ -2384,14 +2388,14 @@ TEST_CASE("Project export command opens from every project tab without Compose d
 namespace {
 void selection_require(bool value) { REQUIRE(value); }
 void selection_check(bool value) { CHECK(value); }
-auto invoke_selection_command(TimingInsertFixture& f, std::string id) -> wormedit::command_dispatch_result_t {
+auto invoke_selection_command(TimingInsertFixture& f, std::string id, bool modal = false) -> wormedit::command_dispatch_result_t {
     using namespace wormedit;
     const auto registry = make_default_editor_command_registry([&](const command_invocation_context_t& context) {
         const auto parsed = parse_application_command(context.command.value);
         if (!parsed) return command_invocation_result_t{};
         return f.invoke(parsed->kind);
     });
-    return invoke_command(registry, {std::move(id)}, {.workspace_active = true,
+    return invoke_command(registry, {std::move(id)}, {.modal_active = modal, .workspace_active = true,
         .active_tab = workspace_tab_t::compose, .visible_tabs = {workspace_tab_t::compose}});
 }
 void add_selection_spans(TimingInsertFixture& f) {
@@ -2551,5 +2555,100 @@ TEST_CASE("Registered Cut rejects unsupported recipe clipboard without dropping 
     selection_check(write_native_project(f.fixture.history.document).bytes == original);
     selection_check(f.fixture.history.undo.empty());
     selection_check(f.application_state.recipe_selected == 300);
+}
+#endif
+
+#ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+TEST_CASE("Registered menu verbs reject paste and pending gestures atomically", "[sys][gesture-verbs]") {
+    using namespace wormedit;
+    const auto id = GENERATE("edit.apply_quantize", "markers.add_bookmark", "selection.select_same_sound_chart",
+        "edit.move_to_bgm", "transport.loop_selection", "transport.toggle_loop_selection",
+        "measures.insert_before", "measures.insert_after", "measures.remove_empty",
+        "measures.split_at_cursor");
+    const int owner = GENERATE(0, 1, 2);
+    TimingInsertFixture f;
+    f.fixture.history.document.charts.front().source_family = format_family_t::bms;
+    unsigned calls{};
+    f.application_state.transport_set_loop_selection = [&](auto, auto, auto, auto, bool) { ++calls; return true; };
+    if (owner == 1) f.application_state.paste_session = application_command_state_t::paste_session_t{};
+    else if (owner == 0) f.compose_state->pending_note_duration_gesture.emplace();
+    const auto original = write_native_project(f.fixture.history.document).bytes;
+    const auto selected = f.compose_state->selected_notes;
+    selection_check(!static_cast<bool>(invoke_selection_command(f, id, owner == 2)));
+    selection_check(write_native_project(f.fixture.history.document).bytes == original);
+    selection_check(f.compose_state->selected_notes == selected);
+    selection_check(f.fixture.history.undo.empty());
+    selection_check(calls == 0);
+}
+
+TEST_CASE("Registered Quantize uses panel settings rather than the active snap fallback", "[sys][gesture-verbs]") {
+    TimingInsertFixture f;
+    auto& history = f.fixture.history;
+    f.compose_state->active_snap_denominator = 4;
+    f.application_state.quantize_editor = application_command_state_t::quantize_editor_t{
+        .song = history.document.id, .chart = f.compose_state->chart, .request = {.divisions = 8}};
+    selection_require(static_cast<bool>(invoke_selection_command(f, "edit.apply_quantize")));
+    selection_check(history.document.charts.front().measures.front().notes.front().position.row == 120);
+    selection_check(history.undo.size() == 1);
+    selection_require(undo_document_command(history));
+    selection_check(history.document.charts.front().measures.front().notes.front().position.row == 121);
+}
+
+TEST_CASE("Registered bookmark Add snaps the playing cursor and deduplicates", "[sys][gesture-verbs]") {
+    TimingInsertFixture f;
+    f.application_state.transport_preview_playing = [] { return true; };
+    f.application_state.preview_playhead_absolute_row = 241.0;
+    selection_require(static_cast<bool>(invoke_selection_command(f, "markers.add_bookmark")));
+    const auto& bookmarks = f.fixture.history.document.charts.front().bookmarks;
+    selection_require(bookmarks.size() == 1);
+    selection_check(bookmarks.front().position->row == 240);
+    selection_check(bookmarks.front().label.empty());
+    const auto revision = f.fixture.history.document.revision;
+    (void)invoke_selection_command(f, "markers.add_bookmark");
+    selection_check(f.fixture.history.document.revision == revision);
+    selection_check(f.fixture.history.undo.size() == 1);
+}
+
+TEST_CASE("Registered loop toggle disables without a retained area and shares rejection guards", "[sys][gesture-verbs]") {
+    TimingInsertFixture f;
+    f.compose_state->retained_selection_range.reset();
+    f.application_state.transport_loop_selection_active = [] { return true; };
+    unsigned calls{};
+    f.application_state.transport_set_loop_selection = [&](auto chart, auto revision, auto begin, auto end, bool enabled) {
+        ++calls;
+        selection_check(chart == f.compose_state->chart && revision == f.fixture.history.document.revision);
+        selection_check(!enabled && begin == 0 && end == 0);
+        return true;
+    };
+    selection_require(static_cast<bool>(invoke_selection_command(f, "transport.toggle_loop_selection")));
+    selection_check(calls == 1);
+    selection_check(!static_cast<bool>(invoke_selection_command(f, "transport.loop_selection")));
+    selection_check(calls == 1);
+}
+
+TEST_CASE("Registered measure insert shares Split guards and retains one Undo", "[sys][gesture-verbs]") {
+    TimingInsertFixture f;
+    const auto before = wormedit::write_native_project(f.fixture.history.document).bytes;
+    selection_require(static_cast<bool>(invoke_selection_command(f, "measures.insert_before")));
+    selection_check(f.fixture.history.document.charts.front().measures.size() == 3);
+    selection_check(f.fixture.history.undo.size() == 1);
+    selection_require(wormedit::undo_document_command(f.fixture.history));
+    selection_check(wormedit::write_native_project(f.fixture.history.document).bytes == before);
+}
+
+TEST_CASE("Registered BGM move consumes chart order and rejects Timing focus", "[sys][gesture-verbs]") {
+    using namespace wormedit;
+    TimingInsertFixture f;
+    f.fixture.history.document.charts.front().source_family = format_family_t::bms;
+    f.compose_state->selected_notes = {object_id_t{3}, object_id_t{1}, object_id_t{2}};
+    f.application_state.compose_timing_focus = true;
+    selection_check(!static_cast<bool>(invoke_selection_command(f, "edit.move_to_bgm")));
+    f.application_state.compose_timing_focus = false;
+    for (const auto id : {1ULL, 2ULL, 3ULL}) {
+        selection_require(static_cast<bool>(invoke_selection_command(f, "edit.move_next_to_bgm")));
+        selection_check(f.fixture.history.document.charts.front().measures.front().bgm_events.back().id == object_id_t{id});
+    }
+    selection_check(f.compose_state->selected_notes.empty());
+    selection_check(f.fixture.history.undo.size() == 3);
 }
 #endif

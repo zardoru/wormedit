@@ -63,7 +63,7 @@ auto resolve_compose_paint_cell(
     const wormedit::chart_document_t& chart, const wormedit::editor_hit_test_index_t& index,
     const wormedit::editor_interaction_view_model_t& view, double x, double y,
     double field_left, double field_width, bool downscroll, std::uint64_t snap,
-    const dead_span_projection_t* dead_spans)
+    const dead_span_projection_t* /*dead_spans*/)
     -> std::optional<wormedit::editor_hit_target_t> {
     auto hit_view = view;
     hit_view.active_snap_denominator = snap;
@@ -71,13 +71,6 @@ auto resolve_compose_paint_cell(
         {.x_pixels = x, .y_pixels = downscroll ? view.viewport_height_pixels - y : y,
          .field_left_pixels = field_left, .field_width_pixels = field_width});
     if (!target) return std::nullopt;
-    if (!target->note && dead_spans) {
-        auto bands = project_dead_span_bands(*dead_spans, view.pixels_per_standard_measure /
-            chart.divisions_per_standard_measure, view.viewport_scroll_pixels,
-            view.viewport_height_pixels, downscroll, dead_span_pause_band_pixels);
-        std::erase_if(bands, [](const auto& band) { return band.kind == dead_span_kind_t::warp; });
-        if (pointer_in_dead_span(bands, y)) return std::nullopt;
-    }
     const auto snapped = wormedit::snap_position(chart, index.measures, target->position, snap);
     if (!snapped) return std::nullopt;
     target->position = *snapped;

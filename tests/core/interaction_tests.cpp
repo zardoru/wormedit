@@ -417,18 +417,17 @@ TEST_CASE("BMS cursor crosses authored boundary and pages through virtual #999",
     REQUIRE(last);
     CHECK(state.virtual_bms_cursor_row == 959'040);
     CHECK(last.view->can_move_forward);
-    state.pending_virtual_lane_key =
-        editor_interaction_state_t::virtual_lane_key_t{959'040, lane_id_t{1},
-                                                        history.document.revision};
+    expect_cursor_gesture(static_cast<bool>(dispatch_editor_action(
+        history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{1}})));
     const auto moved = dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
     REQUIRE(moved);
     REQUIRE(moved.view);
-    REQUIRE(moved.view->pending_virtual_hold);
-    CHECK(moved.view->pending_virtual_hold->anchor_row == 959'040);
+    REQUIRE(!moved.view->pending_canvas_keyboard_holds.empty());
+    CHECK(moved.view->pending_canvas_keyboard_holds.front().anchor_row == 959'040);
     CHECK(state.virtual_bms_cursor_row == 959'280);
     REQUIRE(dispatch_editor_action(history, state, cancel_editor_gesture_action_t{}));
-    CHECK_FALSE(state.pending_virtual_lane_key);
+    CHECK_FALSE(state.pending_hold);
     REQUIRE(dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::backward}));
     CHECK(history.document.charts.front().measures.size() == 2);
@@ -517,19 +516,18 @@ TEST_CASE("virtual BMS lane key may move the cursor before confirming a hold",
         history, state, move_edit_cursor_action_t{interaction_direction_t::forward}));
     REQUIRE(state.virtual_bms_cursor_row);
     const auto anchor = *state.virtual_bms_cursor_row;
-    state.pending_virtual_lane_key =
-        editor_interaction_state_t::virtual_lane_key_t{anchor, lane_id_t{1},
-                                                        history.document.revision};
+    expect_cursor_gesture(static_cast<bool>(dispatch_editor_action(
+        history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{1}})));
     const auto moved = dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
     REQUIRE(moved);
     REQUIRE(moved.view);
-    REQUIRE(moved.view->pending_virtual_hold);
-    CHECK(moved.view->pending_virtual_hold->anchor_row == anchor);
+    REQUIRE(!moved.view->pending_canvas_keyboard_holds.empty());
+    CHECK(moved.view->pending_canvas_keyboard_holds.front().anchor_row == anchor);
     REQUIRE(state.virtual_bms_cursor_row);
     const auto end = *state.virtual_bms_cursor_row;
     CHECK(end == anchor + 240);
-    state.pending_virtual_lane_key.reset();
+    state.pending_hold.reset();
     const auto placed = dispatch_editor_action(
         history, state, place_virtual_bms_hold_action_t{anchor, end, lane_id_t{1}});
     REQUIRE(placed);
@@ -586,15 +584,14 @@ TEST_CASE("virtual BMS hold preview shows transitive authored unions before comm
     REQUIRE(dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::forward}));
     REQUIRE(state.virtual_bms_cursor_row == 1'920);
-    state.pending_virtual_lane_key =
-        editor_interaction_state_t::virtual_lane_key_t{1'920, lane_id_t{1},
-                                                       history.document.revision};
+    expect_cursor_gesture(static_cast<bool>(dispatch_editor_action(
+        history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{1}})));
     const auto moved = dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::backward});
     REQUIRE(moved);
     REQUIRE(moved.view);
-    REQUIRE(moved.view->pending_virtual_hold);
-    const auto& preview = *moved.view->pending_virtual_hold;
+    REQUIRE(!moved.view->pending_canvas_keyboard_holds.empty());
+    const auto& preview = moved.view->pending_canvas_keyboard_holds.front();
     CHECK(preview.end_row == 1'680);
     CHECK(preview.head_row == 1'440);
     CHECK(preview.tail_row == 1'920);
@@ -603,7 +600,7 @@ TEST_CASE("virtual BMS hold preview shows transitive authored unions before comm
     CHECK(preview.adds_note);
     CHECK(history.document.charts.front().measures.size() == 2);
     CHECK(history.undo.empty());
-    state.pending_virtual_lane_key.reset();
+    state.pending_hold.reset();
     REQUIRE(dispatch_editor_action(
         history, state, place_virtual_bms_hold_action_t{1'920, 1'680, lane_id_t{1}}));
     REQUIRE(history.document.charts.front().measures[1].notes.size() == 1);
@@ -648,9 +645,8 @@ TEST_CASE("virtual BMS hold preview rejects a protected authored collision",
         jump_edit_cursor_action_t{{measure_id_t{2}, 720}, history.document.revision}));
     REQUIRE(dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::forward}));
-    state.pending_virtual_lane_key =
-        editor_interaction_state_t::virtual_lane_key_t{1'920, lane_id_t{1},
-                                                       history.document.revision};
+    expect_cursor_gesture(static_cast<bool>(dispatch_editor_action(
+        history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{1}})));
     const auto rejected = dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::backward});
     CHECK_FALSE(rejected);
@@ -3004,7 +3000,7 @@ TEST_CASE("two-step hold placement previews, commits across measures, and cancel
     CHECK(merged_note->position == local_position_t{measure_id_t{1}, 0});
     CHECK(merged_note->end == local_position_t{measure_id_t{2}, 240});
 
-    const auto cancelled = dispatch_editor_action(history, state, cancel_hold_action_t{});
+    const auto cancelled = dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
     REQUIRE(cancelled);
     CHECK_FALSE(state.pending_hold.has_value());
     CHECK_FALSE(cancelled.document_changed);
@@ -3951,7 +3947,7 @@ TEST_CASE("hold previews reject stale document revisions and retire captures",
     CHECK(note_count(history) == 0);
 
     history.document.charts.front().lane_layouts.front().layout.lanes.clear();
-    const auto cancelled = dispatch_editor_action(history, state, cancel_hold_action_t{});
+    const auto cancelled = dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
     REQUIRE(cancelled);
     CHECK_FALSE(state.pending_hold.has_value());
     CHECK_FALSE(cancelled.view.has_value());
@@ -4317,6 +4313,16 @@ TEST_CASE("lane assignment remains bounded for fifty thousand selected notes",
     CHECK(history.document.charts.front().measures.front().notes.back().lane == lane_id_t{2});
 }
 
+namespace {
+auto resize_through_duration_gesture(document_history_t& history,
+    editor_interaction_state_t& state, local_position_t end) -> editor_interaction_result_t {
+    auto begun = dispatch_editor_action(history, state,
+        begin_note_duration_gesture_action_t{object_id_t{101}});
+    if (!begun) return begun;
+    return dispatch_editor_action(history, state, release_note_duration_gesture_action_t{end});
+}
+}
+
 TEST_CASE("duration resizing applies the reference delta to every selected note",
           "[unit][core][interaction][selection][hold]") {
     auto song = make_song();
@@ -4341,8 +4347,7 @@ TEST_CASE("duration resizing applies the reference delta to every selected note"
     REQUIRE(dispatch_editor_action(
         history, state, select_editor_notes_action_t{{object_id_t{101}, object_id_t{102}}}));
 
-    const auto expanded = dispatch_editor_action(
-        history, state, resize_note_durations_action_t{object_id_t{101}, {measure_id_t{1}, 480}});
+    const auto expanded = resize_through_duration_gesture(history, state, {measure_id_t{1}, 480});
     REQUIRE(expanded);
     CHECK(expanded.document_changed);
     REQUIRE(find_note(history, object_id_t{101})->end.has_value());
@@ -4350,15 +4355,13 @@ TEST_CASE("duration resizing applies the reference delta to every selected note"
     REQUIRE(find_note(history, object_id_t{102})->end.has_value());
     CHECK(*find_note(history, object_id_t{102})->end == local_position_t{measure_id_t{1}, 720});
 
-    const auto collision = dispatch_editor_action(
-        history, state, resize_note_durations_action_t{object_id_t{101}, {measure_id_t{1}, 720}});
+    const auto collision = resize_through_duration_gesture(history, state, {measure_id_t{1}, 720});
     CHECK_FALSE(collision);
     CHECK(has_code(collision.diagnostics, diagnostic_code_t::collision));
     CHECK(history.document.revision == 2);
     CHECK(*find_note(history, object_id_t{102})->end == local_position_t{measure_id_t{1}, 720});
 
-    const auto collapsed = dispatch_editor_action(
-        history, state, resize_note_durations_action_t{object_id_t{101}, {measure_id_t{1}, 0}});
+    const auto collapsed = resize_through_duration_gesture(history, state, {measure_id_t{1}, 0});
     REQUIRE(collapsed);
     CHECK(collapsed.document_changed);
     CHECK(find_note(history, object_id_t{101})->kind == note_kind_t::tap);
@@ -4388,8 +4391,7 @@ TEST_CASE("duration resizing rejects an atomic selection that would cross a note
     REQUIRE(dispatch_editor_action(
         history, state, select_editor_notes_action_t{{object_id_t{101}, object_id_t{102}}}));
 
-    const auto rejected = dispatch_editor_action(
-        history, state, resize_note_durations_action_t{object_id_t{101}, {measure_id_t{1}, 0}});
+    const auto rejected = resize_through_duration_gesture(history, state, {measure_id_t{1}, 0});
     CHECK_FALSE(rejected);
     CHECK(has_code(rejected.diagnostics, diagnostic_code_t::invalid_hold));
     CHECK(history.document.revision == 1);
@@ -4799,7 +4801,7 @@ TEST_CASE("Note kind arming rejects unsupported kinds and active gestures", "[in
     check_note_kind_condition(state.armed_note_kind == note_kind_t::tap);
     require_note_kind_condition(dispatch_editor_action(history, state, begin_hold_action_t{{measure_id_t{1}, 0}}));
     check_note_kind_condition(!(arm_note_kind(history, state, note_kind_t::mine)));
-    require_note_kind_condition(dispatch_editor_action(history, state, cancel_hold_action_t{}));
+    require_note_kind_condition(dispatch_editor_action(history, state, cancel_editor_gesture_action_t{}));
     require_note_kind_condition(arm_note_kind(history, state, note_kind_t::mine));
     require_note_kind_condition(dispatch_editor_action(history, state, begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}}));
     check_note_kind_condition(!(arm_note_kind(history, state, note_kind_t::tap)));

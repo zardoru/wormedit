@@ -99,6 +99,7 @@ struct place_tap_action_t {
     // The Sounds-dock sample captured with the click. For an armed Hold/Roll it travels with
     // the pending gesture and is written when the end click commits.
     std::optional<resource_id_t> sound;
+    std::optional<bmson_source_geometry_t> source_geometry;
 };
 
 // Absolute row in the sparse BMS canvas. A successful first edit extends the
@@ -107,6 +108,7 @@ struct place_virtual_bms_tap_action_t {
     std::uint64_t canvas_row{};
     lane_id_t lane;
     std::optional<resource_id_t> sample;
+    std::optional<bmson_source_geometry_t> source_geometry;
 };
 
 struct place_virtual_bms_hold_action_t {
@@ -114,6 +116,7 @@ struct place_virtual_bms_hold_action_t {
     std::uint64_t end_canvas_row{};
     lane_id_t lane;
     std::optional<resource_id_t> sound;
+    std::optional<bmson_source_geometry_t> source_geometry;
 };
 
 // Hold authoring is a two-step gesture. Beginning stores an exact snapped
@@ -131,8 +134,6 @@ struct commit_hold_action_t {
     local_position_t position;
     std::optional<bmson_source_geometry_t> source_geometry;
 };
-
-struct cancel_hold_action_t {};
 
 enum class hold_gesture_source_t {
     keyboard_lane,
@@ -156,6 +157,7 @@ struct begin_alt_pointer_hold_gesture_action_t {
     bool alt_or_option_down{true};
     // Captured at press, like a lane key: later changes to the armed sound do not retarget it.
     std::optional<resource_id_t> sound;
+    std::optional<bmson_source_geometry_t> source_geometry;
 };
 
 struct update_alt_pointer_hold_gesture_action_t {
@@ -343,6 +345,7 @@ struct begin_note_paint_gesture_action_t {
     // its sound_layer_defaults). Empty paints silent notes.
     std::optional<resource_id_t> sound;
     note_paint_intent_t intent{note_paint_intent_t::toggle};
+    std::optional<bmson_source_geometry_t> source_geometry;
 };
 
 struct update_note_paint_gesture_action_t {
@@ -425,14 +428,6 @@ struct select_editor_objects_action_t {
 
 struct delete_editor_selection_action_t {};
 
-// The reference end is an unsnapped pointer/cursor position. Its snapped
-// duration delta is applied atomically to the selected notes when the
-// reference belongs to the selection, otherwise only the reference changes.
-struct resize_note_durations_action_t {
-    object_id_t reference_note;
-    local_position_t reference_end;
-};
-
 struct select_editor_lane_action_t {
     lane_id_t lane;
 };
@@ -473,7 +468,7 @@ using editor_ui_action_t = std::variant<
     cycle_edit_snap_action_t, place_tap_action_t, place_virtual_bms_tap_action_t,
     place_virtual_bms_hold_action_t,
     begin_hold_action_t, update_hold_preview_action_t,
-    commit_hold_action_t, cancel_hold_action_t, begin_lane_key_hold_gesture_action_t,
+    commit_hold_action_t, begin_lane_key_hold_gesture_action_t,
     release_lane_key_hold_gesture_action_t, begin_alt_pointer_hold_gesture_action_t,
     update_alt_pointer_hold_gesture_action_t, release_alt_pointer_hold_gesture_action_t,
     begin_note_duration_gesture_action_t, update_note_duration_gesture_action_t,
@@ -486,7 +481,6 @@ using editor_ui_action_t = std::variant<
     commit_editor_area_selection_action_t, cancel_editor_area_selection_action_t,
     space_range_selection_action_t, cancel_editor_gesture_action_t, select_editor_notes_action_t,
     select_editor_objects_action_t, delete_editor_selection_action_t,
-    resize_note_durations_action_t,
     select_editor_lane_action_t, assign_selected_objects_to_lane_action_t,
     adjust_editor_zoom_action_t, scroll_editor_view_action_t, set_edit_snap_action_t>;
 
@@ -518,6 +512,10 @@ struct pending_hold_t {
     std::optional<hold_gesture_source_t> gesture_source;
     // Captured on key-down; changing the armed sound must not retarget a held key.
     std::optional<resource_id_t> sound;
+
+    note_kind_t kind{note_kind_t::tap};
+    std::optional<std::vector<layer_id_t>> layers;
+    std::shared_ptr<const bmson_source_geometry_t> source_geometry;
 
     auto operator==(const pending_hold_t&) const -> bool = default;
 };
@@ -602,6 +600,9 @@ struct pending_note_paint_gesture_t {
     local_position_t last_position;
     std::optional<resource_id_t> sound;
     note_paint_intent_t intent{note_paint_intent_t::toggle};
+    note_kind_t kind{note_kind_t::tap};
+    std::optional<std::vector<layer_id_t>> layers;
+    std::optional<bmson_source_geometry_t> source_geometry;
 };
 
 struct note_paint_gesture_preview_t {
@@ -690,13 +691,6 @@ struct editor_interaction_state_t {
     // Non-authoring signed offset, in chart rows, from `cursor` to where it is drawn: set while
     // following audio or scrolling with a fixed cursor anchor; other cursor moves clear it.
     double cursor_subrow{};
-    struct virtual_lane_key_t {
-        std::uint64_t canvas_row{};
-        lane_id_t lane;
-        std::uint64_t document_revision{};
-        std::optional<resource_id_t> sound;
-    };
-    std::optional<virtual_lane_key_t> pending_virtual_lane_key;
     std::vector<std::uint64_t> supported_snap_denominators;
     std::uint64_t active_snap_denominator{};
     bool active_snap_was_fallback{};

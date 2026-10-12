@@ -7,7 +7,7 @@
 namespace wormedit {
 
 enum class editor_gesture_kind_t {
-    hold, keyboard_holds, virtual_hold, duration, move, paint, semantic_paint, area, range
+    hold, keyboard_holds, duration, move, paint, semantic_paint, area, range
 };
 
 // The only inventory of pending core gesture fields. Consumers supply policy, not inventories.
@@ -16,7 +16,6 @@ void visit_editor_gestures(State& state, Visitor&& visit) {
     const auto fields = std::tuple{
         std::pair{editor_gesture_kind_t::hold, &editor_interaction_state_t::pending_hold},
         std::pair{editor_gesture_kind_t::keyboard_holds, &editor_interaction_state_t::additional_keyboard_holds},
-        std::pair{editor_gesture_kind_t::virtual_hold, &editor_interaction_state_t::pending_virtual_lane_key},
         std::pair{editor_gesture_kind_t::duration, &editor_interaction_state_t::pending_note_duration_gesture},
         std::pair{editor_gesture_kind_t::move, &editor_interaction_state_t::pending_note_move_gesture},
         std::pair{editor_gesture_kind_t::paint, &editor_interaction_state_t::pending_note_paint_gesture},

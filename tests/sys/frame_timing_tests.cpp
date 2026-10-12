@@ -6255,7 +6255,6 @@ TEST_CASE("Select lane keys cannot start notes at authored or virtual cursor row
     const auto revision = f.compose.history.document.revision;
     (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
     expect_compose_test(!f.compose.interaction->pending_hold);
-    expect_compose_test(!f.compose.interaction->pending_virtual_lane_key);
     expect_compose_test(f.compose.interaction->additional_keyboard_holds.empty());
     (void)f.dispatch(WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD);
     (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE);

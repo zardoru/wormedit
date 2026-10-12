@@ -6872,3 +6872,288 @@ TEST_CASE("Actual same-sound clicks reject a note without a sound without cleari
     expect_t422(f.interaction->selected_notes == selected);
     expect_t422(f.history.undo.empty());
 }
+
+namespace {
+auto placement_point(t422_fixture_t& f, std::uint64_t row, std::uint64_t lane)
+    -> std::pair<float, float> {
+    (void)f.harness.frame();
+    const auto viewport = compose_canvas_viewport_for_testing();
+    expect_t422(viewport.has_value());
+    const auto& view = f.harness.view().compose;
+    const auto lanes = std::span{view.lanes, view.lane_count};
+    const auto found = std::ranges::find(lanes, lane, &WormUiComposeLaneView::lane_id);
+    expect_t422(found != lanes.end());
+    const auto x = (found->bounds.left + found->bounds.right) / 2;
+    const auto y = row * f.interaction->pixels_per_standard_measure / 960.0 -
+                   f.interaction->viewport_scroll_pixels;
+    return {viewport->x + static_cast<float>(x * viewport->width / view.viewport_width_pixels),
+            viewport->y + static_cast<float>((view.downscroll ? view.viewport_height_pixels - y : y) * viewport->height / view.viewport_height_pixels)};
+}
+
+void placement_press(t422_fixture_t& f, std::pair<float, float> point) {
+    const std::array events{motion_event(point.first, point.second),
+        button_event(true, point.first, point.second)};
+    (void)f.dispatch(f.harness.frame(events));
+}
+
+void placement_release(t422_fixture_t& f, std::pair<float, float> point) {
+    const std::array events{motion_event(point.first, point.second),
+        button_event(false, point.first, point.second)};
+    (void)f.dispatch(f.harness.frame(events));
+}
+
+void prepare_placement(t422_fixture_t& f) {
+    f.interaction->selected_notes.clear();
+    f.interaction->selected_objects.clear();
+    f.application.note_paint_mode_active = true;
+    f.project();
+    (void)f.harness.frame();
+}
+}
+
+TEST_CASE("Production paint release outside the field commits its visited cells",
+          "[frontend-state][event-harness][row-placement]") {
+    t422_fixture_t f{t422_song()};
+    prepare_placement(f);
+    placement_press(f, placement_point(f, 120, 2));
+    expect_t422(f.interaction->pending_note_paint_gesture.has_value());
+    placement_release(f, {1790, 1390});
+    expect_t422(f.history.undo.size() == 1);
+    expect_t422(!(has_pending_editor_gesture(*f.interaction)));
+}
+
+TEST_CASE("Production paint captures kind and layers at its beginning",
+          "[frontend-state][event-harness][row-placement]") {
+    t422_fixture_t f{t422_song()};
+    f.application.semantic_layer_target_none = true;
+    prepare_placement(f);
+    const auto point = placement_point(f, 120, 2);
+    placement_press(f, point);
+    expect_t422(f.interaction->pending_note_paint_gesture.has_value());
+    f.interaction->armed_note_kind = note_kind_t::mine;
+    f.application.semantic_layer_target_none = false;
+    f.application.semantic_layer_target = layer_id_t{7};
+    placement_release(f, point);
+    const auto& notes = f.history.document.charts.front().measures.front().notes;
+    const auto placed = std::ranges::find(notes, lane_id_t{2}, &note_t::lane);
+    expect_t422(placed != notes.end());
+    expect_t422(placed->kind == note_kind_t::tap);
+    expect_t422(placed->semantic_layers.empty());
+}
+
+TEST_CASE("Pause event rows permit production pointer and lane-key placement at every zoom",
+          "[frontend-state][event-harness][row-placement]") {
+    const auto kind = GENERATE(pause_kind_t::stop, pause_kind_t::delay);
+    const auto pixels = GENERATE(192.0, 768.0);
+    const auto keyboard = GENERATE(false, true);
+    auto song = t422_song();
+    song.charts.front().pauses.push_back({.id = object_id_t{200},
+        .position = {measure_id_t{1}, 240}, .kind = kind, .duration = {1, 2}});
+    t422_fixture_t f{std::move(song)};
+    f.interaction->pixels_per_standard_measure = pixels;
+    f.interaction->cursor = {measure_id_t{1}, 240};
+    prepare_placement(f);
+    if (keyboard) {
+        (void)t422_lane_press(f, SDL_KMOD_NONE);
+    } else {
+        const auto point = placement_point(f, 240, 2);
+        placement_press(f, point);
+        placement_release(f, point);
+    }
+    const auto& notes = f.history.document.charts.front().measures.front().notes;
+    const auto placed = std::ranges::find(notes, lane_id_t{2}, &note_t::lane);
+    expect_t422(placed != notes.end());
+    expect_t422(placed->position == local_position_t{measure_id_t{1}, 240});
+    expect_t422(f.history.undo.size() == 1);
+}
+
+TEST_CASE("Virtual Hold and Roll clicks share the authored gesture owner and commit once",
+          "[frontend-state][event-harness][row-placement]") {
+    const auto kind = GENERATE(note_kind_t::hold, note_kind_t::roll);
+    const auto same_row = GENERATE(false, true);
+    auto song = t424_song();
+    if (kind == note_kind_t::roll) {
+        song.charts.front().source_family = format_family_t::native_project;
+        song.charts.front().virtual_tail_measures = 1000;
+    }
+    t422_fixture_t f{std::move(song)};
+    f.interaction->armed_note_kind = kind;
+    prepare_placement(f);
+    const auto point = placement_point(f, 2400, 2);
+    for (const auto& frame : click_at(f.harness, point.first, point.second))
+        (void)f.dispatch(frame);
+    expect_t422(f.interaction->pending_hold.has_value());
+    expect_t422(f.history.undo.empty());
+    expect_t422(f.history.document.charts.front().measures.size() == 2);
+    f.project();
+    const auto end = placement_point(f, same_row ? 2400 : 2640, 2);
+    for (const auto& frame : click_at(f.harness, end.first, end.second))
+        (void)f.dispatch(frame);
+    expect_t422(!(has_pending_editor_gesture(*f.interaction)));
+    expect_t422(f.history.undo.size() == (same_row ? 0 : 1));
+    if (!same_row) {
+        const auto& notes = f.history.document.charts.front().measures.back().notes;
+        expect_t422(notes.size() == 1);
+        expect_t422(notes.front().kind == kind);
+        expect_t422(notes.front().end == local_position_t{measure_id_t{3}, 720});
+        expect_t422(static_cast<bool>(undo_document_command(f.history)));
+        expect_t422(f.history.document.charts.front().measures.size() == 2);
+    }
+}
+
+TEST_CASE("Virtual lane keys reject same-row Hold and Roll without publishing or retaining a gesture",
+          "[frontend-state][event-harness][row-placement]") {
+    const auto kind = GENERATE(note_kind_t::hold, note_kind_t::roll);
+    auto song = t424_song();
+    if (kind == note_kind_t::roll) {
+        song.charts.front().source_family = format_family_t::native_project;
+        song.charts.front().virtual_tail_measures = 1000;
+    }
+    t422_fixture_t f{std::move(song)};
+    f.interaction->armed_note_kind = kind;
+    f.interaction->virtual_bms_cursor_row = 2400;
+    prepare_placement(f);
+    (void)t422_lane_press(f, SDL_KMOD_NONE);
+    expect_t422(f.history.undo.empty());
+    expect_t422(f.history.document.charts.front().measures.size() == 2);
+    expect_t422(!(has_pending_editor_gesture(*f.interaction)));
+}
+
+namespace {
+auto placement_stem_song() -> song_document_t {
+    auto song = t422_song();
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bmson;
+    for (auto& measure : chart.measures) measure.notes.clear();
+    song.resources.front().sound_kind = sound_kind_t::stem;
+    song.resources.front().roles.push_back(resource_role_t::bgm);
+    chart.sound_channels = {{.id = object_id_t{300},
+        .source_clip = {clip_id_t{300}, asset_id_t{1}, 0, std::nullopt},
+        .events = {{.id = object_id_t{400}, .position = {measure_id_t{1}, 0}, .playable = false}}}};
+    chart.bgm_source_lanes = {{.id = object_id_t{600}, .stem_channel = object_id_t{300}}};
+    chart.measures.front().bgm_events = {{.id = object_id_t{500},
+        .position = {measure_id_t{1}, 0}, .source_lane = object_id_t{600},
+        .sound = resource_id_t{1}, .sound_channel_event = object_id_t{400}}};
+    return song;
+}
+}
+
+TEST_CASE("Production click-click stem holds retain decoded geometry through release",
+          "[frontend-state][event-harness][row-placement]") {
+    const auto short_source = GENERATE(false, true);
+    t422_fixture_t f{placement_stem_song()};
+    f.interaction->armed_note_kind = note_kind_t::hold;
+    f.application.draw_source_kind = 1;
+    f.application.draw_source_id = 1;
+    prepare_placement(f);
+    auto& ui = worm_ui_nuklear_compose_state();
+    ui.armed_resource_id = 1;
+    ui.armed_from_sounds_dock = true;
+    f.cache.stem_index.built = true;
+    f.cache.stem_index.document = f.history.document.id;
+    f.cache.stem_index.chart = chart_id_t{1};
+    f.cache.stem_index.revision = f.history.document.revision;
+    f.cache.stem_index.bindings = {{.asset = asset_id_t{1}, .source_sample_rate = 48000,
+        .source_frame_count = short_source ? 1000U : 480000U}};
+    const auto start = placement_point(f, 240, 2);
+    for (const auto& frame : click_at(f.harness, start.first, start.second))
+        (void)f.dispatch(frame);
+    expect_t422(f.interaction->pending_hold.has_value());
+    expect_t422(f.interaction->pending_hold->source_geometry != nullptr);
+    f.project();
+    f.cache.stem_index.bindings.clear();
+    const auto end = placement_point(f, 480, 2);
+    for (const auto& frame : click_at(f.harness, end.first, end.second))
+        (void)f.dispatch(frame);
+    const auto& chart = f.history.document.charts.front();
+    expect_t422(chart.measures.front().notes.size() == 1);
+    expect_t422(chart.measures.front().notes.front().sound_channel_event.has_value());
+    expect_t422(chart.measures.front().notes.front().end == local_position_t{measure_id_t{1}, 480});
+    expect_t422(chart.sound_channels.front().events.back().continuation == !short_source);
+    expect_t422(f.history.undo.size() == 1);
+    expect_t422(!(has_pending_editor_gesture(*f.interaction)));
+    expect_t422(f.history.document.audio_assets.front().stream.sample_rate == 0);
+}
+
+TEST_CASE("Production virtual lane chords survive independent materialization and releases",
+          "[frontend-state][event-harness][row-placement]") {
+    t422_fixture_t f{t424_song()};
+    f.interaction->armed_note_kind = note_kind_t::hold;
+    f.interaction->virtual_bms_cursor_row = 2400;
+    prepare_placement(f);
+    const auto first = key_event(SDL_EVENT_KEY_DOWN, SDLK_1, SDL_SCANCODE_1);
+    const auto second = key_event(SDL_EVENT_KEY_DOWN, SDLK_2, SDL_SCANCODE_2);
+    (void)f.dispatch(f.harness.frame(std::span{&first, 1}));
+    (void)f.dispatch(f.harness.frame(std::span{&second, 1}));
+    expect_t422(f.interaction->additional_keyboard_holds.size() == 1);
+    const auto forward = key_event(SDL_EVENT_KEY_DOWN, SDLK_UP, SDL_SCANCODE_UP);
+    (void)f.dispatch(f.harness.frame(std::span{&forward, 1}));
+    const auto first_up = key_event(SDL_EVENT_KEY_UP, SDLK_1, SDL_SCANCODE_1);
+    (void)f.dispatch(f.harness.frame(std::span{&first_up, 1}));
+    expect_t422(f.interaction->pending_hold.has_value());
+    expect_t422(f.history.undo.size() == 1);
+    f.project();
+    const auto second_up = key_event(SDL_EVENT_KEY_UP, SDLK_2, SDL_SCANCODE_2);
+    (void)f.dispatch(f.harness.frame(std::span{&second_up, 1}));
+    expect_t422(f.history.undo.size() == 2);
+    expect_t422(!(has_pending_editor_gesture(*f.interaction)));
+    expect_t422(f.history.document.charts.front().measures.back().notes.size() == 2);
+}
+
+TEST_CASE("Production unsnapped paint walks adjacent rows with the shared grid path",
+          "[frontend-state][event-harness][row-placement]") {
+    t422_fixture_t f{t422_song()};
+    f.application.edit_snap_enabled = false;
+    f.interaction->pixels_per_standard_measure = 960;
+    prepare_placement(f);
+    placement_press(f, placement_point(f, 240, 2));
+    const auto end = placement_point(f, 248, 2);
+    const auto motion = motion_event(end.first, end.second);
+    (void)f.dispatch(f.harness.frame(std::span{&motion, 1}));
+    placement_release(f, end);
+    std::vector<std::uint64_t> rows;
+    for (const auto& note : f.history.document.charts.front().measures.front().notes)
+        if (note.lane == lane_id_t{2}) rows.push_back(note.position.row);
+    std::ranges::sort(rows);
+    expect_t422(rows.size() >= 2);
+    for (std::size_t i = 1; i < rows.size(); ++i) expect_t422(rows[i] == rows[i - 1] + 1);
+    expect_t422(f.history.undo.size() == 1);
+}
+
+TEST_CASE("Production pointer paste and note drag use the valid Stop event row",
+          "[frontend-state][event-harness][row-placement]") {
+    const auto paste = GENERATE(false, true);
+    auto song = t422_song();
+    song.charts.front().pauses.push_back({.id = object_id_t{200},
+        .position = {measure_id_t{1}, 240}, .duration = {1, 2}});
+    t422_fixture_t f{std::move(song)};
+    f.interaction->selected_notes = {object_id_t{101}};
+    f.interaction->selected_objects = {{editor_selection_object_kind_t::note, object_id_t{101}}};
+    if (paste) {
+        auto copied = copy_chart_selection(f.history.document, *f.interaction, f.history.document.revision);
+        expect_t422(static_cast<bool>(copied));
+        f.application.chart_clipboard = std::move(copied.clipboard);
+        std::string status;
+        expect_t422(begin_compose_paste(f.application, f.history.document, *f.interaction, status));
+        f.project();
+        const auto target = placement_point(f, 240, 1);
+        for (const auto& frame : click_at(f.harness, target.first, target.second))
+            (void)f.dispatch(frame);
+    } else {
+        f.project();
+        const auto source = t422_note_screen_center(f, 101);
+        expect_t422(source.has_value());
+        placement_press(f, *source);
+        const auto target = placement_point(f, 240, 1);
+        const auto motion = motion_event(target.first, target.second);
+        (void)f.dispatch(f.harness.frame(std::span{&motion, 1}));
+        placement_release(f, target);
+    }
+    expect_t422(f.history.undo.size() == 1);
+    const auto& notes = f.history.document.charts.front().measures.front().notes;
+    expect_t422(std::ranges::any_of(notes, [](const auto& note) {
+        return note.position == local_position_t{measure_id_t{1}, 240} && note.lane == lane_id_t{1};
+    }));
+    expect_t422(static_cast<bool>(undo_document_command(f.history)));
+    expect_t422(t422_note(f.history, 101)->position == local_position_t{measure_id_t{1}, 120});
+}

@@ -511,7 +511,7 @@ struct dead_span_fixture_t : compose_notification_fixture_t {
 };
 } // namespace
 
-TEST_CASE("pasting with the pointer inside a Stop band is rejected and changes nothing",
+TEST_CASE("pasting inside a visual Stop band uses its valid chart row",
           "[unit][sys][compose-notification][dead-span]") {
     dead_span_fixture_t fixture;
     fixture.state.selected_notes = {object_id_t{1}};
@@ -524,11 +524,12 @@ TEST_CASE("pasting with the pointer inside a Stop band is rejected and changes n
     const auto y = fixture.stop_band_y();
     (void)fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_PASTE_UPDATE, .x_pixels = fixture.lane_x(), .y_pixels = y},
                        {.kind = WORM_UI_COMPOSE_INPUT_PASTE_COMMIT}});
-    fixture.check_document_unchanged();
-    CHECK(fixture.history.document.charts.front().measures.front().notes.size() == 1);
+    CHECK(fixture.history.document.revision == fixture.before_revision + 1);
+    CHECK(fixture.history.undo.size() == 1);
+    CHECK(fixture.history.document.charts.front().measures.front().notes.size() == 2);
 }
 
-TEST_CASE("dropping a dragged note into a Stop band is rejected and changes nothing",
+TEST_CASE("dropping a dragged note inside a visual Stop band uses its valid chart row",
           "[unit][sys][compose-notification][dead-span]") {
     dead_span_fixture_t fixture;
     fixture.state.selected_notes = {object_id_t{1}};
@@ -538,9 +539,10 @@ TEST_CASE("dropping a dragged note into a Stop band is rejected and changes noth
     const auto y = fixture.stop_band_y();
     (void)fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE, .x_pixels = fixture.lane_x(), .y_pixels = y},
                        {.kind = WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE, .x_pixels = fixture.lane_x(), .y_pixels = y}});
-    fixture.check_document_unchanged();
+    CHECK(fixture.history.document.revision == fixture.before_revision + 1);
+    CHECK(fixture.history.undo.size() == 1);
     CHECK(fixture.history.document.charts.front().measures.front().notes.front().position ==
-          local_position_t{measure_id_t{1}, 120});
+          local_position_t{measure_id_t{1}, 480});
 }
 
 TEST_CASE("a lane key at a cursor inside a Warp places nothing",

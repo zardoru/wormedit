@@ -674,3 +674,26 @@ TEST_CASE("Layer assist queue toggles independently and seeks without replacing 
     check_audio_condition(std::ranges::count(active.voices, voice_kind_t::layer_assist,
                                             &transport_voice_t::kind) == 2);
 }
+
+TEST_CASE("Preview seek preserves every layer's stable BGM mix group",
+          "[audio][preview-bridge][bgm-mix]") {
+    decoded_block_cache_t cache;
+    auto transport = transport_for(cache);
+    preview_transport_bridge_t bridge{transport};
+    auto chart = schedule();
+    chart.bgm = {audio_event(0, 1)};
+    auto layered = binding();
+    layered.voices.front().mix_group = 77;
+    layered.voices.push_back(layered.voices.front());
+    const std::array objects{layered};
+    const auto started = bridge.start(chart, objects, {}, 5);
+    require_audio_condition(static_cast<bool>(started));
+    check_audio_condition(bridge.materialize_until(6).scheduled_events == 1);
+    const auto voices = transport.snapshot_active_voices(*started.token);
+    require_audio_condition(static_cast<bool>(voices));
+    require_audio_condition(voices.voices.size() == 2);
+    for (const auto& voice : voices.voices) {
+        check_audio_condition(voice.mix_group == 77);
+        check_audio_condition(voice.source_start_frame == 5);
+    }
+}

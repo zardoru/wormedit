@@ -23,6 +23,10 @@ struct preview_feedback_t {
     bool accepted{};
 };
 
+// Assign source-lane mix identity without changing source ranges or authored data.
+void assign_preview_bgm_mix_groups(const chart_document_t& chart,
+    std::span<audio::preview_object_source_binding_t> bindings);
+
 struct chart_preview_t {
     std::optional<preview_schedule_t> schedule;
     std::optional<timing_index_t> timing;
@@ -35,6 +39,10 @@ struct chart_preview_t {
     std::uint64_t end_frame{};
     std::size_t skipped_unavailable_audio_objects{};
     bool paused{};
+    std::optional<chart_id_t> bgm_mix_chart;
+    std::vector<std::uint64_t> bgm_muted_lanes;
+    void set_bgm_mix(chart_id_t selected, std::span<const std::uint64_t> muted,
+                     audio::preview_session_t& session);
     std::optional<chart_id_t> layer_assist_chart;
     std::vector<layer_id_t> layer_assist_layers;
     [[nodiscard]] auto layer_assist_frames() const -> std::vector<std::uint64_t>;

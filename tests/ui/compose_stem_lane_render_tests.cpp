@@ -141,7 +141,7 @@ void check_stem_header_golden(double width, bool stem, const char* expected,
 }
 TEST_CASE("Stem headers retain useful UTF8 filenames and compact BGM numbers",
           "[ui][field][compose][stem-lane-width][isolated-software-render]") {
-    check_stem_header_golden(96, true, "音楽12345678…");
+    check_stem_header_golden(96, true, "音楽1234…");
     check_stem_header_golden(36, true, "音楽1…");
     check_stem_header_golden(96, false, "1");
     check_stem_header_golden(36, false, "1");

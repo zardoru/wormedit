@@ -1362,6 +1362,8 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
         state.timing_marker_candidate_active || state.timing_marker_drag_active ||
         state.waveform_beat_zero_drag_active || state.waveform_overview_drag_active ||
         beat_fit_pointer_consumed;
+    const auto mix_consumed = process_bgm_mix_controls(pointer_event, compose_pointer_captured);
+    compose_pointer_captured |= mix_consumed;
     const auto resize_consumed = process_stem_lane_resize(pointer_event, double_clicks,
                                                           double_click_count, compose_pointer_captured);
     compose_pointer_captured |= resize_consumed;
@@ -1381,7 +1383,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     pointer_event.compose_note_double_click_in_view = compose_note_double_click_in_view;
     bool paint_pointer_consumed =
         state.inline_timing_open || state.bookmark_rename.active || state.bookmark_rename.release_pending || state.note_paint_pointer_active ||
-        beat_fit_pointer_consumed || resize_consumed ||
+        beat_fit_pointer_consumed || resize_consumed || mix_consumed ||
         state.bmson_razor_pointer_active || state.bmson_marker_move_candidate_active ||
         state.bmson_marker_move_active || state.semantic_layer_paint_pointer_active ||
         compose_action_has_cancel(action);

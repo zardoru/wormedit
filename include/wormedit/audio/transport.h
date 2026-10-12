@@ -11,6 +11,7 @@
 #include <optional>
 #include <span>
 #include <vector>
+#include <unordered_set>
 
 namespace wormedit::audio {
 
@@ -31,6 +32,8 @@ struct transport_voice_t {
     std::uint64_t source_start_frame{};
     std::uint64_t frame_count{};
     float gain{1.0F};
+    // Stable BGM lane identity; zero is outside the lane mix.
+    std::uint64_t mix_group{};
 
     auto operator==(const transport_voice_t&) const -> bool = default;
 };
@@ -94,6 +97,8 @@ class transport_t {
 
     // Disabling retires pending clicks and silences the next callback; other voices survive.
     void set_clicks_enabled(bool enabled);
+    // Control thread; active muted voices keep advancing and can resume mid-tail.
+    void set_muted_mix_groups(std::span<const std::uint64_t> groups);
     // Control thread: retire one preview family without restarting the transport.
     void clear_voices(voice_kind_t kind);
     [[nodiscard]] auto set_click_preview_volume(std::uint8_t volume_percent) noexcept -> bool;
@@ -148,6 +153,7 @@ class transport_t {
     // mix callback only marks completed slots inactive; schedule_voice() on a
     // control thread reuses their storage without growing the vector.
     std::vector<scheduled_voice_entry_t> scheduled_voices_;
+    std::unordered_set<std::uint64_t> muted_mix_groups_;
     std::size_t active_scheduled_voices_{};
     std::atomic<bool> clicks_enabled_{true};
     std::atomic<std::uint8_t> click_volume_percent_{100};

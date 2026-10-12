@@ -1,3 +1,4 @@
+#include <wormedit/formats/native_project.h>
 #include <wormedit/core/lane_profile_switch.h>
 #include <wormedit/core/bmson_lane_mode.h>
 #include "sys/application_command_dispatch.h"
@@ -6673,4 +6674,113 @@ TEST_CASE("Compose reflows wide layouts from stamped canvas width without changi
         *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0);
     expect_compose_test(fixture.application.compose_editor_right_pixels == 700);
     expect_compose_test(compose_editor_layout_width(1000, std::numeric_limits<double>::quiet_NaN()) == 1000);
+}
+
+
+namespace {
+auto bgm_mix_test_action(const compose_test_fixture_t& fixture, WormUiComposeInputKind kind,
+    std::uint64_t lane) -> WormUiWorkspaceAction {
+    WormUiWorkspaceAction action{};
+    action.compose_input_chart_id = 1;
+    action.compose_input_document_revision = fixture.history.document.revision;
+    action.compose_input_count = 1;
+    action.compose_inputs[0] = {.kind = kind, .lane_id = lane};
+    return action;
+}
+auto bgm_mix_test_song() -> song_document_t {
+    auto song = compose_test_song();
+    song.charts.front().bgm_source_lanes = {{.id = object_id_t{80000}},
+        {.id = object_id_t{80001}}, {.id = object_id_t{80002}}};
+    return song;
+}
+}
+
+TEST_CASE("BGM mute and additive solo are session-only and refresh cached lane headers",
+          "[frame-timing][bgm-mix]") {
+    compose_test_fixture_t fixture{bgm_mix_test_song()};
+    std::vector<std::uint64_t> applied;
+    fixture.application.transport_set_bgm_mix = [&](auto chart, auto muted) {
+        expect_compose_test(chart == chart_id_t{1});
+        applied.assign(muted.begin(), muted.end());
+        return true;
+    };
+    fixture.project();
+    const auto before = write_native_project(fixture.history.document);
+    expect_compose_test(before.bytes.has_value());
+    auto toggle = [&](WormUiComposeInputKind kind, std::uint64_t lane) {
+        auto action = bgm_mix_test_action(fixture, kind, lane);
+        (void)dispatch_compose_bgm_mix_inputs(action, fixture.history, *fixture.binding.workspace, fixture.application);
+        expect_compose_test(action.compose_input_count == 0);
+        fixture.project();
+    };
+    toggle(WORM_UI_COMPOSE_INPUT_BGM_MUTE, 80000);
+    expect_compose_test(applied == std::vector<std::uint64_t>{80000});
+    expect_compose_test(fixture.flattened.view.compose.bgm_lanes[0].muted);
+    toggle(WORM_UI_COMPOSE_INPUT_BGM_SOLO, 80001);
+    expect_compose_test(applied == std::vector<std::uint64_t>{80000, 80002});
+    toggle(WORM_UI_COMPOSE_INPUT_BGM_SOLO, 80002);
+    expect_compose_test(applied == std::vector<std::uint64_t>{80000});
+    expect_compose_test(fixture.flattened.view.compose.bgm_lanes[1].solo);
+    expect_compose_test(!fixture.flattened.view.compose.bgm_lanes[1].mix_silent);
+    toggle(WORM_UI_COMPOSE_INPUT_BGM_MUTE, 80000);
+    expect_compose_test(applied == std::vector<std::uint64_t>{80000});
+    toggle(WORM_UI_COMPOSE_INPUT_BGM_SOLO, 80001);
+    toggle(WORM_UI_COMPOSE_INPUT_BGM_SOLO, 80002);
+    expect_compose_test(applied.empty());
+    const auto after = write_native_project(fixture.history.document);
+    expect_compose_test(after.bytes == before.bytes);
+    expect_compose_test(fixture.history.undo.empty());
+    fixture.application.bgm_lane_mix[1].solo.insert(99999);
+    expect_compose_test(compose_bgm_muted_lanes(fixture.history.document.charts.front(),
+        fixture.application.bgm_lane_mix.at(1)).empty());
+    reset_application_project_edit_state(fixture.application);
+    expect_compose_test(fixture.application.bgm_lane_mix.empty());
+    expect_compose_test(static_cast<bool>(fixture.application.transport_set_bgm_mix));
+}
+
+TEST_CASE("BGM mixing rejects stale missing and runtime-failed controls atomically",
+          "[frame-timing][bgm-mix]") {
+    compose_test_fixture_t fixture{bgm_mix_test_song()};
+    int calls{};
+    fixture.application.transport_set_bgm_mix = [&](auto, auto) { ++calls; return false; };
+    auto action = bgm_mix_test_action(fixture, WORM_UI_COMPOSE_INPUT_BGM_MUTE, 80000);
+    ++action.compose_input_document_revision;
+    (void)dispatch_compose_bgm_mix_inputs(action, fixture.history, *fixture.binding.workspace, fixture.application);
+    expect_compose_test(calls == 0);
+    action = bgm_mix_test_action(fixture, WORM_UI_COMPOSE_INPUT_BGM_MUTE, 99999);
+    (void)dispatch_compose_bgm_mix_inputs(action, fixture.history, *fixture.binding.workspace, fixture.application);
+    expect_compose_test(calls == 0);
+    action = bgm_mix_test_action(fixture, WORM_UI_COMPOSE_INPUT_BGM_MUTE, 80000);
+    (void)dispatch_compose_bgm_mix_inputs(action, fixture.history, *fixture.binding.workspace, fixture.application);
+    expect_compose_test(calls == 1);
+    expect_compose_test(fixture.application.bgm_lane_mix.empty());
+    fixture.application.transport_set_bgm_mix = {};
+    action = bgm_mix_test_action(fixture, WORM_UI_COMPOSE_INPUT_BGM_SOLO, 80001);
+    (void)dispatch_compose_bgm_mix_inputs(action, fixture.history, *fixture.binding.workspace, fixture.application);
+    expect_compose_test(fixture.application.bgm_lane_mix.empty());
+}
+
+
+TEST_CASE("BGM-only charts receive canvas width and mix controls without note interaction state",
+          "[frame-timing][bgm-mix]") {
+    auto song = bgm_mix_test_song();
+    auto& chart = song.charts.front();
+    chart.lane_layouts.clear();
+    chart.input_profile = {};
+    chart.measures.front().notes.clear();
+    compose_test_fixture_t fixture{std::move(song)};
+    fixture.application.transport_set_bgm_mix = [](auto, auto) { return true; };
+    auto action = bgm_mix_test_action(fixture, WORM_UI_COMPOSE_INPUT_BGM_MUTE, 80000);
+    action.compose_input_viewport_width_pixels = 1232;
+    action.compose_input_editor_right_pixels = 800;
+    refresh_compose_editor_width(action, fixture.history, *fixture.binding.workspace, fixture.application);
+    expect_compose_test(fixture.application.compose_editor_right_pixels == 800);
+    (void)dispatch_compose_bgm_mix_inputs(action, fixture.history, *fixture.binding.workspace, fixture.application);
+    fixture.project();
+    expect_compose_test(!fixture.interaction);
+    expect_compose_test(fixture.flattened.view.compose.bgm_lane_count == 3);
+    expect_compose_test(fixture.flattened.view.compose.bgm_mix_available);
+    expect_compose_test(fixture.flattened.view.compose.bgm_lanes[0].muted);
+    for (const auto& lane : std::span(fixture.flattened.view.compose.bgm_lanes,
+        fixture.flattened.view.compose.bgm_lane_count)) expect_compose_test(lane.bounds.right <= 800);
 }

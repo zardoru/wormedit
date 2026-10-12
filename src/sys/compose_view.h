@@ -362,12 +362,21 @@ struct application_command_services_t {
     std::function<void(std::uint8_t)> transport_set_metronome_volume;
     std::function<void(std::uint8_t)> transport_set_metronome_count_in;
     std::function<void(bool)> transport_set_metronome;
+    std::function<bool(wormedit::chart_id_t, std::span<const std::uint64_t>)> transport_set_bgm_mix;
     std::function<std::string(external_player_action_t)> external_player;
     std::function<std::string()> transport_cancel_restore;
     std::function<std::chrono::steady_clock::time_point()> bookmark_clock;
 };
 
+struct bgm_lane_mix_state_t {
+    std::set<std::uint64_t> muted;
+    std::set<std::uint64_t> solo;
+};
+auto compose_bgm_muted_lanes(const wormedit::chart_document_t& chart,
+    const bgm_lane_mix_state_t& mix) -> std::vector<std::uint64_t>;
+
 struct application_command_state_t : application_command_services_t {
+    std::unordered_map<std::uint64_t, bgm_lane_mix_state_t> bgm_lane_mix;
     // Fresh per-frame source context, stamped to prevent cross-chart/stale hover reuse.
     std::optional<wormedit::chart_id_t> sound_selection_chart;
     std::uint64_t sound_selection_revision{};

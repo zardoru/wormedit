@@ -42,6 +42,39 @@
 #include "ui/nuklear/compose_input_internal.h"
 #include "ui/nuklear/compose_object_input.h"
 
+static auto pressed_bgm_mix_button(const ComposePointerEventContext& input)
+    -> std::optional<std::pair<std::uint64_t, bool>> {
+    for (const auto& lane : std::span(input.view->bgm_lanes, input.view->bgm_lane_count)) {
+        for (const auto solo : {false, true}) {
+            const auto rect = compose_bgm_mix_button_rect(lane, *input.view, input.viewport, solo);
+            if (rect.w > 0 && input.left_clicked_screen_x >= rect.x &&
+                input.left_clicked_screen_x < rect.x + rect.w && input.left_clicked_screen_y >= rect.y &&
+                input.left_clicked_screen_y < rect.y + rect.h)
+                return std::pair{lane.source_lane_id, solo};
+        }
+    }
+    return std::nullopt;
+}
+
+auto process_bgm_mix_controls(const ComposePointerEventContext& input,
+                              bool other_pointer_captured) -> bool {
+    if (state.bgm_mix_pointer_active) {
+        if (!input.left_down || !input.window_focused || input.view->input_occluded)
+            state.bgm_mix_pointer_active = false;
+        return true;
+    }
+    if (other_pointer_captured || !input.window_focused || input.view->input_occluded ||
+        !input.view->scene_available || !input.pointer_started_in_view || !input.left_down) return false;
+    const auto button = pressed_bgm_mix_button(input);
+    if (!button) return false;
+    state.bgm_mix_pointer_active = true;
+    if (input.view->bgm_mix_available)
+        append_compose_input(input.action,
+            button->second ? WORM_UI_COMPOSE_INPUT_BGM_SOLO : WORM_UI_COMPOSE_INPUT_BGM_MUTE,
+            input.pointer_started_x, input.pointer_started_y, button->first);
+    return true;
+}
+
 static auto stem_lane_resize_edge(const ComposePointerEventContext& input, double x, double y)
     -> const WormUiComposeBgmLaneView* {
     const auto& view = *input.view;

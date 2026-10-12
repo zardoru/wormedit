@@ -1034,6 +1034,15 @@ void configure_transport_seek_commands(auto& state, auto& history, auto& workspa
     };
 }
 
+void sync_bgm_mix_selection(const auto& state, const auto& history, const auto& workspace,
+                             auto& preview_state, auto& preview_session) {
+    const auto* chart = wormedit::sys::selected_chart(history, workspace);
+    const auto found = chart ? state.bgm_lane_mix.find(chart->id.value) : state.bgm_lane_mix.end();
+    const auto muted = chart && found != state.bgm_lane_mix.end()
+        ? wormedit::sys::compose_bgm_muted_lanes(*chart, found->second) : std::vector<std::uint64_t>{};
+    preview_state.set_bgm_mix(chart ? chart->id : wormedit::chart_id_t{}, muted, preview_session);
+}
+
 void sync_layer_assist_selection(const auto& state, const auto& workspace,
                                  auto& preview_state, auto& preview_session) {
     if (state.layer_assist_chart == workspace.selected_chart) {
@@ -1043,6 +1052,15 @@ void sync_layer_assist_selection(const auto& state, const auto& workspace,
         (void)preview_state.set_layer_assist(workspace.selected_chart.value_or(wormedit::chart_id_t{}),
                                             {}, preview_session);
     }
+}
+
+void configure_bgm_mix_command(auto& state, auto& workspace, auto& preview_state,
+                               auto& preview_session) {
+    state.transport_set_bgm_mix = [&](wormedit::chart_id_t chart, std::span<const std::uint64_t> muted) {
+        if (workspace.selected_chart != chart) return false;
+        preview_state.set_bgm_mix(chart, muted, preview_session);
+        return true;
+    };
 }
 
 void configure_transport_commands(auto& state, auto& history, auto& workspace,
@@ -1055,6 +1073,7 @@ void configure_transport_commands(auto& state, auto& history, auto& workspace,
     state.transport_set_layer_assist = [&](wormedit::chart_id_t chart, std::span<const wormedit::layer_id_t> layers) {
         return workspace.selected_chart == chart && preview_state.set_layer_assist(chart, layers, preview_session);
     };
+    configure_bgm_mix_command(state, workspace, preview_state, preview_session);
     state.transport_set_metronome = [&](bool enabled) { preview_session.set_metronome_enabled(enabled); };
     preview_session.set_metronome_enabled(state.transport_metronome_enabled);
     state.transport_set_metronome_volume = [&](std::uint8_t volume) {
@@ -2393,6 +2412,12 @@ void cancel_stale_compose_interaction(
     }
 }
 
+void dispatch_bgm_mix_frame_action(auto& action, auto& context, bool shortcut_handled) {
+    if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT)
+        (void)dispatch_compose_bgm_mix_inputs(action, context.history_ref, context.workspace_ref,
+            context.application_command_state_ref, &context.notification_sink_ref);
+}
+
 void refresh_sound_selection_context(const WormUiWorkspaceAction& action,
     application_command_state_t& sound_context) {
     sound_context.sound_selection_chart = wormedit::chart_id_t{action.compose_input_chart_id};
@@ -2447,6 +2472,7 @@ auto process_compose_frame_action(Context& context, WormUiWorkspaceAction& actio
                 *context.compose_interaction_state_ref, context.history_ref.document.revision);
         context.compose_scene_cache_ref.offset_fit_drag.reset();
     }
+    dispatch_bgm_mix_frame_action(action, context, shortcut_handled);
     if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
         (action.compose_input_count != 0 || action.compose_viewport_input_count != 0 ||
          action.compose_has_pointer_hover ||
@@ -2468,6 +2494,8 @@ auto process_compose_frame_action(Context& context, WormUiWorkspaceAction& actio
             context.compose_scene_cache_ref, context.history_ref, context.notification_sink_ref);
 #endif
     }
+    refresh_compose_editor_width(action, context.history_ref, context.workspace_ref,
+        context.application_command_state_ref);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     wormedit::sys::process_sound_audition_request(
         context.application_command_state_ref.pending_sound_audition, context.history_ref,
@@ -4561,6 +4589,7 @@ int main(int argc, char** argv) {
             notification_sink.post(*loading);
         }
         sync_layer_assist_selection(application_command_state, workspace, preview_state, preview_session);
+        sync_bgm_mix_selection(application_command_state, history, workspace, preview_state, preview_session);
         wormedit::sys::service_audio_transport_frame(
             history.document, workspace, preview_state, preview_session,
             audition_output, preview_output,

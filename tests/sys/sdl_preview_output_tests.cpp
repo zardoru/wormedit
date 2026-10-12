@@ -1727,3 +1727,51 @@ TEST_CASE("One-frame and callback-sized loops remain continuous with either pitc
         }
     }
 }
+
+TEST_CASE("SDL BGM lane mixing mutes and resumes a live stem without restarting playback",
+          "[integration][audio][sdl][bgm-mix]") {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    expect_pitch(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    expect_pitch(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const preview_audio_subsystem_t audio_subsystem;
+    decoded_source_registry_t sources;
+    const auto registered = sources.register_generated_source({
+        .source = {"generated:lane-mix", "lane-mix-v1"},
+        .interleaved_stereo = generated_sine(output_sample_rate * 2)});
+    expect_pitch(static_cast<bool>(registered));
+    decoded_block_cache_t blocks;
+    transport_t transport{blocks};
+    preview_transport_bridge_t bridge{transport};
+    preview_session_t session{sources, transport, bridge};
+    sys::sdl_preview_output_t output{session};
+    expect_pitch(output.open());
+    device_capture_t capture{output.audio_device_id()};
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
+    schedule.bgm = {{.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
+    const preview_object_source_binding_t binding{.object = object_id_t{1}, .voices = {{
+        .source = registered.binding->source, .frame_count = output_sample_rate * 2, .mix_group = 77}}};
+    sys::runtime::chart_preview_t preview;
+    const std::array<std::uint64_t, 1> muted{77};
+    preview.set_bgm_mix(chart_id_t{1}, muted, session);
+    expect_pitch(static_cast<bool>(output.start(schedule, std::span{&binding, 1})));
+    const auto generation = session.playhead().generation;
+    wait_capture_frames(capture, output, 4410);
+    expect_pitch(std::ranges::all_of(std::span(capture.samples).first(4410),
+        [](float value) { return value == 0; }));
+    preview.set_bgm_mix(chart_id_t{1}, {}, session);
+    auto end = capture.count.load() + 17640;
+    wait_capture_frames(capture, output, end);
+    expect_pitch(std::ranges::any_of(std::span(capture.samples).subspan(end - 4410, 4410),
+        [](float value) { return std::abs(value) > .001F; }));
+    preview.set_bgm_mix(chart_id_t{1}, muted, session);
+    end = capture.count.load() + 17640;
+    wait_capture_frames(capture, output, end);
+    expect_pitch(std::ranges::all_of(std::span(capture.samples).subspan(end - 4410, 4410),
+        [](float value) { return value == 0; }));
+    expect_pitch(session.playhead().generation == generation);
+    expect_pitch(output.playing());
+    capture.detach();
+    (void)output.stop();
+    output.close();
+}

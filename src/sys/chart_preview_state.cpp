@@ -9,8 +9,41 @@
 #include <limits>
 #include <ranges>
 #include <unordered_set>
+#include <unordered_map>
 
 namespace wormedit::sys::runtime {
+void assign_preview_bgm_mix_groups(const chart_document_t& chart,
+    std::span<audio::preview_object_source_binding_t> bindings) {
+    std::unordered_map<std::uint64_t, std::uint64_t> channels, events, objects;
+    for (const auto& lane : chart.bgm_source_lanes)
+        if (lane.stem_channel) channels.emplace(lane.stem_channel->value, lane.id.value);
+    for (const auto& channel : chart.sound_channels) {
+        const auto owner = channels.find(channel.id.value);
+        if (owner == channels.end()) continue;
+        for (const auto& event : channel.events) events.emplace(event.id.value, owner->second);
+    }
+    for (const auto& measure : chart.measures) {
+        for (const auto& bgm : measure.bgm_events) objects.emplace(bgm.id.value, bgm.source_lane.value);
+        for (const auto& note : measure.notes) {
+            const auto owner = events.find(note.sound_channel_event.value_or(object_id_t{}).value);
+            if (owner != events.end()) objects.emplace(note.id.value, owner->second);
+        }
+    }
+    for (auto& binding : bindings) {
+        const auto owner = objects.find(binding.object.value);
+        for (auto& voice : binding.voices)
+            voice.mix_group = owner == objects.end() ? 0 : owner->second;
+    }
+}
+
+void chart_preview_t::set_bgm_mix(chart_id_t selected, std::span<const std::uint64_t> muted,
+                                  audio::preview_session_t& session) {
+    if (bgm_mix_chart == selected && std::ranges::equal(bgm_muted_lanes, muted)) return;
+    session.set_muted_mix_groups(muted);
+    bgm_mix_chart = selected;
+    bgm_muted_lanes.assign(muted.begin(), muted.end());
+}
+
 auto chart_preview_t::report(notification_severity_t severity, bool accepted, std::string message)
     -> std::string {
     feedback = {severity, accepted};
@@ -219,6 +252,7 @@ auto chart_preview_t::compile_if_needed(
     schedule = std::move(*built_schedule.schedule);
     timing = std::move(*built_timing.index);
     bindings = std::move(resolved.bindings);
+    assign_preview_bgm_mix_groups(selected_chart, bindings);
     retained_metronome_bindings = metronome_bindings;
     chart = selected_chart.id;
     revision = document.revision;

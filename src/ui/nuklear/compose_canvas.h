@@ -35,3 +35,7 @@ auto compose_editor_status_hint(const WormUiComposeView* view,
 
 void draw_compose_tool_chip(nk_context*, const WormUiComposeView&, nk_command_buffer*, struct nk_rect);
 auto process_compose_tool_chip(nk_context*, const WormUiComposeView&, struct nk_rect, bool focused) -> bool;
+
+// Shared screen-space header button geometry for drawing and pointer capture.
+auto compose_bgm_mix_button_rect(const WormUiComposeBgmLaneView& lane,
+    const WormUiComposeView& view, struct nk_rect viewport, bool solo) -> struct nk_rect;

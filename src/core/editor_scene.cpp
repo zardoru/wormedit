@@ -54,10 +54,6 @@ auto viewport_scroll_in_range(double scroll, double height, long double maximum,
            static_cast<long double>(scroll) <= maximum;
 }
 
-auto rectangular_glyph(lane_glyph_t glyph) -> bool {
-    return glyph == lane_glyph_t::bar || glyph == lane_glyph_t::square;
-}
-
 auto ordered_vertical_bounds(double first, double second) -> std::pair<double, double> {
     return std::minmax(first, second);
 }
@@ -65,11 +61,8 @@ auto ordered_vertical_bounds(double first, double second) -> std::pair<double, d
 auto endpoint_vertical_bounds(double snap_y, double height, lane_glyph_t glyph,
                               editor_field_scroll_direction_t direction)
     -> std::pair<double, double> {
-    if (!rectangular_glyph(glyph)) {
-        return {snap_y - height / 2.0, snap_y + height / 2.0};
-    }
-    return direction == editor_field_scroll_direction_t::up ? std::pair{snap_y, snap_y + height}
-                                                            : std::pair{snap_y - height, snap_y};
+    return editor_note_head_bounds(snap_y, height, glyph,
+        direction == editor_field_scroll_direction_t::down);
 }
 
 auto rect_intersects_viewport(const editor_field_rect_t& rect, double height) -> bool {
@@ -1736,8 +1729,6 @@ auto append_visible_layout_band(scene_geometry_context_t& context,
                                             "split-stage gutter consumes the note field"));
         return false;
     }
-    const auto lane_width = (request.field_width_pixels - gutter) /
-                            static_cast<double>(std::max<std::size_t>(1, lanes.size()));
     const auto clipped_begin =
         std::max(context.query_low, static_cast<long double>(source.begin_row));
     const auto clipped_end = std::min(context.query_high, static_cast<long double>(source_end));
@@ -1764,9 +1755,9 @@ auto append_visible_layout_band(scene_geometry_context_t& context,
                         .layout = &source.layout};
     band.lanes.reserve(lanes.size());
     for (std::size_t lane_index = 0; lane_index < lanes.size(); ++lane_index) {
-        const auto left = request.field_left_pixels + lane_width * lane_index +
-                          (lane_index >= split ? gutter : 0.0);
-        const auto right = left + lane_width;
+        const auto [left, right] = editor_presented_lane_bounds(source.layout, lanes.size(),
+            lane_index, request.field_left_pixels, request.field_width_pixels,
+            request.split_stage_gutter_pixels);
         band.lanes.push_back({lanes[lane_index]->id, lanes[lane_index]->glyph, left, right});
         context.scene.lanes.push_back({.layout_band = scene_band,
                                        .lane = lanes[lane_index]->id,

@@ -176,7 +176,8 @@ auto candidate_voices(const event_candidate_t& candidate,
                           .source_start_frame = music ? candidate.source_start_frame
                                                       : source.source_start_frame,
                           .frame_count = music ? candidate.frame_count : source.frame_count,
-                          .gain = source.gain});
+                          .gain = source.gain,
+                          .mix_group = source.mix_group});
     }
     return voices;
 }

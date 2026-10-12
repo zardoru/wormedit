@@ -327,3 +327,46 @@ TEST_CASE("transport publishes layered voice batches atomically",
     CHECK(transport.schedule_voices(*token, accepted) == voice_schedule_status_t::scheduled);
     CHECK(transport.scheduled_voice_count() == 2);
 }
+
+namespace {
+void require_bgm_mix(bool condition) { REQUIRE(condition); }
+void check_bgm_mix(bool condition) { CHECK(condition); }
+}
+
+TEST_CASE("BGM mix groups silence active and future voices without losing their source position",
+          "[audio][transport][bgm-mix]") {
+    using namespace wormedit::audio;
+    decoded_block_cache_t blocks;
+    transport_t transport{blocks};
+    const auto token = transport.start();
+    require_bgm_mix(token.has_value());
+    const auto shared = source("shared-mix-source");
+    std::vector<float> samples(64 * output_channel_count);
+    for (std::size_t frame = 0; frame < 64; ++frame)
+        for (std::size_t channel = 0; channel < output_channel_count; ++channel)
+            samples[frame * output_channel_count + channel] = static_cast<float>(frame + 1) / 1024;
+    require_bgm_mix(blocks.store({.source = shared, .block_index = 0}, 64, samples) == block_store_status_t::stored);
+    const std::array voices{
+        transport_voice_t{.id = 1, .kind = voice_kind_t::bgm, .source = shared, .frame_count = 64, .mix_group = 11},
+        transport_voice_t{.id = 2, .kind = voice_kind_t::bgm, .source = shared, .frame_count = 64, .mix_group = 22},
+        transport_voice_t{.id = 3, .source = shared, .frame_count = 64, .mix_group = 11},
+        transport_voice_t{.id = 4, .kind = voice_kind_t::music, .source = shared, .frame_count = 64}};
+    require_bgm_mix(transport.schedule_voices(*token, voices) == voice_schedule_status_t::scheduled);
+    transport.set_muted_mix_groups(std::array<std::uint64_t, 2>{0, 11});
+    std::array<float, 16> output{};
+    check_bgm_mix(transport.mix(*token, 0, output).voices_mixed == 2);
+    check_bgm_mix(output.front() == 2.0F / 1024);
+    check_bgm_mix(transport.scheduled_voice_count() == 4);
+    transport.set_muted_mix_groups({});
+    check_bgm_mix(transport.mix(*token, 8, output).voices_mixed == 4);
+    check_bgm_mix(output.front() == 36.0F / 1024);
+    transport.set_muted_mix_groups(std::array<std::uint64_t, 1>{22});
+    require_bgm_mix(transport.schedule_voice(*token, {.id = 5, .kind = voice_kind_t::bgm,
+        .source = shared, .timeline_start_frame = 16, .frame_count = 8, .mix_group = 22}) == voice_schedule_status_t::scheduled);
+    check_bgm_mix(transport.mix(*token, 16, output).voices_mixed == 3);
+    check_bgm_mix(output.front() == 51.0F / 1024);
+    check_bgm_mix(transport.scheduled_voice_count() == 4);
+    std::array<float, 80> tail{};
+    check_bgm_mix(transport.mix(*token, 24, tail).voices_mixed == 3);
+    check_bgm_mix(transport.scheduled_voice_count() == 0);
+}

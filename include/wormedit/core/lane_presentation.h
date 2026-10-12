@@ -3,7 +3,14 @@
 #include <array>
 #include <optional>
 #include <vector>
+#include <utility>
 namespace wormedit {
+// Shared field geometry for projection and picking.
+[[nodiscard]] auto editor_note_head_bounds(double row_y, double height, lane_glyph_t glyph,
+    bool downscroll = false) -> std::pair<double, double>;
+[[nodiscard]] auto editor_presented_lane_bounds(const lane_layout_t& layout,
+    std::size_t columns, std::size_t column, double left, double width, double gutter)
+    -> std::pair<double, double>;
 // Scratch visuals include playable osu SpecialStyle columns; authored roles stay intact.
 [[nodiscard]] auto editor_lane_has_scratch_class(const lane_definition_t& lane) -> bool;
 // View-only scratch sides: null retains authored ordering, false left, true right.

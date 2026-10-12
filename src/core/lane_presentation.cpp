@@ -3,6 +3,21 @@
 #include <tuple>
 #include <unordered_map>
 namespace wormedit {
+auto editor_note_head_bounds(double row_y, double height, lane_glyph_t glyph,
+                             bool downscroll) -> std::pair<double, double> {
+    if (glyph != lane_glyph_t::bar && glyph != lane_glyph_t::square)
+        return {row_y - height / 2.0, row_y + height / 2.0};
+    return downscroll ? std::pair{row_y - height, row_y} : std::pair{row_y, row_y + height};
+}
+auto editor_presented_lane_bounds(const lane_layout_t& layout, std::size_t columns,
+    std::size_t column, double left, double width, double gutter) -> std::pair<double, double> {
+    const auto split = layout.split_stage && layout.split_after_column
+        ? std::min<std::size_t>(*layout.split_after_column, columns) : columns;
+    const auto gap = split > 0 && split < columns ? gutter : 0.0;
+    const auto lane_width = (width - gap) / static_cast<double>(std::max<std::size_t>(1, columns));
+    const auto begin = left + lane_width * column + (column >= split ? gap : 0.0);
+    return {begin, begin + lane_width};
+}
 auto editor_lane_has_scratch_class(const lane_definition_t& lane) -> bool {
     return lane.role == lane_role_t::scratch ||
         (lane.role == lane_role_t::playable && lane.key_color == lane_key_color_t::scratch);

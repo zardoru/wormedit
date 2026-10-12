@@ -1082,6 +1082,8 @@ struct editor_hit_test_request_t {
     double field_left_pixels{};
     double field_width_pixels{};
     double note_hit_radius_pixels{8.0};
+    double note_head_height_pixels{};
+    double split_stage_gutter_pixels{};
 };
 
 struct editor_object_hover_request_t {
@@ -1090,6 +1092,8 @@ struct editor_object_hover_request_t {
     double field_left_pixels{};
     double field_width_pixels{};
     double hit_radius_pixels{8.0};
+    double note_head_height_pixels{};
+    double split_stage_gutter_pixels{};
     editor_selection_scope_t scope{.notes = false, .bgm = true, .timing = true, .bga = true};
 };
 

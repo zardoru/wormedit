@@ -257,6 +257,10 @@ auto preview_session_t::set_layer_tick_frames(std::span<const std::uint64_t> fra
     return bridge_.set_layer_tick_frames(frames, timeline_frame_);
 }
 
+void preview_session_t::set_muted_mix_groups(std::span<const std::uint64_t> groups) {
+    transport_.set_muted_mix_groups(groups);
+}
+
 void preview_session_t::set_metronome_enabled(bool enabled) {
     const std::scoped_lock lock(mutex_);
     bridge_.set_metronome_enabled(enabled, timeline_frame_);

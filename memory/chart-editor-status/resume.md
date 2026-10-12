@@ -1,14 +1,21 @@
 # Status: resume checklist
 
-T-577 implementation checkpoint (2026-10-11): SpecialStyle 12K/16K profile
-selection, stage geometry, scratch-class presentation, export flag and uncovered
-canvas width are implemented. Normal/Release builds and **3,420/3,420 checks
-each** pass. Native Save/Undo and full-field visibility pass; rightmost-note
-pointer picking remains unresolved. T-577 stays ready for that investigation;
-T-576 BGM mute/solo also remains pending. [Evidence](../../docs/chart-editor-plan/tasks/scratchpad-completion.md).
+Completed **T-576 and T-577** (2026-10-11; committed with this implementation):
+BGM lanes have live session-only mute/solo, including owned stem-linked playable
+portions, additive solo, source-clock-preserving unmute and input capture.
+Compact stem filenames remain readable. BGM-only charts share dock-width
+feedback. SpecialStyle picking now shares rendered filled-head and stage-gap
+geometry; initial layout support is in `1d39348`.
+Normal/Release builds and **3,431/3,431 full CTest checks each** pass;
+focused PCM/SDL, dispatcher, frontend and filename rendering checks pass.
+Native isolated Xvfb verifies M/S, UTF-8 stem headers, authored data preservation
+and rightmost-note selection/Delete/Save/Undo. Affected default clang-tidy has
+no new/increased complexity violations; documentation and whitespace gates pass.
+[Evidence](../../docs/chart-editor-plan/tasks/scratchpad-completion.md).
+Inventory: **503 cards / 416 done / 27 ready / 2 partial**.
+Manual/About still awaits the finished manual.
 
-
-Completed **T-573–T-575** (2026-10-11; committed with implementation): recovery snapshots preserve imported source references without modifying live asset paths; double-clicking a valid stem note arms it, including cached geometry and filtered Sounds lists; toggling it back to BGM uses explicit channel-owned lane identity. Older backups lacking their original directory metadata cannot be repaired automatically. Normal/Release builds and **3,414/3,414 full CTest checks each** pass; focused recovery/assignment/projection/frontend regressions, affected default clang-tidy, documentation and whitespace gates pass. Native isolated Xvfb verifies arming, owned-lane toggle, Save and Undo. [Cards and evidence](../../docs/chart-editor-plan/tasks/scratchpad-completion.md). Inventory: **503 cards / 414 done / 29 ready / 2 partial**. **T-576** BGM mute/solo and **T-577** SpecialStyle 16K/layout swapping remain pending; Manual/About remains conditional on the finished manual.
+Completed **T-573–T-575** (2026-10-11; committed with implementation): recovery snapshots preserve imported source references without modifying live asset paths; double-clicking a valid stem note arms it, including cached geometry and filtered Sounds lists; toggling it back to BGM uses explicit channel-owned lane identity. Older backups lacking their original directory metadata cannot be repaired automatically. Normal/Release builds and **3,414/3,414 full CTest checks each** pass; focused recovery/assignment/projection/frontend regressions, affected default clang-tidy, documentation and whitespace gates pass. Native isolated Xvfb verifies arming, owned-lane toggle, Save and Undo. [Cards and evidence](../../docs/chart-editor-plan/tasks/scratchpad-completion.md). This checkpoint preceded T-577 completion above. Manual/About remains conditional on the finished manual.
 
 Completed **T-572** (2026-10-11; **committed with implementation**, alongside T-261/T-571): same-row stem placement by lane key or mouse drawing reassigns its existing linked note instead of duplicating its source pulse. Note/event IDs, sound, layers, timing and continuation state survive; Save and one Undo verify natively. Pointer drawing now shares the linked-point editor. Sounds distinguishes `armed stem` / `armed note`; the field indicator distinguishes `Draw stem` / `Draw packed keysound` using current channel layout. Normal/Release builds and **3,410/3,410 full CTest checks in each** pass, plus focused core/dispatcher/frontend checks (71/62/119 assertions), affected default clang-tidy and documentation/whitespace gates. [Card and evidence](../../docs/chart-editor-plan/tasks/scratchpad-lane-entry.md#t-572-reassign-same-row-stem-notes-and-distinguish-armed-packed-sounds). Inventory: **498 cards / 411 done / 27 ready / 2 partial**. BGM mute/solo and special-style 16K/layout swapping remain pending; Manual/About remains conditional on the finished manual.
 

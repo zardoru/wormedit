@@ -2596,9 +2596,67 @@ static void draw_compose_stem_filename(const ComposePaintContext& paint,
 static auto hovered_compose_stem_header(const ComposePaintContext& paint,
     const WormUiComposeBgmLaneView& lane, struct nk_rect rect) -> const char* {
     if (!lane.stem || !lane.filename || paint.view->input_occluded || rect.w <= 0) return nullptr;
+    if (wormedit::ui::nuklear::tooltip::hovered(paint.context,
+            compose_bgm_mix_button_rect(lane, *paint.view, paint.viewport, false)) ||
+        wormedit::ui::nuklear::tooltip::hovered(paint.context,
+            compose_bgm_mix_button_rect(lane, *paint.view, paint.viewport, true))) return nullptr;
     const auto header = nk_rect(rect.x, paint.viewport.y, rect.w, 18);
     return wormedit::ui::nuklear::tooltip::hovered(paint.context, header) ? lane.filename : nullptr;
 }
+auto compose_bgm_mix_button_rect(const WormUiComposeBgmLaneView& lane,
+    const WormUiComposeView& view, struct nk_rect viewport, bool solo) -> struct nk_rect {
+    const auto lane_rect = compose_screen_rect(&lane.bounds, &view, viewport);
+    if (lane_rect.w < 24.0f || lane_rect.h <= 0.0f) return nk_rect(0, 0, 0, 0);
+    const auto width = std::clamp((lane_rect.w - 11.0f) / 2.0f, 10.0f, 16.0f);
+    const auto left = lane_rect.x + lane_rect.w - 1.0f - width;
+    return nk_rect(solo ? left : left - width - 1.0f, viewport.y + 2.0f, width, 14.0f);
+}
+
+static auto bgm_mix_tooltip(bool solo, bool active) -> const char* {
+    if (solo) return active ? "Remove BGM lane from solo mix" : "Solo BGM lane (additive)";
+    return active ? "Unmute BGM lane" : "Mute BGM lane";
+}
+
+static void show_bgm_mix_tooltip(nk_context* context, const WormUiComposeBgmLaneView& lane,
+                                  bool solo, bool active) {
+    auto text = std::string{bgm_mix_tooltip(solo, active)};
+    if (lane.filename && lane.filename[0]) text += "\n" + std::string{lane.filename};
+    wormedit::ui::nuklear::tooltip::text(context, text.c_str());
+}
+
+static void draw_compose_bgm_mix_controls(const ComposePaintContext& paint,
+                                         const WormUiComposeBgmLaneView& lane) {
+    for (const auto solo : {false, true}) {
+        const auto rect = compose_bgm_mix_button_rect(lane, *paint.view, paint.viewport, solo);
+        if (rect.w <= 0) continue;
+        const auto active = solo ? lane.solo : lane.muted;
+        const auto fill = active ? (solo ? nk_rgb(144, 106, 28) : nk_rgb(145, 51, 60))
+            : nk_rgb(36, 39, 48);
+        const auto text = !paint.view->bgm_mix_available ? nk_rgb(90, 94, 105)
+            : lane.mix_silent && !active ? nk_rgb(126, 130, 143) : nk_rgb(225, 227, 235);
+        field_rect(paint, rect, 2, fill, 5);
+        field_text(paint, rect, solo ? "S" : "M", 1, paint.context->style.font, fill, text, 5);
+        if (wormedit::ui::nuklear::tooltip::hovered(paint.context, rect))
+            show_bgm_mix_tooltip(paint.context, lane, solo, active);
+    }
+}
+
+static auto bgm_mix_controls_visible(const ComposePaintContext& paint,
+    const WormUiComposeBgmLaneView& lane, struct nk_rect rect) -> bool {
+    if (!lane.stem || !lane.filename || !lane.filename[0] || rect.w >= 64 || lane.muted || lane.solo)
+        return true;
+    return nk_input_is_mouse_hovering_rect(&paint.context->input,
+        nk_rect(rect.x, paint.viewport.y, rect.w, 18));
+}
+
+static auto bgm_header_label_rect(const ComposePaintContext& paint,
+    const WormUiComposeBgmLaneView& lane, struct nk_rect rect, bool controls) -> struct nk_rect {
+    if (!controls) return rect;
+    const auto button = compose_bgm_mix_button_rect(lane, *paint.view, paint.viewport, false);
+    if (button.w > 0) rect.w = std::max(0.0f, button.x - rect.x - 1.0f);
+    return rect;
+}
+
 static auto draw_compose_bgm_lane_labels(const ComposePaintContext& paint) -> const char* {
     const char* hovered_filename{};
     for (size_t index = 0; index < paint.view->bgm_lane_count; ++index) {
@@ -2608,15 +2666,19 @@ static auto draw_compose_bgm_lane_labels(const ComposePaintContext& paint) -> co
         if (rect.w < 18.0f || rect.h <= 0.0f) {
             continue;
         }
+        const auto controls = bgm_mix_controls_visible(paint, lane, rect);
+        if (controls) draw_compose_bgm_mix_controls(paint, lane);
+        const auto label_rect = bgm_header_label_rect(paint, lane, rect, controls);
+        if (label_rect.w < 8.0f) continue;
         if (lane.stem && lane.filename && lane.filename[0]) {
-            draw_compose_stem_filename(paint, lane.filename, rect);
+            draw_compose_stem_filename(paint, lane.filename, label_rect);
             continue;
         }
         char label[20]{};
         const auto length = snprintf(label, sizeof(label), "%zu", lane.source_order + 1);
         if (length > 0) {
-            const auto title = nk_rect(rect.x + 2.0f, paint.viewport.y + 2.0f,
-                                       std::max(1.0f, rect.w - 4.0f), 14.0f);
+            const auto title = nk_rect(label_rect.x + 2.0f, paint.viewport.y + 2.0f,
+                                       std::max(1.0f, label_rect.w - 4.0f), 14.0f);
             field_text(paint, title, label, static_cast<int>(strlen(label)),
                          paint.context->style.font, nk_rgba(31, 25, 38, 215),
                          nk_rgb(211, 175, 226), 3);

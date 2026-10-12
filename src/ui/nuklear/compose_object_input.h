@@ -25,3 +25,6 @@ auto handle_compose_measure_click(const ComposePointerEventContext& input,
                                   bool paint_pointer_consumed) -> bool;
 auto handle_compose_alt_pointer(const ComposePointerEventContext& input,
                                 bool paint_pointer_consumed) -> bool;
+
+auto process_bgm_mix_controls(const ComposePointerEventContext& input,
+    bool other_pointer_captured) -> bool;

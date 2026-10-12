@@ -1285,6 +1285,8 @@ void update_compose_pointer_hover(const WormUiWorkspaceAction& ui_action, bool g
                  .field_left_pixels = field_left_pixels,
                  .field_width_pixels = field_width_pixels,
                  .hit_radius_pixels = 8.0,
+                 .note_head_height_pixels = scene_cache.preview_scene_request.note_head_height_pixels,
+                 .split_stage_gutter_pixels = scene_cache.preview_scene_request.split_stage_gutter_pixels,
                  .scope = {.notes = true, .bgm = false, .timing = false, .bga = false}});
         }
     }
@@ -1405,7 +1407,9 @@ struct compose_input_context_t {
              .y_pixels = compose_source_y(y_pixels, view.viewport_height_pixels,
                                           compose_field_downscroll(chart, application_state.editor_preferences)),
              .field_left_pixels = field_left_pixels,
-             .field_width_pixels = field_width_pixels});
+             .field_width_pixels = field_width_pixels,
+             .note_head_height_pixels = scene_cache.preview_scene_request.note_head_height_pixels,
+             .split_stage_gutter_pixels = scene_cache.preview_scene_request.split_stage_gutter_pixels});
     }
     auto position_at_compose_y(const wormedit::chart_document_t& chart,
                                const wormedit::editor_interaction_view_model_t& view,
@@ -2363,6 +2367,8 @@ auto focus_compose_note_label(const WormUiComposeInputAction& input,
          .field_left_pixels = context.field_left_pixels,
          .field_width_pixels = context.field_width_pixels,
          .hit_radius_pixels = 8.0,
+         .note_head_height_pixels = context.scene_cache.preview_scene_request.note_head_height_pixels,
+         .split_stage_gutter_pixels = context.scene_cache.preview_scene_request.split_stage_gutter_pixels,
          .scope = {.notes = true, .bgm = false, .timing = false, .bga = false}});
     if (!hover || hover->object.kind != editor_selection_object_kind_t::note)
         return "Double-click a note to edit its label.";
@@ -4393,11 +4399,6 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
         bgm_lane_count != 0, state.bga_lane_visible && input_chart != history.document.charts.end()
             ? std::popcount(editor_bga_visible_lane_mask(*input_chart, state.bga_revealed_lane_mask)) : 0,
         effective_compose_timing_lane_mask(application_state));
-    // Pick against the geometry the frontend received, then reflow the next frame.
-    if (std::isfinite(ui_action.compose_input_editor_right_pixels) &&
-        ui_action.compose_input_editor_right_pixels > 0.0)
-        application_state.compose_editor_right_pixels = compose_editor_layout_width(
-            ui_action.compose_input_viewport_width_pixels, ui_action.compose_input_editor_right_pixels);
     const auto bgm_pane_width = horizontal_layout.bgm_pane_width_pixels;
     const auto bgm_pane_left_pixels = horizontal_layout.bgm_pane_left_pixels;
     const auto field_left_pixels = horizontal_layout.field_left_pixels;
@@ -4455,6 +4456,71 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
                : std::string{};
 }
 
+void refresh_compose_editor_width(const WormUiWorkspaceAction& action,
+    const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
+    application_command_state_t& application) {
+    if (workspace.active_tab != wormedit::workspace_tab_t::compose || !workspace.selected_chart ||
+        workspace.selected_chart->value != action.compose_input_chart_id ||
+        history.document.revision != action.compose_input_document_revision ||
+        !std::isfinite(action.compose_input_viewport_width_pixels) || action.compose_input_viewport_width_pixels <= 0 ||
+        !std::isfinite(action.compose_input_editor_right_pixels) || action.compose_input_editor_right_pixels <= 0) return;
+    application.compose_editor_right_pixels = compose_editor_layout_width(
+        action.compose_input_viewport_width_pixels, action.compose_input_editor_right_pixels);
+}
+
+namespace {
+auto dispatch_bgm_mix_toggle(const WormUiComposeInputAction& input,
+    const WormUiWorkspaceAction& action, const wormedit::document_history_t& history,
+    const wormedit::workspace_controller_t& workspace, application_command_state_t& application,
+    bool& accepted) -> std::string {
+    const auto* chart = selected_chart(history, workspace);
+    if (!chart || workspace.active_tab != wormedit::workspace_tab_t::compose ||
+        action.compose_input_chart_id != chart->id.value ||
+        action.compose_input_document_revision != history.document.revision)
+        return "BGM mix input ignored because the chart or document revision changed.";
+    if (std::ranges::find(chart->bgm_source_lanes, wormedit::object_id_t{input.lane_id},
+        &wormedit::bgm_source_lane_t::id) == chart->bgm_source_lanes.end())
+        return "The BGM lane is no longer available.";
+    if (!application.transport_set_bgm_mix) return "BGM preview mixing is unavailable.";
+    const auto found = application.bgm_lane_mix.find(chart->id.value);
+    auto next = found == application.bgm_lane_mix.end() ? bgm_lane_mix_state_t{} : found->second;
+    auto& set = input.kind == WORM_UI_COMPOSE_INPUT_BGM_MUTE ? next.muted : next.solo;
+    const auto enabled = !set.erase(input.lane_id);
+    if (enabled) set.insert(input.lane_id);
+    const auto muted = compose_bgm_muted_lanes(*chart, next);
+    if (!application.transport_set_bgm_mix(chart->id, muted))
+        return "BGM preview mix could not be updated; lane controls were unchanged.";
+    application.bgm_lane_mix.insert_or_assign(chart->id.value, std::move(next));
+    accepted = true;
+    if (input.kind == WORM_UI_COMPOSE_INPUT_BGM_MUTE)
+        return enabled ? "BGM lane muted." : "BGM lane unmuted.";
+    return enabled ? "BGM lane added to solo mix." : "BGM lane removed from solo mix.";
+}
+}
+
+auto dispatch_compose_bgm_mix_inputs(WormUiWorkspaceAction& action,
+    const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
+    application_command_state_t& application, const wormedit::notification_sink_t* notifications)
+    -> std::string {
+    if (action.compose_input_count > WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) return {};
+    std::size_t kept{};
+    std::string status;
+    for (std::size_t index = 0; index < action.compose_input_count; ++index) {
+        const auto& input = action.compose_inputs[index];
+        if (input.kind != WORM_UI_COMPOSE_INPUT_BGM_MUTE && input.kind != WORM_UI_COMPOSE_INPUT_BGM_SOLO) {
+            action.compose_inputs[kept++] = input;
+            continue;
+        }
+        bool accepted{};
+        status = dispatch_bgm_mix_toggle(input, action, history, workspace, application, accepted);
+        post_input_feedback(notifications, accepted ? wormedit::notification_severity_t::hint
+                                                   : wormedit::notification_severity_t::warning,
+            wormedit::notification_source_t::audio, status);
+    }
+    action.compose_input_count = kept;
+    return status;
+}
+
 auto dispatch_compose_input_action(WormUiWorkspaceAction& ui_action,
                                    wormedit::document_history_t& history,
                                    wormedit::workspace_controller_t& workspace,
@@ -4466,6 +4532,12 @@ auto dispatch_compose_input_action(WormUiWorkspaceAction& ui_action,
                                    double viewport_delta_seconds,
                                    const wormedit::notification_sink_t* notifications)
     -> std::string {
+    const auto mix_status = dispatch_compose_bgm_mix_inputs(ui_action, history, workspace,
+        application_state, notifications);
+    if (!mix_status.empty() && ui_action.compose_input_count == 0) {
+        refresh_compose_editor_width(ui_action, history, workspace, application_state);
+        return mix_status;
+    }
     // View-only BGM bar inputs never reach the editor dispatcher.
     const bgm_bar_input_context_t bgm_bar_context{
         .total_frames = scene_cache.waveform_overview_total_frames,
@@ -4486,6 +4558,7 @@ auto dispatch_compose_input_action(WormUiWorkspaceAction& ui_action,
     }
     const auto status = dispatch_compose_input_action_impl(ui_action, history, workspace, state, viewport_input,
         navigation_input, application_state, scene_cache, viewport_delta_seconds, notifications);
+    refresh_compose_editor_width(ui_action, history, workspace, application_state);
     (void)compose_minimap_start_frame(application_state, history, &state);
     return status;
 }

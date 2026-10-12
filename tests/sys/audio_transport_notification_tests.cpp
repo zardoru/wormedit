@@ -2,6 +2,7 @@
 #include <wormedit/audio/audition_bridge.h>
 #include <catch2/catch_test_macros.hpp>
 #include <array>
+#include <algorithm>
 #include <SDL3/SDL_hints.h>
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_timer.h>
@@ -179,4 +180,30 @@ TEST_CASE("Deferred chart seek decode failure notifies and retains the requested
     verify_audio_notification(SDL_InitSubSystem(SDL_INIT_AUDIO));
     verify_audio_notification(deferred_seek_failure_preserves_position());
     SDL_QuitSubSystem(SDL_INIT_AUDIO);
+}
+
+TEST_CASE("Preview mix identities follow BGM lanes and their explicitly owned linked stem notes",
+          "[audio][bgm-mix]") {
+    chart_document_t chart;
+    chart.bgm_source_lanes = {{.id = object_id_t{10}},
+        {.id = object_id_t{20}, .stem_channel = object_id_t{7}}};
+    chart.sound_channels = {{.id = object_id_t{7}, .events = {{.id = object_id_t{70}}}}};
+    chart.measures = {{.id = measure_id_t{1},
+        .notes = {{.id = object_id_t{1}, .sound_channel_event = object_id_t{70}}, {.id = object_id_t{2}}},
+        .bgm_events = {{.id = object_id_t{3}, .source_lane = object_id_t{10}},
+            {.id = object_id_t{4}, .source_lane = object_id_t{20}}}}};
+    std::vector<audio::preview_object_source_binding_t> bindings;
+    for (std::uint64_t id = 1; id <= 5; ++id)
+        bindings.push_back({.object = object_id_t{id}, .voices = {{}, {}}});
+    runtime::assign_preview_bgm_mix_groups(chart, bindings);
+    const std::array<std::uint64_t, 5> expected{20, 0, 10, 20, 0};
+    for (std::size_t index = 0; index < bindings.size(); ++index)
+        for (const auto& voice : bindings[index].voices)
+            verify_audio_notification(voice.mix_group == expected[index]);
+    std::ranges::reverse(chart.bgm_source_lanes);
+    runtime::assign_preview_bgm_mix_groups(chart, bindings);
+    verify_audio_notification(bindings.front().voices.front().mix_group == 20);
+    chart.bgm_source_lanes.front().stem_channel.reset();
+    runtime::assign_preview_bgm_mix_groups(chart, bindings);
+    verify_audio_notification(bindings.front().voices.front().mix_group == 0);
 }

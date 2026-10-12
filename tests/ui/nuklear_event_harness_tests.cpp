@@ -6582,3 +6582,64 @@ TEST_CASE("Compose reports the canvas width left uncovered by side docks",
     expect_draw(open.get().compose_input_editor_right_pixels > covered.get().compose_input_editor_right_pixels);
     expect_draw(open.get().compose_input_editor_right_pixels <= open.get().compose_input_viewport_width_pixels);
 }
+
+TEST_CASE("SpecialStyle rightmost note remains pickable with side docks open",
+          "[frontend-state][event-harness][scratchpad-specialstyle]") {
+    auto song = t422_song();
+    auto profile = make_osu_mania_profile(16, true);
+    section_import_require(profile.has_value());
+    song.charts.front().lane_layouts.front().layout = profile->layout;
+    song.charts.front().input_profile = profile->input;
+    song.charts.front().measures.front().notes[1].lane = lane_id_t{16};
+    t422_fixture_t fixture{std::move(song)};
+    fixture.interaction->selected_notes.clear();
+    fixture.interaction->selected_objects.clear();
+    auto& ui = worm_ui_nuklear_compose_state();
+    ui.inspector_visible = true;
+    ui.sounds_panel_visible = true;
+    for (int frame = 0; frame < 3; ++frame) {
+        fixture.project();
+        (void)fixture.dispatch(fixture.harness.frame());
+    }
+    fixture.project();
+    const auto center = t422_note_screen_center(fixture, 101);
+    section_import_require(center.has_value());
+    for (const auto& frame : click_at(fixture.harness, center->first, center->second))
+        (void)fixture.dispatch(frame);
+    expect_draw(fixture.interaction->selected_notes == std::vector{object_id_t{101}});
+}
+
+TEST_CASE("BGM header mute and solo buttons capture press and release over canvas tools",
+          "[frontend-state][event-harness][bgm-mix]") {
+    const auto solo = GENERATE(false, true);
+    const auto stem = GENERATE(false, true);
+    nuklear_event_harness_t harness{1600, 900};
+    section_import_require(harness.ready());
+    auto& view = harness.view().compose;
+    WormUiComposeBgmLaneView lane{};
+    lane.bounds = {300, 0, 372, view.viewport_height_pixels};
+    lane.source_lane_id = 77;
+    lane.stem = stem;
+    lane.filename = stem ? "音楽stem.wav" : nullptr;
+    view.bgm_lanes = &lane;
+    view.bgm_lane_count = 1;
+    view.bgm_mix_available = true;
+    view.note_paint_mode_active = true;
+    (void)harness.frame();
+    const auto viewport = compose_canvas_viewport_for_testing();
+    section_import_require(viewport.has_value());
+    const auto rect = compose_bgm_mix_button_rect(lane, view,
+        nk_rect(viewport->x, viewport->y, viewport->width, viewport->height), solo);
+    const auto frames = click_at(harness, rect.x + rect.w / 2, rect.y + rect.h / 2);
+    const auto* input = find_compose_input(frames,
+        solo ? WORM_UI_COMPOSE_INPUT_BGM_SOLO : WORM_UI_COMPOSE_INPUT_BGM_MUTE);
+    section_import_require(input != nullptr);
+    expect_draw(input->lane_id == 77);
+    expect_draw(frames.front().get().compose_input_count == 1);
+    expect_draw(frames.back().get().compose_input_count == 0);
+    expect_draw(!worm_ui_nuklear_compose_state().bgm_mix_pointer_active);
+    view.bgm_mix_available = false;
+    const auto disabled = click_at(harness, rect.x + rect.w / 2, rect.y + rect.h / 2);
+    expect_draw(disabled.front().get().compose_input_count == 0);
+    expect_draw(disabled.back().get().compose_input_count == 0);
+}

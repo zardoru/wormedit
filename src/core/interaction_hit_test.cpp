@@ -601,10 +601,16 @@ struct nearby_note_candidate_t {
     double distance{std::numeric_limits<double>::infinity()};
 };
 
+auto valid_hit_geometry(const editor_hit_test_request_t& request) -> bool {
+    return std::isfinite(request.note_head_height_pixels) && request.note_head_height_pixels >= 0.0 &&
+        std::isfinite(request.split_stage_gutter_pixels) && request.split_stage_gutter_pixels >= 0.0 &&
+        request.split_stage_gutter_pixels < request.field_width_pixels;
+}
+
 auto valid_hit_request(const chart_document_t& chart, const editor_hit_test_index_t& index,
                        const editor_interaction_view_model_t& view,
                        const editor_hit_test_request_t& request) -> bool {
-    return index.chart == chart.id && view.chart == chart.id &&
+    return valid_hit_geometry(request) && index.chart == chart.id && view.chart == chart.id &&
            index.document_revision == view.document_revision &&
            index.measure_buckets.size() == index.measures.entries.size() &&
            std::isfinite(request.x_pixels) && std::isfinite(request.y_pixels) &&
@@ -622,13 +628,12 @@ auto lane_at_pointer(const chart_document_t& chart, const editor_hit_test_index_
     if (!layout) return std::nullopt;
     const auto lanes = editor_presented_lanes(*layout, view.scratch_on_right);
     if (lanes.empty()) return std::nullopt;
-    const auto lane_width = request.field_width_pixels / static_cast<double>(lanes.size());
-    const auto offset = (request.x_pixels - request.field_left_pixels) / lane_width;
-    if (!std::isfinite(offset) || offset < 0.0 || offset >= static_cast<double>(lanes.size()))
-        return std::nullopt;
-    (void)chart;
-    (void)view;
-    return lanes[static_cast<std::size_t>(std::floor(offset))]->id;
+    for (std::size_t column = 0; column < lanes.size(); ++column) {
+        const auto [left, right] = editor_presented_lane_bounds(*layout, lanes.size(), column,
+            request.field_left_pixels, request.field_width_pixels, request.split_stage_gutter_pixels);
+        if (request.x_pixels >= left && request.x_pixels < right) return lanes[column]->id;
+    }
+    return std::nullopt;
 }
 
 auto hit_priority(editor_hit_target_kind_t kind) -> int {
@@ -651,6 +656,17 @@ auto improves_candidate(const nearby_note_candidate_t& current, editor_hit_targe
     return !current.target.note || note.value < current.target.note->value;
 }
 
+auto note_pointer_distance(const lane_layout_t* layout, lane_id_t lane, double y,
+                            const editor_hit_test_request_t& request) -> double {
+    auto glyph = lane_glyph_t::bar;
+    if (layout) {
+        const auto found = std::ranges::find(layout->lanes, lane, &lane_definition_t::id);
+        if (found != layout->lanes.end()) glyph = found->glyph;
+    }
+    const auto [top, bottom] = editor_note_head_bounds(y, request.note_head_height_pixels, glyph);
+    return std::max({top - request.y_pixels, request.y_pixels - bottom, 0.0});
+}
+
 auto nearby_note_points(const chart_document_t& chart, const editor_hit_test_index_t& index,
                        const editor_interaction_view_model_t& view,
                        const editor_hit_test_request_t& request, std::uint64_t pointer_row,
@@ -658,7 +674,7 @@ auto nearby_note_points(const chart_document_t& chart, const editor_hit_test_ind
     -> nearby_note_candidate_t {
     nearby_note_candidate_t best{.target = {.kind = editor_hit_target_kind_t::lane,
                                             .lane = lane, .position = lane_position}};
-    const auto radius_rows = static_cast<long double>(request.note_hit_radius_pixels) *
+    const auto radius_rows = static_cast<long double>(request.note_hit_radius_pixels + request.note_head_height_pixels) *
         static_cast<long double>(chart.divisions_per_standard_measure) /
         static_cast<long double>(view.pixels_per_standard_measure);
     const auto row = static_cast<long double>(pointer_row);
@@ -684,7 +700,8 @@ auto nearby_note_points(const chart_document_t& chart, const editor_hit_test_ind
                 static_cast<long double>(view.pixels_per_standard_measure) /
                 static_cast<long double>(chart.divisions_per_standard_measure) -
                 static_cast<long double>(view.viewport_scroll_pixels));
-            const auto distance = std::abs(y - request.y_pixels);
+            const auto distance = note_pointer_distance(
+                effective_layout(chart, index.measures, entry->position), lane, y, request);
             if (distance > request.note_hit_radius_pixels) continue;
             const auto kind = note_target_kind(*entry);
             if (!improves_candidate(best, kind, distance, entry->note)) continue;
@@ -781,7 +798,9 @@ auto nearest_note_hover(const chart_document_t& chart, const editor_hit_test_ind
         {.x_pixels = request.x_pixels, .y_pixels = request.y_pixels,
          .field_left_pixels = request.field_left_pixels,
          .field_width_pixels = request.field_width_pixels,
-         .note_hit_radius_pixels = request.hit_radius_pixels});
+         .note_hit_radius_pixels = request.hit_radius_pixels,
+         .note_head_height_pixels = request.note_head_height_pixels,
+         .split_stage_gutter_pixels = request.split_stage_gutter_pixels});
     if (!note_hit || !note_hit->note) return {nullptr, std::numeric_limits<double>::infinity()};
     const auto object = editor_selection_object_t{editor_selection_object_kind_t::note,
                                                    *note_hit->note};

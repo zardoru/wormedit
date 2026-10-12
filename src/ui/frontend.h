@@ -821,6 +821,9 @@ typedef struct WormUiComposeBgmLaneView {
     uint64_t source_lane_id;
     size_t source_order;
     bool stem;
+    bool muted;
+    bool solo;
+    bool mix_silent;
     double width_pixels;
     double resize_edge_pixels;
     const char* filename;
@@ -1725,6 +1728,7 @@ typedef struct WormUiComposeView {
     size_t note_endpoint_count;
     const WormUiComposeBgmLaneView* bgm_lanes;
     size_t bgm_lane_count;
+    bool bgm_mix_available;
     const WormUiComposeBgmEventView* bgm_events;
     size_t bgm_event_count;
     const WormUiComposeWaveformRowView* waveform_rows;
@@ -2774,6 +2778,8 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_DRAW_SOURCE,
     WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW,
     WORM_UI_COMPOSE_INPUT_BMSON_EMPTY_SELECT,
+    WORM_UI_COMPOSE_INPUT_BGM_MUTE,
+    WORM_UI_COMPOSE_INPUT_BGM_SOLO,
 } WormUiComposeInputKind;
 
 typedef enum WormUiComposeNavigationAction {

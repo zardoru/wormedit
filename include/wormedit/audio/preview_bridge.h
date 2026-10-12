@@ -18,6 +18,7 @@ struct preview_voice_source_t {
     std::uint64_t source_start_frame{};
     std::uint64_t frame_count{};
     float gain{1.0F};
+    std::uint64_t mix_group{};
 };
 
 struct preview_object_source_binding_t {

@@ -7000,3 +7000,61 @@ TEST_CASE("lane-key same sound toggles to BGM and different sound replaces atomi
     check_lane_sound(find_note(history, original)->sound == resource_id_t{7});
     check_lane_sound(history.document.charts.front().measures.front().bgm_events.empty());
 }
+
+
+namespace {
+void require_specialstyle_pick(bool condition) { REQUIRE(condition); }
+void check_specialstyle_pick(bool condition) { CHECK(condition); }
+}
+
+TEST_CASE("SpecialStyle picking uses complete head fills and excludes the stage gap",
+          "[unit][core][interaction][hit-test][scratchpad-specialstyle]") {
+    const auto column = GENERATE(std::size_t{7}, std::size_t{8}, std::size_t{15});
+    const auto offset = GENERATE(1.0, 8.0, 15.0);
+    auto song = make_song();
+    const auto profile = make_osu_mania_profile(16, true);
+    require_specialstyle_pick(profile.has_value());
+    auto& chart = song.charts.front();
+    chart.lane_layouts.front().layout = profile->layout;
+    chart.measures.front().notes = {{.id = object_id_t{101},
+        .position = {measure_id_t{1}, 240}, .lane = lane_id_t{column + 1}}};
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{std::uint64_t{4}};
+    const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+        {measure_id_t{1}, 0}, snaps, 4, 384.0);
+    require_specialstyle_pick(static_cast<bool>(setup));
+    const auto built = build_editor_hit_test_index(history.document.charts.front(), 1);
+    require_specialstyle_pick(std::holds_alternative<editor_hit_test_index_t>(built));
+    const auto& index = std::get<editor_hit_test_index_t>(built);
+    const auto [left, right] = editor_presented_lane_bounds(profile->layout, 16, column, 100, 640, 14);
+    auto request = editor_hit_test_request_t{.x_pixels = (left + right) / 2,
+        .y_pixels = 48 + offset, .field_left_pixels = 100, .field_width_pixels = 640,
+        .note_hit_radius_pixels = 0, .note_head_height_pixels = 16, .split_stage_gutter_pixels = 14};
+    const auto hit = hit_test_editor(history.document.charts.front(), index, *setup.view, request);
+    require_specialstyle_pick(hit.has_value());
+    check_specialstyle_pick(hit->note == object_id_t{101});
+    request.x_pixels = 420;
+    check_specialstyle_pick(!hit_test_editor(history.document.charts.front(), index, *setup.view, request));
+}
+
+TEST_CASE("Picking rejects invalid head and stage geometry",
+          "[unit][core][interaction][hit-test][scratchpad-specialstyle]") {
+    auto history = make_document_history(make_song());
+    constexpr std::array snaps{std::uint64_t{4}};
+    const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+        {measure_id_t{1}, 0}, snaps, 4, 384.0);
+    require_specialstyle_pick(static_cast<bool>(setup));
+    const auto built = build_editor_hit_test_index(history.document.charts.front(), 1);
+    require_specialstyle_pick(std::holds_alternative<editor_hit_test_index_t>(built));
+    const auto& index = std::get<editor_hit_test_index_t>(built);
+    const auto invalid = GENERATE(-1.0, std::numeric_limits<double>::quiet_NaN(),
+        std::numeric_limits<double>::infinity());
+    auto request = editor_hit_test_request_t{.x_pixels = 150, .y_pixels = 48,
+        .field_left_pixels = 100, .field_width_pixels = 200, .note_head_height_pixels = invalid};
+    check_specialstyle_pick(!hit_test_editor(history.document.charts.front(), index, *setup.view, request));
+    request.note_head_height_pixels = 16;
+    request.split_stage_gutter_pixels = invalid;
+    check_specialstyle_pick(!hit_test_editor(history.document.charts.front(), index, *setup.view, request));
+    request.split_stage_gutter_pixels = 200;
+    check_specialstyle_pick(!hit_test_editor(history.document.charts.front(), index, *setup.view, request));
+}

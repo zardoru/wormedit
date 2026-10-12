@@ -626,6 +626,18 @@ auto maximum_layout_lane_count(const wormedit::chart_document_t& chart) -> std::
     return result;
 }
 
+auto compose_bgm_muted_lanes(const wormedit::chart_document_t& chart,
+    const bgm_lane_mix_state_t& mix) -> std::vector<std::uint64_t> {
+    const auto any_solo = std::ranges::any_of(chart.bgm_source_lanes,
+        [&](const auto& lane) { return mix.solo.contains(lane.id.value); });
+    std::vector<std::uint64_t> muted;
+    for (const auto& lane : chart.bgm_source_lanes)
+        if (mix.muted.contains(lane.id.value) || (any_solo && !mix.solo.contains(lane.id.value)))
+            muted.push_back(lane.id.value);
+    std::ranges::sort(muted);
+    return muted;
+}
+
 auto compose_editor_layout_width(double viewport_width, double editor_right) -> double {
     return std::isfinite(editor_right) && editor_right > 0.0
         ? std::min(viewport_width, editor_right) : viewport_width;
@@ -4777,6 +4789,18 @@ void populate_compose_paint_ghost(const compose_final_projection_context_t& inpu
     view.paint_ghost_visible = true;
 }
 
+void populate_compose_bgm_mix(const compose_final_projection_context_t& input) {
+    const auto found = input.application_state.bgm_lane_mix.find(input.chart.id.value);
+    const auto* mix = found == input.application_state.bgm_lane_mix.end() ? nullptr : &found->second;
+    const auto muted = mix ? compose_bgm_muted_lanes(input.chart, *mix) : std::vector<std::uint64_t>{};
+    input.view.bgm_mix_available = static_cast<bool>(input.application_state.transport_set_bgm_mix);
+    for (auto& lane : input.flattened.compose.bgm.lane) {
+        lane.muted = mix && mix->muted.contains(lane.source_lane_id);
+        lane.solo = mix && mix->solo.contains(lane.source_lane_id);
+        lane.mix_silent = std::ranges::binary_search(muted, lane.source_lane_id);
+    }
+}
+
 void populate_compose_final_projection(const compose_final_projection_context_t& input) {
     input.view.clipboard_copy_available = input.retained_state &&
         !editor_interaction_has_pending_gesture(*input.retained_state) &&
@@ -4788,6 +4812,7 @@ void populate_compose_final_projection(const compose_final_projection_context_t&
     const auto rows = prepare_compose_projection_state(input);
     populate_compose_pending_previews(input);
     (void)compose_project_scene(input, rows);
+    populate_compose_bgm_mix(input);
     populate_compose_paste_projection(input);
     cache_area_object_geometry(input);
     populate_compose_paint_ghost(input);
@@ -4842,6 +4867,7 @@ void populate_bgm_only_compose_projection(
     const auto rows = prepare_compose_projection_state(final_context);
     populate_compose_pending_previews(final_context);
     (void)compose_project_scene(final_context, rows);
+    populate_compose_bgm_mix(final_context);
     view.clipboard_copy_available = false;
     view.clipboard_paste_available = false;
     view.paste_active = false;

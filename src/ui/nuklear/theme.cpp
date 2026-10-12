@@ -662,7 +662,7 @@ auto is_dp5(std::span<const field_lane_t> lanes) -> bool {
     if (groups.size() != 2) return false;
     for (const auto& group : groups) {
         if (group.size() != 6 || std::ranges::count_if(group, [](const auto* lane) {
-                return lane->role == 1;
+                return lane->role == 1 || (lane->role == 0 && lane->key_color == 3);
             }) != 1) return false;
     }
     return true;

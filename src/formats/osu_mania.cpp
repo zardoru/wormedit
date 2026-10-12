@@ -2910,6 +2910,24 @@ void account_osu_metadata(const std::vector<std::string>& music_files,
             account(field.line);
 }
 
+// Layout selection owns SpecialStyle for the two supported split-key modes.
+// Other counts retain their original metadata, including unknown style values.
+void project_osu_specialstyle_field(const chart_document_t& chart,
+                                    std::vector<passthrough_field_t>& fields) {
+    if (chart.lane_layouts.empty()) return;
+    const auto& layout = chart.lane_layouts.front().layout;
+    const auto keys = layout.lanes.size();
+    if (keys != 12 && keys != 16) return;
+    const auto base = "osu-mania-" + std::to_string(keys) + "k";
+    if (layout.profile_id != base && layout.profile_id != base + "-specialstyle") return;
+    std::erase_if(fields, [](const auto& field) {
+        if (field.section != "General") return false;
+        const auto colon = field.line.find(':');
+        return trim(field.line.substr(0, colon)) == "SpecialStyle";
+    });
+    fields.push_back({"General", layout.profile_id == base ? "SpecialStyle:0" : "SpecialStyle:1"});
+}
+
 template <typename append_line_t>
 void append_osu_metadata_sections(const song_document_t& song, const chart_document_t& chart,
                                  const std::vector<std::string>& music_files,
@@ -3442,6 +3460,7 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
         auto extra_fields = options.preserve_unknown_fields
                                 ? passthrough_fields(*chart, song, result.diagnostics)
                                 : std::vector<passthrough_field_t>{};
+        project_osu_specialstyle_field(*chart, extra_fields);
         if (result.has_errors())
             throw osu_write_abort_t{};
         std::size_t metadata_field_count{};

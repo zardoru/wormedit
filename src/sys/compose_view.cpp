@@ -309,7 +309,8 @@ static void populate_lane_profile_choices(WormUiComposeView& view, const wormedi
         const auto& layout = choices[index].layout;
         const auto* prefix = layout.profile_id.starts_with("stepmania:") ? "StepMania " : "osu!mania ";
         std::snprintf(view.lane_profile_names[index], sizeof(view.lane_profile_names[index]),
-                      "%s%s", prefix, layout.display_name.c_str());
+                      "%s%s%s", prefix, layout.display_name.c_str(),
+                      layout.profile_id.ends_with("-specialstyle") ? " (SpecialStyle)" : "");
         if (layout.profile_id == segment->layout.profile_id)
             view.lane_profile_current = static_cast<std::int8_t>(index);
     }
@@ -336,6 +337,8 @@ void append_osu_layout_profiles(std::vector<wormedit::lane_input_profile_t>& cho
     for (std::uint32_t keys = 1; keys <= 18; ++keys)
         if (auto profile = wormedit::make_osu_mania_profile(keys))
             choices.push_back(std::move(*profile));
+    for (const auto keys : {12u, 16u})
+        choices.push_back(*wormedit::make_osu_mania_profile(keys, true));
 }
 
 void append_mode_layout_profiles(std::vector<wormedit::lane_input_profile_t>& choices,
@@ -455,7 +458,8 @@ void append_lane_layout_profile_choice(WormUiComposeView& view,
     const auto* prefix = layout.profile_id.starts_with("osu-mania-") ? "osu!mania "
         : layout.profile_id.starts_with("stepmania:") ? "StepMania " : "";
     std::snprintf(view.lane_layout_profile_names[index],
-        sizeof(view.lane_layout_profile_names[index]), "%s%s", prefix, layout.display_name.c_str());
+        sizeof(view.lane_layout_profile_names[index]), "%s%s%s", prefix, layout.display_name.c_str(),
+                      layout.profile_id.ends_with("-specialstyle") ? " (SpecialStyle)" : "");
     std::snprintf(view.lane_layout_profile_ids[index], sizeof(view.lane_layout_profile_ids[index]),
         "%s", layout.profile_id.c_str());
     if (active && layout.profile_id == active->layout.profile_id)
@@ -620,6 +624,11 @@ auto maximum_layout_lane_count(const wormedit::chart_document_t& chart) -> std::
     for (const auto& segment : chart.lane_layouts)
         result = std::max(result, segment.layout.lanes.size());
     return result;
+}
+
+auto compose_editor_layout_width(double viewport_width, double editor_right) -> double {
+    return std::isfinite(editor_right) && editor_right > 0.0
+        ? std::min(viewport_width, editor_right) : viewport_width;
 }
 
 auto compose_horizontal_layout(double viewport_width_pixels, std::size_t lane_count,
@@ -4435,7 +4444,9 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
     view.bga_lane_visible = interaction_view.bga_lane_visible &&
         wormedit::editor_bga_visible_lane_mask(chart, interaction_view.bga_revealed_lane_mask) != 0;
     const auto horizontal_layout =
-        compose_horizontal_layout(view.viewport_width_pixels, maximum_layout_lane_count(chart),
+        compose_horizontal_layout(compose_editor_layout_width(view.viewport_width_pixels,
+                                      application_state.compose_editor_right_pixels),
+                                  maximum_layout_lane_count(chart),
                                   compose_has_bgm_pane(chart, interaction_view),
                                   interaction_view.bga_lane_visible ? std::popcount(
                                       wormedit::editor_bga_visible_lane_mask(chart,

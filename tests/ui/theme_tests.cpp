@@ -457,10 +457,13 @@ TEST_CASE("BMSE rotation default applies to DP5 only and preserves authored lane
     load(source_themes());
     REQUIRE(select_field_scheme("ibmsc-bmse"));
     const auto dp5 = palette_lanes(wormedit::make_bms_10k_standard_profile());
+    const auto osu_dp5 = palette_lanes(*wormedit::make_osu_mania_profile(12, true));
     const auto dp7 = palette_lanes(wormedit::make_bms_14k_profile());
     const auto sp7 = palette_lanes(wormedit::make_bms_7k_profile());
     expect_theme(field_scratch_side(1, dp5) == false);
     expect_theme(field_scratch_side(2, dp5) == false);
+    expect_theme(field_scratch_side(1, osu_dp5) == false);
+    expect_theme(field_scratch_side(2, osu_dp5) == false);
     expect_theme(!field_scratch_side(1, dp7).has_value());
     expect_theme(!field_scratch_side(2, dp7).has_value());
     expect_theme(!field_scratch_side(1, sp7).has_value());

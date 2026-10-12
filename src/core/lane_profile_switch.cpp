@@ -138,6 +138,8 @@ auto lane_profile_choices(std::size_t lane_count) -> std::vector<lane_input_prof
     std::vector<lane_input_profile_t> choices;
     if (const auto osu = make_osu_mania_profile(static_cast<std::uint32_t>(lane_count)))
         choices.push_back(*osu);
+    if (lane_count == 12 || lane_count == 16)
+        choices.push_back(*make_osu_mania_profile(static_cast<std::uint32_t>(lane_count), true));
     for (const auto step_type : step_types) {
         auto profile = make_stepmania_profile_for(step_type);
         if (profile && profile->layout.lanes.size() == lane_count)
@@ -185,6 +187,15 @@ auto active_lane_layout_segment(const chart_document_t& chart, local_position_t 
     return best;
 }
 
+namespace {
+auto adopts_specialstyle_geometry(const lane_layout_t& current, const lane_layout_t& target) -> bool {
+    const auto base = "osu-mania-" + std::to_string(target.lanes.size()) + "k";
+    return (target.lanes.size() == 12 || target.lanes.size() == 16) &&
+        (target.profile_id == base + "-specialstyle" ||
+         (current.profile_id == base + "-specialstyle" && target.profile_id == base));
+}
+} // namespace
+
 auto retarget_lane_layout(const lane_layout_t& current, const lane_layout_t& target)
     -> std::optional<lane_layout_t> {
     if (current.lanes.size() != target.lanes.size()) return std::nullopt;
@@ -201,6 +212,11 @@ auto retarget_lane_layout(const lane_layout_t& current, const lane_layout_t& tar
     order_by_visual_position(current, ordered_current);
     order_by_visual_position(target, ordered_target);
     auto result = current;
+    const auto adopt_geometry = adopts_specialstyle_geometry(current, target);
+    if (adopt_geometry) {
+        result.split_stage = target.split_stage;
+        result.split_after_column = target.split_after_column;
+    }
     result.profile_id = target.profile_id;
     result.display_name = target.display_name;
     for (auto& lane : result.lanes) {
@@ -209,6 +225,7 @@ auto retarget_lane_layout(const lane_layout_t& current, const lane_layout_t& tar
         const auto& source = ordered_target[rank];
         if (lane.role != source.role) return std::nullopt;
         lane.name = source.name;
+        if (adopt_geometry) lane.stage = source.stage;
         lane.glyph = source.glyph;
         lane.key_color = source.key_color;
     }

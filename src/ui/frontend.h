@@ -3027,6 +3027,8 @@ typedef struct WormUiWorkspaceAction {
     uint8_t compose_quantize_holds;
     char compose_quantize_preset_name[WORM_UI_COMPOSE_QUANTIZE_PRESET_NAME_BYTES + 1];
     double compose_input_viewport_width_pixels;
+    // Uncovered editor right edge in the same source coordinates as the viewport.
+    double compose_input_editor_right_pixels;
     uint64_t compose_sound_hover_object_id;
     bool compose_has_pointer_hover;
     double compose_pointer_hover_x_pixels;

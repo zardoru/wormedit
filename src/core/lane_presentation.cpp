@@ -3,6 +3,10 @@
 #include <tuple>
 #include <unordered_map>
 namespace wormedit {
+auto editor_lane_has_scratch_class(const lane_definition_t& lane) -> bool {
+    return lane.role == lane_role_t::scratch ||
+        (lane.role == lane_role_t::playable && lane.key_color == lane_key_color_t::scratch);
+}
 namespace {
 auto editable(const lane_definition_t& lane) -> bool {
     return lane.role != lane_role_t::autoplay && lane.role != lane_role_t::invisible &&
@@ -14,14 +18,14 @@ auto side(const lane_definition_t& lane, const editor_scratch_presentation_t& si
 }
 auto category(const lane_definition_t& lane, const editor_scratch_presentation_t& sides) -> int {
     const auto placement = side(lane, sides);
-    if (lane.role != lane_role_t::scratch || !placement) return 0;
+    if (!editor_lane_has_scratch_class(lane) || !placement) return 0;
     return *placement ? 1 : -1;
 }
 }
 auto editor_scratch_presentation_active(const lane_layout_t& layout,
                                          const editor_scratch_presentation_t& sides) -> bool {
     return std::ranges::any_of(layout.lanes, [&](const auto& lane) {
-        return lane.role == lane_role_t::scratch && side(lane, sides).has_value();
+        return editor_lane_has_scratch_class(lane) && side(lane, sides).has_value();
     });
 }
 auto editor_presented_lanes(const lane_layout_t& layout, const editor_scratch_presentation_t& sides)

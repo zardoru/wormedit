@@ -4,6 +4,8 @@
 #include <optional>
 #include <vector>
 namespace wormedit {
+// Scratch visuals include playable osu SpecialStyle columns; authored roles stay intact.
+[[nodiscard]] auto editor_lane_has_scratch_class(const lane_definition_t& lane) -> bool;
 // View-only scratch sides: null retains authored ordering, false left, true right.
 using editor_scratch_presentation_t = std::array<std::optional<bool>, 2>;
 [[nodiscard]] auto editor_scratch_presentation_active(const lane_layout_t& layout,

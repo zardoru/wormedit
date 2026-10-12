@@ -4387,11 +4387,17 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
                                     ? std::size_t{}
                                     : input_chart->bgm_source_lanes.size();
     const auto horizontal_layout = compose_horizontal_layout(
-        ui_action.compose_input_viewport_width_pixels,
+        compose_editor_layout_width(ui_action.compose_input_viewport_width_pixels,
+                                    application_state.compose_editor_right_pixels),
         input_chart == history.document.charts.end() ? 0 : maximum_layout_lane_count(*input_chart),
         bgm_lane_count != 0, state.bga_lane_visible && input_chart != history.document.charts.end()
             ? std::popcount(editor_bga_visible_lane_mask(*input_chart, state.bga_revealed_lane_mask)) : 0,
         effective_compose_timing_lane_mask(application_state));
+    // Pick against the geometry the frontend received, then reflow the next frame.
+    if (std::isfinite(ui_action.compose_input_editor_right_pixels) &&
+        ui_action.compose_input_editor_right_pixels > 0.0)
+        application_state.compose_editor_right_pixels = compose_editor_layout_width(
+            ui_action.compose_input_viewport_width_pixels, ui_action.compose_input_editor_right_pixels);
     const auto bgm_pane_width = horizontal_layout.bgm_pane_width_pixels;
     const auto bgm_pane_left_pixels = horizontal_layout.bgm_pane_left_pixels;
     const auto field_left_pixels = horizontal_layout.field_left_pixels;

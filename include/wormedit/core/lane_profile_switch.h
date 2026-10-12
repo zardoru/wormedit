@@ -25,7 +25,8 @@ namespace wormedit {
     -> const lane_layout_segment_t*;
 
 // Keeps the current lane IDs, order and stages and adopts the target's profile id, display name,
-// lane names, glyphs and key colors. Nullopt unless both layouts have the same lane count and corresponding lane roles.
+// lane names, glyphs and key colors. SpecialStyle switches also adopt the target stage split.
+// Nullopt unless both layouts have the same lane count and corresponding lane roles.
 [[nodiscard]] auto retarget_lane_layout(const lane_layout_t& current, const lane_layout_t& target)
     -> std::optional<lane_layout_t>;
 

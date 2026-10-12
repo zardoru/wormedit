@@ -410,6 +410,7 @@ struct application_command_state_t : application_command_services_t {
     std::optional<paste_session_t> paste_session;
     wormedit::editor_preferences_t editor_preferences;
     wormedit::editor_scratch_presentation_t scratch_on_right;
+    double compose_editor_right_pixels{};
     struct bmson_marker_draft_t {
         wormedit::chart_id_t chart;
         std::uint64_t revision{};
@@ -593,6 +594,8 @@ auto compose_field_downscroll(const wormedit::chart_document_t& chart,
     const wormedit::editor_preferences_t& preferences) -> bool;
 auto compose_project_y(long double row, double pixels_per_row, double scroll,
                        double viewport_height, bool downscroll) -> double;
+// Bounds source geometry to the canvas left uncovered by frontend docks.
+auto compose_editor_layout_width(double viewport_width, double editor_right) -> double;
 auto compose_horizontal_layout(double viewport_width_pixels, std::size_t lane_count,
                                bool has_bgm_lanes, std::size_t bga_lane_count,
                                std::uint8_t timing_lane_mask)

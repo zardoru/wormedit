@@ -1,4 +1,5 @@
 #include <wormedit/core/lane_profile_switch.h>
+#include <wormedit/core/lane_presentation.h>
 #include <wormedit/formats/native_project.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -458,4 +459,53 @@ TEST_CASE("Equal counts cannot relabel scratch or auxiliary lanes as ordinary ke
     check_profile(!rejected.applied);
     check_profile(history.document.revision == 4);
     check_profile(history.undo.empty());
+}
+
+TEST_CASE("SpecialStyle switches expose both stages and preserve playable column identities",
+          "[core][lane-profile-switch][scratchpad-specialstyle]") {
+    for (const auto keys : {12U, 16U}) {
+        auto song = switch_song(keys, "osu");
+        const auto before = song.charts.front();
+        auto history = make_document_history(song);
+        const auto special = make_osu_mania_profile(keys, true);
+        const auto choices = lane_profile_choices(keys);
+        check_profile(std::ranges::any_of(choices, [&](const auto& value) {
+            return value.layout.profile_id == special->layout.profile_id;
+        }));
+        require_profile(static_cast<bool>(apply_lane_profile_switch(history, 4, before.id,
+            {measure_id_t{3}, 0}, special->layout)));
+        const auto& chart = history.document.charts.front();
+        const auto& layout = chart.lane_layouts.front().layout;
+        check_profile(layout.split_stage && layout.split_after_column == keys / 2);
+        check_profile(layout.lanes.back().stage == stage_group_t::right);
+        check_profile(layout.lanes.front().key_color == lane_key_color_t::scratch);
+        check_profile(layout.lanes.back().key_color == lane_key_color_t::scratch);
+        check_profile(chart.measures.front().notes.front().lane == before.measures.front().notes.front().lane);
+        check_profile(input_bindings_match(chart.input_profile, before.input_profile));
+        check_profile(validate_document(history.document).empty());
+        const editor_scratch_presentation_t both_left{false, false};
+        const auto presented = editor_presented_lanes(layout, both_left);
+        check_profile(presented.front()->id == lane_id_t{1});
+        check_profile(presented[keys / 2]->id == lane_id_t{keys});
+        check_profile(presented[keys / 2]->role == lane_role_t::playable);
+        require_profile(static_cast<bool>(undo_document_command(history)));
+        check_profile(lane_identity_matches(history.document.charts.front().lane_layouts.front().layout,
+                                            before.lane_layouts.front().layout));
+    }
+}
+
+TEST_CASE("Leaving SpecialStyle restores an ordinary field without replacing input bindings",
+          "[core][lane-profile-switch][scratchpad-specialstyle]") {
+    auto song = switch_song(16, "osu");
+    song.charts.front().lane_layouts.front().layout = make_osu_mania_profile(16, true)->layout;
+    song.charts.front().input_profile = make_osu_mania_profile(16, true)->input;
+    auto history = make_document_history(song);
+    require_profile(static_cast<bool>(apply_lane_profile_switch(history, 4, chart_id_t{2},
+        {measure_id_t{3}, 0}, make_osu_mania_profile(16)->layout)));
+    const auto& chart = history.document.charts.front();
+    check_profile(!chart.lane_layouts.front().layout.split_stage);
+    check_profile(!chart.lane_layouts.front().layout.split_after_column);
+    check_profile(chart.lane_layouts.front().layout.lanes.back().stage == stage_group_t::left);
+    check_profile(input_bindings_match(chart.input_profile, song.charts.front().input_profile));
+    check_profile(validate_document(history.document).empty());
 }

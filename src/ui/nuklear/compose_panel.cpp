@@ -1246,6 +1246,9 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     const auto editor_input_right = inspector_drawn
         ? viewport.x + viewport.w - inspector_width - 8.0f
         : viewport.x + viewport.w;
+    action->compose_input_editor_right_pixels =
+        std::max(1.0, static_cast<double>(editor_input_right - viewport.x) *
+                      view->viewport_width_pixels / viewport.w);
     // A note double-click selected the note and asked for its label editor; open it over the note.
     if (view->focus_note_label_editor && window_focused && !view->input_occluded &&
         begin_compose_note_label_inline(state.bookmark_rename, *view, state.note_label_anchor_x,

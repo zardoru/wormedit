@@ -1,3 +1,4 @@
+#include <wormedit/core/lane_profile_switch.h>
 #include <wormedit/core/bmson_lane_mode.h>
 #include "sys/application_command_dispatch.h"
 #include "sys/frame_timing.h"
@@ -6619,4 +6620,57 @@ TEST_CASE("Compose classifies stem note heads after geometry projection and cach
         t475_check(view.note_endpoints[0].sound_is_stem);
         t475_check(!view.note_endpoints[0].sound_missing);
     }
+}
+
+TEST_CASE("Existing 16K charts offer distinctly named SpecialStyle layouts and projected scratch classes",
+          "[sys][compose][scratchpad-specialstyle]") {
+    auto song = compose_test_song();
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::osu_mania;
+    chart.lane_layouts.front().layout = make_osu_mania_profile(16)->layout;
+    chart.input_profile = make_osu_mania_profile(16)->input;
+    compose_test_fixture_t fixture(std::move(song));
+    fixture.project();
+    auto& view = fixture.flattened.view.compose;
+    expect_compose_test(view.lane_profile_choice_count == 2);
+    expect_compose_test(std::string_view(view.lane_profile_names[1]) == "osu!mania 16K (SpecialStyle)");
+    const auto& active = fixture.history.document.charts.front().lane_layouts.front();
+    expect_compose_test(static_cast<bool>(apply_lane_profile_switch(fixture.history,
+        fixture.history.document.revision, chart_id_t{1}, active.position,
+        make_osu_mania_profile(16, true)->layout)));
+    fixture.application.compose_editor_right_pixels = 820;
+    fixture.application.scratch_on_right = {false, false};
+    fixture.project();
+    const auto lanes = std::span(fixture.flattened.view.compose.lanes,
+                                fixture.flattened.view.compose.lane_count);
+    expect_compose_test(std::ranges::all_of(lanes, [](const auto& lane) {
+        return lane.bounds.right <= 820;
+    }));
+    expect_compose_test(std::ranges::any_of(lanes, [](const auto& lane) {
+        return lane.lane_id == 16 && lane.key_color == static_cast<uint8_t>(lane_key_color_t::scratch) &&
+               lane.stage == static_cast<uint8_t>(stage_group_t::right);
+    }));
+}
+
+TEST_CASE("Compose reflows wide layouts from stamped canvas width without changing authored data",
+          "[sys][compose][scratchpad-specialstyle]") {
+    compose_test_fixture_t fixture;
+    fixture.project();
+    auto action = cursor_placement_action(fixture);
+    action.compose_input_count = 0;
+    action.compose_input_editor_right_pixels = 700;
+    editor_navigation_input_controller_t navigation;
+    viewport_input_controller_t viewport;
+    (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.workspace,
+        *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0);
+    expect_compose_test(fixture.application.compose_editor_right_pixels == 700);
+    fixture.project();
+    expect_compose_test(fixture.flattened.view.compose.playable_field_right_pixels <= 700);
+    expect_compose_test(fixture.history.document.revision == 1 && fixture.history.undo.empty());
+    ++action.compose_input_document_revision;
+    action.compose_input_editor_right_pixels = 200;
+    (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.workspace,
+        *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0);
+    expect_compose_test(fixture.application.compose_editor_right_pixels == 700);
+    expect_compose_test(compose_editor_layout_width(1000, std::numeric_limits<double>::quiet_NaN()) == 1000);
 }

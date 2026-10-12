@@ -6562,3 +6562,23 @@ TEST_CASE("Double-clicking a stem note arms it without opening its label editor"
         expect_draw(label != nullptr);
     }
 }
+
+TEST_CASE("Compose reports the canvas width left uncovered by side docks",
+          "[frontend-state][event-harness][scratchpad-specialstyle]") {
+    nuklear_event_harness_t harness{1600, 900};
+    section_import_require(harness.ready());
+    auto& state = worm_ui_nuklear_compose_state();
+    state.inspector_visible = true;
+    auto covered = harness.frame();
+    expect_draw(covered.get().compose_input_editor_right_pixels > 0);
+    expect_draw(covered.get().compose_input_editor_right_pixels <
+                covered.get().compose_input_viewport_width_pixels);
+    state.inspector_visible = false;
+    state.sounds_panel_visible = false;
+    state.layers_panel_visible = false;
+    state.bga_panel_visible = false;
+    state.measures_panel_visible = false;
+    const auto open = harness.frame();
+    expect_draw(open.get().compose_input_editor_right_pixels > covered.get().compose_input_editor_right_pixels);
+    expect_draw(open.get().compose_input_editor_right_pixels <= open.get().compose_input_viewport_width_pixels);
+}

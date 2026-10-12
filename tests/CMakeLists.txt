@@ -605,6 +605,10 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/compose_navigation.cpp
         ../src/sys/compose_dead_spans.cpp
         ../src/sys/compose_input.cpp
+        ../src/sys/compose_waveform_fit_input.cpp
+        ../src/sys/compose_timing_input.cpp
+        ../src/sys/compose_resource_input.cpp
+        ../src/sys/compose_navigation_input.cpp
         ../src/sys/compose_kiai_spans.cpp
         ../src/sys/compose_minimap_navigation.cpp
         ../src/sys/compose_note_to_bgm.cpp
@@ -615,6 +619,10 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/compose_speed_spans.cpp
         ../src/sys/compose_sv_graph.cpp
         ../src/sys/compose_view.cpp
+        ../src/sys/compose_scene_projection.cpp
+        ../src/sys/compose_marker_projection.cpp
+        ../src/sys/compose_selection_projection.cpp
+        ../src/sys/compose_draw_source_projection.cpp
         ../src/sys/recipe_form.cpp
         ../src/sys/sound_list_projection.cpp
         ../src/sys/sound_picker_projection.cpp
@@ -684,6 +692,10 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/frame_timing.cpp
         ../src/sys/compose_area_actions.cpp
         ../src/sys/compose_view.cpp
+        ../src/sys/compose_scene_projection.cpp
+        ../src/sys/compose_marker_projection.cpp
+        ../src/sys/compose_selection_projection.cpp
+        ../src/sys/compose_draw_source_projection.cpp
         ../src/sys/compose_dead_spans.cpp
         ../src/sys/compose_kiai_spans.cpp
         ../src/sys/compose_sv_graph.cpp
@@ -715,6 +727,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         target_sources(wormedit_frame_timing_tests PRIVATE
             sys/compose_action_notification_tests.cpp
             ../src/sys/compose_actions.cpp
+            ../src/sys/compose_resource_actions.cpp
+            ../src/sys/compose_marker_actions.cpp
             ../src/sys/compose_bga_actions.cpp
             ../src/sys/compose_measure_commands.cpp
             ../src/sys/compose_selection_transform.cpp
@@ -745,6 +759,10 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             sys/audio_notification_tests.cpp
             ../src/sys/bmson_waveform_projection.cpp
             ../src/sys/compose_input.cpp
+            ../src/sys/compose_waveform_fit_input.cpp
+            ../src/sys/compose_timing_input.cpp
+            ../src/sys/compose_resource_input.cpp
+            ../src/sys/compose_navigation_input.cpp
             ../src/sys/compose_note_to_bgm.cpp
             ../src/sys/compose_minimap_navigation.cpp
             ../src/sys/compose_bookmark_commands.cpp

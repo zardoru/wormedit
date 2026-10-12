@@ -74,6 +74,9 @@ add_library(wormedit_core
     src/core/format_field_schema.cpp
     src/core/grid.cpp
     src/core/interaction.cpp
+    src/core/note_placement.cpp
+    src/core/note_move.cpp
+    src/core/interaction_gesture_lifecycle.cpp
     src/core/interaction_cursor.cpp
     src/core/interaction_hit_test.cpp
     src/core/interaction_selection.cpp
@@ -472,12 +475,22 @@ if(WORMEDIT_BUILD_APP)
         src/sys/application_command_dispatch.cpp
         src/sys/compose_resource_presenter.cpp
         src/sys/compose_view.cpp
+        src/sys/compose_scene_projection.cpp
+        src/sys/compose_marker_projection.cpp
+        src/sys/compose_selection_projection.cpp
+        src/sys/compose_draw_source_projection.cpp
         src/sys/compose_hover_timing.cpp
         src/sys/compare_view.cpp
         src/sys/compose_input.cpp
+        src/sys/compose_waveform_fit_input.cpp
+        src/sys/compose_timing_input.cpp
+        src/sys/compose_resource_input.cpp
+        src/sys/compose_navigation_input.cpp
         src/sys/compose_note_to_bgm.cpp
         src/sys/compose_area_actions.cpp
         src/sys/compose_actions.cpp
+        src/sys/compose_resource_actions.cpp
+        src/sys/compose_marker_actions.cpp
         src/sys/compose_sound_actions.cpp
         src/sys/compose_bga_actions.cpp
         src/sys/bga_list_projection.cpp
@@ -498,6 +511,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/chart_import_session.cpp
         src/sys/project_save_paths.cpp
         src/sys/main.cpp
+        src/sys/application_timing_stage.cpp
         src/sys/frame_timing.cpp
         src/sys/timing_view.cpp
         src/sys/timing_edit_runtime.cpp

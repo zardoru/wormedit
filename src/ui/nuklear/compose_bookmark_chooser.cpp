@@ -2,6 +2,7 @@
 
 #include "wormedit/nuklear_config.h"
 #include "ui/nuklear/chrome.h"
+#include "ui/nuklear/popup_lifecycle.h"
 #include <cstring>
 
 #include <algorithm>
@@ -9,22 +10,6 @@
 
 namespace {
 constexpr std::size_t page_size = 12;
-
-auto quiet_input_frame(const nk_context& context) -> bool {
-    for (int button = 0; button < NK_BUTTON_MAX; ++button) {
-        const auto& current = context.input.mouse.buttons[button];
-        if (current.down || current.clicked != 0 ||
-            nk_input_is_mouse_released(&context.input, static_cast<nk_buttons>(button)))
-            return false;
-    }
-    for (int key = 0; key < NK_KEY_MAX; ++key) {
-        const auto current = static_cast<nk_keys>(key);
-        if (nk_input_is_key_down(&context.input, current) ||
-            nk_input_is_key_pressed(&context.input, current) ||
-            nk_input_is_key_released(&context.input, current)) return false;
-    }
-    return true;
-}
 
 void set_status(bookmark_chooser_state_t& state, const char* message) {
     std::snprintf(state.status.data(), state.status.size(), "%s", message);
@@ -186,7 +171,8 @@ auto worm_ui_nuklear_bookmark_chooser_release_pending(
 
 void worm_ui_nuklear_bookmark_chooser_release_delivered(nk_context* context,
                                                        bookmark_chooser_state_t& state) {
-    if (context && quiet_input_frame(*context)) state.release_pending = false;
+    (void)wormedit::ui::chrome::popup_update_release_pending(
+        context, state.release_pending, wormedit::ui::chrome::PopupReleaseKeys::all);
 }
 
 auto worm_ui_nuklear_render_compose_bookmark_chooser(

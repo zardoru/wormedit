@@ -8,13 +8,6 @@
 #include <cstring>
 
 namespace {
-auto quiet_frame(const nk_context& context) -> bool {
-    for (const auto& button : context.input.mouse.buttons)
-        if (button.down || button.clicked) return false;
-    for (const auto& key : context.input.keyboard.keys)
-        if (key.down || key.clicked) return false;
-    return true;
-}
 void activate(const WormUiComposeView& view, WormUiWorkspaceAction& action,
               worm_ui_nuklear_compose_state_t& compose, std::size_t index) {
     auto& picker = compose.sound_picker;
@@ -120,7 +113,8 @@ void render_compose_sound_picker(nk_context* context, const WormUiComposeView& v
     auto& state = compose.sound_picker;
     if (!context) return;
     if (!state.open && !state.close_pending) {
-        if (quiet_frame(*context)) state.release_pending = false;
+        (void)wormedit::ui::chrome::popup_update_release_pending(
+            context, state.release_pending, wormedit::ui::chrome::PopupReleaseKeys::all);
         return;
     }
     if (!focused || state.project != view.project_id || state.chart != view.chart_id ||

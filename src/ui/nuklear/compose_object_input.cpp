@@ -595,8 +595,7 @@ bool process_draw_right_pointer(const ComposePointerEventContext& input) {
     if (!input.view->note_paint_mode_active || !input.window_focused ||
         input.view->input_occluded || input.view->timing_focus) {
         if (state.draw_erase_pointer_active) append_compose_cancel_once(input.action);
-        state.draw_right_candidate = state.draw_erase_pointer_active = false;
-        state.draw_right_press_pending = state.draw_right_release_pending = state.draw_right_native_down = false;
+        worm_ui_nuklear_reset_draw_right_capture(state);
         return false;
     }
     const auto started_inside = state.draw_right_screen_x >= input.viewport.x &&
@@ -627,8 +626,7 @@ bool process_draw_right_pointer(const ComposePointerEventContext& input) {
     }
     const auto consumed = state.draw_erase_pointer_active;
     if (!button.down) {
-        state.draw_right_candidate = state.draw_erase_pointer_active = false;
-        state.draw_right_release_pending = false;
+        worm_ui_nuklear_reset_draw_right_capture(state);
     }
     return consumed;
 }

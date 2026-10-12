@@ -426,9 +426,6 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const WormUiCompose
         nk_label(context, free_run, NK_TEXT_LEFT);
     }
     renumber_confirmation(context, *view, *state, *action);
-    if (state->bga_renumber_release_pending &&
-        !context->input.mouse.buttons[NK_BUTTON_LEFT].down)
-        state->bga_renumber_release_pending = false;
 }
 
 static bool bga_stack_is_valid(const WormUiComposeView& view,

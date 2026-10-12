@@ -277,9 +277,10 @@ static auto bgm_column_count_draft(const WormUiComposeView& view)
     -> worm_ui_nuklear_compose_state_t::bgm_column_count_edit_t& {
     auto& draft = state.bgm_column_count_edit;
     if (!draft.initialized || !view.bgm_column_count_editable ||
-        draft.chart_id != view.chart_id || draft.revision != view.document_revision ||
-        draft.commit_pending)
+        draft.chart_id != view.chart_id || draft.revision != view.document_revision)
         reset_bgm_column_count_draft(draft, view);
+    else if (draft.commit_pending)
+        reset_bgm_column_count_draft(draft, view, false);
     return draft;
 }
 

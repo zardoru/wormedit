@@ -8137,3 +8137,130 @@ TEST_CASE("WAV and BMP renumber toolbar gestures share stamped confirmation",
     expect_t422(emitted->get().compose_renumber_bga == bga && emitted->get().compose_renumber_all);
     expect_t422(emitted->get().compose_input_project_id == view.project_id);
 }
+
+TEST_CASE("BGA renumber retains closing release until a quiet frame",
+          "[frontend-state][event-harness][release-latch-consolidation]") {
+    nuklear_event_harness_t harness{1600, 1100};
+    expect_t422(harness.ready());
+    auto& view = harness.view().compose;
+    view.bga_ids_available = true;
+    (void)harness.frame();
+    auto& state = worm_ui_nuklear_compose_state();
+    state.bga_panel_visible = true;
+    (void)harness.frame();
+    (void)click_at(harness, state.bga_list_x + 6 * 38 + 17, state.bga_list_y + 24 + 13);
+    expect_t422(state.bga_renumber_confirmation_open);
+    const auto button = harness.drawn_text_center("All BGA");
+    expect_t422(button.has_value());
+    const auto frames = click_at(harness, button->first, button->second);
+    expect_t422(has_sound_renumber_action(frames));
+    expect_t422(state.bga_renumber_release_pending);
+    (void)harness.frame();
+    expect_t422(!state.bga_renumber_release_pending);
+}
+
+TEST_CASE("Hidden BGA renumber release is serviced without rendering the panel",
+          "[frontend-state][event-harness][release-latch-consolidation]") {
+    nuklear_event_harness_t harness{1600, 1100};
+    expect_t422(harness.ready());
+    auto& view = harness.view().compose;
+    view.bga_ids_available = true;
+    (void)harness.frame();
+    auto& state = worm_ui_nuklear_compose_state();
+    state.bga_panel_visible = true;
+    (void)harness.frame();
+    (void)click_at(harness, state.bga_list_x + 6 * 38 + 17, state.bga_list_y + 24 + 13);
+    expect_t422(state.bga_renumber_confirmation_open);
+    const auto press = button_event(true, state.bga_list_x + 12, state.bga_list_y + 12);
+    (void)harness.frame(std::span{&press, 1});
+    ++view.chart_id;
+    (void)harness.frame();
+    expect_t422(!state.bga_renumber_confirmation_open);
+    expect_t422(state.bga_renumber_release_pending);
+    state.bga_panel_visible = false;
+    const auto release = button_event(false, press.button.x, press.button.y);
+    (void)harness.frame(std::span{&release, 1});
+    (void)harness.frame();
+    expect_t422(!state.bga_renumber_release_pending);
+}
+
+TEST_CASE("Search popup release guards retire while Compose is hidden",
+          "[frontend-state][event-harness][release-latch-consolidation]") {
+    const auto sound = GENERATE(false, true);
+    nuklear_event_harness_t harness{1600, 1100};
+    expect_t422(harness.ready());
+    auto& view = harness.view();
+    view.compose.bookmark_chooser.project_id = view.compose.project_id;
+    view.compose.bookmark_chooser.chart_id = view.compose.chart_id;
+    view.compose.bookmark_chooser.document_revision = view.compose.document_revision;
+    (void)harness.frame();
+    if (sound) expect_t422(worm_ui_frontend_open_sound_picker(1, 1, 1));
+    else expect_t422(worm_ui_frontend_open_bookmark_chooser(1, 1, 1));
+    (void)harness.frame();
+    auto& state = worm_ui_nuklear_compose_state();
+    auto& pending = sound ? state.sound_picker.release_pending : state.bookmark_chooser.release_pending;
+    const auto escape = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+    (void)harness.frame(std::span{&escape, 1});
+    expect_t422(pending);
+    view.compose.visible = false;
+    view.active_tab = WORM_UI_WORKSPACE_TAB_METADATA;
+    auto release = escape;
+    release.type = release.key.type = SDL_EVENT_KEY_UP;
+    release.key.down = false;
+    (void)harness.frame(std::span{&release, 1});
+    expect_t422(pending);
+    (void)harness.frame();
+    expect_t422(!pending);
+}
+
+TEST_CASE("BGM count Enter retains ownership through held and released frames",
+          "[frontend-state][event-harness][release-latch-consolidation]") {
+    nuklear_event_harness_t harness{1600, 1100};
+    expect_t422(harness.ready());
+    auto& view = harness.view().compose;
+    view.bgm_column_count = 3;
+    view.bgm_column_count_editable = true;
+    (void)harness.frame();
+    const auto count = harness.drawn_text_center("3");
+    expect_t422(count.has_value());
+    (void)click_at(harness, count->first, count->second);
+    auto& draft = worm_ui_nuklear_compose_state().bgm_column_count_edit;
+    expect_t422(draft.input_owned);
+    const auto enter = key_event(SDL_EVENT_KEY_DOWN, SDLK_RETURN, SDL_SCANCODE_RETURN);
+    const auto finish = harness.frame(std::span{&enter, 1});
+    expect_t422(finish.get().compose_action == WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT);
+    expect_t422(draft.release_pending && draft.input_owned);
+    (void)harness.frame();
+    expect_t422(draft.release_pending && draft.input_owned);
+    auto release = enter;
+    release.type = release.key.type = SDL_EVENT_KEY_UP;
+    release.key.down = false;
+    (void)harness.frame(std::span{&release, 1});
+    expect_t422(draft.release_pending && draft.input_owned);
+    (void)harness.frame();
+    expect_t422(!draft.release_pending && !draft.input_owned);
+}
+
+TEST_CASE("Draw right capture has one reset on interruption and late release",
+          "[frontend-state][event-harness][release-latch-consolidation]") {
+    note_menu_fixture_t fixture;
+    auto& view = fixture.harness.view().compose;
+    view.note_paint_mode_active = true;
+    (void)fixture.harness.frame();
+    const auto press = draw_right_event(true, 300, 300);
+    (void)fixture.harness.frame(std::span{&press, 1});
+    const auto motion = motion_event(310, 340);
+    (void)fixture.harness.frame(std::span{&motion, 1});
+    auto& state = worm_ui_nuklear_compose_state();
+    expect_t422(state.draw_erase_pointer_active);
+    SDL_Event interrupted{};
+    interrupted.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+    (void)fixture.harness.frame(std::span{&interrupted, 1});
+    expect_t422(!state.draw_right_candidate && !state.draw_erase_pointer_active);
+    expect_t422(!state.draw_right_native_down && !state.draw_right_press_pending && !state.draw_right_release_pending);
+    expect_t422(!state.draw_right_dragged && state.draw_right_anchor_x == 0 && state.draw_right_anchor_y == 0);
+    const auto release = draw_right_event(false, 310, 340);
+    const auto late = fixture.harness.frame(std::span{&release, 1});
+    expect_t422(!find_compose_input(std::vector<workspace_action_snapshot_t>{late}, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE));
+    expect_t422(late.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+}

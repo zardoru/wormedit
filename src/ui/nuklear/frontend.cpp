@@ -520,7 +520,6 @@ static void expose_shortcut_input(WormUiWorkspaceAction* action, bool compose_la
     action->shortcut_ime_composition_active = g_ime_composition_active;
     action->shortcut_compose_lane_focused = compose_lane_focused && g_window_focused;
     action->shortcut_focused_lane_id = action->shortcut_compose_lane_focused ? focused_lane_id : 0;
-    worm_ui_nuklear_retire_bgm_column_count_input_owner(compose_state);
 
     g_shortcut_event_count = 0;
     g_shortcut_events_overflowed = false;
@@ -3272,6 +3271,8 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         !view->options.visible && !project_modal_active(*view) && !project_dialog_active() &&
         !g_notification_modal && !command_menu_dialog_blocked() &&
         !wormedit::ui::chrome::context_menu_keyboard_owned());
+    // Existing command owners see the closing frame before release guards retire.
+    worm_ui_nuklear_update_compose_release_latches(worm_ui_nuklear_compose_state(), g_context);
 
     int width = 0;
     int height = 0;

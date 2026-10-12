@@ -3,6 +3,7 @@
 #include "wormedit/nuklear_config.h"
 
 #include <cstdint>
+#include <initializer_list>
 
 namespace wormedit::ui::chrome {
 
@@ -57,23 +58,34 @@ inline auto popup_dismiss_requested(const nk_context* context, struct nk_rect sc
 
 inline void popup_arm_release(bool& release_pending) { release_pending = true; }
 
-inline auto popup_update_release_pending(const nk_context* context, bool& release_pending)
-    -> bool {
-    if (!release_pending) return false;
-    if (!context) return true;
+enum class PopupReleaseKeys { escape, text, all };
+
+inline auto popup_key_has_input(const nk_input& input, nk_keys key) -> bool {
+    return nk_input_is_key_down(&input, key) || nk_input_is_key_pressed(&input, key) ||
+           nk_input_is_key_released(&input, key);
+}
+
+inline auto popup_input_is_quiet(const nk_context* context,
+                                 PopupReleaseKeys keys = PopupReleaseKeys::escape) -> bool {
+    if (!context) return false;
     const auto& input = context->input;
-    const auto mouse_down = input.mouse.buttons[NK_BUTTON_LEFT].down ||
-                            input.mouse.buttons[NK_BUTTON_RIGHT].down;
-    const auto mouse_edge = nk_input_is_mouse_pressed(&input, NK_BUTTON_LEFT) ||
-                            nk_input_is_mouse_pressed(&input, NK_BUTTON_RIGHT) ||
-                            nk_input_is_mouse_released(&input, NK_BUTTON_LEFT) ||
-                            nk_input_is_mouse_released(&input, NK_BUTTON_RIGHT);
-    const auto escape_edge = nk_input_is_key_pressed(&input, NK_KEY_TEXT_RESET_MODE) ||
-                             nk_input_is_key_released(&input, NK_KEY_TEXT_RESET_MODE);
-    const auto escape_down = input.keyboard.keys[NK_KEY_TEXT_RESET_MODE].down;
-    if (mouse_down || mouse_edge || escape_down || escape_edge) return true;
-    release_pending = false;
-    return false;
+    for (const auto button : {NK_BUTTON_LEFT, NK_BUTTON_RIGHT}) {
+        if (input.mouse.buttons[button].down || nk_input_is_mouse_pressed(&input, button) ||
+            nk_input_is_mouse_released(&input, button)) return false;
+    }
+    if (keys == PopupReleaseKeys::all) {
+        for (int key = 0; key < NK_KEY_MAX; ++key)
+            if (popup_key_has_input(input, static_cast<nk_keys>(key))) return false;
+        return true;
+    }
+    return !popup_key_has_input(input, NK_KEY_TEXT_RESET_MODE) &&
+        (keys != PopupReleaseKeys::text || !popup_key_has_input(input, NK_KEY_ENTER));
+}
+
+inline auto popup_update_release_pending(const nk_context* context, bool& release_pending,
+                                         PopupReleaseKeys keys = PopupReleaseKeys::escape) -> bool {
+    if (release_pending && popup_input_is_quiet(context, keys)) release_pending = false;
+    return release_pending;
 }
 
 inline auto popup_owns_input(bool open, bool release_pending) -> bool {

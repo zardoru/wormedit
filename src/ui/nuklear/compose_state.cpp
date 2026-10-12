@@ -1,5 +1,6 @@
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/compose_resources.h"
+#include "ui/nuklear/popup_lifecycle.h"
 #include "ui/nuklear/arrow_glyph.h"
 #include "ui/nuklear/theme.h"
 #include "wormedit/nuklear_config.h"
@@ -339,10 +340,7 @@ auto worm_ui_nuklear_update_bgm_column_count_input_owner(
         edit.revision = revision;
         edit.initialized = true;
     }
-    if (edit.release_pending) {
-        edit.input_owned = false;
-        edit.release_pending = false;
-    }
+    if (edit.release_pending) return edit.input_owned;
     if (edit_finished) {
         edit.input_owned = edit.input_owned || field_clicked || edit_active;
         edit.release_pending = edit.input_owned;
@@ -358,11 +356,33 @@ auto worm_ui_nuklear_update_bgm_column_count_input_owner(
 }
 
 void worm_ui_nuklear_retire_bgm_column_count_input_owner(
-    worm_ui_nuklear_compose_state_t& state) {
+    worm_ui_nuklear_compose_state_t& state, const nk_context* context) {
     auto& edit = state.bgm_column_count_edit;
     if (!edit.release_pending) return;
-    edit.input_owned = false;
-    edit.release_pending = false;
+    if (!wormedit::ui::chrome::popup_update_release_pending(
+            context, edit.release_pending, wormedit::ui::chrome::PopupReleaseKeys::all))
+        edit.input_owned = false;
+}
+
+void worm_ui_nuklear_update_compose_release_latches(
+    worm_ui_nuklear_compose_state_t& state, const nk_context* context) {
+    using namespace wormedit::ui::chrome;
+    (void)popup_update_release_pending(context, state.bga_renumber_release_pending);
+    (void)popup_update_release_pending(context, state.keysound_renumber_release_pending);
+    (void)popup_update_release_pending(context, state.keysound_slot_release_pending);
+    (void)popup_update_release_pending(context, state.bookmark_chooser.release_pending, PopupReleaseKeys::all);
+    (void)popup_update_release_pending(context, state.sound_picker.release_pending, PopupReleaseKeys::all);
+    (void)popup_update_release_pending(context, state.bookmark_rename.release_pending, PopupReleaseKeys::text);
+    worm_ui_nuklear_retire_bgm_column_count_input_owner(state, context);
+}
+
+void worm_ui_nuklear_reset_draw_right_capture(worm_ui_nuklear_compose_state_t& state) {
+    state.draw_right_candidate = state.draw_erase_pointer_active = false;
+    state.draw_right_press_pending = state.draw_right_release_pending = state.draw_right_native_down = false;
+    state.draw_right_dragged = false;
+    state.draw_right_screen_x = state.draw_right_screen_y = 0;
+    state.draw_right_current_screen_x = state.draw_right_current_screen_y = 0;
+    state.draw_right_anchor_x = state.draw_right_anchor_y = 0;
 }
 
 void worm_ui_nuklear_advance_resource_picker(std::uint64_t placed_resource_id,

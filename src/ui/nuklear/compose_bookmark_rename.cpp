@@ -3,6 +3,7 @@
 
 #include "ui/nuklear/compose_bookmark_label.h"
 #include "ui/nuklear/chrome.h"
+#include "ui/nuklear/popup_lifecycle.h"
 
 #include <algorithm>
 #include <cmath>
@@ -72,23 +73,10 @@ auto editor_popup_bounds(nk_context* context, const WormUiComposeView& view,
     return nk_rect(x, y, std::min(300.0f, content.w), 58.0f);
 }
 
-auto rename_input_is_quiet(const nk_input& input) -> bool {
-    const auto& left = input.mouse.buttons[NK_BUTTON_LEFT];
-    const auto key_down = nk_input_is_key_down(&input, NK_KEY_ENTER) ||
-                          nk_input_is_key_down(&input, NK_KEY_TEXT_RESET_MODE);
-    const auto key_edge = nk_input_is_key_pressed(&input, NK_KEY_ENTER) ||
-                          nk_input_is_key_pressed(&input, NK_KEY_TEXT_RESET_MODE) ||
-                          nk_input_is_key_released(&input, NK_KEY_ENTER) ||
-                          nk_input_is_key_released(&input, NK_KEY_TEXT_RESET_MODE);
-    const auto mouse_edge = nk_input_is_mouse_pressed(&input, NK_BUTTON_LEFT) ||
-                            nk_input_is_mouse_released(&input, NK_BUTTON_LEFT);
-    return !left.down && !key_down && !key_edge && !mouse_edge;
-}
-
 void request_editor_close(bookmark_rename_editor_t& editor) {
     editor.active = false;
     editor.focus_pending = false;
-    editor.release_pending = true;
+    wormedit::ui::chrome::popup_arm_release(editor.release_pending);
     editor.close_pending = editor.popup_open;
 }
 
@@ -184,8 +172,8 @@ void render_compose_bookmark_rename(nk_context* context, const WormUiComposeView
                                     WormUiWorkspaceAction& action,
                                     bookmark_rename_editor_t& editor,
                                     struct nk_rect viewport, bool window_focused) {
-    if (editor.release_pending && rename_input_is_quiet(context->input))
-        editor.release_pending = false;
+    (void)wormedit::ui::chrome::popup_update_release_pending(
+        context, editor.release_pending, wormedit::ui::chrome::PopupReleaseKeys::text);
     if (editor.close_pending) {
         close_pending_popup(context, editor);
         return;
@@ -198,7 +186,8 @@ void render_compose_bookmark_rename(nk_context* context, const WormUiComposeView
         close_pending_popup(context, editor);
         return;
     }
-    if (editor.focus_pending && !rename_input_is_quiet(context->input)) return;
+    if (editor.focus_pending && !wormedit::ui::chrome::popup_input_is_quiet(
+            context, wormedit::ui::chrome::PopupReleaseKeys::text)) return;
     const auto bounds = editor_popup_bounds(context, view, editor, viewport);
     if (!nk_popup_begin(context, NK_POPUP_STATIC, "Rename bookmark", NK_WINDOW_NO_SCROLLBAR,
                         bounds)) {

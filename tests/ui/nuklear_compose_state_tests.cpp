@@ -793,7 +793,8 @@ TEST_CASE("BGM column count field owns active editing and the finish dispatch fr
         state, 12, 7, true, false, false, true));
     CHECK(state.bgm_column_count_edit.input_owned);
     CHECK(state.bgm_column_count_edit.release_pending);
-    worm_ui_nuklear_retire_bgm_column_count_input_owner(state);
+    nk_context context{};
+    worm_ui_nuklear_retire_bgm_column_count_input_owner(state, &context);
     CHECK_FALSE(state.bgm_column_count_edit.input_owned);
     CHECK_FALSE(state.bgm_column_count_edit.release_pending);
 }

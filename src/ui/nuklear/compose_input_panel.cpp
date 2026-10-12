@@ -88,12 +88,13 @@ static void reset_range_capture() {
     state.shift_range_keys = 0;
 }
 
+static void reset_draw_right_capture() { worm_ui_nuklear_reset_draw_right_capture(state); }
+
 static void reset_draw_capture() {
     state.draw_left_cancelled_until_release |= state.note_paint_pointer_active ||
                                               state.bmson_point_capture.has_value();
     state.bmson_point_capture.reset();
-    state.draw_right_press_pending = state.draw_right_release_pending = false;
-    state.draw_right_native_down = false;
+    reset_draw_right_capture();
     state.draw_stroke_bgm_lane = 0;
 }
 
@@ -123,8 +124,8 @@ static constexpr auto compose_gesture_registry = std::to_array<compose_gesture_e
     {&worm_ui_nuklear_compose_state_t::pointer_hold_active, reset_hold_capture},
     {&worm_ui_nuklear_compose_state_t::lane_hold_active, reset_hold_capture},
     {&worm_ui_nuklear_compose_state_t::note_paint_pointer_active, reset_draw_capture},
-    {&worm_ui_nuklear_compose_state_t::draw_erase_pointer_active},
-    {&worm_ui_nuklear_compose_state_t::draw_right_candidate},
+    {&worm_ui_nuklear_compose_state_t::draw_erase_pointer_active, reset_draw_right_capture},
+    {&worm_ui_nuklear_compose_state_t::draw_right_candidate, reset_draw_right_capture},
     {&worm_ui_nuklear_compose_state_t::bmson_razor_pointer_active},
     {&worm_ui_nuklear_compose_state_t::bmson_marker_move_active, reset_bmson_marker_move_capture},
     {&worm_ui_nuklear_compose_state_t::bmson_marker_move_candidate_active},
@@ -563,8 +564,7 @@ static void cancel_disabled_compose_paint_modes(const WormUiComposeView* view,
          view->input_occluded || view->timing_focus)) {
         append_compose_cancel_once(action);
         clear_note_paint_capture();
-        state.draw_right_candidate = state.draw_erase_pointer_active = false;
-        state.draw_right_press_pending = state.draw_right_release_pending = state.draw_right_native_down = false;
+        reset_draw_right_capture();
     }
     if (state.semantic_layer_paint_pointer_active &&
         (!window_focused || !view->scene_available || !view->semantic_layer_paint_mode_active)) {

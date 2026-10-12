@@ -1812,10 +1812,4 @@ void worm_ui_nuklear_render_compose_sounds(struct nk_context* context,
         nk_label_colored(context, state->keysound_slot_feedback.c_str(), NK_TEXT_LEFT,
                          nk_rgb(226, 166, 64));
     }
-    if (state->keysound_renumber_release_pending &&
-        !context->input.mouse.buttons[NK_BUTTON_LEFT].down)
-        state->keysound_renumber_release_pending = false;
-    if (state->keysound_slot_release_pending &&
-        !context->input.mouse.buttons[NK_BUTTON_LEFT].down)
-        state->keysound_slot_release_pending = false;
 }

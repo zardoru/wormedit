@@ -660,7 +660,11 @@ auto worm_ui_nuklear_update_bgm_column_count_input_owner(
     std::uint64_t revision, bool editable, bool field_clicked, bool edit_active,
     bool edit_finished) -> bool;
 void worm_ui_nuklear_retire_bgm_column_count_input_owner(
-    worm_ui_nuklear_compose_state_t& state);
+    worm_ui_nuklear_compose_state_t& state, const nk_context* context);
+
+void worm_ui_nuklear_update_compose_release_latches(
+    worm_ui_nuklear_compose_state_t& state, const nk_context* context);
+void worm_ui_nuklear_reset_draw_right_capture(worm_ui_nuklear_compose_state_t& state);
 
 // Keep press/release pairs ordered, including pairs received within one SDL frame.
 // When another owner takes input, discard new presses but deliver matching releases.

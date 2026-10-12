@@ -237,6 +237,8 @@ struct worm_ui_nuklear_compose_state_t {
     float middle_click_x{};
     float middle_click_y{};
     bool cancel_pending{};
+    bool waveform_offset_cancel_pending{};
+    bool core_gesture_active{};
     bool keyboard_focus{};
     bool action_overflowed{};
     bool pointer_hold_active{};

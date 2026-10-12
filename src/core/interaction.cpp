@@ -1,3 +1,4 @@
+#include <wormedit/core/interaction_gestures.h>
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/snap.h>
 #include <wormedit/core/resource_assignment.h>
@@ -1971,11 +1972,7 @@ auto diagnostic_result(const document_history_t& history, const editor_interacti
 }
 
 auto playhead_gesture_active(const editor_interaction_state_t& state) -> bool {
-    return state.pending_hold || !state.additional_keyboard_holds.empty() ||
-           state.pending_virtual_lane_key || state.pending_note_duration_gesture ||
-           state.pending_note_move_gesture || state.pending_note_paint_gesture ||
-           state.pending_semantic_layer_paint_gesture || state.pending_editor_area_selection ||
-           state.pending_space_range_selection;
+    return has_pending_editor_gesture(state);
 }
 
 auto proposed_playhead_cursor(const document_history_t& history,
@@ -5337,110 +5334,116 @@ auto handle_editor_cancellation(document_history_t& history, editor_interaction_
                                      {error(diagnostic_code_t::invalid_id,
                                             "unknown editor gesture cancellation reason")});
         }
-        state.pending_hold.reset();
-        state.additional_keyboard_holds.clear();
-        state.pending_note_duration_gesture.reset();
-        state.pending_note_move_gesture.reset();
-        state.pending_note_paint_gesture.reset();
-        state.pending_semantic_layer_paint_gesture.reset();
-        state.pending_editor_area_selection.reset();
-        state.pending_space_range_selection.reset();
-        state.pending_virtual_lane_key.reset();
+        clear_editor_gestures(state);
         return recovered_editor_view(history, state);
     }
     if (std::holds_alternative<cancel_hold_action_t>(action)) {
-        state.pending_hold.reset();
-        state.additional_keyboard_holds.clear();
-        state.pending_virtual_lane_key.reset();
+        visit_editor_gestures(state, [](auto kind, auto& field) {
+            if (kind == editor_gesture_kind_t::hold || kind == editor_gesture_kind_t::keyboard_holds ||
+                kind == editor_gesture_kind_t::virtual_hold) clear_editor_gesture(field);
+        });
         return recovered_editor_view(history, state);
     }
     if (std::holds_alternative<cancel_editor_area_selection_action_t>(action)) {
-        state.pending_editor_area_selection.reset();
+        visit_editor_gestures(state, [](auto kind, auto& field) {
+            if (kind == editor_gesture_kind_t::area) clear_editor_gesture(field);
+        });
         return recovered_editor_view(history, state);
     }
     return std::nullopt;
+}
+
+template<class... Actions>
+auto gesture_action_is(const editor_ui_action_t& action) -> bool {
+    return (std::holds_alternative<Actions>(action) || ...);
+}
+
+auto keyboard_hold_action_allowed(const editor_ui_action_t& action) -> bool {
+    return gesture_action_is<move_edit_cursor_action_t, page_edit_cursor_action_t,
+        scroll_editor_view_action_t, begin_lane_key_hold_gesture_action_t,
+        release_lane_key_hold_gesture_action_t>(action);
+}
+
+auto hold_gesture_action_allowed(const editor_interaction_state_t& state,
+                                const editor_ui_action_t& action) -> bool {
+    if (!state.pending_hold || !state.pending_hold->gesture_source) return true;
+    if (*state.pending_hold->gesture_source == hold_gesture_source_t::keyboard_lane)
+        return keyboard_hold_action_allowed(action);
+    return gesture_action_is<update_alt_pointer_hold_gesture_action_t,
+        release_alt_pointer_hold_gesture_action_t>(action);
+}
+
+auto gesture_action_allowed(editor_gesture_kind_t kind,
+                            const editor_interaction_state_t& state,
+                            const editor_ui_action_t& action) -> bool {
+    switch (kind) {
+    case editor_gesture_kind_t::hold:
+        return hold_gesture_action_allowed(state, action);
+    case editor_gesture_kind_t::keyboard_holds:
+        // The authorized lane action delegates its begin/preview/commit to these legacy verbs.
+        return keyboard_hold_action_allowed(action) ||
+            gesture_action_is<begin_hold_action_t, update_hold_preview_action_t,
+                commit_hold_action_t, place_virtual_bms_hold_action_t>(action);
+    case editor_gesture_kind_t::virtual_hold:
+        return gesture_action_is<move_edit_cursor_action_t, page_edit_cursor_action_t>(action);
+    case editor_gesture_kind_t::duration:
+        return gesture_action_is<update_note_duration_gesture_action_t,
+            release_note_duration_gesture_action_t>(action);
+    case editor_gesture_kind_t::move:
+        return gesture_action_is<update_note_move_gesture_action_t,
+            release_note_move_gesture_action_t>(action);
+    case editor_gesture_kind_t::paint:
+        return gesture_action_is<update_note_paint_gesture_action_t,
+            end_note_paint_gesture_action_t>(action);
+    case editor_gesture_kind_t::semantic_paint:
+        return gesture_action_is<update_semantic_layer_paint_gesture_action_t,
+            end_semantic_layer_paint_gesture_action_t>(action);
+    case editor_gesture_kind_t::area:
+        return gesture_action_is<update_editor_area_selection_action_t,
+            commit_editor_area_selection_action_t>(action);
+    case editor_gesture_kind_t::range:
+        return gesture_action_is<space_range_selection_action_t, move_edit_cursor_action_t,
+            page_edit_cursor_action_t, jump_edit_cursor_action_t, cycle_edit_snap_action_t,
+            set_edit_snap_action_t, adjust_editor_zoom_action_t, scroll_editor_view_action_t>(action);
+    }
+    return false;
+}
+
+auto gesture_finish_message(editor_gesture_kind_t kind) -> const char* {
+    switch (kind) {
+    case editor_gesture_kind_t::hold:
+    case editor_gesture_kind_t::keyboard_holds:
+        return "finish or cancel the active hold input gesture first";
+    case editor_gesture_kind_t::virtual_hold:
+        return "release or cancel the virtual BMS lane key first";
+    case editor_gesture_kind_t::duration:
+        return "finish or cancel the active note duration gesture first";
+    case editor_gesture_kind_t::move:
+        return "finish or cancel the active note move gesture first";
+    case editor_gesture_kind_t::paint:
+        return "finish or cancel the active note paint gesture first";
+    case editor_gesture_kind_t::semantic_paint:
+        return "finish or cancel the active semantic-layer paint gesture first";
+    case editor_gesture_kind_t::area:
+        return "finish or cancel the active area selection gesture first";
+    case editor_gesture_kind_t::range:
+        return "finish or cancel the active Space range selection first";
+    }
+    return "finish or cancel the active gesture first";
 }
 
 auto validate_active_gesture_action(const document_history_t& history,
                                     const editor_interaction_state_t& state,
                                     const editor_ui_action_t& action)
     -> std::optional<editor_interaction_result_t> {
-    if (state.pending_space_range_selection &&
-        state.pending_space_range_selection->document_revision != history.document.revision)
-        return diagnostic_result(
-            history, state,
-            {error(diagnostic_code_t::invalid_hold,
-                   "Space range selection is stale after a document edit")});
-    if (state.pending_virtual_lane_key &&
-        !std::holds_alternative<move_edit_cursor_action_t>(action) &&
-        !std::holds_alternative<page_edit_cursor_action_t>(action))
-        return diagnostic_result(history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        "release or cancel the virtual BMS lane key first")});
-    if (state.pending_hold && state.pending_hold->gesture_source) {
-        const auto source = *state.pending_hold->gesture_source;
-        const auto keyboard_action = source == hold_gesture_source_t::keyboard_lane &&
-            (std::holds_alternative<move_edit_cursor_action_t>(action) ||
-             std::holds_alternative<page_edit_cursor_action_t>(action) ||
-             std::holds_alternative<scroll_editor_view_action_t>(action) ||
-             std::holds_alternative<begin_lane_key_hold_gesture_action_t>(action) ||
-             std::holds_alternative<release_lane_key_hold_gesture_action_t>(action));
-        const auto pointer_action = source == hold_gesture_source_t::alt_pointer &&
-            (std::holds_alternative<update_alt_pointer_hold_gesture_action_t>(action) ||
-             std::holds_alternative<release_alt_pointer_hold_gesture_action_t>(action));
-        if (!keyboard_action && !pointer_action)
-            return diagnostic_result(
-                history, state,
-                {error(diagnostic_code_t::invalid_hold,
-                       "finish or cancel the active hold input gesture first")});
-    }
-    if (state.pending_note_duration_gesture &&
-        !std::holds_alternative<update_note_duration_gesture_action_t>(action) &&
-        !std::holds_alternative<release_note_duration_gesture_action_t>(action))
-        return diagnostic_result(
-            history, state,
-            {error(diagnostic_code_t::invalid_hold,
-                   "finish or cancel the active note duration gesture first")});
-    if (state.pending_note_move_gesture &&
-        !std::holds_alternative<update_note_move_gesture_action_t>(action) &&
-        !std::holds_alternative<release_note_move_gesture_action_t>(action))
-        return diagnostic_result(history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        "finish or cancel the active note move gesture first")});
-    if (state.pending_note_paint_gesture &&
-        !std::holds_alternative<update_note_paint_gesture_action_t>(action) &&
-        !std::holds_alternative<end_note_paint_gesture_action_t>(action))
-        return diagnostic_result(history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        "finish or cancel the active note paint gesture first")});
-    if (state.pending_semantic_layer_paint_gesture &&
-        !std::holds_alternative<update_semantic_layer_paint_gesture_action_t>(action) &&
-        !std::holds_alternative<end_semantic_layer_paint_gesture_action_t>(action))
-        return diagnostic_result(
-            history, state,
-            {error(diagnostic_code_t::invalid_hold,
-                   "finish or cancel the active semantic-layer paint gesture first")});
-    if (state.pending_editor_area_selection &&
-        !std::holds_alternative<update_editor_area_selection_action_t>(action) &&
-        !std::holds_alternative<commit_editor_area_selection_action_t>(action))
-        return diagnostic_result(
-            history, state,
-            {error(diagnostic_code_t::invalid_hold,
-                   "finish or cancel the active area selection gesture first")});
-    if (state.pending_space_range_selection &&
-        !std::holds_alternative<space_range_selection_action_t>(action) &&
-        !std::holds_alternative<move_edit_cursor_action_t>(action) &&
-        !std::holds_alternative<page_edit_cursor_action_t>(action) &&
-        !std::holds_alternative<jump_edit_cursor_action_t>(action) &&
-        !std::holds_alternative<cycle_edit_snap_action_t>(action) &&
-        !std::holds_alternative<set_edit_snap_action_t>(action) &&
-        !std::holds_alternative<adjust_editor_zoom_action_t>(action) &&
-        !std::holds_alternative<scroll_editor_view_action_t>(action))
-        return diagnostic_result(
-            history, state,
-            {error(diagnostic_code_t::invalid_hold,
-                   "finish or cancel the active Space range selection first")});
-    return std::nullopt;
+    std::optional<editor_gesture_kind_t> blocked;
+    visit_editor_gestures(state, [&](auto kind, const auto& field) {
+        if (!blocked && editor_gesture_pending(field) && !gesture_action_allowed(kind, state, action))
+            blocked = kind;
+    });
+    if (!blocked) return std::nullopt;
+    return diagnostic_result(history, state,
+        {error(diagnostic_code_t::invalid_hold, gesture_finish_message(*blocked))});
 }
 
 auto virtual_cursor_action_allowed(const editor_interaction_state_t& state,
@@ -5756,9 +5759,36 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
                                  const editor_ui_action_t& action) -> editor_interaction_result_t;
 } // namespace
 
+auto terminal_editor_gesture_action(const editor_interaction_state_t& state,
+                                    const editor_ui_action_t& action) -> bool {
+    return std::holds_alternative<commit_hold_action_t>(action) ||
+        std::holds_alternative<release_alt_pointer_hold_gesture_action_t>(action) ||
+        std::holds_alternative<release_lane_key_hold_gesture_action_t>(action) ||
+        std::holds_alternative<release_note_duration_gesture_action_t>(action) ||
+        std::holds_alternative<release_note_move_gesture_action_t>(action) ||
+        std::holds_alternative<end_note_paint_gesture_action_t>(action) ||
+        std::holds_alternative<end_semantic_layer_paint_gesture_action_t>(action) ||
+        std::holds_alternative<update_semantic_layer_paint_gesture_action_t>(action) ||
+        std::holds_alternative<update_editor_area_selection_action_t>(action) ||
+        std::holds_alternative<commit_editor_area_selection_action_t>(action) ||
+        (state.pending_space_range_selection &&
+         std::holds_alternative<space_range_selection_action_t>(action));
+}
+
 auto dispatch_editor_action(document_history_t& history, editor_interaction_state_t& state,
                             const editor_ui_action_t& action) -> editor_interaction_result_t {
-    return dispatch_editor_action_impl(history, state, action);
+    if (auto canceled = handle_editor_cancellation(history, state, action)) return *canceled;
+    if (editor_gestures_stale(state, history.document.revision)) {
+        clear_editor_gestures(state);
+        return diagnostic_result(history, state,
+            {error(diagnostic_code_t::invalid_hold, "Editor gesture is stale after a document edit.")});
+    }
+    auto result = dispatch_editor_action_impl(history, state, action);
+    if (!result && terminal_editor_gesture_action(state, action)) {
+        clear_editor_gestures(state);
+        return diagnostic_result(history, state, std::move(result.diagnostics));
+    }
+    return result;
 }
 
 namespace {
@@ -6257,12 +6287,10 @@ auto prune_stale_selection(const chart_document_t& chart, std::uint64_t document
 
 namespace wormedit {
 auto has_pending_editor_gesture(const editor_interaction_state_t& state) -> bool {
-    return state.pending_hold.has_value() || state.pending_virtual_lane_key.has_value() ||
-           state.pending_note_duration_gesture.has_value() ||
-           state.pending_note_move_gesture.has_value() ||
-           state.pending_note_paint_gesture.has_value() ||
-           state.pending_semantic_layer_paint_gesture.has_value() ||
-           state.pending_editor_area_selection.has_value() ||
-           state.pending_space_range_selection.has_value();
+    bool pending{};
+    visit_editor_gestures(state, [&](auto, const auto& field) {
+        pending |= editor_gesture_pending(field);
+    });
+    return pending;
 }
 } // namespace wormedit

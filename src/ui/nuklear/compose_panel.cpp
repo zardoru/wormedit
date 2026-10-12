@@ -1,3 +1,4 @@
+#include "ui/nuklear/compose_gesture_registry.h"
 #include "ui/nuklear/compose_note_menu.h"
 #include "ui/nuklear/compose_area_menu.h"
 #include "ui/nuklear/compose_recipe_menu.h"
@@ -66,9 +67,6 @@ void worm_ui_nuklear_queue_compose_middle_click(float x, float y) {
 }
 
 void worm_ui_nuklear_compose_handle_focus_lost() {
-    worm_ui_nuklear_cancel_stem_lane_resize(state);
-    state.draw_left_cancelled_until_release |= state.bmson_point_capture.has_value();
-    state.bmson_point_capture.reset();
     compose_handle_focus_lost_input();
 }
 
@@ -78,13 +76,6 @@ void worm_ui_nuklear_compose_discard_frame_input() {
 
 void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool compose_tab_active,
                                            bool window_focused, WormUiWorkspaceAction* action) {
-    if (!compose_tab_active || !view || !view->visible) {
-        worm_ui_nuklear_cancel_stem_lane_resize(state);
-        state.draw_left_cancelled_until_release |= state.bmson_point_capture.has_value();
-        state.bmson_point_capture.reset();
-    } else {
-        worm_ui_nuklear_cancel_stale_stem_lane_resize(state, *view, window_focused);
-    }
     prepare_compose_panel_input(view, compose_tab_active, window_focused, action);
 }
 
@@ -1144,24 +1135,9 @@ static void render_compose_inline_timing_editor(const ComposePanelRenderContext&
 }
 
 static void discard_occluded_compose_input(const ComposePanelRenderContext& panel) {
-    worm_ui_nuklear_cancel_stem_lane_resize(state);
-    state.draw_left_cancelled_until_release |= state.bmson_point_capture.has_value();
-    state.bmson_point_capture.reset();
-    if (state.note_paint_pointer_active || state.draw_erase_pointer_active)
-        append_compose_cancel_once(panel.action);
-    state.draw_left_cancelled_until_release |= state.note_paint_pointer_active;
-    state.note_paint_pointer_active = state.draw_erase_pointer_active = state.draw_right_candidate = false;
-    state.draw_right_press_pending = state.draw_right_release_pending = state.draw_right_native_down = false;
-    // Release previously held editor keys; Options owns new presses and wheel input.
-    std::size_t releases{};
-    for (std::size_t index = 0; index < state.key_event_count; ++index) {
-        if (!state.key_events[index].down) state.key_events[releases++] = state.key_events[index];
-    }
-    state.key_event_count = releases;
-    if (releases != 0)
-        process_compose_key_events(panel.context, panel.view, panel.action,
-            panel.window_focused, panel.ime_composition_active);
-    discard_compose_frame_input();
+    panel.action->compose_input_ownership = 1;
+    cancel_compose_gestures(panel.action);
+    state.key_event_count = 0;
 }
 
 // Area and SV recipe popups occlude the rest of Compose input while they own it,
@@ -1211,6 +1187,18 @@ static void process_compose_canvas_tools(const ComposePointerEventContext& point
         process_compose_drag_gestures(pointer_event, paint_pointer_consumed);
     }
 
+}
+
+// Canceled captures retain ownership until their physical release.
+static auto consume_compose_capture_release(const ComposePanelRenderContext& panel,
+                                            struct nk_rect viewport, float editor_right) -> bool {
+    if (state.draw_left_cancelled_until_release) {
+        if (!panel.context->input.mouse.buttons[NK_BUTTON_LEFT].down)
+            state.draw_left_cancelled_until_release = false;
+        return true;
+    }
+    return process_compose_tool_chip(panel.context, *panel.view,
+        nk_rect(viewport.x, viewport.y, editor_right - viewport.x, viewport.h), panel.window_focused);
 }
 
 static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
@@ -1272,12 +1260,6 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
         render_compose_bookmark_rename(context, *view, *action, state.bookmark_rename, viewport, window_focused);
         return;
     }
-    if (process_compose_tool_chip(context, *view,
-            nk_rect(viewport.x, viewport.y, static_cast<float>(editor_input_right - viewport.x), viewport.h),
-            window_focused)) {
-        draw_compose_editor_scene(panel, canvas, viewport, editor_input_right);
-        return;
-    }
     const auto pointer_focus = update_compose_pointer_focus(
         {context, view, action, viewport, nk_rect(0, 0, 0, 0), editor_input_right, false,
          window_focused});
@@ -1291,6 +1273,11 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
         return;
     }
 
+
+    if (consume_compose_capture_release(panel, viewport, static_cast<float>(editor_input_right))) {
+        draw_compose_editor_scene(panel, canvas, viewport, editor_input_right);
+        return;
+    }
 
     const ComposeViewportInputContext viewport_input{
         context, view, action, viewport, editor_input_right, pointer_inside, window_focused};

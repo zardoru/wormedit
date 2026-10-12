@@ -1394,6 +1394,8 @@ typedef struct WormUiComposeView {
     uint32_t area_band_alpha;
     bool visible;
     bool scene_available;
+    bool editor_gesture_active;
+    bool editor_gesture_current;
     // Full chart index presence, independent of viewport and visibility filters.
     bool has_bgm_events;
     // BMS charts only: the BGM source column count and whether the toolbar may change it.
@@ -3146,6 +3148,8 @@ typedef struct WormUiWorkspaceAction {
     bool shortcut_window_focused;
     bool shortcut_notification_history_focused;
     bool shortcut_text_entry_active;
+    // Compose ownership transition: 1 = modal, 2 = text/IME.
+    uint8_t compose_input_ownership;
     bool shortcut_ime_composition_active;
     bool shortcut_compose_lane_focused;
     uint64_t shortcut_focused_lane_id;

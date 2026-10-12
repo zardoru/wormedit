@@ -1,0 +1,222 @@
+# Gesture and verb consolidation
+
+[Back to task cards](../tasks.md) · [Read-only audit](../../audits/gesture-redundancy-2026-10-11.md).
+
+Execute in order. Finding IDs refer to the audit; rejected claims are excluded.
+A-marked findings are leads, never assumed defects. Every card obeys RC6.
+NV7 is also tracked as a T-506 follow-up; preserve unrelated navigation edits.
+
+## T-580 Register gesture lifecycles and unify cancellation
+
+- **Status:** done
+- **Findings closed:** RC1, RC1-pred, TL1, LC-D1, LC-D2/HC2, LC-D3/D4, SM4, HC3, TL12, NV4, GH-A3.
+- **Stale-plan audit:** Re-grep the named symbols in the audit against current main before editing. Confirm each A lead (HC3, HC4, TL12, NV4 replay, LC-D3/D4) through the production emitter first; drop non-reproducing leads from this card and record evidence. Check the entire outcome before declaring already implemented.
+- **Stale-plan evidence (2026-10-11):** Re-grepped all six UI reset sites and the core predicates/validator. HC3 is reachable through Alt on an existing hold; its real emitted collision release now has an end-to-end regression. TL12, NV4 replay and LC-D3/D4 are exercised through overflow, Go-to-measure queued inputs and overview capture interruptions. HC4 is dropped as a shipped-workflow defect: the UI explicitly emits Draw/erase, not legacy toggle paint; the common terminal policy still retires rejected core releases defensively. Move/duration update previews and bounded paint-update cap failures are explicitly retryable; their terminal release always retires on failure. No rejected audit repro is pursued.
+- **Outcome:** Register gesture lifecycles and unify cancellation so all supported production entry points share lifecycle, validation and failure behavior.
+- **Read first:** `docs/audits/gesture-redundancy-2026-10-11.md`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_keyboard_input.cpp`, `src/core/interaction.cpp`, `src/sys/compose_input.cpp`.
+- **Files owned:** `include/wormedit/core/interaction.h`, `include/wormedit/core/interaction_gestures.h`, `src/core/interaction.cpp`, `src/core/note_to_bgm.cpp`, `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/compose_state.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_keyboard_input.cpp`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_viewport_input.cpp`, `src/ui/nuklear/compose_input_panel.h`, `src/ui/nuklear/compose_gesture_registry.h`, `src/sys/compose_input.cpp`, `src/sys/compose_view.cpp`, `src/sys/compose_playhead_cursor.h`, `src/ui/frontend.h`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/core/interaction_tests.cpp`, `tests/sys/frame_timing_tests.cpp`, `tests/ui/gesture_lifecycle_event_harness_tests.cpp`, `tests/CMakeLists.txt`, `scripts/smoke-compose-virtual-x.sh`, `docs/chart-editor-plan/tasks/gesture-consolidation.md`, `memory/chart-editor-status/resume.md`.
+- **Steps:**
+  1. Create one UI registry with reset/cancel hooks used by Escape, focus loss, revision/chart changes, inactive panel, action overflow and modal/text ownership.
+  2. Create one core pending-field enumeration for predicates, cancellation and validation; clear terminal failures and stale gestures consistently.
+  3. Wire modal/text navigation hooks and drain queued viewport input on ownership changes; test each registered gesture against every interruption through its production emitter.
+  4. Add regression tests entering through the production event harness or registered command; never use an input kind no UI emits (RC6).
+  5. Supporting ownership: update the isolated smoke script to enter Compose with a supplied fixture and match the current startup button position, so the visible gate actually exercises Compose. Run the complete verify gate, record actual output tails and evidence, then commit this card to main without staging unrelated work.
+- **Invariants:** Authored IDs, resources, timing and unrelated selections remain lossless; successful edits retain one Undo; gestures have one owner and no delayed release can mutate after cancellation.
+- **Reject/failure behavior:** No partial document/history/clipboard publication; terminal failures retire captures and previews; stale work cannot affect a new chart/project.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build src/core/interaction.cpp`; `clang-tidy -p build src/core/note_to_bgm.cpp`; `clang-tidy -p build src/ui/nuklear/compose_input_panel.cpp`; `clang-tidy -p build src/ui/nuklear/compose_keyboard_input.cpp`; `clang-tidy -p build src/ui/nuklear/compose_panel.cpp`; `clang-tidy -p build src/sys/compose_view.cpp`; `clang-tidy -p build src/sys/compose_input.cpp`; `clang-tidy -p build tests/ui/nuklear_event_harness_tests.cpp`; `clang-tidy -p build tests/core/interaction_tests.cpp`; `clang-tidy -p build tests/ui/gesture_lifecycle_event_harness_tests.cpp`; `scripts/smoke-compose-virtual-x.sh /tmp/gesture-T-580.png compose /tmp/stem-entry-native-before.wormedit` (use a disposable native fixture) and inspect the image. All commands must pass; no new function above complexity 25 or increase to an existing violation.
+- **Out of scope:** Other cards in this group, rejected audit claims, new product semantics without a user decision, and unrelated navigation work.
+
+
+- **Completion (2026-10-12):** One UI capture registry owns all interruption routes, including early occlusion, deferred focus/overflow cancellation and typed audio-offset/navigation cancellation. One core pending-field enumeration owns predicates, validation, cancellation and stale retirement. Terminal rejections clear previews; documented retryable updates remain available. Surviving keyboard chord holds retain their refreshed revision. The production harness covers 26 capture families across seven interruption routes, rejected Alt duration release, a real chord/external revision change and queued Go-to-measure viewport input. No synthetic orphan input kind is used by these regressions. Navigation travel is unchanged; NV7 remains explicitly assigned to T-587/T-506 follow-up.
+- **Gate evidence:** Build: `[100%] Built target wormedit`. Full CTest: `100% tests passed out of 3440`. Event label: `100% tests passed out of 439`. Production registry regressions: `All tests passed (4098 assertions in 4 test cases)`; hold checks: `All tests passed (1620 assertions in 104 test cases)`. Documentation: `100% tests passed out of 1`. Default clang-tidy completed with exit 0 on every touched source and test; no new/increased complexity violation. Unchanged legacy warnings remain in `build_speed_graph` (29), `compose_surface_height` (26) and existing Catch test functions. The canvas release-ownership helper keeps the affected canvas function within the limit. Isolated native Compose capture inspected successfully at `/tmp/gesture-T-580-final2.png`; the smoke script now enters the actual Compose tab. Evidence logs: `/tmp/gesture-T-580-{build-final2,ctest-final2,events-final2,focused-final2,holds-final2,tidy-final-core,tidy-final-ui,tidy-gate,tidy-final2,smoke-final2,docs-gate}.log`. Earlier failed/superseded runs were corrected and are not the passing gate.
+
+## T-581 Unify Delete and Cut selection mutations
+
+- **Status:** ready
+- **Findings closed:** MV2, MV3, MV-cut, RC2, RC6, MV8.
+- **Stale-plan audit:** Re-grep the named symbols in the audit against current main before editing. Confirm each A lead (MV8) through the production emitter first; drop non-reproducing leads from this card and record evidence. Check the entire outcome before declaring already implemented.
+- **Outcome:** Unify Delete and Cut selection mutations so all supported production entry points share lifecycle, validation and failure behavior.
+- **Read first:** `docs/audits/gesture-redundancy-2026-10-11.md`, `src/sys/application_command_dispatch.cpp`, `src/sys/compose_clipboard_selection.h`, `src/core/chart_clipboard.cpp`.
+- **Files owned:** `src/sys/application_command_dispatch.cpp`, `src/sys/compose_clipboard_selection.h`, `src/sys/compose_input.cpp`, `src/sys/compose_area_actions.cpp`, `include/wormedit/core/chart_clipboard.h`, `src/core/chart_clipboard.cpp`, `src/ui/frontend.h`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/sys/compose_clipboard_selection_tests.cpp`, `tests/sys/compose_notification_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/sys/frame_timing_tests.cpp`, `tests/core/chart_clipboard_tests.cpp`, `docs/chart-editor-plan/tasks/gesture-consolidation.md`, `memory/chart-editor-status/resume.md`.
+- **Steps:**
+  1. Build one delete_selection_all request spanning notes, timing, Kiai and recipes, validating all pieces before publication.
+  2. Route registered Delete and Cut through that request; retire or make canonical the orphan DELETE_SELECTION and test-only Cut implementation.
+  3. Test mixed families, rejected Cut preserving clipboard/history, one Undo and area enablement through actual commands and menu emitters.
+  4. Add regression tests entering through the production event harness or registered command; never use an input kind no UI emits (RC6).
+  5. Run the complete verify gate, record actual output tails and evidence, then commit this card to main without staging unrelated work.
+- **Invariants:** Authored IDs, resources, timing and unrelated selections remain lossless; successful edits retain one Undo; gestures have one owner and no delayed release can mutate after cancellation.
+- **Reject/failure behavior:** No partial document/history/clipboard publication; terminal failures retire captures and previews; stale work cannot affect a new chart/project.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build src/sys/application_command_dispatch.cpp`; `clang-tidy -p build src/sys/compose_input.cpp`; `clang-tidy -p build src/sys/compose_area_actions.cpp`; `clang-tidy -p build src/core/chart_clipboard.cpp`; `clang-tidy -p build tests/ui/nuklear_event_harness_tests.cpp`; `clang-tidy -p build tests/sys/compose_clipboard_selection_tests.cpp`; `clang-tidy -p build tests/sys/compose_notification_tests.cpp`; `clang-tidy -p build tests/sys/compose_action_notification_tests.cpp`; `clang-tidy -p build tests/sys/frame_timing_tests.cpp`; `clang-tidy -p build tests/core/chart_clipboard_tests.cpp`; `scripts/smoke-compose-virtual-x.sh /tmp/gesture-T-581.png compose` and inspect the image for visible behavior. All commands must pass; no new function above complexity 25 or increase to an existing violation.
+- **Out of scope:** Other cards in this group, rejected audit claims, new product semantics without a user decision, and unrelated navigation work.
+
+## T-582 Route menu verbs through registered commands
+
+- **Status:** blocked-on T-581
+- **Findings closed:** RC2, RC6, MV1, MV4, MV5, MV6, MV7, MV10.
+- **Stale-plan audit:** Re-grep the named symbols in the audit against current main before editing. Confirm each A lead (MV4, MV5, MV6, MV7, MV10) through the production emitter first; drop non-reproducing leads from this card and record evidence. Check the entire outcome before declaring already implemented.
+- **Outcome:** Route menu verbs through registered commands so all supported production entry points share lifecycle, validation and failure behavior.
+- **Read first:** `docs/audits/gesture-redundancy-2026-10-11.md`, `src/sys/application_command_dispatch.cpp`, `src/sys/compose_area_actions.cpp`, `src/ui/nuklear/compose_area_menu.cpp`.
+- **Files owned:** `src/sys/application_command_dispatch.cpp`, `src/sys/compose_area_actions.cpp`, `src/sys/compose_input.cpp`, `src/ui/nuklear/compose_area_menu.cpp`, `src/ui/nuklear/compose_note_menu.cpp`, `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/frontend.h`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `docs/chart-editor-plan/tasks/gesture-consolidation.md`, `memory/chart-editor-status/resume.md`.
+- **Steps:**
+  1. Route area Quantize through invoke_compose_quantize_command with panel settings.
+  2. Share bookmark-add, same-sound and move-to-BGM builders/predicates; retire orphan NOTE_MOVE_TO_BGM; route loop through transport.loop_selection and unify measure guards.
+  3. Test each actual menu emitter against its registered command, including stale revision, modal, paste and gesture guards.
+  4. Add regression tests entering through the production event harness or registered command; never use an input kind no UI emits (RC6).
+  5. Run the complete verify gate, record actual output tails and evidence, then commit this card to main without staging unrelated work.
+- **Invariants:** Authored IDs, resources, timing and unrelated selections remain lossless; successful edits retain one Undo; gestures have one owner and no delayed release can mutate after cancellation.
+- **Reject/failure behavior:** No partial document/history/clipboard publication; terminal failures retire captures and previews; stale work cannot affect a new chart/project.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build src/sys/application_command_dispatch.cpp`; `clang-tidy -p build src/sys/compose_area_actions.cpp`; `clang-tidy -p build src/sys/compose_input.cpp`; `clang-tidy -p build src/ui/nuklear/compose_area_menu.cpp`; `clang-tidy -p build src/ui/nuklear/compose_note_menu.cpp`; `clang-tidy -p build src/ui/nuklear/compose_toolbar.cpp`; `clang-tidy -p build tests/ui/nuklear_event_harness_tests.cpp`; `clang-tidy -p build tests/sys/compose_action_notification_tests.cpp`; `scripts/smoke-compose-virtual-x.sh /tmp/gesture-T-582.png compose` and inspect the image for visible behavior. All commands must pass; no new function above complexity 25 or increase to an existing violation.
+- **Out of scope:** Other cards in this group, rejected audit claims, new product semantics without a user decision, and unrelated navigation work.
+
+## T-583 Unify authored and virtual row placement
+
+- **Status:** blocked-on-user
+- **Findings closed:** RC3, HC5, HC6, HC7, HC8, HC9, HC10, HC11, GH-1.
+- **Stale-plan audit:** Re-grep the named symbols in the audit against current main before editing. Confirm each A lead (HC6, HC8, HC9, HC10, HC11) through the production emitter first; drop non-reproducing leads from this card and record evidence. Check the entire outcome before declaring already implemented.
+- **Outcome:** Unify authored and virtual row placement so all supported production entry points share lifecycle, validation and failure behavior.
+- **Read first:** `docs/audits/gesture-redundancy-2026-10-11.md`, `src/core/interaction.cpp`, `src/sys/compose_input.cpp`, `src/ui/nuklear/compose_dead_spans.cpp`.
+- **Files owned:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `src/sys/compose_input.cpp`, `src/ui/nuklear/compose_dead_spans.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/core/interaction_tests.cpp`, `tests/sys/frame_timing_tests.cpp`, `docs/chart-editor-plan/tasks/gesture-consolidation.md`, `memory/chart-editor-status/resume.md`.
+- **Steps:**
+  1. STOP for the user decision: remove the Stop/Delay pointer pixel band or replace it with a row-based rule in shared placement; do not extend the pixel rule to lane keys.
+  2. Implement resolve_row_placement shared by authored/virtual click and key paths, one stem/decoded-geometry resolver, and begin-time kind/layers/sound capture.
+  3. Retire unused hold actions after checking production emitters, keep the unified keyboard-hold owner null-safe, and test Roll, same-row release, continuation/restart, collisions and empty-space release through actual emitters.
+  4. Add regression tests entering through the production event harness or registered command; never use an input kind no UI emits (RC6).
+  5. Run the complete verify gate, record actual output tails and evidence, then commit this card to main without staging unrelated work.
+- **Invariants:** Authored IDs, resources, timing and unrelated selections remain lossless; successful edits retain one Undo; gestures have one owner and no delayed release can mutate after cancellation.
+- **Reject/failure behavior:** No partial document/history/clipboard publication; terminal failures retire captures and previews; stale work cannot affect a new chart/project.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build src/core/interaction.cpp`; `clang-tidy -p build src/sys/compose_input.cpp`; `clang-tidy -p build src/ui/nuklear/compose_dead_spans.cpp`; `clang-tidy -p build tests/ui/nuklear_event_harness_tests.cpp`; `clang-tidy -p build tests/core/interaction_tests.cpp`; `clang-tidy -p build tests/sys/frame_timing_tests.cpp`; `scripts/smoke-compose-virtual-x.sh /tmp/gesture-T-583.png compose` and inspect the image for visible behavior. All commands must pass; no new function above complexity 25 or increase to an existing violation.
+- **Out of scope:** Other cards in this group, rejected audit claims, new product semantics without a user decision, and unrelated navigation work.
+
+## T-584 Share drag capture and timing placement rules
+
+- **Status:** blocked-on T-583
+- **Findings closed:** RC4, TL2-slip, TL3, TL4, TL5, TL6, TL7, TL8, TL9, TL10, TL11, GH-A4.
+- **Stale-plan audit:** Re-grep the named symbols in the audit against current main before editing. Confirm each A lead (TL3, TL4, TL5, TL7, TL8, TL9, TL10, TL11) through the production emitter first; drop non-reproducing leads from this card and record evidence. Check the entire outcome before declaring already implemented.
+- **Outcome:** Share drag capture and timing placement rules so all supported production entry points share lifecycle, validation and failure behavior.
+- **Read first:** `docs/audits/gesture-redundancy-2026-10-11.md`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_viewport_input.cpp`, `src/sys/compose_input.cpp`.
+- **Files owned:** `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_viewport_input.cpp`, `src/ui/nuklear/compose_timing_input.cpp`, `src/ui/nuklear/compose_drag_capture.h`, `src/sys/compose_input.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/ui/compose_beat_fit_tests.cpp`, `tests/sys/frame_timing_tests.cpp`, `docs/chart-editor-plan/tasks/gesture-consolidation.md`, `memory/chart-editor-status/resume.md`.
+- **Steps:**
+  1. Create a drag_capture primitive with begin-time stamp, anchor, threshold, lock gate and registered lifecycle hooks.
+  2. Merge beat/offset-fit capture and unify pointer-to-snapped-row failure policy; route timing/span/BGA captures through it.
+  3. Test lock/stale/occluded/rejected releases, zero movement, Speed tails and timing-stage parity through real drag emitters.
+  4. Add regression tests entering through the production event harness or registered command; never use an input kind no UI emits (RC6).
+  5. Run the complete verify gate, record actual output tails and evidence, then commit this card to main without staging unrelated work.
+- **Invariants:** Authored IDs, resources, timing and unrelated selections remain lossless; successful edits retain one Undo; gestures have one owner and no delayed release can mutate after cancellation.
+- **Reject/failure behavior:** No partial document/history/clipboard publication; terminal failures retire captures and previews; stale work cannot affect a new chart/project.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build src/ui/nuklear/compose_input_panel.cpp`; `clang-tidy -p build src/ui/nuklear/compose_viewport_input.cpp`; `clang-tidy -p build src/ui/nuklear/compose_timing_input.cpp`; `clang-tidy -p build src/sys/compose_input.cpp`; `clang-tidy -p build tests/ui/nuklear_event_harness_tests.cpp`; `clang-tidy -p build tests/ui/compose_beat_fit_tests.cpp`; `clang-tidy -p build tests/sys/frame_timing_tests.cpp`; `scripts/smoke-compose-virtual-x.sh /tmp/gesture-T-584.png compose` and inspect the image for visible behavior. All commands must pass; no new function above complexity 25 or increase to an existing violation.
+- **Out of scope:** Other cards in this group, rejected audit claims, new product semantics without a user decision, and unrelated navigation work.
+
+## T-585 Centralize resource arming and role validation
+
+- **Status:** blocked-on T-584
+- **Findings closed:** RS3, RS11, RS2.
+- **Stale-plan audit:** Re-grep the named symbols in the audit against current main before editing. Confirm each A lead (RS11, RS2) through the production emitter first; drop non-reproducing leads from this card and record evidence. Check the entire outcome before declaring already implemented.
+- **Outcome:** Centralize resource arming and role validation so all supported production entry points share lifecycle, validation and failure behavior.
+- **Read first:** `docs/audits/gesture-redundancy-2026-10-11.md`, `src/ui/nuklear/compose_resources.cpp`, `src/ui/nuklear/compose_state.cpp`, `src/core/resource_assignment.cpp`.
+- **Files owned:** `src/ui/nuklear/compose_resources.h`, `src/ui/nuklear/compose_resources.cpp`, `src/ui/nuklear/compose_state.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_sound_picker.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/core/resource_assignment.cpp`, `src/sys/compose_sound_actions.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/core/resource_assignment_tests.cpp`, `docs/chart-editor-plan/tasks/gesture-consolidation.md`, `memory/chart-editor-status/resume.md`.
+- **Steps:**
+  1. Introduce set_armed_resource(state,id,origin) and reset_armed_resource(reason) for every writer.
+  2. Share core resource-role validation across menu and pointer assignment.
+  3. Test project/chart switches, missing and packed sounds, list and note/BGM double-click arming and role rejection using actual emitters.
+  4. Add regression tests entering through the production event harness or registered command; never use an input kind no UI emits (RC6).
+  5. Run the complete verify gate, record actual output tails and evidence, then commit this card to main without staging unrelated work.
+- **Invariants:** Authored IDs, resources, timing and unrelated selections remain lossless; successful edits retain one Undo; gestures have one owner and no delayed release can mutate after cancellation.
+- **Reject/failure behavior:** No partial document/history/clipboard publication; terminal failures retire captures and previews; stale work cannot affect a new chart/project.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build src/ui/nuklear/compose_resources.cpp`; `clang-tidy -p build src/ui/nuklear/compose_state.cpp`; `clang-tidy -p build src/ui/nuklear/compose_input_panel.cpp`; `clang-tidy -p build src/ui/nuklear/compose_sound_picker.cpp`; `clang-tidy -p build src/ui/nuklear/compose_bga_panel.cpp`; `clang-tidy -p build src/ui/nuklear/compose_sounds_panel.cpp`; `clang-tidy -p build src/core/resource_assignment.cpp`; `clang-tidy -p build src/sys/compose_sound_actions.cpp`; `clang-tidy -p build tests/ui/nuklear_event_harness_tests.cpp`; `clang-tidy -p build tests/core/resource_assignment_tests.cpp`; `scripts/smoke-compose-virtual-x.sh /tmp/gesture-T-585.png compose` and inspect the image for visible behavior. All commands must pass; no new function above complexity 25 or increase to an existing violation.
+- **Out of scope:** Other cards in this group, rejected audit claims, new product semantics without a user decision, and unrelated navigation work.
+
+## T-586 Centralize pointer modifiers and chord routing
+
+- **Status:** blocked-on T-585
+- **Findings closed:** RC5, PR-C3, PR-A1, PR-B1, PR-B2, PR-B3, PR-C1, PR-C2, NV8.
+- **Stale-plan audit:** Re-grep the named symbols in the audit against current main before editing. Confirm each A lead (PR-A1, PR-B1, PR-B2, PR-B3, PR-C2, NV8) through the production emitter first; drop non-reproducing leads from this card and record evidence. Check the entire outcome before declaring already implemented.
+- **Outcome:** Centralize pointer modifiers and chord routing so all supported production entry points share lifecycle, validation and failure behavior.
+- **Read first:** `docs/audits/gesture-redundancy-2026-10-11.md`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_object_input.cpp`, `src/sys/compose_input.cpp`.
+- **Files owned:** `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_object_input.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_state.h`, `src/sys/compose_input.cpp`, `src/ui/frontend.h`, `docs/compose-pointer-chords.md`, `tests/ui/nuklear_event_harness_tests.cpp`, `docs/chart-editor-plan/tasks/gesture-consolidation.md`, `memory/chart-editor-status/resume.md`.
+- **Steps:**
+  1. Capture one modifier snapshot per frame and document existing supported chord priorities.
+  2. Route gesture ownership through one chord table; activate pointer holds only after accepted begin and preserve original release ownership.
+  3. Test conflicting chords, mine/BGM Alt begins, modifier changes mid-drag and Ctrl+Alt wheel through production pointer/keyboard events.
+  4. Add regression tests entering through the production event harness or registered command; never use an input kind no UI emits (RC6).
+  5. Run the complete verify gate, record actual output tails and evidence, then commit this card to main without staging unrelated work.
+- **Invariants:** Authored IDs, resources, timing and unrelated selections remain lossless; successful edits retain one Undo; gestures have one owner and no delayed release can mutate after cancellation.
+- **Reject/failure behavior:** No partial document/history/clipboard publication; terminal failures retire captures and previews; stale work cannot affect a new chart/project.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build src/ui/nuklear/compose_panel.cpp`; `clang-tidy -p build src/ui/nuklear/compose_object_input.cpp`; `clang-tidy -p build src/ui/nuklear/compose_input_panel.cpp`; `clang-tidy -p build src/sys/compose_input.cpp`; `clang-tidy -p build tests/ui/nuklear_event_harness_tests.cpp`; `scripts/smoke-compose-virtual-x.sh /tmp/gesture-T-586.png compose` and inspect the image for visible behavior. All commands must pass; no new function above complexity 25 or increase to an existing violation.
+- **Out of scope:** Other cards in this group, rejected audit claims, new product semantics without a user decision, and unrelated navigation work.
+
+## T-587 Unify navigation transport decisions
+
+- **Status:** blocked-on T-586
+- **Findings closed:** NV1, NV2, NV3, NV5, NV6, NV7, NV9.
+- **Stale-plan audit:** Re-grep the named symbols in the audit against current main before editing. Confirm each A lead (NV1, NV2, NV3, NV5, NV6, NV9) through the production emitter first; drop non-reproducing leads from this card and record evidence. Check the entire outcome before declaring already implemented.
+- **Outcome:** Unify navigation transport decisions so all supported production entry points share lifecycle, validation and failure behavior.
+- **Read first:** `docs/audits/gesture-redundancy-2026-10-11.md`, `src/sys/compose_input.cpp`, `src/sys/compose_navigation_travel.h`, `docs/chart-editor-plan/tasks/navigation-polish.md`.
+- **Files owned:** `src/sys/compose_input.cpp`, `src/sys/compose_navigation_travel.h`, `src/sys/compose_playhead_skip.cpp`, `src/ui/nuklear/compose_viewport_input.cpp`, `src/ui/nuklear/compose_keyboard_input.cpp`, `docs/chart-editor-plan/tasks/navigation-polish.md`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/sys/compose_playhead_skip_tests.cpp`, `docs/chart-editor-plan/tasks/gesture-consolidation.md`, `memory/chart-editor-status/resume.md`.
+- **Steps:**
+  1. Re-check NV7 against T-506 follow-up evidence; settle owned travel on interruption and never overwrite externally replaced cursor/view state.
+  2. Create one navigation-step and one go-to-position helper deciding cursor/playhead, bounds and unit; preserve intentional playing beat versus stopped snap policy.
+  3. Test wheel/arrows/Page/Tab/bookmarks/modal/minimap while stopped, paused and playing, including interrupted travel and released repeat debt through real emitters.
+  4. Add regression tests entering through the production event harness or registered command; never use an input kind no UI emits (RC6).
+  5. Run the complete verify gate, record actual output tails and evidence, then commit this card to main without staging unrelated work.
+- **Invariants:** Authored IDs, resources, timing and unrelated selections remain lossless; successful edits retain one Undo; gestures have one owner and no delayed release can mutate after cancellation.
+- **Reject/failure behavior:** No partial document/history/clipboard publication; terminal failures retire captures and previews; stale work cannot affect a new chart/project.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build src/sys/compose_input.cpp`; `clang-tidy -p build src/sys/compose_playhead_skip.cpp`; `clang-tidy -p build src/ui/nuklear/compose_viewport_input.cpp`; `clang-tidy -p build src/ui/nuklear/compose_keyboard_input.cpp`; `clang-tidy -p build tests/ui/nuklear_event_harness_tests.cpp`; `clang-tidy -p build tests/sys/compose_action_notification_tests.cpp`; `clang-tidy -p build tests/sys/compose_playhead_skip_tests.cpp`; `scripts/smoke-compose-virtual-x.sh /tmp/gesture-T-587.png compose` and inspect the image for visible behavior. All commands must pass; no new function above complexity 25 or increase to an existing violation.
+- **Out of scope:** Other cards in this group, rejected audit claims, new product semantics without a user decision, and unrelated navigation work.
+
+## T-588 Resolve selection targets consistently
+
+- **Status:** blocked-on T-587
+- **Findings closed:** SM5, SM6, SM7, SM8, SM9, SM10.
+- **Stale-plan audit:** Re-grep the named symbols in the audit against current main before editing. Confirm each A lead (SM5, SM6, SM7, SM9, SM10) through the production emitter first; drop non-reproducing leads from this card and record evidence. Check the entire outcome before declaring already implemented.
+- **Outcome:** Resolve selection targets consistently so all supported production entry points share lifecycle, validation and failure behavior.
+- **Read first:** `docs/audits/gesture-redundancy-2026-10-11.md`, `src/core/interaction.cpp`, `src/sys/application_command_dispatch.cpp`, `src/ui/nuklear/compose_object_input.cpp`.
+- **Files owned:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `src/sys/application_command_dispatch.cpp`, `src/sys/compose_input.cpp`, `src/ui/nuklear/compose_object_input.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/core/interaction_tests.cpp`, `tests/sys/frame_timing_tests.cpp`, `docs/chart-editor-plan/tasks/gesture-consolidation.md`, `memory/chart-editor-status/resume.md`.
+- **Steps:**
+  1. Create one selectable-family mapping and selection-to-target resolver for transforms, deletion and lane moves.
+  2. Use committed combine semantics in range previews and exact move planning in both preview and release; audition only objects remaining selected.
+  3. Test mixed families, hidden/inactive lanes, select-all/invert, toggle deselection audition and preview/release parity through actual emitters.
+  4. Add regression tests entering through the production event harness or registered command; never use an input kind no UI emits (RC6).
+  5. Run the complete verify gate, record actual output tails and evidence, then commit this card to main without staging unrelated work.
+- **Invariants:** Authored IDs, resources, timing and unrelated selections remain lossless; successful edits retain one Undo; gestures have one owner and no delayed release can mutate after cancellation.
+- **Reject/failure behavior:** No partial document/history/clipboard publication; terminal failures retire captures and previews; stale work cannot affect a new chart/project.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build src/core/interaction.cpp`; `clang-tidy -p build src/sys/application_command_dispatch.cpp`; `clang-tidy -p build src/sys/compose_input.cpp`; `clang-tidy -p build src/ui/nuklear/compose_object_input.cpp`; `clang-tidy -p build tests/ui/nuklear_event_harness_tests.cpp`; `clang-tidy -p build tests/core/interaction_tests.cpp`; `clang-tidy -p build tests/sys/frame_timing_tests.cpp`; `scripts/smoke-compose-virtual-x.sh /tmp/gesture-T-588.png compose` and inspect the image for visible behavior. All commands must pass; no new function above complexity 25 or increase to an existing violation.
+- **Out of scope:** Other cards in this group, rejected audit claims, new product semantics without a user decision, and unrelated navigation work.
+
+## T-589 Unify resource import and replacement workflows
+
+- **Status:** blocked-on T-588
+- **Findings closed:** RS1, RS4, RS5, RS6, RS7, RS8, RS9, RS10, MV9.
+- **Stale-plan audit:** Re-grep the named symbols in the audit against current main before editing. Confirm each A lead (RS4, RS5, RS6, RS7, RS8, RS9, RS10, MV9) through the production emitter first; drop non-reproducing leads from this card and record evidence. Check the entire outcome before declaring already implemented.
+- **Outcome:** Unify resource import and replacement workflows so all supported production entry points share lifecycle, validation and failure behavior.
+- **Read first:** `docs/audits/gesture-redundancy-2026-10-11.md`, `src/core/resource_assignment.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/compose_sounds_panel.cpp`.
+- **Files owned:** `src/core/resource_assignment.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_sound_actions.cpp`, `src/ui/nuklear/metadata_panel.cpp`, `src/sys/metadata_actions.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/core/resource_assignment_tests.cpp`, `tests/sys/frame_timing_tests.cpp`, `docs/chart-editor-plan/tasks/gesture-consolidation.md`, `memory/chart-editor-status/resume.md`.
+- **Steps:**
+  1. Runtime-check RS7 BGA drop coordinates first; share replacement naming and occupancy matching across single/batch import.
+  2. Share stamped confirmation lifecycle and lane-assignment wrapper, preserving BMSON links and invalidating previews by project identity.
+  3. Test actual file-drop and menu/key emitters, occupied slots, pending confirmation, project switches and atomic failure/Undo.
+  4. Add regression tests entering through the production event harness or registered command; never use an input kind no UI emits (RC6).
+  5. Run the complete verify gate, record actual output tails and evidence, then commit this card to main without staging unrelated work.
+- **Invariants:** Authored IDs, resources, timing and unrelated selections remain lossless; successful edits retain one Undo; gestures have one owner and no delayed release can mutate after cancellation.
+- **Reject/failure behavior:** No partial document/history/clipboard publication; terminal failures retire captures and previews; stale work cannot affect a new chart/project.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build src/core/resource_assignment.cpp`; `clang-tidy -p build src/ui/nuklear/compose_bga_panel.cpp`; `clang-tidy -p build src/ui/nuklear/compose_sounds_panel.cpp`; `clang-tidy -p build src/sys/compose_input.cpp`; `clang-tidy -p build src/sys/compose_sound_actions.cpp`; `clang-tidy -p build src/ui/nuklear/metadata_panel.cpp`; `clang-tidy -p build src/sys/metadata_actions.cpp`; `clang-tidy -p build tests/ui/nuklear_event_harness_tests.cpp`; `clang-tidy -p build tests/core/resource_assignment_tests.cpp`; `clang-tidy -p build tests/sys/frame_timing_tests.cpp`; `scripts/smoke-compose-virtual-x.sh /tmp/gesture-T-589.png compose` and inspect the image for visible behavior. All commands must pass; no new function above complexity 25 or increase to an existing violation.
+- **Out of scope:** Other cards in this group, rejected audit claims, new product semantics without a user decision, and unrelated navigation work.
+
+## T-590 Use the shared release-latch primitive
+
+- **Status:** blocked-on T-589
+- **Findings closed:** PR-D1.
+- **Stale-plan audit:** Re-grep the named symbols in the audit against current main before editing. Confirm each A lead (PR-D1) through the production emitter first; drop non-reproducing leads from this card and record evidence. Check the entire outcome before declaring already implemented.
+- **Outcome:** Use the shared release-latch primitive so all supported production entry points share lifecycle, validation and failure behavior.
+- **Read first:** `docs/audits/gesture-redundancy-2026-10-11.md`, `src/ui/nuklear/popup_lifecycle.h`, `src/ui/nuklear/compose_bookmark_rename.cpp`, `src/ui/nuklear/compose_sound_picker.cpp`.
+- **Files owned:** `src/ui/nuklear/popup_lifecycle.h`, `src/ui/nuklear/compose_bookmark_chooser.cpp`, `src/ui/nuklear/compose_bookmark_rename.cpp`, `src/ui/nuklear/compose_sound_picker.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_state.h`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/ui/popup_lifecycle_tests.cpp`, `docs/chart-editor-plan/tasks/gesture-consolidation.md`, `memory/chart-editor-status/resume.md`.
+- **Steps:**
+  1. Replace hand-rolled chooser/rename/BGA/count-edit release latches with popup_lifecycle hooks.
+  2. Use one draw-right capture reset hook registered with the gesture lifecycle.
+  3. Test real popup selection/close clicks, releases while panels are hidden, chart switches and no click-through into underlying components.
+  4. Add regression tests entering through the production event harness or registered command; never use an input kind no UI emits (RC6).
+  5. Run the complete verify gate, record actual output tails and evidence, then commit this card to main without staging unrelated work.
+- **Invariants:** Authored IDs, resources, timing and unrelated selections remain lossless; successful edits retain one Undo; gestures have one owner and no delayed release can mutate after cancellation.
+- **Reject/failure behavior:** No partial document/history/clipboard publication; terminal failures retire captures and previews; stale work cannot affect a new chart/project.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build src/ui/nuklear/compose_bookmark_chooser.cpp`; `clang-tidy -p build src/ui/nuklear/compose_bookmark_rename.cpp`; `clang-tidy -p build src/ui/nuklear/compose_sound_picker.cpp`; `clang-tidy -p build src/ui/nuklear/compose_bga_panel.cpp`; `clang-tidy -p build src/ui/nuklear/compose_input_panel.cpp`; `clang-tidy -p build tests/ui/nuklear_event_harness_tests.cpp`; `clang-tidy -p build tests/ui/popup_lifecycle_tests.cpp`; `scripts/smoke-compose-virtual-x.sh /tmp/gesture-T-590.png compose` and inspect the image for visible behavior. All commands must pass; no new function above complexity 25 or increase to an existing violation.
+- **Out of scope:** Other cards in this group, rejected audit claims, new product semantics without a user decision, and unrelated navigation work.
+

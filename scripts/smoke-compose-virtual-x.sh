@@ -126,7 +126,7 @@ click_at() {
 }
 if [[ -z $project && $mode != landing && $mode != gallery ]]; then
     # The initial window has no chart. Create the standard template first.
-    click_at "$((window_width / 2))" 150
+    click_at "$((window_width / 2))" 200
 fi
 if [[ -z $project && $mode != landing && $mode != wizard && $mode != gallery ]]; then
     # The centered, 204-pixel wizard puts Create 46 pixels below the window midpoint.
@@ -136,6 +136,9 @@ if [[ -z $project && $mode != landing && $mode != wizard && $mode != gallery ]];
 fi
 if [[ -n $project ]]; then
     sleep 1
+    if [[ $mode == compose || $mode == timing ]]; then
+        click_at "$((window_width * 5 / 12))" 55
+    fi
 fi
 if [[ $mode == audio ]]; then
     click_at "$((window_width * 9 / 12))" 55

@@ -1,3 +1,4 @@
+#include <wormedit/core/interaction_gestures.h>
 #include "sys/compose_sound_selection.h"
 #include "sys/frame_timing.h"
 #include "sys/compose_view.h"
@@ -5139,6 +5140,9 @@ void populate_compose_view(flattened_workspace_t& flattened,
         return;
     }
     auto& view = flattened.view.compose;
+    view.editor_gesture_active = retained_state && has_pending_editor_gesture(*retained_state);
+    view.editor_gesture_current = view.editor_gesture_active &&
+        !editor_gestures_stale(*retained_state, history.document.revision);
     if (!workspace.selected_chart) {
         report_compose_projection(flattened, projection_feedback_kind_t::choose_chart,
             wormedit::notification_severity_t::hint, "Choose a difficulty to display its chart field.", 0,

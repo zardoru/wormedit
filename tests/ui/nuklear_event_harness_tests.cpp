@@ -6696,3 +6696,75 @@ TEST_CASE("File Save project can queue through its own menu release capture",
     expect_draw(worm_ui_frontend_request_save_project(view.project_id));
     expect_draw(harness.frame().get().kind == WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
 }
+
+TEST_CASE("Rejected Alt duration release retires the production gesture and preserves the document",
+          "[frontend-state][event-harness][gesture-registry][duration]") {
+    auto song = t422_song();
+    song.charts.front().measures.front().notes.push_back({.id = object_id_t{104},
+        .position = {measure_id_t{1}, 720}, .lane = lane_id_t{1}});
+    t422_fixture_t f{std::move(song)};
+    f.interaction->selected_notes = {object_id_t{102}};
+    f.interaction->selected_objects = {{editor_selection_object_kind_t::note, object_id_t{102}}};
+    f.project();
+    (void)f.harness.frame();
+    const auto head = t422_note_screen_center(f, 102);
+    const auto target = t422_note_screen_center(f, 104);
+    section_import_require(head.has_value());
+    section_import_require(target.has_value());
+    const auto original = t422_native_bytes(f.history.document);
+    const auto alt = key_event(SDL_EVENT_KEY_DOWN, SDLK_LALT, SDL_SCANCODE_LALT);
+    (void)f.dispatch(f.harness.frame(std::span{&alt, 1}, SDL_KMOD_ALT));
+    const std::array press{motion_event(head->first, head->second),
+        button_event(true, head->first, head->second)};
+    (void)f.dispatch(f.harness.frame(press, SDL_KMOD_ALT));
+    section_import_require(f.interaction->pending_note_duration_gesture.has_value());
+    const auto move = motion_event(target->first, target->second);
+    (void)f.dispatch(f.harness.frame(std::span{&move, 1}, SDL_KMOD_ALT));
+    const auto release = button_event(false, target->first, target->second);
+    (void)f.dispatch(f.harness.frame(std::span{&release, 1}, SDL_KMOD_ALT));
+    expect_draw(!has_pending_editor_gesture(*f.interaction));
+    expect_draw(f.history.undo.empty());
+    expect_draw(t422_native_bytes(f.history.document) == original);
+}
+
+TEST_CASE("A production lane chord survives its own revision refresh but cancels an external edit",
+          "[frontend-state][event-harness][gesture-registry][lane-key]") {
+    auto song = t422_song();
+    for (auto& measure : song.charts.front().measures) measure.notes.clear();
+    t422_fixture_t f{std::move(song)};
+    f.interaction->selected_notes.clear();
+    f.interaction->selected_objects.clear();
+    f.application.note_paint_mode_active = true;
+    f.interaction->armed_note_kind = note_kind_t::hold;
+    f.project();
+    (void)f.harness.frame();
+    const auto first = key_event(SDL_EVENT_KEY_DOWN, SDLK_1, SDL_SCANCODE_1);
+    const auto second = key_event(SDL_EVENT_KEY_DOWN, SDLK_2, SDL_SCANCODE_2);
+    (void)f.dispatch(f.harness.frame(std::span{&first, 1}));
+    (void)f.dispatch(f.harness.frame(std::span{&second, 1}));
+    section_import_require(f.interaction->additional_keyboard_holds.size() == 1);
+    const auto forward = key_event(SDL_EVENT_KEY_DOWN, SDLK_UP, SDL_SCANCODE_UP);
+    (void)f.dispatch(f.harness.frame(std::span{&forward, 1}));
+    const auto first_up = key_event(SDL_EVENT_KEY_UP, SDLK_1, SDL_SCANCODE_1);
+    (void)f.dispatch(f.harness.frame(std::span{&first_up, 1}));
+    section_import_require(f.interaction->pending_hold.has_value());
+    f.project();
+    (void)f.dispatch(f.harness.frame());
+    expect_draw(f.interaction->pending_hold.has_value());
+    auto changed = f.history.document;
+    changed.metadata.title = "External edit";
+    section_import_require(static_cast<bool>(commit_document_command(f.history, std::move(changed), "External edit")));
+    // Stale captures can temporarily make scene projection unavailable; pass that real view
+    // through the frontend rather than requiring a healthy scene before cancellation.
+    f.flattened = {};
+    populate_compose_view(f.flattened, f.history, *f.binding.workspace, f.cache, 1800, 1400,
+                          f.interaction, f.application, nullptr);
+    f.harness.view().compose = f.flattened.view.compose;
+    f.harness.view().document_revision = f.history.document.revision;
+    (void)f.dispatch(f.harness.frame());
+    expect_draw(!has_pending_editor_gesture(*f.interaction));
+    f.project();
+    const auto second_up = key_event(SDL_EVENT_KEY_UP, SDLK_2, SDL_SCANCODE_2);
+    (void)f.dispatch(f.harness.frame(std::span{&second_up, 1}));
+    expect_draw(f.history.undo.size() == 2);
+}

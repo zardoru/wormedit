@@ -596,11 +596,7 @@ auto move_selected_objects_to_lane(document_history_t& history, std::uint64_t ex
 
 namespace {
 auto note_conversion_pending(const editor_interaction_state_t& state) -> bool {
-    return state.pending_hold || !state.additional_keyboard_holds.empty() ||
-           state.pending_virtual_lane_key || state.pending_note_duration_gesture ||
-           state.pending_note_move_gesture || state.pending_note_paint_gesture ||
-           state.pending_semantic_layer_paint_gesture || state.pending_editor_area_selection ||
-           state.pending_space_range_selection;
+    return has_pending_editor_gesture(state);
 }
 
 auto selected_conversion_notes(const editor_interaction_state_t& state) -> std::vector<object_id_t> {

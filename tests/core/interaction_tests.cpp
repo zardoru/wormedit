@@ -1943,7 +1943,7 @@ TEST_CASE("Space range selection supports add and toggle and cancels safely",
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
-    CHECK(state.pending_space_range_selection.has_value());
+    CHECK_FALSE(state.pending_space_range_selection.has_value());
     REQUIRE(dispatch_editor_action(
         history, state, cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::escape}));
     CHECK_FALSE(state.pending_space_range_selection.has_value());
@@ -2098,7 +2098,7 @@ TEST_CASE("area selection capture loss cancels and stale revisions preserve comm
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
-    CHECK(state.pending_editor_area_selection.has_value());
+    CHECK_FALSE(state.pending_editor_area_selection.has_value());
     REQUIRE(dispatch_editor_action(history, state, cancel_editor_area_selection_action_t{}));
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
     CHECK_FALSE(state.pending_editor_area_selection.has_value());
@@ -2471,7 +2471,7 @@ TEST_CASE("single-cell paint toggles taps and rejects hold collisions atomically
     CHECK(colliding_history.document.revision == 1);
     CHECK(colliding_history.undo.empty());
     CHECK(note_count(colliding_history) == 1);
-    CHECK(colliding_state.pending_note_paint_gesture.has_value());
+    CHECK_FALSE(colliding_state.pending_note_paint_gesture.has_value());
 }
 
 TEST_CASE("paint gestures cancel on capture loss and leave previews intact on cap rejection",
@@ -2524,7 +2524,7 @@ TEST_CASE("paint gestures cancel on capture loss and leave previews intact on ca
     CHECK(history.document.revision == 2);
     CHECK(note_count(history) == 0);
     CHECK(history.undo.size() == 1);
-    CHECK(state.pending_note_paint_gesture.has_value());
+    CHECK_FALSE(state.pending_note_paint_gesture.has_value());
     REQUIRE(dispatch_editor_action(
         history, state, cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::escape}));
     CHECK_FALSE(state.pending_note_paint_gesture.has_value());
@@ -3099,7 +3099,7 @@ TEST_CASE("hold placement moves its head before the fixed anchor and normalizes 
                                                  commit_hold_action_t{{measure_id_t{1}, 480}});
     CHECK_FALSE(conflict);
     CHECK(has_code(conflict.diagnostics, diagnostic_code_t::collision));
-    CHECK(conflicting_state.pending_hold.has_value());
+    CHECK_FALSE(conflicting_state.pending_hold.has_value());
     CHECK(conflicting_history.document.revision == 1);
     CHECK(note_count(conflicting_history) == 1);
 
@@ -3553,7 +3553,7 @@ TEST_CASE("Alt pointer hold gestures cancel on modifier release or capture loss"
     CHECK(note_count(history) == 0);
 }
 
-TEST_CASE("hold input gestures retain stale previews and can cancel after focus loss",
+TEST_CASE("hold input gestures retire stale previews and can cancel after focus loss",
           "[unit][core][interaction][gesture][hold][revision]") {
     auto history = make_document_history(make_song());
     auto state = make_state(history);
@@ -3567,7 +3567,7 @@ TEST_CASE("hold input gestures retain stale previews and can cancel after focus 
         history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
-    CHECK(state.pending_hold.has_value());
+    CHECK_FALSE(state.pending_hold.has_value());
     CHECK(note_count(history) == 0);
 
     const auto cancelled = dispatch_editor_action(
@@ -3678,7 +3678,7 @@ TEST_CASE("duration gestures reject collisions and stale revisions without parti
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
     CHECK(find_note(history, object_id_t{101})->end == local_position_t{measure_id_t{1}, 240});
-    CHECK(state.pending_note_duration_gesture.has_value());
+    CHECK_FALSE(state.pending_note_duration_gesture.has_value());
     REQUIRE(dispatch_editor_action(
         history, state,
         cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::focus_lost}));
@@ -3934,7 +3934,7 @@ TEST_CASE("hold completion restores its lane across layout transitions",
     CHECK(note_count(history) == 1);
 }
 
-TEST_CASE("hold previews reject stale document revisions and remain cancellable",
+TEST_CASE("hold previews reject stale document revisions and retire captures",
           "[unit][core][interaction][hold][revision]") {
     auto history = make_document_history(make_song());
     auto state = make_state(history);
@@ -3947,7 +3947,7 @@ TEST_CASE("hold previews reject stale document revisions and remain cancellable"
         dispatch_editor_action(history, state, commit_hold_action_t{{measure_id_t{1}, 720}});
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
-    CHECK(state.pending_hold.has_value());
+    CHECK_FALSE(state.pending_hold.has_value());
     CHECK(note_count(history) == 0);
 
     history.document.charts.front().lane_layouts.front().layout.lanes.clear();
@@ -4820,7 +4820,8 @@ TEST_CASE("Hold and Roll palette use explicit duration gestures", "[interaction]
         check_note_kind_condition(note_count(history) == 0);
         require_note_kind_condition(state.pending_hold);
         check_note_kind_condition(!(dispatch_editor_action(history, state, commit_hold_action_t{{measure_id_t{1}, 0}})));
-        require_note_kind_condition(state.pending_hold);
+        check_note_kind_condition(!state.pending_hold);
+        require_note_kind_condition(dispatch_editor_action(history, state, place_tap_action_t{{measure_id_t{1}, 0}}));
         require_note_kind_condition(dispatch_editor_action(history, state, commit_hold_action_t{{measure_id_t{1}, 240}}));
         require_note_kind_condition(note_count(history) == 1);
         check_note_kind_condition(history.document.charts.front().measures.front().notes.front().kind == kind);

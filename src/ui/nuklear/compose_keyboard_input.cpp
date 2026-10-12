@@ -1,3 +1,4 @@
+#include "ui/nuklear/compose_gesture_registry.h"
 #include "ui/nuklear/compose_panel.h"
 #include "ui/nuklear/theme.h"
 #include "sys/compose_scroll_geometry.h"
@@ -274,51 +275,16 @@ static bool process_compose_navigation_key(const auto& key_event,
     return true;
 }
 
-static void cancel_compose_pointer_selection(WormUiWorkspaceAction* action) {
-    if (state.note_move_active || state.area_selection_active)
-        append_compose_cancel_once(action);
-    state.note_move_candidate_active = false;
-    state.note_move_active = false;
-    state.area_selection_candidate_active = false;
-    state.area_selection_active = false;
-}
-
 static bool process_compose_escape(const auto& key_event,
-                                           const WormUiComposeView* view,
-                                           WormUiWorkspaceAction* action) {
-    if (key_event.keycode == static_cast<uint32_t>(SDLK_ESCAPE)) {
-        cancel_compose_navigation(action);
-        cancel_compose_pointer_selection(action);
-        state.bga_event_move_candidate_active = false;
-        state.bga_event_move_active = false;
-        state.bga_event_move_object_id = 0;
-        state.bookmark_move_candidate_active = false;
-        state.bookmark_move_active = false;
-        state.bookmark_move_id = 0;
-        state.bga_stack_open = false;
-        cancel_beat_fit_drag(action);
-        cancel_compose_measure_resize();
-        cancel_offset_fit_drag(action);
-        if (state.waveform_beat_zero_drag_active) {
-            set_waveform_offset_drag_action(action, WORM_UI_AUDIO_OFFSET_DRAG_CANCEL,
-                                            state.waveform_beat_zero_drag_delta_frames);
-            reset_waveform_offset_drag();
-        }
-        state.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
-        if (state.bmson_marker_move_active)
-            append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_CANCEL);
-        reset_bmson_marker_move_capture();
-        if (state.space_range_hold_active) {
-            append_compose_cancel_once(action);
-            state.space_range_hold_active = false;
-            state.space_range_latched = false;
-            state.space_range_hold_moved = false;
-        }
-        if (view->area_range_available || compose_area_capture_active())
-            cancel_compose_area_capture(*action);
-        return true;
-    }
-    return false;
+                                   const WormUiComposeView* view,
+                                   WormUiWorkspaceAction* action) {
+    if (key_event.keycode != static_cast<uint32_t>(SDLK_ESCAPE)) return false;
+    cancel_compose_gestures(action);
+    state.bga_stack_open = false;
+    state.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
+    if (view->area_range_available || compose_area_capture_active())
+        cancel_compose_area_capture(*action);
+    return true;
 }
 
 static void process_compose_lane_key(const auto& key_event, const WormUiComposeView* view,
@@ -447,7 +413,7 @@ static bool process_go_to_measure_keys(nk_context* context, const WormUiComposeV
         const auto& event = state.key_events[index];
         if (!go_to_measure_shortcut(event)) continue;
         cancel_compose_navigation(action);
-        cancel_compose_pointer_selection(action);
+        cancel_compose_gestures(action);
         append_compose_cancel_once(action);
         state.go_to_measure_open = true;
         state.go_to_measure_cancel_pending = false;
@@ -487,12 +453,14 @@ void process_compose_key_events(struct nk_context* context, const WormUiComposeV
                                        WormUiWorkspaceAction* action, bool window_focused,
                                        bool ime_composition_active) {
     if (state.inline_timing_open || state.go_to_measure_open || ime_composition_active ||
-        compose_text_owned(context))
-        cancel_compose_shift_range(action);
+        compose_text_owned(context)) {
+        action->compose_input_ownership = state.go_to_measure_open ? 1 : 2;
+        cancel_compose_gestures(action);
+    }
     if (process_go_to_measure_keys(context, *view, action, window_focused,
                                    ime_composition_active)) {
-        cancel_compose_shift_range(action);
-        cancel_compose_navigation(action);
+        action->compose_input_ownership = 1;
+        cancel_compose_gestures(action);
         release_discarded_compose_keys(action);
         state.key_event_count = 0;
         return;

@@ -1,3 +1,4 @@
+#include <wormedit/core/interaction_gestures.h>
 #include "sys/compose_input.h"
 #include "sys/compose_sound_selection.h"
 #include "sys/compose_note_to_bgm.h"
@@ -1215,7 +1216,10 @@ void update_compose_viewport_pointer_input(const WormUiWorkspaceAction& ui_actio
                                            double bgm_pane_width, double bgm_pane_left_pixels,
                                            double viewport_width_pixels) {
     using namespace wormedit;
-    if (!ui_action.shortcut_window_focused) {
+    if (ui_action.compose_input_ownership != 0) {
+        viewport_input.modal_opened();
+        scene_cache.viewport_autoscroll_active = false;
+    } else if (!ui_action.shortcut_window_focused) {
         viewport_input.focus_lost();
         scene_cache.viewport_autoscroll_active = false;
     } else {
@@ -3385,13 +3389,26 @@ auto dispatch_compose_undo_redo(const WormUiComposeInputAction& input,
         status, notification_severity_t::success, notification_source_t::edit);
 }
 
+auto retire_interrupted_compose_input(wormedit::document_history_t& history,
+    wormedit::editor_interaction_state_t& state, wormedit::viewport_input_controller_t& viewport,
+    wormedit::editor_navigation_input_controller_t& navigation,
+    application_command_state_t& application, compose_scene_cache_t& cache)
+    -> wormedit::editor_interaction_result_t {
+    viewport.focus_lost();
+    navigation.focus_lost();
+    cache.clear_beat_fit_capture();
+    cache.offset_fit_drag.reset();
+    application.bga_draw_stroke.reset();
+    return wormedit::dispatch_editor_action(history, state, wormedit::cancel_editor_gesture_action_t{});
+}
+
 auto cancel_compose_gesture(compose_input_context_t& context,
                             wormedit::editor_interaction_result_t& result,
                             std::string_view& accepted) -> compose_input_family_result_t {
-    context.scene_cache.clear_beat_fit_capture();
-    context.navigation_input.cancel();
-    result = wormedit::dispatch_editor_action(context.history, context.state,
-                                              wormedit::cancel_editor_gesture_action_t{});
+    result = retire_interrupted_compose_input(context.history, context.state, context.viewport_input,
+        context.navigation_input, context.application_state, context.scene_cache);
+    if (context.ui_action.compose_input_ownership == 1) context.navigation_input.modal_opened();
+    else if (context.ui_action.compose_input_ownership == 2) context.navigation_input.text_input_started();
     accepted = "Compose gesture canceled.";
     return compose_input_family_result_t::continue_with_result();
 }
@@ -4370,6 +4387,10 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
         !std::isfinite(ui_action.compose_input_viewport_width_pixels) ||
         ui_action.compose_input_viewport_width_pixels <= 0.0) {
         scene_cache.navigation_travel.cancel();
+        if (workspace.active_tab != workspace_tab_t::compose ||
+            editor_gestures_stale(state, history.document.revision))
+            retire_interrupted_compose_input(history, state, viewport_input, navigation_input,
+                                             application_state, scene_cache);
         const auto message = "Compose input ignored because the chart or document revision changed.";
         post_input_feedback(notifications, notification_severity_t::warning,
                             notification_source_t::input, message);
@@ -4411,14 +4432,7 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
     const auto field_width_pixels = horizontal_layout.playable_field_width_pixels;
     const auto chart =
         std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
-    const auto gesture_active = state.pending_hold.has_value() ||
-                                state.pending_virtual_lane_key.has_value() ||
-                                state.pending_note_duration_gesture.has_value() ||
-                                state.pending_note_move_gesture.has_value() ||
-                                state.pending_note_paint_gesture.has_value() ||
-                                state.pending_semantic_layer_paint_gesture.has_value() ||
-                                state.pending_editor_area_selection.has_value() ||
-                                state.pending_space_range_selection.has_value();
+    const auto gesture_active = has_pending_editor_gesture(state);
     auto input_context = compose_input_context_t{
         .ui_action = ui_action,
         .history = history,

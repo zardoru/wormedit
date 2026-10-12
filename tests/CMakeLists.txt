@@ -539,6 +539,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/compose_stem_lane_render_tests.cpp
         ui/nuklear_event_harness.cpp
         ui/nuklear_event_harness_tests.cpp
+        ui/gesture_lifecycle_event_harness_tests.cpp
         ui/tag_grips_event_harness_tests.cpp
         ui/command_menu_event_harness_tests.cpp
         ui/selected_sound_layers_menu_tests.cpp

@@ -1,3 +1,5 @@
+#include "ui/nuklear/compose_gesture_registry.h"
+#include "ui/nuklear/compose_measure_resize_input.h"
 #include "ui/nuklear/compose_panel.h"
 #include "ui/compose_timing_geometry.h"
 #include "ui/nuklear/theme.h"
@@ -67,6 +69,107 @@ static void reset_bga_event_move_capture() {
     state.bga_event_move_object_id = 0;
 }
 
+static void reset_overview_capture() {
+    state.waveform_overview_gesture = {};
+    state.waveform_overview_capture = {};
+}
+
+static void reset_hold_capture() {
+    state.pointer_hold_without_alt = false;
+    state.lane_hold_count = 0;
+    state.lane_holds = {};
+}
+
+static void reset_range_capture() {
+    state.space_range_latched = false;
+    state.space_range_hold_moved = false;
+    state.shift_range_keys = 0;
+}
+
+static void reset_draw_capture() {
+    state.draw_left_cancelled_until_release |= state.note_paint_pointer_active ||
+                                              state.bmson_point_capture.has_value();
+    state.bmson_point_capture.reset();
+    state.draw_right_press_pending = state.draw_right_release_pending = false;
+    state.draw_right_native_down = false;
+    state.draw_stroke_bgm_lane = 0;
+}
+
+static void reset_measure_capture() { cancel_compose_measure_resize(); }
+static void reset_stem_capture() { worm_ui_nuklear_cancel_stem_lane_resize(state); }
+static void reset_tool_chip_capture() {
+    state.tool_chip_pointer_canceled |= state.tool_chip_pointer_active;
+}
+
+struct compose_gesture_entry_t {
+    bool worm_ui_nuklear_compose_state_t::*active;
+    void (*reset)(){};
+    bool cancel_core{true};
+};
+
+// Candidate flags are captures too: a late release must not resurrect a cancelled press.
+static constexpr auto compose_gesture_registry = std::to_array<compose_gesture_entry_t>({
+    {&worm_ui_nuklear_compose_state_t::pointer_hold_active, reset_hold_capture},
+    {&worm_ui_nuklear_compose_state_t::lane_hold_active, reset_hold_capture},
+    {&worm_ui_nuklear_compose_state_t::note_paint_pointer_active, reset_draw_capture},
+    {&worm_ui_nuklear_compose_state_t::draw_erase_pointer_active},
+    {&worm_ui_nuklear_compose_state_t::draw_right_candidate},
+    {&worm_ui_nuklear_compose_state_t::bmson_razor_pointer_active},
+    {&worm_ui_nuklear_compose_state_t::bmson_marker_move_active, reset_bmson_marker_move_capture},
+    {&worm_ui_nuklear_compose_state_t::bmson_marker_move_candidate_active},
+    {&worm_ui_nuklear_compose_state_t::semantic_layer_paint_pointer_active},
+    {&worm_ui_nuklear_compose_state_t::space_range_hold_active, reset_range_capture},
+    {&worm_ui_nuklear_compose_state_t::note_move_active},
+    {&worm_ui_nuklear_compose_state_t::note_move_candidate_active},
+    {&worm_ui_nuklear_compose_state_t::area_selection_active},
+    {&worm_ui_nuklear_compose_state_t::area_selection_candidate_active},
+    {&worm_ui_nuklear_compose_state_t::bga_event_move_active, reset_bga_event_move_capture},
+    {&worm_ui_nuklear_compose_state_t::bga_event_move_candidate_active},
+    {&worm_ui_nuklear_compose_state_t::bookmark_move_active, reset_bookmark_move_capture},
+    {&worm_ui_nuklear_compose_state_t::bookmark_move_candidate_active},
+    {&worm_ui_nuklear_compose_state_t::timing_stage_drag_active},
+    {&worm_ui_nuklear_compose_state_t::kiai_drag_active},
+    {&worm_ui_nuklear_compose_state_t::recipe_drag_active},
+    {&worm_ui_nuklear_compose_state_t::timing_marker_drag_active, reset_timing_marker_drag_capture},
+    {&worm_ui_nuklear_compose_state_t::timing_marker_candidate_active},
+    {&worm_ui_nuklear_compose_state_t::beat_fit_drag_active},
+    {&worm_ui_nuklear_compose_state_t::offset_fit_drag_active},
+    {&worm_ui_nuklear_compose_state_t::waveform_beat_zero_drag_active},
+    {&worm_ui_nuklear_compose_state_t::waveform_overview_drag_active, reset_overview_capture},
+    {&worm_ui_nuklear_compose_state_t::measure_resize_active, reset_measure_capture},
+    {&worm_ui_nuklear_compose_state_t::stem_lane_resize_cursor_requested, reset_stem_capture},
+    {&worm_ui_nuklear_compose_state_t::tool_chip_pointer_active, reset_tool_chip_capture, false},
+    {&worm_ui_nuklear_compose_state_t::bgm_mix_pointer_active},
+});
+
+void cancel_compose_gestures(WormUiWorkspaceAction* action) {
+    bool pending = state.cancel_pending || state.core_gesture_active;
+    for (const auto& entry : compose_gesture_registry)
+        pending |= entry.cancel_core && state.*entry.active;
+    pending |= state.stem_lane_resize.has_value() || state.bmson_point_capture.has_value();
+    // Audio offset is a separate transaction, so preserve its stamp until the deferred cancel.
+    state.waveform_offset_cancel_pending |= state.waveform_beat_zero_drag_active;
+    if (action && state.waveform_offset_cancel_pending) {
+        set_waveform_offset_drag_action(action, WORM_UI_AUDIO_OFFSET_DRAG_CANCEL,
+                                        state.waveform_beat_zero_drag_delta_frames);
+        state.waveform_offset_cancel_pending = false;
+    }
+    for (const auto& entry : compose_gesture_registry) {
+        state.draw_left_cancelled_until_release |= state.*entry.active;
+        if (entry.reset) entry.reset();
+        state.*entry.active = false;
+    }
+    state.core_gesture_active = false;
+    state.alt_wheel_last_event_ms.reset();
+    cancel_compose_navigation(action);
+    discard_compose_frame_input();
+    if (action) {
+        action->minimap_window_capture_active = false;
+        if (pending) append_compose_cancel_once(action);
+        state.cancel_pending = false;
+    } else state.cancel_pending = true;
+}
+
 void set_waveform_offset_drag_action(WormUiWorkspaceAction* action,
                                             WormUiAudioOffsetDragAction kind,
                                             std::int64_t delta_frames) {
@@ -119,35 +222,7 @@ void append_compose_input(
             .beat_fit_snap_step_denominator = 1,
         };
         action->compose_input_count = WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY;
-        state.cancel_pending = false;
-        state.pointer_hold_active = false;
-        clear_note_paint_capture();
-        state.draw_right_candidate = state.draw_erase_pointer_active = false;
-        state.draw_right_press_pending = state.draw_right_release_pending = state.draw_right_native_down = false;
-        state.bmson_razor_pointer_active = false;
-        reset_bmson_marker_move_capture();
-        state.semantic_layer_paint_pointer_active = false;
-        state.lane_hold_active = false;
-        state.space_range_hold_active = false;
-        state.space_range_latched = false;
-        state.space_range_hold_moved = false;
-        state.note_move_candidate_active = false;
-        state.note_move_active = false;
-        reset_bga_event_move_capture();
-        state.timing_stage_drag_active = false;
-        state.kiai_drag_active = false;
-        state.recipe_drag_active = false;
-        state.beat_fit_drag_active = false;
-        state.area_selection_candidate_active = false;
-        state.area_selection_active = false;
-        state.navigation_key_active = false;
-        state.navigation_keycode = 0;
-        state.pointer_navigation_active = false;
-        state.keyboard_focus = false;
-        state.lane_hold_count = 0;
-        state.tab_navigation.cancel();
-        state.raw_tab_down = false;
-        state.pinch = {};
+        cancel_compose_gestures(nullptr);
         state.action_overflowed = true;
         return;
     }
@@ -229,13 +304,14 @@ update_compose_pointer_navigation(WormUiWorkspaceAction* action,
 }
 
 void cancel_compose_navigation(WormUiWorkspaceAction* action) {
-    if (action && (state.tab_navigation_needs_cancel || state.tab_navigation.tab_down ||
-                   state.navigation_key_active || state.pointer_navigation_active)) {
+    const bool pending = state.tab_navigation_needs_cancel || state.tab_navigation.tab_down ||
+                         state.navigation_key_active || state.pointer_navigation_active;
+    if (action && pending) {
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL);
     }
     state.tab_navigation.cancel();
     state.raw_tab_down = false;
-    state.tab_navigation_needs_cancel = false;
+    state.tab_navigation_needs_cancel = pending && !action;
     state.pinch = {};
     state.navigation_key_active = false;
     state.navigation_keycode = 0;
@@ -264,33 +340,9 @@ void queue_compose_wheel_input(double delta_x, double delta_y, double mouse_x,
                                          double mouse_y, std::uint16_t modifiers,
                                          bool coarse_steps) {
     if (state.wheel_event_count == state.wheel_events.size()) {
-        state.wheel_event_count = 0;
-        state.cancel_pending = true;
-        state.tab_navigation.cancel();
-        state.raw_tab_down = false;
-        state.pinch = {};
+        cancel_compose_gestures(nullptr);
         state.key_event_count = 0;
-        state.pointer_hold_active = false;
-        clear_note_paint_capture();
-        state.draw_right_candidate = state.draw_erase_pointer_active = false;
-        state.draw_right_press_pending = state.draw_right_release_pending = state.draw_right_native_down = false;
-        state.bmson_razor_pointer_active = false;
-        reset_bmson_marker_move_capture();
-        state.semantic_layer_paint_pointer_active = false;
-        state.lane_hold_active = false;
-        state.space_range_hold_active = false;
-        state.space_range_latched = false;
-        state.space_range_hold_moved = false;
-        state.note_move_candidate_active = false;
-        state.note_move_active = false;
-        reset_bga_event_move_capture();
-        state.timing_stage_drag_active = false;
-        state.kiai_drag_active = false;
-        state.recipe_drag_active = false;
-        state.area_selection_candidate_active = false;
-        state.area_selection_active = false;
         state.keyboard_focus = false;
-        state.lane_hold_count = 0;
         return;
     }
     state.wheel_events[state.wheel_event_count++] = {
@@ -318,39 +370,9 @@ void queue_compose_middle_click_input(float x, float y) {
 }
 
 void compose_handle_focus_lost_input() {
-    state.draw_right_candidate = state.draw_erase_pointer_active = false;
-    state.draw_right_press_pending = state.draw_right_release_pending = state.draw_right_native_down = false;
-    state.alt_wheel_last_event_ms.reset();
-    state.tab_navigation.cancel();
-    state.raw_tab_down = false;
-    state.pinch = {};
-    state.cancel_pending = true;
+    cancel_compose_gestures(nullptr);
     state.key_event_count = 0;
-    state.wheel_event_count = 0;
-    state.middle_click_pending = false;
     state.keyboard_focus = false;
-    state.pointer_hold_active = false;
-    state.bmson_razor_pointer_active = false;
-    reset_bmson_marker_move_capture();
-    // Keep paint capture until Compose can deliver the pending cancel.
-    state.lane_hold_active = false;
-    state.lane_hold_count = 0;
-    state.space_range_hold_active = false;
-    state.space_range_latched = false;
-    state.space_range_hold_moved = false;
-    state.note_move_candidate_active = false;
-    state.note_move_active = false;
-    reset_bga_event_move_capture();
-    state.timing_stage_drag_active = false;
-    state.kiai_drag_active = false;
-    state.recipe_drag_active = false;
-    reset_timing_marker_drag_capture();
-    // Deliver the timing cancellation through prepare_compose_panel_input.
-    state.area_selection_candidate_active = false;
-    state.area_selection_active = false;
-    state.navigation_key_active = false;
-    state.navigation_keycode = 0;
-    state.pointer_navigation_active = false;
 }
 
 void discard_compose_frame_input() {
@@ -500,112 +522,28 @@ WormUiComposeSelectionMode compose_selection_mode(uint16_t modifiers) {
 
 static void cancel_pending_compose_panel_actions(WormUiWorkspaceAction* action) {
     if (state.inline_timing_open) worm_ui_nuklear_inline_timing_cancel(state, *action);
-    cancel_beat_fit_drag(action);
-    cancel_offset_fit_drag(action);
-    if (state.waveform_beat_zero_drag_active) {
-        set_waveform_offset_drag_action(action, WORM_UI_AUDIO_OFFSET_DRAG_CANCEL,
-                                        state.waveform_beat_zero_drag_delta_frames);
-        reset_waveform_offset_drag();
-    }
-    state.waveform_overview_drag_active = false;
-    append_compose_input(action, WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
-    state.cancel_pending = false;
+    cancel_compose_gestures(action);
     state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
     state.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
-    clear_note_paint_capture();
-    state.draw_right_candidate = state.draw_erase_pointer_active = false;
-    state.draw_right_press_pending = state.draw_right_release_pending = state.draw_right_native_down = false;
-    state.bmson_razor_pointer_active = false;
-    reset_bmson_marker_move_capture();
-    state.semantic_layer_paint_pointer_active = false;
-    state.space_range_hold_active = false;
-    state.space_range_latched = false;
-    state.space_range_hold_moved = false;
-    state.note_move_candidate_active = false;
-    state.note_move_active = false;
-    reset_bga_event_move_capture();
-    state.timing_stage_drag_active = false;
-    state.kiai_drag_active = false;
-    state.recipe_drag_active = false;
-    reset_timing_marker_drag_capture();
     state.inline_timing_open = false;
 }
 
-static void reset_compose_revision_state(bool chart_changed, WormUiWorkspaceAction* action) {
-    state.alt_wheel_last_event_ms.reset();
+static void reset_compose_revision_state(bool, WormUiWorkspaceAction* action) {
+    cancel_compose_gestures(action);
     state.bgm_column_count_edit = {};
-    cancel_beat_fit_drag(action);
-    if (state.waveform_beat_zero_drag_active) {
-        set_waveform_offset_drag_action(action, WORM_UI_AUDIO_OFFSET_DRAG_CANCEL,
-                                        state.waveform_beat_zero_drag_delta_frames);
-        reset_waveform_offset_drag();
-    }
-    state.waveform_overview_drag_active = false;
-    if (state.note_paint_pointer_active || state.draw_erase_pointer_active || state.semantic_layer_paint_pointer_active ||
-        state.space_range_hold_active || state.note_move_active || state.bmson_marker_move_active ||
-        state.bga_event_move_active)
-        append_compose_cancel_once(action);
-    state.pointer_hold_active = false;
-    clear_note_paint_capture();
-    state.draw_right_candidate = state.draw_erase_pointer_active = false;
-    state.draw_right_press_pending = state.draw_right_release_pending = state.draw_right_native_down = false;
-    state.bmson_razor_pointer_active = false;
-    reset_bmson_marker_move_capture();
-    state.semantic_layer_paint_pointer_active = false;
-    if (chart_changed) state.lane_hold_active = false;
-    state.space_range_hold_active = false;
-    state.space_range_latched = false;
-    state.space_range_hold_moved = false;
-    state.note_move_candidate_active = false;
-    state.note_move_active = false;
-    reset_bga_event_move_capture();
-    state.timing_stage_drag_active = false;
-    state.kiai_drag_active = false;
-    state.recipe_drag_active = false;
-    reset_timing_marker_drag_capture();
     state.inline_timing_open = false;
     state.timing_missing_initial_selected = false;
-    state.area_selection_candidate_active = false;
-    state.area_selection_active = false;
     state.semantic_layer_color_editor_visible = false;
-    if (chart_changed) state.lane_hold_count = 0;
-    cancel_compose_navigation(action);
 }
 
 static void clear_inactive_compose_panel(WormUiWorkspaceAction* action) {
-    state.alt_wheel_last_event_ms.reset();
+    cancel_compose_gestures(action);
     state.bgm_column_count_edit = {};
-    state.cancel_pending = false;
-    cancel_beat_fit_drag(action);
     state.key_event_count = 0;
-    state.wheel_event_count = 0;
-    state.middle_click_pending = false;
     state.keyboard_focus = false;
-    if (state.pointer_hold_active || state.lane_hold_active || state.note_paint_pointer_active || state.draw_erase_pointer_active ||
-        state.semantic_layer_paint_pointer_active || state.space_range_hold_active ||
-        state.area_selection_active)
-        append_compose_cancel_once(action);
-    state.pointer_hold_active = false;
-    clear_note_paint_capture();
-    state.draw_right_candidate = state.draw_erase_pointer_active = false;
-    state.draw_right_press_pending = state.draw_right_release_pending = state.draw_right_native_down = false;
-    state.semantic_layer_paint_pointer_active = false;
-    state.lane_hold_active = false;
-    state.lane_hold_count = 0;
-    state.space_range_hold_active = false;
-    state.space_range_latched = false;
-    state.space_range_hold_moved = false;
-    state.area_selection_candidate_active = false;
-    state.area_selection_active = false;
-    reset_bga_event_move_capture();
-    state.timing_stage_drag_active = false;
-    state.kiai_drag_active = false;
-    state.recipe_drag_active = false;
-    reset_timing_marker_drag_capture();
     state.inline_timing_open = false;
     state.timing_missing_initial_selected = false;
     state.semantic_layer_color_editor_visible = false;
-    cancel_compose_navigation(action);
     state.last_chart_id = 0;
     state.last_document_revision = 0;
 }
@@ -628,8 +566,13 @@ static void cancel_disabled_compose_paint_modes(const WormUiComposeView* view,
     }
 }
 
+static void retain_compose_core_gesture_presence(const WormUiComposeView* view, bool active) {
+    if (view && active && view->visible) state.core_gesture_active = view->editor_gesture_active;
+}
+
 void prepare_compose_panel_input(const WormUiComposeView* view, bool compose_tab_active,
                                            bool window_focused, WormUiWorkspaceAction* action) {
+    retain_compose_core_gesture_presence(view, compose_tab_active);
     if (!action) {
         return;
     }
@@ -641,7 +584,7 @@ void prepare_compose_panel_input(const WormUiComposeView* view, bool compose_tab
         action->compose_input_document_revision = view->document_revision;
         action->compose_input_viewport_width_pixels = view->viewport_width_pixels;
         if (!view->scene_available || view->input_occluded || !window_focused) {
-            cancel_compose_navigation(action);
+            cancel_compose_gestures(action);
         }
         if (state.cancel_pending) cancel_pending_compose_panel_actions(action);
         const auto project_changed = state.last_project_id != view->project_id;
@@ -657,7 +600,10 @@ void prepare_compose_panel_input(const WormUiComposeView* view, bool compose_tab
             state.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
             state.last_project_id = view->project_id;
         }
-        if (chart_changed || revision_changed) reset_compose_revision_state(chart_changed, action);
+        // A successful chord release refreshes surviving core holds to the new revision.
+        // External edits leave their stamps stale and cancel the complete capture instead.
+        if (chart_changed || (revision_changed && !view->editor_gesture_current))
+            reset_compose_revision_state(chart_changed, action);
         if (chart_changed) {
             state.resource_pointer_mode =
                 worm_ui_nuklear_compose_resource_pointer_mode_t::off;

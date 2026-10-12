@@ -2314,7 +2314,8 @@ auto kiai_screen_y(compose_test_fixture_t& fixture, std::uint64_t row) -> double
     const bool downscroll = compose_field_downscroll(chart, fixture.application.editor_preferences);
     return compose_source_y(*y, view->viewport_height_pixels, downscroll);
 }
-auto invoke_span_delete_command(compose_test_fixture_t& fixture) -> command_dispatch_result_t {
+auto invoke_compose_registered_command(compose_test_fixture_t& fixture,
+    std::string_view command_id = "edit.delete") -> command_dispatch_result_t {
     notification_center_t center;
     notification_sink_t sink{center};
     std::optional<timing_lane_pseudonote_preview_t> timing;
@@ -2324,7 +2325,7 @@ auto invoke_span_delete_command(compose_test_fixture_t& fixture) -> command_disp
         return invoke_application_command(*command, fixture.history, *fixture.binding.workspace,
             fixture.interaction, timing, fixture.application, sink);
     });
-    return invoke_command(registry, {"edit.delete"}, {.workspace_active = true,
+    return invoke_command(registry, {std::string(command_id)}, {.workspace_active = true,
         .active_tab = workspace_tab_t::compose, .visible_tabs = {workspace_tab_t::compose}});
 }
 
@@ -2393,7 +2394,7 @@ TEST_CASE("Kiai edge drags edit the area, Delete removes the selected area and s
     auto select = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_SELECT, 9001);
     CHECK(dispatch_paste_action(fixture, select) == "Kiai area selected.");
     CHECK(fixture.application.kiai_selected_head == 9001);
-    CHECK(static_cast<bool>(invoke_span_delete_command(fixture)));
+    CHECK(static_cast<bool>(invoke_compose_registered_command(fixture)));
     CHECK(kiai_areas(fixture).empty());
     CHECK(fixture.application.kiai_selected_head == 0);
     CHECK(fixture.history.undo.size() == 3);
@@ -2509,7 +2510,7 @@ TEST_CASE("Delete removes the selected SV recipe and the area menu adds one over
     compose_test_fixture_t fixture{recipe_test_song()};
     fixture.project();
     fixture.application.recipe_selected = 7001;
-    CHECK(static_cast<bool>(invoke_span_delete_command(fixture)));
+    CHECK(static_cast<bool>(invoke_compose_registered_command(fixture)));
     CHECK(fixture.history.document.charts.front().sv_recipes.empty());
     CHECK(fixture.application.recipe_selected == 0);
     REQUIRE(undo_document_command(fixture.history));
@@ -6853,4 +6854,62 @@ TEST_CASE("Mouse stem entry receives the same decoded source geometry as lane ke
     expect_compose_test(!fixture.interaction->pending_hold && !fixture.interaction->pending_note_paint_gesture);
     expect_compose_test(fixture.history.undo.size() == 1);
     expect_compose_test(fixture.history.document.audio_assets.front().stream.sample_rate == 0);
+}
+
+TEST_CASE("Registered selection scopes preserve mixed objects and expose Select All Objects",
+          "[frame-timing][selection-consolidation]") {
+    auto song = bga_virtual_preview_song();
+    auto& chart = song.charts.front();
+    chart.bookmarks.push_back({.id = object_id_t{9001}, .label = "Marker",
+        .position = local_position_t{measure_id_t{1}, 240}});
+    chart.sections.push_back({.id = object_id_t{9002}, .label = "Section",
+        .beat_span = position_span_t{{measure_id_t{1}, 240}, {measure_id_t{1}, 480}}});
+    chart.bgm_source_lanes.push_back({.id = object_id_t{700}, .name = "BGM"});
+    chart.measures.front().bgm_events.push_back({.id = object_id_t{9003},
+        .position = {measure_id_t{1}, 240}, .source_lane = object_id_t{700}});
+    compose_test_fixture_t f{std::move(song)};
+    f.project();
+    const auto revision = f.history.document.revision;
+    expect_compose_test(static_cast<bool>(invoke_compose_registered_command(f, "selection.select_all_objects")));
+    const auto all = f.interaction->selected_objects;
+    const auto notes = f.interaction->selected_notes.size();
+    for (const auto kind : {editor_selection_object_kind_t::note, editor_selection_object_kind_t::bga_event,
+                           editor_selection_object_kind_t::bgm_event, editor_selection_object_kind_t::bookmark,
+                           editor_selection_object_kind_t::section, editor_selection_object_kind_t::bpm_event})
+        expect_compose_test(std::ranges::any_of(all, [=](auto object) { return object.kind == kind; }));
+    expect_compose_test(static_cast<bool>(invoke_compose_registered_command(f, "selection.invert")));
+    expect_compose_test(f.interaction->selected_notes.empty());
+    expect_compose_test(f.interaction->selected_objects.size() == all.size() - notes);
+    expect_compose_test(static_cast<bool>(invoke_compose_registered_command(f, "selection.select_all")));
+    expect_compose_test(std::ranges::is_permutation(f.interaction->selected_objects, all));
+    expect_compose_test(f.history.document.revision == revision && f.history.undo.empty());
+}
+
+TEST_CASE("Registered note selection respects active editable lanes",
+          "[frame-timing][selection-consolidation]") {
+    auto song = compose_test_song();
+    auto& chart = song.charts.front();
+    chart.lane_layouts.front().layout.lanes.push_back(
+        {.id = lane_id_t{2}, .name = "Hidden", .role = lane_role_t::invisible});
+    chart.measures.front().notes.push_back(
+        {.id = object_id_t{9001}, .position = {measure_id_t{1}, 18}, .lane = lane_id_t{2}});
+    auto later = chart.lane_layouts.front();
+    later.id = object_id_t{9002};
+    later.position = {measure_id_t{1}, 60};
+    later.layout.lanes.front().role = lane_role_t::autoplay;
+    chart.lane_layouts.push_back(std::move(later));
+    compose_test_fixture_t f{std::move(song)};
+    // Imported charts can contain non-editable lane endpoints. Exercise the
+    // registered verb without requiring that malformed field to render.
+    constexpr std::array snaps{std::uint64_t{4}};
+    auto setup = make_editor_interaction(f.history, chart_id_t{1}, lane_id_t{1},
+                                         {measure_id_t{1}, 0}, snaps, 4);
+    expect_compose_test(static_cast<bool>(setup));
+    f.interaction = std::move(setup.state);
+    expect_compose_test(static_cast<bool>(invoke_compose_registered_command(f, "selection.select_all")));
+    expect_compose_test(f.interaction->selected_notes == std::vector<object_id_t>{
+        object_id_t{3}, object_id_t{4}, object_id_t{5}, object_id_t{6}});
+    expect_compose_test(static_cast<bool>(invoke_compose_registered_command(f, "selection.invert")));
+    expect_compose_test(f.interaction->selected_notes.empty());
+    expect_compose_test(f.history.undo.empty());
 }

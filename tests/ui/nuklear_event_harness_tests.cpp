@@ -7739,3 +7739,154 @@ TEST_CASE("Production overview clicks preserve playing paused and stopped prefer
     expect_t422(f.history.undo.empty());
     if (seeks_expected) expect_t422(sought_frame > 0 && sought_frame % 24000 != 0);
 }
+
+TEST_CASE("Production Ctrl click auditions only a note remaining selected",
+          "[frontend-state][event-harness][selection-consolidation]") {
+    const auto initially_selected = GENERATE(false, true);
+    t422_fixture_t f{t422_song()};
+    if (!initially_selected) {
+        std::erase(f.interaction->selected_notes, object_id_t{101});
+        std::erase(f.interaction->selected_objects,
+            editor_selection_object_t{editor_selection_object_kind_t::note, object_id_t{101}});
+    }
+    f.application.editor_preferences.audition_on_click = true;
+    f.project(); (void)f.harness.frame();
+    const auto note = t422_note_screen_center(f, 101);
+    expect_t422(note.has_value());
+    const std::array press{motion_event(note->first, note->second),
+        button_event(true, note->first, note->second)};
+    const auto down = f.harness.frame(press, SDL_KMOD_CTRL);
+    (void)f.dispatch(down);
+    const auto up = button_event(false, note->first, note->second);
+    const auto released = f.harness.frame(std::span{&up, 1}, SDL_KMOD_CTRL);
+    (void)f.dispatch(released);
+    expect_t422((std::ranges::find(f.interaction->selected_notes, object_id_t{101}) ==
+                 f.interaction->selected_notes.end()) == initially_selected);
+    expect_t422(f.cache.audition_request.has_value() == !initially_selected);
+    expect_t422(f.history.undo.empty());
+}
+
+TEST_CASE("Production marquee includes visible beat markers in its mixed selection",
+          "[frontend-state][event-harness][selection-marquee]") {
+    auto song = t422_song();
+    song.charts.front().bookmarks.push_back({.id = object_id_t{501}, .label = "Selection marker", .anchor = marker_anchor_t::beat,
+        .position = local_position_t{measure_id_t{1}, 240}});
+    song.charts.front().sections.push_back({.id = object_id_t{502}, .label = "Selection section",
+        .beat_span = position_span_t{{measure_id_t{1}, 300}, {measure_id_t{1}, 600}}});
+    t422_fixture_t f{std::move(song)};
+    const auto first = placement_point(f, 60, 4);
+    const auto last = placement_point(f, 800, 1);
+    const std::array press{motion_event(first.first, first.second), button_event(true, first.first, first.second)};
+    (void)f.dispatch(f.harness.frame(press));
+    const auto move = motion_event(last.first, last.second);
+    const auto moved = f.harness.frame(std::span{&move, 1});
+    expect_t422(find_compose_input(std::vector{moved}, WORM_UI_COMPOSE_INPUT_AREA_SELECTION_BEGIN) != nullptr);
+    (void)f.dispatch(moved);
+    const auto up = button_event(false, last.first, last.second);
+    (void)f.dispatch(f.harness.frame(std::span{&up, 1}));
+    const auto marker = editor_selection_object_t{editor_selection_object_kind_t::bookmark, object_id_t{501}};
+    expect_t422(std::ranges::find(f.interaction->selected_objects, marker) != f.interaction->selected_objects.end());
+    const auto section = editor_selection_object_t{editor_selection_object_kind_t::section, object_id_t{502}};
+    expect_t422(std::ranges::find(f.interaction->selected_objects, section) != f.interaction->selected_objects.end());
+    expect_t422(!f.interaction->selected_notes.empty());
+    expect_t422(editor_quantize_selection(*f.interaction).notes == f.interaction->selected_notes);
+    expect_t422(f.history.undo.empty());
+}
+
+TEST_CASE("Production latched range uses the same selection for preview and commit",
+          "[frontend-state][event-harness][selection-range]") {
+    t422_fixture_t f{t422_song()};
+    const auto begin = ctrl_space_frame(f.harness);
+    expect_t422(find_compose_input(std::vector{begin}, WORM_UI_COMPOSE_INPUT_LATCHED_RANGE_SELECTION) != nullptr);
+    (void)f.dispatch(begin);
+    (void)f.dispatch(ctrl_space_frame(f.harness, false));
+    const auto down = key_event(SDL_EVENT_KEY_DOWN, SDLK_DOWN, SDL_SCANCODE_DOWN);
+    (void)f.dispatch(f.harness.frame(std::span{&down, 1}));
+    const auto inspected = inspect_editor_interaction(f.history, *f.interaction);
+    const auto* view = std::get_if<editor_interaction_view_model_t>(&inspected);
+    expect_t422(view && view->pending_space_range_selection && view->pending_space_range_selection->objects);
+    const auto preview = *view->pending_space_range_selection->objects;
+    expect_t422(!preview.empty());
+    const auto committed = ctrl_space_frame(f.harness);
+    (void)f.dispatch(committed);
+    expect_t422(f.interaction->selected_objects == preview);
+    expect_t422(f.history.undo.empty());
+}
+
+TEST_CASE("Production off grid note drag commits its preview position and lane",
+          "[frontend-state][event-harness][selection-move-parity]") {
+    const auto row = GENERATE(100, 160, 300);
+    t422_fixture_t f{t422_song()};
+    f.interaction->selected_notes = {object_id_t{101}};
+    f.interaction->selected_objects = {{editor_selection_object_kind_t::note, object_id_t{101}}};
+    f.project();
+    const auto note = t422_note_screen_center(f, 101);
+    expect_t422(note.has_value());
+    const auto target = placement_point(f, row, 2);
+    const std::array press{motion_event(note->first, note->second), button_event(true, note->first, note->second)};
+    (void)f.dispatch(f.harness.frame(press));
+    const auto motion = motion_event(target.first, target.second);
+    const auto moved = f.harness.frame(std::span{&motion, 1});
+    expect_t422(find_compose_input(std::vector{moved}, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE) != nullptr);
+    (void)f.dispatch(moved);
+    expect_t422(f.interaction->pending_note_move_gesture.has_value());
+    const auto preview = f.interaction->pending_note_move_gesture->preview;
+    expect_t422(preview.size() == 1);
+    const auto up = button_event(false, target.first, target.second);
+    (void)f.dispatch(f.harness.frame(std::span{&up, 1}));
+    expect_t422(!f.interaction->pending_note_move_gesture);
+    const auto* changed = t422_note(f.history, 101);
+    expect_t422(changed != nullptr);
+    expect_t422(changed->position == preview.front().position);
+    expect_t422(changed->lane == preview.front().lane);
+    expect_t422(f.history.undo.size() == 1);
+}
+
+TEST_CASE("Production Ctrl Alt A resolves the separate Select All Objects command",
+          "[frontend-state][event-harness][selection-all-objects]") {
+    nuklear_event_harness_t h;
+    (void)h.frame();
+    const auto key = key_event(SDL_EVENT_KEY_DOWN, SDLK_A, SDL_SCANCODE_A);
+    const auto frame = h.frame(std::span{&key, 1}, static_cast<SDL_Keymod>(SDL_KMOD_CTRL | SDL_KMOD_ALT));
+    std::string invoked;
+    const auto registry = make_default_editor_command_registry([&](const command_invocation_context_t& context) {
+        invoked = context.command.value;
+        return command_invocation_result_t{.accepted = true};
+    });
+    const auto result = route_harness_shortcut(frame.get(), registry);
+    expect_t422(result.command == command_id_t{"selection.select_all_objects"});
+    expect_t422(invoked == "selection.select_all_objects");
+}
+
+TEST_CASE("Production marquee selects a BGA tile through shared projected geometry",
+          "[frontend-state][event-harness][selection-marquee]") {
+    auto song = t422_song();
+    song.visual_assets.push_back({.id = asset_id_t{2}, .kind = asset_kind_t::image});
+    song.resources.push_back({.id = resource_id_t{2}, .name = "Selection image",
+        .asset = asset_id_t{2}, .roles = {resource_role_t::bga}});
+    song.charts.front().bga_events.push_back({.id = object_id_t{501},
+        .position = {measure_id_t{1}, 480}, .resource = resource_id_t{2}});
+    t422_fixture_t f{std::move(song)};
+    (void)f.harness.frame();
+    const auto& view = f.harness.view().compose;
+    expect_t422(view.bga_event_count == 1);
+    const auto viewport = compose_canvas_viewport_for_testing();
+    expect_t422(viewport.has_value());
+    const auto bounds = view.bga_events[0].bounds;
+    const auto first = placement_point(f, 60, 4);
+    const auto x2 = viewport->x + (bounds.left + 1) * viewport->width / view.viewport_width_pixels;
+    const auto y2 = viewport->y + (bounds.top - 12) * viewport->height / view.viewport_height_pixels;
+    const std::array press{motion_event(first.first, first.second), button_event(true, first.first, first.second)};
+    (void)f.dispatch(f.harness.frame(press));
+    const auto move = motion_event(x2, y2);
+    const auto moved = f.harness.frame(std::span{&move, 1});
+    expect_t422(find_compose_input(std::vector{moved}, WORM_UI_COMPOSE_INPUT_AREA_SELECTION_BEGIN) != nullptr);
+    (void)f.dispatch(moved);
+    const auto up = button_event(false, x2, y2);
+    (void)f.dispatch(f.harness.frame(std::span{&up, 1}));
+    INFO("BGA bounds " << bounds.left << "," << bounds.top << " -> " << bounds.right << "," << bounds.bottom
+         << " drag " << first.first << "," << first.second << " -> " << x2 << "," << y2);
+    const auto object = editor_selection_object_t{editor_selection_object_kind_t::bga_event, object_id_t{501}};
+    expect_t422(std::ranges::find(f.interaction->selected_objects, object) != f.interaction->selected_objects.end());
+    expect_t422(f.history.undo.empty());
+}

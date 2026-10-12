@@ -820,6 +820,9 @@ auto make_default_editor_command_registry(command_invoker_t invoker) -> command_
     add_builtin(registry, invoker, "selection.select_all", "Select All",
                 command_category_t::selection, command_focus_scope_t::tab,
                 {chord(shortcut_key_t::a, primary())}, false, compose);
+    add_builtin(registry, invoker, "selection.select_all_objects", "Select All Objects",
+                command_category_t::selection, command_focus_scope_t::tab,
+                {chord(shortcut_key_t::a, modified(shortcut_modifier_t::alt))}, false, compose);
     add_builtin(registry, invoker, "selection.select_same_sound_chart", "Select Same Sound (Whole Chart)",
                 command_category_t::selection, command_focus_scope_t::tab,
                 {chord(shortcut_key_t::a, modified(shortcut_modifier_t::shift))}, false, compose);

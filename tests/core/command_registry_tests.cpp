@@ -1,3 +1,4 @@
+#include <catch2/generators/catch_generators.hpp>
 #include <wormedit/core/command_registry.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -930,4 +931,23 @@ TEST_CASE("Quantize commands are searchable and preview shortcut respects text f
     focus.text_entry_active = true;
     CHECK(dispatch_shortcut(registry, event, focus, shortcut_primary_modifier_t::control).status ==
           command_dispatch_status_t::focus_consumed);
+}
+
+TEST_CASE("Select All Objects uses Primary Alt A independently from note selection",
+          "[unit][core][command_registry][selection-consolidation]") {
+    auto calls = std::make_shared<std::vector<command_id_t>>();
+    const auto registry = make_default_editor_command_registry(make_invoker(calls));
+    const auto primary = GENERATE(shortcut_primary_modifier_t::control, shortcut_primary_modifier_t::meta);
+    const auto actual = primary == shortcut_primary_modifier_t::control
+        ? shortcut_modifier_t::control : shortcut_modifier_t::meta;
+    const auto modifiers = static_cast<shortcut_modifiers_t>(
+        static_cast<shortcut_modifiers_t>(actual) | static_cast<shortcut_modifiers_t>(shortcut_modifier_t::alt));
+    const shortcut_event_t event{.chord = {.key = shortcut_key_t::a, .modifiers = modifiers}};
+    auto focus = focus_for_compose();
+    CHECK(dispatch_shortcut(registry, event, focus, primary).command == command_id_t{"selection.select_all_objects"});
+    focus.text_entry_active = true;
+    CHECK(dispatch_shortcut(registry, event, focus, primary).status == command_dispatch_status_t::focus_consumed);
+    focus.text_entry_active = false;
+    focus.ime_composition_active = true;
+    CHECK(dispatch_shortcut(registry, event, focus, primary).status == command_dispatch_status_t::focus_consumed);
 }

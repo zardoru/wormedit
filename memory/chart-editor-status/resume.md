@@ -1,6 +1,6 @@
 # Status: resume checklist
 
-Next: [T-588 Resolve selection targets consistently](../../docs/chart-editor-plan/tasks/gesture-consolidation.md#t-588-resolve-selection-targets-consistently). T-580–T-587 are complete. Continue T-588–T-590 in order. T-583 permits heads on the exact Stop/Delay event row; visual pause bands do not exclude chart rows. NV7 is resolved by T-587; T-509 key-release freezing remains intentional.
+Next: [T-589 Unify resource import and replacement workflows](../../docs/chart-editor-plan/tasks/gesture-consolidation.md#t-589-unify-resource-import-and-replacement-workflows). T-580–T-588 are complete. Continue T-589–T-590 in order. T-583 permits heads on the exact Stop/Delay event row; visual pause bands do not exclude chart rows. NV7 is resolved by T-587; T-509 key-release freezing remains intentional. Select All/Invert remain note-only; Ctrl+Alt+A selects all selectable object families.
 
 Completed **T-582** (2026-10-12): stamped menu commands and shared Quantize/bookmark/same-sound/BGM/loop/measure paths; orphan BGM and workspace loop paths retired. Build, **3,457/3,457** full serial CTest, **444/444** event checks, default clang-tidy with no new/increased complexity, documentation and whitespace gates pass. Isolated Xvfb Compose screenshot inspected. [Card and evidence](../../docs/chart-editor-plan/tasks/gesture-consolidation.md#t-582-route-menu-verbs-through-registered-commands).
 

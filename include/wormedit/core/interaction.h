@@ -1207,6 +1207,16 @@ auto clear_editor_double_click_state(editor_double_click_state_t& state) -> void
                                           const editor_ui_action_t& action)
     -> editor_interaction_result_t;
 
+// Typed objects are authoritative; legacy note-only callers fall back to their note list.
+[[nodiscard]] auto editor_selection_targets(const editor_interaction_state_t& state)
+    -> std::vector<editor_selection_object_t>;
+[[nodiscard]] auto editor_selection_scope_accepts(editor_selection_scope_t scope,
+    editor_selection_object_kind_t kind) -> bool;
+
+// Select/invert only the requested families; selections outside that scope survive.
+[[nodiscard]] auto select_editor_scope(document_history_t& history, editor_interaction_state_t& state,
+    editor_selection_scope_t scope, bool invert) -> editor_interaction_result_t;
+
 // Canonical typed selection for Quantize preview and Apply. Existing BGM and note IDs
 // may coincide; unrelated selected object families do not participate.
 [[nodiscard]] auto editor_quantize_selection(const editor_interaction_state_t& state)

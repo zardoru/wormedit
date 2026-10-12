@@ -478,28 +478,21 @@ auto selection_commands(command_context_t& context) -> std::optional<command_res
     if (kind == command_kind_t::selection_clear)
         return clear_selection_or_cancel_preview(context.history, state,
                                                  context.application_state, context.sink);
-    if (kind != command_kind_t::selection_select_all && kind != command_kind_t::selection_invert)
+    if (kind != command_kind_t::selection_select_all && kind != command_kind_t::selection_invert &&
+        kind != command_kind_t::selection_select_all_objects)
         return std::nullopt;
     const auto* chart = selected_chart(context.history, context.workspace);
     if (!state || !chart)
         return reject_application_command(context.sink,
             "Selection command requires the active Compose chart.", notification_severity_t::warning,
             notification_source_t::edit);
-    std::unordered_set<std::uint64_t> selected;
-    if (kind == command_kind_t::selection_invert) {
-        selected.reserve(state->selected_notes.size());
-        for (const auto note : state->selected_notes) selected.insert(note.value);
-    }
-    std::vector<object_id_t> notes;
-    for (const auto& measure : chart->measures)
-        for (const auto& note : measure.notes)
-            if (kind == command_kind_t::selection_select_all || !selected.contains(note.id.value))
-                notes.push_back(note.id);
-    const bool all = kind == command_kind_t::selection_select_all;
+    const auto all_objects = kind == command_kind_t::selection_select_all_objects;
+    const auto invert = kind == command_kind_t::selection_invert;
     return accept_editor_command(
-        dispatch_editor_action(context.history, *state,
-                               select_editor_notes_action_t{std::move(notes)}),
-        context.sink, all ? "All playable notes selected." : "Playable-note selection inverted.",
+        select_editor_scope(context.history, *state,
+            all_objects ? editor_selection_scope_t{true, true, true, true} : editor_selection_scope_t{}, invert),
+        context.sink, all_objects ? "All selectable chart objects selected."
+            : invert ? "Playable-note selection inverted." : "All playable notes selected.",
         notification_severity_t::success, notification_source_t::edit);
 }
 

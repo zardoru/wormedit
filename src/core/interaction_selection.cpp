@@ -369,6 +369,11 @@ auto collect_row_selection(const chart_document_t& chart, const editor_hit_test_
 
 } // namespace
 
+auto editor_selection_scope_accepts(editor_selection_scope_t scope,
+    editor_selection_object_kind_t kind) -> bool {
+    return scope_accepts(scope, kind);
+}
+
 auto editor_objects_in_row_range(const chart_document_t& chart,
                                  const editor_hit_test_index_t& index, std::uint64_t first_row,
                                  std::uint64_t last_row, editor_selection_scope_t scope)

@@ -4601,6 +4601,28 @@ void append_area_timing_geometry(wormedit::editor_area_geometry_snapshot_t& snap
     }
 }
 
+void append_area_visual_geometry(wormedit::editor_area_geometry_snapshot_t& snapshot,
+                                 const WormUiComposeView& view, bool downscroll) {
+    for (const auto& event : std::span(view.bga_events, view.bga_event_count))
+        append_area_object_geometry(snapshot,
+            {wormedit::editor_selection_object_kind_t::bga_event, wormedit::object_id_t{event.event_id}},
+            event.bounds, view, downscroll);
+    for (const auto& marker : std::span(view.beat_bookmarks, view.beat_bookmark_count)) {
+        if (!marker.projection_visible) continue;
+        append_area_object_geometry(snapshot,
+            {wormedit::editor_selection_object_kind_t::bookmark, wormedit::object_id_t{marker.bookmark_id}},
+            {0, marker.projected_y_pixels, view.viewport_width_pixels, marker.projected_y_pixels},
+            view, downscroll);
+    }
+    for (const auto& section : std::span(view.beat_sections, view.beat_section_count)) {
+        if (!section.span_projection_visible) continue;
+        append_area_object_geometry(snapshot,
+            {wormedit::editor_selection_object_kind_t::section, wormedit::object_id_t{section.section_id}},
+            {0, section.projected_span_top_y_pixels, view.viewport_width_pixels,
+                section.projected_span_bottom_y_pixels}, view, downscroll);
+    }
+}
+
 void cache_area_object_geometry(const compose_final_projection_context_t& input) {
     auto& cache = input.cache;
     const auto& view = input.view;
@@ -4621,6 +4643,7 @@ void cache_area_object_geometry(const compose_final_projection_context_t& input)
              wormedit::object_id_t{event.event_id}}, event.bounds, view, input.downscroll);
     }
     append_area_timing_geometry(*snapshot, view, input.downscroll);
+    append_area_visual_geometry(*snapshot, view, input.downscroll);
     cache.area_object_geometry = std::move(snapshot);
 }
 

@@ -36,3 +36,5 @@ For the canvas wheel, Ctrl or Command zoom takes priority over Alt navigation.
 Alt alone advances snapped rows. During beat fitting, Ctrl+wheel changes the
 fit snap; Ctrl+Alt+wheel remains consumed by onset fitting. The BGM overview
 keeps its own wheel zoom and Shift-wheel pan controls.
+
+Select All (`Ctrl+A`, or `Cmd+A`) and Invert Selection operate on notes and retain selected objects from other families. Select All Objects (`Ctrl+Alt+A`, or `Cmd+Option+A`) selects every selectable chart object family. The Edit menu and Help shortcut sheet expose the separate command.

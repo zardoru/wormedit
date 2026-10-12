@@ -50,9 +50,24 @@ auto editor_bga_visible_lane_mask(const chart_document_t& chart, std::uint8_t re
     return mask;
 }
 
+auto editor_selection_targets(const editor_interaction_state_t& state)
+    -> std::vector<editor_selection_object_t> {
+    if (!state.selected_objects.empty()) return state.selected_objects;
+    std::vector<editor_selection_object_t> objects;
+    objects.reserve(state.selected_notes.size());
+    for (const auto id : state.selected_notes)
+        objects.push_back({editor_selection_object_kind_t::note, id});
+    return objects;
+}
+
 auto interaction_view_result(const document_history_t& history,
                              const editor_interaction_state_t& state,
                              bool changed) -> editor_interaction_result_t;
+auto combine_editor_area_selection(const editor_interaction_state_t& state,
+    const std::vector<editor_selection_object_t>& hits, editor_area_selection_mode_t mode,
+    const editor_hit_test_index_t& hit_index)
+    -> std::variant<std::vector<editor_selection_object_t>, diagnostic_list_t>;
+
 namespace {
 
 auto error(diagnostic_code_t code, std::string message,
@@ -577,7 +592,10 @@ auto make_space_range_preview(const document_history_t& history,
     auto queried = space_range_objects(*geometry.chart, *pending.hit_index, first, last,
                                       pending.scope);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&queried)) return *diagnostics;
-    auto objects = std::get<std::vector<editor_selection_object_t>>(std::move(queried));
+    auto combined = combine_editor_area_selection(state,
+        std::get<std::vector<editor_selection_object_t>>(queried), pending.mode, *pending.hit_index);
+    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&combined)) return *diagnostics;
+    auto objects = std::get<std::vector<editor_selection_object_t>>(std::move(combined));
     auto notes = notes_from_objects(objects);
     return std::optional{space_range_selection_preview_t{
         .document_revision = pending.document_revision, .anchor = pending.anchor,
@@ -2237,23 +2255,9 @@ auto collect_delete_object_ids(const std::vector<editor_selection_object_t>& obj
     return ids;
 }
 
-auto collect_delete_note_ids(const std::vector<object_id_t>& notes)
-    -> std::variant<editor_delete_ids_t, diagnostic_list_t> {
-    editor_delete_ids_t ids;
-    for (const auto id : notes) {
-        if (!id || !ids.notes.insert(id.value).second) {
-            return diagnostic_list_t{error(diagnostic_code_t::duplicate_id,
-                                           "selected note list contains a duplicate or empty identity",
-                                           id)};
-        }
-    }
-    return ids;
-}
-
 auto collect_delete_ids(const editor_interaction_state_t& state)
     -> std::variant<editor_delete_ids_t, diagnostic_list_t> {
-    return state.selected_objects.empty() ? collect_delete_note_ids(state.selected_notes)
-                                          : collect_delete_object_ids(state.selected_objects);
+    return collect_delete_object_ids(editor_selection_targets(state));
 }
 
 auto validate_delete_note_ids(const chart_document_t& chart,
@@ -2670,16 +2674,8 @@ auto first_selected_lane_object(const chart_document_t& chart,
 
 auto selected_lane_assignment_ids(const editor_interaction_state_t& state)
     -> std::pair<std::vector<object_id_t>, std::vector<object_id_t>> {
-    auto notes = state.selected_notes;
-    std::unordered_set<std::uint64_t> note_ids;
-    for (const auto id : notes) note_ids.insert(id.value);
-    std::vector<object_id_t> events;
-    for (const auto& object : state.selected_objects) {
-        if (object.kind == editor_selection_object_kind_t::note &&
-            note_ids.insert(object.id.value).second) notes.push_back(object.id);
-        if (object.kind == editor_selection_object_kind_t::bgm_event) events.push_back(object.id);
-    }
-    return {std::move(notes), std::move(events)};
+    auto targets = editor_quantize_selection(state);
+    return {std::move(targets.notes), std::move(targets.bgm_events)};
 }
 
 auto assign_selected_objects_to_lane(lane_assignment_context_t context,
@@ -2754,7 +2750,7 @@ auto begin_note_duration_gesture(note_gesture_context_t& context, object_id_t re
             context.history, state,
             {error(diagnostic_code_t::invalid_id,
                    "duration gesture requires a tap or hold reference note", reference_id)});
-    auto targets = state.selected_notes;
+    auto targets = editor_quantize_selection(state).notes;
     if (std::ranges::find(targets, reference_id) == targets.end())
         targets = {reference_id};
     const auto initial_end = reference->end.value_or(reference->position);
@@ -2942,7 +2938,7 @@ auto begin_note_move_gesture(note_gesture_context_t& context, object_id_t refere
         (reference && reference->kind != note_kind_t::tap && reference->kind != note_kind_t::hold))
         return diagnostic_result(context.history, state,
             {error(diagnostic_code_t::invalid_id, "Move requires a tap, hold or BGM reference", reference_id)});
-    auto targets = state.selected_notes;
+    auto targets = editor_quantize_selection(state).notes;
     if (!bgm_reference && std::ranges::find(targets, reference_id) == targets.end())
         targets = {reference_id};
     auto planned = context.make_move_plan(targets, reference_id, reference ? reference->position : bgm_reference->position, lane_id_t{},
@@ -4224,7 +4220,8 @@ auto combine_editor_area_selection(
     if (mode == editor_area_selection_mode_t::replace)
         return hits;
     std::set<editor_selection_object_t> combined;
-    for (const auto object : state.selected_objects) {
+    const auto current = editor_selection_targets(state);
+    for (const auto object : current) {
         if (!object.id || !std::ranges::binary_search(hit_index.available_objects, object))
             return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
                                            "current selection contains a missing object",
@@ -4235,7 +4232,7 @@ auto combine_editor_area_selection(
                                            object.id)};
     }
     std::set<editor_selection_object_t> hit_set(hits.begin(), hits.end());
-    auto result = state.selected_objects;
+    auto result = current;
     if (mode == editor_area_selection_mode_t::add) {
         for (const auto object : hits)
             if (combined.insert(object).second)
@@ -4329,13 +4326,7 @@ auto commit_space_range_selection(space_range_selection_context_t& context)
             {error(diagnostic_code_t::invalid_hold,
                    "Space range preview is unavailable for commit")});
     }
-    auto combined = combine_editor_area_selection(
-        state, *current_view.pending_space_range_selection->objects, pending.mode,
-        *pending.hit_index);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&combined))
-        return diagnostic_result(history, state, *diagnostics);
-    set_selected_objects(
-        state, std::move(std::get<std::vector<editor_selection_object_t>>(combined)));
+    set_selected_objects(state, *current_view.pending_space_range_selection->objects);
     const auto first_row = current_view.pending_space_range_selection->first_row;
     const auto last_row = current_view.pending_space_range_selection->last_row;
     state.retained_canvas_selection_range = first_row < last_row
@@ -4908,6 +4899,15 @@ struct editor_object_selection_context_t {
     const chart_document_t& chart;
 };
 
+auto audition_selected_object(bool requested,
+    const std::vector<editor_selection_object_t>& hits, const editor_interaction_state_t& state,
+    std::uint64_t revision) -> std::optional<editor_object_audition_request_t> {
+    if (!requested || hits.size() != 1 ||
+        std::ranges::find(state.selected_objects, hits.front()) == state.selected_objects.end())
+        return std::nullopt;
+    return editor_object_audition_request_t{revision, state.chart, hits.front()};
+}
+
 auto select_editor_objects(editor_object_selection_context_t& context,
                            const select_editor_objects_action_t& action)
     -> editor_interaction_result_t {
@@ -4918,9 +4918,9 @@ auto select_editor_objects(editor_object_selection_context_t& context,
         return diagnostic_result(history, state, *diagnostics);
     const auto& hit_index = std::get<editor_hit_test_index_t>(built);
     const auto& available = hit_index.available_objects;
-    auto selected = action.objects;
-    std::ranges::sort(selected);
-    if (std::ranges::adjacent_find(selected) != selected.end())
+    const auto& selected = action.objects;
+    const std::set unique(selected.begin(), selected.end());
+    if (unique.size() != selected.size())
         return diagnostic_result(
             history, state,
             {error(diagnostic_code_t::duplicate_id,
@@ -4954,10 +4954,8 @@ auto select_editor_objects(editor_object_selection_context_t& context,
         .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
                            ? std::get<diagnostic_list_t>(view)
                            : diagnostic_list_t{},
-        .audition = action.request_audition
-            ? std::optional{editor_object_audition_request_t{
-                  history.document.revision, state.chart, selected.front()}}
-            : std::nullopt,
+        .audition = audition_selected_object(action.request_audition, selected, state,
+                                              history.document.revision),
     };
 }
 
@@ -5526,21 +5524,12 @@ auto select_editor_notes(document_history_t& history, editor_interaction_state_t
                          const chart_document_t& chart,
                          const select_editor_notes_action_t& action)
     -> editor_interaction_result_t {
-    const auto available = chart_note_ids(chart);
-    std::unordered_set<std::uint64_t> selected;
-    selected.reserve(action.notes.size());
-    for (const auto id : action.notes) {
-        if (id.value == 0 || !available.contains(id.value))
-            return diagnostic_result(history, state,
-                {error(diagnostic_code_t::invalid_id,
-                       "note selection contains an unknown note ID", id)});
-        if (!selected.insert(id.value).second)
-            return diagnostic_result(history, state,
-                {error(diagnostic_code_t::duplicate_id,
-                       "note selection contains a duplicate note ID", id)});
-    }
-    set_selected_notes(state, action.notes);
-    return interaction_view_result(history, state, false);
+    std::vector<editor_selection_object_t> objects;
+    objects.reserve(action.notes.size());
+    for (const auto id : action.notes)
+        objects.push_back({editor_selection_object_kind_t::note, id});
+    editor_object_selection_context_t context{history, state, chart};
+    return select_editor_objects(context, {std::move(objects)});
 }
 
 auto select_editor_lane(document_history_t& history, editor_interaction_state_t& state,
@@ -6051,9 +6040,42 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
 }
 } // namespace
 
+namespace {
+auto scoped_selection(const editor_interaction_state_t& state,
+    const std::vector<editor_selection_object_t>& available, editor_selection_scope_t scope,
+    bool invert) -> std::vector<editor_selection_object_t> {
+    const auto current = editor_selection_targets(state);
+    const std::set selected(current.begin(), current.end());
+    std::vector<editor_selection_object_t> result;
+    for (const auto object : current)
+        if (!editor_selection_scope_accepts(scope, object.kind)) result.push_back(object);
+    for (const auto object : available)
+        if (!invert || !selected.contains(object)) result.push_back(object);
+    return result;
+}
+}
+
+auto select_editor_scope(document_history_t& history, editor_interaction_state_t& state,
+    editor_selection_scope_t scope, bool invert) -> editor_interaction_result_t {
+    const auto* chart = find_chart(history.document, state.chart);
+    if (!chart) return diagnostic_result(history, state,
+        {error(diagnostic_code_t::invalid_id, "Selection chart is unavailable")});
+    const auto built = build_editor_hit_test_index(*chart, history.document.revision);
+    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built))
+        return diagnostic_result(history, state, *diagnostics);
+    const auto& index = std::get<editor_hit_test_index_t>(built);
+    if (index.measures.total_rows == 0) return diagnostic_result(history, state,
+        {error(diagnostic_code_t::row_out_of_range, "Selection chart has no rows")});
+    const auto queried = editor_objects_in_row_range(*chart, index, 0, index.measures.total_rows - 1, scope);
+    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&queried))
+        return diagnostic_result(history, state, *diagnostics);
+    return dispatch_editor_action(history, state, select_editor_objects_action_t{
+        scoped_selection(state, std::get<std::vector<editor_selection_object_t>>(queried), scope, invert)});
+}
+
 auto editor_quantize_selection(const editor_interaction_state_t& state) -> quantize_selection_t {
-    quantize_selection_t result{.notes = state.selected_notes};
-    for (const auto& object : state.selected_objects) {
+    quantize_selection_t result;
+    for (const auto& object : editor_selection_targets(state)) {
         if (object.kind == editor_selection_object_kind_t::note) result.notes.push_back(object.id);
         if (object.kind == editor_selection_object_kind_t::bgm_event) result.bgm_events.push_back(object.id);
     }

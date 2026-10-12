@@ -1800,9 +1800,7 @@ TEST_CASE("typed object selection validates BGM events and synchronizes note sel
                                    editor_area_selection_mode_t::toggle,
                                    true});
     REQUIRE(bgm_toggled);
-    REQUIRE(bgm_toggled.audition.has_value());
-    CHECK(bgm_toggled.audition->object ==
-          editor_selection_object_t{editor_selection_object_kind_t::bgm_event, object_id_t{201}});
+    CHECK_FALSE(bgm_toggled.audition.has_value());
     CHECK(state.selected_objects == std::vector<editor_selection_object_t>{
                                         {editor_selection_object_kind_t::note, object_id_t{101}}});
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
@@ -6277,13 +6275,14 @@ TEST_CASE("shared lane action rejects mixed collisions without consuming selecti
     auto history = make_document_history(song);
     auto state = make_state(history);
     state.selected_notes = {object_id_t{101}};
-    state.selected_objects = {{editor_selection_object_kind_t::bgm_event, object_id_t{202}}};
+    state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{101}},
+                              {editor_selection_object_kind_t::bgm_event, object_id_t{202}}};
     const auto result = dispatch_editor_action(
         history, state, assign_selected_objects_to_lane_action_t{lane_id_t{2}, false});
     feedback_check(!result.accepted);
     feedback_check(history.undo.empty());
     feedback_check(find_note(history, object_id_t{101})->lane == lane_id_t{1});
-    feedback_check(state.selected_objects.size() == 1);
+    feedback_check(state.selected_objects.size() == 2);
     feedback_check(state.selected_notes.size() == 1);
 }
 

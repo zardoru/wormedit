@@ -145,16 +145,16 @@ bool transition_values(nk_context* context, WormUiTimingRecipeForm& form) {
 // the document moved on after an apply or while nothing was being edited.
 void synchronize_buffers(const WormUiComposeView& view) {
     const auto& stored = view.recipe_form;
-    const bool selection_changed = state.recipe_edit_id != stored.recipe_id;
-    const bool revision_changed = state.recipe_edit_revision != view.document_revision;
+    const bool selection_changed = state.recipe_editor.recipe_edit_id != stored.recipe_id;
+    const bool revision_changed = state.recipe_editor.recipe_edit_revision != view.document_revision;
     if (selection_changed ||
-        (revision_changed && (!state.recipe_edit_dirty || state.recipe_edit_apply_pending))) {
-        state.recipe_edit_form = stored.form;
-        state.recipe_edit_dirty = false;
-        state.recipe_edit_apply_pending = false;
+        (revision_changed && (!state.recipe_editor.recipe_edit_dirty || state.recipe_editor.recipe_edit_apply_pending))) {
+        state.recipe_editor.recipe_edit_form = stored.form;
+        state.recipe_editor.recipe_edit_dirty = false;
+        state.recipe_editor.recipe_edit_apply_pending = false;
     }
-    state.recipe_edit_id = stored.recipe_id;
-    state.recipe_edit_revision = view.document_revision;
+    state.recipe_editor.recipe_edit_id = stored.recipe_id;
+    state.recipe_editor.recipe_edit_revision = view.document_revision;
 }
 
 void queue(const WormUiComposeView& view, WormUiWorkspaceAction& action, WormUiComposeActionKind kind) {
@@ -163,7 +163,7 @@ void queue(const WormUiComposeView& view, WormUiWorkspaceAction& action, WormUiC
     action.compose_input_chart_id = view.chart_id;
     action.compose_input_document_revision = view.document_revision;
     action.compose_recipe_id = view.recipe_form.recipe_id;
-    action.compose_recipe_form = state.recipe_edit_form;
+    action.compose_recipe_form = state.recipe_editor.recipe_edit_form;
 }
 
 } // namespace
@@ -173,12 +173,12 @@ void render_compose_recipe_form(const ComposeInspectorContext& inspector) {
     auto* context = inspector.context;
     auto* action = inspector.action;
     if (!view.recipe_form.visible) {
-        state.recipe_edit_id = 0;
-        state.recipe_edit_dirty = false;
+        state.recipe_editor.recipe_edit_id = 0;
+        state.recipe_editor.recipe_edit_dirty = false;
         return;
     }
     synchronize_buffers(view);
-    auto& form = state.recipe_edit_form;
+    auto& form = state.recipe_editor.recipe_edit_form;
     nk_layout_row_dynamic(context, 20, 1);
     nk_labelf(context, NK_TEXT_LEFT, "SV recipe: %s%s", view.recipe_form.name,
               view.recipe_form.enabled ? "" : " (off)");
@@ -201,7 +201,7 @@ void render_compose_recipe_form(const ComposeInspectorContext& inspector) {
     changed |= sampling_values(context, form);
     changed |= transition_values(context, form);
     if (changed) {
-        state.recipe_edit_dirty = true;
+        state.recipe_editor.recipe_edit_dirty = true;
         queue(view, *action, WORM_UI_COMPOSE_ACTION_PREVIEW_SV_RECIPE_FORM);
     }
     if (view.recipe_form.status_text) {
@@ -210,13 +210,13 @@ void render_compose_recipe_form(const ComposeInspectorContext& inspector) {
     }
     nk_layout_row_dynamic(context, 24, 2);
     if (nk_button_label(context, "Apply")) {
-        state.recipe_edit_apply_pending = true;
+        state.recipe_editor.recipe_edit_apply_pending = true;
         queue(view, *action, WORM_UI_COMPOSE_ACTION_APPLY_SV_RECIPE_FORM);
     }
     if (nk_button_label(context, "Revert")) {
-        state.recipe_edit_form = view.recipe_form.form;
-        state.recipe_edit_dirty = false;
-        state.recipe_edit_apply_pending = false;
+        state.recipe_editor.recipe_edit_form = view.recipe_form.form;
+        state.recipe_editor.recipe_edit_dirty = false;
+        state.recipe_editor.recipe_edit_apply_pending = false;
         queue(view, *action, WORM_UI_COMPOSE_ACTION_CLEAR_SV_RECIPE_PREVIEW);
     }
 }

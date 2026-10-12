@@ -7,7 +7,7 @@
 namespace {
 void enable_slots(nuklear_event_harness_t& harness) {
     (void)harness.frame();
-    worm_ui_nuklear_compose_state().keysound_slots_mode = true;
+    worm_ui_nuklear_compose_state().keysound_filters.keysound_slots_mode = true;
     harness.view().compose.sound_slots_mode = true;
     (void)harness.frame();
 }
@@ -56,11 +56,11 @@ TEST_CASE("WAV batch review keeps ordered paths and original starting slot throu
     REQUIRE(harness.ready());
     enable_slots(harness);
     stage_batch(harness);
-    worm_ui_nuklear_compose_state().keysound_selected_slot = 100;
+    worm_ui_nuklear_compose_state().keysound_catalog.keysound_selected_slot = 100;
     const auto snapshot = click(harness, "Assign files");
     check_confirmed_batch(snapshot.get());
     worm_ui_frontend_sound_slot_batch_result(true, "Imported");
-    CHECK_FALSE(worm_ui_nuklear_compose_state().keysound_slot_batch.open);
+    CHECK_FALSE(worm_ui_nuklear_compose_state().keysound_slots.keysound_slot_batch.open);
 }
 
 TEST_CASE("Invalid WAV batches stay visible and cannot confirm", "[event-harness][sound-slot-batch]") {
@@ -70,7 +70,7 @@ TEST_CASE("Invalid WAV batches stay visible and cannot confirm", "[event-harness
     stage_batch(harness, "One file cannot be decoded.");
     const auto snapshot = click(harness, "Assign files");
     CHECK(snapshot.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
-    CHECK(worm_ui_nuklear_compose_state().keysound_slot_batch.open);
+    CHECK(worm_ui_nuklear_compose_state().keysound_slots.keysound_slot_batch.open);
     CHECK(harness.drawn_text().find("One file cannot be decoded.") != std::string::npos);
 }
 
@@ -84,11 +84,11 @@ TEST_CASE("Escape and a stale document cancel WAV batch review", "[event-harness
     escape.key.key = SDLK_ESCAPE;
     escape.key.down = true;
     (void)harness.frame(std::array{escape});
-    CHECK_FALSE(worm_ui_nuklear_compose_state().keysound_slot_batch.open);
+    CHECK_FALSE(worm_ui_nuklear_compose_state().keysound_slots.keysound_slot_batch.open);
     stage_batch(harness);
     ++harness.view().compose.document_revision;
     (void)harness.frame();
-    CHECK_FALSE(worm_ui_nuklear_compose_state().keysound_slot_batch.open);
+    CHECK_FALSE(worm_ui_nuklear_compose_state().keysound_slots.keysound_slot_batch.open);
 }
 
 TEST_CASE("WAV batch dialog Cancel closes it and Enter confirms",
@@ -99,7 +99,7 @@ TEST_CASE("WAV batch dialog Cancel closes it and Enter confirms",
         enable_slots(harness);
         stage_batch(harness);
         (void)click(harness, "Cancel");
-        CHECK_FALSE(worm_ui_nuklear_compose_state().keysound_slot_batch.open);
+        CHECK_FALSE(worm_ui_nuklear_compose_state().keysound_slots.keysound_slot_batch.open);
     }
     {
         nuklear_event_harness_t harness{960, 720};

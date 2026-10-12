@@ -11,19 +11,19 @@
 namespace {
 void require_harness_ready(bool value) { REQUIRE(value); }
 void require_bga_list_valid(const worm_ui_nuklear_compose_state_t& state) {
-    REQUIRE(state.bga_list_valid);
+    REQUIRE(state.bga_catalog.bga_list_valid);
 }
 void require_bga_row_armed(const worm_ui_nuklear_compose_state_t& state) {
-    REQUIRE(state.armed_resource_id == 1400);
-    REQUIRE(state.armed_from_bga_dock);
+    REQUIRE(state.resource_picker.armed_resource_id == 1400);
+    REQUIRE(state.bga_catalog.armed_from_bga_dock);
 }
 void require_bga_draw_source(const worm_ui_nuklear_compose_state_t& state) {
-    REQUIRE(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
-    REQUIRE(state.draw_source_kind == 2);
-    REQUIRE(state.draw_source_id == 1400);
+    REQUIRE(state.resource_picker.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
+    REQUIRE(state.pointer_capture.draw_source_kind == 2);
+    REQUIRE(state.pointer_capture.draw_source_id == 1400);
 }
 void require_bga_auto_advance(const worm_ui_nuklear_compose_state_t& state) {
-    REQUIRE(state.bga_auto_increment_on_place);
+    REQUIRE(state.bga_catalog.bga_auto_increment_on_place);
 }
 void check_resource_place(const WormUiComposeInputAction* input) {
     REQUIRE(input != nullptr);
@@ -32,20 +32,20 @@ void check_resource_place(const WormUiComposeInputAction* input) {
     CHECK(input->resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGA);
 }
 void check_no_advance_before_dispatch(const worm_ui_nuklear_compose_state_t& state) {
-    CHECK(state.armed_resource_id == 1400);
-    CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
+    CHECK(state.resource_picker.armed_resource_id == 1400);
+    CHECK(state.resource_picker.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
 }
 void check_successor_armed(const worm_ui_nuklear_compose_state_t& state) {
-    CHECK(state.armed_resource_id == 1700);
-    CHECK(state.bga_selection.primary == 1700);
-    CHECK(state.bga_reveal_primary);
-    CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
-    CHECK(state.bga_auto_increment_on_place);
+    CHECK(state.resource_picker.armed_resource_id == 1700);
+    CHECK(state.bga_catalog.bga_selection.primary == 1700);
+    CHECK(state.bga_catalog.bga_reveal_primary);
+    CHECK(state.resource_picker.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
+    CHECK(state.bga_catalog.bga_auto_increment_on_place);
 }
 void check_order_exhausted(const worm_ui_nuklear_compose_state_t& state) {
-    CHECK(state.armed_resource_id == 1700);
-    CHECK(!state.bga_auto_increment_on_place);
-    CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
+    CHECK(state.resource_picker.armed_resource_id == 1700);
+    CHECK(!state.bga_catalog.bga_auto_increment_on_place);
+    CHECK(state.resource_picker.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
 }
 void check_sound_toggle_preserved(bool current, bool initial) { CHECK(current == initial); }
 void check_bga_request(const WormUiBgaDockRequest& request) {
@@ -131,7 +131,7 @@ TEST_CASE("BGA dock auto advance follows eligible filtered order after placement
     (void)harness.frame();
 
     auto& state = worm_ui_nuklear_compose_state();
-    state.bga_panel_visible = true;
+    state.dock_layout.bga_panel_visible = true;
     (void)harness.frame();
     // Match chart-model dimensions to the actual first-frame editor viewport.
     // Keep the lane in the visible editor area, left of the floating dock.
@@ -150,9 +150,9 @@ TEST_CASE("BGA dock auto advance follows eligible filtered order after placement
 
     // Sort by BMP ID through the real toolbar, then enter a search in the
     // actual field. The projection consumer receives the resulting order.
-    click(harness, state.bga_list_x + 207,
-          state.bga_list_y + 43);
-    click(harness, state.bga_list_x + 90, state.bga_list_y + 155);
+    click(harness, state.bga_catalog.bga_list_x + 207,
+          state.bga_catalog.bga_list_y + 43);
+    click(harness, state.bga_catalog.bga_list_x + 90, state.bga_catalog.bga_list_y + 155);
     SDL_Event search_text{};
     search_text.type = SDL_EVENT_TEXT_INPUT;
     search_text.text.type = SDL_EVENT_TEXT_INPUT;
@@ -184,10 +184,10 @@ TEST_CASE("BGA dock auto advance follows eligible filtered order after placement
     require_bga_draw_source(state);
     view.note_paint_mode_active = true;
     (void)harness.frame();
-    const auto sounds_auto_advance = state.auto_increment_on_place;
-    click(harness, state.bga_list_x + 22, state.bga_list_y + 43);
+    const auto sounds_auto_advance = state.resource_picker.auto_increment_on_place;
+    click(harness, state.bga_catalog.bga_list_x + 22, state.bga_catalog.bga_list_y + 43);
     require_bga_auto_advance(state);
-    check_sound_toggle_preserved(state.auto_increment_on_place, sounds_auto_advance);
+    check_sound_toggle_preserved(state.resource_picker.auto_increment_on_place, sounds_auto_advance);
 
     // Placement comes from the BGA lane. Until the application accepts it and
     // sends its notification, the dock stays armed.

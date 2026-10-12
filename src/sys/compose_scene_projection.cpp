@@ -540,7 +540,7 @@ void project_compose_bga(const compose_scene_projection_context_t& projection) {
 }
 
 void project_compose_marker_draft(const compose_scene_projection_context_t& projection) {
-    const auto& draft = projection.frame.application_state.bmson_marker_draft;
+    const auto& draft = projection.frame.application_state.compose_gesture.bmson_marker_draft;
     if (!draft || projection.scope.pixels_per_row <= 0.0)
         return;
     const auto* reference =
@@ -602,17 +602,17 @@ bool initialize_compose_view_state(
     const application_command_state_t& application_state) {
     auto& view = flattened.view.compose;
     if (!view.visible) {
-        cache.interaction_view.reset();
-        cache.hover.reset();
-        cache.paint_pointer.reset();
-        cache.focus_note_label_editor = false;
-        cache.viewport_autoscroll_active = false;
+        cache.frame.interaction_view.reset();
+        cache.frame.hover.reset();
+        cache.frame.paint_pointer.reset();
+        cache.frame.focus_note_label_editor = false;
+        cache.frame.viewport_autoscroll_active = false;
         return false;
     }
     view.viewport_width_pixels = std::max(160.0, static_cast<double>(window_width) - 48.0);
-    view.bgm_bar_available = cache.bgm_bar_audio_seen;
-    view.bgm_bar_reserved = cache.bgm_bar_audio_seen &&
-                            !application_state.bgm_bar_hidden.value_or(default_bgm_bar_hidden);
+    view.bgm_bar_available = cache.frame.bgm_bar_audio_seen;
+    view.bgm_bar_reserved = cache.frame.bgm_bar_audio_seen &&
+                            !application_state.bgm.bgm_bar_hidden.value_or(default_bgm_bar_hidden);
     view.viewport_height_pixels = compose_surface_height(window_height, flattened.view);
     view.bga_lane_visible = !retained_state || retained_state->bga_lane_visible;
     view.bga_revealed_lane_mask = retained_state ? retained_state->bga_revealed_lane_mask : 0;
@@ -632,14 +632,14 @@ bool initialize_compose_view_state(
                                            : wormedit::default_pixels_per_standard_measure;
     const auto notes_editable =
         wormedit::ui::compose_notes_editable(compose_mode_of(application_state));
-    view.draw_source_kind = application_state.draw_source_kind;
-    view.draw_source_id = application_state.draw_source_id;
+    view.draw_source_kind = application_state.compose_gesture.draw_source_kind;
+    view.draw_source_id = application_state.compose_gesture.draw_source_id;
     view.draw_source_label = "silent note";
     view.draw_source_missing = false;
     view.semantic_layer_target_row = 0;
-    view.note_paint_mode_active = notes_editable && application_state.note_paint_mode_active;
+    view.note_paint_mode_active = notes_editable && application_state.compose_gesture.note_paint_mode_active;
     view.semantic_layer_paint_mode_active =
-        notes_editable && application_state.semantic_layer_paint_mode_active;
+        notes_editable && application_state.compose_gesture.semantic_layer_paint_mode_active;
     view.semantic_layer_gesture_active =
         retained_state && editor_interaction_has_pending_gesture(*retained_state);
     view.timing_stage_active = false;
@@ -647,7 +647,7 @@ bool initialize_compose_view_state(
     view.timing_stage_lane = WORM_UI_TIMING_LANE_BPM;
     view.timing_stage_y_pixels = 0.0;
     view.timing_lane_visibility_mask = effective_compose_timing_lane_mask(application_state);
-    view.timing_focus = application_state.compose_timing_focus;
+    view.timing_focus = application_state.compose_view.compose_timing_focus;
     view.selected_note_count = 0;
     view.keyboard_context_note_id = 0;
     view.move_conflict_count = 0;
@@ -683,7 +683,7 @@ bool initialize_compose_view_state(
     view.bgm_bar_marks = nullptr;
     view.bgm_bar_mark_count = 0;
     view.audio_offset_editable = false;
-    view.audio_offset_locked = application_state.audio_offset_locked;
+    view.audio_offset_locked = application_state.timing_recipe.audio_offset_locked;
     view.waveform_audio_offset_numerator = 0;
     view.waveform_audio_offset_denominator = 1;
     view.waveform_offset_drag_active = false;
@@ -716,7 +716,7 @@ bool initialize_compose_view_state(
     view.waveform_proposed_beat_zero_fraction = 0.0;
     view.waveform_proposed_audio_offset_numerator = 0;
     view.waveform_proposed_audio_offset_denominator = 1;
-    view.waveform_timing_locked = application_state.timing_locked;
+    view.waveform_timing_locked = application_state.timing_recipe.timing_locked;
     view.waveform_analysis_pending = false;
     view.beat_marker_navigation_available = false;
     view.audio_marker_navigation_available = false;
@@ -757,7 +757,7 @@ bool initialize_compose_view_state(
     view.semantic_layer_target_visible = false;
     view.semantic_layer_target_required_filter = false;
     view.semantic_layer_target_excluded_filter = false;
-    view.semantic_layer_solo_active = application_state.semantic_layer_solo_active;
+    view.semantic_layer_solo_active = application_state.semantic_layer.semantic_layer_solo_active;
     view.status_text = nullptr;
     view.selected_note_label = nullptr;
     view.selected_note_label_note_id = 0;
@@ -767,11 +767,11 @@ bool initialize_compose_view_state(
     view.hover_tooltip = nullptr;
     view.timing_markers = nullptr;
     view.timing_marker_count = 0;
-    view.viewport_autoscroll_active = cache.viewport_autoscroll_active;
-    view.viewport_autoscroll_anchor_x_pixels = cache.viewport_autoscroll_anchor_x_pixels;
-    view.viewport_autoscroll_anchor_y_pixels = cache.viewport_autoscroll_anchor_y_pixels;
-    view.viewport_autoscroll_pointer_x_pixels = cache.viewport_autoscroll_pointer_x_pixels;
-    view.viewport_autoscroll_pointer_y_pixels = cache.viewport_autoscroll_pointer_y_pixels;
+    view.viewport_autoscroll_active = cache.frame.viewport_autoscroll_active;
+    view.viewport_autoscroll_anchor_x_pixels = cache.frame.viewport_autoscroll_anchor_x_pixels;
+    view.viewport_autoscroll_anchor_y_pixels = cache.frame.viewport_autoscroll_anchor_y_pixels;
+    view.viewport_autoscroll_pointer_x_pixels = cache.frame.viewport_autoscroll_pointer_x_pixels;
+    view.viewport_autoscroll_pointer_y_pixels = cache.frame.viewport_autoscroll_pointer_y_pixels;
     flattened.compose.hover_tooltip.clear();
     flattened.compose.selected_note_label.clear();
     return true;

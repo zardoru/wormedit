@@ -782,9 +782,9 @@ void worm_ui_nuklear_render_compose_minimap(
     const auto& button = context->input.mouse.buttons[NK_BUTTON_LEFT];
     const bool pressed = available && window_focused && button.clicked && button.down &&
         nk_input_is_mouse_click_down_in_rect(&context->input, NK_BUTTON_LEFT, bounds, nk_true);
-    if (pressed) state.keyboard_focus = true;
+    if (pressed) state.input_queue.keyboard_focus = true;
     process_compose_overview_input({context, view, action, bounds, available, pressed,
-        window_focused && available, state.waveform_beat_zero_drag_active});
+        window_focused && available, state.waveform_drag.waveform_beat_zero_drag_active});
 }
 
 namespace {
@@ -952,7 +952,7 @@ void process_bgm_bar_view_input(struct nk_context* context, const WormUiComposeV
         append_bgm_bar_input(action, WORM_UI_COMPOSE_INPUT_BGM_BAR_PAN,
                              -static_cast<double>(input.mouse.delta.x) / geometry.bounds.w * span, 0.0);
     }
-    const bool shift = (state.pointer_modifiers & SDL_KMOD_SHIFT) != 0;
+    const bool shift = (state.input_queue.pointer_modifiers & SDL_KMOD_SHIFT) != 0;
     const auto wheel_x = static_cast<double>(input.mouse.scroll_delta.x);
     const auto wheel_y = static_cast<double>(input.mouse.scroll_delta.y);
     if (shift || wheel_x != 0.0) {
@@ -1008,12 +1008,12 @@ void worm_ui_nuklear_render_compose_bgm_bar(
     const bool available = view->visible && overview_valid &&
         view->scene_available && view->bgm_bar_row_count != 0 && bounds.w > 1.0f && bounds.h > 1.0f;
     auto* canvas = nk_window_get_canvas(context);
-    const auto capture_valid = state.waveform_overview_drag_active &&
-        state.waveform_overview_capture.window_capture &&
-        worm_ui_nuklear_overview_capture_matches(state.waveform_overview_capture, *view,
+    const auto capture_valid = state.waveform_drag.waveform_overview_drag_active &&
+        state.waveform_drag.waveform_overview_capture.window_capture &&
+        worm_ui_nuklear_overview_capture_matches(state.waveform_drag.waveform_overview_capture, *view,
             bounds.x, bounds.w, available, window_focused);
     const auto captured_window = worm_ui_nuklear_overview_window_for_capture(
-        state.waveform_overview_capture, capture_valid,
+        state.waveform_drag.waveform_overview_capture, capture_valid,
         view->bgm_bar_begin_fraction, view->bgm_bar_end_fraction);
     const BgmBarGeometry geometry{bounds, captured_window.begin, captured_window.end};
     if (available && canvas) {
@@ -1028,16 +1028,16 @@ void worm_ui_nuklear_render_compose_bgm_bar(
     const auto& button = context->input.mouse.buttons[NK_BUTTON_LEFT];
     const bool pressed = available && window_focused && button.clicked && button.down &&
         nk_input_is_mouse_click_down_in_rect(&context->input, NK_BUTTON_LEFT, bounds, nk_true);
-    if (pressed) state.keyboard_focus = true;
+    if (pressed) state.input_queue.keyboard_focus = true;
     if (available && window_focused) process_bgm_bar_view_input(context, *view, action, geometry);
     process_compose_overview_input({context, view, action, bounds, available, pressed,
-        window_focused && available, state.waveform_beat_zero_drag_active,
+        window_focused && available, state.waveform_drag.waveform_beat_zero_drag_active,
         view->bgm_bar_begin_fraction, view->bgm_bar_end_fraction, true});
-    action->minimap_window_capture_active = state.waveform_overview_drag_active &&
-        state.waveform_overview_capture.window_capture;
+    action->minimap_window_capture_active = state.waveform_drag.waveform_overview_drag_active &&
+        state.waveform_drag.waveform_overview_capture.window_capture;
     action->minimap_window_capture_begin_fraction =
-        state.waveform_overview_capture.window_begin;
-    action->minimap_window_capture_end_fraction = state.waveform_overview_capture.window_end;
+        state.waveform_drag.waveform_overview_capture.window_begin;
+    action->minimap_window_capture_end_fraction = state.waveform_drag.waveform_overview_capture.window_end;
 }
 
 struct ComposePanelRenderContext {
@@ -1056,9 +1056,9 @@ static auto compose_inline_timing_popup_bounds(nk_context* context, struct nk_re
     -> struct nk_rect {
     constexpr float popup_width = 196.0f;
     constexpr float popup_height = 75.0f;
-    const auto popup_x = std::clamp(state.inline_timing_anchor_screen_x,
+    const auto popup_x = std::clamp(state.inline_timing.inline_timing_anchor_screen_x,
                                     viewport.x, viewport.x + std::max(0.0f, viewport.w - popup_width));
-    const auto popup_y = std::clamp(state.inline_timing_anchor_screen_y - 24.0f,
+    const auto popup_y = std::clamp(state.inline_timing.inline_timing_anchor_screen_y - 24.0f,
                                     viewport.y,
                                     viewport.y + std::max(0.0f, viewport.h - popup_height));
     const auto parent_clip = nk_window_get_content_region(context);
@@ -1070,9 +1070,9 @@ static auto compose_inline_timing_popup_bounds(nk_context* context, struct nk_re
 static void dismiss_compose_inline_timing_popup(nk_context* context, struct nk_rect viewport) {
     wormedit::ui::chrome::dismiss_popup(
         context, "Compose timing value", compose_inline_timing_popup_bounds(context, viewport));
-    state.inline_timing_popup_close_pending = false;
-    state.inline_timing_open = false;
-    state.inline_timing_focus_pending = false;
+    state.inline_timing.inline_timing_popup_close_pending = false;
+    state.inline_timing.inline_timing_open = false;
+    state.inline_timing.inline_timing_focus_pending = false;
 }
 
 static void render_compose_inline_timing_editor(const ComposePanelRenderContext& panel,
@@ -1080,11 +1080,11 @@ static void render_compose_inline_timing_editor(const ComposePanelRenderContext&
     static_cast<void>(worm_ui_nuklear_inline_timing_review_new_stage(
         state, *panel.timing_view, *panel.action,
         viewport.x + viewport.w * 0.5f, viewport.y + viewport.h * 0.5f));
-    if (state.inline_timing_popup_close_pending) {
+    if (state.inline_timing.inline_timing_popup_close_pending) {
         dismiss_compose_inline_timing_popup(panel.context, viewport);
         return;
     }
-    if (!state.inline_timing_open) return;
+    if (!state.inline_timing.inline_timing_open) return;
     if (!panel.window_focused) {
         worm_ui_nuklear_inline_timing_cancel(state, *panel.action);
         dismiss_compose_inline_timing_popup(panel.context, viewport);
@@ -1097,16 +1097,16 @@ static void render_compose_inline_timing_editor(const ComposePanelRenderContext&
         dismiss_compose_inline_timing_popup(panel.context, viewport);
         return;
     }
-    if (timing.chart_id != state.inline_timing_chart_id ||
-        timing.document_revision != state.inline_timing_revision ||
-        timing.stage_existing_object_id != state.inline_timing_object_id ||
-        timing.stage_lane != state.inline_timing_lane) {
+    if (timing.chart_id != state.inline_timing.inline_timing_chart_id ||
+        timing.document_revision != state.inline_timing.inline_timing_revision ||
+        timing.stage_existing_object_id != state.inline_timing.inline_timing_object_id ||
+        timing.stage_lane != state.inline_timing.inline_timing_lane) {
         dismiss_compose_inline_timing_popup(panel.context, viewport);
         return;
     }
-    if (state.inline_timing_focus_pending && state.inline_timing_error[0] == '\0')
+    if (state.inline_timing.inline_timing_focus_pending && state.inline_timing.inline_timing_error[0] == '\0')
         worm_ui_nuklear_inline_timing_initial_text(
-            timing, state.inline_timing_text.data(), state.inline_timing_text.size());
+            timing, state.inline_timing.inline_timing_text.data(), state.inline_timing.inline_timing_text.size());
 
     if (!nk_popup_begin(panel.context, NK_POPUP_STATIC, "Compose timing value",
                         NK_WINDOW_NO_SCROLLBAR,
@@ -1118,17 +1118,17 @@ static void render_compose_inline_timing_editor(const ComposePanelRenderContext&
     const auto edit_flags = wormedit::ui::chrome::autofocus_text_field(
         panel.context, static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER |
                            NK_EDIT_AUTO_SELECT,
-        state.inline_timing_text.data(), static_cast<int>(state.inline_timing_text.size()),
-        nk_filter_default, state.inline_timing_focus_pending);
+        state.inline_timing.inline_timing_text.data(), static_cast<int>(state.inline_timing.inline_timing_text.size()),
+        nk_filter_default, state.inline_timing.inline_timing_focus_pending);
     worm_ui_nuklear_inline_timing_update(state, timing, *panel.action,
                                         (edit_flags & NK_EDIT_COMMITTED) != 0,
                                         (edit_flags & NK_EDIT_DEACTIVATED) != 0);
-    if (!state.inline_timing_open) {
+    if (!state.inline_timing.inline_timing_open) {
         nk_popup_close(panel.context);
-        state.inline_timing_popup_close_pending = false;
+        state.inline_timing.inline_timing_popup_close_pending = false;
     }
     nk_layout_row_dynamic(panel.context, 17.0f, 1);
-    nk_label(panel.context, state.inline_timing_error[0] ? state.inline_timing_error.data()
+    nk_label(panel.context, state.inline_timing.inline_timing_error[0] ? state.inline_timing.inline_timing_error.data()
                                                     : "Enter to apply · Esc to cancel",
              NK_TEXT_LEFT);
     nk_popup_end(panel.context);
@@ -1137,7 +1137,7 @@ static void render_compose_inline_timing_editor(const ComposePanelRenderContext&
 static void discard_occluded_compose_input(const ComposePanelRenderContext& panel) {
     panel.action->compose_input_ownership = 1;
     cancel_compose_gestures(panel.action);
-    state.key_event_count = 0;
+    state.input_queue.key_event_count = 0;
 }
 
 // Area and SV recipe popups occlude the rest of Compose input while they own it,
@@ -1191,19 +1191,19 @@ static void process_compose_canvas_tools(const ComposePointerEventContext& point
 
 static auto capture_pointer_modifiers(const nk_context& context) -> std::uint16_t {
     if (nk_input_is_mouse_pressed(&context.input, NK_BUTTON_LEFT))
-        state.pointer_press_modifiers = state.pointer_modifiers;
-    const auto modifiers = state.pointer_press_modifiers.value_or(state.pointer_modifiers);
+        state.input_queue.pointer_press_modifiers = state.input_queue.pointer_modifiers;
+    const auto modifiers = state.input_queue.pointer_press_modifiers.value_or(state.input_queue.pointer_modifiers);
     if (!context.input.mouse.buttons[NK_BUTTON_LEFT].down)
-        state.pointer_press_modifiers.reset();
+        state.input_queue.pointer_press_modifiers.reset();
     return modifiers;
 }
 
 // Canceled captures retain ownership until their physical release.
 static auto consume_compose_capture_release(const ComposePanelRenderContext& panel,
                                             struct nk_rect viewport, float editor_right) -> bool {
-    if (state.draw_left_cancelled_until_release) {
+    if (state.pointer_capture.draw_left_cancelled_until_release) {
         if (!panel.context->input.mouse.buttons[NK_BUTTON_LEFT].down)
-            state.draw_left_cancelled_until_release = false;
+            state.pointer_capture.draw_left_cancelled_until_release = false;
         return true;
     }
     return process_compose_tool_chip(panel.context, *panel.view,
@@ -1248,25 +1248,25 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
                       view->viewport_width_pixels / viewport.w);
     // A note double-click selected the note and asked for its label editor; open it over the note.
     if (view->focus_note_label_editor && window_focused && !view->input_occluded &&
-        begin_compose_note_label_inline(state.bookmark_rename, *view, state.note_label_anchor_x,
-                                        state.note_label_anchor_y))
+        begin_compose_note_label_inline(state.bookmark_ui.bookmark_rename, *view, state.note_label.note_label_anchor_x,
+                                        state.note_label.note_label_anchor_y))
         action->compose_note_label_focus_consumed = true;
     if (compose_note_menu_open() || compose_note_menu_consumed())
         process_compose_note_menu(context, *view, *action, viewport, editor_input_right, window_focused);
     const bool owned_popup = !compose_note_menu_consumed() &&
         process_compose_owned_popups(panel, viewport, editor_input_right);
-    if (view->input_occluded || owned_popup || compose_quantize_owns_input() || state.keysound_group_review.open ||
-        wormedit::ui::chrome::context_menu_owns_input(state.keysound_group_menu) ||
-        wormedit::ui::chrome::context_menu_owns_input(state.layers_menu) ||
-        wormedit::ui::chrome::context_menu_owns_input(state.snap_grid_menu) ||
-        state.bga_stack_open || state.bga_stack_release_pending ||
-        state.bga_renumber_confirmation_open ||
-        state.bga_renumber_release_pending || compose_note_menu_consumed() ||
-        state.bookmark_rename.active || state.bookmark_rename.release_pending ||
-        (worm_ui_nuklear_bookmark_chooser_owns_input(state.bookmark_chooser) || compose_sound_picker_owns_input(state.sound_picker))) {
+    if (view->input_occluded || owned_popup || compose_quantize_owns_input() || state.keysound_catalog.keysound_group_review.open ||
+        wormedit::ui::chrome::context_menu_owns_input(state.keysound_catalog.keysound_group_menu) ||
+        wormedit::ui::chrome::context_menu_owns_input(state.layer_editor.layers_menu) ||
+        wormedit::ui::chrome::context_menu_owns_input(state.snap_grid.snap_grid_menu) ||
+        state.bga_interaction.bga_stack_open || state.bga_interaction.bga_stack_release_pending ||
+        state.bga_catalog.bga_renumber_confirmation_open ||
+        state.bga_catalog.bga_renumber_release_pending || compose_note_menu_consumed() ||
+        state.bookmark_ui.bookmark_rename.active || state.bookmark_ui.bookmark_rename.release_pending ||
+        (worm_ui_nuklear_bookmark_chooser_owns_input(state.bookmark_ui.bookmark_chooser) || compose_sound_picker_owns_input(state.sound_picker_ui.sound_picker))) {
         discard_occluded_compose_input(panel);
         draw_compose_editor_scene(panel, canvas, viewport, editor_input_right);
-        render_compose_bookmark_rename(context, *view, *action, state.bookmark_rename, viewport, window_focused);
+        render_compose_bookmark_rename(context, *view, *action, state.bookmark_ui.bookmark_rename, viewport, window_focused);
         return;
     }
     const auto pointer_focus = update_compose_pointer_focus(
@@ -1276,9 +1276,9 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     const auto pointer_clicked = pointer_focus.pointer_clicked;
     const auto& left_button = context->input.mouse.buttons[NK_BUTTON_LEFT];
     process_compose_key_events(context, view, action, window_focused, ime_composition_active);
-    if (state.go_to_measure_open) {
+    if (state.dialogs.go_to_measure_open) {
         draw_compose_editor_scene(panel, canvas, viewport, editor_input_right);
-        render_compose_bookmark_rename(context, *view, *action, state.bookmark_rename, viewport, window_focused);
+        render_compose_bookmark_rename(context, *view, *action, state.bookmark_ui.bookmark_rename, viewport, window_focused);
         return;
     }
 
@@ -1332,7 +1332,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     const auto paint_pointer_y = clamp_paint_y(pointer_y);
     const ComposeBeatFitInput beat_fit_input{
         context, view, action, viewport, pointer_y, pointer_started_x, pointer_started_y,
-        state.pointer_modifiers, any_pointer_modifier, shortcut_event_count, window_focused,
+        state.input_queue.pointer_modifiers, any_pointer_modifier, shortcut_event_count, window_focused,
         pointer_started_in_view, left_down, left_released};
     const bool beat_fit_pointer_consumed = process_compose_beat_fit_pointer(beat_fit_input);
     ComposePointerEventContext pointer_event{
@@ -1344,26 +1344,26 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
         pointer_inside, pointer_clicked, pointer_in_note_field,
         pointer_started_in_view, pointer_started_in_note_field,
         left_down, left_released, alt_down, false, false};
-    if (!state.inline_timing_open && !state.timing_marker_candidate_active)
+    if (!state.inline_timing.inline_timing_open && !state.timing_marker.timing_marker_candidate_active)
         update_timing_stage_drag(pointer_event);
     update_kiai_span_drag(pointer_event);
     update_recipe_drag(pointer_event);
     auto compose_pointer_captured =
-        state.inline_timing_open || state.bookmark_rename.active || state.bookmark_rename.release_pending || state.note_paint_pointer_active ||
-        state.bmson_razor_pointer_active ||
-        state.bmson_marker_move_active || state.semantic_layer_paint_pointer_active ||
-        state.pointer_hold_active || state.pointer_hold_begin_pending || state.lane_hold_active ||
-        state.note_move_active || state.note_move_candidate_active ||
-        state.area_selection_active || state.timing_stage_drag_active || state.kiai_drag_active || state.recipe_drag_active ||
-        state.timing_marker_candidate_active || state.timing_marker_drag_active ||
-        state.waveform_beat_zero_drag_active || state.waveform_overview_drag_active ||
+        state.inline_timing.inline_timing_open || state.bookmark_ui.bookmark_rename.active || state.bookmark_ui.bookmark_rename.release_pending || state.pointer_capture.note_paint_pointer_active ||
+        state.bmson_input.bmson_razor_pointer_active ||
+        state.bmson_input.bmson_marker_move_active || state.pointer_capture.semantic_layer_paint_pointer_active ||
+        state.pointer_capture.pointer_hold_active || state.pointer_capture.pointer_hold_begin_pending || state.range_selection.lane_hold_active ||
+        state.note_move.note_move_active || state.note_move.note_move_candidate_active ||
+        state.area_selection.area_selection_active || state.timing_drag.timing_stage_drag_active || state.timing_drag.kiai_drag_active || state.timing_drag.recipe_drag_active ||
+        state.timing_marker.timing_marker_candidate_active || state.timing_marker.timing_marker_drag_active ||
+        state.waveform_drag.waveform_beat_zero_drag_active || state.waveform_drag.waveform_overview_drag_active ||
         beat_fit_pointer_consumed;
     const auto mix_consumed = process_bgm_mix_controls(pointer_event, compose_pointer_captured);
     compose_pointer_captured |= mix_consumed;
     const auto resize_consumed = process_stem_lane_resize(pointer_event, double_clicks,
                                                           double_click_count, compose_pointer_captured);
     compose_pointer_captured |= resize_consumed;
-    action->compose_has_pointer_hover = !state.action_overflowed && window_focused &&
+    action->compose_has_pointer_hover = !state.input_queue.action_overflowed && window_focused &&
                                         view->scene_available && pointer_in_note_field &&
                                         !compose_pointer_captured;
     if (action->compose_has_pointer_hover) {
@@ -1378,37 +1378,37 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     update_compose_sound_hover(pointer_event);
     pointer_event.compose_note_double_click_in_view = compose_note_double_click_in_view;
     bool paint_pointer_consumed =
-        state.inline_timing_open || state.bookmark_rename.active || state.bookmark_rename.release_pending || state.note_paint_pointer_active ||
+        state.inline_timing.inline_timing_open || state.bookmark_ui.bookmark_rename.active || state.bookmark_ui.bookmark_rename.release_pending || state.pointer_capture.note_paint_pointer_active ||
         beat_fit_pointer_consumed || resize_consumed || mix_consumed ||
-        state.bmson_razor_pointer_active || state.bmson_marker_move_candidate_active ||
-        state.bmson_marker_move_active || state.semantic_layer_paint_pointer_active ||
-        state.kiai_drag_active || state.recipe_drag_active || state.timing_stage_drag_active ||
+        state.bmson_input.bmson_razor_pointer_active || state.bmson_input.bmson_marker_move_candidate_active ||
+        state.bmson_input.bmson_marker_move_active || state.pointer_capture.semantic_layer_paint_pointer_active ||
+        state.timing_drag.kiai_drag_active || state.timing_drag.recipe_drag_active || state.timing_drag.timing_stage_drag_active ||
         compose_action_has_cancel(action);
     process_compose_canvas_tools(pointer_event, paint_pointer_consumed);
 
     draw_compose_editor_scene(panel, canvas, viewport, editor_input_right);
-    render_compose_bookmark_rename(context, *view, *action, state.bookmark_rename, viewport, window_focused);
+    render_compose_bookmark_rename(context, *view, *action, state.bookmark_ui.bookmark_rename, viewport, window_focused);
     render_compose_inline_timing_editor(panel, viewport);
 }
 
 static void close_go_to_measure(nk_context* context) {
     nk_edit_unfocus(context);
-    state.go_to_measure_open = false;
-    state.go_to_measure_focus_pending = false;
-    state.go_to_measure_cancel_pending = false;
-    state.keyboard_focus = true;
+    state.dialogs.go_to_measure_open = false;
+    state.dialogs.go_to_measure_focus_pending = false;
+    state.dialogs.go_to_measure_cancel_pending = false;
+    state.input_queue.keyboard_focus = true;
     nk_popup_close(context);
 }
 
 static void confirm_go_to_measure(const WormUiComposeView& view,
                                   WormUiWorkspaceAction& action, nk_context* context) {
     const auto number = worm_ui_nuklear_compose_measure_number(view,
-                                                              state.go_to_measure_text.data());
+                                                              state.dialogs.go_to_measure_text.data());
     if (!number) {
-        std::snprintf(state.go_to_measure_error.data(), state.go_to_measure_error.size(),
+        std::snprintf(state.dialogs.go_to_measure_error.data(), state.dialogs.go_to_measure_error.size(),
                       view.bms_measure_labels ? "Enter a measure from 000 to 999"
                                               : "Enter an existing measure number");
-        state.go_to_measure_focus_pending = true;
+        state.dialogs.go_to_measure_focus_pending = true;
         return;
     }
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
@@ -1421,10 +1421,10 @@ static void confirm_go_to_measure(const WormUiComposeView& view,
 
 static void render_go_to_measure(nk_context* context, const WormUiComposeView& view,
                                  WormUiWorkspaceAction& action, bool window_focused) {
-    if (!state.go_to_measure_open) return;
-    if (!window_focused || view.chart_id != state.go_to_measure_chart_id ||
-        view.document_revision != state.go_to_measure_revision) {
-        state.go_to_measure_cancel_pending = true;
+    if (!state.dialogs.go_to_measure_open) return;
+    if (!window_focused || view.chart_id != state.dialogs.go_to_measure_chart_id ||
+        view.document_revision != state.dialogs.go_to_measure_revision) {
+        state.dialogs.go_to_measure_cancel_pending = true;
     }
     const auto region = nk_window_get_content_region(context);
     const auto parent = nk_window_get_bounds(context);
@@ -1434,11 +1434,11 @@ static void render_go_to_measure(nk_context* context, const WormUiComposeView& v
                                 width, 120.0f);
     if (!nk_popup_begin(context, NK_POPUP_STATIC, "Go to measure",
                         NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, bounds)) {
-        state.go_to_measure_open = false;
-        state.go_to_measure_focus_pending = false;
+        state.dialogs.go_to_measure_open = false;
+        state.dialogs.go_to_measure_focus_pending = false;
         return;
     }
-    if (state.go_to_measure_cancel_pending) {
+    if (state.dialogs.go_to_measure_cancel_pending) {
         close_go_to_measure(context);
         nk_popup_end(context);
         return;
@@ -1450,31 +1450,31 @@ static void render_go_to_measure(nk_context* context, const WormUiComposeView& v
         nk_labelf(context, NK_TEXT_LEFT, "Measure M1-M%llu",
                   static_cast<unsigned long long>(view.compose_measure_count));
     nk_layout_row_dynamic(context, 28, 1);
-    if (state.go_to_measure_focus_pending) {
+    if (state.dialogs.go_to_measure_focus_pending) {
         nk_edit_focus(context, NK_EDIT_ALWAYS_INSERT_MODE);
-        state.go_to_measure_focus_pending = false;
+        state.dialogs.go_to_measure_focus_pending = false;
     }
     const auto flags = wormedit::ui::chrome::worm_ui_nuklear_text_field(
         context, static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER,
-        state.go_to_measure_text.data(), static_cast<int>(state.go_to_measure_text.size()),
+        state.dialogs.go_to_measure_text.data(), static_cast<int>(state.dialogs.go_to_measure_text.size()),
         nk_filter_decimal);
     if ((flags & NK_EDIT_COMMITTED) != 0) confirm_go_to_measure(view, action, context);
     nk_layout_row_dynamic(context, 20, 1);
-    nk_label(context, state.go_to_measure_error[0] ? state.go_to_measure_error.data()
+    nk_label(context, state.dialogs.go_to_measure_error[0] ? state.dialogs.go_to_measure_error.data()
                                                 : "Enter to go · Esc to cancel", NK_TEXT_LEFT);
     nk_popup_end(context);
 }
 
 static void begin_layer_menu_input_frame() {
-    state.layers_menu_input_consumed = wormedit::ui::chrome::context_menu_owns_input(state.layers_menu);
+    state.layer_editor.layers_menu_input_consumed = wormedit::ui::chrome::context_menu_owns_input(state.layer_editor.layers_menu);
 }
 
 static void close_hidden_layer_actions(bool visible) {
     if (visible) return;
-    wormedit::ui::chrome::context_menu_abandon(state.layers_menu);
-    state.semantic_layer_name_editor_visible = false;
-    state.semantic_layer_name_focus_pending = false;
-    state.semantic_layer_color_editor_visible = false;
+    wormedit::ui::chrome::context_menu_abandon(state.layer_editor.layers_menu);
+    state.layer_editor.semantic_layer_name_editor_visible = false;
+    state.layer_editor.semantic_layer_name_focus_pending = false;
+    state.layer_editor.semantic_layer_color_editor_visible = false;
 }
 
 struct ComposeDockLayout {
@@ -1497,8 +1497,8 @@ struct ComposeDockLayout {
 
 static void close_hidden_offset_editor(nk_context* context, bool inspector_drawn,
                                        bool timing_focus) {
-    if (!state.inline_offset_open) return;
-    const bool visible = state.inline_offset_in_inspector ? inspector_drawn
+    if (!state.inline_offset.inline_offset_open) return;
+    const bool visible = state.inline_offset.inline_offset_in_inspector ? inspector_drawn
         : timing_focus && nk_window_get_bounds(context).w >= 900.0f;
     if (!visible) {
         worm_ui_nuklear_cancel_inline_offset(state);
@@ -1513,17 +1513,17 @@ static auto compose_dock_layout(nk_context* context, const WormUiComposeView* vi
     const auto compose_body_height = std::max(
         64.0f, compose_body_bounds.y + compose_body_bounds.h - body_top -
                    context->style.window.spacing.y);
-    const auto sounds_requested = state.sounds_panel_visible && view->keysounds_available &&
+    const auto sounds_requested = state.dock_layout.sounds_panel_visible && view->keysounds_available &&
         wormedit::ui::compose_notes_editable(compose_mode_of(*view));
-    state.compact_dock_layout = compose_body_bounds.w < 1100.0f;
-    const auto compact_sounds_layout = sounds_requested && state.compact_dock_layout;
-    const auto inspector_drawn = state.inspector_visible && !compact_sounds_layout &&
+    state.dock_layout.compact_dock_layout = compose_body_bounds.w < 1100.0f;
+    const auto compact_sounds_layout = sounds_requested && state.dock_layout.compact_dock_layout;
+    const auto inspector_drawn = state.dock_layout.inspector_visible && !compact_sounds_layout &&
         compose_body_bounds.w >= 540.0f &&
         wormedit::ui::compose_inspector_available(compose_mode_of(*view));
     const auto inspector_width = inspector_drawn
                                      ? std::clamp(compose_body_bounds.w * 0.24f, 280.0f, 380.0f)
                                      : 0.0f;
-    const auto layers_drawn = state.layers_panel_visible && !compact_sounds_layout &&
+    const auto layers_drawn = state.dock_layout.layers_panel_visible && !compact_sounds_layout &&
         compose_body_bounds.w >= 540.0f &&
         wormedit::ui::compose_notes_editable(compose_mode_of(*view));
     close_hidden_layer_actions(layers_drawn);
@@ -1535,19 +1535,19 @@ static auto compose_dock_layout(nk_context* context, const WormUiComposeView* vi
     const auto sounds_width = sounds_drawn
                                   ? std::clamp(compose_body_bounds.w * 0.2f, 292.0f, 340.0f)
                                   : 0.0f;
-    const auto bga_drawn = state.bga_panel_visible && view->scene_available &&
+    const auto bga_drawn = state.dock_layout.bga_panel_visible && view->scene_available &&
         compose_body_bounds.w >= 860.0f + layers_width + sounds_width;
     const auto bga_width = bga_drawn ? 292.0f : 0.0f;
     // Both side panels float over the right edge of the editor; the field gives up their width.
-    const auto measures_drawn = state.measures_panel_visible &&
+    const auto measures_drawn = state.dock_layout.measures_panel_visible &&
         compose_body_bounds.w >= 860.0f + layers_width + sounds_width + bga_width &&
         wormedit::ui::compose_notes_editable(compose_mode_of(*view));
     const auto measures_width = measures_drawn ? 220.0f : 0.0f;
     // The branch dock sits left of the field and pushes it over; below this width it hides instead.
-    const auto branch_drawn = state.branch_panel_visible && worm_ui_nuklear_bms_branch_panel_visible(view) &&
+    const auto branch_drawn = state.dock_layout.branch_panel_visible && worm_ui_nuklear_bms_branch_panel_visible(view) &&
         compose_body_bounds.w >= 900.0f;
     const auto branch_width = branch_drawn ? std::clamp(compose_body_bounds.w * 0.2f, 260.0f, 320.0f) : 0.0f;
-    state.branch_dock_width_drawn = branch_drawn ? branch_width + 8.0f : 0.0f;
+    state.dock_layout.branch_dock_width_drawn = branch_drawn ? branch_width + 8.0f : 0.0f;
     const auto side_width = inspector_width + (measures_drawn ? measures_width + 8.0f : 0.0f) +
                             (sounds_drawn ? sounds_width + 8.0f : 0.0f) +
                             (layers_drawn ? layers_width + 8.0f : 0.0f) +
@@ -1648,8 +1648,8 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     close_hidden_offset_editor(context, dock_layout.inspector_drawn, view->timing_focus);
     prepare_compose_quantize_input(context, *view, dock_layout.inspector_drawn, window_focused);
     const auto [compose_body_bounds, compose_body_height, inspector_drawn, inspector_width, layers_drawn, layers_width, sounds_drawn, sounds_width, bga_drawn, bga_width, measures_drawn, measures_width, branch_drawn, branch_width, side_width] = dock_layout;
-    state.sound_list_valid = false;
-    state.bga_list_valid = false;
+    state.sounds_dock.sound_list_valid = false;
+    state.bga_catalog.bga_list_valid = false;
     const auto editor_width = compose_body_bounds.w;
     const auto palette_drawn =
         wormedit::ui::compose_note_palette_visible(compose_mode_of(*view)) &&
@@ -1685,17 +1685,17 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     nk_layout_space_end(context);
     worm_ui_nuklear_render_bga_stack_picker(context, view, action, &state);
     render_go_to_measure(context, *view, *action, window_focused);
-    (void)worm_ui_nuklear_render_compose_bookmark_chooser(context, view->bookmark_chooser, action, window_focused, &state.bookmark_chooser);
+    (void)worm_ui_nuklear_render_compose_bookmark_chooser(context, view->bookmark_chooser, action, window_focused, &state.bookmark_ui.bookmark_chooser);
     render_compose_sound_picker(context, *view, *action, state, window_focused);
 }
 
 bool worm_ui_nuklear_compose_lane_focused(const WormUiComposeView* view, bool compose_tab_active,
                                           bool window_focused) {
     return compose_tab_active && worm_ui_nuklear_compose_canvas_input_available(
-        view, window_focused, state.inline_timing_open || state.go_to_measure_open ||
-            state.layers_menu.open || state.layers_menu_input_consumed || compose_quantize_owns_input() ||
-            wormedit::ui::chrome::context_menu_owns_input(state.snap_grid_menu) || compose_note_menu_consumed() ||
-            state.bookmark_rename.active || state.bookmark_rename.release_pending ||
-            (worm_ui_nuklear_bookmark_chooser_owns_input(state.bookmark_chooser) || compose_sound_picker_owns_input(state.sound_picker)), false) &&
+        view, window_focused, state.inline_timing.inline_timing_open || state.dialogs.go_to_measure_open ||
+            state.layer_editor.layers_menu.open || state.layer_editor.layers_menu_input_consumed || compose_quantize_owns_input() ||
+            wormedit::ui::chrome::context_menu_owns_input(state.snap_grid.snap_grid_menu) || compose_note_menu_consumed() ||
+            state.bookmark_ui.bookmark_rename.active || state.bookmark_ui.bookmark_rename.release_pending ||
+            (worm_ui_nuklear_bookmark_chooser_owns_input(state.bookmark_ui.bookmark_chooser) || compose_sound_picker_owns_input(state.sound_picker_ui.sound_picker)), false) &&
         view->cursor && view->cursor->lane_id != 0;
 }

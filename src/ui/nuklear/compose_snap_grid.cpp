@@ -19,7 +19,7 @@ void emit_snap(nk_context* context, const WormUiComposeView& view,
     action.compose_input_chart_id = view.chart_id;
     action.compose_input_document_revision = view.document_revision;
     action.compose_snap_denominator = denominator;
-    context_menu_close(worm_ui_nuklear_compose_state().snap_grid_menu, context);
+    context_menu_close(worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu, context);
 }
 void move_choice(nk_context* context, int count, int& selected) {
     int delta{};
@@ -32,7 +32,7 @@ void move_choice(nk_context* context, int count, int& selected) {
 void render_grid_popup(nk_context* context, const WormUiComposeView& view,
                        WormUiWorkspaceAction& action, bool available) {
     auto& state = worm_ui_nuklear_compose_state();
-    auto& menu = state.snap_grid_menu;
+    auto& menu = state.snap_grid.snap_grid_menu;
     const auto count = static_cast<int>(std::min<std::size_t>(view.supported_snap_denominator_count, 32));
     if (!available || count == 0) context_menu_close(menu, context);
     const auto height = context_menu_height(static_cast<float>((count + 3) / 4 + 3));
@@ -44,13 +44,13 @@ void render_grid_popup(nk_context* context, const WormUiComposeView& view,
                       static_cast<unsigned long long>(view.supported_snap_denominators[index]));
         labels[index] = storage[index].data();
     }
-    move_choice(context, count, state.snap_grid_choice);
+    move_choice(context, count, state.snap_grid.snap_grid_choice);
     nk_layout_row_dynamic(context, 22, 1);
     nk_label(context, "Editing grid", NK_TEXT_LEFT);
-    const auto chosen = ChipGrid{labels.data(), count, state.snap_grid_choice, 4}.render(context).chosen;
+    const auto chosen = ChipGrid{labels.data(), count, state.snap_grid.snap_grid_choice, 4}.render(context).chosen;
     if (chosen >= 0) emit_snap(context, view, action, view.supported_snap_denominators[chosen]);
     else if (nk_input_is_key_pressed(&context->input, NK_KEY_ENTER))
-        emit_snap(context, view, action, view.supported_snap_denominators[state.snap_grid_choice]);
+        emit_snap(context, view, action, view.supported_snap_denominators[state.snap_grid.snap_grid_choice]);
     nk_layout_row_dynamic(context, 22, 1);
     if (Button{"Find fitting snap", ButtonKind::secondary, nullptr,
                view.selected_note_count + view.selected_bgm_event_count != 0}.render(context)) {
@@ -67,18 +67,18 @@ void render_grid_popup(nk_context* context, const WormUiComposeView& view,
 void render_compose_snap_badge(nk_context* context, const WormUiComposeView& view,
                                WormUiWorkspaceAction& action, bool available) {
     auto& state = worm_ui_nuklear_compose_state();
-    auto& menu = state.snap_grid_menu;
+    auto& menu = state.snap_grid.snap_grid_menu;
     (void)context_menu_update(menu, context);
     char label[24];
     std::snprintf(label, sizeof(label), "1/%llu",
                   static_cast<unsigned long long>(view.area_snap_denominator));
     const auto bounds = nk_widget_bounds(context);
     if (Chip{label, menu.open, available, context_menu_owns_input(menu) ? nullptr : "Choose editing grid"}.render(context)) {
-        state.snap_grid_choice = 0;
+        state.snap_grid.snap_grid_choice = 0;
         const auto count = std::min<std::size_t>(view.supported_snap_denominator_count, 32);
         for (std::size_t index = 0; index < count; ++index)
             if (view.supported_snap_denominators[index] == view.area_snap_denominator)
-                state.snap_grid_choice = static_cast<int>(index);
+                state.snap_grid.snap_grid_choice = static_cast<int>(index);
         context_menu_open(menu, nk_vec2(bounds.x, bounds.y), stamp(view));
         menu.shared_keyboard_navigation = false;
     }

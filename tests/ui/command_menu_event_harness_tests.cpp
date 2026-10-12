@@ -115,9 +115,9 @@ TEST_CASE("Command menu rejects and cancels inline editors",
     for (int editor = 0; editor < 5; ++editor) {
         fixture_t fixture;
         auto& compose = worm_ui_nuklear_compose_state();
-        bool* active[] = {&compose.inline_timing_open, &compose.inline_offset_open,
-            &compose.go_to_measure_open, &compose.bookmark_rename.active,
-            &compose.bookmark_rename.release_pending};
+        bool* active[] = {&compose.inline_timing.inline_timing_open, &compose.inline_offset.inline_offset_open,
+            &compose.dialogs.go_to_measure_open, &compose.bookmark_ui.bookmark_rename.active,
+            &compose.bookmark_ui.bookmark_rename.release_pending};
         *active[editor] = true;
         expect_menu(!worm_ui_frontend_open_command_menu());
         *active[editor] = false;

@@ -82,7 +82,7 @@ TEST_CASE("repeated playing skips within 300 ms continue from the last target",
     constexpr auto quarter = audio::output_sample_rate / 4;
     const auto notch = [&](double amount) {
         // The audio clock has not caught up: the live playhead stays at row 10.
-        application.preview_playhead_absolute_row = 10.0;
+        application.transport.preview_playhead_absolute_row = 10.0;
         REQUIRE(skip_playing_playhead(application, chart, 4, playhead_skip_unit_t::snap, amount)
                     .accepted);
     };

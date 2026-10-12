@@ -106,24 +106,24 @@ void render_bmson_razor_mode(const BmsonTab& panel, bool can_move) {
                            !view.semantic_layer_paint_mode_active &&
                            !view.timing_stage_active;
     if (!can_razor) {
-        state->bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
+        state->bmson_input.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
         nk_widget_disable_begin(context);
     }
     nk_layout_row_dynamic(context, 24, 2);
     const auto continue_clicked = wormedit::ui::chrome::mode_button(
         context, "Razor continue", "Slice the selected BGM lane without restarting",
-        state->bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::continuation);
+        state->bmson_input.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::continuation);
     const auto restart_clicked = wormedit::ui::chrome::mode_button(
         context, "Razor restart", "Slice the selected BGM lane and restart playback",
-        state->bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::restart);
+        state->bmson_input.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::restart);
     if (!can_razor) nk_widget_disable_end(context);
     if (can_razor && (continue_clicked || restart_clicked)) {
         const auto choice = restart_clicked ? worm_ui_nuklear_bmson_razor_mode_t::restart
                                              : worm_ui_nuklear_bmson_razor_mode_t::continuation;
-        state->bmson_razor_mode = state->bmson_razor_mode == choice
+        state->bmson_input.bmson_razor_mode = state->bmson_input.bmson_razor_mode == choice
             ? worm_ui_nuklear_bmson_razor_mode_t::off : choice;
-        if (state->bmson_razor_mode != worm_ui_nuklear_bmson_razor_mode_t::off)
-            state->resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
+        if (state->bmson_input.bmson_razor_mode != worm_ui_nuklear_bmson_razor_mode_t::off)
+            state->resource_picker.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
     }
 }
 
@@ -181,17 +181,17 @@ void render_staged_bmson_regions(const BmsonTab& inspector) {
     if (view->staged_bmson_marker_count == 0 ||
         !nk_tree_push(context, NK_TREE_TAB, "Staged BMSON regions", NK_MAXIMIZED))
         return;
-    inspector.state->bmson_audition_index = std::clamp(inspector.state->bmson_audition_index, 1,
+    inspector.state->sounds_dock.bmson_audition_index = std::clamp(inspector.state->sounds_dock.bmson_audition_index, 1,
                                             static_cast<int>(view->staged_bmson_marker_count));
     nk_layout_row_dynamic(context, 24, 1);
-    nk_property_int(context, "Region", 1, &inspector.state->bmson_audition_index,
+    nk_property_int(context, "Region", 1, &inspector.state->sounds_dock.bmson_audition_index,
                     static_cast<int>(view->staged_bmson_marker_count), 1, 1.0f);
-    const auto selected_index = static_cast<std::size_t>(inspector.state->bmson_audition_index - 1);
+    const auto selected_index = static_cast<std::size_t>(inspector.state->sounds_dock.bmson_audition_index - 1);
     const auto assigned_lane = view->staged_bmson_marker_playable_lanes[selected_index];
     nk_labelf(context, NK_TEXT_LEFT, "%s · %s",
               view->staged_bmson_marker_restarts[selected_index] ? "Restart" : "Continue",
               assigned_lane == 0 ? "BGM" : "Playable key lane");
-    const auto selected = static_cast<std::uint64_t>(inspector.state->bmson_audition_index);
+    const auto selected = static_cast<std::uint64_t>(inspector.state->sounds_dock.bmson_audition_index);
     if (nk_button_label(context, "Audition staged region"))
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_AUDITION_DRAFT,
                              0.0, 0.0, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,

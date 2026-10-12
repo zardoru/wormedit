@@ -168,8 +168,8 @@ void process_compose_audition_requests(
     audio::preview_session_t& preview_session, sdl_preview_output_t& preview_output,
     runtime::chart_preview_t& preview_state, sdl_audition_output_t& audition_output,
     const notification_sink_t& notifications) {
-    auto object_request = std::exchange(cache.audition_request, std::nullopt);
-    auto draft_request = std::exchange(cache.draft_audition_request, std::nullopt);
+    auto object_request = std::exchange(cache.frame.audition_request, std::nullopt);
+    auto draft_request = std::exchange(cache.frame.draft_audition_request, std::nullopt);
     if (object_request) {
         process_object_request(*object_request, history, audition_sources, object_audition,
                                preview_session, preview_output, preview_state, audition_output,
@@ -197,8 +197,8 @@ void process_sound_audition_request(std::optional<resource_id_t>& request, const
 void process_compose_audition_requests(compose_scene_cache_t& cache,
                                        document_history_t& history, const notification_sink_t& notifications) {
     static_cast<void>(history);
-    const auto object_request = std::exchange(cache.audition_request, std::nullopt);
-    const auto draft_request = std::exchange(cache.draft_audition_request, std::nullopt);
+    const auto object_request = std::exchange(cache.frame.audition_request, std::nullopt);
+    const auto draft_request = std::exchange(cache.frame.draft_audition_request, std::nullopt);
     if (object_request || draft_request) {
         notifications.post(notification_severity_t::warning, notification_source_t::audio,
             "Audio preview is unavailable in this build.");

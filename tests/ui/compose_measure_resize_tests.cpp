@@ -56,7 +56,7 @@ struct resize_fixture_t {
         x = rect.x + static_cast<float>(200 * rect.width / v.viewport_width_pixels);
         pixels_per_view_pixel = static_cast<float>(rect.height / v.viewport_height_pixels);
         y_line = rect.y + static_cast<float>(500 * pixels_per_view_pixel);
-        worm_ui_nuklear_compose_state().measure_resize_active = false;
+        worm_ui_nuklear_compose_state().measure_resize.measure_resize_active = false;
     }
     auto screen_y(float view_offset) const { return y_line + view_offset * pixels_per_view_pixel; }
 };
@@ -68,10 +68,10 @@ TEST_CASE("Alt+drag of a bar line sets the measure meter on release",
     const std::array press{resize_motion(f.x, f.y_line), resize_button(f.x, f.y_line, true)};
     (void)f.harness.frame(press, SDL_KMOD_LALT);
     auto& state = worm_ui_nuklear_compose_state();
-    require_resize(state.measure_resize_active);
+    require_resize(state.measure_resize.measure_resize_active);
     const std::array drag{resize_motion(f.x, f.screen_y(-50))};
     (void)f.harness.frame(drag, SDL_KMOD_LALT);
-    check_resize(std::string(state.measure_resize_label.data()) == "7/8");
+    check_resize(std::string(state.measure_resize.measure_resize_label.data()) == "7/8");
     const std::array release{resize_motion(f.x, f.screen_y(-50)), resize_button(f.x, f.screen_y(-50), false)};
     const auto action = f.harness.frame(release, SDL_KMOD_LALT);
     require_resize(action.get().compose_action == WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER);
@@ -79,7 +79,7 @@ TEST_CASE("Alt+drag of a bar line sets the measure meter on release",
     check_resize(action.get().compose_measure_ids[0] == 77);
     check_resize(std::string(action.get().timing_meter_numerator_text) == "7");
     check_resize(std::string(action.get().timing_meter_denominator_text) == "8");
-    check_resize(!state.measure_resize_active);
+    check_resize(!state.measure_resize.measure_resize_active);
 }
 
 TEST_CASE("Alt+drag of a bar line can lengthen the measure",
@@ -101,10 +101,10 @@ TEST_CASE("Escape cancels an Alt+drag of a bar line", "[frontend-state][event-ha
     const std::array press{resize_motion(f.x, f.y_line), resize_button(f.x, f.y_line, true)};
     (void)f.harness.frame(press, SDL_KMOD_LALT);
     auto& state = worm_ui_nuklear_compose_state();
-    require_resize(state.measure_resize_active);
+    require_resize(state.measure_resize.measure_resize_active);
     const std::array escape{resize_key(SDLK_ESCAPE)};
     (void)f.harness.frame(escape, SDL_KMOD_LALT);
-    check_resize(!state.measure_resize_active);
+    check_resize(!state.measure_resize.measure_resize_active);
     const std::array release{resize_motion(f.x, f.screen_y(-50)), resize_button(f.x, f.screen_y(-50), false)};
     const auto action = f.harness.frame(release, SDL_KMOD_LALT);
     check_resize(action.get().compose_action != WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER);
@@ -115,7 +115,7 @@ TEST_CASE("Alt press away from a bar line does not start a resize",
     resize_fixture_t f;
     const std::array press{resize_motion(f.x, f.screen_y(-120)), resize_button(f.x, f.screen_y(-120), true)};
     (void)f.harness.frame(press, SDL_KMOD_LALT);
-    check_resize(!worm_ui_nuklear_compose_state().measure_resize_active);
+    check_resize(!worm_ui_nuklear_compose_state().measure_resize.measure_resize_active);
 }
 
 TEST_CASE("Shift+Alt drag moves only the bar line and trades length with the next measure",
@@ -125,11 +125,11 @@ TEST_CASE("Shift+Alt drag moves only the bar line and trades length with the nex
     const std::array press{resize_motion(f.x, f.y_line), resize_button(f.x, f.y_line, true)};
     (void)f.harness.frame(press, both);
     auto& state = worm_ui_nuklear_compose_state();
-    require_resize(state.measure_resize_active);
-    check_resize(state.measure_resize_move_line);
+    require_resize(state.measure_resize.measure_resize_active);
+    check_resize(state.measure_resize.measure_resize_move_line);
     const std::array drag{resize_motion(f.x, f.screen_y(-50))};
     (void)f.harness.frame(drag, both);
-    check_resize(std::string(state.measure_resize_label.data()) == "7/8 | 9/8");
+    check_resize(std::string(state.measure_resize.measure_resize_label.data()) == "7/8 | 9/8");
     const std::array release{resize_motion(f.x, f.screen_y(-50)), resize_button(f.x, f.screen_y(-50), false)};
     const auto action = f.harness.frame(release, both);
     require_resize(action.get().compose_action == WORM_UI_COMPOSE_ACTION_MOVE_BAR_LINE);

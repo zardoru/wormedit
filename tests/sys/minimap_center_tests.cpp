@@ -73,14 +73,14 @@ struct projection_fixture_t {
     bgm_bar_range_t range{0.2, 0.6};
 
     projection_fixture_t() {
-        cache.marker_timing_index = timing;
-        cache.chart = chart.id;
-        cache.revision = 5;
+        cache.timing.marker_timing_index = timing;
+        cache.scene.chart = chart.id;
+        cache.scene.revision = 5;
         flattened.view.compose.visible = true;
         flattened.view.compose.scene_available = true;
         flattened.view.compose.project_id = 1;
         flattened.view.compose.chart_id = chart.id.value;
-        flattened.view.compose.document_revision = cache.revision;
+        flattened.view.compose.document_revision = cache.scene.revision;
         flattened.view.compose.selected_audio_asset_id = 12;
         flattened.view.compose.viewport_height_pixels = 200;
         flattened.view.compose.pixels_per_standard_measure = 200;
@@ -227,7 +227,7 @@ TEST_CASE("song bar uses a BMS default and preserves explicit session choices ac
     binding.workspace->selected_chart = chart.id;
     binding.workspace->active_tab = workspace_tab_t::compose;
     compose_scene_cache_t cache;
-    cache.bgm_bar_audio_seen = true;
+    cache.frame.bgm_bar_audio_seen = true;
     application_command_state_t application;
     std::optional<editor_interaction_state_t> interaction;
     flattened_workspace_t flattened;

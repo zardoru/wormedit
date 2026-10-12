@@ -136,7 +136,7 @@ auto skip_playhead_for_navigation(wormedit::editor_navigation_action_t action,
     return {.message = outcome.status,
             .severity =
                 outcome.accepted ? notification_severity_t::hint : notification_severity_t::warning,
-            .posted_by_seek = outcome.accepted && application.transport_seek_posts_feedback};
+            .posted_by_seek = outcome.accepted && application.transport.transport_seek_posts_feedback};
 }
 
 } // namespace compose_navigation_input_detail

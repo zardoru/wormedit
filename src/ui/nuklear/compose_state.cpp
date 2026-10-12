@@ -22,20 +22,20 @@
 
 void reset_armed_resource(worm_ui_nuklear_compose_state_t& state,
                           compose_resource_reset_reason_t reason) {
-    state.armed_resource_id = 0;
-    state.armed_from_sounds_dock = state.armed_from_bga_dock = false;
-    state.draw_source_kind = 0;
-    state.draw_source_id = 0;
-    state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
+    state.resource_picker.armed_resource_id = 0;
+    state.keysound_catalog.armed_from_sounds_dock = state.bga_catalog.armed_from_bga_dock = false;
+    state.pointer_capture.draw_source_kind = 0;
+    state.pointer_capture.draw_source_id = 0;
+    state.resource_picker.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
     if (reason != compose_resource_reset_reason_t::source_cleared) {
-        state.resource_selection_chart_id = state.resource_selection_object_id =
-            state.resource_selection_assigned_id = 0;
+        state.resource_picker.resource_selection_chart_id = state.resource_picker.resource_selection_object_id =
+            state.resource_picker.resource_selection_assigned_id = 0;
     }
 }
 
 auto armed_resource_origin(const worm_ui_nuklear_compose_state_t& state) -> compose_resource_origin_t {
-    if (state.armed_from_bga_dock) return compose_resource_origin_t::bga;
-    return state.armed_from_sounds_dock ? compose_resource_origin_t::sounds : compose_resource_origin_t::selection;
+    if (state.bga_catalog.armed_from_bga_dock) return compose_resource_origin_t::bga;
+    return state.keysound_catalog.armed_from_sounds_dock ? compose_resource_origin_t::sounds : compose_resource_origin_t::selection;
 }
 
 void set_armed_resource(worm_ui_nuklear_compose_state_t& state, std::uint64_t id,
@@ -44,13 +44,13 @@ void set_armed_resource(worm_ui_nuklear_compose_state_t& state, std::uint64_t id
         reset_armed_resource(state, compose_resource_reset_reason_t::source_cleared);
         return;
     }
-    state.armed_resource_id = id;
-    state.armed_from_sounds_dock = origin == compose_resource_origin_t::sounds;
-    state.armed_from_bga_dock = origin == compose_resource_origin_t::bga;
+    state.resource_picker.armed_resource_id = id;
+    state.keysound_catalog.armed_from_sounds_dock = origin == compose_resource_origin_t::sounds;
+    state.bga_catalog.armed_from_bga_dock = origin == compose_resource_origin_t::bga;
     if (origin == compose_resource_origin_t::sounds)
-        state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::sample;
+        state.resource_picker.resource_filter = worm_ui_nuklear_compose_resource_filter_t::sample;
     else if (origin == compose_resource_origin_t::bga)
-        state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
+        state.resource_picker.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
 }
 
 namespace {
@@ -129,29 +129,29 @@ auto worm_ui_nuklear_compose_canvas_input_available(const WormUiComposeView* vie
 
 auto worm_ui_nuklear_begin_shift_range(worm_ui_nuklear_compose_state_t& state,
     std::uint8_t shift_keys) -> bool {
-    if (shift_keys == 0 || state.space_range_hold_active) return false;
-    state.shift_range_keys = shift_keys;
-    state.space_range_hold_active = true;
-    state.space_range_hold_moved = false;
+    if (shift_keys == 0 || state.range_selection.space_range_hold_active) return false;
+    state.range_selection.shift_range_keys = shift_keys;
+    state.range_selection.space_range_hold_active = true;
+    state.range_selection.space_range_hold_moved = false;
     return true;
 }
 
 auto worm_ui_nuklear_release_shift_range(worm_ui_nuklear_compose_state_t& state,
     std::uint8_t released_key) -> bool {
-    if (!state.space_range_hold_active || state.space_range_latched || released_key == 0) return false;
-    state.shift_range_keys &= static_cast<std::uint8_t>(~released_key);
-    return state.shift_range_keys == 0;
+    if (!state.range_selection.space_range_hold_active || state.range_selection.space_range_latched || released_key == 0) return false;
+    state.range_selection.shift_range_keys &= static_cast<std::uint8_t>(~released_key);
+    return state.range_selection.shift_range_keys == 0;
 }
 
 auto worm_ui_nuklear_alt_wheel_step(worm_ui_nuklear_compose_state_t& state,
     double delta, bool alt, std::uint64_t now_ms) -> int {
     if (!alt || delta == 0.0) {
-        state.alt_wheel_last_event_ms.reset();
+        state.range_selection.alt_wheel_last_event_ms.reset();
         return 0;
     }
     if (!std::isfinite(delta)) return 0;
-    const auto previous = state.alt_wheel_last_event_ms;
-    state.alt_wheel_last_event_ms = now_ms;
+    const auto previous = state.range_selection.alt_wheel_last_event_ms;
+    state.range_selection.alt_wheel_last_event_ms = now_ms;
     // SDL generally emits no terminating zero event: a quiet interval ends the burst.
     constexpr std::uint64_t quiet_interval_ms = 150;
     if (previous && now_ms >= *previous && now_ms - *previous < quiet_interval_ms) return 0;
@@ -300,7 +300,7 @@ auto worm_ui_nuklear_update_bgm_column_count_input_owner(
     worm_ui_nuklear_compose_state_t& state, std::uint64_t chart_id,
     std::uint64_t revision, bool editable, bool field_clicked, bool edit_active,
     bool edit_finished) -> bool {
-    auto& edit = state.bgm_column_count_edit;
+    auto& edit = state.inline_offset.bgm_column_count_edit;
     if (!editable || chart_id == 0) {
         edit = {};
         return false;
@@ -328,7 +328,7 @@ auto worm_ui_nuklear_update_bgm_column_count_input_owner(
 
 void worm_ui_nuklear_retire_bgm_column_count_input_owner(
     worm_ui_nuklear_compose_state_t& state, const nk_context* context) {
-    auto& edit = state.bgm_column_count_edit;
+    auto& edit = state.inline_offset.bgm_column_count_edit;
     if (!edit.release_pending) return;
     if (!wormedit::ui::chrome::popup_update_release_pending(
             context, edit.release_pending, wormedit::ui::chrome::PopupReleaseKeys::all))
@@ -338,82 +338,82 @@ void worm_ui_nuklear_retire_bgm_column_count_input_owner(
 void worm_ui_nuklear_update_compose_release_latches(
     worm_ui_nuklear_compose_state_t& state, const nk_context* context) {
     using namespace wormedit::ui::chrome;
-    (void)popup_update_release_pending(context, state.bga_renumber_release_pending);
-    (void)popup_update_release_pending(context, state.keysound_renumber_release_pending);
-    (void)popup_update_release_pending(context, state.keysound_slot_release_pending);
-    (void)popup_update_release_pending(context, state.bookmark_chooser.release_pending, PopupReleaseKeys::all);
-    (void)popup_update_release_pending(context, state.sound_picker.release_pending, PopupReleaseKeys::all);
-    (void)popup_update_release_pending(context, state.bookmark_rename.release_pending, PopupReleaseKeys::text);
+    (void)popup_update_release_pending(context, state.bga_catalog.bga_renumber_release_pending);
+    (void)popup_update_release_pending(context, state.keysound_slots.keysound_renumber_release_pending);
+    (void)popup_update_release_pending(context, state.keysound_slots.keysound_slot_release_pending);
+    (void)popup_update_release_pending(context, state.bookmark_ui.bookmark_chooser.release_pending, PopupReleaseKeys::all);
+    (void)popup_update_release_pending(context, state.sound_picker_ui.sound_picker.release_pending, PopupReleaseKeys::all);
+    (void)popup_update_release_pending(context, state.bookmark_ui.bookmark_rename.release_pending, PopupReleaseKeys::text);
     worm_ui_nuklear_retire_bgm_column_count_input_owner(state, context);
 }
 
 void worm_ui_nuklear_reset_draw_right_capture(worm_ui_nuklear_compose_state_t& state) {
-    state.draw_right_candidate = state.draw_erase_pointer_active = false;
-    state.draw_right_press_pending = state.draw_right_release_pending = state.draw_right_native_down = false;
-    state.draw_right_dragged = false;
-    state.draw_right_screen_x = state.draw_right_screen_y = 0;
-    state.draw_right_current_screen_x = state.draw_right_current_screen_y = 0;
-    state.draw_right_anchor_x = state.draw_right_anchor_y = 0;
+    state.pointer_capture.draw_right_candidate = state.pointer_capture.draw_erase_pointer_active = false;
+    state.pointer_capture.draw_right_press_pending = state.pointer_capture.draw_right_release_pending = state.pointer_capture.draw_right_native_down = false;
+    state.pointer_capture.draw_right_dragged = false;
+    state.pointer_capture.draw_right_screen_x = state.pointer_capture.draw_right_screen_y = 0;
+    state.pointer_capture.draw_right_current_screen_x = state.pointer_capture.draw_right_current_screen_y = 0;
+    state.pointer_capture.draw_right_anchor_x = state.pointer_capture.draw_right_anchor_y = 0;
 }
 
 void worm_ui_nuklear_advance_resource_picker(std::uint64_t placed_resource_id,
                                               std::uint64_t next_resource_id) {
     auto& state = worm_ui_nuklear_compose_state();
-    if (placed_resource_id == 0 || state.armed_resource_id != placed_resource_id) {
+    if (placed_resource_id == 0 || state.resource_picker.armed_resource_id != placed_resource_id) {
         return;
     }
-    if (state.armed_from_bga_dock) {
-        if (!state.bga_auto_increment_on_place ||
-            state.resource_filter != worm_ui_nuklear_compose_resource_filter_t::bga) return;
-        if (std::ranges::find(state.bga_advance_ids, placed_resource_id) ==
-            state.bga_advance_ids.end()) {
-            state.bga_auto_increment_on_place = false;
-            state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
+    if (state.bga_catalog.armed_from_bga_dock) {
+        if (!state.bga_catalog.bga_auto_increment_on_place ||
+            state.resource_picker.resource_filter != worm_ui_nuklear_compose_resource_filter_t::bga) return;
+        if (std::ranges::find(state.bga_catalog.bga_advance_ids, placed_resource_id) ==
+            state.bga_catalog.bga_advance_ids.end()) {
+            state.bga_catalog.bga_auto_increment_on_place = false;
+            state.resource_picker.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
             return;
         }
-        next_resource_id = next_ordered_resource(state.bga_advance_ids, placed_resource_id);
+        next_resource_id = next_ordered_resource(state.bga_catalog.bga_advance_ids, placed_resource_id);
         if (next_resource_id) {
             const std::array next{next_resource_id};
-            worm_ui_keysound_clear(state.bga_selection);
-            worm_ui_keysound_select_all(state.bga_selection, next);
-            state.bga_reveal_primary = true;
+            worm_ui_keysound_clear(state.bga_catalog.bga_selection);
+            worm_ui_keysound_select_all(state.bga_catalog.bga_selection, next);
+            state.bga_catalog.bga_reveal_primary = true;
         } else {
-            state.bga_auto_increment_on_place = false;
-            state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
+            state.bga_catalog.bga_auto_increment_on_place = false;
+            state.resource_picker.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
         }
         if (next_resource_id) {
             set_armed_resource(state, next_resource_id, compose_resource_origin_t::bga);
-            if (state.draw_source_kind == 2) state.draw_source_id = next_resource_id;
+            if (state.pointer_capture.draw_source_kind == 2) state.pointer_capture.draw_source_id = next_resource_id;
         }
         return;
     }
-    if (!state.auto_increment_on_place) return;
-    if (state.armed_from_sounds_dock) {
-        next_resource_id = next_visible_keysound(state.keysound_advance_rows, placed_resource_id);
+    if (!state.resource_picker.auto_increment_on_place) return;
+    if (state.keysound_catalog.armed_from_sounds_dock) {
+        next_resource_id = next_visible_keysound(state.keysound_catalog.keysound_advance_rows, placed_resource_id);
         if (next_resource_id) {
             const std::array next{next_resource_id};
-            worm_ui_keysound_clear(state.keysound_selection);
-            worm_ui_keysound_select_all(state.keysound_selection, next);
-            state.keysound_reveal_primary = true;
+            worm_ui_keysound_clear(state.keysound_catalog.keysound_selection);
+            worm_ui_keysound_select_all(state.keysound_catalog.keysound_selection, next);
+            state.keysound_catalog.keysound_reveal_primary = true;
         }
     }
     if (next_resource_id == 0) {
-        state.auto_increment_on_place = false;
-        state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
+        state.resource_picker.auto_increment_on_place = false;
+        state.resource_picker.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
     } else {
         set_armed_resource(state, next_resource_id, armed_resource_origin(state));
-        if (state.draw_source_kind == 1) state.draw_source_id = next_resource_id;
+        if (state.pointer_capture.draw_source_kind == 1) state.pointer_capture.draw_source_id = next_resource_id;
     }
 }
 
 auto worm_ui_nuklear_armed_dock_sound(const worm_ui_nuklear_compose_state_t& state,
                                       const WormUiComposeView& view) -> std::uint64_t {
-    if (state.armed_resource_id == 0 || !state.armed_from_sounds_dock) return 0;
-    if (view.draw_source_kind == 1 && view.draw_source_id == state.armed_resource_id)
-        return view.draw_source_missing ? 0 : state.armed_resource_id;
+    if (state.resource_picker.armed_resource_id == 0 || !state.keysound_catalog.armed_from_sounds_dock) return 0;
+    if (view.draw_source_kind == 1 && view.draw_source_id == state.resource_picker.armed_resource_id)
+        return view.draw_source_missing ? 0 : state.resource_picker.armed_resource_id;
     for (std::size_t index = 0; index < view.keysound_count; ++index) {
         const auto& row = view.keysounds[index];
-        if (row.resource_id == state.armed_resource_id) return row.missing ? 0 : row.resource_id;
+        if (row.resource_id == state.resource_picker.armed_resource_id) return row.missing ? 0 : row.resource_id;
     }
     return 0;
 }
@@ -421,46 +421,46 @@ auto worm_ui_nuklear_armed_dock_sound(const worm_ui_nuklear_compose_state_t& sta
 void worm_ui_nuklear_tag_last_compose_input_sound(const worm_ui_nuklear_compose_state_t& state,
                                                   const WormUiComposeView& view,
                                                   WormUiWorkspaceAction& action) {
-    if (state.action_overflowed || action.compose_input_count == 0) return;
+    if (state.input_queue.action_overflowed || action.compose_input_count == 0) return;
     action.compose_inputs[action.compose_input_count - 1].resource_id =
         worm_ui_nuklear_armed_dock_sound(state, view);
 }
 
 auto worm_ui_nuklear_sound_list_contains(float x, float y) -> bool {
     const auto& state = worm_ui_nuklear_compose_state();
-    return state.sound_list_valid && x >= state.sound_list_x &&
-           x < state.sound_list_x + state.sound_list_width && y >= state.sound_list_y &&
-           y < state.sound_list_y + state.sound_list_height;
+    return state.sounds_dock.sound_list_valid && x >= state.sounds_dock.sound_list_x &&
+           x < state.sounds_dock.sound_list_x + state.sounds_dock.sound_list_width && y >= state.sounds_dock.sound_list_y &&
+           y < state.sounds_dock.sound_list_y + state.sounds_dock.sound_list_height;
 }
 
 auto worm_ui_nuklear_stem_lane_width(const worm_ui_nuklear_compose_state_t& state,
     std::uint64_t project, std::uint64_t chart, std::uint64_t lane) -> double {
-    const auto found = state.stem_lane_widths.find({project, chart, lane});
-    return found == state.stem_lane_widths.end() ? 36.0 : found->second;
+    const auto found = state.stem_lanes.stem_lane_widths.find({project, chart, lane});
+    return found == state.stem_lanes.stem_lane_widths.end() ? 36.0 : found->second;
 }
 void worm_ui_nuklear_set_stem_lane_width(worm_ui_nuklear_compose_state_t& state,
     std::uint64_t project, std::uint64_t chart, std::uint64_t lane, double width) {
     if (!project || !chart || !lane) return;
-    state.stem_lane_widths[{project, chart, lane}] =
+    state.stem_lanes.stem_lane_widths[{project, chart, lane}] =
         std::isnan(width) ? 36.0 : std::clamp(width, 36.0, 480.0);
 }
 void worm_ui_nuklear_cancel_stem_lane_resize(worm_ui_nuklear_compose_state_t& state,
                                            bool restore) {
-    if (state.stem_lane_resize && restore) {
-        const auto& resize = *state.stem_lane_resize;
+    if (state.stem_lanes.stem_lane_resize && restore) {
+        const auto& resize = *state.stem_lanes.stem_lane_resize;
         const auto [project, chart, lane] = resize.key;
         worm_ui_nuklear_set_stem_lane_width(state, project, chart, lane, resize.anchor_width);
     }
-    state.stem_lane_resize.reset();
-    state.stem_lane_resize_cursor_requested = false;
-    state.stem_lane_resize_hover_lane = 0;
+    state.stem_lanes.stem_lane_resize.reset();
+    state.stem_lanes.stem_lane_resize_cursor_requested = false;
+    state.stem_lanes.stem_lane_resize_hover_lane = 0;
 }
 void worm_ui_nuklear_cancel_stale_stem_lane_resize(worm_ui_nuklear_compose_state_t& state,
     const WormUiComposeView& view, bool window_focused) {
     if (!window_focused || view.input_occluded ||
-        (state.stem_lane_resize &&
-         (std::get<0>(state.stem_lane_resize->key) != view.project_id ||
-          std::get<1>(state.stem_lane_resize->key) != view.chart_id)))
+        (state.stem_lanes.stem_lane_resize &&
+         (std::get<0>(state.stem_lanes.stem_lane_resize->key) != view.project_id ||
+          std::get<1>(state.stem_lanes.stem_lane_resize->key) != view.chart_id)))
         worm_ui_nuklear_cancel_stem_lane_resize(state);
 }
 void worm_ui_nuklear_reset_compose_state() {
@@ -472,48 +472,48 @@ auto worm_ui_nuklear_begin_inline_offset(worm_ui_nuklear_compose_state_t& state,
                                          const WormUiComposeView& view) -> bool {
     if (!view.audio_offset_editable || view.input_occluded || !view.chart_id ||
         !view.waveform_audio_offset_denominator ||
-        state.inline_timing_open || state.go_to_measure_open) return false;
-    state.inline_offset_open = true;
-    state.inline_offset_focus_pending = true;
-    state.inline_offset_cancel_pending = false;
-    state.inline_offset_input_consumed = true;
-    state.inline_offset_chart_id = view.chart_id;
-    state.inline_offset_revision = view.document_revision;
-    state.inline_offset_error.fill(0);
-    std::snprintf(state.inline_offset_text.data(), state.inline_offset_text.size(), "%lld/%llu",
+        state.inline_timing.inline_timing_open || state.dialogs.go_to_measure_open) return false;
+    state.inline_offset.inline_offset_open = true;
+    state.inline_offset.inline_offset_focus_pending = true;
+    state.inline_offset.inline_offset_cancel_pending = false;
+    state.inline_offset.inline_offset_input_consumed = true;
+    state.inline_offset.inline_offset_chart_id = view.chart_id;
+    state.inline_offset.inline_offset_revision = view.document_revision;
+    state.inline_offset.inline_offset_error.fill(0);
+    std::snprintf(state.inline_offset.inline_offset_text.data(), state.inline_offset.inline_offset_text.size(), "%lld/%llu",
         static_cast<long long>(view.waveform_audio_offset_numerator),
         static_cast<unsigned long long>(view.waveform_audio_offset_denominator));
     return true;
 }
 
 void worm_ui_nuklear_cancel_inline_offset(worm_ui_nuklear_compose_state_t& state) {
-    state.inline_offset_input_consumed = true;
-    state.inline_offset_open = false;
-    state.inline_offset_focus_pending = false;
-    state.inline_offset_cancel_pending = false;
+    state.inline_offset.inline_offset_input_consumed = true;
+    state.inline_offset.inline_offset_open = false;
+    state.inline_offset.inline_offset_focus_pending = false;
+    state.inline_offset.inline_offset_cancel_pending = false;
 }
 
 void worm_ui_nuklear_update_inline_offset(worm_ui_nuklear_compose_state_t& state,
     const WormUiComposeView& view, WormUiWorkspaceAction& action, bool committed, bool deactivated) {
-    if (!state.inline_offset_open) return;
-    state.inline_offset_input_consumed = true;
-    if (state.inline_offset_cancel_pending || !view.audio_offset_editable ||
-        state.inline_offset_chart_id != view.chart_id || state.inline_offset_revision != view.document_revision) {
+    if (!state.inline_offset.inline_offset_open) return;
+    state.inline_offset.inline_offset_input_consumed = true;
+    if (state.inline_offset.inline_offset_cancel_pending || !view.audio_offset_editable ||
+        state.inline_offset.inline_offset_chart_id != view.chart_id || state.inline_offset.inline_offset_revision != view.document_revision) {
         worm_ui_nuklear_cancel_inline_offset(state);
         return;
     }
     if (committed) {
-        const auto value = parse_timing_scalar(state.inline_offset_text.data());
+        const auto value = parse_timing_scalar(state.inline_offset.inline_offset_text.data());
         if (!value) {
-            std::snprintf(state.inline_offset_error.data(), state.inline_offset_error.size(),
+            std::snprintf(state.inline_offset.inline_offset_error.data(), state.inline_offset.inline_offset_error.size(),
                           "Enter valid offset seconds (signed decimal or fraction)");
-            state.inline_offset_focus_pending = true;
+            state.inline_offset.inline_offset_focus_pending = true;
             return;
         }
         if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
         action.compose_action = WORM_UI_COMPOSE_ACTION_APPLY_AUDIO_OFFSET;
-        action.compose_input_chart_id = state.inline_offset_chart_id;
-        action.compose_input_document_revision = state.inline_offset_revision;
+        action.compose_input_chart_id = state.inline_offset.inline_offset_chart_id;
+        action.compose_input_document_revision = state.inline_offset.inline_offset_revision;
         action.compose_audio_offset_numerator = value->numerator;
         action.compose_audio_offset_denominator = value->denominator;
         worm_ui_nuklear_cancel_inline_offset(state);
@@ -544,40 +544,40 @@ auto worm_ui_nuklear_inline_timing_review_new_stage(
     worm_ui_nuklear_compose_state_t& state, const WormUiTimingView& view,
     const WormUiWorkspaceAction& action, float anchor_x, float anchor_y) -> bool {
     if (!view.stage_active) {
-        state.inline_timing_stage_seen = false;
+        state.inline_timing.inline_timing_stage_seen = false;
         return false;
     }
-    const bool same_stage = state.inline_timing_stage_seen &&
-        state.inline_timing_seen_chart_id == view.chart_id &&
-        state.inline_timing_seen_revision == view.document_revision &&
-        state.inline_timing_seen_object_id == view.stage_existing_object_id &&
-        state.inline_timing_seen_lane == view.stage_lane &&
-        state.inline_timing_seen_stage_y == view.stage_marker_y_pixels;
+    const bool same_stage = state.inline_timing.inline_timing_stage_seen &&
+        state.inline_timing.inline_timing_seen_chart_id == view.chart_id &&
+        state.inline_timing.inline_timing_seen_revision == view.document_revision &&
+        state.inline_timing.inline_timing_seen_object_id == view.stage_existing_object_id &&
+        state.inline_timing.inline_timing_seen_lane == view.stage_lane &&
+        state.inline_timing.inline_timing_seen_stage_y == view.stage_marker_y_pixels;
     if (same_stage) return false;
-    if (state.inline_timing_open || state.inline_timing_popup_close_pending ||
+    if (state.inline_timing.inline_timing_open || state.inline_timing.inline_timing_popup_close_pending ||
         action.timing_stage_action != WORM_UI_TIMING_STAGE_NONE)
         return false;
-    state.inline_timing_stage_seen = true;
-    state.inline_timing_seen_chart_id = view.chart_id;
-    state.inline_timing_seen_revision = view.document_revision;
-    state.inline_timing_seen_object_id = view.stage_existing_object_id;
-    state.inline_timing_seen_lane = view.stage_lane;
-    state.inline_timing_seen_stage_y = view.stage_marker_y_pixels;
+    state.inline_timing.inline_timing_stage_seen = true;
+    state.inline_timing.inline_timing_seen_chart_id = view.chart_id;
+    state.inline_timing.inline_timing_seen_revision = view.document_revision;
+    state.inline_timing.inline_timing_seen_object_id = view.stage_existing_object_id;
+    state.inline_timing.inline_timing_seen_lane = view.stage_lane;
+    state.inline_timing.inline_timing_seen_stage_y = view.stage_marker_y_pixels;
     const bool editable_new_value = view.stage_existing_object_id == 0 &&
         (view.stage_lane == WORM_UI_TIMING_LANE_BPM || view.stage_lane == WORM_UI_TIMING_LANE_SCROLL);
-    if (!editable_new_value || state.timing_stage_drag_active)
+    if (!editable_new_value || state.timing_drag.timing_stage_drag_active)
         return false;
 
-    state.inline_timing_open = true;
-    state.inline_timing_focus_pending = true;
-    state.inline_timing_chart_id = view.chart_id;
-    state.inline_timing_revision = view.document_revision;
-    state.inline_timing_object_id = view.stage_existing_object_id;
-    state.inline_timing_lane = view.stage_lane;
-    state.inline_timing_anchor_screen_x = anchor_x;
-    state.inline_timing_anchor_screen_y = anchor_y;
-    state.inline_timing_text.fill('\0');
-    state.inline_timing_error.fill('\0');
+    state.inline_timing.inline_timing_open = true;
+    state.inline_timing.inline_timing_focus_pending = true;
+    state.inline_timing.inline_timing_chart_id = view.chart_id;
+    state.inline_timing.inline_timing_revision = view.document_revision;
+    state.inline_timing.inline_timing_object_id = view.stage_existing_object_id;
+    state.inline_timing.inline_timing_lane = view.stage_lane;
+    state.inline_timing.inline_timing_anchor_screen_x = anchor_x;
+    state.inline_timing.inline_timing_anchor_screen_y = anchor_y;
+    state.inline_timing.inline_timing_text.fill('\0');
+    state.inline_timing.inline_timing_error.fill('\0');
     return true;
 }
 
@@ -635,10 +635,10 @@ auto worm_ui_nuklear_inline_timing_confirm(const WormUiTimingView& view, const c
 
 void worm_ui_nuklear_inline_timing_cancel(worm_ui_nuklear_compose_state_t& state,
                                          WormUiWorkspaceAction& action) {
-    state.inline_timing_input_consumed = true;
-    state.inline_timing_open = false;
-    state.inline_timing_focus_pending = false;
-    state.inline_timing_popup_close_pending = true;
+    state.inline_timing.inline_timing_input_consumed = true;
+    state.inline_timing.inline_timing_open = false;
+    state.inline_timing.inline_timing_focus_pending = false;
+    state.inline_timing.inline_timing_popup_close_pending = true;
     action.timing_stage_action = WORM_UI_TIMING_STAGE_CANCEL;
 }
 
@@ -646,15 +646,15 @@ void worm_ui_nuklear_inline_timing_update(worm_ui_nuklear_compose_state_t& state
                                          const WormUiTimingView& view,
                                          WormUiWorkspaceAction& action,
                                          bool committed, bool deactivated) {
-    state.inline_timing_input_consumed = true;
+    state.inline_timing.inline_timing_input_consumed = true;
     if (committed) {
-        if (worm_ui_nuklear_inline_timing_confirm(view, state.inline_timing_text.data(), action)) {
-            state.inline_timing_open = false;
-            state.inline_timing_focus_pending = false;
+        if (worm_ui_nuklear_inline_timing_confirm(view, state.inline_timing.inline_timing_text.data(), action)) {
+            state.inline_timing.inline_timing_open = false;
+            state.inline_timing.inline_timing_focus_pending = false;
         } else {
-            std::snprintf(state.inline_timing_error.data(), state.inline_timing_error.size(),
+            std::snprintf(state.inline_timing.inline_timing_error.data(), state.inline_timing.inline_timing_error.size(),
                           "Enter a valid timing value");
-            state.inline_timing_focus_pending = true;
+            state.inline_timing.inline_timing_focus_pending = true;
         }
     } else if (deactivated) {
         worm_ui_nuklear_inline_timing_cancel(state, action);
@@ -778,13 +778,13 @@ void worm_ui_nuklear_pinch_input(worm_ui_nuklear_pinch_gesture_t& gesture,
 
 void worm_ui_nuklear_pick_draw_source(worm_ui_nuklear_compose_state_t& state,
     WormUiWorkspaceAction& action, uint8_t kind, uint64_t id) {
-    state.draw_source_kind = id ? kind : 0;
-    state.draw_source_id = id;
+    state.pointer_capture.draw_source_kind = id ? kind : 0;
+    state.pointer_capture.draw_source_id = id;
     if (!id) reset_armed_resource(state, compose_resource_reset_reason_t::source_cleared);
     if (action.compose_input_count >= WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) return;
     action.compose_inputs[action.compose_input_count++] = {
         .kind = WORM_UI_COMPOSE_INPUT_DRAW_SOURCE,
-        .resource_role = state.draw_source_kind,
+        .resource_role = state.pointer_capture.draw_source_kind,
         .resource_id = id};
 }
 
@@ -794,11 +794,11 @@ bool worm_ui_nuklear_compose_context_click(const nk_context* context, const Worm
     const auto& mouse = context->input.mouse;
     const auto& button = mouse.buttons[NK_BUTTON_RIGHT];
     const auto& state = worm_ui_nuklear_compose_state();
-    const auto tracked = state.draw_right_press_pending || state.draw_right_release_pending || state.draw_right_candidate;
-    const auto x = tracked ? state.draw_right_screen_x : button.clicked_pos.x;
-    const auto y = tracked ? state.draw_right_screen_y : button.clicked_pos.y;
-    const auto current_x = tracked ? state.draw_right_current_screen_x : mouse.pos.x;
-    const auto current_y = tracked ? state.draw_right_current_screen_y : mouse.pos.y;
+    const auto tracked = state.pointer_capture.draw_right_press_pending || state.pointer_capture.draw_right_release_pending || state.pointer_capture.draw_right_candidate;
+    const auto x = tracked ? state.pointer_capture.draw_right_screen_x : button.clicked_pos.x;
+    const auto y = tracked ? state.pointer_capture.draw_right_screen_y : button.clicked_pos.y;
+    const auto current_x = tracked ? state.pointer_capture.draw_right_current_screen_x : mouse.pos.x;
+    const auto current_y = tracked ? state.pointer_capture.draw_right_current_screen_y : mouse.pos.y;
     return nk_input_is_mouse_released(&context->input, NK_BUTTON_RIGHT) &&
-        !state.draw_right_dragged && std::hypot(current_x - x, current_y - y) < 3.0;
+        !state.pointer_capture.draw_right_dragged && std::hypot(current_x - x, current_y - y) < 3.0;
 }

@@ -14,12 +14,12 @@ struct CatalogConfirmation {
 };
 inline auto catalog_confirmation(worm_ui_nuklear_compose_state_t& state, bool bga)
     -> CatalogConfirmation {
-    if (bga) return {state.bga_renumber_confirmation_open, state.bga_renumber_release_pending,
-        state.bga_renumber_project, state.bga_renumber_chart, state.bga_renumber_revision,
-        state.bga_renumber_resources};
-    return {state.keysound_renumber_confirmation_open, state.keysound_renumber_release_pending,
-        state.keysound_renumber_project, state.keysound_renumber_chart, state.keysound_renumber_revision,
-        state.keysound_renumber_resources};
+    if (bga) return {state.bga_catalog.bga_renumber_confirmation_open, state.bga_catalog.bga_renumber_release_pending,
+        state.bga_catalog.bga_renumber_project, state.bga_catalog.bga_renumber_chart, state.bga_catalog.bga_renumber_revision,
+        state.bga_catalog.bga_renumber_resources};
+    return {state.keysound_slots.keysound_renumber_confirmation_open, state.keysound_slots.keysound_renumber_release_pending,
+        state.keysound_slots.keysound_renumber_project, state.keysound_slots.keysound_renumber_chart, state.keysound_slots.keysound_renumber_revision,
+        state.keysound_slots.keysound_renumber_resources};
 }
 inline auto catalog_context(const WormUiComposeView& view) -> chrome::PopupContextStamp {
     return {view.project_id, view.chart_id, view.document_revision};
@@ -68,7 +68,7 @@ inline auto render_catalog_confirmation(nk_context* context, const WormUiCompose
     return choice;
 }
 inline auto slot_review_active(const worm_ui_nuklear_compose_state_t& state) -> bool {
-    return state.keysound_slot_confirmation_open || state.keysound_slot_release_pending ||
-           state.keysound_slot_batch.open || state.keysound_slot_batch.commit_pending;
+    return state.keysound_slots.keysound_slot_confirmation_open || state.keysound_slots.keysound_slot_release_pending ||
+           state.keysound_slots.keysound_slot_batch.open || state.keysound_slots.keysound_slot_batch.commit_pending;
 }
 } // namespace wormedit::ui::nuklear

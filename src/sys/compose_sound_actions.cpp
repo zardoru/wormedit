@@ -486,7 +486,7 @@ auto request_audition(const WormUiWorkspaceAction& action, const document_histor
     if (!resource || found == history.document.resources.end())
         return {notification_severity_t::warning, "That sound is no longer in the list."};
     if (found->missing) return {notification_severity_t::warning, "That sound's file is missing."};
-    application_state.pending_sound_audition = resource;
+    application_state.sound_selection.pending_sound_audition = resource;
     return {notification_severity_t::info, "Playing " + (found->name.empty() ? std::string{"sound"} : found->name) + "."};
 }
 

@@ -58,7 +58,7 @@ TEST_CASE("Fit drag switches literal Ctrl Alt onset mode without pointer motion"
     v.beat_fit_target_y_pixels = 120;
     const auto plain = h.frame({}, SDL_KMOD_CTRL);
     const auto* pi = find_fit_input(plain.get(), WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE);
-    INFO("active=" << worm_ui_nuklear_compose_state().beat_fit_drag_active << " ctrl=" << worm_ui_nuklear_compose_state().beat_fit_ctrl_held << " events=" << plain.get().compose_input_count);
+    INFO("active=" << worm_ui_nuklear_compose_state().waveform_drag.beat_fit_drag_active << " ctrl=" << worm_ui_nuklear_compose_state().waveform_drag.beat_fit_ctrl_held << " events=" << plain.get().compose_input_count);
     for (std::size_t i = 0; i < plain.get().compose_input_count; ++i) INFO("kind=" << plain.get().compose_inputs[i].kind);
     verify_fit_event(pi); verify_fit_event(pi->beat_fit_ctrl_held); verify_fit_event(!(pi->beat_fit_onset_snap_held));
     const auto onset = h.frame({}, static_cast<SDL_Keymod>(SDL_KMOD_CTRL | SDL_KMOD_ALT));
@@ -67,10 +67,10 @@ TEST_CASE("Fit drag switches literal Ctrl Alt onset mode without pointer motion"
     SDL_Event wheel{};
     wheel.type = SDL_EVENT_MOUSE_WHEEL; wheel.wheel.y = 1;
     wheel.wheel.mouse_x = x; wheel.wheel.mouse_y = y;
-    const auto step_before = worm_ui_nuklear_compose_state().beat_fit_snap_step_index;
+    const auto step_before = worm_ui_nuklear_compose_state().waveform_drag.beat_fit_snap_step_index;
     const std::array wheels{wheel};
     (void)h.frame(wheels, static_cast<SDL_Keymod>(SDL_KMOD_CTRL | SDL_KMOD_ALT));
-    verify_fit_event(worm_ui_nuklear_compose_state().beat_fit_snap_step_index == step_before);
+    verify_fit_event(worm_ui_nuklear_compose_state().waveform_drag.beat_fit_snap_step_index == step_before);
     const auto restored = h.frame({}, SDL_KMOD_CTRL);
     const auto* ri = find_fit_input(restored.get(), WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE);
     verify_fit_event(ri); verify_fit_event(!(ri->beat_fit_onset_snap_held));
@@ -133,7 +133,7 @@ struct timing_drag_fixture_t {
         v.speed_spans = &speed; v.speed_span_count = 1;
         v.recipe_areas = &recipe; v.recipe_area_count = 1;
         auto& s = worm_ui_nuklear_compose_state();
-        s.inspector_visible = s.layers_panel_visible = s.sounds_panel_visible = false;
+        s.dock_layout.inspector_visible = s.dock_layout.layers_panel_visible = s.dock_layout.sounds_panel_visible = false;
         (void)h.frame();
     }
     auto point(WormUiTimingLaneKind lane, double row_y) -> std::pair<float, float> {
@@ -166,7 +166,7 @@ TEST_CASE("Timing drags respect the timing lock before capture", "[event-harness
     (void)f.h.frame();
     (void)f.press(lane, 200);
     const auto& s = worm_ui_nuklear_compose_state();
-    verify_fit_event(!s.kiai_drag_active && !s.recipe_drag_active && !s.timing_stage_drag_active);
+    verify_fit_event(!s.timing_drag.kiai_drag_active && !s.timing_drag.recipe_drag_active && !s.timing_drag.timing_stage_drag_active);
 }
 
 TEST_CASE("Span drags retire before a locked stale or occluded release",
@@ -177,8 +177,8 @@ TEST_CASE("Span drags retire before a locked stale or occluded release",
     timing_drag_fixture_t f;
     auto& v = f.h.view().compose;
     const auto p = f.press(lane, 200);
-    verify_fit_event(worm_ui_nuklear_compose_state().kiai_drag_active ||
-                     worm_ui_nuklear_compose_state().recipe_drag_active);
+    verify_fit_event(worm_ui_nuklear_compose_state().timing_drag.kiai_drag_active ||
+                     worm_ui_nuklear_compose_state().timing_drag.recipe_drag_active);
     (void)f.h.frame(std::array{fit_motion(p.first, p.second + 25)});
     switch (interruption) {
     case 0: v.waveform_timing_locked = true; break;
@@ -191,8 +191,8 @@ TEST_CASE("Span drags retire before a locked stale or occluded release",
     verify_fit_event(!find_fit_input(end.get(), WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT));
     verify_fit_event(!find_fit_input(end.get(), WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT));
     const auto& s = worm_ui_nuklear_compose_state();
-    verify_fit_event(!s.kiai_drag_active && !s.recipe_drag_active);
-    verify_fit_event(!s.span_capture.active && !s.recipe_capture.active);
+    verify_fit_event(!s.timing_drag.kiai_drag_active && !s.timing_drag.recipe_drag_active);
+    verify_fit_event(!s.timing_drag.span_capture.active && !s.timing_drag.recipe_capture.active);
 }
 
 TEST_CASE("Span release uses the captured stamp and a screen pixel threshold",
@@ -214,7 +214,7 @@ TEST_CASE("Span release uses the captured stamp and a screen pixel threshold",
         verify_fit_event(edit->span_edge == WORM_UI_SPAN_HANDLE_END);
     }
     const auto& s = worm_ui_nuklear_compose_state();
-    verify_fit_event(!s.span_capture.active && !s.recipe_capture.active);
+    verify_fit_event(!s.timing_drag.span_capture.active && !s.timing_drag.recipe_capture.active);
 }
 
 TEST_CASE("Staged timing uses the shared lock and threshold while retaining Apply semantics",
@@ -234,7 +234,7 @@ TEST_CASE("Staged timing uses the shared lock and threshold while retaining Appl
     verify_fit_event(move.get().timing_chart_id == 1 && move.get().timing_document_revision == 1);
     const auto end = f.h.frame(std::array{fit_button(p.first, p.second + 20, false)});
     verify_fit_event(end.get().timing_stage_action == WORM_UI_TIMING_STAGE_NONE);
-    verify_fit_event(!worm_ui_nuklear_compose_state().timing_stage_capture.active);
+    verify_fit_event(!worm_ui_nuklear_compose_state().timing_drag.timing_stage_capture.active);
 }
 
 TEST_CASE("Beat and offset fit share zero movement and source change cancellation",
@@ -282,7 +282,7 @@ TEST_CASE("Beat and offset fit share zero movement and source change cancellatio
     verify_fit_event(find_fit_input(end.get(), expected) ||
                      (interruption == 4 && find_fit_input(end.get(), WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE)));
     const auto& s = worm_ui_nuklear_compose_state();
-    verify_fit_event(!s.beat_fit_drag_active && !s.offset_fit_drag_active && !s.fit_capture.active);
+    verify_fit_event(!s.waveform_drag.beat_fit_drag_active && !s.waveform_drag.offset_fit_drag_active && !s.timing_drag.fit_capture.active);
 }
 
 TEST_CASE("BGA drag releases under occlusion cannot submit a move",
@@ -302,13 +302,13 @@ TEST_CASE("BGA drag releases under occlusion cannot submit a move",
     const auto x = rect.x + 475.0f / 900 * rect.width;
     const auto y = rect.y + 200.0f / 600 * rect.height;
     (void)f.h.frame(std::array{fit_motion(x, y), fit_button(x, y, true)});
-    verify_fit_event(worm_ui_nuklear_compose_state().bga_event_move_candidate_active);
+    verify_fit_event(worm_ui_nuklear_compose_state().bga_interaction.bga_event_move_candidate_active);
     (void)f.h.frame(std::array{fit_motion(x, y + 20)});
-    verify_fit_event(worm_ui_nuklear_compose_state().bga_event_move_active);
+    verify_fit_event(worm_ui_nuklear_compose_state().bga_interaction.bga_event_move_active);
     v.input_occluded = occluded;
     const auto end = f.h.frame(std::array{fit_button(x, y + 20, false)});
     verify_fit_event((find_fit_input(end.get(), WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE) != nullptr) == !occluded);
-    verify_fit_event(!worm_ui_nuklear_compose_state().bga_capture.active);
+    verify_fit_event(!worm_ui_nuklear_compose_state().timing_drag.bga_capture.active);
 }
 
 TEST_CASE("Overview beat zero cancels clicks and commits only travelled drags",
@@ -323,11 +323,11 @@ TEST_CASE("Overview beat zero cancels clicks and commits only travelled drags",
     v.selected_audio_asset_id = 12; v.waveform_overview_sample_rate = 48000;
     v.waveform_overview_total_frames = 480000;
     auto& s = worm_ui_nuklear_compose_state();
-    s.inspector_visible = s.sounds_panel_visible = s.layers_panel_visible = false;
+    s.dock_layout.inspector_visible = s.dock_layout.sounds_panel_visible = s.dock_layout.layers_panel_visible = false;
     (void)h.frame();
     constexpr auto x = 351.0f, y = 120.0f;
     (void)h.frame(std::array{fit_motion(x, y), fit_button(x, y, true)});
-    const auto overview = s.waveform_overview_capture;
+    const auto overview = s.waveform_drag.waveform_overview_capture;
     verify_fit_event(overview.width > 0);
     (void)h.frame(std::array{fit_button(x, y, false)});
     v.waveform_proposed_audio_offset_denominator = 1;
@@ -341,7 +341,7 @@ TEST_CASE("Overview beat zero cancels clicks and commits only travelled drags",
         ? WORM_UI_AUDIO_OFFSET_DRAG_COMMIT : WORM_UI_AUDIO_OFFSET_DRAG_CANCEL));
     verify_fit_event(end.get().audio_offset_drag_chart_id == 1 &&
                      end.get().audio_offset_drag_document_revision == 1);
-    verify_fit_event(!s.waveform_beat_zero_drag_active && !s.beat_zero_capture.active);
+    verify_fit_event(!s.waveform_drag.waveform_beat_zero_drag_active && !s.timing_drag.beat_zero_capture.active);
 }
 
 TEST_CASE("Empty timing lanes preserve their distinct creation and selection verbs",
@@ -352,9 +352,9 @@ TEST_CASE("Empty timing lanes preserve their distinct creation and selection ver
     f.recipe.selected = true;
     const auto p = f.press(lane, 500);
     const auto& s = worm_ui_nuklear_compose_state();
-    verify_fit_event(s.kiai_drag_active == (lane == WORM_UI_TIMING_LANE_KIAI));
-    verify_fit_event(!s.recipe_drag_active);
-    if (s.kiai_drag_active) verify_fit_event(s.kiai_drag_edge == WORM_UI_SPAN_HANDLE_CREATE);
+    verify_fit_event(s.timing_drag.kiai_drag_active == (lane == WORM_UI_TIMING_LANE_KIAI));
+    verify_fit_event(!s.timing_drag.recipe_drag_active);
+    if (s.timing_drag.kiai_drag_active) verify_fit_event(s.timing_drag.kiai_drag_edge == WORM_UI_SPAN_HANDLE_CREATE);
     const auto end = f.h.frame(std::array{fit_button(p.first, p.second, false)});
     verify_fit_event(!find_fit_input(end.get(), WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT));
     verify_fit_event(!find_fit_input(end.get(), WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT));

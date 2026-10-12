@@ -47,7 +47,7 @@ struct sound_menu_fixture_t {
     sound_menu_fixture_t() {
         require_sound_menu(harness.ready());
         auto& state = worm_ui_nuklear_compose_state();
-        state.inspector_visible = state.sounds_panel_visible = state.layers_panel_visible = false;
+        state.dock_layout.inspector_visible = state.dock_layout.sounds_panel_visible = state.dock_layout.layers_panel_visible = false;
         auto& view = harness.view().compose;
         view.area_range_available = true;
         view.area_rows_per_measure = 960;

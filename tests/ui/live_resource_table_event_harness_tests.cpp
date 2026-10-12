@@ -65,9 +65,9 @@ auto action_point(const nuklear_event_harness_t& harness, std::string_view state
 void show_dock(nuklear_event_harness_t& harness, bool images) {
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
-    state.inspector_visible = false; state.layers_panel_visible = false;
-    state.sounds_panel_visible = !images; state.bga_panel_visible = images;
-    state.sounds_preview_on_click = false;
+    state.dock_layout.inspector_visible = false; state.dock_layout.layers_panel_visible = false;
+    state.dock_layout.sounds_panel_visible = !images; state.dock_layout.bga_panel_visible = images;
+    state.dock_layout.sounds_preview_on_click = false;
     (void)harness.frame();
 }
 struct sound_fixture_t {
@@ -107,19 +107,19 @@ TEST_CASE("Live Sounds table separates selection from arming and keeps filtered 
     sound_fixture_t fixture;
     auto& state = worm_ui_nuklear_compose_state();
     (void)click_text(fixture.harness, "Used.wav");
-    check_resource_table(state.keysound_selection.primary == 11);
-    check_resource_table(state.armed_resource_id == 0);
+    check_resource_table(state.keysound_catalog.keysound_selection.primary == 11);
+    check_resource_table(state.resource_picker.armed_resource_id == 0);
     (void)click_text(fixture.harness, "Used.wav", true);
-    check_resource_table(state.armed_resource_id == 11);
+    check_resource_table(state.resource_picker.armed_resource_id == 11);
     (void)click_text(fixture.harness, "Lost.wav", true);
-    check_resource_table(state.keysound_selection.primary == 13);
-    check_resource_table(state.armed_resource_id == 11);
+    check_resource_table(state.keysound_catalog.keysound_selection.primary == 13);
+    check_resource_table(state.resource_picker.armed_resource_id == 11);
     (void)click_text(fixture.harness, "Unused");
-    check_resource_table(state.keysound_filters.use_filter == 2);
+    check_resource_table(state.keysound_filters.keysound_filters.use_filter == 2);
     (void)fixture.harness.frame();
     check_no_resource_table(fixture.harness.drawn_text_center("Used.wav"));
     check_resource_table(fixture.harness.drawn_text_center("Free.wav"));
-    check_resource_table(state.armed_resource_id == 11);
+    check_resource_table(state.resource_picker.armed_resource_id == 11);
     WormUiKeysoundDockRequest request{};
     worm_ui_frontend_keysound_dock_request(&request);
     check_resource_table(request.use_filter == 2);
@@ -129,7 +129,7 @@ TEST_CASE("Sound row audition and protected deletion use the standard actions", 
     sound_fixture_t fixture;
     auto point = action_point(fixture.harness, "ok", 0);
     check_resource_table(has_action(click(fixture.harness, point.first, point.second), WORM_UI_COMPOSE_ACTION_AUDITION_SOUND));
-    check_resource_table(worm_ui_nuklear_compose_state().armed_resource_id == 0);
+    check_resource_table(worm_ui_nuklear_compose_state().resource_picker.armed_resource_id == 0);
     point = action_point(fixture.harness, "ok", 1);
     check_no_resource_table(has_action(click(fixture.harness, point.first, point.second), WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS));
     point = action_point(fixture.harness, "unused", 1);
@@ -149,28 +149,28 @@ TEST_CASE("Images table preserves hidden selection and disarms actual removed re
     image_fixture_t fixture;
     auto& state = worm_ui_nuklear_compose_state();
     (void)click_text(fixture.harness, "Used.png");
-    check_resource_table(state.bga_selection.primary == 21);
-    check_resource_table(state.armed_resource_id == 0);
+    check_resource_table(state.bga_catalog.bga_selection.primary == 21);
+    check_resource_table(state.resource_picker.armed_resource_id == 0);
     (void)click_text(fixture.harness, "Used.png", true);
-    check_resource_table(state.armed_resource_id == 21);
+    check_resource_table(state.resource_picker.armed_resource_id == 21);
     (void)click_text(fixture.harness, "Lost.png", true);
-    check_resource_table(state.armed_resource_id == 21);
+    check_resource_table(state.resource_picker.armed_resource_id == 21);
     (void)click_text(fixture.harness, "Used.png");
     (void)click_text(fixture.harness, "Unused");
     auto& view = fixture.harness.view().compose;
     view.bga_rows = fixture.rows.data() + 1; view.bga_row_count = 2;
     view.bga_matching_ids = fixture.ids.data() + 1; view.bga_total_matching = 2;
     (void)fixture.harness.frame();
-    check_resource_table(state.bga_selection.primary == 21);
-    check_resource_table(state.armed_resource_id == 21);
+    check_resource_table(state.bga_catalog.bga_selection.primary == 21);
+    check_resource_table(state.resource_picker.armed_resource_id == 21);
     WormUiBgaDockRequest request{};
     worm_ui_frontend_bga_dock_request(&request);
     check_resource_table(request.use_filter == 2);
     ++view.document_revision;
     view.bga_all_resource_ids = fixture.ids.data() + 1; view.bga_all_resource_count = 2;
     (void)fixture.harness.frame();
-    check_resource_table(state.armed_resource_id == 0);
-    check_resource_table(state.draw_source_id == 0);
+    check_resource_table(state.resource_picker.armed_resource_id == 0);
+    check_resource_table(state.pointer_capture.draw_source_id == 0);
 }
 
 TEST_CASE("Images row deletion protects references and stamps the unused resource", "[event-harness][resource-table]") {

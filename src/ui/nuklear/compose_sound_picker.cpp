@@ -10,15 +10,15 @@
 namespace {
 void activate(const WormUiComposeView& view, WormUiWorkspaceAction& action,
               worm_ui_nuklear_compose_state_t& compose, std::size_t index) {
-    auto& picker = compose.sound_picker;
+    auto& picker = compose.sound_picker_ui.sound_picker;
     const auto& result = view.sound_picker;
     if (!result.ready || index >= result.row_count || result.rows[index].missing ||
         std::strcmp(picker.query.data(), result.query) != 0 ||
         action.compose_input_count >= WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) return;
     const auto id = result.rows[index].resource_id;
     if (!id) return;
-    compose.keysound_selection.selected = {id};
-    compose.keysound_selection.primary = compose.keysound_selection.anchor = id;
+    compose.keysound_catalog.keysound_selection.selected = {id};
+    compose.keysound_catalog.keysound_selection.primary = compose.keysound_catalog.keysound_selection.anchor = id;
     set_armed_resource(compose, id, compose_resource_origin_t::sounds);
     action.compose_input_project_id = view.project_id;
     action.compose_input_chart_id = view.chart_id;
@@ -53,7 +53,7 @@ void render_keyboard_hint(nk_context* context) {
 
 void render_results(nk_context* context, const WormUiComposeView& view,
                     WormUiWorkspaceAction& action, worm_ui_nuklear_compose_state_t& compose) {
-    auto& picker = compose.sound_picker;
+    auto& picker = compose.sound_picker_ui.sound_picker;
     const auto& results = view.sound_picker;
     nk_layout_row_dynamic(context, 22, 1);
     if (!results.ready || std::strcmp(results.query, picker.query.data()) != 0) {
@@ -110,7 +110,7 @@ auto compose_sound_picker_owns_input(const sound_picker_state_t& state) -> bool 
 }
 void render_compose_sound_picker(nk_context* context, const WormUiComposeView& view,
     WormUiWorkspaceAction& action, worm_ui_nuklear_compose_state_t& compose, bool focused) {
-    auto& state = compose.sound_picker;
+    auto& state = compose.sound_picker_ui.sound_picker;
     if (!context) return;
     if (!state.open && !state.close_pending) {
         (void)wormedit::ui::chrome::popup_update_release_pending(

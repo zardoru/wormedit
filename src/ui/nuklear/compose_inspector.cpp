@@ -166,11 +166,11 @@ void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
         if (nk_button_label(inspector.context, "Timing Settings..."))
             inspector.action->timing_settings.toggle = true;
         nk_tree_pop(inspector.context);
-    } else if (state.inline_offset_open && state.inline_offset_in_inspector) {
+    } else if (state.inline_offset.inline_offset_open && state.inline_offset.inline_offset_in_inspector) {
         worm_ui_nuklear_cancel_inline_offset(state);
         nk_edit_unfocus(inspector.context);
     }
-    if (!state.inline_timing_open && inspector.timing_view->stage_active &&
+    if (!state.inline_timing.inline_timing_open && inspector.timing_view->stage_active &&
         inspector.action->timing_stage_action == WORM_UI_TIMING_STAGE_NONE &&
         nk_tree_push(inspector.context, NK_TREE_TAB, "Timing event", NK_MAXIMIZED)) {
         worm_ui_nuklear_render_timing_stage_editor(inspector.context, inspector.timing_view,
@@ -193,17 +193,17 @@ void render_compose_label_search(const ComposeInspectorContext& inspector) {
     nk_layout_row_dynamic(context, 18, 1);
     nk_label(context, "Find note label", NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, 25, 1);
-    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.label_search.data(),
-                                         state.label_search.size(), nk_filter_default);
-    const auto disabled = !view->scene_available || state.label_search[0] == '\0';
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.note_label.label_search.data(),
+                                         state.note_label.label_search.size(), nk_filter_default);
+    const auto disabled = !view->scene_available || state.note_label.label_search[0] == '\0';
     if (disabled) nk_widget_disable_begin(context);
     nk_layout_row_dynamic(context, 25, 3);
     const auto submit = [&](const char* title, WormUiComposeActionKind kind) {
         if (!nk_button_label(context, title) ||
             action->compose_action != WORM_UI_COMPOSE_ACTION_NONE)
             return;
-        memcpy(action->compose_note_label, state.label_search.data(),
-               state.label_search.size());
+        memcpy(action->compose_note_label, state.note_label.label_search.data(),
+               state.note_label.label_search.size());
         action->compose_action = kind;
         action->compose_input_chart_id = view->chart_id;
         action->compose_input_document_revision = view->document_revision;
@@ -224,18 +224,18 @@ static void render_compose_meter_control(const ComposeInspectorContext& inspecto
     nk_layout_row_push(context, 0.2f);
     nk_label(context, "Meter", NK_TEXT_LEFT);
     nk_layout_row_push(context, 0.2f);
-    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.meter_numerator.data(),
-                                         state.meter_numerator.size(), nk_filter_decimal);
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.recipe_editor.meter_numerator.data(),
+                                         state.recipe_editor.meter_numerator.size(), nk_filter_decimal);
     nk_layout_row_push(context, 0.06f);
     nk_label(context, "/", NK_TEXT_CENTERED);
     nk_layout_row_push(context, 0.2f);
-    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.meter_denominator.data(),
-                                         state.meter_denominator.size(), nk_filter_decimal);
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.recipe_editor.meter_denominator.data(),
+                                         state.recipe_editor.meter_denominator.size(), nk_filter_decimal);
     nk_layout_row_push(context, 0.34f);
     const auto apply = nk_button_label(context, "Apply");
     nk_layout_row_end(context);
-    const auto suggestions = worm_ui_nuklear_suggest_meters(state.meter_numerator.data(),
-                                                            state.meter_denominator.data());
+    const auto suggestions = worm_ui_nuklear_suggest_meters(state.recipe_editor.meter_numerator.data(),
+                                                            state.recipe_editor.meter_denominator.data());
     if (suggestions.count != 0) {
         nk_layout_row_dynamic(context, 24, static_cast<int>(suggestions.count) + 1);
         nk_label(context, "Suggest", NK_TEXT_LEFT);
@@ -244,8 +244,8 @@ static void render_compose_meter_control(const ComposeInspectorContext& inspecto
             std::array<char, 16> label{};
             std::snprintf(label.data(), label.size(), "%u/%u", item.numerator, item.denominator);
             if (!nk_button_label(context, label.data())) continue;
-            std::snprintf(state.meter_numerator.data(), state.meter_numerator.size(), "%u", item.numerator);
-            std::snprintf(state.meter_denominator.data(), state.meter_denominator.size(), "%u",
+            std::snprintf(state.recipe_editor.meter_numerator.data(), state.recipe_editor.meter_numerator.size(), "%u", item.numerator);
+            std::snprintf(state.recipe_editor.meter_denominator.data(), state.recipe_editor.meter_denominator.size(), "%u",
                           item.denominator);
         }
     }
@@ -254,9 +254,9 @@ static void render_compose_meter_control(const ComposeInspectorContext& inspecto
     action->compose_input_chart_id = view->chart_id;
     action->compose_input_document_revision = view->document_revision;
     std::snprintf(action->timing_meter_numerator_text, sizeof(action->timing_meter_numerator_text), "%s",
-                  state.meter_numerator.data());
+                  state.recipe_editor.meter_numerator.data());
     std::snprintf(action->timing_meter_denominator_text, sizeof(action->timing_meter_denominator_text), "%s",
-                  state.meter_denominator.data());
+                  state.recipe_editor.meter_denominator.data());
 }
 
 // The confirmation belongs to one measure at one document revision; a move or edit closes it.

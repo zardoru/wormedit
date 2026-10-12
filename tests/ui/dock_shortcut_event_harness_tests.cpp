@@ -54,14 +54,14 @@ TEST_CASE("Dock shortcut opens Layers in a narrow window without creating a laye
     check_dock(press_and_dispatch(harness, SDLK_L, SDL_SCANCODE_L, SDL_KMOD_CTRL).status ==
                command_dispatch_status_t::invoked);
     const auto action = harness.frame();
-    check_dock(worm_ui_nuklear_compose_state().layers_panel_visible);
-    check_dock(!worm_ui_nuklear_compose_state().sounds_panel_visible);
+    check_dock(worm_ui_nuklear_compose_state().dock_layout.layers_panel_visible);
+    check_dock(!worm_ui_nuklear_compose_state().dock_layout.sounds_panel_visible);
     check_dock(harness.drawn_text().find("Layers") != std::string::npos);
     check_dock(action.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     check_dock(press_and_dispatch(harness, SDLK_L, SDL_SCANCODE_L, SDL_KMOD_CTRL).status ==
                command_dispatch_status_t::invoked);
     static_cast<void>(harness.frame());
-    check_dock(!worm_ui_nuklear_compose_state().layers_panel_visible);
+    check_dock(!worm_ui_nuklear_compose_state().dock_layout.layers_panel_visible);
 }
 
 TEST_CASE("Dock shortcut creation emits one existing Add layer action with its context stamp",
@@ -71,7 +71,7 @@ TEST_CASE("Dock shortcut creation emits one existing Add layer action with its c
     check_dock(press_and_dispatch(harness, SDLK_L, SDL_SCANCODE_L,
         SDL_KMOD_GUI | SDL_KMOD_SHIFT).status == command_dispatch_status_t::invoked);
     check_dock(harness.frame().get().compose_action != WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER);
-    check_dock(worm_ui_nuklear_compose_state().layer_creation_context.has_value());
+    check_dock(worm_ui_nuklear_compose_state().layer_editor.layer_creation_context.has_value());
     static_cast<void>(harness.frame());
     SDL_Event text{};
     text.type = SDL_EVENT_TEXT_INPUT;
@@ -88,8 +88,8 @@ TEST_CASE("Dock shortcut creation emits one existing Add layer action with its c
     check_dock(action.get().compose_input_project_id == 1);
     check_dock(action.get().compose_input_chart_id == 1);
     check_dock(action.get().compose_input_document_revision == 1);
-    check_dock(worm_ui_nuklear_compose_state().layers_panel_visible);
-    check_dock(!worm_ui_nuklear_compose_state().layer_creation_request);
+    check_dock(worm_ui_nuklear_compose_state().dock_layout.layers_panel_visible);
+    check_dock(!worm_ui_nuklear_compose_state().layer_editor.layer_creation_request);
     check_dock(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
@@ -97,13 +97,13 @@ TEST_CASE("Dock shortcut toggles Sounds without opening the Go to sound picker",
           "[frontend-state][event-harness][dock-shortcuts]") {
     nuklear_event_harness_t harness{1280, 800};
     prepare(harness);
-    const bool visible = worm_ui_nuklear_compose_state().sounds_panel_visible;
+    const bool visible = worm_ui_nuklear_compose_state().dock_layout.sounds_panel_visible;
     check_dock(press_and_dispatch(harness, SDLK_K, SDL_SCANCODE_K,
         SDL_KMOD_CTRL | SDL_KMOD_SHIFT).status == command_dispatch_status_t::invoked);
-    check_dock(worm_ui_nuklear_compose_state().sounds_panel_visible != visible);
-    check_dock(!worm_ui_nuklear_compose_state().sound_picker.open);
+    check_dock(worm_ui_nuklear_compose_state().dock_layout.sounds_panel_visible != visible);
+    check_dock(!worm_ui_nuklear_compose_state().sound_picker_ui.sound_picker.open);
     check_dock(worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS, 1, 1, 1));
-    check_dock(worm_ui_nuklear_compose_state().sounds_panel_visible == visible);
+    check_dock(worm_ui_nuklear_compose_state().dock_layout.sounds_panel_visible == visible);
 }
 
 TEST_CASE("Queued layer creation is discarded on stale contexts focus loss and modal input",
@@ -126,7 +126,7 @@ TEST_CASE("Queued layer creation is discarded on stale contexts focus loss and m
             events.push_back(lost);
         }
         check_dock(harness.frame(events).get().compose_action != WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER);
-        check_dock(!worm_ui_nuklear_compose_state().layer_creation_request);
+        check_dock(!worm_ui_nuklear_compose_state().layer_editor.layer_creation_request);
     }
 }
 
@@ -139,7 +139,7 @@ TEST_CASE("Dock requests cannot bypass stale stamps or popup and IME ownership",
     for (const auto dock : {WORM_UI_COMPOSE_DOCK_OPEN_LAYERS, WORM_UI_COMPOSE_DOCK_CREATE_LAYER,
                            WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS})
         check_dock(!worm_ui_frontend_compose_dock_command(dock, 1, 1, 1));
-    cancel_compose_sound_picker(worm_ui_nuklear_compose_state().sound_picker);
+    cancel_compose_sound_picker(worm_ui_nuklear_compose_state().sound_picker_ui.sound_picker);
     static_cast<void>(harness.frame());
     SDL_Event composition{};
     composition.type = SDL_EVENT_TEXT_EDITING;
@@ -188,7 +188,7 @@ TEST_CASE("Create layer from a closed populated dock takes priority over list pr
     nuklear_event_harness_t harness{1280, 800};
     prepare(harness);
     harness.view().compose.semantic_layer_total_count = 200;
-    require_dock(!worm_ui_nuklear_compose_state().layers_panel_visible);
+    require_dock(!worm_ui_nuklear_compose_state().dock_layout.layers_panel_visible);
     require_dock(worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_CREATE_LAYER, 1, 1, 1));
     static_cast<void>(harness.frame());
     static_cast<void>(harness.frame());
@@ -198,7 +198,7 @@ TEST_CASE("Create layer from a closed populated dock takes priority over list pr
     enter.key.key = SDLK_RETURN;
     enter.key.scancode = SDL_SCANCODE_RETURN;
     check_dock(harness.frame({&enter, 1}).get().compose_action == WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER);
-    check_dock(!worm_ui_nuklear_compose_state().layer_creation_request);
+    check_dock(!worm_ui_nuklear_compose_state().layer_editor.layer_creation_request);
 }
 
 TEST_CASE("Compact dock shortcuts switch panels and close the active panel", "[frontend-state][event-harness][dock-shortcuts]") {
@@ -207,15 +207,15 @@ TEST_CASE("Compact dock shortcuts switch panels and close the active panel", "[f
     auto& state = worm_ui_nuklear_compose_state();
     require_dock(worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_OPEN_LAYERS, 1, 1, 1));
     static_cast<void>(harness.frame());
-    check_dock(state.layers_panel_visible);
+    check_dock(state.dock_layout.layers_panel_visible);
     require_dock(worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS, 1, 1, 1));
     static_cast<void>(harness.frame());
-    check_dock(state.sounds_panel_visible);
-    check_dock(!state.layers_panel_visible);
+    check_dock(state.dock_layout.sounds_panel_visible);
+    check_dock(!state.dock_layout.layers_panel_visible);
     require_dock(worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS, 1, 1, 1));
     static_cast<void>(harness.frame());
-    check_dock(!state.sounds_panel_visible);
-    check_dock(!state.layers_panel_visible);
+    check_dock(!state.dock_layout.sounds_panel_visible);
+    check_dock(!state.dock_layout.layers_panel_visible);
 }
 
 namespace {
@@ -243,12 +243,12 @@ TEST_CASE("Layer naming Escape cancels and blank names cannot create",
     static_cast<void>(harness.frame({&text, 1}));
     const auto enter = dialog_key(SDLK_RETURN, SDL_SCANCODE_RETURN);
     check_dock(harness.frame({&enter, 1}).get().compose_action != WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER);
-    check_dock(state.layer_creation_context.has_value());
+    check_dock(state.layer_editor.layer_creation_context.has_value());
     const auto escape = dialog_key(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
     const auto action = harness.frame({&escape, 1});
     check_dock(action.get().compose_action != WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER);
     check_dock(action.get().shortcut_event_count == 0);
-    check_dock(!state.layer_creation_context);
+    check_dock(!state.layer_editor.layer_creation_context);
 }
 
 TEST_CASE("Export dialog fits a small viewport and submits captured group and overwrite",
@@ -264,11 +264,11 @@ TEST_CASE("Export dialog fits a small viewport and submits captured group and ov
     harness.view().compose.output_group_count = 1;
     auto& state = worm_ui_nuklear_compose_state();
     worm_ui_nuklear_open_export_dialog(harness.view().compose, state);
-    state.export_overwrite = true;
+    state.dialogs.export_overwrite = true;
     static_cast<void>(harness.frame());
     static_cast<void>(harness.frame());
-    check_dock(state.export_dialog.bounds.x >= 0 && state.export_dialog.bounds.y >= 0);
-    check_dock(state.export_dialog.bounds.y + state.export_dialog.bounds.h <= 480);
+    check_dock(state.dialogs.export_dialog.bounds.x >= 0 && state.dialogs.export_dialog.bounds.y >= 0);
+    check_dock(state.dialogs.export_dialog.bounds.y + state.dialogs.export_dialog.bounds.h <= 480);
     check_dock(harness.drawn_text_center("Export group").has_value());
     const auto enter = dialog_key(SDLK_RETURN, SDL_SCANCODE_RETURN);
     const auto action = harness.frame({&enter, 1});
@@ -276,7 +276,7 @@ TEST_CASE("Export dialog fits a small viewport and submits captured group and ov
     check_dock(action.get().compose_output_group_index == 7);
     check_dock(action.get().compose_export_overwrite);
     check_dock(action.get().compose_input_project_id == 1);
-    check_dock(!state.export_dialog_open);
+    check_dock(!state.dialogs.export_dialog_open);
 }
 
 TEST_CASE("Open compose dialogs cancel on context changes and external modals",
@@ -296,6 +296,6 @@ TEST_CASE("Open compose dialogs cancel on context changes and external modals",
         if (cause == 6) harness.view().options.visible = true;
         const auto enter = dialog_key(SDLK_RETURN, SDL_SCANCODE_RETURN);
         check_dock(harness.frame({&enter, 1}).get().compose_action != WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER);
-        check_dock(!state.layer_creation_context);
+        check_dock(!state.layer_editor.layer_creation_context);
     }
 }

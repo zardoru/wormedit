@@ -114,7 +114,7 @@ auto move_compose_timing_selection(const WormUiComposeInputAction& input,
     }
     const auto moved = move_timing_lane_event_group(
         context.environment.history_ref, chart->id, selected, delta, input.timing_document_revision,
-        context.environment.application_command_state_ref.timing_locked);
+        context.environment.application_command_state_ref.timing_recipe.timing_locked);
     result.accepted = moved.applied;
     result.document_changed = moved.applied;
     result.diagnostics = moved.diagnostics;
@@ -148,7 +148,7 @@ auto edit_compose_kiai_span(const WormUiComposeInputAction& input, compose_input
     if (!chart || !view || input.timing_chart_id != chart->id.value ||
         input.timing_document_revision != context.environment.history_ref.document.revision)
         return "Kiai edit is stale or invalid.";
-    if (context.environment.application_command_state_ref.timing_locked)
+    if (context.environment.application_command_state_ref.timing_recipe.timing_locked)
         return "Timing is locked.";
     const auto measures = build_measure_index(*chart);
     const auto* index = std::get_if<measure_index_t>(&measures);
@@ -243,7 +243,7 @@ auto edit_compose_speed_span(const WormUiComposeInputAction& input,
     if (!row || !begin_row)
         return "Speed edit has no valid destination row.";
     // The span as drawn: from the event to the end of its transition.
-    const auto& projected = context.environment.compose_scene_cache_ref.speed_spans;
+    const auto& projected = context.environment.compose_scene_cache_ref.timing.speed_spans;
     const auto span = projected
                           ? std::ranges::find(projected->spans, speed->id, &speed_span_t::object)
                           : std::vector<speed_span_t>::const_iterator{};
@@ -272,15 +272,15 @@ auto edit_compose_speed_span(const WormUiComposeInputAction& input,
         if (!edit.position)
             return "Speed edit has no valid destination row.";
     }
-    const auto timing = context.environment.compose_scene_cache_ref.marker_timing_index
-                            ? &*context.environment.compose_scene_cache_ref.marker_timing_index
+    const auto timing = context.environment.compose_scene_cache_ref.timing.marker_timing_index
+                            ? &*context.environment.compose_scene_cache_ref.timing.marker_timing_index
                             : nullptr;
     edit.transition = speed_transition_between(*chart, timing, *speed, moved->begin, moved->end);
     if (!edit.transition)
         return "The Speed transition length cannot be measured there.";
     const auto edited =
         edit_speed_event_span(context.environment.history_ref, chart->id, speed->id, edit,
-                              context.environment.application_command_state_ref.timing_locked);
+                              context.environment.application_command_state_ref.timing_recipe.timing_locked);
     result.accepted = edited.applied;
     result.document_changed = edited.applied;
     result.diagnostics = edited.diagnostics;
@@ -321,7 +321,7 @@ auto edit_compose_recipe_range(const WormUiComposeInputAction& input,
     auto drag = begin_sv_recipe_range_drag(
         context.environment.history_ref, chart->id, recipe_id_t{input.object_id}, handle, *press,
         edit_snap_denominator(*chart, context.state),
-        context.environment.application_command_state_ref.timing_locked);
+        context.environment.application_command_state_ref.timing_recipe.timing_locked);
     if (drag.status != sv_recipe_range_drag_status_t::previewing) {
         result.diagnostics = drag.diagnostics;
         return drag.diagnostics.empty() ? "SV recipe edit was rejected."
@@ -329,14 +329,14 @@ auto edit_compose_recipe_range(const WormUiComposeInputAction& input,
     }
     if (!update_sv_recipe_range_drag(
             context.environment.history_ref, drag, *release,
-            context.environment.application_command_state_ref.timing_locked)) {
+            context.environment.application_command_state_ref.timing_recipe.timing_locked)) {
         result.diagnostics = drag.diagnostics;
         return drag.diagnostics.empty() ? "SV recipe edit was rejected."
                                         : drag.diagnostics.front().message;
     }
     const auto committed = commit_sv_recipe_range_drag(
         context.environment.history_ref, drag,
-        context.environment.application_command_state_ref.timing_locked);
+        context.environment.application_command_state_ref.timing_recipe.timing_locked);
     result.accepted = committed.applied;
     result.document_changed = committed.applied;
     result.diagnostics = committed.diagnostics;
@@ -353,7 +353,7 @@ auto run_compose_recipe_command(std::uint64_t id, std::uint8_t command,
     const auto* recipe = chart ? find_input_recipe(*chart, id) : nullptr;
     if (!recipe)
         return "The SV recipe no longer exists.";
-    if (context.environment.application_command_state_ref.timing_locked)
+    if (context.environment.application_command_state_ref.timing_recipe.timing_locked)
         return "Timing is locked.";
     const auto recipe_id = recipe->id;
     const auto chart_id = chart->id;
@@ -375,7 +375,7 @@ auto run_compose_recipe_command(std::uint64_t id, std::uint8_t command,
     if (!edited.applied)
         accepted = "SV recipe command rejected.";
     if (edited.applied && command != 0)
-        context.environment.application_command_state_ref.recipe_selected = 0;
+        context.environment.application_command_state_ref.timing_recipe.recipe_selected = 0;
     return std::nullopt;
 }
 } // namespace wormedit::sys::compose_input_detail

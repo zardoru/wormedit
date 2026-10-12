@@ -736,9 +736,9 @@ void prepare_t459_packed_runtime_fixture(t459_packed_runtime_fixture_t& fixture)
     const auto timing = build_timing_index(stored_chart);
     check_audio_worker(timing.index.has_value());
     if (timing.index) {
-        fixture.cache.chart = stored_chart.id;
-        fixture.cache.revision = fixture.document.revision;
-        fixture.cache.marker_timing_index = *timing.index;
+        fixture.cache.scene.chart = stored_chart.id;
+        fixture.cache.scene.revision = fixture.document.revision;
+        fixture.cache.timing.marker_timing_index = *timing.index;
     }
     std::vector<audio::preview_metronome_source_binding_t> metronome;
     const auto base = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio";

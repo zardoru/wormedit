@@ -67,10 +67,10 @@ auto escape_key() -> SDL_Event {
 
 void hide_compose_docks() {
     auto& state = worm_ui_nuklear_compose_state();
-    state.inspector_visible = false;
-    state.sounds_panel_visible = false;
-    state.layers_panel_visible = false;
-    state.bga_panel_visible = false;
+    state.dock_layout.inspector_visible = false;
+    state.dock_layout.sounds_panel_visible = false;
+    state.dock_layout.layers_panel_visible = false;
+    state.dock_layout.bga_panel_visible = false;
 }
 
 auto click(nuklear_event_harness_t& harness, float x, float y)
@@ -200,7 +200,7 @@ void choose_last_stacked_event(nuklear_event_harness_t& harness,
     REQUIRE(last.has_value());
     const auto chosen = click(harness, last->first, last->second);
     CHECK(has_input(chosen, WORM_UI_COMPOSE_INPUT_BGA_EVENT_CLICK, 149));
-    CHECK_FALSE(worm_ui_nuklear_compose_state().bga_stack_open);
+    CHECK_FALSE(worm_ui_nuklear_compose_state().bga_interaction.bga_stack_open);
     CHECK_FALSE(harness.drawn_text_center("Choose the event to select or edit").has_value());
     events.back().selected = true;
 }
@@ -225,7 +225,7 @@ void cancel_bga_move_after_drag(nuklear_event_harness_t& harness, float x, float
     (void)harness.frame(down);
     const auto drag = mouse_motion(x, y + 24.0f);
     (void)harness.frame(std::span{&drag, 1});
-    CHECK(worm_ui_nuklear_compose_state().bga_event_move_active);
+    CHECK(worm_ui_nuklear_compose_state().bga_interaction.bga_event_move_active);
     const auto escape = escape_key();
     (void)harness.frame(std::span{&escape, 1});
     const auto release = std::array{mouse_motion(x, y + 24.0f),
@@ -265,8 +265,8 @@ void verify_bga_stack_outside_dismissal(nuklear_event_harness_t& harness) {
     const auto down = std::array{mouse_motion(outside.first, outside.second),
                                  mouse_button(true, outside.first, outside.second)};
     const auto pressed = harness.frame(down);
-    check_bga(!worm_ui_nuklear_compose_state().bga_stack_open);
-    check_bga(worm_ui_nuklear_compose_state().bga_stack_release_pending);
+    check_bga(!worm_ui_nuklear_compose_state().bga_interaction.bga_stack_open);
+    check_bga(worm_ui_nuklear_compose_state().bga_interaction.bga_stack_release_pending);
     check_bga(pressed.get().compose_input_count == 0);
     check_bga(!harness.drawn_text_center("Choose the event to select or edit").has_value());
 
@@ -274,17 +274,17 @@ void verify_bga_stack_outside_dismissal(nuklear_event_harness_t& harness) {
                                mouse_button(false, outside.first, outside.second)};
     const auto released = harness.frame(up);
     check_bga(released.get().compose_input_count == 0);
-    check_bga(worm_ui_nuklear_compose_state().bga_stack_release_pending);
+    check_bga(worm_ui_nuklear_compose_state().bga_interaction.bga_stack_release_pending);
     const auto quiet = harness.frame();
     check_bga(quiet.get().compose_input_count == 0);
-    check_bga(!worm_ui_nuklear_compose_state().bga_stack_release_pending);
+    check_bga(!worm_ui_nuklear_compose_state().bga_interaction.bga_stack_release_pending);
 }
 
 void verify_bga_stack_escape_dismissal(nuklear_event_harness_t& harness) {
     const auto escape = escape_key();
     const auto dismissed = harness.frame(std::span{&escape, 1});
-    check_bga(!worm_ui_nuklear_compose_state().bga_stack_open);
-    check_bga(worm_ui_nuklear_compose_state().bga_stack_release_pending);
+    check_bga(!worm_ui_nuklear_compose_state().bga_interaction.bga_stack_open);
+    check_bga(worm_ui_nuklear_compose_state().bga_interaction.bga_stack_release_pending);
     check_bga(dismissed.get().compose_input_count == 0);
     check_bga(!harness.drawn_text_center("Choose the event to select or edit").has_value());
 
@@ -294,10 +294,10 @@ void verify_bga_stack_escape_dismissal(nuklear_event_harness_t& harness) {
     key_up.key.down = false;
     const auto released = harness.frame(std::span{&key_up, 1});
     check_bga(released.get().compose_input_count == 0);
-    check_bga(worm_ui_nuklear_compose_state().bga_stack_release_pending);
+    check_bga(worm_ui_nuklear_compose_state().bga_interaction.bga_stack_release_pending);
     const auto quiet = harness.frame();
     check_bga(quiet.get().compose_input_count == 0);
-    check_bga(!worm_ui_nuklear_compose_state().bga_stack_release_pending);
+    check_bga(!worm_ui_nuklear_compose_state().bga_interaction.bga_stack_release_pending);
 }
 
 using lane_profile_choices_t = decltype(wormedit::lane_profile_choices());
@@ -314,7 +314,7 @@ auto prepare_initial_profile_picker(nuklear_event_harness_t& harness)
     for (std::size_t index = 0; index < profiles.size(); ++index)
         std::snprintf(view.lane_profile_names[index], sizeof(view.lane_profile_names[index]),
                       "%s", profiles[index].layout.display_name.c_str());
-    worm_ui_nuklear_compose_state().inspector_visible = true;
+    worm_ui_nuklear_compose_state().dock_layout.inspector_visible = true;
     return profiles;
 }
 
@@ -478,9 +478,9 @@ TEST_CASE("armed BGA resource cannot place from playable or BGM lane clicks",
     view.bgm_lane_count = 1;
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
-    state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
-    state.armed_resource_id = 91;
-    state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::place;
+    state.resource_picker.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
+    state.resource_picker.armed_resource_id = 91;
+    state.resource_picker.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::place;
     const auto field = canvas_point(harness,
         (view.playable_field_left_pixels + view.playable_field_right_pixels) * 0.5,
         view.viewport_height_pixels * 0.5);
@@ -505,10 +505,10 @@ TEST_CASE("BGA event hit testing maps through the visible inspector and Sounds d
     nuklear_event_harness_t harness{1280, 800};
     REQUIRE(harness.ready());
     auto& compose_state = worm_ui_nuklear_compose_state();
-    compose_state.inspector_visible = true;
-    compose_state.sounds_panel_visible = true;
-    compose_state.layers_panel_visible = false;
-    compose_state.bga_panel_visible = false;
+    compose_state.dock_layout.inspector_visible = true;
+    compose_state.dock_layout.sounds_panel_visible = true;
+    compose_state.dock_layout.layers_panel_visible = false;
+    compose_state.dock_layout.bga_panel_visible = false;
     auto& view = harness.view().compose;
     view.scene_available = true;
     view.project_id = 3;
@@ -569,8 +569,8 @@ TEST_CASE("dense BGA overlap marker opens a scrollable picker for every event",
     const auto stack_center = rect_center(harness, events.front().bounds);
     (void)click(harness, stack_center.first, stack_center.second);
     (void)harness.frame();
-    INFO("BGA stack open=" << worm_ui_nuklear_compose_state().bga_stack_open
-         << " release pending=" << worm_ui_nuklear_compose_state().bga_stack_release_pending
+    INFO("BGA stack open=" << worm_ui_nuklear_compose_state().bga_interaction.bga_stack_open
+         << " release pending=" << worm_ui_nuklear_compose_state().bga_interaction.bga_stack_release_pending
          << " text=" << harness.drawn_text());
     REQUIRE(harness.drawn_text_center("Choose the event to select or edit").has_value());
     const auto first_row = drawn_text_center_with_prefix(harness, "#100 · BACKGROUND");
@@ -785,7 +785,7 @@ TEST_CASE("BGA lane controls reveal every kind without a hidden dropdown", "[eve
     view.bga_lane_count = 0;
     view.bga_ids_available = true;
     (void)harness.frame();
-    worm_ui_nuklear_compose_state().bga_panel_visible = true;
+    worm_ui_nuklear_compose_state().dock_layout.bga_panel_visible = true;
     (void)harness.frame();
     REQUIRE(harness.drawn_text_center("Show BGA lanes"));
     constexpr std::array labels{"BGA", "Layer", "Layer 2", "Poor (miss)"};
@@ -815,7 +815,7 @@ TEST_CASE("Populated BGA lanes retain discoverable controls", "[event-harness][b
     constexpr std::array<std::uint8_t, 4> kinds{0, 2, 5, 1};
     std::ranges::copy(kinds, view.bga_lane_kinds);
     (void)harness.frame();
-    worm_ui_nuklear_compose_state().bga_panel_visible = true;
+    worm_ui_nuklear_compose_state().dock_layout.bga_panel_visible = true;
     (void)harness.frame();
     REQUIRE(harness.drawn_text_center("Layer 2"));
     REQUIRE(harness.drawn_text_center("Poor (miss)"));
@@ -913,8 +913,8 @@ void start_resizing(resizable_stem_lane_fixture_t& f) {
     const auto expected = f.expected_drag_width(40);
     (void)drag_stem_edge(f, 40);
     check_bga(std::abs(f.width() - expected) < 1e-6);
-    check_bga(worm_ui_nuklear_compose_state().stem_lane_resize.has_value());
-    check_bga(worm_ui_nuklear_compose_state().stem_lane_resize_cursor_requested);
+    check_bga(worm_ui_nuklear_compose_state().stem_lanes.stem_lane_resize.has_value());
+    check_bga(worm_ui_nuklear_compose_state().stem_lanes.stem_lane_resize_cursor_requested);
 }
 
 auto window_focus_lost_event() -> SDL_Event {
@@ -991,8 +991,8 @@ TEST_CASE("stem lane resize cancels on focus loss, hidden Compose, tab switch, a
     f.harness.view().compose.visible = false;
     (void)f.harness.frame();
     check_bga(f.width() == anchor);
-    check_bga(!worm_ui_nuklear_compose_state().stem_lane_resize);
-    check_bga(!worm_ui_nuklear_compose_state().stem_lane_resize_cursor_requested);
+    check_bga(!worm_ui_nuklear_compose_state().stem_lanes.stem_lane_resize);
+    check_bga(!worm_ui_nuklear_compose_state().stem_lanes.stem_lane_resize_cursor_requested);
     release_inactive_stem_pointer(f);
 
     f.harness.view().compose.visible = true;
@@ -1000,9 +1000,9 @@ TEST_CASE("stem lane resize cancels on focus loss, hidden Compose, tab switch, a
     start_resizing(f);
     f.harness.view().active_tab = WORM_UI_WORKSPACE_TAB_STORYBOARD;
     (void)f.harness.frame();
-    check_bga(!worm_ui_nuklear_compose_state().stem_lane_resize);
+    check_bga(!worm_ui_nuklear_compose_state().stem_lanes.stem_lane_resize);
     check_bga(f.width() == anchor);
-    check_bga(!worm_ui_nuklear_compose_state().stem_lane_resize_cursor_requested);
+    check_bga(!worm_ui_nuklear_compose_state().stem_lanes.stem_lane_resize_cursor_requested);
     release_inactive_stem_pointer(f);
 
     f.harness.view().active_tab = WORM_UI_WORKSPACE_TAB_COMPOSE;
@@ -1010,9 +1010,9 @@ TEST_CASE("stem lane resize cancels on focus loss, hidden Compose, tab switch, a
     start_resizing(f);
     f.harness.view().compose.input_occluded = true;
     (void)f.harness.frame();
-    check_bga(!worm_ui_nuklear_compose_state().stem_lane_resize);
+    check_bga(!worm_ui_nuklear_compose_state().stem_lanes.stem_lane_resize);
     check_bga(f.width() == anchor);
-    check_bga(!worm_ui_nuklear_compose_state().stem_lane_resize_cursor_requested);
+    check_bga(!worm_ui_nuklear_compose_state().stem_lanes.stem_lane_resize_cursor_requested);
     release_inactive_stem_pointer(f);
 
     f.harness.view().compose.input_occluded = false;
@@ -1021,8 +1021,8 @@ TEST_CASE("stem lane resize cancels on focus loss, hidden Compose, tab switch, a
     f.harness.view().compose.visible = false;
     const auto focus_lost = window_focus_lost_event();
     (void)f.harness.frame(std::span{&focus_lost, 1});
-    check_bga(!worm_ui_nuklear_compose_state().stem_lane_resize);
-    check_bga(!worm_ui_nuklear_compose_state().stem_lane_resize_cursor_requested);
+    check_bga(!worm_ui_nuklear_compose_state().stem_lanes.stem_lane_resize);
+    check_bga(!worm_ui_nuklear_compose_state().stem_lanes.stem_lane_resize_cursor_requested);
     check_bga(f.width() == anchor);
 }
 
@@ -1056,7 +1056,7 @@ TEST_CASE("batched stem edge press and motion uses the original header press",
     const auto events = std::array{mouse_motion(from.first, from.second),
         mouse_button(true, from.first, from.second), mouse_motion(to.first, to.second)};
     const auto action = f.harness.frame(events);
-    check_bga(worm_ui_nuklear_compose_state().stem_lane_resize.has_value());
+    check_bga(worm_ui_nuklear_compose_state().stem_lanes.stem_lane_resize.has_value());
     check_bga(std::abs(f.width() - expected) < 1e-6);
     check_bga(no_stem_point_actions(action));
     release_stem_edge(f, 264);
@@ -1069,7 +1069,7 @@ TEST_CASE("batched stem body press followed by edge motion does not begin resizi
     const auto events = std::array{mouse_motion(from.first, from.second),
         mouse_button(true, from.first, from.second), mouse_motion(to.first, to.second)};
     (void)f.harness.frame(events);
-    check_bga(!worm_ui_nuklear_compose_state().stem_lane_resize);
+    check_bga(!worm_ui_nuklear_compose_state().stem_lanes.stem_lane_resize);
     check_bga(f.width() == 36);
     const auto up = mouse_button(false, to.first, to.second);
     (void)f.harness.frame(std::span{&up, 1});
@@ -1095,8 +1095,8 @@ TEST_CASE("Draw BGA source emits one stroke with the destination kind and no res
     view.note_paint_mode_active = true;
     auto& state = worm_ui_nuklear_compose_state();
     (void)harness.frame();
-    state.draw_source_kind = 2;
-    state.draw_source_id = 91;
+    state.pointer_capture.draw_source_kind = 2;
+    state.pointer_capture.draw_source_id = 91;
     (void)harness.frame();
     const auto center = rect_center(harness, view.bga_lane_rects[1]);
     const auto frames = click(harness, center.first, center.second);
@@ -1134,8 +1134,8 @@ TEST_CASE("Packed Draw emits the current keysound and rejects a stem source",
           "[event-harness][bmson-stem][draw]") {
     stem_lane_fixture_t f;
     auto& state = worm_ui_nuklear_compose_state();
-    state.draw_source_kind = 1;
-    state.draw_source_id = 81;
+    state.pointer_capture.draw_source_kind = 1;
+    state.pointer_capture.draw_source_id = 81;
     f.harness.view().compose.draw_source_kind = 1;
     f.harness.view().compose.draw_source_id = 81;
     const auto point = f.at(662, 300);
@@ -1171,8 +1171,8 @@ struct dock_stem_fixture_t {
         REQUIRE(harness.ready());
         auto& state = worm_ui_nuklear_compose_state();
         hide_compose_docks();
-        state.inspector_visible = true;
-        state.sounds_panel_visible = true;
+        state.dock_layout.inspector_visible = true;
+        state.dock_layout.sounds_panel_visible = true;
         auto& view = harness.view().compose;
         view.scene_available = true;
         view.bmson_tools_available = true;
@@ -1252,7 +1252,7 @@ auto source_drop_cancelled(int transition) -> bool {
     const auto release = mouse_button(false, target.first, target.second);
     const auto action = fixture.harness.frame(std::span{&release, 1});
     return stem_input(action) == nullptr &&
-           !worm_ui_nuklear_compose_state().bmson_point_capture.has_value();
+           !worm_ui_nuklear_compose_state().bmson_input.bmson_point_capture.has_value();
 }
 
 auto ui_bmson_song() -> wormedit::song_document_t {
@@ -1469,8 +1469,8 @@ TEST_CASE("Emitted stem and packed draw payloads each commit one undoable BMSON 
     {
         stem_lane_fixture_t packed;
         auto& state = worm_ui_nuklear_compose_state();
-        state.draw_source_kind = 1;
-        state.draw_source_id = 800'001;
+        state.pointer_capture.draw_source_kind = 1;
+        state.pointer_capture.draw_source_id = 800'001;
         packed.harness.view().compose.draw_source_kind = 1;
         packed.harness.view().compose.draw_source_id = 800'001;
         const auto packed_point = packed.at(662, 300);
@@ -1561,7 +1561,7 @@ TEST_CASE("Unrecognized key layout picker waits for a deliberate compatible prof
     view.lane_profile_choice_count = 1;
     view.lane_profile_current = -1;
     std::snprintf(view.lane_profile_names[0], sizeof(view.lane_profile_names[0]), "osu!mania 7K");
-    worm_ui_nuklear_compose_state().inspector_visible = true;
+    worm_ui_nuklear_compose_state().dock_layout.inspector_visible = true;
     const auto placeholder = open_initial_profile_picker(harness);
     REQUIRE(placeholder);
     const auto selected = scroll_to_profile_and_select(harness, "osu!mania 7K",
@@ -1584,7 +1584,7 @@ struct timing_controls_fixture_t {
         view.waveform_audio_offset_denominator = 1;
         view.waveform_overview_visible_end_fraction = 1;
         view.audio_offset_editable = true;
-        worm_ui_nuklear_compose_state().inspector_visible = true;
+        worm_ui_nuklear_compose_state().dock_layout.inspector_visible = true;
         (void)harness.frame();
         const auto section = harness.drawn_text_center("Quantize / Snap");
         REQUIRE(section);
@@ -1608,7 +1608,7 @@ struct timing_controls_fixture_t {
         down.button.clicks = 2;
         up.button.clicks = 2;
         (void)harness.frame(std::array{mouse_motion(p.first, p.second), down, up});
-        check_bga(worm_ui_nuklear_compose_state().inline_offset_open);
+        check_bga(worm_ui_nuklear_compose_state().inline_offset.inline_offset_open);
         (void)harness.frame();
     }
 };
@@ -1627,14 +1627,14 @@ TEST_CASE("Timing controls leave the normal toolbar and appear during timing foc
           "[frontend-state][event-harness][timing-controls]") {
     timing_controls_fixture_t f;
     auto& state = worm_ui_nuklear_compose_state();
-    state.inspector_visible = false;
+    state.dock_layout.inspector_visible = false;
     (void)f.harness.frame();
     check_bga(!f.harness.drawn_text_center("+0.000 s"));
     f.harness.view().compose.timing_focus = true;
     (void)f.harness.frame();
     check_bga(f.harness.drawn_text_center("+0.000 s").has_value());
     f.harness.view().compose.timing_focus = false;
-    state.inspector_visible = true;
+    state.dock_layout.inspector_visible = true;
     const auto snap = f.reveal("BPM snap");
     check_bga(snap.first > 1200);
     check_bga(f.harness.drawn_text_center("Timing Settings...").has_value());
@@ -1646,7 +1646,7 @@ TEST_CASE("Offset editor commits one exact stamped action from either timing sur
     const bool inspector = GENERATE(true, false);
     f.harness.view().compose.timing_focus = !inspector;
     f.edit_offset();
-    check_bga(worm_ui_nuklear_compose_state().inline_offset_in_inspector == inspector);
+    check_bga(worm_ui_nuklear_compose_state().inline_offset.inline_offset_in_inspector == inspector);
     SDL_Event text{};
     text.type = SDL_EVENT_TEXT_INPUT;
     text.text.type = SDL_EVENT_TEXT_INPUT;
@@ -1659,7 +1659,7 @@ TEST_CASE("Offset editor commits one exact stamped action from either timing sur
     check_bga(committed.get().compose_audio_offset_denominator == 8);
     check_bga(committed.get().compose_input_chart_id == 1);
     check_bga(committed.get().compose_input_document_revision == 1);
-    check_bga(!worm_ui_nuklear_compose_state().inline_offset_open);
+    check_bga(!worm_ui_nuklear_compose_state().inline_offset.inline_offset_open);
     check_bga(f.harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
@@ -1667,15 +1667,15 @@ TEST_CASE("Hiding an offset editor owner cancels its draft",
           "[frontend-state][event-harness][timing-controls]") {
     timing_controls_fixture_t f;
     f.edit_offset();
-    worm_ui_nuklear_compose_state().inspector_visible = false;
+    worm_ui_nuklear_compose_state().dock_layout.inspector_visible = false;
     check_bga(f.harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
-    check_bga(!worm_ui_nuklear_compose_state().inline_offset_open);
+    check_bga(!worm_ui_nuklear_compose_state().inline_offset.inline_offset_open);
     f.harness.view().compose.timing_focus = true;
     f.edit_offset();
-    check_bga(!worm_ui_nuklear_compose_state().inline_offset_in_inspector);
+    check_bga(!worm_ui_nuklear_compose_state().inline_offset.inline_offset_in_inspector);
     f.harness.view().compose.timing_focus = false;
     check_bga(f.harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
-    check_bga(!worm_ui_nuklear_compose_state().inline_offset_open);
+    check_bga(!worm_ui_nuklear_compose_state().inline_offset.inline_offset_open);
 }
 
 TEST_CASE("Inspector offset nudges preserve frame precision and disabled locks",
@@ -1712,7 +1712,7 @@ TEST_CASE("Collapsing Timing cancels an inspector offset draft",
     const auto header = f.harness.drawn_text_center("Timing");
     REQUIRE(header);
     const auto collapsed = click(f.harness, header->first, header->second);
-    check_bga(!worm_ui_nuklear_compose_state().inline_offset_open);
+    check_bga(!worm_ui_nuklear_compose_state().inline_offset.inline_offset_open);
     check_bga(collapsed.front().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     check_bga(!f.harness.drawn_text_center("BPM snap"));
 }
@@ -1723,7 +1723,7 @@ TEST_CASE("Switching into timing focus cancels the hidden inspector offset draft
     f.edit_offset();
     f.harness.view().compose.timing_focus = true;
     const auto changed = f.harness.frame();
-    check_bga(!worm_ui_nuklear_compose_state().inline_offset_open);
+    check_bga(!worm_ui_nuklear_compose_state().inline_offset.inline_offset_open);
     check_bga(changed.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     check_bga(f.harness.drawn_text_center("+0.000 s").has_value());
 }
@@ -1738,14 +1738,14 @@ TEST_CASE("Inspector BPM snap choice is shared with the timing-focus toolbar",
     const auto half = f.harness.drawn_text_center("0.5");
     REQUIRE(half);
     const auto selected = click(f.harness, half->first, half->second);
-    check_bga(worm_ui_nuklear_compose_state().beat_fit_snap_step_index == 2);
+    check_bga(worm_ui_nuklear_compose_state().waveform_drag.beat_fit_snap_step_index == 2);
     check_bga(selected.front().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     check_bga(selected.front().get().compose_input_count == 0);
     check_bga(selected.front().get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE);
     f.harness.view().compose.timing_focus = true;
     (void)f.harness.frame();
     check_bga(f.harness.drawn_text_center("0.5").has_value());
-    check_bga(worm_ui_nuklear_compose_state().beat_fit_snap_step_index == 2);
+    check_bga(worm_ui_nuklear_compose_state().waveform_drag.beat_fit_snap_step_index == 2);
 }
 
 TEST_CASE("Layers assist icon is independent of lock and sends one stamped session toggle",
@@ -1753,8 +1753,8 @@ TEST_CASE("Layers assist icon is independent of lock and sends one stamped sessi
     nuklear_event_harness_t harness{1280, 900};
     REQUIRE(harness.ready());
     auto& state = worm_ui_nuklear_compose_state();
-    state.inspector_visible = state.sounds_panel_visible = false;
-    state.layers_panel_visible = true;
+    state.dock_layout.inspector_visible = state.dock_layout.sounds_panel_visible = false;
+    state.dock_layout.layers_panel_visible = true;
     WormUiComposeSemanticLayerView layer{.layer_id=7,.name="Lead",.red=255,
         .assigned_note_count=3,.visible=true,.locked=true};
     auto& view=harness.view().compose;

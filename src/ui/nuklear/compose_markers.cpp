@@ -302,7 +302,7 @@ void handle_bookmark_row(const WormUiComposeView& view, WormUiWorkspaceAction& a
     state.bookmark_id = bookmark.bookmark_id;
     if (row.double_clicked) {
         const auto [x, y] = row_center(row);
-        (void)begin_compose_bookmark_rename_anchored(worm_ui_nuklear_compose_state().bookmark_rename,
+        (void)begin_compose_bookmark_rename_anchored(worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename,
                                                      view, bookmark.bookmark_id, x, y);
         return;
     }
@@ -371,7 +371,7 @@ void handle_section_row(const WormUiComposeView& view, const WormUiComposeSectio
     state.section_id = section.section_id;
     if (!row.double_clicked) return;
     const auto [x, y] = row_center(row);
-    (void)begin_compose_section_label_inline(worm_ui_nuklear_compose_state().bookmark_rename, view,
+    (void)begin_compose_section_label_inline(worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename, view,
                                              section.section_id, x, y);
 }
 

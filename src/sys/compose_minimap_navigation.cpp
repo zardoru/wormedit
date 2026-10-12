@@ -80,16 +80,16 @@ auto seek_stopped_compose_transport(document_history_t& history,
         if (notifications) notifications->post(severity, notification_source_t::input, message);
         return std::string{message};
     };
-    if (cache.chart != state.chart || cache.revision != history.document.revision ||
-        !cache.marker_timing_index || !cache.cached_measure_index)
+    if (cache.scene.chart != state.chart || cache.scene.revision != history.document.revision ||
+        !cache.timing.marker_timing_index || !cache.scene.cached_measure_index)
         return feedback(notification_severity_t::warning, "Compose seek is unavailable until the chart is ready.");
     const auto chart = std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
     if (chart == history.document.charts.end()) return feedback(notification_severity_t::warning, "The selected chart is unavailable.");
     const auto target = target_at_frame(frame, audio::output_sample_rate,
-        *cache.marker_timing_index, *cache.cached_measure_index, edit_snap_denominator(*chart, state));
+        *cache.timing.marker_timing_index, *cache.scene.cached_measure_index, edit_snap_denominator(*chart, state));
     if (!target) return feedback(notification_severity_t::warning, "The requested chart position is unavailable.");
-    const auto moved = move_compose_minimap_cursor(history, state, *cache.cached_measure_index,
-        *cache.marker_timing_index, *target);
+    const auto moved = move_compose_minimap_cursor(history, state, *cache.scene.cached_measure_index,
+        *cache.timing.marker_timing_index, *target);
     return moved.accepted ? feedback(notification_severity_t::hint, "Compose cursor moved to the seek position.")
                           : feedback(notification_severity_t::warning, "The requested chart position could not be reached.");
 }
@@ -97,25 +97,25 @@ auto seek_stopped_compose_transport(document_history_t& history,
 void retain_compose_minimap_start(application_command_state_t& application,
     const document_history_t& history, const editor_interaction_state_t& state,
     const compose_minimap_target_t& target, const timing_index_t& timing) {
-    application.minimap_start_frame.reset();
+    application.transport.minimap_start_frame.reset();
     const bool playing = application.transport_preview_playing && application.transport_preview_playing();
     const bool paused = application.transport_preview_paused && application.transport_preview_paused();
     const auto end = timing_at(timing, timing.total_rows);
     if (playing || paused || !end || !end.seconds) return;
     if (static_cast<long double>(target.frame) / audio::output_sample_rate <=
         static_cast<long double>(end.seconds->numerator) / end.seconds->denominator) return;
-    application.minimap_start_frame = application_command_state_t::minimap_start_frame_t{
+    application.transport.minimap_start_frame = application_command_state_t::minimap_start_frame_t{
         state.chart, history.document.revision, state.cursor, target.frame, state.cursor_subrow};
 }
 auto compose_minimap_start_frame(application_command_state_t& application,
     const document_history_t& history, const editor_interaction_state_t* state)
     -> std::optional<std::uint64_t> {
-    const auto& pending = application.minimap_start_frame;
+    const auto& pending = application.transport.minimap_start_frame;
     if (!pending) return std::nullopt;
     if (!state || state->chart != pending->chart || history.document.revision != pending->revision ||
         state->cursor != pending->cursor || state->cursor_subrow != pending->cursor_subrow ||
         state->virtual_bms_cursor_row) {
-        application.minimap_start_frame.reset();
+        application.transport.minimap_start_frame.reset();
         return std::nullopt;
     }
     return pending->frame;

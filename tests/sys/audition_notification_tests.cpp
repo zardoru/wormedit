@@ -67,9 +67,9 @@ TEST_CASE("Catalog audition rejects missing sources once and idle stays quiet", 
 }
 TEST_CASE("Object then draft audition preserve producer diagnostics and consumption order", "[audio][audition-notification]") {
     audition_fixture_t fixture;
-    fixture.cache.audition_request = editor_object_audition_request_t{
+    fixture.cache.frame.audition_request = editor_object_audition_request_t{
         .object = {editor_selection_object_kind_t::bpm_event, object_id_t{1}}};
-    fixture.cache.draft_audition_request = bmson_draft_audition_request_t{.chart = chart_id_t{2}};
+    fixture.cache.frame.draft_audition_request = bmson_draft_audition_request_t{.chart = chart_id_t{2}};
     const auto expected = audio::resolve_bmson_draft_audition(fixture.history.document,
         {.chart = chart_id_t{2}}, {});
     expect_audition(!expected.diagnostics.empty());
@@ -80,7 +80,7 @@ TEST_CASE("Object then draft audition preserve producer diagnostics and consumpt
     expect_audition(entries[0].severity == notification_severity_t::error);
     expect_audition(entries[1].message == "Only notes and BGM events can be prepared for audition.");
     expect_audition(entries[1].severity == notification_severity_t::warning);
-    expect_audition(!fixture.cache.audition_request && !fixture.cache.draft_audition_request);
+    expect_audition(!fixture.cache.frame.audition_request && !fixture.cache.frame.draft_audition_request);
     fixture.compose();
     expect_audition(fixture.center.statistics().posted == 2);
 }
@@ -158,10 +158,10 @@ TEST_CASE("Auditioning a silent note or BGM event is quietly consumed", "[audio]
     fixture.history.document.charts = {chart};
     for (const auto& object : {editor_selection_object_t{editor_selection_object_kind_t::note, object_id_t{4}},
                                editor_selection_object_t{editor_selection_object_kind_t::bgm_event, object_id_t{5}}}) {
-        fixture.cache.audition_request = editor_object_audition_request_t{
+        fixture.cache.frame.audition_request = editor_object_audition_request_t{
             .document_revision = fixture.history.document.revision, .chart = chart.id, .object = object};
         fixture.compose();
-        expect_audition(!fixture.cache.audition_request);
+        expect_audition(!fixture.cache.frame.audition_request);
     }
     expect_audition(fixture.entries().empty());
 }

@@ -38,20 +38,20 @@ static void append_bgm_horizontal_scroll(WormUiWorkspaceAction* action,
 }
 
 static void update_compose_note_label_cache(const WormUiComposeView* view) {
-    if (state.label_project_id == view->project_id && state.label_chart_id == view->chart_id &&
-        state.label_document_revision == view->document_revision &&
-        state.label_note_id == view->selected_note_label_note_id)
+    if (state.note_label.label_project_id == view->project_id && state.note_label.label_chart_id == view->chart_id &&
+        state.note_label.label_document_revision == view->document_revision &&
+        state.note_label.label_note_id == view->selected_note_label_note_id)
         return;
-    state.note_label.fill('\0');
+    state.note_label.note_label.fill('\0');
     if (view->selected_note_label && view->selected_note_label_note_id != 0) {
-        const auto length = std::min(strlen(view->selected_note_label), state.note_label.size() - 1);
-        memcpy(state.note_label.data(), view->selected_note_label, length);
-        state.note_label[length] = '\0';
+        const auto length = std::min(strlen(view->selected_note_label), state.note_label.note_label.size() - 1);
+        memcpy(state.note_label.note_label.data(), view->selected_note_label, length);
+        state.note_label.note_label[length] = '\0';
     }
-    state.label_project_id = view->project_id;
-    state.label_chart_id = view->chart_id;
-    state.label_document_revision = view->document_revision;
-    state.label_note_id = view->selected_note_label_note_id;
+    state.note_label.label_project_id = view->project_id;
+    state.note_label.label_chart_id = view->chart_id;
+    state.note_label.label_document_revision = view->document_revision;
+    state.note_label.label_note_id = view->selected_note_label_note_id;
 }
 
 // Shows or hides the song bar under the seek bar; unavailable while the song has no audio.
@@ -187,36 +187,36 @@ static void render_color_view_group(const ComposeToolbarContext& toolbar) {
         wormedit::ui::vector_icons::view_snap, wormedit::ui::vector_icons::view_layers};
     for (std::size_t index = 0; index < std::size(views); ++index)
         if (wormedit::ui::chrome::DrawnIconButton{icons[index], tips[index],
-                state.color_view == views[index]}.render(toolbar.context))
-            state.color_view = views[index];
+                state.input_queue.color_view == views[index]}.render(toolbar.context))
+            state.input_queue.color_view = views[index];
 }
 
 static void render_panel_group(const ComposeToolbarContext& toolbar) {
     auto* context = toolbar.context;
-    if (wormedit::ui::chrome::IconButton{compose_inspector_icon(state.inspector_visible),
-            state.inspector_visible ? "Hide inspector" : "Show inspector",
-            state.inspector_visible}.render(context))
-        state.inspector_visible = !state.inspector_visible;
+    if (wormedit::ui::chrome::IconButton{compose_inspector_icon(state.dock_layout.inspector_visible),
+            state.dock_layout.inspector_visible ? "Hide inspector" : "Show inspector",
+            state.dock_layout.inspector_visible}.render(context))
+        state.dock_layout.inspector_visible = !state.dock_layout.inspector_visible;
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::sound_list,
-            state.sounds_panel_visible ? "Hide sounds list" : "Show sounds list",
-            state.sounds_panel_visible}.render(context))
-        state.sounds_panel_visible = !state.sounds_panel_visible;
+            state.dock_layout.sounds_panel_visible ? "Hide sounds list" : "Show sounds list",
+            state.dock_layout.sounds_panel_visible}.render(context))
+        state.dock_layout.sounds_panel_visible = !state.dock_layout.sounds_panel_visible;
     if (worm_ui_nuklear_bms_branch_panel_visible(toolbar.view) &&
         wormedit::ui::chrome::IconButton{Glyph::chevrons_right,
-            state.branch_panel_visible ? "Hide BMS branches" : "Show BMS branches",
-            state.branch_panel_visible}.render(context))
-        state.branch_panel_visible = !state.branch_panel_visible;
+            state.dock_layout.branch_panel_visible ? "Hide BMS branches" : "Show BMS branches",
+            state.dock_layout.branch_panel_visible}.render(context))
+        state.dock_layout.branch_panel_visible = !state.dock_layout.branch_panel_visible;
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::measure_list,
-            state.measures_panel_visible ? "Hide measures list" : "Show measures list",
-            state.measures_panel_visible}.render(context))
-        state.measures_panel_visible = !state.measures_panel_visible;
+            state.dock_layout.measures_panel_visible ? "Hide measures list" : "Show measures list",
+            state.dock_layout.measures_panel_visible}.render(context))
+        state.dock_layout.measures_panel_visible = !state.dock_layout.measures_panel_visible;
     if (wormedit::ui::chrome::IconButton{Glyph::layers,
-            state.layers_panel_visible ? "Hide layers" : "Show layers",
-            state.layers_panel_visible}.render(context))
-        state.layers_panel_visible = !state.layers_panel_visible;
+            state.dock_layout.layers_panel_visible ? "Hide layers" : "Show layers",
+            state.dock_layout.layers_panel_visible}.render(context))
+        state.dock_layout.layers_panel_visible = !state.dock_layout.layers_panel_visible;
     if (wormedit::ui::chrome::IconButton{Glyph::eye,
-            state.bga_panel_visible ? "Hide BGA list" : "Show BGA list", state.bga_panel_visible}.render(context))
-        state.bga_panel_visible = !state.bga_panel_visible;
+            state.dock_layout.bga_panel_visible ? "Hide BGA list" : "Show BGA list", state.dock_layout.bga_panel_visible}.render(context))
+        state.dock_layout.bga_panel_visible = !state.dock_layout.bga_panel_visible;
     render_compose_bgm_bar_toggle(toolbar);
 }
 
@@ -275,7 +275,7 @@ static void reset_bgm_column_count_draft(
 
 static auto bgm_column_count_draft(const WormUiComposeView& view)
     -> worm_ui_nuklear_compose_state_t::bgm_column_count_edit_t& {
-    auto& draft = state.bgm_column_count_edit;
+    auto& draft = state.inline_offset.bgm_column_count_edit;
     if (!draft.initialized || !view.bgm_column_count_editable ||
         draft.chart_id != view.chart_id || draft.revision != view.document_revision)
         reset_bgm_column_count_draft(draft, view);
@@ -368,28 +368,28 @@ static void render_inline_offset(const ComposeToolbarContext& toolbar, bool in_i
     auto* context = toolbar.context;
     const auto& view = *toolbar.view;
     const auto bounds = nk_widget_bounds(context);
-    if (!state.inline_offset_open && nk_input_is_mouse_click_in_rect(&context->input, NK_BUTTON_DOUBLE, bounds) &&
+    if (!state.inline_offset.inline_offset_open && nk_input_is_mouse_click_in_rect(&context->input, NK_BUTTON_DOUBLE, bounds) &&
         worm_ui_nuklear_begin_inline_offset(state, view))
-        state.inline_offset_in_inspector = in_inspector;
-    if (!state.inline_offset_open || state.inline_offset_in_inspector != in_inspector) {
+        state.inline_offset.inline_offset_in_inspector = in_inspector;
+    if (!state.inline_offset.inline_offset_open || state.inline_offset.inline_offset_in_inspector != in_inspector) {
         render_offset_value(context, view);
         return;
     }
     worm_ui_nuklear_update_inline_offset(state, view, *toolbar.action, false, false);
-    if (!state.inline_offset_open) {
+    if (!state.inline_offset.inline_offset_open) {
         nk_edit_unfocus(context);
         render_offset_value(context, view);
         return;
     }
     const auto flags = wormedit::ui::chrome::autofocus_text_field(context,
         NK_EDIT_FIELD | NK_EDIT_SIG_ENTER | NK_EDIT_AUTO_SELECT,
-        state.inline_offset_text.data(), static_cast<int>(state.inline_offset_text.size()),
-        nk_filter_default, state.inline_offset_focus_pending);
+        state.inline_offset.inline_offset_text.data(), static_cast<int>(state.inline_offset.inline_offset_text.size()),
+        nk_filter_default, state.inline_offset.inline_offset_focus_pending);
     worm_ui_nuklear_update_inline_offset(state, view, *toolbar.action,
         (flags & NK_EDIT_COMMITED) != 0, (flags & NK_EDIT_DEACTIVATED) != 0);
-    if (!state.inline_offset_open) nk_edit_unfocus(context);
-    if (state.inline_offset_error[0] && wormedit::ui::nuklear::tooltip::hovered(context, bounds))
-        wormedit::ui::nuklear::tooltip::text(context, state.inline_offset_error.data());
+    if (!state.inline_offset.inline_offset_open) nk_edit_unfocus(context);
+    if (state.inline_offset.inline_offset_error[0] && wormedit::ui::nuklear::tooltip::hovered(context, bounds))
+        wormedit::ui::nuklear::tooltip::text(context, state.inline_offset.inline_offset_error.data());
 }
 
 static void render_compose_audio_offset(const ComposeToolbarContext& toolbar, bool show_offset,
@@ -397,7 +397,7 @@ static void render_compose_audio_offset(const ComposeToolbarContext& toolbar, bo
     auto* context = toolbar.context;
     const auto& view = *toolbar.view;
     const bool disabled = view.waveform_timing_locked || view.audio_offset_locked || view.waveform_offset_drag_active ||
-                          !view.waveform_overview_row_count || state.inline_offset_open;
+                          !view.waveform_overview_row_count || state.inline_offset.inline_offset_open;
     const auto ten_ms = static_cast<std::int64_t>(std::max(1U, view.waveform_overview_sample_rate / 100U));
     if (disabled) nk_widget_disable_begin(context);
     if (wormedit::ui::chrome::IconButton{Glyph::chevrons_left, "Nudge audio offset -10 ms"}.render(context))
@@ -424,13 +424,13 @@ static void render_compose_snap_controls(nk_context* context) {
         "BPM snap step 0.25 (Ctrl+drag beat fit; Ctrl+wheel while dragging)",
         "BPM snap step 0.1 (Ctrl+drag beat fit; Ctrl+wheel while dragging)",
     };
-    const auto step_index = std::min<std::size_t>(state.beat_fit_snap_step_index,
+    const auto step_index = std::min<std::size_t>(state.waveform_drag.beat_fit_snap_step_index,
                                                   std::size(steps) - 1);
     if (wormedit::ui::chrome::IconButton{Glyph::magnet, tooltips[step_index]}.render(context))
-        state.beat_fit_snap_step_index = static_cast<std::uint8_t>((step_index + 1) % std::size(steps));
-    state.beat_fit_snap_step_index = static_cast<std::uint8_t>(std::min<int>(
+        state.waveform_drag.beat_fit_snap_step_index = static_cast<std::uint8_t>((step_index + 1) % std::size(steps));
+    state.waveform_drag.beat_fit_snap_step_index = static_cast<std::uint8_t>(std::min<int>(
         wormedit::ui::chrome::safe_combo(context, steps, static_cast<int>(std::size(steps)),
-                 state.beat_fit_snap_step_index, 20, nk_vec2(70, 140)),
+                 state.waveform_drag.beat_fit_snap_step_index, 20, nk_vec2(70, 140)),
         static_cast<int>(std::size(steps) - 1)));
 }
 

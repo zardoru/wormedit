@@ -668,37 +668,37 @@ TEST_CASE("Note kind shortcut activates paint and keeps it active when repeated"
         fixture.application_state, fixture.sink);
     REQUIRE(result.accepted);
     CHECK(fixture.compose_state->armed_note_kind == wormedit::note_kind_t::hold);
-    CHECK(fixture.application_state.note_paint_mode_active);
+    CHECK(fixture.application_state.compose_gesture.note_paint_mode_active);
     CHECK(invoke_application_command(
         {.kind = application_command_kind_t::edit_note_kind, .note_kind = 1},
         fixture.fixture.history, fixture.workspace, fixture.compose_state, fixture.preview,
         fixture.application_state, fixture.sink).accepted);
-    CHECK(fixture.application_state.note_paint_mode_active);
+    CHECK(fixture.application_state.compose_gesture.note_paint_mode_active);
 }
 
 TEST_CASE("Timing Settings command toggles without changing chart cursor selection or tool", "[sys][timing-settings]") {
     TimingInsertFixture fixture;
     const auto revision = fixture.fixture.history.document.revision;
     const auto cursor = fixture.compose_state->cursor;
-    const auto tool = fixture.application_state.note_paint_mode_active;
+    const auto tool = fixture.application_state.compose_gesture.note_paint_mode_active;
     const auto selection = fixture.compose_state->selected_objects;
     CHECK(fixture.invoke(application_command_kind_t::timing_open_settings).accepted);
-    CHECK(fixture.application_state.timing_settings_visible);
+    CHECK(fixture.application_state.transport.timing_settings_visible);
     CHECK(fixture.invoke(application_command_kind_t::timing_open_settings).accepted);
-    CHECK_FALSE(fixture.application_state.timing_settings_visible);
+    CHECK_FALSE(fixture.application_state.transport.timing_settings_visible);
     CHECK(fixture.fixture.history.document.revision == revision);
     CHECK(fixture.fixture.history.undo.empty());
     CHECK(fixture.compose_state->cursor == cursor);
-    CHECK(fixture.application_state.note_paint_mode_active == tool);
+    CHECK(fixture.application_state.compose_gesture.note_paint_mode_active == tool);
     CHECK(fixture.compose_state->selected_objects == selection);
 }
 
 TEST_CASE("Select shortcut ends note paint without changing the armed kind", "[sys][application_commands]") {
     TimingInsertFixture fixture;
-    fixture.application_state.note_paint_mode_active = true;
+    fixture.application_state.compose_gesture.note_paint_mode_active = true;
     fixture.compose_state->armed_note_kind = wormedit::note_kind_t::hold;
     REQUIRE(fixture.invoke(application_command_kind_t::edit_tool_select).accepted);
-    CHECK_FALSE(fixture.application_state.note_paint_mode_active);
+    CHECK_FALSE(fixture.application_state.compose_gesture.note_paint_mode_active);
     CHECK(fixture.compose_state->armed_note_kind == wormedit::note_kind_t::hold);
     fixture.workspace.active_tab = wormedit::workspace_tab_t::metadata;
     CHECK_FALSE(fixture.invoke(application_command_kind_t::edit_tool_select).accepted);
@@ -712,7 +712,7 @@ TEST_CASE("Disallowed note kind leaves Select and the armed kind unchanged", "[s
         fixture.fixture.history, fixture.workspace, fixture.compose_state, fixture.preview,
         fixture.application_state, fixture.sink);
     CHECK_FALSE(result.accepted);
-    CHECK_FALSE(fixture.application_state.note_paint_mode_active);
+    CHECK_FALSE(fixture.application_state.compose_gesture.note_paint_mode_active);
     CHECK(fixture.compose_state->armed_note_kind == wormedit::note_kind_t::tap);
 }
 
@@ -785,11 +785,11 @@ TEST_CASE("timing insertion rejects locked edits and missing charts",
     using namespace wormedit;
     TimingInsertFixture fixture;
     const auto revision = fixture.fixture.history.document.revision;
-    fixture.application_state.timing_locked = true;
+    fixture.application_state.timing_recipe.timing_locked = true;
     CHECK_FALSE(fixture.invoke(application_command_kind_t::timing_insert_bpm).accepted);
     CHECK(fixture.latest_message() == "Timing edits are locked.");
     CHECK_FALSE(fixture.preview);
-    fixture.application_state.timing_locked = false;
+    fixture.application_state.timing_recipe.timing_locked = false;
     fixture.workspace.selected_chart.reset();
     CHECK_FALSE(fixture.invoke(application_command_kind_t::timing_insert_sv).accepted);
     CHECK_FALSE(fixture.preview);
@@ -855,7 +855,7 @@ TEST_CASE("semantic command success remains current after a navigation hint",
         {.id = wormedit::layer_id_t{7}, .name = "First", .color = {32, 64, 128, 255}},
         {.id = wormedit::layer_id_t{8}, .name = "Second", .color = {64, 128, 32, 255}}};
     fixture.compose_state->selected_notes = {wormedit::object_id_t{1}, wormedit::object_id_t{2}};
-    fixture.application_state.semantic_layer_target = wormedit::layer_id_t{8};
+    fixture.application_state.semantic_layer.semantic_layer_target = wormedit::layer_id_t{8};
     const auto applied = fixture.invoke(application_command_kind_t::semantic_layer_apply);
     REQUIRE(applied.accepted);
     fixture.sink.post(wormedit::notification_severity_t::hint,
@@ -944,7 +944,7 @@ TEST_CASE("Application No layer command clears selection and disables other memb
     using namespace wormedit;
     TimingInsertFixture fixture;
     seed_layer_commands(fixture);
-    fixture.application_state.semantic_layer_target_none = true;
+    fixture.application_state.semantic_layer.semantic_layer_target_none = true;
     require_layer_command(fixture.invoke(application_command_kind_t::semantic_layer_apply).accepted);
     check_layer_command(fixture.fixture.history.undo.size() == 1);
     check_layer_command(fixture.fixture.history.document.charts.front().measures.front().notes.front().semantic_layers.empty());
@@ -953,7 +953,7 @@ TEST_CASE("Application No layer command clears selection and disables other memb
     check_layer_command(!fixture.invoke(application_command_kind_t::semantic_layer_toggle).accepted);
     check_layer_command(fixture.fixture.history.undo.size() == 1);
     require_layer_command(fixture.invoke(application_command_kind_t::semantic_layer_clear_target).accepted);
-    check_layer_command(!fixture.application_state.semantic_layer_target_none);
+    check_layer_command(!fixture.application_state.semantic_layer.semantic_layer_target_none);
 }
 
 TEST_CASE("Application layer commands replace membership and reject locked sources without edits",
@@ -962,7 +962,7 @@ TEST_CASE("Application layer commands replace membership and reject locked sourc
     for (const auto locked : {false, true}) {
         TimingInsertFixture fixture;
         seed_layer_commands(fixture, locked);
-        fixture.application_state.semantic_layer_target = layer_id_t{8};
+        fixture.application_state.semantic_layer.semantic_layer_target = layer_id_t{8};
         const auto original = write_native_project(fixture.fixture.history.document).bytes;
         const auto result = fixture.invoke(application_command_kind_t::semantic_layer_apply);
         check_layer_command(result.accepted == !locked);
@@ -974,7 +974,7 @@ TEST_CASE("Application layer commands replace membership and reject locked sourc
             check_layer_command(notes[0].semantic_layers == std::vector{layer_id_t{8}});
             check_layer_command(notes[1].semantic_layers == std::vector{layer_id_t{8}});
         }
-        check_layer_command(fixture.application_state.semantic_layer_target == layer_id_t{8});
+        check_layer_command(fixture.application_state.semantic_layer.semantic_layer_target == layer_id_t{8});
     }
 }
 
@@ -983,14 +983,14 @@ TEST_CASE("Application numbered layer selection resets No layer target",
     using namespace wormedit;
     TimingInsertFixture fixture;
     seed_layer_commands(fixture);
-    fixture.application_state.semantic_layer_target_none = true;
+    fixture.application_state.semantic_layer.semantic_layer_target_none = true;
     const auto result = invoke_application_command(
         {.kind = application_command_kind_t::semantic_layer_select_slot, .semantic_layer_slot = 1},
         fixture.fixture.history, fixture.workspace, fixture.compose_state, fixture.preview,
         fixture.application_state, fixture.sink);
     require_layer_command(result.accepted);
-    check_layer_command(!fixture.application_state.semantic_layer_target_none);
-    check_layer_command(fixture.application_state.semantic_layer_target == layer_id_t{7});
+    check_layer_command(!fixture.application_state.semantic_layer.semantic_layer_target_none);
+    check_layer_command(fixture.application_state.semantic_layer.semantic_layer_target == layer_id_t{7});
 }
 
 
@@ -1001,8 +1001,8 @@ TEST_CASE("bookmark dispatcher preserves one typed seek producer warning", "[uni
     chart.bookmarks.push_back({.id = object_id_t{1001}, .label = "Next",
         .anchor = marker_anchor_t::beat, .position = local_position_t{measure_id_t{1}, 900}});
     fixture.application_state.transport_preview_playing = [] { return true; };
-    fixture.application_state.preview_playhead_absolute_row = 0.0;
-    fixture.application_state.transport_seek_posts_feedback = true;
+    fixture.application_state.transport.preview_playhead_absolute_row = 0.0;
+    fixture.application_state.transport.transport_seek_posts_feedback = true;
     fixture.application_state.transport_seek = [&](std::uint64_t) {
         fixture.sink.post(notification_severity_t::warning, notification_source_t::audio, "Opaque seek failure.");
         return std::string{"Opaque seek failure."};
@@ -1238,7 +1238,7 @@ TEST_CASE("Transport rates accept exact preferences and reject boundaries", "[un
     CHECK(calls == 0);
     for (std::size_t index = 8; index > 0; --index) {
         REQUIRE(step_transport_rate(state, false));
-        CHECK(state.transport_rate_index == index - 1);
+        CHECK(state.transport.transport_rate_index == index - 1);
         CHECK(requested == wormedit::audio::playback_rates[index - 1]);
     }
     CHECK_FALSE(step_transport_rate(state, false));
@@ -1246,9 +1246,9 @@ TEST_CASE("Transport rates accept exact preferences and reject boundaries", "[un
     CHECK_FALSE(set_transport_rate(state, 9));
     state.transport_set_playback_rate = [](wormedit::rational_t) { return false; };
     CHECK_FALSE(step_transport_rate(state, true));
-    CHECK(state.transport_rate_index == 0);
-    CHECK_FALSE(state.transport_keep_pitch_available);
-    CHECK_FALSE(state.transport_keep_pitch);
+    CHECK(state.transport.transport_rate_index == 0);
+    CHECK_FALSE(state.transport.transport_keep_pitch_available);
+    CHECK_FALSE(state.transport.transport_keep_pitch);
     REQUIRE(parse_application_command("transport.rate_slower"));
     REQUIRE(parse_application_command("transport.rate_faster"));
     CHECK(parse_application_command("transport.rate_slower")->kind == application_command_kind_t::transport_rate_slower);
@@ -1319,7 +1319,7 @@ TEST_CASE("Minimap transport gestures preserve playing paused and stopped polici
     CHECK(navigate_compose_minimap_transport(state, 300, false, true) == "seek");
     CHECK(paused);
     CHECK(resume == 300);
-    state.minimap_click_moves_paused_playhead = true;
+    state.compose_view.minimap_click_moves_paused_playhead = true;
     CHECK(navigate_compose_minimap_transport(state, 400, false, false) == "seek");
     CHECK(resume == 400);
     CHECK(navigate_compose_minimap_transport(state, 500, false, true).empty());
@@ -1372,7 +1372,7 @@ TEST_CASE("Minimap mapping converts rates offsets snaps and chart endpoints with
 TEST_CASE("Minimap exact starts expire when the fractional cursor changes", "[unit][sys][commands]") {
     AreaFixture fixture;
     application_command_state_t application;
-    application.minimap_start_frame = application_command_state_t::minimap_start_frame_t{
+    application.transport.minimap_start_frame = application_command_state_t::minimap_start_frame_t{
         fixture.state.chart, fixture.history.document.revision, fixture.state.cursor, 44'100,
         fixture.state.cursor_subrow};
     REQUIRE(compose_minimap_start_frame(application, fixture.history, &fixture.state));
@@ -1419,18 +1419,18 @@ TEST_CASE("Minimap audio-tail starts are bound to chart revision and cursor", "[
     SECTION("playing and paused exact seeks require no next-start binding") {
         application.transport_preview_playing = [] { return true; };
         retain_compose_minimap_start(application, fixture.history, fixture.state, *target, *timing.index);
-        CHECK_FALSE(application.minimap_start_frame);
+        CHECK_FALSE(application.transport.minimap_start_frame);
         application.transport_preview_playing = [] { return false; };
         application.transport_preview_paused = [] { return true; };
         retain_compose_minimap_start(application, fixture.history, fixture.state, *target, *timing.index);
-        CHECK_FALSE(application.minimap_start_frame);
+        CHECK_FALSE(application.transport.minimap_start_frame);
     }
     SECTION("in-range clicks use their active snapped cursor") {
         const auto in_range = compose_minimap_target(0.1, 441001, 44100, 44100, *timing.index,
         std::get<wormedit::measure_index_t>(measures), 4);
         REQUIRE(in_range);
         retain_compose_minimap_start(application, fixture.history, fixture.state, *in_range, *timing.index);
-        CHECK_FALSE(application.minimap_start_frame);
+        CHECK_FALSE(application.transport.minimap_start_frame);
     }
 }
 
@@ -1476,16 +1476,16 @@ TEST_CASE("Keep pitch dispatch accepts backend preferences without changing docu
     action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH;
     action.transport_keep_pitch = true;
     expect_keep_pitch(dispatch_transport_player_action(action, state, policy) == "Keep pitch is unavailable.");
-    state.transport_keep_pitch_available = true;
+    state.transport.transport_keep_pitch_available = true;
     bool requested{};
     state.transport_set_keep_pitch = [&](bool value) { requested = value; return true; };
     expect_keep_pitch(dispatch_transport_player_action(action, state, policy) == "Keep pitch enabled.");
     expect_keep_pitch(requested);
-    expect_keep_pitch(state.transport_keep_pitch);
+    expect_keep_pitch(state.transport.transport_keep_pitch);
     state.transport_set_keep_pitch = [](bool) { return false; };
     action.transport_keep_pitch = false;
     expect_keep_pitch(dispatch_transport_player_action(action, state, policy) == "Keep pitch is unavailable.");
-    expect_keep_pitch(state.transport_keep_pitch);
+    expect_keep_pitch(state.transport.transport_keep_pitch);
 }
 
 TEST_CASE("Tap timing commands parse independently of document editing", "[unit][sys][commands]") {
@@ -1546,17 +1546,17 @@ TEST_CASE("transport UI producer posts typed rejection and accepted settings onc
     action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH;
     const auto rejected = dispatch_transport_player_action(action, state, policy, sink);
     check_transport_notification(rejected == "Keep pitch is unavailable.");
-    check_transport_notification(!state.transport_keep_pitch);
+    check_transport_notification(!state.transport.transport_keep_pitch);
     center.drain_inbox(notification_time_t{0});
     auto entries = center.snapshot(notification_capacity);
     require_transport_notification(entries.size() == 1);
     check_transport_notification(entries[0].severity == notification_severity_t::warning);
     check_transport_notification(entries[0].source == notification_source_t::audio);
-    state.transport_keep_pitch_available = true;
+    state.transport.transport_keep_pitch_available = true;
     state.transport_set_keep_pitch = [](bool) { return true; };
     action.transport_keep_pitch = true;
     check_transport_notification(dispatch_transport_player_action(action, state, policy, sink) == "Keep pitch enabled.");
-    check_transport_notification(state.transport_keep_pitch);
+    check_transport_notification(state.transport.transport_keep_pitch);
     center.drain_inbox(notification_time_t{0});
     entries = center.snapshot(notification_capacity);
     require_transport_notification(entries.size() == 2);
@@ -1904,9 +1904,9 @@ TEST_CASE("Dock commands use the active Compose context without editing history"
         fixture.compose_state->pending_note_duration_gesture.emplace();
         check_bookmark_callback(!fixture.invoke(kind).accepted);
         fixture.compose_state->pending_note_duration_gesture.reset();
-        fixture.application_state.compose_timing_focus = true;
+        fixture.application_state.compose_view.compose_timing_focus = true;
         check_bookmark_callback(!fixture.invoke(kind).accepted);
-        fixture.application_state.compose_timing_focus = false;
+        fixture.application_state.compose_view.compose_timing_focus = false;
     }
     check_bookmark_callback(calls == 3);
     check_bookmark_callback(fixture.fixture.history.document.revision == revision);
@@ -2023,18 +2023,18 @@ TEST_CASE("Draw and Layer shortcuts select tools without changing the armed note
     const auto revision = fixture.fixture.history.document.revision;
     fixture.compose_state->armed_note_kind = wormedit::note_kind_t::hold;
     require_transient_transport(fixture.invoke(application_command_kind_t::edit_tool_draw).accepted);
-    check_transient_transport(fixture.application_state.note_paint_mode_active);
-    check_transient_transport(!fixture.application_state.semantic_layer_paint_mode_active);
+    check_transient_transport(fixture.application_state.compose_gesture.note_paint_mode_active);
+    check_transient_transport(!fixture.application_state.compose_gesture.semantic_layer_paint_mode_active);
     check_transient_transport(!fixture.invoke(application_command_kind_t::edit_tool_layer).accepted);
-    check_transient_transport(fixture.application_state.note_paint_mode_active);
+    check_transient_transport(fixture.application_state.compose_gesture.note_paint_mode_active);
     fixture.fixture.history.document.charts.front().semantic_layers = {
         {.id = wormedit::layer_id_t{7}, .name = "Brush"}};
-    fixture.application_state.semantic_layer_target = wormedit::layer_id_t{7};
+    fixture.application_state.semantic_layer.semantic_layer_target = wormedit::layer_id_t{7};
     require_transient_transport(fixture.invoke(application_command_kind_t::edit_tool_layer).accepted);
-    check_transient_transport(!fixture.application_state.note_paint_mode_active);
-    check_transient_transport(fixture.application_state.semantic_layer_paint_mode_active);
+    check_transient_transport(!fixture.application_state.compose_gesture.note_paint_mode_active);
+    check_transient_transport(fixture.application_state.compose_gesture.semantic_layer_paint_mode_active);
     require_transient_transport(fixture.invoke(application_command_kind_t::edit_tool_select).accepted);
-    check_transient_transport(!fixture.application_state.semantic_layer_paint_mode_active);
+    check_transient_transport(!fixture.application_state.compose_gesture.semantic_layer_paint_mode_active);
     check_transient_transport(fixture.compose_state->armed_note_kind == wormedit::note_kind_t::hold);
     check_transient_transport(fixture.fixture.history.document.revision == revision);
     check_transient_transport(fixture.fixture.history.undo.empty());
@@ -2047,7 +2047,7 @@ TEST_CASE("Draw shortcut rejects a retained interaction without editable chart g
     history.document.charts.front().lane_layouts.clear();
     const auto revision = history.document.revision;
     check_transient_transport(!fixture.invoke(application_command_kind_t::edit_tool_draw).accepted);
-    check_transient_transport(!fixture.application_state.note_paint_mode_active);
+    check_transient_transport(!fixture.application_state.compose_gesture.note_paint_mode_active);
     check_transient_transport(history.document.revision == revision);
     check_transient_transport(history.undo.empty());
     check_transient_transport(fixture.latest_message() ==
@@ -2091,8 +2091,8 @@ void check_placement_audition(bool enabled) {
     binding.workspace->selected_chart = chart_id_t{1};
     compose_scene_cache_t cache;
     application_command_state_t application;
-    application.editor_preferences.audition_on_click = enabled;
-    application.note_paint_mode_active = true;
+    application.compose_view.editor_preferences.audition_on_click = enabled;
+    application.compose_gesture.note_paint_mode_active = true;
     std::optional<editor_interaction_state_t> interaction;
     flattened_workspace_t flattened;
     flattened.view.compose.visible = true;
@@ -2115,13 +2115,13 @@ void check_placement_audition(bool enabled) {
     action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
         .x_pixels = compose.playable_field_left_pixels + 20,
         .y_pixels = compose_source_y(*y, interaction->viewport_height_pixels,
-            compose_field_downscroll(chart, application.editor_preferences))};
+            compose_field_downscroll(chart, application.compose_view.editor_preferences))};
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
     (void)dispatch_compose_input_action(action, history, *binding.workspace, *interaction,
         viewport, navigation, application, cache, 0.016);
     REQUIRE(history.document.charts.front().measures.front().notes.size() == 1);
-    CHECK(cache.audition_request.has_value() == enabled);
+    CHECK(cache.frame.audition_request.has_value() == enabled);
 }
 } // namespace
 
@@ -2320,14 +2320,14 @@ TEST_CASE("Quantize registry commands toggle session preview and preserve Apply 
     fixture.compose_state->selected_notes = {note.id};
     const auto revision = history.document.revision;
     require_bookmark_callback(fixture.invoke(application_command_kind_t::edit_toggle_quantize_preview).accepted);
-    check_bookmark_callback(fixture.application_state.quantize_editor->preview_enabled);
+    check_bookmark_callback(fixture.application_state.quantize.quantize_editor->preview_enabled);
     check_bookmark_callback(history.document.revision == revision && history.undo.empty());
     require_bookmark_callback(fixture.invoke(application_command_kind_t::edit_toggle_quantize_preview).accepted);
-    check_bookmark_callback(!fixture.application_state.quantize_editor->preview_enabled);
-    fixture.application_state.quantize_editor->request.divisions = 4;
+    check_bookmark_callback(!fixture.application_state.quantize.quantize_editor->preview_enabled);
+    fixture.application_state.quantize.quantize_editor->request.divisions = 4;
     require_bookmark_callback(fixture.invoke(application_command_kind_t::edit_apply_quantize).accepted);
     check_bookmark_callback(history.undo.size() == 1);
-    check_bookmark_callback(fixture.application_state.quantize_applied_report.has_value());
+    check_bookmark_callback(fixture.application_state.quantize.quantize_applied_report.has_value());
     require_bookmark_callback(fixture.invoke(application_command_kind_t::history_undo).accepted);
     check_bookmark_callback(history.document.charts.front().measures.front().notes.front().position == before);
     fixture.workspace.active_tab = wormedit::workspace_tab_t::metadata;
@@ -2349,8 +2349,8 @@ TEST_CASE("Quantize command rejects collisions with preview off and rejects timi
     fixture.compose_state->selected_objects = {{wormedit::editor_selection_object_kind_t::note, notes[0].id}};
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::edit_apply_quantize).accepted);
     check_bookmark_callback(history.document.revision == revision && history.undo.empty());
-    check_bookmark_callback(!fixture.application_state.quantize_editor->preview_enabled);
-    fixture.application_state.compose_timing_focus = true;
+    check_bookmark_callback(!fixture.application_state.quantize.quantize_editor->preview_enabled);
+    fixture.application_state.compose_view.compose_timing_focus = true;
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::edit_toggle_quantize_preview).accepted);
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::edit_apply_quantize).accepted);
 }
@@ -2407,7 +2407,7 @@ void add_selection_spans(TimingInsertFixture& f) {
     chart.sv_recipes = {{.id = recipe_id_t{300}, .name = "Selection recipe",
         .range = {{measure_id_t{1}, 0}, {measure_id_t{1}, 480}}, .output = sv_recipe_output_t::sv,
         .curve = sv_recipe_curve_t::linear, .parameters = {.value_from = {1, 1}, .value_to = {2, 1}}}};
-    f.application_state.kiai_selected_head = 200;
+    f.application_state.timing_recipe.kiai_selected_head = 200;
 }
 }
 
@@ -2416,7 +2416,7 @@ TEST_CASE("Registered Delete removes mixed notes timing Kiai and recipe with one
     using namespace wormedit;
     TimingInsertFixture f;
     add_selection_spans(f);
-    f.application_state.recipe_selected = 300;
+    f.application_state.timing_recipe.recipe_selected = 300;
     f.compose_state->selected_objects.push_back({editor_selection_object_kind_t::bpm_event, object_id_t{102}});
     const auto original = write_native_project(f.fixture.history.document).bytes;
     selection_require(original.has_value());
@@ -2426,8 +2426,8 @@ TEST_CASE("Registered Delete removes mixed notes timing Kiai and recipe with one
     selection_check(chart.bpms.size() == 1);
     selection_check(chart.kiai.empty());
     selection_check(chart.sv_recipes.empty());
-    selection_check(f.application_state.kiai_selected_head == 0);
-    selection_check(f.application_state.recipe_selected == 0);
+    selection_check(f.application_state.timing_recipe.kiai_selected_head == 0);
+    selection_check(f.application_state.timing_recipe.recipe_selected == 0);
     selection_check(f.fixture.history.undo.size() == 1);
     selection_require(undo_document_command(f.fixture.history));
     selection_check(write_native_project(f.fixture.history.document).bytes == original);
@@ -2456,7 +2456,7 @@ TEST_CASE("Registered Cut rejects a late stem deletion without publishing timing
     f.compose_state->selected_objects = {{editor_selection_object_kind_t::bgm_event, object_id_t{33}},
         {editor_selection_object_kind_t::bgm_event, object_id_t{35}},
         {editor_selection_object_kind_t::bpm_event, object_id_t{102}}};
-    f.application_state.chart_clipboard = chart_clipboard_t{song_id_t{999}, chart_id_t{999}, {}};
+    f.application_state.clipboard.chart_clipboard = chart_clipboard_t{song_id_t{999}, chart_id_t{999}, {}};
     selection_require(validate_document(history.document).empty());
     auto metadata_edit = history.document;
     metadata_edit.metadata.title = "Redo must survive rejection";
@@ -2474,9 +2474,9 @@ TEST_CASE("Registered Cut rejects a late stem deletion without publishing timing
     selection_require(history.redo.size() == 1);
     selection_check(write_native_project(history.redo.front().after).bytes == redo_bytes);
     selection_check(f.compose_state->selected_objects == selected);
-    selection_check(f.application_state.kiai_selected_head == 200);
-    selection_require(f.application_state.chart_clipboard.has_value());
-    selection_check(f.application_state.chart_clipboard->source_song == song_id_t{999});
+    selection_check(f.application_state.timing_recipe.kiai_selected_head == 200);
+    selection_require(f.application_state.clipboard.chart_clipboard.has_value());
+    selection_check(f.application_state.clipboard.chart_clipboard->source_song == song_id_t{999});
 }
 #endif
 
@@ -2488,8 +2488,8 @@ TEST_CASE("Registered Delete handles a span-only Kiai or recipe selection",
     TimingInsertFixture f;
     add_selection_spans(f);
     f.compose_state->selected_notes.clear(); f.compose_state->selected_objects.clear();
-    f.application_state.kiai_selected_head = recipe ? 0 : 200;
-    f.application_state.recipe_selected = recipe ? 300 : 0;
+    f.application_state.timing_recipe.kiai_selected_head = recipe ? 0 : 200;
+    f.application_state.timing_recipe.recipe_selected = recipe ? 300 : 0;
     const auto original = write_native_project(f.fixture.history.document).bytes;
     selection_require(static_cast<bool>(invoke_selection_command(f, "edit.delete")));
     const auto& chart = f.fixture.history.document.charts.front();
@@ -2509,9 +2509,9 @@ TEST_CASE("Registered Cut publishes mixed copied objects with one Undo and Redo"
     f.compose_state->selected_objects.push_back({editor_selection_object_kind_t::bpm_event, object_id_t{102}});
     const auto original = write_native_project(f.fixture.history.document).bytes;
     selection_require(static_cast<bool>(invoke_selection_command(f, "edit.cut")));
-    selection_require(f.application_state.chart_clipboard.has_value());
-    selection_check(f.application_state.chart_clipboard->objects.size() == 4);
-    selection_check(f.application_state.kiai_selected_head == 0);
+    selection_require(f.application_state.clipboard.chart_clipboard.has_value());
+    selection_check(f.application_state.clipboard.chart_clipboard->objects.size() == 4);
+    selection_check(f.application_state.timing_recipe.kiai_selected_head == 0);
     const auto& chart = f.fixture.history.document.charts.front();
     selection_check(chart.measures.front().notes.size() == 2);
     selection_check(chart.bpms.size() == 1);
@@ -2531,8 +2531,8 @@ TEST_CASE("Registered Delete and Cut reject locked mixed selection atomically",
     const auto id = GENERATE("edit.delete", "edit.cut");
     TimingInsertFixture f;
     add_selection_spans(f);
-    f.application_state.timing_locked = true;
-    f.application_state.chart_clipboard = chart_clipboard_t{song_id_t{999}, chart_id_t{999}, {}};
+    f.application_state.timing_recipe.timing_locked = true;
+    f.application_state.clipboard.chart_clipboard = chart_clipboard_t{song_id_t{999}, chart_id_t{999}, {}};
     f.compose_state->selected_objects.push_back({editor_selection_object_kind_t::bpm_event, object_id_t{102}});
     const auto original = write_native_project(f.fixture.history.document).bytes;
     const auto selection = f.compose_state->selected_objects;
@@ -2540,8 +2540,8 @@ TEST_CASE("Registered Delete and Cut reject locked mixed selection atomically",
     selection_check(write_native_project(f.fixture.history.document).bytes == original);
     selection_check(f.fixture.history.undo.empty());
     selection_check(f.compose_state->selected_objects == selection);
-    selection_check(f.application_state.kiai_selected_head == 200);
-    selection_check(f.application_state.chart_clipboard->source_song == song_id_t{999});
+    selection_check(f.application_state.timing_recipe.kiai_selected_head == 200);
+    selection_check(f.application_state.clipboard.chart_clipboard->source_song == song_id_t{999});
 }
 
 TEST_CASE("Registered Cut rejects unsupported recipe clipboard without dropping selected notes",
@@ -2549,13 +2549,13 @@ TEST_CASE("Registered Cut rejects unsupported recipe clipboard without dropping 
     using namespace wormedit;
     TimingInsertFixture f;
     add_selection_spans(f);
-    f.application_state.recipe_selected = 300;
+    f.application_state.timing_recipe.recipe_selected = 300;
     const auto original = write_native_project(f.fixture.history.document).bytes;
     selection_check(!invoke_selection_command(f, "edit.cut"));
     selection_check(f.latest_message().find("SV recipes cannot be copied") != std::string::npos);
     selection_check(write_native_project(f.fixture.history.document).bytes == original);
     selection_check(f.fixture.history.undo.empty());
-    selection_check(f.application_state.recipe_selected == 300);
+    selection_check(f.application_state.timing_recipe.recipe_selected == 300);
 }
 #endif
 
@@ -2571,7 +2571,7 @@ TEST_CASE("Registered menu verbs reject paste and pending gestures atomically", 
     f.fixture.history.document.charts.front().source_family = format_family_t::bms;
     unsigned calls{};
     f.application_state.transport_set_loop_selection = [&](auto, auto, auto, auto, bool) { ++calls; return true; };
-    if (owner == 1) f.application_state.paste_session = application_command_state_t::paste_session_t{};
+    if (owner == 1) f.application_state.clipboard.paste_session = application_command_state_t::paste_session_t{};
     else if (owner == 0) f.compose_state->pending_note_duration_gesture.emplace();
     const auto original = write_native_project(f.fixture.history.document).bytes;
     const auto selected = f.compose_state->selected_notes;
@@ -2586,7 +2586,7 @@ TEST_CASE("Registered Quantize uses panel settings rather than the active snap f
     TimingInsertFixture f;
     auto& history = f.fixture.history;
     f.compose_state->active_snap_denominator = 4;
-    f.application_state.quantize_editor = application_command_state_t::quantize_editor_t{
+    f.application_state.quantize.quantize_editor = application_command_state_t::quantize_editor_t{
         .song = history.document.id, .chart = f.compose_state->chart, .request = {.divisions = 8}};
     selection_require(static_cast<bool>(invoke_selection_command(f, "edit.apply_quantize")));
     selection_check(history.document.charts.front().measures.front().notes.front().position.row == 120);
@@ -2598,7 +2598,7 @@ TEST_CASE("Registered Quantize uses panel settings rather than the active snap f
 TEST_CASE("Registered bookmark Add snaps the playing cursor and deduplicates", "[sys][gesture-verbs]") {
     TimingInsertFixture f;
     f.application_state.transport_preview_playing = [] { return true; };
-    f.application_state.preview_playhead_absolute_row = 241.0;
+    f.application_state.transport.preview_playhead_absolute_row = 241.0;
     selection_require(static_cast<bool>(invoke_selection_command(f, "markers.add_bookmark")));
     const auto& bookmarks = f.fixture.history.document.charts.front().bookmarks;
     selection_require(bookmarks.size() == 1);
@@ -2642,9 +2642,9 @@ TEST_CASE("Registered BGM move consumes chart order and rejects Timing focus", "
     TimingInsertFixture f;
     f.fixture.history.document.charts.front().source_family = format_family_t::bms;
     f.compose_state->selected_notes = {object_id_t{3}, object_id_t{1}, object_id_t{2}};
-    f.application_state.compose_timing_focus = true;
+    f.application_state.compose_view.compose_timing_focus = true;
     selection_check(!static_cast<bool>(invoke_selection_command(f, "edit.move_to_bgm")));
-    f.application_state.compose_timing_focus = false;
+    f.application_state.compose_view.compose_timing_focus = false;
     for (const auto id : {1ULL, 2ULL, 3ULL}) {
         selection_require(static_cast<bool>(invoke_selection_command(f, "edit.move_next_to_bgm")));
         selection_check(f.fixture.history.document.charts.front().measures.front().bgm_events.back().id == object_id_t{id});

@@ -34,7 +34,7 @@ auto compose_navigation_transport_policy(const application_command_state_t& appl
     if (is_preview_playing(application)) return compose_navigation_transport_t::seek;
     const bool paused = application.transport_preview_paused && application.transport_preview_paused();
     if (!minimap || !paused) return compose_navigation_transport_t::keep;
-    return primary != application.minimap_click_moves_paused_playhead
+    return primary != application.compose_view.minimap_click_moves_paused_playhead
         ? compose_navigation_transport_t::seek : compose_navigation_transport_t::stop;
 }
 
@@ -52,12 +52,12 @@ auto apply_compose_navigation_transport(application_command_state_t& application
         application.invalidate_playing_seek_records();
         return {.accepted = true,
             .status = application.transport_seek_audio_milliseconds(*audio_milliseconds),
-            .feedback_posted = application.transport_seek_posts_feedback};
+            .feedback_posted = application.transport.transport_seek_posts_feedback};
     }
     if (!frame || !application.transport_seek) return {.status = "Chart preview seek is unavailable."};
     application.invalidate_playing_seek_records();
     return {.accepted = true, .status = application.transport_seek(*frame),
-        .feedback_posted = application.transport_seek_posts_feedback};
+        .feedback_posted = application.transport.transport_seek_posts_feedback};
 }
 
 auto move_compose_navigation_cursor(document_history_t& history, editor_interaction_state_t& state,

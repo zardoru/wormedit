@@ -102,12 +102,12 @@ auto sample_workflow_uses_sounds(nuklear_event_harness_t& harness) -> bool {
         initial_text.find("Link audio as Sample") != std::string::npos)
         return false;
     auto& state = worm_ui_nuklear_compose_state();
-    if (!state.sound_list_valid) return false;
+    if (!state.sounds_dock.sound_list_valid) return false;
     const auto sound_row = harness.drawn_text_center("kick.wav");
     if (!sound_row) return false;
     (void)click_at(harness, sound_row->first, sound_row->second, true);
-    if (state.keysound_selection.primary != 40 || state.armed_resource_id != 40 ||
-        !state.armed_from_sounds_dock ||
+    if (state.keysound_catalog.keysound_selection.primary != 40 || state.resource_picker.armed_resource_id != 40 ||
+        !state.keysound_catalog.armed_from_sounds_dock ||
         // The inspector's resource list is retired, so its Disarm is gone. ("Assign selected" is
         // not checked: the semantic-layer section draws "Assign selected objects".)
         harness.drawn_text().find("Disarm") != std::string::npos)
@@ -135,14 +135,14 @@ auto compact_toolbar_sounds_toggle_status(nuklear_event_harness_t& harness) -> s
     if (harness.drawn_text().find("Hide sounds list") == std::string::npos)
         return "hover did not identify Hide sounds list";
     (void)click_at(harness, sounds_button_x, toolbar_y);
-    if (state.sounds_panel_visible || state.sound_list_valid)
+    if (state.dock_layout.sounds_panel_visible || state.sounds_dock.sound_list_valid)
         return "click did not hide the Sounds dock";
     const auto show_hover = mouse_motion(sounds_button_x, toolbar_y);
     (void)harness.frame(std::span{&show_hover, 1});
     if (harness.drawn_text().find("Show sounds list") == std::string::npos)
         return "hidden dock did not expose Show sounds list";
     (void)click_at(harness, sounds_button_x, toolbar_y);
-    if (!state.sounds_panel_visible || !state.sound_list_valid)
+    if (!state.dock_layout.sounds_panel_visible || !state.sounds_dock.sound_list_valid)
         return "click did not reopen the Sounds dock hit region";
     return harness.drawn_text().find("Sounds  1") != std::string::npos
         ? std::string_view{} : "reopened dock did not render its Sounds row";
@@ -172,7 +172,7 @@ TEST_CASE("Inspector delegates sample listing and placement to the Sounds dock",
     view.keysounds_available = true;
     view.note_paint_mode_active = true;
     set_resource_fixture(view, resources.data(), resources.size());
-    worm_ui_nuklear_compose_state().sounds_panel_visible = true;
+    worm_ui_nuklear_compose_state().dock_layout.sounds_panel_visible = true;
     (void)harness.frame();
 
     CHECK(sample_workflow_uses_sounds(harness));
@@ -190,7 +190,7 @@ TEST_CASE("Compact Compose layout keeps Sounds available and restores optional d
         view.keysound_count = view.keysound_total_count = sounds.size();
         view.keysounds_available = true;
         auto& state = worm_ui_nuklear_compose_state();
-        state.layers_panel_visible = true;
+        state.dock_layout.layers_panel_visible = true;
         (void)compact.frame();
         CHECK(compact_layout_keeps_sound_picker(compact));
         const auto toggle_status = compact_toolbar_sounds_toggle_status(compact);
@@ -205,7 +205,7 @@ TEST_CASE("Compact Compose layout keeps Sounds available and restores optional d
         view.keysounds = sounds.data();
         view.keysound_count = view.keysound_total_count = sounds.size();
         view.keysounds_available = true;
-        worm_ui_nuklear_compose_state().layers_panel_visible = true;
+        worm_ui_nuklear_compose_state().dock_layout.layers_panel_visible = true;
         (void)wide.frame();
         CHECK(wide_layout_restores_optional_docks(wide));
     }

@@ -100,7 +100,7 @@ TEST_CASE("Timing modeless panel blank body and disabled controls own pointer in
     view.compose.timing_lane_visibility_mask = 0xff;
     view.timing.stage_active = true;
     view.timing.stage_lane = WORM_UI_TIMING_LANE_BPM;
-    const auto focus = worm_ui_nuklear_compose_state().keyboard_focus;
+    const auto focus = worm_ui_nuklear_compose_state().input_queue.keyboard_focus;
     (void)harness.frame();
     CHECK_FALSE(click_text(harness, "BPM: On").get().compose_action ==
                 WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY);
@@ -108,7 +108,7 @@ TEST_CASE("Timing modeless panel blank body and disabled controls own pointer in
     view.compose.scene_available = false;
     CHECK_FALSE(click_text(harness, "ANC: On").get().compose_action ==
                 WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY);
-    CHECK(worm_ui_nuklear_compose_state().keyboard_focus == focus);
+    CHECK(worm_ui_nuklear_compose_state().input_queue.keyboard_focus == focus);
 }
 
 TEST_CASE("Timing Settings exposes live enable volume and bounded count-in controls",

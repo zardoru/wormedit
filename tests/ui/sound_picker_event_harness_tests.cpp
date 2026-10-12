@@ -61,11 +61,11 @@ TEST_CASE("Go to sound keyboard selection arms through Draw source without short
     const auto selected = press(harness, SDLK_RETURN, SDL_SCANCODE_RETURN);
     check_source(selected.get(), 42);
     const auto& state = worm_ui_nuklear_compose_state();
-    check_picker(state.draw_source_id == 42);
-    check_picker(state.armed_resource_id == 42);
-    check_picker(state.keysound_selection.primary == 42);
-    check_picker(!(state.sound_picker.open));
-    check_picker(state.sound_picker.release_pending);
+    check_picker(state.pointer_capture.draw_source_id == 42);
+    check_picker(state.resource_picker.armed_resource_id == 42);
+    check_picker(state.keysound_catalog.keysound_selection.primary == 42);
+    check_picker(!(state.sound_picker_ui.sound_picker.open));
+    check_picker(state.sound_picker_ui.sound_picker.release_pending);
     const auto held = press(harness, SDLK_SPACE, SDL_SCANCODE_SPACE);
     check_picker(held.get().shortcut_event_count == 0);
     const std::array releases{key(SDLK_DOWN, SDL_SCANCODE_DOWN, false),
@@ -106,7 +106,7 @@ TEST_CASE("Go to sound Escape and context loss leave the armed source unchanged"
         nuklear_event_harness_t harness{1280, 800};
         prepare(harness);
         auto& state = worm_ui_nuklear_compose_state();
-        state.draw_source_id = state.armed_resource_id = 90;
+        state.pointer_capture.draw_source_id = state.resource_picker.armed_resource_id = 90;
         workspace_action_snapshot_t action{{}};
         if (cause == 0) action = press(harness, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
         if (cause == 1) {
@@ -126,9 +126,9 @@ TEST_CASE("Go to sound Escape and context loss leave the armed source unchanged"
             harness.view().active_tab = WORM_UI_WORKSPACE_TAB_METADATA;
             action = harness.frame();
         }
-        check_picker(!(state.sound_picker.open));
-        check_picker(state.draw_source_id == 90);
-        check_picker(state.armed_resource_id == 90);
+        check_picker(!(state.sound_picker_ui.sound_picker.open));
+        check_picker(state.pointer_capture.draw_source_id == 90);
+        check_picker(state.resource_picker.armed_resource_id == 90);
         if (cause == 3) {
             require_picker(action.get().compose_input_count == 1);
             check_picker(action.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
@@ -145,7 +145,7 @@ TEST_CASE("Go to sound missing results cannot arm and an empty search explains i
     view.rows[0].missing = true;
     const auto selected = press(harness, SDLK_RETURN, SDL_SCANCODE_RETURN);
     check_picker(selected.get().compose_input_count == 0);
-    check_picker(worm_ui_nuklear_compose_state().sound_picker.open);
+    check_picker(worm_ui_nuklear_compose_state().sound_picker_ui.sound_picker.open);
     view.row_count = view.total_count = 0;
     static_cast<void>(harness.frame());
     check_picker(harness.drawn_text().find("No matching sounds") != std::string::npos);
@@ -172,7 +172,7 @@ TEST_CASE("Go to sound mouse activation and outside click consume pointer input"
         const auto action = harness.frame(events);
         if (!outside) check_source(action.get(), 42);
         else check_picker(action.get().compose_input_count == 0);
-        check_picker(!(worm_ui_nuklear_compose_state().sound_picker.open));
+        check_picker(!(worm_ui_nuklear_compose_state().sound_picker_ui.sound_picker.open));
     }
 }
 
@@ -208,7 +208,7 @@ TEST_CASE("Go to sound IME confirmation cannot arm an old result", "[frontend-st
     static_cast<void>(harness.frame(std::span{&editing, 1}));
     const auto composing = press(harness, SDLK_RETURN, SDL_SCANCODE_RETURN);
     check_picker(composing.get().compose_input_count == 0);
-    check_picker(worm_ui_nuklear_compose_state().sound_picker.open);
+    check_picker(worm_ui_nuklear_compose_state().sound_picker_ui.sound_picker.open);
     auto release = key(SDLK_RETURN, SDL_SCANCODE_RETURN, false);
     static_cast<void>(harness.frame(std::span{&release, 1}));
     editing.edit.text = "";

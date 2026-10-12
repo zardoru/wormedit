@@ -121,7 +121,7 @@ void open_bookmark_editor(nuklear_event_harness_t& harness,
     const auto [x, y] = *target;
     (void)click_bookmark(harness, x, y, 2);
     (void)harness.frame();
-    require_rename(worm_ui_nuklear_compose_state().bookmark_rename.active);
+    require_rename(worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
 }
 
 } // namespace
@@ -138,7 +138,7 @@ TEST_CASE("single clicking a bookmark line does not open its rename editor",
     const auto [x, y] = *target;
     (void)click_bookmark(harness, x, y);
     (void)harness.frame();
-    check_rename(!worm_ui_nuklear_compose_state().bookmark_rename.active);
+    check_rename(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
 }
 
 TEST_CASE("double clicking a bookmark line opens a captured rename editor and Enter stages exact identity",
@@ -157,8 +157,8 @@ TEST_CASE("double clicking a bookmark line opens a captured rename editor and En
         check_rename(frame.get().compose_input_count == 0);
     }
     (void)harness.frame();
-    require_rename(worm_ui_nuklear_compose_state().bookmark_rename.active);
-    check_rename(std::string_view{worm_ui_nuklear_compose_state().bookmark_rename.label} == "Intro");
+    require_rename(worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
+    check_rename(std::string_view{worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.label} == "Intro");
     check_rename(harness.drawn_text().find("Intro") != std::string::npos);
 
     const std::array number_key{press_one()};
@@ -179,8 +179,8 @@ TEST_CASE("double clicking a bookmark line opens a captured rename editor and En
     check_rename(renamed.compose_input_chart_id == harness.view().compose.chart_id);
     check_rename(renamed.compose_input_document_revision == harness.view().compose.document_revision);
     check_rename(std::string_view{renamed.compose_marker_label} == "Renamé");
-    check_rename(!worm_ui_nuklear_compose_state().bookmark_rename.active);
-    check_rename(worm_ui_nuklear_compose_state().bookmark_rename.release_pending);
+    check_rename(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
+    check_rename(worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.release_pending);
 }
 
 TEST_CASE("Escape cancels bookmark rename and outside clicks do not place a chart event",
@@ -195,13 +195,13 @@ TEST_CASE("Escape cancels bookmark rename and outside clicks do not place a char
     const auto [x, y] = *target;
     (void)click_bookmark(harness, x, y, 2);
     (void)harness.frame();
-    require_rename(worm_ui_nuklear_compose_state().bookmark_rename.active);
+    require_rename(worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
     const std::array escape{press_escape()};
     const auto cancelled = harness.frame(escape).get();
     check_rename(cancelled.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     check_rename(cancelled.compose_input_count == 0);
-    check_rename(!worm_ui_nuklear_compose_state().bookmark_rename.active);
-    check_rename(worm_ui_nuklear_compose_state().bookmark_rename.release_pending);
+    check_rename(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
+    check_rename(worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.release_pending);
 
     const std::array release_events{release_escape()};
     (void)harness.frame(release_events);
@@ -224,15 +224,15 @@ TEST_CASE("blur cancels bookmark rename without forwarding the outside click",
     const auto [x, y] = *target;
     (void)click_bookmark(harness, x, y, 2);
     (void)harness.frame();
-    require_rename(worm_ui_nuklear_compose_state().bookmark_rename.active);
+    require_rename(worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
 
     const auto outside = click_bookmark(harness, 70.0f, 400.0f);
     for (const auto& frame : outside) {
         check_rename(frame.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
         check_rename(frame.get().compose_input_count == 0);
     }
-    check_rename(!worm_ui_nuklear_compose_state().bookmark_rename.active);
-    check_rename(worm_ui_nuklear_compose_state().bookmark_rename.release_pending);
+    check_rename(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
+    check_rename(worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.release_pending);
 }
 
 TEST_CASE("bookmark rename cancels when its document revision becomes stale",
@@ -246,7 +246,7 @@ TEST_CASE("bookmark rename cancels when its document revision becomes stale",
     const auto frame = harness.frame().get();
     check_rename(frame.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     check_rename(frame.compose_input_count == 0);
-    check_rename(!worm_ui_nuklear_compose_state().bookmark_rename.active);
+    check_rename(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
 }
 
 TEST_CASE("bookmark rename cancels when the captured bookmark is deleted",
@@ -261,7 +261,7 @@ TEST_CASE("bookmark rename cancels when the captured bookmark is deleted",
     const auto frame = harness.frame().get();
     check_rename(frame.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     check_rename(frame.compose_input_count == 0);
-    check_rename(!worm_ui_nuklear_compose_state().bookmark_rename.active);
+    check_rename(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
 }
 
 namespace {
@@ -303,8 +303,8 @@ TEST_CASE("double-clicking a bookmark line or label opens its rename editor",
 
     // Far from the single-click strip, on the line itself: the old target missed this.
     require_rename(double_click_at(harness, right * 0.3, bookmark.projected_y_pixels));
-    check_rename(worm_ui_nuklear_compose_state().bookmark_rename.active);
-    check_rename(worm_ui_nuklear_compose_state().bookmark_rename.bookmark_id == 91);
+    check_rename(worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
+    check_rename(worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.bookmark_id == 91);
 
     // Cancel, then use the label zone just above the line on the right half.
     const std::array escape{press_escape()};
@@ -312,9 +312,9 @@ TEST_CASE("double-clicking a bookmark line or label opens its rename editor",
     const std::array release_events{release_escape()};
     (void)harness.frame(release_events);
     (void)harness.frame();
-    require_rename(!worm_ui_nuklear_compose_state().bookmark_rename.active);
+    require_rename(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
     require_rename(double_click_at(harness, right * 0.8, bookmark.projected_y_pixels - 10.0));
-    check_rename(worm_ui_nuklear_compose_state().bookmark_rename.active);
+    check_rename(worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
 }
 
 TEST_CASE("double-clicking empty space does not open a bookmark rename editor",
@@ -326,5 +326,5 @@ TEST_CASE("double-clicking empty space does not open a bookmark rename editor",
     (void)harness.frame();
     const auto right = harness.view().compose.playable_field_right_pixels;
     require_rename(double_click_at(harness, right * 0.3, bookmark.projected_y_pixels + 80.0));
-    check_rename(!worm_ui_nuklear_compose_state().bookmark_rename.active);
+    check_rename(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
 }

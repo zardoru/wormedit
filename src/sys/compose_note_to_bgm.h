@@ -11,7 +11,7 @@ namespace wormedit::sys {
 inline auto compose_move_to_bgm_available(const chart_document_t& chart,
     const editor_interaction_state_t& state, const application_command_state_t& application) -> bool {
     return chart.source_family == format_family_t::bms &&
-        !editor_interaction_has_pending_gesture(state) && !application.paste_session &&
+        !editor_interaction_has_pending_gesture(state) && !application.clipboard.paste_session &&
         ui::compose_notes_editable(compose_mode_of(application)) &&
         (!state.selected_notes.empty() || std::ranges::any_of(state.selected_objects,
             [](const auto& object) { return object.kind == editor_selection_object_kind_t::note; }));

@@ -85,8 +85,8 @@ TEST_CASE("Manual sound group review confirms once on release with stable resour
     view.keysound_count = rows.size();
     view.keysound_total_count = rows.size();
     (void)harness.frame();
-    auto& review = worm_ui_nuklear_compose_state().keysound_group_review;
-    worm_ui_nuklear_compose_state().keysound_selection.selected = {7, 41};
+    auto& review = worm_ui_nuklear_compose_state().keysound_catalog.keysound_group_review;
+    worm_ui_nuklear_compose_state().keysound_catalog.keysound_selection.selected = {7, 41};
     (void)harness.frame();
     const auto group_button = harness.drawn_text_center("Group...");
     require_event(group_button.has_value());
@@ -108,7 +108,7 @@ TEST_CASE("Manual sound group review confirms once on release with stable resour
         if (frame.get().compose_action == WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS)
             actions.push_back(&frame.get());
     require_event(actions.size() == 1);
-    check_event(!worm_ui_nuklear_compose_state().keysound_group_review.open);
+    check_event(!worm_ui_nuklear_compose_state().keysound_catalog.keysound_group_review.open);
     check_event(actions.front()->compose_sound_group_assignment_count == 1);
     require_event(actions.front()->compose_sound_group_assignments != nullptr);
     check_event(actions.front()->compose_sound_group_assignments[0].sound_count == 2);
@@ -130,7 +130,7 @@ TEST_CASE("Rejecting every sound group suggestion closes without an edit",
     auto& view = harness.view().compose;
     view.keysounds_available = true;
     (void)harness.frame();
-    auto& review = worm_ui_nuklear_compose_state().keysound_group_review;
+    auto& review = worm_ui_nuklear_compose_state().keysound_catalog.keysound_group_review;
     review.open = true;
     review.project_id = view.project_id;
     review.chart_id = view.chart_id;
@@ -146,7 +146,7 @@ TEST_CASE("Rejecting every sound group suggestion closes without an edit",
     require_event(confirm.has_value());
     const auto committed = click_at(harness, confirm->first, confirm->second);
     ignored.insert(ignored.end(), committed.begin(), committed.end());
-    check_event(!worm_ui_nuklear_compose_state().keysound_group_review.open);
+    check_event(!worm_ui_nuklear_compose_state().keysound_catalog.keysound_group_review.open);
     check_event(std::ranges::none_of(ignored, [](const auto& frame) {
         return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS ||
                frame.get().compose_action == WORM_UI_COMPOSE_ACTION_UNGROUP_SOUNDS ||
@@ -172,8 +172,8 @@ TEST_CASE("Sounds right-click menu opens Group review without editing on the pre
         return frame.get().compose_action != WORM_UI_COMPOSE_ACTION_NONE;
     }));
     const auto& state = worm_ui_nuklear_compose_state();
-    require_event(state.keysound_group_menu.open);
-    check_event(state.keysound_selection.selected == std::vector<std::uint64_t>{41});
+    require_event(state.keysound_catalog.keysound_group_menu.open);
+    check_event(state.keysound_catalog.keysound_selection.selected == std::vector<std::uint64_t>{41});
     (void)harness.frame();
     const auto group = harness.drawn_text_center("Group...");
     require_event(group.has_value());
@@ -181,10 +181,10 @@ TEST_CASE("Sounds right-click menu opens Group review without editing on the pre
     check_event(std::ranges::none_of(opened, [](const auto& frame) {
         return frame.get().compose_action != WORM_UI_COMPOSE_ACTION_NONE;
     }));
-    check_event(!state.keysound_group_menu.open);
+    check_event(!state.keysound_catalog.keysound_group_menu.open);
     (void)harness.frame();
-    check_event(state.keysound_group_review.open);
-    check_event(state.keysound_group_review.manual);
+    check_event(state.keysound_catalog.keysound_group_review.open);
+    check_event(state.keysound_catalog.keysound_group_review.manual);
 }
 
 TEST_CASE("Group selected sounds dialog has Cancel, Confirm with Enter, and no title-repeating label",
@@ -193,7 +193,7 @@ TEST_CASE("Group selected sounds dialog has Cancel, Confirm with Enter, and no t
         auto& view = harness.view().compose;
         view.keysounds_available = true;
         (void)harness.frame();
-        auto& review = worm_ui_nuklear_compose_state().keysound_group_review;
+        auto& review = worm_ui_nuklear_compose_state().keysound_catalog.keysound_group_review;
         review.open = true;
         review.manual = true;
         review.project_id = view.project_id;

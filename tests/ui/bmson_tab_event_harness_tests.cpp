@@ -95,18 +95,18 @@ TEST_CASE("the razor toggle works from the BMSON tab and the tab falls back on o
     require_tab(tab.has_value());
     click_tab(harness, tab->first, tab->second);
     auto& state = worm_ui_nuklear_compose_state();
-    require_tab(state.sounds_dock_bmson_tab);
+    require_tab(state.dock_layout.sounds_dock_bmson_tab);
     require_tab(harness.drawn_text().find("Razor continue") != std::string::npos);
 
     const auto razor = harness.drawn_text_center("Razor continue");
     require_tab(razor.has_value());
     click_tab(harness, razor->first, razor->second);
-    check_tab(state.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::continuation);
+    check_tab(state.bmson_input.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::continuation);
 
     // A non-BMSON chart drops the tab and the dock shows Sounds again.
     seed_bmson_selection(harness.view().compose, false);
     (void)harness.frame();
-    check_tab(!state.sounds_dock_bmson_tab);
+    check_tab(!state.dock_layout.sounds_dock_bmson_tab);
     check_tab(harness.drawn_text().find("Razor continue") == std::string::npos);
 }
 
@@ -117,24 +117,24 @@ TEST_CASE("razor mode is dropped when another tool activates, even with the BMSO
     seed_bmson_selection(harness.view().compose, true);
     (void)harness.frame();  // A new chart resets Compose state, so arm the razor afterwards.
     auto& state = worm_ui_nuklear_compose_state();
-    state.sounds_dock_bmson_tab = false;  // The Sounds tab is showing, so the razor toggle is hidden.
-    state.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::continuation;
+    state.dock_layout.sounds_dock_bmson_tab = false;  // The Sounds tab is showing, so the razor toggle is hidden.
+    state.bmson_input.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::continuation;
     (void)harness.frame();
-    check_tab(state.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::continuation);
+    check_tab(state.bmson_input.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::continuation);
 
     // Activating Tap from the palette or keyboard sets note paint mode in the view.
     harness.view().compose.note_paint_mode_active = true;
     (void)harness.frame();
-    check_tab(state.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::off);
+    check_tab(state.bmson_input.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::off);
 
     // The same holds when the selected BGM event goes away.
     harness.view().compose.note_paint_mode_active = false;
-    state.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::restart;
+    state.bmson_input.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::restart;
     harness.view().compose.selected_bmson_bgm_event_id = 0;
     harness.view().compose.selected_bmson_source_lane_id = 0;
     harness.view().compose.selected_object_count = 0;
     (void)harness.frame();
-    check_tab(state.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::off);
+    check_tab(state.bmson_input.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::off);
 }
 
 TEST_CASE("BMSON tab content scrolls to its lower actions when the dock is short",
@@ -152,7 +152,7 @@ TEST_CASE("BMSON tab content scrolls to its lower actions when the dock is short
     const auto tab = harness.drawn_text_center("BMSON");
     require_tab(tab.has_value());
     click_tab(harness, tab->first, tab->second);
-    require_tab(worm_ui_nuklear_compose_state().sounds_dock_bmson_tab);
+    require_tab(worm_ui_nuklear_compose_state().dock_layout.sounds_dock_bmson_tab);
     const auto before = harness.drawn_text_center("Remove");
     // The staged-region actions sit below the visible part of the short dock.
     check_tab(!before.has_value());

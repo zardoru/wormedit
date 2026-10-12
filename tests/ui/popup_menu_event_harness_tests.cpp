@@ -229,7 +229,7 @@ void prepare_keyboard_note(nuklear_event_harness_t& harness, WormUiComposeHoldVi
     seed_note_menu(harness, hold, layers);
     harness.view().compose.selected_note_count = 1;
     harness.view().compose.keyboard_context_note_id = hold.note_id;
-    worm_ui_nuklear_compose_state().keyboard_focus = true;
+    worm_ui_nuklear_compose_state().input_queue.keyboard_focus = true;
     (void)harness.frame();
 }
 }
@@ -310,7 +310,7 @@ TEST_CASE("Context invocation rejects IME modals lost focus and stale revisions"
     check_popup(!compose_note_menu_open());
     ime.edit.text = "";
     (void)harness.frame(std::span{&ime, 1});
-    worm_ui_nuklear_compose_state().keyboard_focus = true;
+    worm_ui_nuklear_compose_state().input_queue.keyboard_focus = true;
     (void)press_context_key(harness, SDLK_APPLICATION, SDL_SCANCODE_APPLICATION);
     check_popup(compose_note_menu_open());
     ++harness.view().compose.document_revision;
@@ -357,7 +357,7 @@ TEST_CASE("Context menu row focus clears across project tab and focus changes",
     (void)harness.frame();
     check_popup(chrome::context_menu_focused_target() == chrome::KeyboardContextTarget::none);
     check_popup(chrome::context_menu_focused_object() == 0);
-    worm_ui_nuklear_compose_state().keyboard_focus = true;
+    worm_ui_nuklear_compose_state().input_queue.keyboard_focus = true;
     (void)press_context_key(harness, SDLK_APPLICATION, SDL_SCANCODE_APPLICATION);
     check_popup(compose_note_menu_open());
     SDL_Event lost{};

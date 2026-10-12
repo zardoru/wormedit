@@ -276,11 +276,11 @@ void render(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceA
         if (menu.submenu) chrome::context_menu_reset_navigation(menu.popup);
         nk_layout_row_dynamic(context, row_height, 1);
         const auto& source = worm_ui_nuklear_compose_state();
-        const auto can_replace = source.draw_source_kind == 1 && source.draw_source_id != 0;
+        const auto can_replace = source.pointer_capture.draw_source_kind == 1 && source.pointer_capture.draw_source_id != 0;
         if (chrome::context_menu_button(context, "Replace sound with current source",
                 can_replace ? nullptr : "Choose a sound source first") &&
             raise(view, action, WORM_UI_COMPOSE_ACTION_ASSIGN_RESOURCE_TO_SELECTION)) {
-            action.compose_resource_id = source.draw_source_id;
+            action.compose_resource_id = source.pointer_capture.draw_source_id;
             chrome::context_menu_close(menu.popup);
         }
         nk_layout_row_dynamic(context, row_height, 1);

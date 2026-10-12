@@ -32,21 +32,21 @@ auto populate_cached_overview(flattened_workspace_t& flattened, compose_scene_ca
         request.viewport_height_pixels <= 0 || request.pixels_per_standard_measure <= 0)
         return false;
     auto& view = flattened.view.compose;
-    const auto& timing = *cache.marker_timing_index;
-    if (!cache.waveform_overview_key || *cache.waveform_overview_key != waveform.key ||
-        cache.waveform_overview_identity != &waveform) {
+    const auto& timing = *cache.timing.marker_timing_index;
+    if (!cache.waveform.waveform_overview_key || *cache.waveform.waveform_overview_key != waveform.key ||
+        cache.waveform.waveform_overview_identity != &waveform) {
         const auto overview = audio::project_waveform_overview(waveform, timing, request);
         if (!overview) return false;
-        cache.waveform_overview_rows.clear();
+        cache.waveform.waveform_overview_rows.clear();
         for (const auto& row : overview.rows)
-            cache.waveform_overview_rows.push_back({row.audio_fraction,
+            cache.waveform.waveform_overview_rows.push_back({row.audio_fraction,
                                                    std::clamp(row.absolute_peak, 0.0f, 1.0f)});
-        cache.waveform_overview_key = waveform.key;
-        cache.waveform_overview_identity = &waveform;
+        cache.waveform.waveform_overview_key = waveform.key;
+        cache.waveform.waveform_overview_identity = &waveform;
         static std::atomic<std::uint64_t> next_generation{1};
-        cache.waveform_overview_generation = next_generation.fetch_add(1, std::memory_order_relaxed);
+        cache.waveform.waveform_overview_generation = next_generation.fetch_add(1, std::memory_order_relaxed);
     }
-    cache.waveform_overview_revision = cache.revision;
+    cache.waveform.waveform_overview_revision = cache.scene.revision;
     const auto rows_per_pixel = static_cast<long double>(timing.divisions_per_standard_measure) /
                                request.pixels_per_standard_measure;
     const auto begin = overview_fraction(waveform, timing,
@@ -56,7 +56,7 @@ auto populate_cached_overview(flattened_workspace_t& flattened, compose_scene_ca
         std::ceil((request.viewport_scroll_pixels + request.viewport_height_pixels) * rows_per_pixel),
         timing_boundary_side_t::after_stops, true);
     if (!begin || !end) return false;
-    for (const auto& row : cache.waveform_overview_rows) {
+    for (const auto& row : cache.waveform.waveform_overview_rows) {
         if (!flattened.compose.waveform.overview_row.push_back(row)) {
             flattened.compose.waveform.overview_row.clear();
             return false;
@@ -64,7 +64,7 @@ auto populate_cached_overview(flattened_workspace_t& flattened, compose_scene_ca
     }
     view.waveform_overview_rows = flattened.compose.waveform.overview_row.data();
     view.waveform_overview_row_count = flattened.compose.waveform.overview_row.size();
-    view.waveform_overview_generation = cache.waveform_overview_generation;
+    view.waveform_overview_generation = cache.waveform.waveform_overview_generation;
     view.waveform_overview_visible_begin_fraction = *begin;
     view.waveform_overview_visible_end_fraction = *end;
     const auto zero = timing_at(timing, 0, timing_boundary_side_t::before_delays);
@@ -300,17 +300,17 @@ auto refresh_bgm_bar_rows(compose_scene_cache_t::bgm_bar_cache_t& bar,
 }
 void refresh_bgm_bar_marks(compose_scene_cache_t& cache, const audio::waveform_t& waveform,
                            bgm_bar_range_t range) {
-    auto& bar = cache.bgm_bar;
-    if (bar.marks_valid && bar.marks_revision == cache.revision &&
+    auto& bar = cache.waveform.bgm_bar;
+    if (bar.marks_valid && bar.marks_revision == cache.scene.revision &&
         bar.marks_total_frames == waveform.total_frames && bar.marks_range == range) return;
     bar.marks.clear();
     bar.marks_valid = true;
-    bar.marks_revision = cache.revision;
+    bar.marks_revision = cache.scene.revision;
     bar.marks_total_frames = waveform.total_frames;
     bar.marks_range = range;
-    if (!cache.cached_measure_index || !cache.marker_timing_index) return;
-    for (const auto& mark : bgm_bar_measure_marks(*cache.cached_measure_index,
-             *cache.marker_timing_index, waveform.sample_rate, waveform.total_frames, range,
+    if (!cache.scene.cached_measure_index || !cache.timing.marker_timing_index) return;
+    for (const auto& mark : bgm_bar_measure_marks(*cache.scene.cached_measure_index,
+             *cache.timing.marker_timing_index, waveform.sample_rate, waveform.total_frames, range,
              WORM_UI_COMPOSE_BGM_BAR_MARK_CAPACITY))
         bar.marks.push_back({mark.audio_fraction, mark.measure});
 }
@@ -327,10 +327,10 @@ void populate_bgm_bar_bookmarks(flattened_workspace_t& flattened, const compose_
     const auto frames_to_fraction = [&](long double seconds) {
         return static_cast<double>(seconds * waveform.sample_rate / waveform.total_frames);
     };
-    if (cache.marker_timing_index) {
+    if (cache.timing.marker_timing_index) {
         for (std::size_t index = 0; index < view.beat_bookmark_count; ++index) {
             const auto& bookmark = view.beat_bookmarks[index];
-            const auto time = timing_at(*cache.marker_timing_index, bookmark.chart_row,
+            const auto time = timing_at(*cache.timing.marker_timing_index, bookmark.chart_row,
                                         timing_boundary_side_t::before_delays);
             if (!time.seconds || time.seconds->denominator == 0) continue;
             add(frames_to_fraction(static_cast<long double>(time.seconds->numerator) /
@@ -355,7 +355,7 @@ void populate_bgm_bar(flattened_workspace_t& flattened, compose_scene_cache_t& c
     const auto& projection_view = flattened.view.compose;
     const bool keep_capture = window_capture && *window_capture &&
         bgm_bar_window_capture_matches(**window_capture, song_id_t{projection_view.project_id},
-            chart_id_t{cache.chart.value}, cache.revision,
+            chart_id_t{cache.scene.chart.value}, cache.scene.revision,
             asset_id_t{projection_view.selected_audio_asset_id}, waveform.total_frames,
             waveform.sample_rate);
     if (window_capture && *window_capture && !keep_capture) window_capture->reset();
@@ -363,7 +363,7 @@ void populate_bgm_bar(flattened_workspace_t& flattened, compose_scene_cache_t& c
         bgm_bar_pan_override_matches(**pan_override,
             projection_view.waveform_overview_visible_begin_fraction,
             projection_view.waveform_overview_visible_end_fraction,
-            song_id_t{projection_view.project_id}, chart_id_t{cache.chart.value}, cache.revision,
+            song_id_t{projection_view.project_id}, chart_id_t{cache.scene.chart.value}, cache.scene.revision,
             asset_id_t{projection_view.selected_audio_asset_id});
     if (pan_override && *pan_override && !keep_pan) pan_override->reset();
     const auto range = keep_capture ? bgm_bar_fit((*window_capture)->range, minimum_span)
@@ -371,16 +371,16 @@ void populate_bgm_bar(flattened_workspace_t& flattened, compose_scene_cache_t& c
         : bgm_bar_center_on_visible_span(requested,
             projection_view.waveform_overview_visible_begin_fraction,
             projection_view.waveform_overview_visible_end_fraction, minimum_span);
-    if (!refresh_bgm_bar_rows(cache.bgm_bar, waveform, range)) return;
+    if (!refresh_bgm_bar_rows(cache.waveform.bgm_bar, waveform, range)) return;
     refresh_bgm_bar_marks(cache, waveform, range);
     auto& waveform_views = flattened.compose.waveform;
-    for (const auto& row : cache.bgm_bar.rows) {
+    for (const auto& row : cache.waveform.bgm_bar.rows) {
         if (!waveform_views.bar_row.push_back(row)) {
             waveform_views.bar_row.clear();
             return;
         }
     }
-    for (const auto& mark : cache.bgm_bar.marks) {
+    for (const auto& mark : cache.waveform.bgm_bar.marks) {
         if (!waveform_views.bar_mark.push_back(mark)) {
             waveform_views.bar_mark.clear();
             waveform_views.bar_row.clear();
@@ -471,15 +471,15 @@ auto populate_compose_waveform_projection(
     const audio::aligned_waveform_style_t* stable_style, bgm_bar_range_t bgm_bar_range,
     std::optional<bgm_bar_pan_override_t>* bgm_bar_pan_override,
     std::optional<bgm_bar_window_capture_t>* bgm_bar_window_capture) -> bool {
-    cache.waveform_overview_total_frames = 0;
-    cache.waveform_overview_sample_rate = 0;
+    cache.waveform.waveform_overview_total_frames = 0;
+    cache.waveform.waveform_overview_sample_rate = 0;
     auto& compose = flattened.view.compose;
     clear_frame_waveform_publication(flattened);
     if (!compose.visible || !has_selected_audio_asset)
         return false;
 
     compose.waveform_analysis_pending = analysis_pending;
-    if (!compose.scene_available || !interaction_state || !cache.marker_timing_index ||
+    if (!compose.scene_available || !interaction_state || !cache.timing.marker_timing_index ||
         !analysis || !analysis->waveform)
         return false;
 
@@ -495,8 +495,8 @@ auto populate_compose_waveform_projection(
         .pixels_per_standard_measure = compose.pixels_per_standard_measure,
         .maximum_rows = WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY};
     (void)prepare_compose_display_row_table(cache,
-        request, {compose.project_id, cache.chart.value, cache.revision});
-    const auto window = audio::aligned_waveform_window(waveform, *cache.marker_timing_index, request);
+        request, {compose.project_id, cache.scene.chart.value, cache.scene.revision});
+    const auto window = audio::aligned_waveform_window(waveform, *cache.timing.marker_timing_index, request);
     const auto* selected_waveform = &waveform;
     if (window && detail_analysis && detail_analysis->waveform &&
         detail_analysis->waveform->key.source == waveform.key.source &&
@@ -506,17 +506,17 @@ auto populate_compose_waveform_projection(
     bool cached_envelope = false;
     const auto style = envelope_style(stable_style, window);
     if (!style.sample_points) {
-        const envelope_projection_context_t projection{cache.waveform_envelope_ring, waveform,
+        const envelope_projection_context_t projection{cache.waveform.waveform_envelope_ring, waveform,
             detail_analysis && detail_analysis->waveform ? &*detail_analysis->waveform : nullptr,
-            *cache.marker_timing_index, request, decoded_blocks, style, cache.revision,
-            compose.project_id, cache.chart.value, cache.waveform_row_table};
+            *cache.timing.marker_timing_index, request, decoded_blocks, style, cache.scene.revision,
+            compose.project_id, cache.scene.chart.value, cache.waveform.waveform_row_table};
         cached_envelope = populate_cpu_envelope(projection, flattened.compose.waveform.row);
     } else {
-        cache.waveform_envelope_ring.valid = false;
+        cache.waveform.waveform_envelope_ring.valid = false;
     }
     if (!cached_envelope)
         populate_direct_envelope(flattened.compose.waveform.row, waveform, selected_waveform,
-                                 *cache.marker_timing_index, request, decoded_blocks,
+                                 *cache.timing.marker_timing_index, request, decoded_blocks,
                                  detail_analysis, stable_style);
     orient_compose_waveform_rows(flattened.compose.waveform.row, compose);
     compose.waveform_rows = flattened.compose.waveform.row.data();
@@ -525,8 +525,8 @@ auto populate_compose_waveform_projection(
     if (!populate_cached_overview(flattened, cache, waveform, request)) return false;
     compose.waveform_overview_sample_rate = waveform.sample_rate;
     compose.waveform_overview_total_frames = waveform.total_frames;
-    cache.waveform_overview_total_frames = waveform.total_frames;
-    cache.waveform_overview_sample_rate = waveform.sample_rate;
+    cache.waveform.waveform_overview_total_frames = waveform.total_frames;
+    cache.waveform.waveform_overview_sample_rate = waveform.sample_rate;
     populate_bgm_bar(flattened, cache, waveform, bgm_bar_range, bgm_bar_pan_override,
                      bgm_bar_window_capture);
     return true;

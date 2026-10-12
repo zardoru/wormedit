@@ -67,12 +67,12 @@ TEST_CASE("Ctrl+A over the Sounds list selects its rows and not chart notes",
     seed_sound_rows(harness.view().compose);
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
-    require_select_all(state.sound_list_valid);
-    require_select_all(state.keysound_shown.size() == 2);
-    hover(harness, state.sound_list_x + state.sound_list_width * 0.5f,
-          state.sound_list_y + state.sound_list_height * 0.5f);
+    require_select_all(state.sounds_dock.sound_list_valid);
+    require_select_all(state.keysound_catalog.keysound_shown.size() == 2);
+    hover(harness, state.sounds_dock.sound_list_x + state.sounds_dock.sound_list_width * 0.5f,
+          state.sounds_dock.sound_list_y + state.sounds_dock.sound_list_height * 0.5f);
     const auto action = press_ctrl_a(harness).get();
-    check_select_all(state.keysound_selection.selected == std::vector<std::uint64_t>{5, 9});
+    check_select_all(state.keysound_catalog.keysound_selection.selected == std::vector<std::uint64_t>{5, 9});
     check_select_all(action.shortcut_event_count == 0);
 }
 
@@ -84,22 +84,22 @@ TEST_CASE("Ctrl+A over the BGA list selects its rows and an empty list selects n
     hover(harness, 30.0f, 30.0f);
     auto& state = worm_ui_nuklear_compose_state();
     // The dock records its bounds while rendering; set them after the hover frame.
-    state.bga_list_valid = true;
-    state.bga_list_x = 10.0f;
-    state.bga_list_y = 10.0f;
-    state.bga_list_width = 50.0f;
-    state.bga_list_height = 50.0f;
-    state.bga_shown = {3, 4};
+    state.bga_catalog.bga_list_valid = true;
+    state.bga_catalog.bga_list_x = 10.0f;
+    state.bga_catalog.bga_list_y = 10.0f;
+    state.bga_catalog.bga_list_width = 50.0f;
+    state.bga_catalog.bga_list_height = 50.0f;
+    state.bga_catalog.bga_shown = {3, 4};
     auto action = press_ctrl_a(harness).get();
-    check_select_all(state.bga_selection.selected == std::vector<std::uint64_t>{3, 4});
+    check_select_all(state.bga_catalog.bga_selection.selected == std::vector<std::uint64_t>{3, 4});
     check_select_all(action.shortcut_event_count == 0);
 
-    worm_ui_keysound_clear(state.bga_selection);
+    worm_ui_keysound_clear(state.bga_catalog.bga_selection);
     // The frame above reset the recorded bounds, so arm an empty list again.
-    state.bga_list_valid = true;
-    state.bga_shown.clear();
+    state.bga_catalog.bga_list_valid = true;
+    state.bga_catalog.bga_shown.clear();
     action = press_ctrl_a(harness).get();
-    check_select_all(state.bga_selection.selected.empty());
+    check_select_all(state.bga_catalog.bga_selection.selected.empty());
     check_select_all(action.shortcut_event_count == 0);
 }
 
@@ -114,5 +114,5 @@ TEST_CASE("Ctrl+A over the canvas still reaches the select-all shortcut",
     hover(harness, viewport->x + 20.0f, viewport->y + 20.0f);
     const auto action = press_ctrl_a(harness).get();
     check_select_all(action.shortcut_event_count == 1);
-    check_select_all(worm_ui_nuklear_compose_state().keysound_selection.selected.empty());
+    check_select_all(worm_ui_nuklear_compose_state().keysound_catalog.keysound_selection.selected.empty());
 }

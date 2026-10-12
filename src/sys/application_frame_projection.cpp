@@ -24,9 +24,9 @@ void project_hover_timing(flattened_workspace_t& flattened, const document_histo
     view.hover_timing_total_frames = 0;
     view.hover_timing_sample_rate = 0;
     view.hover_timing_label[0] = '\0';
-    const auto& hover = cache.hover_timing;
-    if (!hover.valid || !workspace.selected_chart || !cache.marker_timing_index ||
-        !cache.cached_measure_index || !view.visible || !view.scene_available ||
+    const auto& hover = cache.waveform.hover_timing;
+    if (!hover.valid || !workspace.selected_chart || !cache.timing.marker_timing_index ||
+        !cache.scene.cached_measure_index || !view.visible || !view.scene_available ||
         view.selected_audio_asset_id == 0 || hover.project_id != history.document.id.value ||
         hover.chart_id != workspace.selected_chart->value ||
         hover.document_revision != history.document.revision ||
@@ -41,7 +41,7 @@ void project_hover_timing(flattened_workspace_t& flattened, const document_histo
     if (chart == history.document.charts.end())
         return;
     if (!format_compose_hover_timing(
-            *chart, *cache.cached_measure_index, *cache.marker_timing_index, hover.source_frame,
+            *chart, *cache.scene.cached_measure_index, *cache.timing.marker_timing_index, hover.source_frame,
             hover.sample_rate, view.hover_timing_label, sizeof(view.hover_timing_label)))
         return;
     view.hover_timing_source_frame = hover.source_frame;
@@ -66,11 +66,11 @@ auto stopped_playhead(const application_frame_projection_context_t& context)
     const auto& cache = context.compose_scene_cache;
     const auto* state = context.compose_interaction_state ? &*context.compose_interaction_state : nullptr;
     if (!state || !context.workspace.selected_chart || state->chart != *context.workspace.selected_chart ||
-        state->virtual_bms_cursor_row || !cache.marker_timing_index || !cache.cached_measure_index ||
-        cache.chart != state->chart)
+        state->virtual_bms_cursor_row || !cache.timing.marker_timing_index || !cache.scene.cached_measure_index ||
+        cache.scene.chart != state->chart)
         return std::nullopt;
-    const auto at = timing_at(*cache.marker_timing_index, *cache.cached_measure_index, state->cursor);
-    const auto end = timing_at(*cache.marker_timing_index, cache.marker_timing_index->total_rows);
+    const auto at = timing_at(*cache.timing.marker_timing_index, *cache.scene.cached_measure_index, state->cursor);
+    const auto end = timing_at(*cache.timing.marker_timing_index, cache.timing.marker_timing_index->total_rows);
     if (!at.seconds || !end.seconds) return std::nullopt;
     // Times before the audio start clamp to frame zero, as the preview start does.
     const auto to_frame = [](signed_rational_t seconds) -> std::optional<std::uint64_t> {
@@ -94,12 +94,12 @@ auto prepare_frame_stems(const application_frame_projection_context_t& context,
         *context.workspace.selected_chart, &chart_document_t::id);
     if (chart == context.history.document.charts.end() || chart->source_family != format_family_t::bmson)
         return {};
-    const auto timing_matches = context.compose_scene_cache.chart == chart->id &&
-        context.compose_scene_cache.revision == context.history.document.revision &&
-        context.compose_scene_cache.marker_timing_index.has_value();
-    const auto* timing = timing_matches ? &*context.compose_scene_cache.marker_timing_index : nullptr;
+    const auto timing_matches = context.compose_scene_cache.scene.chart == chart->id &&
+        context.compose_scene_cache.scene.revision == context.history.document.revision &&
+        context.compose_scene_cache.timing.marker_timing_index.has_value();
+    const auto* timing = timing_matches ? &*context.compose_scene_cache.timing.marker_timing_index : nullptr;
     const auto bindings = context.audition_sources.bindings();
-    return indexed_visible_stem_channels(context.compose_scene_cache.stem_index,
+    return indexed_visible_stem_channels(context.compose_scene_cache.scene.stem_index,
         context.history.document, *chart, context.compose_interaction_state->cursor.measure,
         stem_window_measures(flattened.view.compose.viewport_height_pixels,
                              flattened.view.compose.pixels_per_standard_measure), bindings, timing);
@@ -133,9 +133,9 @@ auto project_application_frame(const application_frame_projection_context_t& con
             &context.compose_scene_cache.keysound_list_cache);
         flattened.rebind_view_pointers();
         flattened.view.transport_metronome_enabled =
-            context.application_command_state.transport_metronome_enabled;
+            context.application_command_state.transport.transport_metronome_enabled;
         flattened.view.transport_metronome_available =
-            context.application_command_state.transport_metronome_available;
+            context.application_command_state.transport.transport_metronome_available;
     }
 
     {
@@ -166,12 +166,12 @@ auto project_application_frame(const application_frame_projection_context_t& con
                 .history = context.history,
                 .workspace = context.model,
                 .selected_chart = context.workspace.selected_chart,
-                .timing_locked = context.application_command_state.timing_locked,
+                .timing_locked = context.application_command_state.timing_recipe.timing_locked,
                 .audio_offset_drag = context.audio_offset_drag,
                 .transport = frame_transport,
                 .player_preview_presenter = context.player_preview_presenter,
-                .player_preview_visible = context.application_command_state.player_preview_visible,
-                .player_preview_skin = context.application_command_state.player_preview_skin,
+                .player_preview_visible = context.application_command_state.compose_view.player_preview_visible,
+                .player_preview_skin = context.application_command_state.compose_view.player_preview_skin,
                 .asset_base = context.asset_base,
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
                 .player_image_job = context.player_image_job,
@@ -189,8 +189,8 @@ auto project_application_frame(const application_frame_projection_context_t& con
     }
 
     flattened.view.metadata.audio_offset_locked =
-        context.application_command_state.audio_offset_locked;
-    if (context.application_command_state.audio_offset_locked) {
+        context.application_command_state.timing_recipe.audio_offset_locked;
+    if (context.application_command_state.timing_recipe.audio_offset_locked) {
         flattened.view.metadata.audio_offset_editable = false;
         flattened.view.audio_slices.timing_locked = true;
     }
@@ -217,7 +217,7 @@ auto project_application_frame(const application_frame_projection_context_t& con
                 context.timing_edit.stage_view());
         }
         flattened.view.timing.initial_bpm_editable =
-            flattened.view.timing.scene_available && !context.application_command_state.timing_locked;
+            flattened.view.timing.scene_available && !context.application_command_state.timing_recipe.timing_locked;
     }
     {
     frame_phase_scope_t compose_controls(frame_phase_t::workspace_compose_controls);
@@ -230,8 +230,8 @@ auto project_application_frame(const application_frame_projection_context_t& con
                           context.timing_edit.stage_view(), {}, &context.bga_move_preview);
     populate_compose_keysound_fallbacks(flattened, context.history, context.asset_base);
     }
-    context.compose_scene_cache.waveform_overview_total_frames = 0;
-    context.compose_scene_cache.waveform_overview_sample_rate = 0;
+    context.compose_scene_cache.waveform.waveform_overview_total_frames = 0;
+    context.compose_scene_cache.waveform.waveform_overview_sample_rate = 0;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     const auto* compose_waveform_analysis =
         context.waveform_runtime.waveform_asset() == context.workspace.transport.audio_asset
@@ -242,11 +242,11 @@ auto project_application_frame(const application_frame_projection_context_t& con
         frame_phase_scope_t compose_waveform(frame_phase_t::workspace_compose_waveform);
         std::optional<audio::aligned_waveform_window_t> detail_window;
         if (compose_waveform_analysis && compose_waveform_analysis->waveform &&
-            context.compose_scene_cache.marker_timing_index && context.compose_interaction_state &&
+            context.compose_scene_cache.timing.marker_timing_index && context.compose_interaction_state &&
             flattened.view.compose.visible && flattened.view.compose.scene_available) {
             detail_window = audio::aligned_waveform_window(
                 *compose_waveform_analysis->waveform,
-                *context.compose_scene_cache.marker_timing_index,
+                *context.compose_scene_cache.timing.marker_timing_index,
                 {.viewport_scroll_pixels =
                      context.compose_interaction_state->viewport_scroll_pixels,
                  .viewport_height_pixels = flattened.view.compose.viewport_height_pixels,
@@ -258,11 +258,11 @@ auto project_application_frame(const application_frame_projection_context_t& con
             flattened.view.transport_playing,
             static_cast<double>(
                 audio::playback_rates[std::min<std::size_t>(
-                                          context.application_command_state.transport_rate_index,
+                                          context.application_command_state.transport.transport_rate_index,
                                           8)]
                     .numerator) /
                 audio::playback_rates[std::min<std::size_t>(
-                                          context.application_command_state.transport_rate_index,
+                                          context.application_command_state.transport.transport_rate_index,
                                           8)]
                     .denominator);
         compose_waveform_overview_available = populate_compose_waveform_projection(
@@ -272,9 +272,9 @@ auto project_application_frame(const application_frame_projection_context_t& con
             context.compose_interaction_state ? &*context.compose_interaction_state : nullptr,
             context.waveform_runtime.detail_analysis().get(),
             &context.waveform_runtime.decoded_blocks(), context.waveform_runtime.playback_style(),
-            context.application_command_state.bgm_bar_range,
-            &context.application_command_state.bgm_bar_pan_override,
-            &context.application_command_state.bgm_bar_window_capture);
+            context.application_command_state.bgm.bgm_bar_range,
+            &context.application_command_state.bgm.bgm_bar_pan_override,
+            &context.application_command_state.bgm.bgm_bar_window_capture);
     }
     {
         frame_phase_scope_t overlays(frame_phase_t::workspace_waveform_overlays);
@@ -317,7 +317,7 @@ auto project_application_frame(const application_frame_projection_context_t& con
     // Sticky across the waveform's analysis flicker: the row only goes away when the song has no
     // audio.
     if (flattened.view.compose.visible) {
-        context.compose_scene_cache.bgm_bar_audio_seen =
+        context.compose_scene_cache.frame.bgm_bar_audio_seen =
             flattened.view.compose.has_bgm_events ||
             context.workspace.transport.audio_asset.has_value() ||
             flattened.view.compose.bgm_bar_row_count != 0 ||

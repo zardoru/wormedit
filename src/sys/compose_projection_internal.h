@@ -317,13 +317,13 @@ void populate_semantic_layer_target_state(WormUiComposeView& view,
     view.semantic_layer_target_required_filter =
         view.semantic_layer_target_required_filter ||
         (selected &&
-         std::ranges::find(application_state.required_semantic_layer_filters, layer.id) !=
-             application_state.required_semantic_layer_filters.end());
+         std::ranges::find(application_state.semantic_layer.required_semantic_layer_filters, layer.id) !=
+             application_state.semantic_layer.required_semantic_layer_filters.end());
     view.semantic_layer_target_excluded_filter =
         view.semantic_layer_target_excluded_filter ||
         (selected &&
-         std::ranges::find(application_state.excluded_semantic_layer_filters, layer.id) !=
-             application_state.excluded_semantic_layer_filters.end());
+         std::ranges::find(application_state.semantic_layer.excluded_semantic_layer_filters, layer.id) !=
+             application_state.semantic_layer.excluded_semantic_layer_filters.end());
 }
 
 auto layer_assist_enabled(const application_command_state_t& app, wormedit::chart_id_t chart,
@@ -806,7 +806,7 @@ auto cached_selected_source(const wormedit::chart_document_t& chart, wormedit::o
         if (group < chart.measures.size()) {
             const auto& events = chart.measures[group].*container;
             if (item < events.size() && events[item].id == id) {
-                ++cache.selected_source_reused;
+                ++cache.scene.selected_source_reused;
                 return &events[item];
             }
         }
@@ -815,7 +815,7 @@ auto cached_selected_source(const wormedit::chart_document_t& chart, wormedit::o
     for (std::size_t group = 0; group < chart.measures.size(); ++group) {
         const auto& events = chart.measures[group].*container;
         for (std::size_t item = 0; item < events.size(); ++item) {
-            ++cache.selected_source_scanned;
+            ++cache.scene.selected_source_scanned;
             if (events[item].id != id)
                 continue;
             slot.location = std::pair{group, item};

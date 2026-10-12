@@ -43,7 +43,7 @@ void prepare(nuklear_event_harness_t& harness) {
     require_grid(target.has_value());
     static_cast<void>(mouse(harness, target->first, target->second, true));
     static_cast<void>(mouse(harness, target->first, target->second, false));
-    require_grid(worm_ui_nuklear_compose_state().snap_grid_menu.open);
+    require_grid(worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu.open);
 }
 void check_snap(const WormUiWorkspaceAction& action, std::uint64_t denominator) {
     INFO("action " << action.compose_action << " snap " << action.compose_snap_denominator);
@@ -63,11 +63,11 @@ TEST_CASE("Snap fraction badge opens supported grids and applies keyboard choice
     check_grid(harness.drawn_text().find("Editing grid") != std::string::npos);
     check_grid(harness.drawn_text().find("Snap 1/") == std::string::npos);
     check_grid(press(harness, SDLK_RIGHT, SDL_SCANCODE_RIGHT).get().shortcut_event_count == 0);
-    check_grid(worm_ui_nuklear_compose_state().snap_grid_menu.open);
-    check_grid(worm_ui_nuklear_compose_state().snap_grid_choice == 1);
+    check_grid(worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu.open);
+    check_grid(worm_ui_nuklear_compose_state().snap_grid.snap_grid_choice == 1);
     const auto selected = press(harness, SDLK_RETURN, SDL_SCANCODE_RETURN);
     check_snap(selected.get(), 8);
-    check_grid(!worm_ui_nuklear_compose_state().snap_grid_menu.open);
+    check_grid(!worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu.open);
     check_grid(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
@@ -106,7 +106,7 @@ TEST_CASE("Snap popup cancels on Escape outside click stale context focus loss a
         // Focus loss may emit the existing cancel/release input, never a chart press.
         for (std::size_t index = 0; index < result.get().compose_input_count; ++index)
             check_grid(result.get().compose_inputs[index].kind == WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
-        check_grid(!worm_ui_nuklear_compose_state().snap_grid_menu.open);
+        check_grid(!worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu.open);
     }
 }
 
@@ -126,5 +126,5 @@ TEST_CASE("Snap popup offers fifth grids and a stamped selection fitting action"
     check_grid(picked.get().compose_input_document_revision==1);
     check_grid(picked.get().compose_input_count==0);
     (void)mouse(h,target->first,target->second,false);
-    check_grid(!worm_ui_nuklear_compose_state().snap_grid_menu.open);
+    check_grid(!worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu.open);
 }

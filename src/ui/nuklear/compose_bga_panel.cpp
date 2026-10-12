@@ -70,18 +70,18 @@ void import_picked(WormUiWorkspaceAction& action, const WormUiComposeView& view,
     wormedit::ui::chrome::PopupContextStamp origin;
     { std::lock_guard lock{picker.mutex};
       if (picker.paths.empty()) return;
-      state.bga_staged_paths = std::move(picker.paths); picker.paths.clear();
+      state.bga_catalog.bga_staged_paths = std::move(picker.paths); picker.paths.clear();
       origin = picker.origin; }
     if (!wormedit::ui::chrome::popup_context_matches(origin,
             wormedit::ui::nuklear::catalog_context(view))) {
-        state.bga_staged_paths.clear();
+        state.bga_catalog.bga_staged_paths.clear();
         return;
     }
-    state.bga_staged_path_pointers.clear();
-    for (const auto& path : state.bga_staged_paths) state.bga_staged_path_pointers.push_back(path.c_str());
+    state.bga_catalog.bga_staged_path_pointers.clear();
+    for (const auto& path : state.bga_catalog.bga_staged_paths) state.bga_catalog.bga_staged_path_pointers.push_back(path.c_str());
     if (!raise(action, view, WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES)) return;
-    action.compose_import_paths = state.bga_staged_path_pointers.data();
-    action.compose_import_path_count = state.bga_staged_path_pointers.size();
+    action.compose_import_paths = state.bga_catalog.bga_staged_path_pointers.data();
+    action.compose_import_path_count = state.bga_catalog.bga_staged_path_pointers.size();
 }
 auto thumbnail(const WormUiComposeView& view, const WormUiComposeBgaRowView& row) -> SDL_Texture* {
     if (!renderer || !row.rgba_pixels || !row.image_width || !row.image_height ||
@@ -152,31 +152,31 @@ void toolbar(nk_context* context, const WormUiComposeView& view, worm_ui_nuklear
     IconButton::layout_columns(context, view.bga_ids_available ? 7 : 5);
     nk_layout_row_template_end(context);
     if (IconButton{Glyph::chevron_right, "Advance after place: arm the next available BGA shown",
-                   state.bga_auto_increment_on_place}.render(context))
-        state.bga_auto_increment_on_place = !state.bga_auto_increment_on_place;
+                   state.bga_catalog.bga_auto_increment_on_place}.render(context))
+        state.bga_catalog.bga_auto_increment_on_place = !state.bga_catalog.bga_auto_increment_on_place;
     if (DrawnIconButton{icons::plus, "Add BGA images (or drop images here)"}.render(context)) open_picker(view);
     if (DrawnIconButton{icons::trash, "Remove unused BGA resources"}.render(context))
         (void)raise(action, view, WORM_UI_COMPOSE_ACTION_REMOVE_UNUSED_BGA);
     if (DrawnIconButton{icons::select_all, "Select every BGA shown"}.render(context))
-        worm_ui_keysound_select_all(state.bga_selection, {view.bga_matching_ids, view.bga_total_matching});
-    if (IconButton{Glyph::x, "Clear BGA selection"}.render(context)) worm_ui_keysound_clear(state.bga_selection);
+        worm_ui_keysound_select_all(state.bga_catalog.bga_selection, {view.bga_matching_ids, view.bga_total_matching});
+    if (IconButton{Glyph::x, "Clear BGA selection"}.render(context)) worm_ui_keysound_clear(state.bga_catalog.bga_selection);
     if (view.bga_ids_available) {
-        if (IconButton{Glyph::chevrons_left, state.bga_sort_by_id ? "Sort by name" : "Sort by BMS ID",
-                       state.bga_sort_by_id}.render(context)) state.bga_sort_by_id = !state.bga_sort_by_id;
+        if (IconButton{Glyph::chevrons_left, state.bga_catalog.bga_sort_by_id ? "Sort by name" : "Sort by BMS ID",
+                       state.bga_catalog.bga_sort_by_id}.render(context)) state.bga_catalog.bga_sort_by_id = !state.bga_catalog.bga_sort_by_id;
         if (IconButton{Glyph::rotate_ccw, "Renumber BMS IDs by name"}.render(context))
         {
             wormedit::ui::nuklear::open_catalog_confirmation(
-                wormedit::ui::nuklear::catalog_confirmation(state, true), view, state.bga_selection.selected);
+                wormedit::ui::nuklear::catalog_confirmation(state, true), view, state.bga_catalog.bga_selection.selected);
         }
     }
 }
 void raise_bga_renumber(const WormUiComposeView& view, worm_ui_nuklear_compose_state_t& state,
                         WormUiWorkspaceAction& action, bool all) {
     if (!raise(action, view, WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS)) return;
-    state.bga_staged_ids = all ? std::vector<std::uint64_t>{}
-                               : state.bga_renumber_resources;
-    action.compose_sound_resource_ids = state.bga_staged_ids.data();
-    action.compose_sound_resource_count = state.bga_staged_ids.size();
+    state.bga_catalog.bga_staged_ids = all ? std::vector<std::uint64_t>{}
+                               : state.bga_catalog.bga_renumber_resources;
+    action.compose_sound_resource_ids = state.bga_catalog.bga_staged_ids.data();
+    action.compose_sound_resource_count = state.bga_catalog.bga_staged_ids.size();
     action.compose_renumber_all = all;
     action.compose_renumber_bga = true;
     wormedit::ui::nuklear::close_catalog_confirmation(
@@ -219,12 +219,12 @@ void select_bga_row(nk_context* context, const WormUiComposeView& view,
                      worm_ui_nuklear_compose_state_t& state, WormUiWorkspaceAction& action,
                      std::size_t index, const WormUiComposeBgaRowView& value) {
     const auto modifiers = SDL_GetModState();
-    worm_ui_keysound_click(state.bga_selection, {view.bga_matching_ids, view.bga_total_matching}, index,
+    worm_ui_keysound_click(state.bga_catalog.bga_selection, {view.bga_matching_ids, view.bga_total_matching}, index,
         (modifiers & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) != 0, (modifiers & SDL_KMOD_SHIFT) != 0);
     if (!nk_input_is_mouse_released(&context->input, NK_BUTTON_DOUBLE) || value.missing ||
-        !advance_eligible(view, state.bga_selection.primary)) return;
-    set_armed_resource(state, state.bga_selection.primary, compose_resource_origin_t::bga);
-    worm_ui_nuklear_pick_draw_source(state, action, 2, state.bga_selection.primary);
+        !advance_eligible(view, state.bga_catalog.bga_selection.primary)) return;
+    set_armed_resource(state, state.bga_catalog.bga_selection.primary, compose_resource_origin_t::bga);
+    worm_ui_nuklear_pick_draw_source(state, action, 2, state.bga_catalog.bga_selection.primary);
     reveal_empty_base_lane(action, view, false);
 }
 
@@ -235,15 +235,15 @@ void row(nk_context* context, const WormUiComposeView& view, worm_ui_nuklear_com
     const auto width = nk_window_get_content_region(context).w;
     nk_layout_row_begin(context, NK_STATIC, bga_row_height, 2);
     nk_layout_row_push(context, std::max(32.0f, width - 22 - context->style.window.spacing.x));
-    const bool available = !view.input_occluded && !state.bga_renumber_confirmation_open &&
-                           !state.bga_renumber_release_pending;
+    const bool available = !view.input_occluded && !state.bga_catalog.bga_renumber_confirmation_open &&
+                           !state.bga_catalog.bga_renumber_release_pending;
     const auto hovered = nk_widget_is_hovered(context);
     const auto clicked = nk_widget_is_mouse_clicked(context, NK_BUTTON_LEFT) && available;
     struct nk_rect bounds{};
     const auto widget = nk_widget(&bounds, context);
     if (widget != NK_WIDGET_INVALID) {
         draw_bga_resource_row(context, view, value, bounds,
-            worm_ui_keysound_is_selected(state.bga_selection, value.resource_id), hovered);
+            worm_ui_keysound_is_selected(state.bga_catalog.bga_selection, value.resource_id), hovered);
         if (hovered && available) {
             const auto tip = std::string{value.source_path ? value.source_path : value.name} + "\n" +
                 std::to_string(value.use_count) + " stored references. " +
@@ -259,8 +259,8 @@ void row(nk_context* context, const WormUiComposeView& view, worm_ui_nuklear_com
     const bool deleted = DrawnIconButton{icons::trash, available ? tip.c_str() : nullptr}.render(context);
     if (!available || value.use_count != 0) nk_widget_disable_end(context);
     if (deleted && available && value.use_count == 0 && raise(action, view, WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS)) {
-        state.bga_staged_ids = {value.resource_id};
-        action.compose_sound_resource_ids = state.bga_staged_ids.data();
+        state.bga_catalog.bga_staged_ids = {value.resource_id};
+        action.compose_sound_resource_ids = state.bga_catalog.bga_staged_ids.data();
         action.compose_sound_resource_count = 1;
     }
     nk_layout_row_end(context);
@@ -271,9 +271,9 @@ void bga_use_filter(nk_context* context, worm_ui_nuklear_compose_state_t& state,
     if (blocked) nk_widget_disable_begin(context);
     nk_layout_row_dynamic(context, 24, 4);
     for (std::size_t index = 0; index < labels.size(); ++index) {
-        if (!wormedit::ui::chrome::mode_button(context, labels[index], nullptr, state.bga_use_filter == index)) continue;
-        state.bga_use_filter = static_cast<std::uint8_t>(index);
-        state.bga_first_row = 0;
+        if (!wormedit::ui::chrome::mode_button(context, labels[index], nullptr, state.bga_catalog.bga_use_filter == index)) continue;
+        state.bga_catalog.bga_use_filter = static_cast<std::uint8_t>(index);
+        state.bga_catalog.bga_first_row = 0;
         nk_group_set_scroll(context, "Compose BGA list", 0, 0);
     }
     if (blocked) nk_widget_disable_end(context);
@@ -297,45 +297,45 @@ void bga_resource_header(nk_context* context) {
 
 void sync_advance_ids(const WormUiComposeView& view, worm_ui_nuklear_compose_state_t& state) {
     if (view.bga_advance_count && view.bga_advance_ids)
-        state.bga_advance_ids.assign(view.bga_advance_ids,
+        state.bga_catalog.bga_advance_ids.assign(view.bga_advance_ids,
                                      view.bga_advance_ids + view.bga_advance_count);
     else
-        state.bga_advance_ids.clear();
+        state.bga_catalog.bga_advance_ids.clear();
 }
 
 void reveal_armed_bga(nk_context* context, const WormUiComposeView& view,
                       worm_ui_nuklear_compose_state_t& state) {
-    if (!state.bga_reveal_primary) return;
-    if (!view.bga_search || std::strcmp(view.bga_search, state.bga_search.data()) != 0) return;
+    if (!state.bga_catalog.bga_reveal_primary) return;
+    if (!view.bga_search || std::strcmp(view.bga_search, state.bga_catalog.bga_search.data()) != 0) return;
     const auto matches = std::span(view.bga_matching_ids, view.bga_total_matching);
-    const auto found = std::ranges::find(matches, state.bga_selection.primary);
+    const auto found = std::ranges::find(matches, state.bga_catalog.bga_selection.primary);
     if (found != matches.end()) {
         const auto index = static_cast<std::size_t>(found - matches.begin());
         const auto y = index * static_cast<std::size_t>(bga_row_height + context->style.window.spacing.y);
         nk_group_set_scroll(context, "Compose BGA list", 0, static_cast<nk_uint>(y));
-        if (state.source_chip_reveal_kind == 2) {
+        if (state.pointer_capture.source_chip_reveal_kind == 2) {
             if (index < view.bga_first_row || index - view.bga_first_row >= view.bga_row_count) return;
-            if (view.bga_rows[index - view.bga_first_row].resource_id != state.source_chip_reveal_id) return;
-            state.source_chip_reveal_kind = 0;
-            state.source_chip_reveal_id = 0;
+            if (view.bga_rows[index - view.bga_first_row].resource_id != state.pointer_capture.source_chip_reveal_id) return;
+            state.pointer_capture.source_chip_reveal_kind = 0;
+            state.pointer_capture.source_chip_reveal_id = 0;
         }
     }
-    if (found != matches.end()) state.bga_reveal_primary = false;
+    if (found != matches.end()) state.bga_catalog.bga_reveal_primary = false;
 }
 
 void restore_chip_bga_selection(const WormUiComposeView& view,
                                worm_ui_nuklear_compose_state_t& state) {
-    if (state.source_chip_reveal_kind != 2) return;
-    if (state.chip_reveal_project != view.project_id || state.chip_reveal_chart != view.chart_id ||
-        view.draw_source_kind != 2 || view.draw_source_id != state.source_chip_reveal_id || view.draw_source_missing) {
-        state.source_chip_reveal_kind = 0;
-        state.source_chip_reveal_id = 0;
-        state.bga_reveal_primary = false;
+    if (state.pointer_capture.source_chip_reveal_kind != 2) return;
+    if (state.pointer_capture.chip_reveal_project != view.project_id || state.pointer_capture.chip_reveal_chart != view.chart_id ||
+        view.draw_source_kind != 2 || view.draw_source_id != state.pointer_capture.source_chip_reveal_id || view.draw_source_missing) {
+        state.pointer_capture.source_chip_reveal_kind = 0;
+        state.pointer_capture.source_chip_reveal_id = 0;
+        state.bga_catalog.bga_reveal_primary = false;
         return;
     }
-    state.bga_selection.primary = state.source_chip_reveal_id;
-    state.bga_selection.selected = {state.source_chip_reveal_id};
-    state.bga_reveal_primary = true;
+    state.bga_catalog.bga_selection.primary = state.pointer_capture.source_chip_reveal_id;
+    state.bga_catalog.bga_selection.selected = {state.pointer_capture.source_chip_reveal_id};
+    state.bga_catalog.bga_reveal_primary = true;
 }
 }
 void worm_ui_nuklear_bga_set_renderer(SDL_Renderer* value) {
@@ -344,19 +344,19 @@ void worm_ui_nuklear_bga_set_renderer(SDL_Renderer* value) {
 }
 static void sync_bga_document(const WormUiComposeView* view,
                               worm_ui_nuklear_compose_state_t* state, WormUiWorkspaceAction* action) {
-    if (state->bga_project_id != view->project_id || state->bga_chart_id != view->chart_id) {
-        state->bga_selection = {}; state->bga_search.fill(0); state->bga_first_row = 0;
-        state->bga_advance_ids.clear();
-        state->bga_project_id = view->project_id; state->bga_chart_id = view->chart_id;
-        state->bga_revision = view->document_revision;
-        state->bga_use_filter = 0;
+    if (state->bga_catalog.bga_project_id != view->project_id || state->bga_catalog.bga_chart_id != view->chart_id) {
+        state->bga_catalog.bga_selection = {}; state->bga_catalog.bga_search.fill(0); state->bga_catalog.bga_first_row = 0;
+        state->bga_catalog.bga_advance_ids.clear();
+        state->bga_catalog.bga_project_id = view->project_id; state->bga_catalog.bga_chart_id = view->chart_id;
+        state->bga_catalog.bga_revision = view->document_revision;
+        state->bga_catalog.bga_use_filter = 0;
         worm_ui_nuklear_bga_set_renderer(renderer);
     }
-    if (state->bga_revision != view->document_revision) {
-        state->bga_revision = view->document_revision;
+    if (state->bga_catalog.bga_revision != view->document_revision) {
+        state->bga_catalog.bga_revision = view->document_revision;
         const auto all = std::span(view->bga_all_resource_ids, view->bga_all_resource_count);
-        worm_ui_keysound_prune(state->bga_selection, all);
-        if (state->armed_from_bga_dock && std::ranges::find(all, state->armed_resource_id) == all.end())
+        worm_ui_keysound_prune(state->bga_catalog.bga_selection, all);
+        if (state->bga_catalog.armed_from_bga_dock && std::ranges::find(all, state->resource_picker.armed_resource_id) == all.end())
             worm_ui_nuklear_pick_draw_source(*state, *action, 0, 0);
     }
 }
@@ -367,37 +367,37 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const WormUiCompose
     sync_bga_document(view, state, action);
     const auto bounds = nk_window_get_content_region(context);
     restore_chip_bga_selection(*view, *state);
-    state->bga_list_valid = true;
-    state->bga_list_x = bounds.x; state->bga_list_y = bounds.y;
-    state->bga_list_width = bounds.w; state->bga_list_height = bounds.h;
-    state->bga_shown.assign(view->bga_matching_ids, view->bga_matching_ids + view->bga_total_matching);
+    state->bga_catalog.bga_list_valid = true;
+    state->bga_catalog.bga_list_x = bounds.x; state->bga_catalog.bga_list_y = bounds.y;
+    state->bga_catalog.bga_list_width = bounds.w; state->bga_catalog.bga_list_height = bounds.h;
+    state->bga_catalog.bga_shown.assign(view->bga_matching_ids, view->bga_matching_ids + view->bga_total_matching);
     nk_layout_row_dynamic(context, 20, 1);
     nk_label(context, "BGA", NK_TEXT_LEFT);
     import_picked(*action, *view, *state);
     sync_advance_ids(*view, *state);
     toolbar(context, *view, *state, *action);
-    bga_lane_picker(context, *view, *action, state->bga_renumber_confirmation_open ||
-                    state->bga_renumber_release_pending);
+    bga_lane_picker(context, *view, *action, state->bga_catalog.bga_renumber_confirmation_open ||
+                    state->bga_catalog.bga_renumber_release_pending);
     nk_layout_row_dynamic(context, 25, 1);
-    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state->bga_search.data(),
-        static_cast<int>(state->bga_search.size()), nk_filter_default);
-    bga_use_filter(context, *state, view->input_occluded || state->bga_renumber_confirmation_open ||
-                   state->bga_renumber_release_pending);
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state->bga_catalog.bga_search.data(),
+        static_cast<int>(state->bga_catalog.bga_search.size()), nk_filter_default);
+    bga_use_filter(context, *state, view->input_occluded || state->bga_catalog.bga_renumber_confirmation_open ||
+                   state->bga_catalog.bga_renumber_release_pending);
     bga_resource_header(context);
     const auto region = nk_window_get_content_region(context);
     const auto height = std::max(60.0f, region.y + region.h - nk_widget_position(context).y -
         (view->bga_ids_available ? 45.0f : 5.0f));
-    const auto block_list_pointer = state->bga_renumber_confirmation_open ||
-                                    state->bga_renumber_release_pending;
+    const auto block_list_pointer = state->bga_catalog.bga_renumber_confirmation_open ||
+                                    state->bga_catalog.bga_renumber_release_pending;
     if (block_list_pointer) nk_widget_disable_begin(context);
     nk_layout_row_dynamic(context, height, 1);
     reveal_armed_bga(context, *view, *state);
     struct nk_list_view list{};
-    const auto matching = view->bga_search && std::strcmp(view->bga_search, state->bga_search.data()) == 0;
+    const auto matching = view->bga_search && std::strcmp(view->bga_search, state->bga_catalog.bga_search.data()) == 0;
     if (nk_list_view_begin(context, &list, "Compose BGA list", NK_WINDOW_BORDER, static_cast<int>(bga_row_height),
                           static_cast<int>(std::max<std::size_t>(view->bga_total_matching, 1)))) {
-        state->bga_first_row = static_cast<std::size_t>(list.begin);
-        state->bga_row_limit = static_cast<std::size_t>(std::max(1, list.end - list.begin + 1));
+        state->bga_catalog.bga_first_row = static_cast<std::size_t>(list.begin);
+        state->bga_catalog.bga_row_limit = static_cast<std::size_t>(std::max(1, list.end - list.begin + 1));
         if (matching) {
             for (auto index = list.begin; index < std::min(list.end, static_cast<int>(view->bga_total_matching)); ++index)
                 row(context, *view, *state, *action, static_cast<std::size_t>(index));
@@ -427,15 +427,15 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const WormUiCompose
 static bool bga_stack_is_valid(const WormUiComposeView& view,
                                const worm_ui_nuklear_compose_state_t& state) {
     const auto expected = wormedit::ui::chrome::PopupContextStamp{
-        state.bga_stack_project_id, state.bga_stack_chart_id, state.bga_stack_revision, 0};
+        state.bga_interaction.bga_stack_project_id, state.bga_interaction.bga_stack_chart_id, state.bga_interaction.bga_stack_revision, 0};
     const auto current = wormedit::ui::chrome::PopupContextStamp{
         view.project_id, view.chart_id, view.document_revision, 0};
     return view.scene_available && view.bga_lane_visible &&
         wormedit::ui::chrome::popup_context_matches(expected, current) &&
         std::ranges::any_of(std::span(view.bga_events, view.bga_event_count), [&](const auto& event) {
-            return event.canvas_row == state.bga_stack_row &&
+            return event.canvas_row == state.bga_interaction.bga_stack_row &&
                    wormedit::editor_bga_lane_index(static_cast<wormedit::visual_event_kind_t>(event.kind)) ==
-                   wormedit::editor_bga_lane_index(static_cast<wormedit::visual_event_kind_t>(state.bga_stack_kind)) &&
+                   wormedit::editor_bga_lane_index(static_cast<wormedit::visual_event_kind_t>(state.bga_interaction.bga_stack_kind)) &&
                    event.overlap_count > WORM_UI_COMPOSE_BGA_OVERLAP_STACK_THRESHOLD;
         });
 }
@@ -463,7 +463,7 @@ static bool draw_bga_stack_row(nk_context* context, const WormUiComposeBgaEventV
         input.timing_chart_id = chart_id;
         input.timing_document_revision = revision;
     }
-    state.bga_stack_open = false;
+    state.bga_interaction.bga_stack_open = false;
     return true;
 }
 
@@ -471,27 +471,27 @@ void worm_ui_nuklear_render_bga_stack_picker(nk_context* context, const WormUiCo
     WormUiWorkspaceAction* action, worm_ui_nuklear_compose_state_t* state) {
     if (!context || !view || !action || !state) return;
     if (wormedit::ui::chrome::popup_update_release_pending(
-            context, state->bga_stack_release_pending)) return;
-    if (!state->bga_stack_open) return;
+            context, state->bga_interaction.bga_stack_release_pending)) return;
+    if (!state->bga_interaction.bga_stack_open) return;
     const auto local_bounds = nk_rect(24, 48, 300, 360);
     const auto screen_bounds = wormedit::ui::chrome::popup_screen_bounds(context, local_bounds);
     if (!bga_stack_is_valid(*view, *state)) {
-        state->bga_stack_open = false;
-        wormedit::ui::chrome::popup_arm_release(state->bga_stack_release_pending);
+        state->bga_interaction.bga_stack_open = false;
+        wormedit::ui::chrome::popup_arm_release(state->bga_interaction.bga_stack_release_pending);
         wormedit::ui::chrome::dismiss_popup(context, "BGA events at measure", local_bounds);
         return;
     }
     if (wormedit::ui::chrome::popup_dismiss_requested(context, screen_bounds)) {
-        state->bga_stack_open = false;
-        wormedit::ui::chrome::popup_arm_release(state->bga_stack_release_pending);
+        state->bga_interaction.bga_stack_open = false;
+        wormedit::ui::chrome::popup_arm_release(state->bga_interaction.bga_stack_release_pending);
         wormedit::ui::chrome::dismiss_popup(context, "BGA events at measure", local_bounds);
         return;
     }
     if (!nk_popup_begin(context, NK_POPUP_STATIC, "BGA events at measure",
                         NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR,
                         local_bounds)) {
-        state->bga_stack_open = false;
-        wormedit::ui::chrome::popup_arm_release(state->bga_stack_release_pending);
+        state->bga_interaction.bga_stack_open = false;
+        wormedit::ui::chrome::popup_arm_release(state->bga_interaction.bga_stack_release_pending);
         return;
     }
     nk_layout_row_dynamic(context, 24, 1);
@@ -499,9 +499,9 @@ void worm_ui_nuklear_render_bga_stack_picker(nk_context* context, const WormUiCo
     struct nk_list_view list{};
     const auto count = static_cast<int>(std::ranges::count_if(
         std::span(view->bga_events, view->bga_event_count), [&](const auto& event) {
-            return event.canvas_row == state->bga_stack_row &&
+            return event.canvas_row == state->bga_interaction.bga_stack_row &&
                 wormedit::editor_bga_lane_index(static_cast<wormedit::visual_event_kind_t>(event.kind)) ==
-                wormedit::editor_bga_lane_index(static_cast<wormedit::visual_event_kind_t>(state->bga_stack_kind));
+                wormedit::editor_bga_lane_index(static_cast<wormedit::visual_event_kind_t>(state->bga_interaction.bga_stack_kind));
         }));
     nk_layout_row_dynamic(context, 300, 1);
     bool selected_event = false;
@@ -510,9 +510,9 @@ void worm_ui_nuklear_render_bga_stack_picker(nk_context* context, const WormUiCo
         const auto events = std::span(view->bga_events, view->bga_event_count);
         int row_index = 0;
         for (const auto& event : events) {
-            if (event.canvas_row != state->bga_stack_row ||
+            if (event.canvas_row != state->bga_interaction.bga_stack_row ||
                 wormedit::editor_bga_lane_index(static_cast<wormedit::visual_event_kind_t>(event.kind)) !=
-                wormedit::editor_bga_lane_index(static_cast<wormedit::visual_event_kind_t>(state->bga_stack_kind))) continue;
+                wormedit::editor_bga_lane_index(static_cast<wormedit::visual_event_kind_t>(state->bga_interaction.bga_stack_kind))) continue;
             if (row_index >= list.begin && row_index < list.end) {
                 nk_layout_row_dynamic(context, 28, 1);
                 selected_event = draw_bga_stack_row(context, event, view->chart_id,
@@ -524,13 +524,13 @@ void worm_ui_nuklear_render_bga_stack_picker(nk_context* context, const WormUiCo
     }
     if (selected_event) {
         nk_popup_close(context);
-        wormedit::ui::chrome::popup_arm_release(state->bga_stack_release_pending);
+        wormedit::ui::chrome::popup_arm_release(state->bga_interaction.bga_stack_release_pending);
     }
     nk_layout_row_dynamic(context, 28, 1);
     if (nk_button_label(context, "Close")) {
-        state->bga_stack_open = false;
+        state->bga_interaction.bga_stack_open = false;
         nk_popup_close(context);
-        wormedit::ui::chrome::popup_arm_release(state->bga_stack_release_pending);
+        wormedit::ui::chrome::popup_arm_release(state->bga_interaction.bga_stack_release_pending);
     }
     nk_popup_end(context);
 }

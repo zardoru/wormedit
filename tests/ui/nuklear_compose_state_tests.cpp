@@ -78,12 +78,12 @@ auto inline_review_opens_once() -> bool {
     WormUiWorkspaceAction action{};
     const auto opened = worm_ui_nuklear_inline_timing_review_new_stage(
         state, view, action, 80.0f, 120.0f);
-    const auto seeded = state.inline_timing_open && state.inline_timing_focus_pending &&
-        state.inline_timing_chart_id == view.chart_id &&
-        state.inline_timing_revision == view.document_revision &&
-        state.inline_timing_object_id == 0 && state.inline_timing_lane == WORM_UI_TIMING_LANE_BPM &&
-        state.inline_timing_anchor_screen_x == 80.0f &&
-        state.inline_timing_anchor_screen_y == 120.0f;
+    const auto seeded = state.inline_timing.inline_timing_open && state.inline_timing.inline_timing_focus_pending &&
+        state.inline_timing.inline_timing_chart_id == view.chart_id &&
+        state.inline_timing.inline_timing_revision == view.document_revision &&
+        state.inline_timing.inline_timing_object_id == 0 && state.inline_timing.inline_timing_lane == WORM_UI_TIMING_LANE_BPM &&
+        state.inline_timing.inline_timing_anchor_screen_x == 80.0f &&
+        state.inline_timing.inline_timing_anchor_screen_y == 120.0f;
     std::array<char, 64> initial{};
     worm_ui_nuklear_inline_timing_initial_text(view, initial.data(), initial.size());
     const auto exact_effective_value = std::strcmp(initial.data(), "150") == 0;
@@ -93,19 +93,19 @@ auto inline_review_opens_once() -> bool {
     view.stage_active = false;
     const auto reset_on_end =
         !worm_ui_nuklear_inline_timing_review_new_stage(state, view, action, 80.0f, 120.0f);
-    state.inline_timing_popup_close_pending = false;
+    state.inline_timing.inline_timing_popup_close_pending = false;
     view.stage_active = true;
     view.document_revision += 1;
     action.timing_stage_action = WORM_UI_TIMING_STAGE_NONE;
     const auto new_revision_opens =
         worm_ui_nuklear_inline_timing_review_new_stage(state, view, action, 80.0f, 120.0f);
-    const auto new_binding = state.inline_timing_revision == view.document_revision;
-    state.inline_timing_open = false;
-    state.inline_timing_popup_close_pending = true;
+    const auto new_binding = state.inline_timing.inline_timing_revision == view.document_revision;
+    state.inline_timing.inline_timing_open = false;
+    state.inline_timing.inline_timing_popup_close_pending = true;
     view.document_revision += 1;
     const auto close_is_deferred =
         !worm_ui_nuklear_inline_timing_review_new_stage(state, view, action, 80.0f, 120.0f);
-    state.inline_timing_popup_close_pending = false;
+    state.inline_timing.inline_timing_popup_close_pending = false;
     const auto opens_after_close =
         worm_ui_nuklear_inline_timing_review_new_stage(state, view, action, 80.0f, 120.0f);
     return opened && seeded && exact_effective_value && stays_closed_after_cancel && reset_on_end &&
@@ -121,7 +121,7 @@ auto inline_review_ignores_other_stage_sources() -> bool {
         action.timing_stage_action = WORM_UI_TIMING_STAGE_BEGIN;
         view.stage_existing_object_id = 0;
         return !worm_ui_nuklear_inline_timing_review_new_stage(state, view, action, 0.0f, 0.0f) &&
-               !state.inline_timing_open;
+               !state.inline_timing.inline_timing_open;
     };
     const auto object_edit = [&] {
         state = {};
@@ -138,7 +138,7 @@ auto inline_review_ignores_other_stage_sources() -> bool {
     const auto pointer_drag = [&] {
         state = {};
         view.stage_lane = WORM_UI_TIMING_LANE_SCROLL;
-        state.timing_stage_drag_active = true;
+        state.timing_drag.timing_stage_drag_active = true;
         return !worm_ui_nuklear_inline_timing_review_new_stage(state, view, action, 0.0f, 0.0f);
     };
     return mouse_begin() && object_edit() && kiai_span() && pointer_drag();
@@ -159,124 +159,124 @@ TEST_CASE("inline timing review leaves mouse and unrelated previews alone",
 TEST_CASE("Nuklear compose state resets queues gestures editors and authored defaults",
           "[unit][frontend][compose]") {
     auto& state = worm_ui_nuklear_compose_state();
-    state.key_event_count = 1;
-    state.wheel_event_count = 1;
-    state.cancel_pending = true;
-    state.pointer_hold_active = true;
-    state.bmson_razor_pointer_active = true;
-    state.bmson_razor_last_y_pixels = 42.0;
-    state.bmson_marker_move_candidate_active = true;
-    state.bmson_marker_move_active = true;
-    state.bmson_marker_move_event_id = 42;
-    state.note_move_active = true;
-    state.timing_stage_drag_active = true;
-    state.timing_marker_candidate_active = true;
-    state.timing_marker_drag_active = true;
-    state.timing_missing_initial_selected = true;
-    state.timing_marker_object_id = 42;
-    state.timing_marker_chart_row = 43;
-    state.timing_marker_lane = WORM_UI_TIMING_LANE_SPEED;
-    state.timing_marker_anchor_y_pixels = 12.0;
-    state.timing_marker_capture.anchor_y = 13.0f;
-    state.timing_marker_current_y_pixels = 14.0;
-    state.timing_marker_capture.chart = 15;
-    state.timing_marker_capture.revision = 16;
-    state.inline_timing_open = true;
-    state.inline_timing_focus_pending = true;
-    state.inline_timing_chart_id = 42;
-    state.inline_timing_revision = 43;
-    state.inline_timing_object_id = 44;
-    state.inline_timing_lane = WORM_UI_TIMING_LANE_SCROLL;
-    state.inline_timing_anchor_screen_x = 45.0f;
-    state.inline_timing_anchor_screen_y = 46.0f;
-    state.inline_timing_text[0] = '3';
-    state.inline_timing_error[0] = 'x';
-    state.area_selection_active = true;
-    state.area_selection_mode = WORM_UI_COMPOSE_SELECTION_TOGGLE;
-    state.navigation_key_active = true;
-    state.navigation_action = WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
-    state.last_chart_id = 42;
-    state.last_project_id = 42;
-    state.label_project_id = 42;
-    state.label_chart_id = 42;
-    state.note_label[0] = 'x';
-    state.semantic_layer_color_editor_visible = true;
-    state.inspector_visible = false;
-    state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
-    state.resource_search[0] = 'x';
-    state.armed_resource_id = 42;
-    state.auto_increment_on_place = true;
-    state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::replace;
-    state.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::restart;
+    state.input_queue.key_event_count = 1;
+    state.input_queue.wheel_event_count = 1;
+    state.input_queue.cancel_pending = true;
+    state.pointer_capture.pointer_hold_active = true;
+    state.bmson_input.bmson_razor_pointer_active = true;
+    state.bmson_input.bmson_razor_last_y_pixels = 42.0;
+    state.bmson_input.bmson_marker_move_candidate_active = true;
+    state.bmson_input.bmson_marker_move_active = true;
+    state.bmson_input.bmson_marker_move_event_id = 42;
+    state.note_move.note_move_active = true;
+    state.timing_drag.timing_stage_drag_active = true;
+    state.timing_marker.timing_marker_candidate_active = true;
+    state.timing_marker.timing_marker_drag_active = true;
+    state.timing_marker.timing_missing_initial_selected = true;
+    state.timing_marker.timing_marker_object_id = 42;
+    state.timing_marker.timing_marker_chart_row = 43;
+    state.timing_marker.timing_marker_lane = WORM_UI_TIMING_LANE_SPEED;
+    state.timing_marker.timing_marker_anchor_y_pixels = 12.0;
+    state.timing_drag.timing_marker_capture.anchor_y = 13.0f;
+    state.timing_marker.timing_marker_current_y_pixels = 14.0;
+    state.timing_drag.timing_marker_capture.chart = 15;
+    state.timing_drag.timing_marker_capture.revision = 16;
+    state.inline_timing.inline_timing_open = true;
+    state.inline_timing.inline_timing_focus_pending = true;
+    state.inline_timing.inline_timing_chart_id = 42;
+    state.inline_timing.inline_timing_revision = 43;
+    state.inline_timing.inline_timing_object_id = 44;
+    state.inline_timing.inline_timing_lane = WORM_UI_TIMING_LANE_SCROLL;
+    state.inline_timing.inline_timing_anchor_screen_x = 45.0f;
+    state.inline_timing.inline_timing_anchor_screen_y = 46.0f;
+    state.inline_timing.inline_timing_text[0] = '3';
+    state.inline_timing.inline_timing_error[0] = 'x';
+    state.area_selection.area_selection_active = true;
+    state.area_selection.area_selection_mode = WORM_UI_COMPOSE_SELECTION_TOGGLE;
+    state.keyboard_navigation.navigation_key_active = true;
+    state.keyboard_navigation.navigation_action = WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
+    state.document_context.last_chart_id = 42;
+    state.document_context.last_project_id = 42;
+    state.note_label.label_project_id = 42;
+    state.note_label.label_chart_id = 42;
+    state.note_label.note_label[0] = 'x';
+    state.layer_editor.semantic_layer_color_editor_visible = true;
+    state.dock_layout.inspector_visible = false;
+    state.resource_picker.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
+    state.resource_picker.resource_search[0] = 'x';
+    state.resource_picker.armed_resource_id = 42;
+    state.resource_picker.auto_increment_on_place = true;
+    state.resource_picker.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::replace;
+    state.bmson_input.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::restart;
 
     worm_ui_nuklear_reset_compose_state();
 
-    CHECK(state.key_event_count == 0);
-    CHECK(state.wheel_event_count == 0);
-    CHECK_FALSE(state.cancel_pending);
-    CHECK_FALSE(state.pointer_hold_active);
-    CHECK_FALSE(state.bmson_razor_pointer_active);
-    CHECK(state.bmson_razor_last_y_pixels == 0.0);
-    CHECK_FALSE(state.bmson_marker_move_candidate_active);
-    CHECK_FALSE(state.bmson_marker_move_active);
-    CHECK(state.bmson_marker_move_event_id == 0);
-    CHECK_FALSE(state.note_move_active);
-    CHECK_FALSE(state.timing_stage_drag_active);
-    CHECK_FALSE(state.area_selection_active);
-    CHECK(state.area_selection_mode == WORM_UI_COMPOSE_SELECTION_REPLACE);
-    CHECK_FALSE(state.navigation_key_active);
-    CHECK(state.navigation_action == WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD);
-    CHECK(state.last_chart_id == 0);
-    CHECK(state.last_project_id == 0);
-    CHECK(state.label_project_id == std::numeric_limits<std::uint64_t>::max());
-    CHECK(state.label_chart_id == std::numeric_limits<std::uint64_t>::max());
-    CHECK(state.note_label[0] == '\0');
-    CHECK_FALSE(state.semantic_layer_color_editor_visible);
-    CHECK(state.inspector_visible);
-    CHECK(state.resource_filter == worm_ui_nuklear_compose_resource_filter_t::sample);
-    CHECK(state.resource_search[0] == '\0');
-    CHECK(state.armed_resource_id == 0);
-    CHECK_FALSE(state.auto_increment_on_place);
-    CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
-    CHECK(state.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::off);
+    CHECK(state.input_queue.key_event_count == 0);
+    CHECK(state.input_queue.wheel_event_count == 0);
+    CHECK_FALSE(state.input_queue.cancel_pending);
+    CHECK_FALSE(state.pointer_capture.pointer_hold_active);
+    CHECK_FALSE(state.bmson_input.bmson_razor_pointer_active);
+    CHECK(state.bmson_input.bmson_razor_last_y_pixels == 0.0);
+    CHECK_FALSE(state.bmson_input.bmson_marker_move_candidate_active);
+    CHECK_FALSE(state.bmson_input.bmson_marker_move_active);
+    CHECK(state.bmson_input.bmson_marker_move_event_id == 0);
+    CHECK_FALSE(state.note_move.note_move_active);
+    CHECK_FALSE(state.timing_drag.timing_stage_drag_active);
+    CHECK_FALSE(state.area_selection.area_selection_active);
+    CHECK(state.area_selection.area_selection_mode == WORM_UI_COMPOSE_SELECTION_REPLACE);
+    CHECK_FALSE(state.keyboard_navigation.navigation_key_active);
+    CHECK(state.keyboard_navigation.navigation_action == WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD);
+    CHECK(state.document_context.last_chart_id == 0);
+    CHECK(state.document_context.last_project_id == 0);
+    CHECK(state.note_label.label_project_id == std::numeric_limits<std::uint64_t>::max());
+    CHECK(state.note_label.label_chart_id == std::numeric_limits<std::uint64_t>::max());
+    CHECK(state.note_label.note_label[0] == '\0');
+    CHECK_FALSE(state.layer_editor.semantic_layer_color_editor_visible);
+    CHECK(state.dock_layout.inspector_visible);
+    CHECK(state.resource_picker.resource_filter == worm_ui_nuklear_compose_resource_filter_t::sample);
+    CHECK(state.resource_picker.resource_search[0] == '\0');
+    CHECK(state.resource_picker.armed_resource_id == 0);
+    CHECK_FALSE(state.resource_picker.auto_increment_on_place);
+    CHECK(state.resource_picker.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
+    CHECK(state.bmson_input.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::off);
 }
 
 TEST_CASE("Compose reset clears inline timing and timing marker gestures",
           "[unit][frontend][compose]") {
     auto& state = worm_ui_nuklear_compose_state();
-    state.timing_marker_drag_active = true;
-    state.timing_marker_object_id = 42;
-    state.timing_marker_chart_row = 43;
-    state.inline_timing_open = true;
-    state.inline_timing_focus_pending = true;
-    state.inline_timing_text[0] = 'x';
+    state.timing_marker.timing_marker_drag_active = true;
+    state.timing_marker.timing_marker_object_id = 42;
+    state.timing_marker.timing_marker_chart_row = 43;
+    state.inline_timing.inline_timing_open = true;
+    state.inline_timing.inline_timing_focus_pending = true;
+    state.inline_timing.inline_timing_text[0] = 'x';
     worm_ui_nuklear_reset_compose_state();
-    CHECK_FALSE(state.timing_marker_drag_active);
-    CHECK(state.timing_marker_object_id == 0);
-    CHECK(state.timing_marker_chart_row == 0);
-    CHECK_FALSE(state.inline_timing_open);
-    CHECK_FALSE(state.inline_timing_focus_pending);
-    CHECK(state.inline_timing_text[0] == '\0');
+    CHECK_FALSE(state.timing_marker.timing_marker_drag_active);
+    CHECK(state.timing_marker.timing_marker_object_id == 0);
+    CHECK(state.timing_marker.timing_marker_chart_row == 0);
+    CHECK_FALSE(state.inline_timing.inline_timing_open);
+    CHECK_FALSE(state.inline_timing.inline_timing_focus_pending);
+    CHECK(state.inline_timing.inline_timing_text[0] == '\0');
 }
 
 TEST_CASE("Compose placement picker advances only when armed and stops at exhaustion",
           "[unit][frontend][compose]") {
     worm_ui_nuklear_reset_compose_state();
     auto& state = worm_ui_nuklear_compose_state();
-    state.armed_resource_id = 4;
-    state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::place;
+    state.resource_picker.armed_resource_id = 4;
+    state.resource_picker.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::place;
     worm_ui_nuklear_advance_resource_picker(4, 5);
-    CHECK(state.armed_resource_id == 4);
-    state.auto_increment_on_place = true;
+    CHECK(state.resource_picker.armed_resource_id == 4);
+    state.resource_picker.auto_increment_on_place = true;
     worm_ui_nuklear_advance_resource_picker(3, 5);
-    CHECK(state.armed_resource_id == 4);
+    CHECK(state.resource_picker.armed_resource_id == 4);
     worm_ui_nuklear_advance_resource_picker(4, 5);
-    CHECK(state.armed_resource_id == 5);
-    CHECK(state.auto_increment_on_place);
+    CHECK(state.resource_picker.armed_resource_id == 5);
+    CHECK(state.resource_picker.auto_increment_on_place);
     worm_ui_nuklear_advance_resource_picker(5, 0);
-    CHECK(state.armed_resource_id == 5);
-    CHECK_FALSE(state.auto_increment_on_place);
-    CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
+    CHECK(state.resource_picker.armed_resource_id == 5);
+    CHECK_FALSE(state.resource_picker.auto_increment_on_place);
+    CHECK(state.resource_picker.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
     worm_ui_nuklear_reset_compose_state();
 }
 
@@ -284,21 +284,21 @@ TEST_CASE("BGA placement advances in dock order and reveals an off-screen succes
           "[unit][frontend][compose][bga][advance]") {
     worm_ui_nuklear_reset_compose_state();
     auto& state = worm_ui_nuklear_compose_state();
-    state.armed_resource_id = 1400;
-    state.armed_from_bga_dock = true;
-    state.bga_auto_increment_on_place = true;
-    state.auto_increment_on_place = false;
-    state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
-    state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::place;
-    state.bga_advance_ids = {1400, 1700, 1500};
+    state.resource_picker.armed_resource_id = 1400;
+    state.bga_catalog.armed_from_bga_dock = true;
+    state.bga_catalog.bga_auto_increment_on_place = true;
+    state.resource_picker.auto_increment_on_place = false;
+    state.resource_picker.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
+    state.resource_picker.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::place;
+    state.bga_catalog.bga_advance_ids = {1400, 1700, 1500};
     const std::array selected{std::uint64_t{1400}};
-    worm_ui_keysound_select_all(state.bga_selection, selected);
+    worm_ui_keysound_select_all(state.bga_catalog.bga_selection, selected);
 
     worm_ui_nuklear_advance_resource_picker(1400, 0);
-    CHECK(state.armed_resource_id == 1700);
-    CHECK(state.bga_selection.primary == 1700);
-    CHECK(state.bga_reveal_primary);
-    CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::place);
+    CHECK(state.resource_picker.armed_resource_id == 1700);
+    CHECK(state.bga_catalog.bga_selection.primary == 1700);
+    CHECK(state.bga_catalog.bga_reveal_primary);
+    CHECK(state.resource_picker.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::place);
     worm_ui_nuklear_reset_compose_state();
 }
 
@@ -306,22 +306,22 @@ TEST_CASE("BGA advance preserves the last resource when order ends and ignores s
           "[unit][frontend][compose][bga][advance]") {
     worm_ui_nuklear_reset_compose_state();
     auto& state = worm_ui_nuklear_compose_state();
-    state.armed_resource_id = 1500;
-    state.armed_from_bga_dock = true;
-    state.bga_auto_increment_on_place = true;
-    state.auto_increment_on_place = true;
-    state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
-    state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::place;
-    state.bga_advance_ids = {1400, 1500};
+    state.resource_picker.armed_resource_id = 1500;
+    state.bga_catalog.armed_from_bga_dock = true;
+    state.bga_catalog.bga_auto_increment_on_place = true;
+    state.resource_picker.auto_increment_on_place = true;
+    state.resource_picker.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
+    state.resource_picker.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::place;
+    state.bga_catalog.bga_advance_ids = {1400, 1500};
     worm_ui_nuklear_advance_resource_picker(1400, 1600);
-    CHECK(state.armed_resource_id == 1500);
-    CHECK(state.bga_auto_increment_on_place);
-    CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::place);
+    CHECK(state.resource_picker.armed_resource_id == 1500);
+    CHECK(state.bga_catalog.bga_auto_increment_on_place);
+    CHECK(state.resource_picker.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::place);
 
     worm_ui_nuklear_advance_resource_picker(1500, 0);
-    CHECK(state.armed_resource_id == 1500);
-    CHECK_FALSE(state.bga_auto_increment_on_place);
-    CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
+    CHECK(state.resource_picker.armed_resource_id == 1500);
+    CHECK_FALSE(state.bga_catalog.bga_auto_increment_on_place);
+    CHECK(state.resource_picker.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
     worm_ui_nuklear_reset_compose_state();
 }
 
@@ -709,42 +709,42 @@ TEST_CASE("Inline timing confirm and blur share the BPM and SV lifecycle",
     const auto lane = GENERATE(WORM_UI_TIMING_LANE_BPM, WORM_UI_TIMING_LANE_SCROLL);
     auto view = staged_timing(lane);
     worm_ui_nuklear_compose_state_t editor{};
-    editor.inline_timing_open = true;
-    std::strcpy(editor.inline_timing_text.data(), "2.5");
+    editor.inline_timing.inline_timing_open = true;
+    std::strcpy(editor.inline_timing.inline_timing_text.data(), "2.5");
     WormUiWorkspaceAction action{};
     SECTION("Enter confirms the typed value and closes") {
         worm_ui_nuklear_inline_timing_update(editor, view, action, true, false);
-        expect_inline(!editor.inline_timing_open);
+        expect_inline(!editor.inline_timing.inline_timing_open);
         expect_inline(action.timing_stage_action == WORM_UI_TIMING_STAGE_CONFIRM);
         expect_inline(action.timing_lane == lane);
         check_primary(action, "5", "2");
     }
     SECTION("Invalid Enter retains the draft and requests focus again") {
-        std::strcpy(editor.inline_timing_text.data(), "invalid");
+        std::strcpy(editor.inline_timing.inline_timing_text.data(), "invalid");
         worm_ui_nuklear_inline_timing_update(editor, view, action, true, false);
-        expect_inline(editor.inline_timing_open);
-        expect_inline(editor.inline_timing_focus_pending);
-        expect_inline(std::strcmp(editor.inline_timing_text.data(), "invalid") == 0);
-        expect_inline(editor.inline_timing_error[0] != '\0');
+        expect_inline(editor.inline_timing.inline_timing_open);
+        expect_inline(editor.inline_timing.inline_timing_focus_pending);
+        expect_inline(std::strcmp(editor.inline_timing.inline_timing_text.data(), "invalid") == 0);
+        expect_inline(editor.inline_timing.inline_timing_error[0] != '\0');
         expect_inline(action.timing_stage_action == WORM_UI_TIMING_STAGE_NONE);
     }
     SECTION("Blur cancels without applying the draft") {
         worm_ui_nuklear_inline_timing_update(editor, view, action, false, true);
-        expect_inline(!editor.inline_timing_open);
-        expect_inline(!editor.inline_timing_focus_pending);
+        expect_inline(!editor.inline_timing.inline_timing_open);
+        expect_inline(!editor.inline_timing.inline_timing_focus_pending);
         expect_inline(action.timing_stage_action == WORM_UI_TIMING_STAGE_CANCEL);
-        expect_inline(editor.inline_timing_popup_close_pending);
-        expect_inline(editor.inline_timing_input_consumed);
+        expect_inline(editor.inline_timing.inline_timing_popup_close_pending);
+        expect_inline(editor.inline_timing.inline_timing_input_consumed);
         expect_inline(action.timing_primary_numerator_text[0] == '\0');
     }
     SECTION("Escape uses the same cancellation") {
-        editor.inline_timing_focus_pending = true;
+        editor.inline_timing.inline_timing_focus_pending = true;
         worm_ui_nuklear_inline_timing_cancel(editor, action);
-        expect_inline(!editor.inline_timing_open);
-        expect_inline(!editor.inline_timing_focus_pending);
+        expect_inline(!editor.inline_timing.inline_timing_open);
+        expect_inline(!editor.inline_timing.inline_timing_focus_pending);
         expect_inline(action.timing_stage_action == WORM_UI_TIMING_STAGE_CANCEL);
-        expect_inline(editor.inline_timing_popup_close_pending);
-        expect_inline(editor.inline_timing_input_consumed);
+        expect_inline(editor.inline_timing.inline_timing_popup_close_pending);
+        expect_inline(editor.inline_timing.inline_timing_input_consumed);
         expect_inline(action.timing_primary_numerator_text[0] == '\0');
     }
 }
@@ -753,7 +753,7 @@ TEST_CASE("Compose canvas ownership ignores historical inspector focus but defer
           "[unit][frontend][compose]") {
     worm_ui_nuklear_reset_compose_state();
     auto& state = worm_ui_nuklear_compose_state();
-    state.keyboard_focus = false;
+    state.input_queue.keyboard_focus = false;
     WormUiComposeView view{};
     view.visible = true;
     view.scene_available = true;
@@ -774,7 +774,7 @@ TEST_CASE("BGM column count field claims its first clicked frame",
     auto& state = worm_ui_nuklear_compose_state();
     CHECK(worm_ui_nuklear_update_bgm_column_count_input_owner(
         state, 12, 7, true, true, false, false));
-    CHECK(state.bgm_column_count_edit.input_owned);
+    CHECK(state.inline_offset.bgm_column_count_edit.input_owned);
 }
 
 TEST_CASE("BGM column count field owns active editing and the finish dispatch frame",
@@ -787,12 +787,12 @@ TEST_CASE("BGM column count field owns active editing and the finish dispatch fr
         state, 12, 7, true, false, true, false));
     CHECK(worm_ui_nuklear_update_bgm_column_count_input_owner(
         state, 12, 7, true, false, false, true));
-    CHECK(state.bgm_column_count_edit.input_owned);
-    CHECK(state.bgm_column_count_edit.release_pending);
+    CHECK(state.inline_offset.bgm_column_count_edit.input_owned);
+    CHECK(state.inline_offset.bgm_column_count_edit.release_pending);
     nk_context context{};
     worm_ui_nuklear_retire_bgm_column_count_input_owner(state, &context);
-    CHECK_FALSE(state.bgm_column_count_edit.input_owned);
-    CHECK_FALSE(state.bgm_column_count_edit.release_pending);
+    CHECK_FALSE(state.inline_offset.bgm_column_count_edit.input_owned);
+    CHECK_FALSE(state.inline_offset.bgm_column_count_edit.release_pending);
 }
 
 TEST_CASE("BGM column count field ownership resets when its chart changes",
@@ -834,27 +834,27 @@ TEST_CASE("BGM column count field owner clears with Compose reset",
     CHECK(worm_ui_nuklear_update_bgm_column_count_input_owner(
         state, 13, 8, true, false, false, true));
     worm_ui_nuklear_reset_compose_state();
-    CHECK_FALSE(worm_ui_nuklear_compose_state().bgm_column_count_edit.input_owned);
+    CHECK_FALSE(worm_ui_nuklear_compose_state().inline_offset.bgm_column_count_edit.input_owned);
 }
 
 TEST_CASE("Compose key batches preserve same-frame edges and release held keys after text ownership",
           "[unit][frontend][compose]") {
     worm_ui_nuklear_compose_state_t state;
     std::vector<bool> edges;
-    state.key_events[0] = {.scancode = 30, .down = true};
-    state.key_events[1] = {.scancode = 30, .down = false};
-    state.key_event_count = 2;
+    state.input_queue.key_events[0] = {.scancode = 30, .down = true};
+    state.input_queue.key_events[1] = {.scancode = 30, .down = false};
+    state.input_queue.key_event_count = 2;
     worm_ui_nuklear_dispatch_compose_keys(state, true, [&](const auto& event) { edges.push_back(event.down); });
     expect_inline(edges == std::vector<bool>{true, false});
-    expect_inline(state.key_event_count == 0);
+    expect_inline(state.input_queue.key_event_count == 0);
     bool held{};
-    state.key_events[0] = {.scancode = 30, .down = true};
-    state.key_event_count = 1;
+    state.input_queue.key_events[0] = {.scancode = 30, .down = true};
+    state.input_queue.key_event_count = 1;
     worm_ui_nuklear_dispatch_compose_keys(state, true, [&](const auto& event) { held = event.down; });
     expect_inline(held);
-    state.key_events[0] = {.scancode = 30, .down = true, .repeat = true};
-    state.key_events[1] = {.scancode = 30, .down = false};
-    state.key_event_count = 2;
+    state.input_queue.key_events[0] = {.scancode = 30, .down = true, .repeat = true};
+    state.input_queue.key_events[1] = {.scancode = 30, .down = false};
+    state.input_queue.key_event_count = 2;
     edges.clear();
     worm_ui_nuklear_dispatch_compose_keys(state, false, [&](const auto& event) {
         edges.push_back(event.down);
@@ -862,7 +862,7 @@ TEST_CASE("Compose key batches preserve same-frame edges and release held keys a
     });
     expect_inline(edges == std::vector<bool>{false});
     expect_inline(!held);
-    expect_inline(state.key_event_count == 0);
+    expect_inline(state.input_queue.key_event_count == 0);
 }
 
 TEST_CASE("Shift navigation range capture starts once and commits on the final Shift release",
@@ -871,17 +871,17 @@ TEST_CASE("Shift navigation range capture starts once and commits on the final S
     expect_inline(!worm_ui_nuklear_begin_shift_range(state, 0));
     expect_inline(worm_ui_nuklear_begin_shift_range(state, 1));
     expect_inline(!worm_ui_nuklear_begin_shift_range(state, 1));
-    state.space_range_hold_moved = true;
-    state.shift_range_keys |= 2;
+    state.range_selection.space_range_hold_moved = true;
+    state.range_selection.shift_range_keys |= 2;
     expect_inline(!worm_ui_nuklear_release_shift_range(state, 1));
-    expect_inline(state.space_range_hold_active && state.space_range_hold_moved);
+    expect_inline(state.range_selection.space_range_hold_active && state.range_selection.space_range_hold_moved);
     expect_inline(!worm_ui_nuklear_release_shift_range(state, 0));
     expect_inline(worm_ui_nuklear_release_shift_range(state, 2));
-    state.space_range_hold_active = false;
-    state.space_range_hold_moved = false;
+    state.range_selection.space_range_hold_active = false;
+    state.range_selection.space_range_hold_moved = false;
     expect_inline(!worm_ui_nuklear_release_shift_range(state, 2));
     expect_inline(worm_ui_nuklear_begin_shift_range(state, 2));
-    expect_inline(!state.space_range_hold_moved);
+    expect_inline(!state.range_selection.space_range_hold_moved);
 }
 
 namespace {
@@ -900,12 +900,12 @@ TEST_CASE("inline audio offset focuses exact text and emits one signed edit", "[
     worm_ui_nuklear_compose_state_t state;
     const auto view = inline_offset_view();
     expect_inline(worm_ui_nuklear_begin_inline_offset(state, view));
-    expect_inline(state.inline_offset_focus_pending);
-    expect_inline(std::strcmp(state.inline_offset_text.data(), "1/3") == 0);
-    std::strcpy(state.inline_offset_text.data(), "-0.125");
+    expect_inline(state.inline_offset.inline_offset_focus_pending);
+    expect_inline(std::strcmp(state.inline_offset.inline_offset_text.data(), "1/3") == 0);
+    std::strcpy(state.inline_offset.inline_offset_text.data(), "-0.125");
     WormUiWorkspaceAction action{};
     worm_ui_nuklear_update_inline_offset(state, view, action, true, false);
-    expect_inline(!state.inline_offset_open);
+    expect_inline(!state.inline_offset.inline_offset_open);
     expect_inline(action.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_AUDIO_OFFSET);
     expect_inline(action.compose_audio_offset_numerator == -1);
     expect_inline(action.compose_audio_offset_denominator == 8);
@@ -919,15 +919,15 @@ TEST_CASE("inline audio offset invalid Enter retains text and blur cancels", "[f
     worm_ui_nuklear_compose_state_t state;
     const auto view = inline_offset_view();
     expect_inline(worm_ui_nuklear_begin_inline_offset(state, view));
-    std::strcpy(state.inline_offset_text.data(), "-1/0");
+    std::strcpy(state.inline_offset.inline_offset_text.data(), "-1/0");
     WormUiWorkspaceAction action{};
     worm_ui_nuklear_update_inline_offset(state, view, action, true, false);
-    expect_inline(state.inline_offset_open && state.inline_offset_focus_pending);
-    expect_inline(std::strcmp(state.inline_offset_text.data(), "-1/0") == 0);
-    expect_inline(state.inline_offset_error[0] != 0);
+    expect_inline(state.inline_offset.inline_offset_open && state.inline_offset.inline_offset_focus_pending);
+    expect_inline(std::strcmp(state.inline_offset.inline_offset_text.data(), "-1/0") == 0);
+    expect_inline(state.inline_offset.inline_offset_error[0] != 0);
     expect_inline(action.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     worm_ui_nuklear_update_inline_offset(state, view, action, false, true);
-    expect_inline(!state.inline_offset_open);
+    expect_inline(!state.inline_offset.inline_offset_open);
     expect_inline(action.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
@@ -939,10 +939,10 @@ TEST_CASE("inline audio offset cancels on chart revision lock and explicit Escap
     if (change == 0) ++view.chart_id;
     if (change == 1) ++view.document_revision;
     if (change == 2) view.audio_offset_editable = false;
-    if (change == 3) state.inline_offset_cancel_pending = true;
+    if (change == 3) state.inline_offset.inline_offset_cancel_pending = true;
     WormUiWorkspaceAction action{};
     worm_ui_nuklear_update_inline_offset(state, view, action, true, false);
-    expect_inline(!state.inline_offset_open);
+    expect_inline(!state.inline_offset.inline_offset_open);
     expect_inline(action.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
@@ -951,8 +951,8 @@ TEST_CASE("occluded offset readout cannot steal another panel's input", "[fronte
     auto view = inline_offset_view();
     view.input_occluded = true;
     expect_inline(!worm_ui_nuklear_begin_inline_offset(state, view));
-    expect_inline(!state.inline_offset_open && !state.inline_offset_focus_pending);
-    expect_inline(!state.inline_offset_input_consumed);
+    expect_inline(!state.inline_offset.inline_offset_open && !state.inline_offset.inline_offset_focus_pending);
+    expect_inline(!state.inline_offset.inline_offset_input_consumed);
     view.input_occluded = false;
     expect_inline(worm_ui_nuklear_begin_inline_offset(state, view));
 }
@@ -1111,25 +1111,25 @@ TEST_CASE("Alt wheel snaps once per burst and rearms on quiet zero or modifier r
 TEST_CASE("Latched range selection survives Shift release",
           "[frontend][ctrl-space]") {
     worm_ui_nuklear_compose_state_t state;
-    state.space_range_hold_active = true;
-    state.space_range_latched = true;
+    state.range_selection.space_range_hold_active = true;
+    state.range_selection.space_range_latched = true;
     expect_inline(!worm_ui_nuklear_release_shift_range(state, 1));
     expect_inline(!worm_ui_nuklear_begin_shift_range(state, 1));
-    expect_inline(state.space_range_hold_active && state.space_range_latched);
+    expect_inline(state.range_selection.space_range_hold_active && state.range_selection.space_range_latched);
 }
 
 TEST_CASE("Tab range release retires the directional repeat before its deadline", "[frontend][tab-repeat][selection]") {
     worm_ui_nuklear_compose_state_t state;
     expect_inline(worm_ui_nuklear_begin_shift_range(state, 3));
-    expect_inline(!state.tab_navigation.press_tab(0));
-    expect_inline(state.tab_navigation.press_direction(
+    expect_inline(!state.keyboard_navigation.tab_navigation.press_tab(0));
+    expect_inline(state.keyboard_navigation.tab_navigation.press_direction(
         WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD, 82, 0).has_value());
-    state.space_range_hold_moved = true;
+    state.range_selection.space_range_hold_moved = true;
     expect_inline(!worm_ui_nuklear_release_shift_range(state, 1));
-    state.tab_navigation.release_direction(82);
+    state.keyboard_navigation.tab_navigation.release_direction(82);
     expect_inline(worm_ui_nuklear_release_shift_range(state, 2));
-    expect_inline(state.space_range_hold_moved);
-    expect_inline(!state.tab_navigation.advance(200, true));
+    expect_inline(state.range_selection.space_range_hold_moved);
+    expect_inline(!state.keyboard_navigation.tab_navigation.advance(200, true));
 }
 
 TEST_CASE("Compose zoom anchors use source coordinates in either scroll direction", "[frontend][pinch][zoom-anchor]") {
@@ -1245,7 +1245,7 @@ TEST_CASE("Compose selection outline is green in the theme", "[compose][key-colo
 
 TEST_CASE("Compose color views default to Normal and unknown snaps use other grey", "[compose][color-view]") {
     using View = worm_ui_nuklear_compose_color_view_t;
-    CHECK(worm_ui_nuklear_compose_state_t{}.color_view == View::normal);
+    CHECK(worm_ui_nuklear_compose_state_t{}.input_queue.color_view == View::normal);
     WormUiComposeNoteView note{};
     note.snap_class = 255;
     const auto actual = compose_note_base_fill(View::snap, note);
@@ -1297,19 +1297,19 @@ TEST_CASE("Note layer submenu rejects malformed rows and oversized projections",
 TEST_CASE("Sounds dock advance selects its visible successor and rejected placement leaves it alone", "[frontend-state][keysounds]") {
     auto& state = worm_ui_nuklear_compose_state();
     state = {};
-    state.armed_from_sounds_dock = true;
-    state.auto_increment_on_place = true;
-    state.armed_resource_id = 40;
-    state.keysound_advance_rows = {{40, false}, {10, true}, {30, false}};
-    state.keysound_selection.selected = {40, 50};
+    state.keysound_catalog.armed_from_sounds_dock = true;
+    state.resource_picker.auto_increment_on_place = true;
+    state.resource_picker.armed_resource_id = 40;
+    state.keysound_catalog.keysound_advance_rows = {{40, false}, {10, true}, {30, false}};
+    state.keysound_catalog.keysound_selection.selected = {40, 50};
     worm_ui_nuklear_advance_resource_picker(50, 99);
-    CHECK(state.armed_resource_id == 40);
+    CHECK(state.resource_picker.armed_resource_id == 40);
     worm_ui_nuklear_advance_resource_picker(40, 99);
-    CHECK(state.armed_resource_id == 30);
-    CHECK(state.keysound_selection.selected == std::vector<std::uint64_t>{30});
-    CHECK(state.keysound_reveal_primary);
+    CHECK(state.resource_picker.armed_resource_id == 30);
+    CHECK(state.keysound_catalog.keysound_selection.selected == std::vector<std::uint64_t>{30});
+    CHECK(state.keysound_catalog.keysound_reveal_primary);
     worm_ui_nuklear_advance_resource_picker(30, 99);
-    CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
+    CHECK(state.resource_picker.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
     state = {};
 }
 
@@ -1339,11 +1339,11 @@ auto stem_lane_width_values_are_clamped() -> bool {
         -std::numeric_limits<double>::infinity());
     worm_ui_nuklear_set_stem_lane_width(state, 1, 2, 7,
         std::numeric_limits<double>::quiet_NaN());
-    const auto entries = state.stem_lane_widths.size();
+    const auto entries = state.stem_lanes.stem_lane_widths.size();
     worm_ui_nuklear_set_stem_lane_width(state, 0, 2, 3, 100);
     worm_ui_nuklear_set_stem_lane_width(state, 1, 0, 3, 100);
     worm_ui_nuklear_set_stem_lane_width(state, 1, 2, 0, 100);
-    return entries == 5 && state.stem_lane_widths.size() == entries &&
+    return entries == 5 && state.stem_lanes.stem_lane_widths.size() == entries &&
         worm_ui_nuklear_stem_lane_width(state, 1, 2, 3) == 36 &&
         worm_ui_nuklear_stem_lane_width(state, 1, 2, 4) == 480 &&
         worm_ui_nuklear_stem_lane_width(state, 1, 2, 5) == 480 &&
@@ -1355,20 +1355,20 @@ auto stem_lane_resize_cancel_restores_only_captured_key() -> bool {
     worm_ui_nuklear_compose_state_t state{};
     worm_ui_nuklear_set_stem_lane_width(state, 1, 2, 3, 120);
     worm_ui_nuklear_set_stem_lane_width(state, 1, 4, 3, 300);
-    state.stem_lane_resize = worm_ui_nuklear_compose_state_t::stem_lane_resize_t{
+    state.stem_lanes.stem_lane_resize = worm_ui_nuklear_compose_state_t::stem_lane_resize_t{
         .key = {1, 2, 3}, .anchor_x = 400, .anchor_width = 120};
-    state.stem_lane_resize_cursor_requested = true;
+    state.stem_lanes.stem_lane_resize_cursor_requested = true;
     worm_ui_nuklear_set_stem_lane_width(state, 1, 2, 3, 260);
     worm_ui_nuklear_cancel_stem_lane_resize(state);
-    if (state.stem_lane_resize || state.stem_lane_resize_cursor_requested ||
+    if (state.stem_lanes.stem_lane_resize || state.stem_lanes.stem_lane_resize_cursor_requested ||
         worm_ui_nuklear_stem_lane_width(state, 1, 2, 3) != 120 ||
         worm_ui_nuklear_stem_lane_width(state, 1, 4, 3) != 300) return false;
-    state.stem_lane_resize = worm_ui_nuklear_compose_state_t::stem_lane_resize_t{
+    state.stem_lanes.stem_lane_resize = worm_ui_nuklear_compose_state_t::stem_lane_resize_t{
         .key = {1, 2, 3}, .anchor_x = 400, .anchor_width = 120};
-    state.stem_lane_resize_cursor_requested = true;
+    state.stem_lanes.stem_lane_resize_cursor_requested = true;
     worm_ui_nuklear_set_stem_lane_width(state, 1, 2, 3, 280);
     worm_ui_nuklear_cancel_stem_lane_resize(state, false);
-    return !state.stem_lane_resize && !state.stem_lane_resize_cursor_requested &&
+    return !state.stem_lanes.stem_lane_resize && !state.stem_lanes.stem_lane_resize_cursor_requested &&
         worm_ui_nuklear_stem_lane_width(state, 1, 2, 3) == 280 &&
         worm_ui_nuklear_stem_lane_width(state, 1, 4, 3) == 300;
 }
@@ -1377,15 +1377,15 @@ auto resize_capture_stays_or_cancels_for_view(const WormUiComposeView& view,
                                                bool focused) -> bool {
     worm_ui_nuklear_compose_state_t state{};
     worm_ui_nuklear_set_stem_lane_width(state, 1, 2, 3, 120);
-    state.stem_lane_resize = worm_ui_nuklear_compose_state_t::stem_lane_resize_t{
+    state.stem_lanes.stem_lane_resize = worm_ui_nuklear_compose_state_t::stem_lane_resize_t{
         .key = {1, 2, 3}, .anchor_x = 400, .anchor_width = 120};
-    state.stem_lane_resize_cursor_requested = true;
+    state.stem_lanes.stem_lane_resize_cursor_requested = true;
     worm_ui_nuklear_set_stem_lane_width(state, 1, 2, 3, 220);
     worm_ui_nuklear_cancel_stale_stem_lane_resize(state, view, focused);
     const bool same_key = view.project_id == 1 && view.chart_id == 2 && focused &&
                           !view.input_occluded;
-    return state.stem_lane_resize.has_value() == same_key &&
-        state.stem_lane_resize_cursor_requested == same_key &&
+    return state.stem_lanes.stem_lane_resize.has_value() == same_key &&
+        state.stem_lanes.stem_lane_resize_cursor_requested == same_key &&
         worm_ui_nuklear_stem_lane_width(state, 1, 2, 3) == (same_key ? 220 : 120);
 }
 

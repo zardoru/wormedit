@@ -76,8 +76,8 @@ struct lifecycle_fixture_t {
         configure_auxiliary();
         (void)harness.frame();
         auto& ui = worm_ui_nuklear_compose_state();
-        ui.inspector_visible = ui.sounds_panel_visible = ui.layers_panel_visible = false;
-        ui.bga_panel_visible = ui.measures_panel_visible = false;
+        ui.dock_layout.inspector_visible = ui.dock_layout.sounds_panel_visible = ui.dock_layout.layers_panel_visible = false;
+        ui.dock_layout.bga_panel_visible = ui.dock_layout.measures_panel_visible = false;
         (void)harness.frame();
         lifecycle_require(worm_ui_frontend_compose_viewport_for_testing(&rect));
         x = screen_x(500); y = screen_y(300);
@@ -141,7 +141,7 @@ struct lifecycle_fixture_t {
         choose_other_pointer();
         if (family == lifecycle_family::beat_zero) calibrate_beat_zero();
         if (family == lifecycle_family::razor)
-            worm_ui_nuklear_compose_state().bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::continuation;
+            worm_ui_nuklear_compose_state().bmson_input.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::continuation;
         if (family == lifecycle_family::pointer_hold) {
             const auto alt = lifecycle_key(SDLK_LALT, SDL_SCANCODE_LALT);
             (void)harness.frame(std::span{&alt, 1}, modifiers);
@@ -225,7 +225,7 @@ struct lifecycle_fixture_t {
     void calibrate_beat_zero() {
         const std::array press{lifecycle_motion(x, y), lifecycle_button(x, y, true)};
         (void)harness.frame(press);
-        const auto capture = worm_ui_nuklear_compose_state().waveform_overview_capture;
+        const auto capture = worm_ui_nuklear_compose_state().waveform_drag.waveform_overview_capture;
         lifecycle_require(capture.width > 0);
         const auto release = lifecycle_button(x, y, false);
         (void)harness.frame(std::span{&release, 1});
@@ -274,17 +274,17 @@ struct lifecycle_fixture_t {
     auto other_active() const -> bool {
         const auto& s = worm_ui_nuklear_compose_state();
         switch (family) {
-        case lifecycle_family::overview: return s.waveform_overview_drag_active;
-        case lifecycle_family::measure: return s.measure_resize_active;
-        case lifecycle_family::stem: return s.stem_lane_resize.has_value();
-        case lifecycle_family::bga: return s.bga_event_move_active;
-        case lifecycle_family::bookmark: return s.bookmark_move_active;
-        case lifecycle_family::bmson: return s.bmson_marker_move_active;
-        case lifecycle_family::beat_zero: return s.waveform_beat_zero_drag_active;
-        case lifecycle_family::chip: return s.tool_chip_pointer_active;
-        case lifecycle_family::mix: return s.bgm_mix_pointer_active;
-        case lifecycle_family::razor: return s.bmson_razor_pointer_active;
-        case lifecycle_family::navigation: return s.tab_navigation.direction.has_value();
+        case lifecycle_family::overview: return s.waveform_drag.waveform_overview_drag_active;
+        case lifecycle_family::measure: return s.measure_resize.measure_resize_active;
+        case lifecycle_family::stem: return s.stem_lanes.stem_lane_resize.has_value();
+        case lifecycle_family::bga: return s.bga_interaction.bga_event_move_active;
+        case lifecycle_family::bookmark: return s.bookmark_ui.bookmark_move_active;
+        case lifecycle_family::bmson: return s.bmson_input.bmson_marker_move_active;
+        case lifecycle_family::beat_zero: return s.waveform_drag.waveform_beat_zero_drag_active;
+        case lifecycle_family::chip: return s.pointer_capture.tool_chip_pointer_active;
+        case lifecycle_family::mix: return s.stem_lanes.bgm_mix_pointer_active;
+        case lifecycle_family::razor: return s.bmson_input.bmson_razor_pointer_active;
+        case lifecycle_family::navigation: return s.keyboard_navigation.tab_navigation.direction.has_value();
         default: return false;
         }
     }
@@ -292,21 +292,21 @@ struct lifecycle_fixture_t {
         if (family >= lifecycle_family::overview) return other_active();
         const auto& s = worm_ui_nuklear_compose_state();
         switch (family) {
-        case lifecycle_family::paint: return s.note_paint_pointer_active;
-        case lifecycle_family::erase: return s.draw_erase_pointer_active;
-        case lifecycle_family::semantic: return s.semantic_layer_paint_pointer_active;
-        case lifecycle_family::pointer_hold: return s.pointer_hold_begin_pending || s.pointer_hold_active;
-        case lifecycle_family::lane_hold: return s.lane_hold_active;
-        case lifecycle_family::range: return s.space_range_hold_active;
-        case lifecycle_family::area: return s.area_selection_active;
-        case lifecycle_family::move: return s.note_move_active;
+        case lifecycle_family::paint: return s.pointer_capture.note_paint_pointer_active;
+        case lifecycle_family::erase: return s.pointer_capture.draw_erase_pointer_active;
+        case lifecycle_family::semantic: return s.pointer_capture.semantic_layer_paint_pointer_active;
+        case lifecycle_family::pointer_hold: return s.pointer_capture.pointer_hold_begin_pending || s.pointer_capture.pointer_hold_active;
+        case lifecycle_family::lane_hold: return s.range_selection.lane_hold_active;
+        case lifecycle_family::range: return s.range_selection.space_range_hold_active;
+        case lifecycle_family::area: return s.area_selection.area_selection_active;
+        case lifecycle_family::move: return s.note_move.note_move_active;
         case lifecycle_family::kiai:
-        case lifecycle_family::speed: return s.kiai_drag_active;
-        case lifecycle_family::recipe: return s.recipe_drag_active;
-        case lifecycle_family::timing_marker: return s.timing_marker_drag_active;
-        case lifecycle_family::timing_stage: return s.timing_stage_drag_active;
-        case lifecycle_family::beat_fit: return s.beat_fit_drag_active;
-        case lifecycle_family::offset_fit: return s.offset_fit_drag_active;
+        case lifecycle_family::speed: return s.timing_drag.kiai_drag_active;
+        case lifecycle_family::recipe: return s.timing_drag.recipe_drag_active;
+        case lifecycle_family::timing_marker: return s.timing_marker.timing_marker_drag_active;
+        case lifecycle_family::timing_stage: return s.timing_drag.timing_stage_drag_active;
+        case lifecycle_family::beat_fit: return s.waveform_drag.beat_fit_drag_active;
+        case lifecycle_family::offset_fit: return s.waveform_drag.offset_fit_drag_active;
         default: return false;
         }
         return false;
@@ -338,7 +338,7 @@ auto interrupt_lifecycle(lifecycle_fixture_t& f, int transition) -> workspace_ac
         SDL_Event wheel{};
         wheel.type = SDL_EVENT_MOUSE_WHEEL; wheel.wheel.y = 1;
         wheel.wheel.mouse_x = 500; wheel.wheel.mouse_y = 400;
-        const std::vector<SDL_Event> overflow(worm_ui_nuklear_compose_state().wheel_events.size() + 1, wheel);
+        const std::vector<SDL_Event> overflow(worm_ui_nuklear_compose_state().input_queue.wheel_events.size() + 1, wheel);
         return h.frame(overflow);
     }
     const auto go = lifecycle_key(SDLK_G, SDL_SCANCODE_G);
@@ -365,8 +365,8 @@ TEST_CASE("Registered Compose gestures cancel through production interruption em
     const auto interrupted = interrupt_lifecycle(f, transition);
     lifecycle_check(!f.active());
     if (family == lifecycle_family::overview) {
-        lifecycle_check(!worm_ui_nuklear_compose_state().waveform_overview_gesture.active);
-        lifecycle_check(worm_ui_nuklear_compose_state().waveform_overview_capture.chart_id == 0);
+        lifecycle_check(!worm_ui_nuklear_compose_state().waveform_drag.waveform_overview_gesture.active);
+        lifecycle_check(worm_ui_nuklear_compose_state().waveform_drag.waveform_overview_capture.chart_id == 0);
     }
     if (family == lifecycle_family::beat_zero)
         lifecycle_check(interrupted.get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_CANCEL);
@@ -412,7 +412,7 @@ TEST_CASE("Go-to-measure drains queued production wheel middle-click and pinch i
 #endif
     events.push_back(go);
     const auto opened = h.frame(events, SDL_KMOD_CTRL);
-    lifecycle_require(worm_ui_nuklear_compose_state().go_to_measure_open);
+    lifecycle_require(worm_ui_nuklear_compose_state().dialogs.go_to_measure_open);
     lifecycle_check(opened.get().compose_viewport_input_count == 0);
     lifecycle_check(!opened.get().compose_viewport_middle_click);
     const auto escape = lifecycle_key(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
@@ -420,5 +420,5 @@ TEST_CASE("Go-to-measure drains queued production wheel middle-click and pinch i
     const auto quiet = h.frame();
     lifecycle_check(quiet.get().compose_viewport_input_count == 0);
     lifecycle_check(!quiet.get().compose_viewport_middle_click);
-    lifecycle_check(!worm_ui_nuklear_compose_state().pinch.active);
+    lifecycle_check(!worm_ui_nuklear_compose_state().pinch.pinch.active);
 }

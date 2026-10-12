@@ -56,11 +56,11 @@ struct fit_fixture_t {
         state.viewport_scroll_pixels = 40;
         const auto index = build_editor_field_scene_index(chart, history.document.revision);
         expect_fit(std::holds_alternative<editor_field_scene_index_t>(index));
-        cache.index = std::get<editor_field_scene_index_t>(index);
-        cache.marker_timing_index = build_timing_index(chart).index;
-        expect_fit(cache.marker_timing_index.has_value());
-        cache.waveform_overview_sample_rate = 44'100;
-        cache.waveform_overview_total_frames = 441'000;
+        cache.scene.index = std::get<editor_field_scene_index_t>(index);
+        cache.timing.marker_timing_index = build_timing_index(chart).index;
+        expect_fit(cache.timing.marker_timing_index.has_value());
+        cache.waveform.waveform_overview_sample_rate = 44'100;
+        cache.waveform.waveform_overview_total_frames = 441'000;
     }
 
     void send(WormUiComposeInputKind kind, double world_pixel, bool ctrl = false, bool onset = false) {
@@ -85,9 +85,9 @@ struct fit_fixture_t {
 void check_fit_proposal(fit_fixture_t& fixture, double world_pixel,
                        std::uint64_t frame, signed_rational_t bpm) {
     fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE, world_pixel);
-    expect_fit(fixture.cache.beat_fit_drag.has_value());
-    expect_fit(fixture.cache.beat_fit_drag->proposed_sample_frame == frame);
-    expect_fit(fixture.cache.beat_fit_drag->proposed_bpm == bpm);
+    expect_fit(fixture.cache.timing.beat_fit_drag.has_value());
+    expect_fit(fixture.cache.timing.beat_fit_drag->proposed_sample_frame == frame);
+    expect_fit(fixture.cache.timing.beat_fit_drag->proposed_bpm == bpm);
     expect_fit(fixture.history.document.charts.front().bpms.front().beats_per_minute ==
                signed_rational_t{120, 1});
     expect_fit(fixture.history.undo.empty());
@@ -100,7 +100,7 @@ void check_beat_drag(bool downscroll) {
     check_fit_proposal(fixture, 90, 44'100, {160, 1});
     check_fit_proposal(fixture, 180, 77'175, {80, 1});
     fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE, 180);
-    expect_fit(!fixture.cache.beat_fit_drag);
+    expect_fit(!fixture.cache.timing.beat_fit_drag);
     expect_fit(fixture.history.undo.size() == 1);
     expect_fit(fixture.history.document.charts.front().bpms.front().beats_per_minute ==
                signed_rational_t{80, 1});
@@ -122,13 +122,13 @@ void check_offset_proposal(fit_fixture_t& fixture, WormUiComposeInputKind kind,
 void check_offset_drag(bool downscroll) {
     fit_fixture_t fixture(downscroll);
     fixture.send(WORM_UI_COMPOSE_INPUT_OFFSET_FIT_BEGIN, 120);
-    expect_fit(fixture.cache.offset_fit_drag.has_value());
+    expect_fit(fixture.cache.timing.offset_fit_drag.has_value());
     check_offset_proposal(fixture, WORM_UI_COMPOSE_INPUT_OFFSET_FIT_UPDATE, 120, 0);
     check_offset_proposal(fixture, WORM_UI_COMPOSE_INPUT_OFFSET_FIT_UPDATE, 90, -11'025);
     check_offset_proposal(fixture, WORM_UI_COMPOSE_INPUT_OFFSET_FIT_UPDATE, 180, 22'050);
     check_offset_proposal(fixture, WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE, 180, 22'050);
     expect_fit(fixture.action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_COMMIT);
-    expect_fit(!fixture.cache.offset_fit_drag);
+    expect_fit(!fixture.cache.timing.offset_fit_drag);
 }
 } // namespace
 
@@ -149,17 +149,17 @@ TEST_CASE("Compose onset fit preserves exact frame while plain Ctrl rounds BPM",
     for (const bool down : {false, true}) {
         fit_fixture_t fixture(down);
         fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_BEGIN, 120);
-        fixture.cache.beat_fit_onsets.frames = {44'000};
+        fixture.cache.timing.beat_fit_onsets.frames = {44'000};
         fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE, 90, true, true);
-        expect_fit(fixture.cache.beat_fit_drag.has_value());
-        expect_fit(fixture.cache.beat_fit_drag->proposed_sample_frame == 44'000);
-        expect_fit(fixture.cache.beat_fit_onset_snapped);
-        expect_fit(!(fixture.cache.beat_fit_drag->snap_active));
+        expect_fit(fixture.cache.timing.beat_fit_drag.has_value());
+        expect_fit(fixture.cache.timing.beat_fit_drag->proposed_sample_frame == 44'000);
+        expect_fit(fixture.cache.timing.beat_fit_onset_snapped);
+        expect_fit(!(fixture.cache.timing.beat_fit_drag->snap_active));
         expect_fit(fixture.history.undo.empty());
         fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE, 90, true, false);
-        expect_fit(!(fixture.cache.beat_fit_onset_snapped));
-        expect_fit(fixture.cache.beat_fit_drag->snap_active);
-        expect_fit(fixture.cache.beat_fit_drag->proposed_bpm == signed_rational_t{160, 1});
+        expect_fit(!(fixture.cache.timing.beat_fit_onset_snapped));
+        expect_fit(fixture.cache.timing.beat_fit_drag->snap_active);
+        expect_fit(fixture.cache.timing.beat_fit_drag->proposed_bpm == signed_rational_t{160, 1});
         fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE, 90, true, true);
         expect_fit(fixture.history.undo.size() == 1);
         expect_fit(undo_document_command(fixture.history));
@@ -173,12 +173,12 @@ TEST_CASE("Compose onset fit missing candidates remains unsnapped and source cha
     fit_fixture_t fixture(false);
     fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_BEGIN, 120);
     fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE, 90, true, true);
-    expect_fit(fixture.cache.beat_fit_drag->proposed_sample_frame == 44'100);
-    expect_fit(!(fixture.cache.beat_fit_onset_snapped));
-    expect_fit(!(fixture.cache.beat_fit_drag->snap_active));
+    expect_fit(fixture.cache.timing.beat_fit_drag->proposed_sample_frame == 44'100);
+    expect_fit(!(fixture.cache.timing.beat_fit_onset_snapped));
+    expect_fit(!(fixture.cache.timing.beat_fit_drag->snap_active));
     fixture.workspace.transport.audio_asset = asset_id_t{99};
     fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE, 90, true, true);
-    expect_fit(!(fixture.cache.beat_fit_drag));
+    expect_fit(!(fixture.cache.timing.beat_fit_drag));
     expect_fit(fixture.history.undo.empty());
 }
 
@@ -193,20 +193,20 @@ TEST_CASE("Compose fit captures visible cached onsets once and rejects a replace
     wave.bins.resize(1000);
     for (auto& bin : wave.bins) bin.frame_count = 441;
     wave.bins[100].rms[1] = 0.5f;
-    fixture.cache.fit_waveform = analysis;
-    fixture.cache.fit_waveform_asset = fixture.workspace.transport.audio_asset;
+    fixture.cache.timing.fit_waveform = analysis;
+    fixture.cache.timing.fit_waveform_asset = fixture.workspace.transport.audio_asset;
     fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_BEGIN, 120);
-    expect_fit(fixture.cache.beat_fit_onsets.frames == std::vector<std::uint64_t>{44'100});
+    expect_fit(fixture.cache.timing.beat_fit_onsets.frames == std::vector<std::uint64_t>{44'100});
     auto refreshed = std::make_shared<audio::waveform_analysis_result_t>(*analysis);
     refreshed->waveform->bins[100].rms[1] = 0;
-    fixture.cache.fit_waveform = refreshed;
+    fixture.cache.timing.fit_waveform = refreshed;
     fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE, 90.2, true, true);
-    expect_fit(fixture.cache.beat_fit_drag->proposed_sample_frame == 44'100);
-    expect_fit(fixture.cache.beat_fit_onset_snapped);
+    expect_fit(fixture.cache.timing.beat_fit_drag->proposed_sample_frame == 44'100);
+    expect_fit(fixture.cache.timing.beat_fit_onset_snapped);
     refreshed->waveform->key.begin_frame = 441;
     fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE, 90.2, true, true);
-    expect_fit(!(fixture.cache.beat_fit_onset_snapped));
-    expect_fit(fixture.cache.beat_fit_drag->proposed_sample_frame != 44'100);
+    expect_fit(!(fixture.cache.timing.beat_fit_onset_snapped));
+    expect_fit(fixture.cache.timing.beat_fit_drag->proposed_sample_frame != 44'100);
     expect_fit(fixture.history.undo.empty());
 }
 
@@ -216,7 +216,7 @@ TEST_CASE("Compose visible onset query clips negative audio time and outside cha
         fit_fixture_t fixture(down);
         auto& chart = fixture.history.document.charts.front();
         chart.beat_zero_audio_offset_seconds = {-1, 4};
-        fixture.cache.marker_timing_index = build_timing_index(chart).index;
+        fixture.cache.timing.marker_timing_index = build_timing_index(chart).index;
         fixture.state.viewport_scroll_pixels = -40;
         auto analysis = std::make_shared<audio::waveform_analysis_result_t>();
         analysis->waveform.emplace();
@@ -227,19 +227,19 @@ TEST_CASE("Compose visible onset query clips negative audio time and outside cha
         for (auto& bin : wave.bins) bin.frame_count = 441;
         wave.bins[0].rms[1] = 0.5f;
         wave.bins[900].rms[1] = 0.5f;
-        fixture.cache.fit_waveform = analysis;
-        fixture.cache.fit_waveform_asset = fixture.workspace.transport.audio_asset;
+        fixture.cache.timing.fit_waveform = analysis;
+        fixture.cache.timing.fit_waveform_asset = fixture.workspace.transport.audio_asset;
         fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_BEGIN, 120);
-        expect_fit(fixture.cache.beat_fit_onsets.frames == std::vector<std::uint64_t>{0});
+        expect_fit(fixture.cache.timing.beat_fit_onsets.frames == std::vector<std::uint64_t>{0});
         fixture.cache.clear_beat_fit_capture();
-        expect_fit(fixture.cache.beat_fit_onsets.frames.empty());
+        expect_fit(fixture.cache.timing.beat_fit_onsets.frames.empty());
         fixture.state.viewport_scroll_pixels = 1'000'000;
         fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_BEGIN, 120);
-        expect_fit(fixture.cache.beat_fit_onsets.frames.empty());
+        expect_fit(fixture.cache.timing.beat_fit_onsets.frames.empty());
         fixture.cache.clear_beat_fit_capture();
         fixture.state.viewport_scroll_pixels = -1'000'000;
         fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_BEGIN, 120);
-        expect_fit(fixture.cache.beat_fit_onsets.frames.empty());
+        expect_fit(fixture.cache.timing.beat_fit_onsets.frames.empty());
     }
 }
 

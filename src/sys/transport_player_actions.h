@@ -16,24 +16,24 @@ inline auto set_transport_rate(application_command_state_t& state, std::size_t i
     if (index >= audio::playback_rates.size() || !state.transport_set_playback_rate ||
         !state.transport_set_playback_rate(audio::playback_rates[index]))
         return false;
-    state.transport_rate_index = index;
+    state.transport.transport_rate_index = index;
     return true;
 }
 
 inline auto step_transport_rate(application_command_state_t& state, bool faster) -> bool {
-    if (state.transport_rate_index >= audio::playback_rates.size() ||
-        (faster && state.transport_rate_index == audio::playback_rates.size() - 1) ||
-        (!faster && state.transport_rate_index == 0)) return false;
-    return set_transport_rate(state, faster ? state.transport_rate_index + 1
-                                           : state.transport_rate_index - 1);
+    if (state.transport.transport_rate_index >= audio::playback_rates.size() ||
+        (faster && state.transport.transport_rate_index == audio::playback_rates.size() - 1) ||
+        (!faster && state.transport.transport_rate_index == 0)) return false;
+    return set_transport_rate(state, faster ? state.transport.transport_rate_index + 1
+                                           : state.transport.transport_rate_index - 1);
 }
 
 // Steps the rate one notch and returns the status text; nullopt when the output
 // rejected the change. Already at the slowest or fastest rate is not an error.
 inline auto step_transport_rate_status(application_command_state_t& state, bool faster)
     -> std::optional<const char*> {
-    const bool boundary = (faster && state.transport_rate_index == audio::playback_rates.size() - 1) ||
-                          (!faster && state.transport_rate_index == 0);
+    const bool boundary = (faster && state.transport.transport_rate_index == audio::playback_rates.size() - 1) ||
+                          (!faster && state.transport.transport_rate_index == 0);
     if (!boundary && !step_transport_rate(state, faster)) return std::nullopt;
     return boundary ? "Playback rate unchanged." : "Playback rate changed.";
 }

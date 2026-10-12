@@ -65,7 +65,7 @@ auto toggle_metronome_status(application_command_state_t& state,
     if (!toggle_transport_metronome(state))
         return publish_transport_feedback(notifications, notification_severity_t::warning, "Metronome is unavailable.");
     return publish_transport_feedback(notifications, notification_severity_t::success,
-        state.transport_metronome_enabled ? "Metronome enabled." : "Metronome disabled.");
+        state.transport.transport_metronome_enabled ? "Metronome enabled." : "Metronome disabled.");
 }
 
 
@@ -85,11 +85,11 @@ auto dispatch_transport_player_action(
             return publish_transport_feedback(notifications, notification_severity_t::success, "Playback rate changed.");
         return publish_transport_feedback(notifications, notification_severity_t::warning, "Playback rate unchanged.");
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH:
-        if (!application_state.transport_keep_pitch_available ||
+        if (!application_state.transport.transport_keep_pitch_available ||
             !application_state.transport_set_keep_pitch ||
             !application_state.transport_set_keep_pitch(action.transport_keep_pitch))
             return publish_transport_feedback(notifications, notification_severity_t::warning, "Keep pitch is unavailable.");
-        application_state.transport_keep_pitch = action.transport_keep_pitch;
+        application_state.transport.transport_keep_pitch = action.transport_keep_pitch;
         return publish_transport_feedback(notifications, notification_severity_t::success,
             action.transport_keep_pitch ? "Keep pitch enabled." : "Keep pitch disabled.");
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE:
@@ -106,14 +106,14 @@ auto dispatch_transport_player_action(
         if (application_state.transport_seek) return application_state.transport_seek(action.transport_seek_frame);
         return publish_transport_feedback(notifications, notification_severity_t::warning, "Chart preview seek is unavailable.");
     case WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW:
-        application_state.player_preview_visible = !application_state.player_preview_visible;
+        application_state.compose_view.player_preview_visible = !application_state.compose_view.player_preview_visible;
         return publish_transport_feedback(notifications, notification_severity_t::info,
-            application_state.player_preview_visible ? "Player preview shown." : "Player preview hidden.");
+            application_state.compose_view.player_preview_visible ? "Player preview shown." : "Player preview hidden.");
     case WORM_UI_WORKSPACE_ACTION_SELECT_PLAYER_PREVIEW_SKIN:
         if (action.player_preview_skin > WORM_UI_PLAYER_PREVIEW_SKIN_ARROWS) {
             return publish_transport_feedback(notifications, notification_severity_t::warning, "Unknown player-preview skin ignored.");
         }
-        application_state.player_preview_skin =
+        application_state.compose_view.player_preview_skin =
             static_cast<wormedit::player_preview_skin_t>(action.player_preview_skin);
         return publish_transport_feedback(notifications, notification_severity_t::success, "Player-preview skin changed.");
     case WORM_UI_WORKSPACE_ACTION_SET_STEPMANIA_EXPORT_POLICY: {

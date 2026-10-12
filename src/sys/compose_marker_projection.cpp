@@ -417,9 +417,9 @@ bool compose_audio_marker_y_visible(double y, const WormUiComposeView& view) {
 }
 
 void project_compose_audio_markers(const compose_marker_projection_context_t& input) {
-    if (!input.cache().marker_timing_index)
+    if (!input.cache().timing.marker_timing_index)
         return;
-    const auto& timing_index = *input.cache().marker_timing_index;
+    const auto& timing_index = *input.cache().timing.marker_timing_index;
     project_compose_audio_bookmarks(input, timing_index);
     project_compose_audio_sections(input, timing_index);
 }
@@ -446,11 +446,11 @@ auto cached_compose_timing_payloads(const wormedit::song_document_t& document,
     stored.valid = false;
     stored.markers.clear();
     append_compose_chart_timing_markers(
-        chart, cache.index->measures,
+        chart, cache.scene.index->measures,
         [&](wormedit::local_position_t position, std::uint64_t id, std::size_t source_order,
             std::size_t storage_order, WormUiTimingLaneKind lane, std::string short_label,
             std::string detail, bool fixed_initial) {
-            stored.markers.push_back({wormedit::absolute_row(cache.index->measures, position), id,
+            stored.markers.push_back({wormedit::absolute_row(cache.scene.index->measures, position), id,
                                       source_order, storage_order, lane, std::move(short_label),
                                       std::move(detail), fixed_initial});
         });
@@ -526,11 +526,11 @@ void populate_compose_timing_markers(
                                  marker.fixed_initial);
     } else {
         append_compose_chart_timing_markers(
-            chart, cache.index->measures,
+            chart, cache.scene.index->measures,
             [&](wormedit::local_position_t position, std::uint64_t id, std::size_t source_order,
                 std::size_t storage_order, WormUiTimingLaneKind lane, std::string short_label,
                 std::string detail, bool fixed_initial) {
-                append_timing_marker(wormedit::absolute_row(cache.index->measures, position), id,
+                append_timing_marker(wormedit::absolute_row(cache.scene.index->measures, position), id,
                                      source_order, storage_order, lane, std::move(short_label),
                                      std::move(detail), fixed_initial);
             });
@@ -543,7 +543,7 @@ void populate_compose_timing_markers(
         timing_stage->chart == chart.id &&
         timing_stage->document_revision == view.document_revision) {
         const auto stage_row =
-            wormedit::absolute_row(cache.index->measures, timing_stage->position);
+            wormedit::absolute_row(cache.scene.index->measures, timing_stage->position);
         if (stage_row) {
             const auto y = compose_project_y(*stage_row, pixels_per_row,
                                              interaction_view.viewport_scroll_pixels,
@@ -578,10 +578,10 @@ void populate_compose_dead_spans(flattened_workspace_t& flattened,
     flattened.compose.dead_span_labels.clear();
     view.dead_spans = nullptr;
     view.dead_span_count = 0;
-    if (!cache.dead_spans)
+    if (!cache.timing.dead_spans)
         return;
     const auto bands = wormedit::sys::project_dead_span_bands(
-        *cache.dead_spans, pixels_per_row, interaction_view.viewport_scroll_pixels,
+        *cache.timing.dead_spans, pixels_per_row, interaction_view.viewport_scroll_pixels,
         view.viewport_height_pixels, downscroll, wormedit::sys::dead_span_pause_band_pixels);
     const auto count = std::min<std::size_t>(bands.size(), WORM_UI_COMPOSE_DEAD_SPAN_CAPACITY);
     flattened.compose.dead_span.reserve(count);
@@ -621,8 +621,8 @@ void populate_compose_kiai_and_sv(flattened_workspace_t& flattened,
         return compose_project_y(static_cast<long double>(row), pixels_per_row, scroll, height,
                                  downscroll);
     };
-    if (cache.kiai_spans) {
-        for (const auto& span : cache.kiai_spans->spans) {
+    if (cache.timing.kiai_spans) {
+        for (const auto& span : cache.timing.kiai_spans->spans) {
             const auto begin_y = row_to_y(span.begin_row);
             const auto end_y = row_to_y(span.end_row);
             const auto top = std::min(begin_y, end_y);
@@ -645,12 +645,12 @@ void populate_compose_kiai_and_sv(flattened_workspace_t& flattened,
         view.kiai_spans = flattened.compose.kiai_span.data();
         view.kiai_span_count = flattened.compose.kiai_span.size();
     }
-    if (cache.sv_steps && !cache.sv_steps->steps.empty()) {
+    if (cache.timing.sv_steps && !cache.timing.sv_steps->steps.empty()) {
         const auto first =
             static_cast<std::uint64_t>(std::max(0.0, std::floor(scroll / pixels_per_row)));
         const auto last = std::min<std::uint64_t>(
             total_rows, static_cast<std::uint64_t>(std::ceil((scroll + height) / pixels_per_row)));
-        const auto graph = wormedit::sys::build_sv_graph(*cache.sv_steps, first, last, row_to_y);
+        const auto graph = wormedit::sys::build_sv_graph(*cache.timing.sv_steps, first, last, row_to_y);
         for (const auto& point : graph.points) {
             if (flattened.compose.sv_graph_point.size() >= WORM_UI_COMPOSE_SV_GRAPH_CAPACITY)
                 break;
@@ -686,7 +686,7 @@ void populate_compose_recipe_areas(
     view.recipe_area_count = 0;
     view.recipe_graph_points = nullptr;
     view.recipe_graph_point_count = 0;
-    if (!cache.recipe_areas || !(pixels_per_row > 0.0))
+    if (!cache.timing.recipe_areas || !(pixels_per_row > 0.0))
         return;
     const auto scroll = interaction_view.viewport_scroll_pixels;
     const auto height = view.viewport_height_pixels;
@@ -698,8 +698,8 @@ void populate_compose_recipe_areas(
         static_cast<std::uint64_t>(std::max(0.0, std::floor(scroll / pixels_per_row)));
     const auto last = std::min<std::uint64_t>(
         total_rows, static_cast<std::uint64_t>(std::ceil((scroll + height) / pixels_per_row)));
-    flattened.compose.recipe_area_labels.reserve(cache.recipe_areas->areas.size());
-    for (const auto& stored_area : cache.recipe_areas->areas) {
+    flattened.compose.recipe_area_labels.reserve(cache.timing.recipe_areas->areas.size());
+    for (const auto& stored_area : cache.timing.recipe_areas->areas) {
         const auto* shown = &stored_area;
         wormedit::sys::recipe_area_t previewed;
         const bool previewing = preview && preview->candidate.id == stored_area.recipe;
@@ -764,13 +764,13 @@ void populate_compose_speed_spans(flattened_workspace_t& flattened,
     view.speed_graph_points = nullptr;
     view.speed_graph_point_count = 0;
     view.speed_graph_one_fraction = -1.0;
-    if (!cache.speed_spans || !(pixels_per_row > 0.0))
+    if (!cache.timing.speed_spans || !(pixels_per_row > 0.0))
         return;
     const auto scroll = interaction_view.viewport_scroll_pixels;
     const auto height = view.viewport_height_pixels;
-    if (!cache.speed_spans->spans.empty()) {
+    if (!cache.timing.speed_spans->spans.empty()) {
         const auto graph = wormedit::sys::build_speed_graph(
-            *cache.speed_spans, std::max(0.0, scroll / pixels_per_row),
+            *cache.timing.speed_spans, std::max(0.0, scroll / pixels_per_row),
             (scroll + height) / pixels_per_row, [&](double row) {
                 return compose_project_y(row, pixels_per_row, scroll, height, downscroll);
             });
@@ -783,7 +783,7 @@ void populate_compose_speed_spans(flattened_workspace_t& flattened,
         view.speed_graph_point_count = flattened.compose.speed_graph_point.size();
         view.speed_graph_one_fraction = graph.one_x;
     }
-    for (const auto& span : cache.speed_spans->spans) {
+    for (const auto& span : cache.timing.speed_spans->spans) {
         const auto begin_y =
             compose_project_y(span.begin_row, pixels_per_row, scroll, height, downscroll);
         const auto end_y =
@@ -807,11 +807,11 @@ void populate_compose_speed_spans(flattened_workspace_t& flattened,
 
 void drop_stale_recipe_preview(application_command_state_t& application_state,
                                const wormedit::chart_document_t& chart, std::uint64_t revision) {
-    auto& preview = application_state.recipe_preview;
+    auto& preview = application_state.timing_recipe.recipe_preview;
     if (!preview)
         return;
     const bool current = preview->chart == chart.id && preview->revision == revision &&
-                         preview->candidate.id.value == application_state.recipe_selected &&
+                         preview->candidate.id.value == application_state.timing_recipe.recipe_selected &&
                          std::ranges::any_of(chart.sv_recipes, [&](const auto& recipe) {
                              return recipe.id == preview->candidate.id;
                          });
@@ -826,15 +826,15 @@ void populate_compose_recipe_form(flattened_workspace_t& flattened,
     flattened.compose.recipe_form_text.clear();
     view.recipe_form = {};
     const auto recipe = std::ranges::find(chart.sv_recipes,
-                                          wormedit::recipe_id_t{application_state.recipe_selected},
+                                          wormedit::recipe_id_t{application_state.timing_recipe.recipe_selected},
                                           &wormedit::sv_recipe_t::id);
-    if (application_state.recipe_selected == 0 || recipe == chart.sv_recipes.end())
+    if (application_state.timing_recipe.recipe_selected == 0 || recipe == chart.sv_recipes.end())
         return;
     flattened.compose.recipe_form_text.reserve(3);
     const auto& name = flattened.compose.recipe_form_text.emplace_back(recipe->name);
     const auto& source = flattened.compose.recipe_form_text.emplace_back(recipe->expression_source);
     const auto& status = flattened.compose.recipe_form_text.emplace_back(
-        application_state.recipe_preview ? application_state.recipe_preview->error : std::string{});
+        application_state.timing_recipe.recipe_preview ? application_state.timing_recipe.recipe_preview->error : std::string{});
     view.recipe_form.visible = true;
     view.recipe_form.recipe_id = recipe->id.value;
     view.recipe_form.enabled = recipe->enabled;

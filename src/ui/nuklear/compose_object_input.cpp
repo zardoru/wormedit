@@ -58,16 +58,16 @@ static auto pressed_bgm_mix_button(const ComposePointerEventContext& input)
 
 auto process_bgm_mix_controls(const ComposePointerEventContext& input,
                               bool other_pointer_captured) -> bool {
-    if (state.bgm_mix_pointer_active) {
+    if (state.stem_lanes.bgm_mix_pointer_active) {
         if (!input.left_down || !input.window_focused || input.view->input_occluded)
-            state.bgm_mix_pointer_active = false;
+            state.stem_lanes.bgm_mix_pointer_active = false;
         return true;
     }
     if (other_pointer_captured || !input.window_focused || input.view->input_occluded ||
         !input.view->scene_available || !input.pointer_started_in_view || !input.left_down) return false;
     const auto button = pressed_bgm_mix_button(input);
     if (!button) return false;
-    state.bgm_mix_pointer_active = true;
+    state.stem_lanes.bgm_mix_pointer_active = true;
     if (input.view->bgm_mix_available)
         append_compose_input(input.action,
             button->second ? WORM_UI_COMPOSE_INPUT_BGM_SOLO : WORM_UI_COMPOSE_INPUT_BGM_MUTE,
@@ -89,8 +89,8 @@ static auto stem_lane_resize_edge(const ComposePointerEventContext& input, doubl
     return nullptr;
 }
 static auto update_stem_lane_resize(const ComposePointerEventContext& input) -> bool {
-    if (!state.stem_lane_resize) return false;
-    const auto resize = *state.stem_lane_resize;
+    if (!state.stem_lanes.stem_lane_resize) return false;
+    const auto resize = *state.stem_lanes.stem_lane_resize;
     const auto [project, chart, lane] = resize.key;
     const auto& view = *input.view;
     if (!input.window_focused || view.input_occluded || view.project_id != project ||
@@ -99,8 +99,8 @@ static auto update_stem_lane_resize(const ComposePointerEventContext& input) -> 
         worm_ui_nuklear_cancel_stem_lane_resize(state);
         return true;
     }
-    state.stem_lane_resize_cursor_requested = true;
-    state.stem_lane_resize_hover_lane = lane;
+    state.stem_lanes.stem_lane_resize_cursor_requested = true;
+    state.stem_lanes.stem_lane_resize_hover_lane = lane;
     worm_ui_nuklear_set_stem_lane_width(state, project, chart, lane,
         resize.anchor_width + input.pointer_x - resize.anchor_x);
     if (input.left_released) worm_ui_nuklear_cancel_stem_lane_resize(state, false);
@@ -117,8 +117,8 @@ static auto reset_stem_lane_from_double_click(const ComposePointerEventContext& 
             worm_ui_nuklear_cancel_stem_lane_resize(state, false);
             worm_ui_nuklear_set_stem_lane_width(state, input.view->project_id,
                 input.view->chart_id, lane->source_lane_id, 36);
-            state.stem_lane_resize_cursor_requested = true;
-            state.stem_lane_resize_hover_lane = lane->source_lane_id;
+            state.stem_lanes.stem_lane_resize_cursor_requested = true;
+            state.stem_lanes.stem_lane_resize_hover_lane = lane->source_lane_id;
             return true;
         }
     }
@@ -127,7 +127,7 @@ static auto reset_stem_lane_from_double_click(const ComposePointerEventContext& 
 auto process_stem_lane_resize(const ComposePointerEventContext& input,
     const worm_ui_nuklear_pointer_click_t* double_clicks, std::size_t double_click_count,
     bool other_pointer_captured) -> bool {
-    state.stem_lane_resize_hover_lane = 0;
+    state.stem_lanes.stem_lane_resize_hover_lane = 0;
     if (update_stem_lane_resize(input)) return true;
     const auto& view = *input.view;
     if (other_pointer_captured || !input.window_focused || view.input_occluded ||
@@ -135,13 +135,13 @@ auto process_stem_lane_resize(const ComposePointerEventContext& input,
     if (reset_stem_lane_from_double_click(input, double_clicks, double_click_count)) return true;
     const auto* hovered = stem_lane_resize_edge(input, input.pointer_x, input.pointer_y);
     if (hovered && input.pointer_inside) {
-        state.stem_lane_resize_cursor_requested = true;
-        state.stem_lane_resize_hover_lane = hovered->source_lane_id;
+        state.stem_lanes.stem_lane_resize_cursor_requested = true;
+        state.stem_lanes.stem_lane_resize_hover_lane = hovered->source_lane_id;
     }
     if (!input.pointer_started_in_view || !input.left_down) return false;
     const auto* lane = stem_lane_resize_edge(input, input.pointer_started_x, input.pointer_started_y);
     if (!lane) return false;
-    state.stem_lane_resize = worm_ui_nuklear_compose_state_t::stem_lane_resize_t{
+    state.stem_lanes.stem_lane_resize = worm_ui_nuklear_compose_state_t::stem_lane_resize_t{
         {view.project_id, view.chart_id, lane->source_lane_id}, input.pointer_started_x, lane->width_pixels};
     return update_stem_lane_resize(input);
 }
@@ -150,12 +150,12 @@ static auto resource_pointer_can_start(const ComposePointerEventContext& input,
     const auto& view = *input.view;
     return !paint_pointer_consumed &&
            wormedit::ui::compose_notes_editable(compose_mode_of(view)) &&
-           state.resource_pointer_mode != worm_ui_nuklear_compose_resource_pointer_mode_t::off &&
+           state.resource_picker.resource_pointer_mode != worm_ui_nuklear_compose_resource_pointer_mode_t::off &&
            view.scene_available && input.pointer_started_in_view && input.window_focused &&
            input.shortcut_event_count == 0 &&
            (input.pointer_modifiers & input.any_pointer_modifier) == 0 &&
            !input.compose_note_double_click_in_view && !input.compose_pointer_captured &&
-           !state.note_move_candidate_active && !state.area_selection_candidate_active &&
+           !state.note_move.note_move_candidate_active && !state.area_selection.area_selection_candidate_active &&
            !view.note_paint_mode_active && !view.semantic_layer_paint_mode_active;
 }
 
@@ -166,13 +166,13 @@ static bool open_bga_stack_for_event(const WormUiComposeView& view, std::uint64_
         &WormUiComposeBgaEventView::event_id);
     if (target == events.end() || target->overlap_count <=
             WORM_UI_COMPOSE_BGA_OVERLAP_STACK_THRESHOLD) return false;
-    state.bga_stack_open = true;
-    state.bga_stack_release_pending = true;
-    state.bga_stack_project_id = view.project_id;
-    state.bga_stack_chart_id = view.chart_id;
-    state.bga_stack_revision = view.document_revision;
-    state.bga_stack_row = target->canvas_row;
-    state.bga_stack_kind = target->kind;
+    state.bga_interaction.bga_stack_open = true;
+    state.bga_interaction.bga_stack_release_pending = true;
+    state.bga_interaction.bga_stack_project_id = view.project_id;
+    state.bga_interaction.bga_stack_chart_id = view.chart_id;
+    state.bga_interaction.bga_stack_revision = view.document_revision;
+    state.bga_interaction.bga_stack_row = target->canvas_row;
+    state.bga_interaction.bga_stack_kind = target->kind;
     return true;
 }
 
@@ -199,9 +199,9 @@ auto begin_compose_resource_pointer(const ComposePointerEventContext& input,
     const auto& view = *input.view;
     auto* action = input.action;
     if (!resource_pointer_can_start(input, paint_pointer_consumed)) return false;
-    const auto role = state.resource_filter == worm_ui_nuklear_compose_resource_filter_t::sample
+    const auto role = state.resource_picker.resource_filter == worm_ui_nuklear_compose_resource_filter_t::sample
                           ? WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE
-                      : state.resource_filter == worm_ui_nuklear_compose_resource_filter_t::bgm
+                      : state.resource_picker.resource_filter == worm_ui_nuklear_compose_resource_filter_t::bgm
                           ? WORM_UI_COMPOSE_RESOURCE_ROLE_BGM
                           : WORM_UI_COMPOSE_RESOURCE_ROLE_BGA;
     uint64_t target_lane_id = 0;
@@ -230,10 +230,10 @@ auto begin_compose_resource_pointer(const ComposePointerEventContext& input,
                               compose_bgm_event_at(&view, input.pointer_started_x,
                                                    input.pointer_started_y) != 0;
     if (!in_placement_pane || existing_note ||
-        (existing_bgm && state.resource_pointer_mode ==
+        (existing_bgm && state.resource_picker.resource_pointer_mode ==
                              worm_ui_nuklear_compose_resource_pointer_mode_t::place))
         return false;
-    const auto replacing = state.resource_pointer_mode ==
+    const auto replacing = state.resource_picker.resource_pointer_mode ==
                            worm_ui_nuklear_compose_resource_pointer_mode_t::replace;
     if (replacing && role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM)
         target_lane_id = compose_bgm_event_at(&view, input.pointer_started_x,
@@ -246,7 +246,7 @@ auto begin_compose_resource_pointer(const ComposePointerEventContext& input,
                          input.pointer_started_x, input.pointer_started_y, target_lane_id, false,
                          WORM_UI_COMPOSE_SELECTION_REPLACE,
                          WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
-                         state.armed_resource_id, role);
+                         state.resource_picker.armed_resource_id, role);
     set_bga_pointer_kind(action, role, view, input.pointer_started_x, input.pointer_started_y);
     return true;
 }
@@ -279,7 +279,7 @@ static auto bmson_move_lane_at(const ComposePointerEventContext& input,
 }
 
 auto bmson_razor_input_kind() -> WormUiComposeInputKind {
-    return state.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::restart
+    return state.bmson_input.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::restart
                ? WORM_UI_COMPOSE_INPUT_BMSON_RAZOR_RESTART
                : WORM_UI_COMPOSE_INPUT_BMSON_RAZOR_CONTINUE;
 }
@@ -290,7 +290,7 @@ static auto bmson_razor_can_start(const ComposePointerEventContext& input,
     return !paint_pointer_consumed && !input.compose_pointer_captured && view.scene_available &&
            input.window_focused && input.shortcut_event_count == 0 && input.left_down &&
            input.pointer_started_in_view &&
-           state.bmson_razor_mode != worm_ui_nuklear_bmson_razor_mode_t::off &&
+           state.bmson_input.bmson_razor_mode != worm_ui_nuklear_bmson_razor_mode_t::off &&
            bmson_razor_eligible(view) &&
            (input.pointer_modifiers & input.any_pointer_modifier) == 0 &&
            selected_bmson_lane_at(input, input.pointer_started_x, input.pointer_started_y);
@@ -301,37 +301,37 @@ static void update_active_bmson_razor(const ComposePointerEventContext& input) {
     auto& action = *input.action;
     const auto input_kind = bmson_razor_input_kind();
     if (!input.window_focused || !view.scene_available ||
-        state.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::off ||
+        state.bmson_input.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::off ||
         input.shortcut_event_count != 0 ||
         (input.pointer_modifiers & input.any_pointer_modifier) != 0 ||
         (!input.left_down && !input.left_released)) {
-        state.bmson_razor_pointer_active = false;
+        state.bmson_input.bmson_razor_pointer_active = false;
     } else if (input.left_released) {
         if (input.pointer_inside && selected_bmson_lane_at(input, input.pointer_x, input.pointer_y) &&
-            std::abs(input.pointer_y - state.bmson_razor_last_y_pixels) > 0.1)
+            std::abs(input.pointer_y - state.bmson_input.bmson_razor_last_y_pixels) > 0.1)
             append_compose_input(&action, input_kind, input.pointer_x, input.pointer_y, 0, false,
                                  WORM_UI_COMPOSE_SELECTION_REPLACE,
                                  WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
                                  view.selected_bmson_bgm_event_id);
-        state.bmson_razor_pointer_active = false;
+        state.bmson_input.bmson_razor_pointer_active = false;
     } else if (input.left_down && nk_input_is_mouse_moved(&input.context->input) &&
                input.pointer_inside && selected_bmson_lane_at(input, input.pointer_x, input.pointer_y) &&
-               std::abs(input.pointer_y - state.bmson_razor_last_y_pixels) > 0.1) {
+               std::abs(input.pointer_y - state.bmson_input.bmson_razor_last_y_pixels) > 0.1) {
         append_compose_input(&action, input_kind, input.pointer_x, input.pointer_y, 0, false,
                              WORM_UI_COMPOSE_SELECTION_REPLACE,
                              WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
                              view.selected_bmson_bgm_event_id);
-        state.bmson_razor_last_y_pixels = input.pointer_y;
+        state.bmson_input.bmson_razor_last_y_pixels = input.pointer_y;
     }
 }
 
 auto process_bmson_razor_pointer(const ComposePointerEventContext& input,
                                         bool paint_pointer_consumed) -> bool {
     if (compose_area_pointer_consumed()) return true;
-    if (state.bmson_razor_mode != worm_ui_nuklear_bmson_razor_mode_t::off &&
+    if (state.bmson_input.bmson_razor_mode != worm_ui_nuklear_bmson_razor_mode_t::off &&
         !bmson_razor_eligible(*input.view))
-        state.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
-    if (state.bmson_razor_pointer_active) {
+        state.bmson_input.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
+    if (state.bmson_input.bmson_razor_pointer_active) {
         update_active_bmson_razor(input);
         return true;
     }
@@ -341,8 +341,8 @@ auto process_bmson_razor_pointer(const ComposePointerEventContext& input,
                          WORM_UI_COMPOSE_SELECTION_REPLACE,
                          WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
                          input.view->selected_bmson_bgm_event_id, 0, true);
-    state.bmson_razor_pointer_active = !state.action_overflowed;
-    state.bmson_razor_last_y_pixels = input.pointer_started_y;
+    state.bmson_input.bmson_razor_pointer_active = !state.input_queue.action_overflowed;
+    state.bmson_input.bmson_razor_last_y_pixels = input.pointer_started_y;
     return true;
 }
 
@@ -352,7 +352,7 @@ static void append_bmson_move_input(const ComposePointerEventContext& input,
     append_compose_input(input.action, kind, x, y, lane_id, false,
                          WORM_UI_COMPOSE_SELECTION_REPLACE,
                          WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
-                         state.bmson_marker_move_event_id);
+                         state.bmson_input.bmson_marker_move_event_id);
 }
 
 // The playfield lane whose column holds the pointer, or 0 outside the playable field.
@@ -379,7 +379,7 @@ static void update_active_bmson_marker_move(const ComposePointerEventContext& in
             append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BGM_MOVE_TO_LANE, input.pointer_x,
                                  input.pointer_y, field_lane_under_pointer(input), false,
                                  WORM_UI_COMPOSE_SELECTION_REPLACE, WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
-                                 state.bmson_marker_move_event_id);
+                                 state.bmson_input.bmson_marker_move_event_id);
             reset_bmson_marker_move_capture();
         }
         return;
@@ -408,37 +408,37 @@ static void update_bmson_marker_move_candidate(const ComposePointerEventContext&
         reset_bmson_marker_move_capture();
         return;
     }
-    const auto dx = input.context->input.mouse.pos.x - state.bmson_marker_move_anchor_screen_x;
-    const auto dy = input.context->input.mouse.pos.y - state.bmson_marker_move_anchor_screen_y;
+    const auto dx = input.context->input.mouse.pos.x - state.bmson_input.bmson_marker_move_anchor_screen_x;
+    const auto dy = input.context->input.mouse.pos.y - state.bmson_input.bmson_marker_move_anchor_screen_y;
     const auto moved_far_enough = std::hypot(dx, dy) >= 4.0f;
     const auto lane_id = bmson_move_lane_at(input, input.pointer_x, input.pointer_y);
     if (input.left_released && moved_far_enough && lane_id == 0 && field_lane_under_pointer(input) != 0) {
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BGM_MOVE_TO_LANE, input.pointer_x, input.pointer_y,
                              field_lane_under_pointer(input), false, WORM_UI_COMPOSE_SELECTION_REPLACE,
-                             WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, state.bmson_marker_move_event_id);
+                             WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, state.bmson_input.bmson_marker_move_event_id);
         reset_bmson_marker_move_capture();
         return;
     }
     if (input.left_released) {
         if (moved_far_enough && input.pointer_inside && lane_id != 0) {
             append_bmson_move_input(input, WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_BEGIN,
-                                    state.bmson_marker_move_anchor_x,
-                                    state.bmson_marker_move_anchor_y, 0);
+                                    state.bmson_input.bmson_marker_move_anchor_x,
+                                    state.bmson_input.bmson_marker_move_anchor_y, 0);
             append_bmson_move_input(input, WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_RELEASE,
                                     input.pointer_x, input.pointer_y, lane_id);
         } else {
             append_bmson_move_input(input, WORM_UI_COMPOSE_INPUT_BGM_EVENT_CLICK,
-                                    state.bmson_marker_move_anchor_x,
-                                    state.bmson_marker_move_anchor_y, 0);
+                                    state.bmson_input.bmson_marker_move_anchor_x,
+                                    state.bmson_input.bmson_marker_move_anchor_y, 0);
         }
         reset_bmson_marker_move_capture();
     } else if (input.left_down && moved_far_enough) {
         append_bmson_move_input(input, WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_BEGIN,
-                                state.bmson_marker_move_anchor_x,
-                                state.bmson_marker_move_anchor_y, 0);
-        state.bmson_marker_move_candidate_active = false;
-        state.bmson_marker_move_active = !state.action_overflowed;
-        if (state.bmson_marker_move_active && input.pointer_inside && lane_id != 0)
+                                state.bmson_input.bmson_marker_move_anchor_x,
+                                state.bmson_input.bmson_marker_move_anchor_y, 0);
+        state.bmson_input.bmson_marker_move_candidate_active = false;
+        state.bmson_input.bmson_marker_move_active = !state.input_queue.action_overflowed;
+        if (state.bmson_input.bmson_marker_move_active && input.pointer_inside && lane_id != 0)
             append_bmson_move_input(input, WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_UPDATE,
                                     input.pointer_x, input.pointer_y, lane_id);
     }
@@ -458,29 +458,29 @@ static auto bmson_marker_move_can_start(const ComposePointerEventContext& input,
            input.pointer_started_in_view && input.left_down && input.window_focused &&
            input.shortcut_event_count == 0 &&
            (input.pointer_modifiers & input.any_pointer_modifier) == 0 &&
-           state.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::off &&
-           state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off &&
+           state.bmson_input.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::off &&
+           state.resource_picker.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off &&
            !view.note_paint_mode_active && !view.semantic_layer_paint_mode_active &&
            selected_bgm_drag_reference(input) != 0;
 }
 
 static void begin_bmson_marker_move_candidate(const ComposePointerEventContext& input) {
-    state.bmson_marker_move_candidate_active = true;
-    state.bmson_marker_move_event_id = selected_bgm_drag_reference(input);
-    state.bmson_marker_move_anchor_x = input.pointer_started_x;
-    state.bmson_marker_move_anchor_y = input.pointer_started_y;
-    state.bmson_marker_move_anchor_screen_x = input.left_clicked_screen_x;
-    state.bmson_marker_move_anchor_screen_y = input.left_clicked_screen_y;
+    state.bmson_input.bmson_marker_move_candidate_active = true;
+    state.bmson_input.bmson_marker_move_event_id = selected_bgm_drag_reference(input);
+    state.bmson_input.bmson_marker_move_anchor_x = input.pointer_started_x;
+    state.bmson_input.bmson_marker_move_anchor_y = input.pointer_started_y;
+    state.bmson_input.bmson_marker_move_anchor_screen_x = input.left_clicked_screen_x;
+    state.bmson_input.bmson_marker_move_anchor_screen_y = input.left_clicked_screen_y;
 }
 
 auto process_bmson_marker_move_pointer(const ComposePointerEventContext& input,
                                               bool paint_pointer_consumed) -> bool {
     if (compose_area_pointer_consumed()) return true;
-    if (state.bmson_marker_move_active) {
+    if (state.bmson_input.bmson_marker_move_active) {
         update_active_bmson_marker_move(input);
         return true;
     }
-    if (state.bmson_marker_move_candidate_active) {
+    if (state.bmson_input.bmson_marker_move_candidate_active) {
         update_bmson_marker_move_candidate(input);
         return true;
     }
@@ -492,7 +492,7 @@ auto process_bmson_marker_move_pointer(const ComposePointerEventContext& input,
 void append_layer_brush_begin(const ComposePointerEventContext& input) {
     append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN,
                          input.paint_anchor_x, input.paint_anchor_y);
-    if (!state.action_overflowed)
+    if (!state.input_queue.action_overflowed)
         input.action->compose_inputs[input.action->compose_input_count - 1].paint_intent =
             (input.pointer_modifiers & SDL_KMOD_ALT) != 0 ? 2 : 1;
 }
@@ -502,35 +502,35 @@ auto process_semantic_layer_paint_pointer(const ComposePointerEventContext& inpu
     if (compose_area_pointer_consumed()) return true;
     const auto& view = *input.view;
     auto* action = input.action;
-    if (!state.action_overflowed && state.semantic_layer_paint_pointer_active) {
+    if (!state.input_queue.action_overflowed && state.pointer_capture.semantic_layer_paint_pointer_active) {
         if (!input.window_focused || !view.scene_available ||
             !view.semantic_layer_paint_mode_active || input.shortcut_event_count != 0 ||
             (input.pointer_modifiers & input.any_pointer_modifier & ~SDL_KMOD_ALT) != 0 ||
             (!input.left_down && !input.left_released)) {
             append_compose_cancel_once(action);
-            state.semantic_layer_paint_pointer_active = false;
+            state.pointer_capture.semantic_layer_paint_pointer_active = false;
         } else if (input.left_released) {
             append_compose_input(action, WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_RELEASE,
                                  input.paint_pointer_x, input.paint_pointer_y);
-            state.semantic_layer_paint_pointer_active = false;
+            state.pointer_capture.semantic_layer_paint_pointer_active = false;
         } else if (input.left_down && nk_input_is_mouse_moved(&input.context->input)) {
             append_compose_input(action, WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_UPDATE,
                                  input.paint_pointer_x, input.paint_pointer_y);
         }
         return true;
     }
-    if (!state.action_overflowed && view.scene_available &&
+    if (!state.input_queue.action_overflowed && view.scene_available &&
         view.semantic_layer_paint_mode_active && input.pointer_started_in_view &&
         input.window_focused && input.shortcut_event_count == 0 &&
         (input.pointer_modifiers & input.any_pointer_modifier & ~SDL_KMOD_ALT) == 0 &&
-        !state.pointer_hold_active && !state.lane_hold_active && !state.area_selection_active &&
-        !state.area_selection_candidate_active) {
+        !state.pointer_capture.pointer_hold_active && !state.range_selection.lane_hold_active && !state.area_selection.area_selection_active &&
+        !state.area_selection.area_selection_candidate_active) {
         paint_pointer_consumed = true;
         if (compose_point_hits_note(&view, input.paint_anchor_x, input.paint_anchor_y) ||
             compose_bgm_event_at(&view, input.paint_anchor_x, input.paint_anchor_y) != 0) {
             append_layer_brush_begin(input);
-            state.semantic_layer_paint_pointer_active = !state.action_overflowed && input.left_down;
-            if (!state.action_overflowed && !input.left_down)
+            state.pointer_capture.semantic_layer_paint_pointer_active = !state.input_queue.action_overflowed && input.left_down;
+            if (!state.input_queue.action_overflowed && !input.left_down)
                 append_compose_input(action, WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_RELEASE,
                                      input.paint_pointer_x, input.paint_pointer_y);
         }
@@ -551,7 +551,7 @@ static auto bgm_draw_lane_at(const WormUiComposeView& view, double x, double y)
 
 // A sound is the current Draw source and, on BMSON, it is not owned by a stem lane.
 static auto bgm_draw_source_ready(const WormUiComposeView& view) -> bool {
-    return state.draw_source_kind == 1 && state.draw_source_id != 0 &&
+    return state.pointer_capture.draw_source_kind == 1 && state.pointer_capture.draw_source_id != 0 &&
            !view.draw_source_stem_lane_id && !view.draw_source_is_stem;
 }
 
@@ -559,33 +559,33 @@ static void emit_draw_stroke(const ComposePointerEventContext& input,
     WormUiComposeInputKind kind, double x, double y, bool erase = false) {
     auto* action = input.action;
     append_compose_input(action, kind, x, y);
-    if (!action->compose_input_count || state.action_overflowed) return;
+    if (!action->compose_input_count || state.input_queue.action_overflowed) return;
     auto& output = action->compose_inputs[action->compose_input_count - 1];
     output.paint_intent = erase ? 2 : 1;
-    output.resource_id = erase ? 0 : state.draw_source_id;
+    output.resource_id = erase ? 0 : state.pointer_capture.draw_source_id;
     if (kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN) {
         const auto* pressed = erase
-            ? bgm_draw_lane_at(*input.view, state.draw_right_anchor_x, state.draw_right_anchor_y)
+            ? bgm_draw_lane_at(*input.view, state.pointer_capture.draw_right_anchor_x, state.pointer_capture.draw_right_anchor_y)
             : bgm_draw_lane_at(*input.view, input.pointer_started_x, input.pointer_started_y);
-        state.draw_stroke_bgm_lane = pressed ? pressed->source_lane_id : 0;
+        state.pointer_capture.draw_stroke_bgm_lane = pressed ? pressed->source_lane_id : 0;
     }
-    if (state.draw_stroke_bga) {
+    if (state.pointer_capture.draw_stroke_bga) {
         output.resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_BGA;
         output.bga_lane_kind = compose_bga_lane_kind_at(*input.view, x, y).value_or(255);
         output.bga_lane_kind_valid = true;
-    } else if (state.draw_stroke_bgm_lane != 0) {
+    } else if (state.pointer_capture.draw_stroke_bgm_lane != 0) {
         output.resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_BGM;
-        output.lane_id = state.draw_stroke_bgm_lane;
-    } else if (!erase && state.draw_source_kind != 1) {
+        output.lane_id = state.pointer_capture.draw_stroke_bgm_lane;
+    } else if (!erase && state.pointer_capture.draw_source_kind != 1) {
         output.resource_id = 0;
     }
-    if (kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE) state.draw_stroke_bgm_lane = 0;
+    if (kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE) state.pointer_capture.draw_stroke_bgm_lane = 0;
 }
 
 void append_note_paint_begin(const ComposePointerEventContext& input) {
-    state.draw_stroke_bga = state.draw_source_kind == 2;
+    state.pointer_capture.draw_stroke_bga = state.pointer_capture.draw_source_kind == 2;
     emit_draw_stroke(input, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN,
-        state.draw_stroke_bga ? input.pointer_started_x : input.paint_anchor_x,
+        state.pointer_capture.draw_stroke_bga ? input.pointer_started_x : input.paint_anchor_x,
         input.paint_anchor_y);
 }
 
@@ -594,37 +594,37 @@ bool process_draw_right_pointer(const ComposePointerEventContext& input) {
     const auto& button = mouse.buttons[NK_BUTTON_RIGHT];
     if (!input.view->note_paint_mode_active || !input.window_focused ||
         input.view->input_occluded || input.view->timing_focus) {
-        if (state.draw_erase_pointer_active) append_compose_cancel_once(input.action);
+        if (state.pointer_capture.draw_erase_pointer_active) append_compose_cancel_once(input.action);
         worm_ui_nuklear_reset_draw_right_capture(state);
         return false;
     }
-    const auto started_inside = state.draw_right_screen_x >= input.viewport.x &&
-        state.draw_right_screen_x < input.editor_input_right && state.draw_right_screen_y >= input.viewport.y &&
-        state.draw_right_screen_y <= input.viewport.y + input.viewport.h;
-    if (state.draw_right_press_pending && !state.draw_right_candidate && started_inside) {
-        state.draw_right_candidate = true;
-        state.draw_right_anchor_x = (state.draw_right_screen_x - input.viewport.x) *
+    const auto started_inside = state.pointer_capture.draw_right_screen_x >= input.viewport.x &&
+        state.pointer_capture.draw_right_screen_x < input.editor_input_right && state.pointer_capture.draw_right_screen_y >= input.viewport.y &&
+        state.pointer_capture.draw_right_screen_y <= input.viewport.y + input.viewport.h;
+    if (state.pointer_capture.draw_right_press_pending && !state.pointer_capture.draw_right_candidate && started_inside) {
+        state.pointer_capture.draw_right_candidate = true;
+        state.pointer_capture.draw_right_anchor_x = (state.pointer_capture.draw_right_screen_x - input.viewport.x) *
             input.view->viewport_width_pixels / input.viewport.w;
-        state.draw_right_anchor_y = (state.draw_right_screen_y - input.viewport.y) *
+        state.pointer_capture.draw_right_anchor_y = (state.pointer_capture.draw_right_screen_y - input.viewport.y) *
             input.view->viewport_height_pixels / input.viewport.h;
     }
-    state.draw_right_press_pending = false;
-    if (!state.draw_right_candidate) { state.draw_right_release_pending = false; return false; }
-    const auto moved = state.draw_right_dragged ||
-        std::hypot(state.draw_right_current_screen_x - state.draw_right_screen_x,
-            state.draw_right_current_screen_y - state.draw_right_screen_y) >= 3.0;
-    if (moved && !state.draw_erase_pointer_active) {
-        state.draw_stroke_bga = compose_bga_lane_kind_at(*input.view,
-            state.draw_right_anchor_x, state.draw_right_anchor_y).has_value();
+    state.pointer_capture.draw_right_press_pending = false;
+    if (!state.pointer_capture.draw_right_candidate) { state.pointer_capture.draw_right_release_pending = false; return false; }
+    const auto moved = state.pointer_capture.draw_right_dragged ||
+        std::hypot(state.pointer_capture.draw_right_current_screen_x - state.pointer_capture.draw_right_screen_x,
+            state.pointer_capture.draw_right_current_screen_y - state.pointer_capture.draw_right_screen_y) >= 3.0;
+    if (moved && !state.pointer_capture.draw_erase_pointer_active) {
+        state.pointer_capture.draw_stroke_bga = compose_bga_lane_kind_at(*input.view,
+            state.pointer_capture.draw_right_anchor_x, state.pointer_capture.draw_right_anchor_y).has_value();
         emit_draw_stroke(input, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN,
-            state.draw_right_anchor_x, state.draw_right_anchor_y, true);
-        state.draw_erase_pointer_active = state.draw_right_dragged = true;
+            state.pointer_capture.draw_right_anchor_x, state.pointer_capture.draw_right_anchor_y, true);
+        state.pointer_capture.draw_erase_pointer_active = state.pointer_capture.draw_right_dragged = true;
     }
-    if (state.draw_erase_pointer_active) {
+    if (state.pointer_capture.draw_erase_pointer_active) {
         emit_draw_stroke(input, button.down ? WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE :
             WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, input.pointer_x, input.pointer_y, true);
     }
-    const auto consumed = state.draw_erase_pointer_active;
+    const auto consumed = state.pointer_capture.draw_erase_pointer_active;
     if (!button.down) {
         worm_ui_nuklear_reset_draw_right_capture(state);
     }
@@ -646,20 +646,20 @@ static void update_draw_left_pointer(const ComposePointerEventContext& input) {
         (input.pointer_modifiers & input.any_pointer_modifier) != 0 ||
         (!input.left_down && !input.left_released)) {
         append_compose_cancel_once(action);
-        state.note_paint_pointer_active = false;
+        state.pointer_capture.note_paint_pointer_active = false;
     } else if (input.left_released) {
         emit_draw_stroke(input, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE,
-            state.draw_stroke_bga ? input.pointer_x : input.paint_pointer_x, input.paint_pointer_y);
-        state.note_paint_pointer_active = false;
+            state.pointer_capture.draw_stroke_bga ? input.pointer_x : input.paint_pointer_x, input.paint_pointer_y);
+        state.pointer_capture.note_paint_pointer_active = false;
     } else if (input.left_down && nk_input_is_mouse_moved(&input.context->input)) {
         emit_draw_stroke(input, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE,
-            state.draw_stroke_bga ? input.pointer_x : input.paint_pointer_x, input.paint_pointer_y);
+            state.pointer_capture.draw_stroke_bga ? input.pointer_x : input.paint_pointer_x, input.paint_pointer_y);
     }
 }
 
 static bool draw_left_can_start(const ComposePointerEventContext& input) {
     const auto& view = *input.view;
-    const auto bga = state.draw_source_kind == 2;
+    const auto bga = state.pointer_capture.draw_source_kind == 2;
     const auto bgm = bgm_draw_source_ready(view) &&
         bgm_draw_lane_at(view, input.pointer_started_x, input.pointer_started_y) != nullptr;
     const auto target = bga ? compose_bga_lane_kind_at(view, input.pointer_started_x,
@@ -667,12 +667,12 @@ static bool draw_left_can_start(const ComposePointerEventContext& input) {
     // A sample or BGA stroke starts only from a press or a release this frame. The pointer
     // started position is stale between clicks, so hovering must not emit empty strokes.
     if ((bga || bgm) && !input.left_down && !input.left_released) return false;
-    return !state.action_overflowed && view.scene_available && view.note_paint_mode_active &&
+    return !state.input_queue.action_overflowed && view.scene_available && view.note_paint_mode_active &&
         (bga || bgm || !armed_kind_uses_hold_gesture(view)) && target && input.window_focused &&
         input.shortcut_event_count == 0 &&
         (input.pointer_modifiers & input.any_pointer_modifier) == 0 &&
-        !state.pointer_hold_active && !state.lane_hold_active && !state.area_selection_active &&
-        !state.area_selection_candidate_active;
+        !state.pointer_capture.pointer_hold_active && !state.range_selection.lane_hold_active && !state.area_selection.area_selection_active &&
+        !state.area_selection.area_selection_candidate_active;
 }
 
 static auto bmson_lane_at(const WormUiComposeView& view, double x, double y)
@@ -684,8 +684,8 @@ static auto bmson_lane_at(const WormUiComposeView& view, double x, double y)
 }
 
 static void finish_bmson_point_capture(const ComposePointerEventContext& input) {
-    const auto capture = *state.bmson_point_capture;
-    state.bmson_point_capture.reset();
+    const auto capture = *state.bmson_input.bmson_point_capture;
+    state.bmson_input.bmson_point_capture.reset();
     const auto* lane = bmson_lane_at(*input.view, input.pointer_x, input.pointer_y);
     if (capture.dock && (!lane || !lane->stem || lane->source_lane_id != capture.lane)) return;
     const auto kind = capture.packed ? WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW :
@@ -702,7 +702,7 @@ static void finish_bmson_point_capture(const ComposePointerEventContext& input) 
 
 static bool bmson_point_capture_current(const ComposePointerEventContext& input) {
     const auto& view = *input.view;
-    const auto& capture = *state.bmson_point_capture;
+    const auto& capture = *state.bmson_input.bmson_point_capture;
     return input.window_focused && view.scene_available && !view.input_occluded && !view.timing_focus &&
         view.note_paint_mode_active && capture.project == view.project_id &&
         capture.chart == view.chart_id && capture.revision == view.document_revision;
@@ -711,9 +711,9 @@ static bool bmson_point_capture_current(const ComposePointerEventContext& input)
 static bool bmson_draw_can_start(const ComposePointerEventContext& input) {
     const auto& view = *input.view;
     return view.bmson_tools_available && view.note_paint_mode_active && !view.timing_focus &&
-        input.window_focused && state.draw_source_kind != 2 && input.pointer_inside &&
+        input.window_focused && state.pointer_capture.draw_source_kind != 2 && input.pointer_inside &&
         input.pointer_started_in_view && !input.shortcut_event_count && !input.compose_pointer_captured &&
-        state.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::off &&
+        state.bmson_input.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::off &&
         !compose_bgm_event_at(input.view, input.pointer_started_x, input.pointer_started_y) &&
         !(input.pointer_modifiers & input.any_pointer_modifier & ~SDL_KMOD_SHIFT);
 }
@@ -736,10 +736,10 @@ static void show_packed_draw_source_tip(const ComposePointerEventContext& input)
 static bool process_bmson_draw_pointer(const ComposePointerEventContext& input) {
     const auto& view = *input.view;
     show_packed_draw_source_tip(input);
-    if (state.bmson_point_capture) {
-        if (!bmson_point_capture_current(input)) state.bmson_point_capture.reset();
+    if (state.bmson_input.bmson_point_capture) {
+        if (!bmson_point_capture_current(input)) state.bmson_input.bmson_point_capture.reset();
         else if (input.left_released) finish_bmson_point_capture(input);
-        else if (!input.left_down) state.bmson_point_capture.reset();
+        else if (!input.left_down) state.bmson_input.bmson_point_capture.reset();
         return true;
     }
     if (!bmson_draw_can_start(input)) return false;
@@ -747,9 +747,9 @@ static bool process_bmson_draw_pointer(const ComposePointerEventContext& input) 
     if (!lane) return false;
     // Packed columns draw as BGM-style strokes; only the missing-source case stops here.
     if (!lane->stem) return !packed_draw_source_available(view);
-    state.bmson_point_capture = worm_ui_nuklear_compose_state_t::bmson_point_capture_t{
+    state.bmson_input.bmson_point_capture = worm_ui_nuklear_compose_state_t::bmson_point_capture_t{
         view.project_id, view.chart_id, view.document_revision, lane->source_lane_id,
-        state.draw_source_id, input.pointer_started_x, input.pointer_started_y,
+        state.pointer_capture.draw_source_id, input.pointer_started_x, input.pointer_started_y,
         (input.pointer_modifiers & SDL_KMOD_SHIFT) != 0, !lane->stem, false};
     if (!input.left_down) finish_bmson_point_capture(input);
     return true;
@@ -765,15 +765,15 @@ static auto bgm_draw_press_without_source(const ComposePointerEventContext& inpu
 void process_note_paint_pointer(const ComposePointerEventContext& input,
                                        bool& paint_pointer_consumed) {
     if (input.view->note_paint_mode_active && input.view->draw_source_missing) {
-        if (state.note_paint_pointer_active || state.bmson_point_capture)
+        if (state.pointer_capture.note_paint_pointer_active || state.bmson_input.bmson_point_capture)
             append_compose_cancel_once(input.action);
-        state.note_paint_pointer_active = false;
-        state.bmson_point_capture.reset();
+        state.pointer_capture.note_paint_pointer_active = false;
+        state.bmson_input.bmson_point_capture.reset();
         paint_pointer_consumed = true;
         return;
     }
-    if (state.draw_left_cancelled_until_release) {
-        if (!input.left_down) state.draw_left_cancelled_until_release = false;
+    if (state.pointer_capture.draw_left_cancelled_until_release) {
+        if (!input.left_down) state.pointer_capture.draw_left_cancelled_until_release = false;
         paint_pointer_consumed = true;
         return;
     }
@@ -781,13 +781,13 @@ void process_note_paint_pointer(const ComposePointerEventContext& input,
     if (input.view->paste_active) { paint_pointer_consumed = true; return; }
     if (compose_area_pointer_consumed()) return;
     const auto& view = *input.view;
-    if (state.draw_source_kind == 2 && view.note_paint_mode_active &&
-        input.pointer_started_in_note_field && !state.note_paint_pointer_active) {
+    if (state.pointer_capture.draw_source_kind == 2 && view.note_paint_mode_active &&
+        input.pointer_started_in_note_field && !state.pointer_capture.note_paint_pointer_active) {
         paint_pointer_consumed = true;
         return;
     }
 
-    if (!state.action_overflowed && state.note_paint_pointer_active) {
+    if (!state.input_queue.action_overflowed && state.pointer_capture.note_paint_pointer_active) {
         update_draw_left_pointer(input);
         return;
     }
@@ -800,10 +800,10 @@ void process_note_paint_pointer(const ComposePointerEventContext& input,
     if (draw_left_can_start(input)) {
         append_note_paint_begin(input);
         paint_pointer_consumed = true;
-        state.note_paint_pointer_active = !state.action_overflowed && input.left_down;
-        if (!state.action_overflowed && !input.left_down)
+        state.pointer_capture.note_paint_pointer_active = !state.input_queue.action_overflowed && input.left_down;
+        if (!state.input_queue.action_overflowed && !input.left_down)
             emit_draw_stroke(input, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE,
-                state.draw_stroke_bga ? input.pointer_x : input.paint_pointer_x, input.paint_pointer_y);
+                state.pointer_capture.draw_stroke_bga ? input.pointer_x : input.paint_pointer_x, input.paint_pointer_y);
     }
 }
 
@@ -836,25 +836,25 @@ static void append_note_move_input(const ComposePointerEventContext& input,
 
 static auto update_note_move_candidate(const ComposePointerEventContext& input,
                                       bool paint_pointer_consumed) -> bool {
-    if (state.action_overflowed || paint_pointer_consumed || !state.note_move_candidate_active)
+    if (state.input_queue.action_overflowed || paint_pointer_consumed || !state.note_move.note_move_candidate_active)
         return false;
     if (!input.window_focused || (!input.left_down && !input.left_released)) {
-        state.note_move_candidate_active = false;
+        state.note_move.note_move_candidate_active = false;
     } else if (input.left_released) {
-        if (state.note_move_select_on_release)
+        if (state.note_move.note_move_select_on_release)
             append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
-                                 state.note_move_anchor_x, state.note_move_anchor_y);
-        state.note_move_candidate_active = false;
+                                 state.note_move.note_move_anchor_x, state.note_move.note_move_anchor_y);
+        state.note_move.note_move_candidate_active = false;
     } else if (input.left_down) {
         constexpr float drag_threshold_pixels = 4.0f;
-        const auto dx = input.context->input.mouse.pos.x - state.note_move_anchor_screen_x;
-        const auto dy = input.context->input.mouse.pos.y - state.note_move_anchor_screen_y;
+        const auto dx = input.context->input.mouse.pos.x - state.note_move.note_move_anchor_screen_x;
+        const auto dy = input.context->input.mouse.pos.y - state.note_move.note_move_anchor_screen_y;
         if (std::hypot(dx, dy) >= drag_threshold_pixels) {
             append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_BEGIN,
-                                 state.note_move_anchor_x, state.note_move_anchor_y);
-            state.note_move_candidate_active = false;
-            state.note_move_active = !state.action_overflowed;
-            if (state.note_move_active)
+                                 state.note_move.note_move_anchor_x, state.note_move.note_move_anchor_y);
+            state.note_move.note_move_candidate_active = false;
+            state.note_move.note_move_active = !state.input_queue.action_overflowed;
+            if (state.note_move.note_move_active)
                 append_note_move_input(input, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE);
         }
     }
@@ -863,14 +863,14 @@ static auto update_note_move_candidate(const ComposePointerEventContext& input,
 
 static auto update_note_move_active(const ComposePointerEventContext& input,
                                     bool paint_pointer_consumed) -> bool {
-    if (state.action_overflowed || paint_pointer_consumed || !state.note_move_active)
+    if (state.input_queue.action_overflowed || paint_pointer_consumed || !state.note_move.note_move_active)
         return false;
     if (!input.window_focused || (!input.left_down && !input.left_released)) {
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
-        state.note_move_active = false;
+        state.note_move.note_move_active = false;
     } else if (input.left_released) {
         append_note_move_input(input, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE);
-        state.note_move_active = false;
+        state.note_move.note_move_active = false;
     } else if (input.left_down && nk_input_is_mouse_moved(&input.context->input)) {
         append_note_move_input(input, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE);
     }
@@ -878,8 +878,8 @@ static auto update_note_move_active(const ComposePointerEventContext& input,
 }
 
 static bool area_selection_drag_threshold_reached(const ComposePointerEventContext& input) {
-    const auto dx = input.context->input.mouse.pos.x - state.area_selection_anchor_screen_x;
-    const auto dy = input.context->input.mouse.pos.y - state.area_selection_anchor_screen_y;
+    const auto dx = input.context->input.mouse.pos.x - state.area_selection.area_selection_anchor_screen_x;
+    const auto dy = input.context->input.mouse.pos.y - state.area_selection.area_selection_anchor_screen_y;
     return std::hypot(dx, dy) >= 4.0f;
 }
 
@@ -888,9 +888,9 @@ static auto request_pointer_hold(const ComposePointerEventContext& input,
     append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_ALT_POINTER_BEGIN,
                          x, y);
     worm_ui_nuklear_tag_last_compose_input_sound(state, *input.view, *input.action);
-    state.pointer_hold_begin_pending = !state.action_overflowed;
-    state.pointer_hold_without_alt = without_alt && state.pointer_hold_begin_pending;
-    return state.pointer_hold_begin_pending;
+    state.pointer_capture.pointer_hold_begin_pending = !state.input_queue.action_overflowed;
+    state.pointer_capture.pointer_hold_without_alt = without_alt && state.pointer_capture.pointer_hold_begin_pending;
+    return state.pointer_capture.pointer_hold_begin_pending;
 }
 
 static void emit_pointer_hold_motion(const ComposePointerEventContext& input, bool released) {
@@ -899,17 +899,17 @@ static void emit_pointer_hold_motion(const ComposePointerEventContext& input, bo
                                   : WORM_UI_COMPOSE_INPUT_ALT_POINTER_UPDATE,
                          input.pointer_x, input.pointer_y);
     if (released) {
-        state.pointer_hold_begin_pending = false;
-        state.pointer_hold_active = false;
-        state.pointer_hold_without_alt = false;
+        state.pointer_capture.pointer_hold_begin_pending = false;
+        state.pointer_capture.pointer_hold_active = false;
+        state.pointer_capture.pointer_hold_without_alt = false;
     }
 }
 
 // With Hold/Roll armed, a drag starts the same pointer lifecycle as Alt/Option.
 static void begin_pointer_hold_drag(const ComposePointerEventContext& input, bool released) {
-    state.area_selection_candidate_active = false;
-    if (request_pointer_hold(input, state.area_selection_anchor_x,
-                             state.area_selection_anchor_y, true))
+    state.area_selection.area_selection_candidate_active = false;
+    if (request_pointer_hold(input, state.area_selection.area_selection_anchor_x,
+                             state.area_selection.area_selection_anchor_y, true))
         emit_pointer_hold_motion(input, released);
 }
 
@@ -919,52 +919,52 @@ static void begin_area_selection_drag(const ComposePointerEventContext& input, b
         return;
     }
     append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_AREA_SELECTION_BEGIN,
-                         state.area_selection_anchor_x, state.area_selection_anchor_y,
-                         0, false, state.area_selection_mode);
-    state.area_selection_candidate_active = false;
-    state.area_selection_active = !state.action_overflowed;
-    if (!state.area_selection_active) return;
+                         state.area_selection.area_selection_anchor_x, state.area_selection.area_selection_anchor_y,
+                         0, false, state.area_selection.area_selection_mode);
+    state.area_selection.area_selection_candidate_active = false;
+    state.area_selection.area_selection_active = !state.input_queue.action_overflowed;
+    if (!state.area_selection.area_selection_active) return;
     append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_AREA_SELECTION_UPDATE,
                          input.pointer_x, input.pointer_y);
     if (released) {
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_AREA_SELECTION_RELEASE,
                              input.pointer_x, input.pointer_y);
-        state.area_selection_active = false;
+        state.area_selection.area_selection_active = false;
     }
 }
 
 static void release_compose_selection_click(const ComposePointerEventContext& input) {
-    if (state.area_selection_anchor_x >= input.note_field_left &&
-        state.area_selection_anchor_x < input.note_field_right) {
+    if (state.area_selection.area_selection_anchor_x >= input.note_field_left &&
+        state.area_selection.area_selection_anchor_x < input.note_field_right) {
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
-                             state.area_selection_anchor_x, state.area_selection_anchor_y,
-                             0, false, state.area_selection_mode);
+                             state.area_selection.area_selection_anchor_x, state.area_selection.area_selection_anchor_y,
+                             0, false, state.area_selection.area_selection_mode);
         worm_ui_nuklear_tag_last_compose_input_sound(state, *input.view, *input.action);
     } else if (input.view->bms_measure_labels &&
-               state.area_selection_anchor_x < compose_measure_rail_width) {
+               state.area_selection.area_selection_anchor_x < compose_measure_rail_width) {
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_MEASURE_SELECT,
-                             state.area_selection_anchor_x, state.area_selection_anchor_y);
+                             state.area_selection.area_selection_anchor_x, state.area_selection.area_selection_anchor_y);
     } else {
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BMSON_EMPTY_SELECT,
-                             state.area_selection_anchor_x, state.area_selection_anchor_y);
+                             state.area_selection.area_selection_anchor_x, state.area_selection.area_selection_anchor_y);
     }
 }
 
 static auto update_area_selection_candidate(const ComposePointerEventContext& input,
                                             bool paint_pointer_consumed) -> bool {
-    if (state.action_overflowed || paint_pointer_consumed ||
-        !state.area_selection_candidate_active)
+    if (state.input_queue.action_overflowed || paint_pointer_consumed ||
+        !state.area_selection.area_selection_candidate_active)
         return false;
     if (!input.window_focused || (!input.left_down && !input.left_released)) {
         if (input.window_focused)
             append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
-        state.area_selection_candidate_active = false;
+        state.area_selection.area_selection_candidate_active = false;
     } else if (input.left_released) {
         if (area_selection_drag_threshold_reached(input)) {
             begin_area_selection_drag(input, true);
         } else {
             release_compose_selection_click(input);
-            state.area_selection_candidate_active = false;
+            state.area_selection.area_selection_candidate_active = false;
         }
     } else if (input.left_down && area_selection_drag_threshold_reached(input)) {
         begin_area_selection_drag(input, false);
@@ -974,15 +974,15 @@ static auto update_area_selection_candidate(const ComposePointerEventContext& in
 
 static auto update_area_selection_active(const ComposePointerEventContext& input,
                                          bool paint_pointer_consumed) -> bool {
-    if (state.action_overflowed || paint_pointer_consumed || !state.area_selection_active)
+    if (state.input_queue.action_overflowed || paint_pointer_consumed || !state.area_selection.area_selection_active)
         return false;
     if (!input.window_focused || (!input.left_down && !input.left_released)) {
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
-        state.area_selection_active = false;
+        state.area_selection.area_selection_active = false;
     } else if (input.left_released) {
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_AREA_SELECTION_RELEASE,
                              input.pointer_x, input.pointer_y);
-        state.area_selection_active = false;
+        state.area_selection.area_selection_active = false;
     } else if (input.left_down && nk_input_is_mouse_moved(&input.context->input)) {
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_AREA_SELECTION_UPDATE,
                              input.pointer_x, input.pointer_y);
@@ -1002,12 +1002,12 @@ void process_compose_drag_gestures(const ComposePointerEventContext& input,
 
 auto handle_compose_measure_click(const ComposePointerEventContext& input,
                                          bool paint_pointer_consumed) -> bool {
-    if (state.action_overflowed || paint_pointer_consumed || !input.view->scene_available ||
+    if (state.input_queue.action_overflowed || paint_pointer_consumed || !input.view->scene_available ||
         !input.view->bms_measure_labels || !input.pointer_clicked || !input.pointer_inside ||
-        input.pointer_x >= 42.0 || !input.window_focused || state.pointer_hold_active ||
-        state.lane_hold_active || state.note_move_active || state.area_selection_active ||
-        state.area_selection_candidate_active ||
-        state.timing_stage_drag_active)
+        input.pointer_x >= 42.0 || !input.window_focused || state.pointer_capture.pointer_hold_active ||
+        state.range_selection.lane_hold_active || state.note_move.note_move_active || state.area_selection.area_selection_active ||
+        state.area_selection.area_selection_candidate_active ||
+        state.timing_drag.timing_stage_drag_active)
         return false;
     append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_MEASURE_SELECT,
                          input.pointer_x, input.pointer_y);
@@ -1017,9 +1017,9 @@ auto handle_compose_measure_click(const ComposePointerEventContext& input,
 auto handle_compose_alt_pointer(const ComposePointerEventContext& input,
                                        bool paint_pointer_consumed) -> bool {
     auto* action = input.action;
-    if (!state.action_overflowed && !paint_pointer_consumed && input.view->scene_available &&
+    if (!state.input_queue.action_overflowed && !paint_pointer_consumed && input.view->scene_available &&
         input.pointer_started_in_note_field && input.alt_down &&
-        !state.pointer_hold_active && !state.pointer_hold_begin_pending &&
+        !state.pointer_capture.pointer_hold_active && !state.pointer_capture.pointer_hold_begin_pending &&
         input.window_focused && !input.compose_note_double_click_in_view &&
         wormedit::ui::compose_notes_editable(compose_mode_of(*input.view))) {
         if (request_pointer_hold(input, input.pointer_started_x, input.pointer_started_y, false) &&
@@ -1027,12 +1027,12 @@ auto handle_compose_alt_pointer(const ComposePointerEventContext& input,
             emit_pointer_hold_motion(input, true);
         return true;
     }
-    if (state.action_overflowed || paint_pointer_consumed || !state.pointer_hold_active)
+    if (state.input_queue.action_overflowed || paint_pointer_consumed || !state.pointer_capture.pointer_hold_active)
         return false;
-    if (!input.window_focused || (!input.alt_down && !state.pointer_hold_without_alt)) {
+    if (!input.window_focused || (!input.alt_down && !state.pointer_capture.pointer_hold_without_alt)) {
         append_compose_cancel_once(action);
-        state.pointer_hold_active = false;
-        state.pointer_hold_without_alt = false;
+        state.pointer_capture.pointer_hold_active = false;
+        state.pointer_capture.pointer_hold_without_alt = false;
     } else if (input.left_released) {
         emit_pointer_hold_motion(input, true);
     } else if (input.left_down && nk_input_is_mouse_moved(&input.context->input)) {

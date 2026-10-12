@@ -129,7 +129,7 @@ TEST_CASE("double-clicking a bookmark row opens the inline rename editor",
     (void)click(fixture.harness, row->first, row->second);
     (void)click(fixture.harness, row->first, row->second);
     (void)fixture.harness.frame();
-    const auto& editor = worm_ui_nuklear_compose_state().bookmark_rename;
+    const auto& editor = worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename;
     CHECK(editor.active);
     CHECK(editor.anchored);
     CHECK(editor.bookmark_id == 21);
@@ -143,7 +143,7 @@ TEST_CASE("double-clicking a section row opens the inline section label editor",
     (void)click(fixture.harness, row->first, row->second);
     (void)click(fixture.harness, row->first, row->second);
     (void)fixture.harness.frame();
-    const auto& editor = worm_ui_nuklear_compose_state().bookmark_rename;
+    const auto& editor = worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename;
     CHECK(editor.active);
     CHECK(editor.kind == inline_label_kind_t::section_label);
     CHECK(editor.bookmark_id == 31);
@@ -174,7 +174,7 @@ TEST_CASE("renaming a section from the list stages the label update with its ide
     (void)click(fixture.harness, row->first, row->second);
     (void)click(fixture.harness, row->first, row->second);
     (void)fixture.harness.frame();
-    REQUIRE(worm_ui_nuklear_compose_state().bookmark_rename.active);
+    REQUIRE(worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
     SDL_Event text{};
     text.type = SDL_EVENT_TEXT_INPUT;
     text.text.type = SDL_EVENT_TEXT_INPUT;

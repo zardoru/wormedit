@@ -6784,3 +6784,62 @@ TEST_CASE("BGM-only charts receive canvas width and mix controls without note in
     for (const auto& lane : std::span(fixture.flattened.view.compose.bgm_lanes,
         fixture.flattened.view.compose.bgm_lane_count)) expect_compose_test(lane.bounds.right <= 800);
 }
+
+
+TEST_CASE("Compose classifies armable BGM stem heads after projection and cache reuse",
+          "[sys][compose][bmson][scratchpad-stem-projection]") {
+    const auto bgm_only = GENERATE(false, true);
+    const auto missing = GENERATE(false, true);
+    auto song = t463_shared_asset_song();
+    song.resources.front().missing = missing;
+    if (bgm_only) song.charts.front().lane_layouts.clear();
+    compose_test_fixture_t fixture{std::move(song)};
+    for (int pass = 0; pass < 2; ++pass) {
+        t475_project(fixture);
+        const auto& view = fixture.flattened.view.compose;
+        const auto events = std::span(view.bgm_events, view.bgm_event_count);
+        const auto stem = std::ranges::find(events, uint64_t{500}, &WormUiComposeBgmEventView::event_id);
+        const auto packed = std::ranges::find(events, uint64_t{502}, &WormUiComposeBgmEventView::event_id);
+        t475_require(stem != events.end());
+        t475_require(packed != events.end());
+        t475_check(stem->armable_stem == !missing);
+        t475_check(!packed->armable_stem);
+    }
+}
+
+
+TEST_CASE("Mouse stem entry receives the same decoded source geometry as lane keys",
+          "[sys][compose][bmson][stem-mouse-entry]") {
+    const auto alt = GENERATE(false, true);
+    const auto short_source = GENERATE(false, true);
+    auto song = t463_shared_asset_song();
+    song.audio_assets.front().stream = {};
+    compose_test_fixture_t fixture{std::move(song)};
+    fixture.application.note_paint_mode_active = true;
+    fixture.project();
+    fixture.cache.stem_index.built = true;
+    fixture.cache.stem_index.document = fixture.history.document.id;
+    fixture.cache.stem_index.chart = fixture.history.document.charts.front().id;
+    fixture.cache.stem_index.revision = fixture.history.document.revision;
+    fixture.cache.stem_index.bindings = {{.asset = asset_id_t{200}, .source_sample_rate = 48000,
+        .source_frame_count = short_source ? 1000U : 480000U}};
+    auto action = paint_stroke_inputs(fixture, 100);
+    action.compose_inputs[0].paint_intent = 1;
+    if (alt) {
+        action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_ALT_POINTER_BEGIN;
+        action.compose_inputs[1].kind = WORM_UI_COMPOSE_INPUT_ALT_POINTER_RELEASE;
+    }
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    const auto status = dispatch_compose_input_action(action, fixture.history, *fixture.binding.workspace,
+        *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0);
+    INFO(status);
+    const auto& chart = fixture.history.document.charts.front();
+    expect_compose_test(chart.measures.front().notes.size() == 1);
+    expect_compose_test(chart.measures.front().notes.front().sound_channel_event.has_value());
+    expect_compose_test(chart.sound_channels.front().events.back().continuation == !short_source);
+    expect_compose_test(chart.sound_channels.front().events.back().playable);
+    expect_compose_test(!fixture.interaction->pending_hold && !fixture.interaction->pending_note_paint_gesture);
+    expect_compose_test(fixture.history.undo.size() == 1);
+    expect_compose_test(fixture.history.document.audio_assets.front().stream.sample_rate == 0);
+}

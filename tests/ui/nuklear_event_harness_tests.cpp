@@ -6643,3 +6643,56 @@ TEST_CASE("BGM header mute and solo buttons capture press and release over canva
     expect_draw(disabled.front().get().compose_input_count == 0);
     expect_draw(disabled.back().get().compose_input_count == 0);
 }
+
+
+TEST_CASE("Double-clicking a BGM stem head arms it outside the playable field",
+          "[frontend-state][event-harness][scratchpad-stem-arm]") {
+    const auto kind = GENERATE(0, 1, 2, 3);
+    bgm_draw_fixture_t fixture{true, true};
+    auto& view = fixture.harness.view().compose;
+    view.note_paint_mode_active = false;
+    view.playable_field_right_pixels = fixture.lane_x;
+    WormUiComposeBgmEventView event{};
+    event.bounds = {fixture.lane_x + 2, 100, fixture.lane_x + 38, 400};
+    event.head_top_pixels = 190;
+    event.head_bottom_pixels = 206;
+    event.has_tail = true;
+    event.event_id = 73;
+    event.source_lane_id = 71;
+    event.has_sound = true;
+    event.sound_id = 40;
+    event.armable_stem = kind != 1;
+    event.proposal_ghost = kind == 2;
+    view.bgm_events = &event;
+    view.bgm_event_count = 1;
+    (void)fixture.harness.frame();
+    const auto [x, y] = fixture.point(20, kind == 3 ? 300 : 198);
+    (void)click_at(fixture.harness, x, y);
+    const auto clicks = click_at(fixture.harness, x, y, true);
+    const auto* source = find_compose_input(clicks, WORM_UI_COMPOSE_INPUT_DRAW_SOURCE);
+    expect_draw((source != nullptr) == (kind == 0));
+    expect_draw(!find_compose_input(clicks, WORM_UI_COMPOSE_INPUT_NOTE_DOUBLE_CLICK));
+    if (source) expect_draw(source->resource_id == 40);
+}
+
+
+TEST_CASE("File Save project can queue through its own menu release capture",
+          "[frontend-state][event-harness][save-shortcut][save-menu]") {
+    nuklear_event_harness_t harness{1280, 900};
+    auto& view = harness.view();
+    view.project_has_native_path = true;
+    view.menu_command_count = 1;
+    view.menu_commands[0] = {.id = "document.save_project", .enabled = true};
+    (void)harness.frame();
+    const auto file = harness.drawn_text_center("File");
+    section_import_require(file.has_value());
+    (void)click_at(harness, file->first, file->second);
+    const auto save = harness.drawn_text_center("Save project");
+    section_import_require(save.has_value());
+    const auto frames = click_at(harness, save->first, save->second);
+    section_import_require(std::ranges::any_of(frames, [](const auto& frame) {
+        return std::string_view{frame.get().menu_command_id} == "document.save_project";
+    }));
+    expect_draw(worm_ui_frontend_request_save_project(view.project_id));
+    expect_draw(harness.frame().get().kind == WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
+}

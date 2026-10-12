@@ -258,7 +258,7 @@ bool worm_ui_frontend_request_new_project(void) {
 
 bool worm_ui_frontend_request_save_project(uint64_t project_id) {
     if ((!g_window && !g_headless) || project_dialog_active() || g_new_project_wizard.open ||
-        g_notification_project_modal || nuklear_text_entry_active() || compose_popup_owns_input())
+        g_notification_project_modal || nuklear_text_entry_active() || compose_popup_owns_input(false))
         return false;
     g_save_project_requested = true;
     g_save_project_request_id = project_id;

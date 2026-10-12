@@ -1,5 +1,24 @@
 # Status: resume checklist
 
+Completed **T-574 follow-up, T-578 and T-579** (2026-10-11; committed with implementation):
+BGM stem heads now double-click to arm outside the playable field. Mouse paint
+and Alt-click use the same decoded-span classifier and linked stem insertion as
+lane keys, creating continuations/restarts and visible stem waveforms; rejected
+released previews clear. Alt-pointer hold tails retain source linkage. File
+Save project after import now opens Save As through the existing picker path.
+Normal/Release builds and **3,436/3,436 full serial CTest checks each** pass,
+plus 128 core, 115 dispatcher/projection and 37 frontend focused assertions.
+Native isolated Xvfb verifies arming, plain/Alt EOF restarts and waveforms,
+Save/two Undo restoration, and imported BMSON File Save invoking the Save As
+picker and publishing to its disposable path. Default clang-tidy has no new or
+increased violations; documentation and whitespace checks pass. Parallel runs
+hit known intermittent SDL audition shutdown timeouts; serial suites pass and
+no audio shutdown fix is claimed.
+[Evidence](../../docs/chart-editor-plan/tasks/scratchpad-completion.md).
+Inventory: **505 cards / 418 done / 27 ready / 2 partial**.
+Manual/About still awaits the finished manual.
+
+
 Completed **T-576 and T-577** (2026-10-11; committed with this implementation):
 BGM lanes have live session-only mute/solo, including owned stem-linked playable
 portions, additive solo, source-clock-preserving unmute and input capture.

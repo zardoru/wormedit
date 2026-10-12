@@ -778,7 +778,7 @@ auto retained_bmson_source_geometry(const wormedit::document_history_t& history,
     return wormedit::bmson_source_geometry_t{asset, binding->source_sample_rate, *binding->source_frame_count};
 }
 
-auto keyboard_stem_geometry(const wormedit::document_history_t& history,
+auto compose_stem_geometry(const wormedit::document_history_t& history,
     const wormedit::editor_interaction_state_t& state, const compose_scene_cache_t& cache,
     std::optional<wormedit::resource_id_t> sound) -> std::optional<wormedit::bmson_source_geometry_t> {
     using namespace wormedit;
@@ -814,7 +814,7 @@ auto dispatch_compose_lane_key_press(const WormUiComposeInputAction& input,
             history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{input.lane_id},
                                                                note_paint_sound(input),
                 application.editor_preferences.move_collision_policy == move_collision_policy_t::displace_to_bgm,
-                keyboard_stem_geometry(history, state, cache, note_paint_sound(input))});
+                compose_stem_geometry(history, state, cache, note_paint_sound(input))});
         advance_sound_after_paint_commit(result, note_paint_sound(input), result.created_note.has_value());
         accepted = result.document_changed ? "Lane-key note updated." : "Lane hold started; move the edit cursor and release the key to finish.";
     }
@@ -1518,7 +1518,8 @@ auto begin_alt_pointer_gesture(const WormUiComposeInputAction& input,
 template <typename PositionAtComposeY>
 auto update_alt_pointer_gesture(const WormUiComposeInputAction& input,
                                 compose_gesture_context_t& context,
-                                PositionAtComposeY&& position_at_compose_y)
+                                PositionAtComposeY&& position_at_compose_y,
+                                const compose_scene_cache_t& cache)
     -> compose_input_family_result_t {
     using namespace wormedit;
     auto& [history, state, application_state, result, accepted] = context;
@@ -1553,7 +1554,8 @@ auto update_alt_pointer_gesture(const WormUiComposeInputAction& input,
                            history, state,
                            release_alt_pointer_hold_gesture_action_t{.position = *position,
                                                                      .alt_or_option_down = true,
-                                                                     .pointer_captured = true})
+                                                                     .pointer_captured = true,
+                                                                     .source_geometry = compose_stem_geometry(history, state, cache, sound)})
                      : dispatch_editor_action(
                            history, state,
                            update_alt_pointer_hold_gesture_action_t{.position = *position,
@@ -1572,16 +1574,18 @@ auto update_alt_pointer_gesture(const WormUiComposeInputAction& input,
 template <typename HitTargetAt, typename PositionAtComposeY>
 auto dispatch_alt_pointer_gesture(const WormUiComposeInputAction& input,
                                   compose_gesture_context_t& context, HitTargetAt&& hit_target_at,
-                                  PositionAtComposeY&& position_at_compose_y)
+                                  PositionAtComposeY&& position_at_compose_y,
+                                  const compose_scene_cache_t& cache)
     -> compose_input_family_result_t {
     if (input.kind == WORM_UI_COMPOSE_INPUT_ALT_POINTER_BEGIN)
         return begin_alt_pointer_gesture(input, context, hit_target_at);
-    return update_alt_pointer_gesture(input, context, position_at_compose_y);
+    return update_alt_pointer_gesture(input, context, position_at_compose_y, cache);
 }
 
 template <typename HitTargetAt>
 auto dispatch_note_paint_gesture(const WormUiComposeInputAction& input,
-                                 compose_gesture_context_t& context, HitTargetAt&& hit_target_at)
+                                 compose_gesture_context_t& context, HitTargetAt&& hit_target_at,
+                                 const compose_scene_cache_t& cache)
     -> compose_input_family_result_t {
     using namespace wormedit;
     auto& [history, state, application_state, result, accepted] = context;
@@ -1632,7 +1636,8 @@ auto dispatch_note_paint_gesture(const WormUiComposeInputAction& input,
         result = dispatch_editor_action(
             history, state,
             end_note_paint_gesture_action_t{
-                .lane = target->lane, .position = target->position, .pointer_captured = captured});
+                .lane = target->lane, .position = target->position, .pointer_captured = captured,
+                .source_geometry = compose_stem_geometry(history, state, cache, stroke_sound)});
         advance_sound_after_paint_commit(result, stroke_sound, !state.selected_notes.empty());
         accepted = result.document_changed ? "Note-paint stroke committed."
                                            : "Note-paint stroke released.";
@@ -1833,14 +1838,15 @@ auto dispatch_compose_gesture_input(const WormUiComposeInputAction& input,
                                     wormedit::editor_interaction_result_t& result,
                                     std::string_view& accepted, HitTargetAt&& hit_target_at,
                                     BgmEventAt&& bgm_event_at,
-                                    PositionAtComposeY&& position_at_compose_y)
+                                    PositionAtComposeY&& position_at_compose_y,
+                                    const compose_scene_cache_t& cache)
     -> compose_input_family_result_t {
     auto context = compose_gesture_context_t{history, state, application_state, result, accepted};
     switch (input.kind) {
     case WORM_UI_COMPOSE_INPUT_ALT_POINTER_BEGIN:
     case WORM_UI_COMPOSE_INPUT_ALT_POINTER_UPDATE:
     case WORM_UI_COMPOSE_INPUT_ALT_POINTER_RELEASE:
-        return dispatch_alt_pointer_gesture(input, context, hit_target_at, position_at_compose_y);
+        return dispatch_alt_pointer_gesture(input, context, hit_target_at, position_at_compose_y, cache);
     case WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN:
     case WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_UPDATE:
     case WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_RELEASE:
@@ -1849,7 +1855,7 @@ auto dispatch_compose_gesture_input(const WormUiComposeInputAction& input,
     case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN:
     case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE:
     case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE:
-        return dispatch_note_paint_gesture(input, context, hit_target_at);
+        return dispatch_note_paint_gesture(input, context, hit_target_at, cache);
     case WORM_UI_COMPOSE_INPUT_NOTE_MOVE_BEGIN:
     case WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE:
     case WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE:
@@ -3759,7 +3765,7 @@ auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
     };
     const auto gesture = dispatch_compose_gesture_input(input, context.history, context.state,
                                                         context.application_state, result, accepted,
-                                                        hit_target, bgm_event_at, position);
+                                                        hit_target, bgm_event_at, position, context.scene_cache);
     if (gesture.handled)
         return gesture;
     const auto selection_mode = [&context](WormUiComposeSelectionMode mode) {

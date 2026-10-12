@@ -843,6 +843,7 @@ typedef struct WormUiComposeBgmEventView {
     bool has_tail;
     bool proposal_ghost;
     bool move_conflict;
+    bool armable_stem; // Valid stem resource, independent of Sounds filtering.
     const char* sound_label;
     const char* sound_detail;
     bool semantic_color_visible;

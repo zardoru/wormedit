@@ -3362,7 +3362,8 @@ struct prepared_note_paint_t {
 
 auto prepare_stem_note_paint(const document_history_t& history, chart_id_t chart_id,
     const note_paint_plan_t& plan, object_id_t channel,
-    const std::optional<std::vector<layer_id_t>>& armed_layers)
+    const std::optional<std::vector<layer_id_t>>& armed_layers,
+    std::optional<bmson_source_geometry_t> geometry)
     -> std::variant<prepared_note_paint_t, diagnostic_list_t> {
     auto scratch = make_document_history(history.document);
     if (!plan.removals.empty()) {
@@ -3375,7 +3376,7 @@ auto prepare_stem_note_paint(const document_history_t& history, chart_id_t chart
     std::vector<object_id_t> notes;
     for (const auto& target : plan.additions) {
         const auto placed = insert_bmson_playable_stem_point(scratch, scratch.document.revision,
-            chart_id, channel, target.position, target.lane);
+            chart_id, channel, target.position, target.lane, geometry);
         if (!placed && !placed.diagnostics.empty()) return placed.diagnostics;
         auto* chart = find_chart(scratch.document, chart_id);
         for (auto& measure : chart->measures)
@@ -3397,12 +3398,13 @@ auto prepare_stem_note_paint(const document_history_t& history, chart_id_t chart
 auto prepare_note_paint_document(const document_history_t& history, chart_id_t chart_id,
                                 const note_paint_plan_t& plan, note_kind_t kind,
                                 std::optional<resource_id_t> sound,
-                                const std::optional<std::vector<layer_id_t>>& armed_layers)
+                                const std::optional<std::vector<layer_id_t>>& armed_layers,
+                                std::optional<bmson_source_geometry_t> geometry)
     -> std::variant<prepared_note_paint_t, diagnostic_list_t> {
     const auto stem = entry_stem_channel(history.document, *find_chart(history.document, chart_id), sound);
     if (const auto* failure = std::get_if<diagnostic_list_t>(&stem)) return *failure;
     if (const auto channel = std::get<std::optional<object_id_t>>(stem))
-        return prepare_stem_note_paint(history, chart_id, plan, *channel, armed_layers);
+        return prepare_stem_note_paint(history, chart_id, plan, *channel, armed_layers, geometry);
     const auto first_id = plan.additions.empty()
                               ? std::optional<object_id_t>{}
                               : next_object_id(*find_chart(history.document, chart_id));
@@ -3451,7 +3453,8 @@ auto prepare_note_paint_document(const document_history_t& history, chart_id_t c
 }
 
 auto end_note_paint_gesture(note_paint_context_t& context, lane_id_t lane,
-                            local_position_t position, bool pointer_captured)
+                            local_position_t position, bool pointer_captured,
+                            std::optional<bmson_source_geometry_t> geometry)
     -> editor_interaction_result_t {
     if (!pointer_captured)
         return append_note_paint_target(context, lane, position, false);
@@ -3464,9 +3467,8 @@ auto end_note_paint_gesture(note_paint_context_t& context, lane_id_t lane,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "note paint gesture was cancelled before commit")});
     const auto pending = *state.pending_note_paint_gesture;
+    if (pending.intent != note_paint_intent_t::toggle) state.pending_note_paint_gesture.reset();
     if (pending.document_revision != context.history.document.revision) {
-        if (pending.intent != note_paint_intent_t::toggle)
-            state.pending_note_paint_gesture.reset();
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "note paint gesture is stale after a document edit")});
@@ -3495,11 +3497,9 @@ auto end_note_paint_gesture(note_paint_context_t& context, lane_id_t lane,
         };
     }
     auto prepared = prepare_note_paint_document(context.history, state.chart, plan, state.armed_note_kind,
-                                           pending.sound, state.armed_note_layers);
+                                           pending.sound, state.armed_note_layers, geometry);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&prepared)) {
-        if (pending.intent == note_paint_intent_t::draw && pending.sound &&
-            !is_paint_sample_resource(context.history.document, *pending.sound))
-            state.pending_note_paint_gesture.reset();
+        state.pending_note_paint_gesture.reset();
         return diagnostic_result(context.history, state, *diagnostics);
     }
     auto result = std::get<prepared_note_paint_t>(std::move(prepared));
@@ -3537,7 +3537,7 @@ auto dispatch_note_paint_gesture(note_paint_context_t& context, const editor_ui_
                                                 typed_action.pointer_captured);
             else if constexpr (std::is_same_v<action_t, end_note_paint_gesture_action_t>)
                 return end_note_paint_gesture(context, typed_action.lane, typed_action.position,
-                                              typed_action.pointer_captured);
+                                              typed_action.pointer_captured, typed_action.source_geometry);
             else
                 return diagnostic_result(context.history, context.state,
                                          {error(diagnostic_code_t::invalid_id,
@@ -3856,7 +3856,8 @@ auto update_hold_gesture(hold_gesture_context_t& context, hold_gesture_source_t 
 }
 
 auto release_hold_gesture(hold_gesture_context_t& context, hold_gesture_source_t source,
-                          local_position_t position) -> editor_interaction_result_t {
+                          local_position_t position,
+                          std::optional<bmson_source_geometry_t> geometry = {}) -> editor_interaction_result_t {
     auto& state = context.state;
     if (!state.pending_hold || state.pending_hold->gesture_source != source)
         return diagnostic_result(context.history, state,
@@ -3865,7 +3866,7 @@ auto release_hold_gesture(hold_gesture_context_t& context, hold_gesture_source_t
     const auto target = snapped_position(context.chart, context.index, position,
                                          edit_snap_denominator(context.chart, state));
     state.pending_hold->gesture_source.reset();
-    auto result = context.dispatch_action(commit_hold_action_t{target.value_or(position)});
+    auto result = context.dispatch_action(commit_hold_action_t{target.value_or(position), geometry});
     if (state.pending_hold)
         state.pending_hold->gesture_source = source;
     if (result) {
@@ -3970,7 +3971,53 @@ auto update_hold_preview(hold_gesture_context_t& context, local_position_t posit
     return space_selection_view_result(make_view(history, state));
 }
 
-auto commit_hold(hold_gesture_context_t& context, local_position_t position)
+auto prepare_stem_hold_document(const hold_gesture_context_t& context,
+    const pending_hold_t& pending, const hold_placement_plan_t& placement,
+    object_id_t channel, std::optional<bmson_source_geometry_t> geometry)
+    -> std::variant<prepared_note_paint_t, diagnostic_list_t> {
+    note_paint_plan_t plan{.additions = {}, .removals = placement.removals};
+    if (placement.adds_note) plan.additions.push_back({pending.lane, placement.head});
+    auto prepared = prepare_stem_note_paint(context.history, context.state.chart, plan,
+        channel, context.state.armed_note_layers, geometry);
+    if (std::holds_alternative<diagnostic_list_t>(prepared)) return prepared;
+    auto& result = std::get<prepared_note_paint_t>(prepared);
+    auto* chart = find_chart(result.document, context.state.chart);
+    for (const auto id : result.painted_notes) {
+        auto* note = find_note(*chart, id);
+        note->kind = placement.tail ? held_note_kind(context.state.armed_note_kind) : context.state.armed_note_kind;
+        note->end = placement.tail;
+        auto& events = std::ranges::find(chart->sound_channels, channel, &sound_channel_t::id)->events;
+        std::ranges::find(events, *note->sound_channel_event, &sound_channel_event_t::id)->end = placement.tail;
+    }
+    return prepared;
+}
+
+auto commit_stem_hold(hold_gesture_context_t& context, const pending_hold_t& pending,
+    const hold_placement_plan_t& placement, local_position_t target,
+    std::optional<bmson_source_geometry_t> geometry) -> std::optional<editor_interaction_result_t> {
+    const auto resolved = entry_stem_channel(context.history.document, context.chart, pending.sound);
+    const auto* channel = std::get_if<std::optional<object_id_t>>(&resolved);
+    if (channel && !*channel) return std::nullopt;
+    context.state.pending_hold.reset();
+    if (const auto* failure = std::get_if<diagnostic_list_t>(&resolved))
+        return diagnostic_result(context.history, context.state, *failure);
+    auto prepared = prepare_stem_hold_document(context, pending, placement, **channel, geometry);
+    if (const auto* failure = std::get_if<diagnostic_list_t>(&prepared))
+        return diagnostic_result(context.history, context.state, *failure);
+    auto document = std::get<prepared_note_paint_t>(std::move(prepared));
+    const auto created = document.painted_notes.empty() ? std::optional<object_id_t>{}
+                                                       : std::optional{document.painted_notes.front()};
+    const auto committed = commit_document_command(context.history, std::move(document.document), "Place linked BMSON stem note");
+    if (!committed) return diagnostic_result(context.history, context.state, committed.diagnostics);
+    place_cursor_at(context.state, target);
+    context.state.active_lane = pending.lane;
+    auto result = interaction_view_result(context.history, context.state, true);
+    result.created_note = created;
+    return result;
+}
+
+auto commit_hold(hold_gesture_context_t& context, local_position_t position,
+                 std::optional<bmson_source_geometry_t> geometry)
     -> editor_interaction_result_t {
     auto& history = context.history;
     auto& state = context.state;
@@ -4005,9 +4052,10 @@ auto commit_hold(hold_gesture_context_t& context, local_position_t position)
                                           pending.position, *snapped, state.armed_note_kind, true);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&plan))
         return diagnostic_result(history, state, *diagnostics);
+    const auto& placement = std::get<hold_placement_plan_t>(plan);
+    if (auto stem = commit_stem_hold(context, pending, placement, *snapped, geometry)) return *stem;
     auto proposed = history.document;
     auto* chart = find_chart(proposed, state.chart);
-    const auto& placement = std::get<hold_placement_plan_t>(plan);
     std::optional<object_id_t> id;
     if (placement.adds_note) {
         id = next_object_id(*chart);
@@ -5866,7 +5914,7 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
         return update_hold_preview(hold_gestures, typed_action.position);
     };
     const auto handle_commit_hold = [&](const commit_hold_action_t& typed_action) {
-        return commit_hold(hold_gestures, typed_action.position);
+        return commit_hold(hold_gestures, typed_action.position, typed_action.source_geometry);
     };
 
     const auto handle_cancel_hold = [&](const cancel_hold_action_t& typed_action) -> editor_interaction_result_t {
@@ -5931,7 +5979,7 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
                     editor_gesture_cancel_reason_t::modifier_released});
         }
         return release_hold_gesture(hold_gestures, hold_gesture_source_t::alt_pointer,
-                                    typed_action.position);
+                                    typed_action.position, typed_action.source_geometry);
 
     };
 

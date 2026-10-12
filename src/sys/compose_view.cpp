@@ -5022,15 +5022,26 @@ void populate_bgm_draw_hint(WormUiComposeView& view, const wormedit::chart_docum
     view.draw_source_label = "silent note · Pick a sound to draw BGM";
 }
 
+auto compose_sound_is_stem(const compose_scene_cache_t& cache, std::uint64_t resource) -> bool {
+    return cache.draw_stem_sources.resource_lanes.contains(resource) ||
+           cache.draw_stem_sources.explicit_stem_resources.contains(resource);
+}
+
+auto compose_sound_missing(const compose_scene_cache_t& cache,
+    const wormedit::song_document_t& document, std::uint64_t resource) -> bool {
+    const auto found = cache.draw_stem_sources.resource_indices.find(resource);
+    return found == cache.draw_stem_sources.resource_indices.end() || document.resources[found->second].missing;
+}
+
 void populate_note_stem_sources(flattened_workspace_t& flattened, const compose_scene_cache_t& cache,
     const wormedit::song_document_t& document) {
     for (auto& note : flattened.compose.note) {
-        note.sound_is_stem = cache.draw_stem_sources.resource_lanes.contains(note.sound_resource_id) ||
-                            cache.draw_stem_sources.explicit_stem_resources.contains(note.sound_resource_id);
-        const auto resource = cache.draw_stem_sources.resource_indices.find(note.sound_resource_id);
-        note.sound_missing = resource == cache.draw_stem_sources.resource_indices.end() ||
-                             document.resources[resource->second].missing;
+        note.sound_is_stem = compose_sound_is_stem(cache, note.sound_resource_id);
+        note.sound_missing = compose_sound_missing(cache, document, note.sound_resource_id);
     }
+    for (auto& event : flattened.compose.bgm.event)
+        event.armable_stem = event.has_sound && compose_sound_is_stem(cache, event.sound_id) &&
+                            !compose_sound_missing(cache, document, event.sound_id);
 }
 
 void populate_draw_stem_sources(flattened_workspace_t& flattened, compose_scene_cache_t& cache,
@@ -5162,6 +5173,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     if (chart.lane_layouts.empty() && !chart.bgm_source_lanes.empty()) {
         populate_bgm_only_compose_projection(flattened, history, chart, measures, cache,
                                              application_state, view, downscroll, timing_stage);
+        populate_note_stem_sources(flattened, cache, history.document);
         project_loop_selection_controls(view, application_state);
         return;
     }

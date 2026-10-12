@@ -756,19 +756,28 @@ static bool begin_bookmark_rename_from_double_click(const ComposeDoubleClickCont
                                                          click_y);
 }
 
+static void arm_compose_stem_source(WormUiWorkspaceAction& action, std::uint64_t resource) {
+    state.armed_resource_id = resource;
+    state.armed_from_sounds_dock = true;
+    state.armed_from_bga_dock = false;
+    state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::sample;
+    worm_ui_nuklear_pick_draw_source(state, action, 1, resource);
+}
+
 static auto arm_double_clicked_stem(const ComposeDoubleClickContext& input, double x, double y) -> bool {
     for (const auto& note : std::span(input.view->note_endpoints, input.view->note_endpoint_count)) {
         const auto& bounds = note.bounds;
         if (!note.sound_is_stem || !note.sound_resource_id || note.sound_missing || note.tail || note.proposal_ghost ||
             x < bounds.left || x > bounds.right || y < bounds.top || y > bounds.bottom) continue;
-        state.armed_resource_id = note.sound_resource_id;
-        state.armed_from_sounds_dock = true;
-        state.armed_from_bga_dock = false;
-        state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::sample;
-        worm_ui_nuklear_pick_draw_source(state, *input.action, 1, note.sound_resource_id);
+        arm_compose_stem_source(*input.action, note.sound_resource_id);
         return true;
     }
-    return false;
+    const auto event_id = compose_bgm_event_at(input.view, x, y);
+    const auto events = std::span(input.view->bgm_events, input.view->bgm_event_count);
+    const auto event = std::ranges::find(events, event_id, &WormUiComposeBgmEventView::event_id);
+    if (!event_id || event == events.end() || !event->armable_stem || !event->sound_id) return false;
+    arm_compose_stem_source(*input.action, event->sound_id);
+    return true;
 }
 
 bool process_compose_double_clicks(const ComposeDoubleClickContext& input,
@@ -791,15 +800,15 @@ bool process_compose_double_clicks(const ComposeDoubleClickContext& input,
             note_double_click_in_view = true;
             continue;
         }
+        if (arm_double_clicked_stem(input, click_x, click_y)) {
+            note_double_click_in_view = true;
+            continue;
+        }
         if (begin_bookmark_rename_from_double_click(input, click_x, click_y)) {
             note_double_click_in_view = true;
             continue;
         }
         if (click_x < input.note_field_left || click_x >= input.note_field_right) continue;
-        if (arm_double_clicked_stem(input, click_x, click_y)) {
-            note_double_click_in_view = true;
-            continue;
-        }
         state.note_label_anchor_x = pointer.x;
         state.note_label_anchor_y = pointer.y;
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_NOTE_DOUBLE_CLICK, click_x,

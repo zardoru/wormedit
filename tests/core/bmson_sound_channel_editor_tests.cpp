@@ -1875,3 +1875,56 @@ TEST_CASE("Stem notes return to their channel-owned BGM lane regardless of sourc
     expect_bmson_core(std::ranges::any_of(history.document.charts.front().measures.front().notes,
         [id = bgm.id](const auto& note) { return note.id == id; }));
 }
+
+
+TEST_CASE("Mouse stem placement shares decoded span classification and clears failed releases",
+          "[unit][core][bmson][stem-mouse-entry]") {
+    const auto alt = GENERATE(false, true);
+    const auto hold = GENERATE(false, true);
+    const auto row = GENERATE(300U, 400U);
+    const auto decoded = GENERATE(false, true);
+    auto song = fixture();
+    for (auto& resource : song.resources) resource.missing = false;
+    const auto asset = song.charts.front().sound_channels.front().source_clip.source;
+    std::ranges::find(song.audio_assets, asset, &wormedit::audio_asset_t::id)->stream = {};
+    const auto sound = std::ranges::find_if(song.resources,
+        [asset](const auto& item) { return item.asset == asset; })->id;
+    auto history = wormedit::make_document_history(std::move(song));
+    const auto before = history.document;
+    wormedit::editor_interaction_state_t state;
+    state.chart = history.document.charts.front().id;
+    const auto lane = history.document.charts.front().lane_layouts.front().layout.lanes[1].id;
+    state.active_lane = lane;
+    state.supported_snap_denominators = {192};
+    state.active_snap_denominator = 192;
+    const auto position = first_measure_position(history.document, row);
+    state.cursor = position;
+    const std::optional<wormedit::bmson_source_geometry_t> geometry = decoded
+        ? std::optional{wormedit::bmson_source_geometry_t{asset, 48000, row == 400 ? 10000U : 480000U}}
+        : std::nullopt;
+    const auto begun = alt ? wormedit::dispatch_editor_action(history, state,
+        wormedit::begin_alt_pointer_hold_gesture_action_t{lane, position, true, sound})
+        : wormedit::dispatch_editor_action(history, state,
+        wormedit::begin_note_paint_gesture_action_t{lane, position, true, sound, wormedit::note_paint_intent_t::draw});
+    expect_bmson_core(static_cast<bool>(begun));
+    const auto end = first_measure_position(history.document, row + (alt && hold ? 60 : 0));
+    const auto released = alt ? wormedit::dispatch_editor_action(history, state,
+        wormedit::release_alt_pointer_hold_gesture_action_t{end, true, true, geometry})
+        : wormedit::dispatch_editor_action(history, state,
+        wormedit::end_note_paint_gesture_action_t{lane, position, true, geometry});
+    INFO((released.diagnostics.empty() ? "No placement diagnostic" : released.diagnostics.front().message));
+    expect_bmson_core(static_cast<bool>(released) == decoded);
+    expect_bmson_core(!state.pending_note_paint_gesture && !state.pending_hold);
+    if (decoded) {
+        const auto& channel = history.document.charts.front().sound_channels.front();
+        expect_bmson_core(channel.events.back().playable);
+        expect_bmson_core(channel.events.back().continuation == (row == 300));
+        expect_bmson_core(channel.events.back().end == (alt && hold ? std::optional{end} : std::nullopt));
+        expect_bmson_core(history.undo.size() == 1);
+        expect_bmson_core(wormedit::validate_document(history.document).empty());
+        expect_bmson_core(wormedit::undo_document_command(history));
+    }
+    auto restored = history.document;
+    restored.revision = before.revision;
+    expect_bmson_core(wormedit::write_native_project(restored).bytes == wormedit::write_native_project(before).bytes);
+}

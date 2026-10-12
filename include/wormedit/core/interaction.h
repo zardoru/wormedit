@@ -129,6 +129,7 @@ struct update_hold_preview_action_t {
 
 struct commit_hold_action_t {
     local_position_t position;
+    std::optional<bmson_source_geometry_t> source_geometry;
 };
 
 struct cancel_hold_action_t {};
@@ -167,6 +168,7 @@ struct release_alt_pointer_hold_gesture_action_t {
     local_position_t position;
     bool alt_or_option_down{true};
     bool pointer_captured{true};
+    std::optional<bmson_source_geometry_t> source_geometry;
 };
 
 struct begin_note_duration_gesture_action_t {
@@ -353,6 +355,7 @@ struct end_note_paint_gesture_action_t {
     lane_id_t lane;
     local_position_t position;
     bool pointer_captured{true};
+    std::optional<bmson_source_geometry_t> source_geometry;
 };
 
 // Semantic-layer painting visits existing notes under a captured pointer and

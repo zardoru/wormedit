@@ -16,10 +16,10 @@ Synced feedback, 2026-10-11. Root may record supporting ownership needed for the
 - **Verify:** Normal/Release builds and full CTest; production event harness for UI routing; affected default clang-tidy; isolated authenticated Xvfb native behavior; documentation and whitespace gates.
 - **Out of scope:** Unrelated roadmap cards and publishing an unfinished manual.
 
-## T-574 Arm a stem from a double-clicked playable note
+## T-574 Arm a stem from a double-clicked playable or BGM note
 
 - **Status:** done
-- **Outcome:** Double-clicking a linked stem note arms its sound without opening the note label editor.
+- **Outcome:** Double-clicking a linked playable or BGM stem head arms its sound without opening the note label editor.
 - **Read first:** src/sys/compose_view.cpp; src/ui/frontend.h; src/ui/nuklear/compose_input_panel.cpp; tests/ui/nuklear_event_harness_tests.cpp.
 - **Files owned:** tests/sys/frame_timing_tests.cpp; src/ui/nuklear/compose_state.cpp; src/sys/compose_view.cpp; src/ui/frontend.h; src/ui/nuklear/compose_input_panel.cpp; tests/ui/nuklear_event_harness_tests.cpp; docs/chart-editor-plan/tasks/scratchpad-completion.md; memory/chart-editor-status/resume.md.
 - **Steps:** 1. Reproduce the reported failure and audit existing shared mechanisms. 2. Implement the outcome using the existing source identities, runtime and layout services. 3. Add focused regressions covering success, invalid/stale inputs and reversibility. 4. Build, run the full suite and applicable native/frontend verification, then record evidence and archive the completed feedback.
@@ -63,6 +63,30 @@ Synced feedback, 2026-10-11. Root may record supporting ownership needed for the
 - **Reject/failure behavior:** Missing or ambiguous sources and stale UI actions reject atomically with an actionable message.
 - **Verify:** Normal/Release builds and full CTest; production event harness for UI routing; affected default clang-tidy; isolated authenticated Xvfb native behavior; documentation and whitespace gates.
 - **Out of scope:** Unrelated roadmap cards and publishing an unfinished manual.
+
+## T-578 Unify mouse stem entry with decoded span classification
+
+- **Status:** done
+- **Outcome:** Plain and Alt-pointer stem placement create linked continuation or restart events from decoded source spans, and rejected released strokes leave no ghost.
+- **Read first:** src/core/interaction.cpp; src/sys/compose_input.cpp; include/wormedit/core/interaction.h.
+- **Files owned:** include/wormedit/core/interaction.h; src/core/interaction.cpp; src/sys/compose_input.cpp; tests/core/bmson_sound_channel_editor_tests.cpp; tests/sys/frame_timing_tests.cpp; docs/chart-editor-plan/tasks/scratchpad-completion.md; memory/chart-editor-status/resume.md.
+- **Steps:** 1. Reproduce the sample-rate rejection and unlinked Alt-click note. 2. Pass retained decoded geometry through the shared stem classifier for mouse placement. 3. Clear rejected released previews and retain matching hold tails. 4. Verify native waveform, Save and Undo plus full normal/Release suites.
+- **Invariants:** Atomic authoring, one Undo per placement, stable source identity and unchanged authored source metadata.
+- **Reject/failure behavior:** Unknown or stale decoded geometry rejects without authoring or retaining a released draw/Alt-pointer ghost.
+- **Verify:** Focused core and dispatcher regressions, native isolated Xvfb, normal/Release builds and full CTest, affected default clang-tidy and documentation/whitespace checks.
+- **Out of scope:** Unrelated roadmap cards and changes to source audio files.
+
+## T-579 Allow File Save project to open Save As after import
+
+- **Status:** done
+- **Outcome:** File Save project after chart import opens the existing Save As picker instead of rejecting its own menu capture.
+- **Read first:** src/ui/nuklear/frontend.cpp; tests/ui/nuklear_event_harness_tests.cpp.
+- **Files owned:** src/ui/nuklear/frontend.cpp; tests/ui/nuklear_event_harness_tests.cpp; docs/chart-editor-plan/tasks/scratchpad-completion.md; memory/chart-editor-status/resume.md.
+- **Steps:** 1. Reproduce the menu command rejection. 2. Exclude its own menu release capture from queued Save's popup guard. 3. Retain other popup/modal and project identity guards. 4. Verify native import and Save As plus frontend regressions and full suites.
+- **Invariants:** Save uses the existing publication and picker paths and cannot target a different project.
+- **Reject/failure behavior:** Unrelated popups and modals continue to block Save; picker cancellation does not save.
+- **Verify:** Production frontend event harness, native authenticated isolated Xvfb with a deterministic picker fixture, full normal/Release CTest, default clang-tidy and documentation/whitespace checks.
+- **Out of scope:** Publication semantics and unrelated dialog redesign.
 
 ## Completion evidence: T-573–T-575
 
@@ -188,3 +212,61 @@ Evidence: `/tmp/bgm-mix-commit-{normal,release}-ctest.log`,
 `/tmp/bgm-mix-native-{controls,stem-caption,stem-hover,stem-muted}.png`.
 T-577 shared geometry/picking fixes are included in these complete suites.
 Manual/About remains conditional on the finished manual.
+
+
+T-574 follow-up (2026-10-11): user clarified the missed target is a BGM stem
+marker. Extend the shared arming action to BGM heads outside the playable field,
+using the existing exact BGM head hit test and cached resource classification.
+Waveform bodies, proposal ghosts, ordinary packed sounds and missing resources
+must not arm. BGM-only and cached geometry classification checks pass.
+
+
+T-578 implementation decision: mouse-paint release receives the same validated
+decoded source geometry as lane keys. Alt-pointer release uses the shared
+linked stem insertion and span classifier, including matching hold/event tails.
+Explicit draw failures clear the released preview; source metadata is not
+rewritten from decoded geometry. Native checks cover EOF restart events from
+plain and Alt clicks, Save and two single-step Undo operations.
+
+T-579 implementation decision: a command selected from the File menu must
+ignore that menu's own release capture when queueing Save. Existing unrelated
+popup/modal checks still block the command. An imported chart has no native
+path, so the existing queued Save path invokes Save As.
+
+
+## Completion evidence: T-574 follow-up, T-578 and T-579 (2026-10-11)
+
+Double-clicking a valid BGM stem head now arms its sound outside the playable
+field through the existing BGM head hit test and shared resource classification.
+Waveform bodies, ghosts, ordinary packed resources and missing sources do not
+arm. Classification survives cached scenes and BGM-only charts.
+
+Mouse-paint and Alt-pointer releases use retained decoded geometry and the same
+linked stem span classifier as lane keys. Within-span points continue; EOF
+points restart. Alt-pointer hold tails update both semantic notes and source
+events. Unknown geometry rejects atomically and released previews clear.
+Authored audio metadata remains unchanged. File Save project accepts its own
+menu release capture, retaining unrelated modal/popup/project guards; imported
+charts then use the existing Save As path.
+
+Normal and Release builds pass. Full serial CTest passes **3,436/3,436 in each**.
+Focused normal/Release checks pass 128 core, 115 dispatcher/projection and 37
+frontend assertions. Affected default clang-tidy reports no new or increased
+complexity violations. Native authenticated isolated Xvfb verifies BGM-head
+arming, plain and Alt EOF restart placement, visible waveforms, linked saved
+source events, and two Undo steps restoring the whole authored document.
+Native File Open imports BMSON, and File Save project invokes the save picker
+with `--save`; a deterministic picker fixture returns a disposable path and
+publication succeeds. Documentation and whitespace gates pass.
+
+Parallel full runs hit the existing intermittent SDL audition rejection/resume
+and streamed audition shutdown timeouts. An isolated rejection retry and both
+complete serial suites pass; no audio shutdown fix is claimed.
+
+Evidence: `/tmp/stem-entry-followup-{normal-serial,release-final}-ctest.log`,
+`/tmp/stem-entry-followup-{core-final,dispatch,events-final,release-core,release-dispatch,release-events,tidy,tests-tidy}.log`,
+`/tmp/bgm-double-arm-tidy.log`, `/tmp/bgm-double-arm-native-armed.png`,
+`/tmp/stem-entry-native-{import,saved,plain,alt}.png`,
+`/tmp/stem-entry-native-{before,plain,alt,undone}.wormedit` and
+`/tmp/stem-followup-native/picker.log`.
+Committed with implementation. Manual/About remains conditional on the finished manual.

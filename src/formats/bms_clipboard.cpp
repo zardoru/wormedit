@@ -68,10 +68,6 @@ struct decode_context_t {
     const resource_index_t& resources;
 };
 
-[[nodiscard]] auto failure(std::string message) -> chart_clipboard_result_t {
-    return {.error = std::move(message)};
-}
-
 [[nodiscard]] auto detect_grammar(std::string_view header) -> std::optional<grammar_t> {
     if (header == "BMSE3.0 ClipBoard Object Data Format") return grammar_t::bmse3;
     if (header == "BMSE ClipBoard Object Data Format") return grammar_t::bmse_legacy;
@@ -702,58 +698,73 @@ using record_key_t = std::tuple<object_kind_t, std::size_t, std::size_t,
 }
 
 [[nodiscard]] auto build_clipboard(const std::vector<record_t>& records, grammar_t grammar,
-                                   const decode_context_t& context)
-    -> chart_clipboard_result_t {
-    chart_clipboard_t clipboard{.source_song = context.song.id,
-                                .source_chart = context.chart.id};
+                                   const decode_context_t& context) -> chart_clipboard_outcome_t {
+    chart_clipboard_t clipboard{.source_song = context.song.id, .source_chart = context.chart.id};
     std::vector<const record_t*> endpoints;
     std::size_t next_id = 1;
     for (const auto& record : records) {
-        if (record.long_endpoint) endpoints.push_back(&record);
-        else append_record_object(clipboard, record, grammar, context, next_id++);
+        if (record.long_endpoint)
+            endpoints.push_back(&record);
+        else
+            append_record_object(clipboard, record, grammar, context, next_id++);
     }
-    const auto error = append_long_note_groups(clipboard, std::move(endpoints), grammar,
-                                                context, next_id);
-    if (!error.empty()) return failure(error);
-    if (clipboard.objects.empty()) return failure("BMS clipboard contains no supported objects.");
-    return {.clipboard = std::move(clipboard)};
+    const auto error =
+        append_long_note_groups(clipboard, std::move(endpoints), grammar, context, next_id);
+    if (!error.empty())
+        return std::unexpected(error);
+    if (clipboard.objects.empty())
+        return std::unexpected(std::string{"BMS clipboard contains no supported objects."});
+    return clipboard;
 }
 
 } // namespace
 
-auto decode_bms_clipboard(std::string_view text, const song_document_t& target_document,
-                          const chart_document_t& target_chart,
-                          const lane_layout_t& target_layout,
-                          bms_clipboard_decode_options_t options) -> chart_clipboard_result_t {
+auto parse_bms_chart_clipboard(std::string_view text, const song_document_t& target_document,
+                               const chart_document_t& target_chart,
+                               const lane_layout_t& target_layout,
+                               bms_clipboard_decode_options_t options)
+    -> chart_clipboard_outcome_t {
     if (options.maximum_bytes == 0 || text.size() > options.maximum_bytes)
-        return failure("BMS clipboard exceeds the configured byte limit.");
+        return std::unexpected(std::string{"BMS clipboard exceeds the configured byte limit."});
     if (options.maximum_records == 0)
-        return failure("BMS clipboard record limit must be positive.");
+        return std::unexpected(std::string{"BMS clipboard record limit must be positive."});
     const auto separator = text.find("\r\n");
     if (separator == std::string_view::npos)
-        return failure("BMS clipboard is missing its header or record separator.");
+        return std::unexpected(
+            std::string{"BMS clipboard is missing its header or record separator."});
     const auto grammar = detect_grammar(text.substr(0, separator));
-    if (!grammar) return failure("BMS clipboard header is not recognized.");
+    if (!grammar)
+        return std::unexpected(std::string{"BMS clipboard header is not recognized."});
     const auto lines = split_payload(text, *grammar);
-    if (!lines) return failure(lines.error());
+    if (!lines)
+        return std::unexpected(lines.error());
     if (lines->size() > options.maximum_records)
-        return failure("BMS clipboard exceeds the configured record limit.");
+        return std::unexpected(std::string{"BMS clipboard exceeds the configured record limit."});
 
     const auto resources = index_resources(target_document);
-    const decode_context_t context{target_document, target_chart, target_layout, options, resources};
+    const decode_context_t context{target_document, target_chart, target_layout, options,
+                                   resources};
     std::vector<record_t> records;
     records.reserve(lines->size());
     std::set<record_key_t> seen;
     for (std::size_t order = 0; order < lines->size(); ++order) {
         auto parsed = *grammar == grammar_t::bmse3 || *grammar == grammar_t::bmse_legacy
-            ? parse_bmse_record((*lines)[order], *grammar, order, context)
-            : parse_ibmsc_record((*lines)[order], *grammar, order, context);
-        if (!parsed) return failure(parsed.error());
+                          ? parse_bmse_record((*lines)[order], *grammar, order, context)
+                          : parse_ibmsc_record((*lines)[order], *grammar, order, context);
+        if (!parsed)
+            return std::unexpected(parsed.error());
         if (!seen.insert(record_key(*parsed)).second)
-            return failure("BMS clipboard contains a duplicate record.");
+            return std::unexpected(std::string{"BMS clipboard contains a duplicate record."});
         records.push_back(std::move(*parsed));
     }
     return build_clipboard(records, *grammar, context);
+}
+
+auto decode_bms_clipboard(std::string_view text, const song_document_t& target_document,
+                          const chart_document_t& target_chart, const lane_layout_t& target_layout,
+                          bms_clipboard_decode_options_t options) -> chart_clipboard_result_t {
+    return chart_clipboard_result_t::from(
+        parse_bms_chart_clipboard(text, target_document, target_chart, target_layout, options));
 }
 
 } // namespace wormedit

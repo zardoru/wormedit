@@ -173,41 +173,65 @@ auto collect(chart_clipboard_t& clipboard, const chart_document_t& chart,
 }
 } // namespace
 
-auto copy_chart_selection(const song_document_t& document,
-                          const editor_interaction_state_t& state,
-                          std::uint64_t expected_revision, object_id_t kiai_head) -> chart_clipboard_result_t {
-    if (document.revision != expected_revision) return {{}, "The document has changed."};
+auto chart_clipboard_t::from(const song_document_t& document,
+                             const editor_interaction_state_t& state,
+                             std::uint64_t expected_revision, object_id_t kiai_head)
+    -> chart_clipboard_outcome_t {
+    if (document.revision != expected_revision)
+        return std::unexpected(std::string{"The document has changed."});
     const auto chart = document.find_chart(state.chart);
-    if (chart == nullptr) return {{}, "The selected chart no longer exists."};
+    if (chart == nullptr)
+        return std::unexpected(std::string{"The selected chart no longer exists."});
     auto selected = selected_objects(state);
     const auto boundaries = selected_kiai_boundaries(document, state, kiai_head);
-    if (!boundaries) return {{}, "The selected Kiai area no longer exists."};
+    if (!boundaries)
+        return std::unexpected(std::string{"The selected Kiai area no longer exists."});
     selected.insert(boundaries->begin(), boundaries->end());
-    if (selected.empty()) return {{}, "Select notes, BGM events or timing objects to copy."};
-    if (selected.size() > maximum_objects) return {{}, "The clipboard object limit was exceeded."};
+    if (selected.empty())
+        return std::unexpected(std::string{"Select notes, BGM events or timing objects to copy."});
+    if (selected.size() > maximum_objects)
+        return std::unexpected(std::string{"The clipboard object limit was exceeded."});
     const auto indexed = build_measure_index(*chart);
     const auto* index = std::get_if<measure_index_t>(&indexed);
     if (!index || !chart->divisions_per_standard_measure)
-        return {{}, "The chart positions are invalid."};
+        return std::unexpected(std::string{"The chart positions are invalid."});
     chart_clipboard_t clipboard{document.id, chart->id, {}};
     if (!collect(clipboard, *chart, *index, selected))
-        return {{}, "The selection contains unavailable or unsupported objects."};
+        return std::unexpected(
+            std::string{"The selection contains unavailable or unsupported objects."});
     // Every absolute offset originated as an integer row in this resolution.
     const auto resolution = chart->divisions_per_standard_measure;
     const auto row_of = [resolution](const auto& object) {
         return object.offset.numerator * (resolution / object.offset.denominator);
     };
-    std::stable_sort(clipboard.objects.begin(), clipboard.objects.end(),
+    std::stable_sort(
+        clipboard.objects.begin(), clipboard.objects.end(),
         [&row_of](const auto& left, const auto& right) { return row_of(left) < row_of(right); });
     const auto anchor = row_of(clipboard.objects.front());
-    for (auto& object : clipboard.objects) object.offset = rows_to_fraction(row_of(object) - anchor, resolution);
-    return {std::move(clipboard), {}};
+    for (auto& object : clipboard.objects)
+        object.offset = rows_to_fraction(row_of(object) - anchor, resolution);
+    return clipboard;
+}
+
+auto chart_clipboard_result_t::from(chart_clipboard_outcome_t&& outcome)
+    -> chart_clipboard_result_t {
+    if (!outcome)
+        return {.clipboard = std::nullopt, .error = std::move(outcome.error())};
+    return {.clipboard = std::move(*outcome), .error = {}};
+}
+
+auto copy_chart_selection(const song_document_t& document, const editor_interaction_state_t& state,
+                          std::uint64_t expected_revision, object_id_t kiai_head)
+    -> chart_clipboard_result_t {
+    return chart_clipboard_result_t::from(
+        chart_clipboard_t::from(document, state, expected_revision, kiai_head));
 }
 
 namespace {
 auto selection_error(std::string message) -> editor_interaction_result_t {
     return {.diagnostics = {{.severity = diagnostic_severity_t::error,
-        .code = diagnostic_code_t::unsupported_feature, .message = std::move(message)}}};
+                             .code = diagnostic_code_t::unsupported_feature,
+                             .message = std::move(message)}}};
 }
 
 auto selection_timing_lane(editor_selection_object_kind_t kind) -> std::optional<timing_lane_kind_t> {
@@ -284,24 +308,38 @@ auto delete_selection_all(document_history_t& history, editor_interaction_state_
     return {.accepted = true, .document_changed = true, .diagnostics = committed.diagnostics};
 }
 
+auto create_cut_chart_clipboard(document_history_t& history, editor_interaction_state_t& state,
+                                std::uint64_t expected_revision, selection_delete_options_t options)
+    -> chart_clipboard_outcome_t {
+    if (options.recipe)
+        return std::unexpected(std::string{"SV recipes cannot be copied to the chart clipboard."});
+    auto result =
+        chart_clipboard_t::from(history.document, state, expected_revision, options.kiai_head);
+    if (!result)
+        return result;
+    options.label = "Cut selection";
+    const auto deleted = delete_selection_all(history, state, expected_revision, options);
+    if (!deleted)
+        return std::unexpected(deleted.diagnostics.empty()
+                                   ? std::string{"The selection could not be cut."}
+                                   : deleted.diagnostics.front().message);
+    return result;
+}
+
 auto cut_chart_selection(document_history_t& history, editor_interaction_state_t& state,
                          std::uint64_t expected_revision, selection_delete_options_t options)
     -> chart_clipboard_result_t {
-    if (options.recipe) return {{}, "SV recipes cannot be copied to the chart clipboard."};
-    auto result = copy_chart_selection(history.document, state, expected_revision, options.kiai_head);
-    if (!result) return result;
-    options.label = "Cut selection";
-    const auto deleted = delete_selection_all(history, state, expected_revision, options);
-    if (!deleted) return {{}, deleted.diagnostics.empty() ? "The selection could not be cut."
-                                                        : deleted.diagnostics.front().message};
-    return result;
+    return chart_clipboard_result_t::from(
+        create_cut_chart_clipboard(history, state, expected_revision, std::move(options)));
 }
 
 namespace {
 auto exact_rows(rational_t value, std::uint64_t resolution) -> std::optional<std::uint64_t> {
-    if (!value.denominator) return std::nullopt;
+    if (!value.denominator)
+        return std::nullopt;
     const auto reduced = rows_to_fraction(value.numerator, value.denominator);
-    if (resolution % reduced.denominator) return std::nullopt;
+    if (resolution % reduced.denominator)
+        return std::nullopt;
     const auto scale = resolution / reduced.denominator;
     if (reduced.numerator > std::numeric_limits<std::uint64_t>::max() / scale)
         return std::nullopt;

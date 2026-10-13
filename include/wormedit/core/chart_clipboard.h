@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/interaction.h>
+#include <wormedit/core/result.h>
 
 #include <optional>
 #include <string>
@@ -35,20 +36,32 @@ struct chart_clipboard_object_t {
 };
 
 struct chart_clipboard_t {
+    [[nodiscard]] static auto from(const song_document_t& document,
+                                   const editor_interaction_state_t& state,
+                                   std::uint64_t expected_revision, object_id_t kiai_head = {})
+        -> result_t<chart_clipboard_t, std::string>;
+
     song_id_t source_song;
     chart_id_t source_chart;
     std::vector<chart_clipboard_object_t> objects;
 };
 
+using chart_clipboard_outcome_t = result_t<chart_clipboard_t, std::string>;
+
 struct chart_clipboard_result_t {
+    [[nodiscard]] static auto from(chart_clipboard_outcome_t&& outcome) -> chart_clipboard_result_t;
+
     std::optional<chart_clipboard_t> clipboard;
     std::string error;
-    [[nodiscard]] explicit operator bool() const noexcept { return clipboard.has_value(); }
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return clipboard.has_value();
+    }
 };
 
 [[nodiscard]] auto copy_chart_selection(const song_document_t& document,
-    const editor_interaction_state_t& state, std::uint64_t expected_revision,
-    object_id_t kiai_head = {}) -> chart_clipboard_result_t;
+                                        const editor_interaction_state_t& state,
+                                        std::uint64_t expected_revision, object_id_t kiai_head = {})
+    -> chart_clipboard_result_t;
 
 struct selection_delete_options_t {
     object_id_t kiai_head;
@@ -59,12 +72,20 @@ struct selection_delete_options_t {
 
 // Stage all selected families, then publish once. Failure preserves history and selection.
 [[nodiscard]] auto delete_selection_all(document_history_t& history,
-    editor_interaction_state_t& state, std::uint64_t expected_revision,
-    const selection_delete_options_t& options = {}) -> editor_interaction_result_t;
+                                        editor_interaction_state_t& state,
+                                        std::uint64_t expected_revision,
+                                        const selection_delete_options_t& options = {})
+    -> editor_interaction_result_t;
 
-[[nodiscard]] auto cut_chart_selection(document_history_t& history,
-    editor_interaction_state_t& state, std::uint64_t expected_revision,
-    selection_delete_options_t options = {}) -> chart_clipboard_result_t;
+[[nodiscard]] auto
+create_cut_chart_clipboard(document_history_t& history, editor_interaction_state_t& state,
+                           std::uint64_t expected_revision, selection_delete_options_t options = {})
+    -> chart_clipboard_outcome_t;
+
+[[nodiscard]] auto
+cut_chart_selection(document_history_t& history, editor_interaction_state_t& state,
+                    std::uint64_t expected_revision, selection_delete_options_t options = {})
+    -> chart_clipboard_result_t;
 
 struct chart_paste_stem_event_t {
     object_id_t channel;
@@ -82,12 +103,13 @@ struct chart_paste_proposal_t {
     std::string error;
 };
 
-[[nodiscard]] auto propose_chart_paste(const song_document_t& document,
-    chart_id_t chart, const chart_clipboard_t& clipboard, local_position_t anchor,
-    std::uint64_t expected_revision) -> chart_paste_proposal_t;
+[[nodiscard]] auto propose_chart_paste(const song_document_t& document, chart_id_t chart,
+                                       const chart_clipboard_t& clipboard, local_position_t anchor,
+                                       std::uint64_t expected_revision) -> chart_paste_proposal_t;
 
-[[nodiscard]] auto paste_chart_clipboard(document_history_t& history,
-    chart_id_t chart, const chart_clipboard_t& clipboard, local_position_t anchor,
-    std::uint64_t expected_revision) -> document_command_result_t;
+[[nodiscard]] auto paste_chart_clipboard(document_history_t& history, chart_id_t chart,
+                                         const chart_clipboard_t& clipboard,
+                                         local_position_t anchor, std::uint64_t expected_revision)
+    -> document_command_result_t;
 
 } // namespace wormedit

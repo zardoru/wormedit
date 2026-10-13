@@ -416,7 +416,7 @@ void normalize_empty_input_profiles(song_document_t& document) {
         const auto named = !chart.input_profile.profile_id.empty() &&
                            chart.input_profile.profile_id != "bmson-unbound";
         if (named || !chart.input_profile.bindings.empty() || chart.lane_layouts.empty()) continue;
-        const auto input = default_input_profile_for(chart.lane_layouts.front().layout);
+        const auto input = make_default_input_profile_for(chart.lane_layouts.front().layout);
         if (input) chart.input_profile = *input;
     }
 }

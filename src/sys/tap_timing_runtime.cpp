@@ -177,7 +177,7 @@ void tap_timing_runtime_t::prepare_apply(const song_document_t& document, bool t
     proposal_clock_.reset();
     auto proposed = propose_tap_timing_apply(document, {clock_->chart}, *estimate,
         clock_->sample_rate, clock_->beats_per_measure, choice_, timing_locked);
-    if (!proposed || !build_tap_timing_preview(document, *proposed.proposal)) return;
+    if (!proposed || !make_tap_timing_preview(document, *proposed.proposal)) return;
     proposal_ = std::move(proposed.proposal);
     proposal_clock_ = clock_;
     proposal_estimate_ = estimate;

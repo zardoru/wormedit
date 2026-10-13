@@ -121,7 +121,7 @@ auto next_object_id(const chart_document_t& chart) -> std::optional<object_id_t>
     return object_id_t{maximum + 1};
 }
 
-auto build_proposal(const song_document_t& document, chart_id_t chart_id,
+auto prepare_tap_timing_proposal(const song_document_t& document, chart_id_t chart_id,
                     const tap_tempo_estimate_t& estimate, std::uint32_t sample_rate,
                     std::uint16_t beats_per_measure, tap_bpm_choice_t choice)
     -> result_t<tap_timing_apply_proposal_t, diagnostic_t> {
@@ -195,7 +195,7 @@ auto apply_proposal_to_chart(chart_document_t& chart,
 
 auto proposed_document(const song_document_t& document,
                       const tap_timing_apply_proposal_t& proposal) -> std::optional<song_document_t> {
-    const auto verified = build_proposal(document, proposal.chart, proposal.estimate,
+    const auto verified = prepare_tap_timing_proposal(document, proposal.chart, proposal.estimate,
         proposal.sample_rate, proposal.beats_per_measure, proposal.choice);
     if (!verified || verified->beats_per_minute != proposal.beats_per_minute ||
         verified->beat_zero_audio_offset_seconds != proposal.beat_zero_audio_offset_seconds)
@@ -224,7 +224,7 @@ auto tap_timing_apply_proposal_t::from(const song_document_t& document, chart_id
             "tap timing apply is disabled while timing is locked"));
         return result;
     }
-    auto proposal = build_proposal(document, chart, estimate, sample_rate, beats_per_measure, choice);
+    auto proposal = prepare_tap_timing_proposal(document, chart, estimate, sample_rate, beats_per_measure, choice);
     if (proposal)
         result.value = std::move(*proposal);
     else
@@ -245,7 +245,7 @@ auto propose_tap_timing_apply(const song_document_t& document, chart_id_t chart,
         document, chart, estimate, sample_rate, beats_per_measure, choice, timing_locked));
 }
 
-auto build_tap_timing_preview(const song_document_t& document,
+auto make_tap_timing_preview(const song_document_t& document,
                              const tap_timing_apply_proposal_t& proposal)
     -> std::optional<chart_document_t> {
     if (proposal.document_revision != document.revision) return std::nullopt;

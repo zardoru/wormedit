@@ -1171,7 +1171,7 @@ auto parse_one_chart(stepmania_parse_state_t& context, const chart_source_t& sou
         parse_row_map(note_map, *lane_count, chart.divisions_per_standard_measure,
                       context.options.max_measures, context.options.max_events, note_field->order);
     auto layout = make_layout(step_type, *lane_count, context.ids);
-    if (const auto input = default_input_profile_for(layout)) chart.input_profile = *input;
+    if (const auto input = make_default_input_profile_for(layout)) chart.input_profile = *input;
     chart.lane_layouts.push_back({.id = context.ids.take<object_id_t>(),
                                   .position = {measure_id_t{1}, 0},
                                   .layout = layout});

@@ -595,7 +595,7 @@ void populate_tap_apply_overlay(flattened_workspace_t& flattened,
                            proposal.beat_zero_audio_offset_seconds)) {
         cache.timing.tap_preview_binding = proposal;
         cache.timing.tap_preview_timing.reset();
-        const auto candidate = build_tap_timing_preview(history.document, proposal);
+        const auto candidate = make_tap_timing_preview(history.document, proposal);
         if (!candidate) return;
         auto timing = build_timing_index(*candidate);
         if (timing) cache.timing.tap_preview_timing = std::move(timing.index);

@@ -724,7 +724,7 @@ auto make_number_row_input_profile(const lane_layout_t& layout, std::uint32_t st
     };
 }
 
-auto default_input_profile_for(const lane_layout_t& layout) -> std::optional<input_profile_t> {
+auto make_default_input_profile_for(const lane_layout_t& layout) -> std::optional<input_profile_t> {
     if (layout.split_stage) {
         if (!make_number_row_input_profile(layout, 0) || !make_number_row_input_profile(layout, 1))
             return std::nullopt;

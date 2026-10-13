@@ -50,7 +50,7 @@ struct tap_timing_apply_proposal_result_t {
     -> tap_timing_apply_proposal_result_t;
 
 // Builds the same BPM/offset edit used by the commit path for read-only grid preview.
-[[nodiscard]] auto build_tap_timing_preview(
+[[nodiscard]] auto make_tap_timing_preview(
     const song_document_t& document, const tap_timing_apply_proposal_t& proposal)
     -> std::optional<chart_document_t>;
 

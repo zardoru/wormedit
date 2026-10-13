@@ -112,7 +112,7 @@ TEST_CASE("Tap timing commit inserts row-zero BPM and undo restores both values 
     auto history = document_history_t::from(apply_song());
     const auto proposed = proposal(history.document, stable_estimate(22'050.0));
     REQUIRE(proposed);
-    const auto preview = build_tap_timing_preview(history.document, *proposed.proposal);
+    const auto preview = make_tap_timing_preview(history.document, *proposed.proposal);
     REQUIRE(preview);
     CHECK(preview->bpms.size() == 1);
     CHECK(preview->bpms.front().position == local_position_t{measure_id_t{10}, 0});

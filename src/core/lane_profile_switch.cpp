@@ -55,7 +55,7 @@ auto materialize_initial_profile_target(document_history_t& scratch, chart_id_t 
     return local_position_t{found->measures.front().id, 0};
 }
 
-auto initial_profile_layout(const chart_document_t& chart, const lane_layout_t& target)
+auto make_initial_profile_layout(const chart_document_t& chart, const lane_layout_t& target)
     -> std::optional<std::pair<lane_layout_t, input_profile_t>> {
     const auto profile = built_in_profile(target.profile_id);
     if (!profile || profile->layout.lanes.size() != target.lanes.size()) return std::nullopt;
@@ -103,7 +103,7 @@ auto insert_initial_lane_profile(document_history_t& history, chart_id_t chart,
         return result;
     }
     const auto found = scratch.document.find_chart(chart);
-    const auto prepared = initial_profile_layout(*found, target);
+    const auto prepared = make_initial_profile_layout(*found, target);
     if (!prepared) {
         reject(result, diagnostic_code_t::invalid_id, "That lane profile is not a supported built-in profile.");
         return result;

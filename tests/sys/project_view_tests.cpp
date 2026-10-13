@@ -126,7 +126,7 @@ TEST_CASE("Project New templates the selected four-key chart instead of the firs
                   {.id = lane_id_t{2}, .name = "Down", .display_order = 1, .glyph = lane_glyph_t::arrow_down},
                   {.id = lane_id_t{3}, .name = "Up", .display_order = 2, .glyph = lane_glyph_t::arrow_up},
                   {.id = lane_id_t{4}, .name = "Right", .display_order = 3, .glyph = lane_glyph_t::arrow_right}}}};
-    profile.input = *default_input_profile_for(profile.layout);
+    profile.input = *make_default_input_profile_for(profile.layout);
     const auto active = apply_new_chart_command(history, history.document.revision, std::move(profile), format_family_t::stepmania);
     require_project(static_cast<bool>(active));
     auto& selected = history.document.charts.back();

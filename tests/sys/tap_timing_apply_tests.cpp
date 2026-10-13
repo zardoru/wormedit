@@ -36,7 +36,7 @@ TEST_CASE("Tap Apply binds a stable proposal and records both values once", "[sy
     runtime.prepare_apply(history.document, false);
     REQUIRE(runtime.apply_proposal());
     const auto proposal = *runtime.apply_proposal();
-    const auto preview = build_tap_timing_preview(history.document, proposal);
+    const auto preview = make_tap_timing_preview(history.document, proposal);
     REQUIRE(preview);
     const auto original = build_timing_index(history.document.charts.front());
     const auto proposed = build_timing_index(*preview);

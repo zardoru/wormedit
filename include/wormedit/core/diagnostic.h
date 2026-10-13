@@ -74,7 +74,12 @@ namespace diagnostic_queries {
 template <class Diagnostic>
 [[nodiscard]] auto has_errors(const std::vector<Diagnostic>& diagnostics) -> bool {
     for (const auto& diagnostic : diagnostics) {
-        if (diagnostic.severity == diagnostic_severity_t::error) return true;
+        if constexpr (requires { diagnostic.severity; }) {
+            if (diagnostic.severity == diagnostic_severity_t::error) return true;
+        } else {
+            // Error-only reports make their implicit severity explicit on the type.
+            if (diagnostic.is_error()) return true;
+        }
     }
     return false;
 }

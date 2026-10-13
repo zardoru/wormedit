@@ -139,3 +139,27 @@ TEST_CASE("invalid slicer inputs return diagnostics and no ranges", "[unit][core
     request.maximum_slices = 10;
     rejects(request, audio_slicer_error_code_t::capacity_exceeded);
 }
+
+namespace {
+
+auto diagnosed_slice_plans_preserve_error_only_reports() -> bool {
+    const auto ready = audio_slice_plan_t::from(base_request());
+    if (!ready.ok() || ready.value.ranges.size() != 80)
+        return false;
+    auto request = base_request();
+    request.sample_rate = 0;
+    const auto rejected = audio_slice_plan_t::from(request);
+    return !rejected.ok() && rejected.value.ranges.empty() &&
+           rejected.diagnostics.size() == 1 && rejected.diagnostics.front().is_error() &&
+           rejected.diagnostics.front().code == audio_slicer_error_code_t::invalid_sample_rate &&
+           rejected.diagnostics.front().message == "sample rate is out of range" &&
+           ready.value.ranges.front() == audio_slice_range_t{0, 6000} &&
+           ready.value.ranges.back() == audio_slice_range_t{474'000, 480'000};
+}
+
+} // namespace
+
+TEST_CASE("diagnosed slicer plans preserve exact ranges and error-only diagnostic metadata",
+          "[unit][core][slicer][result]") {
+    CHECK(diagnosed_slice_plans_preserve_error_only_reports());
+}

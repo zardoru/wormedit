@@ -27,6 +27,12 @@ void initialize_compose_view(WormUiWorkspaceView& workspace, int width, int heig
     workspace.sound_kinds = wormedit::sys::sound_kind_view;
     workspace.new_project_layouts = wormedit::sys::new_project_layout_view;
     workspace.playback_rates = wormedit::sys::playback_rate_view;
+    workspace.bms_encodings = wormedit::sys::bms_encoding_view;
+    workspace.compose.timing_lanes = wormedit::sys::timing_lane_view;
+    workspace.compose.timing_lane_captions = wormedit::sys::timing_caption_view;
+    workspace.compose.note_palette = wormedit::sys::note_palette_view;
+    workspace.setup.output_families = wormedit::sys::output_family_view;
+    workspace.metadata.format_families = wormedit::sys::metadata_family_view;
     workspace.transport_rate_id = static_cast<std::uint32_t>(wormedit::audio::playback_rate_id_t::normal);
     workspace.audio_slices.sound_kinds = wormedit::sys::sound_kind_view;
     workspace.project_loaded = true;

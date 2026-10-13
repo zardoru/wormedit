@@ -153,27 +153,6 @@ auto recovery_comparison_name(wormedit::native_project_recovery_comparison_t com
     return "unknown comparison";
 }
 
-auto format_family_name(wormedit::format_family_t family) -> std::string_view {
-    using family_t = wormedit::format_family_t;
-    switch (family) {
-    case family_t::native_project:
-        return "Native";
-    case family_t::bms:
-        return "BMS";
-    case family_t::stepmania:
-        return "StepMania";
-    case family_t::osu_mania:
-        return "osu!mania";
-    case family_t::bmson:
-        return "BMSON";
-    case family_t::midi:
-        return "MIDI";
-    case family_t::quaver:
-        return "Quaver";
-    }
-    return "Unknown";
-}
-
 auto metadata_value_summary(std::string_view value) -> std::string {
     constexpr std::size_t readable_value_limit = 96;
     if (value.size() <= readable_value_limit)
@@ -471,13 +450,8 @@ void populate_metadata_format_fields(flattened_workspace_t& result,
 
 void append_metadata_format_targets(flattened_workspace_t& result, auto& metadata,
                                     const auto& groups, bool chart_scoped) {
-    constexpr std::array format_families{
-        wormedit::format_family_t::native_project, wormedit::format_family_t::bms,
-        wormedit::format_family_t::stepmania,      wormedit::format_family_t::osu_mania,
-        wormedit::format_family_t::bmson,          wormedit::format_family_t::midi,
-        wormedit::format_family_t::quaver};
-    std::array<const wormedit::format_metadata_t*, format_families.size()> first_groups{};
-    std::array<std::size_t, format_families.size()> first_group_indices{};
+    std::array<const wormedit::format_metadata_t*, wormedit::format_families.size()> first_groups{};
+    std::array<std::size_t, wormedit::format_families.size()> first_group_indices{};
     for (std::size_t group_index = 0; group_index < groups.size(); ++group_index) {
         const auto family_index = static_cast<std::size_t>(groups[group_index].family);
         if (family_index < first_groups.size() && first_groups[family_index] == nullptr) {
@@ -485,7 +459,9 @@ void append_metadata_format_targets(flattened_workspace_t& result, auto& metadat
             first_group_indices[family_index] = group_index;
         }
     }
-    for (const auto family : format_families) {
+    for (const auto& descriptor : wormedit::format_families) {
+        if (!descriptor.offered_as_metadata) continue;
+        const auto family = descriptor.kind;
         const auto family_index = static_cast<std::size_t>(family);
         const auto* found = first_groups[family_index];
         (void)result.metadata.format_target.push_back({
@@ -583,7 +559,7 @@ void populate_metadata_tab(const workspace_projection_context_t& projection, con
                 append("Format-specific fields: " + std::to_string(tab.format_fields.size()));
                 for (const auto& field : tab.format_fields) {
                     append(std::string(field.chart_scoped ? "Difficulty · " : "Song · ") +
-                           std::string(format_family_name(field.family)) + " · " + field.name +
+                           std::string(wormedit::format_family_label(field.family)) + " · " + field.name +
                            ": " + metadata_value_summary(field.value));
                 }
 
@@ -1551,6 +1527,12 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
     result.view.sound_kinds = sound_kind_view;
     result.view.new_project_layouts = new_project_layout_view;
     result.view.playback_rates = playback_rate_view;
+    result.view.bms_encodings = bms_encoding_view;
+    result.view.compose.timing_lanes = timing_lane_view;
+    result.view.compose.timing_lane_captions = timing_caption_view;
+    result.view.compose.note_palette = note_palette_view;
+    result.view.setup.output_families = output_family_view;
+    result.view.metadata.format_families = metadata_family_view;
     result.view.transport_rate_id = static_cast<std::uint32_t>(audio::playback_rate_id_t::normal);
 
     const workspace_projection_context_t projection{

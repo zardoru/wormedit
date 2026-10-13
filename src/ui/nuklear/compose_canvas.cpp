@@ -1,3 +1,4 @@
+#include "ui/nuklear/catalog_view.h"
 #include "ui/field/rect.h"
 
 #include <wormedit/core/rational.h>
@@ -1018,12 +1019,6 @@ static void compose_timing_lane_layout(const ComposePaintContext& paint, Compose
     }
 }
 
-constexpr std::array<const char*, WORM_UI_TIMING_LANE_COUNT> timing_lane_captions{
-    "BPM", "SV", "SPD", "STP", "DLY", "WRP", "KIA", "ANC"};
-constexpr std::array<const char*, WORM_UI_TIMING_LANE_COUNT> timing_lane_descriptions{
-    "BPM · tempo", "SV · scroll multiplier", "SPEEDS · speed transitions", "Stop · pause after notes",
-    "Delay · pause before notes", "Warp · skip chart rows", "Kiai · highlight sections",
-    "Anchor · timing references"};
 constexpr std::array<wormedit::ui::lucide::Glyph, WORM_UI_TIMING_LANE_COUNT> timing_lane_icons{
     wormedit::ui::lucide::Glyph::metronome, wormedit::ui::lucide::Glyph::waves_horizontal,
     wormedit::ui::lucide::Glyph::gauge, wormedit::ui::lucide::Glyph::pause,
@@ -1033,7 +1028,7 @@ constexpr std::array<wormedit::ui::lucide::Glyph, WORM_UI_TIMING_LANE_COUNT> tim
 static void draw_compose_timing_header(const ComposePaintContext& paint, std::size_t index,
                                         struct nk_rect lane, nk_color tint) {
     if (lane.w < 17.0f) return;
-    const auto* caption = timing_lane_captions[index];
+    const auto* caption = wormedit::ui::kind_label(paint.view->timing_lane_captions, static_cast<std::uint32_t>(index), "");
     const auto* font = paint.context->style.font;
     const auto length = static_cast<int>(strlen(caption));
     const auto caption_width = font->width(font->userdata, font->height, caption, length);
@@ -1071,7 +1066,7 @@ static void draw_compose_timing_header_tooltip(const ComposePaintContext& paint,
         if (lane.w <= 0) continue;
         if (wormedit::ui::nuklear::tooltip::hovered(paint.context,
                 nk_rect(lane.x, paint.viewport.y, lane.w, 20))) {
-            wormedit::ui::nuklear::tooltip::text(paint.context, timing_lane_descriptions[index]);
+            wormedit::ui::nuklear::tooltip::text(paint.context, wormedit::ui::kind_label(paint.view->timing_lanes, static_cast<std::uint32_t>(index), ""));
             return;
         }
     }

@@ -1,3 +1,4 @@
+#include <wormedit/core/catalogs.h>
 #include "ui/field/rect.h"
 #include "ui/nuklear/modal_input.h"
 #include "ui/nuklear/text_fit.h"
@@ -2847,22 +2848,10 @@ static void render_bms_encoding_dialog(const WormUiWorkspaceView& view,
         g_bms_encoding_path_seen = path;
         g_bms_encoding_choice = 0;
     }
-    constexpr std::array<const char*, 5> all_labels{
-        "UTF-8", "CP932 (Japanese)", "EUC-KR (Korean)", "CP949 (Korean)",
-        "Windows-1252 (Western)"};
-    constexpr std::array<wormedit::text_encoding_t, 5> all_encodings{
-        wormedit::text_encoding_t::utf8, wormedit::text_encoding_t::cp932,
-        wormedit::text_encoding_t::euc_kr, wormedit::text_encoding_t::cp949,
-        wormedit::text_encoding_t::windows_1252};
-    std::array<const char*, 5> labels{};
-    std::array<std::uint8_t, 5> indexes{};
-    int count = 0;
-    for (std::size_t i = 0; i < all_encodings.size(); ++i) {
-        if (!wormedit::is_bms_text_encoding_supported(all_encodings[i])) continue;
-        labels[static_cast<std::size_t>(count)] = all_labels[i];
-        indexes[static_cast<std::size_t>(count)] = static_cast<std::uint8_t>(i + 1);
-        ++count;
-    }
+    std::array<const char*, wormedit::text_encoding_count> labels{};
+    const int count = static_cast<int>(std::min(view.bms_encodings.count, labels.size()));
+    for (int i = 0; i < count; ++i)
+        labels[static_cast<std::size_t>(i)] = view.bms_encodings.entries[i].label;
     if (g_bms_encoding_choice >= count) g_bms_encoding_choice = 0;
     namespace chrome = wormedit::ui::chrome;
     auto& dialog = g_project_modal_dialog;
@@ -2882,9 +2871,9 @@ static void render_bms_encoding_dialog(const WormUiWorkspaceView& view,
             cancel_bms_encoding_dialog(action);
         if (chrome::dialog_button(dialog, g_context, "Open chart", chrome::DialogButtonRole::primary) &&
             action.kind == WORM_UI_WORKSPACE_ACTION_NONE &&
-            path.size() < sizeof(action.project_path)) {
+            count > 0 && path.size() < sizeof(action.project_path)) {
             action.kind = WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
-            action.bms_encoding_index = indexes[static_cast<std::size_t>(g_bms_encoding_choice)];
+            action.bms_encoding_id = view.bms_encodings.entries[g_bms_encoding_choice].id;
             std::memcpy(action.project_path, path.c_str(), path.size() + 1);
         }
     }

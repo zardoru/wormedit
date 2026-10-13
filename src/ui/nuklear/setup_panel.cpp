@@ -1,3 +1,4 @@
+#include "ui/nuklear/catalog_view.h"
 #include "ui/nuklear/text_fit.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/setup_panel.h"
@@ -418,7 +419,6 @@ void render_project_charts(nk_context* context, const WormUiSetupView& view, Wor
     render_row_menu(context, view, action);
 }
 
-constexpr const char* output_family_names[]{"Native", "BMS", "SM/SSC", "osu!mania", "BMSON"};
 
 void begin_output_group_editor(const WormUiSetupView& view, const WormUiProjectOutputGroupView* group) {
     auto& state = project_state;
@@ -461,6 +461,20 @@ void render_output_group_members(nk_context* context, const WormUiSetupView& vie
             &project_state.group_charts[i]);
     }
 }
+auto render_output_family_picker(nk_context* context, const WormUiKindCatalogView& catalog,
+                                 int selected) -> int {
+    const auto label = wormedit::ui::kind_label(catalog, selected, "Unsupported");
+    if (wormedit::ui::chrome::safe_combo_begin_label(context, label, nk_vec2(220, 160))) {
+        nk_layout_row_dynamic(context, 24, 1);
+        for (std::size_t index = 0; index < catalog.count; ++index) {
+            const auto& family = catalog.entries[index];
+            if (nk_combo_item_label(context, family.label, NK_TEXT_LEFT))
+                selected = static_cast<int>(family.id);
+        }
+        wormedit::ui::chrome::safe_combo_end(context);
+    }
+    return selected;
+}
 void render_output_group_editor(nk_context* context, const WormUiSetupView& view, WormUiWorkspaceAction& action) {
     auto& state = project_state;
     if (!state.group_editor_open) return;
@@ -473,7 +487,7 @@ void render_output_group_editor(nk_context* context, const WormUiSetupView& view
     nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.group_name, sizeof(state.group_name), nk_filter_default);
     nk_layout_row(context, NK_DYNAMIC, 28, 2, fields);
     nk_label(context, "Format", NK_TEXT_LEFT);
-    state.group_family = wormedit::ui::chrome::safe_combo(context, output_family_names, 5, state.group_family, 24, nk_vec2(220, 160));
+    state.group_family = render_output_family_picker(context, view.output_families, state.group_family);
     nk_layout_row(context, NK_DYNAMIC, 28, 2, fields);
     nk_label(context, "Output path", NK_TEXT_LEFT);
     nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.group_path, sizeof(state.group_path), nk_filter_default);
@@ -504,7 +518,7 @@ void render_output_group_row(nk_context* context, const WormUiSetupView& view,
     constexpr float ratios[]{0.20f, 0.10f, 0.28f, 0.08f, 0.10f, 0.12f, 0.12f};
     nk_layout_row(context, NK_DYNAMIC, 28, 7, ratios);
     nk_label(context, group.name, NK_TEXT_LEFT);
-    nk_label(context, group.family <= 4 ? output_family_names[group.family] : "Unsupported", NK_TEXT_LEFT);
+    nk_label(context, wormedit::ui::kind_label(view.output_families, group.family, "Unsupported"), NK_TEXT_LEFT);
     nk_label(context, group.path, NK_TEXT_LEFT);
     nk_labelf(context, NK_TEXT_LEFT, "%zu", group.chart_count);
     const bool editable = !view.charts_truncated && group.chart_count <= WORM_UI_PROJECT_CHART_CAPACITY && std::strlen(group.name) < sizeof(project_state.group_name) &&

@@ -1,5 +1,6 @@
 #pragma once
 #include "common.h"
+#include "catalog.h"
 
 typedef enum WormUiRecoveryAction {
     WORM_UI_RECOVERY_ACTION_INSPECT = 1 << 0,
@@ -202,6 +203,7 @@ typedef struct WormUiProjectOutputGroupAction {
 } WormUiProjectOutputGroupAction;
 
 typedef struct WormUiSetupView {
+    WormUiKindCatalogView output_families;
     bool visible;
     uint64_t song_id;
     uint64_t document_revision;

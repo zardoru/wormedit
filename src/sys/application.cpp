@@ -1,3 +1,4 @@
+#include "sys/catalog_projection.h"
 #include "sys/application.h"
 #include "sys/application_edit_inputs.h"
 #include "sys/external_player_runtime.h"
@@ -1309,6 +1310,7 @@ struct pending_close_t {
     std::uint8_t layout_index{};
     std::array<char, sizeof(WormUiWorkspaceAction::new_project_layout_id)> layout_id{};
     std::uint8_t encoding_index{};
+    std::uint32_t encoding_id{};
     bool awaiting_encoding{};
     // Shown in the confirmation only when a save started from it failed.
     std::string save_failure;
@@ -2958,6 +2960,7 @@ struct application_t::implementation_t {
             pending.revision != session.history.document.revision)
             return false;
         pending.encoding_index = action.bms_encoding_index;
+        pending.encoding_id = action.bms_encoding_id;
         pending.awaiting_encoding = false;
         (void)finish_confirmed_close(pending);
         return true;
@@ -3010,19 +3013,17 @@ struct application_t::implementation_t {
     }
 
     void open_project_session(const WormUiWorkspaceAction& action) {
-        constexpr std::array<wormedit::text_encoding_t, 5> encodings{
-            wormedit::text_encoding_t::utf8, wormedit::text_encoding_t::cp932,
-            wormedit::text_encoding_t::euc_kr, wormedit::text_encoding_t::cp949,
-            wormedit::text_encoding_t::windows_1252};
-        if (action.bms_encoding_index > encodings.size()) {
+        const auto kind = static_cast<wormedit::text_encoding_t>(action.bms_encoding_id);
+        if (action.bms_encoding_id != 0 &&
+            !wormedit::sys::is_bms_encoding_offered(action.bms_encoding_id)) {
             post_project_feedback(wormedit::notification_severity_t::warning,
                                   wormedit::notification_source_t::import_,
                                   "Choose a supported BMS text encoding.");
             return;
         }
-        const auto encoding = action.bms_encoding_index == 0
+        const auto encoding = action.bms_encoding_id == 0
                                   ? std::optional<wormedit::text_encoding_t>{}
-                                  : std::optional{encodings[action.bms_encoding_index - 1]};
+                                  : std::optional{kind};
         auto opened = wormedit::sys::open_project_file(action.project_path, encoding);
         if (!opened) {
             post_project_feedback(opened.needs_encoding_choice
@@ -3402,6 +3403,7 @@ struct application_t::implementation_t {
         std::copy(pending.layout_id.begin(), pending.layout_id.end(),
                   std::begin(action.new_project_layout_id));
         action.bms_encoding_index = pending.encoding_index;
+        action.bms_encoding_id = pending.encoding_id;
         std::snprintf(action.project_path, sizeof(action.project_path), "%s",
                       pending.project_path.c_str());
         if (pending.target == close_target_t::new_project)
@@ -3551,6 +3553,7 @@ struct application_t::implementation_t {
             std::copy(std::begin(replacement->new_project_layout_id),
                       std::end(replacement->new_project_layout_id), pending.layout_id.begin());
             pending.encoding_index = replacement->bms_encoding_index;
+            pending.encoding_id = replacement->bms_encoding_id;
         }
         if (!confirm || !session.project_identity.session_loaded ||
             !wormedit::is_document_dirty(session.history))

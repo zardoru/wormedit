@@ -66,6 +66,7 @@ typedef struct WormUiMetadataDropTarget {
 } WormUiMetadataDropTarget;
 
 typedef struct WormUiMetadataView {
+    WormUiKindCatalogView format_families;
     bool visible;
     bool song_fields_editable;
     bool chart_fields_editable;

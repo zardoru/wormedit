@@ -5458,7 +5458,7 @@ TEST_CASE("BMS text encoding dialog keeps its actions and drops the repeated pro
             if (frame.get().kind == WORM_UI_WORKSPACE_ACTION_OPEN_FILE) {
                 opened = true;
                 CHECK(std::string(frame.get().project_path) == "/charts/song.bms");
-                CHECK(frame.get().bms_encoding_index == 1);
+                CHECK(frame.get().bms_encoding_id == static_cast<std::uint32_t>(wormedit::text_encoding_t::utf8));
             }
         CHECK(opened);
     }
@@ -8333,4 +8333,28 @@ TEST_CASE("Transport rate label comes from the view and is selected by stable id
     harness.view().transport_available = true;
     static_cast<void>(harness.frame());
     CHECK(harness.drawn_text().find("R@") != std::string::npos);
+}
+
+TEST_CASE("BMS encoding dialog sends the offered identity independently of position",
+          "[frontend-state][event-harness][catalog-wiring]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    static constexpr WormUiKindDescriptorView entries[]{
+        {static_cast<std::uint32_t>(wormedit::text_encoding_t::windows_1252), "Western choice"},
+        {static_cast<std::uint32_t>(wormedit::text_encoding_t::utf8), "Unicode choice"}};
+    harness.view().bms_encodings = {.entries = entries, .count = std::size(entries)};
+    harness.view().pending_bms_encoding_path = "/charts/catalog.bms";
+    (void)harness.frame();
+    (void)harness.frame();
+    (void)harness.frame();
+    CHECK(harness.drawn_text().find("Western choice") != std::string::npos);
+    const auto open = harness.drawn_text_center("Open chart");
+    REQUIRE(open);
+    bool opened = false;
+    for (const auto& frame : click_at(harness, open->first, open->second)) {
+        if (frame.get().kind != WORM_UI_WORKSPACE_ACTION_OPEN_FILE) continue;
+        opened = true;
+        CHECK(frame.get().bms_encoding_id == entries[0].id);
+    }
+    CHECK(opened);
 }

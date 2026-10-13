@@ -443,6 +443,8 @@ typedef struct WormUiWorkspaceAction {
     // OPEN_FILE: 0 automatic, 1 UTF-8, 2 CP932, 3 EUC-KR, 4 CP949,
     // 5 Windows-1252.
     uint8_t bms_encoding_index;
+    // Stable text_encoding_t id; zero requests automatic detection.
+    uint32_t bms_encoding_id;
     // Initial layout index: 4K, 5K, 6K, 7K, 8K, 9K, 10K, 14K.
     uint8_t new_project_layout_index;
     // Stable core layout identity; the legacy index field is retained for ABI compatibility.

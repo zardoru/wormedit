@@ -278,13 +278,15 @@ auto apply_tap_timing_proposal(document_history_t& history, std::uint64_t expect
         reject(result, diagnostic_code_t::invalid_id, "tap timing proposal targets a stale revision");
         return result;
     }
-    const auto proposed = proposed_document(history.document, proposal);
+    auto proposed = proposed_document(history.document, proposal);
     if (!proposed) {
         reject(result, diagnostic_code_t::invalid_id,
                "tap timing proposal no longer matches a valid chart");
         return result;
     }
-    return commit_document_command(history, *proposed, "Apply tap timing");
+    auto transaction = document_command_transaction_t::from(history);
+    transaction.adopt_document(std::move(*proposed));
+    return transaction.commit("Apply tap timing");
 }
 
 } // namespace wormedit

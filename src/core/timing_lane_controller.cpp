@@ -835,7 +835,9 @@ auto move_timing_lane_event_group(document_history_t& history, chart_id_t chart_
             return result;
         }
     }
-    return commit_document_command(history, std::move(staged.document), "Move timing markers");
+    auto transaction = document_command_transaction_t::from(history);
+    transaction.adopt_document(std::move(staged.document));
+    return transaction.commit("Move timing markers");
 }
 
 auto confirm_timing_lane_pseudonote(document_history_t& history,
@@ -1036,7 +1038,9 @@ auto delete_timing_lane_event_group(document_history_t& history, chart_id_t char
             return result;
         }
     }
-    return commit_document_command(history, std::move(staged.document), "Delete timing markers");
+    auto transaction = document_command_transaction_t::from(history);
+    transaction.adopt_document(std::move(staged.document));
+    return transaction.commit("Delete timing markers");
 }
 
 } // namespace wormedit

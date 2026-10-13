@@ -122,7 +122,8 @@ auto apply_timing_anchor_edit(document_history_t& history, std::uint64_t expecte
         return result;
     }
 
-    auto proposed = history.document;
+    auto transaction = document_command_transaction_t::from(history);
+    auto& proposed = transaction.copy_document();
     anchor_edit_result_t edit_result;
     std::visit(
         [&](const auto& edit) {
@@ -146,7 +147,7 @@ auto apply_timing_anchor_edit(document_history_t& history, std::uint64_t expecte
     if (!result.diagnostics.empty() || !edit_result.changed) {
         return result;
     }
-    return commit_document_command(history, std::move(proposed), edit_result.command_label);
+    return transaction.commit(edit_result.command_label);
 }
 
 } // namespace wormedit

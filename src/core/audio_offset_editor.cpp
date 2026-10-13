@@ -129,7 +129,8 @@ auto apply_audio_offset_edit(document_history_t& history, std::uint64_t expected
                                            "audio offset must be an exact signed rational"));
         return result;
     }
-    auto proposed = history.document;
+    auto transaction = document_command_transaction_t::from(history);
+    auto& proposed = transaction.copy_document();
     const auto selected = std::ranges::find(proposed.charts, chart, &chart_document_t::id);
     if (!chart || selected == proposed.charts.end()) {
         result.diagnostics.push_back(
@@ -144,7 +145,7 @@ auto apply_audio_offset_edit(document_history_t& history, std::uint64_t expected
                                            "Offset edit would exceed the audio chart measure limits"));
         return result;
     }
-    return commit_document_command(history, std::move(proposed), "Set audio offset");
+    return transaction.commit("Set audio offset");
 }
 
 auto commit_audio_offset_drag(document_history_t& history, const audio_offset_drag_t& drag,

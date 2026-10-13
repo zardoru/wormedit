@@ -286,7 +286,8 @@ auto apply_scroll_speed_edit(document_history_t& history, std::uint64_t expected
         return result;
     }
 
-    auto proposed = history.document;
+    auto transaction = document_command_transaction_t::from(history);
+    auto& proposed = transaction.copy_document();
     scroll_speed_edit_context_t context{.proposed = proposed, .result = result,
         .limits = limits, .command_label = {}, .changed = false};
     std::visit([&](const auto& edit) { apply_scroll_speed_operation(context, edit); }, action);
@@ -294,7 +295,7 @@ auto apply_scroll_speed_edit(document_history_t& history, std::uint64_t expected
     if (!result.diagnostics.empty() || !context.changed) {
         return result;
     }
-    return commit_document_command(history, std::move(proposed), std::move(context.command_label));
+    return transaction.commit(std::move(context.command_label));
 }
 
 } // namespace wormedit

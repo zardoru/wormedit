@@ -1673,7 +1673,8 @@ auto apply_sv_recipe_edit(document_history_t& history, std::uint64_t expected_re
         return result;
     }
 
-    auto proposed = history.document;
+    auto transaction = document_command_transaction_t::from(history);
+    auto& proposed = transaction.copy_document();
     sv_recipe_edit_context_t context{.proposed = proposed,
                                      .result = result,
                                      .label = {},
@@ -1682,7 +1683,7 @@ auto apply_sv_recipe_edit(document_history_t& history, std::uint64_t expected_re
     if (!result.diagnostics.empty() || !context.changed) {
         return result;
     }
-    return commit_document_command(history, std::move(proposed), std::move(context.label));
+    return transaction.commit(std::move(context.label));
 }
 
 } // namespace wormedit

@@ -482,7 +482,9 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-623 Put timing and index queries on their types
 
-- **Status:** Ready
+- **Status:** Partly done (core and audio; sys wrappers deferred)
+- **Completion (2026-10-13):** Commit `206178c`. `timing_index_t` gains `seconds_at`, `row_at` (exact, plus a `chart_end_policy_t` overload), `seconds_at_approx`, `row_at_approx`, `tail_seconds_per_row` and `row_at_frame`; `chart_end_policy_t {reject, clamp_to_end, clamp_to_last_row, extrapolate_tail}`. Core/audio callers migrated. The sys wrapper → member + policy mapping is planned in the follow-up file. Lane drake/core-queries; deferred sys/UI call sites (file:line → new call) are in the lane's `02-T-623-sys-ui-followups.txt`, copied to `/tmp/wormedit-lanes/drake-core-queries-agent/`, and go to wave 2.
+- **Gate evidence (Claude, on main with FFmpeg on, after all three core parts):** build exit 0; `100% tests passed out of 3550`; event harness `500/500`; documentation `1/1`.
 - **Findings closed:** TI1–TI4 (targets; not yet closed).
 - **Stale-plan audit:** Search by behavior: rational time divisions, end clamps, tail-BPM extrapolation, frame-to-seconds conversions and copied index queries. Confirm every A lead and current caller/body equivalence; record stale claims, stricter validation, diagnostics, rounding and policy differences before editing.
 - **Outcome:** `timing_index_t` query members (`seconds_at`, `row_at`, `*_approx` with `chart_end_policy_t`, `tail_seconds_per_row`, `row_at_frame`). Each sys wrapper becomes a call with its current policy. Sweep the other index types for copied queries (TI4). Runs after T-617.
@@ -545,7 +547,9 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-626 Move document and lane queries onto owners
 
-- **Status:** Ready
+- **Status:** Partly done (core, audio, formats; sys/UI lookups deferred)
+- **Completion (2026-10-13):** Commit `126d88f`. Document/chart lookup members, `lane_layout_t::find`/`contains`/`has_same_shape`, `lane_definition_t::is_editable`, defaulted `operator==` on lane, channel-map, MIDI destination and `target_resource_identity_t` types, exhaustive control-kind predicates beside `bms_control_kind_t`. The free `find_chart` stays as a forwarder for sys until wave 2. Nit for T-612: `has_positive_control_value` only forwards to `has_control_value`. Lane drake/core-queries; deferred sys/UI call sites (file:line → new call) are in the lane's `03-T-626-sys-ui-followups.txt`, copied to `/tmp/wormedit-lanes/drake-core-queries-agent/`, and go to wave 2.
+- **Gate evidence (Claude, on main with FFmpeg on, after all three core parts):** build exit 0; `100% tests passed out of 3550`; event harness `500/500`; documentation `1/1`.
 - **Findings closed:** Catalog P4 (targets; not yet closed).
 - **Stale-plan audit:** Search by behavior: ranges::find of charts/assets/notes/events by id, lane predicates/equality field sets, layout-at loops and projection maps. Confirm every A lead and current caller/body equivalence; record stale claims, stricter validation, diagnostics, rounding and policy differences before editing.
 - **Outcome:** Document, chart and lane queries as members (P4): `song_document_t`/`chart_document_t` `find_chart`/`find_audio_asset`/`find_note`/`find_bgm_event`/`find_measure` members, migrating the ~110 inline chart lookups and the other inline lookups; `lane_layout_t` `find`/`contains`, `lane_definition_t::is_editable`, one `layout_at` with a row overload; defaulted `operator==` on `target_resource_identity_t` and lane types, plus a named shape comparator; control-kind predicates beside `bms_control_kind_t`. The per-projection id maps become a shared index only where an index is built today (no new allocation). Runs after T-617; before T-621.
@@ -567,7 +571,9 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-627 Share split helpers and projection contexts
 
-- **Status:** Ready
+- **Status:** Partly done (core; the compose projection context is deferred to wave 2)
+- **Completion (2026-10-13):** Commit `5da6907`. One definition each of `minimum_viewport_scroll`, `normalized_position_span`, `snapped_position`, `absolute_row_at_y_pixels` and `find_active_lane` in `interaction_internal.h`; shared `valid_pause_unit`/`valid_warp_encoding` and one `next_source_order` for the timing editors. Lane drake/core-queries; deferred sys/UI call sites (file:line → new call) are in the lane's `01-T-627-sys-ui-followups.txt`, copied to `/tmp/wormedit-lanes/drake-core-queries-agent/`, and go to wave 2.
+- **Gate evidence (Claude, on main with FFmpeg on, after all three core parts):** build exit 0; `100% tests passed out of 3550`; event harness `500/500`; documentation `1/1`.
 - **Findings closed:** Catalog P1, P8 (targets; not yet closed).
 - **Stale-plan audit:** Search by behavior: viewport/span/snap/y-pixel/lane lookup bodies, pause/warp validators, source-order scans and field-by-field frame/scope repacking. Confirm every A lead and current caller/body equivalence; record stale claims, stricter validation, diagnostics, rounding and policy differences before editing.
 - **Outcome:** Split leftovers and rebuilt contexts (P1/P8): one definition each of `minimum_viewport_scroll`, `normalized_position_span`, `snapped_position`, `absolute_row_at_y_pixels` and `find_active_lane` in `interaction_internal.h`; shared timing-event validators and `next_source_order`; `compose_projection_context_t {frame, scope}` plus `compose_chart_scope_t::for_view`, replacing the five rebuilds and four wrapper structs. Runs before T-621.

@@ -65,8 +65,6 @@ struct display_preferences_t {
 [[nodiscard]] auto resolve_field_scheme(const display_preferences_t&, std::string_view layout_key)
     -> std::string_view;
 [[nodiscard]] auto is_valid_field_scheme_overrides(const display_preferences_t&) -> bool;
-// Compatibility for the coordinated sys/UI migration.
-inline auto valid_field_scheme_overrides(const display_preferences_t& value0) -> bool { return is_valid_field_scheme_overrides(value0); }
 
 struct external_player_definition_t {
     std::string name;
@@ -117,8 +115,6 @@ struct preferences_load_result_t {
 
 [[nodiscard]] auto default_program_preferences() -> program_preferences_t;
 [[nodiscard]] auto is_valid_external_player_preferences(const external_player_preferences_t&) -> bool;
-// Compatibility for the coordinated sys/UI migration.
-inline auto valid_external_player_preferences(const external_player_preferences_t& value0) -> bool { return is_valid_external_player_preferences(value0); }
 [[nodiscard]] auto parse_program_preferences(std::string_view bytes) -> preferences_parse_result_t;
 // Invalid typed values reject serialization; no project data or shortcut bindings are serialized.
 [[nodiscard]] auto serialize_program_preferences(const program_preferences_t& preferences)

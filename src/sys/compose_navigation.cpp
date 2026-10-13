@@ -135,7 +135,7 @@ auto navigate_compose_measure(document_history_t& history, editor_interaction_st
     const auto* chart = history.document.find_chart(state.chart);
     if (!chart) return {.status = "The selected difficulty is no longer available."};
     compose_navigation_target_t target;
-    if (chart_has_virtual_tail(*chart)) {
+    if (has_chart_virtual_tail(*chart)) {
         const auto bms = chart->source_family == format_family_t::bms;
         if (!bms && number == 0) return {.status = "The requested measure is outside this chart."};
         const auto index = bms ? number : number - 1;

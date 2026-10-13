@@ -65,7 +65,7 @@ TEST_CASE("SDL dummy output drives and hard-stops a primed audition session",
 
     const auto stopped = output.stop();
     CHECK(stopped.scheduled_voices <= 1);
-    CHECK_FALSE(session.active());
+    CHECK_FALSE(session.is_active());
     output.close();
 }
 
@@ -97,7 +97,7 @@ auto audition_lock_order_stress() -> bool {
     std::array<float, 64> samples;
     samples.fill(1.0F);
     static_cast<void>(session.render(samples));
-    return !session.active() && std::ranges::all_of(samples, [](float value) { return value == 0.0F; });
+    return !session.is_active() && std::ranges::all_of(samples, [](float value) { return value == 0.0F; });
 }
 } // namespace
 
@@ -129,9 +129,9 @@ auto rejected_audition_continues_previous_session() -> bool {
     const auto before = session.timeline_frame();
     const auto rejected = output.start({});
     if (rejected.status != wormedit::sys::sdl_audition_start_status_t::session_failed ||
-        !session.active() || bridge.session_token() != token) return false;
+        !session.is_active() || bridge.session_token() != token) return false;
     const auto deadline = SDL_GetTicks() + 2'000;
-    while (session.timeline_frame() <= before && session.active() && SDL_GetTicks() < deadline)
+    while (session.timeline_frame() <= before && session.is_active() && SDL_GetTicks() < deadline)
         SDL_Delay(2);
     return session.timeline_frame() > before;
 }
@@ -166,7 +166,7 @@ auto streamed_audition_without_service() -> bool {
     while (session.timeline_frame() == 0 && SDL_GetTicks() < deadline) SDL_Delay(2);
     const bool progressed = session.timeline_frame() > 0;
     static_cast<void>(output.stop());
-    return progressed && !output.service() && !session.active();
+    return progressed && !output.service() && !session.is_active();
 }
 }
 TEST_CASE("SDL streamed audition decodes and advances without caller service",

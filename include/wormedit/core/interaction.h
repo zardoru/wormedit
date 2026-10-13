@@ -1189,8 +1189,6 @@ auto clear_editor_double_click_state(editor_double_click_state_t& state) -> void
 
 // The chart source family determines which authoring kinds are available.
 [[nodiscard]] auto is_note_kind_allowed(const chart_document_t& chart, note_kind_t kind) -> bool;
-// Compatibility for the coordinated sys/UI migration.
-inline auto note_kind_allowed(const chart_document_t& chart, note_kind_t kind) -> bool { return is_note_kind_allowed(chart, kind); }
 [[nodiscard]] auto arm_note_kind(const document_history_t& history,
                                  editor_interaction_state_t& state, note_kind_t kind)
     -> editor_interaction_result_t;

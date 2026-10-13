@@ -33,7 +33,7 @@ void post_audition_started(const notification_sink_t& notifications, bool starte
 
 void pause_preview(audio::preview_session_t& preview_session, sdl_preview_output_t& preview_output,
                    runtime::chart_preview_t& preview_state) {
-    if (!preview_session.active()) {
+    if (!preview_session.is_active()) {
         return;
     }
     const auto frame = preview_session.timeline_frame();
@@ -72,7 +72,7 @@ void process_object_request(const editor_object_audition_request_t& request,
         history.document, {request.document_revision, request.chart, request.object.id},
         inputs.audition.sources.bindings(history.document));
     if (prepared) {
-        if (!audio::bound_stem_audition(
+        if (!audio::is_bound_stem_audition(
                 history.document, object_sound(history.document, request.chart, request.object.id),
                 inputs.audition.sources.bindings(history.document), prepared.prepared->clips)) {
             inputs.notifications.post(notification_severity_t::warning,
@@ -156,7 +156,7 @@ void process_sound_audition_request(std::optional<resource_id_t>& request,
     }
     std::vector<audio::audition_clip_t> clips{
         {binding->source, 0, binding->output_frame_count, 1.0F}};
-    if (!audio::bound_stem_audition(history.document, resource_id, bindings, clips)) {
+    if (!audio::is_bound_stem_audition(history.document, resource_id, bindings, clips)) {
         inputs.notifications.post(notification_severity_t::warning, notification_source_t::audio,
                                   "The stem preview has invalid decoded source geometry.");
         return;

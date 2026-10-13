@@ -148,7 +148,7 @@ auto failed_import_feedback(const wormedit::task_result_t& completed,
                             const std::shared_ptr<const metadata_asset_import_task_result_t>& imported)
     -> std::optional<metadata_import_feedback_t> {
     using namespace wormedit;
-    if (!completed.succeeded() || !imported) {
+    if (!completed.is_successful() || !imported) {
         const auto cancelled = completed.error &&
                                completed.error->code == task_error_code_t::cancelled;
         return metadata_import_feedback_t{
@@ -204,7 +204,7 @@ auto copy_preview_feedback(const wormedit::task_result_t& completed,
                            const std::shared_ptr<const wormedit::project_asset_copy_result_t>& inspected)
     -> std::pair<std::string, wormedit::notification_severity_t> {
     using namespace wormedit;
-    if (!completed.succeeded() || !inspected) {
+    if (!completed.is_successful() || !inspected) {
         const auto cancelled = completed.error &&
                                completed.error->code == task_error_code_t::cancelled;
         return {completed.error ? completed.error->message : "Copy inspection returned no result.",
@@ -585,7 +585,7 @@ void metadata_asset_t::cleanup(const std::filesystem::path& asset_base) {
     if (impl_->pending_import) {
         if (const auto completed = impl_->pending_import->graph.result(
                 impl_->pending_import->task);
-            completed && completed->succeeded()) {
+            completed && completed->is_successful()) {
             const auto imported =
                 wormedit::task_value_cast<metadata_asset_import_task_result_t>(*completed);
             if (imported && imported->copy.status ==

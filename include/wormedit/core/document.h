@@ -179,8 +179,6 @@ struct lane_layout_t {
     [[nodiscard]] auto find(lane_id_t id) const -> const lane_definition_t*;
     [[nodiscard]] auto find(lane_id_t id) -> lane_definition_t*;
     [[nodiscard]] auto has_lane(lane_id_t id) const -> bool;
-    // Compatibility for the coordinated sys/UI migration.
-    inline auto contains(lane_id_t id) const -> bool { return has_lane(id); }
     // Branch reprojection compares source lane shape, ignoring generated IDs/presentation.
     [[nodiscard]] auto has_same_shape(const lane_layout_t& other) const -> bool;
 };

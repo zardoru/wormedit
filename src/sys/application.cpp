@@ -629,7 +629,7 @@ auto edit_external_player_preferences(external_player_runtime_t& runtime,
         break;
     default: return {};
     }
-    if (!wormedit::valid_external_player_preferences(candidate)) return post_callback_feedback(notifications,
+    if (!wormedit::is_valid_external_player_preferences(candidate)) return post_callback_feedback(notifications,
         wormedit::notification_severity_t::warning, wormedit::notification_source_t::system, "External-player preferences are invalid.");
     auto program = runtime.program_preferences->preferences;
     program.players = candidate;
@@ -722,7 +722,7 @@ void refresh_note_kind_commands(wormedit::command_registry_t& registry,
         {"fake", note_kind_t::fake}, {"roll", note_kind_t::roll}};
     for (const auto& [name, kind] : note_kinds)
         (void)update_command_state(registry, command_id_t{"edit.note_kind_" + std::string(name)},
-            compose_ready && note_kind_allowed(*chart, kind) && !pending,
+            compose_ready && is_note_kind_allowed(*chart, kind) && !pending,
             compose_ready && paint_active && compose_state->armed_note_kind == kind);
 }
 
@@ -2293,8 +2293,8 @@ struct application_t::implementation_t {
     }
 
     auto can_transition_project() -> bool {
-        if (session.autosave_loop.busy() || jobs.resource_copy_runtime.busy() ||
-            jobs.export_runtime.busy() || jobs.metadata_asset_runtime.import_pending()) {
+        if (session.autosave_loop.is_busy() || jobs.resource_copy_runtime.is_busy() ||
+            jobs.export_runtime.is_busy() || jobs.metadata_asset_runtime.import_pending()) {
             post_project_feedback(wormedit::notification_severity_t::warning,
                                   wormedit::notification_source_t::document,
                                   "Wait for the current file operation before changing projects.");
@@ -2386,7 +2386,7 @@ struct application_t::implementation_t {
                                   "Create or open a project before saving.");
             return false;
         }
-        if (jobs.resource_copy_runtime.busy() || jobs.export_runtime.busy() ||
+        if (jobs.resource_copy_runtime.is_busy() || jobs.export_runtime.is_busy() ||
             jobs.metadata_asset_runtime.import_pending()) {
             post_project_feedback(notification_severity_t::warning, notification_source_t::document,
                                   "Wait for the current file operation before saving.");
@@ -2903,8 +2903,8 @@ struct application_t::implementation_t {
     }
 
     auto is_project_replacement_busy() -> bool {
-        if (!session.autosave_loop.busy() && !jobs.resource_copy_runtime.busy() &&
-            !jobs.export_runtime.busy() && !jobs.metadata_asset_runtime.import_pending())
+        if (!session.autosave_loop.is_busy() && !jobs.resource_copy_runtime.is_busy() &&
+            !jobs.export_runtime.is_busy() && !jobs.metadata_asset_runtime.import_pending())
             return false;
         post_project_feedback(wormedit::notification_severity_t::warning,
                               wormedit::notification_source_t::document,
@@ -2985,7 +2985,7 @@ struct application_t::implementation_t {
         if (action.kind < WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT ||
             action.kind > WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE)
             return false;
-        if (session.autosave_loop.busy()) {
+        if (session.autosave_loop.is_busy()) {
             platform.notification_sink.post(
                 wormedit::notification_severity_t::warning,
                 wormedit::notification_source_t::recovery,
@@ -3124,7 +3124,7 @@ struct application_t::implementation_t {
         } else if (const auto metadata_status = wormedit::sys::dispatch_metadata_action(
                        action, metadata_inputs(),
                        application_command_state.audio_offset_edits_locked(),
-                       jobs.resource_copy_runtime.busy(), jobs.export_runtime.busy(), true)) {
+                       jobs.resource_copy_runtime.is_busy(), jobs.export_runtime.is_busy(), true)) {
             static_cast<void>(metadata_status);
         } else if (dispatch_timing_workspace_action(action, application_command_state)) {
             // The timing producer publishes feedback and consumes this action.
@@ -4242,7 +4242,7 @@ struct application_t::implementation_t {
     }
 
     auto is_transport_active() -> bool {
-        return audio_runtime.audition_session.active() || audio_runtime.preview_output.playing() ||
+        return audio_runtime.audition_session.is_active() || audio_runtime.preview_output.playing() ||
                audio_runtime.preview_state.paused;
     }
 

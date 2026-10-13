@@ -7932,7 +7932,7 @@ TEST_CASE("BGA file drops share retained POSITION and reject changed origins",
     expect_t422(result.completed->origin.project_id == 1);
     expect_t422(result.completed->origin.target == resource_drop_target_t::bga);
     expect_t422(result.completed->paths == std::vector<std::string>{"/tmp/drop-image.png", "/tmp/drop-image-two.png"});
-    expect_t422(!transaction.active());
+    expect_t422(!transaction.is_active());
 }
 
 TEST_CASE("WAV slot confirmation retains its first file and rejects another staged request",

@@ -267,7 +267,7 @@ auto chart_preview_t::compile_if_needed(
 }
 
 bool chart_preview_t::playing(const audio::preview_session_t& session) const {
-    return output_observer ? output_observer->playing() : session.active();
+    return output_observer ? output_observer->playing() : session.is_active();
 }
 
 std::uint64_t chart_preview_t::current_frame(
@@ -372,7 +372,7 @@ namespace {
 auto restore_preview_after_seek_failure(const chart_preview_t& preview,
     std::uint64_t previous_frame, audio::preview_session_t& session,
     sdl_preview_output_t& output, std::string failure) -> std::string {
-    if (session.active()) return failure;
+    if (session.is_active()) return failure;
     const auto restored = output.start(*preview.schedule, preview.bindings,
         preview.retained_metronome_bindings, previous_frame, preview.end_frame);
     if (restored) return failure + " Playback continues from its previous position.";

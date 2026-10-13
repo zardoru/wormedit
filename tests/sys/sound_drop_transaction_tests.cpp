@@ -36,7 +36,7 @@ auto start_drop(wormedit::sys::sound_drop_transaction_t& transaction,
     (void)transaction.handle(begin, current, over_list);
     const auto position = drop_event(SDL_EVENT_DROP_POSITION, current.window_id);
     (void)transaction.handle(position, current, over_list);
-    return transaction.active();
+    return transaction.is_active();
 }
 
 auto send_file(wormedit::sys::sound_drop_transaction_t& transaction,
@@ -91,7 +91,7 @@ auto interrupt_with_new_drop() -> interruption_result_t {
     const auto begin = drop_event(SDL_EVENT_DROP_BEGIN, next.window_id);
     auto result = transaction.handle(begin, next, true);
     return {.batch = std::move(result.completed),
-            .active = transaction.active(), .claimed = transaction.claimed()};
+            .active = transaction.is_active(), .claimed = transaction.is_claimed()};
 }
 
 auto rejects_changed_origin(wormedit::sys::sound_drop_origin_t changed) -> bool {
@@ -127,7 +127,7 @@ auto unrelated_event_is_not_consumed() -> bool {
     (void)send_file(transaction, current, "/tmp/input.wav");
     SDL_Event event{};
     event.type = SDL_EVENT_MOUSE_MOTION;
-    return !transaction.handle(event, current, true).consumed && transaction.claimed();
+    return !transaction.handle(event, current, true).consumed && transaction.is_claimed();
 }
 
 } // namespace
@@ -169,7 +169,7 @@ TEST_CASE("implicit sound drop begin retains files until complete",
     const auto first_result = transaction.handle(first_file, current, true);
     REQUIRE(first_result.consumed);
     CHECK_FALSE(first_result.completed);
-    CHECK(transaction.active());
+    CHECK(transaction.is_active());
     std::string second{"/tmp/second.wav"};
     CHECK(send_file(transaction, current, second));
     const auto completed = finish_drop(transaction, current);

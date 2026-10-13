@@ -215,13 +215,13 @@ auto worm_ui_nuklear_sound_import_confirm(worm_ui_sound_import_state_t& state)
     }
     for (auto& item : state.items) item.name = std::string(wormedit::text_util::trim(item.name, " \t"));
     for (const auto& item : state.items) {
-        if (!item.name.empty() && wormedit::text_util::valid_bounded_text(item.name, maximum_name_bytes)) continue;
+        if (!item.name.empty() && wormedit::text_util::is_valid_bounded_text(item.name, maximum_name_bytes)) continue;
         state.message = "Every sound needs a name.";
         return std::nullopt;
     }
     for (const auto& group : state.groups) {
         if (group.accepted && (wormedit::text_util::trim(group.name, " \t").empty() ||
-                               !wormedit::text_util::valid_bounded_text(group.name, 64))) {
+                               !wormedit::text_util::is_valid_bounded_text(group.name, 64))) {
             state.message = "Group names must contain 1 to 64 bytes.";
             return std::nullopt;
         }

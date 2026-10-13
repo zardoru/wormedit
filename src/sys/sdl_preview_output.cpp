@@ -217,7 +217,7 @@ auto sdl_preview_output_t::finish_start(sdl_preview_start_result_t result) -> sd
         static_cast<void>(stop());
         return result;
     }
-    set_refill_enabled(playing() && session_.active());
+    set_refill_enabled(playing() && session_.is_active());
     return result;
 }
 
@@ -257,7 +257,7 @@ auto sdl_preview_output_t::start(
         reset_output(start_frame);
     }
     auto result = sdl_preview_start_result_t{.session = started};
-    const bool preserved = !started && session_.active();
+    const bool preserved = !started && session_.is_active();
     const auto cleared = preserved || SDL_ClearAudioStream(stream_);
     if (!preserved) callback_failure_.store(callback_failure_t::none, std::memory_order_release);
     output_playing_.store(static_cast<bool>(started) || preserved, std::memory_order_release);
@@ -295,15 +295,15 @@ auto sdl_preview_output_t::seek(std::uint64_t sample_frame) -> sdl_preview_start
     set_refill_enabled(false);
     silenced_voices_.store(0, std::memory_order_release);
     silenced_music_voices_.store(0, std::memory_order_release);
-    const bool preserved_tail = source_finished_ && playing() && !session_.active();
-    auto started = !session_.active() && playing() && retained_schedule_
+    const bool preserved_tail = source_finished_ && playing() && !session_.is_active();
+    auto started = !session_.is_active() && playing() && retained_schedule_
         ? session_.start(*retained_schedule_, retained_objects_, retained_metronome_, sample_frame, {}, source_end_frame_)
         : session_.seek(sample_frame);
     auto result = sdl_preview_start_result_t{.session = started};
     if (!started) {
         result.status = sdl_preview_start_status_t::session_failed;
         result.message = "chart-preview seek could not be materialized and primed";
-        if (!session_.active() && !preserved_tail) {
+        if (!session_.is_active() && !preserved_tail) {
             output_playing_.store(false, std::memory_order_release);
             static_cast<void>(SDL_ClearAudioStream(stream_));
         }
@@ -342,18 +342,18 @@ auto sdl_preview_output_t::set_loop_region(
     const auto previous_region = session_.loop_region();
     set_refill_enabled(false);
     if (!session_.set_loop_region(region)) {
-        set_refill_enabled(playing() && session_.active());
+        set_refill_enabled(playing() && session_.is_active());
         return false;
     }
     if (!set_loop_output_region(region)) {
         static_cast<void>(session_.set_loop_region(previous_region));
-        set_refill_enabled(playing() && session_.active());
+        set_refill_enabled(playing() && session_.is_active());
         return false;
     }
     // Discard prefetched repeats when disabling, and continue from the audible
     // source position rather than from the worker's later materialization cursor.
     if (!region && was_looping && playing()) return static_cast<bool>(seek(audible));
-    set_refill_enabled(playing() && session_.active());
+    set_refill_enabled(playing() && session_.is_active());
     return true;
 }
 
@@ -380,7 +380,7 @@ auto sdl_preview_output_t::service() -> std::optional<sdl_preview_service_result
     if (stream_ != nullptr && output_drained_.load(std::memory_order_acquire) && SDL_GetAudioStreamQueued(stream_) == 0)
     {
         output_playing_.store(false, std::memory_order_release);
-        if (session_.active()) static_cast<void>(session_.stop());
+        if (session_.is_active()) static_cast<void>(session_.stop());
     }
     frame_phase_scope_t pump(frame_phase_t::audio_pump);
     return service_refill_result(take_refill_result(), rate_unavailable,
@@ -663,7 +663,7 @@ auto sdl_preview_output_t::render_block(std::size_t frames) noexcept -> std::siz
         if (result.produced_frames == 0 && supplied == 0) break;
     }
     buffered_source_frames_.store(stretcher_.buffered_source_frames(), std::memory_order_release);
-    output_drained_.store(!loop_enabled_.load(std::memory_order_acquire) && stretcher_.complete(),
+    output_drained_.store(!loop_enabled_.load(std::memory_order_acquire) && stretcher_.is_complete(),
                           std::memory_order_release);
     return written;
 }

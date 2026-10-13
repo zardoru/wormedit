@@ -128,12 +128,10 @@ class preview_session_t {
     }
     [[nodiscard]] auto set_assist_grid(bool active,
         std::optional<preview_assist_click_grid_t> grid) -> bool;
-    // active() and timeline_frame() read a lock-free snapshot published by the control
+    // is_active() and timeline_frame() read a lock-free snapshot published by the control
     // and render sides; they never wait on the session mutex.
     [[nodiscard]] auto playhead() const noexcept -> playhead_state_t;
     [[nodiscard]] auto is_active() const -> bool;
-    // Compatibility for the coordinated sys/UI migration.
-    inline auto active() const -> bool { return is_active(); }
     // Audible source-frame estimate; scheduling continues on the unadjusted
     // internal source clock. Headless sessions have zero output latency.
     [[nodiscard]] auto timeline_frame() const -> std::uint64_t;

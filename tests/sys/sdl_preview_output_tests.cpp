@@ -36,13 +36,13 @@ auto fixture_path(std::string_view name) -> std::filesystem::path {
 auto wait_for_silent_preview_frame(wormedit::audio::preview_session_t& session,
                                    wormedit::sys::sdl_preview_output_t& output) -> bool {
     const auto deadline = SDL_GetTicks() + 2'000;
-    while (session.timeline_frame() == 0 && session.active() && SDL_GetTicks() < deadline) {
+    while (session.timeline_frame() == 0 && session.is_active() && SDL_GetTicks() < deadline) {
         const auto service = output.service();
         if (service && !*service)
             return false;
         SDL_Delay(2);
     }
-    return session.active() && session.timeline_frame() > 0;
+    return session.is_active() && session.timeline_frame() > 0;
 }
 
 auto silent_preview_advances() -> bool {
@@ -110,7 +110,7 @@ TEST_CASE("SDL dummy output drives seeks and hard-stops a chart preview session"
     const auto first_token = *started.session->token;
 
     const auto deadline = SDL_GetTicks() + 2'000;
-    while (session.timeline_frame() == 0 && session.active() && SDL_GetTicks() < deadline) {
+    while (session.timeline_frame() == 0 && session.is_active() && SDL_GetTicks() < deadline) {
         const auto service = output.service();
         if (service)
             REQUIRE(*service);
@@ -126,7 +126,7 @@ TEST_CASE("SDL dummy output drives seeks and hard-stops a chart preview session"
 
     const auto stopped = output.stop();
     CHECK(stopped.scheduled_voices <= 1);
-    CHECK_FALSE(session.active());
+    CHECK_FALSE(session.is_active());
     output.close();
 }
 
@@ -494,7 +494,7 @@ auto exercise_sdl_silent_tail_loop() -> bool {
         SDL_Delay(1);
     }
     const auto token = bridge.session_token();
-    const bool looped = wrapped && session.active() && output.playing() && token && initial &&
+    const bool looped = wrapped && session.is_active() && output.playing() && token && initial &&
         token->generation > initial->generation;
     static_cast<void>(output.stop());
     output.close();
@@ -613,7 +613,7 @@ void exercise_pitch_output(wormedit::rational_t rate) {
     while (output.playing() && SDL_GetTicks() < deadline) {
         const auto service = output.service();
         expect_pitch(!service || static_cast<bool>(*service));
-        if (!session.active() && output.playing()) {
+        if (!session.is_active() && output.playing()) {
             saw_drain = true;
             if (!restarted) {
                 exercise_failed_drain_seek(output, binding);
@@ -810,7 +810,7 @@ void exercise_refill_generations() {
         expect_pitch(!service || static_cast<bool>(*service));
     }
     static_cast<void>(output.stop());
-    expect_pitch(!session.active() && !output.playing());
+    expect_pitch(!session.is_active() && !output.playing());
     SDL_Delay(20);
     expect_pitch(!output.service());
     expect_pitch(static_cast<bool>(output.start(schedule, std::span{&binding, 1})));
@@ -847,7 +847,7 @@ void exercise_pending_refill_failure() {
     // The missing next block drops the voice and completes the session; the
     // unread worker failure must survive that completion until the frame reads it.
     SDL_Delay(800);
-    expect_pitch(!session.active());
+    expect_pitch(!session.is_active());
     const auto failed = output.service();
     expect_pitch(failed && failed->status == sys::sdl_preview_service_status_t::pump_failed);
     expect_pitch(failed->pump && failed->pump->status == preview_session_pump_status_t::decode_failed);
@@ -902,7 +902,7 @@ auto preview_stress_step(wormedit::sys::sdl_preview_output_t& output,
         std::array<float, 64> samples;
         samples.fill(1.0F);
         static_cast<void>(session.render(samples));
-        return !session.active() && std::ranges::all_of(samples, [](float value) { return value == 0.0F; });
+        return !session.is_active() && std::ranges::all_of(samples, [](float value) { return value == 0.0F; });
     }
     }
 }
@@ -953,7 +953,7 @@ auto exercise_preview_worker_closes(wormedit::sys::sdl_preview_output_t& output,
         if (!output.open() || !output.start(schedule, std::span{&binding, 1})) return false;
         static_cast<void>(output.stop());
         output.close(); // Worker may be entering its wait after Stop.
-        if (output.available() || session.active()) return false;
+        if (output.available() || session.is_active()) return false;
     }
     return true;
 }
@@ -1185,9 +1185,9 @@ void verify_warm_seek_measurement(const std::filesystem::path& path = {}) {
     const wormedit::audio::audio_block_key_t warm_key{fixture.binding.voices.front().source,
                                            first_frame / wormedit::audio::maximum_read_frames};
     const auto deadline = SDL_GetTicks() + 500;
-    while (!fixture.cache.contains(warm_key) && SDL_GetTicks() < deadline)
+    while (!fixture.cache.has_block(warm_key) && SDL_GetTicks() < deadline)
         SDL_Delay(1);
-    expect_pitch(fixture.cache.contains(warm_key));
+    expect_pitch(fixture.cache.has_block(warm_key));
     std::vector<double> latency, gaps;
     for (unsigned iteration = 0; iteration < 30; ++iteration) {
         const auto [returned, audible] = fixture.warm_seek_gap(first_frame + iteration * 10);
@@ -1397,7 +1397,7 @@ auto t276_seek_stop_publications_remain_coherent(t276_output_fixture_t& fixture)
 
 auto t471_service_finishes_with_stream_lock_held(t276_output_fixture_t& fixture) -> bool {
     using access = wormedit::sys::sdl_preview_output_test_access_t;
-    if (!fixture.output.playing() || !fixture.session.active() ||
+    if (!fixture.output.playing() || !fixture.session.is_active() ||
         fixture.session.loop_region().has_value() ||
         !access::lock_stream(fixture.output)) return false;
     if (access::source_finished(fixture.output)) {
@@ -1464,7 +1464,7 @@ auto t471_wait_for_output_block(t276_output_fixture_t& fixture) -> bool {
         const auto first = frame / wormedit::audio::maximum_read_frames;
         const auto last = (frame + 1'024U) / wormedit::audio::maximum_read_frames;
         const auto& source = fixture.binding.voices.front().source;
-        if (fixture.cache.contains({source, first}) && fixture.cache.contains({source, last}))
+        if (fixture.cache.has_block({source, first}) && fixture.cache.has_block({source, last}))
             return true;
         SDL_Delay(1);
     }
@@ -1558,7 +1558,7 @@ auto t276_completed_pitch_tail_retains_clock() -> bool {
         state = access::snapshot(fixture.output);
     }
     const bool valid_tail = state.source_finished && state.transport_generation != 0 &&
-                            state.timeline_frame > 0 && fixture.output.playing() && !fixture.session.active() &&
+                            state.timeline_frame > 0 && fixture.output.playing() && !fixture.session.is_active() &&
                             fixture.session.playhead().generation - state.generation == 1;
     static_cast<void>(fixture.session.stop());
     const auto cancelled = access::snapshot(fixture.output);
@@ -1714,13 +1714,13 @@ auto stale_loop_work_preserves_replacement() -> bool {
     static_cast<void>(fixture.session.stop(old));
     const auto wrapped = fixture.session.restart_loop(old);
     const auto hidden = access::snapshot(fixture.output);
-    const bool protected_session = replaced && !wrapped && fixture.session.active() &&
+    const bool protected_session = replaced && !wrapped && fixture.session.is_active() &&
         fixture.session.playhead().generation != old && !hidden.active && hidden.timeline_frame == 0 &&
         rendered.status == preview_session_render_status_t::stale_generation &&
         std::ranges::all_of(samples, [](float sample) { return sample == 0; });
     access::unlock_stream(fixture.output);
     SDL_Delay(30);
-    return protected_session && fixture.session.active() && fixture.output.timeline_frame() == 0;
+    return protected_session && fixture.session.is_active() && fixture.output.timeline_frame() == 0;
 }
 } // namespace
 TEST_CASE("Stale loop render restart and Stop cannot mutate a replacement generation", "[integration][audio][sdl][loop-generation][T559]") {

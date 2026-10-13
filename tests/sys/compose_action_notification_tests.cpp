@@ -2171,5 +2171,5 @@ TEST_CASE("Project export rejects stale stamps and reports missing paths without
     }));
     check_action(!state);
     check_action(fixture.history.undo.empty());
-    check_action(!fixture.export_runtime.busy());
+    check_action(!fixture.export_runtime.is_busy());
 }

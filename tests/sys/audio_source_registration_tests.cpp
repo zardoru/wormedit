@@ -439,7 +439,7 @@ TEST_CASE("long sources get their head decoded into the block cache instead of g
     sources.await_pending();
     const auto binding = sources.binding(wormedit::asset_id_t{5});
     REQUIRE(binding.has_value());
-    CHECK(head_cache.contains({binding->source, 0}));
+    CHECK(head_cache.has_block({binding->source, 0}));
     CHECK(store.snapshot()->size() == 0);
     CHECK(store.stats().decode_count == 0);
 }

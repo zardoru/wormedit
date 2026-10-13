@@ -9,10 +9,6 @@ namespace wormedit::audio {
 [[nodiscard]] auto is_bound_stem_audition(const song_document_t& song,
     std::optional<resource_id_t> resource, std::span<const audition_source_binding_t> bindings,
     std::span<audition_clip_t> clips) -> bool;
-// Compatibility for the coordinated sys/UI migration.
-inline auto bound_stem_audition(const song_document_t& song,
-    std::optional<resource_id_t> resource, std::span<const audition_source_binding_t> bindings,
-    std::span<audition_clip_t> clips) -> bool { return is_bound_stem_audition(song, resource, bindings, clips); }
 
 struct object_audition_request_t {
     std::uint64_t document_revision{};

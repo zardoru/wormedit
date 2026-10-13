@@ -76,8 +76,6 @@ inline auto is_valid_utf8(std::string_view text) noexcept -> bool {
 inline auto is_valid_bounded_text(std::string_view text, std::size_t maximum_bytes) noexcept -> bool {
     return text.size() <= maximum_bytes && text.find('\0') == std::string_view::npos && is_valid_utf8(text);
 }
-// Compatibility for the coordinated sys/UI migration.
-inline auto valid_bounded_text(std::string_view text, std::size_t maximum_bytes) noexcept -> bool { return is_valid_bounded_text(text, maximum_bytes); }
 inline auto path_from_utf8(std::string_view value) -> std::filesystem::path {
     std::u8string text;
     text.reserve(value.size());

@@ -23,8 +23,6 @@ struct waveform_viewport_t {
 inline constexpr double minimum_waveform_frames_per_pixel = 1.0 / 16.0;
 
 [[nodiscard]] auto is_waveform_viewport_valid(const waveform_viewport_t& viewport) noexcept -> bool;
-// Compatibility for the coordinated sys/UI migration.
-inline auto waveform_viewport_valid(const waveform_viewport_t& viewport) noexcept -> bool { return is_waveform_viewport_valid(viewport); }
 
 // Exclusive last visible frame, clamped to total_frames.
 [[nodiscard]] auto waveform_viewport_end_frame(const waveform_viewport_t& viewport) noexcept

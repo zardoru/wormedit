@@ -884,11 +884,11 @@ TEST_CASE("Waveform runtime reports decoder failures instead of silently losing 
     compose_scene_cache_t cache;
     song_document_t document;
     waveform.service(document, workspace, cache, nullptr);
-    for (std::size_t attempt = 0; attempt < 200 && waveform.waveform_job().busy(); ++attempt) {
+    for (std::size_t attempt = 0; attempt < 200 && waveform.waveform_job().is_busy(); ++attempt) {
         SDL_Delay(5);
         waveform.service(document, workspace, cache, nullptr);
     }
-    expect_compose_test(!waveform.waveform_job().busy());
+    expect_compose_test(!waveform.waveform_job().is_busy());
     center.drain_inbox(std::chrono::seconds{1});
     const auto notifications = center.snapshot(10);
     expect_compose_test(notifications.size() == 1);
@@ -3709,7 +3709,7 @@ TEST_CASE("Compose pinch dispatch preserves anchor and cancels prior viewport mo
         viewport_input_controller_t viewport;
         editor_navigation_input_controller_t navigation;
         start_pinch_test_motion(viewport, autoscroll);
-        expect_compose_test(viewport.momentum_active() || viewport.autoscroll_active());
+        expect_compose_test(viewport.is_momentum_active() || viewport.is_autoscroll_active());
         const auto status = dispatch_compose_input_action(action, fixture.history,
             *fixture.binding.workspace, *fixture.interaction, viewport, navigation,
             fixture.application, fixture.cache, 0.016);
@@ -3730,8 +3730,8 @@ TEST_CASE("Compose pinch dispatch preserves anchor and cancels prior viewport mo
         expect_compose_test(after.selected_objects == before.selected_objects);
         expect_compose_test(after.selected_notes == before.selected_notes);
         expect_compose_test(fixture.history.document.revision == revision && fixture.history.undo.empty());
-        expect_compose_test(!viewport.momentum_active() && !viewport.autoscroll_active());
-        expect_compose_test(viewport.advance(0.016).empty());
+        expect_compose_test(!viewport.is_momentum_active() && !viewport.is_autoscroll_active());
+        expect_compose_test(viewport.advance(0.016).is_empty());
     }
 }
 TEST_CASE("Compose pinch rejects invalid ratios and anchors before motion cancellation",
@@ -3761,8 +3761,8 @@ TEST_CASE("Compose pinch rejects invalid ratios and anchors before motion cancel
             expect_compose_test(fixture.interaction->selected_objects == before.selected_objects);
             expect_compose_test(fixture.interaction->selected_notes == before.selected_notes);
             expect_compose_test(fixture.history.document.revision == revision && fixture.history.undo.empty());
-            expect_compose_test(viewport.autoscroll_active() == autoscroll);
-            expect_compose_test(viewport.momentum_active() == !autoscroll);
+            expect_compose_test(viewport.is_autoscroll_active() == autoscroll);
+            expect_compose_test(viewport.is_momentum_active() == !autoscroll);
         }
     }
 }

@@ -77,7 +77,7 @@ void bga_dock_runtime_t::state_t::update_images(const song_document_t& document,
         request.push_back(*source.source);
         if (request.size() == 4) break;
     }
-    if (!job.busy() && !request.empty()) (void)job.request(document.id, document.revision, request);
+    if (!job.is_busy() && !request.empty()) (void)job.request(document.id, document.revision, request);
 #else
     (void)document; (void)base;
 #endif

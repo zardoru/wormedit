@@ -185,7 +185,7 @@ TEST_CASE("player preview asynchronously publishes and replaces exact video fram
                        video_job);
     REQUIRE(view.visual_layers[0].image_ready);
     CHECK(view.visual_layers[0].image_content_id == red_content_id);
-    CHECK_FALSE(video_job.busy());
+    CHECK_FALSE(video_job.is_busy());
 
     REQUIRE(wait_for_frame(presenter, view, history, image_job, video_job, 72'000, red_content_id));
     CHECK(view.visual_layers[0].rgba_pixels[0] < 16);
@@ -226,7 +226,7 @@ TEST_CASE("player preview links a late video frame diagnostic to its event",
     const auto directory = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "video";
     presenter.populate(view, history, chart_id_t{7}, true, player_preview_skin_t::mania, 24'000,
                        48'000, directory, image_job, video_job);
-    REQUIRE(video_job.busy());
+    REQUIRE(video_job.is_busy());
     presenter.populate(view, history, chart_id_t{7}, true, player_preview_skin_t::mania, 24'000,
                        48'000, directory, image_job, video_job);
 

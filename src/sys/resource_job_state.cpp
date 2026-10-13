@@ -41,7 +41,7 @@ auto copy_task_failure(const wormedit::task_result_t& completed,
                        const std::shared_ptr<const wormedit::project_asset_copy_result_t>& copied)
     -> std::optional<resource_copy_feedback_t> {
     using namespace wormedit;
-    if (!completed.succeeded() || !copied) {
+    if (!completed.is_successful() || !copied) {
         const auto cancelled = completed.error &&
                                completed.error->code == task_error_code_t::cancelled;
         return resource_copy_feedback_t{
@@ -115,7 +115,7 @@ runtime::resource_copy_t::resource_copy_t(
     : notifications_(std::move(notifications)) {}
 
 auto runtime::resource_copy_t::start(pending_project_resource_copy_t&& pending) -> bool {
-    if (busy())
+    if (is_busy())
         return false;
     const auto source = pending.export_copy ? wormedit::notification_source_t::export_
                                             : wormedit::notification_source_t::import_;
@@ -177,7 +177,7 @@ runtime::output_group_export_t::~output_group_export_t() noexcept {
 }
 
 auto runtime::output_group_export_t::start(pending_output_group_export_t&& pending) -> bool {
-    if (busy())
+    if (is_busy())
         return false;
     this->pending = std::move(pending);
     if (notifications_)
@@ -200,11 +200,11 @@ auto runtime::output_group_export_t::poll(const wormedit::document_history_t& hi
     pending.reset();
     const auto exported =
         wormedit::task_value_cast<output_group_export_task_result_t>(*completed);
-    auto status = !completed->succeeded() || !exported
+    auto status = !completed->is_successful() || !exported
                       ? completed->error ? completed->error->message
                                          : "Output group export returned no result."
                       : exported->message;
-    auto severity = !completed->succeeded() || !exported
+    auto severity = !completed->is_successful() || !exported
                         ? completed->error && completed->error->code ==
                                                   wormedit::task_error_code_t::cancelled
                               ? wormedit::notification_severity_t::info

@@ -149,7 +149,7 @@ TEST_CASE("Deferred audition source failure retains existing notification and is
     expect_audition(entries[0].message == "Audio preview stopped because its decoded source is unavailable.");
     expect_audition(entries[0].source == notification_source_t::audio);
     expect_audition(!fixture.output.service());
-    expect_audition(!fixture.audition_session.active());
+    expect_audition(!fixture.audition_session.is_active());
 }
 TEST_CASE("Auditioning a silent note or BGM event is quietly consumed", "[audio][audition-notification]") {
     audition_fixture_t fixture;

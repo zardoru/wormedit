@@ -126,7 +126,7 @@ auto sdl_audition_output_t::start(std::span<const audio::audition_clip_t> clips)
     audio_stream_lock_t stream_lock{stream_};
     if (!stream_lock) {
         const auto message = sdl_error("could not lock the audio output stream");
-        if (session_.active()) static_cast<void>(resume_device());
+        if (session_.is_active()) static_cast<void>(resume_device());
         return {.status = sdl_audition_start_status_t::device_failed,
                 .session = std::nullopt, .message = message};
     }
@@ -134,7 +134,7 @@ auto sdl_audition_output_t::start(std::span<const audio::audition_clip_t> clips)
     auto started = session_.start(clips);
     auto status = sdl_audition_start_status_t::session_failed;
     std::string message;
-    const bool preserved = !started && session_.active();
+    const bool preserved = !started && session_.is_active();
     if (!preserved) callback_failure_.store(callback_failure_t::none, std::memory_order_release);
     const auto cleared = preserved || SDL_ClearAudioStream(stream_);
     if (started) {
@@ -149,7 +149,7 @@ auto sdl_audition_output_t::start(std::span<const audio::audition_clip_t> clips)
         message = sdl_error("could not reset and resume the audio output stream");
     }
     if (status == sdl_audition_start_status_t::device_failed) static_cast<void>(stop());
-    else set_refill_enabled(session_.active());
+    else set_refill_enabled(session_.is_active());
     return {.status = status, .session = std::move(started), .message = std::move(message)};
 }
 

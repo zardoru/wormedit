@@ -133,8 +133,6 @@ class preview_transport_bridge_t {
         return token_;
     }
     [[nodiscard]] auto is_exhausted() const noexcept -> bool;
-    // Compatibility for the coordinated sys/UI migration.
-    inline auto exhausted() const noexcept -> bool { return is_exhausted(); }
 
   private:
     [[nodiscard]] auto begin_session(std::uint64_t seek_frame) -> preview_bridge_start_result_t;

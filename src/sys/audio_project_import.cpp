@@ -33,7 +33,7 @@ auto metadata_text(const AVDictionary* metadata, const char* key) -> std::string
     std::size_t length{};
     while (length <= maximum_field_bytes && entry->value[length] != '\0') ++length;
     const auto value = std::string_view{entry->value, length};
-    if (!text_util::valid_bounded_text(value, maximum_field_bytes)) return {};
+    if (!text_util::is_valid_bounded_text(value, maximum_field_bytes)) return {};
     return std::string{text_util::trim(value, " \t\r\n")};
 }
 
@@ -62,7 +62,7 @@ void read_metadata(const std::filesystem::path& path, audio_project_import_resul
 void prefill_metadata(const std::filesystem::path& path, audio_project_import_result_t& result) {
     read_metadata(path, result);
     if (result.title.empty()) result.title = text_util::path_utf8(path.stem());
-    if (result.title.empty() || !text_util::valid_bounded_text(result.title, maximum_field_bytes))
+    if (result.title.empty() || !text_util::is_valid_bounded_text(result.title, maximum_field_bytes))
         result.title = "Untitled";
 }
 #endif

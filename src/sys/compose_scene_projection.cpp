@@ -405,7 +405,7 @@ auto bga_preview_virtual_row(const compose_scene_projection_context_t& projectio
     -> std::optional<std::uint64_t> {
     using namespace wormedit;
     if (projection.inputs.scope.chart_scope.chart.source_family != format_family_t::bms ||
-        !chart_has_virtual_tail(projection.inputs.scope.chart_scope.chart))
+        !has_chart_virtual_tail(projection.inputs.scope.chart_scope.chart))
         return std::nullopt;
     const auto& interaction = projection.inputs.scope.interaction_view;
     const auto raw = (static_cast<long double>(interaction.viewport_scroll_pixels) + source_y) *

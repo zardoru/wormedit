@@ -74,8 +74,6 @@ class native_project_autosave_loop_t {
         -> std::optional<native_project_autosave_result_t>;
 
     [[nodiscard]] auto is_busy() const noexcept -> bool;
-    // Compatibility for the coordinated sys/UI migration.
-    inline auto busy() const noexcept -> bool { return is_busy(); }
     [[nodiscard]] auto session_sequence() const noexcept -> std::uint64_t;
 
   private:

@@ -123,9 +123,6 @@ struct measure_removal_proposal_t {
 // still names `measure`. Such a measure cannot be deleted as an empty one.
 [[nodiscard]] auto has_measure_positioned_objects(const chart_document_t& chart,
                                                     measure_id_t measure) -> bool;
-// Compatibility for the coordinated sys/UI migration.
-inline auto measure_holds_positioned_objects(const chart_document_t& chart,
-                                                    measure_id_t measure) -> bool { return has_measure_positioned_objects(chart, measure); }
 
 // Append default 4/4 measures through the source audio's end using the chart's
 // final BPM and exact existing timing. Existing IDs and positions stay intact.

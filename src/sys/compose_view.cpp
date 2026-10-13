@@ -151,7 +151,7 @@ void block_paste_heads_in_warps(const wormedit::chart_document_t& chart,
     for (const auto& object : proposal.objects) {
         const auto* note = std::get_if<wormedit::note_t>(&object);
         const auto row = note ? (*index).row_of(note->position) : std::nullopt;
-        if (!row || !wormedit::head_blocked_by_warp(chart, *index, *row, note->kind)) continue;
+        if (!row || !wormedit::is_head_blocked_by_warp(chart, *index, *row, note->kind)) continue;
         proposal.valid = false;
         proposal.error = "Playable note heads cannot sit inside a warp.";
         return;
@@ -351,7 +351,7 @@ void populate_lane_profile_choices(WormUiComposeView& view, const wormedit::char
         view.lane_profile_choice_count = static_cast<std::uint8_t>(count);
         return;
     }
-    if (!wormedit::lane_layout_supports_key_profiles(segment->layout)) return;
+    if (!wormedit::can_use_lane_key_profiles(segment->layout)) return;
     const auto& choices = cached_lane_profile_choices(segment->layout.lanes.size());
     const auto count = std::min<std::size_t>(choices.size(), WORM_UI_COMPOSE_LANE_PROFILE_CAPACITY);
     for (std::size_t index = 0; index < count; ++index) {
@@ -488,7 +488,7 @@ void populate_measure_removal(WormUiComposeView& view, const wormedit::song_docu
         proposal.deleted_notes + proposal.deleted_bgm_events + proposal.deleted_bga_events +
                 proposal.shortened_holds + proposal.moved_positions != 0 ||
         (view.measure_removal_blocked &&
-         wormedit::measure_holds_positioned_objects(chart, cursor.measure));
+         wormedit::has_measure_positioned_objects(chart, cursor.measure));
 }
 
 void append_lane_layout_profile_choice(WormUiComposeView& view,
@@ -514,7 +514,7 @@ void populate_lane_layout_profile_choices(WormUiComposeView& view,
     const auto mode = active ? compose_mode_family(active->layout) : wormedit::editor_mode_family_t::other;
     for (const auto& profile : cached_lane_layout_profile_choices(chart.source_family, mode))
         append_lane_layout_profile_choice(view, profile.layout, active);
-    if (active && wormedit::lane_layout_supports_key_profiles(active->layout)) {
+    if (active && wormedit::can_use_lane_key_profiles(active->layout)) {
         for (const auto& profile : cached_lane_profile_choices(active->layout.lanes.size()))
             append_lane_layout_profile_choice(view, profile.layout, active);
     }
@@ -1383,7 +1383,7 @@ std::uint64_t prepare_compose_projection_state(const compose_projection_context_
     populate_compose_selected_objects_and_drafts(flattened, chart, history,
                                                  application_state, retained_state, view, cache);
     auto canvas_rows = cache.scene.index->measures.total_rows;
-    if (wormedit::chart_has_virtual_tail(chart)) {
+    if (wormedit::has_chart_virtual_tail(chart)) {
         const auto built_canvas = wormedit::build_virtual_canvas(chart);
         if (const auto* canvas = std::get_if<wormedit::virtual_canvas_t>(&built_canvas))
             canvas_rows = canvas->total_rows;
@@ -1920,7 +1920,7 @@ bool compose_project_scene(const compose_projection_context_t<wormedit::editor_i
     view.armed_note_kind = static_cast<std::uint32_t>(retained_state->armed_note_kind);
     view.allowed_note_kind_mask = 0;
     for (unsigned kind = 0; kind <= static_cast<unsigned>(wormedit::note_kind_t::fake); ++kind)
-        if (wormedit::note_kind_allowed(chart, static_cast<wormedit::note_kind_t>(kind)))
+        if (wormedit::is_note_kind_allowed(chart, static_cast<wormedit::note_kind_t>(kind)))
             view.allowed_note_kind_mask |= 1U << kind;
     auto& interaction_view = input.scope.interaction_view;
     const auto& timing_stage = input.frame.timing_stage;
@@ -2027,7 +2027,7 @@ bool compose_project_scene(const compose_projection_context_t<wormedit::editor_i
         .bgm_horizontal_scroll_pixels = bgm_horizontal_scroll,
         .bga_pane_left_pixels = horizontal_layout.bga_pane_left_pixels,
         .bga_pane_width_pixels = bga_pane_width,
-        .include_virtual_bms_tail = wormedit::chart_has_virtual_tail(chart),
+        .include_virtual_bms_tail = wormedit::has_chart_virtual_tail(chart),
         .solo_semantic_layer = application_state.project.semantic_layer.semantic_layer_solo_active
                                    ? application_state.project.semantic_layer.semantic_layer_target
                                    : std::nullopt,
@@ -2342,7 +2342,7 @@ void populate_compose_paint_ghost(const compose_projection_context_t<wormedit::e
             target->position.row, input.scope.chart_scope.chart.divisions_per_standard_measure),
         .kind = static_cast<std::uint8_t>(view.armed_note_kind),
         .paint_erase_preview = occupied,
-        .paint_invalid_preview = !note_kind_allowed(input.scope.chart_scope.chart,
+        .paint_invalid_preview = !is_note_kind_allowed(input.scope.chart_scope.chart,
                                                     input.frame.retained_state->armed_note_kind)};
     view.paint_ghost_visible = true;
 }
@@ -2554,7 +2554,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     auto& view = flattened.view.compose;
     view.editor_gesture_active = retained_state && has_pending_editor_gesture(*retained_state);
     view.editor_gesture_current = view.editor_gesture_active &&
-        !editor_gestures_stale(*retained_state, history.document.revision);
+        !is_editor_gestures_stale(*retained_state, history.document.revision);
     view.editor_pointer_hold_active = projected_pointer_hold_active(retained_state);
     if (!workspace.selected_chart) {
         report_compose_projection(flattened, projection_feedback_kind_t::choose_chart,

@@ -144,11 +144,11 @@ auto project_application_frame(const application_frame_projection_context_t& con
         frame_transport.available =
             context.workspace.selected_chart.has_value() && context.preview_output_available;
         frame_transport.playing =
-            context.preview_state.playing(context.preview_session) || context.audition_session.active();
+            context.preview_state.playing(context.preview_session) || context.audition_session.is_active();
         frame_transport.paused = context.preview_state.paused;
         frame_transport.frame =
             context.preview_state.playing(context.preview_session) ? context.preview_state.current_frame(context.preview_session)
-            : context.audition_session.active() ? context.audition_session.timeline_frame()
+            : context.audition_session.is_active() ? context.audition_session.timeline_frame()
                                                 : context.preview_state.resume_frame;
         frame_transport.end_frame = context.preview_state.end_frame;
         frame_transport.sample_rate = audio::output_sample_rate;
@@ -204,7 +204,7 @@ auto project_application_frame(const application_frame_projection_context_t& con
         WormUiAudioWaveformViewportRequest viewport_request{};
         worm_ui_frontend_audio_waveform_viewport_request(&viewport_request);
         populate_audio_waveform_views(flattened, context.waveform_runtime.waveform_analysis().get(),
-                                      context.waveform_runtime.waveform_job().busy(),
+                                      context.waveform_runtime.waveform_job().is_busy(),
                                       compose_window_width, &viewport_request);
     }
 #endif
@@ -260,7 +260,7 @@ auto project_application_frame(const application_frame_projection_context_t& con
             flattened.view.transport_playing, wormedit::to_double(audio::playback_rates[rate_index]));
         compose_waveform_overview_available = populate_compose_waveform_projection(
             flattened, context.compose_scene_cache, compose_waveform_analysis,
-            context.waveform_runtime.waveform_job().busy(),
+            context.waveform_runtime.waveform_job().is_busy(),
             context.workspace.transport.audio_asset.has_value(),
             context.compose_interaction_state ? &*context.compose_interaction_state : nullptr,
             context.waveform_runtime.detail_analysis().get(),

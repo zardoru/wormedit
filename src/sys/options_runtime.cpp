@@ -63,7 +63,7 @@ void validate_editor(options_runtime_t& r) {
         "Scroll direction must be Profile default, Up, or Down.");
 }
 void validate_display(options_runtime_t& r) {
-    diagnose(r, WORM_UI_OPTIONS_FIELD_LAYOUT_FIELD_SCHEME, valid_field_scheme_overrides(r.draft.display),
+    diagnose(r, WORM_UI_OPTIONS_FIELD_LAYOUT_FIELD_SCHEME, is_valid_field_scheme_overrides(r.draft.display),
         "Layout skin overrides must contain at most 128 nonempty layout and skin names of at most 4096 bytes.");
     diagnose(r, WORM_UI_OPTIONS_FIELD_P1_SCRATCH_POSITION, r.draft.display.scratch_positions[0] <= 3, "Choose Skin default, Chart layout, Left, or Right for Single / P1 scratch.");
     diagnose(r, WORM_UI_OPTIONS_FIELD_P2_SCRATCH_POSITION, r.draft.display.scratch_positions[1] <= 3, "Choose Skin default, Chart layout, Left, or Right for P2 scratch.");
@@ -89,7 +89,7 @@ void validate_draft(options_runtime_t& r) {
         diagnose(r, WORM_UI_OPTIONS_FIELD_SHORTCUT_PATH, text_util::is_valid_bounded_text(r.draft.general.shortcut_profile_path, maximum_preference_string_bytes) &&
             !r.draft.general.shortcut_profile_path.empty(), "Shortcut profile path must be nonempty and at most 4096 bytes."); break;
     case WORM_UI_OPTIONS_PLAYERS:
-        diagnose(r, WORM_UI_OPTIONS_FIELD_PLAYERS, valid_external_player_preferences(r.draft.players), "External-player definitions are invalid."); break;
+        diagnose(r, WORM_UI_OPTIONS_FIELD_PLAYERS, is_valid_external_player_preferences(r.draft.players), "External-player definitions are invalid."); break;
     default: break;
     }
     auto candidate = program_preferences_t::with_defaults();
@@ -155,7 +155,7 @@ auto edit_layout_field_scheme(program_preferences_t& p, const WormUiOptionsActio
     auto& overrides = p.display.field_scheme_overrides;
     if (!action.text[0]) overrides.erase(std::string{layout_key});
     else overrides.insert_or_assign(std::string{layout_key}, action.text);
-    return valid_field_scheme_overrides(p.display);
+    return is_valid_field_scheme_overrides(p.display);
 }
 
 auto edit_display(program_preferences_t& p, const WormUiOptionsAction& a,

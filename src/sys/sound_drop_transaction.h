@@ -52,8 +52,8 @@ class sound_drop_transaction_t {
                                                    : resource_drop_target_t::none);
     }
     [[nodiscard]] auto cancel() -> std::optional<sound_drop_batch_t>;
-    [[nodiscard]] auto active() const noexcept -> bool { return active_; }
-    [[nodiscard]] auto claimed() const noexcept -> bool { return claimed_; }
+    [[nodiscard]] auto is_active() const noexcept -> bool { return active_; }
+    [[nodiscard]] auto is_claimed() const noexcept -> bool { return claimed_; }
 
   private:
     void begin(const sound_drop_origin_t& origin);

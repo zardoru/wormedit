@@ -48,8 +48,6 @@ static_assert(workspace_tab_count == static_cast<std::size_t>(workspace_tab_t::c
 static_assert(is_catalog_exhaustive(workspace_tabs, workspace_tab_count));
 
 [[nodiscard]] auto is_workspace_tab_enabled(workspace_tab_t tab) noexcept -> bool;
-// Compatibility for the coordinated sys/UI migration.
-inline auto workspace_tab_enabled(workspace_tab_t tab) noexcept -> bool { return is_workspace_tab_enabled(tab); }
 
 struct workspace_limits_t {
     std::size_t maximum_charts{1'024};

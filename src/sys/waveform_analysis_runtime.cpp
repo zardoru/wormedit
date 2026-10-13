@@ -74,7 +74,7 @@ void waveform_analysis_t::borrow_preview_blocks(const audio::waveform_key_t& key
     const auto last = (key.end_frame - 1U) / audio::maximum_read_frames;
     for (auto index = first; index <= last && !stop.stop_requested(); ++index) {
         const audio::audio_block_key_t block_key{key.source, index};
-        if (decoded_blocks_.contains(block_key)) continue;
+        if (decoded_blocks_.has_block(block_key)) continue;
         if (const auto resident = preview_blocks_->find(block_key))
             static_cast<void>(decoded_blocks_.store(block_key, resident->frame_count,
                                                    resident->interleaved_stereo));
@@ -265,7 +265,7 @@ void waveform_analysis_t::service_compose_detail(std::optional<asset_id_t> asset
         completed->analysis && completed->analysis->waveform) {
         const auto& key = completed->analysis->waveform->key;
         if (key.source == binding->source &&
-            audio::aligned_waveform_detail_range_t{key.begin_frame, key.end_frame}.covers(*window))
+            audio::aligned_waveform_detail_range_t{key.begin_frame, key.end_frame}.is_covering_window(*window))
             detail_analysis_ = completed->analysis;
     }
     audio::update_aligned_waveform_style(detail_style_, window->frames_per_pixel);
@@ -274,11 +274,11 @@ void waveform_analysis_t::service_compose_detail(std::optional<asset_id_t> asset
     const auto retained = retained_detail_range();
     const bool pcm_ready = !detail_style_.sample_points ||
         cached_detail_window({binding->source, 32}, *window);
-    if (retained && pcm_ready && !retained->needs_refill(*window, direction)) return;
+    if (retained && pcm_ready && !retained->is_refill_needed(*window, direction)) return;
     auto range = audio::padded_aligned_waveform_range(*window, direction);
     if (!range) return;
     range->end_frame = std::min(range->end_frame, binding->output_frame_count);
-    if (retained == range && retained->covers(*window) && pcm_ready) return;
+    if (retained == range && retained->is_covering_window(*window) && pcm_ready) return;
     const audio::waveform_key_t requested{binding->source, 32, range->begin_frame, range->end_frame};
     if (request_detail_worker(*asset, requested, detail_style_.sample_points)) detail_key_ = requested;
 }
@@ -309,7 +309,7 @@ void waveform_analysis_t::service_idle_detail(
     const bool pcm_missing = window->frames_per_pixel < 1.0 &&
         !audio::project_cached_waveform_samples(decoded_blocks_, key.source,
             key.begin_frame, key.end_frame, audio::maximum_aligned_waveform_rows);
-    if (detail_job_.busy() || (detail_analysis_ && !pcm_missing)) return;
+    if (detail_job_.is_busy() || (detail_analysis_ && !pcm_missing)) return;
     const auto started = detail_job_.request(*asset, 32,
         {.begin_frame = key.begin_frame, .end_frame = key.end_frame,
          .require_cached_pcm = window->frames_per_pixel < 1.0});

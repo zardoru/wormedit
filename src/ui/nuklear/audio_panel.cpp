@@ -874,7 +874,7 @@ void worm_ui_frontend_select_sound_usage_source(std::uint64_t project_id, std::u
 
 void worm_ui_nuklear_audio_waveform_viewport_request(WormUiAudioWaveformViewportRequest& request) noexcept {
     request = {};
-    if (!audio.waveform_asset_id || !wormedit::audio::waveform_viewport_valid(audio.waveform_viewport)) return;
+    if (!audio.waveform_asset_id || !wormedit::audio::is_waveform_viewport_valid(audio.waveform_viewport)) return;
     const auto& viewport = audio.waveform_viewport;
     request.asset_id = audio.waveform_asset_id;
     request.total_frames = viewport.total_frames;

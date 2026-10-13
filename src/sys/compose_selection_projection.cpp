@@ -166,7 +166,7 @@ void populate_measure_rows(compose_scene_cache_t& cache, const wormedit::chart_d
     cache.measures.measure_row_views.clear();
     cache.measures.measure_row_ids.clear();
     const auto addressable =
-        wormedit::chart_has_virtual_tail(chart)
+        wormedit::has_chart_virtual_tail(chart)
             ? std::max(chart.measures.size(), wormedit::virtual_tail_measure_limit(chart))
             : chart.measures.size();
     const auto count = std::min(addressable, compose_measure_row_limit);

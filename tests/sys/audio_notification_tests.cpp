@@ -23,7 +23,7 @@ void service_until_waveform_finishes(wormedit::sys::runtime::waveform_analysis_t
                                      wormedit::sys::compose_scene_cache_t& cache) {
     runtime.service(document, workspace, cache, nullptr);
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (runtime.waveform_job().busy() && std::chrono::steady_clock::now() < deadline) {
+    while (runtime.waveform_job().is_busy() && std::chrono::steady_clock::now() < deadline) {
         runtime.service(document, workspace, cache, nullptr);
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
@@ -316,7 +316,7 @@ auto mixed_filter_runtime_passes() -> bool {
     sys::runtime::waveform_analysis_t runtime{fixture.sources, nullptr,
         notification_sink_t{notifications}};
     runtime.service(fixture.document, fixture.workspace, fixture.cache, &fixture.interaction);
-    if (runtime.channel_waveform_asset() || runtime.channel_waveform_job().busy() ||
+    if (runtime.channel_waveform_asset() || runtime.channel_waveform_job().is_busy() ||
         runtime.channel_waveform_analysis()) return false;
     runtime.service_compose_stem_waveforms(fixture.document, fixture.workspace, fixture.cache,
         &fixture.interaction, mixed_filter_subset(fixture));
@@ -429,7 +429,7 @@ TEST_CASE("waveform runtime without a notification sink remains safe",
     sys::compose_scene_cache_t cache;
     workspace.transport.audio_asset = asset_id_t{44};
     service_until_waveform_finishes(runtime, document, workspace, cache);
-    check_audio_worker(!(runtime.waveform_job().busy()));
+    check_audio_worker(!(runtime.waveform_job().is_busy()));
     runtime.reset_sources();
     check_audio_worker(!(runtime.waveform_asset().has_value()));
 }
@@ -764,7 +764,7 @@ auto t459_packed_runtime_filters_assets() -> bool {
         !runtime.stem_waveform_analysis(asset_id_t{91}) &&
         !runtime.stem_waveform_analysis(asset_id_t{92}) &&
         runtime.stem_waveform_cache_stats().entries == 1 &&
-        !runtime.channel_waveform_asset() && !runtime.channel_waveform_job().busy() &&
+        !runtime.channel_waveform_asset() && !runtime.channel_waveform_job().is_busy() &&
         !runtime.channel_waveform_analysis();
 }
 } // namespace

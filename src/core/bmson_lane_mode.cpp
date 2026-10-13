@@ -10,10 +10,6 @@
 
 namespace wormedit {
 namespace {
-auto reject(std::uint64_t revision, std::string message) -> document_command_result_t {
-    return {.revision = revision, .diagnostics = {{diagnostic_severity_t::error,
-        diagnostic_code_t::invalid_id, std::move(message), {}}}};
-}
 
 auto largest_id(const chart_document_t& chart) -> std::uint64_t {
     std::uint64_t largest{};
@@ -207,27 +203,28 @@ auto set_bmson_channel_lane_mode(document_history_t& history, std::uint64_t expe
     bool convert_continuations_to_restarts, note_to_bgm_policy_t policy)
     -> document_command_result_t {
     const auto revision = history.document.revision;
-    if (revision != expected_revision) return reject(revision, "BMSON lane mode has a stale document revision");
-    auto proposed = history.document;
+    if (revision != expected_revision) return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "BMSON lane mode has a stale document revision");
+    auto transaction = document_command_transaction_t::from(history);
+    auto& proposed = transaction.copy_document();
     const auto chart = std::ranges::find(proposed.charts, chart_id, &chart_document_t::id);
     if (chart == proposed.charts.end() || chart->source_family != format_family_t::bmson)
-        return reject(revision, "Lane mode requires a known BMSON chart");
+        return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "Lane mode requires a known BMSON chart");
     const auto channel = std::ranges::find(chart->sound_channels, channel_id, &sound_channel_t::id);
-    if (channel == chart->sound_channels.end()) return reject(revision, "Unknown BMSON sound channel");
+    if (channel == chart->sound_channels.end()) return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "Unknown BMSON sound channel");
     if (mode != bmson_channel_lane_mode_t::stem && mode != bmson_channel_lane_mode_t::packed)
-        return reject(revision, "Unknown BMSON lane mode");
+        return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "Unknown BMSON lane mode");
     const auto resources = channel_resources(proposed, chart_id, channel_id);
-    if (resources.empty()) return reject(revision, "BMSON channel has no unambiguous sound resource");
+    if (resources.empty()) return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "BMSON channel has no unambiguous sound resource");
     const bool continues = std::ranges::any_of(channel->events,
         [](const auto& event) { return event.continuation; });
     if (mode == bmson_channel_lane_mode_t::packed && continues && !convert_continuations_to_restarts)
-        return reject(revision, "continuation points need a stem lane");
+        return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "continuation points need a stem lane");
     if (!convert_continuations_to_restarts && already_matches(proposed, *chart, *channel, resources, mode))
         return {.revision = revision};
     const auto ids = channel_events(*channel);
     if (mode == bmson_channel_lane_mode_t::stem) {
         const auto error = make_stem(*chart, *channel, ids);
-        if (!error.empty()) return reject(revision, error);
+        if (!error.empty()) return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, error);
     } else {
         const auto plan = pack_channel(*chart, *channel, ids, proposed.resources, policy);
         if (!plan.accepted()) return {.revision = revision, .diagnostics = plan.diagnostics};
@@ -238,8 +235,6 @@ auto set_bmson_channel_lane_mode(document_history_t& history, std::uint64_t expe
     const auto kind = mode == bmson_channel_lane_mode_t::stem ? sound_kind_t::stem : sound_kind_t::keysound;
     for (auto& resource : proposed.resources)
         if (std::ranges::find(resources, resource.id) != resources.end()) resource.sound_kind = kind;
-    return commit_document_command(history, std::move(proposed),
-        mode == bmson_channel_lane_mode_t::stem ? "Make BMSON stem" : "Pack BMSON channel",
-        {.preserve_retained_source_flags = !convert_continuations_to_restarts});
+    return transaction.commit(mode == bmson_channel_lane_mode_t::stem ? "Make BMSON stem" : "Pack BMSON channel", {.preserve_retained_source_flags = !convert_continuations_to_restarts});
 }
 } // namespace wormedit

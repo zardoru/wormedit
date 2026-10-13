@@ -16,12 +16,7 @@ struct defaults_t {
     std::string close_feedback{};
     document_history_t history{};
     workspace_controller_t workspace{};
-    bool session_loaded{};
-    bool native_project_loaded{};
-    bool fresh_blank_project{};
-    std::string pending_audio_project_path{};
-    std::string pending_bms_encoding_path{};
-    std::filesystem::path active_project_path{};
+    project_identity_t project_identity;
     application_command_state_t application_command_state{};
     stepmania_export_policy_t stepmania_export_policy{};
     std::optional<audio_offset_drag_t> audio_offset_drag{};
@@ -30,7 +25,6 @@ struct defaults_t {
     std::optional<editor_interaction_state_t> compose_interaction_state{};
     metadata_drop_state_t metadata_drop{};
     runtime::metadata_asset_t metadata_asset_runtime{};
-    std::filesystem::path asset_base{};
     task_scheduler_t resource_copy_scheduler{1, 1};
     runtime::resource_copy_t resource_copy_runtime{};
     runtime::output_group_export_t export_runtime{};
@@ -44,7 +38,6 @@ struct defaults_t {
     native_project_autosave_loop_t autosave_loop{native_project_autosave_loop_t::clock_t::now(),
                                                  resource_copy_scheduler};
     native_project_recovery_controller_t recovery_controller{};
-    std::optional<native_project_document_version_t> scanned_primary_version{};
     external_player_runtime_t external_player_runtime{};
     project_chart_runtime_t project_chart_runtime{};
 };
@@ -59,7 +52,7 @@ inline auto dispatch_compose_view_action(
     bool metadata_import_busy, std::optional<wormedit::notification_sink_t> notifications = {})
     -> std::string {
     test_dispatch::defaults_t defaults;
-    defaults.asset_base = asset_base;
+    defaults.project_identity.asset_base = asset_base;
     auto& sink = notifications ? *notifications : defaults.notification_sink;
     application_dispatch_context_t environment{
         defaults.program_preferences,
@@ -68,12 +61,7 @@ inline auto dispatch_compose_view_action(
         defaults.close_feedback,
         history,
         workspace,
-        defaults.session_loaded,
-        defaults.native_project_loaded,
-        defaults.fresh_blank_project,
-        defaults.pending_audio_project_path,
-        defaults.pending_bms_encoding_path,
-        defaults.active_project_path,
+        defaults.project_identity,
         application_state,
         defaults.stepmania_export_policy,
         defaults.audio_offset_drag,
@@ -82,7 +70,6 @@ inline auto dispatch_compose_view_action(
         defaults.compose_interaction_state,
         defaults.metadata_drop,
         defaults.metadata_asset_runtime,
-        defaults.asset_base,
         resource_copy_scheduler,
         resource_copy_runtime,
         export_runtime,
@@ -95,7 +82,6 @@ inline auto dispatch_compose_view_action(
         defaults.compose_navigation_input,
         defaults.autosave_loop,
         defaults.recovery_controller,
-        defaults.scanned_primary_version,
         defaults.external_player_runtime,
         defaults.project_chart_runtime,
     };
@@ -114,7 +100,7 @@ inline auto dispatch_compose_workspace_action(
     runtime::metadata_asset_t& metadata_asset_runtime, wormedit::notification_sink_t notifications)
     -> bool {
     test_dispatch::defaults_t defaults;
-    defaults.asset_base = asset_base;
+    defaults.project_identity.asset_base = asset_base;
     application_dispatch_context_t environment{
         defaults.program_preferences,
         defaults.running,
@@ -122,12 +108,7 @@ inline auto dispatch_compose_workspace_action(
         defaults.close_feedback,
         history,
         workspace,
-        defaults.session_loaded,
-        defaults.native_project_loaded,
-        defaults.fresh_blank_project,
-        defaults.pending_audio_project_path,
-        defaults.pending_bms_encoding_path,
-        defaults.active_project_path,
+        defaults.project_identity,
         application_state,
         defaults.stepmania_export_policy,
         defaults.audio_offset_drag,
@@ -136,7 +117,6 @@ inline auto dispatch_compose_workspace_action(
         interaction_state,
         metadata_drop,
         metadata_asset_runtime,
-        defaults.asset_base,
         resource_copy_scheduler,
         resource_copy_runtime,
         export_runtime,
@@ -149,7 +129,6 @@ inline auto dispatch_compose_workspace_action(
         defaults.compose_navigation_input,
         defaults.autosave_loop,
         defaults.recovery_controller,
-        defaults.scanned_primary_version,
         defaults.external_player_runtime,
         defaults.project_chart_runtime,
     };
@@ -174,12 +153,7 @@ inline auto dispatch_compose_input_action(
         defaults.close_feedback,
         history,
         workspace,
-        defaults.session_loaded,
-        defaults.native_project_loaded,
-        defaults.fresh_blank_project,
-        defaults.pending_audio_project_path,
-        defaults.pending_bms_encoding_path,
-        defaults.active_project_path,
+        defaults.project_identity,
         application_state,
         defaults.stepmania_export_policy,
         defaults.audio_offset_drag,
@@ -188,7 +162,6 @@ inline auto dispatch_compose_input_action(
         defaults.compose_interaction_state,
         defaults.metadata_drop,
         defaults.metadata_asset_runtime,
-        defaults.asset_base,
         defaults.resource_copy_scheduler,
         defaults.resource_copy_runtime,
         defaults.export_runtime,
@@ -201,7 +174,6 @@ inline auto dispatch_compose_input_action(
         navigation_input,
         defaults.autosave_loop,
         defaults.recovery_controller,
-        defaults.scanned_primary_version,
         defaults.external_player_runtime,
         defaults.project_chart_runtime,
     };
@@ -224,12 +196,7 @@ invoke_application_command(application_command_t command, wormedit::document_his
         defaults.close_feedback,
         history,
         workspace,
-        defaults.session_loaded,
-        defaults.native_project_loaded,
-        defaults.fresh_blank_project,
-        defaults.pending_audio_project_path,
-        defaults.pending_bms_encoding_path,
-        defaults.active_project_path,
+        defaults.project_identity,
         application_state,
         defaults.stepmania_export_policy,
         defaults.audio_offset_drag,
@@ -238,7 +205,6 @@ invoke_application_command(application_command_t command, wormedit::document_his
         compose_state,
         defaults.metadata_drop,
         defaults.metadata_asset_runtime,
-        defaults.asset_base,
         defaults.resource_copy_scheduler,
         defaults.resource_copy_runtime,
         defaults.export_runtime,
@@ -251,7 +217,6 @@ invoke_application_command(application_command_t command, wormedit::document_his
         defaults.compose_navigation_input,
         defaults.autosave_loop,
         defaults.recovery_controller,
-        defaults.scanned_primary_version,
         defaults.external_player_runtime,
         defaults.project_chart_runtime,
     };
@@ -266,7 +231,7 @@ inline auto dispatch_metadata_action(
     bool resource_copy_busy, bool export_busy,
     std::optional<notification_sink_t> notifications = {}) -> std::optional<std::string> {
     test_dispatch::defaults_t defaults;
-    defaults.asset_base = asset_base;
+    defaults.project_identity.asset_base = asset_base;
     auto& sink = notifications ? *notifications : defaults.notification_sink;
     application_dispatch_context_t environment{
         defaults.program_preferences,
@@ -275,12 +240,7 @@ inline auto dispatch_metadata_action(
         defaults.close_feedback,
         history,
         workspace,
-        defaults.session_loaded,
-        defaults.native_project_loaded,
-        defaults.fresh_blank_project,
-        defaults.pending_audio_project_path,
-        defaults.pending_bms_encoding_path,
-        defaults.active_project_path,
+        defaults.project_identity,
         defaults.application_command_state,
         defaults.stepmania_export_policy,
         defaults.audio_offset_drag,
@@ -289,7 +249,6 @@ inline auto dispatch_metadata_action(
         defaults.compose_interaction_state,
         metadata_drop,
         metadata_asset_runtime,
-        defaults.asset_base,
         resource_copy_scheduler,
         defaults.resource_copy_runtime,
         defaults.export_runtime,
@@ -302,7 +261,6 @@ inline auto dispatch_metadata_action(
         defaults.compose_navigation_input,
         defaults.autosave_loop,
         defaults.recovery_controller,
-        defaults.scanned_primary_version,
         defaults.external_player_runtime,
         defaults.project_chart_runtime,
     };

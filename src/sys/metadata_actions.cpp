@@ -397,7 +397,7 @@ auto dispatch_metadata_action(const WormUiWorkspaceAction& action,
     auto& workspace = environment.workspace_ref;
     auto& metadata_drop = environment.metadata_drop_ref;
     auto& metadata_asset_runtime = environment.metadata_asset_runtime_ref;
-    auto& asset_base = environment.asset_base_ref;
+    auto& asset_base = environment.project_identity_ref.asset_base;
     auto& resource_copy_scheduler = environment.resource_copy_scheduler_ref;
     const std::optional<notification_sink_t> notifications =
         post_notifications ? std::optional{environment.notification_sink_ref} : std::nullopt;

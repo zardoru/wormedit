@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/formats/native_project_storage.h>
 
 #include <filesystem>
 #include <optional>
@@ -8,6 +9,30 @@
 #include <vector>
 
 namespace wormedit::sys {
+
+struct project_chart_runtime_t;
+
+struct pending_import_t {
+    std::string audio_project_path;
+    std::string chart_project_path;
+    std::string bms_encoding_path;
+};
+
+struct project_identity_t {
+    bool session_loaded{};
+    bool native_project_loaded{};
+    bool fresh_blank_project{};
+    pending_import_t pending_import;
+    std::filesystem::path active_project_path;
+    std::filesystem::path asset_base;
+    std::optional<native_project_document_version_t> scanned_primary_version;
+    std::filesystem::path external_player_source_path;
+};
+
+// Generation changes before any project state, so captured work is stale first.
+// The dropped-chart request retains its existing consume-on-dispatch lifetime.
+void begin_project_session(project_identity_t& current, project_chart_runtime_t& charts,
+                           project_identity_t replacement);
 
 // Match the extensions accepted by open_project_file, case-insensitively.
 [[nodiscard]] auto is_supported_project_file_extension(

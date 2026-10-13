@@ -1001,8 +1001,9 @@ auto launch_external_player(external_player_runtime_t& runtime,
     wormedit::sys::external_player_action_t action, const wormedit::document_history_t& history,
     const wormedit::workspace_controller_t& workspace,
     const std::optional<wormedit::editor_interaction_state_t>& interaction,
-    const std::filesystem::path& asset_base, wormedit::notification_sink_t& notifications) -> std::string {
+    const wormedit::sys::project_identity_t& project, wormedit::notification_sink_t& notifications) -> std::string {
     using namespace wormedit::sys;
+    const auto& asset_base = project.asset_base;
     if (runtime.preferences.selected >= runtime.preferences.players.size()) {
         runtime.visible = true;
         return post_callback_feedback(notifications, wormedit::notification_severity_t::warning,
@@ -1025,7 +1026,7 @@ auto launch_external_player(external_player_runtime_t& runtime,
             wormedit::notification_source_t::audio, "Place the Compose cursor before playing externally from here.");
         measure = *source_measure;
     }
-    auto source = runtime.source_path;
+    auto source = project.external_player_source_path;
     if (source.empty() && chart && !asset_base.empty()) {
         // Native projects retain the authoritative resource directory, but no imported basename.
         bool popn{};
@@ -1186,7 +1187,7 @@ bool dispatch_project_chart_action(const WormUiWorkspaceAction& frame_action,
     auto& interaction = environment.compose_interaction_state_ref;
     auto& application = environment.application_command_state_ref;
     auto& notifications = environment.notification_sink_ref;
-    auto& loaded = environment.session_loaded_ref;
+    auto& loaded = environment.project_identity_ref.session_loaded;
     auto& scheduler = environment.resource_copy_scheduler_ref;
 
     if (handled) return true;
@@ -2028,7 +2029,7 @@ auto process_compose_frame_action(Context& context, WormUiWorkspaceAction& actio
             context.environment.application_command_state_ref,
             context.environment.notification_sink_ref, context.tap_event_ns_ref,
             preserves_editor_gesture);
-    if (!context.environment.session_loaded_ref)
+    if (!context.environment.project_identity_ref.session_loaded)
         return shortcut_handled;
     if (shortcut_handled && !preserves_editor_gesture &&
         context.environment.compose_interaction_state_ref &&
@@ -2201,9 +2202,9 @@ void post_project_feedback(Context& context, wormedit::notification_severity_t s
 }
 
 template <typename Context>
-void reset_project_runtime_state(Context& context) {
-    const auto generation = context.project_chart_runtime_ref.session_generation + 1;
-    context.project_chart_runtime_ref = {.session_generation = generation};
+void begin_project_session(Context& context, wormedit::sys::project_identity_t replacement) {
+    wormedit::sys::begin_project_session(context.project_identity_ref,
+        context.project_chart_runtime_ref, std::move(replacement));
     context.audio_offset_drag_ref.reset();
     context.audio_offset_drag_tab_ref.reset();
     context.compose_interaction_state_ref.reset();
@@ -2249,16 +2250,10 @@ auto replace_project_session(Context& context, wormedit::song_document_t documen
     }
     context.history_ref = std::move(replacement_history);
     context.workspace_ref = std::move(*replacement_binding.workspace);
-    context.session_loaded_ref = loaded;
-    context.native_project_loaded_ref = native_project;
-    context.fresh_blank_project_ref = false;
-    context.pending_audio_project_path_ref.clear();
-    context.pending_bms_encoding_path_ref.clear();
-    context.active_project_path_ref = std::move(native_path);
-    context.asset_base_ref = std::move(asset_base);
-    context.external_player_runtime_ref.source_path.clear();
-    context.scanned_primary_version_ref = saved_version;
-    reset_project_runtime_state(context);
+    begin_project_session(context, {.session_loaded = loaded,
+        .native_project_loaded = native_project,
+        .active_project_path = std::move(native_path), .asset_base = std::move(asset_base),
+        .scanned_primary_version = saved_version});
     return true;
 }
 
@@ -2270,7 +2265,7 @@ auto project_transition_ready(Context& context) -> bool {
                               "Wait for the current file operation before changing projects.");
         return false;
     }
-    if (context.session_loaded_ref && wormedit::is_document_dirty(context.history_ref)) {
+    if (context.project_identity_ref.session_loaded && wormedit::is_document_dirty(context.history_ref)) {
         post_project_feedback(context, wormedit::notification_severity_t::warning, wormedit::notification_source_t::document,
                               "Save the current project before replacing or closing it.");
         return false;
@@ -2281,7 +2276,7 @@ auto project_transition_ready(Context& context) -> bool {
 template <typename Context>
 auto save_project_session(Context& context, const WormUiWorkspaceAction& action) -> bool {
     using namespace wormedit;
-    if (!context.session_loaded_ref) {
+    if (!context.project_identity_ref.session_loaded) {
         post_project_feedback(context, notification_severity_t::warning, notification_source_t::document,
                               "Create or open a project before saving.");
         return false;
@@ -2293,7 +2288,7 @@ auto save_project_session(Context& context, const WormUiWorkspaceAction& action)
         return false;
     }
     auto destination = action.project_path[0] != '\0' ? std::filesystem::path{action.project_path}
-                                                      : context.active_project_path_ref;
+                                                      : context.project_identity_ref.active_project_path;
     if (destination.empty()) {
         post_project_feedback(context, notification_severity_t::hint, notification_source_t::document,
                               "Choose a native project path to save.");
@@ -2316,7 +2311,7 @@ auto save_project_session(Context& context, const WormUiWorkspaceAction& action)
         return false;
     }
     auto saved_document = context.history_ref.document;
-    wormedit::sys::rebase_project_paths(saved_document, context.asset_base_ref, destination_base);
+    wormedit::sys::rebase_project_paths(saved_document, context.project_identity_ref.asset_base, destination_base);
     const auto result = publish_native_project_atomic(destination, saved_document);
     if (!result.published) {
         post_project_feedback(context,
@@ -2326,27 +2321,27 @@ auto save_project_session(Context& context, const WormUiWorkspaceAction& action)
         return false;
     }
     wormedit::sys::rebase_project_paths(context.history_ref.document,
-                                        context.asset_base_ref, destination_base);
+                                        context.project_identity_ref.asset_base, destination_base);
     for (auto& entry : context.history_ref.undo) {
-        wormedit::sys::rebase_project_paths(entry.before, context.asset_base_ref, destination_base);
-        wormedit::sys::rebase_project_paths(entry.after, context.asset_base_ref, destination_base);
+        wormedit::sys::rebase_project_paths(entry.before, context.project_identity_ref.asset_base, destination_base);
+        wormedit::sys::rebase_project_paths(entry.after, context.project_identity_ref.asset_base, destination_base);
     }
     for (auto& entry : context.history_ref.redo) {
-        wormedit::sys::rebase_project_paths(entry.before, context.asset_base_ref, destination_base);
-        wormedit::sys::rebase_project_paths(entry.after, context.asset_base_ref, destination_base);
+        wormedit::sys::rebase_project_paths(entry.before, context.project_identity_ref.asset_base, destination_base);
+        wormedit::sys::rebase_project_paths(entry.after, context.project_identity_ref.asset_base, destination_base);
     }
     mark_document_saved(context.history_ref);
     const auto version = native_project_document_version_t{
         .project_id = context.history_ref.document.id,
         .revision = context.history_ref.document.revision};
     context.autosave_loop_ref.mark_explicit_save(version);
-    context.scanned_primary_version_ref = version;
-    context.active_project_path_ref = destination;
+    context.project_identity_ref.scanned_primary_version = version;
+    context.project_identity_ref.active_project_path = destination;
     remember_project_file(context.program_preferences_ref, destination,
                           context.notification_sink_ref);
-    context.native_project_loaded_ref = true;
-    context.asset_base_ref = destination_base;
-    context.external_player_runtime_ref.source_path.clear();
+    context.project_identity_ref.native_project_loaded = true;
+    context.project_identity_ref.asset_base = destination_base;
+    context.project_identity_ref.external_player_source_path.clear();
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     post_audio_inventory_feedback(
         wormedit::sys::reconcile_audition_sources(context.audition_reconciliation_ref, true),
@@ -2393,7 +2388,7 @@ void finish_confirmed_project_replacement(pending_close_t& pending, Context& con
         open_project_session(context, action);
     // Encoding choice continues the same approved replacement of this document version.
     if (pending.target == close_target_t::open_file && !pending.project_path.empty() &&
-        context.pending_bms_encoding_path_ref == pending.project_path) {
+        context.project_identity_ref.pending_import.bms_encoding_path == pending.project_path) {
         pending.awaiting_encoding = true;
         return;
     }
@@ -2449,7 +2444,7 @@ void confirm_unsaved_changes(pending_close_t& pending, close_target_t target, Co
         pending.layout_index = replacement->new_project_layout_index;
         pending.encoding_index = replacement->bms_encoding_index;
     }
-    if (!confirm || !context.session_loaded_ref ||
+    if (!confirm || !context.project_identity_ref.session_loaded ||
         !wormedit::is_document_dirty(context.history_ref))
         (void)finish_confirmed_close(pending, context);
 }
@@ -2550,9 +2545,9 @@ void open_project_session(Context& context, const WormUiWorkspaceAction& action)
             opened.needs_encoding_choice ? wormedit::notification_severity_t::warning : wormedit::notification_severity_t::error,
             wormedit::notification_source_t::import_, opened.error);
         if (opened.needs_encoding_choice)
-            context.pending_bms_encoding_path_ref = action.project_path;
+            context.project_identity_ref.pending_import.bms_encoding_path = action.project_path;
         else if (encoding)
-            context.pending_bms_encoding_path_ref.clear();
+            context.project_identity_ref.pending_import.bms_encoding_path.clear();
         return;
     }
     auto document = std::move(*opened.document);
@@ -2563,7 +2558,7 @@ void open_project_session(Context& context, const WormUiWorkspaceAction& action)
                                 opened.asset_base)) {
         remember_project_file(context.program_preferences_ref, opened.source_path,
                               context.notification_sink_ref);
-        context.external_player_runtime_ref.source_path =
+        context.project_identity_ref.external_player_source_path =
             opened.native_project ? std::filesystem::path{} : opened.source_path;
         post_project_feedback(context, wormedit::notification_severity_t::success,
             opened.native_project ? wormedit::notification_source_t::document : wormedit::notification_source_t::import_,
@@ -2584,7 +2579,7 @@ void create_audio_project_session(Context& context, const char* path,
     const auto audio = wormedit::sys::inspect_audio_for_project(path);
     if (!audio) {
         post_project_feedback(context, wormedit::notification_severity_t::error, wormedit::notification_source_t::import_, audio.error);
-        context.pending_audio_project_path_ref.clear();
+        context.project_identity_ref.pending_import.audio_project_path.clear();
         return;
     }
     auto document = wormedit::sys::audio_project_document(
@@ -2637,7 +2632,7 @@ void create_new_project_session(Context& context, const WormUiWorkspaceAction& a
             remember_snap_denominator(
                 context.application_command_state_ref, chart.id,
                 context.application_command_state_ref.preferences.editor_preferences.default_snap);
-        context.fresh_blank_project_ref = true;
+        context.project_identity_ref.fresh_blank_project = true;
         post_project_feedback(context, wormedit::notification_severity_t::success, wormedit::notification_source_t::document,
                               "New " + std::to_string(*lane_count) + "K project created. Save it to keep your work.");
     }
@@ -2647,12 +2642,12 @@ template <typename Context>
 auto dispatch_project_session_action(Context& context,
                                      const WormUiWorkspaceAction& action) -> bool {
     if (action.kind == WORM_UI_WORKSPACE_ACTION_CANCEL_BMS_ENCODING) {
-        context.pending_bms_encoding_path_ref.clear();
+        context.project_identity_ref.pending_import.bms_encoding_path.clear();
         post_project_feedback(context, wormedit::notification_severity_t::hint, wormedit::notification_source_t::import_, "BMS import canceled.");
         return true;
     }
     if (action.kind == WORM_UI_WORKSPACE_ACTION_CANCEL_AUDIO_PROJECT) {
-        context.pending_audio_project_path_ref.clear();
+        context.project_identity_ref.pending_import.audio_project_path.clear();
         post_project_feedback(context, wormedit::notification_severity_t::hint, wormedit::notification_source_t::import_, "Audio import canceled.");
         return true;
     }
@@ -2708,18 +2703,10 @@ auto dispatch_recovery_workspace_action(Context& context,
     bool recovered = false;
     (void)wormedit::sys::dispatch_recovery_ui_action(
         action, context.recovery_controller_ref, context.history_ref, context.workspace_ref,
-        context.scanned_primary_version_ref, context.autosave_loop_ref, recovered,
+        context.project_identity_ref.scanned_primary_version, context.autosave_loop_ref, recovered,
         context.notification_sink_ref);
     if (recovered) {
-        context.session_loaded_ref = true;
-        context.native_project_loaded_ref = false;
-        context.fresh_blank_project_ref = false;
-        context.pending_audio_project_path_ref.clear();
-        context.pending_bms_encoding_path_ref.clear();
-        context.active_project_path_ref.clear();
-        context.asset_base_ref.clear();
-        context.scanned_primary_version_ref.reset();
-        reset_project_runtime_state(context);
+        begin_project_session(context, {.session_loaded = true});
     }
     return true;
 }
@@ -3102,7 +3089,7 @@ void dispatch_workspace_frame_action(Context& context, const WormUiWorkspaceActi
         // Project transitions are handled before editor actions.
     } else if (dispatch_recovery_workspace_action(context, action)) {
         // Recovery can open a document from the empty landing state.
-    } else if (!context.session_loaded_ref) {
+    } else if (!context.project_identity_ref.session_loaded) {
         // The landing view only accepts project and recovery actions.
     } else if (shortcut_handled) {
         // Registry commands take precedence over widget actions emitted
@@ -3305,8 +3292,8 @@ auto handle_workspace_view_error(const Model& model, Context& context,
                        wormedit::notification_source_t::document, diagnostic}},
                      context.notification_sink_ref);
     const auto close =
-        close_confirmation_view(pending_close, context.native_project_loaded_ref &&
-                                                   !context.active_project_path_ref.empty());
+        close_confirmation_view(pending_close, context.project_identity_ref.native_project_loaded &&
+                                                   !context.project_identity_ref.active_project_path.empty());
     const auto action = worm_ui_frontend_workspace_error(diagnostic.c_str(), &notifications, &close);
     pending_notification = action.notifications;
     if (dispatch_close_confirmation(pending_close, context, action, confirm)) return true;
@@ -3788,7 +3775,9 @@ int main(int argc, char** argv) {
     wormedit::sys::frontend_notification_sink_t frontend_notifications{notification_sink};
     auto& window = runtime.window;
 
-    auto asset_base =
+    wormedit::sys::project_identity_t project_identity;
+    auto& asset_base = project_identity.asset_base;
+    asset_base =
         startup.loaded_primary ? std::filesystem::absolute(requested_primary_path).parent_path()
                                : std::filesystem::path{};
     wormedit::sys::refresh_project_audio_availability(startup.document, asset_base);
@@ -3816,16 +3805,19 @@ int main(int argc, char** argv) {
     WormUiNotificationAction pending_notification{};
     seed_notification_smoke(notifications);
     seed_notification_history_smoke(notifications, history.document);
-    bool session_loaded = startup.loaded_primary;
-    bool native_project_loaded = startup.loaded_primary;
-    bool fresh_blank_project = false;
-    std::string pending_audio_project_path;
-    std::string pending_chart_project_path;
+    auto& session_loaded = project_identity.session_loaded;
+    session_loaded = startup.loaded_primary;
+    auto& native_project_loaded = project_identity.native_project_loaded;
+    native_project_loaded = startup.loaded_primary;
+    auto& fresh_blank_project = project_identity.fresh_blank_project;
+    auto& pending_audio_project_path = project_identity.pending_import.audio_project_path;
+    auto& pending_chart_project_path = project_identity.pending_import.chart_project_path;
     wormedit::sys::sound_drop_transaction_t sound_drop_transaction;
     std::vector<wormedit::sys::sound_drop_batch_t> pending_resource_batches;
     wormedit::sys::bga_dock_runtime_t bga_dock_runtime;
-    std::string pending_bms_encoding_path;
-    std::filesystem::path active_project_path =
+    auto& pending_bms_encoding_path = project_identity.pending_import.bms_encoding_path;
+    auto& active_project_path = project_identity.active_project_path;
+    active_project_path =
         startup.loaded_primary ? requested_primary_path : std::filesystem::path{};
     std::optional<wormedit::audio_offset_drag_t> audio_offset_drag;
     std::optional<wormedit::workspace_tab_t> audio_offset_drag_tab;
@@ -3913,7 +3905,8 @@ int main(int argc, char** argv) {
     wormedit::sys::recovery_scan_notification_publisher_t recovery_scan_feedback;
     recovery_scan_feedback.publish(recovery_controller.view(), notification_sink);
     const auto recovery_scan_configured = startup.recovery_scan_configured;
-    auto scanned_primary_version = startup.primary_version;
+    auto& scanned_primary_version = project_identity.scanned_primary_version;
+    scanned_primary_version = startup.primary_version;
 
     timing_scene_cache_t timing_scene_cache;
     timing_edit_t timing_edit;
@@ -3952,7 +3945,7 @@ int main(int argc, char** argv) {
     (void)autosave_loop.set_interval(std::chrono::minutes{program_preferences.preferences.general.autosave_minutes});
     application_command_state.services.external_player = [&](wormedit::sys::external_player_action_t action) {
         return launch_external_player(external_player_runtime, action, history, workspace,
-                                      compose_interaction_state, asset_base, notification_sink);
+                                      compose_interaction_state, project_identity, notification_sink);
     };
     wormedit::sys::inline_preview_cursor_t inline_preview_cursor;
     wormedit::stepmania_export_policy_t stepmania_export_policy;
@@ -3997,12 +3990,7 @@ int main(int argc, char** argv) {
                         close_feedback,
                         history,
                         workspace,
-                        session_loaded,
-                        native_project_loaded,
-                        fresh_blank_project,
-                        pending_audio_project_path,
-                        pending_bms_encoding_path,
-                        active_project_path,
+                        project_identity,
                         application_command_state,
                         stepmania_export_policy,
                         audio_offset_drag,
@@ -4011,7 +3999,6 @@ int main(int argc, char** argv) {
                         compose_interaction_state,
                         metadata_drop,
                         metadata_asset_runtime,
-                        asset_base,
                         resource_copy_scheduler,
                         resource_copy_runtime,
                         export_runtime,
@@ -4024,7 +4011,6 @@ int main(int argc, char** argv) {
                         compose_navigation_input,
                         autosave_loop,
                         recovery_controller,
-                        scanned_primary_version,
                         external_player_runtime,
                         project_chart_runtime,
                     };
@@ -4066,12 +4052,7 @@ int main(int argc, char** argv) {
                 close_feedback,
                 history,
                 workspace,
-                session_loaded,
-                native_project_loaded,
-                fresh_blank_project,
-                pending_audio_project_path,
-                pending_bms_encoding_path,
-                active_project_path,
+                project_identity,
                 application_command_state,
                 stepmania_export_policy,
                 audio_offset_drag,
@@ -4080,7 +4061,6 @@ int main(int argc, char** argv) {
                 compose_interaction_state,
                 metadata_drop,
                 metadata_asset_runtime,
-                asset_base,
                 resource_copy_scheduler,
                 resource_copy_runtime,
                 export_runtime,
@@ -4093,7 +4073,6 @@ int main(int argc, char** argv) {
                 compose_navigation_input,
                 autosave_loop,
                 recovery_controller,
-                scanned_primary_version,
                 external_player_runtime,
                 project_chart_runtime
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)

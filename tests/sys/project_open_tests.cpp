@@ -1,5 +1,6 @@
 #include "sys/project_open.h"
 #include "sys/project_save_paths.h"
+#include "sys/project_view.h"
 
 #include <wormedit/core/command.h>
 #include <wormedit/core/startup_session.h>
@@ -1092,4 +1093,52 @@ TEST_CASE("Audio availability requires a base for relative sources and accepts a
     wormedit::sys::refresh_project_audio_availability(document, {});
     check_open_audio(document.resources[0].missing);
     check_open_audio(!document.resources[1].missing);
+}
+
+namespace {
+void check_project_boundary(bool value) { CHECK(value); }
+}
+
+TEST_CASE("Recovered session clears the external player source path", "[sys][ownership]") {
+    wormedit::sys::project_identity_t current;
+    current.session_loaded = true;
+    current.external_player_source_path = "previous-chart.bms";
+    wormedit::sys::project_chart_runtime_t charts;
+    wormedit::sys::begin_project_session(current, charts, {.session_loaded = true});
+    check_project_boundary(current.external_player_source_path.empty());
+    check_project_boundary(current.session_loaded);
+    check_project_boundary(!current.native_project_loaded);
+}
+
+TEST_CASE("Project session boundary resets identity and advances generation", "[sys][ownership]") {
+    using namespace wormedit::sys;
+    project_identity_t current;
+    current.fresh_blank_project = true;
+    current.pending_import.audio_project_path = "pending.wav";
+    current.pending_import.bms_encoding_path = "pending.bms";
+    current.pending_import.chart_project_path = "dropped.osu";
+    current.active_project_path = "old.wormedit";
+    current.asset_base = "old-assets";
+    current.external_player_source_path = "old.bms";
+    current.scanned_primary_version = wormedit::native_project_document_version_t{
+        .project_id = wormedit::song_id_t{1}, .revision = 2};
+    project_chart_runtime_t charts;
+    charts.session_generation = 7;
+    charts.cache.populated = true;
+    begin_project_session(current, charts,
+        {.session_loaded = true, .native_project_loaded = true,
+         .active_project_path = "new.wormedit", .asset_base = "new-assets",
+         .scanned_primary_version = wormedit::native_project_document_version_t{
+             .project_id = wormedit::song_id_t{2}, .revision = 3}});
+    check_project_boundary(charts.session_generation == 8);
+    check_project_boundary(!charts.cache.populated);
+    check_project_boundary(current.session_loaded && current.native_project_loaded);
+    check_project_boundary(!current.fresh_blank_project);
+    check_project_boundary(current.pending_import.audio_project_path.empty());
+    check_project_boundary(current.pending_import.bms_encoding_path.empty());
+    check_project_boundary(current.pending_import.chart_project_path == "dropped.osu");
+    check_project_boundary(current.active_project_path == "new.wormedit");
+    check_project_boundary(current.asset_base == "new-assets");
+    check_project_boundary(current.scanned_primary_version->project_id == wormedit::song_id_t{2});
+    check_project_boundary(current.external_player_source_path.empty());
 }

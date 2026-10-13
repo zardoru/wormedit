@@ -7,6 +7,7 @@
 #include "sys/metadata_drop_state.h"
 #include "sys/preferences_runtime.h"
 #include "sys/project_view.h"
+#include "sys/project_open.h"
 #include "sys/resource_job_state.h"
 #include "sys/timing_edit_runtime.h"
 #include "sys/timing_view.h"
@@ -24,7 +25,6 @@ struct external_player_runtime_t {
     wormedit::sys::external_player_preferences_t preferences =
         wormedit::sys::default_external_player_preferences();
     wormedit::sys::program_preferences_runtime_t* program_preferences{};
-    std::filesystem::path source_path;
     bool visible{};
     std::uint64_t revision{};
     std::vector<WormUiExternalPlayerDefinitionView> views;
@@ -39,12 +39,7 @@ struct application_dispatch_context_t {
     std::string& close_feedback_ref;
     document_history_t& history_ref;
     workspace_controller_t& workspace_ref;
-    bool& session_loaded_ref;
-    bool& native_project_loaded_ref;
-    bool& fresh_blank_project_ref;
-    std::string& pending_audio_project_path_ref;
-    std::string& pending_bms_encoding_path_ref;
-    std::filesystem::path& active_project_path_ref;
+    project_identity_t& project_identity_ref;
     application_command_state_t& application_command_state_ref;
     stepmania_export_policy_t& stepmania_export_policy_ref;
     std::optional<audio_offset_drag_t>& audio_offset_drag_ref;
@@ -53,7 +48,6 @@ struct application_dispatch_context_t {
     std::optional<editor_interaction_state_t>& compose_interaction_state_ref;
     metadata_drop_state_t& metadata_drop_ref;
     runtime::metadata_asset_t& metadata_asset_runtime_ref;
-    std::filesystem::path& asset_base_ref;
     task_scheduler_t& resource_copy_scheduler_ref;
     runtime::resource_copy_t& resource_copy_runtime_ref;
     runtime::output_group_export_t& export_runtime_ref;
@@ -66,7 +60,6 @@ struct application_dispatch_context_t {
     editor_navigation_input_controller_t& compose_navigation_input_ref;
     native_project_autosave_loop_t& autosave_loop_ref;
     native_project_recovery_controller_t& recovery_controller_ref;
-    std::optional<native_project_document_version_t>& scanned_primary_version_ref;
     external_player_runtime_t& external_player_runtime_ref;
     project_chart_runtime_t& project_chart_runtime_ref;
 };

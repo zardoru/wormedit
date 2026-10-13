@@ -89,9 +89,9 @@ auto poll_frontend_events(WormWindow& window, application_dispatch_context_t& en
     auto& metadata_drop = environment.metadata_drop_ref;
     auto& workspace = environment.workspace_ref;
     auto& history = environment.history_ref;
-    auto& asset_base = environment.asset_base_ref;
+    auto& asset_base = environment.project_identity_ref.asset_base;
     auto& notifications = environment.notification_sink_ref;
-    auto& pending_audio_project_path = environment.pending_audio_project_path_ref;
+    auto& pending_audio_project_path = environment.project_identity_ref.pending_import.audio_project_path;
 
     bool running = true;
     SDL_Event event;

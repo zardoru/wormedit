@@ -1,4 +1,5 @@
 #include "sys/project_open.h"
+#include "sys/project_view.h"
 
 #include <wormedit/core/bmson_layer_defaults.h>
 #include <wormedit/core/lane_profiles.h>
@@ -491,6 +492,21 @@ auto validation_error(const diagnostic_list_t& diagnostics) -> std::string {
 }
 
 } // namespace
+
+void begin_project_session(project_identity_t& current, project_chart_runtime_t& charts,
+                           project_identity_t replacement) {
+    const auto generation = charts.session_generation + 1;
+    charts = {.session_generation = generation};
+    current.session_loaded = replacement.session_loaded;
+    current.native_project_loaded = replacement.native_project_loaded;
+    current.fresh_blank_project = replacement.fresh_blank_project;
+    current.active_project_path = std::move(replacement.active_project_path);
+    current.asset_base = std::move(replacement.asset_base);
+    current.scanned_primary_version = replacement.scanned_primary_version;
+    current.pending_import.audio_project_path.clear();
+    current.pending_import.bms_encoding_path.clear();
+    current.external_player_source_path.clear();
+}
 
 void refresh_project_audio_availability(song_document_t& document,
                                         const std::filesystem::path& asset_base) {

@@ -384,7 +384,7 @@ auto prepare_resource_copy(compose_action_context_t& context)
         return compose_feedback_t{
             "Wait for the current resource copy, import, or export to finish.",
             notification_severity_t::warning, notification_source_t::import_};
-    if (context.environment.asset_base_ref.empty())
+    if (context.environment.project_identity_ref.asset_base.empty())
         return compose_feedback_t{
             "Open a saved native project before copying resource files into it.",
             notification_severity_t::warning, notification_source_t::import_};
@@ -427,7 +427,7 @@ std::optional<std::string> start_resource_copy(compose_action_context_t& context
     using namespace wormedit;
     task_graph_t graph{1};
     const project_asset_copy_request_t request{.project_directory =
-                                                   context.environment.asset_base_ref,
+                                                   context.environment.project_identity_ref.asset_base,
                                                .source_path = plan.source,
                                                .asset = plan.asset};
     const auto added = graph.add_task({}, [request, plan](std::span<const task_result_t>,
@@ -486,7 +486,7 @@ auto prepare_output_export(compose_action_context_t& context)
     -> std::variant<output_export_plan_t, compose_feedback_t> {
     using namespace wormedit;
     const auto& doc = context.environment.history_ref.document;
-    if (context.environment.asset_base_ref.empty())
+    if (context.environment.project_identity_ref.asset_base.empty())
         return compose_feedback_t{"Open a saved native project before exporting an output group.",
                                   notification_severity_t::warning, notification_source_t::export_};
     if (context.environment.resource_copy_runtime_ref.busy() ||
@@ -533,7 +533,7 @@ std::optional<std::string> start_output_export(compose_action_context_t& context
     task_graph_t graph{1};
     const auto added = graph.add_task(
         {}, [snapshot = std::move(snapshot), group = std::move(plan.group),
-             request = std::move(plan.request), base = context.environment.asset_base_ref](
+             request = std::move(plan.request), base = context.environment.project_identity_ref.asset_base](
                 std::span<const task_result_t>, std::stop_token stop) mutable {
             return run_output_group_export_task(snapshot, group, request, base, stop);
         });
@@ -759,7 +759,7 @@ std::string relink_sound_fallback(compose_action_context_t& context) {
     if (asset == document.audio_assets.end())
         return compose_action_warning(context, "That sound is no longer in the project.");
     const auto fallback =
-        resolve_audio_fallback(asset->source_path, context.environment.asset_base_ref);
+        resolve_audio_fallback(asset->source_path, context.environment.project_identity_ref.asset_base);
     if (action.compose_fallback_candidate >= fallback.candidates.size())
         return compose_action_warning(context, "That file is no longer available.");
     const auto& chosen = fallback.candidates[action.compose_fallback_candidate];

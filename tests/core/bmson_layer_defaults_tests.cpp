@@ -56,8 +56,8 @@ constexpr std::array expected_colors{
 };
 
 auto initialized_chart_matches(chart_document_t chart, std::size_t channel_count) -> bool {
-    const auto result = initialize_bmson_sound_channel_layers(chart);
-    if (!result.error.empty() || !result.initialized ||
+    const auto result = create_bmson_sound_channel_layers(chart);
+    if (!result || !*result ||
         chart.semantic_layers.size() != channel_count ||
         chart.measures.front().notes.size() != channel_count ||
         chart.measures.front().bgm_events.size() != channel_count)
@@ -80,8 +80,8 @@ auto initialization_failure_is_atomic() -> bool {
     auto chart = imported_chart(2);
     const auto invalid_event = object_id_t{99999};
     chart.measures.front().notes.front().sound_channel_event = invalid_event;
-    const auto result = initialize_bmson_sound_channel_layers(chart);
-    return !result.error.empty() && !result.initialized && chart.semantic_layers.empty() &&
+    const auto result = create_bmson_sound_channel_layers(chart);
+    return !result && !result.error().empty() && chart.semantic_layers.empty() &&
            chart.measures.front().notes.front().sound_channel_event == invalid_event &&
            chart.measures.front().notes.front().semantic_layers.empty() &&
            chart.measures.front().bgm_events.front().semantic_layers.empty();
@@ -92,8 +92,8 @@ auto authored_layer_is_left_untouched() -> bool {
     chart.semantic_layers.push_back({.id = layer_id_t{77}, .name = "Authored",
                                      .color = {12, 34, 56, 255}});
     chart.measures.front().notes.front().semantic_layers = {layer_id_t{77}};
-    const auto result = initialize_bmson_sound_channel_layers(chart);
-    return result.error.empty() && !result.initialized && chart.semantic_layers.size() == 1 &&
+    const auto result = create_bmson_sound_channel_layers(chart);
+    return result && !*result && chart.semantic_layers.size() == 1 &&
            chart.semantic_layers.front().name == "Authored" &&
            chart.measures.front().notes.front().semantic_layers == std::vector{layer_id_t{77}} &&
            chart.measures.front().bgm_events.front().semantic_layers.empty();

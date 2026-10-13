@@ -20,8 +20,8 @@ struct properties_fixture_t {
         song.resources = {{.id = resource_id_t{4}, .name = "Voice", .asset = asset_id_t{3},
             .roles = {resource_role_t::sample}, .sound_kind = sound_kind_t::keysound,
             .tags = {"Vocal", "Keep"}}};
-        history = make_document_history(std::move(song));
-        const auto bound = make_workspace_controller(history);
+        history = document_history_t::from(std::move(song));
+        const auto bound = workspace_controller_t::from(history);
         REQUIRE(bound.workspace);
         workspace = *bound.workspace;
         workspace.active_tab = workspace_tab_t::audio_slices;

@@ -2567,7 +2567,7 @@ auto t422_note(document_history_t& history, std::uint64_t id) -> note_t* {
 struct t422_fixture_t {
     document_history_t history;
     using workspace_binding_t =
-        decltype(make_workspace_controller(std::declval<document_history_t&>()));
+        decltype(workspace_controller_t::from(std::declval<document_history_t&>()));
     workspace_binding_t binding;
     compose_scene_cache_t cache;
     application_command_state_t application;
@@ -2580,8 +2580,8 @@ struct t422_fixture_t {
     nuklear_event_harness_t harness{1800, 1400};
 
     explicit t422_fixture_t(song_document_t song)
-        : history(make_document_history(std::move(song))),
-          binding(make_workspace_controller(history)) {
+        : history(document_history_t::from(std::move(song))),
+          binding(workspace_controller_t::from(history)) {
         expect_t422(harness.ready());
         expect_t422(binding.workspace.has_value());
         binding.workspace->active_tab = workspace_tab_t::compose;
@@ -3630,7 +3630,7 @@ auto tool_route_matches(const WormUiWorkspaceAction& action, SDL_Scancode scanco
 
 TEST_CASE("Compose Alt tool shortcuts route through the ready command registry",
           "[frontend-state][event-harness][command-registry][tools]") {
-    auto registry = wormedit::make_default_editor_command_registry(
+    auto registry = wormedit::command_registry_t::from(
         [](const wormedit::command_invocation_context_t&) {
             return wormedit::command_invocation_result_t{.accepted = true};
         });
@@ -3652,7 +3652,7 @@ TEST_CASE("Compose Alt tool shortcuts route through the ready command registry",
 
 TEST_CASE("Unavailable Draw tool readiness rejects the routed shortcut",
           "[frontend-state][event-harness][command-registry][tools]") {
-    auto registry = wormedit::make_default_editor_command_registry(
+    auto registry = wormedit::command_registry_t::from(
         [](const wormedit::command_invocation_context_t&) {
             return wormedit::command_invocation_result_t{.accepted = true};
         });
@@ -4609,7 +4609,7 @@ TEST_CASE("Backquote shortcuts invoke the registered BGM verbs without legacy in
           "[frontend-state][event-harness][t424]") {
     nuklear_event_harness_t harness;
     std::string invoked;
-    const auto registry = wormedit::make_default_editor_command_registry([&](const auto& context) {
+    const auto registry = wormedit::command_registry_t::from([&](const auto& context) {
         invoked = context.command.value;
         return wormedit::command_invocation_result_t{.accepted = true};
     });
@@ -4905,7 +4905,7 @@ TEST_CASE("Real Shift Space events route to the selection loop command", "[front
     nuklear_event_harness_t harness;
     REQUIRE(harness.ready());
     unsigned calls{};
-    const auto registry = wormedit::make_default_editor_command_registry([&](const auto& context) {
+    const auto registry = wormedit::command_registry_t::from([&](const auto& context) {
         ++calls;
         check_layer_menu(context.command == wormedit::command_id_t{"transport.loop_selection"});
         return wormedit::command_invocation_result_t{.accepted = true};
@@ -6759,9 +6759,9 @@ TEST_CASE("Production area Delete enablement agrees with its scoped dispatch",
     auto song = t422_song();
     if (timing) song.charts.front().bpms.push_back({.id = object_id_t{400},
         .position = {measure_id_t{1}, 240}, .beats_per_minute = {150, 1}});
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const std::array snaps{std::uint64_t{4}};
-    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 120}, snaps, 4);
+    auto setup = editor_interaction_state_t::from(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 120}, snaps, 4);
     section_import_require(setup.state.has_value());
     auto state = *setup.state;
     state.retained_selection_range = position_span_t{{measure_id_t{1}, 120}, {measure_id_t{2}, 0}};
@@ -6813,8 +6813,8 @@ TEST_CASE("Area Quantize activates the registered verb instead of a fallback gri
         if (std::string_view{frame.get().menu_command_id} == "edit.apply_quantize") {
             emitted = true;
             auto action = frame.get();
-            auto history = wormedit::make_document_history(t422_song());
-            const auto binding = wormedit::make_workspace_controller(history);
+            auto history = wormedit::document_history_t::from(t422_song());
+            const auto binding = wormedit::workspace_controller_t::from(history);
             auto workspace = *binding.workspace;
             workspace.active_tab = wormedit::workspace_tab_t::compose;
             check_layer_menu(action.compose_menu_command);
@@ -7854,7 +7854,7 @@ TEST_CASE("Production Ctrl Alt A resolves the separate Select All Objects comman
     const auto key = key_event(SDL_EVENT_KEY_DOWN, SDLK_A, SDL_SCANCODE_A);
     const auto frame = h.frame(std::span{&key, 1}, static_cast<SDL_Keymod>(SDL_KMOD_CTRL | SDL_KMOD_ALT));
     std::string invoked;
-    const auto registry = make_default_editor_command_registry([&](const command_invocation_context_t& context) {
+    const auto registry = command_registry_t::from([&](const command_invocation_context_t& context) {
         invoked = context.command.value;
         return command_invocation_result_t{.accepted = true};
     });
@@ -8046,8 +8046,8 @@ TEST_CASE("Lane key assignment synchronizes the linked BMSON source through the 
 
 TEST_CASE("Metadata key-count preview retires when project identity changes with matching revision",
           "[frontend-state][event-harness][resource-import-consolidation]") {
-    auto history = make_document_history(t422_song());
-    auto binding = make_workspace_controller(history);
+    auto history = document_history_t::from(t422_song());
+    auto binding = workspace_controller_t::from(history);
     expect_t422(binding.workspace.has_value());
     task_scheduler_t scheduler{1, 1};
     runtime::metadata_asset_t assets;

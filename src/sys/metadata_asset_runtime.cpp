@@ -379,7 +379,7 @@ auto copy_and_decode_metadata_audio(const wormedit::project_asset_copy_request_t
         else
             (void)discard_unlinked_project_asset_copy(copy_request, completed->copy);
     }
-    return task_result_t::success(make_task_value(
+    return task_result_t::success(task_value_t::from(
         std::shared_ptr<const metadata_asset_import_task_result_t>{std::move(completed)}));
 }
 #endif
@@ -447,7 +447,7 @@ auto metadata_asset_t::start_copy_preview(
                                                      .maximum_bytes = request.maximum_bytes},
                                                     stop)
                         : inspect_project_asset_copy(request, stop));
-        return task_result_t::success(make_task_value(std::move(inspected)));
+        return task_result_t::success(task_value_t::from(std::move(inspected)));
     });
     if (!added)
         return finish(added.error ? added.error->message : "Copy inspection could not start.",

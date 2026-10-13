@@ -29,8 +29,8 @@ struct dispatch_fixture_t {
             song.resources.push_back({.id = resource_id_t{id}, .name = "Sound " + std::to_string(id),
                 .asset = asset_id_t{id}, .roles = {resource_role_t::sample}});
         }
-        history = make_document_history(std::move(song));
-        const auto binding = make_workspace_controller(history);
+        history = document_history_t::from(std::move(song));
+        const auto binding = workspace_controller_t::from(history);
         REQUIRE(binding.workspace);
         workspace = *binding.workspace;
     }
@@ -78,7 +78,7 @@ auto grouped_history(bool leave_run) -> document_history_t {
         other.target_identities.push_back({format_family_t::bms, base36(value), "WAV"});
     }
     song.resources.push_back(std::move(other));
-    return make_document_history(std::move(song));
+    return document_history_t::from(std::move(song));
 }
 
 auto two_scattered_groups_history() -> document_history_t {
@@ -100,7 +100,7 @@ auto two_scattered_groups_history() -> document_history_t {
     for (std::size_t value = 7; value < 36 * 36; ++value)
         other.target_identities.push_back({format_family_t::bms, base36(value), "WAV"});
     song.resources.push_back(std::move(other));
-    return make_document_history(std::move(song));
+    return document_history_t::from(std::move(song));
 }
 
 auto wav_value(const resource_entry_t& resource) -> std::size_t {

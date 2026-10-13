@@ -145,12 +145,12 @@ auto target_lane(const chart_document_t& chart, local_position_t position) -> la
     const auto built = build_measure_index(chart);
     const auto* index = std::get_if<measure_index_t>(&built);
     if (!index) return {};
-    const auto row = absolute_row(*index, position);
+    const auto row = (*index).row_of(position);
     if (!row) return {};
     const lane_layout_segment_t* active{};
     std::uint64_t active_row{};
     for (const auto& segment : chart.lane_layouts) {
-        const auto start = absolute_row(*index, segment.position);
+        const auto start = (*index).row_of(segment.position);
         if (start && *start <= *row && (!active || *start >= active_row)) {
             active = &segment;
             active_row = *start;
@@ -169,7 +169,7 @@ auto navigation_interaction(const document_history_t& history,
     if (chart == nullptr) return std::nullopt;
     const auto snaps = previous ? std::span<const std::uint64_t>{previous->supported_snap_denominators}
                                 : std::span<const std::uint64_t>{wormedit::default_snap_denominators};
-    auto setup = make_editor_interaction(history, target.chart, target_lane(*chart, target.position),
+    auto setup = editor_interaction_state_t::from(history, target.chart, target_lane(*chart, target.position),
         target.position, snaps, previous ? previous->active_snap_denominator : 16,
         previous ? previous->viewport_height_pixels : 1.0);
     return std::move(setup.state);

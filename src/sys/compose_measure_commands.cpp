@@ -98,7 +98,7 @@ auto apply_cursor_measure_split(document_history_t& history, editor_interaction_
     if (chart == nullptr) return "The selected chart is unavailable.";
     const auto index = build_measure_index(*chart);
     const auto* before = std::get_if<measure_index_t>(&index);
-    const auto row = before ? absolute_row(*before, state.cursor) : std::nullopt;
+    const auto row = before ? (*before).row_of(state.cursor) : std::nullopt;
     if (!row) return "The cursor is outside the authored chart.";
     const auto result = apply_measure_edit(history, history.document.revision,
         split_measure_action_t{state.chart, state.cursor});

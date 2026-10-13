@@ -121,7 +121,7 @@ void start_audition_source_probes(audio::decoded_source_registry_t& sources,
             {}, [&sources](std::span<const task_result_t>, std::stop_token stop) {
                 while (sources.probe_next_pending(stop)) {
                 }
-                return task_result_t::success(make_task_value(std::make_shared<const int>(0)));
+                return task_result_t::success(task_value_t::from(std::make_shared<const int>(0)));
             });
         if (!added) return;
     }
@@ -373,7 +373,7 @@ void resident_sample_loader_t::set_budget_bytes(std::size_t bytes) {
         [&store = store_, state, stop, pass = pass_mutex_](std::span<const task_result_t>, std::stop_token) {
             const std::scoped_lock lock(*pass);
             if (!stop.stop_requested()) finish_resident_pass(store, *state, stop, true);
-            return task_result_t::success(make_task_value(std::make_shared<const int>(0)));
+            return task_result_t::success(task_value_t::from(std::make_shared<const int>(0)));
         });
     if (!added || !scheduler_.submit(std::move(graph))) state->running = false;
 }
@@ -462,7 +462,7 @@ void resident_sample_loader_t::start(const song_document_t& document,
                 std::span<const task_result_t>, std::stop_token) {
             const std::scoped_lock pass_lock(*pass);
             if (stop.stop_requested())
-                return task_result_t::success(make_task_value(std::make_shared<const int>(0)));
+                return task_result_t::success(task_value_t::from(std::make_shared<const int>(0)));
             const auto wanted = resident_requests(candidates, sources, store.options(), stop);
             // The song head comes first so playback can start before any keysound loads.
             if (head_cache != nullptr) {
@@ -471,7 +471,7 @@ void resident_sample_loader_t::start(const song_document_t& document,
             }
             run_resident_loads(wanted, sources, store, *state, stop);
             finish_resident_pass(store, *state, stop, false);
-            return task_result_t::success(make_task_value(std::make_shared<const int>(0)));
+            return task_result_t::success(task_value_t::from(std::make_shared<const int>(0)));
         });
     if (!added || !scheduler_.submit(std::move(graph))) state->running = false;
 }

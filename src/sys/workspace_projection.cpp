@@ -654,7 +654,7 @@ auto append_compose_resource(flattened_workspace_t& result, frame_arena_t& arena
 void populate_compose_resources(const workspace_projection_context_t& projection) {
     auto& result = projection.result;
     auto& view = result.view.compose;
-    const auto catalog = make_compose_resource_catalog(projection.document,
+    const auto catalog = compose_resource_catalog_t::from(projection.document,
         projection.source.transport.audio_asset, WORM_UI_COMPOSE_RESOURCE_CAPACITY,
         projection.source.selected_visual_asset);
     auto* arena = result.arena();

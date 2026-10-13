@@ -53,26 +53,21 @@ void populate_compose_selection_preview(
     interaction_view.selected_objects = retained_state->selected_objects;
     if (retained_state->retained_selection_range) {
         const auto& retained = *retained_state->retained_selection_range;
-        const auto begin_row = wormedit::absolute_row(cache.scene.index->measures, retained.begin);
-        const auto end_row = wormedit::absolute_row(cache.scene.index->measures, retained.end);
-        const auto begin_measure =
-            std::ranges::find(cache.scene.index->measures.entries, retained.begin.measure,
-                              &wormedit::measure_index_entry_t::id);
-        const auto end_measure =
-            std::ranges::find(cache.scene.index->measures.entries, retained.end.measure,
-                              &wormedit::measure_index_entry_t::id);
+        const auto begin_row = (cache.scene.index->measures).row_of(retained.begin);
+        const auto end_row = (cache.scene.index->measures).row_of(retained.end);
+        const auto* begin_measure = cache.scene.index->measures.entry_for(retained.begin.measure);
+        const auto* end_measure = cache.scene.index->measures.entry_for(retained.end.measure);
         if (begin_row && end_row && *begin_row < *end_row &&
-            begin_measure != cache.scene.index->measures.entries.end() &&
-            end_measure != cache.scene.index->measures.entries.end()) {
+            begin_measure && end_measure) {
             view.area_range_available = true;
             view.area_range_begin_row = *begin_row;
             view.area_range_end_row = *end_row;
             view.beat_section_selection_span_available = true;
             view.beat_section_selection_begin_measure_number = static_cast<std::uint64_t>(
-                std::distance(cache.scene.index->measures.entries.begin(), begin_measure) + 1);
+                begin_measure - cache.scene.index->measures.entries.data() + 1);
             view.beat_section_selection_begin_row = retained.begin.row;
             view.beat_section_selection_end_measure_number = static_cast<std::uint64_t>(
-                std::distance(cache.scene.index->measures.entries.begin(), end_measure) + 1);
+                end_measure - cache.scene.index->measures.entries.data() + 1);
             view.beat_section_selection_end_row = retained.end.row;
         } else {
             retained_state->retained_selection_range.reset();

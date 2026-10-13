@@ -26,7 +26,7 @@ auto clipboard_timing_song() -> song_document_t {
 
 TEST_CASE("A selected Kiai area and speed marker are copied and cut together",
           "[unit][sys][clipboard]") {
-    auto history = make_document_history(clipboard_timing_song());
+    auto history = document_history_t::from(clipboard_timing_song());
     editor_interaction_state_t state;
     state.chart = chart_id_t{1};
     state.selected_objects = {{editor_selection_object_kind_t::speed_event, object_id_t{2}}};

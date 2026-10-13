@@ -66,7 +66,7 @@ struct packed_geometry_builder_t {
     document_id_index_t<resource_entry_t> resources;
     document_id_index_t<audio_asset_t> assets;
     std::unordered_map<std::uint64_t, const audio::decoded_source_binding_t*> sources;
-    std::unordered_map<std::uint64_t, const measure_index_entry_t*> measures;
+    measure_lookup_t measures;
     std::unordered_map<std::uint64_t, sound_slice_result_t> slices;
     std::unordered_set<std::uint64_t> continuation_channels;
     std::unordered_map<std::uint64_t, const derived_sound_slice_t*> spans;
@@ -84,7 +84,7 @@ inline void prepare_packed_geometry(packed_geometry_builder_t& builder,
         builder.resources.add(resource);
     for (const auto& asset : builder.document.audio_assets) builder.assets.add(asset);
     for (const auto& binding : builder.bindings) builder.sources.emplace(binding.asset.value, &binding);
-    for (const auto& measure : measures.entries) builder.measures.emplace(measure.id.value, &measure);
+    builder.measures = measure_lookup_t::from(measures);
 }
 inline auto packed_event_clip(const packed_geometry_builder_t& builder, const bgm_event_t& event)
     -> std::optional<audio_clip_t> {
@@ -138,26 +138,20 @@ inline auto packed_linked_span(packed_geometry_builder_t& builder, const bgm_eve
 }
 inline auto packed_event_row(const packed_geometry_builder_t& builder, local_position_t position)
     -> std::optional<std::uint64_t> {
-    const auto measure = builder.measures.find(position.measure.value);
-    if (measure == builder.measures.end() || position.row >= measure->second->row_capacity ||
-        position.row > std::numeric_limits<std::uint64_t>::max() - measure->second->absolute_begin_row)
-        return std::nullopt;
-    return measure->second->absolute_begin_row + position.row;
+    return builder.measures.row_of(position);
 }
 inline auto make_packed_piece(packed_geometry_builder_t& builder, const bgm_event_t& event)
     -> std::optional<packed_waveform_piece_t> {
-    const auto measure = builder.measures.find(event.position.measure.value);
+    const auto* measure = builder.measures.entry_for(event.position.measure);
     const auto clip = packed_event_clip(builder, event);
-    if (!clip || measure == builder.measures.end() ||
-        event.position.row >= measure->second->row_capacity ||
-        event.position.row > std::numeric_limits<std::uint64_t>::max() - measure->second->absolute_begin_row)
+    const auto row = builder.measures.row_of(event.position);
+    if (!clip || !measure || !row)
         return std::nullopt;
-    const auto row = measure->second->absolute_begin_row + event.position.row;
-    const auto seconds = builder.timing.seconds_at_approx(row, chart_end_policy_t::reject);
-    const auto duration = packed_measure_seconds(builder.timing, *measure->second, row);
+    const auto seconds = builder.timing.seconds_at_approx(*row, chart_end_policy_t::reject);
+    const auto duration = packed_measure_seconds(builder.timing, *measure, *row);
     if (!seconds || !duration || !std::isfinite(*seconds) || !std::isfinite(*duration)) return std::nullopt;
     packed_waveform_piece_t piece{.event = event.id, .lane = event.source_lane, .clip = *clip,
-        .position = event.position, .row = row, .begin_seconds = *seconds,
+        .position = event.position, .row = *row, .begin_seconds = *seconds,
         .end_seconds = std::numeric_limits<double>::infinity(), .measure_seconds = *duration};
     packed_source_geometry(builder, piece);
     if (!packed_linked_span(builder, event, piece)) return std::nullopt;
@@ -357,7 +351,7 @@ struct stem_slice_scan_t {
     for (const auto& event : channel.events) {
         const auto at = index_of.find(event.position.measure.value);
         const auto row =
-            at == index_of.end() ? std::nullopt : absolute_row(measures, event.position);
+            at == index_of.end() ? std::nullopt : (measures).row_of(event.position);
         const auto event_time = row ? timing.seconds_at_approx(*row, chart_end_policy_t::reject, timing_boundary_side_t::after_stops) : std::nullopt;
         if (!event_time)
             return true;
@@ -421,7 +415,7 @@ inline void stem_add_interval(stem_index_channel_t& channel, double begin, doubl
     std::optional<double> duration, double chart_end) -> bool {
     const auto at = index.measure_by_id.find(event.position.measure.value);
     if (at == index.measure_by_id.end()) return false;
-    const auto row = absolute_row(index.measures, event.position);
+    const auto row = (index.measures).row_of(event.position);
     const auto when = row ? index.timing.seconds_at_approx(*row, chart_end_policy_t::reject, timing_boundary_side_t::after_stops) : std::nullopt;
     if (!when || (scan.previous_time && *when < *scan.previous_time)) return false;
     if (scan.previous_time) {

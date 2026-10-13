@@ -203,7 +203,7 @@ auto previous_beat_fit_anchor(const wormedit::chart_document_t& chart,
     std::optional<wormedit::local_position_t> anchor;
     std::uint64_t anchor_row{};
     const auto consider = [&](wormedit::local_position_t position) {
-        const auto row = wormedit::absolute_row(measures, position);
+        const auto row = (measures).row_of(position);
         if (row && *row < beat_row && (!anchor || *row > anchor_row)) {
             anchor = position;
             anchor_row = *row;
@@ -419,7 +419,7 @@ auto click_compose_waveform(const WormUiComposeInputAction& input, compose_input
         cache.scene.index->measures, edit_snap_denominator(*context.input_chart, context.state), end);
     if (!target)
         return compose_input_family_result_t{"Waveform overview seek is unavailable."};
-    const auto position = local_position_for_row(cache.scene.index->measures, target->snapped_row);
+    const auto position = (cache.scene.index->measures).position_at(target->snapped_row);
     if (!position)
         return compose_input_family_result_t{"Waveform cursor position is unavailable."};
     const auto outcome =

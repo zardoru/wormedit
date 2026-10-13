@@ -334,8 +334,8 @@ auto loop_region_for_selection(const wormedit::chart_document_t& chart,
     const auto built_measures = build_measure_index(chart);
     const auto* measures = std::get_if<measure_index_t>(&built_measures);
     if (!measures) return std::nullopt;
-    const auto begin_row = absolute_row(*measures, selection.begin);
-    const auto end_row = absolute_row(*measures, selection.end);
+    const auto begin_row = (*measures).row_of(selection.begin);
+    const auto end_row = (*measures).row_of(selection.end);
     if (!begin_row || !end_row || *begin_row != requested_begin_row ||
         *end_row != requested_end_row || *begin_row >= *end_row) return std::nullopt;
     const auto built_timing = build_timing_index(chart, {.allow_bounded_clock = true});
@@ -476,7 +476,7 @@ void remap_and_save_shortcut(wormedit::command_registry_t& registry, const worme
         return;
     }
     const auto saved = wormedit::save_shortcut_profile_atomic(shortcut_profile_path(preferences),
-                                                              wormedit::make_shortcut_profile(registry, "user"));
+                                                              wormedit::shortcut_profile_t::from(registry, "user"));
     if (saved)
         notifications.post(wormedit::notification_severity_t::success, wormedit::notification_source_t::input,
                            "Shortcut saved: " + id.value);
@@ -586,7 +586,7 @@ auto external_source_measure(const wormedit::chart_document_t& chart,
     const auto* canvas = std::get_if<wormedit::virtual_canvas_t>(&built);
     if (!canvas) return std::nullopt;
     const auto row = interaction->virtual_bms_cursor_row
-        ? interaction->virtual_bms_cursor_row : wormedit::absolute_row(canvas->authored_index, interaction->cursor);
+        ? interaction->virtual_bms_cursor_row : (canvas->authored_index).row_of(interaction->cursor);
     const auto measure = row ? canvas->measure_containing(*row) : std::nullopt;
     return measure ? std::optional<std::uint64_t>{measure->number} : std::nullopt;
 }
@@ -910,7 +910,7 @@ void refresh_application_command_states(
     set("timing.open_settings", true);
 
     const auto palette = compose_ready
-                             ? make_semantic_layer_palette_window(
+                             ? semantic_layer_palette_window_t::from(
                                    *chart, application_state.project.semantic_layer.semantic_layer_target,
                                    application_state.project.semantic_layer.semantic_layer_palette_chart == chart->id
                                        ? application_state.project.semantic_layer.semantic_layer_palette_page
@@ -1563,12 +1563,12 @@ auto compare_jump_interaction(const wormedit::document_history_t& history,
     if (previous && previous->chart == chart.id) return previous;
     const auto built = wormedit::build_measure_index(chart);
     const auto* index = std::get_if<wormedit::measure_index_t>(&built);
-    const auto row = index ? wormedit::absolute_row(*index, position) : std::nullopt;
+    const auto row = index ? (*index).row_of(position) : std::nullopt;
     const wormedit::lane_layout_segment_t* active{};
     std::uint64_t active_row{};
     if (row) {
         for (const auto& segment : chart.lane_layouts) {
-            const auto start = wormedit::absolute_row(*index, segment.position);
+            const auto start = (*index).row_of(segment.position);
             if (start && *start <= *row && (!active || *start >= active_row)) {
                 active = &segment;
                 active_row = *start;
@@ -1576,7 +1576,7 @@ auto compare_jump_interaction(const wormedit::document_history_t& history,
         }
     }
     if (!active || active->layout.lanes.empty()) return std::nullopt;
-    const auto setup = wormedit::make_editor_interaction(history, chart.id,
+    const auto setup = wormedit::editor_interaction_state_t::from(history, chart.id,
         active->layout.lanes.front().id, position,
         previous ? std::span<const std::uint64_t>{previous->supported_snap_denominators}
                  : std::span<const std::uint64_t>{wormedit::default_snap_denominators},
@@ -2869,8 +2869,8 @@ struct application_t::implementation_t {
                                  std::filesystem::path asset_base) -> bool {
         using namespace wormedit;
         wormedit::sys::refresh_project_audio_availability(document, asset_base);
-        auto replacement_history = make_document_history(std::move(document), 128, saved);
-        auto replacement_binding = make_workspace_controller(replacement_history);
+        auto replacement_history = document_history_t::from(std::move(document), 128, saved);
+        auto replacement_binding = workspace_controller_t::from(replacement_history);
         if (!replacement_binding) {
             post_project_feedback(notification_severity_t::error, notification_source_t::document,
                                   "The selected document could not be bound to a workspace.");
@@ -3991,8 +3991,8 @@ struct application_t::implementation_t {
             startup.loaded_primary ? std::filesystem::absolute(requested_primary_path).parent_path()
                                    : std::filesystem::path{};
         refresh_project_audio_availability(startup.document, session.project_identity.asset_base);
-        session.history = make_document_history(std::move(startup.document), 128, true);
-        auto binding = make_workspace_controller(session.history);
+        session.history = document_history_t::from(std::move(startup.document), 128, true);
+        auto binding = workspace_controller_t::from(session.history);
         if (!binding) {
             std::fprintf(stderr, "Initial workspace binding failed\n");
             return false;
@@ -4082,7 +4082,7 @@ struct application_t::implementation_t {
         views.tap_clock = [this]() -> tap_timing_clock_t {
             return read_tap_clock(tap_clock_context);
         };
-        command_registry = make_default_editor_command_registry(
+        command_registry = command_registry_t::from(
             command_menu_invoker([this](const command_invocation_context_t& invocation) {
                 return invoke_registry_command(invocation);
             }));

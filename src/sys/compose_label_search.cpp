@@ -26,7 +26,7 @@ auto locate_matches(const chart_document_t& chart, const measure_index_t& measur
     std::vector<located_match_t> located;
     for (const auto id : ids) {
         const auto position = note_position(chart, id);
-        const auto row = position ? absolute_row(measures, *position) : std::nullopt;
+        const auto row = position ? (measures).row_of(*position) : std::nullopt;
         if (row) located.push_back({id, *position, *row});
     }
     return located;
@@ -59,7 +59,7 @@ auto find_label_search_hit(const chart_document_t& chart, std::string_view text,
     auto located = locate_matches(chart, *measures, ids);
     if (located.empty()) return std::nullopt;
     std::ranges::stable_sort(located, {}, &located_match_t::row);
-    const auto cursor_row = absolute_row(*measures, cursor).value_or(0);
+    const auto cursor_row = (*measures).row_of(cursor).value_or(0);
     return label_search_hit_t{.matches = ids, .target = pick_target(located, cursor_row, step).position};
 }
 

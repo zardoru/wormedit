@@ -34,7 +34,7 @@ auto usage_history() -> document_history_t {
                        .name = "Voice",
                        .asset = asset_id_t{10},
                        .roles = {resource_role_t::sample}}};
-    return make_document_history(std::move(song));
+    return document_history_t::from(std::move(song));
 }
 
 auto usage_action(const document_history_t& history, bool source_row = false)
@@ -70,7 +70,7 @@ auto valid_request() -> WormUiSoundUsageRequest {
 }
 
 auto audio_workspace(const song_document_t& document) -> std::optional<workspace_controller_t> {
-    auto bound = make_workspace_controller(document);
+    auto bound = workspace_controller_t::from(document);
     if (!bound)
         return std::nullopt;
     bound.workspace->active_tab = workspace_tab_t::audio_slices;
@@ -200,7 +200,7 @@ TEST_CASE("sound usage action rejects stale project context and malformed rows a
         auto workspace = *workspace_result;
         std::optional<editor_interaction_state_t> interaction;
         auto seed = usage_action(history);
-        const auto setup = make_editor_interaction(
+        const auto setup = editor_interaction_state_t::from(
             history, chart_id_t{7},
             history.document.charts.front().lane_layouts.front().layout.lanes.front().id,
             {measure_id_t{1}, 0}, std::array<std::uint64_t, 2>{4, 8}, 4);
@@ -265,7 +265,7 @@ TEST_CASE("source sound usage selects channel identity without moving cursor") {
     auto workspace = *workspace_result;
     auto profile = history.document.charts.front().lane_layouts.front().layout;
     const auto setup =
-        make_editor_interaction(history, chart_id_t{7}, profile.lanes.front().id,
+        editor_interaction_state_t::from(history, chart_id_t{7}, profile.lanes.front().id,
                                 {measure_id_t{1}, 0}, std::array<std::uint64_t, 1>{4}, 4);
     std::optional<editor_interaction_state_t> interaction{setup.state};
     const auto before = interaction->cursor;

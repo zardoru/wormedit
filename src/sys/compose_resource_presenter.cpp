@@ -89,7 +89,7 @@ auto make_resource_entry(const song_document_t& document, const resource_entry_t
 }
 } // namespace
 
-auto make_compose_resource_catalog(const song_document_t& document,
+auto compose_resource_catalog_t::from(const song_document_t& document,
                                    std::optional<asset_id_t> selected_audio_asset,
                                    std::size_t maximum_entries,
                                    std::optional<asset_id_t> selected_visual_asset)

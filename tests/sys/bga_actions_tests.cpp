@@ -30,8 +30,8 @@ struct Fixture {
                     .layout = {.profile_id = "test", .lanes = {{.id = lane_id_t{1}, .name = "Key"}}}}},
                 .bpms = {{.id = object_id_t{11}, .position = {measure_id_t{1}, 0}, .beats_per_minute = {120, 1}}}}}};
         require_bga(static_cast<bool>(validate_document(song).empty()));
-        history = make_document_history(std::move(song));
-        const auto binding = make_workspace_controller(history);
+        history = document_history_t::from(std::move(song));
+        const auto binding = workspace_controller_t::from(history);
         require_bga(static_cast<bool>(binding.workspace));
         workspace = *binding.workspace;
     }

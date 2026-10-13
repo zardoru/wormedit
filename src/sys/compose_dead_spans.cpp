@@ -27,7 +27,7 @@ void add_pause_spans(const chart_document_t& chart, const measure_index_t& measu
                      const timing_index_t& timing, dead_span_projection_t& result) {
     std::map<std::tuple<std::uint64_t, int>, pause_group_t> groups;
     for (const auto& pause : chart.pauses) {
-        const auto row = absolute_row(measures, pause.position);
+        const auto row = (measures).row_of(pause.position);
         if (!row) {
             result.truncated = true;
             continue;
@@ -59,8 +59,8 @@ void add_pause_spans(const chart_document_t& chart, const measure_index_t& measu
 void add_warp_spans(const chart_document_t& chart, const measure_index_t& measures,
                     dead_span_projection_t& result) {
     for (const auto& warp : chart.warps) {
-        const auto begin = absolute_row(measures, warp.span.begin);
-        const auto end = absolute_row(measures, warp.span.end);
+        const auto begin = (measures).row_of(warp.span.begin);
+        const auto end = (measures).row_of(warp.span.end);
         if (!begin || !end || *end <= *begin) {
             result.truncated = true;
             continue;

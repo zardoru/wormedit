@@ -39,16 +39,16 @@ struct compose_notification_fixture_t {
                       .beats_per_minute = {120, 1}}}};
         chart.measures.front().notes = {{.id = object_id_t{1}, .position = {measure_id_t{1}, 120}, .lane = lane_id_t{1}}};
         chart.semantic_layers = {{.id = layer_id_t{8}, .name = "Layer", .color = {1, 2, 3, 255}}};
-        history = make_document_history({.id = song_id_t{1}, .revision = 9, .charts = {chart}});
+        history = document_history_t::from({.id = song_id_t{1}, .revision = 9, .charts = {chart}});
         constexpr std::array snaps{std::uint64_t{4}, std::uint64_t{8}};
-        const auto setup = make_editor_interaction(history, chart_id_t{7}, lane_id_t{1},
+        const auto setup = editor_interaction_state_t::from(history, chart_id_t{7}, lane_id_t{1},
                                                    {measure_id_t{1}, 0}, snaps, 4);
         REQUIRE(setup);
         state = *setup.state;
         state.selected_notes = {object_id_t{1}};
         state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{1}}};
         optional_state = state;
-        const auto binding = make_workspace_controller(history);
+        const auto binding = workspace_controller_t::from(history);
         REQUIRE(binding);
         workspace = *binding.workspace;
         workspace.active_tab = workspace_tab_t::compose;
@@ -463,7 +463,7 @@ struct dead_span_fixture_t : compose_notification_fixture_t {
                          .source_unit = pause_unit_t::seconds}};
         chart.warps = {{.id = object_id_t{21}, .span = {{measure_id_t{1}, 720}, {measure_id_t{1}, 840}}}};
         REQUIRE(validate_document(history.document).empty());
-        history = make_document_history(history.document);
+        history = document_history_t::from(history.document);
         const auto measures = build_measure_index(history.document.charts.front());
         REQUIRE(std::holds_alternative<measure_index_t>(measures));
         const auto timing = build_timing_index(history.document.charts.front());

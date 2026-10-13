@@ -180,7 +180,7 @@ void project_timing_stage_value(timing_stage_value_context_t& context, const Val
         set_primary(value.duration.numerator, value.duration.denominator);
     } else if constexpr (std::is_same_v<Value, wormedit::timing_warp_value_t>) {
         const auto end_row = context.measures
-                                 ? wormedit::absolute_row(*context.measures, value.end)
+                                 ? (*context.measures).row_of(value.end)
                                  : std::nullopt;
         const auto step = context.stage.existing_event.has_value()
                               ? std::uint64_t{1}
@@ -222,7 +222,7 @@ void populate_timing_stage_view(
             stage->existing_event.has_value() ? stage->existing_event->value : 0;
         view.stage_lane = timing_lane_kind_to_ui(stage->kind);
         const auto stage_row =
-            measures ? wormedit::absolute_row(*measures, stage->position) : std::nullopt;
+            measures ? (*measures).row_of(stage->position) : std::nullopt;
         view.stage_marker_y_pixels =
             stage_row ? row_to_pixels(static_cast<long double>(*stage_row)) : 0.0;
         view.stage_transition_is_seconds = false;

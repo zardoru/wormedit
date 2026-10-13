@@ -43,7 +43,7 @@ void populate_visible(sys::player_preview_presenter_t& presenter, WormUiPlayerPr
 TEST_CASE("player preview reports a status when the index cannot be built",
           "[unit][sys][player-preview]") {
     // A chart without a BPM has no timing, so the index cannot be compiled.
-    const auto history = make_document_history(document_with_revision(9, false));
+    const auto history = document_history_t::from(document_with_revision(9, false));
     sys::player_preview_presenter_t presenter;
     WormUiPlayerPreviewView view{};
 
@@ -57,7 +57,7 @@ TEST_CASE("player preview reports a status when the index cannot be built",
 
 TEST_CASE("player preview reports a status when no chart is usable",
           "[unit][sys][player-preview]") {
-    const auto history = make_document_history(document_with_revision(9));
+    const auto history = document_history_t::from(document_with_revision(9));
     sys::player_preview_presenter_t presenter;
     WormUiPlayerPreviewView view{};
 
@@ -68,7 +68,7 @@ TEST_CASE("player preview reports a status when no chart is usable",
 }
 
 TEST_CASE("player preview publishes a scene for a valid chart", "[unit][sys][player-preview]") {
-    const auto history = make_document_history(document_with_revision(9));
+    const auto history = document_history_t::from(document_with_revision(9));
     sys::player_preview_presenter_t presenter;
     WormUiPlayerPreviewView view{};
 

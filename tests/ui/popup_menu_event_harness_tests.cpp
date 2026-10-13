@@ -156,7 +156,7 @@ TEST_CASE("Global menus dismiss on Escape and right outside click and switch by 
     require_popup(harness.ready());
     auto& view = harness.view();
     view.compose.clipboard_copy_available = true;
-    wormedit::sys::project_menu_commands(wormedit::make_default_editor_command_registry({}), view);
+    wormedit::sys::project_menu_commands(wormedit::command_registry_t::from({}), view);
     (void)harness.frame();
 
     const auto file_title = harness.drawn_text_center("File");

@@ -30,14 +30,14 @@ auto history_song() -> song_document_t {
 }
 
 struct navigation_fixture_t {
-    document_history_t history{make_document_history(history_song())};
+    document_history_t history{document_history_t::from(history_song())};
     workspace_controller_t workspace;
     std::optional<editor_interaction_state_t> interaction;
     navigation_fixture_t() {
-        auto binding = make_workspace_controller(history);
+        auto binding = workspace_controller_t::from(history);
         REQUIRE(binding.workspace);
         workspace = *binding.workspace;
-        auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+        auto setup = editor_interaction_state_t::from(history, chart_id_t{1}, lane_id_t{1},
             {measure_id_t{1}, 0}, std::array<std::uint64_t, 1>{4}, 4);
         REQUIRE(setup.state);
         interaction = std::move(setup.state);
@@ -149,8 +149,8 @@ TEST_CASE("history Go to switches chart and jumps without snap rounding", "[sys]
 }
 
 TEST_CASE("history deleted target rejects before changing workspace or editor", "[sys][notifications]") {
-    auto history = make_document_history(history_song());
-    auto binding = make_workspace_controller(history);
+    auto history = document_history_t::from(history_song());
+    auto binding = workspace_controller_t::from(history);
     REQUIRE(binding.workspace);
     auto workspace = *binding.workspace;
     notification_center_t center{[] { return 0ns; }};

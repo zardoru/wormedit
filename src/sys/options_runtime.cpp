@@ -92,7 +92,7 @@ void validate_draft(options_runtime_t& r) {
         diagnose(r, WORM_UI_OPTIONS_FIELD_PLAYERS, valid_external_player_preferences(r.draft.players), "External-player definitions are invalid."); break;
     default: break;
     }
-    auto candidate = default_program_preferences();
+    auto candidate = program_preferences_t::with_defaults();
     copy_category(candidate, r.draft, r.category);
     if (r.diagnostics.empty() && !serialize_program_preferences(candidate))
         r.diagnostics.push_back({WORM_UI_OPTIONS_FIELD_PAGE, "This page contains invalid text or oversized values."});
@@ -339,7 +339,7 @@ auto apply_options_action(options_runtime_t& r, program_preferences_runtime_t& p
     case WORM_UI_OPTIONS_REVERT:
         copy_category(r.draft, program.preferences, r.category);
         copy_category(r.baseline, program.preferences, r.category); r.status.clear(); break;
-    case WORM_UI_OPTIONS_DEFAULTS: copy_category(r.draft, default_program_preferences(), r.category); r.status.clear(); break;
+    case WORM_UI_OPTIONS_DEFAULTS: copy_category(r.draft, program_preferences_t::with_defaults(), r.category); r.status.clear(); break;
     default: return false;
     }
     ++r.revision;

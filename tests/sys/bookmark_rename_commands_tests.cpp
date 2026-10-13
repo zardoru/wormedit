@@ -45,7 +45,7 @@ auto rename_song() -> song_document_t {
 
 TEST_CASE("bookmark rename preserves stable identity and exact beat or audio anchor",
           "[unit][sys][bookmark-rename]") {
-    document_history_t history{make_document_history(rename_song())};
+    document_history_t history{document_history_t::from(rename_song())};
     const auto beat = bookmark_navigation_t{}.rename_bookmark(history, 7, chart_id_t{2}, object_id_t{4}, "Étage 🎵");
     require_rename(beat.accepted);
     require_rename(history.document.charts.front().bookmarks.size() == 2);
@@ -79,7 +79,7 @@ TEST_CASE("bookmark rename preserves stable identity and exact beat or audio anc
 
 TEST_CASE("bookmark rename rejects stale revision and missing bookmark without mutation",
           "[unit][sys][bookmark-rename]") {
-    document_history_t history{make_document_history(rename_song())};
+    document_history_t history{document_history_t::from(rename_song())};
     const auto stale = bookmark_navigation_t{}.rename_bookmark(history, 6, chart_id_t{2}, object_id_t{4}, "Stale");
     check_rename(!stale.accepted);
     check_rename(history.document.revision == 7);
@@ -93,7 +93,7 @@ TEST_CASE("bookmark rename rejects stale revision and missing bookmark without m
 
 TEST_CASE("bookmark rename uses existing empty and UTF-8 label validation",
           "[unit][sys][bookmark-rename]") {
-    document_history_t history{make_document_history(rename_song())};
+    document_history_t history{document_history_t::from(rename_song())};
     const auto empty = bookmark_navigation_t{}.rename_bookmark(history, 7, chart_id_t{2}, object_id_t{4}, "");
     require_rename(empty.accepted);
     check_rename(history.document.charts.front().bookmarks.front().label.empty());

@@ -71,7 +71,7 @@ auto build_workspace_frame_model(compare_scene_cache_t& cache,
     const bool compare_active = workspace.active_tab == wormedit::workspace_tab_t::compare_validate;
     if (compare_active) cache_compare_diagnostics(cache, document);
     const auto* cached = compare_active ? &cache.cached_diagnostics : nullptr;
-    return wormedit::make_workspace_view(workspace, document, workspace.active_tab, cached,
+    return wormedit::workspace_view_t::from(workspace, document, workspace.active_tab, cached,
                                          &cache.branch_outline, &cache.binding_validation);
 }
 

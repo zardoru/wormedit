@@ -39,15 +39,15 @@ struct fit_fixture_t {
     WormUiWorkspaceAction action{};
     bool downscroll;
 
-    explicit fit_fixture_t(bool down) : history(make_document_history(fit_song(down))), downscroll(down) {
-        const auto bound = make_workspace_controller(history);
+    explicit fit_fixture_t(bool down) : history(document_history_t::from(fit_song(down))), downscroll(down) {
+        const auto bound = workspace_controller_t::from(history);
         expect_fit(bound.workspace.has_value());
         workspace = *bound.workspace;
         workspace.active_tab = workspace_tab_t::compose;
         workspace.transport.audio_asset = asset_id_t{6};
         const auto& chart = history.document.charts.front();
         const std::uint64_t snaps[]{4, 8, 16};
-        const auto setup = make_editor_interaction(history, chart.id, lane_id_t{1},
+        const auto setup = editor_interaction_state_t::from(history, chart.id, lane_id_t{1},
             {chart.measures.front().id, 0}, snaps, 16, 800);
         expect_fit(setup.state.has_value());
         state = *setup.state;

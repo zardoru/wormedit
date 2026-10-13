@@ -144,7 +144,7 @@ void tick_application_autosave(native_project_autosave_loop_t& autosave_loop,
                                const std::filesystem::path& recovery_path,
                                notification_sink_t& notifications,
                                const std::filesystem::path& asset_base) {
-    auto target = make_native_project_autosave_target(
+    auto target = native_project_autosave_target_t::from(
         history.document.id, loaded_primary, requested_primary_path, recovery_path);
     target.asset_base = asset_base;
     if (const auto result = autosave_loop.tick(

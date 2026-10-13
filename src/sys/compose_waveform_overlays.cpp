@@ -238,7 +238,7 @@ void append_proposed_marker(proposed_grid_context_t& projection,
         projection.view().truncated = true;
         return;
     }
-    const auto row = wormedit::absolute_row(projection.cache.scene.index->measures, position);
+    const auto row = (projection.cache.scene.index->measures).row_of(position);
     if (!row || *row < projection.rows.first || *row > projection.rows.second) return;
     const auto y = projection.proposed_y(*row);
     if (!y || std::abs(*y - projection.old_y(*row)) < 0.5 || *y < 0.0 ||
@@ -527,8 +527,8 @@ void project_beat_fit_positions(WormUiComposeView& compose,
                                 const editor_interaction_state_t& interaction,
                                 const beat_interval_drag_t& drag) {
     const auto& timing = *cache.timing.marker_timing_index;
-    compose.beat_fit_chart_row = absolute_row(cache.scene.index->measures, drag.beat).value_or(0);
-    const auto anchor_row = absolute_row(cache.scene.index->measures, drag.original_bpm_position);
+    compose.beat_fit_chart_row = (cache.scene.index->measures).row_of(drag.beat).value_or(0);
+    const auto anchor_row = (cache.scene.index->measures).row_of(drag.original_bpm_position);
     const auto pixels_per_row = compose.pixels_per_standard_measure /
                                 timing.divisions_per_standard_measure;
     const auto downscroll = compose_field_downscroll(chart);

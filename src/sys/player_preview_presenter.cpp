@@ -607,7 +607,7 @@ template <typename Context, typename Frame>
 auto present_player_preview_frame(const Context& context, const Frame& frame) -> bool {
     auto& state = context.state;
     auto& view = context.view;
-    const auto scene = make_player_preview_scene(
+    const auto scene = player_preview_scene_t::from(
         *state.index, {.sample_frame = context.sample_frame,
                        .sample_rate = context.sample_rate,
                        .viewport_width_pixels = view.viewport_width_pixels,

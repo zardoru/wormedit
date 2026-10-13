@@ -150,7 +150,7 @@ void block_paste_heads_in_warps(const wormedit::chart_document_t& chart,
     if (!index) return;
     for (const auto& object : proposal.objects) {
         const auto* note = std::get_if<wormedit::note_t>(&object);
-        const auto row = note ? wormedit::absolute_row(*index, note->position) : std::nullopt;
+        const auto row = note ? (*index).row_of(note->position) : std::nullopt;
         if (!row || !wormedit::head_blocked_by_warp(chart, *index, *row, note->kind)) continue;
         proposal.valid = false;
         proposal.error = "Playable note heads cannot sit inside a warp.";
@@ -530,17 +530,16 @@ void populate_lane_layout_editor(WormUiComposeView& view, const wormedit::chart_
     view.lane_layout_edit_segment_id = 0;
     view.lane_layout_edit_is_update = false;
     view.lane_layout_edit_available = true;
-    const auto measure = std::ranges::find(measures.entries, cursor.measure,
-                                           &wormedit::measure_index_entry_t::id);
+    const auto* measure = measures.entry_for(cursor.measure);
     // At a virtual-only cursor the target is the selected canvas measure, created on apply.
-    const auto virtual_target = virtual_cursor || measure == measures.entries.end();
+    const auto virtual_target = virtual_cursor || !measure;
     if (virtual_target && !selected_canvas_measure) {
         view.lane_layout_edit_available = false;
         return;
     }
     const auto measure_number = virtual_target
         ? *selected_canvas_measure + 1
-        : static_cast<std::size_t>(measure - measures.entries.begin()) + 1;
+        : static_cast<std::size_t>(measure - measures.entries.data()) + 1;
     if (virtual_target) cursor = {};
     view.lane_layout_edit_measure_number = static_cast<std::uint32_t>(
         std::min<std::size_t>(measure_number, std::numeric_limits<std::uint32_t>::max()));
@@ -576,14 +575,13 @@ void populate_lane_layout_segments(flattened_workspace_t& flattened,
     const auto pixels_per_row = compose_pixels_per_row(chart, interaction);
     for (std::size_t index = 0; index < count; ++index) {
         const auto& segment = chart.lane_layouts[index];
-        const auto measure = std::ranges::find(measures.entries, segment.position.measure,
-                                               &wormedit::measure_index_entry_t::id);
-        const auto row = wormedit::absolute_row(measures, segment.position);
-        if (measure == measures.entries.end() || !row) {
+        const auto* measure = measures.entry_for(segment.position.measure);
+        const auto row = (measures).row_of(segment.position);
+        if (!measure || !row) {
             view.truncated = true;
             return;
         }
-        const auto measure_number = static_cast<std::size_t>(measure - measures.entries.begin()) + 1;
+        const auto measure_number = static_cast<std::size_t>(measure - measures.entries.data()) + 1;
         const auto projected_y = compose_project_y(*row, pixels_per_row,
                                                    interaction.viewport_scroll_pixels,
                                                    view.viewport_height_pixels, downscroll);
@@ -922,7 +920,7 @@ void populate_note_layer_menu(flattened_workspace_t& flattened,
     if (app.project.semantic_layer.note_layer_menu_chart != chart.id || app.project.semantic_layer.note_layer_menu_revision != revision)
         app.project.semantic_layer.note_layer_menu_row_count = 0;
     if (!app.project.semantic_layer.note_layer_menu_row_count) { rows = {}; return; }
-    const auto window = wormedit::make_semantic_layer_palette_window(chart,
+    const auto window = wormedit::semantic_layer_palette_window_t::from(chart,
         app.project.semantic_layer.note_layer_menu_first_row,
         std::min<std::size_t>(app.project.semantic_layer.note_layer_menu_row_count, WORM_UI_COMPOSE_NOTE_LAYER_WINDOW_CAPACITY));
     if (!window || !prepare_compose_geometry_rows(flattened, rows, window->layer_indices.size())) return;
@@ -958,7 +956,7 @@ bool populate_semantic_layer_palette(
     view.semantic_layer_unassigned_note_count = cache.frame.semantic_layer_membership_counts[0];
     view.semantic_layer_unassigned_bgm_count =
         cache.frame.semantic_layer_bgm_membership_counts[0];
-    const auto palette = wormedit::make_semantic_layer_palette_window(
+    const auto palette = wormedit::semantic_layer_palette_window_t::from(
         chart, application_state.project.semantic_layer.semantic_layer_first_row,
         std::clamp<std::size_t>(application_state.project.semantic_layer.semantic_layer_row_count, 1,
                                WORM_UI_COMPOSE_SEMANTIC_LAYER_WINDOW_CAPACITY));
@@ -1233,7 +1231,7 @@ bool initialize_compose_interaction(const compose_interaction_population_context
         std::optional<wormedit::lane_id_t> initial_lane;
         std::uint64_t earliest_layout_row = std::numeric_limits<std::uint64_t>::max();
         for (const auto& segment : chart.lane_layouts) {
-            const auto row = wormedit::absolute_row(measures, segment.position);
+            const auto row = (measures).row_of(segment.position);
             if (!row || *row >= earliest_layout_row)
                 continue;
             const auto lane = std::ranges::find_if(segment.layout.lanes, &wormedit::lane_definition_t::is_editable);
@@ -1246,7 +1244,7 @@ bool initialize_compose_interaction(const compose_interaction_population_context
         if (!initial_cursor || !initial_lane) {
             return {};
         }
-        return wormedit::make_editor_interaction(
+        return wormedit::editor_interaction_state_t::from(
             history, chart.id, *initial_lane, *initial_cursor, compose_snap_preferences(application_state, chart.id),
             requested_snap_denominator(application_state, chart.id), view.viewport_height_pixels);
     };
@@ -1258,7 +1256,7 @@ bool initialize_compose_interaction(const compose_interaction_population_context
             return false;
         }
         retained_state = *initial.state;
-        const auto initial_cursor_row = *wormedit::absolute_row(measures, retained_state->cursor);
+        const auto initial_cursor_row = *(measures).row_of(retained_state->cursor);
         const auto desired_scroll =
             static_cast<double>(initial_cursor_row) * retained_state->pixels_per_standard_measure /
                 chart.divisions_per_standard_measure -
@@ -1475,7 +1473,7 @@ void populate_compose_pending_previews(const compose_projection_context_t<wormed
         const auto& pending = *retained_state->pending_space_range_selection;
         const auto cursor_row = retained_state->virtual_bms_cursor_row
                                     ? retained_state->virtual_bms_cursor_row
-                                    : wormedit::absolute_row(measures, retained_state->cursor);
+                                    : (measures).row_of(retained_state->cursor);
         if (cursor_row) {
             const auto pixels_per_row = input.scope.pixels_per_row;
             const auto& preview = *interaction_view.pending_space_range_selection;
@@ -2212,7 +2210,7 @@ void append_paste_timing_ghosts(const compose_projection_context_t<wormedit::edi
     if (!(pixels_per_row > 0.0)) return;
     const auto height = input.frame.view().viewport_height_pixels;
     const auto project = [&](wormedit::local_position_t position) -> std::optional<double> {
-        const auto row = wormedit::absolute_row(input.scope.chart_scope.measures, position);
+        const auto row = (input.scope.chart_scope.measures).row_of(position);
         if (!row)
             return std::nullopt;
         return compose_project_y(*row, pixels_per_row,
@@ -2316,7 +2314,7 @@ void populate_compose_paint_ghost(const compose_projection_context_t<wormedit::e
         view.playable_field_right_pixels - view.playable_field_left_pixels, input.scope.downscroll,
         edit_snap_denominator(input.scope.chart_scope.chart, *input.frame.retained_state));
     if (!target) return;
-    const auto row = absolute_row(input.scope.chart_scope.measures, target->position);
+    const auto row = (input.scope.chart_scope.measures).row_of(target->position);
     if (!row) return;
     const auto source_y = static_cast<double>(*row) *
                               input.scope.interaction_view.pixels_per_standard_measure /

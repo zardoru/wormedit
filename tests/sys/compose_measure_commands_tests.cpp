@@ -35,12 +35,12 @@ auto measure_song() -> song_document_t {
 }
 
 struct fixture_t {
-    document_history_t history{make_document_history(measure_song())};
+    document_history_t history{document_history_t::from(measure_song())};
     editor_interaction_state_t state;
 
     explicit fixture_t(local_position_t cursor) {
         constexpr std::array snaps{std::uint64_t{4}};
-        auto setup = make_editor_interaction(history, chart_id_t{2}, lane_id_t{1}, cursor, snaps, 4, 192.0);
+        auto setup = editor_interaction_state_t::from(history, chart_id_t{2}, lane_id_t{1}, cursor, snaps, 4, 192.0);
         REQUIRE(setup);
         state = std::move(*setup.state);
     }

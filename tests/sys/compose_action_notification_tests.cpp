@@ -75,8 +75,8 @@ auto action_notification_song() -> song_document_t {
 struct action_notification_fixture_t {
     notification_center_t center;
     notification_sink_t sink{center};
-    document_history_t history{make_document_history(action_notification_song())};
-    workspace_controller_t workspace{*make_workspace_controller(history).workspace};
+    document_history_t history{document_history_t::from(action_notification_song())};
+    workspace_controller_t workspace{*workspace_controller_t::from(history).workspace};
     editor_interaction_state_t state;
     application_command_state_t application;
     std::filesystem::path asset_base;
@@ -116,7 +116,7 @@ struct action_notification_fixture_t {
     auto invoke_registered(const char* id) -> bool {
         std::optional<editor_interaction_state_t> interaction = state;
         std::optional<timing_lane_pseudonote_preview_t> timing;
-        const auto registry = make_default_editor_command_registry([&](const auto& request) {
+        const auto registry = command_registry_t::from([&](const auto& request) {
             const auto command = parse_application_command(request.command.value);
             return command ? invoke_application_command(*command, history, workspace, interaction,
                 timing, application, sink) : command_invocation_result_t{};
@@ -1139,7 +1139,7 @@ TEST_CASE("BMSON editor export publishes sliced audio and reports conversion los
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
     require_action(parsed.song.has_value());
     require_action_false(parsed.has_errors());
-    fixture.history = make_document_history(*parsed.song);
+    fixture.history = document_history_t::from(*parsed.song);
     if (other_selected_chart) {
         const auto added = apply_new_chart_command(fixture.history, fixture.history.document.revision);
         INFO((added.command.diagnostics.empty() ? "" : added.command.diagnostics.front().message));
@@ -1155,7 +1155,7 @@ TEST_CASE("BMSON editor export publishes sliced audio and reports conversion los
         .relative_output_path = named_output
             ? (target == format_family_t::osu_mania ? "exports/chart.osu" : "exports/chart.bme")
             : "exports"}};
-    const auto workspace = make_workspace_controller(fixture.history);
+    const auto workspace = workspace_controller_t::from(fixture.history);
     require_action(static_cast<bool>(workspace));
     fixture.workspace = *workspace.workspace;
     fixture.workspace.active_tab = tab;
@@ -1211,7 +1211,7 @@ TEST_CASE("BMSON editor BMS export materializes silent gameplay in private stagi
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
     require_action(parsed.song.has_value());
     require_action_false(parsed.has_errors());
-    fixture.history = make_document_history(*parsed.song);
+    fixture.history = document_history_t::from(*parsed.song);
     auto& chart = fixture.history.document.charts.front();
     const auto& lanes = chart.lane_layouts.front().layout.lanes;
     const auto lane = std::ranges::find(lanes, lane_role_t::playable, &lane_definition_t::role);
@@ -1221,7 +1221,7 @@ TEST_CASE("BMSON editor BMS export materializes silent gameplay in private stagi
     fixture.history.document.output_groups = {{.family = format_family_t::bms,
         .charts = {chart.id},
         .relative_output_path = incompatible_name ? "exports/chart.pms" : "exports"}};
-    const auto workspace = make_workspace_controller(fixture.history);
+    const auto workspace = workspace_controller_t::from(fixture.history);
     require_action(static_cast<bool>(workspace));
     fixture.workspace = *workspace.workspace;
     fixture.workspace.active_tab = workspace_tab_t::compose;
@@ -1452,8 +1452,8 @@ TEST_CASE("BMSON lane_mode dispatcher shares channel and sound targets with atom
     const std::string text = R"({"version":"1.0.0","info":{"title":"Modes","artist":"test","mode_hint":"beat-7k","resolution":240,"init_bpm":120},"lines":[{"y":0},{"y":960}],"sound_channels":[{"name":"stem.wav","notes":[{"x":0,"y":0,"c":false},{"x":0,"y":240,"c":true}]}]})";
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
     require_action(parsed.song.has_value());
-    fixture.history = make_document_history(*parsed.song);
-    fixture.workspace = *make_workspace_controller(fixture.history).workspace;
+    fixture.history = document_history_t::from(*parsed.song);
+    fixture.workspace = *workspace_controller_t::from(fixture.history).workspace;
     fixture.workspace.active_tab = sounds_tab ? workspace_tab_t::audio_slices : workspace_tab_t::compose;
     fixture.state.chart = fixture.history.document.charts.front().id;
     fixture.state.cursor = {fixture.history.document.charts.front().measures.front().id, 0};
@@ -1485,8 +1485,8 @@ TEST_CASE("Compose workspace boundary creates and removes a BMS branch block and
     const auto parsed = parse_bms_bytes(std::as_bytes(std::span{text.data(), text.size()}), std::move(options));
     require_action(parsed.song.has_value() && !parsed.has_errors());
     action_notification_fixture_t fixture;
-    fixture.history = make_document_history(*parsed.song);
-    fixture.workspace = *make_workspace_controller(fixture.history).workspace;
+    fixture.history = document_history_t::from(*parsed.song);
+    fixture.workspace = *workspace_controller_t::from(fixture.history).workspace;
     fixture.workspace.active_tab = workspace_tab_t::compose;
     fixture.workspace.selected_chart = fixture.history.document.charts.front().id;
     fixture.state.chart = fixture.history.document.charts.front().id;
@@ -1833,7 +1833,7 @@ TEST_CASE("Relinking a missing sound to a fallback candidate is one undo step",
     fixture.history.document.audio_assets = {{.id = asset_id_t{5}, .source_path = "snare.wav"}};
     fixture.history.document.resources = {{.id = resource_id_t{6}, .name = "snare", .asset = asset_id_t{5},
                                            .missing = true}};
-    fixture.history = make_document_history(fixture.history.document);
+    fixture.history = document_history_t::from(fixture.history.document);
     auto action = fixture.action(WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK);
     action.compose_resource_id = 6;
     action.compose_fallback_candidate = 9;
@@ -1868,7 +1868,7 @@ TEST_CASE("Lane-less chart fallback relink preserves revision guards and undo",
                                            .missing = true}};
     fixture.history.document.charts.front().lane_layouts.clear();
     fixture.history.document.charts.front().input_profile.bindings.clear();
-    fixture.history = make_document_history(fixture.history.document);
+    fixture.history = document_history_t::from(fixture.history.document);
     std::optional<editor_interaction_state_t> interaction;
     require_action(static_cast<bool>(rebind_workspace(fixture.workspace, fixture.history)));
     auto action = fixture.action(WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK);

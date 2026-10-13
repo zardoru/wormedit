@@ -36,20 +36,10 @@ auto beat_position_for_audio_milliseconds(const chart_document_t& chart,
         return std::nullopt;
     const auto row = static_cast<std::uint64_t>(query.absolute_row->numerator) /
                      query.absolute_row->denominator;
-    return local_position_for_row(std::get<measure_index_t>(measures), row);
+    return (std::get<measure_index_t>(measures)).position_at(row);
 }
 
 } // namespace
-
-auto local_position_for_row(const measure_index_t& index, std::uint64_t row)
-    -> std::optional<local_position_t> {
-    if (row >= index.total_rows) return std::nullopt;
-    const auto after = std::ranges::upper_bound(index.entries, row, {},
-                                                &measure_index_entry_t::absolute_begin_row);
-    if (after == index.entries.begin()) return std::nullopt;
-    const auto& measure = *std::prev(after);
-    return local_position_t{measure.id, row - measure.absolute_begin_row};
-}
 
 auto nearest_snap_row(const chart_document_t& chart, const measure_index_t& index,
                       double absolute_row, std::uint64_t snap_denominator)
@@ -95,14 +85,14 @@ auto playing_bookmark_origin(const chart_document_t& chart, chart_id_t chart_id,
     if (index.total_rows == 0) return std::nullopt;
     if (direction == marker_navigation_direction_t::previous)
         if (const auto recent = application.bookmarks.recent_seek_row(chart_id))
-            return local_position_for_row(index, *recent);
+            return (index).position_at(*recent);
     const auto row = std::clamp(*application.project.transport.preview_playhead_absolute_row, 0.0,
                                 static_cast<double>(index.total_rows - 1));
     // Marker lookup is strict: a fractional playhead must include the row below
     // it when moving backward, and exclude that row when moving forward.
     const auto origin = direction == marker_navigation_direction_t::previous
                             ? std::ceil(row) : std::floor(row);
-    return local_position_for_row(index, static_cast<std::uint64_t>(origin));
+    return (index).position_at(static_cast<std::uint64_t>(origin));
 }
 
 void record_playing_seek(const chart_document_t& chart, chart_id_t chart_id,
@@ -192,7 +182,7 @@ auto bookmark_navigation_t::add_beat_bookmark_here(document_history_t& history, 
         const auto& index = std::get<measure_index_t>(built);
         const auto row = nearest_snap_row(*chart, index, *application.project.transport.preview_playhead_absolute_row,
                                           state.active_snap_denominator);
-        const auto snapped = row ? local_position_for_row(index, *row) : std::nullopt;
+        const auto snapped = row ? (index).position_at(*row) : std::nullopt;
         if (!snapped) return fail("The playhead is not on an editable row.");
         position = *snapped;
     } else if (state.virtual_bms_cursor_row) {

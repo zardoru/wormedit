@@ -62,7 +62,7 @@ TEST_CASE("external_player expands quotes before source measure and path substit
 namespace {
 auto check_preferences_round_trip(const std::filesystem::path& path,
     const external_player_preferences_t& preferences) -> external_player_preferences_t {
-    auto loaded = default_external_player_preferences();
+    auto loaded = external_player_preferences_t::with_defaults();
     REQUIRE(load_external_player_preferences(path, loaded).empty());
     CHECK(loaded == preferences);
     loaded.players[0].name = "Changed";
@@ -75,7 +75,7 @@ auto check_preferences_round_trip(const std::filesystem::path& path,
 TEST_CASE("external_player defaults match iBMSC and preferences round trip atomically", "[external_player]") {
     temporary_directory_t directory;
     const auto path = directory.path / "external-players.conf";
-    auto preferences = default_external_player_preferences();
+    auto preferences = external_player_preferences_t::with_defaults();
     check_defaults_and_missing_preferences(path, preferences);
     preferences.selected = 1;
     preferences.players[1].path = "wrapper with spaces";

@@ -91,7 +91,7 @@ auto waveform_analysis_t::request_detail_worker(asset_id_t asset, audio::wavefor
         borrow_preview_blocks(key, stop);
         auto analysis = sources_.analyze_waveform(asset, decoded_blocks_, waveform_cache_, 32,
             {.begin_frame = key.begin_frame, .end_frame = key.end_frame, .require_cached_pcm = samples}, stop);
-        return task_result_t::success(make_task_value(
+        return task_result_t::success(task_value_t::from(
             std::make_shared<const audio::waveform_analysis_result_t>(std::move(analysis))));
     });
     if (!task) return false;

@@ -74,8 +74,8 @@ auto tagged_audio_creates_selectable_project() -> bool {
         document->charts.front().lane_layouts.front().layout.lanes.size() != 4 ||
         !validate_document(*document).empty()) return false;
 
-    auto history = make_document_history(std::move(*document), 128, true);
-    auto bound = make_workspace_controller(history);
+    auto history = document_history_t::from(std::move(*document), 128, true);
+    auto bound = workspace_controller_t::from(history);
     if (!bound) return false;
     auto& workspace = *bound.workspace;
     if (workspace.history.dirty || !workspace.selected_chart) return false;

@@ -78,7 +78,7 @@ auto history_with_chart(chart_document_t chart) -> document_history_t {
     song_document_t song;
     song.id = song_id_t{1};
     song.charts.push_back(std::move(chart));
-    return make_document_history(std::move(song));
+    return document_history_t::from(std::move(song));
 }
 
 void check_moved_note_report(const quantize_preview_t& preview) {

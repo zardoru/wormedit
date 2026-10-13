@@ -65,7 +65,7 @@ auto timing_pointer_row(compose_input_context_t& context, const wormedit::chart_
         return std::nullopt;
     const auto y = std::clamp(y_pixels, 0.0, std::max(0.0, view.viewport_height_pixels - 0.001));
     const auto position = context.position_at_compose_y_unrestricted(chart, view, y);
-    const auto row = position ? wormedit::absolute_row(index, *position) : std::nullopt;
+    const auto row = position ? (index).row_of(*position) : std::nullopt;
     if (!row)
         return std::nullopt;
     const auto snapped = wormedit::snap_absolute_row(
@@ -227,7 +227,7 @@ auto edit_compose_speed_span(const WormUiComposeInputAction& input,
     if (!index || speed == chart->speeds.end())
         return "The Speed event no longer exists.";
     const auto row = timing_pointer_row(context, *chart, *view, *index, input.y_pixels);
-    const auto begin_row = absolute_row(*index, speed->position);
+    const auto begin_row = (*index).row_of(speed->position);
     if (!row || !begin_row)
         return "Speed edit has no valid destination row.";
     // The span as drawn: from the event to the end of its transition.

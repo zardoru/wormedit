@@ -26,7 +26,7 @@ void check_selected_layer_command(bool value) { CHECK(value); }
 
 TEST_CASE("Compose selected sound assignment routes note and BGM IDs without changing selection",
           "[unit][sys][selected-sound-layers]") {
-    auto history = make_document_history(selected_layer_command_song());
+    auto history = document_history_t::from(selected_layer_command_song());
     REQUIRE(validate_document(history.document).empty());
     editor_interaction_state_t state;
     state.chart = chart_id_t{2};

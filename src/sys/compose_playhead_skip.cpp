@@ -129,7 +129,7 @@ auto skip_playing_playhead(application_command_state_t& application, const chart
                                               skip_origin_row(application, chart.id, forward),
                                               unit, amount, chart.divisions_per_standard_measure,
                                               snap_denominator);
-    const auto position = row ? local_position_for_row(measures, *row) : std::nullopt;
+    const auto position = row ? (measures).position_at(*row) : std::nullopt;
     if (!position) {
         application.project.transport.last_playhead_skip.reset();
         return {.status = "The playhead could not be moved."};

@@ -55,7 +55,7 @@ auto bga_history() -> wormedit::document_history_t {
                           {.id = asset_id_t{62}, .kind = asset_kind_t::video},
                           {.id = asset_id_t{63}, .kind = asset_kind_t::image},
                           {.id = asset_id_t{64}, .kind = asset_kind_t::image}};
-    return make_document_history(std::move(song));
+    return document_history_t::from(std::move(song));
 }
 
 void check_projection(bool condition) { CHECK(condition); }
@@ -64,7 +64,7 @@ void bga_scene_projection_is_ordered() {
     using namespace wormedit;
     using namespace wormedit::sys;
     auto history = bga_history();
-    auto binding = make_workspace_controller(history);
+    auto binding = workspace_controller_t::from(history);
     if (!binding.workspace) { check_projection(false); return; }
     binding.workspace->active_tab = workspace_tab_t::compose;
     binding.workspace->selected_chart = chart_id_t{7};

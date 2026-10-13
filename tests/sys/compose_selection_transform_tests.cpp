@@ -38,12 +38,12 @@ auto transform_song() -> song_document_t {
 }
 
 struct fixture_t {
-    document_history_t history{make_document_history(transform_song())};
+    document_history_t history{document_history_t::from(transform_song())};
     editor_interaction_state_t state;
 
     fixture_t() {
         constexpr std::array snaps{std::uint64_t{4}};
-        auto setup = make_editor_interaction(history, chart_id_t{2}, lane_id_t{1},
+        auto setup = editor_interaction_state_t::from(history, chart_id_t{2}, lane_id_t{1},
                                              local_position_t{measure_id_t{3}, 0}, snaps, 4, 192.0);
         REQUIRE(setup);
         state = std::move(*setup.state);

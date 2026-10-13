@@ -60,7 +60,7 @@ void check_dispatch(std::string_view menu, std::string_view label, std::string_v
     harness.view().setup.stepmania_policy_status = "Ready";
     harness.view().metadata.visible = tab == WORM_UI_WORKSPACE_TAB_METADATA;
     int invocations = 0;
-    const auto registry = wormedit::make_default_editor_command_registry([&](const auto& invocation) {
+    const auto registry = wormedit::command_registry_t::from([&](const auto& invocation) {
         check_menu(invocation.command.value == command);
         ++invocations;
         return wormedit::command_invocation_result_t{true, {}};
@@ -109,7 +109,7 @@ TEST_CASE("Menu commands use one registry invocation across editing chart and pl
 TEST_CASE("Menu projections follow remaps unbinding platform modifiers and registry state",
           "[frontend-state][event-harness][menu-bar]") {
     using namespace wormedit;
-    auto registry = make_default_editor_command_registry({});
+    auto registry = command_registry_t::from({});
     (void)remap_command(registry, {"history.undo"}, {{shortcut_key_t::u, shortcut_modifier_t::primary | shortcut_modifier_t::shift}});
     (void)remap_command(registry, {"history.redo"}, {});
     (void)update_command_state(registry, {"history.undo"}, false, std::nullopt);
@@ -140,7 +140,7 @@ TEST_CASE("Menu groups preserve existing actions and block missing or modal comm
     using Action = ui::workspace_menu_action_t;
     nuklear_event_harness_t harness{1280, 900};
     require_menu(harness.ready());
-    sys::project_menu_commands(make_default_editor_command_registry({}), harness.view());
+    sys::project_menu_commands(command_registry_t::from({}), harness.view());
     const auto model = ui::build_workspace_menu(harness.view(), false, false, true);
     for (const auto action : {Action::open, Action::save_as, Action::close, Action::options,
         Action::copy, Action::cut, Action::paste, Action::select_same_sound, Action::move_to_bgm,
@@ -200,7 +200,7 @@ TEST_CASE("All six menu titles switch without dispatching the covered menu",
           "[frontend-state][event-harness][menu-bar]") {
     nuklear_event_harness_t harness{1280, 900};
     require_menu(harness.ready());
-    wormedit::sys::project_menu_commands(wormedit::make_default_editor_command_registry({}), harness.view());
+    wormedit::sys::project_menu_commands(wormedit::command_registry_t::from({}), harness.view());
     (void)harness.frame();
     constexpr std::array labels{"Open chart or project...", "Undo", "Player preview", "New chart",
                                 "Play from cursor / Pause", "About WormEdit"};
@@ -217,7 +217,7 @@ TEST_CASE("Help shortcut sheet follows remaps and releases modal lane input on E
     using namespace wormedit;
     nuklear_event_harness_t harness{800, 560};
     require_menu(harness.ready());
-    auto registry = make_default_editor_command_registry({});
+    auto registry = command_registry_t::from({});
     (void)remap_command(registry, {"view.open_layers"},
         {{shortcut_key_t::u, shortcut_modifier_t::primary | shortcut_modifier_t::shift}});
     (void)remap_command(registry, {"view.toggle_sounds"}, {});
@@ -339,7 +339,7 @@ TEST_CASE("Menu selection and its release cannot switch the covered Compose work
           "[frontend-state][event-harness][menu-bar][menu-capture]") {
     nuklear_event_harness_t harness{1280, 900};
     require_menu(harness.ready());
-    wormedit::sys::project_menu_commands(wormedit::make_default_editor_command_registry({}), harness.view());
+    wormedit::sys::project_menu_commands(wormedit::command_registry_t::from({}), harness.view());
     (void)harness.frame();
     (void)click_menu(harness, "File");
     (void)harness.frame();

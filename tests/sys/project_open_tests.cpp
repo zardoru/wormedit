@@ -205,7 +205,7 @@ auto opened_stepmania_music_is_selected() -> bool {
     if (opened.document->audio_assets.front().source_path != "fixture.ogg" ||
         resource.roles.size() != 1 || resource.roles.front() != wormedit::resource_role_t::music)
         return false;
-    const auto binding = wormedit::make_workspace_controller(*opened.document);
+    const auto binding = wormedit::workspace_controller_t::from(*opened.document);
     return binding.workspace &&
            binding.workspace->transport.audio_asset == opened.document->audio_assets.front().id;
 }
@@ -715,7 +715,7 @@ void check_normalized_native_document(const wormedit::song_document_t& document,
                                       std::uint64_t saved_revision) {
     CHECK(document.charts.front().input_profile.bindings.size() == 4);
     CHECK(document.revision == saved_revision);
-    const auto history = wormedit::make_document_history(document);
+    const auto history = wormedit::document_history_t::from(document);
     CHECK_FALSE(wormedit::is_document_dirty(history));
     CHECK(history.undo.empty());
 }
@@ -885,7 +885,7 @@ TEST_CASE("project_open rehomes BGM storage without altering authored slots or p
 TEST_CASE("project_open errors identify another chart and exact object location",
           "[project-open][validation]") {
     auto opened = load_validation_fixture();
-    auto history = wormedit::make_document_history(*opened.document);
+    auto history = wormedit::document_history_t::from(*opened.document);
     const auto before = native_bytes(history.document);
     auto proposed = history.document;
     proposed.charts.front().measures.front().notes.front().lane = wormedit::lane_id_t{99999};
@@ -1019,7 +1019,7 @@ TEST_CASE("Opening audio resources marks absent files without changing authored 
     check_open_audio(!opened.document->resources[1].missing);
     check_open_audio(opened.document->audio_assets[0].source_path == "absent.wav");
     check_open_audio(opened.document->audio_assets[1].source_path == "present.wav");
-    check_open_audio(!wormedit::is_document_dirty(wormedit::make_document_history(*opened.document)));
+    check_open_audio(!wormedit::is_document_dirty(wormedit::document_history_t::from(*opened.document)));
 }
 
 TEST_CASE("Native audio availability refreshes saved flags and aliases without an edit",
@@ -1049,7 +1049,7 @@ TEST_CASE("Native audio availability refreshes saved flags and aliases without a
     check_open_audio(!opened.document->resources[1].missing);
     check_open_audio(opened.document->resources[2].missing);
     check_open_audio(opened.document->revision == document.revision);
-    check_open_audio(!wormedit::is_document_dirty(wormedit::make_document_history(*opened.document)));
+    check_open_audio(!wormedit::is_document_dirty(wormedit::document_history_t::from(*opened.document)));
 }
 
 TEST_CASE("Native startup refreshes availability before creating clean saved history",
@@ -1073,7 +1073,7 @@ TEST_CASE("Native startup refreshes availability before creating clean saved his
     check_open_audio(!startup.document.resources[1].missing);
     check_open_audio(startup.document.revision == imported.document->revision);
     check_open_audio(startup.document.audio_assets[0].source_path == "absent.wav");
-    const auto history = wormedit::make_document_history(std::move(startup.document), 128, true);
+    const auto history = wormedit::document_history_t::from(std::move(startup.document), 128, true);
     check_open_audio(!wormedit::is_document_dirty(history));
     check_open_audio(history.undo.empty());
 }

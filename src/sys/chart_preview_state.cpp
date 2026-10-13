@@ -230,7 +230,7 @@ auto chart_preview_t::compile_if_needed(
     if (selected_music) {
         const auto source = sources.binding(document, selected_music->second);
         if (source && source->output_frame_count != 0) {
-            built_schedule.schedule->music = make_preview_music_event(
+            built_schedule.schedule->music = preview_schedule_t::music_event_t::from(
                 selected_music->first, source->output_frame_count);
             if (built_schedule.schedule->music) {
                 resolved.bindings.push_back({

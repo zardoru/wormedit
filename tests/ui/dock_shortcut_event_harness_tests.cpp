@@ -16,7 +16,7 @@ void prepare(nuklear_event_harness_t& harness) {
     static_cast<void>(harness.frame());
 }
 auto registry_for_docks() -> command_registry_t {
-    return make_default_editor_command_registry([](const command_invocation_context_t& context) {
+    return command_registry_t::from([](const command_invocation_context_t& context) {
         const auto& id = context.command.value;
         const auto dock = id == "view.open_layers" ? WORM_UI_COMPOSE_DOCK_OPEN_LAYERS
             : id == "semantic_layer.create" ? WORM_UI_COMPOSE_DOCK_CREATE_LAYER

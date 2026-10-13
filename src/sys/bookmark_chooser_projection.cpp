@@ -18,21 +18,11 @@ struct ordered_row_t {
     std::optional<long double> absolute_row;
 };
 
-auto row_for_position(const measure_index_t& measures, local_position_t position)
-    -> std::optional<std::uint64_t> {
-    const auto found = std::ranges::find(measures.entries, position.measure,
-                                         &measure_index_entry_t::id);
-    if (found == measures.entries.end() || position.row >= found->row_capacity)
-        return std::nullopt;
-    return found->absolute_begin_row + position.row;
-}
-
 auto position_label(const measure_index_t& measures, local_position_t position)
     -> std::string {
-    const auto found = std::ranges::find(measures.entries, position.measure,
-                                         &measure_index_entry_t::id);
-    if (found == measures.entries.end()) return "Unavailable beat position";
-    const auto number = static_cast<std::size_t>(found - measures.entries.begin()) + 1;
+    const auto* found = measures.entry_for(position.measure);
+    if (!found) return "Unavailable beat position";
+    const auto number = static_cast<std::size_t>(found - measures.entries.data()) + 1;
     char buffer[96]{};
     std::snprintf(buffer, sizeof(buffer), "Measure %03zu · row %llu", number,
                   static_cast<unsigned long long>(position.row));
@@ -67,7 +57,7 @@ auto make_row(const bookmark_t& bookmark, const measure_index_t& measures,
     std::optional<long double> absolute;
     if (bookmark.anchor == marker_anchor_t::beat && bookmark.position) {
         row.position_label = position_label(measures, *bookmark.position);
-        if (const auto exact = row_for_position(measures, *bookmark.position))
+        if (const auto exact = measures.row_of(*bookmark.position))
             absolute = static_cast<long double>(*exact);
         else
             row.navigation_available = false;

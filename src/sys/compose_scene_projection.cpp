@@ -398,7 +398,7 @@ auto bga_preview_authored_row(const compose_scene_projection_context_t& projecti
             ? position
             : wormedit::snap_position(projection.inputs.scope.chart_scope.chart, projection.index.measures,
                                       *position, projection.bga_move_snap_denominator);
-    return target ? wormedit::absolute_row(projection.index.measures, *target) : std::nullopt;
+    return target ? (projection.index.measures).row_of(*target) : std::nullopt;
 }
 
 auto bga_preview_virtual_row(const compose_scene_projection_context_t& projection, double source_y)

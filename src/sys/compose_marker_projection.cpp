@@ -37,9 +37,8 @@ auto populate_compose_beat_bookmark(compose_marker_storage_t<WormUiComposeBookma
     }
     if (compose_marker_at_capacity(storage))
         return true;
-    const auto measure = std::ranges::find(measures.entries, bookmark.position->measure,
-                                           &wormedit::measure_index_entry_t::id);
-    if (measure == measures.entries.end() || bookmark.position->row >= measure->row_capacity) {
+    const auto* measure = measures.entry_for(bookmark.position->measure);
+    if (!measure || bookmark.position->row >= measure->row_capacity) {
         report_compose_projection(
             storage.flattened, projection_feedback_kind_t::beat_bookmark_geometry,
             wormedit::notification_severity_t::error,
@@ -51,7 +50,7 @@ auto populate_compose_beat_bookmark(compose_marker_storage_t<WormUiComposeBookma
                               .bookmark_id = bookmark.id.value,
                               .label = nullptr,
                               .measure_number = static_cast<std::uint64_t>(
-                                  std::distance(measures.entries.begin(), measure) + 1),
+                                  measure - measures.entries.data() + 1),
                               .row = bookmark.position->row,
                               .chart_row = measure->absolute_begin_row + bookmark.position->row,
                               .projection_visible = false,
@@ -135,11 +134,9 @@ auto populate_compose_beat_section(compose_marker_storage_t<WormUiComposeSection
     }
     if (compose_marker_at_capacity(storage))
         return true;
-    const auto begin_measure = std::ranges::find(measures.entries, section.beat_span->begin.measure,
-                                                 &wormedit::measure_index_entry_t::id);
-    const auto end_measure = std::ranges::find(measures.entries, section.beat_span->end.measure,
-                                               &wormedit::measure_index_entry_t::id);
-    if (begin_measure == measures.entries.end() || end_measure == measures.entries.end() ||
+    const auto* begin_measure = measures.entry_for(section.beat_span->begin.measure);
+    const auto* end_measure = measures.entry_for(section.beat_span->end.measure);
+    if (!begin_measure || !end_measure ||
         section.beat_span->begin.row >= begin_measure->row_capacity ||
         section.beat_span->end.row >= end_measure->row_capacity) {
         report_compose_projection(
@@ -154,10 +151,10 @@ auto populate_compose_beat_section(compose_marker_storage_t<WormUiComposeSection
             .section_id = section.id.value,
             .label = nullptr,
             .begin_measure_number = static_cast<std::uint64_t>(
-                std::distance(measures.entries.begin(), begin_measure) + 1),
+                begin_measure - measures.entries.data() + 1),
             .begin_row = section.beat_span->begin.row,
             .end_measure_number = static_cast<std::uint64_t>(
-                std::distance(measures.entries.begin(), end_measure) + 1),
+                end_measure - measures.entries.data() + 1),
             .end_row = section.beat_span->end.row,
             .begin_chart_row = begin_measure->absolute_begin_row + section.beat_span->begin.row,
             .end_chart_row = end_measure->absolute_begin_row + section.beat_span->end.row,
@@ -285,7 +282,7 @@ auto compose_initial_bpm(const wormedit::chart_document_t& chart,
     -> const wormedit::bpm_event_t* {
     const wormedit::bpm_event_t* initial = nullptr;
     for (const auto& bpm : chart.bpms) {
-        if (wormedit::absolute_row(measures, bpm.position) == 0 &&
+        if ((measures).row_of(bpm.position) == 0 &&
             bpm.beats_per_minute.numerator > 0 && bpm.beats_per_minute.denominator != 0 &&
             (!initial || bpm.provenance.source_order >= initial->provenance.source_order)) {
             initial = &bpm;
@@ -449,7 +446,7 @@ auto cached_compose_timing_payloads(const wormedit::song_document_t& document,
         [&](wormedit::local_position_t position, std::uint64_t id, std::size_t source_order,
             std::size_t storage_order, WormUiTimingLaneKind lane, std::string short_label,
             std::string detail, bool fixed_initial) {
-            stored.markers.push_back({wormedit::absolute_row(cache.scene.index->measures, position), id,
+            stored.markers.push_back({(cache.scene.index->measures).row_of(position), id,
                                       source_order, storage_order, lane, std::move(short_label),
                                       std::move(detail), fixed_initial});
         });
@@ -529,7 +526,7 @@ void populate_compose_timing_markers(
             [&](wormedit::local_position_t position, std::uint64_t id, std::size_t source_order,
                 std::size_t storage_order, WormUiTimingLaneKind lane, std::string short_label,
                 std::string detail, bool fixed_initial) {
-                append_timing_marker(wormedit::absolute_row(cache.scene.index->measures, position), id,
+                append_timing_marker((cache.scene.index->measures).row_of(position), id,
                                      source_order, storage_order, lane, std::move(short_label),
                                      std::move(detail), fixed_initial);
             });
@@ -542,7 +539,7 @@ void populate_compose_timing_markers(
         timing_stage->chart == chart.id &&
         timing_stage->document_revision == view.document_revision) {
         const auto stage_row =
-            wormedit::absolute_row(cache.scene.index->measures, timing_stage->position);
+            (cache.scene.index->measures).row_of(timing_stage->position);
         if (stage_row) {
             const auto y = compose_project_y(*stage_row, pixels_per_row,
                                              interaction_view.viewport_scroll_pixels,

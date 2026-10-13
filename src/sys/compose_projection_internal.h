@@ -259,7 +259,7 @@ void project_compose_draft_marker(const compose_scene_projection_context_t& proj
     const auto& scene = projection.scene;
     const auto& view = projection.inputs.frame.view();
     const auto& interaction_view = projection.inputs.scope.interaction_view;
-    const auto row = wormedit::absolute_row(projection.index.measures, marker.position);
+    const auto row = (projection.index.measures).row_of(marker.position);
     if (!row)
         return;
     const auto y = compose_project_y(*row, projection.inputs.scope.pixels_per_row,
@@ -477,8 +477,8 @@ void append_compose_chart_timing_markers(const wormedit::chart_document_t& chart
                    std::string(compose_pause_unit_label(chart.pauses[index].source_unit)),
                false);
     for (std::size_t index = 0; index < chart.warps.size(); ++index) {
-        const auto begin = wormedit::absolute_row(measures, chart.warps[index].span.begin);
-        const auto end = wormedit::absolute_row(measures, chart.warps[index].span.end);
+        const auto begin = (measures).row_of(chart.warps[index].span.begin);
+        const auto end = (measures).row_of(chart.warps[index].span.end);
         const auto rows = begin && end && *end >= *begin ? *end - *begin : 0;
         append(chart.warps[index].span.begin, chart.warps[index].id.value,
                chart.warps[index].provenance.source_order, index, WORM_UI_TIMING_LANE_WARP,

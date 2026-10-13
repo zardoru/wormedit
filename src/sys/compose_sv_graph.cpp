@@ -18,7 +18,7 @@ auto project_sv_steps(const chart_document_t& chart, const measure_index_t& meas
     std::vector<placed_t> placed;
     placed.reserve(chart.scrolls.size());
     for (const auto& scroll : chart.scrolls) {
-        const auto row = absolute_row(measures, scroll.position);
+        const auto row = (measures).row_of(scroll.position);
         if (!row || scroll.multiplier.denominator == 0) {
             result.truncated = true;
             continue;

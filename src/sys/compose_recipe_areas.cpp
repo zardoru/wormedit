@@ -8,7 +8,7 @@ namespace {
 // A recipe's end may be the exclusive one-past row of the final measure.
 auto recipe_row(const measure_index_t& measures, local_position_t position, bool is_end)
     -> std::optional<std::uint64_t> {
-    if (const auto row = absolute_row(measures, position)) return row;
+    if (const auto row = (measures).row_of(position)) return row;
     if (is_end && !measures.entries.empty()) {
         const auto& last = measures.entries.back();
         if (position.measure == last.id && position.row == last.row_capacity)

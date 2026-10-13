@@ -102,8 +102,8 @@ auto load_recovered_document(
     if (!result.document)
         return post_recovery_feedback(notifications, notification_severity_t::error,
             "Recovery action completed without a replacement document.");
-    auto replacement_history = make_document_history(*result.document, 128, false);
-    auto replacement_binding = make_workspace_controller(replacement_history);
+    auto replacement_history = document_history_t::from(*result.document, 128, false);
+    auto replacement_binding = workspace_controller_t::from(replacement_history);
     if (!replacement_binding) {
         return post_recovery_feedback(notifications, notification_severity_t::error,
             "Recovered data validated, but the workspace could not be rebound; "

@@ -177,9 +177,6 @@ auto expand_external_player_arguments(std::string_view text, std::string_view ap
     return result;
 }
 
-auto default_external_player_preferences() -> external_player_preferences_t {
-    return wormedit::default_external_player_preferences();
-}
 
 auto load_external_player_preferences(const std::filesystem::path& path,
     external_player_preferences_t& preferences) -> std::string {

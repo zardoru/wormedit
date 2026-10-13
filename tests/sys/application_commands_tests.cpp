@@ -86,7 +86,7 @@ TEST_CASE("application command parser rejects unknown IDs and malformed slots",
 }
 
 TEST_CASE("every built-in command ID has a typed representation", "[unit][sys][commands]") {
-    const auto registry = wormedit::make_default_editor_command_registry(
+    const auto registry = wormedit::command_registry_t::from(
         [](const wormedit::command_invocation_context_t&) {
             return wormedit::command_invocation_result_t{};
         });
@@ -134,9 +134,9 @@ struct AreaFixture {
             {.id = object_id_t{1}, .position = {measure_id_t{1}, 121}, .lane = lane_id_t{1}},
             {.id = object_id_t{2}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{1}},
             {.id = object_id_t{3}, .position = {measure_id_t{1}, 720}, .lane = lane_id_t{1}}};
-        history = make_document_history({.id = song_id_t{1}, .revision = 9, .charts = {chart}});
+        history = document_history_t::from({.id = song_id_t{1}, .revision = 9, .charts = {chart}});
         constexpr std::array snaps{std::uint64_t{4}, std::uint64_t{8}};
-        auto setup = make_editor_interaction(history, chart_id_t{7}, lane_id_t{1},
+        auto setup = editor_interaction_state_t::from(history, chart_id_t{7}, lane_id_t{1},
                                              {measure_id_t{1}, 0}, snaps, 4);
         REQUIRE(setup);
         state = *setup.state;
@@ -179,13 +179,13 @@ auto sound_import_song() -> wormedit::song_document_t {
 struct SoundImportDispatchFixture {
     wormedit::notification_center_t center;
     wormedit::notification_sink_t sink{center};
-    wormedit::document_history_t history{wormedit::make_document_history(sound_import_song())};
+    wormedit::document_history_t history{wormedit::document_history_t::from(sound_import_song())};
     wormedit::workspace_controller_t workspace;
     wormedit::sys::application_command_state_t application_state;
     wormedit::chart_id_t chart{history.document.charts.front().id};
 
     SoundImportDispatchFixture() {
-        const auto created = wormedit::make_workspace_controller(history);
+        const auto created = wormedit::workspace_controller_t::from(history);
         REQUIRE(created);
         workspace = *created.workspace;
     }
@@ -212,7 +212,7 @@ void make_sound_import_chart_bms(wormedit::chart_document_t& chart) {
 }
 
 struct SoundSlotBatchDispatchFixture {
-    wormedit::document_history_t history{wormedit::make_document_history(sound_import_song())};
+    wormedit::document_history_t history{wormedit::document_history_t::from(sound_import_song())};
     wormedit::workspace_controller_t workspace;
     wormedit::sys::application_command_state_t application_state;
     wormedit::chart_id_t chart{history.document.charts.front().id};
@@ -222,7 +222,7 @@ struct SoundSlotBatchDispatchFixture {
         make_sound_import_chart_bms(history.document.charts.front());
         history.document.resources.front().target_identities.push_back(
             {format_family_t::bms, "05", "WAV"});
-        const auto created = make_workspace_controller(history);
+        const auto created = workspace_controller_t::from(history);
         REQUIRE(created);
         workspace = *created.workspace;
     }
@@ -607,7 +607,7 @@ struct TimingInsertFixture {
             fixture.history, fixture.state,
             jump_edit_cursor_action_t{cursor, fixture.history.document.revision});
         REQUIRE(moved.accepted);
-        const auto workspace_result = make_workspace_controller(fixture.history);
+        const auto workspace_result = workspace_controller_t::from(fixture.history);
         REQUIRE(workspace_result);
         workspace = *workspace_result.workspace;
         workspace.active_tab = workspace_tab_t::compose;
@@ -1284,7 +1284,7 @@ void check_note_kind_command_shortcut(const wormedit::command_registry_t& regist
 
 TEST_CASE("Note kind commands preserve lane and layer shortcut chords", "[unit][sys][commands]") {
     using namespace wormedit;
-    const auto registry = make_default_editor_command_registry(
+    const auto registry = command_registry_t::from(
         [](const command_invocation_context_t&) { return command_invocation_result_t{}; });
     const std::array names{"tap", "hold", "mine", "invisible", "lift", "fake", "roll"};
     const std::array kinds{0U, 1U, 4U, 3U, 5U, 6U, 2U};
@@ -2114,8 +2114,8 @@ auto click_audition_song() -> wormedit::song_document_t {
 // Clicking empty playable space in note paint mode places one note; it auditions only when enabled.
 void check_placement_audition(bool enabled) {
     using namespace wormedit;
-    document_history_t history{make_document_history(click_audition_song())};
-    auto binding = make_workspace_controller(history);
+    document_history_t history{document_history_t::from(click_audition_song())};
+    auto binding = workspace_controller_t::from(history);
     REQUIRE(binding.workspace.has_value());
     binding.workspace->active_tab = workspace_tab_t::compose;
     binding.workspace->selected_chart = chart_id_t{1};
@@ -2421,7 +2421,7 @@ void selection_require(bool value) { REQUIRE(value); }
 void selection_check(bool value) { CHECK(value); }
 auto invoke_selection_command(TimingInsertFixture& f, std::string id, bool modal = false) -> wormedit::command_dispatch_result_t {
     using namespace wormedit;
-    const auto registry = make_default_editor_command_registry([&](const command_invocation_context_t& context) {
+    const auto registry = command_registry_t::from([&](const command_invocation_context_t& context) {
         const auto parsed = parse_application_command(context.command.value);
         if (!parsed) return command_invocation_result_t{};
         return f.invoke(parsed->kind);

@@ -117,7 +117,7 @@ auto make_export_task(runtime::output_group_export_t& runtime,
     task_graph_t graph{1};
     const auto value = std::make_shared<const output_group_export_task_result_t>(std::move(result));
     const auto added = graph.add_task({}, [value](std::span<const task_result_t>, std::stop_token) {
-        return task_result_t::success(make_task_value(value));
+        return task_result_t::success(task_value_t::from(value));
     });
     REQUIRE(added);
     auto submitted = runtime.scheduler.submit(std::move(graph));
@@ -229,7 +229,7 @@ TEST_CASE("resource copy stale completion warns once without changing document",
         .status = project_asset_copy_status_t::copied, .relative_path = "assets/1-source.wav"});
     task_graph_t graph{1};
     const auto added = graph.add_task({}, [copied](std::span<const task_result_t>, std::stop_token) {
-        return task_result_t::success(make_task_value(copied));
+        return task_result_t::success(task_value_t::from(copied));
     });
     require_resource_notification(static_cast<bool>(added));
     auto submitted = fixture.scheduler.submit(std::move(graph));
@@ -289,7 +289,7 @@ TEST_CASE("resource copy links a real successful copy and canceled fallback rema
         .source_path = fixture.source, .asset = asset_id_t{1}});
     require_resource_notification(static_cast<bool>(copied));
     auto [graph, task] = make_resource_task(fixture.scheduler,
-        task_result_t::success(make_task_value(std::make_shared<const project_asset_copy_result_t>(copied))));
+        task_result_t::success(task_value_t::from(std::make_shared<const project_asset_copy_result_t>(copied))));
     require_resource_notification(fixture.resource_copy.start({.graph = std::move(graph), .task = task,
         .asset = asset_id_t{1}, .song = fixture.history.document.id, .revision = fixture.history.document.revision,
         .source_path = fixture.source}));
@@ -302,7 +302,7 @@ TEST_CASE("resource copy links a real successful copy and canceled fallback rema
     check_resource_notification(fixture.history.undo.size() == 1);
     const auto cancelled = std::make_shared<const project_asset_copy_result_t>(project_asset_copy_result_t{
         .status = project_asset_copy_status_t::cancelled});
-    auto next = make_resource_task(fixture.scheduler, task_result_t::success(make_task_value(cancelled)));
+    auto next = make_resource_task(fixture.scheduler, task_result_t::success(task_value_t::from(cancelled)));
     require_resource_notification(fixture.resource_copy.start({.graph = std::move(next.first), .task = next.second,
         .asset = asset_id_t{1}, .song = fixture.history.document.id, .revision = fixture.history.document.revision}));
     require_resource_notification(wait_for_resource_result(fixture) == "Resource copy failed.");

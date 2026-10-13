@@ -15,10 +15,6 @@
 
 namespace wormedit::sys {
 
-// The local position of an absolute row, or nothing past the last row.
-[[nodiscard]] auto local_position_for_row(const measure_index_t& index, std::uint64_t row)
-    -> std::optional<local_position_t>;
-
 // The active-snap row nearest `absolute_row` among rows 0 .. total_rows-1; ties go to the
 // earlier row. Returns nothing when the snap does not divide the measure or there are no rows.
 [[nodiscard]] auto nearest_snap_row(const chart_document_t& chart, const measure_index_t& index,

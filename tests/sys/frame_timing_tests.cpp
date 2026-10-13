@@ -222,13 +222,13 @@ auto compose_test_song() -> song_document_t {
 }
 struct compose_test_fixture_t {
     document_history_t history;
-    decltype(make_workspace_controller(history)) binding;
+    decltype(workspace_controller_t::from(history)) binding;
     compose_scene_cache_t cache;
     application_command_state_t application;
     std::optional<editor_interaction_state_t> interaction;
     flattened_workspace_t flattened;
     explicit compose_test_fixture_t(song_document_t song = compose_test_song())
-        : history(make_document_history(std::move(song))), binding(make_workspace_controller(history)) {
+        : history(document_history_t::from(std::move(song))), binding(workspace_controller_t::from(history)) {
         expect_compose_test(binding.workspace.has_value());
         binding.workspace->active_tab = workspace_tab_t::compose;
         binding.workspace->selected_chart = chart_id_t{1};
@@ -752,7 +752,7 @@ void project_follow_frame(document_history_t& history, workspace_controller_t& w
             const double row = 960.0 + static_cast<double>(frame) * 5.0;
             if (interaction) REQUIRE(follow_compose_playhead(history, *interaction, row, true));
             application.project.transport.preview_playhead_absolute_row = row;
-            const auto model = make_workspace_view(workspace, history.document);
+            const auto model = workspace_view_t::from(workspace, history.document);
             REQUIRE(model.view);
             auto flattened = flatten_workspace(*model.view, history.document, "", {}, false, {});
             flattened.rebind_view_pointers();
@@ -765,8 +765,8 @@ void project_follow_frame(document_history_t& history, workspace_controller_t& w
 }
 
 TEST_CASE("Frame timing projects real play follow on a 50000 note chart", "[sys][frame-timing][performance]") {
-    auto history = make_document_history(dense_song());
-    auto binding = make_workspace_controller(history);
+    auto history = document_history_t::from(dense_song());
+    auto binding = workspace_controller_t::from(history);
     REQUIRE(binding.workspace);
     auto& workspace = *binding.workspace;
     workspace.active_tab = workspace_tab_t::compose;
@@ -827,8 +827,8 @@ void check_slim_timing_geometry(const WormUiTimingView& view, const timing_scene
 } // namespace
 
 TEST_CASE("Compose timing projection skips whole-chart geometry and preserves inline fields", "[sys][timing-projection]") {
-    auto history = make_document_history(dense_song());
-    auto binding = make_workspace_controller(history);
+    auto history = document_history_t::from(dense_song());
+    auto binding = workspace_controller_t::from(history);
     REQUIRE(binding.workspace);
     auto& workspace = *binding.workspace;
     workspace.selected_chart = chart_id_t{1};
@@ -856,8 +856,8 @@ TEST_CASE("Compose timing projection skips whole-chart geometry and preserves in
 }
 
 TEST_CASE("Idle Compose timing projection does not build a measure index", "[sys][timing-projection]") {
-    auto history = make_document_history(dense_song());
-    auto binding = make_workspace_controller(history);
+    auto history = document_history_t::from(dense_song());
+    auto binding = workspace_controller_t::from(history);
     REQUIRE(binding.workspace);
     binding.workspace->selected_chart = chart_id_t{1};
     flattened_workspace_t flattened;
@@ -922,7 +922,7 @@ void check_overview_replacement(flattened_workspace_t& flattened, compose_scene_
 }
 }
 TEST_CASE("Compose overview keeps cached rows while moving its visible range", "[sys][waveform-projection]") {
-    auto history = make_document_history(dense_song());
+    auto history = document_history_t::from(dense_song());
     compose_scene_cache_t cache;
     auto timing = build_timing_index(history.document.charts.front());
     REQUIRE(timing.index);
@@ -968,7 +968,7 @@ TEST_CASE("Compose waveform remains visible in a padded one-measure viewport", "
 }
 namespace { void expect_gpu_work(bool value); }
 TEST_CASE("Compose envelope projects only exposed stable world rows during follow", "[sys][waveform-projection]") {
-    auto history = make_document_history(dense_song());
+    auto history = document_history_t::from(dense_song());
     compose_scene_cache_t cache;
     cache.timing.marker_timing_index = build_timing_index(history.document.charts.front()).index;
     expect_gpu_work(cache.timing.marker_timing_index.has_value());
@@ -1015,7 +1015,7 @@ TEST_CASE("Compose envelope projects only exposed stable world rows during follo
 }
 namespace {
 struct envelope_projection_fixture_t {
-    document_history_t history{make_document_history(dense_song())};
+    document_history_t history{document_history_t::from(dense_song())};
     compose_scene_cache_t cache;
     flattened_workspace_t flattened;
     editor_interaction_state_t interaction;
@@ -1123,7 +1123,7 @@ void prepare_seven_key_mp3_project(envelope_projection_fixture_t& fixture) {
     const auto song = audio_project_document(song_id_t{42}, path, "7K MP3", "", 7,
         {info->source_sample_rate, info->source_channel_count, info->source_frame_count, info->seekable});
     expect_gpu_work(song.has_value());
-    fixture.history = make_document_history(*song);
+    fixture.history = document_history_t::from(*song);
     const auto& chart = fixture.history.document.charts.front();
     expect_gpu_work(chart.lane_layouts.front().layout.lanes.size() == 7);
     fixture.cache = {};
@@ -1581,8 +1581,8 @@ void populate_measure_cache_frame(document_history_t& history, workspace_control
 }
 }
 TEST_CASE("Compose controls retain measure geometry until the document revision changes", "[sys][timing-projection]") {
-    auto history = make_document_history(dense_song());
-    auto binding = make_workspace_controller(history);
+    auto history = document_history_t::from(dense_song());
+    auto binding = workspace_controller_t::from(history);
     REQUIRE(binding.workspace);
     auto& workspace = *binding.workspace;
     workspace.active_tab = workspace_tab_t::compose;
@@ -1729,7 +1729,7 @@ TEST_CASE("Hidden GPU workload collection and summaries allocate no C++ storage"
 namespace {
 auto playhead_test_state(const document_history_t& history) -> editor_interaction_state_t {
     const std::uint64_t snaps[]{4, 8, 16};
-    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+    auto setup = editor_interaction_state_t::from(history, chart_id_t{1}, lane_id_t{1},
         {measure_id_t{1}, 0}, snaps, 16, 800);
     REQUIRE(setup.state);
     return *setup.state;
@@ -1779,7 +1779,7 @@ TEST_CASE("Retained playhead geometry preserves dispatcher cursor and viewport t
     layout.position = {measure_id_t{2}, 0};
     layout.layout.lanes.front().id = lane_id_t{2};
     chart.lane_layouts.push_back(layout);
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto index = std::get<measure_index_t>(build_measure_index(history.document.charts.front()));
     auto actual = playhead_test_state(history);
     auto expected = actual;
@@ -1791,7 +1791,7 @@ TEST_CASE("Retained playhead geometry preserves dispatcher cursor and viewport t
     CHECK(history.undo.empty());
 }
 TEST_CASE("Retained playhead geometry rejects stale provenance and active gestures", "[sys][frame-timing][follow]") {
-    auto history = make_document_history(dense_song());
+    auto history = document_history_t::from(dense_song());
     const auto index = std::get<measure_index_t>(build_measure_index(history.document.charts.front()));
     auto state = playhead_test_state(history);
     const auto before = state;
@@ -1824,14 +1824,14 @@ auto static_style_song() -> song_document_t {
     return song;
 }
 struct static_style_fixture_t {
-    document_history_t history=make_document_history(static_style_song());
-    decltype(make_workspace_controller(history)) binding;
+    document_history_t history=document_history_t::from(static_style_song());
+    decltype(workspace_controller_t::from(history)) binding;
     compose_scene_cache_t cache;
     application_command_state_t application;
     std::optional<editor_interaction_state_t> interaction;
     flattened_workspace_t flattened;
     static_style_fixture_t(song_document_t song=static_style_song())
-        : history(make_document_history(std::move(song))), binding(make_workspace_controller(history)) {
+        : history(document_history_t::from(std::move(song))), binding(workspace_controller_t::from(history)) {
         expect_static_style(binding.workspace.has_value());
         binding.workspace->active_tab=workspace_tab_t::compose;
         binding.workspace->selected_chart=chart_id_t{1};
@@ -2327,7 +2327,7 @@ auto invoke_compose_registered_command(compose_test_fixture_t& fixture,
     notification_center_t center;
     notification_sink_t sink{center};
     std::optional<timing_lane_pseudonote_preview_t> timing;
-    const auto registry = make_default_editor_command_registry([&](const command_invocation_context_t& context) {
+    const auto registry = command_registry_t::from([&](const command_invocation_context_t& context) {
         const auto command = parse_application_command(context.command.value);
         if (!command) return command_invocation_result_t{};
         return invoke_application_command(*command, fixture.history, *fixture.binding.workspace,
@@ -5228,7 +5228,7 @@ void t475_check(bool value, std::source_location source = std::source_location::
 void t475_require(const auto& value) { REQUIRE(static_cast<bool>(value)); }
 void t475_project(compose_test_fixture_t& fixture) {
     t475_require(rebind_workspace(*fixture.binding.workspace, fixture.history));
-    const auto model = make_workspace_view(*fixture.binding.workspace, fixture.history.document);
+    const auto model = workspace_view_t::from(*fixture.binding.workspace, fixture.history.document);
     t475_require(model.view.has_value());
     fixture.flattened = flatten_workspace(*model.view, fixture.history.document, "", {}, false, {},
         nullptr, dock_sort_t::natural_name, {}, {}, {}, &fixture.cache.keysound_list_cache);
@@ -5741,7 +5741,7 @@ auto chip_source_song() -> song_document_t {
 }
 void project_chip_request(compose_test_fixture_t& fixture, WormUiKeysoundDockRequest request) {
     t475_require(rebind_workspace(*fixture.binding.workspace, fixture.history));
-    const auto model = make_workspace_view(*fixture.binding.workspace, fixture.history.document);
+    const auto model = workspace_view_t::from(*fixture.binding.workspace, fixture.history.document);
     t475_require(model.view.has_value());
     fixture.flattened = flatten_workspace(*model.view, fixture.history.document, "", {}, false, {},
         nullptr, dock_sort_t::natural_name, request, {}, {}, &fixture.cache.keysound_list_cache);
@@ -6234,7 +6234,7 @@ TEST_CASE("BMSON lane_mode projects current channel ownership in Compose and Sou
         chart_id_t{1}, object_id_t{302}, bmson_channel_lane_mode_t::stem));
     fixture.binding.workspace->active_tab = workspace_tab_t::audio_slices;
     t475_require(rebind_workspace(*fixture.binding.workspace, fixture.history));
-    const auto model = make_workspace_view(*fixture.binding.workspace, fixture.history.document);
+    const auto model = workspace_view_t::from(*fixture.binding.workspace, fixture.history.document);
     t475_require(model.view.has_value());
     fixture.flattened = flatten_workspace(*model.view, fixture.history.document, "", {}, false, {});
     const auto& audio = fixture.flattened.view.audio_slices;
@@ -6912,7 +6912,7 @@ TEST_CASE("Registered note selection respects active editable lanes",
     // Imported charts can contain non-editable lane endpoints. Exercise the
     // registered verb without requiring that malformed field to render.
     constexpr std::array snaps{std::uint64_t{4}};
-    auto setup = make_editor_interaction(f.history, chart_id_t{1}, lane_id_t{1},
+    auto setup = editor_interaction_state_t::from(f.history, chart_id_t{1}, lane_id_t{1},
                                          {measure_id_t{1}, 0}, snaps, 4);
     expect_compose_test(static_cast<bool>(setup));
     f.interaction = std::move(setup.state);

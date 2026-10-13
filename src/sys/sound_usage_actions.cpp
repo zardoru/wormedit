@@ -34,12 +34,12 @@ auto interaction_for_jump(const document_history_t& history, const chart_documen
         return previous;
     const auto built = build_measure_index(chart);
     const auto* index = std::get_if<measure_index_t>(&built);
-    const auto row = index ? absolute_row(*index, position) : std::nullopt;
+    const auto row = index ? (*index).row_of(position) : std::nullopt;
     const lane_layout_segment_t* active{};
     std::uint64_t active_row{};
     if (row) {
         for (const auto& segment : chart.lane_layouts) {
-            const auto start = absolute_row(*index, segment.position);
+            const auto start = (*index).row_of(segment.position);
             if (start && *start <= *row && (!active || *start >= active_row)) {
                 active = &segment;
                 active_row = *start;
@@ -48,7 +48,7 @@ auto interaction_for_jump(const document_history_t& history, const chart_documen
     }
     if (!active || active->layout.lanes.empty())
         return std::nullopt;
-    const auto setup = make_editor_interaction(
+    const auto setup = editor_interaction_state_t::from(
         history, chart.id, active->layout.lanes.front().id, position,
         previous ? std::span<const std::uint64_t>{previous->supported_snap_denominators}
                  : std::span<const std::uint64_t>{wormedit::default_snap_denominators},

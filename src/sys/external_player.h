@@ -27,7 +27,6 @@ struct external_player_arguments_t {
 [[nodiscard]] auto expand_external_player_arguments(std::string_view argument_template,
     std::string_view application_path, std::string_view filename, std::uint64_t source_measure)
     -> external_player_arguments_t;
-[[nodiscard]] auto default_external_player_preferences() -> external_player_preferences_t;
 // Missing preferences retain the defaults. Malformed input never changes preferences.
 [[nodiscard]] auto load_external_player_preferences(const std::filesystem::path& path,
     external_player_preferences_t& preferences) -> std::string;

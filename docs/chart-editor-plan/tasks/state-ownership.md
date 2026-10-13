@@ -653,3 +653,24 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 - **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build <source-file>` for every touched .cpp, with no new/increased violations. Let stale build configuration reconfigure. Read actual output and record command exit statuses/tails; run failing-before regressions for approved changes and existing production-path tests. Add the Linux clang gate after T-622 as specified in Execution. Skip Xvfb in the sandbox.
 - **Out of scope:** No D6 UI state lifetime split; no edits outside src/ui and its tests/build wiring without coordination. Rejected/downgraded audit claims, unapproved behavior changes and unrelated work.
 
+
+## T-629 Stop the streamed SDL audition hang
+
+- **Status:** Ready
+- **Findings closed:** None in the audit; found during the wave-2 and wave-3 gates (2026-10-13).
+- **Stale-plan audit:** Search by behavior: worker start/stop/join paths, refill wake-ups, condition-variable predicates, SDL stream callbacks and close ordering in the audition output and the preview output that shares its shape. Reproduce the hang before editing.
+- **Outcome:** `tests/sys/sdl_audition_output_tests.cpp` "SDL streamed audition decodes and advances without caller service" no longer hangs to its 30 s timeout under parallel load. The cause (most likely `stop()`/close joining the refill worker while it waits for a wake-up that never comes, or the dummy driver never pulling) is found, fixed in the owner and covered by a regression that reproduces it deterministically (for example with an injected slow refill or a stalled stream), not by a longer timeout.
+- **Read first:** `src/sys/sdl_audition_output.cpp`, `src/sys/sdl_audition_output.h`, `tests/sys/sdl_audition_output_tests.cpp`, `src/sys/sdl_preview_output.cpp`.
+- **Files owned:** `src/sys/sdl_audition_output.cpp`, `src/sys/sdl_audition_output.h`, `tests/sys/sdl_audition_output_tests.cpp`. Supporting caller/test/CMake extensions require exact paths and coordinator approval before editing.
+- **Runs after/before:** After T-612 in the wyrm lane. Runs before T-621.
+- **Decisions applied:**
+  - None. Any behavior change to playback beyond the hang fix needs an owner decision.
+- **Steps:**
+  1. Reproduce the hang (repeat the test under `ctest --repeat until-fail:200 -j2` alongside load, or with a stress harness) and capture where each thread waits (gdb thread backtraces are allowed outside the sandbox; inside, use logging or a deterministic injected stall).
+  2. Write a deterministic failing-before regression for that ordering.
+  3. Fix the wake-up/stop/join ordering in the owner; check the preview output for the same shape and record whether it shares the bug.
+  4. Run every Verify command plus 200 repeats of the audition tests; record search evidence, the root cause, actual output tails and supporting ownership in the commit body. Claude transfers evidence on merge.
+- **Invariants:** Preserve diagnostics, ordering, audio thread real-time rules (no locks or allocation added to the SDL callback) and the current start/stop/service contract. Follow Execution performance/type/ABI/complexity rules.
+- **Reject/failure behavior:** Stop must stay bounded and never leave a running worker; a failed open/start still reports failure. A failed gate stops completion.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `ctest --test-dir build -R audition --repeat until-fail:200 -j2`; `clang-tidy -p build <source-file>` for every touched .cpp, with no new/increased violations. Add the Linux clang gate as specified in Execution. Skip Xvfb in the sandbox.
+- **Out of scope:** Raising timeouts or skipping the test; audio engine redesign; unrelated work.

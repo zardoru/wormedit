@@ -35,7 +35,7 @@ auto group_song() -> song_document_t {
 }
 
 auto grouped_history() -> document_history_t {
-    auto history = make_document_history(group_song());
+    auto history = document_history_t::from(group_song());
     REQUIRE(apply_sound_group_edit(history, history.document.revision,
         create_sound_group_action_t{.group = sound_group_id_t{11}, .name = "Drums",
                                     .sounds = {resource_id_t{1}, resource_id_t{2}}}));
@@ -46,7 +46,7 @@ auto grouped_history() -> document_history_t {
 }
 
 auto single_member_groups_history() -> document_history_t {
-    auto history = make_document_history(group_song());
+    auto history = document_history_t::from(group_song());
     REQUIRE(apply_sound_group_edit(history, history.document.revision,
         create_sound_group_action_t{.group = sound_group_id_t{11}, .name = "Solo",
                                     .sounds = {resource_id_t{1}}}));
@@ -119,7 +119,7 @@ auto grouped_bmson_outputs() -> std::pair<std::string, std::string> {
     const auto before = write_bmson(*imported.song);
     REQUIRE_FALSE(before.has_errors());
     REQUIRE(before.json);
-    auto history = make_document_history(*imported.song);
+    auto history = document_history_t::from(*imported.song);
     const auto state_before = sound_group_invariants(history.document);
     add_group_to_one_sample(history);
     REQUIRE(sound_group_invariants(history.document) == state_before);
@@ -165,7 +165,7 @@ auto grouped_bms_outputs() -> std::pair<std::string, std::string> {
     const auto before = write_bms(*imported.song, options);
     REQUIRE_FALSE(before.has_errors());
     REQUIRE(before.bytes);
-    auto history = make_document_history(*imported.song);
+    auto history = document_history_t::from(*imported.song);
     const auto state_before = sound_group_invariants(history.document);
     add_group_to_one_sample(history);
     REQUIRE(sound_group_invariants(history.document) == state_before);
@@ -187,7 +187,7 @@ auto default_bms_history() -> document_history_t {
     REQUIRE_FALSE(original.has_errors());
     REQUIRE(original.bytes);
     CHECK(*original.bytes == default_bms_source);
-    return make_document_history(*parsed.song);
+    return document_history_t::from(*parsed.song);
 }
 
 auto default_export_matches(const document_history_t& history,
@@ -240,7 +240,7 @@ auto invalid_group_inputs_are_rejected() -> bool {
     song.visual_assets = {{.id = asset_id_t{4}, .source_path = "image.png"}};
     song.resources.push_back({.id = resource_id_t{4}, .name = "image", .asset = asset_id_t{4},
                               .roles = {resource_role_t::bga}});
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     const auto revision = history.document.revision;
     CHECK_FALSE(apply_sound_group_edit(history, revision,
         create_sound_group_action_t{.group = sound_group_id_t{1}, .name = "Empty", .sounds = {}}));
@@ -317,7 +317,7 @@ TEST_CASE("group delete and undo restore membership", "[unit][core][sound-groups
 }
 
 TEST_CASE("deleting the last grouped sound removes its group", "[unit][core][sound-groups]") {
-    auto history = make_document_history(group_song());
+    auto history = document_history_t::from(group_song());
     REQUIRE(apply_sound_group_edit(history, history.document.revision,
         create_sound_group_action_t{.group = sound_group_id_t{11}, .name = "Solo",
                                     .sounds = {resource_id_t{1}}}));
@@ -346,7 +346,7 @@ TEST_CASE("group names trim whitespace and reject case-insensitive collisions",
 
 TEST_CASE("group name byte limits accept one and sixty-four bytes and reject sixty-five",
           "[unit][core][sound-groups]") {
-    auto history = make_document_history(group_song());
+    auto history = document_history_t::from(group_song());
     REQUIRE(apply_sound_group_edit(history, history.document.revision,
         create_sound_group_action_t{.group = sound_group_id_t{11}, .name = "x",
                                     .sounds = {resource_id_t{1}}}));
@@ -411,7 +411,7 @@ TEST_CASE("song validation rejects duplicate IDs and names for groups", "[unit][
 }
 
 TEST_CASE("sound group names reject malformed UTF-8", "[unit][core][helpers][sound-groups]") {
-    auto history = make_document_history(group_song());
+    auto history = document_history_t::from(group_song());
     const auto result = apply_sound_group_edit(history, history.document.revision,
         create_sound_group_action_t{.group = sound_group_id_t{11}, .name = "bad\xc0\x80",
                                     .sounds = {resource_id_t{1}}});

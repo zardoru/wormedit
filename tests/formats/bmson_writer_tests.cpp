@@ -185,7 +185,7 @@ TEST_CASE("BMSON writer persists editable info metadata through export and reloa
           "[unit][format][bmson][writer][metadata]") {
     auto imported = fixture("slicing-and-mixed-sounds.bmson");
     REQUIRE(imported.song);
-    auto history = wormedit::make_document_history(std::move(*imported.song));
+    auto history = wormedit::document_history_t::from(std::move(*imported.song));
     const auto chart_id = history.document.charts.front().id;
     const wormedit::format_metadata_target_t song_target{
         std::nullopt, wormedit::format_family_t::bmson};
@@ -269,7 +269,7 @@ TEST_CASE("BMSON writer persists editable info metadata through export and reloa
     REQUIRE(saved.bytes);
     auto reopened = wormedit::parse_native_project(*saved.bytes);
     REQUIRE(reopened.song);
-    auto resumed = wormedit::make_document_history(std::move(*reopened.song));
+    auto resumed = wormedit::document_history_t::from(std::move(*reopened.song));
     const auto& reopened_song_group = resumed.document.metadata.format_groups.front();
     const auto reopened_genre_index = find_field(reopened_song_group, "info.genre");
     REQUIRE(reopened_genre_index < reopened_song_group.ordered_fields.size());
@@ -287,7 +287,7 @@ TEST_CASE("BMSON writer persists editable info metadata through export and reloa
     REQUIRE(after_reopen.json);
     CHECK(nlohmann::json::parse(*after_reopen.json)["info"]["genre"] == "post-save genre");
 
-    auto invalid = wormedit::make_document_history(history.document);
+    auto invalid = wormedit::document_history_t::from(history.document);
     const auto& invalid_group = invalid.document.charts.front().metadata.format_groups.front();
     const auto subtitle_index = find_field(invalid_group, "info.subtitle");
     REQUIRE(subtitle_index < invalid_group.ordered_fields.size());
@@ -626,7 +626,7 @@ TEST_CASE("BMSON converted playable hold roundtrips as BGM with the same source 
         "mode_hint":"beat-7k","resolution":240},"sound_channels":[{"name":"hold.wav",
         "notes":[{"x":1,"y":300,"l":900,"c":false}]}]})");
     require_bgm_tail(parsed.song);
-    auto history = wormedit::make_document_history(*parsed.song);
+    auto history = wormedit::document_history_t::from(*parsed.song);
     const auto& original = history.document.charts.front();
     const auto at = std::ranges::find_if(original.measures,
         [](const auto& value) { return !value.notes.empty(); });

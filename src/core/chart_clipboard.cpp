@@ -274,7 +274,7 @@ auto delete_selection_all(document_history_t& history, editor_interaction_state_
     proposed_state.selected_objects.assign(selected.begin(), selected.end());
     proposed_state.selected_notes.clear();
     const bool explicit_selection = !selected.empty() || options.kiai_head || options.recipe;
-    auto staged = make_document_history(history.document, 1);
+    auto staged = document_history_t::from(history.document, 1);
     auto diagnostics = stage_selection_spans(staged, proposed_state, options, *boundaries);
     if (!diagnostics.empty()) return {.diagnostics = std::move(diagnostics)};
     diagnostics = stage_selection_timing(staged, proposed_state, options.timing_locked);

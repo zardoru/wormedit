@@ -212,7 +212,7 @@ TEST_CASE("semantic-layer scrolling windows include hidden layers and clamp boun
 
 TEST_CASE("semantic layers insert, update, reorder, and share bounded document history",
           "[unit][core][semantic-layer-editor]") {
-    auto history = make_document_history(semantic_layer_song());
+    auto history = document_history_t::from(semantic_layer_song());
     const auto inserted = apply_semantic_layer_edit(
         history, 4,
         insert_semantic_layer_action_t{
@@ -280,7 +280,7 @@ TEST_CASE("semantic layers insert, update, reorder, and share bounded document h
 
 TEST_CASE("semantic layer membership is bounded, atomic, and leaves gameplay data intact",
           "[unit][core][semantic-layer-editor][membership]") {
-    auto history = make_document_history(semantic_layer_song());
+    auto history = document_history_t::from(semantic_layer_song());
     const auto original_tap = note_by_id(history.document.charts.front(), object_id_t{20});
     const auto original_hold = note_by_id(history.document.charts.front(), object_id_t{21});
 
@@ -347,7 +347,7 @@ TEST_CASE("semantic layer membership is bounded, atomic, and leaves gameplay dat
 
 TEST_CASE("semantic layer membership edits notes and BGM events in one undo step",
           "[unit][core][semantic-layer-editor][bgm]") {
-    auto history = make_document_history(semantic_layer_bgm_song());
+    auto history = document_history_t::from(semantic_layer_bgm_song());
     const auto assigned = apply_semantic_layer_edit(
         history, 4,
         semantic_layer_membership_edit_t{.chart = chart_id_t{2},
@@ -365,7 +365,7 @@ TEST_CASE("semantic layer membership edits notes and BGM events in one undo step
 
 TEST_CASE("stale mixed semantic layer edit leaves note and BGM untouched",
           "[unit][core][semantic-layer-editor][bgm][stale]") {
-    auto history = make_document_history(semantic_layer_bgm_song());
+    auto history = document_history_t::from(semantic_layer_bgm_song());
     const auto stale = apply_semantic_layer_edit(
         history, 3,
         semantic_layer_membership_edit_t{.chart = chart_id_t{2},
@@ -385,7 +385,7 @@ TEST_CASE("locked BGM layer rejects a mixed clear atomically",
     auto locked_song = semantic_layer_bgm_song();
     locked_song.charts.front().semantic_layers.front().locked = true;
     locked_song.charts.front().measures.front().bgm_events.front().semantic_layers = {layer_id_t{7}};
-    auto locked_history = make_document_history(std::move(locked_song));
+    auto locked_history = document_history_t::from(std::move(locked_song));
     const auto before_revision = locked_history.document.revision;
     const auto rejected = apply_semantic_layer_edit(
         locked_history, before_revision, clear_semantic_layer_membership_action_t{
@@ -409,7 +409,7 @@ TEST_CASE("deleting a semantic layer with unlink removes BGM membership",
         .position = {measure_id_t{3}, 360}, .source_lane = object_id_t{33},
         .semantic_layers = {layer_id_t{7}}});
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto removed = apply_semantic_layer_edit(
         history, 4, delete_semantic_layer_action_t{chart_id_t{2}, layer_id_t{7}, true});
     REQUIRE(removed);
@@ -421,7 +421,7 @@ TEST_CASE("deleting a semantic layer with unlink removes BGM membership",
 
 TEST_CASE("BGM placement receives the sound's semantic layer defaults",
           "[unit][core][semantic-layer-editor][bgm]") {
-    auto history = make_document_history(bgm_placement_song());
+    auto history = document_history_t::from(bgm_placement_song());
     const auto placed = apply_resource_placement(
         history, 4, {.chart = chart_id_t{2}, .resource = resource_id_t{51},
                      .position = {measure_id_t{3}, 600},
@@ -454,7 +454,7 @@ TEST_CASE("clearing mixed semantic layers is one undoable revision and preserves
     chart.semantic_layers.push_back({.id = layer_id_t{8}, .name = "Percussion"});
     note_by_id(chart, object_id_t{21}).semantic_layers = {layer_id_t{8}};
     const auto original_notes = chart.measures.front().notes;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
 
     REQUIRE(apply_semantic_layer_edit(
         history, 4,
@@ -476,7 +476,7 @@ TEST_CASE("clearing memberships rejects a locked member without modifying histor
     auto& chart = song.charts.front();
     chart.semantic_layers.push_back({.id = layer_id_t{8}, .name = "Locked", .locked = true});
     note_by_id(chart, object_id_t{21}).semantic_layers = {layer_id_t{8}};
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto next_revision = history.next_revision;
 
     const auto rejected = apply_semantic_layer_edit(
@@ -490,7 +490,7 @@ TEST_CASE("clearing memberships rejects a locked member without modifying histor
 
 TEST_CASE("clearing unassigned notes is a no-op and mixed assigned notes still clear",
           "[unit][core][semantic-layer-editor][clear][noop]") {
-    auto history = make_document_history(semantic_layer_song());
+    auto history = document_history_t::from(semantic_layer_song());
     const auto next_revision = history.next_revision;
     const auto no_op = apply_semantic_layer_edit(
         history, 4, clear_semantic_layer_membership_action_t{chart_id_t{2}, {object_id_t{21}}});
@@ -507,7 +507,7 @@ TEST_CASE("clearing unassigned notes is a no-op and mixed assigned notes still c
 
 TEST_CASE("clearing semantic layers validates revisions charts notes and selection caps",
           "[unit][core][semantic-layer-editor][clear][negative]") {
-    auto history = make_document_history(semantic_layer_song());
+    auto history = document_history_t::from(semantic_layer_song());
     const auto stale = apply_semantic_layer_edit(
         history, 3, clear_semantic_layer_membership_action_t{chart_id_t{2}, {object_id_t{20}}});
     CHECK_FALSE(stale);
@@ -538,7 +538,7 @@ TEST_CASE("locked layers block membership and deletion until unlocked",
           "[unit][core][semantic-layer-editor][locked]") {
     auto song = semantic_layer_song();
     song.charts.front().semantic_layers.front().locked = true;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
 
     const auto assign_locked = apply_semantic_layer_edit(
         history, 4,
@@ -597,7 +597,7 @@ TEST_CASE("locked layers block membership and deletion until unlocked",
 TEST_CASE(
     "semantic layer edits reject malformed names colors IDs and bounded selections atomically",
     "[unit][core][semantic-layer-editor][negative]") {
-    auto history = make_document_history(semantic_layer_song());
+    auto history = document_history_t::from(semantic_layer_song());
     const auto revision = history.document.revision;
     const auto valid_color =
         semantic_layer_rgba_t{.red = 1.0, .green = 0.0, .blue = 0.0, .alpha = 1.0};
@@ -720,7 +720,7 @@ TEST_CASE("semantic layer assignment indexes a fifty-thousand-note chart once",
         selected.push_back(id);
     }
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
 
     const auto started = std::chrono::steady_clock::now();
     const auto applied = apply_semantic_layer_edit(
@@ -752,7 +752,7 @@ TEST_CASE("replacement layer assignments keep one membership and restore origina
           "[unit][core][semantic-layer][replacement]") {
     auto song = semantic_layer_song();
     song.charts.front().semantic_layers.push_back({.id = layer_id_t{8}, .name = "Target", .color = {32, 64, 128, 255}});
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     require_membership(static_cast<bool>(apply_semantic_layer_edit(history, 4,
         replace_notes_semantic_layer_action_t{chart_id_t{2}, layer_id_t{8}, {object_id_t{20}, object_id_t{21}}})));
     check_membership(static_cast<bool>(history.document.revision == 5));
@@ -768,7 +768,7 @@ TEST_CASE("replacement layer assignments reject locked source layers atomically"
     auto song = semantic_layer_song();
     song.charts.front().semantic_layers.front().locked = true;
     song.charts.front().semantic_layers.push_back({.id = layer_id_t{8}, .name = "Target", .color = {32, 64, 128, 255}});
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     const auto result = apply_semantic_layer_edit(history, 4,
         replace_notes_semantic_layer_action_t{chart_id_t{2}, layer_id_t{8}, {object_id_t{21}, object_id_t{20}}});
     check_membership(static_cast<bool>(!(result)));
@@ -782,7 +782,7 @@ TEST_CASE("replacement layer paint toggles only the target and replaces other me
     auto song = semantic_layer_song();
     song.charts.front().semantic_layers.push_back({.id = layer_id_t{8}, .name = "Target", .color = {32, 64, 128, 255}});
     song.charts.front().measures.front().notes.back().semantic_layers = {layer_id_t{8}};
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     require_membership(static_cast<bool>(apply_semantic_layer_edit(history, 4,
         replace_notes_semantic_layer_action_t{chart_id_t{2}, layer_id_t{8}, {object_id_t{20}, object_id_t{21}}, true})));
     check_membership(static_cast<bool>(history.document.charts.front().measures.front().notes.front().semantic_layers == std::vector{layer_id_t{8}}));
@@ -804,7 +804,7 @@ TEST_CASE("replacement membership batch checks a shared layer catalog once",
         chart.measures.front().notes.push_back({.id = ids.back(), .position = {measure_id_t{3}, index},
             .lane = lane_id_t{1}, .semantic_layers = {layer_id_t{100 + index}}});
     }
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     require_membership(static_cast<bool>(apply_semantic_layer_edit(history, 4,
         replace_notes_semantic_layer_action_t{chart_id_t{2}, layer_id_t{1099}, ids})));
     check_membership(static_cast<bool>(history.undo.size() == 1));
@@ -840,7 +840,7 @@ void check_selected_sounds(bool value) { CHECK(value); }
 
 TEST_CASE("Selected sound layers propagate chart-wide while preserving explicit memberships",
           "[unit][core][semantic-layer][selected-sound-layers]") {
-    auto history = make_document_history(selected_sound_layer_song());
+    auto history = document_history_t::from(selected_sound_layer_song());
     const auto original = write_native_project(history.document);
     REQUIRE(original.bytes);
     const auto applied = add_selected_sounds_to_semantic_layer(history, 4,
@@ -877,7 +877,7 @@ TEST_CASE("Selected sound layers propagate chart-wide while preserving explicit 
 
 TEST_CASE("Selected sound layer edits reject stale invalid locked and oversized selections atomically",
           "[unit][core][semantic-layer][selected-sound-layers]") {
-    auto history = make_document_history(selected_sound_layer_song());
+    auto history = document_history_t::from(selected_sound_layer_song());
     const add_selected_sounds_to_semantic_layer_action_t action{
         chart_id_t{2}, layer_id_t{8}, {object_id_t{20}}, {}};
     check_selected_sounds(!add_selected_sounds_to_semantic_layer(history, 3, action));
@@ -905,7 +905,7 @@ TEST_CASE("Selected sound layer edits reject stale invalid locked and oversized 
 
 TEST_CASE("Selected sound layers deduplicate resources support BGM-only and ignore silent objects",
           "[unit][core][semantic-layer][selected-sound-layers]") {
-    auto history = make_document_history(selected_sound_layer_song());
+    auto history = document_history_t::from(selected_sound_layer_song());
     const auto silent = add_selected_sounds_to_semantic_layer(history, 4,
         {chart_id_t{2}, layer_id_t{8}, {object_id_t{26}}, {}});
     check_selected_sounds(!silent.applied && silent.diagnostics.empty());

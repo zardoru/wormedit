@@ -107,7 +107,7 @@ void expect_cursor_gesture(bool value, std::source_location where = std::source_
 
 void check_fractional_snap_cursor(std::uint64_t row, double subrow,
                                   interaction_direction_t direction, std::uint64_t expected) {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     place_cursor_on_picked_row(state, {measure_id_t{1}, row});
     set_cursor_subrow(state, subrow);
@@ -140,7 +140,7 @@ TEST_CASE("Latched cursor range begins one snap wide follows navigation and comm
     song.charts.front().measures.front().notes = {
         {.id = object_id_t{501}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{1}},
         {.id = object_id_t{502}, .position = {measure_id_t{1}, 720}, .lane = lane_id_t{1}}};
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     place_cursor_on_picked_row(state, {measure_id_t{1}, 480});
     const space_range_selection_action_t toggle{.minimum_snap_width = true};
@@ -163,7 +163,7 @@ TEST_CASE("Latched cursor range begins one snap wide follows navigation and comm
 
 TEST_CASE("Latched range commits without movement and Escape cancels its preview",
           "[unit][core][interaction][ctrl-space]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     const space_range_selection_action_t toggle{.minimum_snap_width = true};
     expect_cursor_gesture(dispatch_editor_action(history, state, toggle).accepted);
@@ -197,7 +197,7 @@ TEST_CASE("Chart preview starts at the fractional cursor instead of its snapped 
 
 TEST_CASE("Escape restoration returns the Compose cursor to its preplay position",
           "[unit][core][interaction][transport]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     const auto original = state.cursor;
     sys::inline_preview_cursor_t preview_cursor;
@@ -212,7 +212,7 @@ TEST_CASE("Escape restoration returns the Compose cursor to its preplay position
 
 TEST_CASE("Escape restoration also restores the drawn cursor offset and scroll",
           "[unit][core][interaction][transport]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     state.cursor_subrow = 3.5;
     const auto scroll = state.viewport_scroll_pixels;
@@ -230,7 +230,7 @@ using parallel_hold_signature_t =
 
 auto parallel_hold_result(bool release_newest_first)
     -> std::optional<std::array<parallel_hold_signature_t, 2>> {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     const auto apply = [&](const editor_interaction_action_t& action) {
         return static_cast<bool>(dispatch_editor_action(history, state, action));
@@ -279,7 +279,7 @@ TEST_CASE("first tap in virtual BMS #999 commits geometry and note as one undo s
     auto song = make_song();
     song.charts.front().source_family = format_family_t::bms;
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     const auto before = history.document.revision;
     const auto placed = dispatch_editor_action(
@@ -319,7 +319,7 @@ void check_native_tail_commit(document_history_t& history, std::size_t authored)
 
 TEST_CASE("native chart without BGM places taps in its virtual tail as one undo step",
           "[unit][core][interaction][virtual-canvas]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     const auto built = build_virtual_canvas(history.document.charts.front());
     REQUIRE(std::holds_alternative<virtual_canvas_t>(built));
@@ -342,7 +342,7 @@ TEST_CASE("invalid virtual BMS taps leave document and cursor untouched",
           "[unit][core][interaction][virtual-canvas]") {
     auto song = make_song();
     song.charts.front().source_family = format_family_t::bms;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     const auto cursor = state.cursor;
     CHECK_FALSE(dispatch_editor_action(
@@ -361,7 +361,7 @@ TEST_CASE("BMS view scrolls through #999 without authoring empty measures",
           "[unit][core][interaction][virtual-canvas]") {
     auto song = make_song();
     song.charts.front().source_family = format_family_t::bms;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     const auto scrolled =
         dispatch_editor_action(history, state, scroll_editor_view_action_t{1'000'000.0});
@@ -378,7 +378,7 @@ TEST_CASE("undoing a virtual BMS edit recovers the cursor without moving the vie
           "[unit][core][interaction][virtual-canvas]") {
     auto song = make_song();
     song.charts.front().source_family = format_family_t::bms;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     const auto scrolled =
         dispatch_editor_action(history, state, scroll_editor_view_action_t{1'000'000.0});
@@ -399,7 +399,7 @@ TEST_CASE("BMS cursor crosses authored boundary and pages through virtual #999",
           "[unit][core][interaction][virtual-canvas]") {
     auto song = make_song();
     song.charts.front().source_family = format_family_t::bms;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     const auto authored = dispatch_editor_action(
         history, state,
@@ -458,7 +458,7 @@ TEST_CASE("BMS paging preserves fractional position across an imported short mea
     auto& chart = song.charts.front();
     chart.source_family = format_family_t::bms;
     chart.measures.front().definition = {{1, 2}, meter_t{2, 4}};
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                          {measure_id_t{1}, 240}, snaps, 4);
@@ -482,7 +482,7 @@ TEST_CASE("virtual BMS hold spans rows in one undoable command",
           "[unit][core][interaction][virtual-canvas]") {
     auto song = make_song();
     song.charts.front().source_family = format_family_t::bms;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     const auto placed = dispatch_editor_action(
         history, state,
@@ -507,7 +507,7 @@ TEST_CASE("virtual BMS lane key may move the cursor before confirming a hold",
           "[unit][core][interaction][virtual-canvas]") {
     auto song = make_song();
     song.charts.front().source_family = format_family_t::bms;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     REQUIRE(dispatch_editor_action(
         history, state,
@@ -544,7 +544,7 @@ TEST_CASE("virtual BMS hold extends backward into authored geometry and merges a
     chart.measures[1].notes.push_back({.id = object_id_t{200},
                                        .position = {measure_id_t{2}, 720},
                                        .lane = lane_id_t{1}});
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     const auto placed = dispatch_editor_action(
         history, state,
@@ -576,7 +576,7 @@ TEST_CASE("virtual BMS hold preview shows transitive authored unions before comm
                                        .lane = lane_id_t{1},
                                        .kind = note_kind_t::hold,
                                        .end = local_position_t{measure_id_t{2}, 600}});
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     REQUIRE(dispatch_editor_action(
         history, state,
@@ -618,7 +618,7 @@ TEST_CASE("virtual BMS hold rejects a protected authored collision atomically",
                                        .position = {measure_id_t{2}, 720},
                                        .lane = lane_id_t{1},
                                        .label = "protected"});
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     const auto cursor = state.cursor;
     CHECK_FALSE(dispatch_editor_action(
@@ -638,7 +638,7 @@ TEST_CASE("virtual BMS hold preview rejects a protected authored collision",
                                        .position = {measure_id_t{2}, 720},
                                        .lane = lane_id_t{1},
                                        .label = "protected"});
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     REQUIRE(dispatch_editor_action(
         history, state,
@@ -665,7 +665,7 @@ TEST_CASE("area selection in virtual BMS space excludes authored boundary events
     chart.measures[1].bgm_events.push_back({.id = object_id_t{201},
                                             .position = {measure_id_t{2}, 959},
                                             .source_lane = object_id_t{300}});
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                          {measure_id_t{2}, 720}, snaps, 4, 192.0);
@@ -718,7 +718,7 @@ TEST_CASE("Space selection crosses into virtual BMS measures without authoring t
     chart.measures[1].notes.push_back({.id = object_id_t{201},
                                        .position = {measure_id_t{2}, 720},
                                        .lane = lane_id_t{1}});
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     REQUIRE(dispatch_editor_action(
         history, state,
@@ -763,7 +763,7 @@ TEST_CASE("BMS measure rail selects #999 without materializing it",
           "[unit][core][interaction][virtual-canvas][selection]") {
     auto song = make_song();
     song.charts.front().source_family = format_family_t::bms;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     const auto selected = dispatch_editor_action(
         history, state, select_bms_canvas_measure_action_t{999});
@@ -793,7 +793,7 @@ TEST_CASE("BMS measure rail selects #999 without materializing it",
 
 TEST_CASE("turning edit snap off places taps on the exact pointer row",
           "[unit][core][interaction][snap]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     state.snap_enabled = false;
     const auto placed =
@@ -813,7 +813,7 @@ TEST_CASE("turning edit snap off places taps on the exact pointer row",
 TEST_CASE(
     "headless editor actions cycle exact snaps, step across measures, and place undoable taps",
     "[unit][core][interaction]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     constexpr std::array snaps{std::uint64_t{4}, std::uint64_t{8}, std::uint64_t{6}};
     const auto initial = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
@@ -909,7 +909,7 @@ TEST_CASE("cursor paging preserves fractional measure rows and keeps the cursor 
         {.id = measure_id_t{2}, .definition = {{3, 2}, meter_t{3, 2}}},
         {.id = measure_id_t{3}, .definition = {{1, 2}, meter_t{1, 2}}},
     };
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}, std::uint64_t{8}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                          {measure_id_t{1}, 320}, snaps, 4, 192.0);
@@ -950,7 +950,7 @@ TEST_CASE("cursor paging preserves fractional measure rows and keeps the cursor 
 
 TEST_CASE("cursor navigation moves a mobile head through a central comfort band",
           "[unit][core][interaction][navigation]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     constexpr std::array snaps{std::uint64_t{4}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                          {measure_id_t{1}, 0}, snaps, 4, 96.0);
@@ -988,7 +988,7 @@ TEST_CASE("cursor navigation moves a mobile head through a central comfort band"
 
 TEST_CASE("editor y mapping preserves exact rows through zoom and scroll",
           "[unit][core][interaction][mapping]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     constexpr std::array snaps{std::uint64_t{4}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
                                          snaps, 4, 192.0);
@@ -1036,7 +1036,7 @@ TEST_CASE("hit testing returns lane, note, hold head, and cross-measure tail tar
          .kind = note_kind_t::tap},
     };
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}};
     const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                                {measure_id_t{1}, 0}, snaps, 4, 384.0);
@@ -1102,7 +1102,7 @@ TEST_CASE("overlapping hit records use stable hold-head priority",
          .kind = note_kind_t::hold,
          .end = local_position_t{measure_id_t{1}, 480}},
     };
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}};
     const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                                {measure_id_t{1}, 0}, snaps, 4, 192.0);
@@ -1159,7 +1159,7 @@ TEST_CASE("typed object hover is deterministic and supplies a same-object proper
          .source_unit = pause_unit_t::seconds},
     };
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}};
     const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                                {measure_id_t{1}, 0}, snaps, 4, 384.0);
@@ -1257,7 +1257,7 @@ TEST_CASE("typed double-click requests clear across stale revisions, focus, and 
     song.charts.front().bpms = {
         {.id = object_id_t{201}, .position = {measure_id_t{1}, 240}, .beats_per_minute = {180, 1}},
     };
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}};
     const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                                {measure_id_t{1}, 0}, snaps, 4, 384.0);
@@ -1346,7 +1346,7 @@ TEST_CASE("hover lookup stays row-indexed for fifty thousand typed events",
     INFO("validation diagnostics: "
          << diagnostics.size() << (diagnostics.empty() ? "" : ": " + diagnostics.front().message));
     REQUIRE(diagnostics.empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}};
     const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                                {measure_id_t{1}, 0}, snaps, 4, 384.0);
@@ -1397,7 +1397,7 @@ TEST_CASE("area selection normalizes all drag directions and applies replace, ad
              .end = local_position_t{measure_id_t{1}, 720}},
         };
         REQUIRE(validate_document(song).empty());
-        return make_document_history(std::move(song));
+        return document_history_t::from(std::move(song));
     };
     constexpr std::array snaps{std::uint64_t{4}};
     const std::array drag_corners{
@@ -1505,7 +1505,7 @@ TEST_CASE("Space range selection excludes its ending row across measures and dra
         {.id = object_id_t{104}, .position = {measure_id_t{2}, 240}, .lane = lane_id_t{2}},
     };
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                          {measure_id_t{1}, 480}, snaps, 4, 300.0);
@@ -1635,7 +1635,7 @@ TEST_CASE("area and Space selection address scoped BGM, timing, and BGA objects 
                                 .resource = resource_id_t{303}});
     REQUIRE(validate_document(song).empty());
 
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                          {measure_id_t{1}, 240}, snaps, 4, 300.0);
@@ -1784,7 +1784,7 @@ TEST_CASE("typed object selection validates BGM events and synchronizes note sel
                                                  .source_lane = object_id_t{301}});
     chart.measures.front().notes.push_back(
         {.id = object_id_t{101}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{1}});
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
 
     const auto bgm_selected =
@@ -1902,7 +1902,7 @@ TEST_CASE("Space range selection supports add and toggle and cancels safely",
         {.id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}},
         {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{2}},
     };
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}, std::uint64_t{8}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                          {measure_id_t{1}, 240}, snaps, 4, 192.0);
@@ -2001,7 +2001,7 @@ TEST_CASE("Space range selection uses span indexes for a sparse 50k-note chart",
         });
     }
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                          {measure_id_t{1}, 24'000}, snaps, 4, 1200.0);
@@ -2026,7 +2026,7 @@ TEST_CASE("area selection maps through zoom and scroll and intersects cross-meas
          .end = local_position_t{measure_id_t{2}, 480}},
     };
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
                                          snaps, 4, 300.0);
@@ -2085,7 +2085,7 @@ TEST_CASE("area selection capture loss cancels and stale revisions preserve comm
         {.id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}},
         {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{2}},
     };
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
                                          snaps, 4, 192.0);
@@ -2161,7 +2161,7 @@ TEST_CASE("area selection narrows a 50k-note query to a sparse row interval",
         });
     }
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
                                          snaps, 4, 1200.0);
@@ -2190,7 +2190,7 @@ TEST_CASE("area selection narrows a 50k-note query to a sparse row interval",
 
 TEST_CASE("note paint interpolates snap rows, suppresses duplicates, and commits atomically",
           "[unit][core][interaction][paint]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     REQUIRE(dispatch_editor_action(
         history, state,
@@ -2258,7 +2258,7 @@ auto paint_stroke(document_history_t& history, editor_interaction_state_t& state
 TEST_CASE("note paint writes the armed sound and its unlocked default layers into new notes",
           "[unit][core][interaction][paint][sound]") {
     for (const auto kind : {note_kind_t::tap, note_kind_t::mine}) {
-        auto history = make_document_history(make_paint_sound_song());
+        auto history = document_history_t::from(make_paint_sound_song());
         auto state = make_state(history);
         state.armed_note_kind = kind;
         const auto committed = paint_stroke(history, state, resource_id_t{7});
@@ -2279,7 +2279,7 @@ TEST_CASE("note paint writes the armed sound and its unlocked default layers int
 
 TEST_CASE("note paint without a sound leaves notes silent and unlayered",
           "[unit][core][interaction][paint][sound]") {
-    auto history = make_document_history(make_paint_sound_song());
+    auto history = document_history_t::from(make_paint_sound_song());
     auto state = make_state(history);
     REQUIRE(paint_stroke(history, state, std::nullopt));
     for (const auto& note : history.document.charts.front().measures.front().notes) {
@@ -2291,7 +2291,7 @@ TEST_CASE("note paint without a sound leaves notes silent and unlayered",
 TEST_CASE("note paint rejects a sound that is not an existing sample and changes nothing",
           "[unit][core][interaction][paint][sound]") {
     for (const auto bad : {resource_id_t{8}, resource_id_t{99}}) {
-        auto history = make_document_history(make_paint_sound_song());
+        auto history = document_history_t::from(make_paint_sound_song());
         auto state = make_state(history);
         const auto revision = history.document.revision;
         const auto rejected = paint_stroke(history, state, bad);
@@ -2307,7 +2307,7 @@ TEST_CASE("note paint rejects a sound that is not an existing sample and changes
 TEST_CASE("note painting rejects active area and Space range selection gestures",
           "[unit][core][interaction][paint][selection]") {
     for (const auto selection_kind : {0, 1}) {
-        auto history = make_document_history(make_song());
+        auto history = document_history_t::from(make_song());
         auto state = make_state(history);
         state.viewport_height_pixels = 200.0;
         if (selection_kind == 0) {
@@ -2359,7 +2359,7 @@ TEST_CASE("semantic-layer paint visits mixed notes once and commits one undoable
          .kind = note_kind_t::tap},
     };
     require_layer_brush(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
 
     require_layer_brush(dispatch_editor_action(
@@ -2413,7 +2413,7 @@ TEST_CASE("semantic-layer remove preserves nonmembers and repeated strokes creat
          .kind = note_kind_t::tap, .semantic_layers = {layer_id_t{7}}},
         {.id = object_id_t{102}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1},
          .kind = note_kind_t::tap}};
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     for (int stroke = 0; stroke != 2; ++stroke) {
         require_layer_brush(dispatch_editor_action(history, state,
@@ -2448,7 +2448,7 @@ TEST_CASE("semantic-layer paint requires an editable visible layer and cancels o
                                      .lane = lane_id_t{1},
                                      .kind = note_kind_t::tap}};
     require_layer_brush(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
 
     const auto hidden = dispatch_editor_action(
@@ -2478,7 +2478,7 @@ TEST_CASE("semantic-layer paint requires an editable visible layer and cancels o
 
 TEST_CASE("single-cell paint toggles taps and rejects hold collisions atomically",
           "[unit][core][interaction][paint]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     const auto click = [&] {
         REQUIRE(dispatch_editor_action(
@@ -2508,7 +2508,7 @@ TEST_CASE("single-cell paint toggles taps and rejects hold collisions atomically
         .end = local_position_t{measure_id_t{1}, 720},
     });
     REQUIRE(validate_document(colliding_song).empty());
-    auto colliding_history = make_document_history(std::move(colliding_song));
+    auto colliding_history = document_history_t::from(std::move(colliding_song));
     auto colliding_state = make_state(colliding_history);
     REQUIRE(dispatch_editor_action(
         colliding_history, colliding_state,
@@ -2531,7 +2531,7 @@ TEST_CASE("paint gestures cancel on capture loss and leave previews intact on ca
           "[unit][core][interaction][paint][cancel]") {
     auto song = make_song();
     song.charts.front().divisions_per_standard_measure = 100'001;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{100001}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
                                          snaps, 100'001);
@@ -2604,7 +2604,7 @@ TEST_CASE("hit-test buckets handle dense measures and 50k notes within a discret
         .kind = note_kind_t::tap,
     });
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{100000}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
                                          snaps, 100'000, 200.0);
@@ -2653,7 +2653,7 @@ TEST_CASE("interaction rejects invalid targets and occupied non-tap notes atomic
         .end = local_position_t{measure_id_t{1}, 720},
     });
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
 
     const auto invalid =
@@ -2690,7 +2690,7 @@ TEST_CASE("interaction rejects invalid targets and occupied non-tap notes atomic
 
 TEST_CASE("interaction setup rejects unavailable lanes and falls back to supported exact snaps",
           "[unit][core][interaction]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     constexpr std::array snaps{std::uint64_t{7}, std::uint64_t{6}, std::uint64_t{8}};
 
     const auto fallback = make_editor_interaction(history, chart_id_t{1}, lane_id_t{2},
@@ -2724,7 +2724,7 @@ TEST_CASE("interaction crosses lane-layout transitions and exposes explicit lane
             },
     });
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
 
     const auto crossed = dispatch_editor_action(
@@ -2755,7 +2755,7 @@ TEST_CASE("exact cursor jumps preserve authored rows and transition lanes atomic
             },
     });
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
 
     const auto unsnapped = dispatch_editor_action(
@@ -2780,7 +2780,7 @@ TEST_CASE("exact cursor jumps preserve authored rows and transition lanes atomic
 
 TEST_CASE("exact cursor jumps reject stale and out-of-chart targets without changing state",
           "[unit][core][interaction][navigation][negative]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     const auto original = state;
     const auto queried_revision = history.document.revision;
@@ -2822,7 +2822,7 @@ TEST_CASE("pointer zoom anchors chart rows and viewport scrolling clamps to cont
                                             .frame_count = 48'000}});
     song.resources.push_back({.id = resource_id_t{9001}, .asset = asset_id_t{9001},
                               .roles = {resource_role_t::bgm}});
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}, std::uint64_t{8}, std::uint64_t{6}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
                                          snaps, 4, 400.0);
@@ -2869,7 +2869,7 @@ TEST_CASE("Compose wheel direction and first-measure anchor follow field orienta
     CHECK(compose_visual_navigation_direction(true, true) == interaction_direction_t::forward);
     CHECK(compose_visual_navigation_direction(true, false) == interaction_direction_t::backward);
 
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     constexpr std::array snaps{std::uint64_t{4}};
     for (const bool downscroll : {false, true}) {
         const auto initial = make_editor_interaction(
@@ -2905,7 +2905,7 @@ TEST_CASE("Compose wheel direction and first-measure anchor follow field orienta
 
 TEST_CASE("fractional fixed-cursor scrolling keeps the drawn cursor on its screen line",
           "[unit][core][interaction][viewport][fixed-cursor]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     constexpr std::array snaps{std::uint64_t{4}};
     const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                                {measure_id_t{1}, 0}, snaps, 4, 192.0);
@@ -2927,7 +2927,7 @@ TEST_CASE("fractional fixed-cursor scrolling keeps the drawn cursor on its scree
 
 TEST_CASE("fixed cursor scrolling follows the snap beneath a stationary viewport line",
           "[unit][core][interaction][viewport][fixed-cursor]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     constexpr std::array snaps{std::uint64_t{4}};
     const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                                {measure_id_t{1}, 0}, snaps, 4, 192.0);
@@ -2985,7 +2985,7 @@ TEST_CASE("fixed cursor scrolling reaches virtual BMS rows without materializing
           "[unit][core][interaction][viewport][fixed-cursor][virtual-canvas]") {
     auto song = make_song();
     song.charts.front().source_family = format_family_t::bms;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}};
     const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                                {measure_id_t{1}, 0}, snaps, 4, 192.0);
@@ -3003,7 +3003,7 @@ TEST_CASE("fixed cursor scrolling reaches virtual BMS rows without materializing
 
 TEST_CASE("two-step hold placement previews, commits across measures, and cancels atomically",
           "[unit][core][interaction][hold]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
 
     const auto begun =
@@ -3071,7 +3071,7 @@ TEST_CASE("two-step hold placement previews, commits across measures, and cancel
 
 TEST_CASE("hold placement moves its head before the fixed anchor and normalizes collisions",
           "[unit][core][interaction][hold][union]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
 
     REQUIRE(dispatch_editor_action(history, state, begin_hold_action_t{{measure_id_t{1}, 720}}));
@@ -3108,7 +3108,7 @@ TEST_CASE("hold placement moves its head before the fixed anchor and normalizes 
          .kind = note_kind_t::hold,
          .end = local_position_t{measure_id_t{2}, 0}},
     };
-    auto union_history = make_document_history(std::move(union_song));
+    auto union_history = document_history_t::from(std::move(union_song));
     auto union_state = make_state(union_history);
     REQUIRE(dispatch_editor_action(union_history, union_state,
                                    begin_hold_action_t{{measure_id_t{1}, 240}}));
@@ -3144,7 +3144,7 @@ TEST_CASE("hold placement moves its head before the fixed anchor and normalizes 
          .lane = lane_id_t{1},
          .kind = note_kind_t::mine},
     };
-    auto conflicting_history = make_document_history(std::move(conflicting_song));
+    auto conflicting_history = document_history_t::from(std::move(conflicting_song));
     auto conflicting_state = make_state(conflicting_history);
     REQUIRE(dispatch_editor_action(conflicting_history, conflicting_state,
                                    begin_hold_action_t{{measure_id_t{1}, 0}}));
@@ -3163,7 +3163,7 @@ TEST_CASE("hold placement moves its head before the fixed anchor and normalizes 
          .lane = lane_id_t{1},
          .label = std::string{"keep this label"}},
     };
-    auto metadata_history = make_document_history(std::move(metadata_song));
+    auto metadata_history = document_history_t::from(std::move(metadata_song));
     auto metadata_state = make_state(metadata_history);
     const auto metadata_conflict = dispatch_editor_action(
         metadata_history, metadata_state, begin_hold_action_t{{measure_id_t{1}, 480}});
@@ -3174,7 +3174,7 @@ TEST_CASE("hold placement moves its head before the fixed anchor and normalizes 
 }
 
 TEST_CASE("releasing a pending hold at its head places a tap", "[unit][core][interaction][hold]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
 
     REQUIRE(dispatch_editor_action(history, state, begin_hold_action_t{{measure_id_t{1}, 241}}));
@@ -3193,7 +3193,7 @@ TEST_CASE("releasing a pending hold at its head places a tap", "[unit][core][int
 
 TEST_CASE("lane-key hold gestures snap, extend, contract to a tap, and undo atomically",
           "[unit][core][interaction][gesture][hold]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
 
     const auto pressed =
@@ -3268,7 +3268,7 @@ TEST_CASE("held lane key follows the cursor through multiple measures",
     auto song = make_song();
     song.charts.front().measures.push_back({.id = measure_id_t{3}});
     song.charts.front().measures.push_back({.id = measure_id_t{4}});
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                          {measure_id_t{1}, 0}, snaps, 4, 192.0);
@@ -3305,7 +3305,7 @@ TEST_CASE("preview starts at the cursor time and Compose cursor follows the play
     song.charts.front().bpms.push_back({.id = object_id_t{200},
                                        .position = {measure_id_t{1}, 0},
                                        .beats_per_minute = {120, 1}});
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto timing = build_timing_index(history.document.charts.front());
     REQUIRE(timing);
     const auto start = sys::preview_cursor_frame(
@@ -3328,7 +3328,7 @@ TEST_CASE("preview starts at the cursor time and Compose cursor follows the play
 
 TEST_CASE("Following audio keeps the cursor at the anchor between snaps and edits clear the offset",
           "[unit][core][interaction][transport]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     state.viewport_height_pixels = 400.0;
     const auto& chart = history.document.charts.front();
@@ -3349,7 +3349,7 @@ TEST_CASE("Following audio keeps the cursor at the anchor between snaps and edit
 
 TEST_CASE("Starting playback keeps the cursor where it sits instead of re-anchoring the camera",
           "[unit][core][interaction][transport]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     state.viewport_height_pixels = 400.0;
     const auto& chart = history.document.charts.front();
@@ -3368,7 +3368,7 @@ TEST_CASE("Starting playback keeps the cursor where it sits instead of re-anchor
 
 TEST_CASE("Compose playback keeps the playhead anchored 20 percent from the chart start",
           "[unit][core][interaction][transport]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     state.viewport_height_pixels = 400.0;
     state.pixels_per_standard_measure = 400.0;
@@ -3388,7 +3388,7 @@ TEST_CASE("Compose playback keeps the playhead anchored 20 percent from the char
 
 TEST_CASE("Paused Compose playback only scrolls once the playhead leaves the comfort band",
           "[unit][core][interaction][transport]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     state.viewport_height_pixels = 400.0;
     state.pixels_per_standard_measure = 400.0;
@@ -3408,7 +3408,7 @@ TEST_CASE("held BMS lane keys extend into unmaterialized measures and commit ind
           "[unit][core][interaction][gesture][hold][virtual-canvas]") {
     auto song = make_song();
     song.charts.front().source_family = format_family_t::bms;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     const auto jump = dispatch_editor_action(
         history, state, jump_edit_cursor_action_t{{measure_id_t{2}, 720},
@@ -3454,7 +3454,7 @@ TEST_CASE("two BMS lane keys can begin on a virtual measure",
           "[unit][core][interaction][gesture][hold][virtual-canvas]") {
     auto song = make_song();
     song.charts.front().source_family = format_family_t::bms;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     const auto jump = dispatch_editor_action(
         history, state, jump_edit_cursor_action_t{{measure_id_t{2}, 720},
@@ -3489,7 +3489,7 @@ TEST_CASE("BMS canvas hold commit reuses measures materialized by another lane",
     song.charts.front().source_family = format_family_t::bms;
     song.charts.front().measures.push_back({.id = measure_id_t{3}});
     song.charts.front().measures.push_back({.id = measure_id_t{4}});
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     const auto placed = dispatch_editor_action(
         history, state, place_virtual_bms_hold_action_t{960, 2'160, lane_id_t{1}});
@@ -3504,7 +3504,7 @@ TEST_CASE("wheel anchored scrolling extends a held BMS lane key into virtual mea
           "[unit][core][interaction][gesture][hold][virtual-canvas][scroll]") {
     auto song = make_song();
     song.charts.front().source_family = format_family_t::bms;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                          {measure_id_t{1}, 0}, snaps, 4, 192.0);
@@ -3540,7 +3540,7 @@ TEST_CASE("lane-key press removes an occupied ordinary tap or hold",
          .kind = note_kind_t::hold,
          .end = local_position_t{measure_id_t{1}, 720}},
     };
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     state.cursor = {measure_id_t{1}, 480};
 
@@ -3560,7 +3560,7 @@ TEST_CASE("lane-key press removes an occupied ordinary tap or hold",
 
 TEST_CASE("Alt pointer hold gestures cancel on modifier release or capture loss",
           "[unit][core][interaction][gesture][hold]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
 
     const auto no_modifier = dispatch_editor_action(
@@ -3608,7 +3608,7 @@ TEST_CASE("Alt pointer hold gestures cancel on modifier release or capture loss"
 
 TEST_CASE("hold input gestures retire stale previews and can cancel after focus loss",
           "[unit][core][interaction][gesture][hold][revision]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     REQUIRE(
         dispatch_editor_action(history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{1}}));
@@ -3646,7 +3646,7 @@ TEST_CASE("tail drag previews and commits the same exact duration delta for a se
          .end = local_position_t{measure_id_t{1}, 480}},
     };
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     REQUIRE(dispatch_editor_action(
         history, state, select_editor_notes_action_t{{object_id_t{101}, object_id_t{102}}}));
@@ -3708,7 +3708,7 @@ TEST_CASE("duration gestures reject collisions and stale revisions without parti
         {.id = object_id_t{102}, .position = {measure_id_t{1}, 720}, .lane = lane_id_t{1}},
     };
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     REQUIRE(dispatch_editor_action(history, state,
                                    begin_note_duration_gesture_action_t{object_id_t{101}}));
@@ -3754,7 +3754,7 @@ TEST_CASE("selected note moves preview and commit one snapped translation",
         {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{2}},
     };
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     REQUIRE(dispatch_editor_action(
         history, state, select_editor_notes_action_t{{object_id_t{101}, object_id_t{102}}}));
@@ -3796,7 +3796,7 @@ TEST_CASE("note move gestures reject collisions and stale revisions without part
         {.id = object_id_t{102}, .position = {measure_id_t{1}, 720}, .lane = lane_id_t{1}},
     };
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     REQUIRE(
         dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}}));
@@ -3837,7 +3837,7 @@ TEST_CASE("selected note moves translate playable lane columns atomically",
         {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{2}},
     };
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     REQUIRE(dispatch_editor_action(
         history, state, select_editor_notes_action_t{{object_id_t{101}, object_id_t{102}}}));
@@ -3878,7 +3878,7 @@ TEST_CASE("selected note lane moves reject unavailable columns and destination c
         {.id = object_id_t{102}, .position = {measure_id_t{2}, 0}, .lane = lane_id_t{2}},
     };
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     REQUIRE(
         dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}}));
@@ -3912,7 +3912,7 @@ TEST_CASE("selected note lane moves validate every target lane across layout bou
         {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{2}},
     };
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     REQUIRE(dispatch_editor_action(
         history, state, select_editor_notes_action_t{{object_id_t{101}, object_id_t{102}}}));
@@ -3947,7 +3947,7 @@ TEST_CASE("duration gesture previews scale to fifty thousand selected notes",
         selected.push_back(id);
     }
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{100000}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
                                          snaps, 100'000);
@@ -3982,7 +3982,7 @@ TEST_CASE("hold completion restores its lane across layout transitions",
             },
     });
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
 
     REQUIRE(dispatch_editor_action(history, state, begin_hold_action_t{{measure_id_t{1}, 0}}));
@@ -3998,7 +3998,7 @@ TEST_CASE("hold completion restores its lane across layout transitions",
 
 TEST_CASE("hold previews reject stale document revisions and retire captures",
           "[unit][core][interaction][hold][revision]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     REQUIRE(dispatch_editor_action(history, state, begin_hold_action_t{{measure_id_t{1}, 240}}));
 
@@ -4031,7 +4031,7 @@ TEST_CASE("editor deletion removes a cursor note or selected notes atomically",
         {.id = object_id_t{103}, .position = {measure_id_t{2}, 0}, .lane = lane_id_t{1}},
     };
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
 
     const auto cursor_delete =
@@ -4085,7 +4085,7 @@ TEST_CASE("Delete removes selected bookmarks and sections together with notes",
                               .beat_span = position_span_t{{measure_id_t{1}, 0},
                                                            {measure_id_t{1}, 480}}});
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     REQUIRE(dispatch_editor_action(
         history, state,
@@ -4118,7 +4118,7 @@ TEST_CASE("Delete uses typed BGM selection instead of removing a cursor note",
          .position = {measure_id_t{1}, 840},
          .source_lane = object_id_t{200}});
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     REQUIRE(dispatch_editor_action(
         history, state,
@@ -4171,7 +4171,7 @@ TEST_CASE("Delete routes a linked BMSON BGM marker through its sound channel",
     REQUIRE(parsed.song);
     auto song = *parsed.song;
     song.audio_assets.front().stream = {48'000, 2, 200'000, true};
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto& chart = history.document.charts.front();
     const auto measure = std::ranges::find_if(chart.measures, [](const auto& item) {
         return !item.bgm_events.empty();
@@ -4235,7 +4235,7 @@ TEST_CASE("Delete preserves a branch-owned BMS BGM source statement",
                       .children = {{.id = branch_id_t{3},
                                     .kind = bms_control_kind_t::raw_statement,
                                     .source_order = 7}}}}};
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     REQUIRE(dispatch_editor_action(
         history, state,
@@ -4257,7 +4257,7 @@ TEST_CASE("bare lane assignment moves every selected note and retains selection"
         {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{2}},
     };
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     REQUIRE(dispatch_editor_action(
         history, state, select_editor_notes_action_t{{object_id_t{102}, object_id_t{101}}}));
@@ -4285,7 +4285,7 @@ TEST_CASE("Shift lane assignment consumes deterministic selected notes and reque
         {.id = object_id_t{103}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}},
     };
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     REQUIRE(dispatch_editor_action(
         history, state,
@@ -4323,7 +4323,7 @@ TEST_CASE("lane assignment rejects selected and existing collisions atomically",
         {.id = object_id_t{104}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{1}},
     };
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     REQUIRE(dispatch_editor_action(
         history, state, select_editor_notes_action_t{{object_id_t{101}, object_id_t{102}}}));
@@ -4362,7 +4362,7 @@ TEST_CASE("lane assignment remains bounded for fifty thousand selected notes",
         selected.push_back(id);
     }
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{100000}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
                                          snaps, 100'000);
@@ -4411,7 +4411,7 @@ TEST_CASE("duration resizing applies the reference delta to every selected note"
         {.id = object_id_t{103}, .position = {measure_id_t{2}, 0}, .lane = lane_id_t{2}},
     };
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     REQUIRE(dispatch_editor_action(
         history, state, select_editor_notes_action_t{{object_id_t{101}, object_id_t{102}}}));
@@ -4455,7 +4455,7 @@ TEST_CASE("duration resizing rejects an atomic selection that would cross a note
         {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{2}},
     };
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     REQUIRE(dispatch_editor_action(
         history, state, select_editor_notes_action_t{{object_id_t{101}, object_id_t{102}}}));
@@ -4480,7 +4480,7 @@ auto global_marquee_fixture() -> global_marquee_fixture_t {
         {.id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}},
         {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{2}},
     };
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                          {measure_id_t{1}, 0}, snaps, 4, 192.0);
@@ -4722,7 +4722,7 @@ TEST_CASE("Compose note kind availability follows the chart family", "[interacti
 
 TEST_CASE("Armed tap-like kinds place and toggle without converting existing notes", "[interaction][note-kind]") {
     for (const auto kind : {note_kind_t::mine, note_kind_t::invisible, note_kind_t::lift, note_kind_t::fake}) {
-        auto history = make_document_history(make_song());
+        auto history = document_history_t::from(make_song());
         auto state = make_state(history);
         check_note_kind_condition(state.armed_note_kind == note_kind_t::tap);
         const auto revision = history.document.revision;
@@ -4775,7 +4775,7 @@ TEST_CASE("explicit note draw preserves occupied taps and commits only empty cel
     auto song = make_song();
     song.charts.front().measures.front().notes.push_back({
         .id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}});
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     const auto result = note_paint_intent_stroke(history, state, 0, 480,
                                                   note_paint_intent_t::draw);
@@ -4801,7 +4801,7 @@ TEST_CASE("explicit note erase removes encountered taps and holds once without a
                      .lane = lane_id_t{1}, .kind = note_kind_t::hold,
                      .end = local_position_t{measure_id_t{1}, 720}});
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     state.armed_note_kind = note_kind_t::hold;
     const auto result = note_paint_intent_stroke(history, state, 0, 960,
@@ -4818,7 +4818,7 @@ TEST_CASE("explicit draw and erase no-ops finish without a document edit",
     auto song = make_song();
     song.charts.front().measures.front().notes.push_back({
         .id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}});
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     const auto draw = note_paint_intent_stroke(history, state, 240, 240,
                                                 note_paint_intent_t::draw);
@@ -4841,7 +4841,7 @@ TEST_CASE("explicit draw still rejects an incompatible hold overlap atomically",
     song.charts.front().measures.front().notes.push_back({
         .id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1},
         .kind = note_kind_t::hold, .end = local_position_t{measure_id_t{1}, 480}});
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     const auto result = note_paint_intent_stroke(history, state, 240, 240,
                                                   note_paint_intent_t::draw);
@@ -4853,7 +4853,7 @@ TEST_CASE("explicit draw still rejects an incompatible hold overlap atomically",
 
 TEST_CASE("explicit note strokes cancel on capture loss or stale deleted sources",
           "[unit][core][interaction][paint][intent]") {
-    auto history = make_document_history(make_paint_sound_song());
+    auto history = document_history_t::from(make_paint_sound_song());
     auto state = make_state(history);
     require_note_paint_intent(dispatch_editor_action(history, state,
         begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true,
@@ -4884,7 +4884,7 @@ TEST_CASE("explicit note strokes cancel on capture loss or stale deleted sources
 TEST_CASE("Note kind arming rejects unsupported kinds and active gestures", "[interaction][note-kind]") {
     auto song = make_song();
     song.charts.front().source_family = format_family_t::bms;
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     auto state = make_state(history);
     check_note_kind_condition(!(arm_note_kind(history, state, note_kind_t::roll)));
     check_note_kind_condition(state.armed_note_kind == note_kind_t::tap);
@@ -4902,7 +4902,7 @@ TEST_CASE("Note kind arming rejects unsupported kinds and active gestures", "[in
 
 TEST_CASE("Hold and Roll palette use explicit duration gestures", "[interaction][note-kind]") {
     for (const auto kind : {note_kind_t::hold, note_kind_t::roll}) {
-        auto history = make_document_history(make_song());
+        auto history = document_history_t::from(make_song());
         auto state = make_state(history);
         require_note_kind_condition(arm_note_kind(history, state, kind));
         check_note_kind_condition(!(dispatch_editor_action(history, state, begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}})));
@@ -4923,7 +4923,7 @@ TEST_CASE("Hold and Roll palette use explicit duration gestures", "[interaction]
 TEST_CASE("Virtual BMS armed kinds stay atomic with explicit hold durations", "[interaction][note-kind]") {
     auto song = make_song();
     song.charts.front().source_family = format_family_t::bms;
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     auto state = make_state(history);
     require_note_kind_condition(arm_note_kind(history, state, note_kind_t::mine));
     require_note_kind_condition(dispatch_editor_action(history, state, place_virtual_bms_tap_action_t{2400, lane_id_t{1}}));
@@ -4951,7 +4951,7 @@ void require_configured_follow(bool value, std::source_location where = std::sou
 }
 }
 TEST_CASE("configured playback anchor remains inspectable at chart boundaries and after pause", "[unit][core][interaction][transport]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     state.viewport_height_pixels = 400;
     state.pixels_per_standard_measure = 400;
@@ -4974,7 +4974,7 @@ TEST_CASE("configured playback anchor remains inspectable at chart boundaries an
     expect_configured_follow(std::holds_alternative<editor_interaction_view_model_t>(inspect_editor_interaction(history, state)));
 }
 TEST_CASE("invalid configured playback anchors reject without changing interaction state", "[unit][core][interaction][transport]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     state.viewport_height_pixels = 400;
     state.pixels_per_standard_measure = 400;
@@ -4987,7 +4987,7 @@ TEST_CASE("invalid configured playback anchors reject without changing interacti
 }
 
 TEST_CASE("configured playback anchors reach both chart ends at zero and one hundred percent", "[unit][core][interaction][transport]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     state.viewport_height_pixels = 400;
     state.pixels_per_standard_measure = 400;
@@ -5003,7 +5003,7 @@ TEST_CASE("configured playback anchors reach both chart ends at zero and one hun
 
 TEST_CASE("configured follow publishes its validated margins to scene consumers",
           "[unit][core][interaction][anchor-scene]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     state.viewport_height_pixels = 400;
     state.pixels_per_standard_measure = 400;
@@ -5035,7 +5035,7 @@ auto native_hundred_measure_song() -> song_document_t {
 
 TEST_CASE("native canvas navigation preserves authored measures beyond the virtual minimum",
           "[unit][core][interaction][integration-fix]") {
-    auto history = make_document_history(native_hundred_measure_song());
+    auto history = document_history_t::from(native_hundred_measure_song());
     auto state = make_state(history);
     CHECK(virtual_tail_measure_limit(history.document.charts.front()) == 100);
     const auto selected = dispatch_editor_action(history, state, select_bms_canvas_measure_action_t{64});
@@ -5046,7 +5046,7 @@ TEST_CASE("native canvas navigation preserves authored measures beyond the virtu
 
 TEST_CASE("Cursor pose helpers round-trip every cursor field",
           "[unit][core][interaction][cursor_write_guard]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     state.cursor_subrow = 2.25;
     state.viewport_scroll_pixels = 40.0;
@@ -5070,7 +5070,7 @@ auto warp_history() -> document_history_t {
     auto song = make_song();
     song.charts.front().warps.push_back(
         {.id = object_id_t{900}, .span = {{measure_id_t{2}, 240}, {measure_id_t{2}, 720}}});
-    return make_document_history(std::move(song));
+    return document_history_t::from(std::move(song));
 }
 
 } // namespace
@@ -5157,7 +5157,7 @@ TEST_CASE("a rejected note move into a warp ends the gesture without a ghost",
 
 TEST_CASE("picking a row drops the sub-row offset a fixed-cursor scroll left",
           "[unit][core][interaction][cursor_write_guard]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     state.cursor_subrow = 2.25;
     place_cursor_on_picked_row(state, {measure_id_t{2}, 240});
@@ -5195,7 +5195,7 @@ TEST_CASE("DP hit testing and area selection keep stage-local lanes together",
         chart.measures.front().notes.push_back({.id = object_id_t{200 + i},
                                                .position = {measure_id_t{1}, 240},
                                                .lane = lane_id_t{i}});
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}};
     const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                               {measure_id_t{1}, 0}, snaps, 4, 192.0);
@@ -5237,7 +5237,7 @@ void check_retained_drag_range(const document_history_t& history,
     CHECK(history.undo.empty());
 }
 void check_retained_area_snap(bool snap) {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     constexpr std::array snaps{std::uint64_t{4}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
         {measure_id_t{1}, 0}, snaps, 4, 192.0);
@@ -5267,7 +5267,7 @@ TEST_CASE("Mouse box stays exact while its retained area follows the active snap
 
 TEST_CASE("Pointer zoom synchronizes the edit row beneath a fixed cursor line",
           "[unit][core][interaction][cursor][zoom]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     const auto& chart = history.document.charts.front();
     const auto index = std::get<measure_index_t>(build_measure_index(chart));
@@ -5284,7 +5284,7 @@ TEST_CASE("Pointer zoom synchronizes the edit row beneath a fixed cursor line",
 
 TEST_CASE("Paused seeks align the chart position with the fixed screen anchor",
           "[unit][core][interaction][cursor][transport]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     const auto& chart = history.document.charts.front();
     const auto index = std::get<measure_index_t>(build_measure_index(chart));
@@ -5333,7 +5333,7 @@ TEST_CASE("lane-key interaction captures sound and default layers for authored a
     const auto hold = GENERATE(false, true);
     auto song = make_paint_sound_song();
     song.charts.front().source_family = format_family_t::bms;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     if (virtual_measure) enter_sound_test_virtual_measure(history, state);
     require_lane_sound(dispatch_editor_action(history, state,
@@ -5363,7 +5363,7 @@ TEST_CASE("alt-pointer hold captures the armed sound and default layers like a l
           "[unit][core][interaction][lane-key-sound]") {
     auto song = make_paint_sound_song();
     song.charts.front().source_family = format_family_t::bms;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     require_lane_sound(dispatch_editor_action(history, state,
         begin_alt_pointer_hold_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true,
@@ -5383,7 +5383,7 @@ TEST_CASE("alt-pointer hold captures the armed sound and default layers like a l
 TEST_CASE("click placement captures the armed sound for taps and click-click holds",
           "[unit][core][interaction][lane-key-sound]") {
     const auto hold = GENERATE(false, true);
-    auto history = make_document_history(make_paint_sound_song());
+    auto history = document_history_t::from(make_paint_sound_song());
     auto state = make_state(history);
     require_lane_sound(arm_note_kind(history, state, hold ? note_kind_t::hold : note_kind_t::tap));
     auto placed = dispatch_editor_action(history, state,
@@ -5410,7 +5410,7 @@ TEST_CASE("lane-key interaction rejects absent and non-sample sounds without cha
     const auto sound = GENERATE(resource_id_t{8}, resource_id_t{999});
     auto song = make_paint_sound_song();
     song.charts.front().source_family = format_family_t::bms;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     if (virtual_measure) enter_sound_test_virtual_measure(history, state);
     const auto revision = history.document.revision;
@@ -5429,7 +5429,7 @@ TEST_CASE("lane-key interaction retains independent sounds through reverse key r
           "[unit][core][interaction][lane-key-sound]") {
     auto song = make_paint_sound_song();
     song.resources.back().roles = {resource_role_t::sample};
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     require_lane_sound(dispatch_editor_action(history, state,
         begin_lane_key_hold_gesture_action_t{lane_id_t{1}, resource_id_t{7}}));
@@ -5449,7 +5449,7 @@ TEST_CASE("lane-key interaction retains independent sounds through reverse key r
 
 TEST_CASE("lane-key interaction honors explicit palette layers and kind over sound defaults",
           "[unit][core][interaction][lane-key-sound]") {
-    auto history = make_document_history(make_paint_sound_song());
+    auto history = document_history_t::from(make_paint_sound_song());
     auto state = make_state(history);
     state.armed_note_kind = note_kind_t::mine;
     state.armed_note_layers = std::vector<layer_id_t>{};
@@ -5467,7 +5467,7 @@ TEST_CASE("lane-key interaction honors explicit palette layers and kind over sou
 
 TEST_CASE("lane-key interaction rejects a stale armed replacement without removing the note",
           "[unit][core][interaction][lane-key-sound]") {
-    auto history = make_document_history(make_paint_sound_song());
+    auto history = document_history_t::from(make_paint_sound_song());
     auto state = make_state(history);
     require_lane_sound(dispatch_editor_action(history, state,
         begin_lane_key_hold_gesture_action_t{lane_id_t{1}, resource_id_t{7}}));
@@ -5484,7 +5484,7 @@ TEST_CASE("lane-key interaction rejects a stale armed replacement without removi
 
 TEST_CASE("lane-key interaction cancels a sound hold after a resource deletion",
           "[unit][core][interaction][lane-key-sound]") {
-    auto history = make_document_history(make_paint_sound_song());
+    auto history = document_history_t::from(make_paint_sound_song());
     auto state = make_state(history);
     require_lane_sound(dispatch_editor_action(history, state,
         begin_lane_key_hold_gesture_action_t{lane_id_t{1}, resource_id_t{7}}));
@@ -5503,7 +5503,7 @@ TEST_CASE("lane-key interaction cancels a sound hold after a resource deletion",
 TEST_CASE("lane-key interaction protects hidden or locked sounded notes and never merges their sound away",
           "[unit][core][interaction][lane-key-sound]") {
     const auto protection = GENERATE(0, 1, 2);
-    auto history = make_document_history(make_paint_sound_song());
+    auto history = document_history_t::from(make_paint_sound_song());
     if (protection == 2) history.document.charts.front().semantic_layers.front().visible = false;
     auto& notes = history.document.charts.front().measures.front().notes;
     notes.push_back({.id = object_id_t{101}, .position = {measure_id_t{1}, 720},
@@ -5535,7 +5535,7 @@ auto off_grid_history() -> document_history_t {
     song.charts.front().measures.front().notes = {
         {.id = object_id_t{201}, .position = {measure_id_t{1}, 100}, .lane = lane_id_t{1}}};
     REQUIRE(validate_document(song).empty());
-    return make_document_history(std::move(song));
+    return document_history_t::from(std::move(song));
 }
 
 auto drag_note(document_history_t& history, editor_interaction_state_t& state, local_position_t to, lane_id_t lane)
@@ -5634,7 +5634,7 @@ TEST_CASE("retained interaction geometry matches exact views as selection and pr
     auto song = make_song();
     song.charts.front().measures.front().notes.push_back({
         .id = object_id_t{77}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{1}});
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     state.viewport_height_pixels = 400;
     state.pixels_per_standard_measure = 400;
@@ -5670,7 +5670,7 @@ TEST_CASE("retained interaction geometry matches exact views as selection and pr
 
 TEST_CASE("missing and stale retained interaction geometry falls back to exact inspection",
           "[unit][core][interaction][geometry]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     const auto& chart = history.document.charts.front();
     const auto index = std::get<measure_index_t>(build_measure_index(chart));
@@ -5713,7 +5713,7 @@ struct move_feedback_fixture_t {
 
     move_feedback_fixture_t(song_document_t song, std::vector<object_id_t> selected,
                             object_id_t reference)
-        : history(make_document_history(std::move(song))), state(make_state(history)),
+        : history(document_history_t::from(std::move(song))), state(make_state(history)),
           original(history.document) {
         feedback_require(validate_document(history.document).empty());
         feedback_require(
@@ -6118,7 +6118,7 @@ TEST_CASE("stale selected objects are pruned once per document revision and surv
     auto& measure = song.charts.front().measures.front();
     measure.notes.push_back({.id = object_id_t{5}, .position = {measure_id_t{1}, 0}, .lane = lane_id_t{1}});
     measure.notes.push_back({.id = object_id_t{6}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{1}});
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     state.selected_notes = {object_id_t{5}, object_id_t{6}};
     state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{5}},
@@ -6144,7 +6144,7 @@ TEST_CASE("stale selected objects are pruned once per document revision and surv
 
 TEST_CASE("setting the editing snap accepts only supported grids without touching the document",
           "[core][interaction][snap]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     const auto revision = history.document.revision;
     const auto before = state.active_snap_denominator;
@@ -6190,7 +6190,7 @@ auto bgm_move_event(const document_history_t& history, object_id_t id) -> const 
 
 TEST_CASE("Dragging into BGM previews shifted destinations and returning leaves the document untouched",
           "[unit][core][interaction][move][bgm-move]") {
-    auto history = make_document_history(bgm_move_song());
+    auto history = document_history_t::from(bgm_move_song());
     auto state = make_state(history);
     const auto original = feedback_document_bytes(history.document);
     feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{102}}));
@@ -6211,7 +6211,7 @@ TEST_CASE("Dragging into BGM previews shifted destinations and returning leaves 
 
 TEST_CASE("BGM drag commits row delta and tail in exactly one undo step",
           "[unit][core][interaction][move][bgm-move]") {
-    auto history = make_document_history(bgm_move_song());
+    auto history = document_history_t::from(bgm_move_song());
     auto state = make_state(history);
     const auto original = history.document;
     feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{102}}));
@@ -6244,7 +6244,7 @@ TEST_CASE("Move displacement allocates occupants to BGM and preserves hold tails
     auto& occupant = song.charts.front().measures.front().notes[1];
     occupant.sound = resource_id_t{20};
     occupant.semantic_layers = {layer_id_t{1}};
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     const auto original = history.document;
     feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}, true}));
@@ -6275,7 +6275,7 @@ TEST_CASE("A displacement with no permitted BGM capacity rejects the whole move"
           "[unit][core][interaction][move][bgm-move]") {
     auto song = bgm_move_song(true);
     song.charts.front().source_family = format_family_t::stepmania;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     const auto original = feedback_document_bytes(history.document);
     feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}, true}));
@@ -6312,7 +6312,7 @@ TEST_CASE("Dragging a retained BMSON hold into BGM shifts its source head and ta
     chart.bgm_source_lanes.front().stem_channel = object_id_t{400};
     for (const auto& diagnostic : validate_document(song)) UNSCOPED_INFO(diagnostic.message);
     feedback_require(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}}));
     const auto released = dispatch_editor_action(
@@ -6344,7 +6344,7 @@ TEST_CASE("Selected-note BGM drop shifts the whole cohort and ignores playable o
         {.id = object_id_t{201}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}}};
     chart.measures.front().bgm_events = {{.id = object_id_t{301},
         .position = {measure_id_t{1}, 240}, .source_lane = object_id_t{300}}};
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     feedback_require(dispatch_editor_action(history, state, select_editor_notes_action_t{{object_id_t{101}, object_id_t{102}}}));
     feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}}));
@@ -6377,7 +6377,7 @@ TEST_CASE("shared lane action assigns mixed selections and audits successive BGM
     song.charts.front().bgm_source_lanes = {{.id = object_id_t{201}, .name = "BGM"}};
     measure.bgm_events = {{.id = object_id_t{202}, .position = {measure_id_t{1}, 0},
                            .source_lane = object_id_t{201}}};
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     auto state = make_state(history);
     state.selected_notes = {object_id_t{101}};
     state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{101}},
@@ -6405,7 +6405,7 @@ TEST_CASE("shared lane action rejects mixed collisions without consuming selecti
     song.charts.front().bgm_source_lanes = {{.id = object_id_t{201}, .name = "BGM"}};
     measure.bgm_events = {{.id = object_id_t{202}, .position = {measure_id_t{1}, 0},
                            .source_lane = object_id_t{201}}};
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     auto state = make_state(history);
     state.selected_notes = {object_id_t{101}};
     state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{101}},
@@ -6434,7 +6434,7 @@ TEST_CASE("Mixed dragging from either kind translates heads and tails with one U
     const auto from_bgm = GENERATE(false, true);
     auto song = bgm_move_song(true);
     song.charts.front().measures.front().bgm_events.front().end = local_position_t{measure_id_t{1}, 720};
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     auto state = mixed_move_state(history);
     const auto reference = object_id_t{from_bgm ? 301U : 101U};
     const auto target = local_position_t{measure_id_t{1}, from_bgm ? 720U : 240U};
@@ -6470,7 +6470,7 @@ TEST_CASE("Mixed dragging rejects either part's collision atomically and clears 
     else
         song.charts.front().measures.front().notes.push_back(
             {.id = object_id_t{103}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}});
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     song.revision = history.document.revision;
     auto state = mixed_move_state(history);
     const auto selected = state.selected_objects;
@@ -6490,7 +6490,7 @@ TEST_CASE("Mixed dragging rejects either part's collision atomically and clears 
 TEST_CASE("Mixed Y-lock preserves both rows while note lane changes remain available",
           "[unit][core][interaction][move][mixed-move]") {
     const auto from_bgm = GENERATE(false, true);
-    auto history = make_document_history(bgm_move_song(true));
+    auto history = document_history_t::from(bgm_move_song(true));
     auto state = mixed_move_state(history);
     state.y_lock = true;
     history.document.charts.front().lane_layouts.front().layout.lanes[1].display_order = 1;
@@ -6517,7 +6517,7 @@ TEST_CASE("Mixed drag vacates selected BGM rows together and rejects translated 
         {.id = object_id_t{302}, .position = {measure_id_t{1}, 720}, .source_lane = object_id_t{300}});
     if (overflow)
         song.charts.front().measures.front().bgm_events.back().end = local_position_t{song.charts.front().measures.back().id, 900};
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     auto state = mixed_move_state(history);
     state.selected_objects.push_back({editor_selection_object_kind_t::bgm_event, object_id_t{302}});
     feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}}));
@@ -6554,7 +6554,7 @@ TEST_CASE("Mixed BMSON drag preserves the retained stem point or rejects both pa
             .sound = resource_id_t{20}, .sound_channel_event = object_id_t{403}});
     }
     feedback_require(validate_document(song).empty());
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     auto state = mixed_move_state(history);
     feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}}));
     const auto result = dispatch_editor_action(
@@ -6604,7 +6604,7 @@ TEST_CASE("Single BGM horizontal moves share the gesture and preserve tails unde
     auto& chart = song.charts.front();
     chart.bgm_source_lanes.push_back({.id = object_id_t{310}, .name = "BGM 2", .source_order = 1});
     chart.measures.front().bgm_events.front().end = local_position_t{measure_id_t{1}, 720};
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     auto state = single_bgm_state(history);
     state.y_lock = true;
     feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{301}}));
@@ -6633,7 +6633,7 @@ TEST_CASE("Single BGM collision previews the actual newly allocated lane before 
     auto song = bgm_move_song(true);
     song.charts.front().measures.front().bgm_events.push_back(
         {.id = object_id_t{302}, .position = {measure_id_t{1}, 720}, .source_lane = object_id_t{300}});
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     auto state = single_bgm_state(history);
     feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{301}}));
     feedback_require(dispatch_editor_action(history, state,
@@ -6660,7 +6660,7 @@ TEST_CASE("Single BGM virtual move previews without materializing and restores e
     const auto requested_row = GENERATE(std::uint64_t{2400}, std::uint64_t{2500});
     auto song = bgm_move_song(true);
     song.charts.front().measures.front().bgm_events.front().end = local_position_t{measure_id_t{1}, 720};
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     song.revision = history.document.revision;
     auto state = single_bgm_state(history);
     feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{301}}));
@@ -6693,7 +6693,7 @@ TEST_CASE("Single BGM virtual move previews without materializing and restores e
 TEST_CASE("Single BGM invalid lane and virtual overflow reject atomically and recover the preview",
           "[unit][core][interaction][move][single-bgm-move]") {
     const auto virtual_overflow = GENERATE(false, true);
-    auto history = make_document_history(bgm_move_song(true));
+    auto history = document_history_t::from(bgm_move_song(true));
     auto state = single_bgm_state(history);
     const auto original = feedback_document_bytes(history.document);
     feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{301}}));
@@ -6734,7 +6734,7 @@ TEST_CASE("Single stem BGM uses shared move policy and rejects virtual targets w
     chart.sound_channels = {{.id = object_id_t{400}, .name = "Stem",
         .source_clip = {.id = clip_id_t{401}, .source = asset_id_t{10}, .end_frame = 480000},
         .events = {{.id = object_id_t{402}, .position = bgm.position, .playable = false}}}};
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     auto state = single_bgm_state(history);
     feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{301}}));
     const auto moved = dispatch_editor_action(
@@ -6758,7 +6758,7 @@ TEST_CASE("Single stem BGM uses shared move policy and rejects virtual targets w
 TEST_CASE("Single BGM cancel and stale release discard shared previews without materializing measures",
           "[unit][core][interaction][move][single-bgm-move][virtual]") {
     const auto stale = GENERATE(false, true);
-    auto history = make_document_history(bgm_move_song(true));
+    auto history = document_history_t::from(bgm_move_song(true));
     auto state = single_bgm_state(history);
     feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{301}}));
     feedback_require(dispatch_editor_action(history, state,
@@ -6798,7 +6798,7 @@ struct stem_delete_fixture_t {
         chart.bgm_source_lanes.push_back({.id = object_id_t{90002}, .name = "Ordinary", .source_order = 99});
         chart.measures.back().notes.push_back({.id = object_id_t{90000}, .position = {chart.measures.back().id, 0}, .lane = note.lane});
         chart.measures.back().bgm_events.push_back({.id = object_id_t{90001}, .position = {chart.measures.back().id, 0}, .source_lane = object_id_t{90002}});
-        history = make_document_history(std::move(*parsed.song));
+        history = document_history_t::from(std::move(*parsed.song));
         const std::array snaps{std::uint64_t{4}};
         auto setup = make_editor_interaction(history, history.document.charts.front().id, note.lane, note.position, snaps, 4);
         feedback_require(setup);
@@ -6912,7 +6912,7 @@ TEST_CASE("cursor paging minimum crosses tiny measures and clamps at canvas ends
         {.id = measure_id_t{3}, .definition = {{1, 960}, std::nullopt}},
         {.id = measure_id_t{4}},
     };
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
         {measure_id_t{1}, 959}, snaps, 4, 192.0);
@@ -6976,7 +6976,7 @@ TEST_CASE("Scratch presentation picking follows SP7 right view without changing 
                                            &lane_definition_t::role)->id;
     chart.measures.front().notes = {
         {.id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = scratch}};
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto before = write_native_project(history.document);
     REQUIRE(before.bytes);
     constexpr std::array snaps{std::uint64_t{4}};
@@ -7001,7 +7001,7 @@ TEST_CASE("Scratch presentation selected drag translates adjacent visual columns
     chart.measures.front().notes = {
         {.id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{2}},
         {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{1}}};
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     state.scratch_on_right = {false, std::nullopt};
     state.selected_notes = {object_id_t{101}, object_id_t{102}};
@@ -7038,7 +7038,7 @@ void check_fractional_cursor(bool value,
 
 TEST_CASE("cursor navigation visits tiny measure heads without skipping or retaining global phase",
           "[unit][core][interaction][measure-local-snap]") {
-    auto history = make_document_history(fractional_cursor_song());
+    auto history = document_history_t::from(fractional_cursor_song());
     const auto initial_revision = history.document.revision;
     constexpr std::array snaps{std::uint64_t{4}};
     const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
@@ -7069,7 +7069,7 @@ TEST_CASE("cursor navigation visits tiny measure heads without skipping or retai
 
 TEST_CASE("fixed cursor snapping preserves fractional position across shortened measure origins",
           "[unit][core][interaction][measure-local-snap]") {
-    auto history = make_document_history(fractional_cursor_song());
+    auto history = document_history_t::from(fractional_cursor_song());
     constexpr std::array snaps{std::uint64_t{4}};
     const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
         {measure_id_t{1}, 0}, snaps, 4, 600.0);
@@ -7108,7 +7108,7 @@ auto tiny_measure_paint_state(document_history_t& history) -> editor_interaction
 void check_virtual_measure_fill(bool hold) {
     auto song = tiny_measure_paint_song();
     song.charts.front().source_family = format_family_t::bms;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = tiny_measure_paint_state(history);
     if (hold) require_note_kind_condition(dispatch_editor_action(history, state,
         place_virtual_bms_hold_action_t{1210, 1690, lane_id_t{1}}));
@@ -7126,7 +7126,7 @@ void check_virtual_measure_fill(bool hold) {
 
 TEST_CASE("Paint crosses tiny measure heads on the same local grid as navigation",
           "[core][interaction][paint][measure-local-snap]") {
-    auto history = make_document_history(tiny_measure_paint_song());
+    auto history = document_history_t::from(tiny_measure_paint_song());
     auto state = tiny_measure_paint_state(history);
     require_note_kind_condition(dispatch_editor_action(history, state,
         begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true}));
@@ -7158,7 +7158,7 @@ TEST_CASE("lane-key same sound toggles to BGM and different sound replaces atomi
     other = *std::ranges::find(song.resources, resource_id_t{7}, &resource_entry_t::id);
     other.id = resource_id_t{9};
     song.resources.push_back(other);
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     require_lane_sound(dispatch_editor_action(history, state,
         begin_lane_key_hold_gesture_action_t{lane_id_t{1}, resource_id_t{7}}));
@@ -7202,7 +7202,7 @@ TEST_CASE("SpecialStyle picking uses complete head fills and excludes the stage 
     chart.lane_layouts.front().layout = profile->layout;
     chart.measures.front().notes = {{.id = object_id_t{101},
         .position = {measure_id_t{1}, 240}, .lane = lane_id_t{column + 1}}};
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}};
     const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
         {measure_id_t{1}, 0}, snaps, 4, 384.0);
@@ -7223,7 +7223,7 @@ TEST_CASE("SpecialStyle picking uses complete head fills and excludes the stage 
 
 TEST_CASE("Picking rejects invalid head and stage geometry",
           "[unit][core][interaction][hit-test][scratchpad-specialstyle]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     constexpr std::array snaps{std::uint64_t{4}};
     const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
         {measure_id_t{1}, 0}, snaps, 4, 384.0);

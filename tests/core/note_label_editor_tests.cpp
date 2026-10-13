@@ -54,7 +54,7 @@ auto has_code(const document_command_result_t& result, diagnostic_code_t code) -
 
 TEST_CASE("note labels apply atomically to an exact selection and preserve gameplay data",
           "[unit][core][note-label-editor]") {
-    auto history = make_document_history(label_song());
+    auto history = document_history_t::from(label_song());
     const auto before = history.document.charts.front().measures.front().notes;
     const auto applied = apply_note_label_edit(
         history, 4,
@@ -93,7 +93,7 @@ TEST_CASE("note labels apply atomically to an exact selection and preserve gamep
 
 TEST_CASE("note-label editing rejects stale unknown duplicate and malformed requests atomically",
           "[unit][core][note-label-editor][bounds]") {
-    auto history = make_document_history(label_song());
+    auto history = document_history_t::from(label_song());
     const auto check_unchanged = [&] {
         CHECK(history.document.revision == 4);
         CHECK(history.document.charts.front().measures.front().notes[0].label == "old");
@@ -144,7 +144,7 @@ TEST_CASE("note-label editing rejects stale unknown duplicate and malformed requ
 
 TEST_CASE("note-label editing enforces aggregate bytes and chart-wide identity",
           "[unit][core][note-label-editor][bounds]") {
-    auto history = make_document_history(label_song());
+    auto history = document_history_t::from(label_song());
     const auto aggregate = apply_note_label_edit(
         history, 4, {.chart = chart_id_t{2}, .notes = {object_id_t{11}}, .label = "four"},
         {.maximum_total_label_bytes = 6});
@@ -154,7 +154,7 @@ TEST_CASE("note-label editing enforces aggregate bytes and chart-wide identity",
 
     auto ambiguous_song = label_song();
     ambiguous_song.charts.front().bpms.front().id = object_id_t{10};
-    auto ambiguous_history = make_document_history(std::move(ambiguous_song));
+    auto ambiguous_history = document_history_t::from(std::move(ambiguous_song));
     const auto ambiguous = apply_note_label_edit(
         ambiguous_history, 4, {.chart = chart_id_t{2}, .notes = {object_id_t{10}}, .label = "new"});
     CHECK_FALSE(ambiguous);
@@ -179,7 +179,7 @@ TEST_CASE("note-label editing stays bounded for fifty thousand selected notes",
         selected.push_back(id);
     }
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
 
     const auto started = std::chrono::steady_clock::now();
     const auto applied = apply_note_label_edit(

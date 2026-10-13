@@ -419,7 +419,7 @@ using namespace interaction_detail;
 auto commit_virtual_hold(editor_edit_context_t& context,
                          const place_virtual_bms_hold_action_t& action,
                          const virtual_hold_rows_t& rows) -> editor_interaction_result_t {
-    auto scratch = make_document_history(context.history.document);
+    auto scratch = document_history_t::from(context.history.document);
     auto* chart = scratch.document.find_chart(context.state.chart);
     if (const auto failure = extend_virtual_chart(*chart, rows.measure_count))
         return diagnostic_result(context.history, context.state, *failure);
@@ -531,7 +531,7 @@ auto place_virtual_bms_tap(editor_edit_context_t& context,
     if (const auto* failure = std::get_if<diagnostic_list_t>(&target))
         return diagnostic_result(context.history, context.state, *failure);
     const auto resolved = std::get<virtual_tap_target_t>(target);
-    auto scratch = make_document_history(context.history.document);
+    auto scratch = document_history_t::from(context.history.document);
     auto* chart = scratch.document.find_chart(context.state.chart);
     if (const auto failure = extend_virtual_chart(*chart, resolved.measure + 1))
         return diagnostic_result(context.history, context.state, *failure);

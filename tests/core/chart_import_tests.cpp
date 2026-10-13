@@ -95,7 +95,7 @@ TEST_CASE("Chart import adds an SM difficulty to a BMS song as one undoable comm
     scratch.write("project/other.wav", "other-bytes");
     scratch.write("source/kick.wav", "kick-bytes");
     scratch.write("source/snare.wav", "snare-bytes");
-    auto history = make_document_history(parse_bms_text(target_bms));
+    auto history = document_history_t::from(parse_bms_text(target_bms));
     const auto before = history.document;
     const auto source = parse_sm_fixture("keysounds.sm");
     const chart_import_paths_t paths{scratch.root / "source", scratch.root / "project"};
@@ -135,7 +135,7 @@ TEST_CASE("Chart import adds an SM difficulty to a BMS song as one undoable comm
 TEST_CASE("Chart import reports missing files and still adds the chart with flagged entries",
           "[unit][core][chart-import]") {
     scratch_t scratch;
-    auto history = make_document_history(parse_bms_text(target_bms));
+    auto history = document_history_t::from(parse_bms_text(target_bms));
     const auto source = parse_sm_fixture("keysounds.sm");
     const chart_import_paths_t paths{scratch.root / "source", scratch.root / "project"};
     const std::vector<chart_id_t> selected{source.charts.front().id};
@@ -152,7 +152,7 @@ TEST_CASE("Chart import reports missing files and still adds the chart with flag
 TEST_CASE("Chart import rejects stale revisions, empty and unknown selections without changes",
           "[unit][core][chart-import]") {
     scratch_t scratch;
-    auto history = make_document_history(parse_bms_text(target_bms));
+    auto history = document_history_t::from(parse_bms_text(target_bms));
     const auto source = parse_sm_fixture("keysounds.sm");
     const chart_import_paths_t paths{scratch.root / "source", scratch.root / "project"};
     const auto revision = history.document.revision;
@@ -172,7 +172,7 @@ TEST_CASE("Importing two difficulties gives each fresh unique identities",
           "[unit][core][chart-import]") {
     scratch_t scratch;
     scratch.write("source/kick.wav", "kick-bytes");
-    auto history = make_document_history(parse_bms_text(target_bms));
+    auto history = document_history_t::from(parse_bms_text(target_bms));
     auto source = parse_sm_fixture("keysounds.sm");
     REQUIRE(source.charts.size() >= 1);
     auto second = source.charts.front();
@@ -198,7 +198,7 @@ TEST_CASE("Chart import session reads a file through the opener, previews, and c
     scratch.write("source/snare.wav", "snare-bytes");
     std::filesystem::copy_file(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "stepmania" / "keysounds.sm",
                                scratch.root / "source" / "keysounds.sm");
-    auto history = make_document_history(parse_bms_text(target_bms));
+    auto history = document_history_t::from(parse_bms_text(target_bms));
     const auto before = history.document;
     sys::chart_import_session_t session;
     sys::chart_import_begin(session);
@@ -230,7 +230,7 @@ TEST_CASE("Chart import session reports unreadable files and keeps the project u
           "[unit][core][chart-import][session]") {
     scratch_t scratch;
     scratch.write("source/broken.sm", "not a chart");
-    auto history = make_document_history(parse_bms_text(target_bms));
+    auto history = document_history_t::from(parse_bms_text(target_bms));
     const auto revision = history.document.revision;
     sys::chart_import_session_t session;
     sys::chart_import_begin(session);

@@ -153,7 +153,7 @@ TEST_CASE("virtual BMS #999 remains sparse until an edit and round-trips its mea
     REQUIRE(untouched.bytes);
     CHECK(*untouched.bytes == source);
 
-    auto history = wormedit::make_document_history(std::move(*imported.song));
+    auto history = wormedit::document_history_t::from(std::move(*imported.song));
     constexpr std::array snaps{std::uint64_t{4}};
     auto setup = wormedit::make_editor_interaction(
         history, history.document.charts.front().id, lane,
@@ -207,7 +207,7 @@ TEST_CASE("virtual BMS BGM and BGA resources export at #999",
             });
         });
         REQUIRE(resource != imported.song->resources.end());
-        auto history = wormedit::make_document_history(*imported.song);
+        auto history = wormedit::document_history_t::from(*imported.song);
         const auto placed = wormedit::apply_virtual_bms_resource_placement(
             history, history.document.revision,
             {.chart = history.document.charts.front().id,
@@ -245,7 +245,7 @@ TEST_CASE("moved BGM event exports in virtual BMS measure #999",
     const auto& source_chart = imported.song->charts.front();
     REQUIRE(source_chart.measures.front().bgm_events.size() == 1);
     const auto event = source_chart.measures.front().bgm_events.front().id;
-    auto history = wormedit::make_document_history(*imported.song);
+    auto history = wormedit::document_history_t::from(*imported.song);
     REQUIRE(wormedit::apply_virtual_bms_bgm_event_move(
         history, history.document.revision,
         {.chart = source_chart.id, .event = event, .canvas_row = 959'040}));
@@ -613,7 +613,7 @@ TEST_CASE("Deleting a selected imported BGM event updates repeated BMS channel l
     const auto imported = parse(source, {.lane_profile_id = "bme-7k-outside-scratch"});
     REQUIRE(imported.song);
     REQUIRE_FALSE(imported.has_errors());
-    auto history = wormedit::make_document_history(*imported.song);
+    auto history = wormedit::document_history_t::from(*imported.song);
     const auto& chart = history.document.charts.front();
     REQUIRE(chart.measures.front().bgm_events.size() == 2);
     const auto removed = chart.measures.front().bgm_events.front().id;
@@ -2467,7 +2467,7 @@ auto export_after_far_edit(const std::string& source) -> wormedit::bms_write_res
     const auto imported = parse(source, {.lane_profile_id = "bme-7k-outside-scratch"});
     REQUIRE(imported.song);
     REQUIRE_FALSE(imported.has_errors());
-    auto history = wormedit::make_document_history(*imported.song);
+    auto history = wormedit::document_history_t::from(*imported.song);
     const auto& chart = history.document.charts.front();
     const auto& far_measure = chart.measures.at(40);
     REQUIRE(far_measure.notes.size() == 3);
@@ -2741,7 +2741,7 @@ TEST_CASE("Converted BMS taps and holds export in their original conditional sco
     if (conditional) options.branch_choices = {{line_order(source, "#RANDOM 2"), 1}};
     auto imported = parse(source, options);
     require_bgm_export(imported.song);
-    auto history = wormedit::make_document_history(*imported.song);
+    auto history = wormedit::document_history_t::from(*imported.song);
     const auto chart = history.document.charts.front().id;
     const std::array ids{history.document.charts.front().measures.front().notes.front().id};
     require_bgm_export(wormedit::move_notes_to_bgm(history, history.document.revision,
@@ -2774,7 +2774,7 @@ TEST_CASE("BGM hold export loss respects strict and warning conversion policies"
     auto imported = parse("#PLAYER 1\n#BPM 120\n#WAV01 kick.wav\n#00051:0101\n",
                           {.lane_profile_id = "bme-7k-outside-scratch"});
     require_bgm_export(imported.song);
-    auto history = wormedit::make_document_history(*imported.song);
+    auto history = wormedit::document_history_t::from(*imported.song);
     const auto chart = history.document.charts.front().id;
     const std::array ids{history.document.charts.front().measures.front().notes.front().id};
     require_bgm_export(wormedit::move_notes_to_bgm(history, history.document.revision,

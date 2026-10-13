@@ -1188,7 +1188,7 @@ auto apply_virtual_bms_resource_placement(
     }
     const local_position_t position{chart.measures[destination->number].id,
                                     snapped_row - destination->begin_row};
-    auto staged = make_document_history(std::move(proposed));
+    auto staged = document_history_t::from(std::move(proposed));
     const auto placed = apply_resource_placement(
         staged, staged.document.revision,
         {.chart = action.chart,
@@ -1275,7 +1275,7 @@ auto apply_virtual_bms_bgm_event_move(
     }
     const local_position_t position{chart.measures[destination->number].id,
                                     snapped_row - destination->begin_row};
-    auto staged = make_document_history(std::move(proposed));
+    auto staged = document_history_t::from(std::move(proposed));
     const auto moved = apply_bgm_event_move(
         staged, staged.document.revision,
         {.chart = action.chart, .event = action.event, .position = position,
@@ -1350,7 +1350,7 @@ auto apply_virtual_bms_bga_event_move(
                                   .definition = {{1, 1}, meter_t{4, 4}}});
     const local_position_t position{chart.measures[destination->number].id,
                                     snapped_row - destination->begin_row};
-    auto staged = make_document_history(std::move(proposed));
+    auto staged = document_history_t::from(std::move(proposed));
     const auto moved = apply_bga_event_move(staged, staged.document.revision,
         {.chart = action.chart, .event = action.event, .position = position, .bga_kind = action.bga_kind});
     if (!moved) {
@@ -1616,7 +1616,7 @@ auto find_primary_music_resource(const song_document_t& document)
 auto import_primary_music(document_history_t& history,
                           const import_resource_asset_action_t& action)
     -> document_command_result_t {
-    auto draft = make_document_history(history.document, 1, false);
+    auto draft = document_history_t::from(history.document, 1, false);
     auto imported = apply_resource_asset_import(draft, draft.document.revision, action);
     if (!imported.applied) {
         imported.revision = history.document.revision;
@@ -1679,7 +1679,7 @@ auto apply_resource_asset_import(document_history_t& history, std::uint64_t expe
         if (!append_imported_asset(proposed, action, registered_copy.value_or(path), asset, result))
             return result;
     }
-    auto draft = make_document_history(std::move(proposed), 1, false);
+    auto draft = document_history_t::from(std::move(proposed), 1, false);
     const auto created =
         apply_resource_creation(draft, draft.document.revision,
                                 {.asset = asset,
@@ -1888,7 +1888,7 @@ auto apply_bms_wav_slot_assignment(document_history_t& history,
         return result;
     }
 
-    auto draft = make_document_history(history.document, 1, false);
+    auto draft = document_history_t::from(history.document, 1, false);
     if (!import_slot_batch_entry(draft, action.imported_file, *value, owner.resource, result)) return result;
     auto transaction = document_command_transaction_t::from(history);
     transaction.adopt_document(std::move(draft.document));
@@ -1916,7 +1916,7 @@ auto apply_bms_wav_slot_batch_assignment(document_history_t& history,
     const auto owners = batch_slot_owners(history.document, *first_slot, files->size(),
                                           action.confirm_replacements, result);
     if (!owners) return result;
-    auto draft = make_document_history(history.document, 1, false);
+    auto draft = document_history_t::from(history.document, 1, false);
     for (std::size_t index = 0; index < files->size(); ++index) {
         if (!import_slot_batch_entry(draft, std::move((*files)[index]), *first_slot + index,
                                      (*owners)[index], result)) return result;

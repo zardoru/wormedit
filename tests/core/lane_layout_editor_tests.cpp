@@ -43,7 +43,7 @@ auto segment_count(const document_history_t& history) -> std::size_t {
 
 TEST_CASE("a narrower layout may start where no later note needs the dropped lanes",
           "[core][lane-layout-editor]") {
-    auto history = make_document_history(layout_song(false));
+    auto history = document_history_t::from(layout_song(false));
     const auto applied = apply_lane_layout_edit(
         history, history.document.revision,
         insert_lane_layout_action_t{chart_id_t{2}, {measure_id_t{11}, 0},
@@ -58,7 +58,7 @@ TEST_CASE("a narrower layout may start where no later note needs the dropped lan
 
 TEST_CASE("a layout that leaves a later note unmapped rejects with the count",
           "[core][lane-layout-editor][negative]") {
-    auto history = make_document_history(layout_song(true));
+    auto history = document_history_t::from(layout_song(true));
     const auto result = apply_lane_layout_edit(
         history, history.document.revision,
         insert_lane_layout_action_t{chart_id_t{2}, {measure_id_t{11}, 0},
@@ -78,7 +78,7 @@ TEST_CASE("a layout that leaves a later note unmapped rejects with the count",
 
 TEST_CASE("update and delete keep notes mapped and protect the chart start",
           "[core][lane-layout-editor]") {
-    auto history = make_document_history(layout_song(true));
+    auto history = document_history_t::from(layout_song(true));
     CHECK_FALSE(apply_lane_layout_edit(
         history, history.document.revision,
         update_lane_layout_action_t{chart_id_t{2}, object_id_t{21}, layout_with({20}, "one")}));
@@ -104,7 +104,7 @@ TEST_CASE("update and delete keep notes mapped and protect the chart start",
 
 TEST_CASE("layout edits reject mid-measure starts, duplicates, stale revisions and unknown ids",
           "[core][lane-layout-editor][negative]") {
-    auto history = make_document_history(layout_song(false));
+    auto history = document_history_t::from(layout_song(false));
     const auto revision = history.document.revision;
     const auto narrow = layout_with({20, 21}, "two");
 
@@ -115,7 +115,7 @@ TEST_CASE("layout edits reject mid-measure starts, duplicates, stale revisions a
         insert_lane_layout_action_t{chart_id_t{2}, {measure_id_t{11}, 480}, narrow},
         lane_layout_change_policy_t::any_row));
 
-    auto fresh = make_document_history(layout_song(false));
+    auto fresh = document_history_t::from(layout_song(false));
     CHECK_FALSE(apply_lane_layout_edit(
         fresh, fresh.document.revision,
         insert_lane_layout_action_t{chart_id_t{2}, {measure_id_t{10}, 0}, narrow}));
@@ -136,7 +136,7 @@ TEST_CASE("layout edits reject mid-measure starts, duplicates, stale revisions a
 TEST_CASE("the first layout of an empty chart brings its key bindings", "[core][lane-layout-editor]") {
     auto song = layout_song(false);
     song.charts.front().lane_layouts.clear();
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     input_profile_t input{.profile_id = "two"};
     input.bindings.push_back({.key = physical_key_t::digit_1, .lane = lane_id_t{20}});
 
@@ -152,7 +152,7 @@ TEST_CASE("the first layout of an empty chart brings its key bindings", "[core][
     other.charts.front().lane_layouts.clear();
     other.charts.front().input_profile = {.profile_id = "kept",
         .bindings = {{.key = physical_key_t::digit_2, .lane = lane_id_t{21}}}};
-    auto kept = make_document_history(other);
+    auto kept = document_history_t::from(other);
     REQUIRE(apply_lane_layout_edit(
         kept, kept.document.revision,
         insert_lane_layout_action_t{chart_id_t{2}, {measure_id_t{10}, 0},

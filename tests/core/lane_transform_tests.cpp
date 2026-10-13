@@ -77,7 +77,7 @@ const std::vector<object_id_t> all_notes{object_id_t{10}, object_id_t{11}, objec
 
 TEST_CASE("mirror reverses keys, keeps the scratch lane, and undoes",
           "[unit][core][lane-transform]") {
-    auto history = make_document_history(seven_key_song());
+    auto history = document_history_t::from(seven_key_song());
     const auto before = history.document.charts.front().measures.front().notes;
     const auto result = apply_lane_mirror(history, 4, {.chart = chart_id_t{2}, .notes = all_notes});
     REQUIRE(result);
@@ -97,7 +97,7 @@ TEST_CASE("mirror reverses keys, keeps the scratch lane, and undoes",
 }
 
 TEST_CASE("mirror works inside each stage of a split layout", "[unit][core][lane-transform]") {
-    auto history = make_document_history(seven_key_song(
+    auto history = document_history_t::from(seven_key_song(
         {key_lane(1, 0, stage_group_t::left), key_lane(2, 1, stage_group_t::left),
          key_lane(3, 2, stage_group_t::right), key_lane(4, 3, stage_group_t::right),
          {.id = lane_id_t{8}, .name = "Scratch", .role = lane_role_t::scratch, .display_order = 4},
@@ -112,7 +112,7 @@ TEST_CASE("mirror works inside each stage of a split layout", "[unit][core][lane
 }
 
 TEST_CASE("mirror of only non-playable notes is a no-op", "[unit][core][lane-transform]") {
-    auto history = make_document_history(seven_key_song());
+    auto history = document_history_t::from(seven_key_song());
     const auto result =
         apply_lane_mirror(history, 4, {.chart = chart_id_t{2}, .notes = {object_id_t{12}}});
     CHECK_FALSE(result.applied);
@@ -123,7 +123,7 @@ TEST_CASE("mirror of only non-playable notes is a no-op", "[unit][core][lane-tra
 
 TEST_CASE("remap swaps lanes and rejects collisions, missing lanes and bad permutations",
           "[unit][core][lane-transform]") {
-    auto history = make_document_history(seven_key_song());
+    auto history = document_history_t::from(seven_key_song());
     const auto swap = apply_lane_remap(
         history, 4,
         {.chart = chart_id_t{2},
@@ -136,7 +136,7 @@ TEST_CASE("remap swaps lanes and rejects collisions, missing lanes and bad permu
     // Moving only one of two same-row notes onto the other's lane would stack them.
     auto stacked = seven_key_song();
     stacked.charts.front().measures.front().notes.push_back(tap(15, 2, 0));
-    auto collide = make_document_history(std::move(stacked));
+    auto collide = document_history_t::from(std::move(stacked));
     const auto collision = apply_lane_remap(
         collide, 4,
         {.chart = chart_id_t{2},
@@ -165,7 +165,7 @@ TEST_CASE("remap swaps lanes and rejects collisions, missing lanes and bad permu
 
 TEST_CASE("lane transforms reject stale revisions and unknown notes",
           "[unit][core][lane-transform]") {
-    auto history = make_document_history(seven_key_song());
+    auto history = document_history_t::from(seven_key_song());
     const auto stale = apply_lane_mirror(history, 3, {.chart = chart_id_t{2}, .notes = all_notes});
     CHECK_FALSE(stale.applied);
     const auto unknown =

@@ -100,7 +100,7 @@ void check_blocked_shrink(document_history_t& history) {
 
 TEST_CASE("BGM column count grows with fresh IDs orders and names",
           "[unit][core][bgm-columns]") {
-    auto history = make_document_history(column_song());
+    auto history = document_history_t::from(column_song());
     REQUIRE(apply_bgm_column_count(history, 4, chart_id_t{2}, 4));
     const auto& lanes = history.document.charts.front().bgm_source_lanes;
     REQUIRE(lanes.size() == 4);
@@ -113,7 +113,7 @@ TEST_CASE("BGM column count grows with fresh IDs orders and names",
 
 TEST_CASE("BGM-only BMS charts change column count without inventing playable lanes",
           "[unit][core][bgm-columns]") {
-    auto history = make_document_history(bgm_only_song());
+    auto history = document_history_t::from(bgm_only_song());
 
     REQUIRE(apply_bgm_column_count(history, history.document.revision, chart_id_t{2}, 3));
     check_bgm_only_chart(history, 3);
@@ -123,7 +123,7 @@ TEST_CASE("BGM-only BMS charts change column count without inventing playable la
 
 TEST_CASE("BGM column count shrinks empty trailing columns only",
           "[unit][core][bgm-columns]") {
-    auto history = make_document_history(column_song());
+    auto history = document_history_t::from(column_song());
     require_column_count(history, 3);
     require_column_count(history, 1);
     CHECK(lane_count(history) == 1);
@@ -138,7 +138,7 @@ TEST_CASE("BGM column count shrinks empty trailing columns only",
 
 TEST_CASE("BGM column count enforces its range and revision",
           "[unit][core][bgm-columns]") {
-    auto history = make_document_history(column_song());
+    auto history = document_history_t::from(column_song());
     CHECK_FALSE(apply_bgm_column_count(history, 4, chart_id_t{2}, 0));
     CHECK_FALSE(apply_bgm_column_count(history, 4, chart_id_t{2}, 129));
     CHECK_FALSE(apply_bgm_column_count(history, 3, chart_id_t{2}, 5));
@@ -149,7 +149,7 @@ TEST_CASE("BGM column count enforces its range and revision",
 
 TEST_CASE("BGM column count changes undo and redo as one step",
           "[unit][core][bgm-columns]") {
-    auto history = make_document_history(column_song());
+    auto history = document_history_t::from(column_song());
     REQUIRE(apply_bgm_column_count(history, 4, chart_id_t{2}, 6));
     REQUIRE(undo_document_command(history));
     CHECK(lane_count(history) == 1);
@@ -160,7 +160,7 @@ TEST_CASE("BGM column count changes undo and redo as one step",
 TEST_CASE("osu!mania BGM column growth preserves samples and undoes as one step",
           "[unit][core][bgm-columns][osu-mania]") {
     auto song = osu_mania_column_song();
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
 
     REQUIRE(apply_bgm_column_count(history, history.document.revision, chart_id_t{2}, 4));
     CHECK(lane_count(history) == 4);
@@ -179,7 +179,7 @@ TEST_CASE("BGM column count rejects BMSON without changing its lanes",
           "[unit][core][bgm-columns]") {
     auto song = column_song();
     song.charts.front().source_family = format_family_t::bmson;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto revision = history.document.revision;
     const auto result = apply_bgm_column_count(history, revision, chart_id_t{2}, 6);
     CHECK_FALSE(result.applied);

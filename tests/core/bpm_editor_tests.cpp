@@ -25,7 +25,7 @@ TEST_CASE("BPM edits extend native music charts through the audio end atomically
                                .beats_per_minute = {120, 1}}}}}};
     REQUIRE(extend_native_charts_to_audio_end(song));
     REQUIRE(song.charts.front().measures.size() == 7);
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     REQUIRE(apply_bpm_edit(history, 1, update_bpm_event_action_t{
         chart_id_t{2}, object_id_t{10}, {measure_id_t{3}, 0}, {240, 1}}));
     check_music_extent(history.document.charts.front().measures.size() == 13);
@@ -65,7 +65,7 @@ auto has_error(const document_command_result_t& result) -> bool {
 }
 
 auto commit_snapped_fit(signed_rational_t step) -> std::optional<signed_rational_t> {
-    auto history = make_document_history(bpm_song());
+    auto history = document_history_t::from(bpm_song());
     const auto begun = begin_beat_interval_drag(history.document, chart_id_t{2},
                                                 object_id_t{10},
                                                 local_position_t{measure_id_t{3}, 480}, 48'000);
@@ -88,7 +88,7 @@ auto rejects_locked_anchor_snap() -> bool {
     song.charts.front().timing_anchors.push_back({.id = object_id_t{11},
         .position = {measure_id_t{3}, 720}, .source_sample_frame = 72'000, .locked = true});
     if (!validate_document(song).empty()) return false;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto begun = begin_beat_interval_drag(history.document, chart_id_t{2}, object_id_t{10},
         {measure_id_t{3}, 240}, 48'000);
     if (!begun) return false;
@@ -150,7 +150,7 @@ TEST_CASE("BPM text parsing is decimal-first and retains a lossless fraction",
 
 TEST_CASE("interval beat drag previews by source frame and commits one undoable BPM edit",
           "[unit][core][bpm-editor][beat-fit]") {
-    auto history = make_document_history(bpm_song());
+    auto history = document_history_t::from(bpm_song());
     const auto beat = local_position_t{measure_id_t{3}, 480};
     const auto begun =
         begin_beat_interval_drag(history.document, chart_id_t{2}, object_id_t{10}, beat, 48'000);
@@ -208,7 +208,7 @@ TEST_CASE("BPM insert update and delete are undoable and retain exact identity a
           "[unit][core][bpm-editor]") {
     auto song = bpm_song();
     song.charts.front().source_family = format_family_t::bms;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto insert = apply_bpm_edit(
         history, 4, insert_bpm_event_action_t{chart_id_t{2}, {measure_id_t{3}, 0}, {90, 2}});
     REQUIRE(insert);
@@ -271,7 +271,7 @@ TEST_CASE("BPM same-row events use source order and remain valid for the timing 
                                         .beats_per_minute = {60, 1},
                                         .provenance = {.source_order = 12}});
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
 
     const auto inserted = apply_bpm_edit(
         history, 4, insert_bpm_event_action_t{chart_id_t{2}, {measure_id_t{3}, 0}, {90, 1}});
@@ -302,7 +302,7 @@ TEST_CASE("BPM same-row events use source order and remain valid for the timing 
 
 TEST_CASE("BPM editor rejects stale IDs positions and invalid exact values atomically",
           "[unit][core][bpm-editor][negative]") {
-    auto history = make_document_history(bpm_song());
+    auto history = document_history_t::from(bpm_song());
     const auto unchanged_revision = history.document.revision;
     const auto unchanged_bpm_count = history.document.charts.front().bpms.size();
 
@@ -356,7 +356,7 @@ TEST_CASE("BPM editor rejects ambiguous stable IDs and event caps",
                                                   .position = {measure_id_t{3}, 240},
                                                   .beats_per_minute = {90, 1},
                                                   .provenance = {.source_order = 5}});
-    auto duplicate_history = make_document_history(duplicate_song);
+    auto duplicate_history = document_history_t::from(duplicate_song);
     const auto duplicate =
         apply_bpm_edit(duplicate_history, 4,
                        update_bpm_event_action_t{
@@ -366,7 +366,7 @@ TEST_CASE("BPM editor rejects ambiguous stable IDs and event caps",
     CHECK(duplicate_history.document.charts.front().bpms.size() == 2);
     CHECK(duplicate_history.undo.empty());
 
-    auto history = make_document_history(bpm_song());
+    auto history = document_history_t::from(bpm_song());
     const auto event_capped = apply_bpm_edit(
         history, 4, insert_bpm_event_action_t{chart_id_t{2}, {measure_id_t{3}, 240}, {100, 1}},
         {.maximum_bpm_events = 1});
@@ -384,7 +384,7 @@ TEST_CASE("BPM editor rejects ambiguous stable IDs and event caps",
 
 TEST_CASE("beat fit without a BPM change at the anchor inserts one exact BPM as one undo step",
           "[unit][core][bpm-editor][beat-fit]") {
-    auto history = make_document_history(bpm_song());
+    auto history = document_history_t::from(bpm_song());
     const auto anchor = local_position_t{measure_id_t{3}, 240};
     const auto beat = local_position_t{measure_id_t{3}, 480};
     const auto begun = begin_beat_interval_anchor_drag(history.document, chart_id_t{2}, anchor,
@@ -423,7 +423,7 @@ TEST_CASE("beat fit without a BPM change at the anchor inserts one exact BPM as 
 
 TEST_CASE("beat fit anchor reuses an existing BPM change and rejects impossible targets",
           "[unit][core][bpm-editor][beat-fit]") {
-    auto history = make_document_history(bpm_song());
+    auto history = document_history_t::from(bpm_song());
     const auto beat = local_position_t{measure_id_t{3}, 480};
     const auto begun = begin_beat_interval_anchor_drag(history.document, chart_id_t{2},
                                                        {measure_id_t{3}, 0}, beat, 48'000);
@@ -442,7 +442,7 @@ TEST_CASE("beat fit insert blocks when a locked anchor after the beat would move
     song.charts.front().timing_anchors.push_back({.id = object_id_t{11},
         .position = {measure_id_t{3}, 720}, .source_sample_frame = 72'000, .locked = true});
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto begun = begin_beat_interval_anchor_drag(history.document, chart_id_t{2},
                                                        {measure_id_t{3}, 240},
                                                        {measure_id_t{3}, 480}, 48'000);

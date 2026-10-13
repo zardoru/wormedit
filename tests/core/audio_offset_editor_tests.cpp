@@ -25,7 +25,7 @@ auto offset_song() -> song_document_t {
 }
 
 auto offset_fit_commit_is_exact_and_undoable() -> bool {
-    auto history = make_document_history(offset_song());
+    auto history = document_history_t::from(offset_song());
     const auto original_bpm = history.document.charts.front().bpms.front().beats_per_minute;
     const auto begun = begin_audio_offset_drag(history.document, chart_id_t{2}, 48'000);
     if (!begun) return false;
@@ -44,7 +44,7 @@ auto offset_fit_commit_is_exact_and_undoable() -> bool {
 }
 
 auto offset_fit_cancel_and_lock_leave_timing_unchanged() -> bool {
-    auto history = make_document_history(offset_song());
+    auto history = document_history_t::from(offset_song());
     const auto original = history.document.charts.front().beat_zero_audio_offset_seconds;
     const auto cancel_begin = begin_audio_offset_drag(history.document, chart_id_t{2}, 48'000);
     if (!cancel_begin) return false;
@@ -74,7 +74,7 @@ TEST_CASE("offset fit cancel and timing lock leave timing unchanged",
 
 TEST_CASE("audio offset drag remains sample-frame exact and commits atomically",
           "[unit][core][audio-offset][drag]") {
-    auto history = make_document_history(offset_song());
+    auto history = document_history_t::from(offset_song());
     const auto begun = begin_audio_offset_drag(history.document, chart_id_t{2}, 48'000);
     REQUIRE(begun);
     CHECK(begun.drag->original_offset_seconds == signed_rational_t{1, 2});
@@ -109,7 +109,7 @@ TEST_CASE("audio offset drag remains sample-frame exact and commits atomically",
 
 TEST_CASE("audio offset drag rejects stale locked invalid and overflowing requests",
           "[unit][core][audio-offset][bounds]") {
-    auto history = make_document_history(offset_song());
+    auto history = document_history_t::from(offset_song());
     CHECK_FALSE(begin_audio_offset_drag(history.document, chart_id_t{2}, 0));
     const auto locked = begin_audio_offset_drag(history.document, chart_id_t{2}, 48'000, true);
     CHECK_FALSE(locked);

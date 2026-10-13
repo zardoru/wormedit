@@ -33,7 +33,7 @@ auto make_reset_fixture() -> reset_fixture_t {
     const auto parsed = wormedit::parse_bmson_bytes(
         std::as_bytes(std::span{json.data(), json.size()}));
     REQUIRE(parsed.song);
-    reset_fixture_t fixture{wormedit::make_document_history(*parsed.song)};
+    reset_fixture_t fixture{wormedit::document_history_t::from(*parsed.song)};
     fixture.chart = fixture.history.document.charts.front().id;
     fixture.history.document.audio_assets.front().stream = {48'000, 2, 200'000, true};
     const auto& events = fixture.history.document.charts.front().sound_channels.front().events;

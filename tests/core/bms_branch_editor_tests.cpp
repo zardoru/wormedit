@@ -74,7 +74,7 @@ auto make_history() -> document_history_t {
     if (!parsed.song || parsed.has_errors()) {
         throw std::runtime_error("BMS branch command test fixture did not parse");
     }
-    return make_document_history(*parsed.song);
+    return document_history_t::from(*parsed.song);
 }
 
 auto make_empty_branch_history() -> document_history_t {
@@ -86,7 +86,7 @@ auto make_empty_branch_history() -> document_history_t {
     if (!parsed.song || parsed.has_errors()) {
         throw std::runtime_error("empty BMS block fixture did not parse");
     }
-    return make_document_history(*parsed.song);
+    return document_history_t::from(*parsed.song);
 }
 
 auto find_node(const bms_control_node_t& root, bms_control_kind_t kind,
@@ -446,7 +446,7 @@ auto native_roundtrip(document_history_t history) -> document_history_t {
     if (!parsed.song) {
         throw std::runtime_error("edited BMS fixture did not reload from native project");
     }
-    return make_document_history(*parsed.song);
+    return document_history_t::from(*parsed.song);
 }
 
 auto parse_branch_fixture(std::string_view text, text_encoding_t encoding = text_encoding_t::utf8)
@@ -461,7 +461,7 @@ auto parse_branch_fixture(std::string_view text, text_encoding_t encoding = text
     if (!parsed.song || parsed.has_errors()) {
         throw std::runtime_error("BMS branch edit fixture did not parse");
     }
-    return make_document_history(*parsed.song);
+    return document_history_t::from(*parsed.song);
 }
 
 auto edit_or_throw(document_history_t& history, std::string_view before, std::string after)
@@ -1101,7 +1101,7 @@ TEST_CASE("BMS branch selection maps nested controls across normalized source or
         std::as_bytes(std::span{nested_source.data(), nested_source.size()}), std::move(options));
     REQUIRE(parsed.song.has_value());
     REQUIRE_FALSE(parsed.has_errors());
-    auto history = make_document_history(*parsed.song);
+    auto history = document_history_t::from(*parsed.song);
     const auto* random = find_node(chart_tree(history), bms_control_kind_t::random, "#RANDOM 2");
     const auto* switch_block =
         find_node(chart_tree(history), bms_control_kind_t::switch_block, "#SWITCH 2");
@@ -1193,7 +1193,7 @@ auto make_three_leaf_history(std::int64_t selected) -> document_history_t {
     const auto parsed = parse_bms_bytes(
         std::as_bytes(std::span{three_leaf_source.data(), three_leaf_source.size()}), std::move(options));
     if (!parsed.song || parsed.has_errors()) throw std::runtime_error("three-leaf fixture did not parse");
-    return make_document_history(*parsed.song);
+    return document_history_t::from(*parsed.song);
 }
 
 auto leaf_move_request(const document_history_t& history, std::string_view header,

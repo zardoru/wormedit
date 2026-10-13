@@ -52,7 +52,7 @@ auto has_code(const document_command_result_t& result, diagnostic_code_t code) -
 
 TEST_CASE("pause and warp editing allocates IDs, preserves identity, and shares undo history",
           "[unit][core][pause-warp-editor]") {
-    auto history = make_document_history(pause_warp_song());
+    auto history = document_history_t::from(pause_warp_song());
     const auto position = local_position_t{measure_id_t{3}, 240};
     const auto inserted_pause = apply_pause_warp_edit(
         history, 4,
@@ -115,7 +115,7 @@ TEST_CASE("pause and warp editing allocates IDs, preserves identity, and shares 
 
 TEST_CASE("same-row pause insertion gets a later source order and updates exact timing",
           "[unit][core][pause-warp-editor][ordering]") {
-    auto history = make_document_history(pause_warp_song());
+    auto history = document_history_t::from(pause_warp_song());
     const auto inserted = apply_pause_warp_edit(history, 4,
                                                 insert_pause_event_action_t{chart_id_t{2},
                                                                             {measure_id_t{3}, 240},
@@ -156,7 +156,7 @@ TEST_CASE("pause edits preserve BMS baselines, reject incoherent updates, and de
                                     .imported_duration = {48, 1},
                                     .imported_source_unit = pause_unit_t::bms_stop_ticks}};
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
 
     const auto update =
         apply_pause_warp_edit(history, 4,
@@ -195,7 +195,7 @@ TEST_CASE("pause edits preserve BMS baselines, reject incoherent updates, and de
 
 TEST_CASE("pause and warp edits reject stale, duplicate, invalid, and over-cap requests atomically",
           "[unit][core][pause-warp-editor][negative]") {
-    auto history = make_document_history(pause_warp_song());
+    auto history = document_history_t::from(pause_warp_song());
     const auto initial_revision = history.document.revision;
 
     const auto stale = apply_pause_warp_edit(history, 3,
@@ -291,7 +291,7 @@ TEST_CASE("pause and warp edits reject stale, duplicate, invalid, and over-cap r
     auto duplicate_song = pause_warp_song();
     duplicate_song.charts.front().pauses.push_back(
         {.id = object_id_t{20}, .position = {measure_id_t{3}, 120}, .duration = {1, 1}});
-    auto duplicate_history = make_document_history(std::move(duplicate_song));
+    auto duplicate_history = document_history_t::from(std::move(duplicate_song));
     const auto ambiguous =
         apply_pause_warp_edit(duplicate_history, initial_revision,
                               update_pause_event_action_t{chart_id_t{2},
@@ -305,7 +305,7 @@ TEST_CASE("pause and warp edits reject stale, duplicate, invalid, and over-cap r
 
     auto cross_type_song = pause_warp_song();
     cross_type_song.charts.front().bpms.front().id = object_id_t{20};
-    auto cross_type_history = make_document_history(std::move(cross_type_song));
+    auto cross_type_history = document_history_t::from(std::move(cross_type_song));
     const auto cross_type_ambiguous =
         apply_pause_warp_edit(cross_type_history, initial_revision,
                               delete_pause_event_action_t{chart_id_t{2}, object_id_t{20}});

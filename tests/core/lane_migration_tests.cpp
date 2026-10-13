@@ -293,7 +293,7 @@ TEST_CASE("lane migration previews drops and changes all segments in one undoabl
     add_note(song.charts.front(), object_id_t{32}, source[5].id, {measure_id_t{3}, 4});
     add_note(song.charts.front(), object_id_t{33}, source[6].id, {measure_id_t{4}, 8});
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
 
     const auto preview = propose_lane_migration(history.document, 5, chart_id_t{2}, *target);
     REQUIRE(preview);
@@ -321,7 +321,7 @@ TEST_CASE("lane migration reports and applies a noncolliding many-to-one mapping
     const auto preview = propose_lane_migration(song, 5, chart_id_t{2}, *target, mapping);
     REQUIRE(preview);
     check_noncolliding_merge_preview(preview);
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     REQUIRE(apply_lane_migration(history, preview, false));
     check_merged_notes(history.document.charts.front(), target_lanes[0].id);
 }
@@ -342,7 +342,7 @@ TEST_CASE("lane migration rejects inclusive hold-tail collisions created by a la
     const auto preview = propose_lane_migration(song, 5, chart_id_t{2}, *target, mapping);
     REQUIRE(preview);
     check_hold_tail_witness(preview);
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     CHECK(apply_lane_migration(history, preview, false).payload.issue == lane_migration_issue_t::lane_collision);
     CHECK(history.document.charts.front().measures.front().notes.size() == 2);
 }
@@ -357,11 +357,11 @@ TEST_CASE("lane migration rejects modified previews and another song at matching
 
     auto other = song;
     other.id = song_id_t{9};
-    auto other_history = make_document_history(other);
+    auto other_history = document_history_t::from(other);
     CHECK(apply_lane_migration(other_history, preview, false).payload.issue ==
           lane_migration_issue_t::stale_revision);
 
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     preview.target.layout.display_name = "tampered";
     CHECK(apply_lane_migration(history, preview, false).payload.issue ==
           lane_migration_issue_t::invalid_mapping);
@@ -376,7 +376,7 @@ TEST_CASE("lane migration rejects source drift even when document revision is re
     REQUIRE(target);
     const auto preview = propose_lane_migration(song, 5, chart_id_t{2}, *target);
     REQUIRE(preview);
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     const auto source_lane = ordered(history.document.charts.front().lane_layouts.front().layout).front().id;
     add_note(history.document.charts.front(), object_id_t{61}, source_lane,
              {measure_id_t{3}, 0});
@@ -472,7 +472,7 @@ TEST_CASE("lane migration keeps an imported BMSON note and retained event togeth
     const auto old_lane = note->lane;
     const auto target = profile_with_new_lane_ids(source, 10'000);
     const auto mapping = rank_mapping(source, target.layout);
-    auto history = make_document_history(*parsed.song);
+    auto history = document_history_t::from(*parsed.song);
     const auto preview = propose_lane_migration(history.document, history.document.revision,
                                                 source.id, target, mapping);
     REQUIRE(preview);
@@ -497,7 +497,7 @@ TEST_CASE("lane migration confirms dropping a linked BMSON pair together",
     const auto event_id = *note->sound_channel_event;
     const auto target = profile_with_new_lane_ids(source, 20'000);
     const auto mapping = rank_mapping(source, target.layout, note->lane);
-    auto history = make_document_history(*parsed.song);
+    auto history = document_history_t::from(*parsed.song);
     const auto preview = propose_lane_migration(history.document, history.document.revision,
                                                 source.id, target, mapping);
     REQUIRE(preview);
@@ -525,7 +525,7 @@ TEST_CASE("lane migration collision sweep includes unlinked playable BMSON event
                                           &lane_migration_mapping_t::source_lane);
     REQUIRE(note_mapping != mapping.end());
     note_mapping->target_lane = target.layout.lanes.front().id;
-    auto history = make_document_history(*parsed.song);
+    auto history = document_history_t::from(*parsed.song);
     const auto preview = propose_lane_migration(history.document, history.document.revision,
                                                 chart.id, target, mapping);
     REQUIRE(preview);
@@ -548,7 +548,7 @@ TEST_CASE("lane migration preserves parsed BMS branch hold channel identity",
     const auto old_lane = hold.lane;
     auto target = profile_with_new_lane_ids(chart, 40'000);
     const auto safe_mapping = rank_mapping(chart, target.layout);
-    auto safe_history = make_document_history(*parsed.song);
+    auto safe_history = document_history_t::from(*parsed.song);
     const auto safe_preview = propose_lane_migration(
         safe_history.document, safe_history.document.revision, chart.id, target, safe_mapping);
     REQUIRE(safe_preview);

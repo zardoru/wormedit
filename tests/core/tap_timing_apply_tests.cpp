@@ -85,7 +85,7 @@ TEST_CASE("Tap timing proposal chooses the nearest measure downbeat and earlier 
 
 TEST_CASE("Tap timing commit inserts row-zero BPM and undo restores both values atomically",
           "[core][tap-timing-apply]") {
-    auto history = make_document_history(apply_song());
+    auto history = document_history_t::from(apply_song());
     const auto proposed = proposal(history.document, stable_estimate(22'050.0));
     REQUIRE(proposed);
     const auto preview = build_tap_timing_preview(history.document, *proposed.proposal);
@@ -122,7 +122,7 @@ TEST_CASE("Tap timing commit changes only the final row-zero BPM and preserves l
         {.id = object_id_t{24}, .position = {measure_id_t{11}, 240},
          .beats_per_minute = {140, 1}, .provenance = {.source_order = 1}},
     };
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     const auto before_note = history.document.charts.front().measures.front().notes.front();
     const auto later = history.document.charts.front().bpms.back();
     const auto before_note_position = before_note.position;
@@ -143,7 +143,7 @@ TEST_CASE("Tap timing commit changes only the final row-zero BPM and preserves l
 
 TEST_CASE("Tap timing lock, stale, unstable, invalid and overflowing proposals reject unchanged",
           "[core][tap-timing-apply]") {
-    auto history = make_document_history(apply_song(true));
+    auto history = document_history_t::from(apply_song(true));
     const auto valid = proposal(history.document);
     REQUIRE(valid);
     const auto before_document = history.document;
@@ -184,7 +184,7 @@ TEST_CASE("Tap timing lock, stale, unstable, invalid and overflowing proposals r
 
 TEST_CASE("Tap timing commit rejects a chart made invalid after proposal without history mutation",
           "[core][tap-timing-apply]") {
-    auto history = make_document_history(apply_song());
+    auto history = document_history_t::from(apply_song());
     const auto proposed = proposal(history.document);
     REQUIRE(proposed);
     history.document.charts.front().measures.clear();

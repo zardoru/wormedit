@@ -406,7 +406,7 @@ auto move_notes_to_bgm(document_history_t& history, std::uint64_t expected_revis
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "note move to BGM refers to an unknown chart");
     const auto selection = partition_selected_notes(*found, notes);
     if (selection.error) return document_command_transaction_t::rejection(revision, {*selection.error});
-    auto scratch = make_document_history(history.document);
+    auto scratch = document_history_t::from(history.document);
     if (const auto failure = reassign_bmson_notes(scratch, chart_id, selection.bmson_linked, revision))
         return *failure;
     if (const auto failure = apply_ordinary_plan(scratch, chart_id, selection.ordinary,
@@ -518,7 +518,7 @@ auto move_bgm_events_to_lane(document_history_t& history, std::uint64_t expected
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "BGM move needs 1 to 4096 events and a lane");
     if (history.document.find_chart(chart_id) == nullptr)
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "BGM move refers to an unknown chart");
-    auto scratch = make_document_history(history.document);
+    auto scratch = document_history_t::from(history.document);
     for (const auto id : events) {
         auto& chart = *scratch.document.find_chart(chart_id);
         const auto located = find_bgm(chart, id);
@@ -562,7 +562,7 @@ auto move_selected_objects_to_lane(document_history_t& history, std::uint64_t ex
     if (notes.empty() && events.empty())
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id,
                         "lane assignment needs at least one selected object");
-    auto scratch = make_document_history(history.document);
+    auto scratch = document_history_t::from(history.document);
     const auto scratch_revision = scratch.document.revision;
     if (!notes.empty()) {
         auto scratch_state = state;

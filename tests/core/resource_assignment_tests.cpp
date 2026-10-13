@@ -165,7 +165,7 @@ auto make_subset_renumber_history() -> document_history_t {
     song.resources[0].target_identities = {{format_family_t::bms, "01", "WAV"}};
     song.resources[1].target_identities = {{format_family_t::bms, "04", "WAV"}};
     song.resources[4].target_identities = {{format_family_t::bms, "05", "WAV"}};
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     static_cast<void>(apply_bms_identifier_renumber(history, history.document.revision,
         {.name_space = "WAV", .resources = {resource_id_t{1}, resource_id_t{2}}}));
     return history;
@@ -216,7 +216,7 @@ auto make_renumbered_bms_fixture() -> std::optional<renumbered_bms_fixture_t> {
         {.lane_profile_id = "bme-7k-outside-scratch"});
     if (!parsed.song || parsed.song->charts.empty() || parsed.song->charts.front().measures.empty() ||
         parsed.song->charts.front().measures.front().notes.empty()) return std::nullopt;
-    auto history = make_document_history(*parsed.song);
+    auto history = document_history_t::from(*parsed.song);
     const auto& note = history.document.charts.front().measures.front().notes.front();
     if (!note.sound) return std::nullopt;
     const auto resource = *note.sound;
@@ -231,7 +231,7 @@ auto make_renumbered_bms_fixture() -> std::optional<renumbered_bms_fixture_t> {
 TEST_CASE("BGA storyboard resource replacement keeps established assignment behavior", "[resource-assignment][bga]") {
     auto song = assignment_song();
     song.charts.front().bga_events.front().kind = visual_event_kind_t::storyboard;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     REQUIRE(apply_resource_assignment(history, history.document.revision,
         {.chart = chart_id_t{2}, .resource = resource_id_t{4},
          .objects = {{editor_selection_object_kind_t::bga_event, object_id_t{12}}}}));
@@ -252,7 +252,7 @@ TEST_CASE("ordinary BGM move preserves identity and advances occupied source lan
                                                 .position = {measure_id_t{4}, 120},
                                                 .source_lane = object_id_t{20},
                                                 .sound = resource_id_t{2}});
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto revision = history.document.revision;
     const auto moved = apply_bgm_event_move(history, revision,
         {.chart = chart_id_t{2}, .event = object_id_t{11},
@@ -281,7 +281,7 @@ TEST_CASE("moving a tailed BGM head translates its end by the exact row delta",
     chart.measures.push_back({.id = measure_id_t{5}});
     chart.measures.front().bgm_events.front().end = local_position_t{measure_id_t{4}, 200};
     check_wav_slot(validate_document(song).empty());
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     const auto moved = apply_bgm_event_move(history, history.document.revision,
         {.chart = chart_id_t{2}, .event = object_id_t{11},
          .position = {measure_id_t{4}, 120}, .source_lane = object_id_t{20}});
@@ -318,7 +318,7 @@ TEST_CASE("BGM head movement rejects translated tails outside the chart without 
     chart.measures.push_back({.id = measure_id_t{4}});
     chart.measures.front().bgm_events.front().end = local_position_t{measure_id_t{4}, 900};
     check_wav_slot(validate_document(song).empty());
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     const auto before = history.document;
     const auto result = apply_bgm_event_move(history, history.document.revision,
         {.chart = chart_id_t{2}, .event = object_id_t{11},
@@ -396,7 +396,7 @@ TEST_CASE("BMS all-kind renumber includes BGM-only resources and leaves notes in
     song.resources[1].roles = {resource_role_t::bgm};
     song.resources[1].target_identities = {{format_family_t::bms, "09", "WAV"}};
     song.resources[4].roles = {resource_role_t::preview};
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto result = apply_bms_identifier_renumber(history, history.document.revision,
         {.name_space = "WAV"});
     REQUIRE(result);
@@ -434,7 +434,7 @@ TEST_CASE("BMS export writes the natural renumbered resource IDs",
 
 TEST_CASE("BMS renumber rejects stale, unknown and duplicate selections atomically",
           "[unit][core][resources][bms-identifiers]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto revision = history.document.revision;
     const auto names_before = std::vector<std::string>{history.document.resources[0].name,
                                                        history.document.resources[1].name};
@@ -447,7 +447,7 @@ TEST_CASE("BMS renumber rejects stale, unknown and duplicate selections atomical
 TEST_CASE("BGM move appends a lane only when needed and rejects linked markers",
           "[unit][core][resources][bgm-move]") {
     auto song = assignment_song();
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto revision = history.document.revision;
     CHECK_FALSE(apply_bgm_event_move(history, revision,
         {.chart = chart_id_t{2}, .event = object_id_t{11},
@@ -472,7 +472,7 @@ TEST_CASE("BGM move appends a lane only when needed and rejects linked markers",
     auto linked_song = assignment_song();
     linked_song.charts.front().measures.front().bgm_events.front().sound_channel_event =
         object_id_t{99};
-    auto linked_history = make_document_history(std::move(linked_song));
+    auto linked_history = document_history_t::from(std::move(linked_song));
     CHECK(has_code(apply_bgm_event_move(linked_history, linked_history.document.revision,
         {.chart = chart_id_t{2}, .event = object_id_t{11},
          .position = {measure_id_t{3}, 400}}),
@@ -484,7 +484,7 @@ TEST_CASE("virtual BMS BGM move materializes destination with one undo step",
           "[unit][core][resources][bgm-move][virtual-canvas]") {
     auto song = assignment_song();
     song.charts.front().source_family = format_family_t::bms;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto revision = history.document.revision;
     const auto moved = apply_virtual_bms_bgm_event_move(history, revision,
         {.chart = chart_id_t{2}, .event = object_id_t{11},
@@ -512,7 +512,7 @@ TEST_CASE("invalid virtual BGM move leaves authored extent unchanged",
           "[unit][core][resources][bgm-move][virtual-canvas]") {
     auto song = assignment_song();
     song.charts.front().source_family = format_family_t::bms;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto revision = history.document.revision;
     CHECK_FALSE(apply_virtual_bms_bgm_event_move(history, revision - 1,
         {.chart = chart_id_t{2}, .event = object_id_t{11}, .canvas_row = 959'040}));
@@ -530,7 +530,7 @@ TEST_CASE("virtual BMS BGM and BGA placement commit geometry with the event",
                             resource_placement_kind_t::bga_background}) {
         auto song = assignment_song();
         song.charts.front().source_family = format_family_t::bms;
-        auto history = make_document_history(std::move(song));
+        auto history = document_history_t::from(std::move(song));
         const auto revision = history.document.revision;
         const auto resource = kind == resource_placement_kind_t::bgm_event
                                   ? resource_id_t{1}
@@ -568,7 +568,7 @@ TEST_CASE("invalid virtual BMS resource placement leaves history unchanged",
           "[unit][core][resources][virtual-canvas]") {
     auto song = assignment_song();
     song.charts.front().source_family = format_family_t::bms;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto revision = history.document.revision;
     CHECK_FALSE(apply_virtual_bms_resource_placement(
         history, revision - 1,
@@ -612,7 +612,7 @@ TEST_CASE("resource creation assigns stable IDs and independent BMS namespaces",
         {.family = format_family_t::bms, .identifier = "01", .namespace_name = "WAV"}};
     song.resources[1].target_identities = {
         {.family = format_family_t::bms, .identifier = "02", .namespace_name = "WAV"}};
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto created = apply_resource_creation(
         history, 4, {.asset = asset_id_t{2}, .role = resource_role_t::sample,
                      .name = "New sample", .allocate_bms_identifier = true});
@@ -639,7 +639,7 @@ TEST_CASE("resource creation assigns stable IDs and independent BMS namespaces",
 
 TEST_CASE("resource creation rejects stale revisions and wrong asset types atomically",
           "[unit][core][resources]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     CHECK(has_code(apply_resource_creation(
                        history, 3, {.asset = asset_id_t{1}, .role = resource_role_t::sample}),
                    diagnostic_code_t::invalid_id));
@@ -658,7 +658,7 @@ TEST_CASE("resource creation rejects stale revisions and wrong asset types atomi
 
 TEST_CASE("resource import registers decoded asset and catalog entry in one history command",
           "[unit][core][resources]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto imported =
         apply_resource_asset_import(history, 4,
                                     {.source_path = TEST_ROOT "/new-audio.wav",
@@ -690,7 +690,7 @@ TEST_CASE("resource import registers decoded asset and catalog entry in one hist
 
 TEST_CASE("explicit BMS WAV assignment creates a resource at the chosen empty slot",
           "[unit][core][resources][bms-wav-slots]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto old_resources = history.document.resources.size();
     const auto old_assets = history.document.audio_assets.size();
     const auto result = apply_bms_wav_slot_assignment(
@@ -715,7 +715,7 @@ TEST_CASE("explicit BMS WAV assignment creates a resource at the chosen empty sl
 
 TEST_CASE("confirmed BMS WAV replacement preserves resource identity and references",
           "[unit][core][resources][bms-wav-slots]") {
-    auto history = make_document_history(wav_slot_song());
+    auto history = document_history_t::from(wav_slot_song());
     const auto original = history.document;
     const auto old_asset = history.document.resources.front().asset;
     const auto result = apply_bms_wav_slot_assignment(
@@ -760,7 +760,7 @@ TEST_CASE("confirmed BMS WAV replacement preserves resource identity and referen
 
 TEST_CASE("BMS WAV assignment rejects reserved, invalid, stale and unconfirmed requests atomically",
           "[unit][core][resources][bms-wav-slots]") {
-    auto history = make_document_history(wav_slot_song());
+    auto history = document_history_t::from(wav_slot_song());
     const auto original = history.document;
     auto attempt = [&](std::string id, std::uint64_t revision, bool confirm = false) {
         return apply_bms_wav_slot_assignment(history, revision,
@@ -795,7 +795,7 @@ TEST_CASE("explicit WAV slot assignment matches canonical namespace casing",
           "[unit][core][resources][bms-wav-slots]") {
     auto song = wav_slot_song();
     song.resources.front().target_identities.front().namespace_name = "wav";
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto result = apply_bms_wav_slot_assignment(
         history, history.document.revision,
         {.identifier = "01", .imported_file = wav_slot_import("case-fold.wav", "Case fold")});
@@ -806,7 +806,7 @@ TEST_CASE("explicit WAV slot assignment matches canonical namespace casing",
 
 TEST_CASE("BMS WAV slot batches use natural filename order and one undo step",
           "[unit][core][resources][bms-wav-slots]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto revision = history.document.revision;
     const auto result = apply_bms_wav_slot_batch_assignment(history, revision,
         {.first_identifier = "0Z",
@@ -841,7 +841,7 @@ TEST_CASE("BMS WAV slot batches use natural filename order and one undo step",
 
 TEST_CASE("BMS WAV slot batches replace occupied resources only when confirmed",
           "[unit][core][resources][bms-wav-slots]") {
-    auto history = make_document_history(wav_slot_song());
+    auto history = document_history_t::from(wav_slot_song());
     const auto before = history.document;
     const auto unconfirmed = apply_bms_wav_slot_batch_assignment(history,
         history.document.revision,
@@ -874,7 +874,7 @@ TEST_CASE("BMS WAV slot batches replace occupied resources only when confirmed",
 
 TEST_CASE("BMS WAV slot batch rejection leaves document and history untouched",
           "[unit][core][resources][bms-wav-slots]") {
-    auto history = make_document_history(wav_slot_song());
+    auto history = document_history_t::from(wav_slot_song());
     const auto before = history.document;
     const auto try_batch = [&](std::string first, std::vector<import_resource_asset_action_t> files,
                                std::uint64_t revision, bool confirm = true) {
@@ -902,7 +902,7 @@ TEST_CASE("BMS WAV slot batch rejection leaves document and history untouched",
 
 TEST_CASE("BMS WAV slot batches accept 1200 files with one-step undo and redo",
           "[unit][core][resources][bms-wav-slots][slow]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto original_resources = history.document.resources.size();
     const auto original_assets = history.document.audio_assets.size();
     auto files = std::vector<import_resource_asset_action_t>{};
@@ -935,7 +935,7 @@ TEST_CASE("BGM import extends native chart measures in the same undo command",
           "[core][resources][audio-extent]") {
     auto song = assignment_song();
     song.charts.front().source_family = format_family_t::native_project;
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     REQUIRE(apply_resource_asset_import(history, song.revision,
         {.source_path = TEST_ROOT "/track.mp3", .role = resource_role_t::bgm,
          .audio_stream = audio_stream_info_t{44'100, 2, 44'100 * 13, true}}));
@@ -960,7 +960,7 @@ auto music_resources(const song_document_t& song) -> std::size_t {
 
 TEST_CASE("setting song audio without a music resource imports one Music+BGM resource",
           "[unit][core][resources][song-audio]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     REQUIRE(apply_primary_music_set(history, 4,
         {.source_path = TEST_ROOT "/song.mp3", .name = "song.mp3",
          .audio_stream = audio_stream_info_t{44'100, 2, 44'100 * 3, true}}));
@@ -976,7 +976,7 @@ TEST_CASE("setting song audio again repoints the music asset instead of adding a
     auto song = assignment_song();
     song.charts.front().source_family = format_family_t::native_project;
     song.resources.front().roles.push_back(resource_role_t::music);
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     const auto assets = history.document.audio_assets.size();
     const auto resources = history.document.resources.size();
     REQUIRE(apply_primary_music_set(history, 4,
@@ -1006,7 +1006,7 @@ TEST_CASE("setting song audio again repoints the music asset instead of adding a
 
 TEST_CASE("setting song audio rejects stale revisions and missing stream geometry",
           "[unit][core][resources][song-audio]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     CHECK(has_code(apply_primary_music_set(history, 3,
                        {.source_path = TEST_ROOT "/song.mp3",
                         .audio_stream = audio_stream_info_t{44'100, 2, 44'100, true}}),
@@ -1018,7 +1018,7 @@ TEST_CASE("setting song audio rejects stale revisions and missing stream geometr
 
 TEST_CASE("resource import rejects path and decoded-type errors without partial assets",
           "[unit][core][resources]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     CHECK(has_code(apply_resource_asset_import(history, 3,
                                                {.source_path = TEST_ROOT "/new.png",
                                                 .role = resource_role_t::bga,
@@ -1042,7 +1042,7 @@ TEST_CASE("resource import rejects path and decoded-type errors without partial 
 
 TEST_CASE("copied resource import binds a reserved project path in one undo command",
           "[unit][core][resources]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto reserved = next_resource_asset_id(history.document);
     REQUIRE(reserved);
     const auto relative =
@@ -1078,7 +1078,7 @@ TEST_CASE("copied resource import binds a reserved project path in one undo comm
 
 TEST_CASE("export-staged import reserves a new asset while retaining its external source",
           "[unit][core][resources]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto reserved = next_resource_asset_id(history.document);
     REQUIRE(reserved);
     const import_resource_asset_action_t action{.source_path = TEST_ROOT "/export-audio.ogg",
@@ -1096,7 +1096,7 @@ TEST_CASE("export-staged import reserves a new asset while retaining its externa
 
 TEST_CASE("visual resource import records decoded geometry and BMP identity",
           "[unit][core][resources]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto imported = apply_resource_asset_import(
         history, 4,
         {.source_path = TEST_ROOT "/new-background.png",
@@ -1118,7 +1118,7 @@ TEST_CASE("visual resource import records decoded geometry and BMP identity",
 
 TEST_CASE("resource asset relink preserves IDs and rejects escaping relative paths",
           "[unit][core][resources]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto relinked = apply_resource_asset_relink(
         history, 4, {.asset = asset_id_t{1},
                      .source_path = "assets/drums/one.wav"});
@@ -1152,7 +1152,7 @@ TEST_CASE("resource asset relink preserves IDs and rejects escaping relative pat
 
 TEST_CASE("resource placement adds typed events with collision and lane allocation",
           "[unit][core][resources]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto sample = apply_resource_placement(
         history, 4, {.chart = chart_id_t{2}, .resource = resource_id_t{2},
                      .position = {measure_id_t{3}, 480}, .lane = lane_id_t{1},
@@ -1192,7 +1192,7 @@ TEST_CASE("resource placement adds typed events with collision and lane allocati
 
 TEST_CASE("resource placement rejects stale incompatible and occupied targets atomically",
           "[unit][core][resources]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto sample = place_resource_action_t{
         .chart = chart_id_t{2}, .resource = resource_id_t{2},
         .position = {measure_id_t{3}, 120}, .lane = lane_id_t{1},
@@ -1225,7 +1225,7 @@ TEST_CASE("BGM placement creates the first source lane when the chart has none",
     song.charts.front().measures.front().bgm_events.clear();
     song.charts.front().bgm_source_lanes.clear();
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto applied = apply_resource_placement(
         history, 4, {.chart = chart_id_t{2}, .resource = resource_id_t{2},
                      .position = {measure_id_t{3}, 240},
@@ -1241,7 +1241,7 @@ TEST_CASE("BGM placement creates the first source lane when the chart has none",
 
 TEST_CASE("pointer resource placement snaps exactly and respects a requested BGM lane",
           "[unit][core][resources]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto& chart = history.document.charts.front();
     const auto snapped = resolve_resource_placement_position(
         chart, {measure_id_t{3}, 190}, 8);
@@ -1277,7 +1277,7 @@ TEST_CASE("pointer resource placement snaps exactly and respects a requested BGM
 
 TEST_CASE("resource assignment changes typed note and BGM references atomically",
           "[unit][core][resources]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto applied = apply_resource_assignment(
         history, 4,
         {.chart = chart_id_t{2},
@@ -1308,7 +1308,7 @@ TEST_CASE("resource assignment changes typed note and BGM references atomically"
 
 TEST_CASE("resource assignment changes BGA references through the same command",
           "[unit][core][resources]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto applied = apply_resource_assignment(
         history, 4,
         {.chart = chart_id_t{2},
@@ -1322,7 +1322,7 @@ TEST_CASE("resource assignment changes BGA references through the same command",
 
 TEST_CASE("resource assignment rejects stale incompatible and incomplete selections",
           "[unit][core][resources]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto note =
         editor_selection_object_t{editor_selection_object_kind_t::note, object_id_t{10}};
     const auto bgm =
@@ -1381,7 +1381,7 @@ TEST_CASE("resource assignment protects retained BMSON sound links",
          .events = {
              {.id = object_id_t{51}, .position = {measure_id_t{3}, 120}, .lane = lane_id_t{1}}}}};
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto rejected = apply_resource_assignment(
         history, 4,
         {.chart = chart_id_t{2},
@@ -1395,7 +1395,7 @@ TEST_CASE("resource assignment protects retained BMSON sound links",
 
 TEST_CASE("sound metadata sets kind and normalized tags in one undoable step",
           "[unit][core][resources][sounds]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto result = apply_resource_sound_metadata(
         history, 4,
         {.resource = resource_id_t{1},
@@ -1413,7 +1413,7 @@ TEST_CASE("sound metadata sets kind and normalized tags in one undoable step",
 
 TEST_CASE("sound metadata rejects invalid input without changing the document",
           "[unit][core][resources][sounds]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto revision = history.document.revision;
     const auto rejected = [&](set_resource_sound_metadata_action_t action,
                               std::uint64_t expected = 4) {
@@ -1437,7 +1437,7 @@ TEST_CASE("sound metadata rejects invalid input without changing the document",
 
 TEST_CASE("sound metadata that changes nothing creates no history entry",
           "[unit][core][resources][sounds]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto result = apply_resource_sound_metadata(history, 4, {.resource = resource_id_t{1}});
     CHECK_FALSE(result);
     CHECK(result.diagnostics.empty());
@@ -1447,7 +1447,7 @@ TEST_CASE("sound metadata that changes nothing creates no history entry",
 
 TEST_CASE("unused resource deletion leaves its asset intact",
           "[unit][core][resources][delete]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto deleted = apply_resource_deletion(history, 4, resource_id_t{4});
     REQUIRE(deleted);
     CHECK(history.document.resources.size() == 4);
@@ -1463,7 +1463,7 @@ TEST_CASE("undo restores a deleted resource without renumbering BMS identities",
         {.family = format_family_t::bms, .identifier = "03", .namespace_name = "BMP"}};
     song.resources[3].target_identities = {
         {.family = format_family_t::bms, .identifier = "04", .namespace_name = "BMP"}};
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     REQUIRE(apply_resource_deletion(history, 4, resource_id_t{4}));
     REQUIRE(undo_document_command(history));
     CHECK((history.document.resources.size() == 5 &&
@@ -1476,7 +1476,7 @@ TEST_CASE("undo restores a deleted resource without renumbering BMS identities",
 
 TEST_CASE("resource deletion counts direct and retained sound references across charts",
           "[unit][core][resources][delete]") {
-    auto history = make_document_history(deletion_reference_song());
+    auto history = document_history_t::from(deletion_reference_song());
     const auto note_and_bgm = apply_resource_deletion(history, 4, resource_id_t{1});
     CHECK_FALSE(note_and_bgm);
     REQUIRE(note_and_bgm.diagnostics.size() == 1);
@@ -1488,7 +1488,7 @@ TEST_CASE("resource deletion counts direct and retained sound references across 
 
 TEST_CASE("resource deletion counts BGA references across charts",
           "[unit][core][resources][delete]") {
-    auto history = make_document_history(deletion_reference_song());
+    auto history = document_history_t::from(deletion_reference_song());
     const auto bga = apply_resource_deletion(history, 4, resource_id_t{3});
     CHECK_FALSE(bga);
     REQUIRE(bga.diagnostics.size() == 1);
@@ -1501,7 +1501,7 @@ TEST_CASE("retained channel references conservatively protect resource aliases",
     song.charts.front().measures.front().notes.front().sound_channel_event.reset();
     song.resources.push_back({.id = resource_id_t{6}, .name = "Alias",
                               .asset = asset_id_t{1}, .roles = {resource_role_t::sample}});
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto rejected = apply_resource_deletion(history, 4, resource_id_t{6});
     CHECK_FALSE(rejected);
     REQUIRE(rejected.diagnostics.size() == 1);
@@ -1514,7 +1514,7 @@ TEST_CASE("retained channel references conservatively protect resource aliases",
 
 TEST_CASE("resource deletion rejects stale revisions atomically",
           "[unit][core][resources][delete]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto stale = apply_resource_deletion(history, 3, resource_id_t{4});
     CHECK_FALSE(stale);
     CHECK(stale.diagnostics.front().message == "resource deletion document revision is stale");
@@ -1524,7 +1524,7 @@ TEST_CASE("resource deletion rejects stale revisions atomically",
 
 TEST_CASE("resource deletion rejects missing IDs atomically",
           "[unit][core][resources][delete]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto unknown = apply_resource_deletion(history, 4, resource_id_t{99});
     CHECK_FALSE(unknown);
     CHECK(unknown.diagnostics.front().message ==
@@ -1535,7 +1535,7 @@ TEST_CASE("resource deletion rejects missing IDs atomically",
 
 TEST_CASE("resource deletion rejects the reserved zero ID atomically",
           "[unit][core][resources][delete]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto zero = apply_resource_deletion(history, 4, resource_id_t{});
     CHECK_FALSE(zero);
     CHECK(zero.diagnostics.front().message ==
@@ -1552,7 +1552,7 @@ TEST_CASE("resource deletion preserves remaining BMS IDs before undo",
         {.family = format_family_t::bms, .identifier = "01", .namespace_name = "WAV"}};
     song.resources[1].target_identities = {
         {.family = format_family_t::bms, .identifier = "02", .namespace_name = "WAV"}};
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     REQUIRE(apply_resource_deletion(history, 4, resource_id_t{2}));
     CHECK(history.document.resources.front().id == resource_id_t{1});
     CHECK(history.document.resources.front().target_identities.front().identifier == "01");
@@ -1585,7 +1585,7 @@ auto place_at(document_history_t& history, std::uint32_t division, resource_id_t
 
 TEST_CASE("sound layer defaults group sounds, undo as one step and tag painted notes",
           "[unit][core][resources][semantic-layer-editor]") {
-    auto history = make_document_history(layered_sound_song());
+    auto history = document_history_t::from(layered_sound_song());
     const auto set = apply_sound_layer_defaults(
         history, 4, {.chart = chart_id_t{2},
                      .resources = {resource_id_t{1}, resource_id_t{2}},
@@ -1613,7 +1613,7 @@ TEST_CASE("sound layer defaults group sounds, undo as one step and tag painted n
 
 TEST_CASE("placement layers resolve through one rule for every placement kind",
           "[unit][core][resources][semantic-layer-editor]") {
-    auto history = make_document_history(layered_sound_song());
+    auto history = document_history_t::from(layered_sound_song());
     REQUIRE(apply_sound_layer_defaults(
         history, 4, {.chart = chart_id_t{2}, .resources = {resource_id_t{1}},
                      .layers = {layer_id_t{7}}}));
@@ -1632,7 +1632,7 @@ TEST_CASE("placement layers resolve through one rule for every placement kind",
     // A sample note and a BGM event take their layers from the same rule.
     for (const auto kind : {resource_placement_kind_t::sample_note,
                             resource_placement_kind_t::bgm_event}) {
-        auto fresh = make_document_history(layered_sound_song());
+        auto fresh = document_history_t::from(layered_sound_song());
         REQUIRE(apply_sound_layer_defaults(
             fresh, 4, {.chart = chart_id_t{2}, .resources = {resource_id_t{1}},
                        .layers = {layer_id_t{7}}}));
@@ -1651,14 +1651,14 @@ TEST_CASE("placement layers resolve through one rule for every placement kind",
 
 TEST_CASE("a sound without layer defaults paints an untagged note",
           "[unit][core][resources][semantic-layer-editor]") {
-    auto history = make_document_history(layered_sound_song());
+    auto history = document_history_t::from(layered_sound_song());
     REQUIRE(place_at(history, 480, resource_id_t{2}));
     CHECK(history.document.charts.front().measures.front().notes.back().semantic_layers.empty());
 }
 
 TEST_CASE("sound layer defaults can be cleared and skip layers locked after assignment",
           "[unit][core][resources][semantic-layer-editor]") {
-    auto history = make_document_history(layered_sound_song());
+    auto history = document_history_t::from(layered_sound_song());
     REQUIRE(apply_sound_layer_defaults(
         history, 4, {.chart = chart_id_t{2}, .resources = {resource_id_t{1}},
                      .layers = {layer_id_t{7}, layer_id_t{8}}}));
@@ -1678,7 +1678,7 @@ TEST_CASE("sound layer defaults can be cleared and skip layers locked after assi
 
 TEST_CASE("sound layer defaults reject bad batches atomically",
           "[unit][core][resources][semantic-layer-editor]") {
-    auto history = make_document_history(layered_sound_song());
+    auto history = document_history_t::from(layered_sound_song());
     const auto good_resources = std::vector<resource_id_t>{resource_id_t{1}, resource_id_t{2}};
     CHECK(has_code(apply_sound_layer_defaults(
                        history, 3, {.chart = chart_id_t{2}, .resources = good_resources,
@@ -1716,7 +1716,7 @@ TEST_CASE("sound layer defaults reject bad batches atomically",
 
 TEST_CASE("deleting a layer or a sound removes its sound layer defaults",
           "[unit][core][resources][semantic-layer-editor]") {
-    auto history = make_document_history(layered_sound_song());
+    auto history = document_history_t::from(layered_sound_song());
     REQUIRE(apply_sound_layer_defaults(
         history, 4, {.chart = chart_id_t{2},
                      .resources = {resource_id_t{2}, resource_id_t{5}},
@@ -1759,7 +1759,7 @@ TEST_CASE("validation reports dangling sound layer defaults",
 
 TEST_CASE("batch resource deletion removes unused sounds in one undo step",
           "[unit][core][resources][delete]") {
-    auto history = make_document_history(layered_sound_song());
+    auto history = document_history_t::from(layered_sound_song());
     REQUIRE(apply_sound_layer_defaults(
         history, 4, {.chart = chart_id_t{2}, .resources = {resource_id_t{2}, resource_id_t{5}},
                      .layers = {layer_id_t{7}}}));
@@ -1778,7 +1778,7 @@ TEST_CASE("batch resource deletion is all-or-nothing and names the referenced so
           "[unit][core][resources][delete]") {
     auto song = assignment_song();
     song.resources[0].name = "kick";
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     // Resource 1 is used by a note and a BGM event; resource 2 is free.
     const auto mixed = std::vector<resource_id_t>{resource_id_t{2}, resource_id_t{1}};
     const auto rejected = apply_resource_deletions(history, 4, mixed);
@@ -1797,7 +1797,7 @@ TEST_CASE("batch resource deletion is all-or-nothing and names the referenced so
 
 TEST_CASE("sound layer membership adds and removes one layer across a group",
           "[unit][core][resources][semantic-layer-editor]") {
-    auto history = make_document_history(layered_sound_song());
+    auto history = document_history_t::from(layered_sound_song());
     REQUIRE(apply_sound_layer_defaults(
         history, 4, {.chart = chart_id_t{2}, .resources = {resource_id_t{1}},
                      .layers = {layer_id_t{7}}}));
@@ -1827,7 +1827,7 @@ TEST_CASE("sound layer membership adds and removes one layer across a group",
 
 TEST_CASE("sound layer membership rejects locked additions and unknown targets",
           "[unit][core][resources][semantic-layer-editor]") {
-    auto history = make_document_history(layered_sound_song());
+    auto history = document_history_t::from(layered_sound_song());
     const auto group = std::vector<resource_id_t>{resource_id_t{1}};
     CHECK(has_code(apply_sound_layer_membership(
                        history, 4, {.chart = chart_id_t{2}, .resources = group,
@@ -1857,7 +1857,7 @@ auto sound_note_layers_history() -> document_history_t {
         .lane = lane_id_t{1}, .sound = resource_id_t{1}, .semantic_layers = {layer_id_t{8}}});
     notes.push_back({.id = object_id_t{31}, .position = {measure_id_t{3}, 720},
         .lane = lane_id_t{1}, .sound = resource_id_t{2}});
-    return make_document_history(std::move(song));
+    return document_history_t::from(std::move(song));
 }
 
 void check_sound_note_assignment(bool overwrite) {
@@ -1923,7 +1923,7 @@ auto same_bga_events(std::span<const bga_event_t> left,
 
 TEST_CASE("BGA draw stroke preserves occupied cells and commits deduplicated targets once",
           "[unit][core][resources][bga][stroke]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const std::array targets{
         bga_stroke_target_t{{measure_id_t{3}, 360}, visual_event_kind_t::background},
         bga_stroke_target_t{{measure_id_t{3}, 240}, visual_event_kind_t::layer},
@@ -1959,7 +1959,7 @@ TEST_CASE("BGA erase stroke removes video base lane without touching other layer
     events.push_back({.id = object_id_t{14}, .position = {measure_id_t{3}, 480},
                       .resource = resource_id_t{3}, .kind = visual_event_kind_t::video});
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const std::array targets{
         bga_stroke_target_t{{measure_id_t{3}, 360}, visual_event_kind_t::background},
     };
@@ -1981,7 +1981,7 @@ TEST_CASE("BGA erase stroke removes video base lane without touching other layer
 
 TEST_CASE("BGA draw on an occupied cell and erase on an empty cell are no-ops",
           "[unit][core][resources][bga][stroke]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto revision = history.document.revision;
     const std::array occupied{
         bga_stroke_target_t{{measure_id_t{3}, 360}, visual_event_kind_t::background}};
@@ -1997,7 +1997,7 @@ TEST_CASE("BGA draw on an occupied cell and erase on an empty cell are no-ops",
 
 TEST_CASE("BGA strokes reject stale invalid video and over-cap batches atomically",
           "[unit][core][resources][bga][stroke]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto original = history.document.charts.front().bga_events;
     const auto revision = history.document.revision;
     const std::array valid_target{
@@ -2011,7 +2011,7 @@ TEST_CASE("BGA strokes reject stale invalid video and over-cap batches atomicall
         resource_id_t{3}, valid_target), diagnostic_code_t::invalid_id));
     auto video_song = assignment_song();
     video_song.visual_assets.front().kind = asset_kind_t::video;
-    auto video_history = make_document_history(std::move(video_song));
+    auto video_history = document_history_t::from(std::move(video_song));
     const auto video_layer = std::array{
         bga_stroke_target_t{{measure_id_t{3}, 600}, visual_event_kind_t::layer}};
     check_bga_stroke(has_code(apply_bga_stroke(video_history, video_history.document.revision,
@@ -2042,7 +2042,7 @@ auto bgm_stroke_events(const document_history_t& history) -> const std::vector<b
 
 TEST_CASE("BGM draw stroke places deduplicated cells on one lane as one undo step",
           "[unit][core][resources][bgm][stroke]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const std::array targets{local_position_t{measure_id_t{3}, 240}, local_position_t{measure_id_t{3}, 360},
                              local_position_t{measure_id_t{3}, 360}, local_position_t{measure_id_t{3}, 480}};
     const auto applied = apply_bgm_stroke(history, history.document.revision, chart_id_t{2},
@@ -2060,7 +2060,7 @@ TEST_CASE("BGM draw stroke places deduplicated cells on one lane as one undo ste
 
 TEST_CASE("BGM draw stroke over only same-sound cells is a no-op and a different sound rejects",
           "[unit][core][resources][bgm][stroke]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto revision = history.document.revision;
     const std::array same{local_position_t{measure_id_t{3}, 240}};
     const auto draw = apply_bgm_stroke(history, revision, chart_id_t{2}, object_id_t{20},
@@ -2083,7 +2083,7 @@ TEST_CASE("BGM erase stroke removes only the pressed lane's events in one step",
         {.id = object_id_t{13}, .position = {measure_id_t{3}, 240},
          .source_lane = object_id_t{23}, .sound = resource_id_t{1}});
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const std::array targets{local_position_t{measure_id_t{3}, 240},
                              local_position_t{measure_id_t{3}, 600}};
     const auto erased = apply_bgm_stroke(history, history.document.revision, chart_id_t{2},
@@ -2099,7 +2099,7 @@ TEST_CASE("BGM erase stroke removes only the pressed lane's events in one step",
 
 TEST_CASE("BGM strokes reject invalid input atomically",
           "[unit][core][resources][bgm][stroke]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto revision = history.document.revision;
     const std::array target{local_position_t{measure_id_t{3}, 600}};
     check_bga_stroke(has_code(apply_bgm_stroke(history, revision + 1, chart_id_t{2},
@@ -2132,7 +2132,7 @@ TEST_CASE("BGM draw stroke rejects a sound that cannot get a BMS ID when IDs are
             .roles = {resource_role_t::sample},
             .target_identities = {{format_family_t::bms,
                 std::string{digits[value / 36], digits[value % 36]}, "WAV"}}});
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const std::array target{local_position_t{measure_id_t{3}, 600}};
     check_bga_stroke(has_code(apply_bgm_stroke(history, history.document.revision, chart_id_t{2},
         object_id_t{20}, resource_id_t{2}, target), diagnostic_code_t::invalid_id));
@@ -2154,7 +2154,7 @@ TEST_CASE("Shared resource usage matches protected deletion across charts and re
         const auto found = counts.find(id);
         require_sound_workflow(found != counts.end());
         check_sound_workflow(found->second == expected);
-        auto history = make_document_history(song);
+        auto history = document_history_t::from(song);
         const auto result = apply_resource_deletion(history, 4, resource_id_t{id});
         require_sound_workflow(!result.diagnostics.empty());
         check_sound_workflow(result.diagnostics.front().message ==
@@ -2169,7 +2169,7 @@ TEST_CASE("Sound name and kind edit atomically preserve supplied tags and undo o
     auto song = assignment_song();
     song.resources[0].name = "Old";
     song.resources[0].tags = {"Keep"};
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     const set_resource_sound_metadata_action_t action{.resource = resource_id_t{1},
         .kind = sound_kind_t::sample, .tags = {"Keep"}, .name = "  新 kick  "};
     require_sound_workflow(static_cast<bool>(apply_resource_sound_metadata(history, 4, action)));
@@ -2189,7 +2189,7 @@ TEST_CASE("Sound name and kind edit atomically preserve supplied tags and undo o
 TEST_CASE("Invalid sound names and stale metadata reject every field without history",
           "[core][resources][sound-workflow]") {
     for (const auto& name : {std::string{}, std::string{" \t "}, std::string{"bad\nname"}, std::string(257, 'x')}) {
-        auto history = make_document_history(assignment_song());
+        auto history = document_history_t::from(assignment_song());
         const auto result = apply_resource_sound_metadata(history, 4,
             {.resource = resource_id_t{1}, .kind = sound_kind_t::stem, .tags = {"New"}, .name = name});
         check_sound_workflow(!result.applied && !result.diagnostics.empty());
@@ -2198,7 +2198,7 @@ TEST_CASE("Invalid sound names and stale metadata reject every field without his
         check_sound_workflow(history.document.resources[0].tags.empty());
         check_sound_workflow(history.document.revision == 4 && history.undo.empty());
     }
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto stale = apply_resource_sound_metadata(history, 3,
         {.resource = resource_id_t{1}, .name = "Changed"});
     check_sound_workflow(!stale.applied && !stale.diagnostics.empty());
@@ -2214,17 +2214,17 @@ TEST_CASE("Resource role validation agrees for placement and assignment",
           "[unit][core][resources][resource-role]") {
     auto song = assignment_song();
     song.resources[1].roles = {resource_role_t::sample};
-    auto assigned = make_document_history(song);
+    auto assigned = document_history_t::from(song);
     const auto bgm = apply_resource_assignment(assigned, assigned.document.revision,
         {.chart = chart_id_t{2}, .resource = resource_id_t{2},
          .objects = {{editor_selection_object_kind_t::bgm_event, object_id_t{11}}}});
     require_resource_role(bgm.applied);
-    auto placed = make_document_history(song);
+    auto placed = document_history_t::from(song);
     require_resource_role(apply_resource_placement(placed, placed.document.revision,
         {.chart = chart_id_t{2}, .resource = resource_id_t{2}, .position = {measure_id_t{3}, 480},
          .kind = resource_placement_kind_t::bgm_event}).applied);
     song.resources[1].roles = {resource_role_t::bgm};
-    auto rejected = make_document_history(song);
+    auto rejected = document_history_t::from(song);
     const auto revision = rejected.document.revision;
     require_resource_role(has_code(apply_resource_assignment(rejected, revision,
         {.chart = chart_id_t{2}, .resource = resource_id_t{2},
@@ -2241,7 +2241,7 @@ TEST_CASE("Resource role validation agrees for placement and assignment",
 }
 
 TEST_CASE("resource creation rejects malformed UTF-8 names atomically", "[unit][core][resources]") {
-    auto history = make_document_history(assignment_song());
+    auto history = document_history_t::from(assignment_song());
     const auto result = apply_resource_creation(history, 4,
         {.asset = asset_id_t{1}, .role = resource_role_t::sample, .name = "\xc0\x80"});
     CHECK_FALSE(result);

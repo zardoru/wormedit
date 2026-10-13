@@ -47,7 +47,7 @@ auto has_code(const document_command_result_t& result, diagnostic_code_t code) -
 
 TEST_CASE("scroll and speed editing is revision checked and undoable",
           "[unit][core][scroll-speed-editor]") {
-    auto history = make_document_history(scroll_speed_song());
+    auto history = document_history_t::from(scroll_speed_song());
     const auto position = local_position_t{measure_id_t{3}, 240};
 
     const auto inserted_scroll = apply_scroll_speed_edit(
@@ -142,7 +142,7 @@ TEST_CASE("same-row scroll and speed events keep source ordering and compose the
                      .multiplier = {5, 1},
                      .provenance = {.source_order = 21}}};
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
 
     const auto inserted = apply_scroll_speed_edit(
         history, 4, insert_scroll_event_action_t{chart_id_t{2}, {measure_id_t{3}, 240}, {2, 1}});
@@ -164,7 +164,7 @@ TEST_CASE("same-row scroll and speed events keep source ordering and compose the
 
 TEST_CASE("scroll and speed edits reject stale IDs, invalid domains, and out-of-bounds positions",
           "[unit][core][scroll-speed-editor][negative]") {
-    auto history = make_document_history(scroll_speed_song());
+    auto history = document_history_t::from(scroll_speed_song());
     const auto revision = history.document.revision;
 
     const auto stale = apply_scroll_speed_edit(
@@ -220,7 +220,7 @@ TEST_CASE("scroll and speed edits reject stale IDs, invalid domains, and out-of-
 
 TEST_CASE("scroll and speed editor enforces event and chart-wide object caps and unique IDs",
           "[unit][core][scroll-speed-editor][bounds]") {
-    auto history = make_document_history(scroll_speed_song());
+    auto history = document_history_t::from(scroll_speed_song());
     const auto position = local_position_t{measure_id_t{3}, 120};
     const auto scroll_capped = apply_scroll_speed_edit(
         history, 4, insert_scroll_event_action_t{chart_id_t{2}, position, {1, 1}},
@@ -241,7 +241,7 @@ TEST_CASE("scroll and speed editor enforces event and chart-wide object caps and
     auto duplicate_song = scroll_speed_song();
     duplicate_song.charts.front().scrolls.push_back(
         {.id = object_id_t{11}, .position = {measure_id_t{3}, 120}, .multiplier = {1, 1}});
-    auto duplicate_history = make_document_history(std::move(duplicate_song));
+    auto duplicate_history = document_history_t::from(std::move(duplicate_song));
     const auto ambiguous = apply_scroll_speed_edit(
         duplicate_history, 4,
         update_scroll_event_action_t{chart_id_t{2}, object_id_t{11}, position, {3, 1}});
@@ -252,7 +252,7 @@ TEST_CASE("scroll and speed editor enforces event and chart-wide object caps and
 
     auto cross_type_song = scroll_speed_song();
     cross_type_song.charts.front().bpms.front().id = object_id_t{11};
-    auto cross_type_history = make_document_history(std::move(cross_type_song));
+    auto cross_type_history = document_history_t::from(std::move(cross_type_song));
     const auto cross_type_ambiguous = apply_scroll_speed_edit(
         cross_type_history, 4, delete_scroll_event_action_t{chart_id_t{2}, object_id_t{11}});
     CHECK_FALSE(cross_type_ambiguous);

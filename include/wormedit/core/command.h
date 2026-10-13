@@ -17,6 +17,11 @@ struct document_command_record_t {
 };
 
 struct document_history_t {
+    // Starts a bounded history; promotes a zero source revision to the first usable revision.
+    [[nodiscard]] static auto from(song_document_t document,
+                                  std::size_t maximum_undo_entries = 128,
+                                  bool initially_saved = true) -> document_history_t;
+
     song_document_t document;
     std::vector<document_command_record_t> undo;
     std::vector<document_command_record_t> redo;
@@ -68,8 +73,7 @@ struct redivision_command_payload_t {
 
 using redivision_command_result_t = command_result_with_t<redivision_command_payload_t>;
 
-// Starts a bounded history at a caller-owned document snapshot. A zero source
-// revision is promoted to the first usable revision.
+// Compatibility for the sys/ui migration wave; new callers use document_history_t::from.
 [[nodiscard]] auto make_document_history(song_document_t document,
                                          std::size_t maximum_undo_entries = 128,
                                          bool initially_saved = true) -> document_history_t;

@@ -60,7 +60,7 @@ auto quantized_stem_audio_valid(const song_document_t& song, const chart_documen
 
 } // namespace
 
-auto make_document_history(song_document_t document, std::size_t maximum_undo_entries,
+auto document_history_t::from(song_document_t document, std::size_t maximum_undo_entries,
                            bool initially_saved) -> document_history_t {
     if (document.revision == 0) {
         document.revision = 1;
@@ -77,6 +77,11 @@ auto make_document_history(song_document_t document, std::size_t maximum_undo_en
             initially_saved ? std::optional<std::uint64_t>{current_revision} : std::nullopt,
         .maximum_undo_entries = maximum_undo_entries,
     };
+}
+
+auto make_document_history(song_document_t document, std::size_t maximum_undo_entries,
+                           bool initially_saved) -> document_history_t {
+    return document_history_t::from(std::move(document), maximum_undo_entries, initially_saved);
 }
 
 auto is_document_dirty(const document_history_t& history) noexcept -> bool {

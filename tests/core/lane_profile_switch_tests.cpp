@@ -55,7 +55,7 @@ auto auxiliary_bms_history() -> document_history_t {
     song.charts.front().measures.front().notes = {
         {.id = object_id_t{30}, .position = {measure_id_t{3}, 0}, .lane = lane_id_t{107}}};
     REQUIRE(validate_document(song).empty());
-    return make_document_history(std::move(song));
+    return document_history_t::from(std::move(song));
 }
 
 auto auxiliary_bms_data_unchanged(const document_history_t& history,
@@ -112,7 +112,7 @@ TEST_CASE("first profile choices include and create both osu SpecialStyle varian
         const auto choice = std::ranges::find(choices, target->layout.profile_id,
             [](const auto& profile) { return std::string_view{profile.layout.profile_id}; });
         require_profile(choice != choices.end());
-        auto history = make_document_history(song_document_t{.id = song_id_t{1}, .revision = 4,
+        auto history = document_history_t::from(song_document_t{.id = song_id_t{1}, .revision = 4,
             .charts = {{.id = chart_id_t{2}, .measures = {{.id = measure_id_t{3}}}}}});
         const auto applied = apply_lane_profile_switch(history, 4, chart_id_t{2},
                                                        {measure_id_t{3}, 0}, choice->layout);
@@ -139,7 +139,7 @@ TEST_CASE("a chart with no layout can insert its first built-in profile",
     song_document_t song{.id = song_id_t{1}, .revision = 4,
         .charts = {{.id = chart_id_t{2},
                     .measures = {{.id = measure_id_t{3}}, {.id = measure_id_t{4}}}}}};
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto applied = apply_lane_profile_switch(history, 4, chart_id_t{2},
                                                    {measure_id_t{4}, 120}, target.layout);
     REQUIRE(applied);
@@ -156,7 +156,7 @@ TEST_CASE("inserting a first lane profile records one undo edit",
     song_document_t song{.id = song_id_t{1}, .revision = 4,
         .charts = {{.id = chart_id_t{2},
                     .measures = {{.id = measure_id_t{3}}}}}};
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto target = make_bms_7k_profile();
     REQUIRE(apply_lane_profile_switch(history, 4, chart_id_t{2},
                                       {measure_id_t{3}, 120}, target.layout));
@@ -168,7 +168,7 @@ TEST_CASE("inserting a first lane profile records one undo edit",
 
 TEST_CASE("first profile insertion rejects a stale document revision",
           "[unit][core][lane-profile-switch][bms]") {
-    auto history = make_document_history(song_document_t{.id = song_id_t{1}, .revision = 4,
+    auto history = document_history_t::from(song_document_t{.id = song_id_t{1}, .revision = 4,
         .charts = {{.id = chart_id_t{2}, .measures = {{.id = measure_id_t{3}}}}}});
     const auto target = make_bms_7k_profile();
     const auto stale = apply_lane_profile_switch(history, 3, chart_id_t{2},
@@ -187,7 +187,7 @@ TEST_CASE("first profile remaps every number-row binding without lane ID aliasin
                         .position = {measure_id_t{4}, 0},
                         .layout = {.profile_id = "future", .lanes = {
                             {.id = lane_id_t{101}, .name = "Future"}}}}}}}};
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto target = make_bms_7k_profile();
     const auto applied = apply_lane_profile_switch(history, 4, chart_id_t{2},
                                                    {measure_id_t{3}, 240}, target.layout);
@@ -208,7 +208,7 @@ TEST_CASE("first BMS profile materializes measure one and remains one undo comma
           "[unit][core][lane-profile-switch][bms]") {
     song_document_t song{.id = song_id_t{1}, .revision = 4,
         .charts = {{.id = chart_id_t{2}, .source_family = format_family_t::bms}}};
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto target = make_bms_7k_profile();
     const auto applied = apply_lane_profile_switch(history, 4, chart_id_t{2}, {}, target.layout);
     require_profile(applied.applied);
@@ -223,7 +223,7 @@ TEST_CASE("first BMS profile materializes measure one and remains one undo comma
 
 TEST_CASE("switching profile keeps lane ids and notes and changes glyphs",
           "[unit][core][lane-profile-switch]") {
-    auto history = make_document_history(switch_song(10, "osu"));
+    auto history = document_history_t::from(switch_song(10, "osu"));
     const auto target = make_stepmania_profile_for("pump-double");
     REQUIRE(target);
     const auto applied = apply_lane_profile_switch(history, 4, chart_id_t{2},
@@ -242,7 +242,7 @@ TEST_CASE("switching profile keeps lane ids and notes and changes glyphs",
 
 TEST_CASE("switching to a profile with another lane count is rejected",
           "[unit][core][lane-profile-switch]") {
-    auto history = make_document_history(switch_song(10, "osu"));
+    auto history = document_history_t::from(switch_song(10, "osu"));
     const auto target = make_stepmania_profile_for("pump-single");
     REQUIRE(target);
     const auto rejected = apply_lane_profile_switch(history, 4, chart_id_t{2},
@@ -331,7 +331,7 @@ TEST_CASE("switching between BMS scratchless and osu 10K follows visible split-s
     const auto bms = make_bms_10k_scratchless_profile();
     const auto osu = make_osu_mania_profile(10);
     REQUIRE(osu);
-    auto history = make_document_history(song_document_t{
+    auto history = document_history_t::from(song_document_t{
         .id = song_id_t{1}, .revision = 4,
         .charts = {{.id = chart_id_t{2}, .measures = {{.id = measure_id_t{3}}},
                     .lane_layouts = {{.id = object_id_t{21},
@@ -360,7 +360,7 @@ TEST_CASE("switching between BMS scratchless and osu 10K follows visible split-s
 
 TEST_CASE("StepMania chart switching to osu layout receives selected profile skin identity and key classes",
           "[core][lane-profile-switch][field-skin-layout]") {
-    auto history = make_document_history(switch_song(5, "pump-single"));
+    auto history = document_history_t::from(switch_song(5, "pump-single"));
     auto& chart = history.document.charts.front();
     chart.source_family = format_family_t::stepmania;
     const auto note_lane = chart.measures.front().notes.front().lane;
@@ -417,7 +417,7 @@ TEST_CASE("Unknown seven-key profiles switch by compatible lanes with one undo a
     original.profile_id = "created-7k";
     original.display_name = "Created 7K";
     const auto initial_bindings = song.charts.front().input_profile;
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     const auto target = make_osu_mania_profile(7);
     require_profile(target.has_value());
     check_profile(lane_layout_supports_key_profiles(original));
@@ -453,7 +453,7 @@ TEST_CASE("Equal counts cannot relabel scratch or auxiliary lanes as ordinary ke
     chart.input_profile = make_bms_7k_profile().input;
     chart.measures.front().notes.front().lane = current.lanes.front().id;
     require_profile(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto rejected = apply_lane_profile_switch(history, 4, chart_id_t{2},
         {measure_id_t{3}, 0}, target->layout);
     check_profile(!rejected.applied);
@@ -466,7 +466,7 @@ TEST_CASE("SpecialStyle switches expose both stages and preserve playable column
     for (const auto keys : {12U, 16U}) {
         auto song = switch_song(keys, "osu");
         const auto before = song.charts.front();
-        auto history = make_document_history(song);
+        auto history = document_history_t::from(song);
         const auto special = make_osu_mania_profile(keys, true);
         const auto choices = lane_profile_choices(keys);
         check_profile(std::ranges::any_of(choices, [&](const auto& value) {
@@ -499,7 +499,7 @@ TEST_CASE("Leaving SpecialStyle restores an ordinary field without replacing inp
     auto song = switch_song(16, "osu");
     song.charts.front().lane_layouts.front().layout = make_osu_mania_profile(16, true)->layout;
     song.charts.front().input_profile = make_osu_mania_profile(16, true)->input;
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     require_profile(static_cast<bool>(apply_lane_profile_switch(history, 4, chart_id_t{2},
         {measure_id_t{3}, 0}, make_osu_mania_profile(16)->layout)));
     const auto& chart = history.document.charts.front();

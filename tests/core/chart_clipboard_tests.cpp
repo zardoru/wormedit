@@ -91,7 +91,7 @@ TEST_CASE("Chart clipboard rejects stale empty and mixed unsupported selections 
 TEST_CASE("Chart clipboard cut deletes the complete merged selection in one undo step") {
     auto song = clipboard_song();
     song.charts.front().measures.front().notes.front().sound.reset();
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto state = clipboard_selection();
     const std::array snaps{std::uint64_t{4}};
     auto interaction = make_editor_interaction(history, state.chart, lane_id_t{1},
@@ -148,7 +148,7 @@ auto paste_fixture() -> std::pair<song_document_t, chart_clipboard_t> {
 
 TEST_CASE("Chart clipboard paste remaps exact resolution and lanes with one undo command") {
     auto [song, clipboard] = paste_fixture();
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto result = paste_chart_clipboard(history, chart_id_t{2}, clipboard,
         {measure_id_t{1}, 120}, history.document.revision);
     INFO((result.diagnostics.empty() ? "No paste diagnostic" : result.diagnostics.front().message));
@@ -168,7 +168,7 @@ TEST_CASE("Chart clipboard paste remaps exact resolution and lanes with one undo
 
 TEST_CASE("Chart clipboard paste collision retains ghosts and rejects commit atomically") {
     auto [song, clipboard] = paste_fixture();
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto proposal = propose_chart_paste(history.document, chart_id_t{1}, clipboard,
         {measure_id_t{1}, 840}, history.document.revision);
     expect(!proposal.valid);
@@ -226,7 +226,7 @@ TEST_CASE("Chart clipboard copies and pastes timing objects at a new anchor") {
     expect(copied.clipboard->objects.size() == 4);
     expect(copied.clipboard->objects[2].duration == rational_t{1, 8});
 
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     const auto pasted = paste_chart_clipboard(history, chart_id_t{1}, *copied.clipboard,
                                               {measure_id_t{2}, 0}, history.document.revision);
     const std::string reason = pasted.diagnostics.empty() ? "" : pasted.diagnostics.front().message;
@@ -277,7 +277,7 @@ auto stem_selection() -> editor_interaction_state_t {
 } // namespace
 
 TEST_CASE("Chart clipboard carries BMSON stem points with their restart and continue flags") {
-    auto history = make_document_history(stem_song());
+    auto history = document_history_t::from(stem_song());
     const auto copied = copy_chart_selection(history.document, stem_selection(), history.document.revision);
     expect(static_cast<bool>(copied));
     expect(copied.clipboard->objects.size() == 2);
@@ -309,7 +309,7 @@ TEST_CASE("Chart clipboard carries BMSON stem points with their restart and cont
 }
 
 TEST_CASE("Chart clipboard rejects stem points that have no channel or collide with a pulse") {
-    auto history = make_document_history(stem_song());
+    auto history = document_history_t::from(stem_song());
     const auto copied = copy_chart_selection(history.document, stem_selection(), history.document.revision);
     expect(static_cast<bool>(copied));
     const auto revision = history.document.revision;
@@ -323,7 +323,7 @@ TEST_CASE("Chart clipboard rejects stem points that have no channel or collide w
     auto other = stem_song();
     other.charts.front().sound_channels.clear();
     for (auto& measure : other.charts.front().measures) measure.bgm_events.clear();
-    auto other_history = make_document_history(other);
+    auto other_history = document_history_t::from(other);
     const auto missing = paste_chart_clipboard(other_history, chart_id_t{1}, *copied.clipboard,
                                                {measure_id_t{2}, 600}, other_history.document.revision);
     expect(!missing.applied);
@@ -353,7 +353,7 @@ auto only_point(std::uint64_t id) -> editor_interaction_state_t {
 
 TEST_CASE("stem points pasted inside the ongoing audio stay continuations",
           "[unit][core][clipboard][stem-run]") {
-    auto history = make_document_history(timed_stem_song());
+    auto history = document_history_t::from(timed_stem_song());
     const auto copied = copy_chart_selection(history.document, only_point(71), history.document.revision);
     expect(static_cast<bool>(copied));
     // Measure 1, row 720 is 1.5 s in: the 4 s sample is still playing.
@@ -367,7 +367,7 @@ TEST_CASE("stem points pasted inside the ongoing audio stay continuations",
 
 TEST_CASE("a continuation pasted after the stem ended becomes a reset",
           "[unit][core][clipboard][stem-run]") {
-    auto history = make_document_history(timed_stem_song());
+    auto history = document_history_t::from(timed_stem_song());
     const auto copied = copy_chart_selection(history.document, only_point(71), history.document.revision);
     expect(static_cast<bool>(copied));
     // Measure 4 is six seconds in: the sample ended at four, so the point has to restart it.
@@ -388,7 +388,7 @@ TEST_CASE("stem points pasted over part of an existing run are rejected",
         {.id = object_id_t{62}, .position = {measure_id_t{6}, 0}, .continuation = true, .playable = false});
     chart.measures[5].bgm_events.push_back({.id = object_id_t{72}, .position = {measure_id_t{6}, 0},
         .source_lane = object_id_t{9}, .sound = resource_id_t{80}, .sound_channel_event = object_id_t{62}});
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     editor_interaction_state_t state;
     state.chart = chart_id_t{1};
     state.selected_objects = {{editor_selection_object_kind_t::bgm_event, object_id_t{71}},
@@ -458,7 +458,7 @@ TEST_CASE("Chart clipboard rejects a BGM hold whose tail overflows the chart ato
     song.charts.front().measures[2].definition.meter.reset();
     const auto copied = copy_chart_selection(song, bgm_only_selection(), 7);
     expect(static_cast<bool>(copied));
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto result = paste_chart_clipboard(history, chart_id_t{1}, *copied.clipboard,
         {measure_id_t{3}, 0}, history.document.revision);
     expect(!static_cast<bool>(result));
@@ -472,7 +472,7 @@ TEST_CASE("Chart clipboard pastes plain BGM events without a tail and undoes exa
     const auto copied = copy_chart_selection(song, bgm_only_selection(), 7);
     expect(static_cast<bool>(copied));
     expect(copied.clipboard->objects.front().duration == rational_t{0, 1});
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     const auto result = paste_chart_clipboard(history, chart_id_t{1}, *copied.clipboard,
         {measure_id_t{3}, 240}, 7);
     expect(static_cast<bool>(result));

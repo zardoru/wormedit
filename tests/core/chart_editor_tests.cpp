@@ -84,7 +84,7 @@ auto duplicate_links_match(const chart_document_t& source, const chart_document_
 }
 
 TEST_CASE("Chart duplicate remaps internal graphs and shares resources", "[unit][core][chart-editor]") {
-    auto history = make_document_history(chart_song());
+    auto history = document_history_t::from(chart_song());
     require_chart(static_cast<bool>(validate_document(history.document).empty()));
     const auto result = apply_duplicate_chart_command(history, 4, chart_id_t{2});
     require_chart(static_cast<bool>(result));
@@ -108,7 +108,7 @@ TEST_CASE("Chart duplicate remaps retained BMS branches and timing projections",
     // Import retains branch ownership in source provenance; also exercise an
     // explicitly authored semantic branch reference in the document model.
     parsed_chart.measures.front().notes.front().branch = parsed_chart.active_branch_selection.front().branch;
-    auto history = make_document_history(*parsed.song);
+    auto history = document_history_t::from(*parsed.song);
     const auto result = apply_duplicate_chart_command(history, history.document.revision, history.document.charts[0].id);
     require_chart(static_cast<bool>(result));
     expect_chart(static_cast<bool>(validate_document(history.document).empty()));
@@ -130,7 +130,7 @@ TEST_CASE("Chart duplicate remaps retained BMS branches and timing projections",
 }
 
 TEST_CASE("Chart management operations undo and redo atomically", "[unit][core][chart-editor]") {
-    auto history = make_document_history(chart_song());
+    auto history = document_history_t::from(chart_song());
     require_chart(static_cast<bool>(apply_duplicate_chart_command(history, 4, chart_id_t{2})));
     const auto duplicate = history.document.charts.back().id;
     require_chart(static_cast<bool>(apply_move_chart_group_command(history, history.document.revision, chart_id_t{2}, 1)));
@@ -144,7 +144,7 @@ TEST_CASE("Chart management operations undo and redo atomically", "[unit][core][
 }
 
 TEST_CASE("Chart delete removes group memberships and restores them on undo", "[unit][core][chart-editor]") {
-    auto history = make_document_history(chart_song());
+    auto history = document_history_t::from(chart_song());
     require_chart(static_cast<bool>(apply_duplicate_chart_command(history, 4, chart_id_t{2})));
     require_chart(static_cast<bool>(apply_delete_chart_command(history, history.document.revision, chart_id_t{2})));
     expect_chart(static_cast<bool>(history.document.output_groups[0].charts.empty()));
@@ -159,7 +159,7 @@ TEST_CASE("Chart delete removes group memberships and restores them on undo", "[
 }
 
 TEST_CASE("Chart management rejects stale revisions and invalid destinations", "[unit][core][chart-editor]") {
-    auto history = make_document_history(chart_song());
+    auto history = document_history_t::from(chart_song());
     const auto before = write_native_project(history.document);
     require_chart(before.bytes.has_value());
     expect_chart(!static_cast<bool>(apply_duplicate_chart_command(history, 3, chart_id_t{2})));
@@ -180,10 +180,10 @@ TEST_CASE("Chart duplication rejects exhausted IDs and invalid proposed document
     auto song = chart_song();
     song.charts.front().id = chart_id_t{std::numeric_limits<std::uint64_t>::max()};
     song.output_groups.clear();
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     expect_chart(!static_cast<bool>(apply_duplicate_chart_command(history, 4, song.charts.front().id)));
     expect_chart(static_cast<bool>(history.undo.empty()));
-    history = make_document_history(chart_song());
+    history = document_history_t::from(chart_song());
     history.document.resources.clear();
     expect_chart(!static_cast<bool>(apply_duplicate_chart_command(history, 4, chart_id_t{2})));
     expect_chart(static_cast<bool>(history.undo.empty()));
@@ -191,7 +191,7 @@ TEST_CASE("Chart duplication rejects exhausted IDs and invalid proposed document
 }
 
 TEST_CASE("Chart duplication does not reuse IDs retained by undo and redo history", "[unit][core][chart-editor]") {
-    auto history = make_document_history(chart_song());
+    auto history = document_history_t::from(chart_song());
     require_chart(static_cast<bool>(apply_duplicate_chart_command(history, 4, chart_id_t{2})));
     const auto first_copy = history.document.charts.back();
     require_chart(undo_document_command(history));
@@ -207,7 +207,7 @@ TEST_CASE("Chart duplication does not reuse IDs retained by undo and redo histor
 }
 
 TEST_CASE("New chart creates an empty valid profile with fresh history-safe identities", "[unit][core][chart-editor]") {
-    auto history = make_document_history(chart_song());
+    auto history = document_history_t::from(chart_song());
     const auto original = history.document;
     const auto result = apply_new_chart_command(history, 4);
     require_chart(static_cast<bool>(result));
@@ -230,7 +230,7 @@ TEST_CASE("New chart creates an empty valid profile with fresh history-safe iden
 }
 
 TEST_CASE("New chart rejects stale invalid and exhausted requests without changing history", "[unit][core][chart-editor]") {
-    auto history = make_document_history(chart_song());
+    auto history = document_history_t::from(chart_song());
     const auto original = history.document;
     expect_chart(!apply_new_chart_command(history, 3));
     auto invalid = make_bms_7k_profile();
@@ -253,7 +253,7 @@ TEST_CASE("New chart accepts explicit profiles beyond the bounded project table"
                 .layout = {.profile_id = "test", .lanes = {{.id = lane_id_t{base + 3}, .name = "Key"}}}}}});
     }
     require_chart(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto added = apply_new_chart_command(history, 4, make_bms_14k_profile(), format_family_t::bms);
     require_chart(static_cast<bool>(added));
     expect_chart(history.document.charts.size() == 258);
@@ -280,7 +280,7 @@ auto four_key_template_song() -> song_document_t {
 }
 
 TEST_CASE("New chart templates active four-key profile resolution and exact offset without source content", "[unit][core][chart-editor]") {
-    auto history = make_document_history(four_key_template_song());
+    auto history = document_history_t::from(four_key_template_song());
     const auto source = history.document.charts[0];
     const auto result = apply_add_chart_command(history, 4, source.id);
     require_chart(static_cast<bool>(result));
@@ -310,7 +310,7 @@ TEST_CASE("New chart templates active four-key profile resolution and exact offs
 }
 
 TEST_CASE("New chart template rejects stale missing and exhausted requests atomically", "[unit][core][chart-editor]") {
-    auto history = make_document_history(four_key_template_song());
+    auto history = document_history_t::from(four_key_template_song());
     const auto source = history.document.charts[0].id;
     expect_chart(!apply_add_chart_command(history, 3, source));
     expect_chart(!apply_add_chart_command(history, 4, chart_id_t{9999}));
@@ -328,7 +328,7 @@ TEST_CASE("New chart templates the initial layout without copying later measure 
         .layout = {.profile_id = "future", .lanes = {{.id = lane_id_t{602}, .name = "Future key"}}}});
     source.input_profile.bindings.push_back({physical_key_t::key_q, lane_id_t{602}});
     require_chart(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto created = apply_add_chart_command(history, 4, history.document.charts[0].id);
     require_chart(static_cast<bool>(created));
     const auto& chart = history.document.charts.back();
@@ -339,7 +339,7 @@ TEST_CASE("New chart templates the initial layout without copying later measure 
 }
 
 TEST_CASE("Output group CRUD is atomic and undoable without altering chart content", "[unit][output-groups]") {
-    auto history = make_document_history(chart_song());
+    auto history = document_history_t::from(chart_song());
     history.document.output_groups.clear();
     const auto before = write_native_project(history.document).bytes;
     const auto initial_revision = history.document.revision;
@@ -367,7 +367,7 @@ TEST_CASE("Output group CRUD is atomic and undoable without altering chart conte
 }
 
 TEST_CASE("Output group edits reject unsafe paths stale contexts and invalid memberships atomically", "[unit][output-groups]") {
-    auto history = make_document_history(chart_song());
+    auto history = document_history_t::from(chart_song());
     history.document.output_groups.clear();
     const auto revision = history.document.revision;
     output_group_t group{.name = "Release", .family = format_family_t::bmson,
@@ -394,7 +394,7 @@ TEST_CASE("Output group edits reject unsafe paths stale contexts and invalid mem
 }
 
 TEST_CASE("Output groups permit drafts and multiple memberships with format-aware file cardinality", "[unit][output-groups]") {
-    auto history = make_document_history(chart_song());
+    auto history = document_history_t::from(chart_song());
     history.document.output_groups.clear();
     const auto duplicate = apply_duplicate_chart_command(history, history.document.revision, chart_id_t{2});
     require_chart(static_cast<bool>(duplicate));

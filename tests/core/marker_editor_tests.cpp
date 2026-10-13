@@ -46,7 +46,7 @@ auto has_code(const document_command_result_t& result, diagnostic_code_t code) -
 
 TEST_CASE("marker editor inserts beat and audio markers and sections with chart-wide IDs",
           "[unit][core][marker-editor]") {
-    auto history = make_document_history(marker_song());
+    auto history = document_history_t::from(marker_song());
     const auto beat_marker = apply_marker_edit(
         history, 4,
         insert_bookmark_action_t{.chart = chart_id_t{2},
@@ -108,7 +108,7 @@ TEST_CASE("marker editor inserts beat and audio markers and sections with chart-
     CHECK(inserted_kiai.provenance.source_order == 8);
     CHECK(validate_document(history.document).empty());
 
-    auto empty_section_history = make_document_history(marker_song());
+    auto empty_section_history = document_history_t::from(marker_song());
     const auto empty_section = apply_marker_edit(
         empty_section_history, 4,
         insert_section_action_t{.chart = chart_id_t{2},
@@ -121,7 +121,7 @@ TEST_CASE("marker editor inserts beat and audio markers and sections with chart-
 
 TEST_CASE("marker updates retain identity and kiai source data and no-op cleanly",
           "[unit][core][marker-editor]") {
-    auto history = make_document_history(marker_song());
+    auto history = document_history_t::from(marker_song());
     const auto bookmark_update =
         apply_marker_edit(history, 4,
                           update_bookmark_action_t{.chart = chart_id_t{2},
@@ -187,7 +187,7 @@ TEST_CASE("marker updates retain identity and kiai source data and no-op cleanly
 
 TEST_CASE("audio-time marker CRUD preserves exact signed millisecond bounds",
           "[unit][core][marker-editor][audio-time]") {
-    auto history = make_document_history(marker_song());
+    auto history = document_history_t::from(marker_song());
     REQUIRE(apply_marker_edit(history, 4,
                               insert_bookmark_action_t{.chart = chart_id_t{2},
                                                        .label = "Preroll",
@@ -231,7 +231,7 @@ TEST_CASE("audio-time marker CRUD preserves exact signed millisecond bounds",
 
 TEST_CASE("marker editor deletes bookmark section and kiai events atomically and undoably",
           "[unit][core][marker-editor]") {
-    auto history = make_document_history(marker_song());
+    auto history = document_history_t::from(marker_song());
     REQUIRE(
         apply_marker_edit(history, 4, delete_bookmark_action_t{chart_id_t{2}, object_id_t{12}}));
     CHECK(history.document.charts.front().bookmarks.empty());
@@ -256,7 +256,7 @@ TEST_CASE("marker editor deletes bookmark section and kiai events atomically and
 
 TEST_CASE("marker editor rejects stale IDs anchors positions ranges labels and caps atomically",
           "[unit][core][marker-editor][negative]") {
-    auto history = make_document_history(marker_song());
+    auto history = document_history_t::from(marker_song());
     const auto stale = apply_marker_edit(
         history, 3,
         insert_bookmark_action_t{.chart = chart_id_t{2},
@@ -373,7 +373,7 @@ TEST_CASE("marker editor rejects ambiguous chart-wide IDs and object allocation 
         {.id = object_id_t{13},
          .label = "collision",
          .position = local_position_t{measure_id_t{3}, 0}});
-    auto duplicate_history = make_document_history(std::move(duplicate_song));
+    auto duplicate_history = document_history_t::from(std::move(duplicate_song));
     const auto duplicate = apply_marker_edit(
         duplicate_history, 4,
         update_section_action_t{.chart = chart_id_t{2},
@@ -385,7 +385,7 @@ TEST_CASE("marker editor rejects ambiguous chart-wide IDs and object allocation 
     CHECK(has_code(duplicate, diagnostic_code_t::duplicate_id));
     CHECK(duplicate_history.undo.empty());
 
-    auto history = make_document_history(marker_song());
+    auto history = document_history_t::from(marker_song());
     const auto objects_capped = apply_marker_edit(
         history, 4,
         insert_section_action_t{.chart = chart_id_t{2},
@@ -416,7 +416,7 @@ auto edit_kiai(document_history_t& history, kiai_span_edit_t edit) -> document_c
 } // namespace
 
 TEST_CASE("kiai span edit creates a separate area with fresh events", "[unit][core][marker-editor][kiai]") {
-    auto history = make_document_history(marker_song());
+    auto history = document_history_t::from(marker_song());
     REQUIRE(edit_kiai(history, {.rows = {{20, 100}}}));
     const auto spans = kiai_spans(history);
     REQUIRE(spans.size() == 2);
@@ -431,7 +431,7 @@ TEST_CASE("kiai span edit creates a separate area with fresh events", "[unit][co
 
 TEST_CASE("kiai span edit merges overlaps and drops the swallowed events",
           "[unit][core][marker-editor][kiai]") {
-    auto history = make_document_history(marker_song());
+    auto history = document_history_t::from(marker_song());
     REQUIRE(edit_kiai(history, {.rows = {{20, 100}}}));
     // Extend the new area over the open one: everything becomes one open area.
     const auto first = kiai_spans(history).front();
@@ -446,7 +446,7 @@ TEST_CASE("kiai span edit merges overlaps and drops the swallowed events",
 
 TEST_CASE("dragging a kiai head or tail keeps the event identity and effect bits",
           "[unit][core][marker-editor][kiai]") {
-    auto history = make_document_history(marker_song());
+    auto history = document_history_t::from(marker_song());
     REQUIRE(edit_kiai(history, {.head = object_id_t{11}, .rows = {{240, 600}}}));
     auto spans = kiai_spans(history);
     REQUIRE(spans.size() == 1);
@@ -466,12 +466,12 @@ TEST_CASE("dragging a kiai head or tail keeps the event identity and effect bits
 
 TEST_CASE("kiai span edit deletes an area and rejects bad input without a revision",
           "[unit][core][marker-editor][kiai]") {
-    auto history = make_document_history(marker_song());
+    auto history = document_history_t::from(marker_song());
     REQUIRE(edit_kiai(history, {.head = object_id_t{11}}));
     CHECK(kiai_spans(history).empty());
     CHECK(history.document.charts.front().kiai.empty());
 
-    history = make_document_history(marker_song());
+    history = document_history_t::from(marker_song());
     const auto revision = history.document.revision;
     CHECK_FALSE(edit_kiai(history, {.rows = {{100, 100}}}));
     CHECK_FALSE(edit_kiai(history, {.rows = {{100, 5000}}}));

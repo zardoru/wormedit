@@ -885,7 +885,7 @@ auto stage_delete_stem_points(song_document_t& proposed, const editor_edit_conte
             if (selected && note.sound_channel_event) stems.push_back(note.id);
         }
     if (stems.empty()) return std::size_t{0};
-    auto scratch = make_document_history(proposed);
+    auto scratch = document_history_t::from(proposed);
     const auto moved = move_notes_to_bgm(scratch, scratch.document.revision, context.state.chart, stems, std::nullopt);
     if (!moved.applied) return moved.diagnostics;
     proposed = std::move(scratch.document);
@@ -1430,7 +1430,7 @@ auto stage_keyboard_entry(const editor_edit_context_t& context, lane_id_t lane,
                           std::optional<object_id_t> stem,
                           std::optional<bmson_source_geometry_t> geometry)
     -> std::variant<prepared_keyboard_entry_t, diagnostic_list_t> {
-    auto scratch = make_document_history(context.history.document);
+    auto scratch = document_history_t::from(context.history.document);
     const bool same = occupant && sound && occupant->sound == sound;
     if (occupant) {
         const auto failure =

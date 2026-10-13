@@ -299,7 +299,7 @@ TEST_CASE("workspace rejects stale revisions and rebinds stable context atomical
 
 TEST_CASE("workspace exposes one shared document-history context across tabs",
           "[unit][core][workspace][history]") {
-    auto history = make_document_history(workspace_song(), 8, true);
+    auto history = document_history_t::from(workspace_song(), 8, true);
     auto bound = make_workspace_controller(history);
     REQUIRE(bound);
     auto& workspace = *bound.workspace;
@@ -358,7 +358,7 @@ TEST_CASE("metadata workspace exposes bounded ordered song and difficulty format
     CHECK(metadata.format_fields[4].chart_scoped);
     CHECK(metadata.format_fields[4].family == format_family_t::stepmania);
 
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     REQUIRE(apply_metadata_edit(history, history.document.revision,
                                 edit_format_metadata_field_action_t{
                                     .target = {std::nullopt, format_family_t::bms},

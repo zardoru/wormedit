@@ -11,6 +11,8 @@
 
 using namespace wormedit;
 
+static_assert(std::is_aggregate_v<document_history_t>);
+
 namespace {
 
 auto make_song(std::uint64_t row = 130) -> song_document_t {
@@ -53,7 +55,7 @@ auto note_row(const document_history_t& history) -> std::uint64_t {
 
 TEST_CASE("quantization commits atomically through bounded document history",
           "[unit][core][command]") {
-    auto history = make_document_history(make_song(), 2);
+    auto history = document_history_t::from(make_song(), 2);
     CHECK(history.document.revision == 1);
     CHECK_FALSE(is_document_dirty(history));
 
@@ -88,7 +90,7 @@ TEST_CASE("rejected and unknown-chart quantization cannot mutate document histor
         .position = {measure_id_t{1}, 110},
         .lane = lane_id_t{1},
     });
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
 
     const auto rejected = apply_quantize_command(history, chart_id_t{1}, {.divisions = 4});
     CHECK_FALSE(rejected);
@@ -106,7 +108,7 @@ TEST_CASE("rejected and unknown-chart quantization cannot mutate document histor
 
 TEST_CASE("new edits clear redo and retain only the configured undo depth",
           "[unit][core][command]") {
-    auto history = make_document_history(make_song(), 1);
+    auto history = document_history_t::from(make_song(), 1);
     REQUIRE(apply_quantize_command(history, chart_id_t{1}, {.divisions = 4}));
     REQUIRE(undo_document_command(history));
 
@@ -129,7 +131,7 @@ TEST_CASE("new edits clear redo and retain only the configured undo depth",
 TEST_CASE("exhausted document revision rejects publication", "[unit][core][command][negative]") {
     auto song = make_song();
     song.revision = std::numeric_limits<std::uint64_t>::max();
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto proposed = history.document;
     proposed.metadata.title = "not published";
     CHECK_FALSE(commit_document_command(history, std::move(proposed), "Rename song"));
@@ -159,7 +161,7 @@ TEST_CASE("published commands invalidate retained-source exact-save claims rever
                 .unchanged_since_import = true,
             },
     });
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
 
     auto proposed = history.document;
     proposed.metadata.title = "edited";
@@ -180,7 +182,7 @@ TEST_CASE("published commands invalidate retained-source exact-save claims rever
 
 TEST_CASE("redivision commits exactly, undoes, and rejects inexact positions untouched",
           "[unit][core][command]") {
-    auto history = make_document_history(make_song(130));
+    auto history = document_history_t::from(make_song(130));
     const auto revision = history.document.revision;
 
     const auto applied = apply_redivision_command(history, revision, chart_id_t{1}, 192);
@@ -194,7 +196,7 @@ TEST_CASE("redivision commits exactly, undoes, and rejects inexact positions unt
     CHECK(history.document.charts.front().divisions_per_standard_measure == 960);
     CHECK(note_row(history) == 130);
 
-    auto inexact = make_document_history(make_song(131));
+    auto inexact = document_history_t::from(make_song(131));
     const auto rejected =
         apply_redivision_command(inexact, inexact.document.revision, chart_id_t{1}, 192);
     CHECK_FALSE(rejected);
@@ -206,7 +208,7 @@ TEST_CASE("redivision commits exactly, undoes, and rejects inexact positions unt
 
 TEST_CASE("redivision rejects stale revisions and unknown charts and ignores no-ops",
           "[unit][core][command][negative]") {
-    auto history = make_document_history(make_song(130));
+    auto history = document_history_t::from(make_song(130));
     const auto revision = history.document.revision;
 
     CHECK_FALSE(apply_redivision_command(history, revision + 1, chart_id_t{1}, 192));
@@ -221,7 +223,7 @@ TEST_CASE("redivision rejects stale revisions and unknown charts and ignores no-
 }
 
 TEST_CASE("document transaction source queries do not copy", "[unit][core][command]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto transaction = document_command_transaction_t::from(history);
     CHECK_FALSE(transaction.has_copy());
     REQUIRE(transaction.source_chart(chart_id_t{1}));
@@ -231,7 +233,7 @@ TEST_CASE("document transaction source queries do not copy", "[unit][core][comma
 }
 
 TEST_CASE("document transactions reuse their working snapshot", "[unit][core][command]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto transaction = document_command_transaction_t::from(history);
     auto& copy = transaction.copy_document();
     copy.charts.front().metadata.name = "Edited";
@@ -241,7 +243,7 @@ TEST_CASE("document transactions reuse their working snapshot", "[unit][core][co
 }
 
 TEST_CASE("document transactions publish one reversible edit", "[unit][core][command]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto transaction = document_command_transaction_t::from(history);
     transaction.copy_document().charts.front().metadata.name = "Edited";
     REQUIRE(transaction.commit("Edit name"));
@@ -252,7 +254,7 @@ TEST_CASE("document transactions publish one reversible edit", "[unit][core][com
 }
 
 TEST_CASE("rejecting a document transaction does not copy", "[unit][core][command]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto transaction = document_command_transaction_t::from(history);
     const auto rejected = transaction.reject(diagnostic_code_t::invalid_id, "Rejected");
     CHECK_FALSE(rejected);
@@ -262,7 +264,7 @@ TEST_CASE("rejecting a document transaction does not copy", "[unit][core][comman
 }
 
 TEST_CASE("rejected document transactions cannot publish", "[unit][core][command]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto transaction = document_command_transaction_t::from(history);
     const auto rejected = transaction.reject(diagnostic_code_t::invalid_id, "Rejected");
     CHECK_FALSE(transaction.commit("Rejected edit"));
@@ -272,7 +274,7 @@ TEST_CASE("rejected document transactions cannot publish", "[unit][core][command
 }
 
 TEST_CASE("document transactions adopt staged snapshots and publish once", "[unit][core][command]") {
-    auto history = make_document_history(make_song());
+    auto history = document_history_t::from(make_song());
     auto staged = history.document;
     staged.charts.front().metadata.name = "Staged";
     auto transaction = document_command_transaction_t::from(history);

@@ -448,7 +448,7 @@ auto apply_bulk_sound_import(document_history_t& history, std::uint64_t expected
     if (!validate_batch(action, result)) return result;
     const auto identifiers = assigned_bms_ids(history.document, action, result);
     if (!identifiers) return result;
-    auto draft = make_document_history(history.document, 1, false);
+    auto draft = document_history_t::from(history.document, 1, false);
     const auto first_imported_resource = draft.document.resources.size();
     chart_id_t stem_chart{};
     object_id_scan_t ids;

@@ -96,7 +96,7 @@ auto insert_initial_lane_profile(document_history_t& history, chart_id_t chart,
     -> document_command_result_t {
     auto result = document_command_result_t{.revision = history.document.revision,
                                              .diagnostics = {}};
-    auto scratch = make_document_history(history.document);
+    auto scratch = document_history_t::from(history.document);
     const auto target_position = materialize_initial_profile_target(scratch, chart);
     if (!target_position) {
         reject(result, diagnostic_code_t::invalid_id, "The lane profile needs a valid materialized chart measure.");

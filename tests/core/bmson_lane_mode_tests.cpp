@@ -37,7 +37,7 @@ auto snapshot(const document_history_t& history) -> std::string {
 
 TEST_CASE("BMSON lane_mode Make stem and Pack preserve channels and round trip", "[core][bmson][lane_mode]") {
     using namespace wormedit;
-    auto history = make_document_history(fixture());
+    auto history = document_history_t::from(fixture());
     const auto before = history.document;
     const auto json = write_bmson(before).json;
     require_mode(json.has_value());
@@ -60,7 +60,7 @@ TEST_CASE("BMSON lane_mode Make stem and Pack preserve channels and round trip",
 
 TEST_CASE("BMSON lane_mode continuation refusal is atomic and conversion is undoable", "[core][bmson][lane_mode]") {
     using namespace wormedit;
-    auto history = make_document_history(fixture());
+    auto history = document_history_t::from(fixture());
     const auto before = snapshot(history);
     const auto refusal = change(history, 2, bmson_channel_lane_mode_t::packed);
     require_mode(!refusal.applied && !refusal.diagnostics.empty());
@@ -80,7 +80,7 @@ TEST_CASE("BMSON lane_mode continuation refusal is atomic and conversion is undo
 
 TEST_CASE("BMSON lane_mode stale format unknown and capacity failures change nothing", "[core][bmson][lane_mode]") {
     using namespace wormedit;
-    auto history = make_document_history(fixture());
+    auto history = document_history_t::from(fixture());
     require_mode(change(history, 0, bmson_channel_lane_mode_t::stem).applied);
     const auto before = snapshot(history);
     const auto& chart = history.document.charts.front();
@@ -99,7 +99,7 @@ TEST_CASE("BMSON lane_mode stale format unknown and capacity failures change not
 
 TEST_CASE("BMSON lane_mode repeated mode changes create no undo entry", "[core][bmson][lane_mode]") {
     using namespace wormedit;
-    auto history = make_document_history(fixture());
+    auto history = document_history_t::from(fixture());
     check_mode(!change(history, 0, bmson_channel_lane_mode_t::packed).applied);
     check_mode(history.undo.empty());
     require_mode(change(history, 0, bmson_channel_lane_mode_t::stem).applied);
@@ -124,7 +124,7 @@ TEST_CASE("BMSON lane_mode empty and playable-only channels round trip", "[core]
         }
         std::erase_if(chart.sound_channels.front().events,
             [empty](const auto& event) { return empty || !event.playable; });
-        auto history = make_document_history(std::move(song));
+        auto history = document_history_t::from(std::move(song));
         const auto before = history.document;
         require_mode(change(history, 0, bmson_channel_lane_mode_t::stem).applied);
         require_mode(change(history, 0, bmson_channel_lane_mode_t::packed).applied);
@@ -136,7 +136,7 @@ TEST_CASE("BMSON lane_mode empty and playable-only channels round trip", "[core]
 
 TEST_CASE("BMSON lane_mode allocator rejection preserves document and history", "[core][bmson][lane_mode]") {
     using namespace wormedit;
-    auto history = make_document_history(fixture());
+    auto history = document_history_t::from(fixture());
     require_mode(change(history, 0, bmson_channel_lane_mode_t::stem).applied);
     auto& chart = history.document.charts.front();
     const auto lane = std::ranges::find_if(chart.bgm_source_lanes,
@@ -162,7 +162,7 @@ TEST_CASE("BMSON lane_mode rejects resources shared by multiple channels", "[cor
     for (auto& measure : song.charts.front().measures)
         for (auto& event : measure.bgm_events)
             if (event.sound == song.resources[1].id) event.sound = resource;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto before = snapshot(history);
     const auto result = change(history, 0, bmson_channel_lane_mode_t::stem);
     require_mode(!result.applied && !result.diagnostics.empty());
@@ -179,7 +179,7 @@ TEST_CASE("BMSON lane_mode packs a whole channel beyond the interactive selectio
     json += "]}]}";
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{json.data(), json.size()}));
     require_mode(parsed.song.has_value());
-    auto history = make_document_history(*parsed.song);
+    auto history = document_history_t::from(*parsed.song);
     const auto before = write_bmson(history.document).json;
     require_mode(before.has_value());
     require_mode(change(history, 0, bmson_channel_lane_mode_t::stem).applied);

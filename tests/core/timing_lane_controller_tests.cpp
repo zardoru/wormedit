@@ -138,7 +138,7 @@ auto has_code(const document_command_result_t& result, diagnostic_code_t code) -
 
 TEST_CASE("timing pseudo-notes preview typed values and commit through one shared history command",
           "[unit][core][timing-lane-controller]") {
-    auto history = make_document_history(timing_song());
+    auto history = document_history_t::from(timing_song());
     const auto initial_revision = history.document.revision;
     const auto initial_undo_count = history.undo.size();
 
@@ -171,7 +171,7 @@ TEST_CASE("timing pseudo-notes preview typed values and commit through one share
 
 TEST_CASE("each timing lane commits its own typed event without creating playable notes",
           "[unit][core][timing-lane-controller]") {
-    auto history = make_document_history(timing_song());
+    auto history = document_history_t::from(timing_song());
     const auto insert = [&](timing_lane_kind_t kind, std::uint64_t row, timing_lane_value_t value) {
         auto preview = begin(history, kind, row, std::move(value));
         REQUIRE(preview.status == timing_lane_pseudonote_status_t::editing);
@@ -218,7 +218,7 @@ TEST_CASE("each timing lane commits its own typed event without creating playabl
 
 TEST_CASE("existing timing lane events update in place and retain source identity and history",
           "[unit][core][timing-lane-controller][update]") {
-    auto history = make_document_history(timing_edit_song());
+    auto history = document_history_t::from(timing_edit_song());
     const auto check_provenance = [](const source_provenance_t& actual, format_family_t family,
                                      std::string_view profile, std::string_view field,
                                      std::string_view spelling, std::size_t source_order) {
@@ -408,7 +408,7 @@ TEST_CASE("existing timing lane events update in place and retain source identit
 
 TEST_CASE("existing timing edit targets reject unknown, wrong-kind, locked, and stale requests",
           "[unit][core][timing-lane-controller][update][negative]") {
-    auto history = make_document_history(timing_edit_song());
+    auto history = document_history_t::from(timing_edit_song());
     auto unknown = begin_existing_timing_lane_pseudonote(
         history, chart_id_t{2}, timing_lane_kind_t::bpm, object_id_t{999}, false);
     CHECK(unknown.status == timing_lane_pseudonote_status_t::rejected);
@@ -460,7 +460,7 @@ TEST_CASE("existing timing edit targets reject unknown, wrong-kind, locked, and 
 
 TEST_CASE("pseudo-note insertion rejects locked, occupied, and stale timing edits atomically",
           "[unit][core][timing-lane-controller][negative]") {
-    auto history = make_document_history(timing_song());
+    auto history = document_history_t::from(timing_song());
     auto locked = begin_timing_lane_pseudonote(
         history, chart_id_t{2}, timing_lane_kind_t::bpm, pos(120), timing_bpm_value_t{{100, 1}},
         timing_lane_initial_value_source_t::explicit_default, true);
@@ -506,7 +506,7 @@ TEST_CASE("pseudo-note insertion rejects locked, occupied, and stale timing edit
 
 TEST_CASE("invalid value types, rationals, pause units, and warp spans cannot be confirmed",
           "[unit][core][timing-lane-controller][negative]") {
-    auto history = make_document_history(timing_song());
+    auto history = document_history_t::from(timing_song());
     auto bpm = begin(history, timing_lane_kind_t::bpm, 120, timing_bpm_value_t{{100, 1}});
     REQUIRE(bpm.status == timing_lane_pseudonote_status_t::editing);
     CHECK_FALSE(update_timing_lane_pseudonote(history, bpm, timing_bpm_value_t{{0, 1}}, false));
@@ -546,7 +546,7 @@ TEST_CASE("invalid value types, rationals, pause units, and warp spans cannot be
 
 TEST_CASE("existing timing pseudo-notes update every typed family in place",
           "[unit][core][timing-lane-controller][edit]") {
-    auto history = make_document_history(timing_song());
+    auto history = document_history_t::from(timing_song());
     const auto insert = [&](timing_lane_kind_t kind, std::uint64_t row,
                             timing_lane_value_t value) -> object_id_t {
         auto preview = begin(history, kind, row, std::move(value));
@@ -656,7 +656,7 @@ TEST_CASE("existing timing pseudo-notes update every typed family in place",
 
 TEST_CASE("existing timing pseudo-note targets are exact, revision-bound, and no-op safe",
           "[unit][core][timing-lane-controller][edit][negative]") {
-    auto history = make_document_history(timing_song());
+    auto history = document_history_t::from(timing_song());
 
     const auto coincident =
         apply_bpm_edit(history, history.document.revision,
@@ -709,7 +709,7 @@ TEST_CASE("existing timing pseudo-note targets are exact, revision-bound, and no
 
 TEST_CASE("existing timing markers move as transient previews and delete through typed history",
           "[unit][core][timing-lane-controller][move][delete]") {
-    auto history = make_document_history(timing_edit_song());
+    auto history = document_history_t::from(timing_edit_song());
     const auto original_revision = history.document.revision;
 
     auto bpm = begin_existing_timing_lane_pseudonote(history, chart_id_t{2},
@@ -752,7 +752,7 @@ TEST_CASE("existing timing markers move as transient previews and delete through
 
 TEST_CASE("timing group deletion is atomic, undoable and keeps the initial BPM",
           "[unit][core][timing-lane-controller][delete]") {
-    auto history = make_document_history(timing_edit_song());
+    auto history = document_history_t::from(timing_edit_song());
     const auto revision = history.document.revision;
     const std::array events{timing_lane_event_ref_t{timing_lane_kind_t::bpm, object_id_t{11}},
                             timing_lane_event_ref_t{timing_lane_kind_t::stop, object_id_t{40}},
@@ -777,7 +777,7 @@ TEST_CASE("timing group deletion is atomic, undoable and keeps the initial BPM",
 
 TEST_CASE("the effective initial BPM cannot leave chart row zero",
           "[unit][core][timing-lane-controller][initial-bpm]") {
-    auto history = make_document_history(timing_song());
+    auto history = document_history_t::from(timing_song());
     auto initial = begin_existing_timing_lane_pseudonote(
         history, chart_id_t{2}, timing_lane_kind_t::bpm, object_id_t{10}, false);
     const auto revision = history.document.revision;
@@ -788,7 +788,7 @@ TEST_CASE("the effective initial BPM cannot leave chart row zero",
 
 TEST_CASE("the effective initial BPM can change value but cannot be deleted",
           "[unit][core][timing-lane-controller][initial-bpm]") {
-    auto history = make_document_history(timing_song());
+    auto history = document_history_t::from(timing_song());
     auto initial = begin_existing_timing_lane_pseudonote(
         history, chart_id_t{2}, timing_lane_kind_t::bpm, object_id_t{10}, false);
     REQUIRE(update_timing_lane_pseudonote(history, initial, timing_bpm_value_t{{365, 3}}, false));
@@ -807,7 +807,7 @@ TEST_CASE("the effective initial BPM can change value but cannot be deleted",
 
 TEST_CASE("coincident ordinary BPMs remain movable and deletable",
           "[unit][core][timing-lane-controller][initial-bpm]") {
-    auto history = make_document_history(timing_edit_song());
+    auto history = document_history_t::from(timing_edit_song());
     auto ordinary = begin_existing_timing_lane_pseudonote(
         history, chart_id_t{2}, timing_lane_kind_t::bpm, object_id_t{10}, false);
     REQUIRE(move_existing_timing_lane_pseudonote(history, ordinary, pos(120), false));
@@ -827,7 +827,7 @@ TEST_CASE("initial BPM follows source order when storage order differs",
           "[unit][core][timing-lane-controller][initial-bpm]") {
     auto song = timing_edit_song();
     song.charts.front().bpms.front().provenance.source_order = 9;
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto effective = begin_existing_timing_lane_pseudonote(
         history, chart_id_t{2}, timing_lane_kind_t::bpm, object_id_t{10}, false);
     CHECK_FALSE(move_existing_timing_lane_pseudonote(history, effective, pos(120), false));
@@ -848,7 +848,7 @@ TEST_CASE("initial BPM follows source order when storage order differs",
 
 TEST_CASE("mixed timing markers move together in one undoable command",
           "[unit][core][timing-lane-controller][group-move]") {
-    auto history = make_document_history(timing_edit_song());
+    auto history = document_history_t::from(timing_edit_song());
     const std::array events{timing_lane_event_ref_t{timing_lane_kind_t::bpm, object_id_t{10}},
                             timing_lane_event_ref_t{timing_lane_kind_t::scroll, object_id_t{20}},
                             timing_lane_event_ref_t{timing_lane_kind_t::stop, object_id_t{40}}};
@@ -871,7 +871,7 @@ TEST_CASE("mixed timing markers move together in one undoable command",
 
 TEST_CASE("timing group row deltas cross measure boundaries exactly",
           "[unit][core][timing-lane-controller][group-move]") {
-    auto history = make_document_history(timing_edit_song());
+    auto history = document_history_t::from(timing_edit_song());
     history.document.charts.front().measures.push_back({.id = measure_id_t{4}});
     const std::array events{timing_lane_event_ref_t{timing_lane_kind_t::scroll,
                                                     object_id_t{20}}};
@@ -884,7 +884,7 @@ TEST_CASE("timing group row deltas cross measure boundaries exactly",
 
 TEST_CASE("group moving a warp preserves its length in both directions",
           "[unit][core][timing-lane-controller][group-move]") {
-    auto history = make_document_history(timing_edit_song());
+    auto history = document_history_t::from(timing_edit_song());
     const std::array events{timing_lane_event_ref_t{timing_lane_kind_t::warp,
                                                     object_id_t{50}}};
     REQUIRE(move_timing_lane_event_group(history, chart_id_t{2}, events, 120,
@@ -899,7 +899,7 @@ TEST_CASE("group moving a warp preserves its length in both directions",
 
 TEST_CASE("warp group move rejects an end outside the chart atomically",
           "[unit][core][timing-lane-controller][group-move][negative]") {
-    auto history = make_document_history(timing_edit_song());
+    auto history = document_history_t::from(timing_edit_song());
     const std::array events{timing_lane_event_ref_t{timing_lane_kind_t::warp,
                                                     object_id_t{50}}};
     const auto revision = history.document.revision;
@@ -914,7 +914,7 @@ TEST_CASE("warp group move rejects an end outside the chart atomically",
 
 TEST_CASE("invalid timing group moves leave every event and history unchanged",
           "[unit][core][timing-lane-controller][group-move][negative]") {
-    auto history = make_document_history(timing_edit_song());
+    auto history = document_history_t::from(timing_edit_song());
     const auto revision = history.document.revision;
     const std::array fixed{timing_lane_event_ref_t{timing_lane_kind_t::bpm, object_id_t{11}},
                            timing_lane_event_ref_t{timing_lane_kind_t::scroll, object_id_t{20}}};
@@ -934,7 +934,7 @@ TEST_CASE("invalid timing group moves leave every event and history unchanged",
 
 TEST_CASE("timing group collisions and stale requests are atomic",
           "[unit][core][timing-lane-controller][group-move][negative]") {
-    auto history = make_document_history(timing_edit_song());
+    auto history = document_history_t::from(timing_edit_song());
     const auto revision = history.document.revision;
     const std::array ordinary{timing_lane_event_ref_t{timing_lane_kind_t::scroll,
                                                         object_id_t{20}}};
@@ -956,7 +956,7 @@ TEST_CASE("timing group collisions and stale requests are atomic",
 
 TEST_CASE("timing group moves honor the timing lock",
           "[unit][core][timing-lane-controller][group-move][negative]") {
-    auto history = make_document_history(timing_edit_song());
+    auto history = document_history_t::from(timing_edit_song());
     const auto revision = history.document.revision;
     const std::array ordinary{timing_lane_event_ref_t{timing_lane_kind_t::scroll,
                                                         object_id_t{20}}};
@@ -986,7 +986,7 @@ TEST_CASE("effective BPM at a position is the latest preceding BPM event", "[tim
 
 TEST_CASE("quick insert copies the BPM in force without changing the effective tempo",
           "[unit][core][timing-lane-controller]") {
-    auto history = make_document_history(timing_song());
+    auto history = document_history_t::from(timing_song());
     const auto position = pos(480);
     const auto inherited = effective_bpm_at(history.document.charts.front(), position);
     REQUIRE(inherited.has_value());
@@ -1003,7 +1003,7 @@ TEST_CASE("quick insert copies the BPM in force without changing the effective t
 
 TEST_CASE("a speed span edit moves the begin row and sets the transition in one command",
           "[unit][core][timing-lane][speed]") {
-    auto history = make_document_history(timing_edit_song());
+    auto history = document_history_t::from(timing_edit_song());
     const auto speed = history.document.charts.front().speeds.front().id;
     const auto undo_count = history.undo.size();
 

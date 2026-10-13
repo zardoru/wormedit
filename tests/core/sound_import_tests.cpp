@@ -129,7 +129,7 @@ auto bms_song_without_stems() -> song_document_t {
 }
 
 auto bms_stem_adds_catalog_only() -> bool {
-    auto history = make_document_history(bms_song_without_stems());
+    auto history = document_history_t::from(bms_song_without_stems());
     const auto before = history.document;
     const auto result = apply_bulk_sound_import(history, history.document.revision,
         reserved({.chart = chart_id_t{1}, .entries = {entry("bms-stem", sound_kind_t::stem)}},
@@ -146,7 +146,7 @@ auto bms_stem_adds_catalog_only() -> bool {
 }
 
 auto keysound_adds_resource_only() -> bool {
-    auto history = make_document_history(bmson_song());
+    auto history = document_history_t::from(bmson_song());
     const auto& chart_before = history.document.charts.front();
     const auto channels = chart_before.sound_channels.size();
     const auto lanes = chart_before.bgm_source_lanes.size();
@@ -164,7 +164,7 @@ auto keysound_adds_resource_only() -> bool {
 }
 
 auto failed_later_stem_entry_is_atomic() -> bool {
-    auto history = make_document_history(bmson_song());
+    auto history = document_history_t::from(bmson_song());
     const auto resources = history.document.resources.size();
     const auto channels = history.document.charts.front().sound_channels.size();
     const auto lanes = history.document.charts.front().bgm_source_lanes.size();
@@ -183,7 +183,7 @@ auto failed_later_stem_entry_is_atomic() -> bool {
 }
 
 auto stem_uses_exactly_two_object_ids() -> bool {
-    auto history = make_document_history(bmson_song());
+    auto history = document_history_t::from(bmson_song());
     auto& chart = history.document.charts.front();
     const auto channel_count = chart.sound_channels.size();
     const auto lane_count = chart.bgm_source_lanes.size();
@@ -207,7 +207,7 @@ auto stem_uses_exactly_two_object_ids() -> bool {
 
 TEST_CASE("bulk import adds linked empty BMSON stem channels and lanes atomically",
           "[unit][core][sounds][import]") {
-    auto history = make_document_history(bmson_song());
+    auto history = document_history_t::from(bmson_song());
     const auto chart_id = history.document.charts.front().id;
     const auto revision = history.document.revision;
     const auto resources = history.document.resources.size();
@@ -243,7 +243,7 @@ TEST_CASE("bulk import adds linked empty BMSON stem channels and lanes atomicall
 
 TEST_CASE("bulk import keeps list order and tags, and skips channels without a BMSON chart",
           "[unit][core][sounds][import]") {
-    auto history = make_document_history(bmson_song());
+    auto history = document_history_t::from(bmson_song());
     const auto resources = history.document.resources.size();
     const auto channels = history.document.charts.front().sound_channels.size();
     auto first = entry("a", sound_kind_t::stem);
@@ -280,7 +280,7 @@ TEST_CASE("an empty BMSON stem consumes exactly two chart object IDs",
 
 TEST_CASE("BMS bulk import allocates one contiguous run in entry order",
           "[unit][core][sounds][import][bms-identifiers]") {
-    auto history = make_document_history(bmson_song());
+    auto history = document_history_t::from(bmson_song());
     history.document.resources.front().target_identities = {
         {format_family_t::bms, "01", "WAV"},
         {format_family_t::bms, "03", "WAV"},
@@ -299,7 +299,7 @@ TEST_CASE("BMS bulk import allocates one contiguous run in entry order",
 
 TEST_CASE("BMS bulk import rejects beyond namespace capacity before changing the song",
           "[unit][core][sounds][import][bms-identifiers]") {
-    auto history = make_document_history(bmson_song());
+    auto history = document_history_t::from(bmson_song());
     constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     auto& occupied = history.document.resources.front().target_identities;
     for (std::size_t value = 1; value < 36 * 36; ++value)
@@ -321,7 +321,7 @@ TEST_CASE("BMS bulk import rejects beyond namespace capacity before changing the
 
 TEST_CASE("fragmented BMS capacity splits an import across the largest gaps in order",
           "[unit][core][sounds][import][bms-identifiers]") {
-    auto history = make_document_history(bmson_song());
+    auto history = document_history_t::from(bmson_song());
     constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     auto& identities = history.document.resources.front().target_identities;
     for (std::size_t value = 1; value < 36 * 36; ++value) {
@@ -352,7 +352,7 @@ TEST_CASE("grouped bulk import creates and joins groups with independent contigu
     const auto existing_group = sound_group_id_t{55};
     song.sound_groups.push_back({.id = existing_group, .name = "Loops"});
     song.resources.front().sound_group = existing_group;
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     const auto before = history.document;
     auto first = entry("kick_01", sound_kind_t::keysound);
     auto second = entry("kick_02", sound_kind_t::keysound);
@@ -386,7 +386,7 @@ TEST_CASE("grouped bulk import creates and joins groups with independent contigu
 
 TEST_CASE("grouped import rejects name collisions and fragmented group ID runs atomically",
           "[unit][core][sounds][import][sound-groups]") {
-    auto history = make_document_history(bmson_song());
+    auto history = document_history_t::from(bmson_song());
     auto first = entry("a", sound_kind_t::keysound);
     auto second = entry("b", sound_kind_t::keysound);
     first.asset.allocate_bms_identifier = true;
@@ -423,7 +423,7 @@ TEST_CASE("grouped import rejects name collisions and fragmented group ID runs a
 
 TEST_CASE("group ID runs pack larger groups first while preserving entry order",
           "[unit][core][sounds][import][sound-groups][bms-identifiers]") {
-    auto history = make_document_history(bmson_song());
+    auto history = document_history_t::from(bmson_song());
     constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     auto& identities = history.document.resources.front().target_identities;
     identities.clear();
@@ -457,7 +457,7 @@ TEST_CASE("group ID runs pack larger groups first while preserving entry order",
 }
 
 TEST_CASE("bulk import handles fifty files in one step", "[unit][core][sounds][import]") {
-    auto history = make_document_history(bmson_song());
+    auto history = document_history_t::from(bmson_song());
     const auto chart_id = history.document.charts.front().id;
     const auto resources = history.document.resources.size();
     bulk_sound_import_action_t action{.chart = chart_id};
@@ -471,7 +471,7 @@ TEST_CASE("bulk import handles fifty files in one step", "[unit][core][sounds][i
 }
 
 TEST_CASE("an invalid entry rejects the whole bulk import", "[unit][core][sounds][import]") {
-    auto history = make_document_history(bmson_song());
+    auto history = document_history_t::from(bmson_song());
     const auto before = history.document;
     const auto rejects = [&](bulk_sound_import_action_t action, std::uint64_t revision) {
         const auto result = apply_bulk_sound_import(history, revision, action);
@@ -500,7 +500,7 @@ TEST_CASE("an invalid entry rejects the whole bulk import", "[unit][core][sounds
 
 TEST_CASE("group import takes the first fitting BMS ID gap",
           "[unit][core][sounds][import][sound-groups][bms-identifiers]") {
-    auto history = make_document_history(bmson_song());
+    auto history = document_history_t::from(bmson_song());
     constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     auto& identities = history.document.resources.front().target_identities;
     identities.clear();
@@ -524,7 +524,7 @@ TEST_CASE("group import takes the first fitting BMS ID gap",
 }
 
 TEST_CASE("bulk import group names reject malformed UTF-8", "[unit][core][helpers][import]") {
-    auto history = make_document_history(bmson_song());
+    auto history = document_history_t::from(bmson_song());
     auto action = bulk_sound_import_action_t{
         .entries = {entry("kick_01", sound_kind_t::keysound)},
         .groups = {{.name = "bad\xc0\x80", .entry_indexes = {0}}}};

@@ -97,7 +97,7 @@ TEST_CASE("audio extent rejects excessive growth atomically and ignores unknown 
 
 TEST_CASE("measure insertion length editing and deletion preserve stable local identities",
           "[unit][core][measure-editor]") {
-    auto history = make_document_history(measure_song());
+    auto history = document_history_t::from(measure_song());
     CHECK(absolute_note_row(history.document) == 1920);
 
     const auto inserted = apply_measure_edit(
@@ -144,7 +144,7 @@ TEST_CASE("measure definition edits reject positions that no longer fit",
     auto song = measure_song();
     song.charts.front().measures.back().notes.front().position.row = 800;
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
 
     const auto rejected =
         apply_measure_edit(history, 5,
@@ -161,7 +161,7 @@ TEST_CASE("measure definition edits reject positions that no longer fit",
 
 TEST_CASE("measure deletion rejects every referenced or final measure atomically",
           "[unit][core][measure-editor][negative]") {
-    auto history = make_document_history(measure_song());
+    auto history = document_history_t::from(measure_song());
     for (const auto id : {measure_id_t{10}, measure_id_t{12}}) {
         CAPTURE(id.value);
         const auto rejected = apply_measure_edit(
@@ -176,7 +176,7 @@ TEST_CASE("measure deletion rejects every referenced or final measure atomically
     chart.measures.erase(chart.measures.begin() + 1, chart.measures.end());
     chart.bms_measure_length_projections.clear();
     REQUIRE(validate_document(single).empty());
-    auto single_history = make_document_history(std::move(single));
+    auto single_history = document_history_t::from(std::move(single));
     const auto final_measure = apply_measure_edit(
         single_history, 5,
         delete_measure_action_t{.chart = chart_id_t{2}, .measure = measure_id_t{10}});
@@ -187,7 +187,7 @@ TEST_CASE("measure deletion rejects every referenced or final measure atomically
 
 TEST_CASE("measure editor validates revisions IDs definitions indexes and caps",
           "[unit][core][measure-editor][bounds]") {
-    auto history = make_document_history(measure_song());
+    auto history = document_history_t::from(measure_song());
 
     CHECK_FALSE(apply_measure_edit(
         history, 4, insert_measure_action_t{.chart = chart_id_t{2}, .before_index = 1}));
@@ -284,7 +284,7 @@ TEST_CASE("measure removal proposal counts contents without mutating",
 
 TEST_CASE("removing a measure with contents is one undoable command",
           "[core][measure-editor][removal]") {
-    auto history = make_document_history(removal_song());
+    auto history = document_history_t::from(removal_song());
     const auto applied = apply_measure_edit(
         history, history.document.revision,
         remove_measure_with_contents_action_t{chart_id_t{2}, measure_id_t{11}});
@@ -324,7 +324,7 @@ TEST_CASE("measure removal deletes contained BGA events and moves timing out of 
     CHECK(proposal.deleted_bga_events == 1);
     CHECK(chart.bga_events.size() == 2);
 
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     REQUIRE(apply_measure_edit(
         history, history.document.revision,
         remove_measure_with_contents_action_t{chart_id_t{2}, measure_id_t{11}}));
@@ -338,7 +338,7 @@ TEST_CASE("measure removal deletes contained BGA events and moves timing out of 
 
 TEST_CASE("measure removal rejects stale, last-measure timing and sole measures",
           "[core][measure-editor][removal][negative]") {
-    auto history = make_document_history(removal_song());
+    auto history = document_history_t::from(removal_song());
     const auto revision = history.document.revision;
     const remove_measure_with_contents_action_t remove_middle{chart_id_t{2}, measure_id_t{11}};
     CHECK_FALSE(apply_measure_edit(history, revision + 1, remove_middle));
@@ -361,7 +361,7 @@ TEST_CASE("measure removal rejects stale, last-measure timing and sole measures"
     song_document_t sole = measure_song();
     sole.charts.front().measures.resize(1);
     sole.charts.front().bms_measure_length_projections.clear();
-    auto sole_history = make_document_history(std::move(sole));
+    auto sole_history = document_history_t::from(std::move(sole));
     CHECK_FALSE(apply_measure_edit(
         sole_history, sole_history.document.revision,
         remove_measure_with_contents_action_t{chart_id_t{2}, measure_id_t{10}}));
@@ -369,7 +369,7 @@ TEST_CASE("measure removal rejects stale, last-measure timing and sole measures"
 
 TEST_CASE("mass measure definition update is one atomic undo step",
           "[unit][core][measure-editor]") {
-    auto history = make_document_history(measure_song());
+    auto history = document_history_t::from(measure_song());
     const auto definition = measure_definition_t{.length = {3, 4}, .meter = meter_t{3, 4}};
 
     const auto stale = apply_measure_edit(
@@ -428,7 +428,7 @@ TEST_CASE("resizing a measure keeps every object on its row from the start of th
     song.charts.front().bpms.push_back(
         {.id = object_id_t{32}, .position = {measure_id_t{11}, 480}, .beats_per_minute = {90, 1}});
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
 
     const auto shrunk = apply_measure_edit(
         history, 5,
@@ -452,7 +452,7 @@ TEST_CASE("resizing a measure keeps every object on its row from the start of th
 
 TEST_CASE("resizing materializes virtual tail measures and keeps coverage",
           "[unit][core][measure-editor][keep-rows]") {
-    auto history = make_document_history(measure_song());
+    auto history = document_history_t::from(measure_song());
     REQUIRE(chart_has_virtual_tail(history.document.charts.front()));
     const auto grown = apply_measure_edit(
         history, 5,
@@ -481,7 +481,7 @@ TEST_CASE("shortening measures extends a native chart back over its audio",
     song.resources.push_back({.id = resource_id_t{8}, .asset = asset_id_t{7},
                               .roles = {resource_role_t::music}});
     song.charts.front().source_family = format_family_t::native_project;
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     const auto before = history.document.charts.front().measures.size();
     const auto resized = apply_measure_edit(
         history, history.document.revision,
@@ -498,7 +498,7 @@ TEST_CASE("moving a bar line changes only the two neighboring measures",
     song.charts.front().measures[1].notes.push_back(
         {.id = object_id_t{31}, .position = {measure_id_t{11}, 100}, .lane = lane_id_t{20}});
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     const auto moved = apply_measure_edit(
         history, 5,
         move_bar_line_action_t{.chart = chart_id_t{2},
@@ -534,7 +534,7 @@ TEST_CASE("removing the first measure keeps layout, BPM and a validating documen
                                        .position = {measure_id_t{10}, 480},
                                        .lane = lane_id_t{20}});
     REQUIRE(validate_document(song).empty());
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     REQUIRE(apply_measure_edit(
         history, history.document.revision,
         remove_measure_with_contents_action_t{chart_id_t{2}, measure_id_t{10}}));
@@ -562,7 +562,7 @@ TEST_CASE("an empty leading measure that anchors BPM and layout cannot be delete
     CHECK(measure_holds_positioned_objects(base, measure_id_t{10}));
     CHECK_FALSE(measure_holds_positioned_objects(base, measure_id_t{11}));
     CHECK_FALSE(propose_measure_removal(base, measure_id_t{10}));
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto plain = apply_measure_edit(history, history.document.revision,
                                           delete_measure_action_t{chart_id_t{2}, measure_id_t{10}});
     CHECK_FALSE(plain);
@@ -579,7 +579,7 @@ TEST_CASE("Measure split preserves all existing heads absolute rows and duration
         .source_lane = object_id_t{43},
         .end = local_position_t{measure_id_t{11},100}}};
     chart.bpms.push_back({.id=object_id_t{42}, .position={measure_id_t{10},600}, .beats_per_minute={150,1}});
-    auto history = make_document_history(document);
+    auto history = document_history_t::from(document);
     const auto before = build_measure_index(chart);
     const auto before_timing = build_timing_index(chart);
     const auto result = apply_measure_edit(history, 5, split_measure_action_t{chart.id,{measure_id_t{10},480}});
@@ -612,7 +612,7 @@ TEST_CASE("Measure split preserves all existing heads absolute rows and duration
 }
 
 TEST_CASE("Measure split head stale invalid and limit boundaries leave history unchanged", "[core][measure-editor][measure-split]") {
-    auto history = make_document_history(measure_song());
+    auto history = document_history_t::from(measure_song());
     check_audio_extent(!apply_measure_edit(history,5,split_measure_action_t{chart_id_t{2},{measure_id_t{10},0}}).applied);
     check_audio_extent(!apply_measure_edit(history,4,split_measure_action_t{chart_id_t{2},{measure_id_t{10},480}}).applied);
     check_audio_extent(!apply_measure_edit(history,5,split_measure_action_t{chart_id_t{2},{measure_id_t{10},960}}).applied);
@@ -625,7 +625,7 @@ TEST_CASE("Measure split supports imported BMS without moving exported later hea
     const std::string source = "#PLAYER 1\n#BPM 120\n#WAV01 kick.wav\n#00111:01\n#00211:01\n";
     const auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(),source.size()}), {.lane_profile_id="bme-7k-outside-scratch"});
     REQUIRE(parsed.song);
-    auto history = make_document_history(*parsed.song);
+    auto history = document_history_t::from(*parsed.song);
     const auto& chart = history.document.charts.front();
     const auto id = chart.id;
     const auto measure = chart.measures.front().id;
@@ -646,7 +646,7 @@ TEST_CASE("Measure split preserves retained BMSON source heads and tails", "[cor
     const std::string source = R"({"version":"1.0.0","info":{"title":"split","mode_hint":"beat-7k","init_bpm":120,"resolution":240},"lines":[{"y":0},{"y":960},{"y":1920}],"sound_channels":[{"name":"kick.wav","notes":[{"x":1,"y":240,"l":480,"c":false},{"x":0,"y":600,"l":600,"c":false}]}]})";
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{source.data(),source.size()}));
     REQUIRE(parsed.song);
-    auto history = make_document_history(*parsed.song);
+    auto history = document_history_t::from(*parsed.song);
     const auto& chart = history.document.charts.front();
     const auto id = chart.id; const auto measure = chart.measures.front().id;
     REQUIRE(apply_measure_edit(history,history.document.revision,split_measure_action_t{id,{measure,chart.divisions_per_standard_measure/2}}).applied);
@@ -681,7 +681,7 @@ auto pause_conversion_song() -> song_document_t {
     return song;
 }
 auto pause_conversion_preserves_times(bool resize, pause_kind_t kind) -> bool {
-    auto history = make_document_history(pause_conversion_song());
+    auto history = document_history_t::from(pause_conversion_song());
     const auto original = history.document;
     const auto old_timing = build_timing_index(original.charts.front());
     const auto result = apply_measure_edit(history, history.document.revision,
@@ -710,7 +710,7 @@ auto pause_conversion_boundaries() -> bool {
     auto song = measure_song();
     song.charts.front().measures[1].notes.push_back({.id = object_id_t{60},
         .position = {measure_id_t{11}, 48}, .lane = lane_id_t{20}});
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     const position_span_t range{{measure_id_t{11}, 0}, {measure_id_t{11}, 48}};
     if (apply_measure_edit(history, history.document.revision,
             convert_range_to_pause_action_t{chart_id_t{2}, range, pause_kind_t::stop}).applied) return false;
@@ -724,7 +724,7 @@ auto pause_conversion_bms_round_trip(bool resize) -> bool {
     const std::string source_bytes = "#TITLE Convert\n#BPM 120\n#WAV01 kick.wav\n#00111:01\n#00211:01\n";
     auto imported = parse_bms_bytes(std::as_bytes(std::span{source_bytes.data(), source_bytes.size()}), {.lane_profile_id = "bme-7k-outside-scratch"});
     if (!imported.song) return false;
-    auto history = make_document_history(*imported.song);
+    auto history = document_history_t::from(*imported.song);
     const auto& source = history.document.charts.front();
     const auto id = source.id;
     const auto resolution = source.divisions_per_standard_measure;
@@ -786,7 +786,7 @@ auto pause_conversion_rejects_atomically(unsigned scenario) -> bool {
     case 7: chart.scrolls.front().id = object_id_t{std::numeric_limits<std::uint64_t>::max()}; break;
     default: break; // stale revision
     }
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     const auto before = write_native_project(history.document).bytes;
     const auto result = apply_measure_edit(history, history.document.revision + (scenario == 8 ? 1 : 0),
         convert_range_to_pause_action_t{chart.id, {{measure_id_t{11}, 0}, {measure_id_t{11}, 48}}, pause_kind_t::stop, true});
@@ -797,7 +797,7 @@ auto pause_conversion_bmson_aliases() -> bool {
     const std::string source_bytes = R"({"version":"1.0.0","info":{"title":"convert","mode_hint":"beat-7k","init_bpm":120,"resolution":240},"lines":[{"y":0},{"y":960},{"y":1920}],"sound_channels":[{"name":"kick.wav","notes":[{"x":1,"y":240,"l":480,"c":false},{"x":0,"y":840,"l":480,"c":false}]}]})";
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{source_bytes.data(), source_bytes.size()}));
     if (!parsed.song) return false;
-    auto history = make_document_history(*parsed.song);
+    auto history = document_history_t::from(*parsed.song);
     const auto& source = history.document.charts.front();
     const auto measure = source.measures.front().id;
     const auto resolution = source.divisions_per_standard_measure;
@@ -826,7 +826,7 @@ TEST_CASE("Range pause conversion keeps BMSON semantic and retained heads and ta
 
 namespace {
 auto pause_conversion_whole_measure() -> bool {
-    auto history = make_document_history(pause_conversion_song());
+    auto history = document_history_t::from(pause_conversion_song());
     const auto old = build_timing_index(history.document.charts.front());
     const auto result = apply_measure_edit(history, history.document.revision,
         convert_range_to_pause_action_t{chart_id_t{2}, {{measure_id_t{11}, 0}, {measure_id_t{12}, 0}}, pause_kind_t::delay, true});

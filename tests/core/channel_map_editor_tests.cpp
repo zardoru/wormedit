@@ -69,7 +69,7 @@ auto batch_swap_scenario() -> bool {
     };
     chart.measures[1].notes = {
         {.id = object_id_t{32}, .position = {measure_id_t{4}, 0}, .lane = first.id}};
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     const std::array replacements{replacement(first, *second.bms_channels.visible),
                                   replacement(second, *first.bms_channels.visible)};
     const auto preview = propose_bms_channel_map_edit(history.document, 7, chart_id_t{2},
@@ -223,7 +223,7 @@ auto root_export_swap_scenario() -> bool {
         return lane.bms_channels.visible == "12";
     });
     if (first == layout.layout.lanes.end() || second == layout.layout.lanes.end()) return false;
-    auto history = make_document_history(*song);
+    auto history = document_history_t::from(*song);
     const std::array replacements{replacement(*first, "12"), replacement(*second, "11")};
     const auto preview = propose_bms_channel_map_edit(history.document,
         history.document.revision, chart.id, layout.id, replacements);
@@ -271,11 +271,11 @@ TEST_CASE("BMS channel-map proposals reject stale or altered state",
     REQUIRE(proposal);
     auto other = song;
     other.id = song_id_t{9};
-    auto history = make_document_history(other);
+    auto history = document_history_t::from(other);
     CHECK(apply_bms_channel_map_edit(history, proposal).payload.issue ==
           channel_map_issue_t::stale_revision);
     CHECK(history.document.revision == other.revision);
-    history = make_document_history(song);
+    history = document_history_t::from(song);
     auto altered = proposal;
     altered.affected_note_count = 42;
     CHECK(apply_bms_channel_map_edit(history, altered).payload.issue ==

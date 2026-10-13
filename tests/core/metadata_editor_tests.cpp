@@ -66,7 +66,7 @@ struct temporary_output_drop_directory_t {
 
 TEST_CASE("normalized song and difficulty metadata edits are atomic and undoable",
           "[unit][core][metadata-editor]") {
-    auto history = make_document_history(metadata_song());
+    auto history = document_history_t::from(metadata_song());
     REQUIRE(apply_metadata_edit(
         history, 4, set_song_metadata_action_t{"New title", "New artist", {"tag one", "tag two"}}));
     CHECK(history.document.metadata.title == "New title");
@@ -85,7 +85,7 @@ TEST_CASE("normalized song and difficulty metadata edits are atomic and undoable
 
 TEST_CASE("ordered search-tag occurrence edits preserve reordering and duplicates",
           "[unit][core][metadata-editor][tags]") {
-    auto history = make_document_history(metadata_song());
+    auto history = document_history_t::from(metadata_song());
     const std::vector<std::string> reordered{"third", "first", "third", "second"};
     const auto edited = apply_metadata_edit(
         history, 4, set_song_metadata_action_t{"Old title", "Old artist", reordered});
@@ -113,7 +113,7 @@ TEST_CASE("output group path edits are safe, revision checked, and undoable",
                                   .family = format_family_t::bms,
                                   .charts = {chart_id_t{2}},
                                   .relative_output_path = "exports/old.bms"});
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     CHECK_FALSE(apply_metadata_edit(history, 3,
                                     set_output_group_path_action_t{0, "exports/new.bms"}));
     CHECK_FALSE(apply_metadata_edit(history, 4,
@@ -197,7 +197,7 @@ TEST_CASE("rating action helper supports exact set and explicit unset through re
     CHECK_FALSE(make_chart_rating_metadata_edit(chart_id_t{2}, false, "1", "0"));
     CHECK_FALSE(make_chart_rating_metadata_edit(chart_id_t{}, true, "", ""));
 
-    auto history = make_document_history(metadata_song());
+    auto history = document_history_t::from(metadata_song());
     const set_chart_metadata_action_t apply_set{set->chart, "Staged name", "Staged mapper",
                                                 set->rating};
     const auto stale = apply_metadata_edit(history, 3, apply_set);
@@ -221,7 +221,7 @@ TEST_CASE("rating action helper supports exact set and explicit unset through re
 
 TEST_CASE("format metadata keeps duplicate occurrences and source identities aligned",
           "[unit][core][metadata-editor]") {
-    auto history = make_document_history(metadata_song());
+    auto history = document_history_t::from(metadata_song());
     const format_metadata_target_t song_bms{std::nullopt, format_family_t::bms};
 
     REQUIRE(apply_metadata_edit(history, 4,
@@ -270,7 +270,7 @@ TEST_CASE("format metadata keeps duplicate occurrences and source identities ali
 
 TEST_CASE("metadata edits reject stale, unsafe, over-cap, and provenance-breaking actions",
           "[unit][core][metadata-editor][negative]") {
-    auto history = make_document_history(metadata_song());
+    auto history = document_history_t::from(metadata_song());
     const format_metadata_target_t song_bms{std::nullopt, format_family_t::bms};
 
     const auto stale =
@@ -321,7 +321,7 @@ TEST_CASE("metadata edits reject stale, unsafe, over-cap, and provenance-breakin
 
 TEST_CASE("semantic metadata no-ops do not dirty or advance the document",
           "[unit][core][metadata-editor]") {
-    auto history = make_document_history(metadata_song());
+    auto history = document_history_t::from(metadata_song());
     const auto no_op =
         apply_metadata_edit(history, 4, set_song_metadata_action_t{"Old title", "Old artist", {}});
     CHECK_FALSE(no_op.applied);
@@ -338,7 +338,7 @@ TEST_CASE("metadata edits synchronize scoped copies of one retained source field
     auto& song_group = song.metadata.format_groups.front();
     song_group.encoding.original_bytes = source;
     song.charts.front().metadata.format_groups.push_back(song_group);
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const format_metadata_target_t song_bms{std::nullopt, format_family_t::bms};
 
     REQUIRE(apply_metadata_edit(history, 4,
@@ -371,7 +371,7 @@ TEST_CASE("Chart metadata batch commits selected charts once and preserves names
         .measures = {{.id = measure_id_t{7}}},
         .lane_layouts = {{.id = object_id_t{8}, .position = {measure_id_t{7}, 0},
             .layout = {.profile_id = "metadata-test", .lanes = {{.id = lane_id_t{9}, .name = "Lane"}}}}}});
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     const batch_chart_metadata_action_t action{.charts = {chart_id_t{2}, chart_id_t{6}},
         .author = "Batch author", .edit_rating = true, .rating = signed_rational_t{7, 2}};
     require_metadata_batch(static_cast<bool>(apply_batch_chart_metadata_edit(history, 4, action)));
@@ -393,7 +393,7 @@ TEST_CASE("Chart metadata batch commits selected charts once and preserves names
 }
 
 TEST_CASE("Chart metadata batch rejects the whole selection on invalid target or value", "[unit][core][metadata-editor]") {
-    auto history = make_document_history(metadata_song());
+    auto history = document_history_t::from(metadata_song());
     batch_chart_metadata_action_t action{.charts = {chart_id_t{2}, chart_id_t{999}}, .author = "Changed"};
     expect_metadata_batch(!static_cast<bool>(apply_batch_chart_metadata_edit(history, 4, action)));
     action.charts = {chart_id_t{2}, chart_id_t{2}};
@@ -418,7 +418,7 @@ TEST_CASE("Chart metadata batch rejects the whole selection on invalid target or
 TEST_CASE("Chart metadata batch supports explicit rating clearing and preserves omitted fields", "[unit][core][metadata-editor]") {
     auto song = metadata_song();
     song.charts[0].metadata.rating = signed_rational_t{11, 3};
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     require_metadata_batch(static_cast<bool>(apply_batch_chart_metadata_edit(history, 4, {.charts = {chart_id_t{2}}, .author = "New author"})));
     expect_metadata_batch(static_cast<bool>(history.document.charts[0].metadata.rating == signed_rational_t{11, 3}));
     require_metadata_batch(static_cast<bool>(apply_batch_chart_metadata_edit(history, 5, {.charts = {chart_id_t{2}}, .edit_rating = true})));

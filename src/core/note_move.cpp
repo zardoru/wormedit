@@ -678,7 +678,7 @@ auto plan_single_bgm_move(const document_history_t& history,
     if (!target)
         return diagnostic_list_t{
             error(diagnostic_code_t::row_out_of_range, "BGM move cannot snap to this chart row")};
-    auto scratch = make_document_history(history.document);
+    auto scratch = document_history_t::from(history.document);
     const auto moved = stage_single_bgm_move(
         scratch, state.chart, source, *target, lane.value_or(source.source_lane),
         state.y_lock ? std::nullopt : canvas_row, exact ? 0 : edit_snap_denominator(chart, state));
@@ -735,7 +735,7 @@ auto relocate_selected_bgm(song_document_t& proposed, chart_id_t chart_id,
                            const note_move_plan_t& plan) -> diagnostic_list_t {
     if (plan.bgm_moves.empty())
         return {};
-    auto scratch = make_document_history(proposed);
+    auto scratch = document_history_t::from(proposed);
     std::vector<bgm_event_t> ordinary;
     for (const auto& preview : plan.bgm_moves) {
         auto* chart = scratch.document.find_chart(chart_id);
@@ -909,7 +909,7 @@ auto stage_bgm_note_move(const document_history_t& history, editor_interaction_s
             return diagnostic_list_t{
                 error(diagnostic_code_t::collision, "Selected notes would overlap")};
     }
-    auto scratch = make_document_history(history.document);
+    auto scratch = document_history_t::from(history.document);
     const auto* source = history.document.find_chart(state.chart);
     const note_to_bgm_policy_t policy{.allow_new_lanes =
                                           source->source_family == format_family_t::bms ||

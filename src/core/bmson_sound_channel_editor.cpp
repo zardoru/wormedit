@@ -1326,7 +1326,7 @@ auto insert_bmson_playable_stem_point(document_history_t& history,
                         "BMSON stem entry expired after the document changed");
     if (const auto reused = reuse_playable_stem_pulse(history, chart_id, channel_id, target, lane))
         return *reused;
-    auto scratch = make_document_history(history.document);
+    auto scratch = document_history_t::from(history.document);
     const auto inserted = insert_bmson_stem_point(scratch, scratch.document.revision,
         chart_id, channel_id, target, false, geometry);
     if (!inserted) return inserted;

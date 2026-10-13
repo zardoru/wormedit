@@ -229,7 +229,7 @@ template <typename T> void check_no_layer_brush(const T& value) { CHECK_FALSE(st
 
 TEST_CASE("BGM-only paint adds mixed membership on a stroke and undoes as one command",
           "[unit][core][interaction][semantic-layer][paint][bgm]") {
-    auto history = make_document_history(interaction_song());
+    auto history = document_history_t::from(interaction_song());
     auto state = make_state(history);
     require_layer_brush(begin_bgm_paint(history, state, layer_id_t{7}, object_id_t{20}));
     require_layer_brush(update_bgm_paint(history, state, object_id_t{21}));
@@ -250,7 +250,7 @@ TEST_CASE("BGM-only paint adds mixed membership on a stroke and undoes as one co
 
 TEST_CASE("BGM-only paint can restore the removed membership through one undoable reversal",
           "[unit][core][interaction][semantic-layer][paint][bgm]") {
-    auto history = make_document_history(interaction_song());
+    auto history = document_history_t::from(interaction_song());
     auto state = make_state(history);
     require_layer_brush(begin_bgm_paint(history, state, layer_id_t{7}, object_id_t{20},
                             semantic_layer_paint_mode_t::remove));
@@ -265,7 +265,7 @@ TEST_CASE("BGM-only paint can restore the removed membership through one undoabl
 
 TEST_CASE("BGM paint rejects a locked layer and cancels on pointer capture loss",
           "[unit][core][interaction][semantic-layer][paint][bgm]") {
-    auto history = make_document_history(interaction_song());
+    auto history = document_history_t::from(interaction_song());
     auto state = make_state(history);
     const auto locked = begin_bgm_paint(history, state, layer_id_t{8}, object_id_t{20});
     CHECK_FALSE(locked);
@@ -291,7 +291,7 @@ TEST_CASE("BGM lane events clip while widened stem resize edges remain addressab
 
 TEST_CASE("BGM paint rejects a stale gesture after a document edit",
           "[unit][core][interaction][semantic-layer][paint][bgm]") {
-    auto history = make_document_history(interaction_song());
+    auto history = document_history_t::from(interaction_song());
     auto state = make_state(history);
     REQUIRE(begin_bgm_paint(history, state, layer_id_t{7}, object_id_t{20}));
     auto changed = history.document;

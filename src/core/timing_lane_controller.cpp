@@ -801,7 +801,7 @@ auto move_timing_lane_event_group(document_history_t& history, chart_id_t chart_
         return row_delta > 0 ? left.source_row > right.source_row
                              : left.source_row < right.source_row;
     });
-    auto staged = make_document_history(history.document);
+    auto staged = document_history_t::from(history.document);
     for (const auto& move : moves) {
         auto preview = begin_existing_timing_lane_pseudonote(
             staged, chart_id, move.event.kind, move.event.event, false);
@@ -1013,7 +1013,7 @@ auto delete_timing_lane_event_group(document_history_t& history, chart_id_t char
                                     "the initial BPM cannot be deleted")};
         return result;
     }
-    auto staged = make_document_history(history.document);
+    auto staged = document_history_t::from(history.document);
     for (const auto& event : doomed) {
         auto deleted = delete_existing_timing_lane_event(staged, chart_id, event.kind, event.event,
                                                          staged.document.revision, false);

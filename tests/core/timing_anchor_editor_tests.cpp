@@ -43,7 +43,7 @@ auto same_anchor(const timing_anchor_t& left, const timing_anchor_t& right) -> b
 
 TEST_CASE("timing anchor insert update and delete preserve exact data through history",
           "[unit][core][timing-anchor-editor]") {
-    auto history = make_document_history(timing_anchor_song());
+    auto history = document_history_t::from(timing_anchor_song());
     const auto coincident_position = local_position_t{measure_id_t{3}, 240};
     const auto inserted = apply_timing_anchor_edit(
         history, 7,
@@ -105,7 +105,7 @@ TEST_CASE("timing anchor insert update and delete preserve exact data through hi
 
 TEST_CASE("timing anchor edits reject stale IDs and invalid positions atomically",
           "[unit][core][timing-anchor-editor][negative]") {
-    auto history = make_document_history(timing_anchor_song());
+    auto history = document_history_t::from(timing_anchor_song());
     const auto original = history.document.charts.front().timing_anchors.front();
     const auto revision = history.document.revision;
 
@@ -152,7 +152,7 @@ TEST_CASE("timing anchor IDs are unambiguous across the chart and insertion resp
     auto duplicate_song = timing_anchor_song();
     duplicate_song.charts.front().timing_anchors.push_back(
         {.id = object_id_t{11}, .position = {measure_id_t{3}, 360}});
-    auto duplicate_history = make_document_history(std::move(duplicate_song));
+    auto duplicate_history = document_history_t::from(std::move(duplicate_song));
     const auto ambiguous = apply_timing_anchor_edit(
         duplicate_history, duplicate_history.document.revision,
         update_timing_anchor_action_t{
@@ -164,7 +164,7 @@ TEST_CASE("timing anchor IDs are unambiguous across the chart and insertion resp
 
     auto cross_type_duplicate = timing_anchor_song();
     cross_type_duplicate.charts.front().timing_anchors.front().id = object_id_t{10};
-    auto cross_type_history = make_document_history(std::move(cross_type_duplicate));
+    auto cross_type_history = document_history_t::from(std::move(cross_type_duplicate));
     const auto cross_type_ambiguous =
         apply_timing_anchor_edit(cross_type_history, cross_type_history.document.revision,
                                  delete_timing_anchor_action_t{chart_id_t{2}, object_id_t{10}});
@@ -172,7 +172,7 @@ TEST_CASE("timing anchor IDs are unambiguous across the chart and insertion resp
     CHECK(has_code(cross_type_ambiguous, diagnostic_code_t::duplicate_id));
     CHECK(cross_type_history.document.charts.front().timing_anchors.size() == 1);
 
-    auto history = make_document_history(timing_anchor_song());
+    auto history = document_history_t::from(timing_anchor_song());
     const auto position = local_position_t{measure_id_t{3}, 120};
     const auto anchor_capped =
         apply_timing_anchor_edit(history, history.document.revision,
@@ -198,7 +198,7 @@ TEST_CASE("timing anchor IDs are unambiguous across the chart and insertion resp
     auto exhausted_song = timing_anchor_song();
     exhausted_song.charts.front().timing_anchors.front().id =
         object_id_t{std::numeric_limits<std::uint64_t>::max()};
-    auto exhausted_history = make_document_history(std::move(exhausted_song));
+    auto exhausted_history = document_history_t::from(std::move(exhausted_song));
     const auto exhausted =
         apply_timing_anchor_edit(exhausted_history, exhausted_history.document.revision,
                                  insert_timing_anchor_action_t{chart_id_t{2}, position, 0, false});

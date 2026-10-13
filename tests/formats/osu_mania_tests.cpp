@@ -2121,7 +2121,7 @@ TEST_CASE("Selected SpecialStyle layout replaces retained osu style on export",
             "\n[TimingPoints]\n0,500,4,0,0,100,1,0\n[HitObjects]\n16,192,100,1,0,0:0:0:0:\n";
         auto parsed = parse_inline(source);
         require_specialstyle(parsed.song.has_value());
-        auto history = make_document_history(*parsed.song);
+        auto history = document_history_t::from(*parsed.song);
         const auto id = history.document.charts.front().id;
         const auto position = history.document.charts.front().lane_layouts.front().position;
         require_specialstyle(static_cast<bool>(apply_lane_profile_switch(history, history.document.revision,

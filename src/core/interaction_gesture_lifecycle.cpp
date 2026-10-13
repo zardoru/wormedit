@@ -621,7 +621,7 @@ auto prepare_stem_note_paint(const document_history_t& history, chart_id_t chart
                              const std::optional<std::vector<layer_id_t>>& armed_layers,
                              std::optional<bmson_source_geometry_t> geometry)
     -> std::variant<prepared_note_paint_t, diagnostic_list_t> {
-    auto scratch = make_document_history(history.document);
+    auto scratch = document_history_t::from(history.document);
     if (!plan.removals.empty()) {
         editor_interaction_state_t selection;
         selection.chart = chart_id;

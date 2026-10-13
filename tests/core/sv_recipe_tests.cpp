@@ -226,7 +226,7 @@ TEST_CASE("export baking materializes ordinary events only in a detached chart c
 
 TEST_CASE("SV recipe commands are revision checked and share undo history",
           "[unit][sv-recipe][history]") {
-    auto history = make_document_history(make_recipe_song());
+    auto history = document_history_t::from(make_recipe_song());
     const auto initial_revision = history.document.revision;
     auto recipe = make_linear_recipe({}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {2, 1});
     auto inserted = apply_sv_recipe_edit(history, initial_revision,
@@ -270,7 +270,7 @@ TEST_CASE("SV recipe order and enabled state edits remain undoable", "[unit][sv-
         make_linear_recipe(recipe_id_t{21}, measure_id_t{11}, measure_id_t{12}, {2, 1}, {3, 1}),
     };
     auto song = song_document_t{.id = song_id_t{1}, .charts = {chart}};
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     auto result =
         apply_sv_recipe_edit(history, history.document.revision,
                              reorder_sv_recipe_action_t{chart_id_t{10}, recipe_id_t{21}, 0});
@@ -290,7 +290,7 @@ TEST_CASE("SV recipe range drag snaps, previews without mutation, and commits on
     auto song = make_recipe_song();
     song.charts.front().sv_recipes.push_back(
         make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {2, 1}));
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto revision = history.document.revision;
 
     auto drag = begin_sv_recipe_range_drag(history, chart_id_t{10}, recipe_id_t{20},
@@ -316,7 +316,7 @@ TEST_CASE("SV recipe endpoint crossing normalizes while whole-span drag preserve
     auto song = make_recipe_song();
     song.charts.front().sv_recipes.push_back(
         make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {2, 1}));
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
 
     auto endpoint = begin_sv_recipe_range_drag(history, chart_id_t{10}, recipe_id_t{20},
                                                sv_recipe_range_handle_t::begin,
@@ -348,7 +348,7 @@ TEST_CASE("SV recipe range drag rejects zero spans, locks, and stale revisions a
     auto song = make_recipe_song();
     song.charts.front().sv_recipes.push_back(
         make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {2, 1}));
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto original = history.document.charts.front().sv_recipes.front().range;
 
     auto zero = begin_sv_recipe_range_drag(history, chart_id_t{10}, recipe_id_t{20},
@@ -388,7 +388,7 @@ TEST_CASE("SV recipe draft previews raw and composed values without mutation, th
     existing.transition_duration = rational_t{1, 1};
     existing.transition_is_seconds = false;
     chart.sv_recipes.push_back(existing);
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto initial_revision = history.document.revision;
     const auto initial_undo_size = history.undo.size();
 
@@ -432,7 +432,7 @@ TEST_CASE("SV recipe draft previews raw and composed values without mutation, th
 
 TEST_CASE("applying an SV recipe requires rebinding the workspace before its next frame",
           "[unit][sv-recipe][workspace]") {
-    auto history = make_document_history(make_recipe_song());
+    auto history = document_history_t::from(make_recipe_song());
     auto binding = make_workspace_controller(history);
     REQUIRE(binding.workspace);
     auto workspace = *binding.workspace;
@@ -470,7 +470,7 @@ TEST_CASE("SV recipe edit drafts substitute in stable order and preserve replace
     last.transition_duration = rational_t{7, 1};
     last.transition_is_seconds = true;
     chart.sv_recipes = {first, middle, last};
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
 
     auto draft = begin_existing_sv_recipe_draft(history, chart_id_t{10}, recipe_id_t{21});
     REQUIRE(draft.status == sv_recipe_draft_status_t::editing);
@@ -500,7 +500,7 @@ TEST_CASE("SV recipe edit drafts substitute in stable order and preserve replace
 
 TEST_CASE("SV recipe draft range snapping normalizes direction and remains transient",
           "[unit][sv-recipe][draft]") {
-    auto history = make_document_history(make_recipe_song());
+    auto history = document_history_t::from(make_recipe_song());
     const auto revision = history.document.revision;
     const auto undo_size = history.undo.size();
     auto draft =
@@ -531,7 +531,7 @@ TEST_CASE("SV recipe draft range snapping normalizes direction and remains trans
 
     auto uneven_song = make_recipe_song();
     uneven_song.charts.front().measures.back().definition = {{7, 8}, meter_t{7, 8}};
-    auto uneven_history = make_document_history(std::move(uneven_song));
+    auto uneven_history = document_history_t::from(std::move(uneven_song));
     auto uneven_draft =
         begin_sv_recipe_draft(uneven_history, chart_id_t{10},
                               make_constant_recipe({}, measure_id_t{11}, measure_id_t{12}, {2, 1}));
@@ -549,7 +549,7 @@ TEST_CASE("SV recipe draft range snapping normalizes direction and remains trans
 
 TEST_CASE("SV recipe drafts reject invalid candidates and stale revisions without publishing",
           "[unit][sv-recipe][draft][negative]") {
-    auto history = make_document_history(make_recipe_song());
+    auto history = document_history_t::from(make_recipe_song());
     auto invalid = make_constant_recipe({}, measure_id_t{11}, measure_id_t{11}, {2, 1});
     auto draft = begin_sv_recipe_draft(history, chart_id_t{10}, invalid);
     REQUIRE(draft.status == sv_recipe_draft_status_t::editing);
@@ -592,7 +592,7 @@ TEST_CASE("materializing a recipe replaces it with ordinary events in one undo s
         make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {2, 1});
     recipe.enabled = false;  // a disabled recipe still materializes
     chart.sv_recipes.push_back(recipe);
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
 
     const auto result = apply_sv_recipe_edit(
         history, history.document.revision,
@@ -630,7 +630,7 @@ TEST_CASE("materializing rejects stale, unknown and non-evaluable recipes withou
     expression.curve = sv_recipe_curve_t::lua_expression;
     expression.expression_source = "return 1 + t";
     song.charts.front().sv_recipes.push_back(expression);
-    auto history = make_document_history(song);
+    auto history = document_history_t::from(song);
     const auto revision = history.document.revision;
 
     CHECK_FALSE(apply_sv_recipe_edit(history, revision + 1,

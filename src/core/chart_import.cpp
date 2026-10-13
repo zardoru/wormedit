@@ -410,7 +410,7 @@ auto apply_chart_import(document_history_t& history, std::uint64_t expected_revi
         result.command = transaction.reject(diagnostic_code_t::invalid_id, "the resource catalog is full");
         return result;
     }
-    auto scratch = make_document_history(proposed, 1, false);
+    auto scratch = document_history_t::from(proposed, 1, false);
     std::vector<chart_document_t> imported;
     for (const auto* chart : plan.charts) {
         auto added = import_one_chart(scratch, *chart, maps);

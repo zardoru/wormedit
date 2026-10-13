@@ -74,8 +74,7 @@ auto make_row(const bookmark_t& bookmark, const measure_index_t& measures,
     } else if (bookmark.audio_milliseconds) {
         row.position_label = audio_position_label(*bookmark.audio_milliseconds);
         if (timing) {
-            const auto musical = musical_position_at(*timing,
-                signed_rational_t{*bookmark.audio_milliseconds, 1'000});
+            const auto musical = timing->row_at(signed_rational_t{*bookmark.audio_milliseconds, 1'000});
             if (musical.absolute_row) {
                 absolute = wormedit::to_long_double(*musical.absolute_row);
             }

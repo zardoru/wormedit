@@ -1879,8 +1879,7 @@ auto tap_meter_at(const wormedit::song_document_t& document,
         frame > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) return 4;
     const auto chart = std::ranges::find(document.charts, *preview.chart, &wormedit::chart_document_t::id);
     if (chart == document.charts.end()) return 4;
-    const auto position = wormedit::musical_position_at(*preview.timing,
-        {static_cast<std::int64_t>(frame), 44'100});
+    const auto position = preview.timing->row_at({static_cast<std::int64_t>(frame), 44'100});
     if (!position.absolute_row) return 4;
     const auto row = position.absolute_row->numerator / static_cast<std::int64_t>(position.absolute_row->denominator);
     struct meter_cache_t {

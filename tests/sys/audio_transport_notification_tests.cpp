@@ -124,13 +124,13 @@ TEST_CASE("Preview audio tail retains the final editable playhead row", "[audio]
                    .event_seconds = {4, 1}, .after_stops_seconds = {4, 1}, .effective_bpm = {120, 1}}};
     timing.segments = {{.begin_row = 0, .end_row = 1920, .begin_seconds = {0, 1},
                         .end_seconds = {4, 1}, .effective_bpm = {120, 1}}};
-    CHECK(preview_playhead_row_at(timing, audio::output_sample_rate * 2) == 960.0);
-    CHECK(preview_playhead_row_at(timing, audio::output_sample_rate * 4) == 1919.0);
-    CHECK(preview_playhead_row_at(timing, audio::output_sample_rate * 4 + 1) == 1919.0);
-    CHECK(preview_playhead_row_at(timing, audio::output_sample_rate * 30) == 1919.0);
+    CHECK(timing.row_at_frame(audio::output_sample_rate * 2, audio::output_sample_rate, chart_end_policy_t::clamp_to_last_row) == 960.0);
+    CHECK(timing.row_at_frame(audio::output_sample_rate * 4, audio::output_sample_rate, chart_end_policy_t::clamp_to_last_row) == 1919.0);
+    CHECK(timing.row_at_frame(audio::output_sample_rate * 4 + 1, audio::output_sample_rate, chart_end_policy_t::clamp_to_last_row) == 1919.0);
+    CHECK(timing.row_at_frame(audio::output_sample_rate * 30, audio::output_sample_rate, chart_end_policy_t::clamp_to_last_row) == 1919.0);
     timing.rows.back().after_stops_seconds = {4, 0};
-    CHECK_FALSE(preview_playhead_row_at(timing, audio::output_sample_rate * 30));
-    CHECK_FALSE(preview_playhead_row_at({}, audio::output_sample_rate));
+    CHECK_FALSE(timing.row_at_frame(audio::output_sample_rate * 30, audio::output_sample_rate, chart_end_policy_t::clamp_to_last_row));
+    CHECK_FALSE(timing_index_t{}.row_at_frame(audio::output_sample_rate, audio::output_sample_rate, chart_end_policy_t::clamp_to_last_row));
 }
 
 namespace {

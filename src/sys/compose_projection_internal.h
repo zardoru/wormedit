@@ -532,8 +532,7 @@ void project_compose_beat_markers(const compose_marker_projection_context_t& inp
 std::optional<double>
 project_compose_audio_marker_y(const compose_marker_projection_context_t& input,
                                const auto& timing_index, std::int64_t milliseconds) {
-    const auto projected = wormedit::musical_position_at(
-        timing_index, wormedit::signed_rational_t{milliseconds, 1'000});
+    const auto projected = timing_index.row_at(wormedit::signed_rational_t{milliseconds, 1'000});
     if (!projected || !projected.absolute_row || projected.absolute_row->denominator == 0)
         return std::nullopt;
     const auto row = wormedit::to_long_double(*projected.absolute_row);

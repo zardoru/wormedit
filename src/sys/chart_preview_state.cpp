@@ -122,7 +122,7 @@ auto chart_visual_end_frame(const timing_index_t& timing,
                             const preview_schedule_t& schedule)
     -> std::optional<std::uint64_t> {
     std::uint64_t end_frame = audio::output_sample_rate;
-    const auto chart_end = timing_at(timing, timing.total_rows);
+    const auto chart_end = timing.seconds_at(timing.total_rows);
     if (!chart_end)
         return std::nullopt;
     if (chart_end.seconds->numerator >= 0) {

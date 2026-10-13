@@ -70,8 +70,8 @@ auto stopped_playhead(const application_frame_projection_context_t& context)
         state->virtual_bms_cursor_row || !cache.timing.marker_timing_index || !cache.scene.cached_measure_index ||
         cache.scene.chart != state->chart)
         return std::nullopt;
-    const auto at = timing_at(*cache.timing.marker_timing_index, *cache.scene.cached_measure_index, state->cursor);
-    const auto end = timing_at(*cache.timing.marker_timing_index, cache.timing.marker_timing_index->total_rows);
+    const auto at = cache.timing.marker_timing_index->seconds_at(*cache.scene.cached_measure_index, state->cursor);
+    const auto end = cache.timing.marker_timing_index->seconds_at(cache.timing.marker_timing_index->total_rows);
     if (!at.seconds || !end.seconds) return std::nullopt;
     // Times before the audio start clamp to frame zero, as the preview start does.
     const auto to_frame = [](signed_rational_t seconds) -> std::optional<std::uint64_t> {

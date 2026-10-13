@@ -30,15 +30,15 @@ auto proposed_visible_source_rows(const wormedit::timing_index_t& original,
         std::clamp(static_cast<long double>((scroll + height) / pixels_per_row), 0.0L,
                    static_cast<long double>(original.total_rows));
     const auto first_time =
-        wormedit::timing_at(original, static_cast<std::uint64_t>(std::floor(first_visible)),
+        original.seconds_at(static_cast<std::uint64_t>(std::floor(first_visible)),
                             wormedit::timing_boundary_side_t::before_delays);
     const auto last_time =
-        wormedit::timing_at(original, static_cast<std::uint64_t>(std::ceil(last_visible)),
+        original.seconds_at(static_cast<std::uint64_t>(std::ceil(last_visible)),
                             wormedit::timing_boundary_side_t::after_stops);
     if (!first_time || !last_time)
         return std::nullopt;
     const auto source_row = [&](wormedit::signed_rational_t seconds) -> std::optional<long double> {
-        const auto position = wormedit::musical_position_at(proposed, seconds);
+        const auto position = proposed.row_at(seconds);
         if (position)
             return to_long_double(*position.absolute_row);
         const auto time = to_long_double(seconds);
@@ -541,8 +541,7 @@ void project_beat_fit_positions(WormUiComposeView& compose,
     compose.beat_fit_beat_y_pixels = compose_project_y(
         compose.beat_fit_chart_row, pixels_per_row, interaction.viewport_scroll_pixels,
         compose.viewport_height_pixels, downscroll);
-    const auto target = musical_position_at(
-        timing, {static_cast<std::int64_t>(drag.proposed_sample_frame), drag.sample_rate});
+    const auto target = timing.row_at({static_cast<std::int64_t>(drag.proposed_sample_frame), drag.sample_rate});
     if (!target) return;
     const auto& row = *target.absolute_row;
     const auto source_y = static_cast<double>(

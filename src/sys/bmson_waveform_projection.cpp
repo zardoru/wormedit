@@ -387,8 +387,8 @@ auto packed_display_table(const bmson_waveform_projection_context_t& context)
     if (!std::isfinite(end) || end >= static_cast<double>(std::numeric_limits<std::uint64_t>::max())) return nullptr;
     if (end <= static_cast<double>(base.total_rows)) return &base;
     const auto& timing = *cache.timing.marker_timing_index;
-    const auto seconds = packed_seconds(timing, timing.total_rows, timing_boundary_side_t::after_stops);
-    const auto scale = packed_tail_seconds_per_row(timing);
+    const auto seconds = timing.seconds_at_approx(timing.total_rows, chart_end_policy_t::reject, timing_boundary_side_t::after_stops);
+    const auto scale = timing.tail_seconds_per_row();
     if (!seconds || !scale) return nullptr;
     auto& table = cache.stems.packed_waveform_row_table;
     if (!table.valid || cache.stems.packed_clock_generation != base.clock_generation) {

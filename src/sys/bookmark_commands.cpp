@@ -30,8 +30,7 @@ auto beat_position_for_audio_milliseconds(const chart_document_t& chart,
     const auto timing = build_timing_index(chart);
     if (!std::holds_alternative<measure_index_t>(measures) || !timing.index)
         return std::nullopt;
-    const auto query = musical_position_at(*timing.index,
-                                           signed_rational_t{milliseconds, 1'000});
+    const auto query = timing.index->row_at(signed_rational_t{milliseconds, 1'000});
     if (!query.absolute_row || query.absolute_row->numerator < 0 ||
         query.absolute_row->denominator == 0)
         return std::nullopt;
@@ -64,7 +63,7 @@ auto nearest_snap_row(const chart_document_t& chart, const measure_index_t& inde
 auto bookmark_preview_frame(const timing_index_t& timing, const measure_index_t& measures,
                             local_position_t position, std::optional<std::uint64_t> end_frame)
     -> std::optional<std::uint64_t> {
-    const auto at = timing_at(timing, measures, position);
+    const auto at = timing.seconds_at(measures, position);
     if (!at.seconds || at.seconds->denominator == 0) return std::nullopt;
     const auto frames = std::llround(static_cast<long double>(at.seconds->numerator) *
                                      audio::output_sample_rate / at.seconds->denominator);

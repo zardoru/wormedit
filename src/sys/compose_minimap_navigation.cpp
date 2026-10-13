@@ -9,17 +9,6 @@
 #include <limits>
 namespace wormedit::sys {
 namespace {
-auto row_for_time(const timing_index_t& timing, signed_rational_t seconds) -> long double {
-    const auto position = musical_position_at(timing, seconds);
-    if (position && position.absolute_row)
-        return std::clamp(wormedit::to_long_double(*position.absolute_row), 0.0L,
-                          static_cast<long double>(timing.total_rows));
-    const auto end = timing_at(timing, timing.total_rows);
-    if (end && end.seconds && wormedit::to_long_double(seconds) >=
-        wormedit::to_long_double(*end.seconds))
-        return static_cast<long double>(timing.total_rows);
-    return 0.0L;
-}
 auto target_at_frame(std::uint64_t frame, std::uint32_t preview_rate,
     const timing_index_t& timing, const measure_index_t& measures, std::uint64_t snap_denominator)
     -> std::optional<compose_minimap_target_t> {
@@ -28,7 +17,9 @@ auto target_at_frame(std::uint64_t frame, std::uint32_t preview_rate,
         timing.divisions_per_standard_measure == 0 ||
         frame > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
         return std::nullopt;
-    const auto row = row_for_time(timing, {static_cast<std::int64_t>(frame), preview_rate});
+    const auto position = timing.row_at({static_cast<std::int64_t>(frame), preview_rate},
+                                        chart_end_policy_t::clamp_to_end);
+    const auto row = position.absolute_row ? wormedit::to_long_double(*position.absolute_row) : 0.0L;
     auto snapped = static_cast<std::uint64_t>(std::floor(row));
     // The chart endpoint has no editable row; choose its last active grid row.
     snapped = std::min(snapped, timing.total_rows - 1);
@@ -105,7 +96,7 @@ void retain_compose_minimap_start(application_command_state_t& application,
     application.project.transport.minimap_start_frame.reset();
     const bool playing = application.services.transport_preview_playing && application.services.transport_preview_playing();
     const bool paused = application.services.transport_preview_paused && application.services.transport_preview_paused();
-    const auto end = timing_at(timing, timing.total_rows);
+    const auto end = timing.seconds_at(timing.total_rows);
     if (playing || paused || !end || !end.seconds) return;
     if (static_cast<long double>(target.frame) / audio::output_sample_rate <=
         wormedit::to_long_double(*end.seconds)) return;

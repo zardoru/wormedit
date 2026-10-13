@@ -17,7 +17,7 @@ auto fit_visible_source_frame(const wormedit::timing_index_t& timing,
                        state.pixels_per_standard_measure,
                    0.0L, static_cast<long double>(timing.total_rows));
     const auto at =
-        timing_at(timing, static_cast<std::uint64_t>(end ? std::ceil(row) : std::floor(row)),
+        timing.seconds_at(static_cast<std::uint64_t>(end ? std::ceil(row) : std::floor(row)),
                   end ? wormedit::timing_boundary_side_t::after_stops
                       : wormedit::timing_boundary_side_t::before_delays);
     if (!at || at.seconds->denominator == 0)
@@ -375,12 +375,12 @@ auto seek_compose_waveform(const WormUiComposeInputAction& input, compose_input_
     const auto frame = static_cast<std::int64_t>(
         input.audio_fraction * static_cast<long double>(cache.waveform.waveform_overview_total_frames - 1));
     const auto musical =
-        musical_position_at(timing, signed_rational_t{frame, cache.waveform.waveform_overview_sample_rate});
+        timing.row_at(signed_rational_t{frame, cache.waveform.waveform_overview_sample_rate});
     long double row = 0.0L;
     if (musical && musical.absolute_row && musical.absolute_row->denominator != 0) {
         row = wormedit::to_long_double(*musical.absolute_row);
     } else {
-        const auto end = timing_at(timing, timing.total_rows);
+        const auto end = timing.seconds_at(timing.total_rows);
         if (end && end.seconds) {
             const auto end_seconds =
                 wormedit::to_long_double(*end.seconds);

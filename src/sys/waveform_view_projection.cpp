@@ -16,7 +16,7 @@ auto overview_fraction(const audio::waveform_t& waveform, const timing_index_t& 
                        long double row, timing_boundary_side_t side, bool round_up)
     -> std::optional<double> {
     row = std::clamp(row, 0.0L, static_cast<long double>(timing.total_rows));
-    const auto time = timing_at(timing, static_cast<std::uint64_t>(row), side);
+    const auto time = timing.seconds_at(static_cast<std::uint64_t>(row), side);
     if (!time || !time.seconds || time.seconds->denominator == 0) return std::nullopt;
     const auto frames = static_cast<long double>(time.seconds->numerator) * waveform.sample_rate /
                         time.seconds->denominator;
@@ -68,7 +68,7 @@ auto populate_cached_overview(flattened_workspace_t& flattened, compose_scene_ca
     view.waveform_overview_generation = cache.waveform.waveform_overview_generation;
     view.waveform_overview_visible_begin_fraction = *begin;
     view.waveform_overview_visible_end_fraction = *end;
-    const auto zero = timing_at(timing, 0, timing_boundary_side_t::before_delays);
+    const auto zero = timing.seconds_at(0, timing_boundary_side_t::before_delays);
     const auto zero_fraction = zero && zero.seconds && zero.seconds->denominator != 0
         ? static_cast<long double>(zero.seconds->numerator) * waveform.sample_rate /
           zero.seconds->denominator / waveform.total_frames : -1.0L;
@@ -331,7 +331,7 @@ void populate_bgm_bar_bookmarks(flattened_workspace_t& flattened, const compose_
     if (cache.timing.marker_timing_index) {
         for (std::size_t index = 0; index < view.beat_bookmark_count; ++index) {
             const auto& bookmark = view.beat_bookmarks[index];
-            const auto time = timing_at(*cache.timing.marker_timing_index, bookmark.chart_row,
+            const auto time = cache.timing.marker_timing_index->seconds_at(bookmark.chart_row,
                                         timing_boundary_side_t::before_delays);
             if (!time.seconds || time.seconds->denominator == 0) continue;
             add(frames_to_fraction(wormedit::to_long_double(*time.seconds)),

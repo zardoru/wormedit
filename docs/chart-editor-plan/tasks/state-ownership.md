@@ -133,7 +133,9 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-606 Reset UI sessions at transitions
 
-- **Status:** Ready
+- **Status:** Done
+- **Completion (2026-10-13):** Commit `520666c`. One Nuklear session-reset helper for init and both shutdown paths; the sound-import picker (app lifetime, generation and mutex) is split from per-project import batches, and its reset moved from the per-frame `!project_loaded` poll to the project transitions; one scene-cache key check and invalidation entry point. Out-of-scope: a two-line declaration/comment in `src/ui/frontend/runtime.h`. A clang SDL audition test timed out once and passed on isolated and full retries (recorded; watch for flakiness).
+- **Gate evidence (Claude, on main with FFmpeg on):** build exit 0; `100% tests passed out of 3592`; event harness `505/505`; documentation `1/1`; isolated Xvfb Compose screenshot normal. Lane gates ran GCC and clang full suites.
 - **Findings closed:** UR1–UR3 (targets; not yet closed).
 - **Stale-plan audit:** Search by behavior: four-reset sequences, picker lock/generation increments, project_loaded polls and scene key field comparisons. Confirm every A lead and current caller/body equivalence; record stale claims, stricter validation, diagnostics, rounding and policy differences before editing.
 - **Outcome:** Reset entry points: one Nuklear session-reset helper; the sound-import picker/session split, with the reset moved from a per-frame poll to the actual transition; a single scene-cache key check and invalidation.
@@ -312,7 +314,9 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-614 Own project audio source reconciliation
 
-- **Status:** Ready
+- **Status:** Done
+- **Completion (2026-10-13):** Commit `bd0a3d8`. `project_audio_sources_t` owns the decoded-source registry and its sync state inside the audio subsystem; reconciliation is a member; consumers take the owner instead of document + registry. D12: the same-frame asset-edit-then-audition window reproduced, so queries now reconcile when the revision moved since the last reconcile; the test is its regression.
+- **Gate evidence (Claude, on main with FFmpeg on):** build exit 0; `100% tests passed out of 3592`; event harness `505/505`; documentation `1/1`; isolated Xvfb Compose screenshot normal. Lane gates ran GCC and clang full suites.
 - **Findings closed:** AS1–AS4 (targets; not yet closed).
 - **Stale-plan audit:** Search by behavior: document-plus-registry signatures, loose sync fields, reset callbacks and audio-phase/action-phase call order. Confirm every A lead and current caller/body equivalence; record stale claims, stricter validation, diagnostics, rounding and policy differences before editing.
 - **Outcome:** `project_audio_sources_t` owns the registry and its sync state. Reconciliation becomes a member; consumers stop taking document and registry separately. Runs after T-603/T-605. Plus D12.
@@ -333,7 +337,9 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-615 Own metronome clicks and settings
 
-- **Status:** Ready
+- **Status:** Done
+- **Completion (2026-10-13):** Commit `0a9b4d4`. `src/audio/metronome` with pure, tested click synthesis; one metronome owner for bindings, registration after a registry reset and the session settings as the single source of truth; the `metronome_bindings` plumbing and the three metronome `std::function` services are gone.
+- **Gate evidence (Claude, on main with FFmpeg on):** build exit 0; `100% tests passed out of 3592`; event harness `505/505`; documentation `1/1`; isolated Xvfb Compose screenshot normal. Lane gates ran GCC and clang full suites.
 - **Findings closed:** MT1–MT4 (targets; not yet closed).
 - **Stale-plan audit:** Search by behavior: sine/exponential click synthesis, binding vector plumbing and settings-to-bridge callbacks. Confirm every A lead and current caller/body equivalence; record stale claims, stricter validation, diagnostics, rounding and policy differences before editing.
 - **Outcome:** `src/audio/metronome` click synthesis plus a `metronome_t` owner in `audio_runtime_t` (bindings, registration after a reset, settings as the single source of truth). Remove the `metronome_bindings` plumbing and the three metronome `std::function` services. Runs after T-601, T-603 and T-614.
@@ -413,7 +419,9 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-619 Own bookmark navigation and stem display state
 
-- **Status:** Ready
+- **Status:** Done
+- **Completion (2026-10-13):** Commit `d8efb4a`. `bookmark_navigation_t` owns the seek record, clock and chooser/rename/seek commands (the three bookmark services became member calls; bookmark sys files renamed); `compose_scene_cache_t::stems` groups the stem display state with `stem_for`/`packed_for`. Later wave: measure wrappers in `bookmark_commands.cpp:45/78` and failure/outcome consolidation (`:18`) go with T-618/T-626 follow-ups.
+- **Gate evidence (Claude, on main with FFmpeg on):** build exit 0; `100% tests passed out of 3592`; event harness `505/505`; documentation `1/1`; isolated Xvfb Compose screenshot normal. Lane gates ran GCC and clang full suites.
 - **Findings closed:** BK1–BK2, ST1–ST2 (targets; not yet closed).
 - **Stale-plan audit:** Search by behavior: seek-record/clock/service field sets and stem display/index/packed/view containers. Confirm every A lead and current caller/body equivalence; record stale claims, stricter validation, diagnostics, rounding and policy differences before editing.
 - **Outcome:** Concept owners: `bookmark_navigation_t` (seek record, clock, chooser/rename/seek commands; the three services become member calls; files named `bookmark_*`) and `compose_scene_cache_t::stems` (display state grouped, `stem_for`/`packed_for` members). Inventory each on the card first. Runs after T-603, T-614 and T-617.

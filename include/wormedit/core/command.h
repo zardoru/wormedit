@@ -6,9 +6,32 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace wormedit {
+
+struct document_stamp_t {
+    song_id_t project;
+    std::uint64_t revision{};
+
+    [[nodiscard]] static auto from(const song_document_t& document) noexcept -> document_stamp_t;
+    [[nodiscard]] auto is_current(const song_document_t& document) const noexcept -> bool;
+    auto operator==(const document_stamp_t&) const -> bool = default;
+};
+
+struct chart_stamp_t {
+    document_stamp_t document;
+    chart_id_t chart;
+
+    [[nodiscard]] static auto from(const song_document_t& document, chart_id_t chart) noexcept
+        -> chart_stamp_t;
+    [[nodiscard]] auto is_current(const song_document_t& current, chart_id_t selected) const noexcept
+        -> bool;
+    auto operator==(const chart_stamp_t&) const -> bool = default;
+};
+
+[[nodiscard]] auto stale_action_message(std::string_view label) -> std::string;
 
 struct document_command_record_t {
     std::string label;

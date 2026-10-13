@@ -274,7 +274,8 @@ TEST_CASE("Compose dispatcher rejects stale actions without changing history", "
     auto action = fixture.action(WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER);
     --action.compose_input_document_revision;
     const auto revision = fixture.history.document.revision;
-    check_action(fixture.dispatch(action) == "Compose view action ignored because the chart or document revision changed.");
+    check_action(fixture.dispatch(action) ==
+                 "Compose view action ignored because the project, chart or document revision changed.");
     check_action(fixture.history.document.revision == revision);
     check_action(fixture.history.undo.empty());
     check_action(fixture.history.document.charts.front().semantic_layers.empty());
@@ -289,6 +290,29 @@ TEST_CASE("Compose NONE remains quiet even with an absent chart", "[compose-acti
     check_action(fixture.dispatch(WormUiWorkspaceAction{}) == "");
     check_action(fixture.entries().empty());
     check_action(fixture.history.undo.empty());
+}
+
+TEST_CASE("Meter edits reject a stale boundary before reaching synchronous handlers",
+          "[compose-action-notifications]") {
+    action_notification_fixture_t fixture;
+    const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER,
+                               WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER);
+    auto action = fixture.action(kind);
+    std::snprintf(action.timing_meter_numerator_text, sizeof(action.timing_meter_numerator_text), "3");
+    std::snprintf(action.timing_meter_denominator_text, sizeof(action.timing_meter_denominator_text), "4");
+    const std::uint64_t measure = 1;
+    action.compose_measure_ids = &measure;
+    action.compose_measure_id_count = 1;
+    --action.compose_input_document_revision;
+    check_action(fixture.dispatch(action) ==
+                 "Compose view action ignored because the project, chart or document revision changed.");
+    check_action(fixture.history.document.revision == 1);
+    check_action(fixture.history.undo.empty());
+    check_action(fixture.history.document.charts.front().measures.front().definition.meter ==
+                 meter_t{4, 4});
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::warning);
 }
 
 TEST_CASE("Compose area navigation and validation keep typed source and unchanged history", "[compose-action-notifications]") {

@@ -2269,15 +2269,18 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_NONE &&
         !action.compose_area_clear_requested) return {};
     const bool metadata_path_action = resource_path_tab_action(action, workspace.active_tab);
+    const chart_stamp_t stamp{
+        .document = {history.document.id, action.compose_input_document_revision},
+        .chart = chart_id_t{action.compose_input_chart_id}};
     if ((workspace.active_tab != workspace_tab_t::compose && !metadata_path_action) ||
         !workspace.selected_chart ||
         workspace.selected_chart->value != action.compose_input_chart_id ||
-        state.chart.value != action.compose_input_chart_id ||
-        history.document.revision != action.compose_input_document_revision) {
+        !stamp.is_current(history.document, state.chart)) {
+        const auto message = stale_action_message("Compose view action");
         if (notifications)
             notifications->post(notification_severity_t::warning, notification_source_t::edit,
-                                "Compose view action ignored because the chart or document revision changed.");
-        return "Compose view action ignored because the chart or document revision changed.";
+                                message);
+        return message;
     }
     const auto selected_chart_it = std::ranges::find(history.document.charts, state.chart,
                                                      &chart_document_t::id);

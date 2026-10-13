@@ -12,6 +12,8 @@
 using namespace wormedit;
 
 static_assert(std::is_aggregate_v<document_history_t>);
+static_assert(std::is_aggregate_v<document_stamp_t>);
+static_assert(std::is_aggregate_v<chart_stamp_t>);
 
 namespace {
 
@@ -52,6 +54,34 @@ auto note_row(const document_history_t& history) -> std::uint64_t {
 }
 
 } // namespace
+
+TEST_CASE("document stamps reject replaced projects and changed revisions", "[unit][core][command]") {
+    auto document = make_song();
+    const auto stamp = document_stamp_t::from(document);
+    CHECK(stamp.is_current(document));
+    CHECK(stamp == document_stamp_t::from(document));
+    ++document.revision;
+    CHECK_FALSE(stamp.is_current(document));
+    --document.revision;
+    document.id = song_id_t{2};
+    CHECK_FALSE(stamp.is_current(document));
+}
+
+TEST_CASE("chart stamps reject a changed selection without conflating missing targets",
+          "[unit][core][command]") {
+    const auto document = make_song();
+    const auto stamp = chart_stamp_t::from(document, chart_id_t{1});
+    CHECK(stamp.is_current(document, chart_id_t{1}));
+    CHECK_FALSE(stamp.is_current(document, chart_id_t{2}));
+    // Existence is a command validation error, separate from stamp freshness.
+    const auto missing = chart_stamp_t::from(document, chart_id_t{99});
+    CHECK(missing.is_current(document, chart_id_t{99}));
+}
+
+TEST_CASE("stale actions share the owner-approved message template", "[unit][core][command]") {
+    CHECK(stale_action_message("Compose view action") ==
+          "Compose view action ignored because the project, chart or document revision changed.");
+}
 
 TEST_CASE("quantization commits atomically through bounded document history",
           "[unit][core][command]") {

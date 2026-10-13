@@ -567,9 +567,6 @@ std::string set_cursor_measure_meter(compose_action_context_t& context) {
     if (editor_interaction_has_pending_gesture(context.state))
         return compose_action_warning(
             context, "Finish or cancel the active Compose gesture before editing measures.");
-    if (context.environment.document.history.document.revision !=
-        context.action.compose_input_document_revision)
-        return compose_action_warning(context, "Meter edit ignored because the document changed.");
     auto severity = notification_severity_t::warning;
     auto status = apply_cursor_measure_meter(
         context.environment.document.history, context.state, context.action.timing_meter_numerator_text,
@@ -590,9 +587,6 @@ std::string set_measures_meter(compose_action_context_t& context) {
     if (editor_interaction_has_pending_gesture(context.state))
         return compose_action_warning(
             context, "Finish or cancel the active Compose gesture before editing measures.");
-    if (context.environment.document.history.document.revision !=
-        context.action.compose_input_document_revision)
-        return compose_action_warning(context, "Meter edit ignored because the document changed.");
     auto severity = notification_severity_t::warning;
     const auto ids = std::span<const std::uint64_t>{context.action.compose_measure_ids,
                                                     context.action.compose_measure_id_count};

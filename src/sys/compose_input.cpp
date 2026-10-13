@@ -2031,7 +2031,7 @@ auto dispatch_compose_input_batch(compose_input_context_t& context) -> std::stri
             context.environment.commands.project.compose_gesture.bga_draw_stroke.reset();
             (void)dispatch_editor_action(context.environment.document.history, context.state,
                                          cancel_editor_gesture_action_t{});
-            const auto message = "Remaining Compose input was discarded after the document revision changed.";
+            const auto message = stale_action_message("Remaining Compose input");
             post_input_feedback(context.notifications, notification_severity_t::warning,
                                 notification_source_t::input, message);
             return message;
@@ -2165,11 +2165,10 @@ auto dispatch_compose_viewport_batch(compose_input_context_t& context,
     using namespace wormedit;
     for (std::size_t index = 0; index < context.ui_action.compose_viewport_input_count; ++index) {
         if (!context.input_is_current()) {
-            const auto message = "Remaining Compose viewport input was discarded after the chart or document changed.";
+            const auto message = stale_action_message("Remaining Compose viewport input");
             post_input_feedback(context.notifications, notification_severity_t::warning,
                                 notification_source_t::input, message);
-            return "Remaining Compose viewport input was discarded after the chart or document "
-                   "changed.";
+            return message;
         }
         const auto& input = context.ui_action.compose_viewport_inputs[index];
         if (input.kind == WORM_UI_COMPOSE_VIEWPORT_INPUT_PINCH_ZOOM) {
@@ -2254,10 +2253,12 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
         state.scratch_on_right = application_state.scratch_on_right;
     scene_cache.frame.audition_request.reset();
     scene_cache.frame.draft_audition_request.reset();
+    const chart_stamp_t stamp{
+        .document = {history.document.id, ui_action.compose_input_document_revision},
+        .chart = chart_id_t{ui_action.compose_input_chart_id}};
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
         workspace.selected_chart->value != ui_action.compose_input_chart_id ||
-        state.chart.value != ui_action.compose_input_chart_id ||
-        history.document.revision != ui_action.compose_input_document_revision ||
+        !stamp.is_current(history.document, state.chart) ||
         !std::isfinite(ui_action.compose_input_viewport_width_pixels) ||
         ui_action.compose_input_viewport_width_pixels <= 0.0) {
         scene_cache.navigation_travel.cancel();
@@ -2265,7 +2266,7 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
             editor_gestures_stale(state, history.document.revision))
             retire_interrupted_compose_input(history, state, viewport_input, navigation_input,
                                              application_state, scene_cache);
-        const auto message = "Compose input ignored because the chart or document revision changed.";
+        const auto message = stale_action_message("Compose input");
         post_input_feedback(notifications, notification_severity_t::warning,
                             notification_source_t::input, message);
         return message;

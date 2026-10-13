@@ -145,7 +145,7 @@ void check_stale_rejection(compose_notification_fixture_t& fixture,
     const auto entries = fixture.drain();
     REQUIRE(entries.size() == 1);
     expect_entry(entries[0], notification_severity_t::warning, notification_source_t::input,
-                 "Compose input ignored because the chart or document revision changed.");
+                 "Compose input ignored because the project, chart or document revision changed.");
     CHECK(fixture.history.document.revision == revision);
     CHECK(fixture.history.undo.empty());
 }

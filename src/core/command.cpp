@@ -9,6 +9,33 @@
 #include <utility>
 
 namespace wormedit {
+auto document_stamp_t::from(const song_document_t& document) noexcept -> document_stamp_t {
+    return {.project = document.id, .revision = document.revision};
+}
+
+auto document_stamp_t::is_current(const song_document_t& document) const noexcept -> bool {
+    return project == document.id && revision == document.revision;
+}
+
+auto chart_stamp_t::from(const song_document_t& document, chart_id_t chart) noexcept -> chart_stamp_t {
+    return {.document = document_stamp_t::from(document), .chart = chart};
+}
+
+auto chart_stamp_t::is_current(const song_document_t& current, chart_id_t selected) const noexcept
+    -> bool {
+    return document.is_current(current) && chart == selected;
+}
+
+auto stale_action_message(std::string_view label) -> std::string {
+    constexpr std::string_view suffix =
+        " ignored because the project, chart or document revision changed.";
+    std::string message;
+    message.reserve(label.size() + suffix.size());
+    message.append(label);
+    message.append(suffix);
+    return message;
+}
+
 void reject(document_command_result_t& result, diagnostic_code_t code, std::string message,
             std::optional<object_id_t> object) {
     result.diagnostics.push_back(error(code, std::move(message), object));

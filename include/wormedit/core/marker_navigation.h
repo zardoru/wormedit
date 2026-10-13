@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/result.h>
 #include <wormedit/core/timing.h>
 
 #include <cstddef>
@@ -44,9 +45,32 @@ struct marker_navigation_item_t {
     std::uint64_t source_order{};
     std::optional<local_position_t> beat_position;
     std::optional<std::int64_t> audio_milliseconds;
+    auto operator==(const marker_navigation_item_t&) const -> bool = default;
 };
 
+struct marker_navigation_match_t {
+    [[nodiscard]] static auto
+    from(const song_document_t& song, std::uint64_t expected_revision, chart_id_t chart,
+         local_position_t beat_cursor, marker_navigation_direction_t direction,
+         marker_navigation_filter_t filter = {}, marker_navigation_limits_t limits = {},
+         const timing_index_t* timing = nullptr) -> diagnosed_t<marker_navigation_match_t>;
+    [[nodiscard]] static auto
+    from(const song_document_t& song, std::uint64_t expected_revision, chart_id_t chart,
+         std::int64_t audio_millisecond_cursor, marker_navigation_direction_t direction,
+         marker_navigation_filter_t filter = {}, marker_navigation_limits_t limits = {})
+        -> diagnosed_t<marker_navigation_match_t>;
+    marker_navigation_status_t status{marker_navigation_status_t::no_result};
+    std::uint64_t document_revision{};
+    chart_id_t chart;
+    std::optional<marker_navigation_item_t> item;
+    auto operator==(const marker_navigation_match_t&) const -> bool = default;
+};
+using marker_navigation_outcome_t = diagnosed_t<marker_navigation_match_t>;
+
 struct marker_navigation_result_t {
+    [[nodiscard]] static auto from(marker_navigation_outcome_t&& outcome)
+        -> marker_navigation_result_t;
+
     marker_navigation_status_t status{marker_navigation_status_t::no_result};
     std::uint64_t document_revision{};
     chart_id_t chart;
@@ -97,7 +121,24 @@ enum class section_selection_status_t : std::uint8_t {
     invalid_request,
 };
 
+struct section_selection_t {
+    [[nodiscard]] static auto from(const song_document_t& song, std::uint64_t expected_revision,
+                                   chart_id_t chart, object_id_t section,
+                                   marker_navigation_limits_t limits = {})
+        -> diagnosed_t<section_selection_t>;
+    section_selection_status_t status{section_selection_status_t::invalid_request};
+    std::uint64_t document_revision{};
+    chart_id_t chart;
+    object_id_t section;
+    std::optional<position_span_t> beat_span;
+    auto operator==(const section_selection_t&) const -> bool = default;
+};
+using section_selection_outcome_t = diagnosed_t<section_selection_t>;
+
 struct section_selection_result_t {
+    [[nodiscard]] static auto from(section_selection_outcome_t&& outcome)
+        -> section_selection_result_t;
+
     section_selection_status_t status{section_selection_status_t::invalid_request};
     std::uint64_t document_revision{};
     chart_id_t chart;

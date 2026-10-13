@@ -1230,9 +1230,7 @@ auto validate_chart(const chart_document_t& chart,
 } // namespace
 
 auto conversion_report_t::has_errors() const -> bool {
-    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-        return diagnostic.severity == diagnostic_severity_t::error;
-    });
+    return diagnostic_queries::has_errors(diagnostics);
 }
 
 namespace {

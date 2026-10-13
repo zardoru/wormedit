@@ -167,18 +167,15 @@ auto make_approximation(double input, rational_t candidate, std::uint32_t iterat
                         const rationalization_options_t& options) -> rationalization_result_t {
     const auto bound = error_bound(input, candidate);
     if (options.maximum_absolute_error.has_value() && bound > *options.maximum_absolute_error) {
-        return {
-            .value = std::nullopt,
-            .status = rationalization_status_t::error,
-            .error = rationalization_error_t::approximation_exceeds_error_limit,
+        return std::unexpected(rationalization_error_info_t{
+            .code = rationalization_error_t::approximation_exceeds_error_limit,
             .absolute_error_bound = bound,
             .iterations = iterations,
-        };
+        });
     }
-    return {
+    return rationalized_value_t{
         .value = candidate,
         .status = rationalization_status_t::approximation,
-        .error = rationalization_error_t::none,
         .absolute_error_bound = bound,
         .iterations = iterations,
     };
@@ -304,28 +301,27 @@ auto parse_exact_decimal(std::string_view text, std::optional<std::uint32_t> max
     return scaled_decimal(*mantissa, negative);
 }
 
-auto rationalize_positive_double(double value, const rationalization_options_t& options)
+auto rationalized_value_t::from(double value, const rationalization_options_t& options)
     -> rationalization_result_t {
     if (!std::isfinite(value)) {
-        return {.error = rationalization_error_t::non_finite};
+        return std::unexpected(rationalization_error_info_t{.code = rationalization_error_t::non_finite});
     }
     if (!(value > 0.0)) {
-        return {.error = rationalization_error_t::non_positive};
+        return std::unexpected(rationalization_error_info_t{.code = rationalization_error_t::non_positive});
     }
     if (options.maximum_denominator == 0 || options.iteration_limit == 0 ||
         (options.maximum_absolute_error.has_value() &&
          (!std::isfinite(*options.maximum_absolute_error) ||
           *options.maximum_absolute_error < 0.0L))) {
-        return {.error = rationalization_error_t::invalid_limits};
+        return std::unexpected(rationalization_error_info_t{.code = rationalization_error_t::invalid_limits});
     }
 
     const auto maximum_denominator = options.maximum_denominator;
     if (const auto exact = exact_binary_value(value);
         exact.has_value() && exact->denominator <= maximum_denominator) {
-        return {
-            .value = exact,
+        return rationalized_value_t{
+            .value = *exact,
             .status = rationalization_status_t::exact,
-            .error = rationalization_error_t::none,
             .absolute_error_bound = 0.0L,
             .iterations = 0,
         };
@@ -342,6 +338,11 @@ auto rationalize_positive_double(double value, const rationalization_options_t& 
     const auto [best, completed_iterations] =
         best_bounded_approximation(value, maximum_denominator, iteration_limit);
     return make_approximation(value, best, completed_iterations, options);
+}
+
+auto rationalize_positive_double(double value, const rationalization_options_t& options)
+    -> rationalization_result_t {
+    return rationalized_value_t::from(value, options);
 }
 
 auto filter_snap_denominators(std::uint64_t divisions_per_standard_measure,

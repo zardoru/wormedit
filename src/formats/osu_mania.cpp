@@ -797,7 +797,7 @@ auto rationalize(long double value, std::uint64_t maximum_denominator = 1'000'00
                                                     {.maximum_denominator = maximum_denominator,
                                                      .iteration_limit = 96,
                                                      .maximum_absolute_error = 1.0e-10L});
-    return result.value;
+    return result ? std::optional{result->value} : std::nullopt;
 }
 
 auto format_double(long double value) -> std::string {

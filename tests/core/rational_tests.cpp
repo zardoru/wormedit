@@ -39,17 +39,17 @@ TEST_CASE("IEEE-754 rationalization distinguishes exact and approximate values",
           "[unit][core][rational]") {
     const auto exact = rationalize_positive_double(0.5);
     REQUIRE(exact);
-    CHECK(exact.status == rationalization_status_t::exact);
-    CHECK((exact.value == rational_t{1, 2}));
-    CHECK(exact.absolute_error_bound == 0.0L);
-    CHECK(exact.iterations == 0);
+    CHECK(exact->status == rationalization_status_t::exact);
+    CHECK((exact->value == rational_t{1, 2}));
+    CHECK(exact->absolute_error_bound == 0.0L);
+    CHECK(exact->iterations == 0);
 
     const auto approximate =
         rationalize_positive_double(0.1, {.maximum_denominator = 100, .iteration_limit = 64});
     REQUIRE(approximate);
-    CHECK(approximate.status == rationalization_status_t::approximation);
-    CHECK((approximate.value == rational_t{1, 10}));
-    CHECK(approximate.absolute_error_bound > 0.0L);
+    CHECK(approximate->status == rationalization_status_t::approximation);
+    CHECK((approximate->value == rational_t{1, 10}));
+    CHECK(approximate->absolute_error_bound > 0.0L);
 }
 
 TEST_CASE("IEEE-754 rationalization obeys denominator and iteration bounds",
@@ -57,49 +57,49 @@ TEST_CASE("IEEE-754 rationalization obeys denominator and iteration bounds",
     const auto denominator_bounded = rationalize_positive_double(
         3.141592653589793, {.maximum_denominator = 1, .iteration_limit = 64});
     REQUIRE(denominator_bounded);
-    CHECK(denominator_bounded.status == rationalization_status_t::approximation);
-    CHECK(denominator_bounded.value->denominator == 1);
-    CHECK(denominator_bounded.iterations <= 64);
+    CHECK(denominator_bounded->status == rationalization_status_t::approximation);
+    CHECK(denominator_bounded->value.denominator == 1);
+    CHECK(denominator_bounded->iterations <= 64);
 
     const auto iteration_bounded = rationalize_positive_double(
         3.141592653589793, {.maximum_denominator = 1'000'000, .iteration_limit = 1});
     REQUIRE(iteration_bounded);
-    CHECK(iteration_bounded.status == rationalization_status_t::approximation);
-    CHECK(iteration_bounded.value->denominator == 1);
-    CHECK(iteration_bounded.iterations == 1);
+    CHECK(iteration_bounded->status == rationalization_status_t::approximation);
+    CHECK(iteration_bounded->value.denominator == 1);
+    CHECK(iteration_bounded->iterations == 1);
 
     const auto below_one_single_iteration =
         rationalize_positive_double(0.9, {.maximum_denominator = 3, .iteration_limit = 1});
     REQUIRE(below_one_single_iteration);
-    CHECK((below_one_single_iteration.value == rational_t{1, 1}));
+    CHECK((below_one_single_iteration->value == rational_t{1, 1}));
 
     const auto small_positive =
         rationalize_positive_double(std::numeric_limits<double>::denorm_min(),
                                     {.maximum_denominator = 100, .iteration_limit = 64});
     REQUIRE(small_positive);
-    CHECK(small_positive.value->numerator > 0);
-    CHECK(small_positive.value->denominator == 100);
+    CHECK(small_positive->value.numerator > 0);
+    CHECK(small_positive->value.denominator == 100);
 }
 
 TEST_CASE("IEEE-754 rationalization rejects invalid values and excessive error",
           "[unit][core][rational][negative]") {
-    CHECK(rationalize_positive_double(0.0).error == rationalization_error_t::non_positive);
-    CHECK(rationalize_positive_double(-0.25).error == rationalization_error_t::non_positive);
-    CHECK(rationalize_positive_double(std::numeric_limits<double>::infinity()).error ==
+    CHECK(rationalize_positive_double(0.0).error().code == rationalization_error_t::non_positive);
+    CHECK(rationalize_positive_double(-0.25).error().code == rationalization_error_t::non_positive);
+    CHECK(rationalize_positive_double(std::numeric_limits<double>::infinity()).error().code ==
           rationalization_error_t::non_finite);
-    CHECK(rationalize_positive_double(std::numeric_limits<double>::quiet_NaN()).error ==
+    CHECK(rationalize_positive_double(std::numeric_limits<double>::quiet_NaN()).error().code ==
           rationalization_error_t::non_finite);
     CHECK(
-        rationalize_positive_double(0.5, {.maximum_denominator = 0, .iteration_limit = 64}).error ==
+        rationalize_positive_double(0.5, {.maximum_denominator = 0, .iteration_limit = 64}).error().code ==
         rationalization_error_t::invalid_limits);
 
     const auto rejected = rationalize_positive_double(
         0.1,
         {.maximum_denominator = 100, .iteration_limit = 64, .maximum_absolute_error = 1.0e-30L});
     CHECK_FALSE(rejected);
-    CHECK(rejected.status == rationalization_status_t::error);
-    CHECK(rejected.error == rationalization_error_t::approximation_exceeds_error_limit);
-    CHECK(rejected.absolute_error_bound > 1.0e-30L);
+    CHECK_FALSE(rejected.has_value());
+    CHECK(rejected.error().code == rationalization_error_t::approximation_exceeds_error_limit);
+    CHECK(rejected.error().absolute_error_bound > 1.0e-30L);
 }
 
 TEST_CASE("snap filtering preserves configured order and exact fallback", "[unit][core][snap]") {
@@ -205,4 +205,17 @@ TEST_CASE("wide arithmetic and row fractions reduce without intermediate overflo
     CHECK_FALSE(timing_arithmetic::rows_to_beat_fraction(1, 1, 0));
     CHECK((checked_math::gcd(wide_math::u128_t{2, 0}, wide_math::u128_t{3, 0}) == wide_math::u128_t{1, 0}));
     CHECK_FALSE(checked_math::checked_multiply(wide_math::u128_t{maximum, maximum}, 2));
+}
+
+TEST_CASE("rationalization rejection retains preview error bounds and iterations",
+          "[unit][core][rational][result]") {
+    const auto rejected = rationalized_value_t::from(0.1,
+        {.maximum_denominator = 100, .iteration_limit = 64, .maximum_absolute_error = 1.0e-30L});
+    REQUIRE_FALSE(rejected.has_value());
+    const auto preview = rationalized_value_t::from(0.1,
+        {.maximum_denominator = 100, .iteration_limit = 64});
+    REQUIRE(preview.has_value());
+    CHECK(preview->iterations > 0);
+    CHECK(rejected.error().absolute_error_bound == preview->absolute_error_bound);
+    CHECK(rejected.error().iterations == preview->iterations);
 }

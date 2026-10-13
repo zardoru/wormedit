@@ -83,9 +83,7 @@ auto lane_bounds(const visible_band_t& band, lane_id_t lane) -> const lane_bound
 } // namespace
 
 auto editor_field_scene_result_t::has_errors() const -> bool {
-    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-        return diagnostic.severity == diagnostic_severity_t::error;
-    });
+    return diagnostic_queries::has_errors(diagnostics);
 }
 
 namespace {

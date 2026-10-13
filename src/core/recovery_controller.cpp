@@ -142,9 +142,7 @@ auto bounded_actions(std::span<const native_project_recovery_action_t> actions)
 } // namespace
 
 auto native_project_recovery_controller_dispatch_result_t::has_errors() const -> bool {
-    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-        return diagnostic.severity == diagnostic_severity_t::error;
-    });
+    return diagnostic_queries::has_errors(diagnostics);
 }
 
 native_project_recovery_controller_t::native_project_recovery_controller_t(

@@ -25,6 +25,8 @@ auto workspace_chart_option_t::from(const chart_document_t& chart) -> workspace_
 
 namespace {
 
+using diagnostic_queries::has_errors;
+
 auto index_of(workspace_tab_t tab) noexcept -> std::optional<std::size_t> {
     const auto index = static_cast<std::size_t>(tab);
     if (index >= workspace_tab_count) {
@@ -36,12 +38,6 @@ auto index_of(workspace_tab_t tab) noexcept -> std::optional<std::size_t> {
 auto add_error(diagnostic_list_t& diagnostics, diagnostic_code_t code, std::string message)
     -> void {
     diagnostics.push_back(error(code, std::move(message)));
-}
-
-auto has_errors(const diagnostic_list_t& diagnostics) -> bool {
-    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-        return diagnostic.severity == diagnostic_severity_t::error;
-    });
 }
 
 template <typename id_t, typename projection_t>

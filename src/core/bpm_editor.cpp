@@ -182,12 +182,12 @@ auto parse_bpm_text(std::string_view text) -> std::optional<signed_rational_t> {
         return parsed && parsed->numerator > 0 ? parsed : std::nullopt;
     }
     const auto parsed = parse_measure_length(text);
-    if (!parsed || parsed.value->numerator >
+    if (!parsed || parsed->numerator >
                        static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
         return std::nullopt;
     }
-    return signed_rational_t{static_cast<std::int64_t>(parsed.value->numerator),
-                             parsed.value->denominator};
+    return signed_rational_t{static_cast<std::int64_t>(parsed->numerator),
+                             parsed->denominator};
 }
 
 auto format_bpm_text(signed_rational_t bpm, std::size_t maximum_fraction_digits)

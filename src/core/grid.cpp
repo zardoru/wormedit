@@ -656,9 +656,7 @@ auto thin_grid_candidates(editor_grid_build_context_t& context) -> void {
 } // namespace
 
 auto editor_grid_result_t::has_errors() const -> bool {
-    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-        return diagnostic.severity == diagnostic_severity_t::error;
-    });
+    return diagnostic_queries::has_errors(diagnostics);
 }
 
 auto make_editor_grid_lines(const chart_document_t& chart, const editor_grid_request_t& request)

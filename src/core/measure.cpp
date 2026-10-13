@@ -49,15 +49,10 @@ auto reduce_fraction_parts(std::uint64_t numerator, std::uint64_t denominator) -
     return reduce_fraction({numerator, denominator});
 }
 
-auto failure(measure_error_t error) -> measure_parse_result_t
-{
-    return {.value = std::nullopt, .error = error};
-}
-
 auto parse_fractional_measure(std::string_view text, std::size_t slash)
     -> measure_parse_result_t {
     if (text.find('/', slash + 1) != std::string_view::npos) {
-        return failure(measure_error_t::invalid_syntax);
+        return std::unexpected(measure_error_t::invalid_syntax);
     }
     std::uint64_t numerator{};
     std::uint64_t denominator{};
@@ -65,31 +60,31 @@ auto parse_fractional_measure(std::string_view text, std::size_t slash)
     const auto denominator_error = parse_unsigned(trim(text.substr(slash + 1)), denominator);
     if (numerator_error == unsigned_parse_error_t::overflow ||
         denominator_error == unsigned_parse_error_t::overflow) {
-        return failure(measure_error_t::overflow);
+        return std::unexpected(measure_error_t::overflow);
     }
     if (numerator_error != unsigned_parse_error_t::none ||
         denominator_error != unsigned_parse_error_t::none) {
-        return failure(measure_error_t::invalid_syntax);
+        return std::unexpected(measure_error_t::invalid_syntax);
     }
     if (denominator == 0) {
-        return failure(measure_error_t::zero_denominator);
+        return std::unexpected(measure_error_t::zero_denominator);
     }
     if (numerator == 0) {
-        return failure(measure_error_t::non_positive);
+        return std::unexpected(measure_error_t::non_positive);
     }
-    return {.value = reduce_fraction_parts(numerator, denominator)};
+    return reduce_fraction_parts(numerator, denominator);
 }
 
 auto parse_decimal_measure(std::string_view text) -> measure_parse_result_t {
     const auto dot = text.find('.');
     if (dot != std::string_view::npos && text.find('.', dot + 1) != std::string_view::npos) {
-        return failure(measure_error_t::invalid_syntax);
+        return std::unexpected(measure_error_t::invalid_syntax);
     }
     auto integer_text = dot == std::string_view::npos ? text : text.substr(0, dot);
     auto fractional_text =
         dot == std::string_view::npos ? std::string_view{} : text.substr(dot + 1);
     if (integer_text.empty() && fractional_text.empty()) {
-        return failure(measure_error_t::invalid_syntax);
+        return std::unexpected(measure_error_t::invalid_syntax);
     }
     while (!fractional_text.empty() && fractional_text.back() == '0') {
         fractional_text.remove_suffix(1);
@@ -98,16 +93,16 @@ auto parse_decimal_measure(std::string_view text) -> measure_parse_result_t {
     if (!integer_text.empty()) {
         const auto error = parse_unsigned(integer_text, integer_part);
         if (error == unsigned_parse_error_t::overflow) {
-            return failure(measure_error_t::overflow);
+            return std::unexpected(measure_error_t::overflow);
         }
         if (error != unsigned_parse_error_t::none) {
-            return failure(measure_error_t::invalid_syntax);
+            return std::unexpected(measure_error_t::invalid_syntax);
         }
     }
     std::uint64_t denominator = 1;
     for ([[maybe_unused]] const auto digit : fractional_text) {
         if (denominator > maximum / 10) {
-            return failure(measure_error_t::overflow);
+            return std::unexpected(measure_error_t::overflow);
         }
         denominator *= 10;
     }
@@ -115,39 +110,39 @@ auto parse_decimal_measure(std::string_view text) -> measure_parse_result_t {
     if (!fractional_text.empty()) {
         const auto error = parse_unsigned(fractional_text, fractional_part);
         if (error == unsigned_parse_error_t::overflow) {
-            return failure(measure_error_t::overflow);
+            return std::unexpected(measure_error_t::overflow);
         }
         if (error != unsigned_parse_error_t::none) {
-            return failure(measure_error_t::invalid_syntax);
+            return std::unexpected(measure_error_t::invalid_syntax);
         }
     }
     std::uint64_t scaled_integer{};
     if (!checked_multiply(integer_part, denominator, scaled_integer) ||
         fractional_part > maximum - scaled_integer) {
-        return failure(measure_error_t::overflow);
+        return std::unexpected(measure_error_t::overflow);
     }
     const auto numerator = scaled_integer + fractional_part;
     if (numerator == 0) {
-        return failure(measure_error_t::non_positive);
+        return std::unexpected(measure_error_t::non_positive);
     }
-    return {.value = reduce_fraction_parts(numerator, denominator)};
+    return reduce_fraction_parts(numerator, denominator);
 }
 
 } // namespace
 
-auto parse_measure_length(std::string_view text) -> measure_parse_result_t
+auto rational_t::from(std::string_view text) -> measure_parse_result_t
 {
     text = trim(text);
     if (text.empty()) {
-        return failure(measure_error_t::empty);
+        return std::unexpected(measure_error_t::empty);
     }
     if (text.front() == '-') {
-        return failure(measure_error_t::non_positive);
+        return std::unexpected(measure_error_t::non_positive);
     }
     if (text.front() == '+') {
         text.remove_prefix(1);
         if (text.empty()) {
-            return failure(measure_error_t::invalid_syntax);
+            return std::unexpected(measure_error_t::invalid_syntax);
         }
     }
 
@@ -156,6 +151,10 @@ auto parse_measure_length(std::string_view text) -> measure_parse_result_t
         return parse_fractional_measure(text, slash);
     }
     return parse_decimal_measure(text);
+}
+
+auto parse_measure_length(std::string_view text) -> measure_parse_result_t {
+    return rational_t::from(text);
 }
 
 auto validate_measure(

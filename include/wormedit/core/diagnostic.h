@@ -69,4 +69,16 @@ using diagnostic_t = object_diagnostic_t<diagnostic_code_t, diagnostic_code_t::i
 
 using diagnostic_list_t = std::vector<diagnostic_t>;
 
+namespace diagnostic_queries {
+
+template <class Diagnostic>
+[[nodiscard]] auto has_errors(const std::vector<Diagnostic>& diagnostics) -> bool {
+    for (const auto& diagnostic : diagnostics) {
+        if (diagnostic.severity == diagnostic_severity_t::error) return true;
+    }
+    return false;
+}
+
+} // namespace diagnostic_queries
+
 } // namespace wormedit

@@ -328,13 +328,13 @@ auto exact_decimal(signed_rational_t value, std::string path) -> std::string {
 
 auto parse_positive_timing_value(std::string_view text) -> std::optional<signed_rational_t> {
     const auto parsed = parse_measure_length(text);
-    if (!parsed.value.has_value() ||
-        parsed.value->numerator >
+    if (!parsed.has_value() ||
+        parsed->numerator >
             static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
         return std::nullopt;
     }
-    return signed_rational_t{static_cast<std::int64_t>(parsed.value->numerator),
-                             parsed.value->denominator};
+    return signed_rational_t{static_cast<std::int64_t>(parsed->numerator),
+                             parsed->denominator};
 }
 
 using checked_math::checked_lcm;
@@ -856,12 +856,12 @@ auto effective_measure_length_sources(const branch_tree_analysis_t& tree,
             return;
         }
         const auto parsed = parse_measure_length(line.raw_value);
-        if (!parsed.value) {
+        if (!parsed) {
             return;
         }
         auto& current = sources[line.measure_index];
         if (current.first <= line.source_order) {
-            current = {line.source_order, *parsed.value};
+            current = {line.source_order, *parsed};
         }
     };
     for (const auto& line : tree.root_measure_ratio_lines) {
@@ -1055,13 +1055,13 @@ auto effective_direct_bpm_source(
     const auto retain = [&](const source_measure_line_t& source, bool active) {
         if (!active) return;
         const auto parsed = parse_measure_length(source.raw_value);
-        if (!parsed.value || parsed.value->numerator >
+        if (!parsed || parsed->numerator >
                                  static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
             return;
         if (!effective || effective->first <= source.source_order) {
             effective = std::pair{source.source_order,
-                                  signed_rational_t{static_cast<std::int64_t>(parsed.value->numerator),
-                                                    parsed.value->denominator}};
+                                  signed_rational_t{static_cast<std::int64_t>(parsed->numerator),
+                                                    parsed->denominator}};
         }
     };
     for (const auto& source : tree.root_direct_bpm_lines) retain(source, true);

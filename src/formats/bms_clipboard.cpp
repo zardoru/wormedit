@@ -157,7 +157,7 @@ struct decode_context_t {
         .maximum_absolute_error = 1e-9L,
     };
     const auto result = rationalize_positive_double(rows / 192.0, limits);
-    return result ? result.value : std::nullopt;
+    return result ? std::optional{result->value} : std::nullopt;
 }
 
 auto base36_digit(char byte) -> std::optional<std::uint32_t> {

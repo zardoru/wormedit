@@ -2,7 +2,6 @@
 
 #include <wormedit/core/diagnostic.h>
 
-#include <algorithm>
 #include <expected>
 #include <string>
 
@@ -22,12 +21,7 @@ template <class T> struct diagnosed_t {
     diagnostic_list_t diagnostics;
 
     [[nodiscard]] auto ok() const -> bool {
-        return std::ranges::none_of(diagnostics, &diagnosed_t::is_error);
-    }
-
-  private:
-    [[nodiscard]] static auto is_error(const diagnostic_t& diagnostic) -> bool {
-        return diagnostic.severity == diagnostic_severity_t::error;
+        return !diagnostic_queries::has_errors(diagnostics);
     }
 };
 

@@ -20,6 +20,8 @@
 namespace wormedit {
 namespace {
 
+using diagnostic_queries::has_errors;
+
 constexpr auto maximum_i64_magnitude =
     static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
 constexpr auto minimum_i64_magnitude = maximum_i64_magnitude + 1;
@@ -424,12 +426,6 @@ auto warning(timing_error_code_t code, std::string message,
             .code = code,
             .message = std::move(message),
             .object = object};
-}
-
-auto has_errors(const std::vector<timing_diagnostic_t>& diagnostics) -> bool {
-    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-        return diagnostic.severity == diagnostic_severity_t::error;
-    });
 }
 
 struct positioned_bpm_t {

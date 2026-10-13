@@ -674,9 +674,9 @@ auto parse_positive_rational(std::string_view text) -> std::optional<signed_rati
         text = text.substr(0, marker);
     }
     const auto parsed = parse_measure_length(text);
-    if (!exponent || !parsed.value.has_value()) return std::nullopt;
-    auto numerator = std::optional{parsed.value->numerator};
-    auto denominator = std::optional{parsed.value->denominator};
+    if (!exponent || !parsed.has_value()) return std::nullopt;
+    auto numerator = std::optional{parsed->numerator};
+    auto denominator = std::optional{parsed->denominator};
     if (*exponent >= 0)
         numerator = scale_by_power_of_ten(*numerator, *exponent);
     else
@@ -2123,8 +2123,8 @@ auto recover_printed_fraction(std::string_view text, rational_t exact) -> ration
 auto parse_bms_measure_length(std::string_view value) -> std::optional<rational_t> {
     if (value.find_first_of("eE") == std::string_view::npos) {
         const auto parsed = parse_measure_length(value);
-        if (!parsed.value) return std::nullopt;
-        return recover_printed_fraction(value, *parsed.value);
+        if (!parsed) return std::nullopt;
+        return recover_printed_fraction(value, *parsed);
     }
     const auto parsed = parse_positive_rational(value);
     if (!parsed) return std::nullopt;

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <ranges>
+#include <utility>
 
 namespace {
 
@@ -230,4 +231,31 @@ TEST_CASE("chart comparison keeps fifty-thousand-note equal difficulties bounded
     const auto changed = compare(song, request);
     REQUIRE(changed);
     CHECK(changed.differing_rows.size() == 2);
+}
+
+TEST_CASE("diagnosed chart comparison retains compatibility payload metadata",
+          "[unit][core][chart-compare][result]") {
+    const auto song = song_with_two_resolutions();
+    const wormedit::chart_compare_request_t request{.charts = {wormedit::chart_id_t{1}, wormedit::chart_id_t{2}}};
+    const auto result = wormedit::chart_comparison_t::from(song, request);
+    REQUIRE(result.ok());
+    const auto legacy = compare(song, request);
+    CHECK(result.value.document_revision == legacy.document_revision);
+    CHECK(result.value.charts == legacy.charts);
+    CHECK(result.value.differing_rows == legacy.differing_rows);
+}
+
+TEST_CASE("chart comparison compatibility preserves warning success and feedback",
+          "[unit][core][chart-compare][result]") {
+    wormedit::chart_comparison_result_t result{
+        .value = {.document_revision = 17, .charts = {}, .differing_rows = {}},
+        .diagnostics = {{.severity = wormedit::diagnostic_severity_t::warning,
+                         .code = wormedit::diagnostic_code_t::approximated_feature,
+                         .message = "approximation", .object = std::nullopt}}};
+    REQUIRE(result.ok());
+    const auto legacy = wormedit::chart_compare_result_t::from(std::move(result));
+    CHECK(legacy);
+    CHECK(legacy.diagnostics.size() == 1);
+    CHECK(legacy.diagnostics.front().severity == wormedit::diagnostic_severity_t::warning);
+    CHECK(legacy.document_revision == 17);
 }

@@ -51,62 +51,88 @@ auto add_frame_delta(signed_rational_t offset, std::int64_t frames, std::uint32_
     return signed_rational_t{reduced_numerator, *denominator / reduction};
 }
 
-auto reject_drag(diagnostic_code_t code, std::string message) -> audio_offset_drag_result_t {
-    audio_offset_drag_result_t result;
-    result.diagnostics.push_back(error(code, std::move(message)));
-    return result;
+} // namespace
+
+auto audio_offset_drag_t::from(const song_document_t& document, chart_id_t chart,
+                               std::uint32_t sample_rate, bool timing_locked)
+    -> audio_offset_drag_outcome_t {
+    audio_offset_drag_outcome_t result;
+    if (timing_locked) {
+        result.diagnostics.push_back(
+            error(diagnostic_code_t::unsupported_feature,
+                  "audio offset dragging is disabled while timing is locked"));
+        return result;
+    }
+    const auto* selected = document.find_chart(chart);
+    if (!chart || selected == nullptr) {
+        result.diagnostics.push_back(
+            error(diagnostic_code_t::invalid_id, "audio offset drag refers to an unknown chart"));
+        return result;
+    }
+    if (sample_rate == 0 || selected->beat_zero_audio_offset_seconds.denominator == 0) {
+        result.diagnostics.push_back(
+            error(diagnostic_code_t::invalid_rational,
+                  "audio offset drag requires a valid offset and sample rate"));
+        return result;
+    }
+    return {.value =
+                audio_offset_drag_t{
+                    .chart = chart,
+                    .document_revision = document.revision,
+                    .sample_rate = sample_rate,
+                    .original_offset_seconds = selected->beat_zero_audio_offset_seconds,
+                    .proposed_offset_seconds = selected->beat_zero_audio_offset_seconds,
+                },
+            .diagnostics = {}};
 }
 
-} // namespace
+auto audio_offset_drag_t::revise(const song_document_t& document, std::int64_t delta_frames,
+                                 bool timing_locked) const -> audio_offset_drag_outcome_t {
+    audio_offset_drag_outcome_t result;
+    const auto& drag = *this;
+    if (timing_locked) {
+        result.diagnostics.push_back(
+            error(diagnostic_code_t::unsupported_feature,
+                  "audio offset dragging is disabled while timing is locked"));
+        return result;
+    }
+    const auto* selected = document.find_chart(drag.chart);
+    if (document.revision != drag.document_revision || selected == nullptr ||
+        selected->beat_zero_audio_offset_seconds != drag.original_offset_seconds) {
+        result.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
+                                           "audio offset drag expired after the document changed"));
+        return result;
+    }
+    const auto proposed =
+        add_frame_delta(drag.original_offset_seconds, delta_frames, drag.sample_rate);
+    if (!proposed) {
+        result.diagnostics.push_back(
+            error(diagnostic_code_t::invalid_rational,
+                  "audio offset frame delta exceeds exact rational bounds"));
+        return result;
+    }
+    auto updated = drag;
+    updated.delta_frames = delta_frames;
+    updated.proposed_offset_seconds = *proposed;
+    return {.value = std::move(updated), .diagnostics = {}};
+}
+
+auto audio_offset_drag_result_t::from(audio_offset_drag_outcome_t&& outcome)
+    -> audio_offset_drag_result_t {
+    return {.drag = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
+}
 
 auto begin_audio_offset_drag(const song_document_t& document, chart_id_t chart,
                              std::uint32_t sample_rate, bool timing_locked)
     -> audio_offset_drag_result_t {
-    if (timing_locked) {
-        return reject_drag(diagnostic_code_t::unsupported_feature,
-                           "audio offset dragging is disabled while timing is locked");
-    }
-    const auto* selected = document.find_chart(chart);
-    if (!chart || selected == nullptr) {
-        return reject_drag(diagnostic_code_t::invalid_id,
-                           "audio offset drag refers to an unknown chart");
-    }
-    if (sample_rate == 0 || selected->beat_zero_audio_offset_seconds.denominator == 0) {
-        return reject_drag(diagnostic_code_t::invalid_rational,
-                           "audio offset drag requires a valid offset and sample rate");
-    }
-    return {.drag = audio_offset_drag_t{
-                .chart = chart,
-                .document_revision = document.revision,
-                .sample_rate = sample_rate,
-                .original_offset_seconds = selected->beat_zero_audio_offset_seconds,
-                .proposed_offset_seconds = selected->beat_zero_audio_offset_seconds,
-            }};
+    return audio_offset_drag_result_t::from(
+        audio_offset_drag_t::from(document, chart, sample_rate, timing_locked));
 }
 
 auto update_audio_offset_drag(const song_document_t& document, const audio_offset_drag_t& drag,
                               std::int64_t delta_frames, bool timing_locked)
     -> audio_offset_drag_result_t {
-    if (timing_locked) {
-        return reject_drag(diagnostic_code_t::unsupported_feature,
-                           "audio offset dragging is disabled while timing is locked");
-    }
-    const auto* selected = document.find_chart(drag.chart);
-    if (document.revision != drag.document_revision || selected == nullptr ||
-        selected->beat_zero_audio_offset_seconds != drag.original_offset_seconds) {
-        return reject_drag(diagnostic_code_t::invalid_id,
-                           "audio offset drag expired after the document changed");
-    }
-    const auto proposed =
-        add_frame_delta(drag.original_offset_seconds, delta_frames, drag.sample_rate);
-    if (!proposed) {
-        return reject_drag(diagnostic_code_t::invalid_rational,
-                           "audio offset frame delta exceeds exact rational bounds");
-    }
-    auto updated = drag;
-    updated.delta_frames = delta_frames;
-    updated.proposed_offset_seconds = *proposed;
-    return {.drag = std::move(updated)};
+    return audio_offset_drag_result_t::from(drag.revise(document, delta_frames, timing_locked));
 }
 
 auto apply_audio_offset_edit(document_history_t& history, std::uint64_t expected_revision,

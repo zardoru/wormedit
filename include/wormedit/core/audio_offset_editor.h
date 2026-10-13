@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/command.h>
+#include <wormedit/core/result.h>
 
 #include <cstdint>
 #include <optional>
@@ -8,6 +9,13 @@
 namespace wormedit {
 
 struct audio_offset_drag_t {
+    [[nodiscard]] static auto from(const song_document_t& document, chart_id_t chart,
+                                  std::uint32_t sample_rate, bool timing_locked = false)
+        -> diagnosed_t<std::optional<audio_offset_drag_t>>;
+    [[nodiscard]] auto revise(const song_document_t& document, std::int64_t delta_frames,
+                              bool timing_locked = false) const
+        -> diagnosed_t<std::optional<audio_offset_drag_t>>;
+
     chart_id_t chart;
     std::uint64_t document_revision{};
     std::uint32_t sample_rate{};
@@ -16,7 +24,12 @@ struct audio_offset_drag_t {
     std::int64_t delta_frames{};
 };
 
+using audio_offset_drag_outcome_t = diagnosed_t<std::optional<audio_offset_drag_t>>;
+
 struct audio_offset_drag_result_t {
+    [[nodiscard]] static auto from(audio_offset_drag_outcome_t&& outcome)
+        -> audio_offset_drag_result_t;
+
     std::optional<audio_offset_drag_t> drag;
     diagnostic_list_t diagnostics;
 

@@ -105,7 +105,7 @@ struct exclusive_write_result_t {
     bool created{};
 };
 
-auto open_file_identity(std::FILE* file) -> std::optional<file_identity_t> {
+auto read_open_file_identity(std::FILE* file) -> std::optional<file_identity_t> {
 #ifdef _WIN32
     BY_HANDLE_FILE_INFORMATION information{};
     const auto handle = reinterpret_cast<HANDLE>(_get_osfhandle(_fileno(file)));
@@ -128,7 +128,7 @@ auto write_exclusive(const std::filesystem::path& path, std::string_view bytes)
     auto* file = std::fopen(path.c_str(), "wbx");
 #endif
     if (!file) return {.error = "Cannot exclusively create file: " + path.string()};
-    const auto identity = open_file_identity(file);
+    const auto identity = read_open_file_identity(file);
     const bool complete = identity && std::fwrite(bytes.data(), 1, bytes.size(), file) == bytes.size();
     const bool closed = std::fclose(file) == 0;
     return {.error = complete && closed ? std::string{} : "Writing file failed.",

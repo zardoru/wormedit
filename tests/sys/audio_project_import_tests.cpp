@@ -66,7 +66,7 @@ auto tagged_audio_creates_selectable_project() -> bool {
     using namespace wormedit;
     const auto imported = sys::inspect_audio_for_project(fixture("tagged-project.ogg"));
     if (!imported) return false;
-    auto document = sys::audio_project_document(song_id_t{42}, imported.source_path,
+    auto document = sys::make_audio_project_document(song_id_t{42}, imported.source_path,
                                                 imported.title, imported.artist, 4, imported.stream);
     if (!document || document->audio_assets.size() != 1) return false;
     if (document->metadata.title != "Título 雪" || document->metadata.artist != "Björk" ||

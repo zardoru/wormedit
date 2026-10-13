@@ -54,7 +54,7 @@ auto valid_audio_project(const wormedit::song_document_t& document,
 }
 
 void check_lane_count_case(std::uint32_t lanes) {
-    const auto document = wormedit::sys::initial_document(wormedit::song_id_t{123}, lanes);
+    const auto document = wormedit::sys::make_initial_document(wormedit::song_id_t{123}, lanes);
     REQUIRE(document);
     CHECK(valid_initial_layout(*document, lanes));
     CHECK(supported_exports(*document, lanes));
@@ -75,9 +75,9 @@ TEST_CASE("new project layouts create valid charts with the requested playable c
 
 TEST_CASE("new project rejects unsupported lane counts and retains legacy BMS template",
           "[unit][sys][application-defaults]") {
-    CHECK_FALSE(wormedit::sys::initial_document(wormedit::song_id_t{123}, 0));
-    CHECK_FALSE(wormedit::sys::initial_document(wormedit::song_id_t{123}, 19));
-    const auto legacy = wormedit::sys::initial_document(wormedit::song_id_t{123});
+    CHECK_FALSE(wormedit::sys::make_initial_document(wormedit::song_id_t{123}, 0));
+    CHECK_FALSE(wormedit::sys::make_initial_document(wormedit::song_id_t{123}, 19));
+    const auto legacy = wormedit::sys::make_initial_document(wormedit::song_id_t{123});
     CHECK(legacy.charts.front().source_family == wormedit::format_family_t::bms);
     CHECK(legacy.charts.front().lane_layouts.front().layout.lanes.size() == 8);
 }
@@ -85,7 +85,7 @@ TEST_CASE("new project rejects unsupported lane counts and retains legacy BMS te
 TEST_CASE("audio project starts with playable lanes and a linked music resource",
           "[unit][sys][application-defaults]") {
     const auto audio_path = std::filesystem::path{"/tmp/example-track.ogg"};
-    const auto document = wormedit::sys::audio_project_document(
+    const auto document = wormedit::sys::make_audio_project_document(
         wormedit::song_id_t{123}, audio_path, "Title from tag", "Artist from tag", 7);
     REQUIRE(document);
     CHECK(valid_audio_project(*document, audio_path));
@@ -97,17 +97,17 @@ TEST_CASE("audio project starts with playable lanes and a linked music resource"
     CHECK(document->output_groups[2].relative_output_path == "ssc");
     for (const auto& group : document->output_groups)
         CHECK(group.charts == std::vector{document->charts.front().id});
-    const auto nine_lanes = wormedit::sys::audio_project_document(
+    const auto nine_lanes = wormedit::sys::make_audio_project_document(
         wormedit::song_id_t{124}, audio_path, "Title", "Artist", 9);
     REQUIRE(nine_lanes);
     REQUIRE(nine_lanes->output_groups.size() == 1);
     CHECK(nine_lanes->output_groups.front().family == wormedit::format_family_t::osu_mania);
-    CHECK_FALSE(wormedit::sys::audio_project_document(wormedit::song_id_t{123}, {}, "", "", 7));
+    CHECK_FALSE(wormedit::sys::make_audio_project_document(wormedit::song_id_t{123}, {}, "", "", 7));
 }
 
 TEST_CASE("audio project creates editable measures through the imported music duration",
           "[sys][application-defaults][audio-extent]") {
-    const auto document = wormedit::sys::audio_project_document(
+    const auto document = wormedit::sys::make_audio_project_document(
         wormedit::song_id_t{123}, "/tmp/track.mp3", "Track", "Artist", 7,
         {44'100, 2, 44'100 * 13, true});
     REQUIRE(document);
@@ -120,7 +120,7 @@ TEST_CASE("audio project creates editable measures through the imported music du
 namespace {
 
 void check_mania_catalog_document(std::uint32_t keys) {
-    const auto document = wormedit::sys::initial_document(wormedit::song_id_t{123}, keys);
+    const auto document = wormedit::sys::make_initial_document(wormedit::song_id_t{123}, keys);
     REQUIRE(document);
     CHECK(valid_initial_layout(*document, keys));
     CHECK((keys <= 10 || document->charts.front().input_profile.bindings.empty()));
@@ -162,9 +162,9 @@ void check_catalog_document_valid(const wormedit::song_document_t& document) {
 }
 
 void check_catalog_layout(const wormedit::new_project_layout_descriptor_t& layout) {
-    const auto blank = wormedit::sys::initial_document(wormedit::song_id_t{123}, layout.id);
+    const auto blank = wormedit::sys::make_initial_document(wormedit::song_id_t{123}, layout.id);
     REQUIRE(blank);
-    const auto audio = wormedit::sys::audio_project_document(
+    const auto audio = wormedit::sys::make_audio_project_document(
         wormedit::song_id_t{123}, "/tmp/track.ogg", "Track", "Artist", layout.id);
     REQUIRE(audio);
     check_catalog_document(*blank, layout);
@@ -188,7 +188,7 @@ TEST_CASE("D7 catalog layouts survive blank and audio document construction", "[
 }
 
 TEST_CASE("D7 catalog document construction rejects invalid identities", "[sys][application-defaults][catalog]") {
-    CHECK_FALSE(wormedit::sys::initial_document(wormedit::song_id_t{123}, "unknown"));
-    CHECK_FALSE(wormedit::sys::initial_document(wormedit::song_id_t{}, "osu-mania-7k"));
-    CHECK_FALSE(wormedit::sys::audio_project_document(wormedit::song_id_t{123}, {}, "", "", "pms-standard-9button"));
+    CHECK_FALSE(wormedit::sys::make_initial_document(wormedit::song_id_t{123}, "unknown"));
+    CHECK_FALSE(wormedit::sys::make_initial_document(wormedit::song_id_t{}, "osu-mania-7k"));
+    CHECK_FALSE(wormedit::sys::make_audio_project_document(wormedit::song_id_t{123}, {}, "", "", "pms-standard-9button"));
 }

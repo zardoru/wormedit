@@ -125,7 +125,7 @@ auto timing_pause_unit_from_ui(WormUiTimingPauseUnit unit)
     return std::nullopt;
 }
 
-auto initial_timing_value_for_stage(const wormedit::chart_document_t& chart,
+auto make_initial_timing_value_for_stage(const wormedit::chart_document_t& chart,
                                     wormedit::timing_lane_kind_t kind,
                                     wormedit::local_position_t position,
                                     std::uint64_t active_snap_denominator)
@@ -218,7 +218,7 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
     }
 
     const auto kind = *requested_kind;
-    auto initial = initial_timing_value_for_stage(*found, kind, *position, active_snap_denominator);
+    auto initial = make_initial_timing_value_for_stage(*found, kind, *position, active_snap_denominator);
     if (!initial) {
         return rejected;
     }

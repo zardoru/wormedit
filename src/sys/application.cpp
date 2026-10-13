@@ -189,8 +189,7 @@ using wormedit::sys::timing_stage_value;
 
 using wormedit::sys::flatten_workspace;
 using wormedit::sys::flattened_workspace_t;
-using wormedit::sys::initial_document;
-using wormedit::sys::new_session_project_id;
+using wormedit::sys::create_session_project_id;
 using wormedit::sys::parse_application_command;
 using wormedit::sys::timing_grid_state_t;
 using wormedit::sys::timing_scene_cache_t;
@@ -1270,7 +1269,7 @@ void install_startup_recovery_scan(
 void post_initial_application_feedback(wormedit::notification_sink_t& notifications,
     bool loaded_primary, const std::filesystem::path& requested_primary_path,
     const wormedit::platform_recovery_directory_result_t& recovery) {
-    notifications.post(wormedit::sys::initial_application_feedback(loaded_primary, requested_primary_path, recovery));
+    notifications.post(wormedit::sys::make_initial_application_feedback(loaded_primary, requested_primary_path, recovery));
 }
 
 void post_shortcut_startup_diagnostic(
@@ -2370,7 +2369,7 @@ struct application_t::implementation_t {
             return true;
         }
         if (!replace_project_session(
-                wormedit::sys::empty_session_document(wormedit::sys::new_session_project_id()),
+                wormedit::sys::make_empty_session_document(wormedit::sys::create_session_project_id()),
                 false, true, false, {}, {}))
             return false;
         pending = {};
@@ -2481,8 +2480,8 @@ struct application_t::implementation_t {
             session.project_identity.pending_import.audio_project_path.clear();
             return;
         }
-        auto document = wormedit::sys::audio_project_document(
-            wormedit::sys::new_session_project_id(), audio.source_path, audio.title, audio.artist,
+        auto document = wormedit::sys::make_audio_project_document(
+            wormedit::sys::create_session_project_id(), audio.source_path, audio.title, audio.artist,
             layout_id, audio.stream);
         if (!document) {
             post_project_feedback(wormedit::notification_severity_t::error,
@@ -3027,7 +3026,7 @@ struct application_t::implementation_t {
         }
         auto document = std::move(*opened.document);
         if (!opened.native_project)
-            document.id = wormedit::sys::new_session_project_id();
+            document.id = wormedit::sys::create_session_project_id();
         if (replace_project_session(std::move(document), true, true, opened.native_project,
                                     opened.native_project ? opened.source_path
                                                           : std::filesystem::path{},
@@ -3176,7 +3175,7 @@ struct application_t::implementation_t {
             return true;
         if (action.kind == WORM_UI_WORKSPACE_ACTION_CLOSE_PROJECT) {
             if (replace_project_session(
-                    wormedit::sys::empty_session_document(wormedit::sys::new_session_project_id()),
+                    wormedit::sys::make_empty_session_document(wormedit::sys::create_session_project_id()),
                     false, true, false, {}, {}))
                 post_project_feedback(wormedit::notification_severity_t::info,
                                       wormedit::notification_source_t::document,
@@ -3633,7 +3632,7 @@ struct application_t::implementation_t {
             return;
         }
         auto document =
-            wormedit::sys::initial_document(wormedit::sys::new_session_project_id(), layout->id);
+            wormedit::sys::make_initial_document(wormedit::sys::create_session_project_id(), layout->id);
         if (!document) {
             post_project_feedback(wormedit::notification_severity_t::error,
                                   wormedit::notification_source_t::document,
@@ -3974,7 +3973,7 @@ struct application_t::implementation_t {
             startup_request.crash_marker_path = platform.lifetime.crash_marker;
         }
         auto startup = prepare_native_project_startup(
-            empty_session_document(new_session_project_id()), std::move(startup_request));
+            make_empty_session_document(create_session_project_id()), std::move(startup_request));
         if (!platform.lifetime.crash_marker.empty()) {
             if (const auto error =
                     write_crash_marker(platform.lifetime.crash_marker, startup.document.id);

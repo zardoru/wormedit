@@ -16,7 +16,7 @@ void expect_fit(bool value, std::source_location where = std::source_location::c
 }
 
 auto fit_song(bool downscroll) -> song_document_t {
-    auto song = audio_project_document(song_id_t{42}, "fixture.mp3", "7K fit", "", 7,
+    auto song = make_audio_project_document(song_id_t{42}, "fixture.mp3", "7K fit", "", 7,
                                       {44'100, 2, 441'000, true});
     expect_fit(song.has_value());
     auto& chart = song->charts.front();

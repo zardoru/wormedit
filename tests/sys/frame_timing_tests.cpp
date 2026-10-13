@@ -1120,7 +1120,7 @@ void prepare_seven_key_mp3_project(envelope_projection_fixture_t& fixture) {
     expect_gpu_work(decoder.open(path));
     const auto info = decoder.info();
     expect_gpu_work(info.has_value());
-    const auto song = audio_project_document(song_id_t{42}, path, "7K MP3", "", 7,
+    const auto song = make_audio_project_document(song_id_t{42}, path, "7K MP3", "", 7,
         {info->source_sample_rate, info->source_channel_count, info->source_frame_count, info->seekable});
     expect_gpu_work(song.has_value());
     fixture.history = document_history_t::from(*song);

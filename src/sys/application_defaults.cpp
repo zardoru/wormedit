@@ -46,7 +46,7 @@ auto make_bms_initial_chart() -> chart_document_t {
 
 } // namespace
 
-auto new_session_project_id() -> song_id_t {
+auto create_session_project_id() -> song_id_t {
     try {
         std::random_device source;
         const auto value =
@@ -63,23 +63,23 @@ auto new_session_project_id() -> song_id_t {
     return song_id_t{value == 0 ? 1 : value};
 }
 
-auto empty_session_document(song_id_t session_id) -> song_document_t {
+auto make_empty_session_document(song_id_t session_id) -> song_document_t {
     return {.id = session_id, .revision = 1, .metadata = {.title = "No project loaded"}};
 }
 
-auto initial_document(song_id_t project_id) -> song_document_t {
+auto make_initial_document(song_id_t project_id) -> song_document_t {
     return {.id = project_id,
             .revision = 1,
             .metadata = {.title = "Untitled Project", .artist = "Unknown Artist"},
             .charts = {make_bms_initial_chart()}};
 }
 
-auto initial_document(song_id_t project_id, std::uint32_t lane_count)
+auto make_initial_document(song_id_t project_id, std::uint32_t lane_count)
     -> std::optional<song_document_t> {
-    return initial_document(project_id, "osu-mania-" + std::to_string(lane_count) + "k");
+    return make_initial_document(project_id, "osu-mania-" + std::to_string(lane_count) + "k");
 }
 
-auto initial_document(song_id_t project_id, std::string_view layout_id)
+auto make_initial_document(song_id_t project_id, std::string_view layout_id)
     -> std::optional<song_document_t> {
     const auto* layout = find_new_project_layout(layout_id);
     if (!project_id || !layout) return std::nullopt;
@@ -92,16 +92,16 @@ auto initial_document(song_id_t project_id, std::string_view layout_id)
                            .output_groups = make_new_project_output_groups(*layout, chart_id_t{2})};
 }
 
-auto audio_project_document(song_id_t project_id, std::filesystem::path audio_source_path,
+auto make_audio_project_document(song_id_t project_id, std::filesystem::path audio_source_path,
                             std::string title, std::string artist, std::uint32_t lane_count,
                             audio_stream_info_t stream)
     -> std::optional<song_document_t> {
-    return audio_project_document(project_id, std::move(audio_source_path), std::move(title),
+    return make_audio_project_document(project_id, std::move(audio_source_path), std::move(title),
                                   std::move(artist),
                                   "osu-mania-" + std::to_string(lane_count) + "k", stream);
 }
 
-auto audio_project_document(song_id_t project_id, std::filesystem::path audio_source_path,
+auto make_audio_project_document(song_id_t project_id, std::filesystem::path audio_source_path,
                             std::string title, std::string artist, std::string_view layout_id,
                             audio_stream_info_t stream)
     -> std::optional<song_document_t> {

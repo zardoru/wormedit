@@ -12,11 +12,6 @@
 namespace wormedit {
 namespace {
 
-auto reject(document_command_result_t& result, std::string message) -> void {
-    result.diagnostics.push_back({.severity = diagnostic_severity_t::error,
-                                  .code = diagnostic_code_t::invalid_id,
-                                  .message = std::move(message)});
-}
 
 auto trim(std::string text) -> std::string {
     return std::string(text_util::trim(text, text_util::ascii_whitespace));
@@ -39,13 +34,13 @@ auto normalize_name(song_document_t& song, sound_group_id_t except, std::string&
                     document_command_result_t& result) -> bool {
     name = trim(std::move(name));
     if (name.empty() || !text_util::valid_bounded_text(name, maximum_sound_group_name_bytes)) {
-        reject(result, "sound group name must contain 1 to 64 bytes");
+        reject(result, diagnostic_code_t::invalid_id, "sound group name must contain 1 to 64 bytes");
         return false;
     }
     const auto folded = text_util::ascii_fold(std::string(name));
     for (const auto& group : song.sound_groups) {
         if (group.id != except && text_util::ascii_fold(std::string(group.name)) == folded) {
-            reject(result, "sound group name is already in use");
+            reject(result, diagnostic_code_t::invalid_id, "sound group name is already in use");
             return false;
         }
     }
@@ -56,7 +51,7 @@ auto selected_resources(song_document_t& song, const std::vector<resource_id_t>&
                         document_command_result_t& result)
     -> std::vector<resource_entry_t*> {
     if (ids.empty()) {
-        reject(result, "sound group edit needs at least one sound");
+        reject(result, diagnostic_code_t::invalid_id, "sound group edit needs at least one sound");
         return {};
     }
     std::unordered_set<std::uint64_t> seen;
@@ -64,12 +59,12 @@ auto selected_resources(song_document_t& song, const std::vector<resource_id_t>&
     selected.reserve(ids.size());
     for (const auto id : ids) {
         if (!id || !seen.insert(id.value).second) {
-            reject(result, "sound group edit contains an invalid or repeated sound");
+            reject(result, diagnostic_code_t::invalid_id, "sound group edit contains an invalid or repeated sound");
             return {};
         }
         const auto found = std::ranges::find(song.resources, id, &resource_entry_t::id);
         if (found == song.resources.end() || !is_sound(*found)) {
-            reject(result, "sound group edit refers to an unknown sound");
+            reject(result, diagnostic_code_t::invalid_id, "sound group edit refers to an unknown sound");
             return {};
         }
         selected.push_back(&*found);
@@ -88,7 +83,7 @@ auto remove_empty_groups(song_document_t& song) -> void {
 auto create_group(song_document_t& song, const create_sound_group_action_t& action,
                   document_command_result_t& result) -> std::string {
     if (!action.group || find_group(song, action.group) != song.sound_groups.end()) {
-        reject(result, "sound group ID is invalid or already in use");
+        reject(result, diagnostic_code_t::invalid_id, "sound group ID is invalid or already in use");
         return {};
     }
     auto name = action.name;
@@ -105,7 +100,7 @@ auto edit_group_action(song_document_t& song, const add_sounds_to_group_action_t
                        document_command_result_t& result) -> std::string {
     const auto group = find_group(song, action.group);
     if (!action.group || group == song.sound_groups.end()) {
-        reject(result, "sound group edit refers to an unknown group");
+        reject(result, diagnostic_code_t::invalid_id, "sound group edit refers to an unknown group");
         return {};
     }
     const auto selected = selected_resources(song, action.sounds, result);
@@ -128,7 +123,7 @@ auto edit_group_action(song_document_t& song, const rename_sound_group_action_t&
                        document_command_result_t& result) -> std::string {
     const auto group = find_group(song, action.group);
     if (!action.group || group == song.sound_groups.end()) {
-        reject(result, "sound group edit refers to an unknown group");
+        reject(result, diagnostic_code_t::invalid_id, "sound group edit refers to an unknown group");
         return {};
     }
     auto name = action.name;
@@ -142,7 +137,7 @@ auto edit_group_action(song_document_t& song, const delete_sound_group_action_t&
                        document_command_result_t& result) -> std::string {
     const auto group = find_group(song, action.group);
     if (!action.group || group == song.sound_groups.end()) {
-        reject(result, "sound group edit refers to an unknown group");
+        reject(result, diagnostic_code_t::invalid_id, "sound group edit refers to an unknown group");
         return {};
     }
     for (auto& resource : song.resources) {
@@ -200,7 +195,7 @@ auto renumber_edited_groups(song_document_t& song,
         });
         const auto run = find_bms_identifier_run(allocation, "WAV", members.size());
         if (!run) {
-            reject(result, "BMS WAV namespace has no contiguous run for the sound groups");
+            reject(result, diagnostic_code_t::invalid_id, "BMS WAV namespace has no contiguous run for the sound groups");
             return false;
         }
         for (std::size_t index = 0; index < members.size(); ++index) {
@@ -261,21 +256,22 @@ auto apply_sound_group_edits(document_history_t& history, std::uint64_t expected
                              bool keep_bms_ids_together) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
     if (expected_revision != history.document.revision) {
-        reject(result, "sound group edit document revision is stale");
+        reject(result, diagnostic_code_t::invalid_id, "sound group edit document revision is stale");
         return result;
     }
     if (actions.empty()) {
-        reject(result, "sound group edit needs at least one change");
+        reject(result, diagnostic_code_t::invalid_id, "sound group edit needs at least one change");
         return result;
     }
-    auto proposed = history.document;
+    auto transaction = document_command_transaction_t::from(history);
+    auto& proposed = transaction.copy_document();
     auto labels = std::vector<std::string>{};
     auto groups = std::vector<sound_group_id_t>{};
     auto edited_ids = std::unordered_set<std::uint64_t>{};
     for (const auto& action : actions) {
         for (const auto id : action_sound_ids(action))
             if (!edited_ids.insert(id.value).second) {
-                reject(result, "sound group batch repeats a sound");
+                reject(result, diagnostic_code_t::invalid_id, "sound group batch repeats a sound");
                 return result;
             }
         const auto label = edit_existing_group(proposed, action, result);
@@ -296,8 +292,7 @@ auto apply_sound_group_edits(document_history_t& history, std::uint64_t expected
     const auto preserve_sources = same_target_vectors(history.document.resources,
                                                       proposed.resources);
     const auto label = labels.size() == 1 ? labels.front() : "Edit sound groups";
-    return commit_document_command(history, std::move(proposed), label,
-                                   {.preserve_retained_source_flags = preserve_sources});
+    return transaction.commit(label, {.preserve_retained_source_flags = preserve_sources});
 }
 
 } // namespace wormedit

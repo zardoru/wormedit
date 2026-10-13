@@ -13,13 +13,6 @@
 namespace wormedit {
 namespace {
 
-void reject(document_command_result_t& result, std::string message) {
-    result.applied = false;
-    result.diagnostics.push_back({.severity = diagnostic_severity_t::error,
-                                  .code = diagnostic_code_t::invalid_id,
-                                  .message = std::move(message),
-                                  .object = std::nullopt});
-}
 
 struct object_id_scan_t {
     std::uint64_t largest{};
@@ -49,13 +42,13 @@ auto scan_chart_objects(const chart_document_t& chart) -> object_id_scan_t {
 auto validate_batch(const bulk_sound_import_action_t& action, document_command_result_t& result)
     -> bool {
     if (action.entries.empty() || action.entries.size() > maximum_bulk_sound_import) {
-        reject(result, "sound import needs between 1 and 1295 files");
+        reject(result, diagnostic_code_t::invalid_id, "sound import needs between 1 and 1295 files");
         return false;
     }
     std::unordered_set<std::string> paths;
     for (const auto& entry : action.entries) {
         if (!paths.insert(entry.asset.source_path.lexically_normal().generic_string()).second) {
-            reject(result, "sound import lists the same source file twice");
+            reject(result, diagnostic_code_t::invalid_id, "sound import lists the same source file twice");
             return false;
         }
     }
@@ -151,7 +144,7 @@ auto assign_contiguous_group_ids(std::vector<bool>& used, const bulk_sound_impor
         if (best == gaps.end() || gap->begin < best->begin) best = gap;
     }
     if (best == gaps.end()) {
-        reject(result, "not enough contiguous BMS WAV IDs for a sound group");
+        reject(result, diagnostic_code_t::invalid_id, "not enough contiguous BMS WAV IDs for a sound group");
         return false;
     }
     const auto begin = best->begin;
@@ -206,12 +199,12 @@ auto group_entry_membership(const bulk_sound_import_action_t& action,
     auto grouped = std::vector<bool>(action.entries.size(), false);
     for (const auto& group : action.groups) {
         if (group.entry_indexes.empty()) {
-            reject(result, "sound import group has no members");
+            reject(result, diagnostic_code_t::invalid_id, "sound import group has no members");
             return std::nullopt;
         }
         for (const auto index : group.entry_indexes) {
             if (index >= action.entries.size() || grouped[index]) {
-                reject(result, "sound group import has an invalid or repeated member");
+                reject(result, diagnostic_code_t::invalid_id, "sound group import has an invalid or repeated member");
                 return std::nullopt;
             }
             grouped[index] = true;
@@ -230,7 +223,7 @@ auto assigned_bms_ids(const song_document_t& document, const bulk_sound_import_a
     if (allocated.empty()) return ids;
     const auto capacity = bms_identifier_capacity(document, "WAV");
     if (allocated.size() > capacity.total - capacity.used) {
-        reject(result, "BMS WAV namespace has " + std::to_string(capacity.total - capacity.used) +
+        reject(result, diagnostic_code_t::invalid_id, "BMS WAV namespace has " + std::to_string(capacity.total - capacity.used) +
                            " IDs left; import needs " + std::to_string(allocated.size()));
         return std::nullopt;
     }
@@ -275,7 +268,7 @@ auto append_stem(chart_document_t& chart, resource_entry_t& resource, std::size_
                  object_id_scan_t& ids, document_command_result_t& result) -> bool {
     if (ids.count > default_maximum_chart_objects - 2 ||
         ids.largest > std::numeric_limits<std::uint64_t>::max() - 2) {
-        reject(result, "chart cannot hold another stem (object IDs exhausted)");
+        reject(result, diagnostic_code_t::invalid_id, "chart cannot hold another stem (object IDs exhausted)");
         return false;
     }
     resource.target_identities.push_back(
@@ -347,29 +340,29 @@ auto validate_import_group_name(const song_document_t& song,
                                 std::string& name, document_command_result_t& result) -> bool {
     name = trim_group_name(group.name);
     if (name.empty() || !text_util::valid_bounded_text(name, maximum_sound_group_name_bytes)) {
-        reject(result, "sound group name must contain 1 to 64 bytes");
+        reject(result, diagnostic_code_t::invalid_id, "sound group name must contain 1 to 64 bytes");
         return false;
     }
     if (group.existing_group && !existing_ids.insert(group.existing_group->value).second) {
-        reject(result, "sound import refers to the same existing group more than once");
+        reject(result, diagnostic_code_t::invalid_id, "sound import refers to the same existing group more than once");
         return false;
     }
     if (group.existing_group && std::ranges::find(song.sound_groups, *group.existing_group,
                                                    &sound_group_t::id) == song.sound_groups.end()) {
-        reject(result, "sound import refers to an unknown existing group");
+        reject(result, diagnostic_code_t::invalid_id, "sound import refers to an unknown existing group");
         return false;
     }
     const auto folded = text_util::ascii_fold(std::string(name));
     for (const auto& prior : prior_names) {
         if (text_util::ascii_fold(std::string(prior)) == folded) {
-            reject(result, "sound group name is already in use");
+            reject(result, diagnostic_code_t::invalid_id, "sound group name is already in use");
             return false;
         }
     }
     for (const auto& current : song.sound_groups) {
         if (group.existing_group == current.id) continue;
         if (text_util::ascii_fold(std::string(current.name)) == folded) {
-            reject(result, "sound group name is already in use");
+            reject(result, diagnostic_code_t::invalid_id, "sound group name is already in use");
             return false;
         }
     }
@@ -401,14 +394,14 @@ auto next_sound_group_id(const song_document_t& song,
     auto next_id = std::uint64_t{1};
     for (const auto& group : song.sound_groups) {
         if (group.id.value == std::numeric_limits<std::uint64_t>::max()) {
-            reject(result, "sound group IDs are exhausted");
+            reject(result, diagnostic_code_t::invalid_id, "sound group IDs are exhausted");
             return std::nullopt;
         }
         next_id = std::max(next_id, group.id.value + 1);
     }
     if (new_group_count != 0 && new_group_count - 1 >
             std::numeric_limits<std::uint64_t>::max() - next_id) {
-        reject(result, "sound group IDs are exhausted");
+        reject(result, diagnostic_code_t::invalid_id, "sound group IDs are exhausted");
         return std::nullopt;
     }
     return next_id;
@@ -449,7 +442,7 @@ auto apply_bulk_sound_import(document_history_t& history, std::uint64_t expected
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
     if (expected_revision != history.document.revision) {
-        reject(result, "sound import document revision is stale");
+        reject(result, diagnostic_code_t::invalid_id, "sound import document revision is stale");
         return result;
     }
     if (!validate_batch(action, result)) return result;
@@ -463,7 +456,7 @@ auto apply_bulk_sound_import(document_history_t& history, std::uint64_t expected
         const auto found = std::ranges::find(draft.document.charts, action.chart,
                                              &chart_document_t::id);
         if (found == draft.document.charts.end()) {
-            reject(result, "sound import chart is unknown");
+            reject(result, diagnostic_code_t::invalid_id, "sound import chart is unknown");
             return result;
         }
         if (found->source_family == format_family_t::bmson) {
@@ -475,8 +468,9 @@ auto apply_bulk_sound_import(document_history_t& history, std::uint64_t expected
         if (!import_entry(draft, action.entries[index], stem_chart, ids, (*identifiers)[index], result)) return result;
     }
     if (!apply_import_groups(draft.document, action, first_imported_resource, result)) return result;
-    return commit_document_command(history, std::move(draft.document),
-                                   action.groups.empty() ? "Import sounds" : "Import sounds and groups");
+    auto transaction = document_command_transaction_t::from(history);
+    transaction.adopt_document(std::move(draft.document));
+    return transaction.commit(action.groups.empty() ? "Import sounds" : "Import sounds and groups");
 }
 
 } // namespace wormedit

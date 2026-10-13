@@ -144,7 +144,9 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-607 Share the core document transaction
 
-- **Status:** Ready
+- **Status:** Done
+- **Completion (2026-10-13):** Commit `216da16` (rebased). `document_command_transaction_t` in `command.h`: a public aggregate built with `::from(history)`; the stale check stays at apply entry points until T-609 stamps; `copy_document()` copies lazily once, `adopt_document()` hands over staged snapshots without a second copy; `reject`/`rejection`/`commit`. `command_result_with_t<Payload>` added. Initial editors migrated.
+- **Gate evidence (Claude, on main with FFmpeg on):** `100% tests passed out of 3542`; event harness `500/500`; documentation `1/1` (after T-608).
 - **Findings closed:** CT1–CT4 (targets; not yet closed).
 - **Stale-plan audit:** Search by behavior: revision result initializers, stale checks, whole-document copies, commit calls and command-plus-payload field sets. Confirm every A lead and current caller/body equivalence; record stale claims, stricter validation, diagnostics, rounding and policy differences before editing.
 - **Outcome:** `document_command_transaction_t` and `command_result_with_t<Payload>` in `command.h`, with a lazy single copy. Migrate the core editors for BPM, measures, markers, metadata, chart and project, and lanes.
@@ -163,7 +165,9 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-608 Migrate remaining document commands
 
-- **Status:** Ready
+- **Status:** Done (sys publication call sites left for a later wave)
+- **Completion (2026-10-13):** Commits `dbf4654` (resources, sound imports, sound groups), `8203ded` (BMSON channel edits and rejection builders), `86fb597` (timing and SV), `b6e4949` (notes, BGM, gestures, clipboard), `6adaba8` (exactly the nine payload results on `command_result_with_t`; remaining editors), rebased. Local `reject`/`rejected` builders and inline `{.applied = false}` rejections removed; `sound_import`'s former `applied = false` reset was proven unobservable (no path sets `applied` before rejecting). One fewer document copy in tap-timing publication. Forced call-site edits in sys (`application_command_dispatch`, `chart_import_session`, `compose_actions`, `compose_input`, `compose_note_to_bgm`, `main`, `metadata_actions`, `project_view`). Later sys wave: BGA import publication `compose_bga_actions.cpp:88`; quantize-preset publication `compose_actions.cpp:1956/1975/2006`. Rebase onto T-625 resolved three conflicts (helper renames vs transaction rewrites).
+- **Gate evidence (Claude, on main with FFmpeg on):** build exit 0; `100% tests passed out of 3542`; event harness `100% tests passed out of 500`; documentation `100% tests passed out of 1`.
 - **Findings closed:** CT1–CT3, AP7 (targets; not yet closed).
 - **Stale-plan audit:** Search by behavior: applied/revision/diagnostics result shapes, rejected builders under any name and inline false-applied returns. Confirm every A lead and current caller/body equivalence; record stale claims, stricter validation, diagnostics, rounding and policy differences before editing.
 - **Outcome:** Migrate the remaining commands: resources, BMSON, SV, timing lanes, notes and BGM. Staged edits remain orchestration around the transaction. Collapse the nine payload result types. Remove the `rejected()` builders and the inline `{.applied = false}` rejections (AP7).

@@ -169,6 +169,11 @@ auto document_command_transaction_t::rejection(std::uint64_t revision, diagnosti
     return result;
 }
 
+auto document_command_transaction_t::rejection(std::uint64_t revision,
+    diagnostic_list_t diagnostics) -> document_command_result_t {
+    return {.revision = revision, .diagnostics = std::move(diagnostics)};
+}
+
 auto document_command_transaction_t::reject(diagnostic_code_t code, std::string message,
     std::optional<object_id_t> object) -> document_command_result_t {
     wormedit::reject(outcome, code, std::move(message), object);

@@ -162,7 +162,9 @@ auto apply_note_label_edit(document_history_t& history, std::uint64_t expected_r
         return result;
     }
 
-    auto proposed = history.document;
+    auto transaction = document_command_transaction_t::from(history);
+
+    auto& proposed = transaction.copy_document();
     const auto chart = std::ranges::find(proposed.charts, action.chart, &chart_document_t::id);
     if (!action.chart || chart == proposed.charts.end()) {
         reject(result, diagnostic_code_t::invalid_id, "note-label edit refers to an unknown chart");
@@ -226,8 +228,7 @@ auto apply_note_label_edit(document_history_t& history, std::uint64_t expected_r
                "note labels exceed the configured aggregate byte cap");
         return result;
     }
-    return commit_document_command(history, std::move(proposed),
-                                   action.label.has_value() ? "Set note label"
+    return transaction.commit(action.label.has_value() ? "Set note label"
                                                             : "Clear note label");
 }
 

@@ -297,7 +297,9 @@ auto delete_selection_all(document_history_t& history, editor_interaction_state_
         if (!deleted) return deleted;
     }
     if (staged.undo.empty()) return {.accepted = true};
-    const auto committed = commit_document_command(history, std::move(staged.document), options.label);
+    auto transaction = document_command_transaction_t::from(history);
+    transaction.adopt_document(std::move(staged.document));
+    const auto committed = transaction.commit(options.label);
     if (!committed) return {.diagnostics = committed.diagnostics};
     proposed_state.selected_notes.clear();
     proposed_state.selected_objects.clear();
@@ -739,12 +741,13 @@ auto paste_chart_clipboard(document_history_t& history, chart_id_t chart_id,
                           const chart_clipboard_t& clipboard, local_position_t anchor,
                           std::uint64_t expected_revision) -> document_command_result_t {
     auto proposal = propose_chart_paste(history.document, chart_id, clipboard, anchor, expected_revision);
-    if (!proposal.valid) return {.revision = history.document.revision, .diagnostics = {
-        {diagnostic_severity_t::error, diagnostic_code_t::collision, std::move(proposal.error), {}}}};
-    auto proposed = history.document;
+    if (!proposal.valid) return document_command_transaction_t::rejection(
+        history.document.revision, diagnostic_code_t::collision, std::move(proposal.error));
+    auto transaction = document_command_transaction_t::from(history);
+    auto& proposed = transaction.copy_document();
     const auto chart = std::ranges::find(proposed.charts, chart_id, &chart_document_t::id);
     for (auto& object : proposal.objects) append_paste_object(*chart, std::move(object));
     append_stem_events(*chart, proposal.stem_events);
-    return commit_document_command(history, std::move(proposed), "Paste chart objects");
+    return transaction.commit("Paste chart objects");
 }
 } // namespace wormedit

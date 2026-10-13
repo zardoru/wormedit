@@ -342,9 +342,9 @@ auto release_note_move_gesture(editor_edit_context_t& context, local_position_t 
         auto staged = stage_bgm_note_move(context.history, context.state, plan, pending);
         if (auto* failures = std::get_if<diagnostic_list_t>(&staged))
             return reject(*failures);
-        auto committed = commit_document_command(
-            context.history, std::move(std::get<song_document_t>(staged)),
-            pending.to_bgm ? "Move selected notes to BGM" : "Move notes and displace to BGM");
+        auto transaction = document_command_transaction_t::from(context.history);
+        transaction.adopt_document(std::move(std::get<song_document_t>(staged)));
+        auto committed = transaction.commit(pending.to_bgm ? "Move selected notes to BGM" : "Move notes and displace to BGM");
         if (!committed)
             return reject(std::move(committed.diagnostics));
         context.state.pending_note_move_gesture.reset();
@@ -777,8 +777,10 @@ auto end_note_paint_gesture(editor_edit_context_t& context, lane_id_t lane,
         return diagnostic_result(context.history, state, *diagnostics);
     }
     auto result = std::get<prepared_note_paint_t>(std::move(prepared));
+    auto transaction = document_command_transaction_t::from(context.history);
+    transaction.adopt_document(std::move(result.document));
     auto command =
-        commit_document_command(context.history, std::move(result.document), "Paint notes");
+        transaction.commit("Paint notes");
     if (!command)
         return diagnostic_result(context.history, state, std::move(command.diagnostics));
     state.pending_note_paint_gesture.reset();
@@ -1057,8 +1059,9 @@ auto commit_stem_hold(editor_edit_context_t& context, const pending_hold_t& pend
     const auto created = document.painted_notes.empty()
                              ? std::optional<object_id_t>{}
                              : std::optional{document.painted_notes.front()};
-    const auto committed = commit_document_command(context.history, std::move(document.document),
-                                                   "Place linked BMSON stem note");
+    auto transaction = document_command_transaction_t::from(context.history);
+    transaction.adopt_document(std::move(document.document));
+    const auto committed = transaction.commit("Place linked BMSON stem note");
     if (!committed)
         return diagnostic_result(context.history, context.state, committed.diagnostics);
     place_cursor_at(context.state, target);
@@ -1106,7 +1109,8 @@ auto commit_hold(editor_edit_context_t& context, local_position_t position,
     const auto& placement = std::get<hold_placement_plan_t>(plan);
     if (auto stem = commit_stem_hold(context, pending, placement, *snapped, geometry))
         return *stem;
-    auto proposed = history.document;
+    auto transaction = document_command_transaction_t::from(history);
+    auto& proposed = transaction.copy_document();
     auto* chart = find_chart(proposed, state.chart);
     std::optional<object_id_t> id;
     if (placement.adds_note) {
@@ -1136,7 +1140,7 @@ auto commit_hold(editor_edit_context_t& context, local_position_t position,
     const auto label = placement.adds_note
                            ? (placement.tail ? "Place merged hold note" : "Place tap note")
                            : "Remove note";
-    auto command = commit_document_command(history, std::move(proposed), label);
+    auto command = transaction.commit(label);
     if (!command)
         return diagnostic_result(history, state, std::move(command.diagnostics));
     state.pending_hold.reset();

@@ -90,7 +90,8 @@ auto apply_bgm_column_count(document_history_t& history, std::uint64_t expected_
         reject(result, diagnostic_code_t::invalid_id, "BGM column count must be 1 to 128");
         return result;
     }
-    auto proposed = history.document;
+    auto transaction = document_command_transaction_t::from(history);
+    auto& proposed = transaction.copy_document();
     const auto target = std::ranges::find(proposed.charts, chart, &chart_document_t::id);
     if (!chart || target == proposed.charts.end()) {
         reject(result, diagnostic_code_t::invalid_id, "BGM column chart is missing");
@@ -107,7 +108,7 @@ auto apply_bgm_column_count(document_history_t& history, std::uint64_t expected_
     const auto changed = count > current ? grow_columns(*target, count, result)
                                          : shrink_columns(*target, count, result);
     if (!changed) return result;
-    return commit_document_command(history, std::move(proposed), "Set BGM column count");
+    return transaction.commit("Set BGM column count");
 }
 
 } // namespace wormedit

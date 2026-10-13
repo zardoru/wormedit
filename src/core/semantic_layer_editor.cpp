@@ -857,12 +857,13 @@ auto apply_semantic_layer_edit(document_history_t& history, std::uint64_t expect
                "semantic layer, object, note selection, and name byte caps must be positive");
         return result;
     }
-    auto proposed = history.document;
+    auto transaction = document_command_transaction_t::from(history);
+    auto& proposed = transaction.copy_document();
     auto outcome = apply_semantic_layer_action(proposed, action, limits, result);
     if (!result.diagnostics.empty() || !outcome.changed) {
         return result;
     }
-    return commit_document_command(history, std::move(proposed), std::move(outcome.label));
+    return transaction.commit(std::move(outcome.label));
 }
 
 auto sound_default_layers_for_placement(const chart_document_t& chart, resource_id_t resource)
@@ -961,7 +962,8 @@ auto apply_sound_layer_defaults(document_history_t& history, std::uint64_t expec
                "sound layer defaults document revision is stale");
         return result;
     }
-    auto proposed = history.document;
+    auto transaction = document_command_transaction_t::from(history);
+    auto& proposed = transaction.copy_document();
     const auto chart = std::ranges::find(proposed.charts, action.chart, &chart_document_t::id);
     if (!action.chart || chart == proposed.charts.end()) {
         reject(result, diagnostic_code_t::invalid_id,
@@ -972,8 +974,7 @@ auto apply_sound_layer_defaults(document_history_t& history, std::uint64_t expec
         !write_sound_layer_defaults(*chart, action)) {
         return result;
     }
-    return commit_document_command(history, std::move(proposed),
-                                   action.layers.empty() ? "Clear sound layers"
+    return transaction.commit(action.layers.empty() ? "Clear sound layers"
                                                          : "Set sound layers");
 }
 
@@ -1054,7 +1055,8 @@ auto apply_sound_layer_membership(document_history_t& history, std::uint64_t exp
                "sound layer membership document revision is stale");
         return result;
     }
-    auto proposed = history.document;
+    auto transaction = document_command_transaction_t::from(history);
+    auto& proposed = transaction.copy_document();
     const auto chart = std::ranges::find(proposed.charts, action.chart, &chart_document_t::id);
     if (!action.chart || chart == proposed.charts.end()) {
         reject(result, diagnostic_code_t::invalid_id,
@@ -1082,8 +1084,7 @@ auto apply_sound_layer_membership(document_history_t& history, std::uint64_t exp
     if (action.member && action.assign_unlayered_bgm)
         changed = paint_unassigned_sound_layer_bgm(*chart, action) || changed;
     if (!changed) return result;
-    return commit_document_command(history, std::move(proposed),
-                                   action.member ? "Add layer to sounds" : "Remove layer from sounds");
+    return transaction.commit(action.member ? "Add layer to sounds" : "Remove layer from sounds");
 }
 
 namespace {

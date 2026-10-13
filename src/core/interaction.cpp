@@ -982,7 +982,9 @@ auto delete_editor_selection(editor_edit_context_t& context) -> editor_interacti
         return complete_editor_delete(context, true);
     }
 
-    auto proposed = context.history.document;
+    auto transaction = document_command_transaction_t::from(context.history);
+
+    auto& proposed = transaction.copy_document();
     auto staged = stage_delete_stem_points(proposed, context, ids);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&staged))
         return diagnostic_result(context.history, context.state, *diagnostics);
@@ -1020,9 +1022,7 @@ auto delete_editor_selection(editor_edit_context_t& context) -> editor_interacti
                                  {error(diagnostic_code_t::invalid_id,
                                         "selected deletion did not resolve every object")});
     }
-    auto command = commit_document_command(
-        context.history, std::move(proposed),
-        selected ? "Delete selected chart objects" : "Delete note");
+    auto command = transaction.commit(selected ? "Delete selected chart objects" : "Delete note");
     if (!command)
         return diagnostic_result(context.history, context.state, std::move(command.diagnostics));
     return complete_editor_delete(context, true);
@@ -1153,7 +1153,8 @@ auto validate_assignment_intervals(std::span<const assignment_interval_t> interv
 auto apply_note_lane_assignment_document(document_history_t& history, chart_id_t chart_id,
     std::span<const assignment_candidate_t> candidates, lane_id_t lane, std::string label)
     -> document_command_result_t {
-    auto proposed = history.document;
+    auto transaction = document_command_transaction_t::from(history);
+    auto& proposed = transaction.copy_document();
     auto* chart = find_chart(proposed, chart_id);
     note_move_plan_t plan;
     plan.moved.reserve(candidates.size());
@@ -1167,7 +1168,7 @@ auto apply_note_lane_assignment_document(document_history_t& history, chart_id_t
     }
     if (const auto failure = sync_linked_sound_events(*chart, plan, history.document))
         return {.revision = history.document.revision, .diagnostics = {*failure}};
-    return commit_document_command(history, std::move(proposed), std::move(label));
+    return transaction.commit(std::move(label));
 }
 
 auto assign_selected_notes_to_lane(editor_edit_context_t& context,
@@ -1543,8 +1544,9 @@ auto apply_keyboard_entry(editor_edit_context_t& context, lane_id_t lane, local_
     if (const auto* failure = std::get_if<diagnostic_list_t>(&staged))
         return diagnostic_result(context.history, state, *failure);
     auto prepared = std::get<prepared_keyboard_entry_t>(std::move(staged));
-    const auto command = commit_document_command(context.history, std::move(prepared.document),
-                                                 "Enter note from lane key");
+    auto transaction = document_command_transaction_t::from(context.history);
+    transaction.adopt_document(std::move(prepared.document));
+    const auto command = transaction.commit("Enter note from lane key");
     if (!command)
         return diagnostic_result(context.history, state, command.diagnostics);
     place_cursor_at(state, *target);

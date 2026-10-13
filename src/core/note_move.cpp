@@ -821,7 +821,8 @@ namespace wormedit {
 using namespace interaction_detail;
 auto apply_duration_resize_plan(document_history_t& history, editor_interaction_state_t& state,
                                 const duration_resize_plan_t& plan) -> editor_interaction_result_t {
-    auto proposed = history.document;
+    auto transaction = document_command_transaction_t::from(history);
+    auto& proposed = transaction.copy_document();
     auto* chart = find_chart(proposed, state.chart);
     auto changed = false;
     for (const auto& candidate : plan.resized) {
@@ -832,9 +833,7 @@ auto apply_duration_resize_plan(document_history_t& history, editor_interaction_
         note->end = candidate.end_position;
     }
     if (changed) {
-        auto command = commit_document_command(
-            history, std::move(proposed),
-            plan.notes.size() == 1 ? "Resize note duration" : "Resize selected note durations");
+        auto command = transaction.commit(plan.notes.size() == 1 ? "Resize note duration" : "Resize selected note durations");
         if (!command)
             return diagnostic_result(history, state, std::move(command.diagnostics));
     }
@@ -946,7 +945,9 @@ namespace wormedit {
 using namespace interaction_detail;
 auto apply_note_move_plan(document_history_t& history, editor_interaction_state_t& state,
                           const note_move_plan_t& plan) -> editor_interaction_result_t {
-    auto proposed = plan.staged_bgm_document.value_or(history.document);
+    auto transaction = document_command_transaction_t::from(history);
+    transaction.adopt_document(plan.staged_bgm_document.value_or(history.document));
+    auto& proposed = transaction.copy_document();
     auto* chart = find_chart(proposed, state.chart);
     const auto changed = plan.staged_bgm_document.has_value() || note_move_changes(*chart, plan) ||
                          std::ranges::any_of(plan.bgm_moves, [&](const auto& move) {
@@ -964,9 +965,7 @@ auto apply_note_move_plan(document_history_t& history, editor_interaction_state_
             state.pending_note_move_gesture.reset();
             return diagnostic_result(history, state, std::move(failures));
         }
-        auto command = commit_document_command(
-            history, std::move(proposed),
-            plan.bgm_moves.empty() ? (plan.notes.size() == 1 ? "Move note" : "Move selected notes")
+        auto command = transaction.commit(plan.bgm_moves.empty() ? (plan.notes.size() == 1 ? "Move note" : "Move selected notes")
                                    : "Move selected chart objects");
         if (!command)
             return diagnostic_result(history, state, std::move(command.diagnostics));

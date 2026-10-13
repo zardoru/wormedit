@@ -100,6 +100,8 @@ struct document_command_transaction_t {
     [[nodiscard]] static auto rejection(std::uint64_t revision, diagnostic_code_t code,
         std::string message, std::optional<object_id_t> object = std::nullopt)
         -> document_command_result_t;
+    [[nodiscard]] static auto rejection(std::uint64_t revision, diagnostic_list_t diagnostics)
+        -> document_command_result_t;
     [[nodiscard]] auto commit(std::string label, document_command_options_t options = {})
         -> document_command_result_t;
 };

@@ -12,18 +12,14 @@
 #include <utility>
 
 namespace wormedit {
+using interaction_detail::minimum_viewport_scroll;
+using interaction_detail::normalized_position_span;
+using interaction_detail::absolute_row_at_y_pixels;
+using interaction_detail::find_active_lane;
+using interaction_detail::snapped_position;
 namespace {
 
-auto find_active_lane(const chart_document_t& chart, const measure_index_t& index,
-                      local_position_t position, lane_id_t id) -> const lane_definition_t* {
-    const auto* layout = effective_layout(chart, index, position);
-    if (!layout)
-        return nullptr;
-    const auto lane = std::ranges::find_if(layout->lanes, [id](const auto& value) {
-        return value.id == id && editable_lane(value);
-    });
-    return lane == layout->lanes.end() ? nullptr : &*lane;
-}
+
 
 auto scope_accepts(editor_selection_scope_t scope, editor_selection_object_kind_t kind) -> bool {
     switch (kind) {
@@ -44,9 +40,7 @@ auto scope_accepts(editor_selection_scope_t scope, editor_selection_object_kind_
     return false;
 }
 
-auto minimum_viewport_scroll(double viewport_height) -> double {
-    return -viewport_height * editor_cursor_edge_margin_fraction;
-}
+
 
 } // namespace
 

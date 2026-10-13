@@ -1,3 +1,4 @@
+#include "interaction_internal.h"
 #include "interaction_geometry.h"
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/snap.h>
@@ -13,6 +14,11 @@
 #include <utility>
 
 namespace wormedit {
+using interaction_detail::minimum_viewport_scroll;
+using interaction_detail::normalized_position_span;
+using interaction_detail::absolute_row_at_y_pixels;
+using interaction_detail::find_active_lane;
+using interaction_detail::snapped_position;
 namespace {
 
 auto rational_label(signed_rational_t value) -> std::string {
@@ -37,39 +43,9 @@ auto note_kind_label(note_kind_t kind) -> std::string_view {
     return "Note";
 }
 
-auto snapped_position(const chart_document_t& chart, const measure_index_t& index,
-                      local_position_t target, std::uint64_t denominator)
-    -> std::optional<local_position_t> {
-    return snap_position(chart, index, target, denominator);
-}
 
-auto absolute_row_at_y_pixels(const chart_document_t& chart, const measure_index_t& index,
-                              const editor_interaction_view_model_t& view, double y_pixels,
-                              bool include_virtual_bms_tail = false)
-    -> std::optional<std::uint64_t> {
-    auto total_rows = index.total_rows;
-    if (include_virtual_bms_tail && chart_has_virtual_tail(chart)) {
-        const auto built = build_virtual_canvas(chart);
-        const auto* canvas = std::get_if<virtual_canvas_t>(&built);
-        if (canvas == nullptr)
-            return std::nullopt;
-        total_rows = canvas->total_rows;
-    }
-    if (view.chart != chart.id || !std::isfinite(y_pixels) || y_pixels < 0.0 ||
-        y_pixels >= view.viewport_height_pixels ||
-        !std::isfinite(view.pixels_per_standard_measure) ||
-        view.pixels_per_standard_measure < minimum_pixels_per_standard_measure ||
-        view.pixels_per_standard_measure > maximum_pixels_per_standard_measure ||
-        !std::isfinite(view.viewport_scroll_pixels) || chart.divisions_per_standard_measure == 0 ||
-        total_rows == 0)
-        return std::nullopt;
-    const auto row = (static_cast<long double>(y_pixels) + view.viewport_scroll_pixels) *
-                     static_cast<long double>(chart.divisions_per_standard_measure) /
-                     static_cast<long double>(view.pixels_per_standard_measure);
-    if (!std::isfinite(row) || row < 0.0L || row >= static_cast<long double>(total_rows))
-        return std::nullopt;
-    return nearest_row(row, total_rows, row_clamp_policy_t::upper_only);
-}
+
+
 
 auto position_at_row_y_pixels(const chart_document_t& chart, const measure_index_t& index,
                               const editor_interaction_view_model_t& view, double y_pixels)

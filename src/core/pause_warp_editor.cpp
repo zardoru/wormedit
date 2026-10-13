@@ -1,3 +1,4 @@
+#include "timing_event_internal.h"
 #include "position_validation.h"
 #include "chart_object_ids.h"
 #include <wormedit/core/pause_warp_editor.h>
@@ -22,16 +23,7 @@ auto valid_pause_kind(pause_kind_t kind) -> bool {
     return false;
 }
 
-auto valid_pause_unit(pause_unit_t unit) -> bool {
-    switch (unit) {
-    case pause_unit_t::seconds:
-    case pause_unit_t::milliseconds:
-    case pause_unit_t::bms_stop_ticks:
-    case pause_unit_t::beats:
-        return true;
-    }
-    return false;
-}
+
 
 auto validate_pause_values(pause_kind_t kind, signed_rational_t duration, pause_unit_t unit,
                            document_command_result_t& result) -> bool {
@@ -53,15 +45,7 @@ auto validate_pause_values(pause_kind_t kind, signed_rational_t duration, pause_
     return true;
 }
 
-auto valid_warp_encoding(warp_provenance_t encoding) -> bool {
-    switch (encoding) {
-    case warp_provenance_t::native:
-    case warp_provenance_t::negative_bpm:
-    case warp_provenance_t::negative_stop:
-        return true;
-    }
-    return false;
-}
+
 
 auto validate_position(const chart_document_t& chart, local_position_t position,
                        document_command_result_t& result, std::string_view event_name) -> bool {
@@ -91,20 +75,7 @@ auto validate_span(const chart_document_t& chart, position_span_t span,
     return true;
 }
 
-template <typename event_t>
-auto next_source_order(const std::vector<event_t>& events) -> std::optional<std::size_t> {
-    if (events.empty()) {
-        return 0;
-    }
-    auto maximum = std::size_t{};
-    for (const auto& event : events) {
-        maximum = std::max(maximum, event.provenance.source_order);
-    }
-    if (maximum == std::numeric_limits<std::size_t>::max()) {
-        return std::nullopt;
-    }
-    return maximum + 1;
-}
+
 
 template <typename event_t>
 auto unique_event(const chart_document_t& chart, std::vector<event_t>& events, object_id_t id,

@@ -1,3 +1,4 @@
+#include "timing_event_internal.h"
 #include "position_validation.h"
 #include "chart_object_ids.h"
 #include <wormedit/core/scroll_speed_editor.h>
@@ -38,20 +39,7 @@ auto validate_position(const chart_document_t& chart, local_position_t position,
     return validate_chart_position(chart, position, result.diagnostics, "scroll/speed event");
 }
 
-template <typename event_t>
-auto next_source_order(const std::vector<event_t>& events) -> std::optional<std::size_t> {
-    if (events.empty()) {
-        return 0;
-    }
-    auto maximum = std::size_t{};
-    for (const auto& event : events) {
-        maximum = std::max(maximum, event.provenance.source_order);
-    }
-    if (maximum == std::numeric_limits<std::size_t>::max()) {
-        return std::nullopt;
-    }
-    return maximum + 1;
-}
+
 
 template <typename event_t>
 auto unique_event(const chart_document_t& chart, std::vector<event_t>& events, object_id_t id,

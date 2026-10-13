@@ -122,11 +122,28 @@ auto existing_ids(const chart_document_t& chart, editor_selection_object_kind_t 
 
 auto span_measures_exist(const chart_document_t& chart, const position_span_t& span) -> bool;
 
-auto find_active_lane(const chart_document_t& chart, const measure_index_t& index,
-                      local_position_t position, lane_id_t id) -> const lane_definition_t*;
+inline auto find_active_lane(const chart_document_t& chart, const measure_index_t& index,
+                      local_position_t position, lane_id_t id) -> const lane_definition_t* {
+    const auto* layout = effective_layout(chart, index, position);
+    if (layout == nullptr) {
+        return nullptr;
+    }
+    for (const auto& lane : layout->lanes) {
+        if (lane.id == id && editable_lane(lane)) return &lane;
+    }
+    return nullptr;
+}
 
-auto normalized_position_span(const measure_index_t& index, local_position_t first,
-                              local_position_t second) -> std::optional<position_span_t>;
+inline auto normalized_position_span(const measure_index_t& index, local_position_t first,
+                              local_position_t second) -> std::optional<position_span_t> {
+    const auto first_row = absolute_row(index, first);
+    const auto second_row = absolute_row(index, second);
+    if (!first_row || !second_row || *first_row == *second_row) {
+        return std::nullopt;
+    }
+    return *first_row < *second_row ? position_span_t{first, second}
+                                    : position_span_t{second, first};
+}
 
 auto notes_from_objects(const std::vector<editor_selection_object_t>& objects)
     -> std::vector<object_id_t>;
@@ -136,19 +153,46 @@ auto set_selected_objects(editor_interaction_state_t& state,
 
 auto set_selected_notes(editor_interaction_state_t& state, std::vector<object_id_t> notes) -> void;
 
-auto find_active_lane(const chart_document_t& chart, const measure_index_t& index,
-                      local_position_t position, lane_id_t id) -> const lane_definition_t*;
+
 
 auto transition_lane(const chart_document_t& chart, const measure_index_t& index,
                      local_position_t from, local_position_t to, lane_id_t current,
                      const editor_scratch_presentation_t& sides) -> std::optional<lane_id_t>;
 
-auto minimum_viewport_scroll(double viewport_height) -> double;
+inline auto minimum_viewport_scroll(double viewport_height) -> double {
+    return -viewport_height * editor_cursor_edge_margin_fraction;
+}
 
-auto absolute_row_at_y_pixels(const chart_document_t& chart, const measure_index_t& index,
+inline auto absolute_row_at_y_pixels(const chart_document_t& chart, const measure_index_t& index,
                               const editor_interaction_view_model_t& view, double y_pixels,
-                              bool include_virtual_bms_tail = false)
-    -> std::optional<std::uint64_t>;
+                              bool include_virtual_bms_tail = false) -> std::optional<std::uint64_t> {
+    auto total_rows = index.total_rows;
+    if (include_virtual_bms_tail && chart_has_virtual_tail(chart)) {
+        const auto built_canvas = build_virtual_canvas(chart);
+        if (const auto* canvas = std::get_if<virtual_canvas_t>(&built_canvas))
+            total_rows = canvas->total_rows;
+        else
+            return std::nullopt;
+    }
+    if (view.chart != chart.id || !std::isfinite(y_pixels) || y_pixels < 0.0 ||
+        y_pixels >= view.viewport_height_pixels ||
+        !std::isfinite(view.pixels_per_standard_measure) ||
+        view.pixels_per_standard_measure < minimum_pixels_per_standard_measure ||
+        view.pixels_per_standard_measure > maximum_pixels_per_standard_measure ||
+        !std::isfinite(view.viewport_scroll_pixels) || chart.divisions_per_standard_measure == 0 ||
+        total_rows == 0) {
+        return std::nullopt;
+    }
+    const auto row = (static_cast<long double>(y_pixels) + view.viewport_scroll_pixels) *
+                     static_cast<long double>(chart.divisions_per_standard_measure) /
+                     static_cast<long double>(view.pixels_per_standard_measure);
+    if (!std::isfinite(row) || row < 0.0L || row >= static_cast<long double>(total_rows)) {
+        return std::nullopt;
+    }
+    // Pointer positions are continuous; map to the nearest stored row and make
+    // exact half-row ties stable by resolving them toward the earlier row.
+    return nearest_row(row, total_rows, row_clamp_policy_t::upper_only);
+}
 
 struct view_geometry_t {
     const chart_document_t* chart{};
@@ -204,9 +248,11 @@ auto make_view(const document_history_t& history, const editor_interaction_state
 
 auto next_object_id(const chart_document_t& chart) -> std::optional<object_id_t>;
 
-auto snapped_position(const chart_document_t& chart, const measure_index_t& index,
+inline auto snapped_position(const chart_document_t& chart, const measure_index_t& index,
                       local_position_t target, std::uint64_t denominator)
-    -> std::optional<local_position_t>;
+    -> std::optional<local_position_t> {
+    return snap_position(chart, index, target, denominator);
+}
 
 auto resolve_row_placement(const chart_document_t& chart, const measure_index_t& index,
                            const editor_interaction_state_t& state, lane_id_t lane,

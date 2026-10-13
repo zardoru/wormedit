@@ -1,3 +1,4 @@
+#include "timing_event_internal.h"
 #include "../core/text_util.h"
 #include "chart_object_ids.h"
 #include "checked_math.h"
@@ -154,19 +155,7 @@ auto same_span(const std::optional<position_span_t>& left,
     return !left.has_value() || (left->begin == right->begin && left->end == right->end);
 }
 
-auto next_kiai_source_order(const chart_document_t& chart) -> std::optional<std::size_t> {
-    if (chart.kiai.empty()) {
-        return 0;
-    }
-    auto maximum = std::size_t{};
-    for (const auto& event : chart.kiai) {
-        maximum = std::max(maximum, event.provenance.source_order);
-    }
-    if (maximum == std::numeric_limits<std::size_t>::max()) {
-        return std::nullopt;
-    }
-    return maximum + 1;
-}
+
 
 struct marker_edit_context_t {
     song_document_t& proposed;
@@ -367,7 +356,7 @@ void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart
     const auto id = allocate_marker_id(context, chart);
     if (!id)
         return;
-    const auto source_order = next_kiai_source_order(chart);
+    const auto source_order = next_source_order(chart.kiai);
     if (!source_order) {
         reject(context.result, diagnostic_code_t::invalid_resolution,
                "kiai source-order sequence is exhausted");

@@ -128,11 +128,7 @@ auto next_object_id(const chart_document_t& chart) -> std::optional<object_id_t>
 } // namespace wormedit::interaction_detail
 
 namespace wormedit::interaction_detail {
-auto snapped_position(const chart_document_t& chart, const measure_index_t& index,
-                      local_position_t target, std::uint64_t denominator)
-    -> std::optional<local_position_t> {
-    return snap_position(chart, index, target, denominator);
-}
+
 } // namespace wormedit::interaction_detail
 
 namespace wormedit::interaction_detail {

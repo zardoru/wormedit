@@ -1,3 +1,4 @@
+#include "timing_event_internal.h"
 #include "position_validation.h"
 #include "chart_object_ids.h"
 #include <wormedit/core/timing_lane_controller.h>
@@ -326,26 +327,9 @@ auto validate_position(const chart_document_t& chart, local_position_t position,
     return validate_chart_position(chart, position, diagnostics, name);
 }
 
-auto valid_pause_unit(pause_unit_t unit) -> bool {
-    switch (unit) {
-    case pause_unit_t::seconds:
-    case pause_unit_t::milliseconds:
-    case pause_unit_t::bms_stop_ticks:
-    case pause_unit_t::beats:
-        return true;
-    }
-    return false;
-}
 
-auto valid_warp_encoding(warp_provenance_t encoding) -> bool {
-    switch (encoding) {
-    case warp_provenance_t::native:
-    case warp_provenance_t::negative_bpm:
-    case warp_provenance_t::negative_stop:
-        return true;
-    }
-    return false;
-}
+
+
 
 auto validate_warp_value(const chart_document_t& chart, local_position_t position,
                          const timing_warp_value_t& warp, diagnostic_list_t& diagnostics) -> bool {

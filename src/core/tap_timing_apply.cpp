@@ -1,3 +1,4 @@
+#include "timing_event_internal.h"
 #include <wormedit/core/rational.h>
 #include "timing_arithmetic.h"
 #include "../core/checked_math.h"
@@ -96,14 +97,7 @@ auto exact_offset(std::int64_t frame, std::uint32_t sample_rate) -> signed_ratio
     return *timing_arithmetic::frames_to_seconds(frame, sample_rate);
 }
 
-auto next_source_order(const chart_document_t& chart) -> std::optional<std::size_t> {
-    auto maximum = std::size_t{};
-    for (const auto& bpm : chart.bpms) maximum = std::max(maximum, bpm.provenance.source_order);
-    if (!chart.bpms.empty() && maximum == std::numeric_limits<std::size_t>::max())
-        return std::nullopt;
-    return chart.bpms.empty() ? std::optional<std::size_t>{0}
-                              : std::optional<std::size_t>{maximum + 1};
-}
+
 
 auto next_object_id(const chart_document_t& chart) -> std::optional<object_id_t> {
     auto maximum = std::uint64_t{};
@@ -198,7 +192,7 @@ auto effective_row_zero_index(const chart_document_t& chart) -> std::optional<st
 
 auto insert_initial_bpm(chart_document_t& chart, signed_rational_t bpm) -> bool {
     const auto id = next_object_id(chart);
-    const auto source_order = next_source_order(chart);
+    const auto source_order = next_source_order(chart.bpms);
     if (!id || !source_order || chart.measures.empty()) return false;
     chart.bpms.push_back({.id = *id,
                           .position = {chart.measures.front().id, 0},

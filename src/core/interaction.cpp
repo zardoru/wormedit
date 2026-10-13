@@ -139,16 +139,7 @@ auto span_measures_exist(const chart_document_t& chart, const position_span_t& s
 
 ;
 
-auto normalized_position_span(const measure_index_t& index, local_position_t first,
-                              local_position_t second) -> std::optional<position_span_t> {
-    const auto first_row = absolute_row(index, first);
-    const auto second_row = absolute_row(index, second);
-    if (!first_row || !second_row || *first_row == *second_row) {
-        return std::nullopt;
-    }
-    return *first_row < *second_row ? position_span_t{first, second}
-                                    : position_span_t{second, first};
-}
+
 
 auto notes_from_objects(const std::vector<editor_selection_object_t>& objects)
     -> std::vector<object_id_t> {
@@ -177,16 +168,7 @@ auto set_selected_notes(editor_interaction_state_t& state, std::vector<object_id
     state.selected_objects = std::move(objects);
 }
 
-auto find_active_lane(const chart_document_t& chart, const measure_index_t& index,
-                      local_position_t position, lane_id_t id) -> const lane_definition_t* {
-    const auto* layout = effective_layout(chart, index, position);
-    if (layout == nullptr) {
-        return nullptr;
-    }
-    const auto found = std::ranges::find_if(
-        layout->lanes, [id](const auto& lane) { return lane.id == id && editable_lane(lane); });
-    return found == layout->lanes.end() ? nullptr : &*found;
-}
+
 
 auto transition_lane(const chart_document_t& chart, const measure_index_t& index,
                      local_position_t from, local_position_t to, lane_id_t current,
@@ -198,40 +180,9 @@ auto transition_lane(const chart_document_t& chart, const measure_index_t& index
                             : std::nullopt;
 }
 
-auto minimum_viewport_scroll(double viewport_height) -> double {
-    return -viewport_height * editor_cursor_edge_margin_fraction;
-}
 
-auto absolute_row_at_y_pixels(const chart_document_t& chart, const measure_index_t& index,
-                              const editor_interaction_view_model_t& view, double y_pixels,
-                              bool include_virtual_bms_tail) -> std::optional<std::uint64_t> {
-    auto total_rows = index.total_rows;
-    if (include_virtual_bms_tail && chart_has_virtual_tail(chart)) {
-        const auto built_canvas = build_virtual_canvas(chart);
-        if (const auto* canvas = std::get_if<virtual_canvas_t>(&built_canvas))
-            total_rows = canvas->total_rows;
-        else
-            return std::nullopt;
-    }
-    if (view.chart != chart.id || !std::isfinite(y_pixels) || y_pixels < 0.0 ||
-        y_pixels >= view.viewport_height_pixels ||
-        !std::isfinite(view.pixels_per_standard_measure) ||
-        view.pixels_per_standard_measure < minimum_pixels_per_standard_measure ||
-        view.pixels_per_standard_measure > maximum_pixels_per_standard_measure ||
-        !std::isfinite(view.viewport_scroll_pixels) || chart.divisions_per_standard_measure == 0 ||
-        total_rows == 0) {
-        return std::nullopt;
-    }
-    const auto row = (static_cast<long double>(y_pixels) + view.viewport_scroll_pixels) *
-                     static_cast<long double>(chart.divisions_per_standard_measure) /
-                     static_cast<long double>(view.pixels_per_standard_measure);
-    if (!std::isfinite(row) || row < 0.0L || row >= static_cast<long double>(total_rows)) {
-        return std::nullopt;
-    }
-    // Pointer positions are continuous; map to the nearest stored row and make
-    // exact half-row ties stable by resolving them toward the earlier row.
-    return nearest_row(row, total_rows, row_clamp_policy_t::upper_only);
-}
+
+
 
 auto resolve_canvas_cursor(const chart_document_t& chart, const measure_index_t& index,
                            const editor_interaction_state_t& state)

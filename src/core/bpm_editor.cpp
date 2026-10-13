@@ -1,3 +1,4 @@
+#include "timing_event_internal.h"
 #include "text_util.h"
 #include <wormedit/core/rational.h>
 #include "position_validation.h"
@@ -37,19 +38,7 @@ auto validate_bpm_position(const chart_document_t& chart, local_position_t posit
     return validate_chart_position(chart, position, result.diagnostics, "BPM event");
 }
 
-auto next_bpm_source_order(const chart_document_t& chart) -> std::optional<std::size_t> {
-    if (chart.bpms.empty()) {
-        return 0;
-    }
-    auto maximum = std::size_t{};
-    for (const auto& bpm : chart.bpms) {
-        maximum = std::max(maximum, bpm.provenance.source_order);
-    }
-    if (maximum == std::numeric_limits<std::size_t>::max()) {
-        return std::nullopt;
-    }
-    return maximum + 1;
-}
+
 
 auto unique_bpm_event(chart_document_t& chart, object_id_t id, document_command_result_t& result)
     -> bpm_event_t* {
@@ -113,7 +102,7 @@ auto apply_insert(bpm_edit_context_t context, const insert_bpm_event_action_t& e
                                      : "chart object ID sequence is exhausted");
         return {false, false, {}};
     }
-    const auto source_order = next_bpm_source_order(context.chart);
+    const auto source_order = next_source_order(context.chart.bpms);
     if (!source_order) {
         reject(context.result, diagnostic_code_t::invalid_resolution,
                "BPM source-order sequence is exhausted");

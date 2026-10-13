@@ -614,11 +614,11 @@ auto paint_cell_hash_t::operator()(paint_cell_key_t cell) const noexcept -> std:
     return lane_hash ^ (row_hash + std::size_t{0x9e3779b9} + (lane_hash << 6U) + (lane_hash >> 2U));
 }
 
-auto make_editor_interaction(const document_history_t& history, chart_id_t chart_id,
-                             lane_id_t lane_id, local_position_t cursor,
-                             std::span<const std::uint64_t> ordered_snap_denominators,
-                             std::uint64_t requested_snap_denominator,
-                             double viewport_height_pixels) -> editor_interaction_setup_t {
+auto editor_interaction_state_t::from(const document_history_t& history, chart_id_t chart_id,
+                                      lane_id_t lane_id, local_position_t cursor,
+                                      std::span<const std::uint64_t> ordered_snap_denominators,
+                                      std::uint64_t requested_snap_denominator,
+                                      double viewport_height_pixels) -> editor_interaction_setup_t {
     editor_interaction_setup_t result;
     const auto* chart = history.document.find_chart(chart_id);
     if (chart == nullptr) {
@@ -704,7 +704,7 @@ auto recover_editor_interaction(const document_history_t& history,
                                            "chart has no editable lane for a recovered cursor"));
         return result;
     }
-    result = make_editor_interaction(history, previous.chart, lane, *cursor,
+    result = editor_interaction_state_t::from(history, previous.chart, lane, *cursor,
                                      previous.supported_snap_denominators,
                                      previous.active_snap_denominator,
                                      previous.viewport_height_pixels);
@@ -2316,4 +2316,15 @@ auto has_pending_editor_gesture(const editor_interaction_state_t& state) -> bool
     });
     return pending;
 }
+// Compatibility for the sys/ui migration wave.
+auto make_editor_interaction(const document_history_t& history, chart_id_t chart_id,
+                             lane_id_t lane_id, local_position_t cursor,
+                             std::span<const std::uint64_t> ordered_snap_denominators,
+                             std::uint64_t requested_snap_denominator,
+                             double viewport_height_pixels) -> editor_interaction_setup_t {
+    return editor_interaction_state_t::from(history, chart_id, lane_id, cursor,
+                                            ordered_snap_denominators, requested_snap_denominator,
+                                            viewport_height_pixels);
+}
+
 } // namespace wormedit

@@ -57,6 +57,9 @@ struct chart_compare_pane_row_t {
 };
 
 struct chart_compare_difference_row_t {
+    [[nodiscard]] static auto from(rational_t position, std::vector<chart_compare_pane_row_t> panes)
+        -> chart_compare_difference_row_t;
+
     // Exact position in standard-measure units, reduced to lowest terms.
     rational_t musical_position;
     std::vector<chart_compare_pane_row_t> panes;

@@ -73,18 +73,18 @@ TEST_CASE("autosave target keeps saved projects adjacent and untitled sessions I
     const auto recovery = directory.path / "recovery";
 
     const auto adjacent =
-        make_native_project_autosave_target(song_id_t{71}, true, primary, recovery, source);
+        native_project_autosave_target_t::from(song_id_t{71}, true, primary, recovery, source);
     CHECK(adjacent.backup_path == native_project_adjacent_backup_path(primary));
     CHECK(adjacent.backup_path != primary);
     CHECK(adjacent.intended_project_path == primary);
     CHECK(adjacent.original_source_path == source);
 
     const auto untitled =
-        make_native_project_autosave_target(song_id_t{71}, false, primary, recovery, source);
+        native_project_autosave_target_t::from(song_id_t{71}, false, primary, recovery, source);
     CHECK(untitled.backup_path == recovery / "project-71.wormedit.bak");
     CHECK(untitled.intended_project_path.empty());
 
-    const auto unavailable = make_native_project_autosave_target(song_id_t{71}, false, {}, {}, {});
+    const auto unavailable = native_project_autosave_target_t::from(song_id_t{71}, false, {}, {}, {});
     CHECK(unavailable.backup_path.empty());
 }
 
@@ -97,7 +97,7 @@ TEST_CASE(
     const auto recovery = directory.path / "recovery";
     std::filesystem::create_directories(recovery);
     const auto document = song(71, 2);
-    const auto target = make_native_project_autosave_target(document.id, false, {}, recovery);
+    const auto target = native_project_autosave_target_t::from(document.id, false, {}, recovery);
     const auto start = clock_t::time_point{};
     task_scheduler_t scheduler(1, 1);
     native_project_autosave_loop_t loop(
@@ -132,7 +132,7 @@ TEST_CASE("autosave loop resumes existing sequence and backs off after publicati
     const auto recovery = directory.path / "recovery";
     std::filesystem::create_directories(recovery);
     const auto document = song(71, 2);
-    const auto target = make_native_project_autosave_target(document.id, false, {}, recovery);
+    const auto target = native_project_autosave_target_t::from(document.id, false, {}, recovery);
     REQUIRE(publish_native_project_recovery_atomic(target.backup_path, song(71, 1),
                                                    {.session_sequence = 8})
                 .published);
@@ -176,7 +176,7 @@ TEST_CASE("autosave loop permits one in-flight snapshot and refuses session repl
     const auto recovery = directory.path / "recovery";
     std::filesystem::create_directories(recovery);
     const auto document = song(71, 2);
-    const auto target = make_native_project_autosave_target(document.id, false, {}, recovery);
+    const auto target = native_project_autosave_target_t::from(document.id, false, {}, recovery);
     const auto start = clock_t::time_point{};
     task_scheduler_t scheduler(1, 1);
     native_project_autosave_loop_t loop(start, scheduler,
@@ -232,7 +232,7 @@ TEST_CASE("autosave loop permits one in-flight snapshot and refuses session repl
 
     const auto recovered = song(72, 5);
     const auto recovered_target =
-        make_native_project_autosave_target(recovered.id, false, {}, recovery);
+        native_project_autosave_target_t::from(recovered.id, false, {}, recovery);
     REQUIRE(
         loop.reset_session(start + 11min, native_project_document_version_t{recovered.id, 4}, 20));
     CHECK_FALSE(loop.tick(recovered, true, start + 16min, recovered_target));
@@ -274,7 +274,7 @@ TEST_CASE("autosave worker errors retain an explicit-save baseline deferred duri
     const auto recovery = directory.path / "recovery";
     std::filesystem::create_directories(recovery);
     const auto document = song(71, 2);
-    const auto target = make_native_project_autosave_target(document.id, false, {}, recovery);
+    const auto target = native_project_autosave_target_t::from(document.id, false, {}, recovery);
     const auto start = clock_t::time_point{};
     task_scheduler_t scheduler(1, 1);
     native_project_autosave_loop_t loop(start, scheduler, {}, 0, 5min, 10s);
@@ -305,7 +305,7 @@ TEST_CASE("autosave interval changes preserve successful cadence and survive pen
     using clock_t = native_project_autosave_loop_t::clock_t;
     temporary_directory_t directory;
     auto document = song(71, 2);
-    const auto target = make_native_project_autosave_target(document.id, false, {}, directory.path);
+    const auto target = native_project_autosave_target_t::from(document.id, false, {}, directory.path);
     const auto start = clock_t::time_point{};
     task_scheduler_t scheduler(1, 1);
     native_project_autosave_loop_t loop(start, scheduler, {}, 4);
@@ -345,7 +345,7 @@ struct autosave_notification_fixture_t {
     wormedit::song_document_t document{song(83, 4)};
     std::filesystem::path recovery{directory.path / "recovery"};
     wormedit::native_project_autosave_target_t target{
-        wormedit::make_native_project_autosave_target(document.id, false, {}, recovery)};
+        wormedit::native_project_autosave_target_t::from(document.id, false, {}, recovery)};
     clock_t::time_point start{};
     wormedit::notification_center_t center;
     wormedit::task_scheduler_t scheduler{1, 1};
@@ -443,7 +443,7 @@ auto throwing_notification_clock_does_not_change_failed_result() -> bool {
     using clock_t = native_project_autosave_loop_t::clock_t;
     temporary_directory_t directory;
     const auto document = song(85, 3);
-    const auto target = make_native_project_autosave_target(document.id, false, {}, directory.path);
+    const auto target = native_project_autosave_target_t::from(document.id, false, {}, directory.path);
     const auto start = clock_t::time_point{};
     notification_center_t center{[]() -> notification_time_t {
         throw std::runtime_error{"injected notification clock failure"};
@@ -497,7 +497,7 @@ TEST_CASE("Recovery snapshots anchor imported assets without changing the live d
     auto document = song(71, 2);
     document.audio_assets = {{.id = asset_id_t{1}, .source_path = "stem.wav",
                               .waveform_cache_path = "stem.waveform"}};
-    auto target = make_native_project_autosave_target(document.id, false, {}, recovery);
+    auto target = native_project_autosave_target_t::from(document.id, false, {}, recovery);
     target.asset_base = source;
     task_scheduler_t scheduler(1, 1);
     const auto start = clock_t::time_point{};

@@ -455,18 +455,13 @@ struct resize_parameters_t {
 struct duration_resize_context_t {
     const chart_document_t& chart;
     const measure_index_t& index;
-    std::unordered_map<std::uint64_t, const measure_index_entry_t*> measures;
+    measure_lookup_t measures;
     std::unordered_map<std::uint64_t, const note_t*> target_notes;
     std::vector<duration_collision_interval_t> collisions;
 
     auto row_for(local_position_t position) const -> std::optional<std::uint64_t> {
-        const auto found = measures.find(position.measure.value);
-        if (found == measures.end() || position.row >= found->second->row_capacity ||
-            position.row >
-                std::numeric_limits<std::uint64_t>::max() - found->second->absolute_begin_row)
-            return std::nullopt;
-        const auto row = found->second->absolute_begin_row + position.row;
-        return row < index.total_rows ? std::optional{row} : std::nullopt;
+        const auto row = measures.row_of(position);
+        return row && *row < index.total_rows ? row : std::nullopt;
     }
 
     auto collect_existing(const std::unordered_set<std::uint64_t>& target_ids)

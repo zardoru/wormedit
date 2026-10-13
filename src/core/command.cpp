@@ -61,7 +61,7 @@ auto quantized_stem_audio_valid(const song_document_t& song, const chart_documen
 } // namespace
 
 auto document_history_t::from(song_document_t document, std::size_t maximum_undo_entries,
-                           bool initially_saved) -> document_history_t {
+                              bool initially_saved) -> document_history_t {
     if (document.revision == 0) {
         document.revision = 1;
     }

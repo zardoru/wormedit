@@ -35,7 +35,7 @@ struct preferences_test_directory_t {
 }
 
 TEST_CASE("Program preferences defaults preserve existing player and minimap behavior", "[unit][core][preferences]") {
-    const auto values = default_program_preferences();
+    const auto values = program_preferences_t::with_defaults();
     expect_preference(values.general.autosave_minutes == 5);
     expect_preference(values.general.shortcut_profile_path == "shortcuts.json");
     expect_preference(values.editor.default_snap == 4);
@@ -50,7 +50,7 @@ TEST_CASE("Program preferences defaults preserve existing player and minimap beh
 }
 
 TEST_CASE("Program preferences round trip every section without project data", "[unit][core][preferences]") {
-    auto values = default_program_preferences();
+    auto values = program_preferences_t::with_defaults();
     values.general = {30, 100, false, "profiles/custom.json"};
     values.editor.default_snap = 96;
     values.audio = {{1, 3}, true};
@@ -70,7 +70,7 @@ TEST_CASE("Program preferences round trip every section without project data", "
 
 TEST_CASE("Program preferences preserve all exact supported playback rates", "[unit][core][preferences]") {
     for (const auto rate : audio::playback_rates) {
-        auto values = default_program_preferences();
+        auto values = program_preferences_t::with_defaults();
         values.audio.playback_rate = rate;
         const auto encoded = serialize_program_preferences(values);
         require_preference(encoded.has_value());
@@ -102,7 +102,7 @@ TEST_CASE("Program preferences reject malformed roots and unsupported versions s
     for (const auto text : {"{", "[]", "null", "{\"version\":2}", "{\"version\":1.0}"}) {
         const auto parsed = parse_program_preferences(text);
         expect_preference(!parsed.parsed && !parsed.warnings.empty());
-        expect_preference(parsed.preferences == default_program_preferences());
+        expect_preference(parsed.preferences == program_preferences_t::with_defaults());
     }
 }
 
@@ -120,12 +120,12 @@ TEST_CASE("Program preferences bound bytes nesting and JSON nodes", "[unit][core
 TEST_CASE("Program preferences reject wrong types NUL and integer overflow", "[unit][core][preferences]") {
     const auto parsed = parse_program_preferences(R"({"general":{"autosave_minutes":18446744073709551615,"shortcut_profile_path":"bad\u0000path"},"display":{"theme":12},"audio":{"keep_pitch":"true"},"minimap":false,"editor":{"default_snap":3.5}})");
     expect_preference(parsed.parsed && parsed.warnings.size() >= 5);
-    expect_preference(parsed.preferences == default_program_preferences());
+    expect_preference(parsed.preferences == program_preferences_t::with_defaults());
 }
 
 TEST_CASE("Program preferences bound and repair external player entries", "[unit][core][preferences]") {
     auto parsed = parse_program_preferences(R"({"players":{"selected":64,"definitions":[]}})");
-    expect_preference(parsed.parsed && parsed.preferences.players == default_external_player_preferences());
+    expect_preference(parsed.parsed && parsed.preferences.players == external_player_preferences_t::with_defaults());
     parsed = parse_program_preferences(R"({"players":{"selected":1,"definitions":[null,{"name":"Custom","path":"/usr/bin/player"}]}})");
     expect_preference(parsed.parsed && parsed.preferences.players.players.size() == 2);
     expect_preference(parsed.preferences.players.selected == 1);
@@ -134,13 +134,13 @@ TEST_CASE("Program preferences bound and repair external player entries", "[unit
 }
 
 TEST_CASE("Program preferences refuse serializing invalid in-memory values", "[unit][core][preferences]") {
-    auto values = default_program_preferences();
+    auto values = program_preferences_t::with_defaults();
     values.general.autosave_minutes = 0;
     expect_preference(!serialize_program_preferences(values));
-    values = default_program_preferences();
+    values = program_preferences_t::with_defaults();
     values.players.selected = 100;
     expect_preference(!serialize_program_preferences(values));
-    values = default_program_preferences();
+    values = program_preferences_t::with_defaults();
     values.layout.dock_layout = std::string(maximum_preference_string_bytes + 1, 'x');
     expect_preference(!serialize_program_preferences(values));
 }
@@ -149,7 +149,7 @@ TEST_CASE("Program preferences files round trip atomically and reject invalid re
     const preferences_test_directory_t directory;
     const auto path = directory.path / "preferences.json";
     expect_preference(load_program_preferences(path).missing);
-    auto values = default_program_preferences();
+    auto values = program_preferences_t::with_defaults();
     values.minimap.click_moves_paused_playhead = true;
     require_preference(static_cast<bool>(save_program_preferences_atomic(path, values)));
     auto loaded = load_program_preferences(path);
@@ -168,7 +168,7 @@ TEST_CASE("Program preferences corrupt and oversized files use defaults without 
     { std::ofstream stream(path); stream << "{corrupt"; }
     auto loaded = load_program_preferences(path);
     expect_preference(!loaded.missing && !loaded.contents.parsed && !loaded.contents.warnings.empty());
-    expect_preference(loaded.contents.preferences == default_program_preferences());
+    expect_preference(loaded.contents.preferences == program_preferences_t::with_defaults());
     expect_preference(std::filesystem::file_size(path) == 8);
     { std::ofstream stream(path); stream << std::string(maximum_preferences_bytes + 1, ' '); }
     loaded = load_program_preferences(path);
@@ -181,7 +181,7 @@ TEST_CASE("Program preferences failed publication preserves destination and clea
     const auto destination = directory.path / "preferences.json";
     std::filesystem::create_directory(destination);
     { std::ofstream stream(destination / "existing"); stream << "retain"; }
-    auto values = default_program_preferences();
+    auto values = program_preferences_t::with_defaults();
     values.general.autosave_minutes = 10;
     expect_preference(!save_program_preferences_atomic(destination, values));
     expect_preference(values.general.autosave_minutes == 10);
@@ -231,12 +231,12 @@ TEST_CASE("Program preferences never replace an existing corrupt file with legac
     { std::ofstream stream(current); stream << "{bad}"; }
     const auto loaded = load_program_preferences_for_startup(current, legacy);
     expect_preference(!loaded.migrated && !loaded.contents.parsed && !loaded.contents.warnings.empty());
-    expect_preference(loaded.contents.preferences == default_program_preferences());
+    expect_preference(loaded.contents.preferences == program_preferences_t::with_defaults());
     expect_preference(std::filesystem::file_size(current) == 5);
 }
 
 TEST_CASE("Editor preference defaults preserve existing appearance and profile direction", "[preferences]") {
-    const auto defaults = default_program_preferences();
+    const auto defaults = program_preferences_t::with_defaults();
     expect_preference(defaults.editor.default_snap == 4);
     expect_preference(defaults.editor.playhead_anchor_percent == 20);
     expect_preference(defaults.editor.note_kind_palette_visible);
@@ -246,7 +246,7 @@ TEST_CASE("Editor preference defaults preserve existing appearance and profile d
     expect_preference(parse_program_preferences(R"({"version":1,"editor":{"default_snap":8}})").preferences.editor.area_band_alpha == 48);
 }
 TEST_CASE("Editor preference fields round trip and invalid individual values retain defaults", "[preferences]") {
-    auto value = default_program_preferences();
+    auto value = program_preferences_t::with_defaults();
     value.editor.scroll_directions = {1, 2, 1, 2, 1, 2};
     value.editor.playhead_anchor_percent = 35;
     value.editor.note_kind_palette_visible = false;
@@ -292,7 +292,7 @@ TEST_CASE("keysound budget invalid JSON types retain the default", "[preferences
 }
 
 TEST_CASE("Move collision preference defaults to Reject and persists displacement safely", "[unit][core][preferences][bgm-move]") {
-    auto values = default_program_preferences();
+    auto values = program_preferences_t::with_defaults();
     expect_preference(values.editor.move_collision_policy == move_collision_policy_t::reject);
     values.editor.move_collision_policy = move_collision_policy_t::displace_to_bgm;
     const auto encoded = serialize_program_preferences(values);
@@ -307,7 +307,7 @@ TEST_CASE("Move collision preference defaults to Reject and persists displacemen
 
 TEST_CASE("Snap-colored grid defaults on and round-trips its saved opt-out", "[preferences][snap-grid]") {
     expect_preference(parse_program_preferences(R"({"version":1,"display":{}})").preferences.display.snap_colored_grid);
-    auto values = default_program_preferences();
+    auto values = program_preferences_t::with_defaults();
     values.display.snap_colored_grid = false;
     const auto encoded = serialize_program_preferences(values);
     require_preference(encoded.has_value());
@@ -322,7 +322,7 @@ TEST_CASE("Snap-colored grid defaults on and round-trips its saved opt-out", "[p
 
 TEST_CASE("Snap grid opacity defaults mild and rejects invalid saved values", "[preferences][snap-grid][opacity]") {
     expect_preference(parse_program_preferences("{}").preferences.display.snap_grid_opacity_percent == 35);
-    auto values = default_program_preferences();
+    auto values = program_preferences_t::with_defaults();
     for (const auto percent : {0u, 35u, 100u}) {
         values.display.snap_grid_opacity_percent = percent;
         const auto encoded = serialize_program_preferences(values);
@@ -435,7 +435,7 @@ TEST_CASE("Layout skin parser sanitizes invalid entries and bounds map size", "[
 }
 
 TEST_CASE("Typed layout skins reject oversized strings and overflowing maps", "[core][preferences][layout-skins]") {
-    auto preferences = default_program_preferences();
+    auto preferences = program_preferences_t::with_defaults();
     auto& overrides = preferences.display.field_scheme_overrides;
     for (unsigned index = 0; index < maximum_field_scheme_overrides; ++index)
         overrides.emplace(std::to_string(index), "classic");
@@ -457,7 +457,7 @@ TEST_CASE("Typed layout skins reject oversized strings and overflowing maps", "[
 }
 
 TEST_CASE("preference serialization rejects malformed UTF-8", "[unit][core][helpers][preferences]") {
-    auto preferences = default_program_preferences();
+    auto preferences = program_preferences_t::with_defaults();
     preferences.display.theme = "bad\xc0\x80";
     CHECK_FALSE(serialize_program_preferences(preferences));
 }

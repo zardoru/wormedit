@@ -468,7 +468,7 @@ auto remap_command(command_registry_t& registry, const command_id_t& id,
     return result;
 }
 
-auto make_shortcut_profile(const command_registry_t& registry, std::string profile_id)
+auto shortcut_profile_t::from(const command_registry_t& registry, std::string profile_id)
     -> shortcut_profile_t {
     shortcut_profile_t profile{.id = std::move(profile_id)};
     for (const auto& command : registry.commands) {
@@ -764,7 +764,7 @@ auto invoke_command(const command_registry_t& registry, const command_id_t& id,
     return result;
 }
 
-auto make_default_editor_command_registry(command_invoker_t invoker) -> command_registry_t {
+auto command_registry_t::from(command_invoker_t invoker) -> command_registry_t {
     command_registry_t registry;
     const auto global = command_focus_scope_t::global;
     const auto workspace = command_focus_scope_t::workspace;
@@ -1004,6 +1004,17 @@ auto make_default_editor_command_registry(command_invoker_t invoker) -> command_
                 command_category_t::audio, global, {}, false);
 
     return registry;
+}
+
+// Compatibility for the sys/ui migration wave.
+auto make_shortcut_profile(const command_registry_t& registry, std::string profile_id)
+    -> shortcut_profile_t {
+    return shortcut_profile_t::from(registry, std::move(profile_id));
+}
+
+// Compatibility for the sys/ui migration wave.
+auto make_default_editor_command_registry(command_invoker_t invoker) -> command_registry_t {
+    return command_registry_t::from(std::move(invoker));
 }
 
 } // namespace wormedit

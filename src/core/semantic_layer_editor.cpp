@@ -778,10 +778,10 @@ auto apply_semantic_layer_action(song_document_t& proposed,
 
 } // namespace
 
-auto make_semantic_layer_palette_window(const chart_document_t& chart,
-                                        std::optional<layer_id_t> selected_layer,
-                                        std::size_t requested_page, bool reveal_selected,
-                                        std::size_t page_size, std::size_t maximum_layers)
+auto semantic_layer_palette_window_t::from(const chart_document_t& chart,
+                                           std::optional<layer_id_t> selected_layer,
+                                           std::size_t requested_page, bool reveal_selected,
+                                           std::size_t page_size, std::size_t maximum_layers)
     -> std::optional<semantic_layer_palette_window_t> {
     if (page_size == 0 || maximum_layers == 0 || chart.semantic_layers.size() > maximum_layers) {
         return std::nullopt;
@@ -825,9 +825,8 @@ auto make_semantic_layer_palette_window(const chart_document_t& chart,
     return result;
 }
 
-auto make_semantic_layer_palette_window(const chart_document_t& chart,
-                                        std::size_t first_row, std::size_t row_count,
-                                        std::size_t maximum_layers)
+auto semantic_layer_palette_window_t::from(const chart_document_t& chart, std::size_t first_row,
+                                           std::size_t row_count, std::size_t maximum_layers)
     -> std::optional<semantic_layer_palette_window_t> {
     const auto count = chart.semantic_layers.size();
     if (row_count == 0 || maximum_layers == 0 || count > maximum_layers) return std::nullopt;
@@ -1146,6 +1145,22 @@ auto add_selected_sounds_to_semantic_layer(document_history_t& history,
     return apply_sound_layer_membership(history, expected_revision,
         {.chart = action.chart, .resources = *resources, .layer = action.layer,
          .member = true, .overwrite_note_layers = false, .assign_unlayered_bgm = true});
+}
+
+// Compatibility for the sys/ui migration wave.
+auto make_semantic_layer_palette_window(const chart_document_t& chart,
+                                        std::optional<layer_id_t> selected_layer,
+                                        std::size_t requested_page, bool reveal_selected,
+                                        std::size_t page_size, std::size_t maximum_layers)
+    -> std::optional<semantic_layer_palette_window_t> {
+    return semantic_layer_palette_window_t::from(chart, selected_layer, requested_page,
+                                                 reveal_selected, page_size, maximum_layers);
+}
+
+auto make_semantic_layer_palette_window(const chart_document_t& chart, std::size_t first_row,
+                                        std::size_t row_count, std::size_t maximum_layers)
+    -> std::optional<semantic_layer_palette_window_t> {
+    return semantic_layer_palette_window_t::from(chart, first_row, row_count, maximum_layers);
 }
 
 } // namespace wormedit

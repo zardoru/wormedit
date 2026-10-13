@@ -15,19 +15,11 @@ namespace {
 // Converts positions to absolute rows and back, applying one signed delta.
 class row_shifter_t {
   public:
-    row_shifter_t(const measure_index_t& index, std::int64_t delta) : index_(index), delta_(delta) {
-        for (std::size_t i = 0; i < index.entries.size(); ++i)
-            by_measure_.emplace(index.entries[i].id.value, i);
-    }
+    row_shifter_t(const measure_index_t& index, std::int64_t delta)
+        : index_(index), delta_(delta), by_measure_(measure_lookup_t::from(index)) {}
 
     [[nodiscard]] auto row_of(local_position_t position) const -> std::optional<std::uint64_t> {
-        const auto found = by_measure_.find(position.measure.value);
-        if (found == by_measure_.end())
-            return std::nullopt;
-        const auto& entry = index_.entries[found->second];
-        if (position.row >= entry.row_capacity)
-            return std::nullopt;
-        return entry.absolute_begin_row + position.row;
+        return by_measure_.row_of(position);
     }
 
     [[nodiscard]] auto shifted(local_position_t position) const
@@ -46,18 +38,13 @@ class row_shifter_t {
             if (target < *row)
                 return std::nullopt;
         }
-        if (target >= index_.total_rows)
-            return std::nullopt;
-        const auto after = std::ranges::upper_bound(index_.entries, target, {},
-                                                    &measure_index_entry_t::absolute_begin_row);
-        const auto& entry = *std::prev(after);
-        return local_position_t{entry.id, target - entry.absolute_begin_row};
+        return index_.position_at(target);
     }
 
   private:
     const measure_index_t& index_;
     std::int64_t delta_;
-    std::unordered_map<std::uint64_t, std::size_t> by_measure_;
+    measure_lookup_t by_measure_;
 };
 
 struct shift_context_t {

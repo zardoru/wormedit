@@ -86,7 +86,7 @@ void check_chart_clipboard_chord(const command_registry_t& registry, shortcut_ke
 TEST_CASE("Chart clipboard chords use platform Primary and defer to text and IME",
           "[unit][core][command_registry][clipboard]") {
     auto calls = std::make_shared<std::vector<command_id_t>>();
-    const auto registry = make_default_editor_command_registry(make_invoker(calls));
+    const auto registry = command_registry_t::from(make_invoker(calls));
     check_chart_clipboard_chord(registry, shortcut_key_t::c, "edit.copy",
         shortcut_primary_modifier_t::control, shortcut_modifier_t::control);
     check_chart_clipboard_chord(registry, shortcut_key_t::x, "edit.cut",
@@ -314,7 +314,7 @@ TEST_CASE("shortcut profiles round trip independently and apply atomically",
                 .applied);
     REQUIRE(remap_command(registry, command_id_t{"edit.two"}, {}).applied);
 
-    const auto profile = make_shortcut_profile(registry, "custom-layout");
+    const auto profile = shortcut_profile_t::from(registry, "custom-layout");
     REQUIRE(profile.bindings.size() == 2);
     const auto serialized = serialize_shortcut_profile(profile);
     REQUIRE_FALSE(serialized.empty());
@@ -332,13 +332,13 @@ TEST_CASE("shortcut profiles round trip independently and apply atomically",
                .modifiers = shortcut_modifier_t::primary | shortcut_modifier_t::alt}});
     CHECK(find_command(registry, command_id_t{"edit.two"})->current_shortcuts.empty());
 
-    const auto before = make_shortcut_profile(registry, "before");
+    const auto before = shortcut_profile_t::from(registry, "before");
     auto invalid = *parsed.profile;
     invalid.bindings.push_back({.command = {"missing.command"}});
     const auto rejected = apply_shortcut_profile(registry, invalid);
     CHECK_FALSE(rejected.applied);
     CHECK(has_code(rejected.diagnostics, diagnostic_code_t::invalid_id));
-    CHECK(make_shortcut_profile(registry, "before") == before);
+    CHECK(shortcut_profile_t::from(registry, "before") == before);
 }
 
 TEST_CASE("malformed profiles, unknown chords, and all configured bounds are rejected",
@@ -394,7 +394,7 @@ TEST_CASE("malformed profiles, unknown chords, and all configured bounds are rej
 TEST_CASE("default registry seeds discoverable editor commands and visible tab routing",
           "[unit][core][command_registry]") {
     auto calls = std::make_shared<std::vector<command_id_t>>();
-    const auto registry = make_default_editor_command_registry(make_invoker(calls));
+    const auto registry = command_registry_t::from(make_invoker(calls));
     CHECK(has_command(registry, "document.new_project"));
     CHECK(has_command(registry, "document.new_chart"));
     CHECK(has_command(registry, "navigation.previous_marker"));
@@ -435,7 +435,7 @@ TEST_CASE("default registry seeds discoverable editor commands and visible tab r
 
 TEST_CASE("Go To Bookmark is bound to Ctrl Shift G without changing Ctrl G",
           "[unit][core][command_registry][bookmark-chooser]") {
-    const auto registry = make_default_editor_command_registry(make_invoker(
+    const auto registry = command_registry_t::from(make_invoker(
         std::make_shared<std::vector<command_id_t>>()));
     const auto* command = find_command(registry, command_id_t{"navigation.go_to_bookmark"});
     REQUIRE(command);
@@ -488,7 +488,7 @@ auto save_command_has_primary_binding(const command_registry_t& registry) -> boo
 TEST_CASE("Save command uses platform Primary and suppresses held-key repeats",
           "[unit][core][command_registry][save-shortcut]") {
     auto calls = std::make_shared<std::vector<command_id_t>>();
-    const auto registry = make_default_editor_command_registry(make_invoker(calls));
+    const auto registry = command_registry_t::from(make_invoker(calls));
     CHECK(save_command_has_primary_binding(registry));
     CHECK(save_binding_dispatches_for_primary(registry, shortcut_primary_modifier_t::control));
     CHECK(save_binding_dispatches_for_primary(registry, shortcut_primary_modifier_t::meta));
@@ -498,7 +498,7 @@ TEST_CASE("Save command uses platform Primary and suppresses held-key repeats",
 TEST_CASE("timing insertion commands route through Compose focus",
           "[unit][core][command_registry][timing]") {
     auto calls = std::make_shared<std::vector<command_id_t>>();
-    const auto registry = make_default_editor_command_registry(make_invoker(calls));
+    const auto registry = command_registry_t::from(make_invoker(calls));
     CHECK(invokes_command_in_focus(registry, focus_for_compose(), calls, "timing.insert_bpm", 1));
     CHECK(invokes_command_in_focus(registry, focus_for_compose(), calls, "timing.insert_sv", 2));
     CHECK(invoke_command(registry, command_id_t{"timing.insert_bpm"},
@@ -510,7 +510,7 @@ TEST_CASE("timing insertion commands route through Compose focus",
 TEST_CASE("transport shortcuts leave primary Space available for canvas gestures",
           "[unit][core][command_registry][transport]") {
     auto calls = std::make_shared<std::vector<command_id_t>>();
-    const auto registry = make_default_editor_command_registry(make_invoker(calls));
+    const auto registry = command_registry_t::from(make_invoker(calls));
     const auto focus = focus_for_compose();
     const auto invoke = [&](shortcut_modifiers_t modifiers,
                             shortcut_primary_modifier_t primary_modifier) {
@@ -537,7 +537,7 @@ TEST_CASE("transport shortcuts leave primary Space available for canvas gestures
 }
 
 TEST_CASE("Playback rate shortcuts have no registry conflicts", "[unit][commands]") {
-    const auto registry = make_default_editor_command_registry(
+    const auto registry = command_registry_t::from(
         [](const command_invocation_context_t&) { return command_invocation_result_t{}; });
     CHECK(diagnose_shortcut_conflicts(registry, shortcut_primary_modifier_t::control).empty());
     CHECK(diagnose_shortcut_conflicts(registry, shortcut_primary_modifier_t::meta).empty());
@@ -554,7 +554,7 @@ TEST_CASE("Playback rate shortcuts have no registry conflicts", "[unit][commands
 }
 
 TEST_CASE("Tap timing registry metadata is nonmutating and initially disabled", "[unit][commands]") {
-    auto registry = make_default_editor_command_registry([](const command_invocation_context_t&) {
+    auto registry = command_registry_t::from([](const command_invocation_context_t&) {
         return command_invocation_result_t{.accepted = true};
     });
     const auto* tap = find_command(registry, {"timing.tap"});
@@ -569,7 +569,7 @@ TEST_CASE("Tap timing registry metadata is nonmutating and initially disabled", 
 
 TEST_CASE("Tap timing dispatch accepts workspace taps and rejects text entry", "[unit][commands]") {
     auto calls = std::make_shared<std::vector<command_id_t>>();
-    auto registry = make_default_editor_command_registry(make_invoker(calls));
+    auto registry = command_registry_t::from(make_invoker(calls));
     REQUIRE(update_command_state(registry, {"timing.tap"}, true, std::nullopt).applied);
     auto focus = focus_for_compose();
     CHECK(dispatch_shortcut(registry, {.chord = {.key = shortcut_key_t::t}}, focus,
@@ -608,7 +608,7 @@ void check_timing_lock_chord(const command_registry_t& registry,
 TEST_CASE("Timing Lock uses Primary Shift T in Compose without shortcut conflicts",
           "[unit][commands][command_registry]") {
     auto calls = std::make_shared<std::vector<command_id_t>>();
-    auto registry = make_default_editor_command_registry(make_invoker(calls));
+    auto registry = command_registry_t::from(make_invoker(calls));
     REQUIRE(update_command_state(registry, {"timing.tap"}, true, std::nullopt).applied);
     check_timing_lock_chord(registry, shortcut_primary_modifier_t::control,
                             shortcut_modifier_t::control);
@@ -633,7 +633,7 @@ void check_notification_chord(const command_registry_t& registry,
 TEST_CASE("notification history default chord opens without a chart and has no conflicts",
           "[unit][core][command_registry][notifications]") {
     auto calls = std::make_shared<std::vector<command_id_t>>();
-    const auto registry = make_default_editor_command_registry(make_invoker(calls));
+    const auto registry = command_registry_t::from(make_invoker(calls));
     check_notification_chord(registry, shortcut_primary_modifier_t::control,
                              shortcut_modifier_t::control);
     check_notification_chord(registry, shortcut_primary_modifier_t::meta,
@@ -643,7 +643,7 @@ TEST_CASE("notification history default chord opens without a chart and has no c
 TEST_CASE("notification history shortcut respects text and IME guards",
           "[unit][core][command_registry][notifications]") {
     auto calls = std::make_shared<std::vector<command_id_t>>();
-    const auto registry = make_default_editor_command_registry(make_invoker(calls));
+    const auto registry = command_registry_t::from(make_invoker(calls));
     const shortcut_chord_t chord{shortcut_key_t::m,
         shortcut_modifier_t::control | shortcut_modifier_t::shift};
     const auto text = dispatch_shortcut(registry, {.chord = chord},
@@ -657,7 +657,7 @@ TEST_CASE("notification history shortcut respects text and IME guards",
 
 TEST_CASE("Plain Space plays or stops once and respects input owners", "[unit][commands]") {
     auto calls = std::make_shared<std::vector<command_id_t>>();
-    const auto registry = make_default_editor_command_registry(make_invoker(calls));
+    const auto registry = command_registry_t::from(make_invoker(calls));
     auto focus = focus_for_compose();
     const shortcut_event_t event{.chord = {.key = shortcut_key_t::space}};
     const auto result = dispatch_shortcut(registry, event, focus, shortcut_primary_modifier_t::control);
@@ -675,7 +675,7 @@ TEST_CASE("Plain Space plays or stops once and respects input owners", "[unit][c
 
 TEST_CASE("Primary V starts paste only for the Compose input owner", "[unit][commands][clipboard]") {
     auto calls = std::make_shared<std::vector<command_id_t>>();
-    const auto registry = make_default_editor_command_registry(make_invoker(calls));
+    const auto registry = command_registry_t::from(make_invoker(calls));
     auto focus = focus_for_compose();
     const shortcut_event_t event{.chord = {.key = shortcut_key_t::v,
                                           .modifiers = static_cast<shortcut_modifiers_t>(shortcut_modifier_t::control)}};
@@ -690,7 +690,7 @@ TEST_CASE("Primary V starts paste only for the Compose input owner", "[unit][com
 TEST_CASE("Compose palette Alt digits select exactly one tool", "[core][command-registry]") {
     using namespace wormedit;
     std::string invoked;
-    const auto registry = make_default_editor_command_registry([&](const auto& context) {
+    const auto registry = command_registry_t::from([&](const auto& context) {
         invoked = context.command.value;
         return command_invocation_result_t{.accepted = true};
     });
@@ -724,7 +724,7 @@ const shortcut_chord_t remap_test_chord{.key = shortcut_key_t::k,
 
 void check_save_and_reload(const command_registry_t& registry, const std::shared_ptr<std::vector<command_id_t>>& calls,
                            const std::filesystem::path& path) {
-    REQUIRE(save_shortcut_profile_atomic(path, make_shortcut_profile(registry, "user")));
+    REQUIRE(save_shortcut_profile_atomic(path, shortcut_profile_t::from(registry, "user")));
     auto reloaded = remap_test_registry(calls);
     const auto loaded = load_shortcut_profile(path);
     REQUIRE(loaded);
@@ -757,7 +757,7 @@ TEST_CASE("failed remap save keeps the in-memory shortcut", "[core][command-regi
 
     // A save into a missing directory fails, and the in-memory mapping stays in place.
     CHECK_FALSE(save_shortcut_profile_atomic(directory / "missing" / "shortcuts.json",
-                                             make_shortcut_profile(registry, "user")));
+                                             shortcut_profile_t::from(registry, "user")));
     CHECK(find_command(registry, {"test.remap"})->current_shortcuts ==
           std::vector<shortcut_chord_t>{remap_test_chord});
     std::filesystem::remove_all(directory);
@@ -789,7 +789,7 @@ TEST_CASE("structured shortcut conflicts name the same pairs as the diagnostic",
 TEST_CASE("BGM pseudo-lane shortcuts are remappable conflict-checked Compose commands",
           "[unit][core][command_registry][t424]") {
     auto calls = std::make_shared<std::vector<command_id_t>>();
-    auto registry = make_default_editor_command_registry(make_invoker(calls));
+    auto registry = command_registry_t::from(make_invoker(calls));
     CHECK(diagnose_shortcut_conflicts(registry).empty());
     const auto result = dispatch_shortcut(registry, {.chord = {.key = shortcut_key_t::backquote}},
                                           focus_for_compose(), shortcut_primary_modifier_t::control);
@@ -799,7 +799,7 @@ TEST_CASE("BGM pseudo-lane shortcuts are remappable conflict-checked Compose com
 
 TEST_CASE("Shift Space loops the Compose selection and retains transport focus gates", "[unit][commands][loop-selection]") {
     auto calls = std::make_shared<std::vector<command_id_t>>();
-    const auto registry = make_default_editor_command_registry(make_invoker(calls));
+    const auto registry = command_registry_t::from(make_invoker(calls));
     auto focus = focus_for_compose();
     shortcut_event_t event{.chord = {.key = shortcut_key_t::space,
         .modifiers = static_cast<shortcut_modifiers_t>(shortcut_modifier_t::shift)}};
@@ -821,7 +821,7 @@ TEST_CASE("Shift Space loops the Compose selection and retains transport focus g
 
 TEST_CASE("Primary M splits a measure without shortcut conflicts", "[commands][measure-split]") {
     auto calls = std::make_shared<std::vector<command_id_t>>();
-    const auto registry = make_default_editor_command_registry(make_invoker(calls));
+    const auto registry = command_registry_t::from(make_invoker(calls));
     const auto focus = focus_for_compose();
     const auto event = shortcut_event_t{.chord={shortcut_key_t::m,static_cast<shortcut_modifiers_t>(shortcut_modifier_t::control)}};
     CHECK(dispatch_shortcut(registry,event,focus,shortcut_primary_modifier_t::control).command == command_id_t{"measures.split_at_cursor"});
@@ -830,7 +830,7 @@ TEST_CASE("Primary M splits a measure without shortcut conflicts", "[commands][m
 }
 
 TEST_CASE("Go to sound uses the platform primary K chord in Compose", "[core][command_registry][sound-picker]") {
-    const auto registry = make_default_editor_command_registry(make_invoker(
+    const auto registry = command_registry_t::from(make_invoker(
         std::make_shared<std::vector<command_id_t>>()));
     for (const auto primary : {shortcut_primary_modifier_t::control, shortcut_primary_modifier_t::meta}) {
         const auto modifier = primary == shortcut_primary_modifier_t::control
@@ -877,7 +877,7 @@ void check_dock_shortcut(const command_registry_t& registry, shortcut_key_t key,
 TEST_CASE("Dock shortcuts distinguish Layers creation Sounds toggle and Go to sound",
           "[core][command_registry][dock-shortcuts]") {
     auto calls = std::make_shared<std::vector<command_id_t>>();
-    auto registry = make_default_editor_command_registry(make_invoker(calls));
+    auto registry = command_registry_t::from(make_invoker(calls));
     for (const auto primary : {shortcut_primary_modifier_t::control, shortcut_primary_modifier_t::meta}) {
         const auto modifier = primary == shortcut_primary_modifier_t::control
             ? shortcut_modifier_t::control : shortcut_modifier_t::meta;
@@ -906,7 +906,7 @@ TEST_CASE("Dock shortcuts distinguish Layers creation Sounds toggle and Go to so
 TEST_CASE("Command menu defaults to primary Shift P and respects text focus",
           "[unit][core][command-registry][command-menu]") {
     std::vector<std::string> invoked;
-    auto registry = make_default_editor_command_registry([&](const command_invocation_context_t& context) {
+    auto registry = command_registry_t::from([&](const command_invocation_context_t& context) {
         invoked.push_back(context.command.value);
         return command_invocation_result_t{.accepted = true};
     });
@@ -923,7 +923,7 @@ TEST_CASE("Command menu defaults to primary Shift P and respects text focus",
 
 TEST_CASE("Quantize commands are searchable and preview shortcut respects text focus", "[core][command_registry][quantize-intent]") {
     const auto calls = std::make_shared<std::vector<command_id_t>>();
-    const auto registry = make_default_editor_command_registry(make_invoker(calls));
+    const auto registry = command_registry_t::from(make_invoker(calls));
     CHECK(has_command(registry, "edit.toggle_quantize_preview"));
     CHECK(has_command(registry, "edit.apply_quantize"));
     const shortcut_event_t event{.chord = {.key = shortcut_key_t::q,
@@ -939,7 +939,7 @@ TEST_CASE("Quantize commands are searchable and preview shortcut respects text f
 TEST_CASE("Select All Objects uses Primary Alt A independently from note selection",
           "[unit][core][command_registry][selection-consolidation]") {
     auto calls = std::make_shared<std::vector<command_id_t>>();
-    const auto registry = make_default_editor_command_registry(make_invoker(calls));
+    const auto registry = command_registry_t::from(make_invoker(calls));
     const auto primary = GENERATE(shortcut_primary_modifier_t::control, shortcut_primary_modifier_t::meta);
     const auto actual = primary == shortcut_primary_modifier_t::control
         ? shortcut_modifier_t::control : shortcut_modifier_t::meta;

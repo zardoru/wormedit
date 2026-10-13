@@ -63,11 +63,13 @@ auto layers_visible(std::span<const layer_id_t> layers, const chart_document_t& 
     return true;
 }
 struct sound_match_index_t {
+    [[nodiscard]] static auto from(const song_document_t& song, const chart_document_t& chart, const sound_selection_query_t& query) -> sound_match_index_t;
+
     std::unordered_set<std::uint64_t> resources, assets, channels;
     std::unordered_map<std::uint64_t, std::uint64_t> resource_assets, event_channels;
 };
-auto make_sound_match_index(const song_document_t& song, const chart_document_t& chart,
-                            const sound_selection_query_t& query) -> sound_match_index_t {
+auto sound_match_index_t::from(const song_document_t& song, const chart_document_t& chart,
+                               const sound_selection_query_t& query) -> sound_match_index_t {
     sound_match_index_t index;
     for (const auto& key : query.keys) {
         switch (key.kind) {
@@ -88,6 +90,13 @@ auto make_sound_match_index(const song_document_t& song, const chart_document_t&
         for (const auto& event : channel.events)
             index.event_channels.emplace(event.id.value, channel.id.value);
     return index;
+}
+
+[[maybe_unused]] auto make_sound_match_index(const song_document_t& song,
+                                             const chart_document_t& chart,
+                                             const sound_selection_query_t& query)
+    -> sound_match_index_t {
+    return sound_match_index_t::from(song, chart, query);
 }
 auto key_matches(const chart_document_t& chart, const sound_match_index_t& index,
                  std::optional<resource_id_t> sound, std::optional<object_id_t> event) -> bool {
@@ -212,7 +221,7 @@ auto select_same_sound(const song_document_t& song, const chart_document_t& char
     const auto* index = std::get_if<measure_index_t>(&built);
     if (!index || query.keys.empty())
         return result;
-    const auto sounds = make_sound_match_index(song, chart, query);
+    const auto sounds = sound_match_index_t::from(song, chart, query);
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes) {
             if (!lane_visible(chart, note, query))
@@ -227,4 +236,6 @@ auto select_same_sound(const song_document_t& song, const chart_document_t& char
                 result.push_back({editor_selection_object_kind_t::bgm_event, bgm.id});
     return result;
 }
+
+
 } // namespace wormedit

@@ -181,7 +181,7 @@ TEST_CASE("workspace tabs retain chart, transport, and isolated logical focus",
           "[unit][core][workspace]") {
     const auto song = workspace_song();
     CHECK(validate_document(song).empty());
-    auto bound = make_workspace_controller(song);
+    auto bound = workspace_controller_t::from(song);
     REQUIRE(bound);
     auto& workspace = *bound.workspace;
     CHECK(workspace.selected_chart == chart_id_t{1});
@@ -210,7 +210,7 @@ TEST_CASE("workspace tabs retain chart, transport, and isolated logical focus",
         workspace_set_focus_action_t{workspace_tab_t::compose, "compose.field", chart_id_t{1}}));
 
     REQUIRE(apply(workspace, song, workspace_switch_tab_action_t{workspace_tab_t::compose}));
-    auto compose = make_workspace_view(workspace, song);
+    auto compose = workspace_view_t::from(workspace, song);
     REQUIRE(compose);
     CHECK(compose.view->selected_difficulty->id == chart_id_t{2});
     CHECK(compose.view->selected_difficulty->difficulty_name == "Hard");
@@ -221,7 +221,7 @@ TEST_CASE("workspace tabs retain chart, transport, and isolated logical focus",
     CHECK(std::get<workspace_compose_view_t>(compose.view->tab_view).note_count == 1);
 
     REQUIRE(apply(workspace, song, workspace_switch_tab_action_t{workspace_tab_t::metadata}));
-    auto metadata = make_workspace_view(workspace, song);
+    auto metadata = workspace_view_t::from(workspace, song);
     REQUIRE(metadata);
     CHECK(metadata.view->focus.region == "metadata.events");
     CHECK(metadata.view->selected_difficulty->id == chart_id_t{2});
@@ -231,7 +231,7 @@ TEST_CASE("workspace tabs retain chart, transport, and isolated logical focus",
 
     REQUIRE(apply(workspace, song, workspace_switch_tab_action_t{workspace_tab_t::audio_slices}));
     REQUIRE(apply(workspace, song, workspace_select_clip_action_t{clip_id_t{4}}));
-    auto audio = make_workspace_view(workspace, song);
+    auto audio = workspace_view_t::from(workspace, song);
     REQUIRE(audio);
     CHECK(audio.view->transport.selected_clip == clip_id_t{4});
     CHECK(audio.view->transport.position_frame == 10);
@@ -246,7 +246,7 @@ TEST_CASE("workspace tabs retain chart, transport, and isolated logical focus",
 TEST_CASE("workspace rejects stale revisions and rebinds stable context atomically",
           "[unit][core][workspace][revision]") {
     auto song = workspace_song();
-    auto bound = make_workspace_controller(song);
+    auto bound = workspace_controller_t::from(song);
     REQUIRE(bound);
     auto& workspace = *bound.workspace;
     REQUIRE(apply(workspace, song, workspace_select_chart_action_t{chart_id_t{2}}));
@@ -273,7 +273,7 @@ TEST_CASE("workspace rejects stale revisions and rebinds stable context atomical
     CHECK_FALSE(stale_action);
     CHECK(has_code(stale_action.diagnostics, diagnostic_code_t::invalid_id));
     CHECK(workspace.active_tab == workspace_tab_t::setup);
-    CHECK_FALSE(make_workspace_view(workspace, changed));
+    CHECK_FALSE(workspace_view_t::from(workspace, changed));
 
     REQUIRE(rebind_workspace(workspace, changed));
     CHECK(workspace.document_revision == 8);
@@ -300,7 +300,7 @@ TEST_CASE("workspace rejects stale revisions and rebinds stable context atomical
 TEST_CASE("workspace exposes one shared document-history context across tabs",
           "[unit][core][workspace][history]") {
     auto history = document_history_t::from(workspace_song(), 8, true);
-    auto bound = make_workspace_controller(history);
+    auto bound = workspace_controller_t::from(history);
     REQUIRE(bound);
     auto& workspace = *bound.workspace;
     CHECK(workspace.history.available);
@@ -317,7 +317,7 @@ TEST_CASE("workspace exposes one shared document-history context across tabs",
 
     REQUIRE(apply_workspace_action(workspace, history.document, history.document.revision,
                                    workspace_switch_tab_action_t{workspace_tab_t::metadata}));
-    const auto metadata = make_workspace_view(workspace, history.document);
+    const auto metadata = workspace_view_t::from(workspace, history.document);
     REQUIRE(metadata);
     CHECK(metadata.view->history == workspace.history);
     CHECK(metadata.view->history.dirty);
@@ -336,11 +336,11 @@ TEST_CASE("metadata workspace exposes bounded ordered song and difficulty format
         {.family = format_family_t::stepmania,
          .ordered_fields = {{"CREDIT", "Difficulty author"}},
          .ordered_field_source_orders = {20}}};
-    auto bound = make_workspace_controller(song);
+    auto bound = workspace_controller_t::from(song);
     REQUIRE(bound);
     auto& workspace = *bound.workspace;
     REQUIRE(apply(workspace, song, workspace_switch_tab_action_t{workspace_tab_t::metadata}));
-    const auto result = make_workspace_view(workspace, song);
+    const auto result = workspace_view_t::from(workspace, song);
     REQUIRE(result);
     const auto& metadata = std::get<workspace_metadata_view_t>(result.view->tab_view);
     CHECK(metadata.beat_zero_audio_offset_seconds == signed_rational_t{-3, 8});
@@ -371,17 +371,17 @@ TEST_CASE("metadata workspace exposes bounded ordered song and difficulty format
     CHECK(history.document.metadata.format_groups[2].ordered_fields.front().second ==
           "later group");
 
-    auto count_capped = make_workspace_controller(song, {.maximum_summary_items = 3});
+    auto count_capped = workspace_controller_t::from(song, {.maximum_summary_items = 3});
     REQUIRE(count_capped);
     REQUIRE(apply(*count_capped.workspace, song,
                   workspace_switch_tab_action_t{workspace_tab_t::metadata}));
-    CHECK_FALSE(make_workspace_view(*count_capped.workspace, song));
+    CHECK_FALSE(workspace_view_t::from(*count_capped.workspace, song));
 
-    auto byte_capped = make_workspace_controller(song, {.maximum_metadata_text_bytes = 8});
+    auto byte_capped = workspace_controller_t::from(song, {.maximum_metadata_text_bytes = 8});
     REQUIRE(byte_capped);
     REQUIRE(apply(*byte_capped.workspace, song,
                   workspace_switch_tab_action_t{workspace_tab_t::metadata}));
-    CHECK_FALSE(make_workspace_view(*byte_capped.workspace, song));
+    CHECK_FALSE(workspace_view_t::from(*byte_capped.workspace, song));
 }
 
 TEST_CASE("workspace validates stable identities, focus targets, and resource caps",
@@ -389,24 +389,24 @@ TEST_CASE("workspace validates stable identities, focus targets, and resource ca
     auto song = workspace_song();
     auto invalid_song = song;
     invalid_song.id = {};
-    const auto invalid_root = make_workspace_controller(invalid_song);
+    const auto invalid_root = workspace_controller_t::from(invalid_song);
     CHECK_FALSE(invalid_root);
     CHECK(has_code(invalid_root.diagnostics, diagnostic_code_t::invalid_id));
 
     auto duplicate = song;
     duplicate.charts.push_back(duplicate.charts.front());
-    const auto duplicate_bind = make_workspace_controller(duplicate);
+    const auto duplicate_bind = workspace_controller_t::from(duplicate);
     CHECK_FALSE(duplicate_bind);
     CHECK(has_code(duplicate_bind.diagnostics, diagnostic_code_t::duplicate_id));
 
-    const auto over_cap = make_workspace_controller(song, {.maximum_charts = 1});
+    const auto over_cap = workspace_controller_t::from(song, {.maximum_charts = 1});
     CHECK_FALSE(over_cap);
     CHECK(has_code(over_cap.diagnostics, diagnostic_code_t::invalid_resolution));
     const auto invalid_compare_cap =
-        make_workspace_controller(song, {.maximum_comparison_charts = 1});
+        workspace_controller_t::from(song, {.maximum_comparison_charts = 1});
     CHECK_FALSE(invalid_compare_cap);
 
-    auto bound = make_workspace_controller(song, {.maximum_focus_region_bytes = 8});
+    auto bound = workspace_controller_t::from(song, {.maximum_focus_region_bytes = 8});
     REQUIRE(bound);
     auto& workspace = *bound.workspace;
     const auto bad_focus = apply(
@@ -439,7 +439,7 @@ TEST_CASE("workspace validates stable identities, focus targets, and resource ca
                   workspace_set_comparison_charts_action_t{{chart_id_t{2}, chart_id_t{1}}}));
     CHECK((workspace.comparison_charts == std::vector{chart_id_t{2}, chart_id_t{1}}));
     workspace.comparison_charts = {chart_id_t{1}, chart_id_t{1}};
-    CHECK_FALSE(make_workspace_view(workspace, song));
+    CHECK_FALSE(workspace_view_t::from(workspace, song));
     REQUIRE(rebind_workspace(workspace, song));
     CHECK((workspace.comparison_charts == std::vector{chart_id_t{1}, chart_id_t{2}}));
 }
@@ -447,13 +447,13 @@ TEST_CASE("workspace validates stable identities, focus targets, and resource ca
 TEST_CASE("storyboard is visible as a disabled placeholder and cannot be activated",
           "[unit][core][workspace][placeholder]") {
     const auto song = workspace_song();
-    auto bound = make_workspace_controller(song);
+    auto bound = workspace_controller_t::from(song);
     REQUIRE(bound);
     auto& workspace = *bound.workspace;
     CHECK(workspace_tab_enabled(workspace_tab_t::setup));
     CHECK_FALSE(workspace_tab_enabled(workspace_tab_t::storyboard));
 
-    const auto placeholder = make_workspace_view(workspace, song, workspace_tab_t::storyboard);
+    const auto placeholder = workspace_view_t::from(workspace, song, workspace_tab_t::storyboard);
     REQUIRE(placeholder);
     CHECK_FALSE(placeholder.view->tab_enabled);
     REQUIRE(std::holds_alternative<workspace_storyboard_view_t>(placeholder.view->tab_view));
@@ -470,7 +470,7 @@ TEST_CASE("storyboard is visible as a disabled placeholder and cannot be activat
 
     REQUIRE(
         apply(workspace, song, workspace_switch_tab_action_t{workspace_tab_t::compare_validate}));
-    const auto validation = make_workspace_view(workspace, song);
+    const auto validation = workspace_view_t::from(workspace, song);
     REQUIRE(validation);
     REQUIRE(std::holds_alternative<workspace_compare_validate_view_t>(validation.view->tab_view));
     const auto& body = std::get<workspace_compare_validate_view_t>(validation.view->tab_view);
@@ -482,7 +482,7 @@ TEST_CASE("storyboard is visible as a disabled placeholder and cannot be activat
 TEST_CASE("transport range and compose summary caps reject partial updates",
           "[unit][core][workspace][bounds]") {
     auto song = workspace_song();
-    auto bound = make_workspace_controller(song, {.maximum_summary_items = 1});
+    auto bound = workspace_controller_t::from(song, {.maximum_summary_items = 1});
     REQUIRE(bound);
     auto& workspace = *bound.workspace;
     REQUIRE(apply(workspace, song,
@@ -499,7 +499,7 @@ TEST_CASE("transport range and compose summary caps reject partial updates",
     CHECK_FALSE(workspace.transport.loop_frames.has_value());
 
     REQUIRE(apply(workspace, song, workspace_switch_tab_action_t{workspace_tab_t::compose}));
-    const auto capped = make_workspace_view(workspace, song);
+    const auto capped = workspace_view_t::from(workspace, song);
     CHECK_FALSE(capped);
     CHECK_FALSE(capped.view.has_value());
     CHECK(has_code(capped.diagnostics, diagnostic_code_t::invalid_resolution));
@@ -508,12 +508,12 @@ TEST_CASE("transport range and compose summary caps reject partial updates",
 TEST_CASE("workspace exposes the complete BMS branch outline with current active projection",
           "[unit][core][workspace][bms-branches]") {
     const auto song = bms_branch_workspace_song();
-    auto bound = make_workspace_controller(song);
+    auto bound = workspace_controller_t::from(song);
     REQUIRE(bound);
     auto& workspace = *bound.workspace;
     REQUIRE(apply(workspace, song, workspace_switch_tab_action_t{workspace_tab_t::compose}));
 
-    const auto result = make_workspace_view(workspace, song);
+    const auto result = workspace_view_t::from(workspace, song);
     REQUIRE(result);
     const auto& compose = std::get<workspace_compose_view_t>(result.view->tab_view);
     const auto& outline = compose.bms_branch_outline;
@@ -566,11 +566,11 @@ TEST_CASE("workspace exposes the complete BMS branch outline with current active
 TEST_CASE("BMS branch outline reports bounded rows and display text",
           "[unit][core][workspace][bms-branches][bounds]") {
     const auto song = bms_branch_workspace_song();
-    auto row_capped = make_workspace_controller(song, {.maximum_bms_branch_rows = 4});
+    auto row_capped = workspace_controller_t::from(song, {.maximum_bms_branch_rows = 4});
     REQUIRE(row_capped);
     REQUIRE(apply(*row_capped.workspace, song,
                   workspace_switch_tab_action_t{workspace_tab_t::compose}));
-    auto row_result = make_workspace_view(*row_capped.workspace, song);
+    auto row_result = workspace_view_t::from(*row_capped.workspace, song);
     REQUIRE(row_result);
     const auto& row_outline =
         std::get<workspace_compose_view_t>(row_result.view->tab_view).bms_branch_outline;
@@ -579,12 +579,12 @@ TEST_CASE("BMS branch outline reports bounded rows and display text",
     CHECK(row_outline.choices_truncated);
     CHECK(has_code(row_outline.diagnostics, diagnostic_code_t::invalid_resolution));
 
-    auto text_capped = make_workspace_controller(
+    auto text_capped = workspace_controller_t::from(
         song, {.maximum_bms_branch_text_bytes = 5, .maximum_bms_branch_display_bytes = 12});
     REQUIRE(text_capped);
     REQUIRE(apply(*text_capped.workspace, song,
                   workspace_switch_tab_action_t{workspace_tab_t::compose}));
-    auto text_result = make_workspace_view(*text_capped.workspace, song);
+    auto text_result = workspace_view_t::from(*text_capped.workspace, song);
     REQUIRE(text_result);
     const auto& text_outline =
         std::get<workspace_compose_view_t>(text_result.view->tab_view).bms_branch_outline;
@@ -593,12 +593,12 @@ TEST_CASE("BMS branch outline reports bounded rows and display text",
     CHECK(std::ranges::all_of(text_outline.rows,
                               [](const auto& item) { return item.display_text.size() <= 5; }));
 
-    auto diagnostics_capped = make_workspace_controller(
+    auto diagnostics_capped = workspace_controller_t::from(
         song, {.maximum_validation_diagnostics = 0, .maximum_bms_branch_rows = 4});
     REQUIRE(diagnostics_capped);
     REQUIRE(apply(*diagnostics_capped.workspace, song,
                   workspace_switch_tab_action_t{workspace_tab_t::compose}));
-    auto diagnostics_result = make_workspace_view(*diagnostics_capped.workspace, song);
+    auto diagnostics_result = workspace_view_t::from(*diagnostics_capped.workspace, song);
     REQUIRE(diagnostics_result);
     const auto& diagnostics_outline =
         std::get<workspace_compose_view_t>(diagnostics_result.view->tab_view).bms_branch_outline;
@@ -611,11 +611,11 @@ TEST_CASE("BMS branch choices expose one reachable unresolved control at a time"
           "[unit][core][workspace][bms-branches][choices]") {
     auto song = bms_branch_workspace_song();
     song.charts.front().active_branch_selection.clear();
-    auto bound = make_workspace_controller(song);
+    auto bound = workspace_controller_t::from(song);
     REQUIRE(bound);
     REQUIRE(apply(*bound.workspace, song, workspace_switch_tab_action_t{workspace_tab_t::compose}));
 
-    const auto result = make_workspace_view(*bound.workspace, song);
+    const auto result = workspace_view_t::from(*bound.workspace, song);
     REQUIRE(result);
     const auto& outline =
         std::get<workspace_compose_view_t>(result.view->tab_view).bms_branch_outline;
@@ -637,11 +637,11 @@ TEST_CASE("BMS branch choices keep invalid imported selections clearable",
           "[unit][core][workspace][bms-branches][choices][recovery]") {
     auto song = bms_branch_workspace_song();
     song.charts.front().active_branch_selection.front().selected_value = 99;
-    auto bound = make_workspace_controller(song);
+    auto bound = workspace_controller_t::from(song);
     REQUIRE(bound);
     REQUIRE(apply(*bound.workspace, song, workspace_switch_tab_action_t{workspace_tab_t::compose}));
 
-    const auto result = make_workspace_view(*bound.workspace, song);
+    const auto result = workspace_view_t::from(*bound.workspace, song);
     REQUIRE(result);
     const auto& outline =
         std::get<workspace_compose_view_t>(result.view->tab_view).bms_branch_outline;
@@ -659,21 +659,21 @@ TEST_CASE("BMS branch choices keep invalid imported selections clearable",
 TEST_CASE("BMS branch outline rejects a stale workspace revision and diagnoses stale choices",
           "[unit][core][workspace][bms-branches][revision]") {
     auto song = bms_branch_workspace_song();
-    auto bound = make_workspace_controller(song);
+    auto bound = workspace_controller_t::from(song);
     REQUIRE(bound);
     auto& workspace = *bound.workspace;
     REQUIRE(apply(workspace, song, workspace_switch_tab_action_t{workspace_tab_t::compose}));
 
     auto changed = song;
     changed.revision = song.revision + 1;
-    const auto stale_view = make_workspace_view(workspace, changed);
+    const auto stale_view = workspace_view_t::from(workspace, changed);
     CHECK_FALSE(stale_view);
     CHECK(has_code(stale_view.diagnostics, diagnostic_code_t::invalid_id));
 
     auto stale_choice_song = song;
     stale_choice_song.charts.front().active_branch_selection.push_back({branch_id_t{9999}, 1});
     REQUIRE(rebind_workspace(workspace, stale_choice_song));
-    const auto updated = make_workspace_view(workspace, stale_choice_song);
+    const auto updated = workspace_view_t::from(workspace, stale_choice_song);
     REQUIRE(updated);
     const auto& outline =
         std::get<workspace_compose_view_t>(updated.view->tab_view).bms_branch_outline;
@@ -716,8 +716,8 @@ auto branch_cache_outlines_equal(const workspace_bms_branch_outline_t& left,
 }
 auto branch_cache_matches_reference(const song_document_t& song,
     const workspace_controller_t& workspace, workspace_bms_branch_outline_cache_t& cache) -> bool {
-    const auto cached = make_workspace_view(workspace, song, workspace_tab_t::compose, nullptr, &cache);
-    const auto reference = make_workspace_view(workspace, song, workspace_tab_t::compose);
+    const auto cached = workspace_view_t::from(workspace, song, workspace_tab_t::compose, nullptr, &cache);
+    const auto reference = workspace_view_t::from(workspace, song, workspace_tab_t::compose);
     if (!cached || !reference) return false;
     return branch_cache_outlines_equal(
         std::get<workspace_compose_view_t>(cached.view->tab_view).bms_branch_outline,
@@ -738,7 +738,7 @@ auto branch_cache_large_song() -> song_document_t {
 }
 auto branch_cache_tracks_choices_without_revision() -> bool {
     auto song = branch_cache_large_song();
-    auto binding = make_workspace_controller(song);
+    auto binding = workspace_controller_t::from(song);
     if (!binding) return false;
     auto& workspace = *binding.workspace;
     workspace_bms_branch_outline_cache_t cache;
@@ -752,7 +752,7 @@ auto branch_cache_tracks_choices_without_revision() -> bool {
 }
 auto branch_cache_tracks_limits_revision_and_identity() -> bool {
     auto song = branch_cache_large_song();
-    auto binding = make_workspace_controller(song);
+    auto binding = workspace_controller_t::from(song);
     if (!binding) return false;
     auto& workspace = *binding.workspace;
     workspace_bms_branch_outline_cache_t cache;
@@ -782,7 +782,7 @@ auto branch_cache_preserves_plain_sidebar_and_skips_absent_tree() -> bool {
         .kind = bms_control_kind_t::root, .children = {
             {.id = branch_id_t{1001}, .kind = bms_control_kind_t::raw_statement,
              .original_text = "#TITLE ordinary sidebar statement"}}};
-    auto binding = make_workspace_controller(song);
+    auto binding = workspace_controller_t::from(song);
     if (!binding) return false;
     workspace_bms_branch_outline_cache_t cache;
     if (!branch_cache_matches_reference(song, *binding.workspace, cache) ||
@@ -808,11 +808,11 @@ TEST_CASE("Workspace branch cache preserves ordinary statements and skips only a
 namespace {
 auto cached_binding_view(const song_document_t& song, const workspace_controller_t& workspace,
                          workspace_binding_validation_cache_t& cache) -> workspace_view_result_t {
-    return make_workspace_view(workspace, song, workspace.active_tab, nullptr, nullptr, &cache);
+    return workspace_view_t::from(workspace, song, workspace.active_tab, nullptr, nullptr, &cache);
 }
 auto binding_cache_tracks_document_and_limits() -> bool {
     auto song = workspace_song();
-    auto binding = make_workspace_controller(song);
+    auto binding = workspace_controller_t::from(song);
     if (!binding) return false;
     auto& workspace = *binding.workspace;
     workspace_binding_validation_cache_t cache;
@@ -828,14 +828,14 @@ auto binding_cache_tracks_document_and_limits() -> bool {
     if (!cached_binding_view(replacement, workspace, cache) || cache.build_count != 3) return false;
     workspace.limits.maximum_audio_assets = 0;
     const auto rejected = cached_binding_view(replacement, workspace, cache);
-    const auto reference = make_workspace_view(workspace, replacement);
+    const auto reference = workspace_view_t::from(workspace, replacement);
     return !rejected && !reference && cache.build_count == 4 &&
         rejected.diagnostics.front().code == reference.diagnostics.front().code &&
         rejected.diagnostics.front().message == reference.diagnostics.front().message;
 }
 auto binding_cache_keeps_dynamic_guards() -> bool {
     auto song = workspace_song();
-    auto binding = make_workspace_controller(song);
+    auto binding = workspace_controller_t::from(song);
     if (!binding) return false;
     auto& workspace = *binding.workspace;
     workspace_binding_validation_cache_t cache;
@@ -857,7 +857,7 @@ auto binding_cache_keeps_dynamic_guards() -> bool {
 }
 auto binding_cache_revalidates_invalid_id_edits() -> bool {
     auto song = workspace_song();
-    auto binding = make_workspace_controller(song);
+    auto binding = workspace_controller_t::from(song);
     if (!binding) return false;
     auto& workspace = *binding.workspace;
     workspace_binding_validation_cache_t cache;

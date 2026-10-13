@@ -11,6 +11,12 @@
 #include <utility>
 
 namespace wormedit {
+auto chart_compare_difference_row_t::from(rational_t position,
+                                          std::vector<chart_compare_pane_row_t> panes)
+    -> chart_compare_difference_row_t {
+    return {.musical_position = position, .panes = std::move(panes)};
+}
+
 namespace {
 
 
@@ -445,11 +451,11 @@ auto pane_signatures_at(const chart_compare_work_t& work, rational_t position)
     return signatures;
 }
 
-auto make_difference_row(const chart_compare_work_t& work, rational_t position,
+auto build_difference_panes(const chart_compare_work_t& work, rational_t position,
                          const std::vector<pane_signature_t>& signatures)
-    -> chart_compare_difference_row_t {
-    chart_compare_difference_row_t row{.musical_position = position, .panes = {}};
-    row.panes.reserve(work.projections.size());
+    -> std::vector<chart_compare_pane_row_t> {
+    std::vector<chart_compare_pane_row_t> panes;
+    panes.reserve(work.projections.size());
     for (std::size_t index = 0; index < work.projections.size(); ++index) {
         const auto differs = work.request.mode == chart_compare_mode_t::baseline_first
                                  ? index == 0 || !equal(signatures[index], signatures.front())
@@ -466,9 +472,16 @@ auto make_difference_row(const chart_compare_work_t& work, rational_t position,
         for (const auto& note : signatures[index].notes) {
             pane.notes.push_back(note.signature);
         }
-        row.panes.push_back(std::move(pane));
+        panes.push_back(std::move(pane));
     }
-    return row;
+    return panes;
+}
+
+[[maybe_unused]] auto make_difference_row(const chart_compare_work_t& work, rational_t position,
+                                          const std::vector<pane_signature_t>& signatures)
+    -> chart_compare_difference_row_t {
+    return chart_compare_difference_row_t::from(position,
+                                                build_difference_panes(work, position, signatures));
 }
 
 auto append_difference_rows(chart_compare_work_t& work) -> bool {
@@ -492,7 +505,7 @@ auto append_difference_rows(chart_compare_work_t& work) -> bool {
             work.result.differing_rows.clear();
             return false;
         }
-        work.result.differing_rows.push_back(make_difference_row(work, position, signatures));
+        work.result.differing_rows.push_back(chart_compare_difference_row_t::from(position, build_difference_panes(work, position, signatures)));
     }
     return true;
 }

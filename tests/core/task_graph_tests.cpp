@@ -23,12 +23,12 @@ TEST_CASE("task graph waits for fan-in dependencies and preserves input order",
     const auto first = graph.add_task({}, [&](std::span<const task_result_t>, std::stop_token) {
         std::lock_guard lock(order_mutex);
         execution_order.push_back(1);
-        return task_result_t::success(make_task_value(std::make_shared<const int>(17)));
+        return task_result_t::success(task_value_t::from(std::make_shared<const int>(17)));
     });
     const auto second = graph.add_task({}, [&](std::span<const task_result_t>, std::stop_token) {
         std::lock_guard lock(order_mutex);
         execution_order.push_back(2);
-        return task_result_t::success(make_task_value(std::make_shared<const int>(25)));
+        return task_result_t::success(task_value_t::from(std::make_shared<const int>(25)));
     });
     REQUIRE(first);
     REQUIRE(second);
@@ -47,7 +47,7 @@ TEST_CASE("task graph waits for fan-in dependencies and preserves input order",
         }
         std::lock_guard lock(order_mutex);
         execution_order.push_back(3);
-        return task_result_t::success(make_task_value(std::make_shared<const int>(*left + *right)));
+        return task_result_t::success(task_value_t::from(std::make_shared<const int>(*left + *right)));
     });
     REQUIRE(joined);
 
@@ -257,7 +257,7 @@ TEST_CASE("task scheduler runs the worker start hook once per worker and survive
                               {.on_worker_start = [] { throw std::runtime_error("denied"); }});
     task_graph_t graph(1);
     const auto added = graph.add_task({}, [](std::span<const task_result_t>, std::stop_token) {
-        return task_result_t::success(make_task_value(std::make_shared<const int>(7)));
+        return task_result_t::success(task_value_t::from(std::make_shared<const int>(7)));
     });
     REQUIRE(added);
     auto submitted = throwing.submit(std::move(graph));

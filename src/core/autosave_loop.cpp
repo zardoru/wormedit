@@ -42,11 +42,10 @@ void post_autosave_failure(const std::optional<notification_sink_t>& notificatio
 
 } // namespace
 
-auto make_native_project_autosave_target(song_id_t project_id, bool has_native_primary,
-                                         const std::filesystem::path& native_primary_path,
-                                         const std::filesystem::path& platform_recovery_directory,
-                                         std::filesystem::path original_source_path)
-    -> native_project_autosave_target_t {
+auto native_project_autosave_target_t::from(
+    song_id_t project_id, bool has_native_primary, const std::filesystem::path& native_primary_path,
+    const std::filesystem::path& platform_recovery_directory,
+    std::filesystem::path original_source_path) -> native_project_autosave_target_t {
     native_project_autosave_target_t target{.original_source_path =
                                                 std::move(original_source_path)};
     if (has_native_primary && !native_primary_path.empty()) {
@@ -146,7 +145,7 @@ auto native_project_autosave_loop_t::tick(const song_document_t& song, bool dirt
                 std::move(intended_project_path), std::move(options));
             auto completion = std::make_shared<const completion_t>(
                 completion_t{.coordinator = std::move(coordinator), .result = std::move(result)});
-            return task_result_t::success(make_task_value(std::move(completion)));
+            return task_result_t::success(task_value_t::from(std::move(completion)));
         });
     if (!added) {
         native_project_autosave_result_t failed{.status = native_project_autosave_status_t::failed,
@@ -225,6 +224,17 @@ void native_project_autosave_loop_t::collect_completed(
         retry_after_ = now + retry_delay_;
     post_autosave_failure(notifications_, completion->result);
     result = completion->result;
+}
+
+// Compatibility for the sys/ui migration wave.
+auto make_native_project_autosave_target(song_id_t project_id, bool has_native_primary,
+                                         const std::filesystem::path& native_primary_path,
+                                         const std::filesystem::path& platform_recovery_directory,
+                                         std::filesystem::path original_source_path)
+    -> native_project_autosave_target_t {
+    return native_project_autosave_target_t::from(project_id, has_native_primary,
+                                                  native_primary_path, platform_recovery_directory,
+                                                  std::move(original_source_path));
 }
 
 } // namespace wormedit

@@ -615,7 +615,7 @@ auto music_source_tracks_frames_for_signed_offsets() -> bool {
         if (!timing) return false;
         const auto beat_zero = timing_at(*timing.index, 0);
         if (!beat_zero || *beat_zero.seconds != offset) return false;
-        const auto music = make_preview_music_event(resource_id_t{7}, 200'000);
+        const auto music = preview_schedule_t::music_event_t::from(resource_id_t{7}, 200'000);
         if (!music) return false;
         for (const auto frame : {0ULL, 1ULL, 88'200ULL, 150'000ULL})
             if (preview_music_source_frame_at(*music, frame) != frame) return false;
@@ -637,7 +637,7 @@ auto beat_zero_note_frame_matches_music_source_time() -> bool {
     const auto note_schedule = build_preview_schedule(
         chart, *timing.index, {.sample_rate = 44'100, .include_metronome = false});
     if (!note_schedule || note_schedule.schedule->playable.size() != 1) return false;
-    const auto music = make_preview_music_event(resource_id_t{7}, 200'000);
+    const auto music = preview_schedule_t::music_event_t::from(resource_id_t{7}, 200'000);
     if (!music) return false;
     const auto audio_time = sample_frame_at(*beat_zero_time.seconds, 44'100);
     return audio_time &&

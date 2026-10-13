@@ -184,7 +184,7 @@ auto video_frame_job_t::run_decode(const decode_request_t& request, std::stop_to
                                       "video frame request was superseded");
     }
     return task_result_t::success(
-        make_task_value(std::make_shared<const video_job_result_t>(std::move(result))));
+        task_value_t::from(std::make_shared<const video_job_result_t>(std::move(result))));
 }
 
 auto video_frame_job_t::request(song_id_t project, std::uint64_t document_revision,

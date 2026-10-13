@@ -19,6 +19,8 @@
 
 namespace wormedit {
 
+struct editor_interaction_setup_t;
+
 // Four editor lanes: background (including video), layer, layer 2, poor.
 inline constexpr std::uint8_t editor_bga_lane_mask_all = 15;
 [[nodiscard]] auto editor_bga_lane_index(visual_event_kind_t kind)
@@ -184,7 +186,6 @@ struct update_note_duration_gesture_action_t {
     editor_gesture_phase_t phase{editor_gesture_phase_t::update};
 };
 
-
 // Translate the selected notes and BGM events by the snapped delta between the
 // reference head and this position. A nonzero reference lane supplies a
 // display-column delta that is applied atomically to every selected note;
@@ -204,7 +205,6 @@ struct update_note_move_gesture_action_t {
     std::optional<std::uint64_t> virtual_bgm_row;
     editor_gesture_phase_t phase{editor_gesture_phase_t::update};
 };
-
 
 struct note_paint_target_t {
     lane_id_t lane;
@@ -316,7 +316,6 @@ struct update_editor_area_selection_action_t {
     editor_gesture_phase_t phase{editor_gesture_phase_t::update};
 };
 
-
 struct cancel_editor_area_selection_action_t {};
 
 enum class note_paint_intent_t {
@@ -371,7 +370,6 @@ struct update_semantic_layer_paint_gesture_action_t {
     std::optional<object_id_t> bgm_event;
     editor_gesture_phase_t phase{editor_gesture_phase_t::update};
 };
-
 
 struct paint_cell_key_t {
     lane_id_t lane;
@@ -668,6 +666,12 @@ struct pending_editor_area_selection_t {
 };
 
 struct editor_interaction_state_t {
+    [[nodiscard]] static auto
+    from(const document_history_t& history, chart_id_t chart, lane_id_t active_lane,
+         local_position_t cursor, std::span<const std::uint64_t> ordered_snap_denominators,
+         std::uint64_t requested_snap_denominator, double viewport_height_pixels = 1.0)
+        -> editor_interaction_setup_t;
+
     chart_id_t chart;
     lane_id_t active_lane;
     editor_scratch_presentation_t scratch_on_right;

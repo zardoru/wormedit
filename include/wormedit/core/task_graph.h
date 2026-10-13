@@ -37,6 +37,14 @@ struct task_error_t {
 };
 
 struct task_value_t {
+    template <typename value_t>
+    [[nodiscard]] static auto from(std::shared_ptr<const value_t> value) -> task_value_t {
+        return {
+            .value = std::static_pointer_cast<const void>(std::move(value)),
+            .type = &typeid(value_t),
+        };
+    }
+
     std::shared_ptr<const void> value;
     const std::type_info* type{&typeid(void)};
 };
@@ -58,10 +66,7 @@ struct task_result_t {
 
 template <typename value_t>
 [[nodiscard]] auto make_task_value(std::shared_ptr<const value_t> value) -> task_value_t {
-    return {
-        .value = std::static_pointer_cast<const void>(std::move(value)),
-        .type = &typeid(value_t),
-    };
+    return task_value_t::from(std::move(value));
 }
 
 template <typename value_t>

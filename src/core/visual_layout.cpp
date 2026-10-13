@@ -26,7 +26,7 @@ auto valid_visual_fit_policy(visual_fit_policy_t fit) noexcept -> bool {
     return false;
 }
 
-auto make_visual_image_layout(const visual_layout_request_t& request)
+auto visual_image_layout_t::from(const visual_layout_request_t& request)
     -> std::optional<visual_image_layout_t> {
     if (request.source_width == 0 || request.source_height == 0 ||
         !valid_destination(request.destination) || !valid_visual_fit_policy(request.fit)) {
@@ -79,7 +79,7 @@ auto make_visual_image_layout(const visual_layout_request_t& request)
     return layout;
 }
 
-auto make_visual_image_quad(const visual_image_quad_request_t& request)
+auto visual_image_quad_t::from(const visual_image_quad_request_t& request)
     -> std::optional<visual_image_quad_t> {
     if (request.source_width == 0 || request.source_height == 0 ||
         !valid_destination(request.destination) || !std::isfinite(request.logical_width) ||
@@ -127,6 +127,18 @@ auto make_visual_image_quad(const visual_image_quad_request_t& request)
         return std::nullopt;
     }
     return quad;
+}
+
+// Compatibility for the sys/ui migration wave.
+auto make_visual_image_layout(const visual_layout_request_t& request)
+    -> std::optional<visual_image_layout_t> {
+    return visual_image_layout_t::from(request);
+}
+
+// Compatibility for the sys/ui migration wave.
+auto make_visual_image_quad(const visual_image_quad_request_t& request)
+    -> std::optional<visual_image_quad_t> {
+    return visual_image_quad_t::from(request);
 }
 
 } // namespace wormedit

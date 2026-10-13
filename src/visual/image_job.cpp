@@ -77,7 +77,7 @@ auto decode_images(image_cache_t& cache, song_id_t project, std::uint64_t docume
         }
     }
     auto payload = std::make_shared<const image_job_result_t>(std::move(result));
-    return task_result_t::success(make_task_value(std::move(payload)));
+    return task_result_t::success(task_value_t::from(std::move(payload)));
 }
 
 } // namespace

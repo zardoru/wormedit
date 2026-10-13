@@ -47,6 +47,8 @@ auto scope_accepts(editor_selection_scope_t scope, editor_selection_object_kind_
 namespace {
 
 struct area_selection_bounds_t {
+    [[nodiscard]] static auto from(const chart_document_t& chart, const editor_hit_test_index_t& index, const editor_interaction_view_model_t& view, const editor_area_selection_request_t& request) -> area_selection_bounds_t;
+
     double left{};
     double right{};
     double field_left{};
@@ -179,9 +181,11 @@ auto valid_area_note_request(const chart_document_t& chart, const editor_hit_tes
         std::isfinite(request.field_left_pixels + request.field_width_pixels);
 }
 
-auto make_area_bounds(const chart_document_t& chart, const editor_hit_test_index_t& index,
-                      const editor_interaction_view_model_t& view,
-                      const editor_area_selection_request_t& request) -> area_selection_bounds_t {
+auto area_selection_bounds_t::from(const chart_document_t& chart,
+                                   const editor_hit_test_index_t& index,
+                                   const editor_interaction_view_model_t& view,
+                                   const editor_area_selection_request_t& request)
+    -> area_selection_bounds_t {
     area_selection_bounds_t result;
     result.field_left = request.field_left_pixels;
     result.field_right = request.field_left_pixels + request.field_width_pixels;
@@ -217,6 +221,14 @@ auto make_area_bounds(const chart_document_t& chart, const editor_hit_test_index
     return result;
 }
 
+[[maybe_unused]] auto make_area_bounds(const chart_document_t& chart,
+                                       const editor_hit_test_index_t& index,
+                                       const editor_interaction_view_model_t& view,
+                                       const editor_area_selection_request_t& request)
+    -> area_selection_bounds_t {
+    return area_selection_bounds_t::from(chart, index, view, request);
+}
+
 auto collect_area_note_spans(note_area_query_t& query, std::vector<object_id_t>& selected,
                              std::size_t node, std::size_t first, std::size_t last) -> void {
     const auto& index = query.index;
@@ -248,7 +260,7 @@ auto editor_notes_in_area_selection(const chart_document_t& chart,
         return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
                                        "area selection geometry or hit-test index is invalid")};
     auto query = note_area_query_t{.chart = chart, .index = index, .view = view,
-                                   .bounds = make_area_bounds(chart, index, view, request),
+                                   .bounds = area_selection_bounds_t::from(chart, index, view, request),
                                    .layouts = {}, .lane_bounds = {}};
     if (query.bounds.empty) return std::vector<object_id_t>{};
     query.prepare_layouts();
@@ -858,4 +870,6 @@ auto commit_area_selection_gesture(area_selection_context_t& context, double x_p
     context.edit.state.pending_editor_area_selection.reset();
     return space_selection_view_result(make_view(context.edit.history, context.edit.state));
 }
+
+
 } // namespace wormedit

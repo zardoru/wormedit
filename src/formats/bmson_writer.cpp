@@ -414,6 +414,8 @@ auto fixed_x_positions(std::string_view mode) -> std::vector<std::uint32_t> {
 }
 
 struct lane_map_t {
+    [[nodiscard]] static auto from(const chart_document_t& chart) -> lane_map_t;
+
     std::string mode{"generic-nkeys"};
     std::unordered_map<std::uint64_t, std::uint32_t> x_by_lane;
 };
@@ -489,7 +491,7 @@ void map_implicit_lanes(const chart_document_t& chart, lane_map_t& result) {
     for (const auto id : lane_ids) result.x_by_lane.emplace(id, x++);
 }
 
-auto make_lane_map(const chart_document_t& chart) -> lane_map_t {
+auto lane_map_t::from(const chart_document_t& chart) -> lane_map_t {
     lane_map_t result;
     if (!chart.lane_layouts.empty()) {
         const auto& initial = chart.lane_layouts.front().layout;
@@ -500,6 +502,10 @@ auto make_lane_map(const chart_document_t& chart) -> lane_map_t {
         map_implicit_lanes(chart, result);
     }
     return result;
+}
+
+[[maybe_unused]] auto make_lane_map(const chart_document_t& chart) -> lane_map_t {
+    return lane_map_t::from(chart);
 }
 
 struct emitted_note_t {
@@ -605,7 +611,7 @@ struct channel_builder_t {
         return static_cast<std::size_t>(std::distance(channels.begin(), found));
     }
 
-    auto ensure_channel(const resource_entry_t& resource, std::string path,
+    auto channel_for(const resource_entry_t& resource, std::string path,
                         std::optional<object_id_t> bgm_lane = {}) -> std::size_t {
         if (const auto found = channel_index_for_resource(resource)) return *found;
         const auto name = asset_path(song, resource.asset, std::move(path));
@@ -750,7 +756,7 @@ struct channel_builder_t {
             fail(bmson_write_diagnostic_code_t::unsupported_feature,
                  "BMSON 1.0 cannot encode note labels or branches", "$.sound_channels");
         const auto& resource = resource_for_id(song, *note.sound, "$.sound_channels");
-        const auto target = ensure_channel(resource, "$.sound_channels");
+        const auto target = channel_for(resource, "$.sound_channels");
         if (reconcile_projection(channels[target], note.sound_channel_event, note.provenance, true,
                                  note.position, note.end, note.lane)) return;
         const auto y = pulse(note.position, "$.sound_channels[].notes[].y");
@@ -767,7 +773,7 @@ struct channel_builder_t {
             fail(bmson_write_diagnostic_code_t::unresolved_resource,
                  "BMSON BGM events require a source audio resource", "$.sound_channels");
         const auto& resource = resource_for_id(song, *event.sound, "$.sound_channels");
-        const auto target = ensure_channel(resource, "$.sound_channels", event.source_lane);
+        const auto target = channel_for(resource, "$.sound_channels", event.source_lane);
         if (reconcile_projection(channels[target], event.sound_channel_event, event.provenance,
                                  false, event.position, event.end, lane_id_t{})) return;
         channels[target].notes.push_back({0, pulse(event.position, "$.sound_channels[].notes[].y"),
@@ -944,7 +950,7 @@ void validate_bmson_visual_features(const chart_document_t& chart) {
 }
 
 auto writer_geometry(const chart_document_t& chart) -> std::pair<bmson_grid_t, measure_index_t> {
-    const auto grid = make_default_bmson_grid(chart.divisions_per_standard_measure);
+    const auto grid = bmson_grid_t::from(chart.divisions_per_standard_measure);
     if (!grid || grid->resolution == 0 || grid->resolution > UINT32_MAX)
         fail(bmson_write_diagnostic_code_t::invalid_geometry,
              "chart resolution cannot be represented by BMSON 1.0", "$.info.resolution");
@@ -1295,7 +1301,7 @@ auto write_impl(const song_document_t& song, bmson_write_options_t options,
     validate_bmson_timing_features(chart);
     validate_bmson_visual_features(chart);
     const auto [grid, index] = writer_geometry(chart);
-    const auto lanes = make_lane_map(chart);
+    const auto lanes = lane_map_t::from(chart);
     const auto channels = channels_for_chart(song, chart, index, grid, lanes, diagnostics);
     writer_output_context_t output(song, chart, grid, index, lanes, channels, options, diagnostics);
     write_info_section(output);
@@ -1330,5 +1336,7 @@ auto write_bmson(const song_document_t& song, bmson_write_options_t options)
     }
     return result;
 }
+
+
 
 } // namespace wormedit

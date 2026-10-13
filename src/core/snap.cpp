@@ -119,12 +119,7 @@ auto snap_absolute_row(const chart_document_t& chart, std::uint64_t row,
 
 auto position_at_absolute_row(const measure_index_t& index, std::uint64_t absolute)
     -> std::optional<local_position_t> {
-    if (absolute >= index.total_rows) return std::nullopt;
-    const auto after = std::ranges::upper_bound(index.entries, absolute, {},
-                                                &measure_index_entry_t::absolute_begin_row);
-    if (after == index.entries.begin()) return std::nullopt;
-    const auto entry = std::prev(after);
-    return local_position_t{.measure = entry->id, .row = absolute - entry->absolute_begin_row};
+    return index.position_at(absolute);
 }
 
 auto snap_position(const chart_document_t& chart, const measure_index_t& index,

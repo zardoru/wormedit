@@ -91,6 +91,15 @@ auto layout_at(const chart_document_t& chart, const measure_index_t& index,
 
 namespace {
 
+auto format_group_in(std::vector<format_metadata_t>& groups, format_family_t family)
+    -> format_metadata_t& {
+    const auto found = std::ranges::find(groups, family, &format_metadata_t::family);
+    if (found != groups.end())
+        return *found;
+    groups.push_back({.family = family});
+    return groups.back();
+}
+
 constexpr auto maximum = std::numeric_limits<std::uint64_t>::max();
 
 auto add_checked(std::uint64_t left, std::uint64_t right, std::uint64_t& result) -> bool {
@@ -609,9 +618,8 @@ auto position_row_or_diagnostic(const measure_index_t& index, local_position_t p
                                 diagnostic_list_t& diagnostics,
                                 std::optional<object_id_t> object = std::nullopt)
     -> std::optional<std::uint64_t> {
-    const auto entry = std::ranges::find_if(
-        index.entries, [&](const auto& candidate) { return candidate.id == position.measure; });
-    if (entry == index.entries.end()) {
+    const auto* entry = index.entry_for(position.measure);
+    if (entry == nullptr) {
         add_diagnostic(diagnostics, diagnostic_code_t::unknown_measure,
                        "object position refers to an unknown measure", object);
         return std::nullopt;
@@ -621,8 +629,8 @@ auto position_row_or_diagnostic(const measure_index_t& index, local_position_t p
                        "object row lies outside its measure", object);
         return std::nullopt;
     }
-    std::uint64_t row{};
-    if (!add_checked(entry->absolute_begin_row, position.row, row)) {
+    const auto row = entry->row_of(position.row);
+    if (!row) {
         add_diagnostic(diagnostics, diagnostic_code_t::invalid_measure,
                        "absolute object row overflows the supported range", object);
         return std::nullopt;
@@ -1304,18 +1312,102 @@ auto build_measure_index(const chart_document_t& chart)
     return index;
 }
 
-auto absolute_row(const measure_index_t& index, local_position_t position)
+auto chart_metadata_t::format_group_for(format_family_t family) -> format_metadata_t& {
+    return format_group_in(format_groups, family);
+}
+
+auto song_metadata_t::format_group_for(format_family_t family) -> format_metadata_t& {
+    return format_group_in(format_groups, family);
+}
+
+auto measure_index_entry_t::row_of(std::uint64_t local_row) const
     -> std::optional<std::uint64_t> {
-    const auto entry = std::ranges::find_if(
-        index.entries, [&](const auto& candidate) { return candidate.id == position.measure; });
-    if (entry == index.entries.end() || position.row >= entry->row_capacity) {
+    if (local_row >= row_capacity) {
         return std::nullopt;
     }
     std::uint64_t result{};
-    if (!add_checked(entry->absolute_begin_row, position.row, result)) {
+    if (!add_checked(absolute_begin_row, local_row, result)) {
         return std::nullopt;
     }
     return result;
+}
+
+namespace {
+
+auto chart_end_row(const measure_index_t& index, local_position_t position,
+                   measure_chart_end_policy_t policy) -> std::optional<std::uint64_t> {
+    if (policy == measure_chart_end_policy_t::allow && !index.entries.empty()) {
+        const auto& last = index.entries.back();
+        if (position.measure == last.id && position.row == last.row_capacity) {
+            return index.total_rows;
+        }
+    }
+    return std::nullopt;
+}
+
+} // namespace
+
+auto measure_index_t::entry_for(measure_id_t id) const -> const measure_index_entry_t* {
+    const auto found = std::ranges::find(entries, id, &measure_index_entry_t::id);
+    return found == entries.end() ? nullptr : &*found;
+}
+
+auto measure_index_t::row_of(local_position_t position, measure_chart_end_policy_t chart_end) const
+    -> std::optional<std::uint64_t> {
+    const auto* entry = entry_for(position.measure);
+    if (const auto row = entry ? entry->row_of(position.row) : std::nullopt) {
+        return row;
+    }
+    return chart_end_row(*this, position, chart_end);
+}
+
+auto measure_index_t::position_at(std::uint64_t row, measure_chart_end_policy_t chart_end) const
+    -> std::optional<local_position_t> {
+    if (chart_end == measure_chart_end_policy_t::allow && row == total_rows && !entries.empty()) {
+        const auto& last = entries.back();
+        return local_position_t{.measure = last.id, .row = last.row_capacity};
+    }
+    if (row >= total_rows) return std::nullopt;
+    const auto after = std::ranges::upper_bound(entries, row, {},
+                                               &measure_index_entry_t::absolute_begin_row);
+    if (after == entries.begin()) return std::nullopt;
+    const auto entry = std::prev(after);
+    return local_position_t{.measure = entry->id, .row = row - entry->absolute_begin_row};
+}
+
+auto measure_lookup_t::from(const measure_index_t& index) -> measure_lookup_t {
+    measure_lookup_t lookup{.index = &index, .entry_indices = {}};
+    if (!index.entries.empty()) {
+        lookup.entry_indices.reserve(index.entries.size());
+    }
+    for (std::size_t bucket = 0; bucket < index.entries.size(); ++bucket) {
+        lookup.entry_indices.emplace(index.entries[bucket].id.value, bucket);
+    }
+    return lookup;
+}
+
+auto measure_lookup_t::bucket_for(measure_id_t id) const -> std::optional<std::size_t> {
+    const auto found = entry_indices.find(id.value);
+    return found == entry_indices.end() ? std::nullopt : std::optional{found->second};
+}
+
+auto measure_lookup_t::entry_for(measure_id_t id) const -> const measure_index_entry_t* {
+    const auto bucket = bucket_for(id);
+    return index && bucket && *bucket < index->entries.size() ? &index->entries[*bucket] : nullptr;
+}
+
+auto measure_lookup_t::row_of(local_position_t position, measure_chart_end_policy_t chart_end) const
+    -> std::optional<std::uint64_t> {
+    const auto* entry = entry_for(position.measure);
+    if (const auto row = entry ? entry->row_of(position.row) : std::nullopt) {
+        return row;
+    }
+    return index ? chart_end_row(*index, position, chart_end) : std::nullopt;
+}
+
+auto absolute_row(const measure_index_t& index, local_position_t position)
+    -> std::optional<std::uint64_t> {
+    return index.row_of(position);
 }
 
 namespace {

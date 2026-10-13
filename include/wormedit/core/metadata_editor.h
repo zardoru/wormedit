@@ -64,6 +64,10 @@ struct set_output_group_path_action_t {
     -> std::optional<std::filesystem::path>;
 
 struct chart_rating_edit_t {
+    [[nodiscard]] static auto from(chart_id_t chart, bool unset, std::string_view numerator,
+                                   std::string_view denominator)
+        -> std::optional<chart_rating_edit_t>;
+
     chart_id_t chart;
     std::optional<signed_rational_t> rating;
 };

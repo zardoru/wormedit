@@ -44,7 +44,6 @@ struct candidate_t {
 };
 
 using resource_keys_t = std::unordered_map<std::uint64_t, group_key_t>;
-using measure_entries_t = std::unordered_map<std::uint64_t, measure_index_entry_t>;
 using occupancy_t = std::pair<std::uint64_t, std::uint64_t>;
 using group_lane_counts_t = std::map<group_key_t, std::map<std::uint64_t, std::size_t>>;
 struct lane_ref_t { std::uint64_t id{}; std::size_t order{}; };
@@ -62,15 +61,6 @@ struct candidates_result_t {
     std::map<group_key_t, std::size_t> group_first_ordinal;
     std::optional<diagnostic_t> error;
 };
-
-auto indexed_absolute_row(const std::unordered_map<std::uint64_t, measure_index_entry_t>& measures,
-                          local_position_t position) -> std::optional<std::uint64_t> {
-    const auto found = measures.find(position.measure.value);
-    if (found == measures.end() || position.row >= found->second.row_capacity ||
-        position.row > std::numeric_limits<std::uint64_t>::max() - found->second.absolute_begin_row)
-        return std::nullopt;
-    return found->second.absolute_begin_row + position.row;
-}
 
 auto make_resource_keys(std::span<const resource_entry_t> resources) -> resource_keys_t {
     resource_keys_t keys;
@@ -104,7 +94,7 @@ auto plan_error(diagnostic_code_t code, std::string message) -> note_to_bgm_plan
 }
 
 auto collect_candidates(const chart_document_t& chart, std::span<const object_id_t> ids,
-                        const resource_keys_t& resource_keys, const measure_entries_t& measure_entries)
+                        const resource_keys_t& resource_keys, const wormedit::measure_lookup_t& measure_entries)
     -> candidates_result_t {
     std::unordered_set<std::uint64_t> requested;
     requested.reserve(ids.size());
@@ -120,7 +110,7 @@ auto collect_candidates(const chart_document_t& chart, std::span<const object_id
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes) {
             if (!requested.contains(note.id.value)) { ++ordinal; continue; }
-            const auto absolute = indexed_absolute_row(measure_entries, note.position);
+            const auto absolute = measure_entries.row_of(note.position);
             if (!absolute)
                 return {{}, {}, diagnostic_t{diagnostic_severity_t::error, diagnostic_code_t::row_out_of_range,
                     "a selected note is outside measure geometry", {}}};
@@ -171,13 +161,13 @@ auto rank_group_preferences(allocation_state_t& state, const group_lane_counts_t
 }
 
 auto prepare_allocation_state(const chart_document_t& chart, const resource_keys_t& resource_keys,
-                              const measure_entries_t& measure_entries)
+                              const wormedit::measure_lookup_t& measure_entries)
     -> std::variant<allocation_state_t, diagnostic_t> {
     allocation_state_t state;
     group_lane_counts_t counts;
     for (const auto& measure : chart.measures)
         for (const auto& event : measure.bgm_events) {
-            const auto absolute = indexed_absolute_row(measure_entries, event.position);
+            const auto absolute = measure_entries.row_of(event.position);
             if (!absolute)
                 return diagnostic_t{diagnostic_severity_t::error, diagnostic_code_t::row_out_of_range,
                     "an existing BGM event is outside measure geometry", {}};
@@ -265,9 +255,7 @@ auto plan_allocation(const chart_document_t& chart, std::span<const resource_ent
     if (!std::holds_alternative<measure_index_t>(built))
         return plan_error(diagnostic_code_t::invalid_measure, "BGM allocation requires valid measure geometry");
     const auto& geometry = std::get<measure_index_t>(built);
-    measure_entries_t measure_entries;
-    measure_entries.reserve(geometry.entries.size());
-    for (const auto& entry : geometry.entries) measure_entries.emplace(entry.id.value, entry);
+    const auto measure_entries = measure_lookup_t::from(geometry);
     const auto resource_keys = make_resource_keys(resources);
     auto collected = collect_candidates(chart, ids, resource_keys, measure_entries);
     if (collected.error)

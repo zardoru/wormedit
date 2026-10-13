@@ -19,6 +19,8 @@ constexpr std::uint32_t maximum_division = 1024;
 constexpr std::uint32_t maximum_sample_rate = 1U << 19;
 
 struct grid_t {
+    [[nodiscard]] static auto from(const audio_slicer_request_t& request) -> std::optional<grid_t>;
+
     // frame(k) = max(0, round((step * k - lead) / denominator)), all exact.
     u128_t step;
     u128_t lead;
@@ -68,7 +70,7 @@ auto slice_covers_a_frame(const audio_slicer_request_t& request) -> bool {
                bpm.numerator * static_cast<std::uint64_t>(request.division);
 }
 
-auto make_grid(const audio_slicer_request_t& request) -> std::optional<grid_t> {
+auto grid_t::from(const audio_slicer_request_t& request) -> std::optional<grid_t> {
     const auto& bpm = request.beats_per_minute;
     const auto& offset = request.offset_seconds;
     const auto step = product({request.sample_rate, 60, bpm.denominator, offset.denominator});
@@ -81,6 +83,10 @@ auto make_grid(const audio_slicer_request_t& request) -> std::optional<grid_t> {
     const auto offset_part = product({request.sample_rate, magnitude, bpm.numerator, request.division});
     if (!offset_part) return std::nullopt;
     return grid_t{*step, offset.numerator < 0 ? *offset_part : u128_t{}, *denominator};
+}
+
+[[maybe_unused]] auto make_grid(const audio_slicer_request_t& request) -> std::optional<grid_t> {
+    return grid_t::from(request);
 }
 
 auto round_quotient(const wide_math::divmod_t& division, const u128_t& denominator,
@@ -131,7 +137,7 @@ auto compute_audio_slices(const audio_slicer_request_t& request) -> audio_slicer
                                       "slices must be at least one frame long"});
         return result;
     }
-    const auto grid = make_grid(request);
+    const auto grid = grid_t::from(request);
     if (!grid) {
         result.diagnostics.push_back(
             {audio_slicer_error_code_t::invalid_offset, "offset is out of range"});
@@ -178,5 +184,7 @@ auto compute_audio_slices(const audio_slicer_request_t& request) -> audio_slicer
     }
     return result;
 }
+
+
 
 } // namespace wormedit

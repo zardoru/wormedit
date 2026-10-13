@@ -711,7 +711,7 @@ TEST_CASE("dragging a stem tap moves its slice point and leaves the audio where 
     REQUIRE(before_at != slices_before.slices.end());
 
     constexpr std::array snaps{std::uint64_t{4}, std::uint64_t{8}};
-    auto setup = make_editor_interaction(history, chart.id, lane, {measure_id_t{chart.measures.front().id.value}, 840}, snaps, 4);
+    auto setup = editor_interaction_state_t::from(history, chart.id, lane, {measure_id_t{chart.measures.front().id.value}, 840}, snaps, 4);
     REQUIRE(setup);
     auto state = std::move(*setup.state);
     REQUIRE(dispatch_editor_action(history, state, select_editor_notes_action_t{{note_id}}));

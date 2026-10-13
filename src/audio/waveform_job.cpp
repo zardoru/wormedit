@@ -54,7 +54,7 @@ auto waveform_job_t::request(asset_id_t asset, std::uint32_t frames_per_bin,
         auto analysis =
             sources_.analyze_waveform(asset, blocks_, waveforms_, frames_per_bin, options, stop);
         auto payload = std::make_shared<const waveform_analysis_result_t>(std::move(analysis));
-        return task_result_t::success(make_task_value(std::move(payload)));
+        return task_result_t::success(task_value_t::from(std::move(payload)));
     });
     if (!task) {
         return {.status = waveform_job_start_status_t::scheduler_rejected,

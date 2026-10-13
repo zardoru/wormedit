@@ -201,9 +201,8 @@ auto validate_measure(
     return {.row_capacity = capacity};
 }
 
-auto make_default_bmson_grid(
-    std::uint64_t divisions_per_standard_measure) -> std::optional<bmson_grid_t>
-{
+auto bmson_grid_t::from(std::uint64_t divisions_per_standard_measure)
+    -> std::optional<bmson_grid_t> {
     if (divisions_per_standard_measure == 0) {
         return std::nullopt;
     }
@@ -247,6 +246,12 @@ auto suggest_meters(const rational_t& length) -> std::vector<meter_t>
         }
     }
     return meters;
+}
+
+// Compatibility for the sys/ui migration wave.
+auto make_default_bmson_grid(std::uint64_t divisions_per_standard_measure)
+    -> std::optional<bmson_grid_t> {
+    return bmson_grid_t::from(divisions_per_standard_measure);
 }
 
 } // namespace wormedit

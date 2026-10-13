@@ -287,7 +287,15 @@ auto valid_display_request(aligned_waveform_request_t request, bool padding = tr
         request.viewport_height_pixels <= static_cast<double>(request.maximum_rows) &&
         std::isfinite(request.pixels_per_standard_measure) && request.pixels_per_standard_measure > 0;
 }
-auto make_display_row(const display_row_table_t& table, std::int64_t world) -> display_row_time_t {
+[[maybe_unused]] auto make_display_row(const display_row_table_t& table, std::int64_t world)
+    -> display_row_time_t {
+    return display_row_time_t::from(table, world);
+}
+
+} // namespace
+
+auto display_row_time_t::from(const display_row_table_t& table, std::int64_t world)
+    -> display_row_time_t {
     const auto scale = static_cast<double>(table.divisions) / table.zoom;
     const auto begin = std::clamp(static_cast<double>(world) * scale, 0.0, static_cast<double>(table.total_rows));
     const auto end = std::clamp((static_cast<double>(world) + 1.0) * scale, 0.0, static_cast<double>(table.total_rows));
@@ -296,7 +304,6 @@ auto make_display_row(const display_row_table_t& table, std::int64_t world) -> d
     return {world, begin, end, first.value_or(0.0), last.value_or(0.0),
             begin < end && first && last && *first <= *last};
 }
-} // namespace
 
 auto display_seconds_at(const display_row_table_t& table, double row, timing_boundary_side_t side)
     -> std::optional<double> {
@@ -348,7 +355,7 @@ auto prepare_display_row_table(display_row_table_t& table, const timing_index_t&
             table.rows.push_back(previous[static_cast<std::size_t>(old_index)]);
             ++table.reused_rows;
         } else {
-            table.rows.push_back(make_display_row(table, world));
+            table.rows.push_back(display_row_time_t::from(table, world));
             ++table.built_rows;
         }
     }

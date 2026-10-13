@@ -135,10 +135,8 @@ auto plan_duration_resize(const chart_document_t& chart, const measure_index_t& 
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&ids_result))
         return *diagnostics;
     duration_resize_context_t context{
-        .chart = chart, .index = index, .measures = {}, .target_notes = {}, .collisions = {}};
-    context.measures.reserve(index.entries.size());
-    for (const auto& entry : index.entries)
-        context.measures.emplace(entry.id.value, &entry);
+        .chart = chart, .index = index, .measures = measure_lookup_t::from(index),
+        .target_notes = {}, .collisions = {}};
     if (auto failure =
             context.collect_existing(std::get<std::unordered_set<std::uint64_t>>(ids_result)))
         return diagnostic_list_t{*failure};
@@ -484,10 +482,8 @@ auto plan_note_move(const chart_document_t& chart, const measure_index_t& index,
         return errors;
     }
     duration_resize_context_t collected{
-        .chart = chart, .index = index, .measures = {}, .target_notes = {}, .collisions = {}};
-    collected.measures.reserve(index.entries.size());
-    for (const auto& entry : index.entries)
-        collected.measures.emplace(entry.id.value, &entry);
+        .chart = chart, .index = index, .measures = measure_lookup_t::from(index),
+        .target_notes = {}, .collisions = {}};
     if (auto failure =
             collected.collect_existing(std::get<std::unordered_set<std::uint64_t>>(ids_result))) {
         auto diagnostics = diagnostic_list_t{*failure};

@@ -61,7 +61,6 @@ struct timing_segment_t {
     bool warped{};
 };
 
-
 struct timing_build_options_t {
     std::size_t maximum_boundaries{100'000};
     std::size_t maximum_timing_events{200'000};
@@ -71,7 +70,6 @@ struct timing_build_options_t {
     bool allow_bounded_clock{};
     std::size_t maximum_bounded_clock_roundings{300'001};
 };
-
 
 struct timing_query_result_t {
     std::optional<signed_rational_t> seconds;
@@ -466,6 +464,9 @@ struct preview_schedule_t {
     std::vector<preview_metronome_event_t> metronome;
     std::vector<preview_discontinuity_event_t> discontinuities;
     struct music_event_t {
+        [[nodiscard]] static auto from(resource_id_t resource, std::uint64_t music_frame_count)
+            -> std::optional<preview_schedule_t::music_event_t>;
+
         resource_id_t resource;
         std::uint64_t sample_frame{};
         std::uint64_t source_start_frame{};

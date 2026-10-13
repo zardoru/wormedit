@@ -190,12 +190,12 @@ TEST_CASE("rating text parser preserves exact signed rational values within inte
 
 TEST_CASE("rating action helper supports exact set and explicit unset through revision checks",
           "[unit][core][metadata-editor][rating]") {
-    const auto set = make_chart_rating_metadata_edit(chart_id_t{2}, false, "-9", "12");
+    const auto set = chart_rating_edit_t::from(chart_id_t{2}, false, "-9", "12");
     REQUIRE(set);
     CHECK(set->chart == chart_id_t{2});
     CHECK(set->rating == signed_rational_t{-9, 12});
-    CHECK_FALSE(make_chart_rating_metadata_edit(chart_id_t{2}, false, "1", "0"));
-    CHECK_FALSE(make_chart_rating_metadata_edit(chart_id_t{}, true, "", ""));
+    CHECK_FALSE(chart_rating_edit_t::from(chart_id_t{2}, false, "1", "0"));
+    CHECK_FALSE(chart_rating_edit_t::from(chart_id_t{}, true, "", ""));
 
     auto history = document_history_t::from(metadata_song());
     const set_chart_metadata_action_t apply_set{set->chart, "Staged name", "Staged mapper",
@@ -209,7 +209,7 @@ TEST_CASE("rating action helper supports exact set and explicit unset through re
     CHECK(history.document.charts.front().metadata.name == "Staged name");
     CHECK(history.document.charts.front().metadata.author == "Staged mapper");
     CHECK(history.document.charts.front().metadata.rating == signed_rational_t{-9, 12});
-    const auto unset = make_chart_rating_metadata_edit(chart_id_t{2}, true, "ignored", "0");
+    const auto unset = chart_rating_edit_t::from(chart_id_t{2}, true, "ignored", "0");
     REQUIRE(unset);
     const set_chart_metadata_action_t apply_unset{unset->chart, "Still staged", "Still mapper",
                                                   unset->rating};

@@ -41,32 +41,14 @@ auto valid_bounded_rational(signed_rational_t value, long double maximum) -> boo
 
 auto position_at_row(const measure_index_t& index, std::uint64_t row, bool allow_chart_end = false)
     -> std::optional<local_position_t> {
-    if (allow_chart_end && row == index.total_rows && !index.entries.empty()) {
-        const auto& last = index.entries.back();
-        return local_position_t{.measure = last.id, .row = last.row_capacity};
-    }
-    const auto found = std::ranges::find_if(index.entries, [row](const auto& entry) {
-        return row >= entry.absolute_begin_row &&
-               row - entry.absolute_begin_row < entry.row_capacity;
-    });
-    if (found == index.entries.end()) {
-        return std::nullopt;
-    }
-    return local_position_t{.measure = found->id, .row = row - found->absolute_begin_row};
+    return index.position_at(row, allow_chart_end ? measure_chart_end_policy_t::allow
+                                                : measure_chart_end_policy_t::reject);
 }
 
 auto position_row(const measure_index_t& index, local_position_t position,
                   bool allow_chart_end = false) -> std::optional<std::uint64_t> {
-    if (const auto row = absolute_row(index, position)) {
-        return row;
-    }
-    if (allow_chart_end && !index.entries.empty()) {
-        const auto& last = index.entries.back();
-        if (position.measure == last.id && position.row == last.row_capacity) {
-            return index.total_rows;
-        }
-    }
-    return std::nullopt;
+    return index.row_of(position, allow_chart_end ? measure_chart_end_policy_t::allow
+                                                : measure_chart_end_policy_t::reject);
 }
 
 auto snapped_position(const chart_document_t& chart, const measure_index_t& index,

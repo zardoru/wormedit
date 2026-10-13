@@ -38,6 +38,9 @@ struct visual_layout_request_t {
 };
 
 struct visual_image_layout_t {
+    [[nodiscard]] static auto from(const visual_layout_request_t& request)
+        -> std::optional<visual_image_layout_t>;
+
     visual_destination_rect_t destination;
     visual_source_rect_t source;
 
@@ -67,6 +70,9 @@ struct visual_image_quad_request_t {
 };
 
 struct visual_image_quad_t {
+    [[nodiscard]] static auto from(const visual_image_quad_request_t& request)
+        -> std::optional<visual_image_quad_t>;
+
     // Top-left, top-right, bottom-right, bottom-left in texture order. Signed
     // scale changes their screen winding and therefore preserves axis flips.
     std::array<visual_point_t, 4> points;

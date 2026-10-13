@@ -129,7 +129,7 @@ void check_fixture_tap_command(const wormedit::song_document_t& document,
     const auto [lane, position] = fixture_empty_tap_slot(chart);
     auto history = wormedit::document_history_t::from(document);
     const std::array snaps{chart.divisions_per_standard_measure};
-    auto setup = wormedit::make_editor_interaction(history, chart.id, lane, position,
+    auto setup = wormedit::editor_interaction_state_t::from(history, chart.id, lane, position,
                                                    snaps, snaps.front());
     REQUIRE(setup.state);
     const auto placed = wormedit::dispatch_editor_action(history, *setup.state,

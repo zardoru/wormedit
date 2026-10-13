@@ -225,23 +225,21 @@ struct hover_source_t {
 struct hit_test_index_builder_t {
     const chart_document_t& chart;
     editor_hit_test_index_t index;
-    std::unordered_map<std::uint64_t, std::size_t> bucket_by_measure;
+    measure_lookup_t bucket_by_measure;
     // Consecutive lookups almost always hit the measure being indexed.
     std::optional<measure_id_t> cached_measure;
     std::size_t cached_bucket{};
 
     auto locate(local_position_t position) -> std::optional<located_row_t> {
         if (cached_measure != position.measure) {
-            const auto bucket = bucket_by_measure.find(position.measure.value);
-            if (bucket == bucket_by_measure.end()) return std::nullopt;
+            const auto bucket = bucket_by_measure.bucket_for(position.measure);
+            if (!bucket) return std::nullopt;
             cached_measure = position.measure;
-            cached_bucket = bucket->second;
+            cached_bucket = *bucket;
         }
         const auto& entry = index.measures.entries[cached_bucket];
-        if (position.row >= entry.row_capacity ||
-            entry.absolute_begin_row > std::numeric_limits<std::uint64_t>::max() - position.row)
-            return std::nullopt;
-        return located_row_t{entry.absolute_begin_row + position.row, cached_bucket};
+        const auto row = entry.row_of(position.row);
+        return row ? std::optional{located_row_t{*row, cached_bucket}} : std::nullopt;
     }
 
     auto row_of(local_position_t position) -> std::optional<std::uint64_t> {
@@ -264,9 +262,9 @@ struct hit_test_index_builder_t {
         index.selection_spans.reserve(spans);
         index.hover_objects_by_id.reserve(spans);
         for (std::size_t bucket = 0; bucket < chart.measures.size(); ++bucket) {
-            const auto found = bucket_by_measure.find(chart.measures[bucket].id.value);
-            if (found != bucket_by_measure.end())
-                index.measure_buckets[found->second].reserve(chart.measures[bucket].notes.size());
+            const auto found = bucket_by_measure.bucket_for(chart.measures[bucket].id);
+            if (found)
+                index.measure_buckets[*found].reserve(chart.measures[bucket].notes.size());
         }
     }
 
@@ -513,9 +511,7 @@ auto build_editor_hit_test_index(const chart_document_t& chart, std::uint64_t do
                   .measures = std::get<measure_index_t>(built_index)},
     };
     builder.index.measure_buckets.resize(builder.index.measures.entries.size());
-    builder.bucket_by_measure.reserve(builder.index.measures.entries.size());
-    for (std::size_t bucket = 0; bucket < builder.index.measures.entries.size(); ++bucket)
-        builder.bucket_by_measure.emplace(builder.index.measures.entries[bucket].id.value, bucket);
+    builder.bucket_by_measure = measure_lookup_t::from(builder.index.measures);
     builder.reserve_objects();
 
     const auto fail_if = [](const auto& result) -> std::optional<diagnostic_list_t> {

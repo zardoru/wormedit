@@ -94,7 +94,7 @@ TEST_CASE("Chart clipboard cut deletes the complete merged selection in one undo
     auto history = document_history_t::from(std::move(song));
     auto state = clipboard_selection();
     const std::array snaps{std::uint64_t{4}};
-    auto interaction = make_editor_interaction(history, state.chart, lane_id_t{1},
+    auto interaction = editor_interaction_state_t::from(history, state.chart, lane_id_t{1},
         {measure_id_t{1}, 0}, snaps, 4);
     expect(static_cast<bool>(interaction));
     interaction.state->selected_notes = state.selected_notes;

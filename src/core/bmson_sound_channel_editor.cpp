@@ -1079,6 +1079,8 @@ auto resolve_stem_geometry(const chart_document_t& chart, const sound_channel_t&
 }
 
 struct empty_stem_fallbacks_t {
+    [[nodiscard]] static auto from(const song_document_t& document, const chart_document_t& chart) -> empty_stem_fallbacks_t;
+
     std::unordered_map<std::uint64_t,
         std::unordered_map<std::string, std::vector<std::uint64_t>>> channels;
     std::unordered_map<std::uint64_t,
@@ -1105,8 +1107,8 @@ auto eligible_empty_stem_resource(const resource_entry_t& resource) -> bool {
             resource.sound_kind == sound_kind_t::unspecified);
 }
 
-auto make_empty_stem_fallbacks(const song_document_t& document,
-                               const chart_document_t& chart) -> empty_stem_fallbacks_t {
+auto empty_stem_fallbacks_t::from(const song_document_t& document, const chart_document_t& chart)
+    -> empty_stem_fallbacks_t {
     empty_stem_fallbacks_t result;
     std::unordered_map<std::uint64_t, const sound_channel_t*> channels;
     for (const auto& channel : chart.sound_channels)
@@ -1123,6 +1125,12 @@ auto make_empty_stem_fallbacks(const song_document_t& document,
         ++result.resource_counts[resource.asset.value][resource.name];
     }
     return result;
+}
+
+[[maybe_unused]] auto make_empty_stem_fallbacks(const song_document_t& document,
+                                                const chart_document_t& chart)
+    -> empty_stem_fallbacks_t {
+    return empty_stem_fallbacks_t::from(document, chart);
 }
 
 auto allocate_two_ids(chart_document_t& chart, std::uint64_t& largest,
@@ -1213,7 +1221,7 @@ auto bmson_channel_resource_bindings(const song_document_t& document, chart_id_t
     const auto chart = document.find_chart(chart_id);
     if (chart == nullptr || chart->sound_channels.empty()) return {};
 
-    const auto empty_stems = make_empty_stem_fallbacks(document, *chart);
+    const auto empty_stems = empty_stem_fallbacks_t::from(document, *chart);
     const auto event_channels = index_source_events(*chart);
     const auto semantic_channels = index_semantic_channels(*chart, event_channels);
     std::vector<bmson_channel_resource_binding_t> result;
@@ -1689,5 +1697,7 @@ auto apply_bmson_packed_stroke(document_history_t& history, std::uint64_t expect
         return *failure;
     return commit_packed_stroke_draw(history, context, source_lane, *found);
 }
+
+
 
 } // namespace wormedit

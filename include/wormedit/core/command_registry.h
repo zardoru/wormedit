@@ -206,6 +206,8 @@ struct command_t {
 };
 
 struct command_registry_t {
+    [[nodiscard]] static auto from(command_invoker_t invoker) -> command_registry_t;
+
     std::vector<command_t> commands;
 };
 
@@ -249,6 +251,9 @@ struct shortcut_profile_binding_t {
 // This profile is intentionally independent of song_document_t and native
 // chart serialization. Persist it as a user preference alongside app settings.
 struct shortcut_profile_t {
+    [[nodiscard]] static auto from(const command_registry_t& registry, std::string profile_id)
+        -> shortcut_profile_t;
+
     std::string id;
     std::vector<shortcut_profile_binding_t> bindings;
 

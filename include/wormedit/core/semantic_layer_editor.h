@@ -29,6 +29,15 @@ struct semantic_layer_rgba_t {
 };
 
 struct semantic_layer_palette_window_t {
+    [[nodiscard]] static auto from(const chart_document_t& chart,
+                                   std::optional<layer_id_t> selected_layer,
+                                   std::size_t requested_page, bool reveal_selected,
+                                   std::size_t page_size, std::size_t maximum_layers = 100'000)
+        -> std::optional<semantic_layer_palette_window_t>;
+    [[nodiscard]] static auto from(const chart_document_t& chart, std::size_t first_row,
+                                   std::size_t row_count, std::size_t maximum_layers = 100'000)
+        -> std::optional<semantic_layer_palette_window_t>;
+
     std::size_t first_row{};
     std::size_t page{};
     std::size_t page_count{};

@@ -63,32 +63,21 @@ auto validate_chart_query(const song_document_t& song, std::uint64_t expected_re
     return query;
 }
 
-using measure_lookup_t = std::unordered_map<std::uint64_t, const measure_index_entry_t*>;
-
-auto build_measure_lookup(const measure_index_t& measures) -> measure_lookup_t {
-    measure_lookup_t lookup;
-    lookup.reserve(measures.entries.size());
-    for (const auto& entry : measures.entries) {
-        lookup.emplace(entry.id.value, &entry);
-    }
-    return lookup;
-}
-
 auto resolve_marker_position_row(const measure_lookup_t& measures, local_position_t position,
                        std::optional<object_id_t> object, diagnostic_list_t& diagnostics)
     -> std::optional<std::uint64_t> {
-    const auto measure = measures.find(position.measure.value);
-    if (measure == measures.end()) {
+    const auto* measure = measures.entry_for(position.measure);
+    if (measure == nullptr) {
         reject(diagnostics, diagnostic_code_t::unknown_measure,
                "marker position refers to an unknown measure", object);
         return std::nullopt;
     }
-    if (position.row >= measure->second->row_capacity) {
+    if (position.row >= measure->row_capacity) {
         reject(diagnostics, diagnostic_code_t::row_out_of_range,
                "marker position lies outside its measure", object);
         return std::nullopt;
     }
-    return measure->second->absolute_begin_row + position.row;
+    return measure->row_of(position.row);
 }
 
 auto valid_direction(marker_navigation_direction_t direction) -> bool {
@@ -456,7 +445,7 @@ auto navigate_markers(const song_document_t& song, std::uint64_t expected_revisi
         return result;
     }
     const auto& measures = std::get<measure_index_t>(built);
-    const auto measure_lookup = build_measure_lookup(measures);
+    const auto measure_lookup = measure_lookup_t::from(measures);
     const auto cursor_row =
         resolve_marker_position_row(measure_lookup, beat_cursor, std::nullopt, result.diagnostics);
     if (!cursor_row.has_value()) {
@@ -533,7 +522,7 @@ auto resolve_section_selection(const song_document_t& song, std::uint64_t expect
         return result;
     }
     const auto& measures = std::get<measure_index_t>(built);
-    const auto measure_lookup = build_measure_lookup(measures);
+    const auto measure_lookup = measure_lookup_t::from(measures);
     const auto begin =
         resolve_marker_position_row(measure_lookup, found->beat_span->begin, section_id, result.diagnostics);
     const auto end =

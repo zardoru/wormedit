@@ -61,18 +61,18 @@ TEST_CASE("measure validation rejects incompatible geometry", "[unit][core][meas
 
 TEST_CASE("default BMSON grid preserves editor rows exactly", "[unit][core][bmson]")
 {
-    const auto grid_960 = make_default_bmson_grid(960);
+    const auto grid_960 = bmson_grid_t::from(960);
     REQUIRE(grid_960);
     CHECK(grid_960->resolution == 240);
     CHECK(grid_960->pulses_per_editor_row == 1);
     CHECK(bmson_pulse_for_row(*grid_960, 721) == 721);
 
-    const auto grid_192 = make_default_bmson_grid(192);
+    const auto grid_192 = bmson_grid_t::from(192);
     REQUIRE(grid_192);
     CHECK(grid_192->resolution == 48);
     CHECK(grid_192->pulses_per_editor_row == 1);
 
-    const auto grid_10 = make_default_bmson_grid(10);
+    const auto grid_10 = bmson_grid_t::from(10);
     REQUIRE(grid_10);
     CHECK(grid_10->resolution == 5);
     CHECK(grid_10->pulses_per_editor_row == 2);
@@ -81,7 +81,7 @@ TEST_CASE("default BMSON grid preserves editor rows exactly", "[unit][core][bmso
 
 TEST_CASE("BMSON mapping rejects invalid grids and overflow", "[unit][core][bmson][negative]")
 {
-    CHECK_FALSE(make_default_bmson_grid(0));
+    CHECK_FALSE(bmson_grid_t::from(0));
     CHECK_FALSE(bmson_pulse_for_row({}, 1));
     CHECK_FALSE(bmson_pulse_for_row(
         {.resolution = 1, .pulses_per_editor_row = 2},

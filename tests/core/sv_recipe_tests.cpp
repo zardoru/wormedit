@@ -433,11 +433,11 @@ TEST_CASE("SV recipe draft previews raw and composed values without mutation, th
 TEST_CASE("applying an SV recipe requires rebinding the workspace before its next frame",
           "[unit][sv-recipe][workspace]") {
     auto history = document_history_t::from(make_recipe_song());
-    auto binding = make_workspace_controller(history);
+    auto binding = workspace_controller_t::from(history);
     REQUIRE(binding.workspace);
     auto workspace = *binding.workspace;
     workspace.active_tab = workspace_tab_t::compose;
-    REQUIRE(make_workspace_view(workspace, history.document));
+    REQUIRE(workspace_view_t::from(workspace, history.document));
 
     auto candidate = make_constant_recipe({}, measure_id_t{11}, measure_id_t{12}, {2, 1});
     auto draft = begin_sv_recipe_draft(history, chart_id_t{10}, candidate);
@@ -445,9 +445,9 @@ TEST_CASE("applying an SV recipe requires rebinding the workspace before its nex
     REQUIRE(preview_sv_recipe_draft(history, draft));
     REQUIRE(apply_sv_recipe_draft(history, draft));
 
-    CHECK_FALSE(make_workspace_view(workspace, history.document));
+    CHECK_FALSE(workspace_view_t::from(workspace, history.document));
     REQUIRE(rebind_workspace(workspace, history));
-    const auto next_frame = make_workspace_view(workspace, history.document);
+    const auto next_frame = workspace_view_t::from(workspace, history.document);
     REQUIRE(next_frame);
     CHECK(next_frame.view->active_tab == workspace_tab_t::compose);
     CHECK(next_frame.view->document_revision == history.document.revision);

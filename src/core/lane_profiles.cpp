@@ -15,6 +15,34 @@
 #include <vector>
 
 namespace wormedit {
+auto bms_channel_map_t::from(std::string_view visible) -> bms_channel_map_t {
+    auto channel = std::string(visible);
+    auto invisible = channel;
+    auto long_note = channel;
+    auto mine = channel;
+    invisible[0] = channel[0] == '1' ? '3' : '4';
+    long_note[0] = channel[0] == '1' ? '5' : '6';
+    mine[0] = channel[0] == '1' ? 'D' : 'E';
+    return {
+        .visible = std::move(channel),
+        .invisible = std::move(invisible),
+        .long_note = std::move(long_note),
+        .mine = std::move(mine),
+    };
+}
+
+auto lane_definition_t::from(std::uint64_t id, std::uint32_t column, stage_group_t stage)
+    -> lane_definition_t {
+    return {
+        .id = lane_id_t{id},
+        .name = "Key " + std::to_string(column + 1),
+        .role = lane_role_t::playable,
+        .stage = stage,
+        .display_order = column,
+        .glyph = lane_glyph_t::bar,
+    };
+}
+
 namespace {
 
 constexpr std::array number_row{
@@ -58,21 +86,10 @@ struct lane_spec_t {
     std::string_view visible_channel;
 };
 
-auto make_bms_channel_map(std::string_view visible) -> bms_channel_map_t {
-    auto channel = std::string(visible);
-    auto invisible = channel;
-    auto long_note = channel;
-    auto mine = channel;
-    invisible[0] = channel[0] == '1' ? '3' : '4';
-    long_note[0] = channel[0] == '1' ? '5' : '6';
-    mine[0] = channel[0] == '1' ? 'D' : 'E';
-    return {
-        .visible = std::move(channel),
-        .invisible = std::move(invisible),
-        .long_note = std::move(long_note),
-        .mine = std::move(mine),
-    };
+[[maybe_unused]] auto make_bms_channel_map(std::string_view visible) -> bms_channel_map_t {
+    return bms_channel_map_t::from(visible);
 }
+
 
 auto lane_name(std::string_view stage_name, std::string_view role) -> std::string {
     std::string name(stage_name);
@@ -96,7 +113,7 @@ auto make_bms_stage(std::uint32_t stage_number, std::span<const lane_spec_t> ord
             .stage = stage,
             .display_order = static_cast<std::uint32_t>(result.size()),
             .glyph = lane_glyph_t::bar,
-            .bms_channels = make_bms_channel_map(spec.visible_channel),
+            .bms_channels = bms_channel_map_t::from(spec.visible_channel),
         });
     }
     return result;
@@ -391,17 +408,11 @@ auto make_bme_14k_profile_impl(scratch_placement_t left_scratch, scratch_placeme
                         std::move(left), std::move(input), true, split_after);
 }
 
-auto make_generic_lane(std::uint64_t id, std::uint32_t column, stage_group_t stage)
+[[maybe_unused]] auto make_generic_lane(std::uint64_t id, std::uint32_t column, stage_group_t stage)
     -> lane_definition_t {
-    return {
-        .id = lane_id_t{id},
-        .name = "Key " + std::to_string(column + 1),
-        .role = lane_role_t::playable,
-        .stage = stage,
-        .display_order = column,
-        .glyph = lane_glyph_t::bar,
-    };
+    return lane_definition_t::from(id, column, stage);
 }
+
 
 } // namespace
 
@@ -853,7 +864,7 @@ auto make_bmson_generic_24k_profile() -> lane_input_profile_t {
     result.input.bindings.reserve(bmson_piano_keys.size());
     for (std::size_t index = 0; index < bmson_piano_keys.size(); ++index) {
         const auto lane =
-            make_generic_lane(index + 1, static_cast<std::uint32_t>(index), stage_group_t::none);
+            lane_definition_t::from(index + 1, static_cast<std::uint32_t>(index), stage_group_t::none);
         result.layout.lanes.push_back(lane);
         result.input.bindings.push_back({.key = bmson_piano_keys[index], .lane = lane.id});
     }
@@ -884,7 +895,7 @@ auto make_bmson_generic_48k_profile() -> lane_input_profile_t {
         const auto stage = index < 24 ? 0U : 1U;
         const auto local_column = static_cast<std::uint32_t>(index % 24);
         const auto lane =
-            make_generic_lane(index + 1, static_cast<std::uint32_t>(index),
+            lane_definition_t::from(index + 1, static_cast<std::uint32_t>(index),
                               stage == 0 ? stage_group_t::left : stage_group_t::right);
         result.layout.lanes.push_back(lane);
         result.input.bindings.push_back({

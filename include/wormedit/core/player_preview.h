@@ -15,6 +15,8 @@
 
 namespace wormedit {
 
+struct player_preview_scene_result_t;
+
 enum class player_preview_skin_t : std::uint8_t {
     neutral,
     mania,
@@ -111,29 +113,6 @@ struct player_preview_hold_geometry_t {
     auto operator==(const player_preview_hold_geometry_t&) const -> bool = default;
 };
 
-struct player_preview_scene_t {
-    chart_id_t chart;
-    std::uint64_t document_revision{};
-    std::uint64_t sample_frame{};
-    signed_rational_t absolute_row;
-    player_preview_skin_t skin{player_preview_skin_t::neutral};
-    player_preview_scroll_direction_t direction{player_preview_scroll_direction_t::toward_top};
-    visual_fit_policy_t visual_fit{visual_fit_policy_t::contain};
-    bool pre_zero{};
-    bool split_stage{};
-    bga_layer_state_t visual_layers;
-    std::optional<video_preview_clock_t> video_clock;
-    std::vector<storyboard_draw_instance_t> storyboard_instances;
-    std::size_t composition_operations{};
-    std::size_t visible_note_count{};
-    std::vector<player_preview_lane_geometry_t> lanes;
-    std::vector<player_preview_receptor_geometry_t> receptors;
-    std::vector<player_preview_hold_geometry_t> hold_bodies;
-    std::vector<player_preview_note_geometry_t> note_endpoints;
-
-    auto operator==(const player_preview_scene_t&) const -> bool = default;
-};
-
 struct player_preview_scene_request_t {
     std::uint64_t sample_frame{};
     std::uint32_t sample_rate{44'100};
@@ -155,6 +134,33 @@ struct player_preview_scene_request_t {
     std::size_t maximum_visible_notes{4'096};
     std::size_t maximum_storyboard_instances{4'096};
     std::size_t maximum_composition_operations{100'000};
+};
+
+struct player_preview_scene_t {
+    [[nodiscard]] static auto from(const player_preview_index_t& index,
+                                   const player_preview_scene_request_t& request = {})
+        -> player_preview_scene_result_t;
+
+    chart_id_t chart;
+    std::uint64_t document_revision{};
+    std::uint64_t sample_frame{};
+    signed_rational_t absolute_row;
+    player_preview_skin_t skin{player_preview_skin_t::neutral};
+    player_preview_scroll_direction_t direction{player_preview_scroll_direction_t::toward_top};
+    visual_fit_policy_t visual_fit{visual_fit_policy_t::contain};
+    bool pre_zero{};
+    bool split_stage{};
+    bga_layer_state_t visual_layers;
+    std::optional<video_preview_clock_t> video_clock;
+    std::vector<storyboard_draw_instance_t> storyboard_instances;
+    std::size_t composition_operations{};
+    std::size_t visible_note_count{};
+    std::vector<player_preview_lane_geometry_t> lanes;
+    std::vector<player_preview_receptor_geometry_t> receptors;
+    std::vector<player_preview_hold_geometry_t> hold_bodies;
+    std::vector<player_preview_note_geometry_t> note_endpoints;
+
+    auto operator==(const player_preview_scene_t&) const -> bool = default;
 };
 
 struct player_preview_scene_result_t {

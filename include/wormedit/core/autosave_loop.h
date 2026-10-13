@@ -11,6 +11,12 @@
 namespace wormedit {
 
 struct native_project_autosave_target_t {
+    [[nodiscard]] static auto from(song_id_t project_id, bool has_native_primary,
+                                   const std::filesystem::path& native_primary_path,
+                                   const std::filesystem::path& platform_recovery_directory,
+                                   std::filesystem::path original_source_path = {})
+        -> native_project_autosave_target_t;
+
     std::filesystem::path backup_path;
     std::filesystem::path original_source_path;
     std::filesystem::path intended_project_path;

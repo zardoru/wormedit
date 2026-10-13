@@ -59,26 +59,17 @@ auto metadata_fits(const song_document_t& song, const metadata_edit_limits_t& li
     return true;
 }
 
-auto format_groups(song_document_t& song, const format_metadata_target_t& target,
-                   diagnostic_list_t& diagnostics) -> std::vector<format_metadata_t>* {
+auto resolve_format_group(song_document_t& song, const format_metadata_target_t& target,
+                   diagnostic_list_t& diagnostics) -> format_metadata_t* {
     if (!target.chart)
-        return &song.metadata.format_groups;
+        return &song.metadata.format_group_for(target.family);
     const auto chart = song.find_chart(*target.chart);
     if (chart == nullptr) {
         diagnostics.push_back(
             error(diagnostic_code_t::invalid_id, "metadata edit refers to an unknown difficulty"));
         return nullptr;
     }
-    return &chart->metadata.format_groups;
-}
-
-auto find_or_append_group(std::vector<format_metadata_t>& groups, format_family_t family)
-    -> format_metadata_t& {
-    const auto found = std::ranges::find(groups, family, &format_metadata_t::family);
-    if (found != groups.end())
-        return *found;
-    groups.push_back({.family = family});
-    return groups.back();
+    return &chart->metadata.format_group_for(target.family);
 }
 
 struct mirrored_source_field_t {
@@ -288,9 +279,9 @@ auto apply_metadata_field(metadata_edit_context_t& context, format_metadata_t& g
 
 template <typename Edit>
 auto apply_format_metadata_action(metadata_edit_context_t& context, const Edit& edit) -> void {
-    auto* groups = format_groups(context.proposed, edit.target, context.result.diagnostics);
+    auto* groups = resolve_format_group(context.proposed, edit.target, context.result.diagnostics);
     if (!groups) return;
-    auto& group = find_or_append_group(*groups, edit.target.family);
+    auto& group = *groups;
     apply_metadata_field(context, group, edit);
 }
 
@@ -384,9 +375,8 @@ auto parse_metadata_rating(std::string_view numerator, std::string_view denomina
     return signed_rational_t{parsed_numerator, parsed_denominator};
 }
 
-auto make_chart_rating_metadata_edit(chart_id_t chart, bool unset, std::string_view numerator,
-                                     std::string_view denominator)
-    -> std::optional<chart_rating_edit_t> {
+auto chart_rating_edit_t::from(chart_id_t chart, bool unset, std::string_view numerator,
+                               std::string_view denominator) -> std::optional<chart_rating_edit_t> {
     if (!chart)
         return std::nullopt;
     if (unset)
@@ -460,6 +450,13 @@ auto apply_metadata_edit(document_history_t& history, std::uint64_t expected_rev
         return result;
     }
     return transaction.commit("Edit metadata");
+}
+
+// Compatibility for the sys/ui migration wave.
+auto make_chart_rating_metadata_edit(chart_id_t chart, bool unset, std::string_view numerator,
+                                     std::string_view denominator)
+    -> std::optional<chart_rating_edit_t> {
+    return chart_rating_edit_t::from(chart, unset, numerator, denominator);
 }
 
 } // namespace wormedit

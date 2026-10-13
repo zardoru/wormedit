@@ -61,6 +61,9 @@ struct measure_validation_t {
 };
 
 struct bmson_grid_t {
+    [[nodiscard]] static auto from(std::uint64_t divisions_per_standard_measure)
+        -> std::optional<bmson_grid_t>;
+
     std::uint64_t resolution{};
     std::uint64_t pulses_per_editor_row{};
 };

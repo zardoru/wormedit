@@ -511,7 +511,7 @@ TEST_CASE("preview bridge assist source phase maps through music origin and roun
     auto transport = transport_for(cache);
     preview_transport_bridge_t bridge{transport};
     auto chart = schedule();
-    chart.music = make_preview_music_event(resource_id_t{1}, 100'000);
+    chart.music = preview_schedule_t::music_event_t::from(resource_id_t{1}, 100'000);
     chart.music->sample_frame = 500;
     chart.music->source_start_frame = 2'000;
     const auto clicks = assist_bindings();
@@ -628,7 +628,7 @@ TEST_CASE("preview bridge assist excludes music EOF and cannot extend completed 
     auto transport = transport_for(cache);
     preview_transport_bridge_t bridge{transport};
     auto chart = schedule();
-    chart.music = make_preview_music_event(resource_id_t{1}, 22'050);
+    chart.music = preview_schedule_t::music_event_t::from(resource_id_t{1}, 22'050);
     const auto clicks = assist_bindings();
     const auto started = bridge.start(chart, {}, clicks);
     require_metronome(static_cast<bool>(started));

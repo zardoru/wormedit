@@ -11,7 +11,7 @@ TEST_CASE("visual image layout makes stretch contain and cover policy explicit",
     const visual_destination_rect_t destination{
         .left = 10.0, .top = 20.0, .width = 300.0, .height = 300.0};
 
-    const auto stretch = make_visual_image_layout({.source_width = 400,
+    const auto stretch = visual_image_layout_t::from({.source_width = 400,
                                                    .source_height = 200,
                                                    .destination = destination,
                                                    .fit = visual_fit_policy_t::stretch});
@@ -19,7 +19,7 @@ TEST_CASE("visual image layout makes stretch contain and cover policy explicit",
     CHECK(stretch->destination == destination);
     CHECK(stretch->source == visual_source_rect_t{0, 0, 400, 200});
 
-    const auto contain = make_visual_image_layout({.source_width = 400,
+    const auto contain = visual_image_layout_t::from({.source_width = 400,
                                                    .source_height = 200,
                                                    .destination = destination,
                                                    .fit = visual_fit_policy_t::contain});
@@ -30,7 +30,7 @@ TEST_CASE("visual image layout makes stretch contain and cover policy explicit",
     CHECK(contain->destination.height == Catch::Approx(150.0));
     CHECK(contain->source == visual_source_rect_t{0, 0, 400, 200});
 
-    const auto cover = make_visual_image_layout({.source_width = 400,
+    const auto cover = visual_image_layout_t::from({.source_width = 400,
                                                  .source_height = 200,
                                                  .destination = destination,
                                                  .fit = visual_fit_policy_t::cover});
@@ -43,7 +43,7 @@ TEST_CASE("visual cover layout center-crops portrait and odd-sized sources deter
           "[unit][core][visual-layout]") {
     using namespace wormedit;
     const auto portrait =
-        make_visual_image_layout({.source_width = 200,
+        visual_image_layout_t::from({.source_width = 200,
                                   .source_height = 401,
                                   .destination = {.width = 100.0, .height = 100.0},
                                   .fit = visual_fit_policy_t::cover});
@@ -51,7 +51,7 @@ TEST_CASE("visual cover layout center-crops portrait and odd-sized sources deter
     CHECK(portrait->source == visual_source_rect_t{0, 100, 200, 200});
 
     const auto landscape =
-        make_visual_image_layout({.source_width = 401,
+        visual_image_layout_t::from({.source_width = 401,
                                   .source_height = 200,
                                   .destination = {.width = 100.0, .height = 100.0},
                                   .fit = visual_fit_policy_t::cover});
@@ -62,16 +62,16 @@ TEST_CASE("visual cover layout center-crops portrait and odd-sized sources deter
 TEST_CASE("visual image layout rejects invalid source destination and policy",
           "[unit][core][visual-layout][negative]") {
     using namespace wormedit;
-    CHECK_FALSE(make_visual_image_layout(
+    CHECK_FALSE(visual_image_layout_t::from(
         {.source_width = 0, .source_height = 1, .destination = {.width = 1, .height = 1}}));
-    CHECK_FALSE(make_visual_image_layout(
+    CHECK_FALSE(visual_image_layout_t::from(
         {.source_width = 1, .source_height = 1, .destination = {.width = 0, .height = 1}}));
-    CHECK_FALSE(make_visual_image_layout(
+    CHECK_FALSE(visual_image_layout_t::from(
         {.source_width = 1,
          .source_height = 1,
          .destination = {
              .left = std::numeric_limits<double>::quiet_NaN(), .width = 1, .height = 1}}));
-    CHECK_FALSE(make_visual_image_layout({.source_width = 1,
+    CHECK_FALSE(visual_image_layout_t::from({.source_width = 1,
                                           .source_height = 1,
                                           .destination = {.width = 1, .height = 1},
                                           .fit = static_cast<visual_fit_policy_t>(255)}));
@@ -81,7 +81,7 @@ TEST_CASE("visual image quad rotates about its origin and preserves signed flips
           "[unit][core][visual-layout][storyboard]") {
     using namespace wormedit;
     constexpr auto half_pi = 1.57079632679489661923;
-    const auto rotated = make_visual_image_quad(
+    const auto rotated = visual_image_quad_t::from(
         {.source_width = 20,
          .source_height = 10,
          .destination = {.left = 10.0, .top = 20.0, .width = 640.0, .height = 480.0},
@@ -100,7 +100,7 @@ TEST_CASE("visual image quad rotates about its origin and preserves signed flips
     CHECK(rotated->points[3].x == Catch::Approx(105.0));
     CHECK(rotated->points[3].y == Catch::Approx(60.0));
 
-    const auto flipped = make_visual_image_quad({.source_width = 20,
+    const auto flipped = visual_image_quad_t::from({.source_width = 20,
                                                  .source_height = 10,
                                                  .destination = {.width = 320.0, .height = 240.0},
                                                  .x = 100.0,
@@ -121,20 +121,20 @@ TEST_CASE("visual image quad rotates about its origin and preserves signed flips
 TEST_CASE("visual image quad rejects invalid canvas transforms",
           "[unit][core][visual-layout][storyboard][negative]") {
     using namespace wormedit;
-    CHECK_FALSE(make_visual_image_quad({.source_width = 1,
+    CHECK_FALSE(visual_image_quad_t::from({.source_width = 1,
                                         .source_height = 1,
                                         .destination = {.width = 1, .height = 1},
                                         .logical_width = 0.0}));
-    CHECK_FALSE(make_visual_image_quad({.source_width = 1,
+    CHECK_FALSE(visual_image_quad_t::from({.source_width = 1,
                                         .source_height = 1,
                                         .destination = {.width = 1, .height = 1},
                                         .origin_x = 2.0}));
-    CHECK_FALSE(make_visual_image_quad({.source_width = 1,
+    CHECK_FALSE(visual_image_quad_t::from({.source_width = 1,
                                         .source_height = 1,
                                         .destination = {.width = 1, .height = 1},
                                         .scale_y = 0.0}));
     CHECK_FALSE(
-        make_visual_image_quad({.source_width = 1,
+        visual_image_quad_t::from({.source_width = 1,
                                 .source_height = 1,
                                 .destination = {.width = 1, .height = 1},
                                 .rotation_radians = std::numeric_limits<double>::infinity()}));

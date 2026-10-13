@@ -12,6 +12,9 @@
 
 namespace wormedit {
 
+struct workspace_bind_result_t;
+struct workspace_view_result_t;
+
 // UI-independent tabs for the song workspace. Storyboard is intentionally
 // present in the navigation model while its editor is not implemented yet.
 enum class workspace_tab_t : std::uint8_t {
@@ -78,6 +81,13 @@ struct workspace_history_summary_t {
 };
 
 struct workspace_controller_t {
+    [[nodiscard]] static auto from(const song_document_t& document,
+                                   const workspace_limits_t& limits = {})
+        -> workspace_bind_result_t;
+    [[nodiscard]] static auto from(const document_history_t& history,
+                                   const workspace_limits_t& limits = {})
+        -> workspace_bind_result_t;
+
     song_id_t song;
     std::uint64_t document_revision{};
     workspace_tab_t active_tab{workspace_tab_t::setup};
@@ -164,6 +174,8 @@ apply_workspace_action(workspace_controller_t& workspace, const song_document_t&
                                     const document_history_t& history) -> workspace_action_result_t;
 
 struct workspace_chart_option_t {
+    [[nodiscard]] static auto from(const chart_document_t& chart) -> workspace_chart_option_t;
+
     chart_id_t id;
     std::string difficulty_name;
     std::optional<signed_rational_t> rating;
@@ -234,6 +246,9 @@ struct workspace_bms_branch_choice_t {
 };
 
 struct workspace_bms_branch_outline_t {
+    [[nodiscard]] static auto from(const chart_document_t& chart, const workspace_limits_t& limits)
+        -> workspace_bms_branch_outline_t;
+
     bool available{};
     bool rows_truncated{};
     bool choices_truncated{};
@@ -307,6 +322,15 @@ using workspace_tab_view_t =
                  workspace_audio_slices_view_t, workspace_compare_validate_view_t>;
 
 struct workspace_view_t {
+    [[nodiscard]] static auto from(const workspace_controller_t& workspace,
+                                   const song_document_t& document) -> workspace_view_result_t;
+    [[nodiscard]] static auto from(const workspace_controller_t& workspace,
+                                   const song_document_t& document, workspace_tab_t tab,
+                                   const diagnostic_list_t* cached_diagnostics = nullptr,
+                                   workspace_bms_branch_outline_cache_t* branch_cache = nullptr,
+                                   workspace_binding_validation_cache_t* binding_cache = nullptr)
+        -> workspace_view_result_t;
+
     song_id_t song;
     std::uint64_t document_revision{};
     workspace_tab_t active_tab{workspace_tab_t::setup};

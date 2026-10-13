@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <limits>
 #include <memory>
@@ -876,3 +877,89 @@ static_assert(std::is_aggregate_v<song_document_t>);
 static_assert(std::is_aggregate_v<chart_document_t>);
 static_assert(std::is_aggregate_v<lane_layout_t>);
 static_assert(std::is_aggregate_v<lane_definition_t>);
+static_assert(std::is_aggregate_v<bms_channel_map_t>);
+static_assert(std::is_aggregate_v<measure_index_entry_t>);
+static_assert(std::is_aggregate_v<measure_index_t>);
+static_assert(std::is_aggregate_v<measure_lookup_t>);
+static_assert(std::is_aggregate_v<chart_metadata_t>);
+static_assert(std::is_aggregate_v<song_metadata_t>);
+
+TEST_CASE("Measure row owners agree at shortened measure boundaries",
+          "[unit][core][document][measure-lookup]") {
+    const measure_index_t index{
+        .entries = {{measure_id_t{1}, 0, 960}, {measure_id_t{2}, 960, 480}},
+        .total_rows = 1440};
+    const auto lookup = measure_lookup_t::from(index);
+    for (const auto row : std::array<std::uint64_t, 4>{0, 959, 960, 1439}) {
+        const auto position = index.position_at(row);
+        REQUIRE(position);
+        check_owner_query(index.row_of(*position) == row);
+        check_owner_query(lookup.row_of(*position) == row);
+        check_owner_query(absolute_row(index, *position) == row);
+    }
+    check_owner_query(index.entry_for(measure_id_t{2}) == &index.entries.back());
+    check_owner_query(lookup.entry_for(measure_id_t{2}) == &index.entries.back());
+    check_owner_query(!index.row_of({measure_id_t{2}, 480}));
+    check_owner_query(!lookup.row_of({measure_id_t{2}, 480}));
+    check_owner_query(!index.position_at(index.total_rows));
+}
+
+TEST_CASE("Measure chart end requires an explicit policy",
+          "[unit][core][document][measure-lookup]") {
+    const measure_index_t index{
+        .entries = {{measure_id_t{1}, 0, 960}, {measure_id_t{2}, 960, 480}},
+        .total_rows = 1440};
+    const auto lookup = measure_lookup_t::from(index);
+    const local_position_t end{measure_id_t{2}, 480};
+    const auto policy = measure_chart_end_policy_t::allow;
+    check_owner_query(index.position_at(index.total_rows, policy) == end);
+    check_owner_query(index.row_of(end, policy) == index.total_rows);
+    check_owner_query(lookup.row_of(end, policy) == index.total_rows);
+    check_owner_query(!index.row_of({measure_id_t{1}, 960}, policy));
+    check_owner_query(!lookup.row_of({measure_id_t{9}, 480}, policy));
+    check_owner_query(!index.position_at(index.total_rows + 1, policy));
+}
+
+TEST_CASE("Measure lookup retains the first duplicate identity and its bucket",
+          "[unit][core][document][measure-lookup]") {
+    const measure_index_t index{
+        .entries = {{measure_id_t{7}, 0, 960}, {measure_id_t{7}, 960, 480}},
+        .total_rows = 1440};
+    const auto lookup = measure_lookup_t::from(index);
+    check_owner_query(lookup.entry_for(measure_id_t{7}) == &index.entries.front());
+    check_owner_query(index.entry_for(measure_id_t{7}) == &index.entries.front());
+    check_owner_query(lookup.bucket_for(measure_id_t{7}) == 0);
+    check_owner_query(lookup.row_of({measure_id_t{7}, 479}) == 479);
+    check_owner_query(!lookup.row_of({measure_id_t{7}, 960}));
+    check_owner_query(!lookup.bucket_for(measure_id_t{9}));
+}
+
+TEST_CASE("Measure row owners retain checked addition without an extra total-row bound",
+          "[unit][core][document][measure-lookup]") {
+    constexpr auto maximum = std::numeric_limits<std::uint64_t>::max();
+    const measure_index_t index{
+        .entries = {{measure_id_t{1}, maximum - 1, 4}}, .total_rows = maximum};
+    const auto lookup = measure_lookup_t::from(index);
+    check_owner_query(!index.entries.front().row_of(2));
+    check_owner_query(!index.row_of({measure_id_t{1}, 2}));
+    check_owner_query(!lookup.row_of({measure_id_t{1}, 2}));
+    check_owner_query(!absolute_row(index, {measure_id_t{1}, 2}));
+    check_owner_query(index.row_of({measure_id_t{1}, 1}) == maximum);
+    check_owner_query(lookup.row_of({measure_id_t{1}, 1}) == maximum);
+}
+
+TEST_CASE("Empty and default measure lookups reject every position",
+          "[unit][core][document][measure-lookup]") {
+    const measure_index_t index;
+    const auto lookup = measure_lookup_t::from(index);
+    const measure_lookup_t unbound;
+    for (const auto policy : {measure_chart_end_policy_t::reject,
+                             measure_chart_end_policy_t::allow}) {
+        check_owner_query(!index.position_at(0, policy));
+        check_owner_query(!index.row_of({measure_id_t{1}, 0}, policy));
+        check_owner_query(!lookup.row_of({measure_id_t{1}, 0}, policy));
+        check_owner_query(!unbound.row_of({measure_id_t{1}, 0}, policy));
+    }
+    check_owner_query(lookup.entry_for(measure_id_t{1}) == nullptr);
+    check_owner_query(!lookup.bucket_for(measure_id_t{1}));
+}

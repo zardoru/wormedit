@@ -74,6 +74,8 @@ struct external_player_definition_t {
     auto operator==(const external_player_definition_t&) const -> bool = default;
 };
 struct external_player_preferences_t {
+    [[nodiscard]] static auto with_defaults() -> external_player_preferences_t;
+
     std::vector<external_player_definition_t> players;
     std::size_t selected{};
     auto operator==(const external_player_preferences_t&) const -> bool = default;
@@ -88,11 +90,13 @@ struct layout_preferences_t {
     auto operator==(const layout_preferences_t&) const -> bool = default;
 };
 struct program_preferences_t {
+    [[nodiscard]] static auto with_defaults() -> program_preferences_t;
+
     general_preferences_t general;
     editor_preferences_t editor;
     audio_preferences_t audio;
     display_preferences_t display;
-    external_player_preferences_t players{default_external_player_preferences()};
+    external_player_preferences_t players{external_player_preferences_t::with_defaults()};
     minimap_preferences_t minimap;
     layout_preferences_t layout;
     auto operator==(const program_preferences_t&) const -> bool = default;

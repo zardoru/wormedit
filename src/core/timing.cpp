@@ -1629,7 +1629,8 @@ auto sample_frame_at(signed_rational_t seconds, std::uint32_t sample_rate,
     return {.frame = frame};
 }
 
-auto make_preview_music_event(resource_id_t resource, std::uint64_t music_frame_count)
+auto preview_schedule_t::music_event_t::from(resource_id_t resource,
+                                             std::uint64_t music_frame_count)
     -> std::optional<preview_schedule_t::music_event_t> {
     if (!resource || music_frame_count == 0) return std::nullopt;
     return preview_schedule_t::music_event_t{resource, 0, 0, music_frame_count};
@@ -2580,33 +2581,12 @@ struct preview_metronome_context_t {
     std::vector<timing_diagnostic_t>& diagnostics;
 };
 
-struct preview_row_lookup_t {
-    std::unordered_map<std::uint64_t, const measure_index_entry_t*> entries;
-
-    explicit preview_row_lookup_t(const measure_index_t& measures) {
-        entries.reserve(measures.entries.size());
-        for (const auto& entry : measures.entries) {
-            entries.emplace(entry.id.value, &entry);
-        }
-    }
-
-    auto row_for(local_position_t position) const -> std::optional<std::uint64_t> {
-        const auto entry = entries.find(position.measure.value);
-        if (entry == entries.end() || position.row >= entry->second->row_capacity ||
-            position.row >
-                std::numeric_limits<std::uint64_t>::max() - entry->second->absolute_begin_row) {
-            return std::nullopt;
-        }
-        return entry->second->absolute_begin_row + position.row;
-    }
-};
-
 struct preview_event_context_t {
     const chart_document_t& chart;
     const timing_index_t& timing;
     const preview_schedule_options_t& options;
     const preview_input_counts_t& counts;
-    const preview_row_lookup_t& rows;
+    const wormedit::measure_lookup_t& rows;
     preview_schedule_t& schedule;
     std::vector<timing_diagnostic_t>& diagnostics;
 };
@@ -2619,7 +2599,7 @@ auto append_preview_note(preview_event_context_t& context, const note_t& note) -
          !context.counts.canonical_linked_playable_ids.contains(note.id.value))) {
         return true;
     }
-    const auto frame = position_frame(context.timing, context.rows.row_for(note.position),
+    const auto frame = position_frame(context.timing, context.rows.row_of(note.position),
                                       context.options, context.diagnostics, note.id);
     if (!frame) {
         return true;
@@ -2642,7 +2622,7 @@ auto append_preview_bgm(preview_event_context_t& context, const bgm_event_t& bgm
     if (!bgm.sound) {
         return true;
     }
-    const auto frame = position_frame(context.timing, context.rows.row_for(bgm.position),
+    const auto frame = position_frame(context.timing, context.rows.row_of(bgm.position),
                                       context.options, context.diagnostics, bgm.id);
     if (!frame) {
         return true;
@@ -2666,7 +2646,7 @@ auto append_preview_bgm(preview_event_context_t& context, const bgm_event_t& bgm
 }
 
 auto append_preview_bga(preview_event_context_t& context, const bga_event_t& bga) -> bool {
-    const auto frame = position_frame(context.timing, context.rows.row_for(bga.position),
+    const auto frame = position_frame(context.timing, context.rows.row_of(bga.position),
                                       context.options, context.diagnostics, bga.id);
     if (!frame) {
         return true;
@@ -2715,7 +2695,7 @@ auto append_layer_tick(preview_event_context_t& context, local_position_t positi
             "layer assist tick queue exceeds its configured cap", object));
         return false;
     }
-    const auto frame = position_frame(context.timing, context.rows.row_for(position),
+    const auto frame = position_frame(context.timing, context.rows.row_of(position),
                                       context.options, context.diagnostics, object);
     if (frame) context.schedule.layer_ticks.push_back({*frame, layers});
     return true;
@@ -2931,7 +2911,7 @@ struct preview_discontinuity_context_t {
     const chart_document_t& chart;
     const timing_index_t& timing;
     const preview_schedule_options_t& options;
-    const preview_row_lookup_t& rows;
+    const wormedit::measure_lookup_t& rows;
     preview_schedule_t& schedule;
     std::vector<timing_diagnostic_t>& diagnostics;
 };
@@ -2947,7 +2927,7 @@ struct preview_timing_marker_t {
 auto append_timing_marker(preview_discontinuity_context_t& context, preview_timing_marker_t marker)
     -> void {
     const auto frame =
-        boundary_frame(context.timing, context.rows.row_for(marker.position), marker.side,
+        boundary_frame(context.timing, context.rows.row_of(marker.position), marker.side,
                        context.options, context.diagnostics, marker.object);
     if (frame) {
         context.schedule.discontinuities.push_back({.sample_frame = *frame,
@@ -2969,7 +2949,7 @@ auto append_chart_timing_markers(preview_discontinuity_context_t& context) -> vo
                                        preview_discontinuity_kind_t::bpm, side});
     }
     for (const auto& pause : context.chart.pauses) {
-        const auto row = context.rows.row_for(pause.position);
+        const auto row = context.rows.row_of(pause.position);
         const auto row_state = row ? std::ranges::lower_bound(context.timing.rows, *row, {},
                                                               &timing_row_state_t::absolute_row)
                                    : context.timing.rows.end();
@@ -3041,7 +3021,7 @@ auto build_preview_schedule(const chart_document_t& chart, const timing_index_t&
     schedule.playable.reserve(input_counts.playable);
     schedule.bgm.reserve(input_counts.bgm);
     schedule.bga.reserve(std::min(chart.bga_events.size(), options.maximum_bga_events));
-    const auto row_lookup = preview_row_lookup_t{measures};
+    const auto row_lookup = wormedit::measure_lookup_t::from(measures);
 
     auto event_context = preview_event_context_t{
         chart, timing, options, input_counts, row_lookup, schedule, result.diagnostics};
@@ -3140,7 +3120,6 @@ auto build_preview_schedule(const chart_document_t& chart, const timing_index_t&
     result.schedule = std::move(schedule);
     return result;
 }
-
 
 auto timing_index_t::seconds_at(std::uint64_t row, timing_boundary_side_t side) const
     -> timing_query_result_t { return timing_at(*this, row, side); }
@@ -3333,4 +3312,10 @@ auto timing_index_t::row_at_frame(std::uint64_t frame, std::uint32_t sample_rate
         rows.back().after_stops_seconds.numerator < 0) return std::nullopt;
     return row_at_approx({static_cast<std::int64_t>(frame), sample_rate}, policy, options);
 }
+// Compatibility for the sys/ui migration wave.
+auto make_preview_music_event(resource_id_t resource, std::uint64_t music_frame_count)
+    -> std::optional<preview_schedule_t::music_event_t> {
+    return preview_schedule_t::music_event_t::from(resource, music_frame_count);
+}
+
 } // namespace wormedit

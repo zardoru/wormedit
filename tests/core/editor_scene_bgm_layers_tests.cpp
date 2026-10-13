@@ -71,7 +71,7 @@ auto scene_index(const chart_document_t& chart) -> editor_field_scene_index_t {
 
 auto make_state(document_history_t& history) -> editor_interaction_state_t {
     constexpr std::array snaps{std::uint64_t{4}};
-    auto result = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+    auto result = editor_interaction_state_t::from(history, chart_id_t{1}, lane_id_t{1},
                                           {measure_id_t{1}, 0}, snaps, 4);
     REQUIRE(result);
     return std::move(*result.state);

@@ -219,7 +219,7 @@ void read_display_minimap_layout(preference_reader_t& reader, const json_t& root
 
 auto read_player(preference_reader_t& reader, const json_t& item, std::size_t index)
     -> external_player_definition_t {
-    const auto defaults = default_external_player_preferences();
+    const auto defaults = external_player_preferences_t::with_defaults();
     auto value = index < defaults.players.size() ? defaults.players[index]
         : external_player_definition_t{"New player", "", "\"<filename>\"", "-s <measure> \"<filename>\"", "-t"};
     if (!item.is_object()) { reader.warn("Invalid player entry; defaults retained."); return value; }
@@ -286,7 +286,7 @@ auto preferences_json(const program_preferences_t& value) -> json_t {
 }
 } // namespace
 
-auto default_external_player_preferences() -> external_player_preferences_t {
+auto external_player_preferences_t::with_defaults() -> external_player_preferences_t {
     return {.players = {
         {"mBMplay", "", "\"<filename>\"", "-s <measure> \"<filename>\"", "-t"},
         {"uBMplay", "", "-P -N0 \"<filename>\"", "-P -N<measure> \"<filename>\"", "-S"},
@@ -308,7 +308,7 @@ auto valid_field_scheme_overrides(const display_preferences_t& display) -> bool 
     });
 }
 
-auto default_program_preferences() -> program_preferences_t { return {}; }
+auto program_preferences_t::with_defaults() -> program_preferences_t { return {}; }
 auto valid_external_player_preferences(const external_player_preferences_t& value) -> bool {
     if (value.players.empty() || value.players.size() > maximum_external_players || value.selected >= value.players.size())
         return false;
@@ -319,7 +319,7 @@ auto valid_external_player_preferences(const external_player_preferences_t& valu
 }
 
 auto parse_program_preferences(std::string_view bytes) -> preferences_parse_result_t {
-    preferences_parse_result_t result{.preferences = default_program_preferences()};
+    preferences_parse_result_t result{.preferences = program_preferences_t::with_defaults()};
     if (bytes.size() > maximum_preferences_bytes) {
         result.warnings.push_back("Preferences exceed the 1 MiB limit; defaults retained."); return result;
     }
@@ -342,7 +342,7 @@ auto parse_program_preferences(std::string_view bytes) -> preferences_parse_resu
         if (reader.unknown) reader.warn("Unknown preference keys were ignored.");
         result.parsed = true;
     } catch (const std::exception&) {
-        result.preferences = default_program_preferences();
+        result.preferences = program_preferences_t::with_defaults();
         result.warnings = {"Preferences are corrupt, unsupported, or exceed limits; defaults retained."};
     }
     return result;
@@ -358,7 +358,7 @@ auto serialize_program_preferences(const program_preferences_t& value) -> std::o
 }
 
 auto load_program_preferences(const std::filesystem::path& path) -> preferences_load_result_t {
-    preferences_load_result_t result{.contents = {.preferences = default_program_preferences()}};
+    preferences_load_result_t result{.contents = {.preferences = program_preferences_t::with_defaults()}};
     std::error_code error;
     const auto status = std::filesystem::status(path, error);
     if (error == std::errc::no_such_file_or_directory || status.type() == std::filesystem::file_type::not_found) {
@@ -437,4 +437,14 @@ auto load_program_preferences_for_startup(const std::filesystem::path& path,
     if (!saved) result.contents.warnings.push_back("Preferences could not be saved: " + saved.error);
     return result;
 }
+// Compatibility for the sys/ui migration wave.
+auto default_external_player_preferences() -> external_player_preferences_t {
+    return external_player_preferences_t::with_defaults();
+}
+
+// Compatibility for the sys/ui migration wave.
+auto default_program_preferences() -> program_preferences_t {
+    return program_preferences_t::with_defaults();
+}
+
 } // namespace wormedit

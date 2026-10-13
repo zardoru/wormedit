@@ -12,6 +12,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 
@@ -174,6 +175,8 @@ struct midi_destination_t {
 };
 
 struct bms_channel_map_t {
+    [[nodiscard]] static auto from(std::string_view visible) -> bms_channel_map_t;
+
     std::optional<std::string> visible;
     std::optional<std::string> invisible;
     std::optional<std::string> long_note;
@@ -198,6 +201,9 @@ enum class lane_key_color_t {
 };
 
 struct lane_definition_t {
+    [[nodiscard]] static auto from(std::uint64_t id, std::uint32_t column, stage_group_t stage)
+        -> lane_definition_t;
+
     lane_id_t id;
     std::string name;
     lane_role_t role{lane_role_t::playable};
@@ -812,6 +818,8 @@ struct chart_metadata_t {
     std::string author;
     std::optional<signed_rational_t> rating;
     std::vector<format_metadata_t> format_groups;
+
+    [[nodiscard]] auto format_group_for(format_family_t family) -> format_metadata_t&;
 };
 
 // Layers a sound receives when it is painted onto this chart. Layer IDs are
@@ -911,6 +919,8 @@ struct song_metadata_t {
     std::string artist;
     std::vector<std::string> ordered_search_tags;
     std::vector<format_metadata_t> format_groups;
+
+    [[nodiscard]] auto format_group_for(format_family_t family) -> format_metadata_t&;
 };
 
 enum class quantization_space_t {
@@ -1084,11 +1094,39 @@ struct measure_index_entry_t {
     measure_id_t id;
     std::uint64_t absolute_begin_row{};
     std::uint64_t row_capacity{};
+
+    [[nodiscard]] auto row_of(std::uint64_t local_row) const
+        -> std::optional<std::uint64_t>;
 };
+
+enum class measure_chart_end_policy_t { reject, allow };
 
 struct measure_index_t {
     std::vector<measure_index_entry_t> entries;
     std::uint64_t total_rows{};
+
+    [[nodiscard]] auto entry_for(measure_id_t id) const -> const measure_index_entry_t*;
+    [[nodiscard]] auto row_of(local_position_t position,
+        measure_chart_end_policy_t chart_end = measure_chart_end_policy_t::reject) const
+        -> std::optional<std::uint64_t>;
+    [[nodiscard]] auto position_at(std::uint64_t row,
+        measure_chart_end_policy_t chart_end = measure_chart_end_policy_t::reject) const
+        -> std::optional<local_position_t>;
+};
+
+// Call-local acceleration only at sites that already build a map. Borrows an
+// index whose entries must remain alive and unchanged for the lookup's lifetime.
+// Duplicate IDs retain their first entry, as the existing private maps do.
+struct measure_lookup_t {
+    const measure_index_t* index{};
+    std::unordered_map<std::uint64_t, std::size_t> entry_indices;
+
+    [[nodiscard]] static auto from(const measure_index_t& index) -> measure_lookup_t;
+    [[nodiscard]] auto bucket_for(measure_id_t id) const -> std::optional<std::size_t>;
+    [[nodiscard]] auto entry_for(measure_id_t id) const -> const measure_index_entry_t*;
+    [[nodiscard]] auto row_of(local_position_t position,
+        measure_chart_end_policy_t chart_end = measure_chart_end_policy_t::reject) const
+        -> std::optional<std::uint64_t>;
 };
 
 enum class position_role_t {

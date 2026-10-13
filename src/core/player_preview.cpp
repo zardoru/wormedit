@@ -367,8 +367,8 @@ auto build_player_preview_index(const chart_document_t& chart, std::uint64_t doc
     return result;
 }
 
-auto make_player_preview_scene(const player_preview_index_t& index,
-                               const player_preview_scene_request_t& request)
+auto player_preview_scene_t::from(const player_preview_index_t& index,
+                                  const player_preview_scene_request_t& request)
     -> player_preview_scene_result_t {
     player_preview_scene_result_t result;
     if (!valid_scene_request(index, request)) {
@@ -511,6 +511,13 @@ auto make_player_preview_scene(const player_preview_index_t& index,
     scene.visible_note_count = render_context.visible_notes;
     result.scene = std::move(scene);
     return result;
+}
+
+// Compatibility for the sys/ui migration wave.
+auto make_player_preview_scene(const player_preview_index_t& index,
+                               const player_preview_scene_request_t& request)
+    -> player_preview_scene_result_t {
+    return player_preview_scene_t::from(index, request);
 }
 
 } // namespace wormedit

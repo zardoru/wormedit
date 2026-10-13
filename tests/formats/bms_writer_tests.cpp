@@ -155,7 +155,7 @@ TEST_CASE("virtual BMS #999 remains sparse until an edit and round-trips its mea
 
     auto history = wormedit::document_history_t::from(std::move(*imported.song));
     constexpr std::array snaps{std::uint64_t{4}};
-    auto setup = wormedit::make_editor_interaction(
+    auto setup = wormedit::editor_interaction_state_t::from(
         history, history.document.charts.front().id, lane,
         {history.document.charts.front().measures.front().id, 0}, snaps, 4);
     REQUIRE(setup);
@@ -620,7 +620,7 @@ TEST_CASE("Deleting a selected imported BGM event updates repeated BMS channel l
     const auto retained = chart.measures.front().bgm_events.back().id;
     const auto lane = chart.lane_layouts.front().layout.lanes.front().id;
     const std::array snaps{std::uint64_t{1}};
-    const auto setup = wormedit::make_editor_interaction(
+    const auto setup = wormedit::editor_interaction_state_t::from(
         history, chart.id, lane, {chart.measures.front().id, 0}, snaps, 1);
     REQUIRE(setup);
     auto state = *setup.state;
@@ -2473,7 +2473,7 @@ auto export_after_far_edit(const std::string& source) -> wormedit::bms_write_res
     REQUIRE(far_measure.notes.size() == 3);
     const auto lane = chart.lane_layouts.front().layout.lanes.front().id;
     const std::array snaps{std::uint64_t{1}};
-    const auto setup = wormedit::make_editor_interaction(
+    const auto setup = wormedit::editor_interaction_state_t::from(
         history, chart.id, lane, {far_measure.id, 0}, snaps, 1);
     REQUIRE(setup);
     auto state = *setup.state;

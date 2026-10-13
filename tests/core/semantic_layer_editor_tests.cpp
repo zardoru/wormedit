@@ -152,26 +152,26 @@ TEST_CASE("semantic-layer palette windows page visible layers and reveal a hidde
         });
     }
 
-    const auto first = make_semantic_layer_palette_window(chart, std::nullopt, 0, false, 4);
+    const auto first = semantic_layer_palette_window_t::from(chart, std::nullopt, 0, false, 4);
     REQUIRE(first);
     CHECK(first->page == 0);
     CHECK(first->page_count == 3);
     CHECK(first->total_count == 11);
     CHECK(first->layer_indices == std::vector<std::size_t>{0, 1, 2, 3});
 
-    const auto clamped = make_semantic_layer_palette_window(chart, std::nullopt, 99, false, 4);
+    const auto clamped = semantic_layer_palette_window_t::from(chart, std::nullopt, 99, false, 4);
     REQUIRE(clamped);
     CHECK(clamped->page == 2);
     CHECK(clamped->layer_indices == std::vector<std::size_t>{8, 9, 11});
 
-    const auto revealed = make_semantic_layer_palette_window(chart, layer_id_t{11}, 0, true, 4);
+    const auto revealed = semantic_layer_palette_window_t::from(chart, layer_id_t{11}, 0, true, 4);
     REQUIRE(revealed);
     CHECK(revealed->page == 2);
     CHECK(revealed->total_count == 12);
     CHECK(revealed->layer_indices == std::vector<std::size_t>{8, 9, 10, 11});
 
-    CHECK_FALSE(make_semantic_layer_palette_window(chart, std::nullopt, 0, false, 0));
-    CHECK_FALSE(make_semantic_layer_palette_window(chart, std::nullopt, 0, false, 4, 11));
+    CHECK_FALSE(semantic_layer_palette_window_t::from(chart, std::nullopt, 0, false, 0));
+    CHECK_FALSE(semantic_layer_palette_window_t::from(chart, std::nullopt, 0, false, 4, 11));
 }
 
 namespace {
@@ -186,24 +186,24 @@ TEST_CASE("semantic-layer scrolling windows include hidden layers and clamp boun
         chart.semantic_layers.push_back({.id = layer_id_t{index + 1},
                                          .name = "Layer " + std::to_string(index + 1),
                                          .visible = index % 2 == 0});
-    const auto window = make_semantic_layer_palette_window(chart, 9, 4);
+    const auto window = semantic_layer_palette_window_t::from(chart, 9, 4);
     require_scrolling_window(window.has_value());
     check_scrolling_window(window->first_row == 9);
     check_scrolling_window(window->total_count == 30);
     check_scrolling_window(window->layer_indices == std::vector<std::size_t>{9, 10, 11, 12});
 
-    const auto clamped = make_semantic_layer_palette_window(
+    const auto clamped = semantic_layer_palette_window_t::from(
         chart, std::numeric_limits<std::size_t>::max(),
         std::numeric_limits<std::size_t>::max());
     require_scrolling_window(clamped.has_value());
     check_scrolling_window(clamped->first_row == 29);
     check_scrolling_window(clamped->layer_indices == std::vector<std::size_t>{29});
-    check_scrolling_window(!make_semantic_layer_palette_window(chart, 0, 0));
-    check_scrolling_window(!make_semantic_layer_palette_window(chart, 0, 4, 29));
-    check_scrolling_window(!make_semantic_layer_palette_window(chart, 0, 4, 0));
+    check_scrolling_window(!semantic_layer_palette_window_t::from(chart, 0, 0));
+    check_scrolling_window(!semantic_layer_palette_window_t::from(chart, 0, 4, 29));
+    check_scrolling_window(!semantic_layer_palette_window_t::from(chart, 0, 4, 0));
 
     chart.semantic_layers.clear();
-    const auto empty = make_semantic_layer_palette_window(chart, 99, 4);
+    const auto empty = semantic_layer_palette_window_t::from(chart, 99, 4);
     require_scrolling_window(empty.has_value());
     check_scrolling_window(empty->first_row == 0);
     check_scrolling_window(empty->total_count == 0);

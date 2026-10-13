@@ -28,7 +28,12 @@ struct display_timing_boundary_t {
 struct display_timing_segment_t {
     double begin_row{}, end_row{}, begin_seconds{}, seconds_per_row{};
 };
+struct display_row_table_t;
+
 struct display_row_time_t {
+    [[nodiscard]] static auto from(const display_row_table_t& table, std::int64_t world)
+        -> display_row_time_t;
+
     std::int64_t world_pixel{};
     double begin_row{}, end_row{}, begin_seconds{}, end_seconds{};
     bool valid{};

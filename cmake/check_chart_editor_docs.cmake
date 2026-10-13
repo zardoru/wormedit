@@ -43,6 +43,7 @@ set(plan_slices
     docs/chart-editor-plan/tasks/markers.md
     docs/chart-editor-plan/tasks/semantic-layers.md
     docs/chart-editor-plan/tasks/compose-followups.md
+    docs/chart-editor-plan/tasks/state-ownership.md
     docs/chart-editor-plan/decisions.md
     docs/chart-editor-plan/decisions/open-questions.md
     docs/references/osu-mania-version-profiles.md
@@ -284,6 +285,7 @@ set(task_card_files
     docs/chart-editor-plan/tasks/bmson-hybrid-lanes.md
     docs/chart-editor-plan/tasks/bmson-conversion.md
     docs/chart-editor-plan/tasks/bookmark-rename-harness.md
+    docs/chart-editor-plan/tasks/state-ownership.md
 )
 set(task_card_fields Status Outcome "Read first" "Files owned" Steps Invariants
     "Reject/failure behavior" Verify "Out of scope")

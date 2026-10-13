@@ -1,4 +1,5 @@
 #include <wormedit/core/catalogs.h>
+#include "text_codec_result.h"
 #include <wormedit/core/bms36.h>
 #include "../core/checked_math.h"
 #include "../core/text_util.h"
@@ -41,11 +42,7 @@ struct write_failure_t {
     std::string path;
 };
 
-struct text_encode_result_t {
-    std::optional<std::string> bytes;
-    std::size_t error_offset{};
-    bool unsupported{};
-};
+using text_encode_result_t = text_codec_result_t;
 
 [[noreturn]] auto fail(bms_write_diagnostic_code_t code, std::string message, std::string path)
     -> void {
@@ -62,36 +59,36 @@ auto encode_normalized_bms(std::string_view utf8_with_bom, text_encoding_t encod
     -> text_encode_result_t {
     constexpr std::string_view utf8_bom = "\xef\xbb\xbf";
     if (!utf8_with_bom.starts_with(utf8_bom)) {
-        return {.error_offset = 0};
+        return std::unexpected(text_codec_error_t{.error_offset = 0});
     }
     if (encoding == text_encoding_t::utf8) {
-        return {.bytes = std::string(utf8_with_bom)};
+        return std::string(utf8_with_bom);
     }
     const auto utf8 = utf8_with_bom.substr(utf8_bom.size());
     if (encoding == text_encoding_t::ascii) {
         for (std::size_t index = 0; index < utf8.size(); ++index) {
             if (static_cast<unsigned char>(utf8[index]) > 0x7fU) {
-                return {.error_offset = index};
+                return std::unexpected(text_codec_error_t{.error_offset = index});
             }
         }
-        return {.bytes = std::string(utf8)};
+        return std::string(utf8);
     }
 
     const auto destination_name = text_encoding_iconv_name(encoding);
     if (!destination_name.has_value()) {
-        return {.unsupported = true};
+        return std::unexpected(text_codec_error_t{.unsupported = true});
     }
 #if defined(WORMEDIT_HAS_ICONV)
     const auto converter = iconv_open(std::string(*destination_name).c_str(), "UTF-8");
     if (converter == reinterpret_cast<iconv_t>(-1)) {
-        return {.unsupported = true};
+        return std::unexpected(text_codec_error_t{.unsupported = true});
     }
     const auto initial_capacity = utf8.size() > (std::numeric_limits<std::size_t>::max() - 32U) / 2U
                                       ? std::numeric_limits<std::size_t>::max()
                                       : std::max<std::size_t>(utf8.size() * 2U + 32U, 32U);
     if (initial_capacity == std::numeric_limits<std::size_t>::max()) {
         iconv_close(converter);
-        return {.error_offset = utf8.size()};
+        return std::unexpected(text_codec_error_t{.error_offset = utf8.size()});
     }
     std::string output(initial_capacity, '\0');
     auto* source = const_cast<char*>(utf8.data());
@@ -110,7 +107,7 @@ auto encode_normalized_bms(std::string_view utf8_with_bom, text_encoding_t encod
         if (errno != E2BIG || output.size() > std::numeric_limits<std::size_t>::max() / 2U) {
             const auto error_offset = utf8.size() - source_remaining;
             iconv_close(converter);
-            return {.error_offset = error_offset};
+            return std::unexpected(text_codec_error_t{.error_offset = error_offset});
         }
         output.resize(output.size() * 2U);
     }
@@ -126,22 +123,22 @@ auto encode_normalized_bms(std::string_view utf8_with_bom, text_encoding_t encod
         }
         if (errno != E2BIG || output.size() > std::numeric_limits<std::size_t>::max() / 2U) {
             iconv_close(converter);
-            return {.error_offset = utf8.size()};
+            return std::unexpected(text_codec_error_t{.error_offset = utf8.size()});
         }
         output.resize(output.size() * 2U);
     }
     iconv_close(converter);
     output.resize(written);
-    return {.bytes = std::move(output)};
+    return output;
 #elif defined(_WIN32)
     const auto code_page = win32_codepage::code_page_for(encoding);
     if (!code_page.has_value()) {
-        return {.unsupported = true};
+        return std::unexpected(text_codec_error_t{.unsupported = true});
     }
     auto converted = win32_codepage::from_utf8(*code_page, utf8);
-    return {.bytes = std::move(converted.text), .error_offset = converted.error_offset};
+    return converted;
 #else
-    return {.unsupported = true};
+    return std::unexpected(text_codec_error_t{.unsupported = true});
 #endif
 }
 
@@ -3317,20 +3314,20 @@ auto write_bms(const song_document_t& song, bms_write_options_t options) -> bms_
             return result;
         }
         auto encoded = encode_normalized_bms(normalized, *options.output_encoding);
-        if (encoded.unsupported) {
+        if (has_unsupported_codec_error(encoded)) {
             fail(bms_write_diagnostic_code_t::unsupported_encoding,
                  "requested " + std::string(text_encoding_label(*options.output_encoding)) +
                      " output encoding is unavailable",
                  "$.output_encoding");
         }
-        if (!encoded.bytes.has_value()) {
+        if (!encoded.has_value()) {
             fail(bms_write_diagnostic_code_t::unrepresentable_text,
                  "normalized BMS text cannot be represented as " +
                      std::string(text_encoding_label(*options.output_encoding)) + " near UTF-8 byte " +
-                     std::to_string(encoded.error_offset),
+                     std::to_string(encoded.error().error_offset),
                  "$.output_encoding");
         }
-        result.bytes = std::move(*encoded.bytes);
+        result.bytes = std::move(*encoded);
     } catch (const write_failure_t& failure) {
         result.diagnostics.push_back(
             {diagnostic_severity_t::error, failure.code, failure.message, failure.path});

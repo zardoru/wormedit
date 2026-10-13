@@ -121,6 +121,7 @@ add_executable(wormedit_core_tests
     core/lane_layout_editor_tests.cpp
     core/measure_editor_tests.cpp
     core/measure_tests.cpp
+    core/result_tests.cpp
     core/sound_slice_rules_tests.cpp
     core/audio_slicer_tests.cpp
     core/sound_import_tests.cpp

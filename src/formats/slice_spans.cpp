@@ -239,7 +239,7 @@ void name_spans(plan_context_t& context) {
 
 } // namespace
 
-auto build_slice_span_plan(const song_document_t& song, chart_id_t chart_id,
+auto plan_slice_spans(const song_document_t& song, chart_id_t chart_id,
     std::span<const slice_span_source_t> sources, const slice_span_options_t& options) -> slice_span_plan_t {
     slice_span_plan_t result;
     plan_context_t context{song, options, result, {}, {}, {}, {}, {}, {}};

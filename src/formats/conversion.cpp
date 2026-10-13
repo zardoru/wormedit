@@ -572,7 +572,7 @@ auto prepare_slice_exports(conversion_context_t& context, song_document_t& prepa
     for (const auto id : charts) {
         auto chart = prepared.find_chart(id);
         if (chart->source_family != format_family_t::bmson) continue;
-        auto plan = build_slice_span_plan(prepared, id, context.request.slice_sources, options);
+        auto plan = plan_slice_spans(prepared, id, context.request.slice_sources, options);
         if (!plan) {
             for (const auto& diagnostic : plan.diagnostics)
                 add_diagnostic(context.result, diagnostic_severity_t::error,
@@ -1015,7 +1015,7 @@ conversion_result_t::operator bool() const noexcept {
 
 auto plan_conversion_slice_spans(const song_document_t& song, chart_id_t chart,
     std::span<const slice_span_source_t> sources, const slice_span_options_t& options) -> slice_span_plan_t {
-    return build_slice_span_plan(song, chart, sources, options);
+    return plan_slice_spans(song, chart, sources, options);
 }
 
 auto is_conversion_needs_slice_spans(const song_document_t& song, const conversion_request_t& request) -> bool {

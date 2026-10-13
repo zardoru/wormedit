@@ -147,7 +147,7 @@ void require_rejected(const slice_fixture_t& fixture, chart_id_t chart,
                       std::span<const slice_span_source_t> sources,
                       const slice_span_options_t& options = {}) {
     const auto before = fixture.song;
-    const auto plan = build_slice_span_plan(fixture.song, chart, sources, options);
+    const auto plan = plan_slice_spans(fixture.song, chart, sources, options);
     check_span(!plan);
     check_span(!plan.diagnostics.empty());
     check_span(plan.spans.empty());
@@ -165,7 +165,7 @@ void check_rejected_sources(const slice_fixture_t& fixture,
 TEST_CASE("slice_spans plan deduplicates repeated continuations and maps semantic sounds",
           "[format][slice_spans]") {
     auto fixture = slice_fixture();
-    const auto plan = build_slice_span_plan(fixture.song, fixture.chart, fixture.sources);
+    const auto plan = plan_slice_spans(fixture.song, fixture.chart, fixture.sources);
     require_span(static_cast<bool>(plan));
     check_span(plan.sources == fixture.sources);
     check_span(plan.spans.size() == 3);
@@ -201,8 +201,8 @@ TEST_CASE("slice_spans plan deduplicates repeated continuations and maps semanti
 TEST_CASE("slice_spans plan filenames and wrapper output are deterministic",
           "[format][slice_spans]") {
     const auto fixture = slice_fixture();
-    const auto first = build_slice_span_plan(fixture.song, fixture.chart, fixture.sources);
-    const auto second = build_slice_span_plan(fixture.song, fixture.chart, fixture.sources);
+    const auto first = plan_slice_spans(fixture.song, fixture.chart, fixture.sources);
+    const auto second = plan_slice_spans(fixture.song, fixture.chart, fixture.sources);
     const auto wrapped = plan_conversion_slice_spans(fixture.song, fixture.chart, fixture.sources);
     require_span(static_cast<bool>(first));
     check_span(first.spans == second.spans);
@@ -217,12 +217,12 @@ TEST_CASE("slice_spans plan filenames and wrapper output are deterministic",
         return static_cast<char>(std::toupper(value));
     });
     occupied.occupied_filenames.push_back(collision);
-    const auto skipped = build_slice_span_plan(fixture.song, fixture.chart, fixture.sources, occupied);
+    const auto skipped = plan_slice_spans(fixture.song, fixture.chart, fixture.sources, occupied);
     require_span(static_cast<bool>(skipped));
     check_span(std::ranges::none_of(skipped.spans, [&](const auto& span) {
         return ascii_iequal(span.filename, collision);
     }));
-    const auto repeated = build_slice_span_plan(fixture.song, fixture.chart, fixture.sources, occupied);
+    const auto repeated = plan_slice_spans(fixture.song, fixture.chart, fixture.sources, occupied);
     check_span(skipped.spans == repeated.spans);
 }
 
@@ -292,7 +292,7 @@ TEST_CASE("slice_spans plan uses ties-to-even at normalized source boundaries", 
     fixture.sources = {{.asset = asset_id_t{2}, .native_sample_rate = 88'200,
         .native_frame_count = 3, .output_frame_count = 2}};
     const auto before = fixture.song;
-    const auto plan = build_slice_span_plan(fixture.song, fixture.chart, fixture.sources);
+    const auto plan = plan_slice_spans(fixture.song, fixture.chart, fixture.sources);
     require_span(static_cast<bool>(plan));
     require_span(plan.spans.size() == 1);
     check_span(plan.spans.front().begin_frame == 0);
@@ -306,7 +306,7 @@ TEST_CASE("slice_spans packed channel markers reuse the complete source clip", "
     channel.source_clip.begin_frame = 100;
     channel.source_clip.end_frame = 900;
     for (auto& event : channel.events) event.continuation = false;
-    const auto plan = build_slice_span_plan(fixture.song, fixture.chart, fixture.sources);
+    const auto plan = plan_slice_spans(fixture.song, fixture.chart, fixture.sources);
     require_span(static_cast<bool>(plan));
     require_span(plan.spans.size() == 4);
     const auto* first = find_mapping(plan, slice_span_event_kind_t::sound_channel_event,
@@ -332,7 +332,7 @@ TEST_CASE("slice_spans native clip boundaries round half frames to even", "[form
     for (auto& channel : channels)
         for (auto& event : channel.events) event.continuation = false;
     const auto before = fixture.song;
-    const auto plan = build_slice_span_plan(fixture.song, fixture.chart, fixture.sources);
+    const auto plan = plan_slice_spans(fixture.song, fixture.chart, fixture.sources);
     require_span(static_cast<bool>(plan));
     require_span_range(mapped_span(plan, slice_span_event_kind_t::sound_channel_event, object_id_t{30}), asset_id_t{2}, 0, 2);
     require_span_range(mapped_span(plan, slice_span_event_kind_t::sound_channel_event, object_id_t{40}), asset_id_t{2}, 2, 4);
@@ -349,7 +349,7 @@ TEST_CASE("slice_spans EOF continuations retain silent source and gameplay mappi
     events.push_back({.id = object_id_t{33}, .position = {measure_id_t{10}, 720}, .continuation = true});
     chart.measures.front().bgm_events.front().sound_channel_event = object_id_t{32};
     const auto before = fixture.song;
-    const auto plan = build_slice_span_plan(fixture.song, fixture.chart, fixture.sources);
+    const auto plan = plan_slice_spans(fixture.song, fixture.chart, fixture.sources);
     require_span(static_cast<bool>(plan));
     check_span(plan.spans.size() == 3 && plan.mappings.size() == 8);
     for (const auto event : {object_id_t{32}, object_id_t{33}}) {
@@ -367,12 +367,12 @@ TEST_CASE("slice_spans explicit restart-only stem differs from a packed full cli
     auto fixture = slice_fixture();
     auto& chart = fixture.song.charts.front();
     for (auto& event : chart.sound_channels.front().events) event.continuation = false;
-    const auto packed = build_slice_span_plan(fixture.song, fixture.chart, fixture.sources);
+    const auto packed = plan_slice_spans(fixture.song, fixture.chart, fixture.sources);
     require_span(static_cast<bool>(packed));
     require_span_range(mapped_span(packed, slice_span_event_kind_t::sound_channel_event, object_id_t{30}), asset_id_t{2}, 0, 441'000);
     chart.bgm_source_lanes.front().stem_channel = object_id_t{20};
     const auto before = fixture.song;
-    const auto stem = build_slice_span_plan(fixture.song, fixture.chart, fixture.sources);
+    const auto stem = plan_slice_spans(fixture.song, fixture.chart, fixture.sources);
     require_span(static_cast<bool>(stem));
     require_span_range(mapped_span(stem, slice_span_event_kind_t::sound_channel_event, object_id_t{30}), asset_id_t{2}, 0, 22'050);
     require_span_range(mapped_span(stem, slice_span_event_kind_t::sound_channel_event, object_id_t{31}), asset_id_t{2}, 0, 22'050);
@@ -397,7 +397,7 @@ TEST_CASE("slice_spans unbound gameplay objects retain explicit no-audio mapping
         bgm.sound_channel_event.reset();
     }
     const auto before = fixture.song;
-    const auto plan = build_slice_span_plan(fixture.song, fixture.chart, fixture.sources);
+    const auto plan = plan_slice_spans(fixture.song, fixture.chart, fixture.sources);
     require_span(static_cast<bool>(plan));
     check_span(plan.spans.empty() && plan.mappings.size() == 4);
     check_span(std::ranges::all_of(plan.mappings, [](const auto& mapping) { return !mapping.span_index; }));

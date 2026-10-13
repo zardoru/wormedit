@@ -7,11 +7,7 @@
 namespace wormedit::audio {
 namespace {
 
-auto failed(offline_mix_status_t status, std::string message) -> offline_mix_result_t {
-    return {.status = status, .interleaved_stereo = {}, .message = std::move(message)};
-}
-
-auto is_valid_request(std::uint32_t sample_rate, std::uint64_t begin, std::uint64_t end,
+auto validate_offline_interval(std::uint32_t sample_rate, std::uint64_t begin, std::uint64_t end,
                    const offline_mix_options_t& options, std::size_t& output_samples)
     -> offline_mix_status_t {
     if (sample_rate != output_sample_rate || begin >= end || end > options.maximum_timeline_frames ||
@@ -149,21 +145,22 @@ auto render_offline_interval(decoded_source_registry_t& sources, const preview_s
                              offline_mix_options_t options, std::stop_token stop)
     -> offline_mix_result_t {
     std::size_t output_samples{};
-    const auto valid = is_valid_request(schedule.sample_rate, begin_frame, end_frame, options, output_samples);
+    const auto valid = validate_offline_interval(schedule.sample_rate, begin_frame, end_frame, options, output_samples);
     if (valid != offline_mix_status_t::mixed)
-        return failed(valid, valid == offline_mix_status_t::capacity_exceeded
+        return std::unexpected(error_t{valid, valid == offline_mix_status_t::capacity_exceeded
                                  ? "Selected interval exceeds offline mix limits."
-                                 : "Invalid offline mix interval or options.");
-    if (stop.stop_requested()) return failed(offline_mix_status_t::cancelled, "Offline mix cancelled.");
+                                 : std::string{"Invalid offline mix interval or options."}});
+    if (stop.stop_requested())
+        return std::unexpected(error_t{offline_mix_status_t::cancelled, std::string{"Offline mix cancelled."}});
 
-    offline_mix_result_t result{.status = offline_mix_status_t::mixed,
-                                .interleaved_stereo = {}, .message = {}};
+    offline_mix_t result;
     std::vector<float> chunk;
     try {
         result.interleaved_stereo.resize(output_samples);
         chunk.resize(options.maximum_read_frames * output_channel_count);
     } catch (const std::bad_alloc&) {
-        return failed(offline_mix_status_t::capacity_exceeded, "Could not allocate offline mix buffer.");
+        return std::unexpected(error_t{offline_mix_status_t::capacity_exceeded,
+            std::string{"Could not allocate offline mix buffer."}});
     }
 
     decoded_block_cache_t cache{preview_block_cache_limits()};
@@ -180,13 +177,13 @@ auto render_offline_interval(decoded_source_registry_t& sources, const preview_s
         const auto failure = prime_status(started);
         static_cast<void>(session.stop());
         result.interleaved_stereo.clear();
-        return failed(failure, "Could not start or prime offline preview session.");
+        return std::unexpected(error_t{failure, std::string{"Could not start or prime offline preview session."}});
     }
     if (started.materialize && materialization_status(*started.materialize) != offline_mix_status_t::mixed) {
         const auto failure = materialization_status(*started.materialize);
         static_cast<void>(session.stop());
         result.interleaved_stereo.clear();
-        return failed(failure, "Preview schedule could not be fully materialized.");
+        return std::unexpected(error_t{failure, std::string{"Preview schedule could not be fully materialized."}});
     }
 
     const auto rendered = render_chunks(session, chunk, result.interleaved_stereo,
@@ -194,9 +191,9 @@ auto render_offline_interval(decoded_source_registry_t& sources, const preview_s
                                         pump_options, stop);
     static_cast<void>(session.stop());
     if (rendered != offline_mix_status_t::mixed)
-        return failed(rendered, rendered == offline_mix_status_t::cancelled
+        return std::unexpected(error_t{rendered, rendered == offline_mix_status_t::cancelled
                                     ? "Offline mix cancelled."
-                                    : "Preview mix did not produce the complete selected interval.");
+                                    : std::string{"Preview mix did not produce the complete selected interval."}});
     apply_fade(result.interleaved_stereo, end_frame - begin_frame, options.fade_out_ms);
     return result;
 }

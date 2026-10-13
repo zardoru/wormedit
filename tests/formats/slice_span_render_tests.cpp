@@ -229,7 +229,7 @@ auto sliced_preview_pcm(const song_document_t& song, const std::filesystem::path
     const auto mixed = audio::render_offline_interval(sources, *schedule.schedule, bindings.bindings,
         0, 2 * slice_span_sample_rate);
     require_span(static_cast<bool>(mixed));
-    return mixed.interleaved_stereo;
+    return mixed->interleaved_stereo;
 }
 
 void check_pcm_tolerance(const std::vector<float>& before, const std::vector<float>& after) {

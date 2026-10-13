@@ -89,8 +89,8 @@ TEST_CASE("Offline interval uses preview voices and preserves pre-range tails", 
     const auto second = render_offline_interval(sources, schedule, objects, 32, 96, options);
     REQUIRE(first);
     REQUIRE(second);
-    REQUIRE(first.interleaved_stereo == second.interleaved_stereo);
-    REQUIRE(expected_tail_mix(first.interleaved_stereo));
+    REQUIRE(first->interleaved_stereo == second->interleaved_stereo);
+    REQUIRE(expected_tail_mix(first->interleaved_stereo));
 }
 
 TEST_CASE("Offline interval excludes an event at its exclusive end", "[unit][audio][offline]") {
@@ -99,7 +99,7 @@ TEST_CASE("Offline interval excludes an event at its exclusive end", "[unit][aud
     schedule.bgm = {{.sample_frame = 64, .object = object_id_t{3}, .resource = resource_id_t{303}}};
     const auto result = render_offline_interval(sources, schedule, {}, 0, 64);
     REQUIRE(result);
-    REQUIRE(std::ranges::all_of(result.interleaved_stereo, [](float value) { return value == 0.0F; }));
+    REQUIRE(std::ranges::all_of(result->interleaved_stereo, [](float value) { return value == 0.0F; }));
 }
 
 TEST_CASE("Offline interval mixes playable keysounds through the chart queue", "[unit][audio][offline]") {
@@ -111,7 +111,7 @@ TEST_CASE("Offline interval mixes playable keysounds through the chart queue", "
     const auto result = render_offline_interval(sources, schedule, objects, 32, 64,
                                                 {.maximum_read_frames = 16});
     REQUIRE(result);
-    REQUIRE(expected_playable_mix(result.interleaved_stereo));
+    REQUIRE(expected_playable_mix(result->interleaved_stereo));
 }
 
 TEST_CASE("Offline interval fade reaches digital silence and empty schedules remain silent", "[unit][audio][offline]") {
@@ -123,12 +123,12 @@ TEST_CASE("Offline interval fade reaches digital silence and empty schedules rem
         sources, schedule, objects, 0, 256,
         {.maximum_read_frames = 64, .fade_out_ms = 2});
     REQUIRE(faded);
-    REQUIRE(faded.interleaved_stereo.front() != 0.0F);
-    REQUIRE(faded.interleaved_stereo[faded.interleaved_stereo.size() - 1] == 0.0F);
+    REQUIRE(faded->interleaved_stereo.front() != 0.0F);
+    REQUIRE(faded->interleaved_stereo[faded->interleaved_stereo.size() - 1] == 0.0F);
     preview_schedule_t empty{.sample_rate = output_sample_rate};
     const auto silent = render_offline_interval(sources, empty, {}, 0, 100);
     REQUIRE(silent);
-    REQUIRE(std::ranges::all_of(silent.interleaved_stereo, [](float value) { return value == 0.0F; }));
+    REQUIRE(std::ranges::all_of(silent->interleaved_stereo, [](float value) { return value == 0.0F; }));
 }
 
 TEST_CASE("Offline interval rejects missing sources without returning partial PCM", "[unit][audio][offline]") {
@@ -136,8 +136,8 @@ TEST_CASE("Offline interval rejects missing sources without returning partial PC
     preview_schedule_t schedule{.sample_rate = output_sample_rate};
     schedule.bgm = {{.sample_frame = 0, .object = object_id_t{8}, .resource = resource_id_t{808}}};
     const auto missing = render_offline_interval(sources, schedule, {}, 0, 64);
-    REQUIRE(missing.status == offline_mix_status_t::missing_sources);
-    REQUIRE(missing.interleaved_stereo.empty());
+    REQUIRE_FALSE(missing.has_value());
+    REQUIRE(missing.error().code == offline_mix_status_t::missing_sources);
 }
 
 TEST_CASE("Offline interval reports missing decoder data instead of silent output", "[unit][audio][offline]") {
@@ -150,8 +150,8 @@ TEST_CASE("Offline interval reports missing decoder data instead of silent outpu
     };
     const std::array objects{unknown};
     const auto missing = render_offline_interval(sources, schedule, objects, 0, 64);
-    REQUIRE(missing.status == offline_mix_status_t::decode_failed);
-    REQUIRE(missing.interleaved_stereo.empty());
+    REQUIRE_FALSE(missing.has_value());
+    REQUIRE(missing.error().code == offline_mix_status_t::decode_failed);
 }
 
 TEST_CASE("Offline interval rejects a bounded pump that cannot decode every scheduled voice", "[unit][audio][offline]") {
@@ -162,8 +162,8 @@ TEST_CASE("Offline interval rejects a bounded pump that cannot decode every sche
         schedule.playable.push_back({.sample_frame = 0, .object = object_id_t{6}, .resource = resource_id_t{606}});
     const std::array objects{bgm_binding(key, 6)};
     const auto capped = render_offline_interval(sources, schedule, objects, 0, 64);
-    REQUIRE(capped.status == offline_mix_status_t::capacity_exceeded);
-    REQUIRE(capped.interleaved_stereo.empty());
+    REQUIRE_FALSE(capped.has_value());
+    REQUIRE(capped.error().code == offline_mix_status_t::capacity_exceeded);
 }
 
 TEST_CASE("Offline interval discards earlier chunks when a later source is missing", "[unit][audio][offline]") {
@@ -177,26 +177,41 @@ TEST_CASE("Offline interval discards earlier chunks when a later source is missi
     const std::array objects{unknown};
     const auto missing = render_offline_interval(
         sources, schedule, objects, 0, 96, {.maximum_read_frames = 32});
-    REQUIRE(missing.status == offline_mix_status_t::decode_failed);
-    REQUIRE(missing.interleaved_stereo.empty());
+    REQUIRE_FALSE(missing.has_value());
+    REQUIRE(missing.error().code == offline_mix_status_t::decode_failed);
 }
 
-TEST_CASE("Offline interval validates range caps and cancellation", "[unit][audio][offline]") {
+TEST_CASE("Offline interval rejects an empty range", "[unit][audio][offline]") {
     decoded_source_registry_t sources;
     preview_schedule_t schedule{.sample_rate = output_sample_rate};
     const auto invalid = render_offline_interval(sources, schedule, {}, 20, 20);
-    REQUIRE(invalid.status == offline_mix_status_t::invalid_interval);
+    REQUIRE_FALSE(invalid.has_value());
+    REQUIRE(invalid.error().code == offline_mix_status_t::invalid_interval);
+    CHECK(invalid.error().message == "Invalid offline mix interval or options.");
+}
+
+TEST_CASE("Offline interval bounds output frames and bytes", "[unit][audio][offline]") {
+    decoded_source_registry_t sources;
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
     const auto capped = render_offline_interval(
         sources, schedule, {}, 0, 65,
         {.maximum_output_frames = 64, .maximum_output_bytes = 1024});
-    REQUIRE(capped.status == offline_mix_status_t::capacity_exceeded);
+    REQUIRE_FALSE(capped.has_value());
+    REQUIRE(capped.error().code == offline_mix_status_t::capacity_exceeded);
     const auto byte_capped = render_offline_interval(
         sources, schedule, {}, 0, 64,
         {.maximum_output_frames = 64, .maximum_output_bytes = 64});
-    REQUIRE(byte_capped.status == offline_mix_status_t::capacity_exceeded);
+    REQUIRE_FALSE(byte_capped.has_value());
+    REQUIRE(byte_capped.error().code == offline_mix_status_t::capacity_exceeded);
+}
+
+TEST_CASE("Offline interval reports cancellation without a PCM value", "[unit][audio][offline]") {
+    decoded_source_registry_t sources;
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
     std::stop_source cancel;
     cancel.request_stop();
     const auto cancelled = render_offline_interval(sources, schedule, {}, 0, 64, {}, cancel.get_token());
-    REQUIRE(cancelled.status == offline_mix_status_t::cancelled);
-    REQUIRE(cancelled.interleaved_stereo.empty());
+    REQUIRE_FALSE(cancelled.has_value());
+    REQUIRE(cancelled.error().code == offline_mix_status_t::cancelled);
+    CHECK(cancelled.error().message == "Offline mix cancelled.");
 }

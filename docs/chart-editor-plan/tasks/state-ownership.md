@@ -306,11 +306,11 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 - **Outcome:** `project_audio_sources_t` owns the registry and its sync state. Reconciliation becomes a member; consumers stop taking document and registry separately. Runs after T-603/T-605. Plus D12.
 - **Read first:** `docs/audits/state-ownership-2026-10-12.md`, `src/sys/project_audio_sources.h`, `src/sys/project_audio_sources.cpp`, `src/sys/audio_source_registration.h`, `src/sys/audio_source_registration.cpp`.
 - **Files owned:** `src/sys/project_audio_sources.h`, `src/sys/project_audio_sources.cpp`, `src/sys/audio_source_registration.h`, `src/sys/audio_source_registration.cpp`, `src/sys/application.h`, `src/sys/application.cpp`, `src/sys/chart_preview_state.h`, `src/sys/chart_preview_state.cpp`, `src/sys/compose_audition_requests.h`, `src/sys/compose_audition_requests.cpp`, `src/sys/bmson_waveform_projection.cpp`, `tests/sys/audio_source_registration_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`. Supporting caller/test/CMake extensions require exact paths and coordinator approval before editing.
-- **Runs after/before:** Runs after T-603/T-605; before T-615 and T-619. D12 test first; STOP if reproduced.
+- **Runs after/before:** Runs after T-603/T-605; before T-615 and T-619. D12: test first; if reproduced, reconcile on demand (owner, 2026-10-13).
 - **Decisions applied:**
-  - D12 — Test first: T-614 adds a test for the same-frame window. If it reproduces, record it on the card and STOP for an owner decision; do not fix it.
+  - D12 — Test first, then reconcile on demand (owner, 2026-10-13): if the same-frame window reproduces, `project_audio_sources_t` queries reconcile when the document revision has moved since the last reconcile (a revision compare per query; the reconcile itself only in the same-frame case), shipped with the regression test. No STOP.
 - **Steps:**
-  1. D12: add and run a same-frame asset-edit-then-audition test before changing reconciliation. If AS3 reproduces, record the test/output and STOP for an owner decision; do not fix it.
+  1. D12: add and run a same-frame asset-edit-then-audition test before changing reconciliation. If AS3 reproduces, implement on-demand reconciliation on revision mismatch and keep the test as its regression (D12, owner 2026-10-13); if it does not reproduce, record the test as coverage and change nothing.
   2. If the test does not reproduce, record why and create project_audio_sources_t owning registry and sync bookkeeping; keep decoded_source_registry_t document-free.
   3. Make reconciliation a member and replace callbacks with sibling calls; consumers take the owner and query with an explicit current document without storing invalidatable references.
   4. Run every Verify command; record search evidence, preserved/approved differences, actual output tails and supporting ownership in the commit body; commit only this card or its numbered part. Claude transfers evidence on merge.

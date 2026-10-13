@@ -46,6 +46,7 @@ set(plan_slices
     docs/chart-editor-plan/tasks/state-ownership.md
     docs/chart-editor-plan/decisions.md
     docs/chart-editor-plan/decisions/open-questions.md
+    docs/chart-editor-plan/decisions/code-style.md
     docs/references/osu-mania-version-profiles.md
     docs/references/stepmania-warps-and-conversion.md
 )

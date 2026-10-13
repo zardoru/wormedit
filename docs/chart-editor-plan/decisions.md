@@ -9,7 +9,7 @@
 - Rust-like explicit error/value flow and readable monadic pipelines are welcome; expected failures remain values rather than control flow hidden in exceptions.
 - Use libavformat for embedded audio Title/Artist metadata; keep audio decoding on miniaudio. Gate metadata on `WORMEDIT_HAS_FFMPEG`, independently of video decoding. Development, headless and test configurations tolerate missing FFmpeg and leave metadata prefill empty without an import error. The Linux `release` and Windows `windows-cross-release` presets require FFmpeg development libraries with CMake `REQUIRED`. Cross-building/installing FFmpeg for Windows is an owner setup step, not a sandbox implementation step (D10/D11).
 - Prefer `std::` facilities. Boost is allowed for specific justified gaps, remains narrowly linked, and stays behind project-owned types and interfaces.
-- Use `snake_case` for project code and `<type>_t` for project-defined types; prefer scoped `enum class` types. Methods on structs are welcome when they express behavior local to that data.
+- Use `snake_case` for project code and `<type>_t` for project-defined types; prefer scoped `enum class` types. Methods on structs are welcome when they express behavior local to that data. The full naming, ownership and structure rules are in [code style](decisions/code-style.md).
 - Keep views, controllers, commands/policies, core data, format codecs, and platform backends as separate dependency layers. Avoid manager singletons and routine class hierarchies.
 - Treat Nuklear as a replaceable initial frontend: controllers own semantic view state/actions, frontend adapters own widget-library types/composition, and performance-critical editor surfaces use shared renderer-neutral draw/hit-test data. Permit a future wxWidgets, ImGui, or Clay frontend through one CMake/frontend boundary; wxWidgets is not a completion criterion. Split the growing Nuklear adapter into frontend-private pane and shared-widget units after the Stage 3 surfaces stabilize, without moving controller state into those units.
 - Keep plan and project state as indexed, single-owner slices. Cross-turn work loads the stable index, the short resume checklist, and only the relevant plan/status ledgers. Treat roughly 100 lines for indexes/active slices and 200 lines for cohesive references as review thresholds; split a growing slice by subsystem and extend the checked documentation inventory instead of duplicating its requirements or history.
@@ -95,6 +95,7 @@
 
 ## Related working sets
 
+- [Code style and structure rules](decisions/code-style.md) — ownership, types, naming, commands/results, shared helpers and the review checklist
 - [Open product and compatibility questions](decisions/open-questions.md)
 - [Immediate cross-turn work](../../memory/chart-editor-status/resume.md)
 

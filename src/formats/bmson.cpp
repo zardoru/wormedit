@@ -1108,25 +1108,26 @@ struct bmson_materialization_t {
     auto pack_sound_lanes() -> void {
         std::vector<bgm_event_t*> events;
         const auto requests = packed_sound_requests(events);
-        const auto packed = allocate_bgm_columns(requests, {}, 0, options.max_events);
+        const auto packed = bgm_column_assignment_t::from(requests, {}, 0, options.max_events);
         if (!packed) {
             add_warning(catalog.result, bmson_parse_diagnostic_code_t::invalid_value,
-                        "BGM packing rejected; retaining one lane per channel: " + packed.error,
+                        "BGM packing rejected; retaining one lane per channel: " +
+                            packed.error().message,
                         "$.sound_channels");
             return;
         }
         std::erase_if(chart.bgm_source_lanes, [](const auto& lane) { return !lane.stem_channel; });
         std::vector<object_id_t> columns;
-        columns.reserve(packed.lane_count);
-        for (std::size_t index = 0; index < packed.lane_count; ++index) {
+        columns.reserve(packed->lane_count);
+        for (std::size_t index = 0; index < packed->lane_count; ++index) {
             const auto lane_id = object_ids.take<object_id_t>();
             columns.push_back(lane_id);
             chart.bgm_source_lanes.push_back({.id = lane_id,
-                .name = "BGM " + std::to_string(index + 1),
-                .source_order = raw.raw_channels.size() + index});
+                                              .name = "BGM " + std::to_string(index + 1),
+                                              .source_order = raw.raw_channels.size() + index});
         }
         for (std::size_t index = 0; index < events.size(); ++index) {
-            events[index]->source_lane = columns.at(packed.lanes.at(index));
+            events[index]->source_lane = columns.at(packed->lanes.at(index));
         }
     }
 

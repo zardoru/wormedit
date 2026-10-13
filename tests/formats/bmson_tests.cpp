@@ -6,6 +6,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -777,4 +778,16 @@ TEST_CASE("BMSON exact decimals reduce before intermediate overflow", "[formats]
     REQUIRE(parsed.song);
     CHECK((parsed.song->charts.front().bpms.front().beats_per_minute ==
            wormedit::signed_rational_t{INT64_MAX, 1}));
+}
+
+TEST_CASE("BGM packing rejection exposes no partial assignments or reserved lane storage",
+          "[core][bgm-packing][capacity]") {
+    const std::array<wormedit::bgm_packing_request_t, 2> requests{{
+        {.row = 0}, {.row = 0},
+    }};
+    const auto result = wormedit::allocate_bgm_columns(requests, {}, 0, 1);
+    CHECK_FALSE(result);
+    CHECK(result.lane_count == 0);
+    CHECK(result.lanes.empty());
+    CHECK(result.lanes.capacity() == 0);
 }

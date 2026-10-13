@@ -61,23 +61,6 @@ struct timing_segment_t {
     bool warped{};
 };
 
-struct timing_index_t {
-    std::uint64_t divisions_per_standard_measure{};
-    std::uint64_t total_rows{};
-    // Detects accidental reuse after timing/measure edits. UI publication still
-    // uses the document generation guard because a hash is not a session token.
-    std::uint64_t source_fingerprint{};
-    timing_discontinuity_profile_t discontinuity_profile{
-        timing_discontinuity_profile_t::canonical};
-    // Preview/display callers may opt into a uniformly rounded derived clock
-    // if exact rational accumulation alone exceeds representable bounds. The
-    // clock uses 1e-12-second ticks. Accumulated boundary error is at most
-    // roundings/(2e12) seconds; interior interpolation adds at most 0.5 ps.
-    bool bounded_clock{};
-    std::size_t bounded_clock_roundings{};
-    std::vector<timing_row_state_t> rows;
-    std::vector<timing_segment_t> segments;
-};
 
 struct timing_build_options_t {
     std::size_t maximum_boundaries{100'000};
@@ -89,14 +72,6 @@ struct timing_build_options_t {
     std::size_t maximum_bounded_clock_roundings{300'001};
 };
 
-struct timing_build_result_t {
-    std::optional<timing_index_t> index;
-    std::vector<timing_diagnostic_t> diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return index.has_value();
-    }
-};
 
 struct timing_query_result_t {
     std::optional<signed_rational_t> seconds;
@@ -131,6 +106,53 @@ struct timing_position_query_result_t {
 
     [[nodiscard]] explicit operator bool() const noexcept {
         return absolute_row.has_value();
+    }
+};
+
+// Tail behavior is a caller choice; editable cursors use the last stored row.
+enum class chart_end_policy_t { reject, clamp_to_end, clamp_to_last_row, extrapolate_tail };
+
+struct timing_index_t {
+    std::uint64_t divisions_per_standard_measure{};
+    std::uint64_t total_rows{};
+    // Detects accidental reuse after timing/measure edits. UI publication still
+    // uses the document generation guard because a hash is not a session token.
+    std::uint64_t source_fingerprint{};
+    timing_discontinuity_profile_t discontinuity_profile{
+        timing_discontinuity_profile_t::canonical};
+    // Preview/display callers may opt into a uniformly rounded derived clock
+    // if exact rational accumulation alone exceeds representable bounds. The
+    // clock uses 1e-12-second ticks. Accumulated boundary error is at most
+    // roundings/(2e12) seconds; interior interpolation adds at most 0.5 ps.
+    bool bounded_clock{};
+    std::size_t bounded_clock_roundings{};
+    std::vector<timing_row_state_t> rows;
+    std::vector<timing_segment_t> segments;
+    [[nodiscard]] auto seconds_at(std::uint64_t row,
+        timing_boundary_side_t side = timing_boundary_side_t::event) const -> timing_query_result_t;
+    [[nodiscard]] auto seconds_at(exact_chart_row_t row,
+        timing_boundary_side_t side = timing_boundary_side_t::event) const -> timing_query_result_t;
+    [[nodiscard]] auto seconds_at(const measure_index_t& measures, local_position_t position,
+        timing_boundary_side_t side = timing_boundary_side_t::event) const -> timing_query_result_t;
+    [[nodiscard]] auto row_at(signed_rational_t seconds,
+        timing_inverse_options_t options = {}) const -> timing_position_query_result_t;
+    [[nodiscard]] auto row_at(signed_rational_t seconds, chart_end_policy_t policy,
+        timing_inverse_options_t options = {}) const -> timing_position_query_result_t;
+    [[nodiscard]] auto seconds_at_approx(std::uint64_t row,
+        chart_end_policy_t policy = chart_end_policy_t::reject,
+        timing_boundary_side_t side = timing_boundary_side_t::event) const -> std::optional<double>;
+    [[nodiscard]] auto row_at_approx(signed_rational_t seconds, chart_end_policy_t policy,
+        timing_inverse_options_t options = {}) const -> std::optional<double>;
+    [[nodiscard]] auto tail_seconds_per_row() const -> std::optional<double>;
+    [[nodiscard]] auto row_at_frame(std::uint64_t frame, std::uint32_t sample_rate,
+        chart_end_policy_t policy, timing_inverse_options_t options = {}) const -> std::optional<double>;
+};
+struct timing_build_result_t {
+    std::optional<timing_index_t> index;
+    std::vector<timing_diagnostic_t> diagnostics;
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return index.has_value();
     }
 };
 

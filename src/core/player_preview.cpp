@@ -391,8 +391,7 @@ auto make_player_preview_scene(const player_preview_index_t& index,
                                            "player-preview video clock is invalid"));
         return result;
     }
-    const auto position = musical_position_at(
-        index.timing, {static_cast<std::int64_t>(request.sample_frame), request.sample_rate},
+    const auto position = index.timing.row_at({static_cast<std::int64_t>(request.sample_frame), request.sample_rate},
         {.extrapolate_before_chart = true});
     if (!position || !position.absolute_row) {
         result.diagnostics.push_back(

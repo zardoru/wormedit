@@ -1,3 +1,4 @@
+#include <wormedit/core/rational.h>
 #include <wormedit/core/timing.h>
 
 #include "../../src/core/timing_arithmetic.h"
@@ -1773,4 +1774,98 @@ TEST_CASE("Layer assist construction rejects its own bounded capacity without tr
         {.include_layer_ticks = true, .maximum_layer_tick_events = 2});
     check_layer_tick(!ticks);
     check_layer_tick(!ticks.schedule.has_value());
+}
+
+namespace {
+void check_timing_query(bool value, std::source_location at = std::source_location::current()) {
+    INFO(at.file_name() << ":" << at.line());
+    CHECK(value);
+}
+void require_timing_query(bool value, std::source_location at = std::source_location::current()) {
+    INFO(at.file_name() << ":" << at.line());
+    REQUIRE(value);
+}
+} // namespace
+TEST_CASE("Timing owner queries retain exact boundary sides and inverse options", "[unit][timing]") {
+    auto chart = base_chart();
+    chart.pauses = {{.id = object_id_t{90}, .position = {measure_id_t{1}, 240},
+                     .kind = pause_kind_t::stop, .duration = {1, 1}}};
+    const auto built = build_timing_index(chart);
+    require_timing_query(static_cast<bool>(built));
+    const auto& index = *built.index;
+    for (const auto side : {timing_boundary_side_t::before_delays,
+                            timing_boundary_side_t::event, timing_boundary_side_t::after_stops}) {
+        const auto member = index.seconds_at(240, side);
+        const auto original = timing_at(index, 240, side);
+        require_timing_query(static_cast<bool>(member.seconds));
+        check_timing_query(static_cast<bool>(member.seconds == original.seconds));
+        check_timing_query(static_cast<bool>(member.inside_warp == original.inside_warp));
+    }
+    const auto fractional = exact_chart_row_t{120, {1, 2}};
+    check_timing_query(static_cast<bool>(index.seconds_at(fractional).seconds == timing_at(index, fractional).seconds));
+    const auto inverse = index.row_at({0, 1}, {.extrapolate_before_chart = true});
+    check_timing_query(static_cast<bool>(inverse.absolute_row == musical_position_at(index, {0, 1},
+        {.extrapolate_before_chart = true}).absolute_row));
+    check_timing_query(static_cast<bool>(index.row_at({0, 1}).error->code == timing_error_code_t::position_out_of_range));
+}
+
+TEST_CASE("Timing display queries name and preserve each chart end policy", "[unit][timing]") {
+    const auto built = build_timing_index(base_chart());
+    require_timing_query(static_cast<bool>(built));
+    const auto& index = *built.index;
+    const auto end = index.seconds_at(index.total_rows, timing_boundary_side_t::after_stops);
+    require_timing_query(static_cast<bool>(end.seconds));
+    const auto end_time = to_double(*end.seconds);
+    const auto tail = signed_rational_t{end.seconds->numerator +
+                                       static_cast<std::int64_t>(end.seconds->denominator),
+                                       end.seconds->denominator};
+    check_timing_query(!(index.row_at_approx(tail, chart_end_policy_t::reject)));
+    check_timing_query(static_cast<bool>(index.row_at_approx(tail, chart_end_policy_t::clamp_to_end) ==
+          std::optional<double>{static_cast<double>(index.total_rows)}));
+    check_timing_query(static_cast<bool>(index.row_at_approx(tail, chart_end_policy_t::clamp_to_last_row) ==
+          std::optional<double>{static_cast<double>(index.total_rows - 1)}));
+    require_timing_query(static_cast<bool>(index.tail_seconds_per_row()));
+    check_timing_query(static_cast<bool>(index.tail_seconds_per_row() == std::optional<double>{1.0 / 240.0}));
+    check_timing_query(static_cast<bool>(index.row_at_approx(tail, chart_end_policy_t::extrapolate_tail) ==
+          std::optional<double>{static_cast<double>(index.total_rows + 240)}));
+    check_timing_query(static_cast<bool>(index.row_at(tail, chart_end_policy_t::extrapolate_tail).absolute_row ==
+          std::optional<signed_rational_t>{{static_cast<std::int64_t>(index.total_rows + 240), 1}}));
+    check_timing_query(!(index.seconds_at_approx(index.total_rows + 240)));
+    check_timing_query(static_cast<bool>(index.seconds_at_approx(index.total_rows + 240, chart_end_policy_t::extrapolate_tail) ==
+          std::optional<double>{end_time + 1.0}));
+    check_timing_query(static_cast<bool>(index.seconds_at_approx(index.total_rows + 240, chart_end_policy_t::clamp_to_end) ==
+          std::optional<double>{end_time}));
+    check_timing_query(static_cast<bool>(index.seconds_at_approx(index.total_rows, chart_end_policy_t::clamp_to_last_row) ==
+          index.seconds_at_approx(index.total_rows - 1)));
+    check_timing_query(static_cast<bool>(index.row_at_approx({0, 1}, chart_end_policy_t::clamp_to_end) == std::optional<double>{0}));
+    check_timing_query(static_cast<bool>(index.row_at_frame(static_cast<std::uint64_t>((end_time + 1) * 48000), 48000,
+          chart_end_policy_t::clamp_to_last_row) ==
+          std::optional<double>{static_cast<double>(index.total_rows - 1)}));
+}
+
+TEST_CASE("Timing owner display queries reject invalid clocks and frame bounds", "[unit][timing]") {
+    const auto built = build_timing_index(base_chart());
+    require_timing_query(static_cast<bool>(built));
+    const auto& index = *built.index;
+    check_timing_query(!(index.row_at_approx({1, 0}, chart_end_policy_t::clamp_to_end)));
+    check_timing_query(!(index.row_at_frame(1, 0, chart_end_policy_t::clamp_to_end)));
+    check_timing_query(!(index.row_at_frame(std::numeric_limits<std::uint64_t>::max(), 48000,
+                                  chart_end_policy_t::clamp_to_end)));
+    const timing_index_t empty;
+    check_timing_query(!(empty.tail_seconds_per_row()));
+    check_timing_query(!(empty.seconds_at_approx(1, chart_end_policy_t::extrapolate_tail)));
+    check_timing_query(!(empty.row_at_approx({1, 1}, chart_end_policy_t::clamp_to_end)));
+}
+
+TEST_CASE("Timing frame last-row policy preserves playback clock rejection", "[unit][timing]") {
+    const auto built = build_timing_index(base_chart());
+    require_timing_query(static_cast<bool>(built));
+    check_timing_query(!built.index->row_at_frame(0, 48000, chart_end_policy_t::clamp_to_last_row));
+    check_timing_query(built.index->row_at_frame(0, 48000, chart_end_policy_t::clamp_to_end) ==
+                       std::optional<double>{0});
+    auto chart = base_chart();
+    chart.beat_zero_audio_offset_seconds = {-100, 1};
+    const auto before_zero = build_timing_index(chart);
+    require_timing_query(static_cast<bool>(before_zero));
+    check_timing_query(!before_zero.index->row_at_frame(0, 48000, chart_end_policy_t::clamp_to_last_row));
 }

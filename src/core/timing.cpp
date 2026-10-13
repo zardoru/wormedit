@@ -458,7 +458,7 @@ auto position_frame(const timing_index_t& timing, std::optional<std::uint64_t> r
                                     "preview event lies outside chart geometry", object));
         return std::nullopt;
     }
-    const auto query = timing_at(timing, *row, timing_boundary_side_t::event);
+    const auto query = timing.seconds_at(*row, timing_boundary_side_t::event);
     if (!query) {
         diagnostics.push_back(*query.error);
         diagnostics.back().object = object;
@@ -489,7 +489,7 @@ auto boundary_frame(const timing_index_t& timing, std::optional<std::uint64_t> r
                                     "timing discontinuity lies outside chart geometry", object));
         return std::nullopt;
     }
-    const auto query = timing_at(timing, *row, side);
+    const auto query = timing.seconds_at(*row, side);
     if (!query) {
         diagnostics.push_back(*query.error);
         diagnostics.back().object = object;
@@ -1073,7 +1073,7 @@ auto timing_at(const timing_index_t& index, exact_chart_row_t absolute_row,
                timing_boundary_side_t side) -> timing_query_result_t {
     if (absolute_row.fractional_rows.numerator == 0 &&
         absolute_row.fractional_rows.denominator != 0) {
-        return timing_at(index, absolute_row.whole_rows, side);
+        return index.seconds_at(absolute_row.whole_rows, side);
     }
     if (absolute_row.whole_rows > maximum_i64_magnitude ||
         absolute_row.fractional_rows.numerator > maximum_i64_magnitude ||
@@ -1116,7 +1116,7 @@ auto sample_frame_at_chart_y(const timing_index_t& index, double viewport_scroll
         ++whole;
         fractional = 0;
     }
-    const auto at = timing_at(index, exact_chart_row_t{whole, {fractional, fractional_scale}});
+    const auto at = index.seconds_at(exact_chart_row_t{whole, {fractional, fractional_scale}});
     const auto frame =
         at ? sample_frame_at(*at.seconds, sample_rate, sample_rounding_t::nearest_ties_to_even)
            : sample_frame_result_t{};
@@ -1133,16 +1133,16 @@ auto proposed_timing_y_on_fixed_waveform(const timing_index_t& original,
         chart_row.fractional_rows.denominator == 0) {
         return std::nullopt;
     }
-    const auto proposed_time = timing_at(proposed, chart_row);
+    const auto proposed_time = proposed.seconds_at(chart_row);
     if (!proposed_time)
         return std::nullopt;
-    const auto original_time = timing_at(original, chart_row);
+    const auto original_time = original.seconds_at(chart_row);
     long double displayed_row{};
     if (original_time && original_time.seconds == proposed_time.seconds) {
         displayed_row =
             chart_row.whole_rows + to_long_double(chart_row.fractional_rows);
     } else {
-        const auto position = musical_position_at(original, *proposed_time.seconds,
+        const auto position = original.row_at(*proposed_time.seconds,
                                                   {.extrapolate_before_chart = true});
         if (!position || position.absolute_row->denominator == 0)
             return std::nullopt;
@@ -1163,7 +1163,7 @@ auto timing_at(const timing_index_t& index, const measure_index_t& measures,
         return {.error = error(timing_error_code_t::position_out_of_range,
                                "timing query position is outside chart geometry")};
     }
-    return timing_at(index, *row, side);
+    return index.seconds_at(*row, side);
 }
 
 namespace {
@@ -1194,7 +1194,7 @@ auto locked_anchors_preserved(const chart_document_t& chart, const measure_index
         if (!row || *row < anchor_row) {
             continue;
         }
-        const auto at = timing_at(fitted, *row);
+        const auto at = fitted.seconds_at(*row);
         const auto frame =
             at ? sample_frame_at(*at.seconds, sample_rate, sample_rounding_t::nearest_ties_to_even)
                : sample_frame_result_t{};
@@ -1240,7 +1240,7 @@ auto candidate_beat_time(chart_document_t& candidate, const beat_fit_selection_t
     if (!built) {
         return std::nullopt;
     }
-    const auto end = timing_at(*built.index, selected.beat_row);
+    const auto end = (*built.index).seconds_at(selected.beat_row);
     return end ? end.seconds : std::nullopt;
 }
 
@@ -1306,7 +1306,7 @@ auto fit_beat_interval(const chart_document_t& chart, object_id_t bpm_event, loc
         return reject(timing_error_code_t::invalid_fit,
                       "fitted BPM does not produce a valid timing index");
     }
-    const auto fitted_beat = timing_at(*fitted_build.index, selected.beat_row);
+    const auto fitted_beat = (*fitted_build.index).seconds_at(selected.beat_row);
     const auto matched =
         fitted_beat ? compare_exact(*fitted_beat.seconds, target_time) : std::nullopt;
     if (!matched || *matched != 0) {
@@ -1684,7 +1684,7 @@ auto collect_scroll_events(scroll_speed_event_context_t& context) -> void {
                                                 event.id));
             continue;
         }
-        const auto position_timing = timing_at(context.timing, *row);
+        const auto position_timing = context.timing.seconds_at(*row);
         if (!position_timing) {
             auto diagnostic = *position_timing.error;
             diagnostic.object = event.id;
@@ -1724,7 +1724,7 @@ auto collect_speed_events(scroll_speed_event_context_t& context) -> void {
                       "speed multiplier and duration must be bounded valid rationals", event.id));
             continue;
         }
-        const auto position_timing = timing_at(context.timing, *row);
+        const auto position_timing = context.timing.seconds_at(*row);
         if (!position_timing) {
             auto diagnostic = *position_timing.error;
             diagnostic.object = event.id;
@@ -1756,7 +1756,7 @@ auto collect_speed_events(scroll_speed_event_context_t& context) -> void {
 auto append_speed_segment(scroll_speed_event_context_t& context, scroll_speed_index_t& index,
                           const positioned_scroll_speed_event_t& positioned) -> bool {
     const auto query_time =
-        timing_at(context.timing, positioned.row, timing_boundary_side_t::event);
+        context.timing.seconds_at(positioned.row, timing_boundary_side_t::event);
     if (!query_time) {
         auto diagnostic = *query_time.error;
         diagnostic.object = positioned.id;
@@ -1861,7 +1861,7 @@ auto append_speed_completion_boundary(const scroll_speed_event_context_t& contex
     if (!completion_time) {
         return;
     }
-    const auto position = musical_position_at(context.timing, *completion_time);
+    const auto position = context.timing.row_at(*completion_time);
     if (!position || !position.absolute_row) {
         return;
     }
@@ -2329,7 +2329,7 @@ auto seconds_transition_end(const transition_span_context_t& context)
                      "SPEEDS transition end exceeds exact timing bounds",
                      context.segment.source_event);
     }
-    const auto position = musical_position_at(context.timing, *natural_end);
+    const auto position = context.timing.row_at(*natural_end);
     if (!position) {
         return error(position.error->code, position.error->message, context.segment.source_event);
     }
@@ -2757,7 +2757,7 @@ auto append_measure_metronome_pulses(preview_metronome_context_t& context,
     const bool compound = measure.definition.meter && pulses > 3 && pulses % 3 == 0;
     for (std::uint64_t pulse = 0; pulse < pulses; ++pulse) {
         const auto row = entry.absolute_begin_row + pulse * step;
-        const auto query = timing_at(context.timing, row, timing_boundary_side_t::event);
+        const auto query = context.timing.seconds_at(row, timing_boundary_side_t::event);
         if (!query) {
             context.diagnostics.push_back(*query.error);
             continue;
@@ -2858,7 +2858,7 @@ auto append_count_in_pulses(preview_metronome_context_t& context,
     const auto step = first_measure.definition.meter
                           ? context.measures.entries.front().row_capacity / *pulses
                           : std::max<std::uint64_t>(1, context.chart.divisions_per_standard_measure / 4);
-    const auto row_zero = timing_at(context.timing, 0, timing_boundary_side_t::event);
+    const auto row_zero = context.timing.seconds_at(0, timing_boundary_side_t::event);
     const auto initial_bpm = context.timing.rows.empty()
                                  ? std::optional<signed_rational_t>{}
                                  : try_normalize(context.timing.rows.front().effective_bpm);
@@ -3141,4 +3141,196 @@ auto build_preview_schedule(const chart_document_t& chart, const timing_index_t&
     return result;
 }
 
+
+auto timing_index_t::seconds_at(std::uint64_t row, timing_boundary_side_t side) const
+    -> timing_query_result_t { return timing_at(*this, row, side); }
+auto timing_index_t::seconds_at(exact_chart_row_t row, timing_boundary_side_t side) const
+    -> timing_query_result_t { return timing_at(*this, row, side); }
+auto timing_index_t::seconds_at(const measure_index_t& measures, local_position_t position,
+    timing_boundary_side_t side) const -> timing_query_result_t {
+    return timing_at(*this, measures, position, side);
+}
+auto timing_index_t::row_at(signed_rational_t seconds, timing_inverse_options_t options) const
+    -> timing_position_query_result_t { return musical_position_at(*this, seconds, options); }
+
+auto timing_index_t::tail_seconds_per_row() const -> std::optional<double> {
+    if (rows.empty() || divisions_per_standard_measure == 0) return std::nullopt;
+    const auto bpm = rows.back().effective_bpm;
+    if (bpm.numerator <= 0 || bpm.denominator == 0) return std::nullopt;
+    return 240.0 * static_cast<double>(bpm.denominator) / bpm.numerator /
+           divisions_per_standard_measure;
+}
+
+auto timing_index_t::seconds_at_approx(std::uint64_t row, chart_end_policy_t policy,
+    timing_boundary_side_t side) const -> std::optional<double> {
+    if (policy == chart_end_policy_t::clamp_to_end) row = std::min(row, total_rows);
+    if (policy == chart_end_policy_t::clamp_to_last_row) {
+        if (total_rows == 0) return std::nullopt;
+        row = std::min(row, total_rows - 1);
+    }
+    if (row <= total_rows) {
+        const auto query = seconds_at(row, side);
+        if (!query.seconds || query.seconds->denominator == 0) return std::nullopt;
+        return static_cast<double>(query.seconds->numerator) / query.seconds->denominator;
+    }
+    if (policy != chart_end_policy_t::extrapolate_tail) return std::nullopt;
+    const auto end = seconds_at_approx(total_rows, chart_end_policy_t::reject,
+                                      timing_boundary_side_t::after_stops);
+    const auto rate = tail_seconds_per_row();
+    if (!end || !rate) return std::nullopt;
+    const auto value = *end + static_cast<double>(row - total_rows) * *rate;
+    return std::isfinite(value) ? std::optional{value} : std::nullopt;
+}
+
+namespace {
+using wide_unsigned_t = unsigned __int128;
+using wide_signed_t = __int128;
+
+auto gcd_wide(wide_unsigned_t left, wide_unsigned_t right) -> wide_unsigned_t {
+    while (right != 0) {
+        const auto remainder = left % right;
+        left = right;
+        right = remainder;
+    }
+    return left;
+}
+
+auto wide_magnitude(wide_signed_t value) -> wide_unsigned_t {
+    return value < 0 ? static_cast<wide_unsigned_t>(-(value + 1)) + 1
+                     : static_cast<wide_unsigned_t>(value);
+}
+
+auto multiply_wide(wide_unsigned_t left, wide_unsigned_t right)
+    -> std::optional<wide_unsigned_t> {
+    constexpr auto maximum = static_cast<wide_unsigned_t>(-1);
+    if (right != 0 && left > maximum / right) return std::nullopt;
+    return left * right;
+}
+
+auto tail_delta(const timing_index_t& timing, signed_rational_t seconds)
+    -> std::optional<std::pair<wide_unsigned_t, wide_unsigned_t>> {
+    if (timing.rows.empty() || seconds.denominator == 0)
+        return std::nullopt;
+    const auto& end = timing.rows.back().after_stops_seconds;
+    if (end.denominator == 0) return std::nullopt;
+    const auto common = std::gcd(seconds.denominator, end.denominator);
+    const auto seconds_scale = end.denominator / common;
+    const auto end_scale = seconds.denominator / common;
+    const auto seconds_scaled = static_cast<wide_signed_t>(seconds.numerator) * seconds_scale;
+    const auto end_scaled = static_cast<wide_signed_t>(end.numerator) * end_scale;
+    wide_signed_t difference{};
+    if (__builtin_sub_overflow(seconds_scaled, end_scaled, &difference) || difference <= 0)
+        return std::nullopt;
+    auto delta_denominator = multiply_wide(seconds.denominator, seconds_scale);
+    if (!delta_denominator) return std::nullopt;
+    auto delta_numerator = wide_magnitude(difference);
+    const auto delta_gcd = gcd_wide(delta_numerator, *delta_denominator);
+    delta_numerator /= delta_gcd;
+    *delta_denominator /= delta_gcd;
+
+    return std::pair{delta_numerator, *delta_denominator};
+}
+
+auto tail_row_delta(const timing_index_t& timing, signed_rational_t seconds)
+    -> std::optional<std::pair<wide_unsigned_t, wide_unsigned_t>> {
+    const auto delta = tail_delta(timing, seconds);
+    if (!delta || timing.divisions_per_standard_measure == 0) return std::nullopt;
+    const auto& bpm = timing.rows.back().effective_bpm;
+    if (bpm.numerator <= 0 || bpm.denominator == 0) return std::nullopt;
+    wide_unsigned_t numerator_factors[]{delta->first,
+        static_cast<wide_unsigned_t>(bpm.numerator), timing.divisions_per_standard_measure};
+    wide_unsigned_t denominator_factors[]{delta->second, bpm.denominator, 240};
+    for (auto& numerator_factor : numerator_factors) {
+        for (auto& denominator_factor : denominator_factors) {
+            const auto factor_gcd = gcd_wide(numerator_factor, denominator_factor);
+            numerator_factor /= factor_gcd;
+            denominator_factor /= factor_gcd;
+        }
+    }
+    wide_unsigned_t row_numerator = 1;
+    wide_unsigned_t row_denominator = 1;
+    for (const auto factor : numerator_factors) {
+        const auto product = multiply_wide(row_numerator, factor);
+        if (!product) return std::nullopt;
+        row_numerator = *product;
+    }
+    for (const auto factor : denominator_factors) {
+        const auto product = multiply_wide(row_denominator, factor);
+        if (!product) return std::nullopt;
+        row_denominator = *product;
+    }
+    return std::pair{row_numerator, row_denominator};
+}
+
+auto tail_row_at_seconds(const timing_index_t& timing, signed_rational_t seconds)
+    -> std::optional<signed_rational_t> {
+    const auto delta = tail_row_delta(timing, seconds);
+    if (!delta) return std::nullopt;
+    auto [row_numerator, row_denominator] = *delta;
+    const auto row_gcd = gcd_wide(row_numerator, row_denominator);
+    row_numerator /= row_gcd;
+    row_denominator /= row_gcd;
+    const auto absolute_begin = multiply_wide(timing.total_rows, row_denominator);
+    if (!absolute_begin || row_numerator > static_cast<wide_unsigned_t>(-1) - *absolute_begin)
+        return std::nullopt;
+    auto absolute_numerator = *absolute_begin + row_numerator;
+    auto absolute_denominator = row_denominator;
+    const auto absolute_gcd = gcd_wide(absolute_numerator, absolute_denominator);
+    absolute_numerator /= absolute_gcd;
+    absolute_denominator /= absolute_gcd;
+    if (absolute_numerator > static_cast<wide_unsigned_t>(std::numeric_limits<std::int64_t>::max()) ||
+        absolute_denominator > std::numeric_limits<std::uint64_t>::max()) return std::nullopt;
+    return signed_rational_t{static_cast<std::int64_t>(absolute_numerator),
+                             static_cast<std::uint64_t>(absolute_denominator)};
+}
+
+} // namespace
+
+auto timing_index_t::row_at(signed_rational_t seconds, chart_end_policy_t policy,
+    timing_inverse_options_t options) const -> timing_position_query_result_t {
+    auto query = row_at(seconds, options);
+    if (policy == chart_end_policy_t::reject) return query;
+    if (query.absolute_row) {
+        if (policy == chart_end_policy_t::clamp_to_last_row && total_rows != 0 &&
+            total_rows - 1 <= static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+            const auto end = signed_rational_t{static_cast<std::int64_t>(total_rows - 1), 1};
+            const auto comparison = compare_exact(*query.absolute_row, end);
+            if (comparison && *comparison > 0) query.absolute_row = end;
+        }
+        return query;
+    }
+    if (!query.error || query.error->code != timing_error_code_t::position_out_of_range ||
+        rows.empty() || seconds.denominator == 0) return query;
+    const auto end = compare_exact(seconds, rows.back().after_stops_seconds);
+    if (!end) return query;
+    if (*end >= 0 && policy == chart_end_policy_t::extrapolate_tail) {
+        const auto row = tail_row_at_seconds(*this, seconds);
+        return row ? timing_position_query_result_t{.absolute_row = *row} : query;
+    }
+    if (policy != chart_end_policy_t::clamp_to_end &&
+        policy != chart_end_policy_t::clamp_to_last_row) return query;
+    if (total_rows == 0 || (*end < 0 && policy == chart_end_policy_t::clamp_to_last_row)) return query;
+    const auto limit = policy == chart_end_policy_t::clamp_to_end ? total_rows : total_rows - 1;
+    if (limit > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) return query;
+    return {.absolute_row = signed_rational_t{*end >= 0 ? static_cast<std::int64_t>(limit) : 0, 1}};
+}
+
+auto timing_index_t::row_at_approx(signed_rational_t seconds, chart_end_policy_t policy,
+    timing_inverse_options_t options) const -> std::optional<double> {
+    const auto query = row_at(seconds, policy, options);
+    if (!query.absolute_row || query.absolute_row->denominator == 0) return std::nullopt;
+    const auto value = static_cast<double>(query.absolute_row->numerator) /
+                       query.absolute_row->denominator;
+    return std::isfinite(value) ? std::optional{value} : std::nullopt;
+}
+
+auto timing_index_t::row_at_frame(std::uint64_t frame, std::uint32_t sample_rate,
+    chart_end_policy_t policy, timing_inverse_options_t options) const -> std::optional<double> {
+    if (sample_rate == 0 || frame > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
+        return std::nullopt;
+    // Playback's editable-row clamp only extends a nonnegative audio tail.
+    if (policy == chart_end_policy_t::clamp_to_last_row && !rows.empty() &&
+        rows.back().after_stops_seconds.numerator < 0) return std::nullopt;
+    return row_at_approx({static_cast<std::int64_t>(frame), sample_rate}, policy, options);
+}
 } // namespace wormedit

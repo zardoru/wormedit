@@ -49,7 +49,7 @@ struct sound_slice_build_context_t {
 auto append_sound_slice_group(sound_slice_build_context_t& context, std::size_t begin,
                               std::size_t end, sound_slice_result_t& result) -> bool {
     const auto& event = context.events[begin];
-    const auto event_time = timing_at(context.timing, event.row);
+    const auto event_time = context.timing.seconds_at(event.row);
     const auto elapsed = event_time ? subtract_exact(*event_time.seconds, context.restart_time)
                                     : std::nullopt;
     const auto relative_frame = elapsed
@@ -174,7 +174,7 @@ auto derive_sound_channel_slices(const chart_document_t& chart,
                std::tie(right.row, right.event->provenance.source_order, right.event->id.value);
     });
 
-    const auto first_time = timing_at(*timing.index, events.front().row);
+    const auto first_time = (*timing.index).seconds_at(events.front().row);
     if (!first_time) {
         result.diagnostics.push_back(diagnostic(
             sound_slice_error_code_t::timing_failure,

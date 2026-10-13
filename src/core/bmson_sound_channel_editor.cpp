@@ -988,8 +988,8 @@ auto target_inside_active_slice(const sound_slice_result_t& slices, const timing
     if (active == slices.slices.rend()) return false;
     if (!source_end) return std::nullopt;
     if (active->source_begin_frame >= *source_end) return false;
-    const auto start = timing_at(timing, active->absolute_row);
-    const auto target = timing_at(timing, target_row);
+    const auto start = timing.seconds_at(active->absolute_row);
+    const auto target = timing.seconds_at(target_row);
     if (!start || !target) return std::nullopt;
     const auto elapsed = subtract_exact(*target.seconds, *start.seconds);
     if (!elapsed || elapsed->numerator < 0) return std::nullopt;

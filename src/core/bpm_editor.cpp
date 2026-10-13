@@ -346,7 +346,7 @@ auto make_beat_interval_drag(const song_document_t& document, const chart_docume
                                            "fitted beat must follow the selected BPM event"));
         return result;
     }
-    const auto at = timing_at(*timing.index, *beat_row);
+    const auto at = (*timing.index).seconds_at(*beat_row);
     const auto frame =
         at ? sample_frame_at(*at.seconds, sample_rate, sample_rounding_t::nearest_ties_to_even)
            : sample_frame_result_t{};
@@ -508,7 +508,7 @@ auto update_beat_interval_drag_to_bpm(const song_document_t& document,
                                        : timing.diagnostics.front().message));
         return rejected;
     }
-    const auto at = timing_at(*timing.index, *beat_row);
+    const auto at = (*timing.index).seconds_at(*beat_row);
     const auto frame = at ? sample_frame_at(*at.seconds, drag.sample_rate,
         sample_rounding_t::nearest_ties_to_even) : sample_frame_result_t{};
     if (!frame) return {.diagnostics = {error(diagnostic_code_t::invalid_rational,
@@ -519,7 +519,7 @@ auto update_beat_interval_drag_to_bpm(const song_document_t& document,
         if (!anchor.locked) continue;
         const auto row = absolute_row(std::get<measure_index_t>(measures), anchor.position);
         if (!row || !anchor_row || *row < *anchor_row) continue;
-        const auto anchor_timing = timing_at(*timing.index, *row);
+        const auto anchor_timing = (*timing.index).seconds_at(*row);
         const auto anchor_frame = anchor_timing
             ? sample_frame_at(*anchor_timing.seconds, drag.sample_rate,
                               sample_rounding_t::nearest_ties_to_even)

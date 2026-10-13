@@ -296,7 +296,7 @@ auto locate_row(const measure_index_t& measures, std::uint64_t row)
 auto project_audio_milliseconds(audio_projection_t& projection, std::int64_t milliseconds,
                                 object_id_t object) -> std::optional<projected_row_t> {
     if (!projection.timing_usable) return std::nullopt;
-    const auto query = musical_position_at(*projection.timing, {milliseconds, 1000});
+    const auto query = (*projection.timing).row_at({milliseconds, 1000});
     if (!query.absolute_row) {
         if (query.error && query.error->code == timing_error_code_t::invalid_document) {
             projection.timing_usable = false;

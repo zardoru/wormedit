@@ -29,13 +29,13 @@ auto frame_at_fractional_row(const waveform_t& waveform, const timing_index_t& t
                              long double row, bool end) -> std::optional<long double> {
     const auto floor_row = static_cast<std::uint64_t>(std::floor(row));
     const auto fraction = row - floor_row;
-    const auto before = timing_at(timing, floor_row,
+    const auto before = timing.seconds_at(floor_row,
         fraction == 0.0L && !end ? timing_boundary_side_t::before_delays
                                 : timing_boundary_side_t::after_stops);
     if (!before || !before.seconds) return std::nullopt;
     auto seconds = to_long_double(*before.seconds);
     if (fraction != 0.0L) {
-        const auto after = timing_at(timing, floor_row + 1U, timing_boundary_side_t::before_delays);
+        const auto after = timing.seconds_at(floor_row + 1U, timing_boundary_side_t::before_delays);
         if (!after || !after.seconds) return std::nullopt;
         const auto next = to_long_double(*after.seconds);
         seconds += (next - seconds) * fraction;
@@ -59,8 +59,7 @@ auto pixel_for_column(const aligned_row_context_t& context, const waveform_colum
     if (midpoint > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
         return std::nullopt;
     }
-    const auto musical = musical_position_at(
-        context.timing, {static_cast<std::int64_t>(midpoint), context.waveform.sample_rate});
+    const auto musical = context.timing.row_at({static_cast<std::int64_t>(midpoint), context.waveform.sample_rate});
     if (!musical || !musical.absolute_row || musical.absolute_row->denominator == 0) {
         return std::nullopt;
     }
@@ -515,8 +514,7 @@ auto project_aligned_waveform_samples(const waveform_t& waveform, const timing_i
     for (const auto& sample : *samples) {
         if (sample.frame > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
             return result;
-        const auto musical = musical_position_at(timing,
-            {static_cast<std::int64_t>(sample.frame), waveform.sample_rate});
+        const auto musical = timing.row_at({static_cast<std::int64_t>(sample.frame), waveform.sample_rate});
         if (!musical || !musical.absolute_row) return result;
         const auto y = to_long_double(*musical.absolute_row) / rows_per_pixel - request.viewport_scroll_pixels;
         if (y >= 0 && y < request.viewport_height_pixels)
@@ -713,9 +711,9 @@ auto project_waveform_overview(const waveform_t& waveform, const timing_index_t&
                               viewport.viewport_height_pixels) *
                              rows_per_pixel),
                    0.0L, static_cast<long double>(timing.total_rows));
-    const auto begin_time = timing_at(timing, static_cast<std::uint64_t>(first_row),
+    const auto begin_time = timing.seconds_at(static_cast<std::uint64_t>(first_row),
                                       timing_boundary_side_t::before_delays);
-    const auto end_time = timing_at(timing, static_cast<std::uint64_t>(last_row),
+    const auto end_time = timing.seconds_at(static_cast<std::uint64_t>(last_row),
                                     timing_boundary_side_t::after_stops);
     if (!begin_time || !end_time) {
         result.status = aligned_waveform_status_t::invalid_timing;
@@ -731,7 +729,7 @@ auto project_waveform_overview(const waveform_t& waveform, const timing_index_t&
     }
     result.visible_begin_fraction = static_cast<double>(*begin) / waveform.total_frames;
     result.visible_end_fraction = static_cast<double>(*end) / waveform.total_frames;
-    const auto beat_zero = timing_at(timing, 0, timing_boundary_side_t::before_delays);
+    const auto beat_zero = timing.seconds_at(0, timing_boundary_side_t::before_delays);
     if (!beat_zero || !beat_zero.seconds || beat_zero.seconds->denominator == 0) {
         result.status = aligned_waveform_status_t::invalid_timing;
         return result;

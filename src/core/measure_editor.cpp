@@ -678,8 +678,8 @@ auto conversion_times_match(const timing_index_t& before, const timing_index_t& 
                             std::span<const std::uint64_t> rows, const pause_range_t& range) -> bool {
     for (const auto row : rows) {
         if (row == range.begin && range.kind == pause_kind_t::delay) continue; // configuration only
-        const auto old_time = timing_at(before, row);
-        const auto new_time = timing_at(after, range.shifted(row));
+        const auto old_time = before.seconds_at(row);
+        const auto new_time = after.seconds_at(range.shifted(row));
         if (!old_time || !new_time || old_time.seconds != new_time.seconds) return false;
     }
     return true;

@@ -619,8 +619,8 @@ auto stem_audio_playing(const song_document_t& document, const chart_document_t&
     if (after == derived.slices.begin()) return false;
     const auto& slice = *std::prev(after);
     if (slice.source_begin_frame >= *source_end) return false;
-    const auto now = timing_at(timing, row).seconds;
-    const auto then = timing_at(timing, slice.absolute_row).seconds;
+    const auto now = timing.seconds_at(row).seconds;
+    const auto then = timing.seconds_at(slice.absolute_row).seconds;
     if (!now || !then) return std::nullopt;
     const auto elapsed = (to_long_double(*now) -
                           to_long_double(*then));

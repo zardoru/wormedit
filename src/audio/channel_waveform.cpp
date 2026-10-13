@@ -73,7 +73,7 @@ auto channel_pixel_for_column(const channel_row_context_t& context,
     if (!time) {
         return std::nullopt;
     }
-    const auto musical = musical_position_at(context.timing, *time);
+    const auto musical = context.timing.row_at(*time);
     if (!musical || !musical.absolute_row || musical.absolute_row->denominator == 0) {
         return std::nullopt;
     }
@@ -158,10 +158,10 @@ auto project_channel_slice(const channel_slice_context_t& context, const derived
         : std::optional{context.waveform.total_frames};
     if (!slice_begin || !slice_end) return aligned_waveform_status_t::invalid_waveform;
     if (*slice_begin >= *slice_end) return aligned_waveform_status_t::projected;
-    const auto origin = timing_at(context.timing, slice.absolute_row);
-    const auto begin_time = timing_at(context.timing, static_cast<std::uint64_t>(low),
+    const auto origin = context.timing.seconds_at(slice.absolute_row);
+    const auto begin_time = context.timing.seconds_at(static_cast<std::uint64_t>(low),
                                       timing_boundary_side_t::before_delays);
-    const auto end_time = timing_at(context.timing, static_cast<std::uint64_t>(high),
+    const auto end_time = context.timing.seconds_at(static_cast<std::uint64_t>(high),
                                     timing_boundary_side_t::after_stops);
     if (!origin || !origin.seconds || !begin_time || !end_time) return aligned_waveform_status_t::invalid_timing;
     const auto first_frame = source_frame_at(*begin_time.seconds, *origin.seconds, context.waveform,

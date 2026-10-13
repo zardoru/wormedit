@@ -1,5 +1,7 @@
 #include "ui/nuklear/keysound_list_state.h"
 
+#include "core/text_util.h"
+
 #include <algorithm>
 #include <cctype>
 #include <unordered_set>
@@ -198,15 +200,9 @@ auto worm_ui_keysound_group_review_confirm(worm_ui_keysound_group_review_t& revi
     review.message.clear();
     for (const auto& group : review.groups) {
         if (!group.accepted || group.member_ids.empty()) continue;
-        auto name = group.name;
-        const auto first = name.find_first_not_of(" \t\n\r\f\v");
-        if (first == std::string::npos) {
-            review.message = "Group names must contain 1 to 64 bytes.";
-            return {};
-        }
-        const auto last = name.find_last_not_of(" \t\n\r\f\v");
-        name = name.substr(first, last - first + 1);
-        if (name.size() > 64 || name.find('\0') != std::string::npos) {
+        auto name = std::string(wormedit::text_util::trim(
+            group.name, wormedit::text_util::ascii_whitespace));
+        if (name.empty() || !wormedit::text_util::valid_bounded_text(name, 64)) {
             review.message = "Group names must contain 1 to 64 bytes.";
             return {};
         }

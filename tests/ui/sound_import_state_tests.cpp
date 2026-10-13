@@ -225,3 +225,25 @@ TEST_CASE("sound_import section kind remains fixed through review retry and canc
     fixed_section_kind(WORM_UI_SOUND_IMPORT_STEM);
     fixed_section_kind(WORM_UI_SOUND_IMPORT_KEYSOUND);
 }
+
+TEST_CASE("Sound import truncates names on UTF8 boundaries", "[frontend-state][shared-text]") {
+    worm_ui_sound_import_state_t state;
+    const auto input = paths({"/s/a.wav"});
+    worm_ui_nuklear_sound_import_add(state, input, true);
+    worm_ui_nuklear_sound_import_rename(state, 0, std::string(254, 'a') + "音");
+    CHECK(state.items[0].name == std::string(254, 'a'));
+    state.groups.push_back({});
+    worm_ui_nuklear_sound_import_rename_group(state, 0, std::string(63, 'a') + "音");
+    CHECK(state.groups[0].name == std::string(63, 'a'));
+}
+
+TEST_CASE("Sound import rejects invalid bounded names", "[frontend-state][shared-text]") {
+    worm_ui_sound_import_state_t state;
+    const auto input = paths({"/s/a.wav"});
+    worm_ui_nuklear_sound_import_add(state, input, true);
+    worm_ui_nuklear_sound_import_rename(state, 0, std::string("bad\xc0\xaf"));
+    CHECK_FALSE(worm_ui_nuklear_sound_import_confirm(state));
+    worm_ui_nuklear_sound_import_rename(state, 0, "valid");
+    state.groups.push_back({.name = std::string("bad\xc0\xaf"), .accepted = true});
+    CHECK_FALSE(worm_ui_nuklear_sound_import_confirm(state));
+}

@@ -1,4 +1,7 @@
 #include "ui/field/rect.h"
+
+#include <wormedit/core/rational.h>
+#include "core/text_util.h"
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/compose_resources.h"
 #include "ui/nuklear/popup_lifecycle.h"
@@ -10,13 +13,10 @@
 
 #include <algorithm>
 #include <cmath>
-#include <charconv>
-#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <limits>
 #include <mutex>
-#include <numeric>
 #include <span>
 #include <string_view>
 #include <utility>
@@ -171,21 +171,9 @@ struct inline_timing_rational_t {
     std::uint64_t denominator{1};
 };
 
-auto trim_timing_text(std::string_view text) -> std::string_view {
-    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front())))
-        text.remove_prefix(1);
-    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back())))
-        text.remove_suffix(1);
-    return text;
-}
-
 auto parse_timing_unsigned(std::string_view text) -> std::optional<std::uint64_t> {
-    if (text.empty()) return std::nullopt;
     std::uint64_t value{};
-    const auto result = std::from_chars(text.data(), text.data() + text.size(), value);
-    if (result.ec != std::errc{} || result.ptr != text.data() + text.size())
-        return std::nullopt;
-    return value;
+    return wormedit::parse_integer(text, value) ? std::optional{value} : std::nullopt;
 }
 
 auto signed_timing_magnitude(std::uint64_t magnitude, bool negative)
@@ -202,17 +190,17 @@ auto parse_timing_fraction(std::string_view text, bool negative)
     const auto slash = text.find('/');
     if (slash == std::string_view::npos || text.find('/', slash + 1) != std::string_view::npos)
         return std::nullopt;
-    const auto magnitude = parse_timing_unsigned(trim_timing_text(text.substr(0, slash)));
-    const auto denominator = parse_timing_unsigned(trim_timing_text(text.substr(slash + 1)));
+    const auto magnitude = parse_timing_unsigned(wormedit::text_util::trim(text.substr(0, slash), wormedit::text_util::ascii_whitespace));
+    const auto denominator = parse_timing_unsigned(wormedit::text_util::trim(text.substr(slash + 1), wormedit::text_util::ascii_whitespace));
     if (!magnitude || !denominator || *denominator == 0) return std::nullopt;
-    const auto divisor = std::gcd(*magnitude, *denominator);
-    const auto numerator = signed_timing_magnitude(*magnitude / divisor, negative);
+    const auto reduced = wormedit::rows_to_fraction(*magnitude, *denominator);
+    const auto numerator = signed_timing_magnitude(reduced.numerator, negative);
     if (!numerator) return std::nullopt;
-    return inline_timing_rational_t{*numerator, *denominator / divisor};
+    return inline_timing_rational_t{*numerator, reduced.denominator};
 }
 
 auto parse_timing_scalar(std::string_view text) -> std::optional<inline_timing_rational_t> {
-    text = trim_timing_text(text);
+    text = wormedit::text_util::trim(text, wormedit::text_util::ascii_whitespace);
     if (text.find('/') == std::string_view::npos) {
         const auto parsed = wormedit::parse_exact_decimal(text);
         if (!parsed) return std::nullopt;
@@ -268,7 +256,7 @@ void set_inline_timing_number(WormUiWorkspaceAction& action, WormUiTimingLaneKin
     } else {
         copy_timing_text(action.timing_primary_numerator_text, numerator);
         copy_timing_text(action.timing_primary_denominator_text, denominator);
-        action.timing_value = static_cast<double>(value.numerator) / value.denominator;
+        action.timing_value = wormedit::to_double(value);
     }
 }
 
@@ -585,7 +573,7 @@ auto worm_ui_nuklear_inline_timing_review_new_stage(
 auto worm_ui_nuklear_inline_timing_confirm(const WormUiTimingView& view, const char* text,
                                            WormUiWorkspaceAction& action) -> bool {
     if (!view.stage_active || !text) return false;
-    const auto input = trim_timing_text(text);
+    const auto input = wormedit::text_util::trim(text, wormedit::text_util::ascii_whitespace);
     if (input.size() >= sizeof(action.timing_bpm_decimal_text)) return false;
     const auto anchor_frame = view.stage_lane == WORM_UI_TIMING_LANE_ANCHOR
                                   ? parse_timing_unsigned(input)

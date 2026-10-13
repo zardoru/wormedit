@@ -1,4 +1,7 @@
 #include "ui/field/rect.h"
+
+#include <wormedit/core/rational.h>
+#include "core/text_util.h"
 #include "ui/nuklear/text_fit.h"
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/compose_canvas.h"
@@ -1592,18 +1595,18 @@ static void draw_compose_beat_fit_overlay(const ComposePaintContext& paint) {
                        1.3f, nk_rgba(110, 222, 236, 215), 4);
     }
     char label[140]{};
-    const auto original = static_cast<double>(view.beat_fit_original_bpm_numerator) /
-                          static_cast<double>(view.beat_fit_original_bpm_denominator);
-    const auto proposed = static_cast<double>(view.beat_fit_proposed_bpm_numerator) /
-                          static_cast<double>(view.beat_fit_proposed_bpm_denominator);
+    const auto original = wormedit::to_double(wormedit::signed_rational_t{view.beat_fit_original_bpm_numerator,
+                          view.beat_fit_original_bpm_denominator});
+    const auto proposed = wormedit::to_double(wormedit::signed_rational_t{view.beat_fit_proposed_bpm_numerator,
+                          view.beat_fit_proposed_bpm_denominator});
     char original_text[32]{};
     char proposed_text[32]{};
     format_beat_fit_bpm(original, original_text, sizeof(original_text));
     format_beat_fit_bpm(proposed, proposed_text, sizeof(proposed_text));
     auto length = snprintf(label, sizeof(label), "Fit %s -> %s BPM", original_text, proposed_text);
     if (view.beat_fit_snap_active && view.beat_fit_snap_step_denominator != 0) {
-        const auto step = static_cast<double>(view.beat_fit_snap_step_numerator) /
-                          static_cast<double>(view.beat_fit_snap_step_denominator);
+        const auto step = wormedit::to_double(wormedit::signed_rational_t{view.beat_fit_snap_step_numerator,
+                          view.beat_fit_snap_step_denominator});
         char step_text[24]{};
         format_beat_fit_bpm(step, step_text, sizeof(step_text));
         length += snprintf(label + length, sizeof(label) - static_cast<std::size_t>(length),
@@ -1676,13 +1679,10 @@ static void draw_compose_offset_fit_overlay(const ComposePaintContext& paint) {
         field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y,
                        1.3f, nk_rgba(110, 222, 236, 215), 4);
     }
-    const auto denominator = std::max<std::uint64_t>(1, view.waveform_audio_offset_denominator);
-    const auto proposed_denominator =
-        std::max<std::uint64_t>(1, view.waveform_proposed_audio_offset_denominator);
-    const auto original = static_cast<double>(view.waveform_audio_offset_numerator) /
-                          static_cast<double>(denominator);
-    const auto proposed = static_cast<double>(view.waveform_proposed_audio_offset_numerator) /
-                          static_cast<double>(proposed_denominator);
+    const auto original = wormedit::to_double(wormedit::signed_rational_t{view.waveform_audio_offset_numerator,
+                          view.waveform_audio_offset_denominator});
+    const auto proposed = wormedit::to_double(wormedit::signed_rational_t{view.waveform_proposed_audio_offset_numerator,
+                          view.waveform_proposed_audio_offset_denominator});
     char label[96]{};
     const auto length = snprintf(label, sizeof(label), "Offset %+.3f -> %+.3f s", original, proposed);
     if (length > 0) {
@@ -3275,7 +3275,9 @@ auto chip_text_width(const nk_user_font* font, const char* text) -> float {
 void fit_chip_source(ToolChip& chip, const nk_user_font* font, const char* text, float width) {
     int length{};
     while (length < 512 && text[length]) ++length;
-    while (length && (static_cast<unsigned char>(text[length]) & 0xc0U) == 0x80U) --length;
+    length = static_cast<int>(wormedit::text_util::truncate_utf8(
+        std::string_view(text, static_cast<std::size_t>(length) + (text[length] ? 1 : 0)),
+        static_cast<std::size_t>(length)).size());
     if (font->width(font->userdata, font->height, text, length) <= width) {
         std::memcpy(chip.source.data(), text, static_cast<std::size_t>(length));
         return;

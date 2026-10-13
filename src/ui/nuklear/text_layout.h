@@ -1,3 +1,4 @@
+#include "core/text_util.h"
 #pragma once
 #include "wormedit/nuklear_config.h"
 #include <algorithm>
@@ -18,7 +19,7 @@ inline auto codepoint_size(std::string_view text, std::size_t offset) -> std::si
                               : (first & 0xF8) == 0xF0 ? 4 : 1;
     if (length > text.size() - offset) return 1;
     for (std::size_t index = 1; index < length; ++index)
-        if ((static_cast<unsigned char>(text[offset + index]) & 0xC0) != 0x80) return 1;
+        if (!wormedit::text_util::is_utf8_continuation(text[offset + index])) return 1;
     return length;
 }
 

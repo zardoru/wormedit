@@ -1,5 +1,6 @@
 #include "nuklear_event_harness.h"
 #include "ui/nuklear/compose_state.h"
+#include <wormedit/core/measure.h>
 #include <catch2/catch_test_macros.hpp>
 #include <array>
 #include <string>
@@ -138,4 +139,30 @@ TEST_CASE("Shift+Alt drag moves only the bar line and trades length with the nex
     check_resize(std::string(action.get().timing_meter_denominator_text) == "8");
     check_resize(action.get().compose_second_meter_numerator == 9);
     check_resize(action.get().compose_second_meter_denominator == 8);
+}
+
+TEST_CASE("Measure resize equality does not wrap 64 bit cross products",
+          "[frontend-state][event-harness][shared-value]") {
+    resize_fixture_t fixture;
+    const auto numerator = (std::uint64_t{5} << 60) + 18;
+    const auto denominator = (std::uint64_t{1} << 62) + 8;
+    const auto measure = wormedit::measure_definition_t{
+        .length = {numerator, denominator}, .meter = std::nullopt};
+    require_resize(wormedit::validate_measure(denominator, measure).row_capacity == numerator);
+    fixture.rows[0].length_numerator = numerator;
+    fixture.rows[0].length_denominator = denominator;
+    fixture.rows[0].has_meter = false;
+    fixture.lines[0].y_pixels = 375;
+    fixture.harness.view().compose.area_rows_per_measure = denominator;
+    fixture.harness.view().compose.pixels_per_standard_measure = 100;
+    const std::array press{resize_motion(fixture.x, fixture.y_line),
+                           resize_button(fixture.x, fixture.y_line, true)};
+    (void)fixture.harness.frame(press, SDL_KMOD_LALT);
+    require_resize(worm_ui_nuklear_compose_state().measure_resize.measure_resize_active);
+    const std::array release{resize_motion(fixture.x, fixture.screen_y(100)),
+                             resize_button(fixture.x, fixture.screen_y(100), false)};
+    const auto action = fixture.harness.frame(release, SDL_KMOD_LALT);
+    check_resize(action.get().compose_action == WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER);
+    check_resize(std::string(action.get().timing_meter_numerator_text) == "9");
+    check_resize(std::string(action.get().timing_meter_denominator_text) == "4");
 }

@@ -1,3 +1,4 @@
+#include "core/text_util.h"
 #pragma once
 #include "ui/nuklear/text_layout.h"
 #include <optional>
@@ -18,7 +19,7 @@ inline auto fit_text_prefix(std::string_view text, const Width& width_of, float 
                             std::size_t minimum_prefix = 0) -> std::optional<std::size_t> {
     std::optional<std::size_t> best;
     for (std::size_t end = 0; end < text.size(); ++end) {
-        if (end < minimum_prefix || (static_cast<unsigned char>(text[end]) & 0xc0U) == 0x80U)
+        if (end < minimum_prefix || wormedit::text_util::is_utf8_continuation(text[end]))
             continue;
         if (width_of(text.substr(0, end), suffix) > width) break;
         best = end;
@@ -33,7 +34,7 @@ inline auto fit_text_prefix_reverse(std::string_view text, const Width& width_of
                                     std::string_view suffix = text_ellipsis)
     -> std::optional<std::size_t> {
     for (auto end = text.size(); end-- > 0;) {
-        if ((static_cast<unsigned char>(text[end]) & 0xc0U) == 0x80U) continue;
+        if (wormedit::text_util::is_utf8_continuation(text[end])) continue;
         if (width_of(text.substr(0, end), suffix) <= width) return end;
     }
     return std::nullopt;
@@ -47,7 +48,7 @@ inline auto fit_marker_text(const nk_user_font* font, std::string_view text, flo
     auto kept = text.size();
     while (kept > 0) {
         --kept;
-        while (kept > 0 && (static_cast<unsigned char>(text[kept - 1]) & 0xc0U) == 0x80U) --kept;
+        while (kept > 0 && wormedit::text_util::is_utf8_continuation(text[kept - 1])) --kept;
         auto candidate = std::string(text.substr(0, kept)) + "...";
         if (text_width(font, candidate) <= width) return candidate;
     }

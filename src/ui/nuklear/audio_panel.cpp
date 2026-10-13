@@ -1,6 +1,8 @@
 #include "ui/field/rect.h"
 #include "ui/nuklear/bmson_lane_mode_ui.h"
 #include "ui/nuklear/audio_panel.h"
+
+#include <wormedit/core/rational.h>
 #include "ui/nuklear/audio_state.h"
 #include "ui/nuklear/chrome.h"
 
@@ -310,7 +312,7 @@ void render_waveform_column(struct nk_context* context, const WormUiAudioSlicesV
         return;
     }
 
-    const auto seconds = static_cast<double>(view->total_frames) / view->sample_rate;
+    const auto seconds = wormedit::to_double(wormedit::rational_t{view->total_frames, view->sample_rate});
     nk_labelf(context, NK_TEXT_LEFT, "Stereo overview · %.2f seconds · %u Hz", seconds,
               view->sample_rate);
     nk_layout_row_dynamic(context, 26, 3);

@@ -1,34 +1,20 @@
 #include "ui/nuklear/metadata_state.h"
 
+#include <wormedit/core/numeric_text.h>
+#include "core/checked_math.h"
+#include "core/text_util.h"
+
 #include <algorithm>
-#include <cctype>
 #include <mutex>
 #include <string_view>
 #include <utility>
 
 namespace {
 
-auto trim_metadata_rational_space(std::string_view text) -> std::string_view {
-    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front())))
-        text.remove_prefix(1);
-    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back())))
-        text.remove_suffix(1);
-    return text;
-}
-
 auto parse_metadata_rational_unsigned(std::string_view text, std::uint64_t limit)
     -> std::optional<std::uint64_t> {
-    if (text.empty())
-        return std::nullopt;
     std::uint64_t value{};
-    for (const char character : text) {
-        if (character < '0' || character > '9')
-            return std::nullopt;
-        const auto digit = static_cast<std::uint64_t>(character - '0');
-        if (value > (limit - digit) / 10)
-            return std::nullopt;
-        value = value * 10 + digit;
-    }
+    if (!wormedit::parse_integer(text, value) || value > limit) return std::nullopt;
     return value;
 }
 
@@ -50,13 +36,6 @@ auto parse_metadata_rational_numerator(std::string_view text)
     if (*magnitude == limit)
         return std::numeric_limits<std::int64_t>::min();
     return -static_cast<std::int64_t>(*magnitude);
-}
-
-auto multiply_metadata_rational_denominator(std::uint64_t denominator, std::uint64_t factor)
-    -> std::optional<std::uint64_t> {
-    if (denominator > std::numeric_limits<std::uint64_t>::max() / factor)
-        return std::nullopt;
-    return denominator * factor;
 }
 
 auto parse_metadata_rational_number(std::string_view text)
@@ -89,7 +68,7 @@ auto parse_metadata_rational_number(std::string_view text)
         return std::nullopt;
     std::uint64_t scale = 1;
     for (std::size_t i = 0; i < fractional_part.size(); ++i) {
-        const auto next_scale = multiply_metadata_rational_denominator(scale, 10);
+        const auto next_scale = wormedit::checked_math::checked_multiply(scale, 10);
         if (!next_scale)
             return std::nullopt;
         scale = *next_scale;
@@ -110,11 +89,6 @@ auto parse_metadata_rational_number(std::string_view text)
                                ? std::numeric_limits<std::int64_t>::min()
                                : -static_cast<std::int64_t>(magnitude);
     return worm_ui_nuklear_metadata_rational_t{numerator, scale};
-}
-
-auto metadata_rational_magnitude(std::int64_t value) -> std::uint64_t {
-    return value < 0 ? static_cast<std::uint64_t>(-(value + 1)) + 1
-                     : static_cast<std::uint64_t>(value);
 }
 
 auto append_metadata_rational_digits(std::string& output, std::uint64_t value) -> void {
@@ -142,7 +116,7 @@ auto metadata_rational_decimal_places(std::uint64_t denominator) -> std::optiona
 auto format_metadata_rational_decimal(worm_ui_nuklear_metadata_rational_t value,
                                       std::size_t places) -> std::string {
     std::string result;
-    const auto magnitude = metadata_rational_magnitude(value.numerator);
+    const auto magnitude = wormedit::checked_math::magnitude(value.numerator);
     const auto scale = value.denominator;
     const auto integer = magnitude / scale;
     auto fraction = magnitude % scale;
@@ -165,7 +139,7 @@ auto format_metadata_rational_fraction(worm_ui_nuklear_metadata_rational_t value
     std::string result;
     if (value.numerator < 0)
         result.push_back('-');
-    append_metadata_rational_digits(result, metadata_rational_magnitude(value.numerator));
+    append_metadata_rational_digits(result, wormedit::checked_math::magnitude(value.numerator));
     result.push_back('/');
     append_metadata_rational_digits(result, value.denominator);
     return result;
@@ -180,7 +154,7 @@ auto metadata_file_dialog_state() -> wormedit::ui::file_dialog_slot_t& {
 
 auto worm_ui_nuklear_parse_metadata_rational(std::string_view text, bool allow_milliseconds)
     -> std::optional<worm_ui_nuklear_metadata_rational_t> {
-    text = trim_metadata_rational_space(text);
+    text = wormedit::text_util::trim(text, wormedit::text_util::ascii_whitespace);
     bool milliseconds = false;
     if (allow_milliseconds && text.ends_with("ms")) {
         milliseconds = true;
@@ -188,11 +162,11 @@ auto worm_ui_nuklear_parse_metadata_rational(std::string_view text, bool allow_m
     } else if (allow_milliseconds && text.ends_with('s')) {
         text.remove_suffix(1);
     }
-    text = trim_metadata_rational_space(text);
+    text = wormedit::text_util::trim(text, wormedit::text_util::ascii_whitespace);
     auto value = parse_metadata_rational_number(text);
     if (!value || !milliseconds)
         return value;
-    const auto denominator = multiply_metadata_rational_denominator(value->denominator, 1000);
+    const auto denominator = wormedit::checked_math::checked_multiply(value->denominator, 1000);
     if (!denominator)
         return std::nullopt;
     value->denominator = *denominator;

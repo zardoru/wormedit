@@ -1,5 +1,7 @@
 #include "arrow_glyph.h"
 
+#include <wormedit/core/rational.h>
+
 #include <numeric>
 
 namespace wormedit::ui {
@@ -48,8 +50,7 @@ auto arrow_polygon(std::uint8_t direction, float x, float y, float size)
 auto note_snap_class(std::uint64_t row, std::uint64_t divisions_per_standard_measure)
     -> std::uint8_t {
     if (divisions_per_standard_measure == 0) return 0;
-    const auto denominator = divisions_per_standard_measure /
-                             std::gcd(row, divisions_per_standard_measure);
+    const auto denominator = wormedit::rows_to_fraction(row, divisions_per_standard_measure).denominator;
     for (const auto snap : snap_classes) {
         if (snap % denominator == 0) return snap;
     }
@@ -74,9 +75,9 @@ auto note_snap_class(std::uint64_t whole, std::uint64_t numerator,
                      std::uint64_t denominator, std::uint64_t divisions) -> std::uint8_t {
     if (denominator == 0 || numerator >= denominator || divisions == 0) return 0;
     if (numerator == 0) return note_snap_class(whole, divisions);
-    const auto reduction = std::gcd(numerator, denominator);
-    numerator /= reduction;
-    denominator /= reduction;
+    const auto reduced = wormedit::rows_to_fraction(numerator, denominator);
+    numerator = reduced.numerator;
+    denominator = reduced.denominator;
     for (const auto snap : snap_classes) {
         const auto common = std::gcd(static_cast<std::uint64_t>(snap), divisions);
         const auto scale = snap / common;

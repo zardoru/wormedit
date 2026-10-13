@@ -1,11 +1,10 @@
 #include "ui/field/field_glyphs.h"
+
+#include "core/text_util.h"
 #include <algorithm>
 
 namespace wormedit::ui::field {
 namespace {
-auto continuation(unsigned char byte) -> bool {
-    return (byte & 0xc0U) == 0x80U;
-}
 auto sequence_length(unsigned char byte) -> unsigned {
     if (byte < 0x80U)
         return 1;
@@ -42,7 +41,7 @@ auto decode_utf8(std::string_view text) noexcept -> decoded_codepoint_t {
     auto value = static_cast<std::uint32_t>(first & (0x7fU >> length));
     for (unsigned index = 1; index < length; ++index) {
         const auto byte = static_cast<unsigned char>(text[index]);
-        if (!continuation(byte))
+        if (!wormedit::text_util::is_utf8_continuation(text[index]))
             return {0xfffdU, 1};
         value = (value << 6U) | (byte & 0x3fU);
     }

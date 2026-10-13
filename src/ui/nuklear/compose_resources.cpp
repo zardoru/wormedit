@@ -1,4 +1,6 @@
 #include "ui/nuklear/compose_resources.h"
+
+#include "core/text_util.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/popup_lifecycle.h"
 
@@ -172,8 +174,8 @@ void render_layer_creation(const ResourcePanel& panel) {
         chrome::autofocus_text_field(panel.context, static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_AUTO_SELECT,
             state.layer_editor.layer_creation_name.data(), static_cast<int>(state.layer_editor.layer_creation_name.size()),
             nk_filter_default, state.layer_editor.layer_creation_focus_pending);
-        const auto valid = std::string_view(state.layer_editor.layer_creation_name.data()).find_first_not_of(" \t\r\n") !=
-            std::string_view::npos;
+        const auto valid = !wormedit::text_util::trim(
+            state.layer_editor.layer_creation_name.data(), " \t\r\n").empty();
         chrome::dialog_footer_begin(dialog, panel.context, 2);
         if (chrome::dialog_button(dialog, panel.context, "Cancel", chrome::DialogButtonRole::secondary))
             state.layer_editor.layer_creation_context.reset();

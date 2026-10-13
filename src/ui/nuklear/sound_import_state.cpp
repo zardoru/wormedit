@@ -1,5 +1,7 @@
 #include "ui/nuklear/sound_import_state.h"
 
+#include "core/text_util.h"
+
 #include <algorithm>
 #include <array>
 #include <optional>
@@ -25,17 +27,8 @@ auto is_stem_friendly(const std::string& extension) -> bool {
 
 auto display_name(const std::string& path) -> std::string {
     auto name = std::filesystem::path{path}.stem().string();
-    if (name.size() > maximum_name_bytes) name.resize(maximum_name_bytes);
+    name.resize(wormedit::text_util::truncate_utf8(name, maximum_name_bytes).size());
     return name;
-}
-
-auto trimmed(std::string text) -> std::string {
-    const auto blank = [](char c) { return c == ' ' || c == '\t'; };
-    while (!text.empty() && blank(text.back())) text.pop_back();
-    std::size_t begin = 0;
-    while (begin < text.size() && blank(text[begin])) ++begin;
-    text.erase(0, begin);
-    return text;
 }
 
 void choose_phase(worm_ui_sound_import_state_t& state, bool chart_has_bgm) {
@@ -159,7 +152,7 @@ void worm_ui_nuklear_sound_import_rename_group(worm_ui_sound_import_state_t& sta
                                               std::size_t group, std::string name) {
     constexpr std::size_t max_group_name_bytes = 64;
     if (group >= state.groups.size()) return;
-    if (name.size() > max_group_name_bytes) name.resize(max_group_name_bytes);
+    name.resize(wormedit::text_util::truncate_utf8(name, max_group_name_bytes).size());
     state.groups[group].name = std::move(name);
 }
 
@@ -189,7 +182,7 @@ void worm_ui_nuklear_sound_import_set_all_kinds(worm_ui_sound_import_state_t& st
 void worm_ui_nuklear_sound_import_rename(worm_ui_sound_import_state_t& state, std::size_t index,
                                          std::string name) {
     if (index >= state.items.size()) return;
-    if (name.size() > maximum_name_bytes) name.resize(maximum_name_bytes);
+    name.resize(wormedit::text_util::truncate_utf8(name, maximum_name_bytes).size());
     state.items[index].name = std::move(name);
 }
 
@@ -220,13 +213,15 @@ auto worm_ui_nuklear_sound_import_confirm(worm_ui_sound_import_state_t& state)
         state.message = "This import exceeds the 1295-file limit. Remove files before confirming.";
         return std::nullopt;
     }
-    for (auto& item : state.items) item.name = trimmed(item.name);
-    if (std::ranges::any_of(state.items, [](const auto& item) { return item.name.empty(); })) {
+    for (auto& item : state.items) item.name = std::string(wormedit::text_util::trim(item.name, " \t"));
+    for (const auto& item : state.items) {
+        if (!item.name.empty() && wormedit::text_util::valid_bounded_text(item.name, maximum_name_bytes)) continue;
         state.message = "Every sound needs a name.";
         return std::nullopt;
     }
     for (const auto& group : state.groups) {
-        if (group.accepted && (trimmed(group.name).empty() || group.name.size() > 64)) {
+        if (group.accepted && (wormedit::text_util::trim(group.name, " \t").empty() ||
+                               !wormedit::text_util::valid_bounded_text(group.name, 64))) {
             state.message = "Group names must contain 1 to 64 bytes.";
             return std::nullopt;
         }
@@ -235,7 +230,7 @@ auto worm_ui_nuklear_sound_import_confirm(worm_ui_sound_import_state_t& state)
     for (auto& group : state.groups) {
         if (!group.accepted) continue;
         auto row = worm_ui_sound_import_group_commit_t{
-            .name = trimmed(group.name), .existing_group = group.existing_group};
+            .name = std::string(wormedit::text_util::trim(group.name, " \t")), .existing_group = group.existing_group};
         for (std::size_t index = 0; index < state.items.size(); ++index)
             if (state.items[index].group_index == std::optional<std::size_t>{
                     static_cast<std::size_t>(&group - state.groups.data())})

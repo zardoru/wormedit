@@ -1,5 +1,7 @@
 #include "ui/nuklear/compose_measure_resize_input.h"
 
+#include <wormedit/core/rational.h>
+
 #include "ui/nuklear/measure_resize.h"
 
 #include <SDL3/SDL_keyboard.h>
@@ -98,8 +100,8 @@ void preview(const ComposeBeatFitInput& input) {
                        (std::clamp(input.pointer_y, 0.0, view.viewport_height_pixels) -
                         state.measure_resize.measure_resize_anchor_y_pixels) / view.pixels_per_standard_measure;
     const auto snap = view.edit_snap_enabled ? view.area_snap_denominator : view.area_rows_per_measure;
-    const auto old_length = static_cast<double>(state.measure_resize.measure_resize_old_numerator) /
-                            static_cast<double>(state.measure_resize.measure_resize_old_denominator);
+    const auto old_length = wormedit::to_double(wormedit::rational_t{
+        state.measure_resize.measure_resize_old_numerator, state.measure_resize.measure_resize_old_denominator});
     double new_length = 0.0;
     std::string label;
     if (state.measure_resize.measure_resize_move_line) {
@@ -132,10 +134,11 @@ void preview(const ComposeBeatFitInput& input) {
 void commit(const ComposeBeatFitInput& input) {
     if (!state.measure_resize.measure_resize_valid || input.action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     const auto& view = *input.view;
-    const auto unchanged = static_cast<std::uint64_t>(state.measure_resize.measure_resize_numerator) *
-                                   state.measure_resize.measure_resize_old_denominator ==
-                               state.measure_resize.measure_resize_old_numerator * state.measure_resize.measure_resize_denominator;
-    if (unchanged) return;
+    const auto original = wormedit::reduce_fraction(wormedit::rational_t{
+        state.measure_resize.measure_resize_old_numerator, state.measure_resize.measure_resize_old_denominator});
+    const auto resized = wormedit::reduce_fraction(wormedit::rational_t{
+        state.measure_resize.measure_resize_numerator, state.measure_resize.measure_resize_denominator});
+    if (original == resized) return;
     state.measures_dock.measures_staged_ids.assign(1, state.measure_resize.measure_resize_measure_id);
     auto& action = *input.action;
     action.compose_action = state.measure_resize.measure_resize_move_line ? WORM_UI_COMPOSE_ACTION_MOVE_BAR_LINE

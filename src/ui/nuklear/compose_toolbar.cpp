@@ -1,4 +1,6 @@
 #include "ui/nuklear/compose_menu_command.h"
+
+#include <wormedit/core/rational.h>
 #include "ui/nuklear/compose_toolbar.h"
 #include "ui/nuklear/tooltip.h"
 #include <cstdio>
@@ -357,10 +359,9 @@ static void render_offset_value(nk_context* context, const WormUiComposeView& vi
         return;
     }
     nk_labelf(context, NK_TEXT_CENTERED, "%+.3f s%s",
-        static_cast<double>(view.waveform_offset_drag_active
-            ? view.waveform_proposed_audio_offset_numerator : view.waveform_audio_offset_numerator) /
-        static_cast<double>(view.waveform_offset_drag_active
-            ? view.waveform_proposed_audio_offset_denominator : view.waveform_audio_offset_denominator),
+        wormedit::to_double(wormedit::signed_rational_t{
+            view.waveform_offset_drag_active ? view.waveform_proposed_audio_offset_numerator : view.waveform_audio_offset_numerator,
+            view.waveform_offset_drag_active ? view.waveform_proposed_audio_offset_denominator : view.waveform_audio_offset_denominator}),
         (view.waveform_timing_locked || view.audio_offset_locked) ? " · locked" : view.waveform_offset_drag_active ? " · preview" : "");
 }
 

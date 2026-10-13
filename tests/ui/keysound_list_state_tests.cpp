@@ -134,3 +134,11 @@ TEST_CASE("resource use filters distinguish missing from unused", "[unit][fronte
     check_resource_filter(worm_ui_keysound_matches("0A", "Display name", "SAMPLES/DRUMS", "samples/drums/kick.wav"));
     check_resource_filter(!worm_ui_keysound_matches("0A", "Display name", "bass", "samples/drums/kick.wav"));
 }
+
+TEST_CASE("Keysound group review rejects invalid UTF8 names", "[frontend-state][shared-text]") {
+    worm_ui_keysound_group_review_t review;
+    review.groups.push_back({.name = std::string("bad\xc0\xaf"), .accepted = true,
+                             .member_ids = {1}});
+    CHECK(worm_ui_keysound_group_review_confirm(review).empty());
+    CHECK(review.message == "Group names must contain 1 to 64 bytes.");
+}

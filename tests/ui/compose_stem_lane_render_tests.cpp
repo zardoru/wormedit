@@ -37,6 +37,7 @@ struct field_submission_fixture_t {
 }
 
 #include "ui/nuklear/compose_canvas.h"
+#include "ui/nuklear/audio_panel.h"
 namespace {
 void check_clipped_wide_stem_canvas(bool selected) {
     field_submission_fixture_t fixture;
@@ -184,4 +185,79 @@ TEST_CASE("BGM tail painter clips the body independently from an offscreen head"
           "[ui][field][compose][t423-tail][isolated-software-render]") {
     check_bgm_tail_with_offscreen_head(false);
     check_bgm_tail_with_offscreen_head(true);
+}
+
+namespace {
+auto fit_overlay_glyphs(bool offset, bool invalid) -> std::vector<SDL_FPoint> {
+    field_submission_fixture_t fixture;
+    expect_field(fixture.context != nullptr);
+    WormUiComposeView view{};
+    view.scene_available = true;
+    view.viewport_width_pixels = 128;
+    view.viewport_height_pixels = 128;
+    view.beat_fit_drag_active = !offset;
+    view.offset_fit_drag_active = offset;
+    view.beat_fit_original_bpm_numerator = invalid ? 120 : 0;
+    view.beat_fit_proposed_bpm_numerator = invalid ? 121 : 0;
+    view.beat_fit_original_bpm_denominator = invalid ? 0 : 1;
+    view.beat_fit_proposed_bpm_denominator = invalid ? 0 : 1;
+    view.waveform_audio_offset_numerator = invalid ? 3 : 0;
+    view.waveform_proposed_audio_offset_numerator = invalid ? 4 : 0;
+    view.waveform_audio_offset_denominator = invalid ? 0 : 1;
+    view.waveform_proposed_audio_offset_denominator = invalid ? 0 : 1;
+    nk_input_begin(fixture.context);
+    nk_input_end(fixture.context);
+    expect_field(nk_begin(fixture.context, "fit overlay", nk_rect(0, 0, 128, 128), NK_WINDOW_NO_SCROLLBAR));
+    draw_compose_scene_canvas(fixture.context, &view, nk_window_get_canvas(fixture.context), nk_rect(0, 0, 128, 128));
+    nk_end(fixture.context);
+    const auto& field = wormedit::ui::nuklear::compose_field(fixture.context);
+    std::vector<SDL_FPoint> glyphs;
+    for (const auto& vertex : field.vertices()) {
+        constexpr auto unit = 1.0f / 255.0f;
+        const auto red = offset ? 148.0f : 255.0f;
+        const auto green = offset ? 229.0f : 219.0f;
+        const auto blue = offset ? 238.0f : 148.0f;
+        if (vertex.color.r == red * unit && vertex.color.g == green * unit &&
+            vertex.color.b == blue * unit) glyphs.push_back(vertex.tex_coord);
+    }
+    return glyphs;
+}
+}
+
+TEST_CASE("Fit overlays display zero for invalid rational denominators",
+          "[ui][field][shared-text][isolated-software-render]") {
+    for (const bool offset : {false, true}) {
+        const auto zero = fit_overlay_glyphs(offset, false);
+        const auto invalid = fit_overlay_glyphs(offset, true);
+        expect_field(!zero.empty());
+        expect_field(invalid.size() == zero.size());
+        for (std::size_t index = 0; index < zero.size(); ++index) {
+            expect_field(invalid[index].x == zero[index].x);
+            expect_field(invalid[index].y == zero[index].y);
+        }
+    }
+}
+
+TEST_CASE("Audio overview rendering guards a zero sample rate", "[ui][shared-text][isolated-software-render]") {
+    field_submission_fixture_t fixture;
+    REQUIRE(fixture.context != nullptr);
+    WormUiAudioSlicesView view{};
+    view.visible = view.has_selected_asset = view.waveform_available = true;
+    view.total_frames = 480000;
+    WormUiWorkspaceAction action{};
+    nk_input_begin(fixture.context);
+    nk_input_end(fixture.context);
+    REQUIRE(nk_begin(fixture.context, "audio overview", nk_rect(0, 0, 1280, 900), NK_WINDOW_NO_SCROLLBAR));
+    worm_ui_nuklear_render_audio_slices(fixture.context, &view, &action, false, false);
+    nk_end(fixture.context);
+    bool has_zero_seconds{};
+    const nk_command* command;
+    nk_foreach(command, fixture.context) {
+        if (command->type != NK_COMMAND_TEXT) continue;
+        const auto* text = reinterpret_cast<const nk_command_text*>(command);
+        const auto label = std::string_view(text->string, static_cast<std::size_t>(text->length));
+        if (label.find("Stereo overview · 0.00 seconds · 0 Hz") != std::string_view::npos)
+            has_zero_seconds = true;
+    }
+    CHECK(has_zero_seconds);
 }

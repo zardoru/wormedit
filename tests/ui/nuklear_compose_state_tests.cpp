@@ -8,6 +8,7 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include <array>
+#include <cmath>
 #include <cstring>
 #include <limits>
 #include <source_location>
@@ -1464,4 +1465,14 @@ TEST_CASE("Plain Page uses Tab cadence and changes distance without retaining re
     expect_inline(held.press_direction(two, 78, 11000, true) == one);
     expect_inline(!held.advance(12000, false));
     expect_inline(!held.advance(13000, true));
+}
+
+TEST_CASE("Inline timing converts exact fractions before narrowing to double",
+          "[frontend-state][shared-text]") {
+    if constexpr (std::numeric_limits<long double>::digits <= std::numeric_limits<double>::digits)
+        SKIP("This platform has no extended precision long double.");
+    const auto view = staged_timing(WORM_UI_TIMING_LANE_BPM);
+    WormUiWorkspaceAction action{};
+    REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "9007199254740995/9007199254740993", action));
+    CHECK(action.timing_value == std::nextafter(1.0, 2.0));
 }

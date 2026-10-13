@@ -217,3 +217,67 @@ TEST_CASE("redivision rejects stale revisions and unknown charts and ignores no-
     CHECK(history.undo.empty());
     CHECK(history.document.revision == revision);
 }
+
+TEST_CASE("document transaction source queries do not copy", "[unit][core][command]") {
+    auto history = make_document_history(make_song());
+    auto transaction = document_command_transaction_t::from(history);
+    CHECK_FALSE(transaction.has_copy());
+    REQUIRE(transaction.source_chart(chart_id_t{1}));
+    CHECK_FALSE(transaction.has_copy());
+    CHECK(transaction.chart(chart_id_t{999}) == nullptr);
+    CHECK_FALSE(transaction.has_copy());
+}
+
+TEST_CASE("document transactions reuse their working snapshot", "[unit][core][command]") {
+    auto history = make_document_history(make_song());
+    auto transaction = document_command_transaction_t::from(history);
+    auto& copy = transaction.copy_document();
+    copy.charts.front().metadata.name = "Edited";
+    CHECK(&transaction.copy_document() == &copy);
+    CHECK(transaction.chart(chart_id_t{1})->metadata.name == "Edited");
+    CHECK(history.document.charts.front().metadata.name.empty());
+}
+
+TEST_CASE("document transactions publish one reversible edit", "[unit][core][command]") {
+    auto history = make_document_history(make_song());
+    auto transaction = document_command_transaction_t::from(history);
+    transaction.copy_document().charts.front().metadata.name = "Edited";
+    REQUIRE(transaction.commit("Edit name"));
+    CHECK(history.document.charts.front().metadata.name == "Edited");
+    REQUIRE(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().metadata.name.empty());
+}
+
+TEST_CASE("rejecting a document transaction does not copy", "[unit][core][command]") {
+    auto history = make_document_history(make_song());
+    auto transaction = document_command_transaction_t::from(history);
+    const auto rejected = transaction.reject(diagnostic_code_t::invalid_id, "Rejected");
+    CHECK_FALSE(rejected);
+    CHECK(rejected.revision == history.document.revision);
+    CHECK_FALSE(transaction.is_ready());
+    CHECK_FALSE(transaction.has_copy());
+}
+
+TEST_CASE("rejected document transactions cannot publish", "[unit][core][command]") {
+    auto history = make_document_history(make_song());
+    auto transaction = document_command_transaction_t::from(history);
+    const auto rejected = transaction.reject(diagnostic_code_t::invalid_id, "Rejected");
+    CHECK_FALSE(transaction.commit("Rejected edit"));
+    CHECK_FALSE(transaction.has_copy());
+    CHECK(history.undo.empty());
+    CHECK(history.document.revision == 1);
+}
+
+TEST_CASE("document transactions adopt staged snapshots and publish once", "[unit][core][command]") {
+    auto history = make_document_history(make_song());
+    auto staged = history.document;
+    staged.charts.front().metadata.name = "Staged";
+    auto transaction = document_command_transaction_t::from(history);
+    transaction.adopt_document(std::move(staged));
+    CHECK(transaction.has_copy());
+    REQUIRE(transaction.commit("Staged edit"));
+    CHECK_FALSE(transaction.commit("Repeat edit"));
+    CHECK(history.undo.size() == 1);
+    CHECK(history.document.charts.front().metadata.name == "Staged");
+}

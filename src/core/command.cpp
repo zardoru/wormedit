@@ -124,6 +124,65 @@ auto commit_document_command(document_history_t& history, song_document_t propos
     return result;
 }
 
+auto document_command_transaction_t::from(document_history_t& history)
+    -> document_command_transaction_t {
+    return {.history = history, .outcome = {.revision = history.document.revision}};
+}
+
+auto document_command_transaction_t::is_ready() const noexcept -> bool {
+    if (finished) return false;
+    for (const auto& diagnostic : outcome.diagnostics) {
+        if (diagnostic.severity == diagnostic_severity_t::error) return false;
+    }
+    return true;
+}
+
+auto document_command_transaction_t::has_copy() const noexcept -> bool {
+    return proposed.has_value();
+}
+
+auto document_command_transaction_t::source_chart(chart_id_t id) const -> const chart_document_t* {
+    const auto found = std::ranges::find(history.document.charts, id, &chart_document_t::id);
+    return found == history.document.charts.end() ? nullptr : &*found;
+}
+
+auto document_command_transaction_t::copy_document() -> song_document_t& {
+    if (!proposed) proposed.emplace(history.document);
+    return *proposed;
+}
+
+void document_command_transaction_t::adopt_document(song_document_t&& document) {
+    proposed.emplace(std::move(document));
+}
+
+auto document_command_transaction_t::chart(chart_id_t id) -> chart_document_t* {
+    if (!source_chart(id)) return nullptr;
+    auto& document = copy_document();
+    const auto found = std::ranges::find(document.charts, id, &chart_document_t::id);
+    return found == document.charts.end() ? nullptr : &*found;
+}
+
+auto document_command_transaction_t::rejection(std::uint64_t revision, diagnostic_code_t code,
+    std::string message, std::optional<object_id_t> object) -> document_command_result_t {
+    document_command_result_t result{.revision = revision};
+    wormedit::reject(result, code, std::move(message), object);
+    return result;
+}
+
+auto document_command_transaction_t::reject(diagnostic_code_t code, std::string message,
+    std::optional<object_id_t> object) -> document_command_result_t {
+    wormedit::reject(outcome, code, std::move(message), object);
+    finished = true;
+    return std::move(outcome);
+}
+
+auto document_command_transaction_t::commit(std::string label, document_command_options_t options)
+    -> document_command_result_t {
+    if (!is_ready() || !proposed) return std::move(outcome);
+    finished = true;
+    return commit_document_command(history, std::move(*proposed), std::move(label), options);
+}
+
 void merge_recent_undo_records(document_history_t& history, std::size_t count, std::string label) {
     if (count < 2 || history.undo.size() < count) return;
     const auto first = history.undo.end() - static_cast<std::ptrdiff_t>(count);
@@ -157,12 +216,13 @@ auto apply_quantize_command(document_history_t& history, chart_id_t chart_id,
 
     if (request.selection && !quantized_stem_audio_valid(history.document, *chart, *proposal.chart,
                                                         result.command.diagnostics)) return result;
-    auto proposed_document = history.document;
+    auto transaction = document_command_transaction_t::from(history);
+    auto& proposed_document = transaction.copy_document();
     const auto proposed_chart = std::ranges::find_if(
         proposed_document.charts, [chart_id](const auto& item) { return item.id == chart_id; });
     *proposed_chart = std::move(*proposal.chart);
     result.command =
-        commit_document_command(history, std::move(proposed_document), "Quantize chart");
+        transaction.commit("Quantize chart");
     return result;
 }
 
@@ -194,12 +254,13 @@ auto apply_redivision_command(document_history_t& history, std::uint64_t expecte
     }
     result.moves = std::move(proposal.moves);
 
-    auto proposed_document = history.document;
+    auto transaction = document_command_transaction_t::from(history);
+    auto& proposed_document = transaction.copy_document();
     const auto proposed_chart = std::ranges::find_if(
         proposed_document.charts, [chart_id](const auto& item) { return item.id == chart_id; });
     *proposed_chart = std::move(*proposal.chart);
     result.command =
-        commit_document_command(history, std::move(proposed_document), "Change chart resolution");
+        transaction.commit("Change chart resolution");
     return result;
 }
 

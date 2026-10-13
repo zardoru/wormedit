@@ -149,13 +149,14 @@ void sort_segments(chart_document_t& chart) {
 auto apply_lane_layout_edit(document_history_t& history, std::uint64_t expected_revision,
                             const lane_layout_action_t& action, lane_layout_change_policy_t policy)
     -> document_command_result_t {
-    document_command_result_t result{.revision = history.document.revision};
+    auto transaction = document_command_transaction_t::from(history);
+    auto& result = transaction.outcome;
     if (expected_revision != history.document.revision) {
         reject(result, diagnostic_code_t::invalid_id, "lane layout editor revision is stale");
         return result;
     }
     const auto chart_id = std::visit([](const auto& edit) { return edit.chart; }, action);
-    auto proposed = history.document;
+    auto& proposed = transaction.copy_document();
     const auto chart = std::ranges::find(proposed.charts, chart_id, &chart_document_t::id);
     if (!chart_id || chart == proposed.charts.end()) {
         reject(result, diagnostic_code_t::invalid_id, "lane layout edit refers to an unknown chart");
@@ -173,7 +174,7 @@ auto apply_lane_layout_edit(document_history_t& history, std::uint64_t expected_
                    " note(s) would sit on a lane the new layout does not define");
         return result;
     }
-    return commit_document_command(history, std::move(proposed), std::move(context.label));
+    return transaction.commit(std::move(context.label));
 }
 
 } // namespace wormedit

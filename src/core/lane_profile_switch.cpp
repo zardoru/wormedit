@@ -15,13 +15,6 @@ namespace {
 
 constexpr std::array<std::string_view, 3> step_types{"pump-single", "pump-double", "dance-solo"};
 
-auto reject(document_command_result_t& result, std::string message) {
-    result.diagnostics.push_back({.severity = diagnostic_severity_t::error,
-                                  .code = diagnostic_code_t::invalid_id,
-                                  .message = std::move(message),
-                                  .object = std::nullopt});
-}
-
 auto measure_order(const chart_document_t& chart, measure_id_t id) -> std::optional<std::size_t> {
     const auto found = std::ranges::find(chart.measures, id, &measure_chunk_t::id);
     if (found == chart.measures.end()) return std::nullopt;
@@ -106,13 +99,13 @@ auto insert_initial_lane_profile(document_history_t& history, chart_id_t chart,
     auto scratch = make_document_history(history.document);
     const auto target_position = materialize_initial_profile_target(scratch, chart);
     if (!target_position) {
-        reject(result, "The lane profile needs a valid materialized chart measure.");
+        reject(result, diagnostic_code_t::invalid_id, "The lane profile needs a valid materialized chart measure.");
         return result;
     }
     const auto found = std::ranges::find(scratch.document.charts, chart, &chart_document_t::id);
     const auto prepared = initial_profile_layout(*found, target);
     if (!prepared) {
-        reject(result, "That lane profile is not a supported built-in profile.");
+        reject(result, diagnostic_code_t::invalid_id, "That lane profile is not a supported built-in profile.");
         return result;
     }
     const auto bindings = found->input_profile.bindings.empty()
@@ -121,7 +114,9 @@ auto insert_initial_lane_profile(document_history_t& history, chart_id_t chart,
         scratch, scratch.document.revision,
         insert_lane_layout_action_t{chart, *target_position, prepared->first, bindings});
     if (!inserted.applied) return inserted;
-    return commit_document_command(history, std::move(scratch.document),
+    auto transaction = document_command_transaction_t::from(history);
+    transaction.adopt_document(std::move(scratch.document));
+    return transaction.commit(
                                    "Set initial lane profile");
 }
 
@@ -237,19 +232,19 @@ auto apply_lane_profile_switch(document_history_t& history, std::uint64_t expect
                                const lane_layout_t& target) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
     if (expected_revision != history.document.revision) {
-        reject(result, "Lane profile switch has a stale document revision.");
+        reject(result, diagnostic_code_t::invalid_id, "Lane profile switch has a stale document revision.");
         return result;
     }
     const auto found = std::ranges::find(history.document.charts, chart, &chart_document_t::id);
     if (found == history.document.charts.end()) {
-        reject(result, "The selected difficulty is no longer available.");
+        reject(result, diagnostic_code_t::invalid_id, "The selected difficulty is no longer available.");
         return result;
     }
     const auto* segment = active_lane_layout_segment(*found, position);
     if (!segment) return insert_initial_lane_profile(history, chart, target);
     auto layout = retarget_lane_layout(segment->layout, target);
     if (!layout) {
-        reject(result, "That profile has a different number of lanes or incompatible lane roles.");
+        reject(result, diagnostic_code_t::invalid_id, "That profile has a different number of lanes or incompatible lane roles.");
         return result;
     }
     return apply_lane_layout_edit(history, expected_revision,

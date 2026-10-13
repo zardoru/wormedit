@@ -146,7 +146,8 @@ auto apply_lane_assignment(document_history_t& history, std::uint64_t expected_r
                            chart_id_t chart_id, const std::vector<object_id_t>& ids,
                            const lane_chooser_t& choose, const char* label,
                            lane_transform_limits_t limits) -> document_command_result_t {
-    document_command_result_t result{.revision = history.document.revision};
+    auto transaction = document_command_transaction_t::from(history);
+    auto& result = transaction.outcome;
     if (expected_revision != history.document.revision) {
         reject(result, diagnostic_code_t::invalid_id, "lane transform document revision is stale");
         return result;
@@ -157,7 +158,7 @@ auto apply_lane_assignment(document_history_t& history, std::uint64_t expected_r
                            : "lane transform selection exceeds its configured cap");
         return result;
     }
-    auto proposed = history.document;
+    auto& proposed = transaction.copy_document();
     const auto chart = std::ranges::find(proposed.charts, chart_id, &chart_document_t::id);
     if (!chart_id || chart == proposed.charts.end()) {
         reject(result, diagnostic_code_t::invalid_id, "lane transform refers to an unknown chart");
@@ -185,7 +186,7 @@ auto apply_lane_assignment(document_history_t& history, std::uint64_t expected_r
     }
     if (touched.empty() || !lanes_free_of_overlap(*chart, measures, touched, result))
         return result;
-    return commit_document_command(history, std::move(proposed), label);
+    return transaction.commit(label);
 }
 
 } // namespace

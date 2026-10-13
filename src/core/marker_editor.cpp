@@ -445,7 +445,8 @@ auto apply_marker_operation(marker_edit_context_t& context, const Edit& edit) ->
 auto apply_marker_edit(document_history_t& history, std::uint64_t expected_revision,
                        const marker_edit_action_t& action, marker_edit_limits_t limits)
     -> document_command_result_t {
-    document_command_result_t result{.revision = history.document.revision};
+    auto transaction = document_command_transaction_t::from(history);
+    auto& result = transaction.outcome;
     if (expected_revision != history.document.revision) {
         reject(result, diagnostic_code_t::invalid_id, "marker editor document revision is stale");
         return result;
@@ -457,7 +458,7 @@ auto apply_marker_edit(document_history_t& history, std::uint64_t expected_revis
         return result;
     }
 
-    auto proposed = history.document;
+    auto& proposed = transaction.copy_document();
     marker_edit_context_t context{.proposed = proposed,
                                   .result = result,
                                   .limits = limits,
@@ -476,7 +477,7 @@ auto apply_marker_edit(document_history_t& history, std::uint64_t expected_revis
                "marker labels exceed the configured UTF-8 text limits");
         return result;
     }
-    return commit_document_command(history, std::move(proposed), std::move(context.command_label));
+    return transaction.commit(std::move(context.command_label));
 }
 
 } // namespace wormedit

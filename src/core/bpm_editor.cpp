@@ -257,7 +257,8 @@ auto step_bpm_by_one(signed_rational_t bpm, bpm_step_direction_t direction)
 auto apply_bpm_edit(document_history_t& history, std::uint64_t expected_revision,
                     const bpm_edit_action_t& action, bpm_edit_limits_t limits)
     -> document_command_result_t {
-    document_command_result_t result{.revision = history.document.revision};
+    auto transaction = document_command_transaction_t::from(history);
+    auto& result = transaction.outcome;
     if (expected_revision != history.document.revision) {
         reject(result, diagnostic_code_t::invalid_id, "BPM editor document revision is stale");
         return result;
@@ -267,7 +268,7 @@ auto apply_bpm_edit(document_history_t& history, std::uint64_t expected_revision
         return result;
     }
 
-    auto proposed = history.document;
+    auto& proposed = transaction.copy_document();
     auto outcome = std::visit(
         [&](const auto& edit) { return apply_chart_edit(proposed, edit, limits, result); }, action);
     if (!outcome.valid || !result.diagnostics.empty() || !outcome.changed) {
@@ -278,7 +279,7 @@ auto apply_bpm_edit(document_history_t& history, std::uint64_t expected_revision
                "BPM edit would exceed the audio chart measure limits");
         return result;
     }
-    return commit_document_command(history, std::move(proposed), std::move(outcome.label));
+    return transaction.commit(std::move(outcome.label));
 }
 
 namespace {

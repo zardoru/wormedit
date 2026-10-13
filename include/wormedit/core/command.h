@@ -78,6 +78,38 @@ struct document_command_options_t {
     bool preserve_retained_source_flags{false};
 };
 
+// A synchronous command owns its working document only after the first edit.
+// Keep revision checks at apply entry points until command stamps are introduced.
+struct document_command_transaction_t {
+    document_history_t& history;
+    document_command_result_t outcome;
+    std::optional<song_document_t> proposed;
+    bool finished{};
+
+    [[nodiscard]] static auto from(document_history_t& history)
+        -> document_command_transaction_t;
+    [[nodiscard]] auto is_ready() const noexcept -> bool;
+    [[nodiscard]] auto has_copy() const noexcept -> bool;
+    [[nodiscard]] auto source_chart(chart_id_t id) const -> const chart_document_t*;
+    auto copy_document() -> song_document_t&;
+    // Staged editors hand over their existing snapshot without copying the live document.
+    void adopt_document(song_document_t&& document);
+    auto chart(chart_id_t id) -> chart_document_t*;
+    [[nodiscard]] auto reject(diagnostic_code_t code, std::string message,
+                std::optional<object_id_t> object = std::nullopt) -> document_command_result_t;
+    [[nodiscard]] static auto rejection(std::uint64_t revision, diagnostic_code_t code,
+        std::string message, std::optional<object_id_t> object = std::nullopt)
+        -> document_command_result_t;
+    [[nodiscard]] auto commit(std::string label, document_command_options_t options = {})
+        -> document_command_result_t;
+};
+
+template <class Payload> struct command_result_with_t {
+    document_command_result_t command;
+    Payload payload{};
+    [[nodiscard]] explicit operator bool() const noexcept { return static_cast<bool>(command); }
+};
+
 // Publishes a complete proposed document only when its graph validates. This
 // is the common atomic boundary for future editor commands.
 [[nodiscard]] auto commit_document_command(document_history_t& history,

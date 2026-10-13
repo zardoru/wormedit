@@ -975,7 +975,8 @@ auto propose_measure_removal(const chart_document_t& chart, measure_id_t measure
 auto apply_measure_edit(document_history_t& history, std::uint64_t expected_revision,
                         const measure_edit_action_t& action, measure_edit_limits_t limits)
     -> document_command_result_t {
-    document_command_result_t result{.revision = history.document.revision};
+    auto transaction = document_command_transaction_t::from(history);
+    auto& result = transaction.outcome;
     if (expected_revision != history.document.revision) {
         reject(result, diagnostic_code_t::invalid_id, "measure editor document revision is stale");
         return result;
@@ -986,7 +987,7 @@ auto apply_measure_edit(document_history_t& history, std::uint64_t expected_revi
         return result;
     }
 
-    auto proposed = history.document;
+    auto& proposed = transaction.copy_document();
     measure_edit_context_t context{.proposed = proposed,
                                    .limits = limits,
                                    .result = result,
@@ -997,7 +998,7 @@ auto apply_measure_edit(document_history_t& history, std::uint64_t expected_revi
     if (!result.diagnostics.empty() || !context.changed) {
         return result;
     }
-    return commit_document_command(history, std::move(proposed), std::move(context.label));
+    return transaction.commit(std::move(context.label));
 }
 
 auto extend_chart_to_audio_end(chart_document_t& chart, const audio_stream_info_t& stream,

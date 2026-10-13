@@ -675,10 +675,11 @@ auto apply_lane_migration(document_history_t& history,
     std::unordered_map<std::uint64_t, std::optional<lane_id_t>> mapping;
     for (const auto& item : canonical->mapping) mapping.emplace(item.source_lane.value,
                                                               item.target_lane);
-    auto proposed = history.document;
+    auto transaction = document_command_transaction_t::from(history);
+    auto& proposed = transaction.copy_document();
     const auto updated = apply_mapping(*chart, mapping, canonical->target);
     *std::ranges::find(proposed.charts, canonical->chart, &chart_document_t::id) = updated;
-    auto command = commit_document_command(history, std::move(proposed), "Migrate chart lane profile");
+    auto command = transaction.commit("Migrate chart lane profile");
     return {.issue = command ? lane_migration_issue_t::none
                              : lane_migration_issue_t::invalid_mapping,
             .message = command ? std::string{} : "The migrated chart failed document validation.",

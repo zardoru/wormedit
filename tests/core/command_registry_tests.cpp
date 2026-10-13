@@ -954,3 +954,10 @@ TEST_CASE("Select All Objects uses Primary Alt A independently from note selecti
     focus.ime_composition_active = true;
     CHECK(dispatch_shortcut(registry, event, focus, primary).status == command_dispatch_status_t::focus_consumed);
 }
+
+TEST_CASE("Workspace project command uses the shared Project vocabulary", "[core][catalog][D15]") {
+    const auto registry = command_registry_t::from({});
+    const auto* project = find_command(registry, {"workspace.open_setup"});
+    REQUIRE(project != nullptr);
+    CHECK(project->definition.display_name == "Open Project");
+}

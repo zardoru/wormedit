@@ -172,7 +172,7 @@ auto validate_osu_mania_keys(const std::vector<field_t>& fields, fail_t&& fail) 
              "only osu! mode 3 (mania) is supported");
     const auto keys_text = find_osu_value(fields, "Difficulty", "CircleSize");
     std::int64_t keys{};
-    if (!keys_text || !parse_integer(*keys_text, keys) || keys < 1 || keys > 18)
+    if (!keys_text || !parse_integer(*keys_text, keys) || keys < minimum_osu_mania_keys || keys > maximum_osu_mania_keys)
         fail(osu_mania_parse_diagnostic_code_t::invalid_difficulty,
              "CircleSize must be an integer key count from 1 through 18");
     return keys;
@@ -2723,7 +2723,7 @@ auto build_osu_measure_index(const chart_document_t& chart,
 
 template <typename fail_t>
 auto normalize_osu_layout(const lane_layout_t& layout, fail_t&& fail) -> std::vector<lane_id_t> {
-    if (layout.lanes.empty() || layout.lanes.size() > 18)
+    if (layout.lanes.empty() || layout.lanes.size() > maximum_osu_mania_keys)
         fail(osu_mania_write_diagnostic_code_t::invalid_layout,
              "osu!mania supports integer lane counts from 1 through 18", "lane_layouts");
     std::vector<const lane_definition_t*> ordered(layout.lanes.size());

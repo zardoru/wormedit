@@ -1,3 +1,4 @@
+#include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/lane_profiles.h>
@@ -7241,4 +7242,22 @@ TEST_CASE("Picking rejects invalid head and stage geometry",
     check_specialstyle_pick(!hit_test_editor(history.document.charts.front(), index, *setup.view, request));
     request.split_stage_gutter_pixels = 200;
     check_specialstyle_pick(!hit_test_editor(history.document.charts.front(), index, *setup.view, request));
+}
+
+namespace {
+void check_timing_catalog(bool condition) { REQUIRE(condition); }
+}
+TEST_CASE("Timing lane catalog maps every selection kind explicitly", "[core][catalog]") {
+    for (const auto& lane : timing_lanes) {
+        check_timing_catalog(timing_lane_for_selection(lane.selection_kind) == lane.kind);
+        check_timing_catalog(selection_kind_for_timing_lane(lane.kind) == lane.selection_kind);
+        check_timing_catalog(!lane.label.empty() && !lane.short_label.empty());
+    }
+    const std::array non_timing{editor_selection_object_kind_t::note, editor_selection_object_kind_t::bgm_event,
+        editor_selection_object_kind_t::bga_event, editor_selection_object_kind_t::bookmark,
+        editor_selection_object_kind_t::section};
+    check_timing_catalog(non_timing.size() + timing_lanes.size() == editor_selection_object_kind_count);
+    for (const auto kind : non_timing) check_timing_catalog(!timing_lane_for_selection(kind));
+    check_timing_catalog(!timing_lane_for_selection(static_cast<editor_selection_object_kind_t>(100)));
+    check_timing_catalog(!selection_kind_for_timing_lane(static_cast<timing_lane_kind_t>(100)));
 }

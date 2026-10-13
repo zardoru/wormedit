@@ -916,28 +916,14 @@ auto command_registry_t::from(command_invoker_t invoker) -> command_registry_t {
                 command_category_t::timing, workspace, {chord(shortcut_key_t::t)});
     (void)update_command_state(registry, {"timing.tap"}, false, std::nullopt);
 
-    constexpr std::array workspace_tabs{
-        workspace_tab_t::setup,
-        workspace_tab_t::metadata,
-        workspace_tab_t::timing,
-        workspace_tab_t::compose,
-        workspace_tab_t::storyboard,
-        workspace_tab_t::audio_slices,
-        workspace_tab_t::compare_validate,
-    };
-    constexpr std::array tab_names{
-        "Setup",        "Metadata",          "Timing", "Compose", "Storyboard",
-        "Audio Slices", "Compare / Validate"};
-    constexpr std::array tab_ids{"setup",      "metadata",     "timing",          "compose",
-                                 "storyboard", "audio_slices", "compare_validate"};
     constexpr std::array function_keys{
         shortcut_key_t::f1, shortcut_key_t::f2, shortcut_key_t::f3, shortcut_key_t::f4,
         shortcut_key_t::f5, shortcut_key_t::f6, shortcut_key_t::f7,
     };
     for (std::size_t i = 0; i < workspace_tabs.size(); ++i) {
-        add_builtin(registry, invoker, "workspace.open_" + std::string(tab_ids[i]),
-                    "Open " + std::string(tab_names[i]), command_category_t::workspace, workspace,
-                    {chord(function_keys[i])}, false, workspace_tabs[i]);
+        add_builtin(registry, invoker, "workspace.open_" + std::string(workspace_tabs[i].id),
+                    "Open " + std::string(workspace_tabs[i].label), command_category_t::workspace, workspace,
+                    {chord(function_keys[i])}, false, workspace_tabs[i].kind);
     }
 
     add_builtin(registry, invoker, "timing.toggle_lock", "Toggle Timing Lock",
@@ -954,7 +940,6 @@ auto command_registry_t::from(command_invoker_t invoker) -> command_registry_t {
                 command_category_t::timing, command_focus_scope_t::tab, {}, false,
                 workspace_tab_t::timing);
 
-    constexpr std::array note_kind_names{"tap", "hold", "mine", "invisible", "lift", "fake", "roll"};
     add_builtin(registry, invoker, "edit.tool_select", "Select tool", command_category_t::edit,
         command_focus_scope_t::tab,
         {chord(shortcut_key_t::digit_1, static_cast<shortcut_modifiers_t>(shortcut_modifier_t::alt))},
@@ -967,16 +952,17 @@ auto command_registry_t::from(command_invoker_t invoker) -> command_registry_t {
         command_focus_scope_t::tab,
         {chord(shortcut_key_t::digit_3, static_cast<shortcut_modifiers_t>(shortcut_modifier_t::alt))},
         false, compose);
-    const std::array<std::vector<shortcut_chord_t>, 7> note_kind_shortcuts{{{}, {},
-        {chord(shortcut_key_t::digit_4, static_cast<shortcut_modifiers_t>(shortcut_modifier_t::alt))},
-        {chord(shortcut_key_t::digit_5, static_cast<shortcut_modifiers_t>(shortcut_modifier_t::alt))},
-        {chord(shortcut_key_t::digit_6, static_cast<shortcut_modifiers_t>(shortcut_modifier_t::alt))},
-        {chord(shortcut_key_t::digit_7, static_cast<shortcut_modifiers_t>(shortcut_modifier_t::alt))},
-        {chord(shortcut_key_t::digit_8, static_cast<shortcut_modifiers_t>(shortcut_modifier_t::alt))}}};
-    for (std::size_t i = 0; i < note_kind_names.size(); ++i)
-        add_builtin(registry, invoker, "edit.note_kind_" + std::string(note_kind_names[i]),
-            "Arm note kind: " + std::string(note_kind_names[i]), command_category_t::edit,
-            command_focus_scope_t::tab, note_kind_shortcuts[i], false, compose);
+    for (const auto kind : note_palette_kinds) {
+        const auto& entry = note_kinds[static_cast<std::size_t>(kind)];
+        std::vector<shortcut_chord_t> shortcuts;
+        if (entry.shortcut_digit != 0)
+            shortcuts.push_back(chord(static_cast<shortcut_key_t>(
+                static_cast<unsigned>(shortcut_key_t::digit_1) + entry.shortcut_digit - 1),
+                static_cast<shortcut_modifiers_t>(shortcut_modifier_t::alt)));
+        add_builtin(registry, invoker, "edit.note_kind_" + std::string(entry.command_id_suffix),
+            "Arm note kind: " + std::string(entry.command_id_suffix), command_category_t::edit,
+            command_focus_scope_t::tab, std::move(shortcuts), false, compose);
+    }
 
     constexpr std::array layer_keys{
         shortcut_key_t::digit_1, shortcut_key_t::digit_2, shortcut_key_t::digit_3,

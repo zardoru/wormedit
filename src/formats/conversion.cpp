@@ -1,3 +1,4 @@
+#include <wormedit/core/catalogs.h>
 #include "../core/text_util.h"
 #include <wormedit/core/rational.h>
 #include <wormedit/formats/conversion.h>
@@ -140,13 +141,7 @@ auto filename_for(const song_document_t& song, const chart_document_t* chart,
 }
 
 auto bms_extension(std::string_view profile) -> std::string_view {
-    if (profile.find("pms") != std::string_view::npos)
-        return ".pms";
-    if (profile.find("bme") != std::string_view::npos)
-        return ".bme";
-    if (profile.find("bml") != std::string_view::npos)
-        return ".bml";
-    return ".bms";
+    return bms_extension_for_profile(profile);
 }
 
 template <typename Diagnostic>

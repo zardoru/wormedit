@@ -1,3 +1,4 @@
+#include <wormedit/core/catalogs.h>
 #include <wormedit/core/bms36.h>
 #include "../core/checked_math.h"
 #include "../core/text_util.h"
@@ -89,24 +90,6 @@ using text_util::path_from_utf8;
 
 using text_util::invalid_utf8_offset;
 
-auto iconv_name(text_encoding_t encoding) -> std::optional<std::string_view> {
-    switch (encoding) {
-    case text_encoding_t::cp932:
-        return "CP932";
-    case text_encoding_t::euc_kr:
-        return "EUC-KR";
-    case text_encoding_t::cp949:
-        return "CP949";
-    case text_encoding_t::windows_1252:
-        return "WINDOWS-1252";
-    case text_encoding_t::unknown:
-    case text_encoding_t::ascii:
-    case text_encoding_t::utf8:
-        return std::nullopt;
-    }
-    return std::nullopt;
-}
-
 auto decode_line(std::string_view input, text_encoding_t encoding) -> decode_result_t {
     if (encoding == text_encoding_t::ascii) {
         for (std::size_t index = 0; index < input.size(); ++index) {
@@ -123,7 +106,7 @@ auto decode_line(std::string_view input, text_encoding_t encoding) -> decode_res
         return {.text = std::string(input)};
     }
 
-    const auto source_name = iconv_name(encoding);
+    const auto source_name = text_encoding_iconv_name(encoding);
     if (!source_name.has_value()) {
         return {.unsupported = true};
     }
@@ -242,7 +225,7 @@ auto encode_line(std::string_view input, text_encoding_t encoding) -> decode_res
         }
         return {.text = std::string(input)};
     }
-    const auto destination_name = iconv_name(encoding);
+    const auto destination_name = text_encoding_iconv_name(encoding);
     if (!destination_name.has_value()) {
         return {.unsupported = true};
     }
@@ -271,26 +254,6 @@ auto encode_line(std::string_view input, text_encoding_t encoding) -> decode_res
         return {.text = std::nullopt};
     }
     return {.text = std::move(output)};
-}
-
-auto encoding_name(text_encoding_t encoding) -> std::string_view {
-    switch (encoding) {
-    case text_encoding_t::unknown:
-        return "unknown";
-    case text_encoding_t::ascii:
-        return "ASCII";
-    case text_encoding_t::utf8:
-        return "UTF-8";
-    case text_encoding_t::cp932:
-        return "CP932";
-    case text_encoding_t::euc_kr:
-        return "EUC-KR";
-    case text_encoding_t::cp949:
-        return "CP949";
-    case text_encoding_t::windows_1252:
-        return "Windows-1252";
-    }
-    return "unknown";
 }
 
 auto decode_diagnostic(bms_parse_result_t& result, bms_parse_diagnostic_code_t code,
@@ -371,7 +334,7 @@ auto split_lines(std::span<const std::byte> bytes, std::size_t start, text_encod
         if (decoded.unsupported) {
             add_line_diagnostic(result, diagnostic_severity_t::error,
                                 bms_parse_diagnostic_code_t::unsupported_encoding,
-                                "requested " + std::string(encoding_name(encoding)) +
+                                "requested " + std::string(text_encoding_label(encoding)) +
                                     " conversion is unavailable in this build",
                                 source_line_t{.span = {begin, cursor}, .order = lines.size()});
             return std::nullopt;
@@ -379,7 +342,7 @@ auto split_lines(std::span<const std::byte> bytes, std::size_t start, text_encod
         if (!decoded.text.has_value()) {
             const auto error = begin + decoded.error_offset;
             decode_diagnostic(result, bms_parse_diagnostic_code_t::invalid_encoding,
-                              "input contains a malformed " + std::string(encoding_name(encoding)) +
+                              "input contains a malformed " + std::string(text_encoding_label(encoding)) +
                                   " byte sequence",
                               error, std::min(error + 1, cursor));
             result.diagnostics.back().line = lines.size() + 1;
@@ -1578,27 +1541,13 @@ auto retained_bms_source(const song_document_t& song, const chart_document_t& ch
     return find(song.metadata.format_groups);
 }
 
-auto ending_bytes(bms_line_ending_t ending) -> std::string_view {
-    switch (ending) {
-    case bms_line_ending_t::none:
-        return {};
-    case bms_line_ending_t::lf:
-        return "\n";
-    case bms_line_ending_t::crlf:
-        return "\r\n";
-    case bms_line_ending_t::cr:
-        return "\r";
-    }
-    return {};
-}
-
 auto retained_line_text(const retained_source_t& source, const bms_control_node_t& node)
     -> std::optional<std::string> {
     if (node.source_span.byte_begin > node.source_span.byte_end ||
         node.source_span.byte_end > source.bytes->size()) {
         return std::nullopt;
     }
-    const auto ending = ending_bytes(node.line_ending);
+    const auto ending = bms_line_ending_bytes(node.line_ending);
     const auto span_size = node.source_span.byte_end - node.source_span.byte_begin;
     if (ending.size() > span_size) {
         return std::nullopt;
@@ -1656,7 +1605,7 @@ auto prepare_bms_source_lines(std::span<const std::byte> bytes, const bms_parse_
         if (options.encoding_override && *options.encoding_override != text_encoding_t::utf8) {
             decode_diagnostic(result, bms_parse_diagnostic_code_t::invalid_encoding,
                               "UTF-8 BOM conflicts with the requested " +
-                                  std::string(encoding_name(*options.encoding_override)) +
+                                  std::string(text_encoding_label(*options.encoding_override)) +
                                   " override",
                               0, 3);
             return std::nullopt;
@@ -1700,7 +1649,7 @@ auto is_bms_text_encoding_supported(text_encoding_t encoding) -> bool {
     if (encoding == text_encoding_t::ascii || encoding == text_encoding_t::utf8) {
         return true;
     }
-    const auto source_name = iconv_name(encoding);
+    const auto source_name = text_encoding_iconv_name(encoding);
     if (!source_name.has_value()) {
         return false;
     }
@@ -2881,7 +2830,7 @@ auto validate_edit_source(const song_document_t& song, const chart_document_t& c
 
 auto encode_replacement_line(const retained_source_t& source, const bms_control_node_t& target,
                             std::string_view replacement) -> std::optional<std::string> {
-    const auto ending = ending_bytes(target.line_ending);
+    const auto ending = bms_line_ending_bytes(target.line_ending);
     const auto span_size = target.source_span.byte_end - target.source_span.byte_begin;
     if (ending.size() > span_size) {
         return std::nullopt;
@@ -3069,7 +3018,7 @@ auto insertion_bounds(const insertion_target_scan_t& targets, const retained_sou
                "the retained source-order space is exhausted");
         return std::nullopt;
     }
-    const auto line_ending = ending_bytes(targets.anchor->line_ending);
+    const auto line_ending = bms_line_ending_bytes(targets.anchor->line_ending);
     if (line_ending.empty()) {
         reject(bms_branch_statement_edit_diagnostic_code_t::provenance_mismatch,
                "the insertion anchor has no retained line ending");

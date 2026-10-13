@@ -1,3 +1,4 @@
+#include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/rational.h>
 #include <wormedit/core/chart_clipboard.h>
 
@@ -210,18 +211,7 @@ auto selection_error(std::string message) -> editor_interaction_result_t {
 }
 
 auto selection_timing_lane(editor_selection_object_kind_t kind) -> std::optional<timing_lane_kind_t> {
-    using selection_t = editor_selection_object_kind_t;
-    switch (kind) {
-    case selection_t::bpm_event: return timing_lane_kind_t::bpm;
-    case selection_t::scroll_event: return timing_lane_kind_t::scroll;
-    case selection_t::speed_event: return timing_lane_kind_t::speed;
-    case selection_t::stop_event: return timing_lane_kind_t::stop;
-    case selection_t::delay_event: return timing_lane_kind_t::delay;
-    case selection_t::warp_event: return timing_lane_kind_t::warp;
-    case selection_t::kiai_event: return timing_lane_kind_t::kiai;
-    case selection_t::timing_anchor: return timing_lane_kind_t::anchor;
-    default: return std::nullopt;
-    }
+    return timing_lane_for_selection(kind);
 }
 
 auto stage_selection_spans(document_history_t& staged, editor_interaction_state_t& state,

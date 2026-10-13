@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/command.h>
+#include <wormedit/core/catalogs.h>
 
 #include <array>
 #include <cstddef>
@@ -28,6 +29,23 @@ enum class workspace_tab_t : std::uint8_t {
 };
 
 inline constexpr std::size_t workspace_tab_count = 7;
+
+struct workspace_tab_descriptor_t {
+    workspace_tab_t kind;
+    std::string_view id;
+    std::string_view label;
+};
+inline constexpr std::array workspace_tabs{
+    workspace_tab_descriptor_t{workspace_tab_t::setup, "setup", "Project"},
+    workspace_tab_descriptor_t{workspace_tab_t::metadata, "metadata", "Metadata"},
+    workspace_tab_descriptor_t{workspace_tab_t::timing, "timing", "Timing"},
+    workspace_tab_descriptor_t{workspace_tab_t::compose, "compose", "Compose"},
+    workspace_tab_descriptor_t{workspace_tab_t::storyboard, "storyboard", "Storyboard"},
+    workspace_tab_descriptor_t{workspace_tab_t::audio_slices, "audio_slices", "Audio Slices"},
+    workspace_tab_descriptor_t{workspace_tab_t::compare_validate, "compare_validate", "Compare / Validate"},
+};
+static_assert(workspace_tab_count == static_cast<std::size_t>(workspace_tab_t::compare_validate) + 1);
+static_assert(is_catalog_exhaustive(workspace_tabs, workspace_tab_count));
 
 [[nodiscard]] auto is_workspace_tab_enabled(workspace_tab_t tab) noexcept -> bool;
 // Compatibility for the coordinated sys/UI migration.

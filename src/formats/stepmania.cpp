@@ -191,57 +191,13 @@ auto parse_source(std::string_view source, std::size_t max_fields) -> std::vecto
 }
 
 auto note_column_count(std::string_view step_type) -> std::optional<std::uint32_t> {
-    const auto type = text_util::ascii_upper(trim(step_type));
-    if (type == "DANCE-SINGLE" || type == "TECHNO-SINGLE")
-        return 4;
-    if (type == "DANCE-THREEPANEL")
-        return 3;
-    if (type == "DANCE-SOLO")
-        return 6;
-    if (type == "DANCE-DOUBLE" || type == "DANCE-COUPLE" || type == "DANCE-ROUTINE" ||
-        type == "TECHNO-DOUBLE")
-        return 8;
-    if (type == "PUMP-SINGLE" || type == "EZ2-SINGLE")
-        return 5;
-    if (type == "PUMP-DOUBLE" || type == "PUMP-COUPLE" || type == "PUMP-ROUTINE" ||
-        type == "EZ2-DOUBLE")
-        return 10;
-    if (type == "PUMP-HALFDOUBLE")
-        return 6;
-    if (type == "EZ2-REAL")
-        return 7;
-    if (type == "KB7")
-        return 7;
-    if (type == "KB4")
-        return 4;
-    if (type == "KB5")
-        return 5;
-    if (type == "KB6")
-        return 6;
-    if (type == "PARA-SINGLE")
-        return 5;
-    return std::nullopt;
+    return stepmania_key_count(trim(step_type));
 }
 
 auto fallback_step_type_for_count(std::size_t count) -> std::optional<std::string> {
-    switch (count) {
-    case 3:
-        return "dance-threepanel";
-    case 4:
-        return "dance-single";
-    case 5:
-        return "pump-single";
-    case 6:
-        return "dance-solo";
-    case 7:
-        return "kb7";
-    case 8:
-        return "dance-double";
-    case 10:
-        return "pump-double";
-    default:
-        return std::nullopt;
-    }
+    const auto step_type = default_stepmania_step_type(count);
+    if (step_type.empty()) return std::nullopt;
+    return std::string(step_type);
 }
 
 auto parse_note_source(const chart_source_t& source, stepmania_profile_t profile,

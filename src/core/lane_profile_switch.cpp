@@ -28,7 +28,7 @@ auto built_in_profile(std::string_view profile_id) -> std::optional<lane_input_p
         auto profile = make_stepmania_profile_for(type);
         if (profile && profile->layout.profile_id == profile_id) return profile;
     }
-    for (std::uint32_t keys = 1; keys <= 18; ++keys) {
+    for (std::uint32_t keys = minimum_osu_mania_keys; keys <= maximum_osu_mania_keys; ++keys) {
         auto profile = make_osu_mania_profile(keys);
         if (profile && profile->layout.profile_id == profile_id) return profile;
     }
@@ -123,7 +123,7 @@ auto insert_initial_lane_profile(document_history_t& history, chart_id_t chart,
 } // namespace
 
 auto can_use_lane_key_profiles(const lane_layout_t& layout) -> bool {
-    return !layout.lanes.empty() && layout.lanes.size() <= 18 &&
+    return !layout.lanes.empty() && layout.lanes.size() <= maximum_osu_mania_keys &&
         std::ranges::all_of(layout.lanes, [](const auto& lane) {
             return lane.role == lane_role_t::playable;
         });
@@ -151,7 +151,7 @@ auto lane_profile_choices() -> std::vector<lane_input_profile_t> {
         auto profile = make_stepmania_profile_for(type);
         if (profile) choices.push_back(std::move(*profile));
     }
-    for (std::uint32_t keys = 1; keys <= 18; ++keys) {
+    for (std::uint32_t keys = minimum_osu_mania_keys; keys <= maximum_osu_mania_keys; ++keys) {
         auto profile = make_osu_mania_profile(keys);
         if (profile) choices.push_back(std::move(*profile));
     }

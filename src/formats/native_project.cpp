@@ -1,3 +1,4 @@
+#include <wormedit/core/catalogs.h>
 #include "../core/text_util.h"
 #include <wormedit/formats/native_project.h>
 
@@ -795,7 +796,7 @@ template <typename enum_t> auto is_enum_at_most(enum_t value, enum_t maximum) ->
 }
 
 auto is_valid_provenance(const source_provenance_t& provenance) -> bool {
-    return is_enum_at_most(provenance.family, format_family_t::quaver);
+    return (static_cast<std::size_t>(provenance.family) < format_family_count);
 }
 
 auto is_valid_encoding(const encoding_provenance_t& encoding) -> bool {
@@ -805,7 +806,7 @@ auto is_valid_encoding(const encoding_provenance_t& encoding) -> bool {
 }
 
 auto is_valid_metadata(const format_metadata_t& metadata) -> bool {
-    return is_enum_at_most(metadata.family, format_family_t::quaver) &&
+    return (static_cast<std::size_t>(metadata.family) < format_family_count) &&
            is_valid_encoding(metadata.encoding);
 }
 
@@ -850,7 +851,7 @@ auto is_valid_resource_enum_domains(const song_document_t& song) -> bool {
             !std::ranges::all_of(resource.roles,
                                  [](auto role) { return is_enum_at_most(role, resource_role_t::preview); }) ||
             !std::ranges::all_of(resource.target_identities, [](const auto& identity) {
-                return is_enum_at_most(identity.family, format_family_t::quaver);
+                return (static_cast<std::size_t>(identity.family) < format_family_count);
             })) {
             return false;
         }
@@ -859,7 +860,7 @@ auto is_valid_resource_enum_domains(const song_document_t& song) -> bool {
 }
 
 auto is_valid_chart_layout_domains(const chart_document_t& chart) -> bool {
-    if (!is_enum_at_most(chart.source_family, format_family_t::quaver) ||
+    if (!(static_cast<std::size_t>(chart.source_family) < format_family_count) ||
         !std::ranges::all_of(chart.metadata.format_groups, is_valid_metadata)) {
         return false;
     }
@@ -980,7 +981,7 @@ auto is_valid_enum_domains(const song_document_t& song, std::size_t maximum_dept
             return is_enum_at_most(asset.kind, asset_kind_t::midi);
         }) ||
         !std::ranges::all_of(song.output_groups, [](const auto& group) {
-            return is_enum_at_most(group.family, format_family_t::quaver);
+            return (static_cast<std::size_t>(group.family) < format_family_count);
         })) {
         return false;
     }

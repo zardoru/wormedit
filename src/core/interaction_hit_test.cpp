@@ -1,3 +1,4 @@
+#include <wormedit/core/catalogs.h>
 #include "interaction_internal.h"
 #include "interaction_geometry.h"
 #include <wormedit/core/interaction.h>
@@ -29,23 +30,6 @@ auto rational_label(signed_rational_t value) -> std::string {
 auto position_label(local_position_t position) -> std::string {
     return std::to_string(position.measure.value) + ":" + std::to_string(position.row);
 }
-
-auto note_kind_label(note_kind_t kind) -> std::string_view {
-    switch (kind) {
-    case note_kind_t::tap: return "Tap";
-    case note_kind_t::hold: return "Hold";
-    case note_kind_t::roll: return "Roll";
-    case note_kind_t::invisible: return "Invisible note";
-    case note_kind_t::mine: return "Mine";
-    case note_kind_t::lift: return "Lift";
-    case note_kind_t::fake: return "Fake note";
-    }
-    return "Note";
-}
-
-
-
-
 
 auto position_at_row_y_pixels(const chart_document_t& chart, const measure_index_t& index,
                               const editor_interaction_view_model_t& view, double y_pixels)

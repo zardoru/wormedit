@@ -16,8 +16,7 @@ auto playback_rate(std::size_t index) noexcept -> std::optional<rational_t> {
     return playback_rates[index];
 }
 auto playback_rate_label(std::size_t index) noexcept -> std::string_view {
-    constexpr std::array<std::string_view,9> labels{"0.1×","0.2×","0.25×","0.33×","0.5×","0.75×","0.8×","0.9×","1×"};
-    return index < labels.size() ? labels[index] : std::string_view{};
+    return index < playback_rate_catalog.size() ? playback_rate_catalog[index].label : std::string_view{};
 }
 auto playback_rate_index(rational_t rate) noexcept -> std::optional<std::size_t> {
     for (std::size_t i=0; i<playback_rates.size(); ++i)

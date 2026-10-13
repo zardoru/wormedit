@@ -80,3 +80,13 @@ TEST_CASE("audio.playback_rate latency reports source frames without changing sc
     expect(session.render(samples).status == preview_session_render_status_t::stopped);
     for (const auto sample : samples) expect(sample == 0.0F);
 }
+
+TEST_CASE("Playback rate descriptors preserve rational identity and labels", "[audio][catalog]") {
+    for (const auto& entry : playback_rate_catalog) {
+        const auto id = static_cast<std::size_t>(entry.id);
+        expect(playback_rate(id) == entry.rate);
+        expect(playback_rate_label(id) == entry.label);
+        expect(playback_rate_index(entry.rate) == id);
+    }
+    expect(playback_rate_label(playback_rate_count).empty());
+}

@@ -1,3 +1,4 @@
+#include <wormedit/core/catalogs.h>
 #include <wormedit/core/document.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -961,4 +962,35 @@ TEST_CASE("Empty and default measure lookups reject every position",
     }
     check_owner_query(lookup.entry_for(measure_id_t{1}) == nullptr);
     check_owner_query(!lookup.bucket_for(measure_id_t{1}));
+}
+
+namespace {
+void check_fact_catalog(bool condition) { REQUIRE(condition); }
+}
+TEST_CASE("Core fact catalogs retain offered policies labels and BMS extensions", "[core][catalog][D9][D16][D17]") {
+    check_fact_catalog(!format_families[static_cast<std::size_t>(format_family_t::midi)].offered_as_output);
+    check_fact_catalog(!format_families[static_cast<std::size_t>(format_family_t::quaver)].offered_as_output);
+    for (const auto& family : format_families) check_fact_catalog(family.offered_as_metadata);
+    check_fact_catalog(sound_kind_label(sound_kind_t::keysound) == "Keysound");
+    check_fact_catalog(is_bms_extension(".bml"));
+    check_fact_catalog(!is_bms_extension(".bmson"));
+    check_fact_catalog(text_encoding_label(text_encoding_t::windows_1252) == "Windows-1252");
+    check_fact_catalog(text_encoding_iconv_name(text_encoding_t::windows_1252) == "WINDOWS-1252");
+    check_fact_catalog(!text_encoding_iconv_name(text_encoding_t::utf8));
+    check_fact_catalog(!bms_text_encodings[0].offered);
+    check_fact_catalog(bms_line_ending_bytes(bms_line_ending_t::crlf) == "\r\n");
+}
+
+TEST_CASE("Note catalog preserves enum identity labels and palette shortcuts", "[core][catalog]") {
+    check_fact_catalog(note_kind_label(note_kind_t::invisible) == "Invisible note");
+    check_fact_catalog(note_kinds[static_cast<std::size_t>(note_kind_t::roll)].shortcut_digit == 8);
+    check_fact_catalog(note_kinds[static_cast<std::size_t>(note_kind_t::mine)].shortcut_digit == 4);
+    check_fact_catalog(note_palette_kinds.front() == note_kind_t::tap);
+    check_fact_catalog(note_palette_kinds.back() == note_kind_t::roll);
+    check_fact_catalog(bms_extension_for_profile("pms-standard-9button") == ".pms");
+    check_fact_catalog(bms_extension_for_profile("bme-7k-outside-scratch") == ".bme");
+    check_fact_catalog(bms_extension_for_profile("bml-custom") == ".bml");
+    check_fact_catalog(bms_extension_for_profile("custom") == ".bms");
+    check_fact_catalog(format_family_label(static_cast<format_family_t>(-1)) == "Unknown");
+    check_fact_catalog(text_encoding_label(static_cast<text_encoding_t>(100)) == "unknown");
 }

@@ -821,7 +821,7 @@ auto make_osu_mania_profile(std::uint32_t keys) -> std::optional<lane_input_prof
 }
 
 auto make_osu_mania_profile(std::uint32_t keys, bool special_style) -> std::optional<lane_input_profile_t> {
-    if (keys < 1 || keys > 18) return std::nullopt;
+    if (keys < minimum_osu_mania_keys || keys > maximum_osu_mania_keys) return std::nullopt;
     const bool split = special_style && (keys == 12 || keys == 16);
     std::vector<lane_definition_t> lanes;
     lanes.reserve(keys);
@@ -1110,6 +1110,184 @@ auto field_skin_key_class(lane_key_color_t color) -> std::string_view {
     case lane_key_color_t::free_zone: return "free-zone";
     default: return "generic";
     }
+}
+
+namespace {
+constexpr std::array step_types{
+    stepmania_step_type_descriptor_t{"dance-threepanel", 3, true},
+    stepmania_step_type_descriptor_t{"dance-single", 4, true},
+    stepmania_step_type_descriptor_t{"pump-single", 5, true},
+    stepmania_step_type_descriptor_t{"dance-solo", 6, true},
+    stepmania_step_type_descriptor_t{"kb7", 7, true},
+    stepmania_step_type_descriptor_t{"dance-double", 8, true},
+    stepmania_step_type_descriptor_t{"pump-double", 10, true},
+    stepmania_step_type_descriptor_t{"techno-single", 4, false},
+    stepmania_step_type_descriptor_t{"dance-couple", 8, false},
+    stepmania_step_type_descriptor_t{"dance-routine", 8, false},
+    stepmania_step_type_descriptor_t{"techno-double", 8, false},
+    stepmania_step_type_descriptor_t{"ez2-single", 5, false},
+    stepmania_step_type_descriptor_t{"pump-couple", 10, false},
+    stepmania_step_type_descriptor_t{"pump-routine", 10, false},
+    stepmania_step_type_descriptor_t{"ez2-double", 10, false},
+    stepmania_step_type_descriptor_t{"pump-halfdouble", 6, false},
+    stepmania_step_type_descriptor_t{"ez2-real", 7, false},
+    stepmania_step_type_descriptor_t{"kb4", 4, false},
+    stepmania_step_type_descriptor_t{"kb5", 5, false},
+    stepmania_step_type_descriptor_t{"kb6", 6, false},
+    stepmania_step_type_descriptor_t{"para-single", 5, false},
+};
+constexpr std::array mania_outputs{
+    new_project_output_group_descriptor_t{"osu!mania", format_family_t::osu_mania, "osu"},
+};
+constexpr std::array mania_step_outputs{
+    mania_outputs[0],
+    new_project_output_group_descriptor_t{"StepMania SM", format_family_t::stepmania, "sm"},
+    new_project_output_group_descriptor_t{"StepMania SSC", format_family_t::stepmania, "ssc"},
+};
+constexpr std::array bms_outputs{
+    new_project_output_group_descriptor_t{"BMS", format_family_t::bms, "bms"},
+};
+constexpr std::array bmson_outputs{
+    new_project_output_group_descriptor_t{"BMSON", format_family_t::bmson, "bmson"},
+};
+constexpr std::array step_outputs{mania_step_outputs[1], mania_step_outputs[2]};
+
+// D7 applies to new-project defaults only; detection/profile factories keep their bindings.
+void unbind_wide_project_profile(lane_input_profile_t& profile) {
+    if (profile.layout.lanes.size() > 10) profile.input.bindings.clear();
+}
+template <auto Factory>
+auto make_catalog_profile() -> lane_input_profile_t {
+    auto profile = Factory();
+    unbind_wide_project_profile(profile);
+    return profile;
+}
+
+constexpr auto catalog_default_step_type(std::size_t keys) -> std::string_view {
+    for (const auto& entry : step_types)
+        if (entry.keys == keys && entry.default_for_key_count) return entry.id;
+    return {};
+}
+constexpr auto catalog_mania_outputs(std::size_t keys)
+    -> std::span<const new_project_output_group_descriptor_t> {
+    if (!catalog_default_step_type(keys).empty()) return mania_step_outputs;
+    return mania_outputs;
+}
+
+template <std::uint32_t Keys, bool Special = false>
+auto make_catalog_mania_profile() -> lane_input_profile_t {
+    static_assert(Keys >= minimum_osu_mania_keys && Keys <= maximum_osu_mania_keys);
+    auto profile = *make_osu_mania_profile(Keys, Special);
+    unbind_wide_project_profile(profile);
+    return profile;
+}
+template <auto Factory, scratch_placement_t Scratch>
+auto make_catalog_single_scratch_profile() -> lane_input_profile_t {
+    auto profile = Factory(Scratch);
+    unbind_wide_project_profile(profile);
+    return profile;
+}
+template <auto Factory, scratch_placement_t Left, scratch_placement_t Right>
+auto make_catalog_double_scratch_profile() -> lane_input_profile_t {
+    auto profile = Factory(Left, Right);
+    unbind_wide_project_profile(profile);
+    return profile;
+}
+
+auto make_catalog_pump_double_profile() -> lane_input_profile_t {
+    return *make_stepmania_profile_for("pump-double");
+}
+
+constexpr std::array project_layouts{
+    new_project_layout_descriptor_t{"osu-mania-1k", "1K", &make_catalog_mania_profile<1>, catalog_mania_outputs(1), catalog_default_step_type(1)},
+    new_project_layout_descriptor_t{"osu-mania-2k", "2K", &make_catalog_mania_profile<2>, catalog_mania_outputs(2), catalog_default_step_type(2)},
+    new_project_layout_descriptor_t{"osu-mania-3k", "3K", &make_catalog_mania_profile<3>, catalog_mania_outputs(3), catalog_default_step_type(3)},
+    new_project_layout_descriptor_t{"osu-mania-4k", "4K", &make_catalog_mania_profile<4>, catalog_mania_outputs(4), catalog_default_step_type(4)},
+    new_project_layout_descriptor_t{"osu-mania-5k", "5K", &make_catalog_mania_profile<5>, catalog_mania_outputs(5), catalog_default_step_type(5)},
+    new_project_layout_descriptor_t{"osu-mania-6k", "6K", &make_catalog_mania_profile<6>, catalog_mania_outputs(6), catalog_default_step_type(6)},
+    new_project_layout_descriptor_t{"osu-mania-7k", "7K", &make_catalog_mania_profile<7>, catalog_mania_outputs(7), catalog_default_step_type(7)},
+    new_project_layout_descriptor_t{"osu-mania-8k", "8K", &make_catalog_mania_profile<8>, catalog_mania_outputs(8), catalog_default_step_type(8)},
+    new_project_layout_descriptor_t{"osu-mania-9k", "9K", &make_catalog_mania_profile<9>, catalog_mania_outputs(9), catalog_default_step_type(9)},
+    new_project_layout_descriptor_t{"osu-mania-10k", "10K", &make_catalog_mania_profile<10>, catalog_mania_outputs(10), catalog_default_step_type(10)},
+    new_project_layout_descriptor_t{"osu-mania-11k", "11K", &make_catalog_mania_profile<11>, catalog_mania_outputs(11), catalog_default_step_type(11)},
+    new_project_layout_descriptor_t{"osu-mania-12k", "12K", &make_catalog_mania_profile<12>, catalog_mania_outputs(12), catalog_default_step_type(12)},
+    new_project_layout_descriptor_t{"osu-mania-13k", "13K", &make_catalog_mania_profile<13>, catalog_mania_outputs(13), catalog_default_step_type(13)},
+    new_project_layout_descriptor_t{"osu-mania-14k", "14K", &make_catalog_mania_profile<14>, catalog_mania_outputs(14), catalog_default_step_type(14)},
+    new_project_layout_descriptor_t{"osu-mania-15k", "15K", &make_catalog_mania_profile<15>, catalog_mania_outputs(15), catalog_default_step_type(15)},
+    new_project_layout_descriptor_t{"osu-mania-16k", "16K", &make_catalog_mania_profile<16>, catalog_mania_outputs(16), catalog_default_step_type(16)},
+    new_project_layout_descriptor_t{"osu-mania-17k", "17K", &make_catalog_mania_profile<17>, catalog_mania_outputs(17), catalog_default_step_type(17)},
+    new_project_layout_descriptor_t{"osu-mania-18k", "18K", &make_catalog_mania_profile<18>, catalog_mania_outputs(18), catalog_default_step_type(18)},
+    new_project_layout_descriptor_t{"osu-mania-12k-specialstyle", "12K SpecialStyle", &make_catalog_mania_profile<12, true>, mania_outputs, ""},
+    new_project_layout_descriptor_t{"osu-mania-16k-specialstyle", "16K SpecialStyle", &make_catalog_mania_profile<16, true>, mania_outputs, ""},
+    new_project_layout_descriptor_t{"bms-5k-outside-scratch", "BMS 5K (outside scratch)", &make_catalog_single_scratch_profile<make_bms_5k_standard_profile, scratch_placement_t::outside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bms-5k-inside-scratch", "BMS 5K (inside scratch)", &make_catalog_single_scratch_profile<make_bms_5k_standard_profile, scratch_placement_t::inside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bms-5k-outside-scratch-free-zone", "BMS 5K (free zone) (outside scratch)", &make_catalog_single_scratch_profile<make_bms_5k_free_zone_profile, scratch_placement_t::outside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bms-5k-inside-scratch-free-zone", "BMS 5K (free zone) (inside scratch)", &make_catalog_single_scratch_profile<make_bms_5k_free_zone_profile, scratch_placement_t::inside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bms-5k-outside-scratch-foot-pedal", "BMS 5K (foot pedal) (outside scratch)", &make_catalog_single_scratch_profile<make_bms_5k_foot_pedal_profile, scratch_placement_t::outside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bms-5k-inside-scratch-foot-pedal", "BMS 5K (foot pedal) (inside scratch)", &make_catalog_single_scratch_profile<make_bms_5k_foot_pedal_profile, scratch_placement_t::inside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bme-7k-outside-scratch", "BME 7K (outside scratch)", &make_catalog_single_scratch_profile<make_bme_7k_profile, scratch_placement_t::outside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bme-7k-inside-scratch", "BME 7K (inside scratch)", &make_catalog_single_scratch_profile<make_bme_7k_profile, scratch_placement_t::inside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bme-7k-outside-scratch-foot-pedal", "BME 7K (foot pedal) (outside scratch)", &make_catalog_single_scratch_profile<make_bme_7k_foot_pedal_profile, scratch_placement_t::outside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bme-7k-inside-scratch-foot-pedal", "BME 7K (foot pedal) (inside scratch)", &make_catalog_single_scratch_profile<make_bme_7k_foot_pedal_profile, scratch_placement_t::inside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bms-10k-left-outside-right-outside", "BMS DP5 / 10K (outside/outside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_standard_profile, scratch_placement_t::outside, scratch_placement_t::outside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bms-10k-left-outside-right-inside", "BMS DP5 / 10K (outside/inside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_standard_profile, scratch_placement_t::outside, scratch_placement_t::inside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bms-10k-left-inside-right-outside", "BMS DP5 / 10K (inside/outside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_standard_profile, scratch_placement_t::inside, scratch_placement_t::outside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bms-10k-left-inside-right-inside", "BMS DP5 / 10K (inside/inside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_standard_profile, scratch_placement_t::inside, scratch_placement_t::inside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bms-10k-left-outside-right-outside-free-zone", "BMS DP5 / 10K (free zone) (outside/outside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_free_zone_profile, scratch_placement_t::outside, scratch_placement_t::outside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bms-10k-left-outside-right-inside-free-zone", "BMS DP5 / 10K (free zone) (outside/inside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_free_zone_profile, scratch_placement_t::outside, scratch_placement_t::inside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bms-10k-left-inside-right-outside-free-zone", "BMS DP5 / 10K (free zone) (inside/outside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_free_zone_profile, scratch_placement_t::inside, scratch_placement_t::outside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bms-10k-left-inside-right-inside-free-zone", "BMS DP5 / 10K (free zone) (inside/inside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_free_zone_profile, scratch_placement_t::inside, scratch_placement_t::inside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bms-10k-left-outside-right-outside-foot-pedal", "BMS DP5 / 10K (foot pedal) (outside/outside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_foot_pedal_profile, scratch_placement_t::outside, scratch_placement_t::outside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bms-10k-left-outside-right-inside-foot-pedal", "BMS DP5 / 10K (foot pedal) (outside/inside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_foot_pedal_profile, scratch_placement_t::outside, scratch_placement_t::inside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bms-10k-left-inside-right-outside-foot-pedal", "BMS DP5 / 10K (foot pedal) (inside/outside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_foot_pedal_profile, scratch_placement_t::inside, scratch_placement_t::outside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bms-10k-left-inside-right-inside-foot-pedal", "BMS DP5 / 10K (foot pedal) (inside/inside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_foot_pedal_profile, scratch_placement_t::inside, scratch_placement_t::inside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bme-14k-left-outside-right-outside", "BME DP7 / 14K (outside/outside scratch)", &make_catalog_double_scratch_profile<make_bme_14k_profile, scratch_placement_t::outside, scratch_placement_t::outside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bme-14k-left-outside-right-inside", "BME DP7 / 14K (outside/inside scratch)", &make_catalog_double_scratch_profile<make_bme_14k_profile, scratch_placement_t::outside, scratch_placement_t::inside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bme-14k-left-inside-right-outside", "BME DP7 / 14K (inside/outside scratch)", &make_catalog_double_scratch_profile<make_bme_14k_profile, scratch_placement_t::inside, scratch_placement_t::outside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bme-14k-left-inside-right-inside", "BME DP7 / 14K (inside/inside scratch)", &make_catalog_double_scratch_profile<make_bme_14k_profile, scratch_placement_t::inside, scratch_placement_t::inside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bme-14k-left-outside-right-outside-foot-pedal", "BME DP7 / 14K (foot pedal) (outside/outside scratch)", &make_catalog_double_scratch_profile<make_bme_14k_foot_pedal_profile, scratch_placement_t::outside, scratch_placement_t::outside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bme-14k-left-outside-right-inside-foot-pedal", "BME DP7 / 14K (foot pedal) (outside/inside scratch)", &make_catalog_double_scratch_profile<make_bme_14k_foot_pedal_profile, scratch_placement_t::outside, scratch_placement_t::inside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bme-14k-left-inside-right-outside-foot-pedal", "BME DP7 / 14K (foot pedal) (inside/outside scratch)", &make_catalog_double_scratch_profile<make_bme_14k_foot_pedal_profile, scratch_placement_t::inside, scratch_placement_t::outside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bme-14k-left-inside-right-inside-foot-pedal", "BME DP7 / 14K (foot pedal) (inside/inside scratch)", &make_catalog_double_scratch_profile<make_bme_14k_foot_pedal_profile, scratch_placement_t::inside, scratch_placement_t::inside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"pms-standard-5button", "PMS 5-button", &make_catalog_profile<make_pms_5k_profile>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"pms-standard-9button", "PMS 9-button", &make_catalog_profile<make_pms_9k_profile>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"pms-bme-style-9button", "PMS 9-button (BME-style)", &make_catalog_profile<make_pms_bme_style_9k_profile>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"pms-bme-style-18button", "PMS 18-button (BME-style)", &make_catalog_profile<make_pms_bme_style_18k_profile>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bms-10k-scratchless", "BMS 10K (no scratch)", &make_catalog_profile<make_bms_10k_scratchless_profile>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bms-double-scratch-fpp", "BMS Double Scratch / FPP", &make_catalog_profile<make_bms_double_scratch_profile>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bms-octave-foot-pedal", "BMS Octave / Foot Pedal", &make_catalog_profile<make_bms_octave_fp_profile>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"project2dx-7k", "Project2DX 7K", &make_catalog_profile<make_project2dx_7k_profile>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"stepmania:pump-single", "Pump 5K (pump-single)", &make_catalog_profile<make_stepmania_pump_single_profile>, step_outputs, "pump-single"},
+    new_project_layout_descriptor_t{"stepmania:pump-double", "Pump 10K (pump-double)", &make_catalog_pump_double_profile, step_outputs, "pump-double"},
+    new_project_layout_descriptor_t{"stepmania:dance-solo", "Solo 6K (dance-solo)", &make_catalog_profile<make_stepmania_dance_solo_profile>, step_outputs, "dance-solo"},
+    new_project_layout_descriptor_t{"bmson-generic-24keys", "BMSON generic 24K", &make_catalog_profile<make_bmson_generic_24k_profile>, bmson_outputs, ""},
+    new_project_layout_descriptor_t{"bmson-generic-48keys", "BMSON generic 48K", &make_catalog_profile<make_bmson_generic_48k_profile>, bmson_outputs, ""},
+};
+} // namespace
+
+auto stepmania_step_types() -> std::span<const stepmania_step_type_descriptor_t> { return step_types; }
+auto stepmania_key_count(std::string_view step_type) -> std::optional<std::uint32_t> {
+    for (const auto& entry : step_types)
+        if (std::ranges::equal(entry.id, step_type, text_util::ascii_iequal)) return entry.keys;
+    return std::nullopt;
+}
+auto default_stepmania_step_type(std::size_t keys) -> std::string_view {
+    return catalog_default_step_type(keys);
+}
+auto new_project_layouts() -> std::span<const new_project_layout_descriptor_t> { return project_layouts; }
+auto find_new_project_layout(std::string_view id) -> const new_project_layout_descriptor_t* {
+    for (const auto& entry : project_layouts)
+        if (entry.id == id) return &entry;
+    return nullptr;
+}
+auto make_new_project_output_groups(const new_project_layout_descriptor_t& layout, chart_id_t chart)
+    -> std::vector<output_group_t> {
+    std::vector<output_group_t> groups;
+    groups.reserve(layout.default_output_groups.size());
+    for (const auto& entry : layout.default_output_groups)
+        groups.push_back({.name = std::string(entry.label), .family = entry.family,
+                          .charts = {chart}, .relative_output_path = std::string(entry.relative_output_path)});
+    return groups;
 }
 
 } // namespace wormedit

@@ -148,7 +148,7 @@ make_bme_14k_foot_pedal_profile(scratch_placement_t left_scratch = scratch_place
     -> std::optional<input_profile_t>;
 
 // Column names and arrow glyphs of the StepMania step types that have a named
-// layout (`pump-single`, `dance-solo`), in file column order. The step type is
+// layout (`pump-single`, `pump-double`, `dance-solo`), in file column order. The step type is
 // matched ASCII case-insensitively; other types return an empty span.
 struct stepmania_lane_spec_t {
     std::string_view name;
@@ -173,5 +173,35 @@ struct stepmania_lane_spec_t {
 
 [[nodiscard]] auto make_bmson_generic_24k_profile() -> lane_input_profile_t;
 [[nodiscard]] auto make_bmson_generic_48k_profile() -> lane_input_profile_t;
+
+inline constexpr std::uint32_t minimum_osu_mania_keys = 1;
+inline constexpr std::uint32_t maximum_osu_mania_keys = 18;
+
+struct stepmania_step_type_descriptor_t {
+    std::string_view id;
+    std::uint32_t keys;
+    bool default_for_key_count;
+};
+[[nodiscard]] auto stepmania_step_types() -> std::span<const stepmania_step_type_descriptor_t>;
+[[nodiscard]] auto stepmania_key_count(std::string_view step_type) -> std::optional<std::uint32_t>;
+[[nodiscard]] auto default_stepmania_step_type(std::size_t keys) -> std::string_view;
+
+struct new_project_output_group_descriptor_t {
+    std::string_view label;
+    format_family_t family;
+    std::string_view relative_output_path;
+};
+struct new_project_layout_descriptor_t {
+    std::string_view id;
+    std::string_view label;
+    lane_input_profile_t (*make_profile)();
+    std::span<const new_project_output_group_descriptor_t> default_output_groups;
+    std::string_view step_type;
+};
+// Static descriptors and factories allocate only when a project is constructed.
+[[nodiscard]] auto new_project_layouts() -> std::span<const new_project_layout_descriptor_t>;
+[[nodiscard]] auto find_new_project_layout(std::string_view id) -> const new_project_layout_descriptor_t*;
+[[nodiscard]] auto make_new_project_output_groups(const new_project_layout_descriptor_t& layout,
+                                                 chart_id_t chart) -> std::vector<output_group_t>;
 
 } // namespace wormedit

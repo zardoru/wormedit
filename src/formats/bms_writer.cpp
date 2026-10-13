@@ -1,3 +1,4 @@
+#include <wormedit/core/catalogs.h>
 #include <wormedit/core/bms36.h>
 #include "../core/checked_math.h"
 #include "../core/text_util.h"
@@ -57,44 +58,6 @@ auto warn(std::vector<bms_write_diagnostic_t>& diagnostics, bms_write_diagnostic
         {diagnostic_severity_t::warning, code, std::move(message), std::move(path)});
 }
 
-auto encoding_name(text_encoding_t encoding) -> std::string_view {
-    switch (encoding) {
-    case text_encoding_t::unknown:
-        return "unknown";
-    case text_encoding_t::ascii:
-        return "ASCII";
-    case text_encoding_t::utf8:
-        return "UTF-8";
-    case text_encoding_t::cp932:
-        return "CP932";
-    case text_encoding_t::euc_kr:
-        return "EUC-KR";
-    case text_encoding_t::cp949:
-        return "CP949";
-    case text_encoding_t::windows_1252:
-        return "Windows-1252";
-    }
-    return "unknown";
-}
-
-auto iconv_name(text_encoding_t encoding) -> std::optional<std::string_view> {
-    switch (encoding) {
-    case text_encoding_t::cp932:
-        return "CP932";
-    case text_encoding_t::euc_kr:
-        return "EUC-KR";
-    case text_encoding_t::cp949:
-        return "CP949";
-    case text_encoding_t::windows_1252:
-        return "WINDOWS-1252";
-    case text_encoding_t::unknown:
-    case text_encoding_t::ascii:
-    case text_encoding_t::utf8:
-        return std::nullopt;
-    }
-    return std::nullopt;
-}
-
 auto encode_normalized_bms(std::string_view utf8_with_bom, text_encoding_t encoding)
     -> text_encode_result_t {
     constexpr std::string_view utf8_bom = "\xef\xbb\xbf";
@@ -114,7 +77,7 @@ auto encode_normalized_bms(std::string_view utf8_with_bom, text_encoding_t encod
         return {.bytes = std::string(utf8)};
     }
 
-    const auto destination_name = iconv_name(encoding);
+    const auto destination_name = text_encoding_iconv_name(encoding);
     if (!destination_name.has_value()) {
         return {.unsupported = true};
     }
@@ -420,21 +383,7 @@ auto is_source_measure_line_current(const source_measure_line_t& source,
         })) {
         return false;
     }
-    std::string_view ending;
-    switch (source.line_ending) {
-    case bms_line_ending_t::none:
-        ending = "";
-        break;
-    case bms_line_ending_t::lf:
-        ending = "\n";
-        break;
-    case bms_line_ending_t::crlf:
-        ending = "\r\n";
-        break;
-    case bms_line_ending_t::cr:
-        ending = "\r";
-        break;
-    }
+    const auto ending = bms_line_ending_bytes(source.line_ending);
     const auto span_size = source.source_span.byte_end - source.source_span.byte_begin;
     if (span_size != source.text.size() + ending.size()) {
         return false;
@@ -3370,14 +3319,14 @@ auto write_bms(const song_document_t& song, bms_write_options_t options) -> bms_
         auto encoded = encode_normalized_bms(normalized, *options.output_encoding);
         if (encoded.unsupported) {
             fail(bms_write_diagnostic_code_t::unsupported_encoding,
-                 "requested " + std::string(encoding_name(*options.output_encoding)) +
+                 "requested " + std::string(text_encoding_label(*options.output_encoding)) +
                      " output encoding is unavailable",
                  "$.output_encoding");
         }
         if (!encoded.bytes.has_value()) {
             fail(bms_write_diagnostic_code_t::unrepresentable_text,
                  "normalized BMS text cannot be represented as " +
-                     std::string(encoding_name(*options.output_encoding)) + " near UTF-8 byte " +
+                     std::string(text_encoding_label(*options.output_encoding)) + " near UTF-8 byte " +
                      std::to_string(encoded.error_offset),
                  "$.output_encoding");
         }

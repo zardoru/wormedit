@@ -943,3 +943,49 @@ TEST_CASE("BMSON DP without a gap keeps each left scratch in its own stage and p
     check_field_skin(field_skin_layout_key(chart.lane_layouts.front().layout) == "bms-dp5");
     check_bmson_dp_scratch_pick(chart, view, right_scratch, (lanes[6].bounds.left + lanes[6].bounds.right) / 2);
 }
+
+namespace {
+void check_catalog(bool condition) { REQUIRE(condition); }
+void check_project_layout(const new_project_layout_descriptor_t& entry) {
+    const auto profile = entry.make_profile();
+    check_catalog(profile.layout.profile_id == entry.id);
+    check_catalog(!entry.label.empty());
+    check_catalog(!profile.layout.lanes.empty());
+    check_catalog(find_new_project_layout(entry.id) == &entry);
+    if (profile.layout.lanes.size() > 10) check_catalog(profile.input.bindings.empty());
+    const auto groups = make_new_project_output_groups(entry, chart_id_t{42});
+    check_catalog(groups.size() == entry.default_output_groups.size());
+    for (const auto& group : groups) {
+        check_catalog(group.charts == std::vector{chart_id_t{42}});
+        if (group.family == format_family_t::stepmania)
+            check_catalog(stepmania_key_count(entry.step_type) == profile.layout.lanes.size());
+    }
+}
+}
+
+TEST_CASE("New Project catalog covers all core profiles and unbinds wide layouts", "[core][catalog][D7]") {
+    std::set<std::string_view> ids;
+    for (const auto& entry : new_project_layouts()) {
+        check_catalog(ids.insert(entry.id).second);
+        check_project_layout(entry);
+    }
+    for (std::uint32_t keys = minimum_osu_mania_keys; keys <= maximum_osu_mania_keys; ++keys) {
+        const auto id = "osu-mania-" + std::to_string(keys) + "k";
+        check_catalog(find_new_project_layout(id) != nullptr);
+    }
+    for (const auto& built_in : built_in_bms_lane_profiles())
+        check_catalog(find_new_project_layout(built_in.profile.layout.profile_id) != nullptr);
+    check_catalog(find_new_project_layout("stepmania:pump-double") != nullptr);
+    check_catalog(find_new_project_layout("unknown") == nullptr);
+}
+
+TEST_CASE("StepMania catalog keeps supported step types and default key counts", "[core][catalog]") {
+    for (const auto& entry : stepmania_step_types()) {
+        check_catalog(stepmania_key_count(entry.id) == entry.keys);
+        if (entry.default_for_key_count)
+            check_catalog(default_stepmania_step_type(entry.keys) == entry.id);
+    }
+    check_catalog(stepmania_key_count("DaNcE-SiNgLe") == 4);
+    check_catalog(!stepmania_key_count("unknown"));
+    check_catalog(default_stepmania_step_type(9).empty());
+}

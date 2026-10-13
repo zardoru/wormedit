@@ -267,7 +267,8 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-612 Apply construction and projection vocabulary
 
-- **Status:** Ready
+- **Status:** In progress (part 1: text helpers and core/formats/audio builders)
+- **Part 1 (2026-10-13):** Commits `41d68e2` (shared allocation-free ASCII helpers in the text owner; copies, forwarders and temporary lowered strings removed; natural-order ties and nullable UI text kept; D4 comments were already present), `66d954a` (core builders: `make_initial_profile_layout`, `make_default_input_profile_for`, `prepare_tap_timing_proposal`, `make_tap_timing_preview`), `27c8fe7` (format slice planning and quarantine names), `f01a42b` (audio status-only builders become `T::from(status)`). No behavior differences. Hot-file call sites kept. Sys/UI builders, D13 views and forwarder removal in progress. Gate on main: `100% tests passed out of 3646`, event harness `508/508`, documentation `1/1`; Xvfb Compose screenshot normal.
 - **Findings closed:** NV1–NV3, TX1–TX4 (targets; not yet closed).
 - **Stale-plan audit:** Search by behavior: A–Z tests, tolower, +32 and a-minus-A arithmetic, lowered-string comparisons, return-only builders and read-only projections. Confirm every A lead and current caller/body equivalence; record stale claims, stricter validation, diagnostics, rounding and policy differences before editing.
 - **Note (2026-10-13):** The vocabulary and structure rules are already written in [code style](../decisions/code-style.md) (owner request). This card applies the renames and keeps that slice current; it does not re-add the table to `decisions.md`.

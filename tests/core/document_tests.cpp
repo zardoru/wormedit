@@ -1,3 +1,4 @@
+#include <wormedit/core/document_index.h>
 #include <wormedit/core/catalogs.h>
 #include <wormedit/core/document.h>
 
@@ -993,4 +994,22 @@ TEST_CASE("Note catalog preserves enum identity labels and palette shortcuts", "
     check_fact_catalog(bms_extension_for_profile("custom") == ".bms");
     check_fact_catalog(format_family_label(static_cast<format_family_t>(-1)) == "Unknown");
     check_fact_catalog(text_encoding_label(static_cast<text_encoding_t>(100)) == "unknown");
+}
+
+TEST_CASE("Document pointer indexes retain first matches and borrow the source values", "[core][document-index]") {
+    resource_entry_t resources[]{
+        {.id = resource_id_t{1}, .name = "first"},
+        {.id = resource_id_t{1}, .name = "duplicate"},
+        {.id = resource_id_t{0}, .name = "zero"}};
+    const auto index = document_id_index_t<resource_entry_t>::from(resources);
+    CHECK(index.find(resource_id_t{1}) == &resources[0]);
+    CHECK(index.at(resource_id_t{0}) == &resources[2]);
+    resources[0].name = "changed";
+    CHECK(index.find(resource_id_t{1})->name == "changed");
+}
+TEST_CASE("Document pointer indexes preserve missing-key lookup contracts", "[core][document-index]") {
+    const auto index = document_id_index_t<audio_asset_t>::from({});
+    CHECK_FALSE(index.has_entry(asset_id_t{1}));
+    CHECK(index.find(asset_id_t{1}) == nullptr);
+    CHECK_THROWS_AS(index.at(asset_id_t{1}), std::out_of_range);
 }

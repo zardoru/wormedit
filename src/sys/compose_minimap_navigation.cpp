@@ -71,8 +71,8 @@ auto seek_stopped_compose_transport(document_history_t& history,
         if (notifications) notifications->post(severity, notification_source_t::input, message);
         return std::string{message};
     };
-    const auto chart = std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
-    if (chart == history.document.charts.end()) {
+    const auto chart = history.document.find_chart(state.chart);
+    if (chart == nullptr) {
         if (cache.scene.chart != state.chart || cache.scene.revision != history.document.revision ||
             !cache.timing.marker_timing_index || !cache.scene.cached_measure_index)
             return feedback(notification_severity_t::warning, "Compose seek is unavailable until the chart is ready.");

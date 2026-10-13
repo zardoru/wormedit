@@ -318,9 +318,8 @@ auto resolve_copy_preview_source(const WormUiWorkspaceAction& action,
             return "This external audio is already linked; inspect its existing asset.";
         return std::nullopt;
     }
-    const auto audio = std::ranges::find(history.document.audio_assets, asset,
-                                         &audio_asset_t::id);
-    if (!asset || audio == history.document.audio_assets.end())
+    const auto audio = history.document.find_audio_asset(asset);
+    if (!asset || audio == nullptr)
         return "Selected music asset is no longer available.";
     source_path = audio->source_path;
     return std::nullopt;
@@ -525,9 +524,8 @@ auto metadata_asset_t::start_import_copy(
         }))
         return finish("This audio is already linked; select its asset and copy it instead.",
                       notification_severity_t::warning);
-    const auto chart = std::ranges::find(history.document.charts, *workspace.selected_chart,
-                                         &chart_document_t::id);
-    if (chart == history.document.charts.end())
+    const auto chart = history.document.find_chart(*workspace.selected_chart);
+    if (chart == nullptr)
         return finish("The selected difficulty is no longer available.",
                       notification_severity_t::warning);
     std::filesystem::path output_path;

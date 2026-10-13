@@ -122,7 +122,7 @@ auto bookmark_navigation_t::navigate_beat_bookmark(document_history_t& history, 
                             application_command_state_t& application,
                             marker_navigation_direction_t direction) -> bookmark_command_outcome_t {
     const bool previous = direction == marker_navigation_direction_t::previous;
-    const auto* chart = find_chart(history.document, state.chart);
+    const auto* chart = history.document.find_chart(state.chart);
     if (!chart) return fail("Bookmark navigation requires the active Compose chart.");
     const bool playing = is_playing(application);
     if (!playing) application.bookmarks.clear_seek_record();
@@ -157,7 +157,7 @@ auto bookmark_navigation_t::navigate_to_bookmark(document_history_t& history, ed
         return fail("Bookmark chooser entry is stale.");
     // A chooser jump is a seek of its own: it ends any repeat sequence in progress.
     application.invalidate_playing_seek_records();
-    const auto* chart = find_chart(history.document, chart_id);
+    const auto* chart = history.document.find_chart(chart_id);
     if (!chart) return fail("Bookmark chooser chart is unavailable.");
     const auto bookmark = std::ranges::find(chart->bookmarks, bookmark_id, &bookmark_t::id);
     if (bookmark == chart->bookmarks.end())
@@ -181,7 +181,7 @@ auto bookmark_navigation_t::navigate_to_bookmark(document_history_t& history, ed
 auto bookmark_navigation_t::add_beat_bookmark_here(document_history_t& history, editor_interaction_state_t& state,
                             application_command_state_t& application)
     -> bookmark_command_outcome_t {
-    const auto* chart = find_chart(history.document, state.chart);
+    const auto* chart = history.document.find_chart(state.chart);
     if (!chart) return fail("Choose a chart before editing bookmarks.");
     auto position = state.cursor;
     if (is_playing(application)) {

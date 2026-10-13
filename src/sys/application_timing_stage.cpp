@@ -189,9 +189,9 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
         if (preview.status == timing_lane_pseudonote_status_t::editing &&
             action.timing_has_target_y) {
             const auto chart =
-                std::ranges::find(history.document.charts, preview.chart, &chart_document_t::id);
+                history.document.find_chart(preview.chart);
             const auto target =
-                chart == history.document.charts.end()
+                chart == nullptr
                     ? std::optional<local_position_t>{}
                     : timing_position_from_fraction(
                           *chart, wormedit::sys::timing_target_fraction(action.timing_target),
@@ -206,9 +206,8 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
     if (!action.timing_has_target_y) {
         return rejected;
     }
-    const auto found = std::ranges::find(history.document.charts,
-                                         chart_id_t{action.timing_chart_id}, &chart_document_t::id);
-    if (found == history.document.charts.end()) {
+    const auto found = history.document.find_chart(chart_id_t{action.timing_chart_id});
+    if (found == nullptr) {
         return rejected;
     }
     const auto position = timing_position_from_fraction(

@@ -20,8 +20,8 @@ auto invoke_notification_history_command(application_command_t command, bool aut
 namespace {
 auto positioned_target(const chart_document_t& chart, local_position_t position)
     -> notification_history_target_t {
-    const auto measure = std::ranges::find(chart.measures, position.measure, &measure_chunk_t::id);
-    if (measure == chart.measures.end()) return {WORM_UI_NOTIFICATION_TARGET_MISSING};
+    const auto measure = chart.find_measure(position.measure);
+    if (measure == nullptr) return {WORM_UI_NOTIFICATION_TARGET_MISSING};
     const auto capacity = validate_measure(chart.divisions_per_standard_measure, measure->definition);
     if (!capacity || position.row >= *capacity.row_capacity)
         return {WORM_UI_NOTIFICATION_TARGET_MISSING};
@@ -70,8 +70,8 @@ auto resolve_notification_target(const song_document_t& document,
                                  const notification_target_t& target)
     -> notification_history_target_t {
     if (const auto* exact = std::get_if<notification_chart_position_t>(&target)) {
-        const auto chart = std::ranges::find(document.charts, exact->chart, &chart_document_t::id);
-        return chart == document.charts.end() ? notification_history_target_t{WORM_UI_NOTIFICATION_TARGET_MISSING}
+        const auto chart = document.find_chart(exact->chart);
+        return chart == nullptr ? notification_history_target_t{WORM_UI_NOTIFICATION_TARGET_MISSING}
                                               : positioned_target(*chart, exact->position);
     }
     const auto* object = std::get_if<object_id_t>(&target);
@@ -165,8 +165,8 @@ auto navigation_interaction(const document_history_t& history,
                              const std::optional<editor_interaction_state_t>& previous)
     -> std::optional<editor_interaction_state_t> {
     if (previous && previous->chart == target.chart) return previous;
-    const auto chart = std::ranges::find(history.document.charts, target.chart, &chart_document_t::id);
-    if (chart == history.document.charts.end()) return std::nullopt;
+    const auto chart = history.document.find_chart(target.chart);
+    if (chart == nullptr) return std::nullopt;
     const auto snaps = previous ? std::span<const std::uint64_t>{previous->supported_snap_denominators}
                                 : std::span<const std::uint64_t>{wormedit::default_snap_denominators};
     auto setup = make_editor_interaction(history, target.chart, target_lane(*chart, target.position),

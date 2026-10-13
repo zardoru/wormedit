@@ -119,7 +119,7 @@ auto bookmark_navigation_t::build_bookmark_chooser_view(const song_document_t& d
         result.status = "Bookmark chooser page size must be positive.";
         return result;
     }
-    const auto* chart = find_chart(document, chart_id);
+    const auto* chart = document.find_chart(chart_id);
     if (!chart) {
         result.status = "Bookmark chooser requires an active chart.";
         return result;

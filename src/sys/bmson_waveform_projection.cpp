@@ -238,9 +238,9 @@ auto project_stem(const bmson_waveform_projection_context_t& context, const char
                   const sound_channel_t& channel, compose_scene_cache_t::stem_waveform_cache_t& entry) -> bool {
     const auto asset = channel.source_clip.source;
     const auto binding = context.audition_sources.binding(context.history.document, asset);
-    const auto stored = std::ranges::find(context.history.document.audio_assets, asset, &audio_asset_t::id);
+    const auto stored = context.history.document.find_audio_asset(asset);
     const auto analysis = stem_analysis_for(context, asset);
-    if (!binding || stored == context.history.document.audio_assets.end() ||
+    if (!binding || stored == nullptr ||
         !stored_source_matches(*stored, *binding) || !analysis_matches_binding(analysis, *binding)) return false;
     const audio::channel_waveform_source_geometry_t source{
         .sample_rate = binding->source_sample_rate, .total_frames = binding->source_frame_count};
@@ -343,9 +343,8 @@ void populate_stem_waveforms(const bmson_waveform_projection_context_t& context)
     cache.stems.stem_waveform_views.clear();
     cache.stems.stem_cut_views.clear();
     if (!stem_ready(context)) return;
-    const auto chart = std::ranges::find(context.history.document.charts, *context.workspace.selected_chart,
-                                         &chart_document_t::id);
-    if (chart == context.history.document.charts.end() || chart->source_family != format_family_t::bmson) {
+    const auto chart = context.history.document.find_chart(*context.workspace.selected_chart);
+    if (chart == nullptr || chart->source_family != format_family_t::bmson) {
         cache.stems.stem_waveforms.clear();
         return;
     }
@@ -441,8 +440,8 @@ auto project_packed_piece(const bmson_waveform_projection_context_t& context,
     const audio::display_row_table_t& table, bool downscroll) -> bool {
     const auto binding = context.audition_sources.binding(context.history.document, piece.clip.source);
     const auto analysis = stem_analysis_for(context, piece.clip.source);
-    const auto stored = std::ranges::find(context.history.document.audio_assets, piece.clip.source, &audio_asset_t::id);
-    if (!binding || stored == context.history.document.audio_assets.end() ||
+    const auto stored = context.history.document.find_audio_asset(piece.clip.source);
+    if (!binding || stored == nullptr ||
         !stored_source_matches(*stored, *binding) || !analysis_matches_binding(analysis, *binding) ||
         analysis->waveform->key.source != binding->source) return false;
     const auto& waveform = *analysis->waveform;
@@ -488,9 +487,8 @@ void populate_packed_waveforms(const bmson_waveform_projection_context_t& contex
     const auto& view = context.flattened.view.compose;
     if (!view.visible || !view.scene_available || !context.workspace.selected_chart ||
         !context.interaction_state || !cache.timing.marker_timing_index) return;
-    const auto chart = std::ranges::find(context.history.document.charts,
-        *context.workspace.selected_chart, &chart_document_t::id);
-    if (chart == context.history.document.charts.end() || chart->source_family != format_family_t::bmson) return;
+    const auto chart = context.history.document.find_chart(*context.workspace.selected_chart);
+    if (chart == nullptr || chart->source_family != format_family_t::bmson) return;
     prepare_packed_waveform_index(cache.stems.packed_waveform_index, context.history.document,
         *chart, context.audition_sources.bindings(context.history.document), *cache.timing.marker_timing_index);
     const auto window = packed_window_seconds(*cache.timing.marker_timing_index,
@@ -561,9 +559,8 @@ void populate_bmson_waveform_projection(const bmson_waveform_projection_context_
     const auto* interaction_state = context.interaction_state;
     auto& cache = context.cache;
 
-    const auto chart = std::ranges::find(history.document.charts, *workspace.selected_chart,
-                                         &wormedit::chart_document_t::id);
-    if (chart == history.document.charts.end())
+    const auto chart = history.document.find_chart(*workspace.selected_chart);
+    if (chart == nullptr)
         return;
 
     const auto selection = selected_bmson_waveform_source(
@@ -579,14 +576,14 @@ void populate_bmson_waveform_projection(const bmson_waveform_projection_context_
     const auto asset = selection->asset;
     const auto binding = context.audition_sources.binding(context.history.document, asset);
     const auto stored_asset =
-        std::ranges::find(history.document.audio_assets, asset, &wormedit::audio_asset_t::id);
+        history.document.find_audio_asset(asset);
     const auto& analysis =
         asset == workspace.transport.audio_asset && context.transport_waveform.asset == asset
             ? context.transport_waveform.analysis
         : context.channel_waveform.asset == asset
             ? context.channel_waveform.analysis
             : std::shared_ptr<const wormedit::audio::waveform_analysis_result_t>{};
-    if (!binding || stored_asset == history.document.audio_assets.end() ||
+    if (!binding || stored_asset == nullptr ||
         !stored_source_matches(*stored_asset, *binding) ||
         !analysis_matches_binding(analysis, *binding))
         return;

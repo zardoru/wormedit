@@ -177,9 +177,8 @@ auto paste_geometry(const wormedit::chart_document_t& source,
             using value_t = std::decay_t<decltype(value)>;
             if constexpr (std::is_same_v<value_t, wormedit::note_t> ||
                           std::is_same_v<value_t, wormedit::bgm_event_t>) {
-                const auto found = std::ranges::find(chart.measures, value.position.measure,
-                                                     &wormedit::measure_chunk_t::id);
-                if (found == chart.measures.end()) return;
+                const auto found = chart.find_measure(value.position.measure);
+                if (found == nullptr) return;
                 if constexpr (std::is_same_v<value_t, wormedit::note_t>)
                     found->notes.push_back(value);
                 else found->bgm_events.push_back(value);
@@ -200,8 +199,8 @@ auto update_compose_paste(application_command_state_t& application_state,
         return false;
     }
     if (session->anchor == anchor && session->index) return true;
-    const auto source = std::ranges::find(document.charts, chart, &wormedit::chart_document_t::id);
-    if (source == document.charts.end()) { session.reset(); return false; }
+    const auto source = document.find_chart(chart);
+    if (source == nullptr) { session.reset(); return false; }
     session->anchor = anchor;
     session->anchor_available = true;
     session->proposal = wormedit::propose_chart_paste(document, chart, session->clipboard,
@@ -763,12 +762,6 @@ auto timing_lane_kind_to_ui(wormedit::timing_lane_kind_t lane) -> WormUiTimingLa
     return WORM_UI_TIMING_LANE_BPM;
 }
 
-auto compose_lane_is_editable(const wormedit::lane_definition_t& lane) -> bool {
-    using wormedit::lane_role_t;
-    return lane.role != lane_role_t::autoplay && lane.role != lane_role_t::invisible &&
-           lane.role != lane_role_t::mine;
-}
-
 auto compose_physical_scancode(wormedit::physical_key_t key) -> std::uint32_t {
     using wormedit::physical_key_t;
     switch (key) {
@@ -1243,7 +1236,7 @@ bool initialize_compose_interaction(const compose_interaction_population_context
             const auto row = wormedit::absolute_row(measures, segment.position);
             if (!row || *row >= earliest_layout_row)
                 continue;
-            const auto lane = std::ranges::find_if(segment.layout.lanes, compose_lane_is_editable);
+            const auto lane = std::ranges::find_if(segment.layout.lanes, &wormedit::lane_definition_t::is_editable);
             if (lane == segment.layout.lanes.end())
                 continue;
             earliest_layout_row = *row;
@@ -2305,9 +2298,8 @@ auto compose_paint_head_occupied(const compose_final_projection_context_t& input
         return false;
     }
     // Exact fallback still restricts the head check to its authored measure.
-    const auto measure = std::ranges::find(input.scope.chart_scope.chart.measures,
-                                           target.position.measure, &wormedit::measure_chunk_t::id);
-    if (measure == input.scope.chart_scope.chart.measures.end())
+    const auto measure = input.scope.chart_scope.chart.find_measure(target.position.measure);
+    if (measure == nullptr)
         return false;
     for (const auto& note : measure->notes) {
         ++cache.scene.paint_occupancy_scanned;
@@ -2538,8 +2530,8 @@ void project_branch_statement_feedback(WormUiComposeView& view,
 auto default_song_bar_hidden(const wormedit::song_document_t& document,
                              std::optional<wormedit::chart_id_t> chart) -> bool {
     if (!chart) return false;
-    const auto selected = std::ranges::find(document.charts, *chart, &wormedit::chart_document_t::id);
-    return selected != document.charts.end() &&
+    const auto selected = document.find_chart(*chart);
+    return selected != nullptr &&
         (selected->source_family == wormedit::format_family_t::bms ||
          selected->source_family == wormedit::format_family_t::bmson);
 }
@@ -2585,9 +2577,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
             wormedit::notification_source_t::input);
         return;
     }
-    const auto chart_it = std::ranges::find(history.document.charts, *workspace.selected_chart,
-                                            &wormedit::chart_document_t::id);
-    if (chart_it == history.document.charts.end()) {
+    const auto chart_it = history.document.find_chart(*workspace.selected_chart);
+    if (chart_it == nullptr) {
         report_compose_projection(flattened, projection_feedback_kind_t::missing_chart,
             wormedit::notification_severity_t::warning, "The selected difficulty is no longer available.");
         return;

@@ -481,18 +481,17 @@ void populate_metadata_format_targets(const workspace_projection_context_t& proj
     const auto& document = projection.document;
     auto& result = projection.result;
     const auto selected = tab.selected_difficulty
-        ? std::ranges::find(document.charts, tab.selected_difficulty->id,
-                            &wormedit::chart_document_t::id) : document.charts.end();
-    if (selected != document.charts.end())
+        ? document.find_chart(tab.selected_difficulty->id) : nullptr;
+    if (selected != nullptr)
         metadata.selected_chart_source_family = static_cast<std::uint8_t>(selected->source_family);
-    const auto count = selected == document.charts.end() ? 7u : 14u;
+    const auto count = metadata_family_view.count * (selected ? 2u : 1u);
     result.metadata.format_target = metadata_rows<WormUiMetadataFormatTargetView>(result, count);
     if (result.metadata.format_target.capacity() != count) {
         metadata.format_fields_truncated = true;
         return;
     }
     append_metadata_format_targets(result, metadata, document.metadata.format_groups, false);
-    if (selected == document.charts.end()) return;
+    if (selected == nullptr) return;
     append_metadata_format_targets(result, metadata, selected->metadata.format_groups, true);
 }
 
@@ -1019,9 +1018,8 @@ void populate_compose_keysounds(const workspace_projection_context_t& projection
     auto& result = projection.result;
     auto& view = result.view.compose;
     auto* arena = result.arena();
-    const auto chart = std::ranges::find(projection.document.charts, chart_id,
-                                         &wormedit::chart_document_t::id);
-    view.keysounds_available = chart != projection.document.charts.end();
+    const auto chart = projection.document.find_chart(chart_id);
+    view.keysounds_available = chart != nullptr;
     if (!arena || !view.keysounds_available) return;
     populate_sound_picker(projection, *chart);
     keysound_list_t uncached;
@@ -1227,9 +1225,8 @@ void populate_storyboard_tab(const workspace_projection_context_t& projection, c
 }
 void populate_sound_lane_modes(const workspace_projection_context_t& projection) {
     using namespace wormedit;
-    const auto chart = std::ranges::find(projection.document.charts, chart_id_t{projection.result.view.selected_chart_id},
-                                         &chart_document_t::id);
-    if (chart == projection.document.charts.end() || chart->source_family != format_family_t::bmson) return;
+    const auto chart = projection.document.find_chart(chart_id_t{projection.result.view.selected_chart_id});
+    if (chart == nullptr || chart->source_family != format_family_t::bmson) return;
     const auto bindings = bmson_lane_mode_resource_bindings(projection.document, chart->id);
     for (auto& row : projection.result.audio.sound_row) {
         const auto binding = std::ranges::find(bindings, resource_id_t{row.resource_id},
@@ -1286,14 +1283,14 @@ auto usage_position_label(const song_document_t& document, const sound_usage_row
     -> std::string {
     if (!row.position)
         return "Source clip";
-    const auto chart = std::ranges::find(document.charts, row.chart, &chart_document_t::id);
-    if (chart == document.charts.end())
+    const auto chart = document.find_chart(row.chart);
+    if (chart == nullptr)
         return "Unavailable position";
     const auto measure =
-        std::ranges::find(chart->measures, row.position->measure, &measure_chunk_t::id);
-    if (measure == chart->measures.end())
+        chart->find_measure(row.position->measure);
+    if (measure == nullptr)
         return "Unavailable position";
-    return "Measure " + std::to_string(std::distance(chart->measures.begin(), measure) + 1) +
+    return "Measure " + std::to_string((measure - chart->measures.data()) + 1) +
            ", row " + std::to_string(row.position->row);
 }
 

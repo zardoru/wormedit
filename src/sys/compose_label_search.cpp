@@ -17,11 +17,8 @@ struct located_match_t {
 };
 
 auto note_position(const chart_document_t& chart, object_id_t id) -> std::optional<local_position_t> {
-    for (const auto& measure : chart.measures) {
-        const auto found = std::ranges::find(measure.notes, id, &note_t::id);
-        if (found != measure.notes.end()) return found->position;
-    }
-    return std::nullopt;
+    const auto* note = chart.find_note(id);
+    return note ? std::optional{note->position} : std::nullopt;
 }
 
 auto locate_matches(const chart_document_t& chart, const measure_index_t& measures,
@@ -70,8 +67,8 @@ auto run_label_search(document_history_t& history, editor_interaction_state_t& s
                       std::string_view text, label_search_step_t step,
                       notification_severity_t* severity) -> std::string {
     set_feedback_severity(severity, notification_severity_t::warning);
-    const auto chart = std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
-    if (chart == history.document.charts.end()) return "The selected difficulty is no longer available.";
+    const auto chart = history.document.find_chart(state.chart);
+    if (chart == nullptr) return "The selected difficulty is no longer available.";
     if (text.empty()) return "Type a label to search for.";
     const auto hit = find_label_search_hit(*chart, text, state.cursor, step);
     if (!hit) {

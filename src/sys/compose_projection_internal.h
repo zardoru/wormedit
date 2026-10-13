@@ -254,17 +254,6 @@ void project_compose_bga_move_preview(const compose_scene_projection_context_t& 
 
 void project_compose_bga(const compose_scene_projection_context_t& projection);
 
-const wormedit::bgm_event_t* find_compose_bgm_event(const wormedit::chart_document_t& chart,
-                                                    const auto& event_id) {
-    for (const auto& measure : chart.measures) {
-        const auto found =
-            std::ranges::find(measure.bgm_events, event_id, &wormedit::bgm_event_t::id);
-        if (found != measure.bgm_events.end())
-            return &*found;
-    }
-    return nullptr;
-}
-
 void project_compose_draft_marker(const compose_scene_projection_context_t& projection,
                                   const auto& marker,
                                   const wormedit::editor_field_rect_t* bgm_bounds) {

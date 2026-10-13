@@ -426,9 +426,8 @@ void rebuild_offset_timing_index(compose_scene_cache_t& cache,
                                  signed_rational_t proposed_offset) {
     cache.timing.proposed_offset_timing_index.reset();
     cache.timing.proposed_offset_seconds = proposed_offset;
-    const auto chart = std::ranges::find(history.document.charts, chart_id,
-                                         &chart_document_t::id);
-    if (chart == history.document.charts.end()) return;
+    const auto chart = history.document.find_chart(chart_id);
+    if (chart == nullptr) return;
     auto candidate = *chart;
     candidate.beat_zero_audio_offset_seconds = proposed_offset;
     auto built = build_timing_index(candidate);
@@ -441,9 +440,8 @@ void project_offset_grid(flattened_workspace_t& flattened, compose_scene_cache_t
                          const editor_interaction_state_t* interaction) {
     if (!cache.timing.proposed_offset_timing_index || !workspace.selected_chart || !interaction ||
         !cache.timing.marker_timing_index) return;
-    const auto chart = std::ranges::find(history.document.charts, *workspace.selected_chart,
-                                         &chart_document_t::id);
-    if (chart != history.document.charts.end())
+    const auto chart = history.document.find_chart(*workspace.selected_chart);
+    if (chart != nullptr)
         project_compose_proposed_grid(flattened, cache, *chart, *cache.timing.marker_timing_index,
                                       *cache.timing.proposed_offset_timing_index, *interaction);
 }
@@ -563,9 +561,8 @@ void populate_beat_fit_overlay(flattened_workspace_t& flattened,
     auto& compose = flattened.view.compose;
     populate_beat_fit_fields(compose, drag);
     compose.beat_fit_onset_snap_active = cache.timing.beat_fit_onset_snapped;
-    const auto chart = std::ranges::find(history.document.charts, drag.chart,
-                                         &chart_document_t::id);
-    if (chart == history.document.charts.end() || !cache.scene.index || !interaction ||
+    const auto chart = history.document.find_chart(drag.chart);
+    if (chart == nullptr || !cache.scene.index || !interaction ||
         !cache.timing.marker_timing_index) return;
     project_beat_fit_positions(compose, cache, *chart, *interaction, drag);
     rebuild_beat_fit_timing_index(cache, *chart, drag);
@@ -604,9 +601,8 @@ void populate_tap_apply_overlay(flattened_workspace_t& flattened,
         if (timing) cache.timing.tap_preview_timing = std::move(timing.index);
     }
     if (!cache.timing.tap_preview_timing) return;
-    const auto chart = std::ranges::find(history.document.charts, proposal.chart,
-                                       &chart_document_t::id);
-    if (chart == history.document.charts.end()) return;
+    const auto chart = history.document.find_chart(proposal.chart);
+    if (chart == nullptr) return;
     project_compose_proposed_grid(flattened, cache, *chart, *cache.timing.marker_timing_index,
                                   *cache.timing.tap_preview_timing, *interaction);
     const audio_offset_drag_t offset{.chart = proposal.chart,

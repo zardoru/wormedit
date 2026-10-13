@@ -17,10 +17,8 @@ void populate_workspace_frame_view(flattened_workspace_t& flattened,
     audio_view.document_revision = args.history.document.revision;
     audio_view.timing_locked = args.timing_locked;
     if (args.selected_chart) {
-        const auto selected = std::ranges::find(args.history.document.charts,
-                                                *args.selected_chart,
-                                                &chart_document_t::id);
-        if (selected != args.history.document.charts.end()) {
+        const auto selected = args.history.document.find_chart(*args.selected_chart);
+        if (selected != nullptr) {
             audio_view.has_chart = true;
             audio_view.chart_id = selected->id.value;
             audio_view.offset_numerator =

@@ -733,8 +733,8 @@ void player_preview_presenter_t::populate(WormUiPlayerPreviewView& view,
         return;
     }
     const auto chart =
-        std::ranges::find(history.document.charts, *selected_chart, &chart_document_t::id);
-    if (chart == history.document.charts.end()) {
+        history.document.find_chart(*selected_chart);
+    if (chart == nullptr) {
         fail("The selected difficulty is unavailable.");
         return;
     }

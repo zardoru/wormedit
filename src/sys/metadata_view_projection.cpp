@@ -23,9 +23,8 @@ void populate_metadata_music(flattened_workspace_t& flattened,
                              const wormedit::document_history_t& history,
                              const wormedit::workspace_controller_t& workspace) {
     if (!workspace.transport.audio_asset) return;
-    const auto audio = std::ranges::find(history.document.audio_assets,
-        *workspace.transport.audio_asset, &wormedit::audio_asset_t::id);
-    if (audio == history.document.audio_assets.end()) return;
+    const auto audio = history.document.find_audio_asset(*workspace.transport.audio_asset);
+    if (audio == nullptr) return;
     auto& metadata = flattened.view.metadata;
     metadata.selected_music_asset_id = audio->id.value;
     metadata.selected_music_source = metadata_frame_text(flattened,
@@ -54,10 +53,8 @@ auto metadata_copy_preview_matches(const WormUiMetadataView& metadata,
 void populate_metadata_chart_resolution(flattened_workspace_t& flattened,
                                        const wormedit::document_history_t& history) {
     auto& metadata = flattened.view.metadata;
-    const auto chart = std::ranges::find_if(history.document.charts, [&](const auto& item) {
-        return item.id.value == metadata.chart_id;
-    });
-    if (chart == history.document.charts.end() || !metadata.has_chart) return;
+    const auto chart = history.document.find_chart(wormedit::chart_id_t{metadata.chart_id});
+    if (chart == nullptr || !metadata.has_chart) return;
     metadata.chart_divisions_per_standard_measure = chart->divisions_per_standard_measure;
 }
 
@@ -81,10 +78,8 @@ void populate_metadata_copy_preview(flattened_workspace_t& flattened,
 void populate_metadata_channel_map_lanes(flattened_workspace_t& flattened,
                                         const wormedit::document_history_t& history) {
     auto& metadata = flattened.view.metadata;
-    const auto chart = std::ranges::find_if(history.document.charts, [&](const auto& item) {
-        return item.id.value == metadata.chart_id;
-    });
-    if (chart == history.document.charts.end() || !metadata.has_chart ||
+    const auto chart = history.document.find_chart(wormedit::chart_id_t{metadata.chart_id});
+    if (chart == nullptr || !metadata.has_chart ||
         chart->source_family != wormedit::format_family_t::bms || chart->lane_layouts.empty())
         return;
     // The first layout segment is the one the table edits; its id travels back with the action.
@@ -155,10 +150,8 @@ void populate_metadata_lane_profile(flattened_workspace_t& flattened,
                                     const wormedit::document_history_t& history,
                                     const metadata_drop_state_t& metadata_drop) {
     auto& metadata = flattened.view.metadata;
-    const auto chart = std::ranges::find_if(history.document.charts, [&](const auto& item) {
-        return item.id.value == metadata.chart_id;
-    });
-    if (chart == history.document.charts.end() || !metadata.has_chart) return;
+    const auto chart = history.document.find_chart(wormedit::chart_id_t{metadata.chart_id});
+    if (chart == nullptr || !metadata.has_chart) return;
     const auto targets = lane_profile_family_targets(*chart);
     if (targets.empty()) return;
     const auto count = targets.size() + 1;

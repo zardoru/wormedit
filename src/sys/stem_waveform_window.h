@@ -1,3 +1,4 @@
+#include <wormedit/core/document_index.h>
 #pragma once
 
 #include <wormedit/audio/source_registry.h>
@@ -62,8 +63,8 @@ struct packed_geometry_builder_t {
     std::span<const audio::decoded_source_binding_t> bindings;
     std::unordered_set<std::uint64_t> lanes;
     std::unordered_map<std::uint64_t, const sound_channel_t*> channels;
-    std::unordered_map<std::uint64_t, const resource_entry_t*> resources;
-    std::unordered_map<std::uint64_t, const audio_asset_t*> assets;
+    document_id_index_t<resource_entry_t> resources;
+    document_id_index_t<audio_asset_t> assets;
     std::unordered_map<std::uint64_t, const audio::decoded_source_binding_t*> sources;
     std::unordered_map<std::uint64_t, const measure_index_entry_t*> measures;
     std::unordered_map<std::uint64_t, sound_slice_result_t> slices;
@@ -80,8 +81,8 @@ inline void prepare_packed_geometry(packed_geometry_builder_t& builder,
             if (event.continuation) builder.continuation_channels.insert(channel.id.value);
         }
     for (const auto& resource : builder.document.resources)
-        builder.resources.emplace(resource.id.value, &resource);
-    for (const auto& asset : builder.document.audio_assets) builder.assets.emplace(asset.id.value, &asset);
+        builder.resources.add(resource);
+    for (const auto& asset : builder.document.audio_assets) builder.assets.add(asset);
     for (const auto& binding : builder.bindings) builder.sources.emplace(binding.asset.value, &binding);
     for (const auto& measure : measures.entries) builder.measures.emplace(measure.id.value, &measure);
 }
@@ -94,17 +95,17 @@ inline auto packed_event_clip(const packed_geometry_builder_t& builder, const bg
     }
     asset_id_t asset;
     if (event.sound) {
-        const auto found = builder.resources.find(event.sound->value);
-        if (found == builder.resources.end()) return std::nullopt;
-        asset = found->second->asset;
+        const auto found = builder.resources.find(*event.sound);
+        if (found == nullptr) return std::nullopt;
+        asset = found->asset;
     } else if (channel) asset = channel->source_clip.source;
-    if (!asset || !builder.assets.contains(asset.value)) return std::nullopt;
+    if (!asset || !builder.assets.has_entry(asset)) return std::nullopt;
     if (channel && channel->source_clip.source != asset) return std::nullopt;
     return channel ? channel->source_clip : audio_clip_t{.source = asset};
 }
 inline void packed_source_geometry(const packed_geometry_builder_t& builder,
                                    packed_waveform_piece_t& piece) {
-    const auto* asset = builder.assets.at(piece.clip.source.value);
+    const auto* asset = builder.assets.at(piece.clip.source);
     piece.sample_rate = asset->stream.sample_rate;
     piece.source_frames = asset->stream.frame_count;
     const auto source = builder.sources.find(piece.clip.source.value);
@@ -295,9 +296,9 @@ stem_duration_seconds(const song_document_t& document, const sound_channel_t& ch
                       std::span<const audio::decoded_source_binding_t> bindings)
     -> std::optional <
     double> {
-    const auto asset = std::ranges::find(document.audio_assets, channel.source_clip.source, &audio_asset_t::id);
-    auto rate =asset == document.audio_assets.end() ? 0U : asset->stream.sample_rate;
-    auto frames = asset == document.audio_assets.end() ? std::nullopt : asset->stream.frame_count;
+    const auto asset = document.find_audio_asset(channel.source_clip.source);
+    auto rate =asset == nullptr ? 0U : asset->stream.sample_rate;
+    auto frames = asset == nullptr ? std::nullopt : asset->stream.frame_count;
     if (rate == 0 || !frames) {
         const auto binding = std::ranges::find(bindings, channel.source_clip.source,
                                                &audio::decoded_source_binding_t::asset);

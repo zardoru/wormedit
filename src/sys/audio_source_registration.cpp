@@ -48,8 +48,8 @@ auto probe_order(const song_document_t& document) -> std::vector<const audio_ass
     std::vector<const audio_asset_t*> order;
     std::unordered_set<std::uint64_t> seen;
     for (const auto id : ids) {
-        const auto found = std::ranges::find(document.audio_assets, id, &audio_asset_t::id);
-        if (found != document.audio_assets.end() && seen.insert(id.value).second)
+        const auto found = document.find_audio_asset(id);
+        if (found != nullptr && seen.insert(id.value).second)
             order.push_back(&*found);
     }
     return order;
@@ -447,8 +447,8 @@ void resident_sample_loader_t::start(const song_document_t& document,
     state_->sources = &sources;
     std::vector<resident_candidate_t> candidates;
     for (const auto asset : first_use_asset_order(document)) {
-        const auto found = std::ranges::find(document.audio_assets, asset, &audio_asset_t::id);
-        if (found == document.audio_assets.end()) continue;
+        const auto found = document.find_audio_asset(asset);
+        if (found == nullptr) continue;
         if (const auto path = resolve_asset_path(*found, asset_base)) {
             candidates.push_back({asset, *path});
         }

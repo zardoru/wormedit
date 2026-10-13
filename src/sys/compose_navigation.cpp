@@ -6,11 +6,6 @@
 
 namespace wormedit::sys {
 namespace {
-auto navigation_chart(const document_history_t& history, chart_id_t id) -> const chart_document_t* {
-    const auto found = std::ranges::find(history.document.charts, id, &chart_document_t::id);
-    return found == history.document.charts.end() ? nullptr : &*found;
-}
-
 auto navigation_frame(const chart_document_t& chart, const application_command_state_t& application,
                        const compose_navigation_target_t& target) -> std::optional<std::uint64_t> {
     if (target.preview_frame) return target.preview_frame;
@@ -117,7 +112,7 @@ auto navigate_compose_position(document_history_t& history, editor_interaction_s
         return {.status = "The navigation request is stale."};
     if (has_pending_editor_gesture(state))
         return {.status = "Finish or cancel the active Compose gesture before navigating."};
-    const auto* chart = navigation_chart(history, state.chart);
+    const auto* chart = history.document.find_chart(state.chart);
     if (!chart) return {.status = "The selected difficulty is no longer available."};
     const auto playing = is_preview_playing(application);
     const auto policy = compose_navigation_transport_policy(application, target.minimap, target.primary);
@@ -137,7 +132,7 @@ auto navigate_compose_position(document_history_t& history, editor_interaction_s
 
 auto navigate_compose_measure(document_history_t& history, editor_interaction_state_t& state,
     application_command_state_t& application, std::uint64_t number) -> bookmark_command_outcome_t {
-    const auto* chart = navigation_chart(history, state.chart);
+    const auto* chart = history.document.find_chart(state.chart);
     if (!chart) return {.status = "The selected difficulty is no longer available."};
     compose_navigation_target_t target;
     if (chart_has_virtual_tail(*chart)) {

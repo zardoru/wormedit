@@ -328,9 +328,8 @@ auto waveform_analysis_t::selected_channel_asset(
         compose_interaction_state->selected_objects.size() == 1 &&
         compose_interaction_state->selected_objects.front().kind ==
             editor_selection_object_kind_t::bgm_event) {
-        const auto chart = std::ranges::find(document.charts, *workspace.selected_chart,
-                                             &chart_document_t::id);
-        if (chart != document.charts.end()) {
+        const auto chart = document.find_chart(*workspace.selected_chart);
+        if (chart != nullptr) {
             const auto selection = selected_bmson_waveform_source(
                 compose_scene_cache, *chart, document.revision,
                 compose_interaction_state->selected_objects.front().id);
@@ -450,8 +449,8 @@ auto waveform_analysis_t::wanted_stem_assets(const song_document_t& document,
     -> std::vector<asset_id_t> {
     std::vector<asset_id_t> wanted;
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart || !interaction) return wanted;
-    const auto chart = std::ranges::find(document.charts, *workspace.selected_chart, &chart_document_t::id);
-    if (chart == document.charts.end() || chart->source_family != format_family_t::bmson) return wanted;
+    const auto chart = document.find_chart(*workspace.selected_chart);
+    if (chart == nullptr || chart->source_family != format_family_t::bmson) return wanted;
     std::unordered_set<std::uint64_t> seen;
     for (const auto* channel : visible_stems) {
         if (!channel || !stem_lane_for_channel(*chart, channel->id)) continue;
@@ -531,8 +530,8 @@ void append_packed_waveform_assets(const song_document_t& document,
     std::vector<asset_id_t>& wanted) {
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart || !interaction ||
         interaction->chart != *workspace.selected_chart || !cache.timing.marker_timing_index) return;
-    const auto chart = std::ranges::find(document.charts, *workspace.selected_chart, &chart_document_t::id);
-    if (chart == document.charts.end() || chart->source_family != format_family_t::bmson ||
+    const auto chart = document.find_chart(*workspace.selected_chart);
+    if (chart == nullptr || chart->source_family != format_family_t::bmson ||
         cache.scene.chart != chart->id || cache.scene.revision != document.revision) return;
     prepare_packed_waveform_index(cache.stems.packed_waveform_index, document, *chart,
                                  sources.bindings(), *cache.timing.marker_timing_index);

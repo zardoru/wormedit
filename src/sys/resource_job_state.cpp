@@ -66,11 +66,10 @@ auto complete_project_resource_copy(const pending_project_resource_copy_t& reque
     if (history.document.id != request.song || history.document.revision != request.revision)
         return {"Resource copy finished, but the document changed; source was not relinked.",
                 notification_severity_t::warning};
-    const auto audio = std::ranges::find(history.document.audio_assets, request.asset,
-                                         &audio_asset_t::id);
+    const auto audio = history.document.find_audio_asset(request.asset);
     const auto visual = std::ranges::find(history.document.visual_assets, request.asset,
                                           &visual_asset_t::id);
-    const auto current_path = audio != history.document.audio_assets.end()
+    const auto current_path = audio != nullptr
         ? audio->source_path
         : visual != history.document.visual_assets.end() ? visual->source_path
                                                          : std::filesystem::path{};

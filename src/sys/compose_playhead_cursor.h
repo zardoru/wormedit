@@ -65,9 +65,8 @@ namespace wormedit::sys {
     if (!std::isfinite(absolute_row) || absolute_row < 0.0 ||
         playhead_cursor_edit_blocked(state))
         return false;
-    const auto chart = std::ranges::find(history.document.charts, state.chart,
-                                         &chart_document_t::id);
-    if (chart == history.document.charts.end() || state.active_snap_denominator == 0 ||
+    const auto chart = history.document.find_chart(state.chart);
+    if (chart == nullptr || state.active_snap_denominator == 0 ||
         chart->divisions_per_standard_measure % state.active_snap_denominator != 0)
         return false;
     if (geometry.index && (geometry.chart != chart->id ||

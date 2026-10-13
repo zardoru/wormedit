@@ -695,7 +695,6 @@ auto compose_horizontal_layout(double viewport_width_pixels, std::size_t lane_co
                                std::uint8_t timing_lane_mask)
     -> compose_horizontal_layout_t;
 auto maximum_layout_lane_count(const wormedit::chart_document_t& chart) -> std::size_t;
-auto compose_lane_is_editable(const wormedit::lane_definition_t& lane) -> bool;
 auto compose_physical_scancode(wormedit::physical_key_t key) -> std::uint32_t;
 auto has_beat_marker_navigation(const wormedit::chart_document_t& chart) -> bool;
 auto has_audio_marker_navigation(const wormedit::chart_document_t& chart) -> bool;

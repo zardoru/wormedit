@@ -325,10 +325,8 @@ auto compose_stem_filename(const compose_scene_projection_context_t& projection,
                                            *lane.stem_channel, &wormedit::sound_channel_t::id);
     if (channel == projection.scope.chart_scope.chart.sound_channels.end())
         return nullptr;
-    const auto& assets = projection.history().document.audio_assets;
-    const auto asset =
-        std::ranges::find(assets, channel->source_clip.source, &wormedit::audio_asset_t::id);
-    if (asset == assets.end() || !projection.frame.flattened.arena())
+    const auto* asset = projection.history().document.find_audio_asset(channel->source_clip.source);
+    if (asset == nullptr || !projection.frame.flattened.arena())
         return nullptr;
     const auto name = asset->source_path.filename().generic_u8string();
     return arena_string(*projection.frame.flattened.arena(),
@@ -544,7 +542,7 @@ void project_compose_marker_draft(const compose_scene_projection_context_t& proj
     if (!draft || projection.scope.pixels_per_row <= 0.0)
         return;
     const auto* reference =
-        find_compose_bgm_event(projection.scope.chart_scope.chart, draft->reference);
+        projection.scope.chart_scope.chart.find_bgm_event(draft->reference);
     if (!reference)
         return;
     const auto lane = std::ranges::find_if(projection.scene.bgm_lanes, [&](const auto& candidate) {

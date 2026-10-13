@@ -251,8 +251,8 @@ auto external_player_t::prepare_preview(const song_document_t& song, chart_id_t 
     options.chart = chart;
     options.preserve_unchanged_source = false;
     options.branch_policy = bms_branch_policy_t::flatten_active;
-    const auto selected = std::ranges::find(song.charts, chart, &chart_document_t::id);
-    if (selected != song.charts.end() && selected->lane_layouts.empty() &&
+    const auto selected = song.find_chart(chart);
+    if (selected != nullptr && selected->lane_layouts.empty() &&
         !selected->input_profile.profile_id.empty())
         options.lane_profile_id = selected->input_profile.profile_id;
     const auto written = write_bms(song, options);

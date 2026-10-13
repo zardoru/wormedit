@@ -43,8 +43,8 @@ void pause_preview(audio::preview_session_t& preview_session, sdl_preview_output
 
 auto object_sound(const song_document_t& song, chart_id_t chart_id, object_id_t id)
     -> std::optional<resource_id_t> {
-    const auto chart = std::ranges::find(song.charts, chart_id, &chart_document_t::id);
-    if (chart == song.charts.end())
+    const auto chart = song.find_chart(chart_id);
+    if (chart == nullptr)
         return std::nullopt;
     for (const auto& measure : chart->measures) {
         const auto note = std::ranges::find(measure.notes, id, &note_t::id);

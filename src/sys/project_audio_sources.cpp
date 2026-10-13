@@ -75,8 +75,8 @@ auto apply_source_plan(const audition_source_reconciliation_context_t& context,
     context.owner.sources.ensure_source_capacity(context.document.audio_assets.size() + 3);
     std::size_t unavailable = plan.unresolved;
     for (const auto& [id, path] : plan.add) {
-        const auto found = std::ranges::find(context.document.audio_assets, id, &audio_asset_t::id);
-        if (found == context.document.audio_assets.end() ||
+        const auto found = context.document.find_audio_asset(id);
+        if (found == nullptr ||
             !register_one_asset(context.document, *found, path, context.owner.generation, context.owner.sources,
                                 context.owner.probe_scheduler != nullptr))
             ++unavailable;

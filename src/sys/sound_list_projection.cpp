@@ -1,3 +1,4 @@
+#include <wormedit/core/document_index.h>
 #include "sys/sound_list_projection.h"
 
 #include <algorithm>
@@ -50,11 +51,6 @@ void append_keysound_metadata(keysound_list_t& list, const song_document_t& docu
     for (auto& row : list.selected_rows) append(row);
 }
 
-auto find_audio_asset(const song_document_t& document, asset_id_t asset) -> const audio_asset_t* {
-    const auto found = std::ranges::find(document.audio_assets, asset, &audio_asset_t::id);
-    return found == document.audio_assets.end() ? nullptr : &*found;
-}
-
 auto joined(const std::vector<std::string>& tags) -> std::string {
     std::string text;
     for (const auto& tag : tags) {
@@ -97,7 +93,7 @@ auto project_sound_list(const song_document_t& document, const sound_list_reques
     const auto counts = count_resource_references(document);
     std::vector<const resource_entry_t*> matched;
     for (const auto& resource : document.resources) {
-        const auto* asset = find_audio_asset(document, resource.asset);
+        const auto* asset = document.find_audio_asset(resource.asset);
         if (!asset) continue;
         for (const auto& candidate : resource.tags) {
             const auto key = fold(candidate);
@@ -115,7 +111,7 @@ auto project_sound_list(const song_document_t& document, const sound_list_reques
     const auto last = std::min(matched.size(), list.first_row + request.row_limit);
     for (auto index = list.first_row; index < last; ++index) {
         const auto& resource = *matched[index];
-        const auto* asset = find_audio_asset(document, resource.asset);
+        const auto* asset = document.find_audio_asset(resource.asset);
         const auto count = counts.find(resource.id.value);
         list.rows.push_back({.resource = resource.id,
                              .name = resource.name,
@@ -134,7 +130,7 @@ auto project_sound_properties(const song_document_t& document, resource_id_t res
     -> sound_properties_t {
     const auto resource = std::ranges::find(document.resources, resource_id, &resource_entry_t::id);
     if (!resource_id || resource == document.resources.end()) return {};
-    const auto* asset = find_audio_asset(document, resource->asset);
+    const auto* asset = document.find_audio_asset(resource->asset);
     if (!asset) return {};
     const auto counts = count_resource_references(document);
     const auto count = counts.find(resource->id.value);
@@ -183,7 +179,7 @@ auto is_placeable_keysound(const song_document_t& document, const resource_entry
     -> bool {
     return std::ranges::find(resource.roles, resource_role_t::sample) != resource.roles.end() &&
            (audio_asset_ids ? audio_asset_ids->contains(resource.asset.value)
-                            : find_audio_asset(document, resource.asset) != nullptr) &&
+                            : document.find_audio_asset(resource.asset) != nullptr) &&
            effective_sound_kind(resource) != sound_kind_t::stem;
 }
 
@@ -195,7 +191,7 @@ auto is_listed_sound(const song_document_t& document, const chart_document_t* ch
         effective_sound_kind(resource) != sound_kind_t::stem) return false;
     return std::ranges::find(resource.roles, resource_role_t::bgm) != resource.roles.end() &&
            (audio_asset_ids ? audio_asset_ids->contains(resource.asset.value)
-                            : find_audio_asset(document, resource.asset) != nullptr);
+                            : document.find_audio_asset(resource.asset) != nullptr);
 }
 
 auto keysound_layer_mask(const chart_document_t& chart, const keysound_list_t& list,
@@ -420,12 +416,12 @@ auto collect_keysound_resources(const song_document_t& document,
                                 std::size_t ungrouped_index,
                                 const std::unordered_set<std::uint64_t>* audio_asset_ids,
                                 const sound_resource_metadata_t& metadata)
-    -> std::unordered_map<std::uint64_t, const resource_entry_t*> {
-    std::unordered_map<std::uint64_t, const resource_entry_t*> resources;
+    -> document_id_index_t<resource_entry_t> {
+    auto resources = document_id_index_t<resource_entry_t>::from({});
     for (const auto& resource : document.resources) {
         if (!is_listed_sound(document, chart, resource, audio_asset_ids)) continue;
         list.all_resources.push_back(resource.id);
-        resources.emplace(resource.id.value, &resource);
+        resources.add(resource);
         if (!matches_resource_use(request.use_filter, metadata.uses(resource.id), resource.missing)) continue;
         const auto row_search = fold(std::string{metadata.path(resource.asset)}).find(search) !=
             std::string::npos ? std::string_view{} : search;
@@ -459,12 +455,11 @@ void sort_keysound_sections(std::vector<keysound_section_projection_t>& sections
 
 void append_selected_keysounds(keysound_list_t& list, const chart_document_t* chart,
                                const keysound_list_request_t& request,
-                               const std::unordered_map<std::uint64_t,
-                                   const resource_entry_t*>& resources) {
+                               const document_id_index_t<resource_entry_t>& resources) {
     for (const auto id : request.selected_resource_ids) {
-        const auto found = resources.find(id);
-        if (found == resources.end()) continue;
-        const auto row = keysound_row_from_resource(chart, list, *found->second);
+        const auto* found = resources.find(resource_id_t{id});
+        if (!found) continue;
+        const auto row = keysound_row_from_resource(chart, list, *found);
         list.selection_rows.push_back({.resource = row.resource,
             .group_id = row.sound_group_id, .layer_mask = row.layer_mask,
             .slot = row.slot, .missing = row.missing});
@@ -724,7 +719,7 @@ auto project_keysound_fallbacks(const song_document_t& document,
         cache = {document.id.value, document.revision, asset_base, {}, true, std::move(missing_resources)};
         audio_directory_cache_t listings;
         for (const auto& resource : document.resources) {
-            const auto* asset = find_audio_asset(document, resource.asset);
+            const auto* asset = document.find_audio_asset(resource.asset);
             if (!asset || !resource.missing) continue;
             auto result = resolve_audio_fallback(asset->source_path, asset_base, &listings);
             if (result.outcome == audio_fallback_outcome_t::fallback ||

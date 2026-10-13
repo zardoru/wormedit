@@ -107,8 +107,8 @@ auto dispatch_sound_usage_action(const WormUiWorkspaceAction& action,
     }
 
     const auto chart =
-        std::ranges::find(history.document.charts, found->chart, &chart_document_t::id);
-    if (chart == history.document.charts.end())
+        history.document.find_chart(found->chart);
+    if (chart == nullptr)
         return rejection("The sound usage chart is unavailable.");
     auto candidate = interaction_for_jump(history, *chart, *found->position, next_interaction);
     if (!candidate ||

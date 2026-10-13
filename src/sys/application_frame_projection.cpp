@@ -37,9 +37,8 @@ void project_hover_timing(flattened_workspace_t& flattened, const document_histo
           (hover.total_frames == flattened.view.transport_end_frame &&
            hover.sample_rate == flattened.view.transport_sample_rate)))
         return;
-    const auto chart = std::ranges::find(history.document.charts, *workspace.selected_chart,
-                                         &chart_document_t::id);
-    if (chart == history.document.charts.end())
+    const auto chart = history.document.find_chart(*workspace.selected_chart);
+    if (chart == nullptr)
         return;
     if (!format_compose_hover_timing(
             *chart, *cache.scene.cached_measure_index, *cache.timing.marker_timing_index, hover.source_frame,
@@ -91,9 +90,8 @@ auto prepare_frame_stems(const application_frame_projection_context_t& context,
         !context.workspace.selected_chart || !context.compose_interaction_state ||
         context.workspace.active_tab != workspace_tab_t::compose)
         return {};
-    const auto chart = std::ranges::find(context.history.document.charts,
-        *context.workspace.selected_chart, &chart_document_t::id);
-    if (chart == context.history.document.charts.end() || chart->source_family != format_family_t::bmson)
+    const auto chart = context.history.document.find_chart(*context.workspace.selected_chart);
+    if (chart == nullptr || chart->source_family != format_family_t::bmson)
         return {};
     const auto timing_matches = context.compose_scene_cache.scene.chart == chart->id &&
         context.compose_scene_cache.scene.revision == context.history.document.revision &&

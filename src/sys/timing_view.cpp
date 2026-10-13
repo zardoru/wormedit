@@ -295,9 +295,8 @@ void populate_timing_view_for_compose(
     const timing_grid_state_t& timing_grid,
     const wormedit::timing_lane_pseudonote_preview_t* stage) {
     if (!workspace.selected_chart) return;
-    const auto selected = std::ranges::find(history.document.charts, *workspace.selected_chart,
-                                           &wormedit::chart_document_t::id);
-    if (selected == history.document.charts.end()) return;
+    const auto selected = history.document.find_chart(*workspace.selected_chart);
+    if (selected == nullptr) return;
     const auto& chart = *selected;
     auto& view = flattened.view.timing;
     view.chart_id = chart.id.value;

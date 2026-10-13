@@ -213,7 +213,6 @@ using wormedit::sys::compose_scene_cache_t;
 using wormedit::sys::compare_scene_cache_t;
 using wormedit::sys::compose_field_downscroll;
 using wormedit::sys::compose_horizontal_layout;
-using wormedit::sys::compose_lane_is_editable;
 using wormedit::sys::compose_physical_scancode;
 using wormedit::sys::compose_project_y;
 using wormedit::sys::compose_source_y;
@@ -544,9 +543,8 @@ auto active_field_skin_layout(const wormedit::song_document_t& document,
     const std::optional<wormedit::editor_interaction_state_t>& interaction)
     -> const wormedit::lane_layout_t* {
     if (!workspace.selected_chart) return nullptr;
-    const auto chart = std::ranges::find(document.charts, *workspace.selected_chart,
-        &wormedit::chart_document_t::id);
-    if (chart == document.charts.end() || chart->lane_layouts.empty()) return nullptr;
+    const auto chart = document.find_chart(*workspace.selected_chart);
+    if (chart == nullptr || chart->lane_layouts.empty()) return nullptr;
     if (interaction && interaction->chart == chart->id) {
         if (const auto* segment = wormedit::active_lane_layout_segment(*chart, interaction->cursor))
             return &segment->layout;
@@ -1365,10 +1363,8 @@ void project_bga_dock(wormedit::sys::bga_dock_runtime_t& runtime,
     worm_ui_frontend_bga_dock_request(&request);
     request.visible = request.visible && workspace.active_tab == wormedit::workspace_tab_t::compose;
     const auto chart = workspace.selected_chart
-        ? std::ranges::find(history.document.charts, *workspace.selected_chart,
-                            &wormedit::chart_document_t::id)
-        : history.document.charts.end();
-    request.ids_available = chart != history.document.charts.end() &&
+        ? history.document.find_chart(*workspace.selected_chart) : nullptr;
+    request.ids_available = chart != nullptr &&
         chart->source_family == wormedit::format_family_t::bms;
     runtime.project(history.document, base, request, view);
 }
@@ -1385,8 +1381,8 @@ void apply_compare_scroll_action(compare_scene_cache_t& cache,
 auto stage_sound_import(const wormedit::song_document_t& document, wormedit::chart_id_t chart,
                         std::span<const std::string> paths, wormedit::notification_sink_t& notifications,
                         std::uint8_t fixed_kind = 0) -> std::string {
-    const auto target = std::ranges::find(document.charts, chart, &wormedit::chart_document_t::id);
-    if (target == document.charts.end()) return post_callback_feedback(notifications, wormedit::notification_severity_t::warning,
+    const auto target = document.find_chart(chart);
+    if (target == nullptr) return post_callback_feedback(notifications, wormedit::notification_severity_t::warning,
         wormedit::notification_source_t::import_, "Select a difficulty before adding sounds.");
     auto prepared = wormedit::sys::prepare_keysound_import(document, chart, paths, fixed_kind);
     if (prepared.entries.empty()) return post_callback_feedback(notifications, prepared.skipped_unreadable
@@ -1613,13 +1609,11 @@ auto dispatch_compare_diagnostic_jump(
     std::optional<wormedit::editor_interaction_state_t>& interaction,
     wormedit::notification_sink_t& notifications) -> std::string {
     const auto chart_id = wormedit::chart_id_t{action.compare_diagnostic_chart};
-    const auto chart = std::ranges::find(history.document.charts, chart_id,
-                                         &wormedit::chart_document_t::id);
-    if (chart == history.document.charts.end()) return post_callback_feedback(notifications, wormedit::notification_severity_t::warning,
+    const auto chart = history.document.find_chart(chart_id);
+    if (chart == nullptr) return post_callback_feedback(notifications, wormedit::notification_severity_t::warning,
         wormedit::notification_source_t::input, "The validation target is no longer available.");
-    const auto measure = std::ranges::find(chart->measures,
-        wormedit::measure_id_t{action.compare_diagnostic_measure}, &wormedit::measure_chunk_t::id);
-    if (measure == chart->measures.end()) return post_callback_feedback(notifications, wormedit::notification_severity_t::warning,
+    const auto measure = chart->find_measure(wormedit::measure_id_t{action.compare_diagnostic_measure});
+    if (measure == nullptr) return post_callback_feedback(notifications, wormedit::notification_severity_t::warning,
         wormedit::notification_source_t::input, "The validation target is no longer available.");
     const auto capacity = wormedit::validate_measure(chart->divisions_per_standard_measure,
                                                       measure->definition).row_capacity;
@@ -1797,7 +1791,7 @@ auto tap_music_available(const wormedit::song_document_t& document, const WormUi
     if (view.tap_timing.source_available || view.metadata.selected_music_asset_id != 0) return true;
     return std::ranges::any_of(document.resources, [&](const wormedit::resource_entry_t& resource) {
         return std::ranges::find(resource.roles, wormedit::resource_role_t::music) != resource.roles.end() &&
-            std::ranges::find(document.audio_assets, resource.asset, &wormedit::audio_asset_t::id) != document.audio_assets.end();
+            document.find_audio_asset(resource.asset) != nullptr;
     });
 }
 
@@ -1877,8 +1871,8 @@ auto tap_meter_at(const wormedit::song_document_t& document,
                   std::uint64_t frame) -> std::uint16_t {
     if (!preview.chart || !preview.timing ||
         frame > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) return 4;
-    const auto chart = std::ranges::find(document.charts, *preview.chart, &wormedit::chart_document_t::id);
-    if (chart == document.charts.end()) return 4;
+    const auto chart = document.find_chart(*preview.chart);
+    if (chart == nullptr) return 4;
     const auto position = preview.timing->row_at({static_cast<std::int64_t>(frame), 44'100});
     if (!position.absolute_row) return 4;
     const auto row = position.absolute_row->numerator / static_cast<std::int64_t>(position.absolute_row->denominator);
@@ -3467,11 +3461,9 @@ struct application_t::implementation_t {
     bool dispatch_timing_workspace_action(const WormUiWorkspaceAction& action,
                                           application_command_state_t& application_state) {
         if (action.timing_stage_action != WORM_UI_TIMING_STAGE_NONE) {
-            const auto chart = std::ranges::find(session.history.document.charts,
-                                                 wormedit::chart_id_t{action.timing_chart_id},
-                                                 &wormedit::chart_document_t::id);
+            const auto chart = session.history.document.find_chart(wormedit::chart_id_t{action.timing_chart_id});
             const auto denominator =
-                chart == session.history.document.charts.end()
+                chart == nullptr
                     ? views.timing_grid.active_denominator
                     : wormedit::effective_edit_snap_denominator(
                           *chart, views.timing_grid.active_denominator,
@@ -3487,10 +3479,8 @@ struct application_t::implementation_t {
         wormedit::sys::frame_phase_scope_t preparation(
             wormedit::sys::frame_phase_t::workspace_preparation);
         if (session.workspace.selected_chart) {
-            const auto chart = std::ranges::find(session.history.document.charts,
-                                                 *session.workspace.selected_chart,
-                                                 &wormedit::chart_document_t::id);
-            if (chart != session.history.document.charts.end()) {
+            const auto chart = session.history.document.find_chart(*session.workspace.selected_chart);
+            if (chart != nullptr) {
                 views.timing_grid = refresh_timing_grid(*chart, commands);
             }
         }
@@ -3954,9 +3944,8 @@ struct application_t::implementation_t {
                 "Timing event staging expired because its chart or revision changed.");
             return;
         }
-        const auto chart = std::ranges::find(session.history.document.charts, stage->chart,
-                                             &wormedit::chart_document_t::id);
-        auto* chart_ptr = chart == session.history.document.charts.end() ? nullptr : &*chart;
+        const auto chart = session.history.document.find_chart(stage->chart);
+        auto* chart_ptr = chart == nullptr ? nullptr : &*chart;
         if (action.timing_stage_action == WORM_UI_TIMING_STAGE_DELETE) {
             delete_staged_timing_event(action, session.history, timing_locked, *stage,
                                        platform.notification_sink);

@@ -47,7 +47,7 @@ auto make_resource_entry(const song_document_t& document, const resource_entry_t
         return std::ranges::find(resource.roles, role) != resource.roles.end();
     };
     const auto audio =
-        std::ranges::find(document.audio_assets, resource.asset, &audio_asset_t::id);
+        document.find_audio_asset(resource.asset);
     const auto visual =
         std::ranges::find(document.visual_assets, resource.asset, &visual_asset_t::id);
     const auto bms_identity =
@@ -65,20 +65,20 @@ auto make_resource_entry(const song_document_t& document, const resource_entry_t
     entry.sample = has_role(resource_role_t::sample);
     entry.bgm = has_role(resource_role_t::bgm);
     entry.bga = has_role(resource_role_t::bga);
-    entry.audio_asset = audio != document.audio_assets.end();
+    entry.audio_asset = audio != nullptr;
     entry.selected_audio_asset = entry.audio_asset && selected_audio_asset == resource.asset;
     entry.image_asset = visual != document.visual_assets.end() &&
                         visual->kind == asset_kind_t::image;
     entry.selected_visual_asset = entry.image_asset &&
                                   selected_visual_asset == resource.asset;
-    entry.missing = resource.missing || (audio == document.audio_assets.end() &&
+    entry.missing = resource.missing || (audio == nullptr &&
                                          visual == document.visual_assets.end());
     entry.target_index = target == resource.target_identities.end()
                              ? "#" + std::to_string(resource.id.value)
                              : "#" + target->namespace_name + target->identifier;
     entry.name =
         resource.name.empty() ? "Resource " + std::to_string(resource.id.value) : resource.name;
-    if (audio != document.audio_assets.end()) {
+    if (audio != nullptr) {
         entry.source_name = audio->source_path.filename().generic_string();
         entry.source_path = audio->source_path.generic_string();
     } else if (visual != document.visual_assets.end()) {

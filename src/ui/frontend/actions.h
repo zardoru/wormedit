@@ -445,6 +445,8 @@ typedef struct WormUiWorkspaceAction {
     uint8_t bms_encoding_index;
     // Initial layout index: 4K, 5K, 6K, 7K, 8K, 9K, 10K, 14K.
     uint8_t new_project_layout_index;
+    // Stable core layout identity; the legacy index field is retained for ABI compatibility.
+    char new_project_layout_id[96];
     WormUiWorkspaceTab tab;
     uint64_t recovery_scan_generation;
     uint64_t transport_seek_frame;

@@ -1,5 +1,6 @@
 #include "sys/frame_timing.h"
 #include "sys/workspace_projection.h"
+#include <wormedit/core/lane_profiles.h>
 #include "sys/timing_view.h"
 #include "sys/metadata_view_projection.h"
 #include <array>
@@ -1426,4 +1427,21 @@ TEST_CASE("Workspace projection uses the canonical Audio Slices tab label", "[sy
     auto frame = flatten_workspace(model, {}, "ready", {}, false, {}, nullptr);
     CHECK(std::string_view{frame.view.tabs[WORM_UI_WORKSPACE_TAB_AUDIO_SLICES].label} == "Audio Slices");
     CHECK(std::string_view{frame.view.tab_heading} == "Audio Slices");
+}
+
+namespace {
+void check_new_project_catalog_entry(const WormUiStringDescriptorView& actual,
+                                     const wormedit::new_project_layout_descriptor_t& expected) {
+    CHECK(std::string_view{actual.id} == expected.id);
+    CHECK(std::string_view{actual.label} == expected.label);
+}
+} // namespace
+
+TEST_CASE("Workspace projects every stable new-project catalog identity", "[sys][catalog-wiring]") {
+    wormedit::workspace_view_t model;
+    auto frame = flatten_workspace(model, {}, "ready", {}, false, {}, nullptr);
+    const auto& view = frame.view.new_project_layouts;
+    REQUIRE(view.count == wormedit::new_project_layouts().size());
+    for (std::size_t i = 0; i < view.count; ++i)
+        check_new_project_catalog_entry(view.entries[i], wormedit::new_project_layouts()[i]);
 }

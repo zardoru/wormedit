@@ -448,7 +448,7 @@ TEST_CASE("Headless frontend new-project wizard creates the default 7K layout",
     REQUIRE(create);
     const auto create_actions = click_at(harness, create->first, create->second);
     CHECK(create_actions[0].get().kind == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT);
-    CHECK(create_actions[0].get().new_project_layout_index == 3);
+    CHECK(std::string_view{create_actions[0].get().new_project_layout_id} == "osu-mania-7k");
 }
 
 namespace {
@@ -5412,7 +5412,7 @@ TEST_CASE("Create project dialog keeps its actions and drops the repeated prompt
         for (const auto& frame : frames)
             if (frame.get().kind == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT) {
                 CHECK(std::string(frame.get().project_path) == "/music/song.ogg");
-                CHECK(frame.get().new_project_layout_index == 0);
+                CHECK(std::string_view{frame.get().new_project_layout_id} == "osu-mania-4k");
             }
     }
     {
@@ -8289,4 +8289,36 @@ TEST_CASE("Project session transitions discard sound import requests without rep
     CHECK(worm_ui_nuklear_sound_import_active());
     worm_ui_frontend_begin_project_session();
     CHECK_FALSE(worm_ui_nuklear_sound_import_active());
+}
+
+namespace {
+void click_new_project_text(nuklear_event_harness_t& harness, const char* text) {
+    const auto center = harness.drawn_text_center(text);
+    REQUIRE(center);
+    static_cast<void>(click_at(harness, center->first, center->second));
+}
+
+void check_new_project_choice(nuklear_event_harness_t& harness) {
+    const auto create = harness.drawn_text_center("Create project");
+    REQUIRE(create);
+    const auto actions = click_at(harness, create->first, create->second);
+    CHECK(actions[0].get().kind == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT);
+    CHECK(std::string_view{actions[0].get().new_project_layout_id} == "pms-bme-style-18button");
+}
+} // namespace
+
+TEST_CASE("New project wizard reads view labels and emits a PMS catalog identity", "[frontend-state][event-harness][catalog-wiring]") {
+    nuklear_event_harness_t harness;
+    REQUIRE(harness.ready());
+    static constexpr WormUiStringDescriptorView entries[]{
+        {"osu-mania-7k", "Catalog default seven"},
+        {"pms-bme-style-18button", "Catalog PMS eighteen"}};
+    static constexpr const char* labels[]{entries[0].label, entries[1].label};
+    harness.view().new_project_layouts = {.entries = entries, .count = std::size(entries), .labels = labels};
+    REQUIRE(worm_ui_frontend_request_new_project());
+    static_cast<void>(harness.frame());
+    static_cast<void>(harness.frame());
+    click_new_project_text(harness, "Catalog default seven");
+    click_new_project_text(harness, "Catalog PMS eighteen");
+    check_new_project_choice(harness);
 }

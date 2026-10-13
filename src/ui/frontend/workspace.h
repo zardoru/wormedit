@@ -53,6 +53,7 @@ typedef struct WormUiCommandMenuRow {
 } WormUiCommandMenuRow;
 
 typedef struct WormUiWorkspaceView {
+    WormUiStringCatalogView new_project_layouts;
     size_t recent_file_count;
     WormUiRecentFileView recent_files[100];
     size_t menu_command_count;

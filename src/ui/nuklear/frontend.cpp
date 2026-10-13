@@ -201,6 +201,7 @@ struct NewProjectWizardState {
     bool open{};
     bool audio{};
     std::uint8_t layout_index{3};
+    const char* layout_id{"osu-mania-7k"};
     std::string audio_path;
     std::string last_pending_audio_path;
 };
@@ -213,6 +214,7 @@ static void request_manual_new_project() {
     g_new_project_wizard.open = true;
     g_new_project_wizard.audio = false;
     g_new_project_wizard.layout_index = 3;
+    g_new_project_wizard.layout_id = "osu-mania-7k";
     g_new_project_wizard.audio_path.clear();
 }
 
@@ -229,6 +231,7 @@ static void sync_pending_audio_project(const WormUiWorkspaceView& view) {
     g_new_project_wizard.audio_path = pending;
     g_new_project_wizard.audio = true;
     g_new_project_wizard.layout_index = 0;
+    g_new_project_wizard.layout_id = "osu-mania-4k";
     g_new_project_wizard.open = true;
 }
 
@@ -2677,6 +2680,8 @@ static void confirm_new_project_wizard(WormUiWorkspaceAction& action) {
     if (g_new_project_wizard.audio && audio_path.size() >= sizeof(action.project_path)) return;
     action.kind = WORM_UI_WORKSPACE_ACTION_NEW_PROJECT;
     action.new_project_layout_index = g_new_project_wizard.layout_index;
+    std::snprintf(action.new_project_layout_id, sizeof(action.new_project_layout_id), "%s",
+                  g_new_project_wizard.layout_id);
     if (g_new_project_wizard.audio)
         std::memcpy(action.project_path, audio_path.c_str(), audio_path.size() + 1);
     g_new_project_wizard.open = false;
@@ -2775,11 +2780,23 @@ static nk_flags workspace_window_flags(const WormUiWorkspaceView& view) {
 
 static wormedit::ui::chrome::Dialog g_project_modal_dialog;
 
-static void render_new_project_wizard(WormUiWorkspaceAction& action, int width, int height) {
+static void render_new_project_layout_choice(const WormUiStringCatalogView& catalog) {
+    if (!catalog.entries || !catalog.labels || catalog.count == 0) return;
+    int selected = 0;
+    for (std::size_t i = 0; i < catalog.count; ++i) {
+        if (std::strcmp(catalog.entries[i].id, g_new_project_wizard.layout_id) == 0)
+            selected = static_cast<int>(i);
+    }
+    selected = wormedit::ui::chrome::safe_combo(g_context, catalog.labels,
+        static_cast<int>(catalog.count), selected, 25, nk_vec2(420.0f, 225.0f));
+    g_new_project_wizard.layout_id = catalog.entries[selected].id;
+    g_new_project_wizard.layout_index = static_cast<std::uint8_t>(selected);
+}
+
+static void render_new_project_wizard(const WormUiWorkspaceView& view, WormUiWorkspaceAction& action, int width, int height) {
     if (!g_new_project_wizard.open) return;
     namespace chrome = wormedit::ui::chrome;
-    constexpr std::array<const char*, 8> layout_labels{
-        "4K", "5K", "6K", "7K", "8K", "9K", "10K", "14K"};
+
     auto& dialog = g_project_modal_dialog;
     const bool audio_path_too_long = g_new_project_wizard.audio &&
                                      g_new_project_wizard.audio_path.size() >=
@@ -2794,12 +2811,7 @@ static void render_new_project_wizard(WormUiWorkspaceAction& action, int width, 
         nk_layout_row_dynamic(g_context, 15, 1);
         nk_label_colored(g_context, "Chart layout", NK_TEXT_LEFT, chrome::color(chrome::UiColor::text_muted));
         nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_default, 1);
-        const auto selected = chrome::safe_combo(g_context, layout_labels.data(),
-                                       static_cast<int>(layout_labels.size()),
-                                       g_new_project_wizard.layout_index, 25,
-                                       nk_vec2(180.0f, 225.0f));
-        if (selected >= 0 && selected < static_cast<int>(layout_labels.size()))
-            g_new_project_wizard.layout_index = static_cast<std::uint8_t>(selected);
+        render_new_project_layout_choice(view.new_project_layouts);
         if (audio_path_too_long)
             chrome::dialog_text(dialog, g_context, "Audio path is too long to import.",
                                 chrome::color(chrome::UiColor::conflict));
@@ -2879,7 +2891,7 @@ static void render_bms_encoding_dialog(const WormUiWorkspaceView& view,
 
 static void render_project_modals(const WorkspaceRenderContext& frame) {
     if (!frame.view.pending_bms_encoding_path || !frame.view.pending_bms_encoding_path[0])
-        render_new_project_wizard(frame.action, frame.width, frame.height);
+        render_new_project_wizard(frame.view, frame.action, frame.width, frame.height);
     render_bms_encoding_dialog(frame.view, frame.action, frame.width, frame.height);
 }
 

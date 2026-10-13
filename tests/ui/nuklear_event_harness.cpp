@@ -25,6 +25,7 @@ class modifier_scope_t {
 
 void initialize_compose_view(WormUiWorkspaceView& workspace, int width, int height) {
     workspace.sound_kinds = wormedit::sys::sound_kind_view;
+    workspace.new_project_layouts = wormedit::sys::new_project_layout_view;
     workspace.audio_slices.sound_kinds = wormedit::sys::sound_kind_view;
     workspace.project_loaded = true;
     workspace.project_id = 1;

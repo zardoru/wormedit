@@ -1260,11 +1260,6 @@ void post_audio_inventory_feedback(std::optional<std::size_t> unavailable,
 
 #endif
 
-auto requested_project_lane_count(std::uint8_t index) -> std::optional<std::uint32_t> {
-    constexpr std::array<std::uint32_t, 8> choices{4, 5, 6, 7, 8, 9, 10, 14};
-    if (index >= choices.size()) return std::nullopt;
-    return choices[index];
-}
 
 void install_startup_recovery_scan(
     wormedit::native_project_recovery_controller_t& controller,
@@ -1312,6 +1307,7 @@ struct pending_close_t {
     bool save_requested{};
     std::string project_path;
     std::uint8_t layout_index{};
+    std::array<char, sizeof(WormUiWorkspaceAction::new_project_layout_id)> layout_id{};
     std::uint8_t encoding_index{};
     bool awaiting_encoding{};
     // Shown in the confirmation only when a save started from it failed.
@@ -2486,7 +2482,7 @@ struct application_t::implementation_t {
         return true;
     }
 
-    void create_audio_project_session(const char* path, std::uint32_t lane_count) {
+    void create_audio_project_session(const char* path, std::string_view layout_id) {
         const auto audio = wormedit::sys::inspect_audio_for_project(path);
         if (!audio) {
             post_project_feedback(wormedit::notification_severity_t::error,
@@ -2496,7 +2492,7 @@ struct application_t::implementation_t {
         }
         auto document = wormedit::sys::audio_project_document(
             wormedit::sys::new_session_project_id(), audio.source_path, audio.title, audio.artist,
-            lane_count, audio.stream);
+            layout_id, audio.stream);
         if (!document) {
             post_project_feedback(wormedit::notification_severity_t::error,
                                   wormedit::notification_source_t::import_,
@@ -2518,7 +2514,7 @@ struct application_t::implementation_t {
             selected ? wormedit::notification_severity_t::success
                      : wormedit::notification_severity_t::warning,
             wormedit::notification_source_t::import_,
-            selected ? "Audio imported as a new " + std::to_string(lane_count) + "K project."
+            selected ? "Audio imported as a new " + std::string(wormedit::find_new_project_layout(layout_id)->label) + " project."
                      : "Audio project created; select the music asset to preview it.");
     }
 
@@ -3403,6 +3399,8 @@ struct application_t::implementation_t {
     void finish_confirmed_project_replacement(pending_close_t& pending) {
         WormUiWorkspaceAction action{};
         action.new_project_layout_index = pending.layout_index;
+        std::copy(pending.layout_id.begin(), pending.layout_id.end(),
+                  std::begin(action.new_project_layout_id));
         action.bms_encoding_index = pending.encoding_index;
         std::snprintf(action.project_path, sizeof(action.project_path), "%s",
                       pending.project_path.c_str());
@@ -3550,6 +3548,8 @@ struct application_t::implementation_t {
         if (replacement) {
             pending.project_path = replacement->project_path;
             pending.layout_index = replacement->new_project_layout_index;
+            std::copy(std::begin(replacement->new_project_layout_id),
+                      std::end(replacement->new_project_layout_id), pending.layout_id.begin());
             pending.encoding_index = replacement->bms_encoding_index;
         }
         if (!confirm || !session.project_identity.session_loaded ||
@@ -3629,19 +3629,23 @@ struct application_t::implementation_t {
     }
 
     void create_new_project_session(const WormUiWorkspaceAction& action) {
-        const auto lane_count = requested_project_lane_count(action.new_project_layout_index);
-        if (!lane_count) {
+        const auto id_end = std::find(std::begin(action.new_project_layout_id),
+                                      std::end(action.new_project_layout_id), '\0');
+        const std::string_view layout_id{action.new_project_layout_id,
+            static_cast<std::size_t>(id_end - std::begin(action.new_project_layout_id))};
+        const auto* layout = wormedit::find_new_project_layout(layout_id);
+        if (id_end == std::end(action.new_project_layout_id) || !layout) {
             post_project_feedback(wormedit::notification_severity_t::warning,
                                   wormedit::notification_source_t::document,
                                   "Choose a supported chart layout.");
             return;
         }
         if (action.project_path[0] != '\0') {
-            create_audio_project_session(action.project_path, *lane_count);
+            create_audio_project_session(action.project_path, layout->id);
             return;
         }
         auto document =
-            wormedit::sys::initial_document(wormedit::sys::new_session_project_id(), *lane_count);
+            wormedit::sys::initial_document(wormedit::sys::new_session_project_id(), layout->id);
         if (!document) {
             post_project_feedback(wormedit::notification_severity_t::error,
                                   wormedit::notification_source_t::document,
@@ -3655,8 +3659,8 @@ struct application_t::implementation_t {
             session.project_identity.fresh_blank_project = true;
             post_project_feedback(wormedit::notification_severity_t::success,
                                   wormedit::notification_source_t::document,
-                                  "New " + std::to_string(*lane_count) +
-                                      "K project created. Save it to keep your work.");
+                                  "New " + std::string(layout->label) +
+                                      " project created. Save it to keep your work.");
         }
     }
 

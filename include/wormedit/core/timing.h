@@ -477,9 +477,6 @@ struct preview_schedule_t {
     std::vector<preview_layer_tick_t> layer_ticks;
 };
 
-[[nodiscard]] auto make_preview_music_event(resource_id_t resource,
-                                            std::uint64_t music_frame_count)
-    -> std::optional<preview_schedule_t::music_event_t>;
 [[nodiscard]] auto preview_music_source_frame_at(
     const preview_schedule_t::music_event_t& music, std::uint64_t timeline_frame)
     -> std::optional<std::uint64_t>;

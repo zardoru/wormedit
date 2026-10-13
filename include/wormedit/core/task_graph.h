@@ -88,8 +88,6 @@ struct task_result_t {
     [[nodiscard]] auto is_successful() const noexcept -> bool {
         return !error.has_value();
     }
-    // Compatibility for the coordinated sys/UI migration.
-    inline auto succeeded() const noexcept -> bool { return is_successful(); }
 
     [[nodiscard]] static auto success(task_value_t value = {}) -> task_result_t;
     [[nodiscard]] static auto failure(task_error_code_t code, std::string message) -> task_result_t;

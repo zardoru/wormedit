@@ -667,6 +667,8 @@ struct pending_editor_area_selection_t {
 };
 
 struct editor_interaction_state_t {
+    // Creates transient, frontend-independent editing state from a validated
+    // history snapshot. Snap denominators are ordered by editor preference.
     [[nodiscard]] static auto
     from(const document_history_t& history, chart_id_t chart, lane_id_t active_lane,
          local_position_t cursor, std::span<const std::uint64_t> ordered_snap_denominators,
@@ -817,15 +819,6 @@ struct editor_measure_geometry_t {
     local_position_t position, double target_scroll,
     double following_anchor_fraction = editor_cursor_edge_margin_fraction,
     double cursor_subrow = 0.0) -> editor_interaction_result_t;
-
-// Creates transient, frontend-independent editing state from a validated
-// history snapshot. Snap denominators are ordered by editor preference.
-[[nodiscard]] auto make_editor_interaction(const document_history_t& history, chart_id_t chart,
-                                           lane_id_t active_lane, local_position_t cursor,
-                                           std::span<const std::uint64_t> ordered_snap_denominators,
-                                           std::uint64_t requested_snap_denominator,
-                                           double viewport_height_pixels = 1.0)
-    -> editor_interaction_setup_t;
 
 // Restore a valid authored cursor after undo or another document edit removes
 // the cursor's measure, retaining the viewport when its extent still exists.

@@ -226,15 +226,4 @@ void native_project_autosave_loop_t::collect_completed(
     result = completion->result;
 }
 
-// Compatibility for the sys/ui migration wave.
-auto make_native_project_autosave_target(song_id_t project_id, bool has_native_primary,
-                                         const std::filesystem::path& native_primary_path,
-                                         const std::filesystem::path& platform_recovery_directory,
-                                         std::filesystem::path original_source_path)
-    -> native_project_autosave_target_t {
-    return native_project_autosave_target_t::from(project_id, has_native_primary,
-                                                  native_primary_path, platform_recovery_directory,
-                                                  std::move(original_source_path));
-}
-
 } // namespace wormedit

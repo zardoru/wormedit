@@ -92,12 +92,6 @@ auto sound_match_index_t::from(const song_document_t& song, const chart_document
     return index;
 }
 
-[[maybe_unused]] auto make_sound_match_index(const song_document_t& song,
-                                             const chart_document_t& chart,
-                                             const sound_selection_query_t& query)
-    -> sound_match_index_t {
-    return sound_match_index_t::from(song, chart, query);
-}
 auto is_sound_key_match(const chart_document_t& chart, const sound_match_index_t& index,
                  std::optional<resource_id_t> sound, std::optional<object_id_t> event) -> bool {
     if (chart.source_family == format_family_t::bmson) {
@@ -236,6 +230,5 @@ auto select_same_sound(const song_document_t& song, const chart_document_t& char
                 result.push_back({editor_selection_object_kind_t::bgm_event, bgm.id});
     return result;
 }
-
 
 } // namespace wormedit

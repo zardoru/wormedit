@@ -1528,30 +1528,4 @@ auto workspace_view_t::from(const workspace_controller_t& workspace,
     return result;
 }
 
-// Compatibility for the sys/ui migration wave.
-auto make_workspace_controller(const song_document_t& document, workspace_limits_t limits)
-    -> workspace_bind_result_t {
-    return workspace_controller_t::from(document, limits);
-}
-
-auto make_workspace_controller(const document_history_t& history, workspace_limits_t limits)
-    -> workspace_bind_result_t {
-    return workspace_controller_t::from(history, limits);
-}
-
-// Compatibility for the sys/ui migration wave.
-auto make_workspace_view(const workspace_controller_t& workspace, const song_document_t& document)
-    -> workspace_view_result_t {
-    return workspace_view_t::from(workspace, document);
-}
-
-auto make_workspace_view(const workspace_controller_t& workspace, const song_document_t& document,
-                         workspace_tab_t requested_tab, const diagnostic_list_t* cached_diagnostics,
-                         workspace_bms_branch_outline_cache_t* branch_cache,
-                         workspace_binding_validation_cache_t* binding_cache)
-    -> workspace_view_result_t {
-    return workspace_view_t::from(workspace, document, requested_tab, cached_diagnostics,
-                                  branch_cache, binding_cache);
-}
-
 } // namespace wormedit

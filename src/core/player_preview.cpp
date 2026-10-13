@@ -513,11 +513,4 @@ auto player_preview_scene_t::from(const player_preview_index_t& index,
     return result;
 }
 
-// Compatibility for the sys/ui migration wave.
-auto make_player_preview_scene(const player_preview_index_t& index,
-                               const player_preview_scene_request_t& request)
-    -> player_preview_scene_result_t {
-    return player_preview_scene_t::from(index, request);
-}
-
 } // namespace wormedit

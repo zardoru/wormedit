@@ -81,7 +81,6 @@ struct external_player_preferences_t {
     std::size_t selected{};
     auto operator==(const external_player_preferences_t&) const -> bool = default;
 };
-[[nodiscard]] auto default_external_player_preferences() -> external_player_preferences_t;
 struct minimap_preferences_t {
     bool click_moves_paused_playhead{};
     auto operator==(const minimap_preferences_t&) const -> bool = default;
@@ -113,7 +112,6 @@ struct preferences_load_result_t {
     bool migrated{};
 };
 
-[[nodiscard]] auto default_program_preferences() -> program_preferences_t;
 [[nodiscard]] auto is_valid_external_player_preferences(const external_player_preferences_t&) -> bool;
 [[nodiscard]] auto parse_program_preferences(std::string_view bytes) -> preferences_parse_result_t;
 // Invalid typed values reject serialization; no project data or shortcut bindings are serialized.

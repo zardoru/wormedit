@@ -73,8 +73,6 @@ struct bmson_grid_t {
 [[nodiscard]] auto validate_measure(
     std::uint64_t divisions_per_standard_measure,
     const measure_definition_t& measure) -> measure_validation_t;
-[[nodiscard]] auto make_default_bmson_grid(
-    std::uint64_t divisions_per_standard_measure) -> std::optional<bmson_grid_t>;
 [[nodiscard]] auto bmson_pulse_for_row(
     const bmson_grid_t& grid,
     std::uint64_t absolute_editor_row) -> std::optional<std::uint64_t>;

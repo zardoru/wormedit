@@ -247,10 +247,4 @@ auto suggest_meters(const rational_t& length) -> std::vector<meter_t>
     return meters;
 }
 
-// Compatibility for the sys/ui migration wave.
-auto make_default_bmson_grid(std::uint64_t divisions_per_standard_measure)
-    -> std::optional<bmson_grid_t> {
-    return bmson_grid_t::from(divisions_per_standard_measure);
-}
-
 } // namespace wormedit

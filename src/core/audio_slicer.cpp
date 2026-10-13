@@ -85,9 +85,6 @@ auto grid_t::from(const audio_slicer_request_t& request) -> std::optional<grid_t
     return grid_t{*step, offset.numerator < 0 ? *offset_part : u128_t{}, *denominator};
 }
 
-[[maybe_unused]] auto make_grid(const audio_slicer_request_t& request) -> std::optional<grid_t> {
-    return grid_t::from(request);
-}
 
 auto round_quotient(const wide_math::divmod_t& division, const u128_t& denominator,
                     sample_rounding_t rounding) -> std::uint64_t {
@@ -184,7 +181,5 @@ auto compute_audio_slices(const audio_slicer_request_t& request) -> audio_slicer
     }
     return result;
 }
-
-
 
 } // namespace wormedit

@@ -3308,10 +3308,5 @@ auto timing_index_t::row_at_frame(std::uint64_t frame, std::uint32_t sample_rate
         rows.back().after_stops_seconds.numerator < 0) return std::nullopt;
     return row_at_approx({static_cast<std::int64_t>(frame), sample_rate}, policy, options);
 }
-// Compatibility for the sys/ui migration wave.
-auto make_preview_music_event(resource_id_t resource, std::uint64_t music_frame_count)
-    -> std::optional<preview_schedule_t::music_event_t> {
-    return preview_schedule_t::music_event_t::from(resource, music_frame_count);
-}
 
 } // namespace wormedit

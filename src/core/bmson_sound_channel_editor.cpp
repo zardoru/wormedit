@@ -1127,11 +1127,6 @@ auto empty_stem_fallbacks_t::from(const song_document_t& document, const chart_d
     return result;
 }
 
-[[maybe_unused]] auto make_empty_stem_fallbacks(const song_document_t& document,
-                                                const chart_document_t& chart)
-    -> empty_stem_fallbacks_t {
-    return empty_stem_fallbacks_t::from(document, chart);
-}
 
 auto allocate_two_ids(chart_document_t& chart, std::uint64_t& largest,
                       std::uint64_t count) -> bool {
@@ -1697,7 +1692,5 @@ auto apply_bmson_packed_stroke(document_history_t& history, std::uint64_t expect
         return *failure;
     return commit_packed_stroke_draw(history, context, source_lane, *found);
 }
-
-
 
 } // namespace wormedit

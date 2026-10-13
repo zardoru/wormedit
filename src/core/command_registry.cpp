@@ -988,11 +988,6 @@ auto command_registry_t::from(command_invoker_t invoker) -> command_registry_t {
     return registry;
 }
 
-// Compatibility for the sys/ui migration wave.
-auto make_shortcut_profile(const command_registry_t& registry, std::string profile_id)
-    -> shortcut_profile_t {
-    return shortcut_profile_t::from(registry, std::move(profile_id));
-}
 
 // Compatibility for the sys/ui migration wave.
 auto make_default_editor_command_registry(command_invoker_t invoker) -> command_registry_t {

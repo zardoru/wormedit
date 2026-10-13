@@ -342,6 +342,10 @@ using workspace_tab_view_t =
 struct workspace_view_t {
     [[nodiscard]] static auto from(const workspace_controller_t& workspace,
                                    const song_document_t& document) -> workspace_view_result_t;
+    // Also builds a non-active tab's view. This lets the shell display the
+    // storyboard placeholder while navigation/actions continue to reject it.
+    // Compare diagnostics may be supplied from a cache keyed to this document's
+    // ID and revision; a null pointer preserves the normal validation behavior.
     [[nodiscard]] static auto from(const workspace_controller_t& workspace,
                                    const song_document_t& document, workspace_tab_t tab,
                                    const diagnostic_list_t* cached_diagnostics = nullptr,
@@ -369,24 +373,5 @@ struct workspace_view_result_t {
         return view.has_value() && diagnostics.empty();
     }
 };
-
-[[nodiscard]] auto make_workspace_controller(const song_document_t& document,
-                                             workspace_limits_t limits = {})
-    -> workspace_bind_result_t;
-[[nodiscard]] auto make_workspace_controller(const document_history_t& history,
-                                             workspace_limits_t limits = {})
-    -> workspace_bind_result_t;
-[[nodiscard]] auto make_workspace_view(const workspace_controller_t& workspace,
-                                       const song_document_t& document) -> workspace_view_result_t;
-// Also builds a non-active tab's view. This lets the shell display the
-// storyboard placeholder while navigation/actions continue to reject it.
-// Compare diagnostics may be supplied from a cache keyed to this document's
-// ID and revision; a null pointer preserves the normal validation behavior.
-[[nodiscard]] auto make_workspace_view(const workspace_controller_t& workspace,
-                                       const song_document_t& document, workspace_tab_t tab,
-                                       const diagnostic_list_t* cached_diagnostics = nullptr,
-                                       workspace_bms_branch_outline_cache_t* branch_cache = nullptr,
-                                       workspace_binding_validation_cache_t* binding_cache = nullptr)
-    -> workspace_view_result_t;
 
 } // namespace wormedit

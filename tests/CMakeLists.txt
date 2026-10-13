@@ -556,6 +556,12 @@ endif()
 
 if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
     add_executable(wormedit_frontend_event_harness_tests
+        sys/application_lifetime_tests.cpp
+        ../src/sys/application_lifetime.cpp
+        ../src/sys/application_startup.cpp
+        ../src/sys/platform_recovery.cpp
+        ../src/sys/audio.cpp
+        ../src/sys/window.cpp
         ../src/sys/external_player.cpp
         ../src/sys/resource_job_state.cpp
         ui/compose_stem_lane_render_tests.cpp

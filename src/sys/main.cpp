@@ -12,6 +12,7 @@
 
 #include "sys/application_commands.h"
 #include "sys/application_startup.h"
+#include "sys/application_lifetime.h"
 #include "sys/application_startup_feedback.h"
 #include "sys/frontend_notification_sink.h"
 #include "sys/application_frame_services.h"
@@ -3744,7 +3745,8 @@ int main(int argc, char** argv) {
     wormedit::notification_center_t notifications;
     wormedit::notification_sink_t notification_sink{notifications};
     wormedit::sys::application_startup_arguments_t arguments;
-    wormedit::sys::application_runtime_t runtime;
+    wormedit::sys::application_platform_t platform;
+    auto& runtime = platform.runtime;
     if (const int startup_error = wormedit::sys::initialize_application_startup(
             argc, argv, arguments, runtime); startup_error != 0)
         return startup_error;
@@ -3752,7 +3754,7 @@ int main(int argc, char** argv) {
     const auto requested_primary_path = arguments.requested_primary_path;
 
     const auto platform_recovery = wormedit::prepare_platform_recovery_directory(notification_sink);
-    std::filesystem::path crash_marker;
+    auto& crash_marker = platform.crash_marker;
     if (platform_recovery) {
         startup_request.recovery_directories.push_back(platform_recovery.path);
         crash_marker = wormedit::crash_marker_path(platform_recovery.path);
@@ -4041,6 +4043,19 @@ int main(int argc, char** argv) {
     using workspace_frame_action_context_t = wormedit::sys::application_dispatch_context_t;
 #endif
     wormedit::sys::project_portability_notice_t portability_notice;
+    std::array worker_schedulers{
+        &autosave_scheduler, &resource_copy_scheduler, &export_runtime.scheduler,
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+        &player_image_scheduler,
+#endif
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+        &player_video_scheduler,
+#endif
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        &waveform_runtime.worker_scheduler(), &audition_probe_scheduler,
+#endif
+    };
+    wormedit::sys::application_worker_set_t workers{platform, worker_schedulers};
     while (running) {
         workspace_frame_action_context_t workspace_frame_action_context{
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
@@ -4361,7 +4376,16 @@ int main(int argc, char** argv) {
     audition_output.close();
 #endif
     external_player_runtime.player.cleanup();
-    wormedit::sys::shutdown_application_runtime(runtime);
-    if (!crash_marker.empty()) wormedit::remove_crash_marker(crash_marker);
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+    player_image_job.cancel();
+#endif
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+    player_video_job.cancel();
+#endif
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    resident_loader.cancel();
+    waveform_runtime.shutdown();
+#endif
+    platform.shutdown();
     return 0;
 }

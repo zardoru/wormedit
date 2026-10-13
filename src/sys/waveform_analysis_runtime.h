@@ -45,6 +45,8 @@ public:
         std::size_t stem_budget_bytes = 64U * 1024U * 1024U);
 
     ~waveform_analysis_t();
+    void shutdown() noexcept;
+    [[nodiscard]] auto worker_scheduler() noexcept -> task_scheduler_t& { return scheduler_; }
 
     // Drop job results and cached decoded data after the registered source set changes.
     void reset_sources();
@@ -103,6 +105,7 @@ public:
     [[nodiscard]] auto stem_waveform_cache_stats() const -> stem_waveform_cache_stats_t;
 
 private:
+    bool shutdown_started_{};
     void request_selected_waveform(std::optional<asset_id_t> asset,
         audio::waveform_job_t& job, std::optional<asset_id_t>& accepted,
         std::optional<asset_id_t>& attempted, const char* failure_message);

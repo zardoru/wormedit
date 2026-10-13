@@ -47,7 +47,18 @@ waveform_analysis_t::waveform_analysis_t(audio::decoded_source_registry_t& sourc
 }
 
 waveform_analysis_t::~waveform_analysis_t() {
+    shutdown();
+}
+
+void waveform_analysis_t::shutdown() noexcept {
+    if (shutdown_started_) return;
+    shutdown_started_ = true;
     cancel_detail_worker();
+    waveform_job_.cancel();
+    channel_waveform_job_.cancel();
+    detail_job_.cancel();
+    for (auto& slot : stem_slots_) slot->job.cancel();
+    scheduler_.shutdown();
     if (detail_worker_) static_cast<void>(detail_worker_.wait());
 }
 

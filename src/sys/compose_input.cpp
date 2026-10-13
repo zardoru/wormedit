@@ -176,7 +176,7 @@ auto stage_bmson_bgm_markers(const wormedit::document_history_t& history,
         !validation.empty()) {
         return validation;
     }
-    auto& draft = application_state.compose_gesture.bmson_marker_draft;
+    auto& draft = application_state.project.compose_gesture.bmson_marker_draft;
     if (draft && (draft->chart != state.chart ||
                   draft->revision != history.document.revision)) {
         draft.reset();
@@ -301,14 +301,14 @@ auto dispatch_compose_keyboard_input(
     case WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS:
     {
         auto pressed = dispatch_compose_lane_key_press(input, history, state, application, scene_cache, result, accepted);
-        audition_created_note(application.compose_view.editor_preferences.audition_on_click, history, state, result);
+        audition_created_note(application.preferences.editor_preferences.audition_on_click, history, state, result);
         return pressed;
     }
     case WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE:
     {
         auto released = dispatch_compose_lane_key_release(input, history, workspace, state, result,
                                                           accepted);
-        audition_created_note(application.compose_view.editor_preferences.audition_on_click, history, state, result);
+        audition_created_note(application.preferences.editor_preferences.audition_on_click, history, state, result);
         return released;
     }
     default:
@@ -443,7 +443,7 @@ auto dispatch_compose_lane_key_press(const WormUiComposeInputAction& input,
         result = dispatch_editor_action(
             history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{input.lane_id},
                                                                note_paint_sound(input),
-                application.compose_view.editor_preferences.move_collision_policy == move_collision_policy_t::displace_to_bgm,
+                application.preferences.editor_preferences.move_collision_policy == move_collision_policy_t::displace_to_bgm,
                 compose_stem_geometry(history, state, cache, note_paint_sound(input))});
         advance_sound_after_paint_commit(result, note_paint_sound(input), result.created_note.has_value());
         accepted = result.document_changed ? "Lane-key note updated." : "Lane hold started; move the edit cursor and release the key to finish.";
@@ -494,7 +494,7 @@ auto begin_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_c
         return "Finish or cancel the active Compose gesture before moving a BGM event.";
     const auto result = dispatch_editor_action(history, state,
         begin_note_move_gesture_action_t{object_id_t{input.object_id},
-            application_state.compose_view.editor_preferences.move_collision_policy == move_collision_policy_t::displace_to_bgm});
+            application_state.preferences.editor_preferences.move_collision_policy == move_collision_policy_t::displace_to_bgm});
     return result.accepted ? compose_input_family_result_t::continue_batch("Selected-object move started.")
         : compose_input_family_result_t{result.diagnostics.empty() ? "Selected-object move could not start."
                                                                    : result.diagnostics.front().message};
@@ -509,7 +509,7 @@ auto edit_bmson_draft_marker(const WormUiComposeInputAction& input,
     auto& application_state = environment.application_command_state_ref;
     if (gesture_active)
         return "Finish or cancel the active Compose gesture before editing a staged BMSON region.";
-    auto& draft = application_state.compose_gesture.bmson_marker_draft;
+    auto& draft = application_state.project.compose_gesture.bmson_marker_draft;
     if (!draft || draft->chart != state.chart || draft->revision != history.document.revision ||
         input.object_id == 0 || input.object_id > draft->markers.size())
         return "The staged BMSON region edit expired.";
@@ -744,25 +744,25 @@ void arm_compose_note_layers(wormedit::editor_interaction_state_t& state,
                              const application_command_state_t& app,
                              const wormedit::chart_document_t& chart) {
     state.armed_note_layers.reset();
-    if (app.semantic_layer.semantic_layer_target_none) {
+    if (app.project.semantic_layer.semantic_layer_target_none) {
         state.armed_note_layers = std::vector<wormedit::layer_id_t>{};
         return;
     }
-    if (!app.semantic_layer.semantic_layer_target) return;
-    const auto layer = std::ranges::find(chart.semantic_layers, *app.semantic_layer.semantic_layer_target,
+    if (!app.project.semantic_layer.semantic_layer_target) return;
+    const auto layer = std::ranges::find(chart.semantic_layers, *app.project.semantic_layer.semantic_layer_target,
                                         &wormedit::semantic_layer_t::id);
     if (layer != chart.semantic_layers.end() && !layer->locked)
         state.armed_note_layers = std::vector{layer->id};
 }
 
 auto semantic_layer_paint_armed(const application_command_state_t& app) -> bool {
-    return app.compose_gesture.semantic_layer_paint_mode_active &&
-           app.semantic_layer.semantic_layer_target.has_value() && !app.semantic_layer.semantic_layer_target_none;
+    return app.project.compose_gesture.semantic_layer_paint_mode_active &&
+           app.project.semantic_layer.semantic_layer_target.has_value() && !app.project.semantic_layer.semantic_layer_target_none;
 }
 
 auto semantic_layer_paint_target_editable(const application_command_state_t& app,
                                           const wormedit::semantic_layer_t* layer) -> bool {
-    return !app.semantic_layer.semantic_layer_target_none && layer && layer->visible && !layer->locked;
+    return !app.project.semantic_layer.semantic_layer_target_none && layer && layer->visible && !layer->locked;
 }
 
 
@@ -776,7 +776,7 @@ auto apply_semantic_layer_paint_target(const WormUiComposeInputAction& input,
     const auto target_id = target.note.value_or(target.bgm_event.value_or(object_id_t{}));
     if (input.kind == WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN) {
         result = begin_compose_layer_paint(history, state,
-            application_state.semantic_layer.semantic_layer_target_none,
+            application_state.project.semantic_layer.semantic_layer_target_none,
             layer ? layer->id : layer_id_t{}, target_id, true, target.bgm_event,
             input.paint_intent == 2 ? semantic_layer_paint_mode_t::remove
                                     : semantic_layer_paint_mode_t::add);
@@ -898,7 +898,7 @@ auto select_compose_bgm_event(const WormUiComposeInputAction& input,
         select_editor_objects_action_t{
             .objects = {{editor_selection_object_kind_t::bgm_event, object_id_t{input.object_id}}},
             .mode = *mode,
-            .request_audition = context.environment.application_command_state_ref.compose_view.editor_preferences
+            .request_audition = context.environment.application_command_state_ref.preferences.editor_preferences
                                     .audition_on_click});
     accepted = "BGM event selected.";
     return std::nullopt;
@@ -963,7 +963,7 @@ auto place_virtual_note_from_pointer(const WormUiComposeInputAction& input,
     }
     advance_sound_after_paint_commit(result, sound, result.created_note.has_value());
     audition_created_note(
-        context.environment.application_command_state_ref.compose_view.editor_preferences.audition_on_click,
+        context.environment.application_command_state_ref.preferences.editor_preferences.audition_on_click,
         context.environment.history_ref, context.state, result);
 }
 
@@ -988,7 +988,7 @@ auto pointer_click_places_notes(const compose_input_context_t& context) -> bool 
     if (!wormedit::ui::compose_notes_editable(
             compose_mode_of(context.environment.application_command_state_ref)))
         return false;
-    return context.environment.application_command_state_ref.compose_gesture.note_paint_mode_active ||
+    return context.environment.application_command_state_ref.project.compose_gesture.note_paint_mode_active ||
            context.state.pending_hold;
 }
 
@@ -1080,7 +1080,7 @@ auto select_compose_pointer_target(const WormUiComposeInputAction& input,
                                                *target->note}},
                                              *mode,
                                              context.environment.application_command_state_ref
-                                                 .compose_view.editor_preferences.audition_on_click}
+                                                 .preferences.editor_preferences.audition_on_click}
             : select_editor_objects_action_t{{}, *mode, false};
     result = dispatch_editor_action(context.environment.history_ref, context.state, selection);
     accepted = target->note ? "Note selected." : "Selection cleared.";
@@ -1216,7 +1216,7 @@ auto select_compose_bms_measure(const WormUiComposeInputAction& input,
          compose_source_y(
              input.y_pixels, view->viewport_height_pixels,
              compose_field_downscroll(
-                 *chart, context.environment.application_command_state_ref.compose_view.editor_preferences))) *
+                 *chart, context.environment.application_command_state_ref.preferences.editor_preferences))) *
         chart->divisions_per_standard_measure / view->pixels_per_standard_measure;
     if (!std::isfinite(exact_row) || exact_row < 0.0L ||
         exact_row >= static_cast<long double>(canvas->total_rows))
@@ -1271,7 +1271,7 @@ auto retire_interrupted_compose_input(wormedit::document_history_t& history,
     navigation.focus_lost();
     cache.clear_beat_fit_capture();
     cache.timing.offset_fit_drag.reset();
-    application.compose_gesture.bga_draw_stroke.reset();
+    application.project.compose_gesture.bga_draw_stroke.reset();
     return wormedit::dispatch_editor_action(history, state, wormedit::cancel_editor_gesture_action_t{});
 }
 
@@ -1323,7 +1323,7 @@ auto dispatch_timing_lane_area_input(const WormUiComposeInputAction& input,
     -> std::optional<compose_input_family_result_t> {
     switch (input.kind) {
     case WORM_UI_COMPOSE_INPUT_KIAI_SPAN_SELECT:
-        context.environment.application_command_state_ref.timing_recipe.kiai_selected_head = input.object_id;
+        context.environment.application_command_state_ref.project.timing_recipe.kiai_selected_head = input.object_id;
         result.accepted = true;
         accepted = input.object_id != 0 ? "Kiai area selected." : "Kiai selection cleared.";
         return compose_input_family_result_t::continue_with_result();
@@ -1336,9 +1336,9 @@ auto dispatch_timing_lane_area_input(const WormUiComposeInputAction& input,
             return compose_input_rejection(*error, result);
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_RECIPE_SELECT:
-        if (context.environment.application_command_state_ref.timing_recipe.recipe_selected != input.object_id)
-            context.environment.application_command_state_ref.timing_recipe.recipe_preview.reset();
-        context.environment.application_command_state_ref.timing_recipe.recipe_selected = input.object_id;
+        if (context.environment.application_command_state_ref.project.timing_recipe.recipe_selected != input.object_id)
+            context.environment.application_command_state_ref.project.timing_recipe.recipe_preview.reset();
+        context.environment.application_command_state_ref.project.timing_recipe.recipe_selected = input.object_id;
         result.accepted = true;
         accepted = input.object_id != 0 ? "SV recipe selected." : "SV recipe selection cleared.";
         return compose_input_family_result_t::continue_with_result();
@@ -1600,14 +1600,14 @@ auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
             context.environment.history_ref.document.revision,
             {.kiai_head =
                  wormedit::object_id_t{
-                     context.environment.application_command_state_ref.timing_recipe.kiai_selected_head},
+                     context.environment.application_command_state_ref.project.timing_recipe.kiai_selected_head},
              .recipe =
                  wormedit::recipe_id_t{
-                     context.environment.application_command_state_ref.timing_recipe.recipe_selected},
-             .timing_locked = context.environment.application_command_state_ref.timing_recipe.timing_locked});
+                     context.environment.application_command_state_ref.project.timing_recipe.recipe_selected},
+             .timing_locked = context.environment.application_command_state_ref.project.timing_recipe.timing_locked});
         if (result.document_changed) {
-            context.environment.application_command_state_ref.timing_recipe.kiai_selected_head = 0;
-            context.environment.application_command_state_ref.timing_recipe.recipe_selected = 0;
+            context.environment.application_command_state_ref.project.timing_recipe.kiai_selected_head = 0;
+            context.environment.application_command_state_ref.project.timing_recipe.recipe_selected = 0;
         }
         accepted = result.document_changed ? "Selection deleted." : "No object at the cursor.";
         return compose_input_family_result_t::continue_with_result();
@@ -1666,7 +1666,7 @@ auto dispatch_compose_paste_input(const WormUiComposeInputAction& input,
     -> std::optional<compose_input_family_result_t> {
     auto& application = context.environment.application_command_state_ref;
     if (input.kind == WORM_UI_COMPOSE_INPUT_PASTE_CANCEL) {
-        application.clipboard.paste_session.reset();
+        application.project.clipboard.paste_session.reset();
         return compose_input_family_result_t::stop_with_feedback("Paste preview cancelled.",
             wormedit::notification_severity_t::hint, wormedit::notification_source_t::input);
     }
@@ -1692,7 +1692,7 @@ auto dispatch_compose_paste_input(const WormUiComposeInputAction& input,
     }
 
     if (input.kind != WORM_UI_COMPOSE_INPUT_PASTE_UPDATE) return std::nullopt;
-    if (!application.clipboard.paste_session || !context.input_chart)
+    if (!application.project.clipboard.paste_session || !context.input_chart)
         return compose_input_family_result_t::continue_batch({});
     const auto view = compose_view_for_state(context.environment.history_ref, context.state);
     if (!view)
@@ -1704,14 +1704,14 @@ auto dispatch_compose_paste_input(const WormUiComposeInputAction& input,
         *context.input_chart, *raw,
         edit_snap_denominator(*context.input_chart, context.state)) : std::nullopt;
     if (!position) {
-        application.clipboard.paste_session->anchor_available = false;
-        application.clipboard.paste_session->anchor_error = "The paste anchor is outside the chart.";
+        application.project.clipboard.paste_session->anchor_available = false;
+        application.project.clipboard.paste_session->anchor_error = "The paste anchor is outside the chart.";
         return compose_input_family_result_t::stop_with_feedback(
-            application.clipboard.paste_session->anchor_error, wormedit::notification_severity_t::warning,
+            application.project.clipboard.paste_session->anchor_error, wormedit::notification_severity_t::warning,
             wormedit::notification_source_t::edit);
     }
-    application.clipboard.paste_session->anchor_available = true;
-    application.clipboard.paste_session->pointer_cursor = context.state.cursor;
+    application.project.clipboard.paste_session->anchor_available = true;
+    application.project.clipboard.paste_session->pointer_cursor = context.state.cursor;
     (void)update_compose_paste(application, context.environment.history_ref.document,
                                context.state.chart, *position);
     return compose_input_family_result_t::continue_batch({});
@@ -1769,7 +1769,7 @@ auto bga_draw_row(const WormUiComposeInputAction& input, const compose_input_con
 
 auto begin_bga_draw(const WormUiComposeInputAction& input, compose_input_context_t& context,
     const wormedit::chart_document_t& chart) -> bool {
-    auto& pending = context.environment.application_command_state_ref.compose_gesture.bga_draw_stroke;
+    auto& pending = context.environment.application_command_state_ref.project.compose_gesture.bga_draw_stroke;
     pending.reset();
     if (input.paint_intent != 1 && input.paint_intent != 2) return false;
     const auto bgm = input.resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM;
@@ -1806,7 +1806,7 @@ auto apply_bgm_draw_stroke(compose_input_context_t& context,
 
 auto finish_bga_draw(const WormUiComposeInputAction& input, compose_input_context_t& context,
     wormedit::editor_interaction_result_t& result) -> void {
-    auto& pending = context.environment.application_command_state_ref.compose_gesture.bga_draw_stroke;
+    auto& pending = context.environment.application_command_state_ref.project.compose_gesture.bga_draw_stroke;
     auto stroke = std::move(*pending);
     pending.reset();
     const auto bgm = input.resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM;
@@ -1844,7 +1844,7 @@ auto bga_draw_stop(std::string_view text)
 auto dispatch_bga_draw_input(const WormUiComposeInputAction& input,
     compose_input_context_t& context, wormedit::editor_interaction_result_t& result,
     std::string_view& accepted) -> std::optional<compose_input_family_result_t> {
-    auto& pending = context.environment.application_command_state_ref.compose_gesture.bga_draw_stroke;
+    auto& pending = context.environment.application_command_state_ref.project.compose_gesture.bga_draw_stroke;
     if (input.kind == WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE) {
         pending.reset();
         return std::nullopt;
@@ -1857,7 +1857,7 @@ auto dispatch_bga_draw_input(const WormUiComposeInputAction& input,
         return std::nullopt;
     const auto* chart = context.chart();
     const auto beginning = input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN;
-    if (!chart || !context.environment.application_command_state_ref.compose_gesture.note_paint_mode_active ||
+    if (!chart || !context.environment.application_command_state_ref.project.compose_gesture.note_paint_mode_active ||
         !wormedit::ui::compose_notes_editable(
             compose_mode_of(context.environment.application_command_state_ref)) ||
         (beginning && !begin_bga_draw(input, context, *chart))) {
@@ -1891,7 +1891,7 @@ auto dispatch_bga_draw_input(const WormUiComposeInputAction& input,
 auto select_lane_key_without_selection(const WormUiComposeInputAction& input,
                                       const compose_input_context_t& context) -> bool {
     if (input.kind != WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS ||
-        context.environment.application_command_state_ref.compose_gesture.note_paint_mode_active)
+        context.environment.application_command_state_ref.project.compose_gesture.note_paint_mode_active)
         return false;
     const auto& state = context.state;
     return state.selected_notes.empty() &&
@@ -1912,8 +1912,8 @@ auto dispatch_compose_input_event(const WormUiComposeInputAction& input,
         if (input.resource_role > 2 || (input.resource_role == 0 && input.resource_id != 0))
             return compose_input_family_result_t::stop_with_feedback("Unsupported Draw source.",
                 wormedit::notification_severity_t::warning, wormedit::notification_source_t::input);
-        context.environment.application_command_state_ref.compose_gesture.draw_source_kind = input.resource_role;
-        context.environment.application_command_state_ref.compose_gesture.draw_source_id = input.resource_id;
+        context.environment.application_command_state_ref.project.compose_gesture.draw_source_kind = input.resource_role;
+        context.environment.application_command_state_ref.project.compose_gesture.draw_source_id = input.resource_id;
         result.accepted = true;
         accepted = "Draw source selected.";
         return compose_input_family_result_t::continue_with_result();
@@ -2032,7 +2032,7 @@ auto dispatch_compose_input_batch(compose_input_context_t& context) -> std::stri
     auto status = std::string{};
     for (std::size_t index = 0; index < context.ui_action.compose_input_count; ++index) {
         if (!context.input_is_current()) {
-            context.environment.application_command_state_ref.compose_gesture.bga_draw_stroke.reset();
+            context.environment.application_command_state_ref.project.compose_gesture.bga_draw_stroke.reset();
             (void)dispatch_editor_action(context.environment.history_ref, context.state,
                                          cancel_editor_gesture_action_t{});
             const auto message = "Remaining Compose input was discarded after the document revision changed.";
@@ -2074,7 +2074,7 @@ void apply_compose_viewport_scroll(const wormedit::viewport_scroll_action_t& scr
             return;
         const auto maximum = std::max(0.0, compose_bgm_scroll_content_width(context) - context.bgm_pane_width);
         auto& retained = context.environment.application_command_state_ref
-                             .compose_view.bgm_horizontal_scroll_pixels[context.state.chart.value];
+                             .project.compose_view.bgm_horizontal_scroll_pixels[context.state.chart.value];
         retained = std::clamp(retained + scroll.delta_x_pixels, 0.0, maximum);
         status = "Compose BGM pane scrolled.";
         post_input_feedback(context.notifications, notification_severity_t::hint,
@@ -2090,7 +2090,7 @@ void apply_compose_viewport_scroll(const wormedit::viewport_scroll_action_t& scr
         return;
     }
     const auto downscroll = compose_field_downscroll(
-        *context.input_chart, context.environment.application_command_state_ref.compose_view.editor_preferences);
+        *context.input_chart, context.environment.application_command_state_ref.preferences.editor_preferences);
     // Convert displacement to chart direction before routing it to the viewport or playhead.
     const auto chart_delta = compose_wheel_scroll_delta(scroll.delta_y_pixels, downscroll);
     if (is_preview_playing(context.environment.application_command_state_ref)) {
@@ -2193,7 +2193,7 @@ auto dispatch_compose_viewport_batch(compose_input_context_t& context,
                  .delta_x = input.delta_x,
                  .delta_y = !bgm_pane && !input.zoom_modifier &&
                                     context.environment.application_command_state_ref
-                                        .compose_view.editor_preferences.invert_scroll_wheel
+                                        .preferences.editor_preferences.invert_scroll_wheel
                                 ? -input.delta_y
                                 : input.delta_y,
                  .zoom_modifier = input.zoom_modifier,
@@ -2230,10 +2230,10 @@ auto consume_minimap_preferences(WormUiWorkspaceAction& action,
     for (std::size_t index = 0; index < action.compose_input_count; ++index) {
         const auto& input = action.compose_inputs[index];
         if (input.kind == WORM_UI_COMPOSE_INPUT_SET_MINIMAP_PAUSED_BEHAVIOR) {
-            application.compose_view.minimap_click_moves_paused_playhead = input.overview_primary;
+            application.preferences.minimap_click_moves_paused_playhead = input.overview_primary;
             changed = true;
         } else if (input.kind == WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE) {
-            application.bgm.bgm_bar_hidden = input.overview_primary;
+            application.project.bgm.bgm_bar_hidden = input.overview_primary;
         } else action.compose_inputs[kept++] = input;
     }
     action.compose_input_count = kept;
@@ -2255,7 +2255,7 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
 
     using namespace wormedit;
     if (!editor_interaction_has_pending_gesture(state))
-        state.scratch_on_right = application_state.compose_view.scratch_on_right;
+        state.scratch_on_right = application_state.scratch_on_right;
     scene_cache.frame.audition_request.reset();
     scene_cache.frame.draft_audition_request.reset();
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
@@ -2299,7 +2299,7 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
                                     : input_chart->bgm_source_lanes.size();
     const auto horizontal_layout = compose_horizontal_layout(
         compose_editor_layout_width(ui_action.compose_input_viewport_width_pixels,
-                                    application_state.compose_view.compose_editor_right_pixels),
+                                    application_state.project.compose_view.compose_editor_right_pixels),
         input_chart == history.document.charts.end() ? 0 : maximum_layout_lane_count(*input_chart),
         bgm_lane_count != 0, state.bga_lane_visible && input_chart != history.document.charts.end()
             ? std::popcount(editor_bga_visible_lane_mask(*input_chart, state.bga_revealed_lane_mask)) : 0,
@@ -2330,7 +2330,7 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
         ui_action, gesture_active, chart == history.document.charts.end() ? nullptr : &*chart,
         scene_cache.frame.interaction_view ? &*scene_cache.frame.interaction_view : nullptr,
         history.document.revision, field_left_pixels, field_width_pixels, scene_cache,
-        application_state.compose_view.editor_preferences);
+        application_state.preferences.editor_preferences);
     auto status = dispatch_compose_input_batch(input_context);
     if (ui_action.compose_note_label_focus_consumed) {
         scene_cache.frame.focus_note_label_editor = false;
@@ -2357,7 +2357,7 @@ void refresh_compose_editor_width(const WormUiWorkspaceAction& action,
         history.document.revision != action.compose_input_document_revision ||
         !std::isfinite(action.compose_input_viewport_width_pixels) || action.compose_input_viewport_width_pixels <= 0 ||
         !std::isfinite(action.compose_input_editor_right_pixels) || action.compose_input_editor_right_pixels <= 0) return;
-    application.compose_view.compose_editor_right_pixels = compose_editor_layout_width(
+    application.project.compose_view.compose_editor_right_pixels = compose_editor_layout_width(
         action.compose_input_viewport_width_pixels, action.compose_input_editor_right_pixels);
 }
 
@@ -2374,16 +2374,16 @@ auto dispatch_bgm_mix_toggle(const WormUiComposeInputAction& input,
     if (std::ranges::find(chart->bgm_source_lanes, wormedit::object_id_t{input.lane_id},
         &wormedit::bgm_source_lane_t::id) == chart->bgm_source_lanes.end())
         return "The BGM lane is no longer available.";
-    if (!application.transport_set_bgm_mix) return "BGM preview mixing is unavailable.";
-    const auto found = application.bgm.bgm_lane_mix.find(chart->id.value);
-    auto next = found == application.bgm.bgm_lane_mix.end() ? bgm_lane_mix_state_t{} : found->second;
+    if (!application.services.transport_set_bgm_mix) return "BGM preview mixing is unavailable.";
+    const auto found = application.project.bgm.bgm_lane_mix.find(chart->id.value);
+    auto next = found == application.project.bgm.bgm_lane_mix.end() ? bgm_lane_mix_state_t{} : found->second;
     auto& set = input.kind == WORM_UI_COMPOSE_INPUT_BGM_MUTE ? next.muted : next.solo;
     const auto enabled = !set.erase(input.lane_id);
     if (enabled) set.insert(input.lane_id);
     const auto muted = compose_bgm_muted_lanes(*chart, next);
-    if (!application.transport_set_bgm_mix(chart->id, muted))
+    if (!application.services.transport_set_bgm_mix(chart->id, muted))
         return "BGM preview mix could not be updated; lane controls were unchanged.";
-    application.bgm.bgm_lane_mix.insert_or_assign(chart->id.value, std::move(next));
+    application.project.bgm.bgm_lane_mix.insert_or_assign(chart->id.value, std::move(next));
     accepted = true;
     if (input.kind == WORM_UI_COMPOSE_INPUT_BGM_MUTE)
         return enabled ? "BGM lane muted." : "BGM lane unmuted.";
@@ -2440,8 +2440,8 @@ auto dispatch_compose_input_action(WormUiWorkspaceAction& ui_action,
         .chart = state.chart,
         .document_revision = history.document.revision,
         .asset = workspace.transport.audio_asset.value_or(asset_id_t{})};
-    (void)consume_bgm_bar_inputs(ui_action, application_state.bgm.bgm_bar_range,
-                                 application_state.bgm.bgm_bar_pan_override, bgm_bar_context);
+    (void)consume_bgm_bar_inputs(ui_action, application_state.project.bgm.bgm_bar_range,
+                                 application_state.project.bgm.bgm_bar_pan_override, bgm_bar_context);
     const bool preference_changed = consume_minimap_preferences(ui_action, application_state);
     if (preference_changed && ui_action.compose_input_count == 0) {
         const auto message = "Minimap paused-click preference changed for this session.";

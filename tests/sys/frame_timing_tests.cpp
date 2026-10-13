@@ -264,7 +264,7 @@ void dispatch_t437_quantize_settings(compose_test_fixture_t& fixture,
     (void)dispatch_compose_view_action(action, fixture.history, *fixture.binding.workspace,
         *fixture.interaction, fixture.flattened.view.compose.viewport_height_pixels,
         fixture.application, {}, scheduler, resource_copy, export_runtime, false, sink);
-    fixture.application.quantize.quantize_editor->preview_enabled = true;
+    fixture.application.project.quantize.quantize_editor->preview_enabled = true;
 }
 
 void check_t437_quantize_geometry(const WormUiComposeView& view,
@@ -327,7 +327,7 @@ TEST_CASE("Quantize preview publishes selected endpoint geometry on the current 
     const auto& revised = fixture.flattened.view.compose;
     expect_compose_test(revised.quantize_ghost_count == 1 &&
                         revised.quantize_preview_rows[0].start_before_absolute_row == 360);
-    fixture.application.quantize.quantize_editor->request.divisions = 0;
+    fixture.application.project.quantize.quantize_editor->request.divisions = 0;
     fixture.project();
     expect_compose_test(!fixture.flattened.view.compose.quantize_ghosts_drawable &&
                         fixture.flattened.view.compose.quantize_ghost_count == 0);
@@ -409,7 +409,7 @@ TEST_CASE("Quantize ghost geometry projects promoted absolute rows into native l
     const auto hold_id = projected_notes.back().id;
     fixture.interaction->selected_notes = {id, hold_id};
     fixture.interaction->viewport_scroll_pixels = -20.0;
-    fixture.application.quantize.quantize_editor = application_command_state_t::quantize_editor_t{
+    fixture.application.project.quantize.quantize_editor = application_command_state_t::quantize_editor_t{
         .song = fixture.history.document.id,
         .chart = fixture.history.document.charts.front().id,
         .request = {.divisions = 7, .space = quantization_space_t::authored_measure,
@@ -492,7 +492,7 @@ TEST_CASE("Quantize hold endpoints use their own layout glyph bands and downscro
     later_layout.layout.lanes.front().glyph = lane_glyph_t::square;
     chart.lane_layouts.push_back(std::move(later_layout));
     compose_test_fixture_t fixture{std::move(song)};
-    fixture.application.compose_view.editor_preferences.scroll_directions[0] = 2;
+    fixture.application.preferences.editor_preferences.scroll_directions[0] = 2;
     fixture.project();
     const auto id = fixture.history.document.charts.front().measures.front().notes.front().id;
     fixture.interaction->selected_notes = {id};
@@ -557,7 +557,7 @@ TEST_CASE("Quantize ghosts retain collision visibility and hide blocked halfway 
     const auto selected = fixture.history.document.charts.front().measures.front().notes[0].id;
     fixture.interaction->selected_notes = {selected};
     fixture.interaction->viewport_scroll_pixels = -20.0;
-    fixture.application.quantize.quantize_editor = application_command_state_t::quantize_editor_t{
+    fixture.application.project.quantize.quantize_editor = application_command_state_t::quantize_editor_t{
         .song = fixture.history.document.id,
         .chart = fixture.history.document.charts.front().id,
         .request = {.divisions = 4, .tie = quantization_tie_t::earlier,
@@ -567,7 +567,7 @@ TEST_CASE("Quantize ghosts retain collision visibility and hide blocked halfway 
     expect_compose_test(collision.quantize_preview_blocked != 0);
     expect_compose_test(collision.quantize_preview_drawable && collision.quantize_ghost_count == 1);
     expect_compose_test(collision.quantize_ghosts[0].collision);
-    fixture.application.quantize.quantize_editor->request.tie = quantization_tie_t::reject;
+    fixture.application.project.quantize.quantize_editor->request.tie = quantization_tie_t::reject;
     fixture.project();
     const auto& halfway_rejected = fixture.flattened.view.compose;
     expect_compose_test(!halfway_rejected.quantize_preview_drawable);
@@ -614,7 +614,7 @@ auto project_bga_preview_row(compose_test_fixture_t& fixture,
                             std::uint64_t raw_row = 2 * 960 + 120) -> double {
     auto& state = *fixture.interaction;
     state.selected_objects = {{editor_selection_object_kind_t::bga_event, object_id_t{500}}};
-    fixture.application.compose_view.edit_snap_enabled = snap_enabled;
+    fixture.application.project.compose_view.edit_snap_enabled = snap_enabled;
     state.snap_enabled = snap_enabled;
     state.active_snap_denominator = 4;
     state.viewport_scroll_pixels = 0;
@@ -623,7 +623,7 @@ auto project_bga_preview_row(compose_test_fixture_t& fixture,
     const auto direction = downscroll ? std::uint8_t{2} : std::uint8_t{1};
     state.scroll_direction = downscroll ? editor_field_scroll_direction_t::down
                                         : editor_field_scroll_direction_t::up;
-    fixture.application.compose_view.editor_preferences.scroll_directions[
+    fixture.application.preferences.editor_preferences.scroll_directions[
         static_cast<std::size_t>(editor_mode_family_t::other)] = direction;
     const auto raw_y = static_cast<double>(raw_row) * 192.0 / 960.0;
     const auto pointer_y = downscroll ? state.viewport_height_pixels - raw_y : raw_y;
@@ -746,7 +746,7 @@ void project_follow_frame(document_history_t& history, workspace_controller_t& w
             frame_phase_scope_t phase(frame_phase_t::workspace);
             const double row = 960.0 + static_cast<double>(frame) * 5.0;
             if (interaction) REQUIRE(follow_compose_playhead(history, *interaction, row, true));
-            application.transport.preview_playhead_absolute_row = row;
+            application.project.transport.preview_playhead_absolute_row = row;
             const auto model = make_workspace_view(workspace, history.document);
             REQUIRE(model.view);
             auto flattened = flatten_workspace(*model.view, history.document, "", {}, false, {});
@@ -1850,25 +1850,25 @@ TEST_CASE("Compose static style generation follows exact semantic filters withou
     static_style_fixture_t fixture;
     const auto initial=fixture.project();
     expect_static_style(fixture.project()==initial);
-    fixture.application.semantic_layer.semantic_layer_target=layer_id_t{101};
-    fixture.application.semantic_layer.semantic_layer_solo_active=true;
+    fixture.application.project.semantic_layer.semantic_layer_target=layer_id_t{101};
+    fixture.application.project.semantic_layer.semantic_layer_solo_active=true;
     const auto first=fixture.project();
     const auto first_note=fixture.first_note();
     expect_static_style(first>initial);
-    fixture.application.semantic_layer.semantic_layer_target=layer_id_t{102};
+    fixture.application.project.semantic_layer.semantic_layer_target=layer_id_t{102};
     const auto second=fixture.project();
     expect_static_style(second>first);
     expect_static_style(fixture.first_note()!=first_note);
-    fixture.application.semantic_layer.semantic_layer_solo_active=false;
-    fixture.application.semantic_layer.required_semantic_layer_filters={layer_id_t{101}};
+    fixture.application.project.semantic_layer.semantic_layer_solo_active=false;
+    fixture.application.project.semantic_layer.required_semantic_layer_filters={layer_id_t{101}};
     const auto required=fixture.project();
     expect_static_style(required>second);
     expect_static_style(fixture.first_note()==first_note);
-    fixture.application.semantic_layer.required_semantic_layer_filters={layer_id_t{102}};
+    fixture.application.project.semantic_layer.required_semantic_layer_filters={layer_id_t{102}};
     const auto replacement=fixture.project();
     expect_static_style(replacement>required);
     expect_static_style(fixture.first_note()!=first_note);
-    fixture.application.semantic_layer.excluded_semantic_layer_filters={layer_id_t{101}};
+    fixture.application.project.semantic_layer.excluded_semantic_layer_filters={layer_id_t{101}};
     const auto excluded=fixture.project();
     expect_static_style(excluded>replacement);
     expect_static_style(fixture.project()==excluded);
@@ -2015,7 +2015,7 @@ TEST_CASE("Retained static scalar source reuses storage while fractional scrolli
     expect_static_style(view.static_scene_style_generation==style);
     expect_static_style(view.static_scene_accounted_bytes<=16*1024*1024);
     expect_static_style(view.static_scene->note_endpoint_count>view.note_endpoint_count);
-    fixture.application.compose_view.compose_timing_lane_visibility_mask^=1;
+    fixture.application.project.compose_view.compose_timing_lane_visibility_mask^=1;
     fixture.project();
     expect_static_style(view.static_scene!=nullptr);
     expect_static_style(view.static_scene_source_generation!=generation);
@@ -2024,9 +2024,9 @@ TEST_CASE("Retained static scalar source reuses storage while fractional scrolli
 
 TEST_CASE("new-chart requested custom snap is admitted without replacing existing chart preferences", "[frame-timing]") {
     application_command_state_t state;
-    state.compose_view.editor_preferences.default_snap = 5;
-    state.compose_view.requested_snap_denominators.emplace(1, 8);
-    state.compose_view.requested_snap_denominators.emplace(2, state.compose_view.editor_preferences.default_snap);
+    state.preferences.editor_preferences.default_snap = 5;
+    state.project.compose_view.requested_snap_denominators.emplace(1, 8);
+    state.project.compose_view.requested_snap_denominators.emplace(2, state.preferences.editor_preferences.default_snap);
     const auto preferences = compose_snap_preferences(state, chart_id_t{2});
     const auto custom = filter_snap_denominators(1920, preferences, requested_snap_denominator(state, chart_id_t{2}));
     CHECK(custom.active_denominator == 5);
@@ -2122,8 +2122,8 @@ TEST_CASE(
     "[sys][field-tile-style][scalar-reuse]") {
     for (const auto direction : {std::uint8_t{0}, std::uint8_t{1}}) {
         static_style_fixture_t retained(scalar_reuse_song()), fresh(scalar_reuse_song());
-        retained.application.compose_view.editor_preferences.scroll_directions.fill(direction);
-        fresh.application.compose_view.editor_preferences = retained.application.compose_view.editor_preferences;
+        retained.application.preferences.editor_preferences.scroll_directions.fill(direction);
+        fresh.application.preferences.editor_preferences = retained.application.preferences.editor_preferences;
         retained.project();
         fresh.project();
         for (const auto scroll : {0.0, 19.75, 65.3, 120.5, 65.3, 0.0})
@@ -2190,7 +2190,7 @@ void copy_preview_note(compose_test_fixture_t& fixture) {
     auto copied = copy_chart_selection(fixture.history.document, *fixture.interaction,
                                       fixture.history.document.revision);
     expect_compose_test(static_cast<bool>(copied));
-    fixture.application.clipboard.chart_clipboard = std::move(copied.clipboard);
+    fixture.application.project.clipboard.chart_clipboard = std::move(copied.clipboard);
 }
 }
 TEST_CASE("Paste preview owns geometry across frames and publishes one undoable command",
@@ -2213,8 +2213,8 @@ TEST_CASE("Paste preview owns geometry across frames and publishes one undoable 
     expect_compose_test(static_cast<bool>(fixture.flattened.view.compose.paste_ghosts[0].bounds.top == first.top));
     expect_compose_test(static_cast<bool>(commit_compose_paste(fixture.application, fixture.history,
                                  *fixture.interaction, status)));
-    expect_compose_test(!static_cast<bool>(fixture.application.clipboard.paste_session));
-    expect_compose_test(static_cast<bool>(fixture.application.clipboard.chart_clipboard.has_value()));
+    expect_compose_test(!static_cast<bool>(fixture.application.project.clipboard.paste_session));
+    expect_compose_test(static_cast<bool>(fixture.application.project.clipboard.chart_clipboard.has_value()));
     expect_compose_test(static_cast<bool>(fixture.history.undo.size() == 1));
     const auto& notes = fixture.history.document.charts.front().measures.front().notes;
     expect_compose_test(static_cast<bool>(notes.size() == 2));
@@ -2241,11 +2241,11 @@ TEST_CASE("Paste collision remains visible and stale previews cannot publish",
     fixture.interaction->cursor.row = 240;
     expect_compose_test(static_cast<bool>(update_compose_paste(fixture.application, fixture.history.document,
                                 fixture.interaction->chart, fixture.interaction->cursor)));
-    expect_compose_test(static_cast<bool>(fixture.application.clipboard.paste_session->proposal.valid));
+    expect_compose_test(static_cast<bool>(fixture.application.project.clipboard.paste_session->proposal.valid));
     ++fixture.history.document.revision;
     expect_compose_test(!static_cast<bool>(commit_compose_paste(fixture.application, fixture.history,
                                      *fixture.interaction, status)));
-    expect_compose_test(!static_cast<bool>(fixture.application.clipboard.paste_session));
+    expect_compose_test(!static_cast<bool>(fixture.application.project.clipboard.paste_session));
     expect_compose_test(static_cast<bool>(fixture.history.undo.empty()));
 }
 
@@ -2260,7 +2260,7 @@ auto paste_pointer_action(compose_test_fixture_t& fixture, bool commit, std::uin
     expect_compose_test(y.has_value());
     // Use an interior point in the first snap cell, avoiding a chart-boundary
     // cancellation error when the downscroll screen transform is reversed.
-    const bool downscroll = compose_field_downscroll(chart, fixture.application.compose_view.editor_preferences);
+    const bool downscroll = compose_field_downscroll(chart, fixture.application.preferences.editor_preferences);
     const auto screen_y = compose_source_y(*y + (row == 0 ? 0.5 : 0.0),
                                            view->viewport_height_pixels, downscroll);
     const auto raw = editor_position_at_y_pixels(chart, *view,
@@ -2312,7 +2312,7 @@ auto kiai_screen_y(compose_test_fixture_t& fixture, std::uint64_t row) -> double
     expect_compose_test(view != nullptr);
     const auto y = editor_position_y_pixels(chart, *view, {chart.measures.front().id, row});
     expect_compose_test(y.has_value());
-    const bool downscroll = compose_field_downscroll(chart, fixture.application.compose_view.editor_preferences);
+    const bool downscroll = compose_field_downscroll(chart, fixture.application.preferences.editor_preferences);
     return compose_source_y(*y, view->viewport_height_pixels, downscroll);
 }
 auto invoke_compose_registered_command(compose_test_fixture_t& fixture,
@@ -2354,7 +2354,7 @@ auto kiai_areas(compose_test_fixture_t& fixture) -> std::vector<kiai_span_t> {
 TEST_CASE("Kiai edge drags edit the area, Delete removes the selected area and stale input is rejected",
           "[sys][kiai-spans]") {
     compose_test_fixture_t fixture{kiai_test_song()};
-    fixture.application.compose_view.requested_snap_denominators.emplace(
+    fixture.application.project.compose_view.requested_snap_denominators.emplace(
         fixture.history.document.charts.front().id.value, 8);
     fixture.project();
     REQUIRE(kiai_areas(fixture).size() == 1);
@@ -2365,11 +2365,11 @@ TEST_CASE("Kiai edge drags edit the area, Delete removes the selected area and s
     CHECK(dispatch_paste_action(fixture, stale) == "Kiai edit is stale or invalid.");
     CHECK(fixture.history.undo.empty());
 
-    fixture.application.timing_recipe.timing_locked = true;
+    fixture.application.project.timing_recipe.timing_locked = true;
     auto locked = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT, 9001, 1,
                              kiai_screen_y(fixture, 480));
     CHECK(dispatch_paste_action(fixture, locked) == "Timing is locked.");
-    fixture.application.timing_recipe.timing_locked = false;
+    fixture.application.project.timing_recipe.timing_locked = false;
 
     auto tail_drag = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT, 9001, 1,
                                 kiai_screen_y(fixture, 480), kiai_screen_y(fixture, 720));
@@ -2394,16 +2394,16 @@ TEST_CASE("Kiai edge drags edit the area, Delete removes the selected area and s
     fixture.project();
     auto select = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_SELECT, 9001);
     CHECK(dispatch_paste_action(fixture, select) == "Kiai area selected.");
-    CHECK(fixture.application.timing_recipe.kiai_selected_head == 9001);
+    CHECK(fixture.application.project.timing_recipe.kiai_selected_head == 9001);
     CHECK(static_cast<bool>(invoke_compose_registered_command(fixture)));
     CHECK(kiai_areas(fixture).empty());
-    CHECK(fixture.application.timing_recipe.kiai_selected_head == 0);
+    CHECK(fixture.application.project.timing_recipe.kiai_selected_head == 0);
     CHECK(fixture.history.undo.size() == 3);
 }
 
 TEST_CASE("A Kiai creation drag adds a merged area and is one undo step", "[sys][kiai-spans]") {
     compose_test_fixture_t fixture{kiai_test_song()};
-    fixture.application.compose_view.requested_snap_denominators.emplace(
+    fixture.application.project.compose_view.requested_snap_denominators.emplace(
         fixture.history.document.charts.front().id.value, 8);
     fixture.project();
     auto create = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT, 0,
@@ -2447,7 +2447,7 @@ TEST_CASE("SV recipe inputs select, resize and move the span, run commands and r
 
     auto select = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_SELECT, 7001);
     CHECK(dispatch_paste_action(fixture, select) == "SV recipe selected.");
-    CHECK(fixture.application.timing_recipe.recipe_selected == 7001);
+    CHECK(fixture.application.project.timing_recipe.recipe_selected == 7001);
     fixture.project();
     CHECK(fixture.flattened.view.compose.recipe_areas[0].selected);
 
@@ -2481,7 +2481,7 @@ TEST_CASE("SV recipe inputs select, resize and move the span, run commands and r
 
     // A locked timeline rejects edits and commands without a revision.
     fixture.project();
-    fixture.application.timing_recipe.timing_locked = true;
+    fixture.application.project.timing_recipe.timing_locked = true;
     const auto revision = fixture.history.document.revision;
     auto locked_edit = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT, 7001, 1,
                                   kiai_screen_y(fixture, 720));
@@ -2490,7 +2490,7 @@ TEST_CASE("SV recipe inputs select, resize and move the span, run commands and r
     auto locked_command = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND, 7001, 0);
     CHECK(dispatch_paste_action(fixture, locked_command) == "Timing is locked.");
     CHECK(fixture.history.document.revision == revision);
-    fixture.application.timing_recipe.timing_locked = false;
+    fixture.application.project.timing_recipe.timing_locked = false;
 
     auto toggle = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND, 7001, 0);
     CHECK(dispatch_paste_action(fixture, toggle) == "SV recipe disabled.");
@@ -2501,7 +2501,7 @@ TEST_CASE("SV recipe inputs select, resize and move the span, run commands and r
     CHECK(dispatch_paste_action(fixture, materialize) == "SV recipe materialized into events.");
     CHECK(fixture.history.document.charts.front().sv_recipes.empty());
     CHECK_FALSE(fixture.history.document.charts.front().scrolls.empty());
-    CHECK(fixture.application.timing_recipe.recipe_selected == 0);
+    CHECK(fixture.application.project.timing_recipe.recipe_selected == 0);
     auto missing = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND, 7001, 2);
     CHECK(dispatch_paste_action(fixture, missing) == "The SV recipe no longer exists.");
 }
@@ -2510,10 +2510,10 @@ TEST_CASE("Delete removes the selected SV recipe and the area menu adds one over
           "[sys][recipe-areas]") {
     compose_test_fixture_t fixture{recipe_test_song()};
     fixture.project();
-    fixture.application.timing_recipe.recipe_selected = 7001;
+    fixture.application.project.timing_recipe.recipe_selected = 7001;
     CHECK(static_cast<bool>(invoke_compose_registered_command(fixture)));
     CHECK(fixture.history.document.charts.front().sv_recipes.empty());
-    CHECK(fixture.application.timing_recipe.recipe_selected == 0);
+    CHECK(fixture.application.project.timing_recipe.recipe_selected == 0);
     REQUIRE(undo_document_command(fixture.history));
     CHECK(fixture.history.document.charts.front().sv_recipes.size() == 1);
 
@@ -2584,7 +2584,7 @@ TEST_CASE("the selected recipe's form and its unapplied preview reach the Compos
     CHECK_FALSE(fixture.flattened.view.compose.recipe_form.visible);
     CHECK_FALSE(fixture.flattened.view.compose.recipe_areas[0].previewing);
 
-    fixture.application.timing_recipe.recipe_selected = 7001;
+    fixture.application.project.timing_recipe.recipe_selected = 7001;
     fixture.project();
     const auto& form_view = fixture.flattened.view.compose.recipe_form;
     REQUIRE(form_view.visible);
@@ -2598,7 +2598,7 @@ TEST_CASE("the selected recipe's form and its unapplied preview reach the Compos
     const auto& chart = fixture.history.document.charts.front();
     auto form = wormedit::sys::recipe_form_from_recipe(chart.sv_recipes.front());
     std::snprintf(form.value_to.numerator, sizeof(form.value_to.numerator), "9");
-    fixture.application.timing_recipe.recipe_preview = wormedit::sys::preview_recipe_form(
+    fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::preview_recipe_form(
         chart, fixture.history.document.revision, chart.sv_recipes.front(), form);
     fixture.project();
     CHECK(fixture.flattened.view.compose.recipe_areas[0].previewing);
@@ -2606,22 +2606,22 @@ TEST_CASE("the selected recipe's form and its unapplied preview reach the Compos
 
     form.curve = WORM_UI_TIMING_RECIPE_CURVE_EXPONENTIAL;
     std::snprintf(form.shape.numerator, sizeof(form.shape.numerator), "99");
-    fixture.application.timing_recipe.recipe_preview = wormedit::sys::preview_recipe_form(
+    fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::preview_recipe_form(
         chart, fixture.history.document.revision, chart.sv_recipes.front(), form);
     fixture.project();
     REQUIRE(fixture.flattened.view.compose.recipe_form.status_text != nullptr);
     CHECK_FALSE(std::string(fixture.flattened.view.compose.recipe_form.status_text).empty());
 
-    fixture.application.timing_recipe.recipe_selected = 0;
+    fixture.application.project.timing_recipe.recipe_selected = 0;
     fixture.project();
-    CHECK_FALSE(fixture.application.timing_recipe.recipe_preview.has_value());
+    CHECK_FALSE(fixture.application.project.timing_recipe.recipe_preview.has_value());
     CHECK_FALSE(fixture.flattened.view.compose.recipe_form.visible);
 
-    fixture.application.timing_recipe.recipe_selected = 7001;
-    fixture.application.timing_recipe.recipe_preview = wormedit::sys::preview_recipe_form(
+    fixture.application.project.timing_recipe.recipe_selected = 7001;
+    fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::preview_recipe_form(
         chart, fixture.history.document.revision + 5, chart.sv_recipes.front(), form);
     fixture.project();
-    CHECK_FALSE(fixture.application.timing_recipe.recipe_preview.has_value());
+    CHECK_FALSE(fixture.application.project.timing_recipe.recipe_preview.has_value());
 }
 
 TEST_CASE("Pointer paste retains cursor and viewport and FIFO release commits that anchor",
@@ -2639,7 +2639,7 @@ TEST_CASE("Pointer paste retains cursor and viewport and FIFO release commits th
     expect_compose_test(fixture.interaction->viewport_scroll_pixels == scroll);
     expect_compose_test(fixture.history.undo.empty());
     fixture.project();
-    expect_compose_test(fixture.application.clipboard.paste_session->anchor.row == 240);
+    expect_compose_test(fixture.application.project.clipboard.paste_session->anchor.row == 240);
     expect_compose_test(fixture.interaction->cursor == cursor);
     expect_compose_test(fixture.interaction->viewport_scroll_pixels == scroll);
     status = dispatch_paste_pointer(fixture, true);
@@ -2660,7 +2660,7 @@ TEST_CASE("Paste cached anchor keeps collision diagnostics across an outside poi
     std::string status;
     expect_compose_test(begin_compose_paste(fixture.application, fixture.history.document,
                                    *fixture.interaction, status));
-    const auto collision = fixture.application.clipboard.paste_session->proposal.error;
+    const auto collision = fixture.application.project.clipboard.paste_session->proposal.error;
     expect_compose_test(!collision.empty());
     auto outside = paste_pointer_action(fixture, false);
     outside.compose_inputs[0].y_pixels = 10000;
@@ -2693,7 +2693,7 @@ TEST_CASE("Offset padlock disables exact offset controls independently of BPM ti
     expect_compose_test(fixture.flattened.view.compose.audio_offset_editable);
     const auto revision = fixture.history.document.revision;
     const auto bpm = fixture.history.document.charts.front().bpms.front().beats_per_minute;
-    fixture.application.timing_recipe.audio_offset_locked = true;
+    fixture.application.project.timing_recipe.audio_offset_locked = true;
     fixture.project();
     expect_compose_test(fixture.flattened.view.compose.audio_offset_locked);
     expect_compose_test(!fixture.flattened.view.compose.audio_offset_editable);
@@ -2701,7 +2701,7 @@ TEST_CASE("Offset padlock disables exact offset controls independently of BPM ti
     expect_compose_test(fixture.history.document.revision == revision);
     expect_compose_test(fixture.history.document.charts.front().bpms.front().beats_per_minute == bpm);
     expect_compose_test(fixture.history.undo.empty());
-    fixture.application.timing_recipe.audio_offset_locked = false;
+    fixture.application.project.timing_recipe.audio_offset_locked = false;
     fixture.project();
     expect_compose_test(fixture.flattened.view.compose.audio_offset_editable);
     expect_compose_test(fixture.history.undo.empty());
@@ -2711,7 +2711,7 @@ TEST_CASE("Locked offset fit rejects captured input without clearing a BPM previ
           "[sys][offset-lock]") {
     compose_test_fixture_t fixture;
     fixture.project();
-    fixture.application.timing_recipe.audio_offset_locked = true;
+    fixture.application.project.timing_recipe.audio_offset_locked = true;
     fixture.cache.timing.beat_fit_drag = beat_interval_drag_t{};
     WormUiWorkspaceAction action{};
     action.compose_input_chart_id = fixture.interaction->chart.value;
@@ -2752,14 +2752,14 @@ TEST_CASE("Offset locking takes precedence over a captured release and never rep
     action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_COMMIT;
     (void)toggle_compose_audio_offset_lock(action, fixture.history, *fixture.binding.workspace,
         fixture.application, fixture.cache, drag, tab);
-    expect_compose_test(fixture.application.timing_recipe.audio_offset_locked);
+    expect_compose_test(fixture.application.project.timing_recipe.audio_offset_locked);
     expect_compose_test(!drag && !tab && !fixture.cache.timing.offset_fit_drag);
     expect_compose_test(!fixture.cache.timing.proposed_offset_seconds);
     expect_compose_test(fixture.cache.timing.beat_fit_drag.has_value());
     expect_compose_test(fixture.history.undo.empty());
     (void)toggle_compose_audio_offset_lock(action, fixture.history, *fixture.binding.workspace,
         fixture.application, fixture.cache, drag, tab);
-    expect_compose_test(!fixture.application.timing_recipe.audio_offset_locked);
+    expect_compose_test(!fixture.application.project.timing_recipe.audio_offset_locked);
     expect_compose_test(!drag && !tab && !fixture.cache.timing.offset_fit_drag);
     expect_compose_test(fixture.history.undo.empty());
 }
@@ -2825,7 +2825,7 @@ TEST_CASE("Configured anchor projects a short chart through audio-tail rows stop
           "[sys][anchor-scene]") {
     for (const std::uint32_t direction : {1U, 2U}) {
         compose_test_fixture_t fixture;
-        fixture.application.compose_view.editor_preferences.scroll_directions.fill(direction);
+        fixture.application.preferences.editor_preferences.scroll_directions.fill(direction);
         for (const int height : {980, 640, 1100}) {
             check_short_chart_anchor_frame(fixture, height, 0, true);
             check_short_chart_anchor_frame(fixture, height, 9600, true);
@@ -3101,8 +3101,8 @@ void check_fresh_reused_geometry(std::uint32_t direction, format_family_t family
     auto song = geometry_arena_song();
     song.charts.front().source_family = family;
     compose_test_fixture_t reused(song), fresh(song);
-    reused.application.compose_view.editor_preferences.scroll_directions.fill(direction);
-    fresh.application.compose_view.editor_preferences.scroll_directions.fill(direction);
+    reused.application.preferences.editor_preferences.scroll_directions.fill(direction);
+    fresh.application.preferences.editor_preferences.scroll_directions.fill(direction);
     wormedit::frame_arena_t reused_arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
     wormedit::frame_arena_t fresh_arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
     project_geometry_arena(reused, reused_arena);
@@ -3110,8 +3110,8 @@ void check_fresh_reused_geometry(std::uint32_t direction, format_family_t family
     const auto source = reused.cache.scene.static_scene_storage;
     expect_compose_test(source != nullptr);
     for (const bool legend : {false, true}) {
-        reused.application.compose_view.editor_preferences.lane_key_legend_visible = legend;
-        fresh.application.compose_view.editor_preferences.lane_key_legend_visible = legend;
+        reused.application.preferences.editor_preferences.lane_key_legend_visible = legend;
+        fresh.application.preferences.editor_preferences.lane_key_legend_visible = legend;
         reused.interaction->viewport_scroll_pixels = 0.5;
         fresh.interaction->viewport_scroll_pixels = 0.5;
         reused_arena.reset();
@@ -3287,8 +3287,8 @@ void check_grid_cache_parity(std::uint32_t direction, format_family_t family) {
     auto song = geometry_arena_song();
     song.charts.front().source_family = family;
     compose_test_fixture_t cached(song), fresh(song);
-    cached.application.compose_view.editor_preferences.scroll_directions.fill(direction);
-    fresh.application.compose_view.editor_preferences.scroll_directions.fill(direction);
+    cached.application.preferences.editor_preferences.scroll_directions.fill(direction);
+    fresh.application.preferences.editor_preferences.scroll_directions.fill(direction);
     wormedit::frame_arena_t arena, reference;
     project_geometry_arena(cached, arena);
     project_geometry_arena(fresh, reference);
@@ -3545,11 +3545,11 @@ void check_semantic_first(const WormUiComposeView& view) {
 TEST_CASE("Compose semantic arena preserves palette flags and independent text lifetime",
           "[sys][compose-semantic-arena]") {
     compose_test_fixture_t fixture(semantic_arena_song());
-    fixture.application.semantic_layer.semantic_layer_filter_chart=chart_id_t{1};
-    fixture.application.semantic_layer.semantic_layer_target=layer_id_t{101};
-    fixture.application.semantic_layer.semantic_layer_solo_active=true;
-    fixture.application.semantic_layer.required_semantic_layer_filters={layer_id_t{101}};
-    fixture.application.semantic_layer.excluded_semantic_layer_filters={layer_id_t{102}};
+    fixture.application.project.semantic_layer.semantic_layer_filter_chart=chart_id_t{1};
+    fixture.application.project.semantic_layer.semantic_layer_target=layer_id_t{101};
+    fixture.application.project.semantic_layer.semantic_layer_solo_active=true;
+    fixture.application.project.semantic_layer.required_semantic_layer_filters={layer_id_t{101}};
+    fixture.application.project.semantic_layer.excluded_semantic_layer_filters={layer_id_t{102}};
     wormedit::frame_arena_t arena({.chunk_bytes=1024*1024,.maximum_bytes=2*1024*1024});
     project_geometry_arena(fixture,arena);
     const auto& view=fixture.flattened.view.compose;
@@ -3561,13 +3561,13 @@ TEST_CASE("Compose semantic arena preserves palette flags and independent text l
     expect_compose_test(view.semantic_layer_target_required_filter && !view.semantic_layer_target_excluded_filter);
     expect_compose_test(view.semantic_layer_solo_active);
     arena.reset();
-    fixture.application.semantic_layer.semantic_layer_target=layer_id_t{102};
-    fixture.application.compose_gesture.semantic_layer_paint_mode_active=true;
+    fixture.application.project.semantic_layer.semantic_layer_target=layer_id_t{102};
+    fixture.application.project.compose_gesture.semantic_layer_paint_mode_active=true;
     project_geometry_arena(fixture,arena);
     expect_compose_test(fixture.flattened.view.compose.semantic_layer_target_excluded_filter);
     expect_compose_test(!fixture.flattened.view.compose.semantic_layer_target_locked);
     expect_compose_test(fixture.flattened.view.compose.semantic_layer_paint_mode_active);
-    fixture.application.semantic_layer.semantic_layer_target=layer_id_t{101};
+    fixture.application.project.semantic_layer.semantic_layer_target=layer_id_t{101};
     arena.reset();
     project_geometry_arena(fixture,arena);
     fixture.history.document.charts.front().semantic_layers[0].name="changed source";
@@ -3585,15 +3585,15 @@ TEST_CASE("Compose semantic arena preserves bounded scrolling and empty state",
     expect_compose_test(empty.flattened.view.compose.semantic_layer_total_count==0);
     expect_compose_test(!empty.flattened.view.compose.semantic_layers_truncated);
     compose_test_fixture_t dense(semantic_arena_song(300));
-    dense.application.semantic_layer.semantic_layer_row_count=1000;
-    dense.application.semantic_layer.semantic_layer_target=layer_id_t{101};
+    dense.application.project.semantic_layer.semantic_layer_row_count=1000;
+    dense.application.project.semantic_layer.semantic_layer_target=layer_id_t{101};
     dense.project();
     const auto& view=dense.flattened.view.compose;
     expect_compose_test(view.semantic_layer_count==WORM_UI_COMPOSE_SEMANTIC_LAYER_WINDOW_CAPACITY);
     expect_compose_test(view.semantic_layer_total_count==300 && view.semantic_layer_first_row==0);
     expect_compose_test(!view.semantic_layers_truncated);
-    dense.application.semantic_layer.semantic_layer_first_row=280;
-    dense.application.semantic_layer.semantic_layer_row_count=18;
+    dense.application.project.semantic_layer.semantic_layer_first_row=280;
+    dense.application.project.semantic_layer.semantic_layer_row_count=18;
     dense.history.document.charts.front().semantic_layers[285].visible=false;
     dense.project();
     expect_compose_test(view.semantic_layer_first_row==280 && view.semantic_layer_count==18);
@@ -3607,32 +3607,32 @@ TEST_CASE("Compose note menu projects a bounded independent catalog and retires 
     auto& app=fixture.application;
     const auto& view=fixture.flattened.view.compose;
     expect_compose_test(view.note_menu_layer_count==0 && !view.note_menu_layers);
-    app.semantic_layer.semantic_layer_first_row=20;
-    app.semantic_layer.note_layer_menu_chart=chart_id_t{1};
-    app.semantic_layer.note_layer_menu_revision=fixture.history.document.revision;
-    app.semantic_layer.note_layer_menu_row_count=1000;
+    app.project.semantic_layer.semantic_layer_first_row=20;
+    app.project.semantic_layer.note_layer_menu_chart=chart_id_t{1};
+    app.project.semantic_layer.note_layer_menu_revision=fixture.history.document.revision;
+    app.project.semantic_layer.note_layer_menu_row_count=1000;
     fixture.project();
     expect_compose_test(view.note_menu_layer_count==WORM_UI_COMPOSE_NOTE_LAYER_WINDOW_CAPACITY);
     expect_compose_test(view.note_menu_layer_total_count==30 && view.note_menu_layer_first_row==0);
     expect_compose_test(view.note_menu_layers[0].layer_id==101 && view.note_menu_layers[0].locked);
     expect_compose_test(view.semantic_layer_first_row==20 && view.semantic_layers[0].layer_id==121);
-    app.semantic_layer.note_layer_menu_first_row=16;
+    app.project.semantic_layer.note_layer_menu_first_row=16;
     fixture.project();
     expect_compose_test(view.note_menu_layer_first_row==16 && view.note_menu_layer_count==14);
     expect_compose_test(view.note_menu_layers[13].layer_id==130);
     expect_compose_test(view.semantic_layer_first_row==20 && view.semantic_layers[0].layer_id==121);
-    app.semantic_layer.note_layer_menu_row_count=0;
+    app.project.semantic_layer.note_layer_menu_row_count=0;
     fixture.project();
     expect_compose_test(view.note_menu_layer_count==0 && !view.note_menu_layers);
-    app.semantic_layer.note_layer_menu_row_count=18;
+    app.project.semantic_layer.note_layer_menu_row_count=18;
     ++fixture.history.document.revision;
     fixture.project();
-    expect_compose_test(view.note_menu_layer_count==0 && app.semantic_layer.note_layer_menu_row_count==0);
-    app.semantic_layer.note_layer_menu_revision=fixture.history.document.revision;
-    app.semantic_layer.note_layer_menu_chart=chart_id_t{2};
-    app.semantic_layer.note_layer_menu_row_count=18;
+    expect_compose_test(view.note_menu_layer_count==0 && app.project.semantic_layer.note_layer_menu_row_count==0);
+    app.project.semantic_layer.note_layer_menu_revision=fixture.history.document.revision;
+    app.project.semantic_layer.note_layer_menu_chart=chart_id_t{2};
+    app.project.semantic_layer.note_layer_menu_row_count=18;
     fixture.project();
-    expect_compose_test(view.note_menu_layer_count==0 && app.semantic_layer.note_layer_menu_row_count==0);
+    expect_compose_test(view.note_menu_layer_count==0 && app.project.semantic_layer.note_layer_menu_row_count==0);
 }
 TEST_CASE("Compose semantic arena exhaustion publishes only complete named rows",
           "[sys][compose-semantic-arena]") {
@@ -3984,7 +3984,7 @@ void check_marker_text_addresses(const auto& rows, std::uintptr_t begin, std::ui
 TEST_CASE("Compose marker arenas preserve anchors labels source order and projected geometry", "[sys][frame-arena][compose-markers]") {
     for (const auto direction : {1U, 2U}) {
         compose_test_fixture_t fixture(marker_arena_song());
-        fixture.application.compose_view.editor_preferences.scroll_directions.fill(direction);
+        fixture.application.preferences.editor_preferences.scroll_directions.fill(direction);
         wormedit::frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
         project_geometry_arena(fixture, arena);
         REQUIRE(fixture.flattened.view.compose.beat_bookmark_count == 2);
@@ -4196,8 +4196,8 @@ void compare_marker_sections(const auto& actual, const auto& expected) {
 }
 void check_marker_reused_frame(std::uint32_t direction) {
     compose_test_fixture_t reused(marker_arena_song()), fresh(marker_arena_song());
-    reused.application.compose_view.editor_preferences.scroll_directions.fill(direction);
-    fresh.application.compose_view.editor_preferences.scroll_directions.fill(direction);
+    reused.application.preferences.editor_preferences.scroll_directions.fill(direction);
+    fresh.application.preferences.editor_preferences.scroll_directions.fill(direction);
     wormedit::frame_arena_t arena, reference;
     project_geometry_arena(reused, arena); project_geometry_arena(fresh, reference);
     const auto source = reused.cache.scene.static_scene_storage;
@@ -4284,14 +4284,14 @@ void place_pointer_test_note(compose_test_fixture_t& fixture, int mode) {
     expect_compose_test(y.has_value());
     auto action = cursor_placement_action(fixture);
     action.compose_input_count = 1;
-    fixture.application.compose_gesture.note_paint_mode_active = !resource;
+    fixture.application.project.compose_gesture.note_paint_mode_active = !resource;
     action.compose_inputs[0] = {.kind = resource ? WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE
                                                : WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
         .object_id = fixture.history.document.resources.front().id.value,
         .resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE,
         .x_pixels = fixture.flattened.view.compose.playable_field_left_pixels + 20,
         .y_pixels = compose_source_y(*y, state.viewport_height_pixels,
-            compose_field_downscroll(chart, fixture.application.compose_view.editor_preferences))};
+            compose_field_downscroll(chart, fixture.application.preferences.editor_preferences))};
     if (mode == 2) {
         action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN;
         action.compose_inputs[1] = action.compose_inputs[0];
@@ -4310,7 +4310,7 @@ void check_note_placement_preserves_cursor(int mode, bool downscroll) {
     INFO("Mode " << mode << ", downscroll " << downscroll);
     compose_test_fixture_t fixture{cursor_placement_song()};
     fixture.binding.workspace->selected_chart = fixture.history.document.charts.front().id;
-    fixture.application.compose_view.editor_preferences.scroll_directions[0] = downscroll ? 2U : 1U;
+    fixture.application.preferences.editor_preferences.scroll_directions[0] = downscroll ? 2U : 1U;
     fixture.project();
     place_pointer_test_note(fixture, mode);
     expect_compose_test(fixture.interaction->fixed_cursor_screen_y_pixels == 48);
@@ -4346,7 +4346,7 @@ void check_ten_key_note_commit() {
     for (auto& measure : chart.measures) measure.notes.clear();
     compose_test_fixture_t fixture{std::move(song)};
     fixture.binding.workspace->selected_chart = fixture.history.document.charts.front().id;
-    fixture.application.compose_gesture.note_paint_mode_active = true;
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
     fixture.project();
     expect_compose_test(fixture.flattened.view.compose.lane_key_binding_count == 10);
     viewport_input_controller_t viewport;
@@ -4374,7 +4374,7 @@ void check_ten_key_note_commit() {
 void check_latched_range_projection(bool downscroll) {
     compose_test_fixture_t fixture{cursor_placement_song()};
     fixture.binding.workspace->selected_chart = fixture.history.document.charts.front().id;
-    fixture.application.compose_view.editor_preferences.scroll_directions[0] = downscroll ? 2U : 1U;
+    fixture.application.preferences.editor_preferences.scroll_directions[0] = downscroll ? 2U : 1U;
     fixture.project();
     auto& state = *fixture.interaction;
     state.active_snap_denominator = 4;
@@ -4407,15 +4407,15 @@ void check_wheel_displacement(bool downscroll, double delta,
          << ", kind " << kind << ", playing " << playing);
     compose_test_fixture_t fixture{cursor_placement_song()};
     fixture.binding.workspace->selected_chart = fixture.history.document.charts.front().id;
-    fixture.application.compose_view.editor_preferences.scroll_directions[0] = downscroll ? 2U : 1U;
+    fixture.application.preferences.editor_preferences.scroll_directions[0] = downscroll ? 2U : 1U;
     fixture.project();
     auto& state = *fixture.interaction;
     state.viewport_scroll_pixels = 1000.0;
     state.active_snap_denominator = 4;
-    fixture.application.transport.preview_playhead_absolute_row = 960.0;
-    fixture.application.transport_preview_playing = [playing] { return playing; };
+    fixture.application.project.transport.preview_playhead_absolute_row = 960.0;
+    fixture.application.services.transport_preview_playing = [playing] { return playing; };
     std::size_t seeks = 0;
-    fixture.application.transport_seek = [&seeks](std::uint64_t) {
+    fixture.application.services.transport_seek = [&seeks](std::uint64_t) {
         ++seeks;
         return std::string{"Seeked."};
     };
@@ -4429,7 +4429,7 @@ void check_wheel_displacement(bool downscroll, double delta,
         state, viewport, navigation, fixture.application, fixture.cache, 0.016);
     const bool forward = (delta > 0.0) != downscroll;
     if (playing) {
-        expect_compose_test(fixture.application.transport.preview_playhead_absolute_row == (forward ? 1200.0 : 720.0));
+        expect_compose_test(fixture.application.project.transport.preview_playhead_absolute_row == (forward ? 1200.0 : 720.0));
         expect_compose_test(seeks == 1);
         expect_compose_test(state.viewport_scroll_pixels == 1000.0);
     } else {
@@ -4490,7 +4490,7 @@ auto paint_stroke_inputs(compose_test_fixture_t& fixture, std::uint64_t sound) -
     action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN,
         .x_pixels = fixture.flattened.view.compose.playable_field_left_pixels + 20,
         .y_pixels = compose_source_y(*y, state.viewport_height_pixels,
-            compose_field_downscroll(chart, fixture.application.compose_view.editor_preferences)),
+            compose_field_downscroll(chart, fixture.application.preferences.editor_preferences)),
         .resource_id = sound};
     action.compose_inputs[1] = action.compose_inputs[0];
     action.compose_inputs[1].kind = WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE;
@@ -4504,7 +4504,7 @@ TEST_CASE("Note paint begin input carries the armed sound into the document and 
     fixture.binding.workspace->selected_chart = fixture.history.document.charts.front().id;
     fixture.project();
     const auto sound = fixture.history.document.resources.front().id;
-    fixture.application.compose_gesture.note_paint_mode_active = true;
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
     placed_resource_notifications.clear();
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
@@ -4540,9 +4540,9 @@ void check_armed_layer_placement(int mode, bool no_layer) {
     chart.sound_layer_defaults = {{.resource = song.resources.front().id, .layers = {layer_id_t{8}}}};
     compose_test_fixture_t fixture{std::move(song)};
     fixture.binding.workspace->selected_chart = fixture.history.document.charts.front().id;
-    fixture.application.semantic_layer.semantic_layer_target = no_layer ? std::nullopt : std::optional{layer_id_t{7}};
-    fixture.application.semantic_layer.semantic_layer_target_none = no_layer;
-    fixture.application.compose_gesture.note_paint_mode_active = mode == 0 || mode == 1;
+    fixture.application.project.semantic_layer.semantic_layer_target = no_layer ? std::nullopt : std::optional{layer_id_t{7}};
+    fixture.application.project.semantic_layer.semantic_layer_target_none = no_layer;
+    fixture.application.project.compose_gesture.note_paint_mode_active = mode == 0 || mode == 1;
     fixture.project();
     const auto sound = fixture.history.document.resources.front().id;
     auto action = paint_stroke_inputs(fixture, sound.value);
@@ -4634,7 +4634,7 @@ TEST_CASE("Stopped BMS transport seek moves cursor and viewport without editing"
 namespace {
 void check_click_audition_preference(bool enabled) {
     compose_test_fixture_t fixture;
-    fixture.application.compose_view.editor_preferences.audition_on_click = enabled;
+    fixture.application.preferences.editor_preferences.audition_on_click = enabled;
     fixture.project();
     expect_compose_test(fixture.flattened.view.compose.note_endpoint_count > 0);
     const auto& bounds = fixture.flattened.view.compose.note_endpoints[0].bounds;
@@ -4664,7 +4664,7 @@ TEST_CASE("Note click audition can be disabled without suppressing selection",
 
 TEST_CASE("Idle paint ghost follows hover without rebuilding the retained scene", "[sys][paint-ghost]") {
     compose_test_fixture_t fixture;
-    fixture.application.compose_gesture.note_paint_mode_active = true;
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
     fixture.project();
     const auto& view = fixture.flattened.view.compose;
     const auto lane = view.lanes[0];
@@ -4697,7 +4697,7 @@ TEST_CASE("Idle paint ghost follows hover without rebuilding the retained scene"
     fixture.project();
     CHECK_FALSE(fixture.flattened.view.compose.paint_ghost_visible);
     fixture.cache.frame.paint_pointer = std::pair{x, y};
-    fixture.application.compose_gesture.note_paint_mode_active = false;
+    fixture.application.project.compose_gesture.note_paint_mode_active = false;
     fixture.project();
     CHECK_FALSE(fixture.flattened.view.compose.paint_ghost_visible);
 }
@@ -4787,7 +4787,7 @@ struct lane_key_callback_fixture_t {
     editor_navigation_input_controller_t navigation;
     lane_key_callback_fixture_t() {
         placed_resource_notifications.clear();
-        compose.application.compose_gesture.note_paint_mode_active = true;
+        compose.application.project.compose_gesture.note_paint_mode_active = true;
         compose.project();
         compose.interaction->active_snap_denominator = 4;
     }
@@ -5301,7 +5301,7 @@ void t475_select_note(compose_test_fixture_t& fixture, object_id_t id) {
     t475_project(fixture);
 }
 void t475_project_at_row(compose_test_fixture_t& fixture, std::uint64_t row, bool downscroll) {
-    fixture.application.compose_view.editor_preferences.scroll_directions.fill(downscroll ? 2 : 1);
+    fixture.application.preferences.editor_preferences.scroll_directions.fill(downscroll ? 2 : 1);
     t475_project(fixture);
     fixture.interaction->viewport_scroll_pixels = -20; // Keep row zero inside both hit-test directions.
     t475_project(fixture);
@@ -5408,7 +5408,7 @@ TEST_CASE("Indexed paint occupancy uses only matching heads including across hol
              .lane = lane_id_t{1}, .kind = note_kind_t::hold, .end = local_position_t{measure_id_t{1}, 480}},
             {.id = object_id_t{600}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{2}}};
         compose_test_fixture_t fixture{std::move(song)};
-        fixture.application.compose_gesture.note_paint_mode_active = true;
+        fixture.application.project.compose_gesture.note_paint_mode_active = true;
         for (const auto row : {0U, 240U, 480U, 720U}) {
             const auto scanned = fixture.cache.scene.paint_occupancy_scanned;
             t475_project_at_row(fixture, row, downscroll);
@@ -5596,7 +5596,7 @@ TEST_CASE("Compose stem width changes reproject same revision and preserve packe
     compose_test_fixture_t fixture(resizable_stem_song());
     double width = 36;
     std::size_t calls{};
-    fixture.application.compose_bgm_lane_width = [&](auto, auto, auto) {
+    fixture.application.services.compose_bgm_lane_width = [&](auto, auto, auto) {
         ++calls;
         return width;
     };
@@ -5616,16 +5616,16 @@ TEST_CASE("Compose stem width changes reproject same revision and preserve packe
 TEST_CASE("Compose BGM dispatcher reaches last widened lane and clamps resized content",
           "[sys][compose][stem-lane-width]") {
     compose_test_fixture_t fixture(resizable_stem_song());
-    fixture.application.compose_bgm_lane_width = [](auto, auto, auto) { return 480; };
+    fixture.application.services.compose_bgm_lane_width = [](auto, auto, auto) { return 480; };
     fixture.project();
     scroll_resized_bgm(fixture, 10000);
     fixture.project();
     const auto& view = fixture.flattened.view.compose;
     const auto maximum = 996.0 - fixture.cache.frame.preview_scene_request.bgm_pane_width_pixels;
-    expect_compose_test(std::abs(fixture.application.compose_view.bgm_horizontal_scroll_pixels[1] - maximum) < 1e-6);
+    expect_compose_test(std::abs(fixture.application.project.compose_view.bgm_horizontal_scroll_pixels[1] - maximum) < 1e-6);
     expect_compose_test(view.bgm_lanes[view.bgm_lane_count - 1].source_lane_id == 905);
     scroll_resized_bgm(fixture, -10000);
-    expect_compose_test(fixture.application.compose_view.bgm_horizontal_scroll_pixels[1] == 0);
+    expect_compose_test(fixture.application.project.compose_view.bgm_horizontal_scroll_pixels[1] == 0);
     expect_compose_test(fixture.history.document.revision == 1 && fixture.history.undo.empty());
 }
 
@@ -5668,13 +5668,13 @@ void t463_check_projected_rows(const compose_test_fixture_t& fixture) {
 TEST_CASE("BMSON Draw projection keeps duplicate asset stem and packed resource ownership distinct",
           "[sys][compose][bmson][stem][draw-source]") {
     compose_test_fixture_t fixture(t463_shared_asset_song());
-    fixture.application.compose_gesture.draw_source_kind = 1;
-    fixture.application.compose_gesture.draw_source_id = 101;
+    fixture.application.project.compose_gesture.draw_source_kind = 1;
+    fixture.application.project.compose_gesture.draw_source_id = 101;
     t475_project(fixture);
     t463_check_projected_rows(fixture);
     t475_check(fixture.flattened.view.compose.draw_source_stem_lane_id == 601);
     const auto builds = fixture.cache.draw_stem_sources.build_count;
-    fixture.application.compose_gesture.draw_source_id = 102;
+    fixture.application.project.compose_gesture.draw_source_id = 102;
     t475_project(fixture);
     t463_check_projected_rows(fixture);
     t475_check(fixture.flattened.view.compose.draw_source_stem_lane_id == 0);
@@ -5702,8 +5702,8 @@ TEST_CASE("BMSON Draw resource ownership cache invalidates revision and replacem
 TEST_CASE("BMSON Draw source names remain frame owned after document edits and frame moves",
           "[sys][compose][bmson][stem][draw-source][frame-arena]") {
     compose_test_fixture_t fixture(t463_shared_asset_song());
-    fixture.application.compose_gesture.draw_source_kind = 1;
-    fixture.application.compose_gesture.draw_source_id = 101;
+    fixture.application.project.compose_gesture.draw_source_kind = 1;
+    fixture.application.project.compose_gesture.draw_source_id = 101;
     t475_project(fixture);
     const std::string original = fixture.flattened.view.compose.draw_source_stem_lane_name;
     auto retained = std::move(fixture.flattened);
@@ -5761,8 +5761,8 @@ auto dispatch_chip_input(compose_test_fixture_t& fixture, WormUiComposeInputActi
 TEST_CASE("Tool chip projects the actual off-page filtered sound with a retained source cache",
           "[sys][compose][source-chip][frame-arena]") {
     compose_test_fixture_t fixture(chip_source_song());
-    fixture.application.compose_gesture.draw_source_kind = 1;
-    fixture.application.compose_gesture.draw_source_id = 179;
+    fixture.application.project.compose_gesture.draw_source_kind = 1;
+    fixture.application.project.compose_gesture.draw_source_id = 179;
     WormUiKeysoundDockRequest request{};
     request.include_ungrouped = true;
     request.primary_resource_id = 100;
@@ -5787,8 +5787,8 @@ TEST_CASE("Tool chip projects the actual off-page filtered sound with a retained
 TEST_CASE("Tool chip names are bounded UTF-8 and survive a moved frame and source rename",
           "[sys][compose][source-chip][frame-arena]") {
     compose_test_fixture_t fixture(chip_source_song());
-    fixture.application.compose_gesture.draw_source_kind = 1;
-    fixture.application.compose_gesture.draw_source_id = 179;
+    fixture.application.project.compose_gesture.draw_source_kind = 1;
+    fixture.application.project.compose_gesture.draw_source_id = 179;
     t475_project(fixture);
     auto retained = std::move(fixture.flattened);
     auto proposed = fixture.history.document;
@@ -5806,15 +5806,15 @@ TEST_CASE("Tool chip names are bounded UTF-8 and survive a moved frame and sourc
 TEST_CASE("Deleted Draw source remains picked and warns until an explicit repick",
           "[sys][compose][source-chip][missing]") {
     compose_test_fixture_t fixture(chip_source_song());
-    fixture.application.compose_gesture.note_paint_mode_active = true;
-    fixture.application.compose_gesture.draw_source_kind = 1;
-    fixture.application.compose_gesture.draw_source_id = 179;
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
+    fixture.application.project.compose_gesture.draw_source_kind = 1;
+    fixture.application.project.compose_gesture.draw_source_id = 179;
     t475_project(fixture);
     auto proposed = fixture.history.document;
     proposed.resources.pop_back();
     t475_require(commit_document_command(fixture.history, std::move(proposed), "Delete chip source"));
     t475_project(fixture);
-    t475_check(fixture.application.compose_gesture.draw_source_kind == 1 && fixture.application.compose_gesture.draw_source_id == 179);
+    t475_check(fixture.application.project.compose_gesture.draw_source_kind == 1 && fixture.application.project.compose_gesture.draw_source_id == 179);
     t475_check(fixture.flattened.view.compose.draw_source_missing);
     t475_check(std::string_view(fixture.flattened.view.compose.draw_source_label) == "missing source");
     const auto revision = fixture.history.document.revision;
@@ -5834,12 +5834,12 @@ TEST_CASE("Deleted Draw source remains picked and warns until an explicit repick
 TEST_CASE("Tool chip BGA uses resource identity and Layer reveals the off-page target ordinal",
           "[sys][compose][source-chip][bga][semantic-layer]") {
     compose_test_fixture_t fixture(bga_virtual_preview_song());
-    fixture.application.compose_gesture.draw_source_kind = 2;
-    fixture.application.compose_gesture.draw_source_id = 501;
+    fixture.application.project.compose_gesture.draw_source_kind = 2;
+    fixture.application.project.compose_gesture.draw_source_id = 501;
     for (std::uint64_t index = 0; index < 100; ++index)
         fixture.history.document.charts.front().semantic_layers.push_back({
             .id = layer_id_t{index + 1}, .name = "Drums " + std::to_string(index)});
-    fixture.application.semantic_layer.semantic_layer_target = layer_id_t{100};
+    fixture.application.project.semantic_layer.semantic_layer_target = layer_id_t{100};
     t475_project(fixture);
     const auto& view = fixture.flattened.view.compose;
     t475_check(std::string_view(view.draw_source_label) == "501 preview image");
@@ -5872,7 +5872,7 @@ struct move_feedback_dispatch_fixture_t {
     double x{}, pixels_per_row{};
     explicit move_feedback_dispatch_fixture_t(song_document_t song = move_feedback_dispatch_song())
         : compose(std::move(song)) {
-        compose.application.compose_view.edit_snap_enabled = false;
+        compose.application.project.compose_view.edit_snap_enabled = false;
         compose.project();
         expect_compose_test(static_cast<bool>(
             dispatch_editor_action(compose.history, *compose.interaction,
@@ -6053,10 +6053,10 @@ TEST_CASE("Compose routes a shifted BGM drop and projects transient amber hold g
 TEST_CASE("Compose captures the collision preference and previews every displaced occupant", "[sys][compose][bgm-move]") {
     move_feedback_dispatch_fixture_t fixture;
     (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE, 240);
-    fixture.compose.application.compose_view.editor_preferences.move_collision_policy = move_collision_policy_t::displace_to_bgm;
+    fixture.compose.application.preferences.editor_preferences.move_collision_policy = move_collision_policy_t::displace_to_bgm;
     (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_BEGIN, 240);
     // The option is captured at begin; changing it mid-drag cannot change the transaction.
-    fixture.compose.application.compose_view.editor_preferences.move_collision_policy = move_collision_policy_t::reject;
+    fixture.compose.application.preferences.editor_preferences.move_collision_policy = move_collision_policy_t::reject;
     (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE, 600);
     fixture.compose.project();
     const auto& view = fixture.compose.flattened.view.compose;
@@ -6075,7 +6075,7 @@ TEST_CASE("Compose shows rejected BGM displacement destinations in red and commi
     song.charts.front().source_family = format_family_t::stepmania;
     move_feedback_dispatch_fixture_t fixture{std::move(song)};
     (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE, 240);
-    fixture.compose.application.compose_view.editor_preferences.move_collision_policy = move_collision_policy_t::displace_to_bgm;
+    fixture.compose.application.preferences.editor_preferences.move_collision_policy = move_collision_policy_t::displace_to_bgm;
     (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_BEGIN, 240);
     (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE, 600);
     fixture.compose.project();
@@ -6100,10 +6100,10 @@ TEST_CASE("Same sound registered command uses hover selection and dock adds with
     notes[2].sound = resource_id_t{2};
     fixture.project();
     auto& application = fixture.application;
-    application.sound_selection.sound_selection_chart = chart_id_t{1};
-    application.sound_selection.sound_selection_revision = song.revision;
-    application.sound_selection.sound_selection_dock = {resource_id_t{2}};
-    application.sound_selection.sound_selection_hover = notes[0].id;
+    application.project.sound_selection.sound_selection_chart = chart_id_t{1};
+    application.project.sound_selection.sound_selection_revision = song.revision;
+    application.project.sound_selection.sound_selection_dock = {resource_id_t{2}};
+    application.project.sound_selection.sound_selection_hover = notes[0].id;
     notification_center_t center;
     notification_sink_t sink{center};
     std::optional<timing_lane_pseudonote_preview_t> timing;
@@ -6115,14 +6115,14 @@ TEST_CASE("Same sound registered command uses hover selection and dock adds with
     const auto revision = song.revision;
     expect_compose_test(invoke().accepted);
     expect_compose_test(fixture.interaction->selected_notes == std::vector<object_id_t>{notes[0].id, notes[1].id});
-    application.sound_selection.sound_selection_hover.reset();
+    application.project.sound_selection.sound_selection_hover.reset();
     expect_compose_test(invoke().accepted); // Selection takes precedence over the dock.
     expect_compose_test(fixture.interaction->selected_notes.size() == 2);
     fixture.interaction->selected_notes.clear();
     fixture.interaction->selected_objects.clear();
     expect_compose_test(invoke().accepted);
     expect_compose_test(fixture.interaction->selected_notes == std::vector<object_id_t>{notes[2].id});
-    application.sound_selection.sound_selection_dock.clear();
+    application.project.sound_selection.sound_selection_dock.clear();
     fixture.interaction->selected_notes.clear();
     fixture.interaction->selected_objects.clear();
     expect_compose_test(!invoke().accepted);
@@ -6187,24 +6187,24 @@ TEST_CASE("Mixed quantize projects BGM hold ghosts and refreshes a BGM-only sele
     expect_compose_test(view.quantize_ghost_count == 1 && view.quantize_ghosts[0].has_tail);
     expect_compose_test(view.quantize_ghosts[0].before_head.left >= view.playable_field_right_pixels);
     const auto chart_id = fixture.history.document.charts.front().id.value;
-    fixture.application.compose_view.bgm_horizontal_scroll_pixels[chart_id] = 12.0;
+    fixture.application.project.compose_view.bgm_horizontal_scroll_pixels[chart_id] = 12.0;
     fixture.project();
     const auto& clipped = fixture.flattened.view.compose;
     expect_compose_test(clipped.quantize_ghost_count == 1 &&
         clipped.quantize_ghosts[0].before_head.left == clipped.playable_field_right_pixels);
     expect_compose_test(clipped.quantize_ghosts[0].before_head.right - clipped.quantize_ghosts[0].before_head.left == 24.0);
-    fixture.application.compose_view.bgm_horizontal_scroll_pixels[chart_id] = 36.0;
+    fixture.application.project.compose_view.bgm_horizontal_scroll_pixels[chart_id] = 36.0;
     fixture.project();
     expect_compose_test(fixture.flattened.view.compose.quantize_ghost_count == 0);
-    fixture.application.compose_view.bgm_horizontal_scroll_pixels[chart_id] = 0.0;
+    fixture.application.project.compose_view.bgm_horizontal_scroll_pixels[chart_id] = 0.0;
     fixture.project();
     expect_compose_test(fixture.history.undo.empty());
     dispatch_t437_quantize_settings(fixture, quantization_tie_t::earlier,
         quantization_hold_t::both_endpoints, 4, quantization_space_t::standard_measure, true);
     expect_compose_test(fixture.history.undo.size() == 1);
-    expect_compose_test(fixture.application.quantize.quantize_applied_report.has_value());
-    expect_compose_test(fixture.application.quantize.quantize_applied_report->rows.size() == 1 &&
-                        fixture.application.quantize.quantize_applied_report->rows.front().bgm);
+    expect_compose_test(fixture.application.project.quantize.quantize_applied_report.has_value());
+    expect_compose_test(fixture.application.project.quantize.quantize_applied_report->rows.size() == 1 &&
+                        fixture.application.project.quantize.quantize_applied_report->rows.front().bgm);
     expect_compose_test(fixture.history.document.charts.front().measures.front().notes.front().position.row == 130);
     expect_compose_test(fixture.history.document.charts.front().measures.front().bgm_events.front().position.row == 240);
 }
@@ -6243,7 +6243,7 @@ TEST_CASE("BMSON lane_mode projects current channel ownership in Compose and Sou
 TEST_CASE("Select lane keys cannot start notes at authored or virtual cursor rows",
           "[sys][compose-input][lane-keys][select-tool]") {
     lane_key_callback_fixture_t f;
-    f.compose.application.compose_gesture.note_paint_mode_active = false;
+    f.compose.application.project.compose_gesture.note_paint_mode_active = false;
     SECTION("authored cursor") {}
     SECTION("virtual cursor") {
         for (int step = 0; step < 8; ++step)
@@ -6311,8 +6311,8 @@ TEST_CASE("Quantize ghost preview defaults off and toggles without editing the c
     expect_compose_test(!fixture.flattened.view.compose.quantize_preview_enabled);
     expect_compose_test(fixture.flattened.view.compose.quantize_ghost_count == 0);
     expect_compose_test(fixture.history.document.revision == revision && fixture.history.undo.empty());
-    fixture.application.quantize.quantize_editor->preview_enabled = true;
-    fixture.application.quantize.quantize_editor->chart = chart_id_t{999};
+    fixture.application.project.quantize.quantize_editor->preview_enabled = true;
+    fixture.application.project.quantize.quantize_editor->chart = chart_id_t{999};
     fixture.project();
     expect_compose_test(!fixture.flattened.view.compose.quantize_preview_enabled);
     expect_compose_test(fixture.flattened.view.compose.quantize_ghost_count == 0);
@@ -6332,29 +6332,29 @@ TEST_CASE("Default chart snap choices include exact fifth grids while filtering 
 TEST_CASE("Project replacement preserves the live BMSON width service while clearing chart session state", "[unit][frame-timing][bmson-resize]") {
     wormedit::sys::application_command_state_t state;
     std::uint64_t requested_project{}, requested_chart{}, requested_lane{};
-    state.compose_bgm_lane_width=[&](auto project,auto chart,auto lane) {
+    state.services.compose_bgm_lane_width=[&](auto project,auto chart,auto lane) {
         requested_project=project;requested_chart=chart;requested_lane=lane;return 116.0;
     };
-    state.compose_left_dock_pixels=[] { return 240; };
-    state.transport_preserve_bookmark_revision=[](auto,auto,auto) { return true; };
+    state.services.compose_left_dock_pixels=[] { return 240; };
+    state.services.transport_preserve_bookmark_revision=[](auto,auto,auto) { return true; };
     const auto now=std::chrono::steady_clock::now();
-    state.bookmark_clock=[=] { return now; };
-    state.semantic_layer.layer_assist_chart=wormedit::chart_id_t{7};
-    state.semantic_layer.layer_assist_layers={wormedit::layer_id_t{3}};
+    state.services.bookmark_clock=[=] { return now; };
+    state.project.semantic_layer.layer_assist_chart=wormedit::chart_id_t{7};
+    state.project.semantic_layer.layer_assist_layers={wormedit::layer_id_t{3}};
     wormedit::sys::reset_application_project_edit_state(state);
-    expect_compose_test(static_cast<bool>(state.compose_bgm_lane_width));
-    expect_compose_test(state.compose_bgm_lane_width(123,7,44)==116.0);
+    expect_compose_test(static_cast<bool>(state.services.compose_bgm_lane_width));
+    expect_compose_test(state.services.compose_bgm_lane_width(123,7,44)==116.0);
     expect_compose_test(requested_project==123);
     expect_compose_test(requested_chart==7);
     expect_compose_test(requested_lane==44);
-    expect_compose_test(static_cast<bool>(state.compose_left_dock_pixels));
-    expect_compose_test(static_cast<bool>(state.transport_preserve_bookmark_revision));
-    expect_compose_test(static_cast<bool>(state.bookmark_clock));
-    expect_compose_test(state.compose_left_dock_pixels()==240);
-    expect_compose_test(state.transport_preserve_bookmark_revision(wormedit::chart_id_t{7},1,2));
-    expect_compose_test(state.bookmark_clock()==now);
-    expect_compose_test(!state.semantic_layer.layer_assist_chart);
-    expect_compose_test(state.semantic_layer.layer_assist_layers.empty());
+    expect_compose_test(static_cast<bool>(state.services.compose_left_dock_pixels));
+    expect_compose_test(static_cast<bool>(state.services.transport_preserve_bookmark_revision));
+    expect_compose_test(static_cast<bool>(state.services.bookmark_clock));
+    expect_compose_test(state.services.compose_left_dock_pixels()==240);
+    expect_compose_test(state.services.transport_preserve_bookmark_revision(wormedit::chart_id_t{7},1,2));
+    expect_compose_test(state.services.bookmark_clock()==now);
+    expect_compose_test(!state.project.semantic_layer.layer_assist_chart);
+    expect_compose_test(state.project.semantic_layer.layer_assist_layers.empty());
 }
 
 TEST_CASE("Workspace frame cache clears when the same document is reopened", "[sys][frame-timing][T558]") {
@@ -6403,12 +6403,12 @@ auto range_pause_routing(unsigned guard) -> bool {
     case 1: ++action.compose_input_project_id; break;
     case 2: ++action.compose_input_chart_id; break;
     case 3: ++action.compose_input_document_revision; break;
-    case 4: fixture.application.timing_recipe.timing_locked = true; break;
+    case 4: fixture.application.project.timing_recipe.timing_locked = true; break;
     case 5: fixture.interaction->pending_editor_area_selection.emplace(); break;
     case 6: fixture.interaction->retained_selection_range.reset(); break;
-    case 7: fixture.application.clipboard.paste_session = application_command_state_t::paste_session_t{}; break;
-    case 8: fixture.application.compose_gesture.bga_draw_stroke = application_command_state_t::bga_draw_stroke_t{}; break;
-    case 9: fixture.application.compose_gesture.bmson_razor_stroke = application_command_state_t::bmson_razor_stroke_t{}; break;
+    case 7: fixture.application.project.clipboard.paste_session = application_command_state_t::paste_session_t{}; break;
+    case 8: fixture.application.project.compose_gesture.bga_draw_stroke = application_command_state_t::bga_draw_stroke_t{}; break;
+    case 9: fixture.application.project.compose_gesture.bmson_razor_stroke = application_command_state_t::bmson_razor_stroke_t{}; break;
     default: break;
     }
     const auto feedback = dispatch_range_pause(fixture, action);
@@ -6514,7 +6514,7 @@ TEST_CASE("Lane-key dispatcher replaces or moves same sound to BGM with correct 
     const auto same = GENERATE(false, true);
     const auto displace = GENERATE(false, true);
     lane_key_callback_fixture_t f;
-    f.compose.application.compose_view.editor_preferences.move_collision_policy = displace
+    f.compose.application.preferences.editor_preferences.move_collision_policy = displace
         ? move_collision_policy_t::displace_to_bgm : move_collision_policy_t::reject;
     (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
     (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE);
@@ -6552,7 +6552,7 @@ TEST_CASE("Lane-key dispatcher uses revision-bound decoded geometry for linked B
         expect_compose_test(result.applied);
         expect_compose_test(f.history.document.resources.front().sound_kind == sound_kind_t::stem);
     }
-    f.application.compose_gesture.note_paint_mode_active = true;
+    f.application.project.compose_gesture.note_paint_mode_active = true;
     f.project();
     f.interaction->cursor = {measure_id_t{1}, 480};
     f.cache.scene.stem_index.built = true;
@@ -6611,10 +6611,10 @@ TEST_CASE("Song bar defaults hide BMSON and BMS while keeping manual overrides",
     expect_compose_test(fixture.flattened.view.compose.bgm_bar_available);
     const bool hidden = family == format_family_t::bms || family == format_family_t::bmson;
     expect_compose_test(fixture.flattened.view.compose.bgm_bar_reserved != hidden);
-    fixture.application.bgm.bgm_bar_hidden = false;
+    fixture.application.project.bgm.bgm_bar_hidden = false;
     fixture.project();
     expect_compose_test(fixture.flattened.view.compose.bgm_bar_reserved);
-    fixture.application.bgm.bgm_bar_hidden = true;
+    fixture.application.project.bgm.bgm_bar_hidden = true;
     fixture.project();
     expect_compose_test(!fixture.flattened.view.compose.bgm_bar_reserved);
 }
@@ -6652,8 +6652,8 @@ TEST_CASE("Existing 16K charts offer distinctly named SpecialStyle layouts and p
     expect_compose_test(static_cast<bool>(apply_lane_profile_switch(fixture.history,
         fixture.history.document.revision, chart_id_t{1}, active.position,
         make_osu_mania_profile(16, true)->layout)));
-    fixture.application.compose_view.compose_editor_right_pixels = 820;
-    fixture.application.compose_view.scratch_on_right = {false, false};
+    fixture.application.project.compose_view.compose_editor_right_pixels = 820;
+    fixture.application.scratch_on_right = {false, false};
     fixture.project();
     const auto lanes = std::span(fixture.flattened.view.compose.lanes,
                                 fixture.flattened.view.compose.lane_count);
@@ -6677,7 +6677,7 @@ TEST_CASE("Compose reflows wide layouts from stamped canvas width without changi
     viewport_input_controller_t viewport;
     (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.workspace,
         *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0);
-    expect_compose_test(fixture.application.compose_view.compose_editor_right_pixels == 700);
+    expect_compose_test(fixture.application.project.compose_view.compose_editor_right_pixels == 700);
     fixture.project();
     expect_compose_test(fixture.flattened.view.compose.playable_field_right_pixels <= 700);
     expect_compose_test(fixture.history.document.revision == 1 && fixture.history.undo.empty());
@@ -6685,7 +6685,7 @@ TEST_CASE("Compose reflows wide layouts from stamped canvas width without changi
     action.compose_input_editor_right_pixels = 200;
     (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.workspace,
         *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0);
-    expect_compose_test(fixture.application.compose_view.compose_editor_right_pixels == 700);
+    expect_compose_test(fixture.application.project.compose_view.compose_editor_right_pixels == 700);
     expect_compose_test(compose_editor_layout_width(1000, std::numeric_limits<double>::quiet_NaN()) == 1000);
 }
 
@@ -6712,7 +6712,7 @@ TEST_CASE("BGM mute and additive solo are session-only and refresh cached lane h
           "[frame-timing][bgm-mix]") {
     compose_test_fixture_t fixture{bgm_mix_test_song()};
     std::vector<std::uint64_t> applied;
-    fixture.application.transport_set_bgm_mix = [&](auto chart, auto muted) {
+    fixture.application.services.transport_set_bgm_mix = [&](auto chart, auto muted) {
         expect_compose_test(chart == chart_id_t{1});
         applied.assign(muted.begin(), muted.end());
         return true;
@@ -6743,19 +6743,19 @@ TEST_CASE("BGM mute and additive solo are session-only and refresh cached lane h
     const auto after = write_native_project(fixture.history.document);
     expect_compose_test(after.bytes == before.bytes);
     expect_compose_test(fixture.history.undo.empty());
-    fixture.application.bgm.bgm_lane_mix[1].solo.insert(99999);
+    fixture.application.project.bgm.bgm_lane_mix[1].solo.insert(99999);
     expect_compose_test(compose_bgm_muted_lanes(fixture.history.document.charts.front(),
-        fixture.application.bgm.bgm_lane_mix.at(1)).empty());
+        fixture.application.project.bgm.bgm_lane_mix.at(1)).empty());
     reset_application_project_edit_state(fixture.application);
-    expect_compose_test(fixture.application.bgm.bgm_lane_mix.empty());
-    expect_compose_test(static_cast<bool>(fixture.application.transport_set_bgm_mix));
+    expect_compose_test(fixture.application.project.bgm.bgm_lane_mix.empty());
+    expect_compose_test(static_cast<bool>(fixture.application.services.transport_set_bgm_mix));
 }
 
 TEST_CASE("BGM mixing rejects stale missing and runtime-failed controls atomically",
           "[frame-timing][bgm-mix]") {
     compose_test_fixture_t fixture{bgm_mix_test_song()};
     int calls{};
-    fixture.application.transport_set_bgm_mix = [&](auto, auto) { ++calls; return false; };
+    fixture.application.services.transport_set_bgm_mix = [&](auto, auto) { ++calls; return false; };
     auto action = bgm_mix_test_action(fixture, WORM_UI_COMPOSE_INPUT_BGM_MUTE, 80000);
     ++action.compose_input_document_revision;
     (void)dispatch_compose_bgm_mix_inputs(action, fixture.history, *fixture.binding.workspace, fixture.application);
@@ -6766,11 +6766,11 @@ TEST_CASE("BGM mixing rejects stale missing and runtime-failed controls atomical
     action = bgm_mix_test_action(fixture, WORM_UI_COMPOSE_INPUT_BGM_MUTE, 80000);
     (void)dispatch_compose_bgm_mix_inputs(action, fixture.history, *fixture.binding.workspace, fixture.application);
     expect_compose_test(calls == 1);
-    expect_compose_test(fixture.application.bgm.bgm_lane_mix.empty());
-    fixture.application.transport_set_bgm_mix = {};
+    expect_compose_test(fixture.application.project.bgm.bgm_lane_mix.empty());
+    fixture.application.services.transport_set_bgm_mix = {};
     action = bgm_mix_test_action(fixture, WORM_UI_COMPOSE_INPUT_BGM_SOLO, 80001);
     (void)dispatch_compose_bgm_mix_inputs(action, fixture.history, *fixture.binding.workspace, fixture.application);
-    expect_compose_test(fixture.application.bgm.bgm_lane_mix.empty());
+    expect_compose_test(fixture.application.project.bgm.bgm_lane_mix.empty());
 }
 
 
@@ -6782,12 +6782,12 @@ TEST_CASE("BGM-only charts receive canvas width and mix controls without note in
     chart.input_profile = {};
     chart.measures.front().notes.clear();
     compose_test_fixture_t fixture{std::move(song)};
-    fixture.application.transport_set_bgm_mix = [](auto, auto) { return true; };
+    fixture.application.services.transport_set_bgm_mix = [](auto, auto) { return true; };
     auto action = bgm_mix_test_action(fixture, WORM_UI_COMPOSE_INPUT_BGM_MUTE, 80000);
     action.compose_input_viewport_width_pixels = 1232;
     action.compose_input_editor_right_pixels = 800;
     refresh_compose_editor_width(action, fixture.history, *fixture.binding.workspace, fixture.application);
-    expect_compose_test(fixture.application.compose_view.compose_editor_right_pixels == 800);
+    expect_compose_test(fixture.application.project.compose_view.compose_editor_right_pixels == 800);
     (void)dispatch_compose_bgm_mix_inputs(action, fixture.history, *fixture.binding.workspace, fixture.application);
     fixture.project();
     expect_compose_test(!fixture.interaction);
@@ -6828,7 +6828,7 @@ TEST_CASE("Mouse stem entry receives the same decoded source geometry as lane ke
     auto song = t463_shared_asset_song();
     song.audio_assets.front().stream = {};
     compose_test_fixture_t fixture{std::move(song)};
-    fixture.application.compose_gesture.note_paint_mode_active = true;
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
     fixture.project();
     fixture.cache.scene.stem_index.built = true;
     fixture.cache.scene.stem_index.document = fixture.history.document.id;

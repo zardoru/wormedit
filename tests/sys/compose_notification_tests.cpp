@@ -53,7 +53,7 @@ struct compose_notification_fixture_t {
         workspace = *binding.workspace;
         workspace.active_tab = workspace_tab_t::compose;
         workspace.selected_chart = chart_id_t{7};
-        application.semantic_layer.semantic_layer_target = layer_id_t{8};
+        application.project.semantic_layer.semantic_layer_target = layer_id_t{8};
     }
 
     auto drain() -> std::vector<notification_entry_t> {
@@ -92,9 +92,9 @@ auto dispatch_stale(compose_notification_fixture_t& fixture, std::uint64_t revis
 }
 
 void check_legacy_seek(compose_notification_fixture_t& fixture) {
-    fixture.application.transport_preview_playing = [] { return true; };
-    fixture.application.transport.preview_playhead_absolute_row = 120.0;
-    fixture.application.transport_seek = [](std::uint64_t) {
+    fixture.application.services.transport_preview_playing = [] { return true; };
+    fixture.application.project.transport.preview_playhead_absolute_row = 120.0;
+    fixture.application.services.transport_seek = [](std::uint64_t) {
         return std::string{"Legacy seek performed."};
     };
     editor_navigation_action_batch_t actions;
@@ -110,8 +110,8 @@ void check_legacy_seek(compose_notification_fixture_t& fixture) {
 }
 
 void check_producer_seek(compose_notification_fixture_t& fixture) {
-    fixture.application.transport.transport_seek_posts_feedback = true;
-    fixture.application.transport_seek = [&](std::uint64_t) {
+    fixture.application.preferences.transport_seek_posts_feedback = true;
+    fixture.application.services.transport_seek = [&](std::uint64_t) {
         fixture.sink.post(notification_severity_t::warning, notification_source_t::audio,
                           "Audio seek was clamped.");
         return std::string{"Audio seek was clamped."};
@@ -213,9 +213,9 @@ TEST_CASE("Playhead navigation preserves legacy and producer-owned seek feedback
 
 TEST_CASE("Viewport wheel seek feedback keeps explicit callback ownership", "[unit][sys][compose-notification]") {
     compose_notification_fixture_t fixture;
-    fixture.application.transport_preview_playing = [] { return true; };
-    fixture.application.transport.preview_playhead_absolute_row = 120.0;
-    fixture.application.transport_seek = [](std::uint64_t) { return std::string{"Legacy wheel seek."}; };
+    fixture.application.services.transport_preview_playing = [] { return true; };
+    fixture.application.project.transport.preview_playhead_absolute_row = 120.0;
+    fixture.application.services.transport_seek = [](std::uint64_t) { return std::string{"Legacy wheel seek."}; };
     WormUiWorkspaceAction action{};
     action.compose_input_chart_id = fixture.state.chart.value;
     action.compose_input_document_revision = fixture.history.document.revision;
@@ -232,8 +232,8 @@ TEST_CASE("Viewport wheel seek feedback keeps explicit callback ownership", "[un
     REQUIRE(fixture.center.current_line() != nullptr);
     expect_entry(*fixture.center.current_line(), notification_severity_t::hint, notification_source_t::input,
         "Legacy wheel seek.");
-    fixture.application.transport.transport_seek_posts_feedback = true;
-    fixture.application.transport_seek = [&](std::uint64_t) {
+    fixture.application.preferences.transport_seek_posts_feedback = true;
+    fixture.application.services.transport_seek = [&](std::uint64_t) {
         fixture.sink.post(notification_severity_t::warning, notification_source_t::audio,
             "Producer wheel seek clamped.");
         return std::string{"Producer wheel seek clamped."};
@@ -482,7 +482,7 @@ struct dead_span_fixture_t : compose_notification_fixture_t {
         const auto bands = project_dead_span_bands(*cache.timing.dead_spans,
             state.pixels_per_standard_measure / 960.0, state.viewport_scroll_pixels,
             state.viewport_height_pixels,
-            compose_field_downscroll(chart, application.compose_view.editor_preferences),
+            compose_field_downscroll(chart, application.preferences.editor_preferences),
             dead_span_pause_band_pixels);
         for (const auto& band : bands)
             if (band.kind == dead_span_kind_t::stop) return (band.top + band.bottom) / 2.0;
@@ -519,7 +519,7 @@ TEST_CASE("pasting inside a visual Stop band uses its valid chart row",
     auto copied = copy_chart_selection(fixture.history.document, fixture.state,
                                        fixture.history.document.revision);
     REQUIRE(copied);
-    fixture.application.clipboard.chart_clipboard = std::move(copied.clipboard);
+    fixture.application.project.clipboard.chart_clipboard = std::move(copied.clipboard);
     std::string status;
     REQUIRE(begin_compose_paste(fixture.application, fixture.history.document, fixture.state, status));
     const auto y = fixture.stop_band_y();
@@ -549,7 +549,7 @@ TEST_CASE("dropping a dragged note inside a visual Stop band uses its valid char
 TEST_CASE("a lane key at a cursor inside a Warp places nothing",
           "[unit][sys][compose-notification][dead-span]") {
     dead_span_fixture_t fixture;
-    fixture.application.compose_gesture.note_paint_mode_active = true;
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
     fixture.state.selected_notes.clear();
     fixture.state.selected_objects.clear();
     fixture.state.cursor = {measure_id_t{1}, 780};
@@ -562,7 +562,7 @@ namespace {
 // A pointer 120 px away from the Stop band on its earlier-row side (row 240, free of dead spans).
 auto free_row_y(const dead_span_fixture_t& fixture) -> double {
     const auto downscroll = compose_field_downscroll(fixture.history.document.charts.front(),
-                                                    fixture.application.compose_view.editor_preferences);
+                                                    fixture.application.preferences.editor_preferences);
     return fixture.stop_band_y() + (downscroll ? 120.0 : -120.0);
 }
 } // namespace
@@ -575,7 +575,7 @@ TEST_CASE("the same paste and drag succeed away from the Stop band",
         auto copied = copy_chart_selection(fixture.history.document, fixture.state,
                                            fixture.history.document.revision);
         REQUIRE(copied);
-        fixture.application.clipboard.chart_clipboard = std::move(copied.clipboard);
+        fixture.application.project.clipboard.chart_clipboard = std::move(copied.clipboard);
         std::string status;
         REQUIRE(begin_compose_paste(fixture.application, fixture.history.document, fixture.state, status));
         (void)fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_PASTE_UPDATE, .x_pixels = fixture.lane_x(), .y_pixels = free_row_y(fixture)},
@@ -598,7 +598,7 @@ TEST_CASE("the same paste and drag succeed away from the Stop band",
 TEST_CASE("a lane key at a cursor just before the Warp places a note",
           "[unit][sys][compose-notification][dead-span]") {
     dead_span_fixture_t fixture;
-    fixture.application.compose_gesture.note_paint_mode_active = true;
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
     fixture.state.selected_notes.clear();
     fixture.state.selected_objects.clear();
     fixture.state.cursor = {measure_id_t{1}, 600};
@@ -614,7 +614,7 @@ TEST_CASE("pasting a note at a cursor inside a Warp is rejected and changes noth
     auto copied = copy_chart_selection(fixture.history.document, fixture.state,
                                        fixture.history.document.revision);
     REQUIRE(copied);
-    fixture.application.clipboard.chart_clipboard = std::move(copied.clipboard);
+    fixture.application.project.clipboard.chart_clipboard = std::move(copied.clipboard);
     fixture.state.cursor = {measure_id_t{1}, 780};
     std::string status;
     REQUIRE(begin_compose_paste(fixture.application, fixture.history.document, fixture.state, status));

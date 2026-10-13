@@ -111,9 +111,9 @@ TEST_CASE("playing bookmark navigation seeks once instead of moving the cursor",
     fixture_t fixture{{measure_id_t{3}, 0}};
     std::uint64_t seeks{};
     std::uint64_t frame{};
-    fixture.application.transport_preview_playing = [] { return true; };
-    fixture.application.transport.preview_playhead_absolute_row = 0.0;
-    fixture.application.transport_seek = [&](std::uint64_t target) {
+    fixture.application.services.transport_preview_playing = [] { return true; };
+    fixture.application.project.transport.preview_playhead_absolute_row = 0.0;
+    fixture.application.services.transport_seek = [&](std::uint64_t target) {
         ++seeks;
         frame = target;
         return std::string{};
@@ -130,16 +130,16 @@ TEST_CASE("playing bookmark navigation seeks once instead of moving the cursor",
 
 TEST_CASE("playing bookmark navigation retains producer publication ownership", "[unit][sys][bookmark-commands][notification]") {
     fixture_t fixture{{measure_id_t{3}, 0}};
-    fixture.application.transport_preview_playing = [] { return true; };
-    fixture.application.transport.preview_playhead_absolute_row = 0.0;
-    fixture.application.transport.transport_seek_posts_feedback = true;
-    fixture.application.transport_seek = [](std::uint64_t) { return std::string{"Opaque producer feedback."}; };
+    fixture.application.services.transport_preview_playing = [] { return true; };
+    fixture.application.project.transport.preview_playhead_absolute_row = 0.0;
+    fixture.application.preferences.transport_seek_posts_feedback = true;
+    fixture.application.services.transport_seek = [](std::uint64_t) { return std::string{"Opaque producer feedback."}; };
     const auto result = navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
                                                marker_navigation_direction_t::next);
     CHECK(result.accepted);
     CHECK(result.feedback_posted);
     CHECK(result.status == "Opaque producer feedback.");
-    fixture.application.transport_seek = {};
+    fixture.application.services.transport_seek = {};
     const auto rejected = navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
                                                  marker_navigation_direction_t::next);
     CHECK_FALSE(rejected.accepted);
@@ -162,8 +162,8 @@ TEST_CASE("add bookmark uses the cursor or the snapped playhead and refuses dupl
     REQUIRE(undo_document_command(fixture.history));
     CHECK(fixture.history.document.charts.front().bookmarks.size() == 1);
 
-    fixture.application.transport_preview_playing = [] { return true; };
-    fixture.application.transport.preview_playhead_absolute_row = 1000.0;
+    fixture.application.services.transport_preview_playing = [] { return true; };
+    fixture.application.project.transport.preview_playhead_absolute_row = 1000.0;
     const auto playing = add_beat_bookmark_here(fixture.history, fixture.state, fixture.application);
     REQUIRE(playing.accepted);
     const auto& bookmarks = fixture.history.document.charts.front().bookmarks;
@@ -215,15 +215,15 @@ TEST_CASE("bookmark chooser selection preserves playback for beat and audio anch
     fixture.history.document.charts.front().bookmarks.push_back({
         .id = object_id_t{32}, .label = "audio", .anchor = marker_anchor_t::audio_time,
         .audio_milliseconds = 500});
-    fixture.application.transport_preview_playing = [] { return true; };
+    fixture.application.services.transport_preview_playing = [] { return true; };
     std::uint64_t frame{};
     std::int64_t audio_ms{};
-    fixture.application.transport_preview_end_frame = [] { return std::optional<std::uint64_t>{}; };
-    fixture.application.transport_seek = [&](std::uint64_t target) {
+    fixture.application.services.transport_preview_end_frame = [] { return std::optional<std::uint64_t>{}; };
+    fixture.application.services.transport_seek = [&](std::uint64_t target) {
         frame = target;
         return std::string{};
     };
-    fixture.application.transport_seek_audio_milliseconds = [&](std::int64_t target) {
+    fixture.application.services.transport_seek_audio_milliseconds = [&](std::int64_t target) {
         audio_ms = target;
         return std::string{};
     };
@@ -258,17 +258,17 @@ TEST_CASE("playing bookmark jumps advance from the live playhead and preserve th
     auto& bookmarks = fixture.history.document.charts.front().bookmarks;
     bookmarks.push_back({.id = object_id_t{32}, .anchor = marker_anchor_t::beat,
                           .position = local_position_t{measure_id_t{3}, 240}});
-    fixture.application.transport_preview_playing = [] { return true; };
+    fixture.application.services.transport_preview_playing = [] { return true; };
     std::vector<std::uint64_t> seeks;
-    fixture.application.transport_seek = [&](std::uint64_t frame) {
+    fixture.application.services.transport_seek = [&](std::uint64_t frame) {
         seeks.push_back(frame);
         return std::string{};
     };
     const auto cursor = fixture.state.cursor;
-    fixture.application.transport.preview_playhead_absolute_row = 0.0;
+    fixture.application.project.transport.preview_playhead_absolute_row = 0.0;
     REQUIRE(navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
                                    marker_navigation_direction_t::next).accepted);
-    fixture.application.transport.preview_playhead_absolute_row = 240.0;
+    fixture.application.project.transport.preview_playhead_absolute_row = 240.0;
     REQUIRE(navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
                                    marker_navigation_direction_t::next).accepted);
     REQUIRE(seeks.size() == 2);
@@ -282,10 +282,10 @@ TEST_CASE("previous playing bookmark includes the row below a fractional playhea
     fixture.history.document.charts.front().bookmarks.push_back(
         {.id = object_id_t{32}, .anchor = marker_anchor_t::beat,
          .position = local_position_t{measure_id_t{3}, 240}});
-    fixture.application.transport_preview_playing = [] { return true; };
-    fixture.application.transport.preview_playhead_absolute_row = 240.25;
+    fixture.application.services.transport_preview_playing = [] { return true; };
+    fixture.application.project.transport.preview_playhead_absolute_row = 240.25;
     std::uint64_t sought{};
-    fixture.application.transport_seek = [&](std::uint64_t frame) {
+    fixture.application.services.transport_seek = [&](std::uint64_t frame) {
         sought = frame;
         return std::string{};
     };
@@ -303,11 +303,11 @@ TEST_CASE("repeated previous playing bookmark within 300 ms steps past the bookm
                           .position = local_position_t{measure_id_t{3}, 240}});
     bookmarks.push_back({.id = object_id_t{33}, .anchor = marker_anchor_t::beat,
                           .position = local_position_t{measure_id_t{3}, 0}});
-    fixture.application.transport_preview_playing = [] { return true; };
+    fixture.application.services.transport_preview_playing = [] { return true; };
     auto now = std::chrono::steady_clock::time_point{} + std::chrono::seconds{10};
-    fixture.application.bookmark_clock = [&] { return now; };
+    fixture.application.services.bookmark_clock = [&] { return now; };
     std::vector<std::uint64_t> seeks;
-    fixture.application.transport_seek = [&](std::uint64_t frame) {
+    fixture.application.services.transport_seek = [&](std::uint64_t frame) {
         seeks.push_back(frame);
         return std::string{};
     };
@@ -318,7 +318,7 @@ TEST_CASE("repeated previous playing bookmark within 300 ms steps past the bookm
     constexpr auto quarter = audio::output_sample_rate / 4;
     // The live playhead sits past bookmark B (row 1440 -> frame 6 * quarter) and does not
     // advance between presses, as when the audio clock lags the seek.
-    fixture.application.transport.preview_playhead_absolute_row = 1500.0;
+    fixture.application.project.transport.preview_playhead_absolute_row = 1500.0;
     REQUIRE(previous().accepted);
     CHECK(seeks.back() == 6 * quarter);
     now += std::chrono::milliseconds{100};
@@ -356,21 +356,21 @@ struct mixed_navigation_fixture_t {
     std::vector<std::uint64_t> seeks;
 
     mixed_navigation_fixture_t() {
-        fixture.application.transport_preview_playing = [] { return true; };
-        fixture.application.bookmark_clock = [this] { return now; };
-        fixture.application.transport_seek = [this](std::uint64_t frame) {
+        fixture.application.services.transport_preview_playing = [] { return true; };
+        fixture.application.services.bookmark_clock = [this] { return now; };
+        fixture.application.services.transport_seek = [this](std::uint64_t frame) {
             seeks.push_back(frame);
             return std::string{};
         };
     }
     auto skip(double live_row, double amount) -> bool {
-        fixture.application.transport.preview_playhead_absolute_row = live_row;
+        fixture.application.project.transport.preview_playhead_absolute_row = live_row;
         return skip_playing_playhead(fixture.application,
                                      fixture.history.document.charts.front(), 4,
                                      playhead_skip_unit_t::snap, amount).accepted;
     }
     auto previous_bookmark(double live_row) -> bool {
-        fixture.application.transport.preview_playhead_absolute_row = live_row;
+        fixture.application.project.transport.preview_playhead_absolute_row = live_row;
         return navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
                                       marker_navigation_direction_t::previous).accepted;
     }
@@ -441,8 +441,8 @@ TEST_CASE("Playing bookmarks and following cursor use the current measure grid",
     CHECK(nearest_snap_row(chart, index, 300, 4) == 320);
     CHECK(nearest_snap_row(chart, index, 440, 4) == 320);
     CHECK(nearest_snap_row(chart, index, 441, 4) == 560);
-    fixture.application.transport_preview_playing = [] { return true; };
-    fixture.application.transport.preview_playhead_absolute_row = 441;
+    fixture.application.services.transport_preview_playing = [] { return true; };
+    fixture.application.project.transport.preview_playhead_absolute_row = 441;
     const auto added = add_beat_bookmark_here(fixture.history, fixture.state, fixture.application);
     REQUIRE(added.accepted);
     CHECK(fixture.history.document.charts.front().bookmarks.back().position ==

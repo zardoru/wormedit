@@ -73,16 +73,16 @@ TEST_CASE("repeated playing skips within 300 ms continue from the last target",
     const auto chart = skip_chart();
     application_command_state_t application;
     auto now = std::chrono::steady_clock::time_point{} + std::chrono::seconds{5};
-    application.bookmark_clock = [&] { return now; };
+    application.services.bookmark_clock = [&] { return now; };
     std::vector<std::uint64_t> seeks;
-    application.transport_seek = [&](std::uint64_t frame) {
+    application.services.transport_seek = [&](std::uint64_t frame) {
         seeks.push_back(frame);
         return std::string{};
     };
     constexpr auto quarter = audio::output_sample_rate / 4;
     const auto notch = [&](double amount) {
         // The audio clock has not caught up: the live playhead stays at row 10.
-        application.transport.preview_playhead_absolute_row = 10.0;
+        application.project.transport.preview_playhead_absolute_row = 10.0;
         REQUIRE(skip_playing_playhead(application, chart, 4, playhead_skip_unit_t::snap, amount)
                     .accepted);
     };

@@ -587,6 +587,7 @@ struct worm_ui_nuklear_compose_state_t {
         bool sounds_layers_open{};
         // The Sounds dock's selected tab; non-BMSON charts always show Sounds.
         bool sounds_dock_bmson_tab{};
+        // Sounds-panel preview-on-click is distinct from editor placement audition.
         bool sounds_preview_on_click{true};
         bool bga_panel_visible{};
         // Measures dock: selection by measure ID, the typed meter, and the IDs staged for one

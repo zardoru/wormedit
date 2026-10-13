@@ -360,7 +360,7 @@ struct compose_scene_cache_t {
 enum class external_player_action_t;
 
 // Application-lifetime callbacks are one unit. Replacing a project resets chart state,
-// but moves this complete bundle so a newly added service cannot be silently dropped.
+// while this complete bundle stays in place.
 struct application_command_services_t {
     std::function<bool(wormedit::chart_id_t, std::span<const wormedit::layer_id_t>)>
         transport_set_layer_assist;
@@ -405,7 +405,7 @@ struct bgm_lane_mix_state_t {
 auto compose_bgm_muted_lanes(const wormedit::chart_document_t& chart,
                              const bgm_lane_mix_state_t& mix) -> std::vector<std::uint64_t>;
 
-struct application_command_state_t : application_command_services_t {
+struct application_command_state_t {
     struct bms_branch_statement_feedback_t {
         wormedit::chart_id_t chart;
         std::uint64_t revision{};
@@ -481,125 +481,132 @@ struct application_command_state_t : application_command_services_t {
         std::chrono::steady_clock::time_point at;
     };
 
-    struct sound_selection_state_t {
-        // Fresh per-frame source context, stamped to prevent cross-chart/stale hover reuse.
-        std::optional<wormedit::chart_id_t> sound_selection_chart;
-        std::uint64_t sound_selection_revision{};
-        std::optional<wormedit::object_id_t> sound_selection_hover;
-        std::vector<wormedit::resource_id_t> sound_selection_dock;
-        // Catalog sound the Compose keysound listbox asked to audition; consumed once per frame.
-        std::optional<wormedit::resource_id_t> pending_sound_audition;
-    } sound_selection;
-
-    struct feedback_state_t {
-        std::optional<bms_branch_statement_feedback_t> bms_branch_statement_feedback;
-    } feedback;
-
-    struct clipboard_state_t {
-        std::optional<wormedit::chart_clipboard_t> chart_clipboard;
-        std::optional<paste_session_t> paste_session;
-    } clipboard;
-
-    struct quantize_state_t {
-        std::optional<quantize_editor_t> quantize_editor;
-        std::optional<quantize_applied_report_t> quantize_applied_report;
-    } quantize;
-
-    struct compose_gesture_state_t {
-        std::optional<bmson_marker_draft_t> bmson_marker_draft;
-        std::optional<bmson_razor_stroke_t> bmson_razor_stroke;
-        std::optional<bga_draw_stroke_t> bga_draw_stroke;
-        uint8_t draw_source_kind{};
-        uint64_t draw_source_id{};
-        bool note_paint_mode_active{};
-        bool semantic_layer_paint_mode_active{};
-    } compose_gesture;
-
-    struct semantic_layer_state_t {
-        bool semantic_layer_solo_active{};
-        std::optional<wormedit::layer_id_t> semantic_layer_target;
-        bool semantic_layer_target_none{};
-        std::optional<wormedit::chart_id_t> layer_assist_chart;
-        std::vector<wormedit::layer_id_t> layer_assist_layers;
-        // IDs are chart-local, so filters are stamped to their owning chart.
-        std::optional<wormedit::chart_id_t> semantic_layer_filter_chart;
-        std::vector<wormedit::layer_id_t> required_semantic_layer_filters;
-        std::vector<wormedit::layer_id_t> excluded_semantic_layer_filters;
-        std::optional<wormedit::chart_id_t> semantic_layer_palette_chart;
-        std::size_t semantic_layer_palette_page{};
-        std::size_t semantic_layer_first_row{};
-        std::size_t semantic_layer_row_count{32};
-        wormedit::chart_id_t note_layer_menu_chart{};
-        std::uint64_t note_layer_menu_revision{};
-        std::size_t note_layer_menu_first_row{};
-        std::size_t note_layer_menu_row_count{};
-    } semantic_layer;
-
-    struct compose_view_state_t {
+    application_command_services_t services;
+    struct preferences_t {
+        // Editor placement audition is distinct from Sounds-panel preview-on-click.
         wormedit::editor_preferences_t editor_preferences;
-        wormedit::editor_scratch_presentation_t scratch_on_right;
-        double compose_editor_right_pixels{};
-        std::unordered_map<std::uint64_t, std::uint64_t> requested_snap_denominators;
-        std::unordered_map<std::uint64_t, double> bgm_horizontal_scroll_pixels;
-        std::uint8_t compose_timing_lane_visibility_mask{0xff};
-        bool compose_timing_focus{};
-        bool edit_snap_enabled{true};
-        bool y_lock{false};
-        bool player_preview_visible{};
-        wormedit::player_preview_skin_t player_preview_skin{
-            wormedit::player_preview_skin_t::neutral};
         bool minimap_click_moves_paused_playhead{};
-    } compose_view;
-
-    struct bgm_state_t {
-        std::unordered_map<std::uint64_t, bgm_lane_mix_state_t> bgm_lane_mix;
-        // Session-only BGM bar window and pointer capture.
-        bgm_bar_range_t bgm_bar_range;
-        std::optional<bgm_bar_pan_override_t> bgm_bar_pan_override;
-        std::optional<bgm_bar_window_capture_t> bgm_bar_window_capture;
-        std::optional<bool> bgm_bar_hidden;
-    } bgm;
-
-    struct timing_recipe_state_t {
-        bool timing_locked{};
-        std::uint64_t kiai_selected_head{};
-        std::uint64_t recipe_selected{};
-        std::optional<recipe_form_preview_t> recipe_preview;
-        bool audio_offset_locked{};
-    } timing_recipe;
-
-    struct transport_state_t {
         std::size_t transport_rate_index{8};
         bool transport_keep_pitch{};
         bool transport_keep_pitch_available{};
-        // Production seek callbacks publish typed outcomes themselves. Legacy or
-        // test callbacks leave this false so their consumer can publish the result.
+        // Production seek services publish feedback; legacy/test callbacks leave this false.
         bool transport_seek_posts_feedback{};
         bool transport_metronome_enabled{};
         bool transport_metronome_available{};
         bool timing_settings_visible{};
         std::uint8_t metronome_volume{100};
         std::uint8_t metronome_count_in{};
-        std::optional<double> preview_playhead_absolute_row;
-        std::optional<minimap_start_frame_t> minimap_start_frame;
-        std::optional<bookmark_seek_record_t> last_playing_bookmark_seek;
-        std::optional<playhead_skip_record_t> last_playhead_skip;
-    } transport;
+    } preferences;
+    // Resolved from display preferences and the field skin, outside the project lifetime.
+    wormedit::editor_scratch_presentation_t scratch_on_right;
+
+    struct project_t {
+        struct sound_selection_state_t {
+            // Fresh per-frame source context, stamped to prevent cross-chart/stale hover reuse.
+            std::optional<wormedit::chart_id_t> sound_selection_chart;
+            std::uint64_t sound_selection_revision{};
+            std::optional<wormedit::object_id_t> sound_selection_hover;
+            std::vector<wormedit::resource_id_t> sound_selection_dock;
+            // Catalog sound the Compose keysound listbox asked to audition; consumed once per frame.
+            std::optional<wormedit::resource_id_t> pending_sound_audition;
+        } sound_selection;
+
+        struct feedback_state_t {
+            std::optional<bms_branch_statement_feedback_t> bms_branch_statement_feedback;
+        } feedback;
+
+        struct clipboard_state_t {
+            std::optional<wormedit::chart_clipboard_t> chart_clipboard;
+            std::optional<paste_session_t> paste_session;
+        } clipboard;
+
+        struct quantize_state_t {
+            std::optional<quantize_editor_t> quantize_editor;
+            std::optional<quantize_applied_report_t> quantize_applied_report;
+        } quantize;
+
+        struct compose_gesture_state_t {
+            std::optional<bmson_marker_draft_t> bmson_marker_draft;
+            std::optional<bmson_razor_stroke_t> bmson_razor_stroke;
+            std::optional<bga_draw_stroke_t> bga_draw_stroke;
+            uint8_t draw_source_kind{};
+            uint64_t draw_source_id{};
+            bool note_paint_mode_active{};
+            bool semantic_layer_paint_mode_active{};
+        } compose_gesture;
+
+        struct semantic_layer_state_t {
+            bool semantic_layer_solo_active{};
+            std::optional<wormedit::layer_id_t> semantic_layer_target;
+            bool semantic_layer_target_none{};
+            std::optional<wormedit::chart_id_t> layer_assist_chart;
+            std::vector<wormedit::layer_id_t> layer_assist_layers;
+            // IDs are chart-local, so filters are stamped to their owning chart.
+            std::optional<wormedit::chart_id_t> semantic_layer_filter_chart;
+            std::vector<wormedit::layer_id_t> required_semantic_layer_filters;
+            std::vector<wormedit::layer_id_t> excluded_semantic_layer_filters;
+            std::optional<wormedit::chart_id_t> semantic_layer_palette_chart;
+            std::size_t semantic_layer_palette_page{};
+            std::size_t semantic_layer_first_row{};
+            std::size_t semantic_layer_row_count{32};
+            wormedit::chart_id_t note_layer_menu_chart{};
+            std::uint64_t note_layer_menu_revision{};
+            std::size_t note_layer_menu_first_row{};
+            std::size_t note_layer_menu_row_count{};
+        } semantic_layer;
+
+        struct compose_view_state_t {
+            double compose_editor_right_pixels{};
+            std::unordered_map<std::uint64_t, std::uint64_t> requested_snap_denominators;
+            std::unordered_map<std::uint64_t, double> bgm_horizontal_scroll_pixels;
+            std::uint8_t compose_timing_lane_visibility_mask{0xff};
+            bool compose_timing_focus{};
+            bool edit_snap_enabled{true};
+            bool y_lock{false};
+            bool player_preview_visible{};
+            wormedit::player_preview_skin_t player_preview_skin{
+                wormedit::player_preview_skin_t::neutral};
+        } compose_view;
+
+        struct bgm_state_t {
+            std::unordered_map<std::uint64_t, bgm_lane_mix_state_t> bgm_lane_mix;
+            // Session-only BGM bar window and pointer capture.
+            bgm_bar_range_t bgm_bar_range;
+            std::optional<bgm_bar_pan_override_t> bgm_bar_pan_override;
+            std::optional<bgm_bar_window_capture_t> bgm_bar_window_capture;
+            std::optional<bool> bgm_bar_hidden;
+        } bgm;
+
+        struct timing_recipe_state_t {
+            bool timing_locked{};
+            std::uint64_t kiai_selected_head{};
+            std::uint64_t recipe_selected{};
+            std::optional<recipe_form_preview_t> recipe_preview;
+            bool audio_offset_locked{};
+        } timing_recipe;
+
+        struct transport_state_t {
+            std::optional<double> preview_playhead_absolute_row;
+            std::optional<minimap_start_frame_t> minimap_start_frame;
+            std::optional<bookmark_seek_record_t> last_playing_bookmark_seek;
+            std::optional<playhead_skip_record_t> last_playhead_skip;
+        } transport;
+    } project;
 
     [[nodiscard]] bool audio_offset_edits_locked() const noexcept {
-        return timing_recipe.timing_locked || timing_recipe.audio_offset_locked;
+        return project.timing_recipe.timing_locked || project.timing_recipe.audio_offset_locked;
     }
     // Any other seek or a playback-session change breaks a repeat sequence: the next skip or
     // bookmark step must start from the live playhead.
     void invalidate_playing_seek_records() {
-        transport.last_playing_bookmark_seek.reset();
-        transport.last_playhead_skip.reset();
+        project.transport.last_playing_bookmark_seek.reset();
+        project.transport.last_playhead_skip.reset();
     }
 };
 
 [[nodiscard]] inline auto compose_mode_of(const application_command_state_t& state)
     -> wormedit::ui::compose_mode_t {
-    return state.compose_view.compose_timing_focus ? wormedit::ui::compose_mode_t::timing_focus
+    return state.project.compose_view.compose_timing_focus ? wormedit::ui::compose_mode_t::timing_focus
                                                     : wormedit::ui::compose_mode_t::full;
 }
 
@@ -607,31 +614,31 @@ struct application_command_state_t : application_command_services_t {
 [[nodiscard]] inline auto effective_compose_timing_lane_mask(
     const application_command_state_t& state) -> std::uint8_t {
     return wormedit::ui::compose_effective_timing_lane_mask(
-        compose_mode_of(state), state.compose_view.compose_timing_lane_visibility_mask);
+        compose_mode_of(state), state.project.compose_view.compose_timing_lane_visibility_mask);
 }
 
 inline auto toggle_transport_metronome(application_command_state_t& state) -> bool {
-    if (!state.transport.transport_metronome_available || !state.transport_set_metronome) return false;
-    state.transport.transport_metronome_enabled = !state.transport.transport_metronome_enabled;
-    state.transport_set_metronome(state.transport.transport_metronome_enabled);
+    if (!state.preferences.transport_metronome_available || !state.services.transport_set_metronome) return false;
+    state.preferences.transport_metronome_enabled = !state.preferences.transport_metronome_enabled;
+    state.services.transport_set_metronome(state.preferences.transport_metronome_enabled);
     return true;
 }
 
 inline void apply_timing_settings_action(application_command_state_t& state,
                                          const WormUiTimingSettingsAction& action) {
-    if (action.toggle) state.transport.timing_settings_visible = !state.transport.timing_settings_visible;
-    if (action.close) state.transport.timing_settings_visible = false;
-    if (action.change_enable && state.transport.transport_metronome_available && state.transport_set_metronome) {
-        state.transport.transport_metronome_enabled = action.enabled;
-        state.transport_set_metronome(action.enabled);
+    if (action.toggle) state.preferences.timing_settings_visible = !state.preferences.timing_settings_visible;
+    if (action.close) state.preferences.timing_settings_visible = false;
+    if (action.change_enable && state.preferences.transport_metronome_available && state.services.transport_set_metronome) {
+        state.preferences.transport_metronome_enabled = action.enabled;
+        state.services.transport_set_metronome(action.enabled);
     }
-    if (action.change_volume && action.volume <= 100 && state.transport_set_metronome_volume) {
-        state.transport.metronome_volume = action.volume;
-        state.transport_set_metronome_volume(action.volume);
+    if (action.change_volume && action.volume <= 100 && state.services.transport_set_metronome_volume) {
+        state.preferences.metronome_volume = action.volume;
+        state.services.transport_set_metronome_volume(action.volume);
     }
-    if (action.change_count_in && action.count_in <= 4 && state.transport_set_metronome_count_in) {
-        state.transport.metronome_count_in = action.count_in;
-        state.transport_set_metronome_count_in(action.count_in);
+    if (action.change_count_in && action.count_in <= 4 && state.services.transport_set_metronome_count_in) {
+        state.preferences.metronome_count_in = action.count_in;
+        state.services.transport_set_metronome_count_in(action.count_in);
     }
 }
 

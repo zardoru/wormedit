@@ -155,7 +155,7 @@ struct bga_input_fixture_t : action_notification_fixture_t {
             .timing_chart_id = 1, .timing_document_revision = history.document.revision,
             .resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_BGA, .x_pixels = 150,
             .y_pixels = compose_source_y(state.pixels_per_standard_measure / 4 - state.viewport_scroll_pixels,
-                state.viewport_height_pixels, compose_field_downscroll(history.document.charts.front(), application.compose_view.editor_preferences)),
+                state.viewport_height_pixels, compose_field_downscroll(history.document.charts.front(), application.preferences.editor_preferences)),
             .bga_lane_kind = lane_kind, .bga_lane_kind_valid = true};
         return value;
     }
@@ -335,9 +335,9 @@ TEST_CASE("Compose bookmark seek callback owns its feedback", "[compose-action-n
     action_notification_fixture_t fixture;
     fixture.history.document.charts.front().bookmarks = {{.id = object_id_t{4},
         .anchor = marker_anchor_t::beat, .position = local_position_t{measure_id_t{1}, 480}}};
-    fixture.application.transport_preview_playing = [] { return true; };
-    fixture.application.transport.transport_seek_posts_feedback = true;
-    fixture.application.transport_seek = [&](std::uint64_t) {
+    fixture.application.services.transport_preview_playing = [] { return true; };
+    fixture.application.preferences.transport_seek_posts_feedback = true;
+    fixture.application.services.transport_seek = [&](std::uint64_t) {
         fixture.sink.post(notification_severity_t::hint, notification_source_t::audio, "Playback cursor moved.");
         return std::string{"Playback cursor moved."};
     };
@@ -850,9 +850,9 @@ TEST_CASE("Compose area quantize records the applied report rows", "[compose-act
     auto action = fixture.action(WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE);
     action.compose_quantize_divisions = 4;
     require_action(fixture.dispatch(action) == "Selected objects quantized.");
-    require_action(fixture.application.quantize.quantize_applied_report.has_value());
-    check_action(fixture.application.quantize.quantize_applied_report->rows.size() == 1);
-    check_action(fixture.application.quantize.quantize_applied_report->total_rows == 1);
+    require_action(fixture.application.project.quantize.quantize_applied_report.has_value());
+    check_action(fixture.application.project.quantize.quantize_applied_report->rows.size() == 1);
+    check_action(fixture.application.project.quantize.quantize_applied_report->total_rows == 1);
 }
 
 namespace {
@@ -864,14 +864,14 @@ auto draw_bga_input(bga_input_fixture_t& fixture, WormUiComposeInputKind kind,
     value.compose_inputs[0].y_pixels = compose_source_y(
         row * fixture.state.pixels_per_standard_measure / 960.0 - fixture.state.viewport_scroll_pixels,
         fixture.state.viewport_height_pixels,
-        compose_field_downscroll(fixture.history.document.charts.front(), fixture.application.compose_view.editor_preferences));
+        compose_field_downscroll(fixture.history.document.charts.front(), fixture.application.preferences.editor_preferences));
     return value;
 }
 }
 TEST_CASE("Draw BGA production stroke commits interpolated targets once and undo restores all",
           "[bga][draw][compose-input]") {
     bga_input_fixture_t fixture;
-    fixture.application.compose_gesture.note_paint_mode_active = true;
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
     auto begin = draw_bga_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 240);
     (void)fixture.dispatch_input(begin);
     check_action(fixture.history.undo.empty());
@@ -879,14 +879,14 @@ TEST_CASE("Draw BGA production stroke commits interpolated targets once and undo
     INFO(fixture.dispatch_input(release));
     require_action(fixture.history.undo.size() == 1);
     check_action(fixture.history.document.charts.front().bga_events.size() == 4);
-    check_action(!fixture.application.compose_gesture.bga_draw_stroke);
+    check_action(!fixture.application.project.compose_gesture.bga_draw_stroke);
     require_action(undo_document_command(fixture.history));
     check_action(fixture.history.document.charts.front().bga_events.size() == 1);
 }
 TEST_CASE("Draw BGA deleted source and Timing focus reject without undo",
           "[bga][draw][compose-input]") {
     bga_input_fixture_t fixture;
-    fixture.application.compose_gesture.note_paint_mode_active = true;
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
     auto begin = draw_bga_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 240);
     (void)fixture.dispatch_input(begin);
     fixture.history.document.resources.clear();
@@ -894,11 +894,11 @@ TEST_CASE("Draw BGA deleted source and Timing focus reject without undo",
     auto release = draw_bga_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, 480);
     (void)fixture.dispatch_input(release);
     fixture.check_unchanged(revision);
-    check_action(!fixture.application.compose_gesture.bga_draw_stroke);
-    fixture.application.compose_gesture.note_paint_mode_active = false;
+    check_action(!fixture.application.project.compose_gesture.bga_draw_stroke);
+    fixture.application.project.compose_gesture.note_paint_mode_active = false;
     (void)fixture.dispatch_input(begin);
     fixture.check_unchanged(revision);
-    check_action(!fixture.application.compose_gesture.bga_draw_stroke);
+    check_action(!fixture.application.project.compose_gesture.bga_draw_stroke);
 }
 TEST_CASE("Draw BGA interpolation follows measure-local snap across a five eighths measure",
           "[bga][draw][compose-input]") {
@@ -906,7 +906,7 @@ TEST_CASE("Draw BGA interpolation follows measure-local snap across a five eight
     auto& chart = fixture.history.document.charts.front();
     chart.measures.front().definition = {{5, 8}, meter_t{5, 8}};
     chart.measures.push_back({.id = measure_id_t{2}});
-    fixture.application.compose_gesture.note_paint_mode_active = true;
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
     auto begin = draw_bga_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 480);
     (void)fixture.dispatch_input(begin);
     auto release = draw_bga_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, 720);
@@ -927,8 +927,8 @@ TEST_CASE("Draw source choice projects session state without changing the docume
     input.compose_inputs[0].resource_role = 2;
     input.compose_inputs[0].resource_id = 31;
     (void)fixture.dispatch_input(input);
-    check_action(fixture.application.compose_gesture.draw_source_kind == 2);
-    check_action(fixture.application.compose_gesture.draw_source_id == 31);
+    check_action(fixture.application.project.compose_gesture.draw_source_kind == 2);
+    check_action(fixture.application.project.compose_gesture.draw_source_id == 31);
     fixture.check_unchanged(revision);
 }
 
@@ -949,7 +949,7 @@ auto note_draw_input(bga_input_fixture_t& fixture, WormUiComposeInputKind kind, 
     return value;
 }
 void add_draw_test_note(bga_input_fixture_t& fixture) {
-    fixture.application.compose_gesture.note_paint_mode_active = true;
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
     fixture.history.document.charts.front().measures.front().notes = {{
         .id = object_id_t{91}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}}};
 }
@@ -996,7 +996,7 @@ void prepare_t463_stem(bga_input_fixture_t& fixture) {
         .events = {{.id = object_id_t{86}, .position = {measure_id_t{1}, 0}, .playable = false}}}};
     chart.measures.front().bgm_events = {{.id = object_id_t{87}, .position = {measure_id_t{1}, 0},
         .source_lane = object_id_t{84}, .sound = resource_id_t{82}, .sound_channel_event = object_id_t{86}}};
-    fixture.application.compose_gesture.note_paint_mode_active = true;
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
     fixture.cache.scene.scene_document_identity = &fixture.history.document;
     fixture.cache.scene.scene_chart_identity = &chart;
     fixture.cache.scene.stem_index.built = true;
@@ -1267,7 +1267,7 @@ void seed_quantize_rename(action_notification_fixture_t& fixture) {
          .space = quantization_space_t::authored_measure,
          .tie = quantization_tie_t::later,
          .holds = quantization_hold_t::start_only}};
-    fixture.application.quantize.quantize_editor =
+    fixture.application.project.quantize.quantize_editor =
         application_command_state_t::quantize_editor_t{.song = fixture.history.document.id,
                                                        .chart = fixture.state.chart,
                                                        .request = {.divisions = 16},
@@ -1290,7 +1290,7 @@ TEST_CASE("Compose quantize preset rename preserves settings and commits one und
     check_action(fixture.history.document.quantization_presets == expected);
     check_action(fixture.history.document.revision == revision + 1);
     check_action(fixture.history.undo.size() == 1);
-    check_action(fixture.application.quantize.quantize_editor->preset_index == 0);
+    check_action(fixture.application.project.quantize.quantize_editor->preset_index == 0);
     check_action(undo_document_command(fixture.history));
     check_action(fixture.history.document.quantization_presets == presets);
 }
@@ -1358,7 +1358,7 @@ TEST_CASE("A single BGM click stroke commits once without a draw warning",
     fixture.history.document.resources.push_back({.id = resource_id_t{33}, .asset = asset_id_t{71},
         .roles = {resource_role_t::sample}});
     fixture.history.document.charts.front().bgm_source_lanes = {{.id = object_id_t{50}, .name = "BGM"}};
-    fixture.application.compose_gesture.note_paint_mode_active = true;
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
     // A click presses and releases on the same row, so the release lands on the begin's row.
     auto begin = draw_bgm_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 240);
     check_action(fixture.dispatch_input(begin) == "BGM Draw stroke preview updated.");
@@ -1369,7 +1369,7 @@ TEST_CASE("A single BGM click stroke commits once without a draw warning",
     for (const auto& measure : fixture.history.document.charts.front().measures)
         total += measure.bgm_events.size();
     check_action(total == 1);
-    check_action(!fixture.application.compose_gesture.bga_draw_stroke);
+    check_action(!fixture.application.project.compose_gesture.bga_draw_stroke);
     require_action(undo_document_command(fixture.history));
     check_action(fixture.history.undo.empty());
 }
@@ -1381,7 +1381,7 @@ TEST_CASE("Draw BGM production stroke commits once and erase removes the lane on
     fixture.history.document.resources.push_back({.id = resource_id_t{33}, .asset = asset_id_t{71},
         .roles = {resource_role_t::sample}});
     fixture.history.document.charts.front().bgm_source_lanes = {{.id = object_id_t{50}, .name = "BGM"}};
-    fixture.application.compose_gesture.note_paint_mode_active = true;
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
     auto begin = draw_bgm_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 240);
     (void)fixture.dispatch_input(begin);
     check_action(fixture.history.undo.empty());
@@ -1395,7 +1395,7 @@ TEST_CASE("Draw BGM production stroke commits once and erase removes the lane on
         return total;
     };
     check_action(count() == 3);
-    check_action(!fixture.application.compose_gesture.bga_draw_stroke);
+    check_action(!fixture.application.project.compose_gesture.bga_draw_stroke);
     auto erase_begin = draw_bgm_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 240, true);
     (void)fixture.dispatch_input(erase_begin);
     auto erase_release = draw_bgm_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, 480, true);
@@ -1421,17 +1421,17 @@ TEST_CASE("Quantize grid and editing snap are one shared grid",
 
     (void)fixture.dispatch(grid(16));
     check_action(fixture.state.active_snap_denominator == 16);
-    check_action(fixture.application.compose_view.requested_snap_denominators.at(1) == 16);
-    check_action(fixture.application.quantize.quantize_editor->request.divisions == 16);
+    check_action(fixture.application.project.compose_view.requested_snap_denominators.at(1) == 16);
+    check_action(fixture.application.project.quantize.quantize_editor->request.divisions == 16);
 
     // A grid the chart cannot snap to sets only the quantize target.
     fixture.entries();
     (void)fixture.dispatch(grid(12));
     check_action(fixture.state.active_snap_denominator == 16);
-    check_action(fixture.application.quantize.quantize_editor->request.divisions == 12);
+    check_action(fixture.application.project.quantize.quantize_editor->request.divisions == 12);
 
     // Next snap moves the quantize target with it and keeps the other settings.
-    fixture.application.quantize.quantize_editor->request.tie = quantization_tie_t::later;
+    fixture.application.project.quantize.quantize_editor->request.tie = quantization_tie_t::later;
     std::optional<editor_interaction_state_t> compose = fixture.state;
     std::optional<timing_lane_pseudonote_preview_t> preview;
     const auto result = invoke_application_command(
@@ -1439,8 +1439,8 @@ TEST_CASE("Quantize grid and editing snap are one shared grid",
         fixture.workspace, compose, preview, fixture.application, fixture.sink);
     require_action(result.accepted);
     check_action(compose->active_snap_denominator == 4);
-    check_action(fixture.application.quantize.quantize_editor->request.divisions == 4);
-    check_action(fixture.application.quantize.quantize_editor->request.tie == quantization_tie_t::later);
+    check_action(fixture.application.project.quantize.quantize_editor->request.divisions == 4);
+    check_action(fixture.application.project.quantize.quantize_editor->request.tie == quantization_tie_t::later);
     check_action(fixture.history.document.revision == revision);
     check_action(fixture.history.undo.empty());
 }
@@ -1542,15 +1542,15 @@ TEST_CASE("Snap badge changes supported editing grid without editing the documen
     auto settings = fixture.action(WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS);
     settings.compose_quantize_divisions = 4;
     (void)fixture.dispatch(settings);
-    fixture.application.quantize.quantize_editor->request.tie = quantization_tie_t::later;
+    fixture.application.project.quantize.quantize_editor->request.tie = quantization_tie_t::later;
     auto snap = fixture.action(WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP);
     snap.compose_snap_denominator = 8;
     const auto revision = fixture.history.document.revision;
     (void)fixture.dispatch(snap);
     check_action(fixture.state.active_snap_denominator == 8);
-    check_action(fixture.application.compose_view.requested_snap_denominators.at(1) == 8);
-    check_action(fixture.application.quantize.quantize_editor->request.divisions == 8);
-    check_action(fixture.application.quantize.quantize_editor->request.tie == quantization_tie_t::later);
+    check_action(fixture.application.project.compose_view.requested_snap_denominators.at(1) == 8);
+    check_action(fixture.application.project.quantize.quantize_editor->request.divisions == 8);
+    check_action(fixture.application.project.quantize.quantize_editor->request.tie == quantization_tie_t::later);
     snap.compose_snap_denominator = 7;
     (void)fixture.dispatch(snap);
     check_action(fixture.state.active_snap_denominator == 8);
@@ -1565,13 +1565,13 @@ TEST_CASE("Snap badge refuses active gestures and paste previews", "[unit][sys][
     for (const bool paste : {false, true}) {
         action_notification_fixture_t fixture;
         fixture.state.supported_snap_denominators = {4, 8};
-        if (paste) fixture.application.clipboard.paste_session = application_command_state_t::paste_session_t{};
+        if (paste) fixture.application.project.clipboard.paste_session = application_command_state_t::paste_session_t{};
         else fixture.state.pending_hold.emplace();
         auto snap = fixture.action(WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP);
         snap.compose_snap_denominator = 8;
         (void)fixture.dispatch(snap);
         check_action(fixture.state.active_snap_denominator == 4);
-        check_action(fixture.application.compose_view.requested_snap_denominators.empty());
+        check_action(fixture.application.project.compose_view.requested_snap_denominators.empty());
         check_action(fixture.history.undo.empty());
     }
 }
@@ -1581,18 +1581,18 @@ TEST_CASE("Playing Compose navigation uses beats while stopped editing retains i
     bga_input_fixture_t f;
     f.state.active_snap_denominator = 16;
     f.state.supported_snap_denominators = {4, 16};
-    f.application.transport.preview_playhead_absolute_row = 240;
-    f.application.transport_preview_playing = [] { return true; };
+    f.application.project.transport.preview_playhead_absolute_row = 240;
+    f.application.services.transport_preview_playing = [] { return true; };
     std::uint64_t sought{};
-    f.application.transport_seek = [&](std::uint64_t frame) { sought = frame; return std::string{}; };
+    f.application.services.transport_seek = [&](std::uint64_t frame) { sought = frame; return std::string{}; };
     auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0);
     action.compose_inputs[0].navigation_action = WORM_UI_COMPOSE_NAVIGATION_CURSOR_FORWARD;
     (void)f.dispatch_input(action);
-    check_action(f.application.transport.preview_playhead_absolute_row == 480);
+    check_action(f.application.project.transport.preview_playhead_absolute_row == 480);
     check_action(sought > 0);
     check_action((f.state.cursor == local_position_t{measure_id_t{1}, 0}));
     check_action(f.state.active_snap_denominator == 16);
-    f.application.transport_preview_playing = [] { return false; };
+    f.application.services.transport_preview_playing = [] { return false; };
     f.navigation.cancel();
     (void)f.dispatch_input(action);
     check_action((f.state.cursor == local_position_t{measure_id_t{1}, 60}));
@@ -1649,11 +1649,11 @@ TEST_CASE("Playback wheel skips one beat in chart direction independently of sna
     const auto inverted = GENERATE(false, true);
     bga_input_fixture_t f;
     f.state.active_snap_denominator = 16;
-    f.application.compose_view.editor_preferences.invert_scroll_wheel = inverted;
-    f.application.compose_view.editor_preferences.scroll_directions.fill(downscroll ? 2 : 1);
-    f.application.transport.preview_playhead_absolute_row = 480;
-    f.application.transport_preview_playing = [] { return true; };
-    f.application.transport_seek = [](std::uint64_t) { return std::string{}; };
+    f.application.preferences.editor_preferences.invert_scroll_wheel = inverted;
+    f.application.preferences.editor_preferences.scroll_directions.fill(downscroll ? 2 : 1);
+    f.application.project.transport.preview_playhead_absolute_row = 480;
+    f.application.services.transport_preview_playing = [] { return true; };
+    f.application.services.transport_seek = [](std::uint64_t) { return std::string{}; };
     auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE, 0);
     action.compose_input_count = 0;
     action.compose_viewport_input_count = 1;
@@ -1662,7 +1662,7 @@ TEST_CASE("Playback wheel skips one beat in chart direction independently of sna
         .delta_y = ((forward != downscroll) != inverted) ? 1.0 : -1.0,
         .cursor_x_pixels = 200, .cursor_y_pixels = 200};
     (void)f.dispatch_input(action);
-    check_action(f.application.transport.preview_playhead_absolute_row == (forward ? 720 : 240));
+    check_action(f.application.project.transport.preview_playhead_absolute_row == (forward ? 720 : 240));
     check_action(f.state.active_snap_denominator == 16);
     f.check_unchanged(1);
 }
@@ -1724,9 +1724,9 @@ TEST_CASE("Page navigation distance and minimum match while stopped and playing"
         chart.measures[2].definition = {{1, 960}, std::nullopt};
     }
     place_cursor_at(f.state, {measure_id_t{1}, 959});
-    f.application.transport_preview_playing = [=] { return playing; };
-    f.application.transport.preview_playhead_absolute_row = 959;
-    f.application.transport_seek = [](std::uint64_t) { return std::string{}; };
+    f.application.services.transport_preview_playing = [=] { return playing; };
+    f.application.project.transport.preview_playhead_absolute_row = 959;
+    f.application.services.transport_seek = [](std::uint64_t) { return std::string{}; };
     auto action = f.input(doubled ? WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP
                                   : WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0);
     action.compose_inputs[0].navigation_action = doubled
@@ -1734,7 +1734,7 @@ TEST_CASE("Page navigation distance and minimum match while stopped and playing"
     (void)f.dispatch_input(action);
     const auto index = std::get<measure_index_t>(build_measure_index(chart));
     const auto expected = short_measures ? (doubled ? 1919 : 1439) : (doubled ? 2879 : 1919);
-    if (playing) check_action(f.application.transport.preview_playhead_absolute_row == expected);
+    if (playing) check_action(f.application.project.transport.preview_playhead_absolute_row == expected);
     else check_action(absolute_row(index, f.state.cursor) == expected);
     f.check_unchanged(1);
 }
@@ -1900,14 +1900,14 @@ TEST_CASE("Lane-less chart fallback relink preserves revision guards and undo",
 TEST_CASE("Scroll direction toolbar changes only its family and preserves authored state", "[compose-action-notifications][feedback]") {
     action_notification_fixture_t f;
     const auto family = static_cast<std::size_t>(compose_mode_family(f.history.document.charts.front().lane_layouts.front().layout));
-    const bool original = compose_field_downscroll(f.history.document.charts.front(), f.application.compose_view.editor_preferences);
+    const bool original = compose_field_downscroll(f.history.document.charts.front(), f.application.preferences.editor_preferences);
     const auto cursor = f.state.cursor;
     const auto zoom = f.state.pixels_per_standard_measure;
     const auto revision = f.history.document.revision;
     (void)f.dispatch(f.action(WORM_UI_COMPOSE_ACTION_TOGGLE_SCROLL_DIRECTION));
-    check_action(compose_field_downscroll(f.history.document.charts.front(), f.application.compose_view.editor_preferences) != original);
+    check_action(compose_field_downscroll(f.history.document.charts.front(), f.application.preferences.editor_preferences) != original);
     check_action(f.state.scroll_direction == (original ? editor_field_scroll_direction_t::up : editor_field_scroll_direction_t::down));
-    check_action(f.application.compose_view.editor_preferences.scroll_directions[family] == (original ? 1 : 2));
+    check_action(f.application.preferences.editor_preferences.scroll_directions[family] == (original ? 1 : 2));
     check_action(f.state.cursor == cursor);
     check_action(f.state.pixels_per_standard_measure == zoom);
     check_action(f.history.document.revision == revision);
@@ -1915,17 +1915,17 @@ TEST_CASE("Scroll direction toolbar changes only its family and preserves author
     auto stale = f.action(WORM_UI_COMPOSE_ACTION_TOGGLE_SCROLL_DIRECTION);
     stale.compose_input_document_revision += 1;
     (void)f.dispatch(stale);
-    check_action(compose_field_downscroll(f.history.document.charts.front(), f.application.compose_view.editor_preferences) != original);
+    check_action(compose_field_downscroll(f.history.document.charts.front(), f.application.preferences.editor_preferences) != original);
     (void)f.dispatch(f.action(WORM_UI_COMPOSE_ACTION_TOGGLE_SCROLL_DIRECTION));
-    check_action(compose_field_downscroll(f.history.document.charts.front(), f.application.compose_view.editor_preferences) == original);
+    check_action(compose_field_downscroll(f.history.document.charts.front(), f.application.preferences.editor_preferences) == original);
 }
 
 TEST_CASE("Direction switching rejects an unfinished hold without changing preferences", "[compose-action-notifications][feedback]") {
     action_notification_fixture_t f;
     f.state.pending_hold = pending_hold_t{};
-    const auto preferences = f.application.compose_view.editor_preferences;
+    const auto preferences = f.application.preferences.editor_preferences;
     (void)f.dispatch(f.action(WORM_UI_COMPOSE_ACTION_TOGGLE_SCROLL_DIRECTION));
-    check_action(f.application.compose_view.editor_preferences == preferences);
+    check_action(f.application.preferences.editor_preferences == preferences);
     check_action(f.state.pending_hold.has_value());
     check_action(f.history.document.revision == 1);
     check_action(f.history.undo.empty());
@@ -1936,8 +1936,8 @@ TEST_CASE("Field wheel inversion reverses stopped coarse and smooth movement", "
     const auto inverted = GENERATE(false, true);
     const auto kind = GENERATE(WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL, WORM_UI_COMPOSE_VIEWPORT_INPUT_SMOOTH_WHEEL);
     bga_input_fixture_t f;
-    f.application.compose_view.editor_preferences.scroll_directions.fill(downscroll ? 2 : 1);
-    f.application.compose_view.editor_preferences.invert_scroll_wheel = inverted;
+    f.application.preferences.editor_preferences.scroll_directions.fill(downscroll ? 2 : 1);
+    f.application.preferences.editor_preferences.invert_scroll_wheel = inverted;
     f.state.viewport_scroll_pixels = 600;
     auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE, 0);
     action.compose_input_count = 0;
@@ -1953,7 +1953,7 @@ TEST_CASE("Field wheel inversion reverses stopped coarse and smooth movement", "
 TEST_CASE("Wheel inversion leaves modifier zoom unchanged", "[compose-action-notifications][feedback]") {
     const auto inverted = GENERATE(false, true);
     bga_input_fixture_t f;
-    f.application.compose_view.editor_preferences.invert_scroll_wheel = inverted;
+    f.application.preferences.editor_preferences.invert_scroll_wheel = inverted;
     const auto zoom = f.state.pixels_per_standard_measure;
     auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE, 0);
     action.compose_input_count = 0;
@@ -1976,7 +1976,7 @@ TEST_CASE("Sounds tab audition reaches the shared resource dispatcher without a 
     action.compose_resource_id = 20;
     std::optional<editor_interaction_state_t> interaction;
     REQUIRE(fixture.dispatch_workspace(action, interaction));
-    CHECK(fixture.application.sound_selection.pending_sound_audition == resource_id_t{20});
+    CHECK(fixture.application.project.sound_selection.pending_sound_audition == resource_id_t{20});
     CHECK_FALSE(interaction.has_value());
     CHECK(fixture.history.undo.empty());
 }
@@ -1993,7 +1993,7 @@ TEST_CASE("Sounds tab audition rejects a stale document before scheduling audio"
     ++action.compose_input_document_revision;
     std::optional<editor_interaction_state_t> interaction;
     REQUIRE(fixture.dispatch_workspace(action, interaction));
-    CHECK_FALSE(fixture.application.sound_selection.pending_sound_audition.has_value());
+    CHECK_FALSE(fixture.application.project.sound_selection.pending_sound_audition.has_value());
     CHECK(fixture.history.undo.empty());
 }
 
@@ -2062,9 +2062,9 @@ TEST_CASE("Layer assist toggles are chart stamped session changes without docume
           "[unit][compose-actions][layer-assist]") {
     action_notification_fixture_t f;
     f.history.document.charts.front().semantic_layers = {{.id=layer_id_t{7},.name="Ticks",.locked=true}};
-    f.application.transport.transport_metronome_available = true;
+    f.application.preferences.transport_metronome_available = true;
     std::vector<layer_id_t> configured;
-    f.application.transport_set_layer_assist = [&](chart_id_t chart, std::span<const layer_id_t> layers) {
+    f.application.services.transport_set_layer_assist = [&](chart_id_t chart, std::span<const layer_id_t> layers) {
         check_action(chart == chart_id_t{1});
         configured.assign(layers.begin(),layers.end());
         return true;
@@ -2073,10 +2073,10 @@ TEST_CASE("Layer assist toggles are chart stamped session changes without docume
     action.compose_semantic_layer_id=7;
     (void)f.dispatch(action);
     check_action(configured == std::vector<layer_id_t>{layer_id_t{7}});
-    check_action(f.application.semantic_layer.layer_assist_layers == configured);
+    check_action(f.application.project.semantic_layer.layer_assist_layers == configured);
     check_action(f.history.document.revision == 1 && f.history.undo.empty());
     (void)f.dispatch(action);
-    check_action(configured.empty() && f.application.semantic_layer.layer_assist_layers.empty());
+    check_action(configured.empty() && f.application.project.semantic_layer.layer_assist_layers.empty());
     action.compose_input_document_revision=0;
     (void)f.dispatch(action);
     check_action(configured.empty());
@@ -2100,11 +2100,11 @@ TEST_CASE("Unavailable and rejected layer assist callbacks leave the current sel
     auto action=f.action(WORM_UI_COMPOSE_ACTION_TOGGLE_LAYER_ASSIST_TICK);
     action.compose_semantic_layer_id=7;
     (void)f.dispatch(action);
-    check_action(f.application.semantic_layer.layer_assist_layers.empty());
-    f.application.transport.transport_metronome_available=true;
-    f.application.transport_set_layer_assist=[](chart_id_t,std::span<const layer_id_t>){return false;};
+    check_action(f.application.project.semantic_layer.layer_assist_layers.empty());
+    f.application.preferences.transport_metronome_available=true;
+    f.application.services.transport_set_layer_assist=[](chart_id_t,std::span<const layer_id_t>){return false;};
     (void)f.dispatch(action);
-    check_action(f.application.semantic_layer.layer_assist_layers.empty());
+    check_action(f.application.project.semantic_layer.layer_assist_layers.empty());
     check_action(f.history.document.revision==1 && f.history.undo.empty());
 }
 
@@ -2117,13 +2117,13 @@ TEST_CASE("Find fitting snap includes hold ends and BGM and changes only session
     auto action=f.action(WORM_UI_COMPOSE_ACTION_FIND_FITTING_SNAP);
     (void)f.dispatch(action);
     check_action(f.state.active_snap_denominator==5);
-    check_action(f.application.quantize.quantize_editor->request.divisions==5);
+    check_action(f.application.project.quantize.quantize_editor->request.divisions==5);
     chart.bgm_source_lanes={{.id=object_id_t{9}}};
     chart.measures.front().bgm_events={{.id=object_id_t{10},.position={measure_id_t{1},48},.source_lane=object_id_t{9}}};
     f.state.selected_objects={{editor_selection_object_kind_t::bgm_event,object_id_t{10}}};
     (void)f.dispatch(action);
     check_action(f.state.active_snap_denominator==20);
-    check_action(f.application.compose_view.requested_snap_denominators.at(1)==20);
+    check_action(f.application.project.compose_view.requested_snap_denominators.at(1)==20);
     check_action(f.history.document.revision==1 && f.history.undo.empty());
     check_action(chart.measures.front().notes.front().position.row==192);
 }

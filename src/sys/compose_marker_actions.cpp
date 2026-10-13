@@ -383,11 +383,11 @@ std::optional<std::string> edit_selected_note_labels(compose_action_context_t& c
 std::string navigate_audio_marker(compose_action_context_t& context) {
     using namespace wormedit;
     auto& app = context.environment.application_command_state_ref;
-    if (!app.transport_audio_milliseconds || !app.transport_seek_audio_milliseconds)
+    if (!app.services.transport_audio_milliseconds || !app.services.transport_seek_audio_milliseconds)
         return compose_action_warning(
             context, "Start chart preview once before navigating audio-time markers.",
             notification_source_t::audio);
-    const auto cursor = app.transport_audio_milliseconds();
+    const auto cursor = app.services.transport_audio_milliseconds();
     if (!cursor)
         return compose_action_warning(context,
                                       "Start chart preview once to compile its seekable timeline.",
@@ -413,8 +413,8 @@ std::string navigate_audio_marker(compose_action_context_t& context) {
                          notification_source_t::audio)
                    : publish_compose_diagnostic(context, marker.diagnostics.front(),
                                                 notification_source_t::audio);
-    const auto status = app.transport_seek_audio_milliseconds(*marker.item->audio_milliseconds);
-    return app.transport.transport_seek_posts_feedback
+    const auto status = app.services.transport_seek_audio_milliseconds(*marker.item->audio_milliseconds);
+    return app.preferences.transport_seek_posts_feedback
                ? status
                : compose_action_hint(context, status, notification_source_t::audio);
 }
@@ -482,7 +482,7 @@ std::string edit_cursor_measure(compose_action_context_t& context,
                                 cursor_measure_command_t command) {
     if (const auto error = compose_measure_edit_rejection(
             context.environment.history_ref, context.state,
-            context.environment.application_command_state_ref.clipboard.paste_session.has_value(),
+            context.environment.application_command_state_ref.project.clipboard.paste_session.has_value(),
             context.action.compose_input_document_revision))
         return compose_action_warning(context, *error);
     auto severity = notification_severity_t::warning;
@@ -531,7 +531,7 @@ std::string preview_recipe_form_action(compose_action_context_t& context) {
     const auto severity = preview.error.empty() ? notification_severity_t::hint : preview.severity;
     const auto source =
         preview.error.empty() ? notification_source_t::input : notification_source_t::edit;
-    context.environment.application_command_state_ref.timing_recipe.recipe_preview = std::move(preview);
+    context.environment.application_command_state_ref.project.timing_recipe.recipe_preview = std::move(preview);
     return publish_compose_feedback(context, status, severity, source);
 }
 
@@ -540,7 +540,7 @@ std::string apply_recipe_form_action(compose_action_context_t& context) {
     if (!target)
         return compose_action_warning(
             context, "SV recipe form ignored because the recipe or the document changed.");
-    if (context.environment.application_command_state_ref.timing_recipe.timing_locked)
+    if (context.environment.application_command_state_ref.project.timing_recipe.timing_locked)
         return compose_action_warning(context, "Timing is locked.");
     bool applied = false;
     auto severity = notification_severity_t::warning;
@@ -550,7 +550,7 @@ std::string apply_recipe_form_action(compose_action_context_t& context) {
     if (!applied)
         return publish_compose_feedback(context, std::move(status), severity,
                                         notification_source_t::edit);
-    context.environment.application_command_state_ref.timing_recipe.recipe_preview.reset();
+    context.environment.application_command_state_ref.project.timing_recipe.recipe_preview.reset();
     const auto rebound =
         rebind_workspace(context.environment.workspace_ref, context.environment.history_ref);
     if (!rebound) {
@@ -654,7 +654,7 @@ std::optional<std::string> dispatch_compose_marker_action(compose_action_context
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_SV_RECIPE_FORM)
         return apply_recipe_form_action(context);
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_CLEAR_SV_RECIPE_PREVIEW) {
-        context.environment.application_command_state_ref.timing_recipe.recipe_preview.reset();
+        context.environment.application_command_state_ref.project.timing_recipe.recipe_preview.reset();
         return compose_action_hint(context, "SV recipe preview cleared.");
     }
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS)

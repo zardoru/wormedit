@@ -66,7 +66,7 @@ auto place_virtual_sample_resource(const WormUiComposeInputAction& input,
         wormedit::place_virtual_bms_tap_action_t{virtual_hit->first, virtual_hit->second,
                                                  spec.resource});
     audition_created_note(
-        context.environment.application_command_state_ref.compose_view.editor_preferences.audition_on_click,
+        context.environment.application_command_state_ref.preferences.editor_preferences.audition_on_click,
         context.environment.history_ref, context.state, result);
     if (result.document_changed)
         advance_dock_after_placement(context.environment.history_ref.document, spec.resource,

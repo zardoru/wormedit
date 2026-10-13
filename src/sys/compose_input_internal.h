@@ -113,7 +113,7 @@ auto dispatch_bmson_razor_input(const WormUiComposeInputAction& input,
     if (chart == history.document.charts.end() || !current_view || !std::isfinite(input.y_pixels)) {
         return "The BMSON chart field is no longer available.";
     }
-    auto& stroke = application_state.compose_gesture.bmson_razor_stroke;
+    auto& stroke = application_state.project.compose_gesture.bmson_razor_stroke;
     const object_id_t reference{input.object_id};
     if (input.razor_stroke_start) {
         stroke.reset();
@@ -132,7 +132,7 @@ auto dispatch_bmson_razor_input(const WormUiComposeInputAction& input,
     }
     const auto restart = input.kind == WORM_UI_COMPOSE_INPUT_BMSON_RAZOR_RESTART;
     if (input.razor_stroke_start) {
-        const auto& draft = application_state.compose_gesture.bmson_marker_draft;
+        const auto& draft = application_state.project.compose_gesture.bmson_marker_draft;
         const auto already_staged =
             draft && draft->chart == state.chart && draft->revision == history.document.revision &&
             draft->reference == reference &&
@@ -143,7 +143,7 @@ auto dispatch_bmson_razor_input(const WormUiComposeInputAction& input,
                                 : stage_bmson_bgm_marker(history, state, application_state,
                                                          reference, *position, restart, &severity);
         severity = staged_input_severity(already_staged, severity);
-        const auto& staged = application_state.compose_gesture.bmson_marker_draft;
+        const auto& staged = application_state.project.compose_gesture.bmson_marker_draft;
         if (staged && staged->chart == state.chart &&
             staged->revision == history.document.revision && staged->reference == reference &&
             std::ranges::any_of(staged->markers,
@@ -166,7 +166,7 @@ auto dispatch_bmson_razor_input(const WormUiComposeInputAction& input,
     std::vector<bmson_sound_marker_insertion_t> pending;
     pending.reserve(path.positions.size());
     for (const auto candidate : path.positions) {
-        const auto& draft = application_state.compose_gesture.bmson_marker_draft;
+        const auto& draft = application_state.project.compose_gesture.bmson_marker_draft;
         if (draft && std::ranges::any_of(draft->markers, [&](const auto& marker) {
                 return marker.position == candidate;
             })) {
@@ -179,13 +179,13 @@ auto dispatch_bmson_razor_input(const WormUiComposeInputAction& input,
         severity = notification_severity_t::hint;
         return "BMSON razor remains on staged grid cells.";
     }
-    const auto before = application_state.compose_gesture.bmson_marker_draft
-                            ? application_state.compose_gesture.bmson_marker_draft->markers.size()
+    const auto before = application_state.project.compose_gesture.bmson_marker_draft
+                            ? application_state.project.compose_gesture.bmson_marker_draft->markers.size()
                             : 0;
     const auto status =
         stage_bmson_bgm_markers(history, state, application_state, reference, pending, &severity);
-    if (application_state.compose_gesture.bmson_marker_draft &&
-        application_state.compose_gesture.bmson_marker_draft->markers.size() == before + pending.size()) {
+    if (application_state.project.compose_gesture.bmson_marker_draft &&
+        application_state.project.compose_gesture.bmson_marker_draft->markers.size() == before + pending.size()) {
         stroke->last_position = *position;
     }
     return status;
@@ -456,7 +456,7 @@ auto insert_bmson_stem_point(const WormUiComposeInputAction& input,
     auto& history = environment.history_ref;
     auto& workspace = environment.workspace_ref;
     auto& application_state = environment.application_command_state_ref;
-    if (gesture_active || !application_state.compose_gesture.note_paint_mode_active ||
+    if (gesture_active || !application_state.project.compose_gesture.note_paint_mode_active ||
         !wormedit::ui::compose_notes_editable(compose_mode_of(application_state)))
         return "Draw requires an editable chart without an active gesture.";
     const auto chart =
@@ -522,7 +522,7 @@ auto dispatch_bmson_compose_input(const WormUiWorkspaceAction& ui_action,
             std::move(message), severity, wormedit::notification_source_t::input);
     }
     case WORM_UI_COMPOSE_INPUT_BMSON_AUDITION_DRAFT: {
-        const auto& draft = application_state.compose_gesture.bmson_marker_draft;
+        const auto& draft = application_state.project.compose_gesture.bmson_marker_draft;
         if (!draft || draft->chart != state.chart || draft->revision != history.document.revision ||
             input.object_id == 0 || input.object_id > draft->markers.size())
             return "The BMSON region audition request expired.";
@@ -540,7 +540,7 @@ auto dispatch_bmson_compose_input(const WormUiWorkspaceAction& ui_action,
     case WORM_UI_COMPOSE_INPUT_BMSON_RESTART_TOGGLE:
         return toggle_bmson_restart(input, context);
     case WORM_UI_COMPOSE_INPUT_BMSON_EMPTY_SELECT:
-        if (application_state.compose_gesture.note_paint_mode_active)
+        if (application_state.project.compose_gesture.note_paint_mode_active)
             return {};
         (void)wormedit::dispatch_editor_action(history, state,
                                                wormedit::select_editor_objects_action_t{});
@@ -613,7 +613,7 @@ struct compose_input_context_t {
             y, state.viewport_height_pixels,
             input_chart &&
                 compose_field_downscroll(
-                    *input_chart, environment.application_command_state_ref.compose_view.editor_preferences));
+                    *input_chart, environment.application_command_state_ref.preferences.editor_preferences));
     }
     auto hit_target_at(const wormedit::chart_document_t& chart,
                        const wormedit::editor_interaction_view_model_t& view, double x_pixels,
@@ -650,12 +650,12 @@ struct compose_input_context_t {
             environment.compose_scene_cache_ref.scene.hit_test_index =
                 std::get<wormedit::editor_hit_test_index_t>(std::move(built));
         }
-        if (environment.application_command_state_ref.compose_gesture.note_paint_mode_active)
+        if (environment.application_command_state_ref.project.compose_gesture.note_paint_mode_active)
             return resolve_compose_paint_cell(
                 chart, *environment.compose_scene_cache_ref.scene.hit_test_index, view, x_pixels,
                 y_pixels, field_left_pixels, field_width_pixels,
                 compose_field_downscroll(
-                    chart, environment.application_command_state_ref.compose_view.editor_preferences),
+                    chart, environment.application_command_state_ref.preferences.editor_preferences),
                 wormedit::edit_snap_denominator(chart, state));
         return wormedit::hit_test_editor(
             chart, *environment.compose_scene_cache_ref.scene.hit_test_index, view,
@@ -663,7 +663,7 @@ struct compose_input_context_t {
              .y_pixels = compose_source_y(
                  y_pixels, view.viewport_height_pixels,
                  compose_field_downscroll(
-                     chart, environment.application_command_state_ref.compose_view.editor_preferences)),
+                     chart, environment.application_command_state_ref.preferences.editor_preferences)),
              .field_left_pixels = field_left_pixels,
              .field_width_pixels = field_width_pixels,
              .note_head_height_pixels =
@@ -685,7 +685,7 @@ struct compose_input_context_t {
             compose_source_y(
                 y_pixels, view.viewport_height_pixels,
                 compose_field_downscroll(
-                    chart, environment.application_command_state_ref.compose_view.editor_preferences)));
+                    chart, environment.application_command_state_ref.preferences.editor_preferences)));
     }
     auto virtual_bms_row_at(const wormedit::chart_document_t& chart,
                             const wormedit::editor_interaction_view_model_t& view,
@@ -701,7 +701,7 @@ struct compose_input_context_t {
         const auto source_y = compose_source_y(
             y_pixels, view.viewport_height_pixels,
             compose_field_downscroll(chart,
-                                     environment.application_command_state_ref.compose_view.editor_preferences));
+                                     environment.application_command_state_ref.preferences.editor_preferences));
         const auto row = (static_cast<long double>(view.viewport_scroll_pixels) + source_y) *
                          chart.divisions_per_standard_measure / view.pixels_per_standard_measure;
         if (!std::isfinite(row) || row < 0.0L ||
@@ -832,7 +832,7 @@ auto update_alt_pointer_gesture(const WormUiComposeInputAction& input,
         if (releasing)
             advance_sound_after_paint_commit(result, sound, result.created_note.has_value());
         if (releasing)
-            audition_created_note(application_state.compose_view.editor_preferences.audition_on_click, history,
+            audition_created_note(application_state.preferences.editor_preferences.audition_on_click, history,
                                   state, result);
         accepted = releasing ? (result.document_changed ? "Pointer hold committed."
                                                         : "Pointer hold released.")
@@ -861,7 +861,7 @@ auto dispatch_note_paint_gesture(const WormUiComposeInputAction& input,
     auto& [environment, state, result, accepted] = context;
     auto& history = environment.history_ref;
     auto& application_state = environment.application_command_state_ref;
-    if (!application_state.compose_gesture.note_paint_mode_active) {
+    if (!application_state.project.compose_gesture.note_paint_mode_active) {
         if (state.pending_note_paint_gesture) {
             result = dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
             accepted = "Note-paint stroke canceled because paint mode is inactive.";
@@ -982,9 +982,9 @@ auto dispatch_semantic_layer_paint_gesture(const WormUiComposeInputAction& input
         return "The selected chart field is no longer available.";
     }
     const auto* layer = visible_semantic_layer_by_id(
-        *chart, application_state.semantic_layer.semantic_layer_target.value_or(layer_id_t{}));
+        *chart, application_state.project.semantic_layer.semantic_layer_target.value_or(layer_id_t{}));
     if (!semantic_layer_paint_target_editable(application_state, layer)) {
-        application_state.compose_gesture.semantic_layer_paint_mode_active = false;
+        application_state.project.compose_gesture.semantic_layer_paint_mode_active = false;
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
         return "Choose an unlocked visible semantic layer before painting chart membership.";
     }
@@ -1024,7 +1024,7 @@ auto dispatch_note_move_gesture(const WormUiComposeInputAction& input,
         result = dispatch_editor_action(
             history, state,
             begin_note_move_gesture_action_t{
-                *target->note, application_state.compose_view.editor_preferences.move_collision_policy ==
+                *target->note, application_state.preferences.editor_preferences.move_collision_policy ==
                                    move_collision_policy_t::displace_to_bgm});
         accepted = "Selected-note move started.";
         return compose_input_family_result_t::continue_with_result();
@@ -1317,7 +1317,7 @@ auto place_note_from_pointer(const WormUiComposeInputAction& input,
                                         context.environment.compose_scene_cache_ref, sound)}});
     advance_sound_after_paint_commit(result, sound, result.created_note.has_value());
     audition_created_note(
-        context.environment.application_command_state_ref.compose_view.editor_preferences.audition_on_click,
+        context.environment.application_command_state_ref.preferences.editor_preferences.audition_on_click,
         context.environment.history_ref, context.state, result);
     accepted =
         context.state.pending_hold ? "Hold gesture started; click its end row." : "Note placed.";

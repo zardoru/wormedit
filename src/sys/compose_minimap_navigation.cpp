@@ -97,25 +97,25 @@ auto seek_stopped_compose_transport(document_history_t& history,
 void retain_compose_minimap_start(application_command_state_t& application,
     const document_history_t& history, const editor_interaction_state_t& state,
     const compose_minimap_target_t& target, const timing_index_t& timing) {
-    application.transport.minimap_start_frame.reset();
-    const bool playing = application.transport_preview_playing && application.transport_preview_playing();
-    const bool paused = application.transport_preview_paused && application.transport_preview_paused();
+    application.project.transport.minimap_start_frame.reset();
+    const bool playing = application.services.transport_preview_playing && application.services.transport_preview_playing();
+    const bool paused = application.services.transport_preview_paused && application.services.transport_preview_paused();
     const auto end = timing_at(timing, timing.total_rows);
     if (playing || paused || !end || !end.seconds) return;
     if (static_cast<long double>(target.frame) / audio::output_sample_rate <=
         static_cast<long double>(end.seconds->numerator) / end.seconds->denominator) return;
-    application.transport.minimap_start_frame = application_command_state_t::minimap_start_frame_t{
+    application.project.transport.minimap_start_frame = application_command_state_t::minimap_start_frame_t{
         state.chart, history.document.revision, state.cursor, target.frame, state.cursor_subrow};
 }
 auto compose_minimap_start_frame(application_command_state_t& application,
     const document_history_t& history, const editor_interaction_state_t* state)
     -> std::optional<std::uint64_t> {
-    const auto& pending = application.transport.minimap_start_frame;
+    const auto& pending = application.project.transport.minimap_start_frame;
     if (!pending) return std::nullopt;
     if (!state || state->chart != pending->chart || history.document.revision != pending->revision ||
         state->cursor != pending->cursor || state->cursor_subrow != pending->cursor_subrow ||
         state->virtual_bms_cursor_row) {
-        application.transport.minimap_start_frame.reset();
+        application.project.transport.minimap_start_frame.reset();
         return std::nullopt;
     }
     return pending->frame;

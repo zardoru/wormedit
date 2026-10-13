@@ -133,9 +133,9 @@ auto project_application_frame(const application_frame_projection_context_t& con
             &context.compose_scene_cache.keysound_list_cache);
         flattened.rebind_view_pointers();
         flattened.view.transport_metronome_enabled =
-            context.application_command_state.transport.transport_metronome_enabled;
+            context.application_command_state.preferences.transport_metronome_enabled;
         flattened.view.transport_metronome_available =
-            context.application_command_state.transport.transport_metronome_available;
+            context.application_command_state.preferences.transport_metronome_available;
     }
 
     {
@@ -166,12 +166,12 @@ auto project_application_frame(const application_frame_projection_context_t& con
                 .history = context.history,
                 .workspace = context.model,
                 .selected_chart = context.workspace.selected_chart,
-                .timing_locked = context.application_command_state.timing_recipe.timing_locked,
+                .timing_locked = context.application_command_state.project.timing_recipe.timing_locked,
                 .audio_offset_drag = context.audio_offset_drag,
                 .transport = frame_transport,
                 .player_preview_presenter = context.player_preview_presenter,
-                .player_preview_visible = context.application_command_state.compose_view.player_preview_visible,
-                .player_preview_skin = context.application_command_state.compose_view.player_preview_skin,
+                .player_preview_visible = context.application_command_state.project.compose_view.player_preview_visible,
+                .player_preview_skin = context.application_command_state.project.compose_view.player_preview_skin,
                 .asset_base = context.asset_base,
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
                 .player_image_job = context.player_image_job,
@@ -189,8 +189,8 @@ auto project_application_frame(const application_frame_projection_context_t& con
     }
 
     flattened.view.metadata.audio_offset_locked =
-        context.application_command_state.timing_recipe.audio_offset_locked;
-    if (context.application_command_state.timing_recipe.audio_offset_locked) {
+        context.application_command_state.project.timing_recipe.audio_offset_locked;
+    if (context.application_command_state.project.timing_recipe.audio_offset_locked) {
         flattened.view.metadata.audio_offset_editable = false;
         flattened.view.audio_slices.timing_locked = true;
     }
@@ -217,12 +217,12 @@ auto project_application_frame(const application_frame_projection_context_t& con
                 context.timing_edit.stage_view());
         }
         flattened.view.timing.initial_bpm_editable =
-            flattened.view.timing.scene_available && !context.application_command_state.timing_recipe.timing_locked;
+            flattened.view.timing.scene_available && !context.application_command_state.project.timing_recipe.timing_locked;
     }
     {
     frame_phase_scope_t compose_controls(frame_phase_t::workspace_compose_controls);
-    const auto left_dock = context.application_command_state.compose_left_dock_pixels
-        ? context.application_command_state.compose_left_dock_pixels() : 0;
+    const auto left_dock = context.application_command_state.services.compose_left_dock_pixels
+        ? context.application_command_state.services.compose_left_dock_pixels() : 0;
     populate_compose_view(flattened, context.history, context.workspace,
                           context.compose_scene_cache, std::max(0, compose_window_width - left_dock),
                           compose_window_height,
@@ -258,11 +258,11 @@ auto project_application_frame(const application_frame_projection_context_t& con
             flattened.view.transport_playing,
             static_cast<double>(
                 audio::playback_rates[std::min<std::size_t>(
-                                          context.application_command_state.transport.transport_rate_index,
+                                          context.application_command_state.preferences.transport_rate_index,
                                           8)]
                     .numerator) /
                 audio::playback_rates[std::min<std::size_t>(
-                                          context.application_command_state.transport.transport_rate_index,
+                                          context.application_command_state.preferences.transport_rate_index,
                                           8)]
                     .denominator);
         compose_waveform_overview_available = populate_compose_waveform_projection(
@@ -272,9 +272,9 @@ auto project_application_frame(const application_frame_projection_context_t& con
             context.compose_interaction_state ? &*context.compose_interaction_state : nullptr,
             context.waveform_runtime.detail_analysis().get(),
             &context.waveform_runtime.decoded_blocks(), context.waveform_runtime.playback_style(),
-            context.application_command_state.bgm.bgm_bar_range,
-            &context.application_command_state.bgm.bgm_bar_pan_override,
-            &context.application_command_state.bgm.bgm_bar_window_capture);
+            context.application_command_state.project.bgm.bgm_bar_range,
+            &context.application_command_state.project.bgm.bgm_bar_pan_override,
+            &context.application_command_state.project.bgm.bgm_bar_window_capture);
     }
     {
         frame_phase_scope_t overlays(frame_phase_t::workspace_waveform_overlays);

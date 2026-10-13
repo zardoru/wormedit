@@ -4825,9 +4825,9 @@ TEST_CASE("Same sound add shortcut keeps selection and Sounds dock fallbacks", "
     WormUiKeysoundDockRequest dock{};
     worm_ui_frontend_keysound_dock_request(&dock);
     expect_lane_key(dock.selected_resource_count == 1 && dock.selected_resource_ids[0] == 2);
-    fixture.application.sound_selection.sound_selection_chart = chart_id_t{frame.get().compose_input_chart_id};
-    fixture.application.sound_selection.sound_selection_revision = frame.get().compose_input_document_revision;
-    fixture.application.sound_selection.sound_selection_dock = {resource_id_t{dock.selected_resource_ids[0]}};
+    fixture.application.project.sound_selection.sound_selection_chart = chart_id_t{frame.get().compose_input_chart_id};
+    fixture.application.project.sound_selection.sound_selection_revision = frame.get().compose_input_document_revision;
+    fixture.application.project.sound_selection.sound_selection_dock = {resource_id_t{dock.selected_resource_ids[0]}};
     fixture.interaction->selected_notes = {object_id_t{101}};
     fixture.interaction->selected_objects.clear();
     const auto& chart = fixture.history.document.charts[0];
@@ -6716,7 +6716,7 @@ TEST_CASE("A production lane chord survives its own revision refresh but cancels
     t422_fixture_t f{std::move(song)};
     f.interaction->selected_notes.clear();
     f.interaction->selected_objects.clear();
-    f.application.compose_gesture.note_paint_mode_active = true;
+    f.application.project.compose_gesture.note_paint_mode_active = true;
     f.interaction->armed_note_kind = note_kind_t::hold;
     f.project();
     (void)f.harness.frame();
@@ -6831,7 +6831,7 @@ TEST_CASE("Timing focus projects the same Move to BGM capability as its command"
           "[frontend-state][event-harness][gesture-verbs]") {
     t422_fixture_t f{t424_song()};
     expect_t422(f.harness.view().compose.move_to_bgm_available);
-    f.application.compose_view.compose_timing_focus = true;
+    f.application.project.compose_view.compose_timing_focus = true;
     f.project();
     (void)f.harness.frame();
     expect_t422(!f.harness.view().compose.move_to_bgm_available);
@@ -6912,7 +6912,7 @@ void placement_release(t422_fixture_t& f, std::pair<float, float> point) {
 void prepare_placement(t422_fixture_t& f) {
     f.interaction->selected_notes.clear();
     f.interaction->selected_objects.clear();
-    f.application.compose_gesture.note_paint_mode_active = true;
+    f.application.project.compose_gesture.note_paint_mode_active = true;
     f.project();
     (void)f.harness.frame();
 }
@@ -6932,14 +6932,14 @@ TEST_CASE("Production paint release outside the field commits its visited cells"
 TEST_CASE("Production paint captures kind and layers at its beginning",
           "[frontend-state][event-harness][row-placement]") {
     t422_fixture_t f{t422_song()};
-    f.application.semantic_layer.semantic_layer_target_none = true;
+    f.application.project.semantic_layer.semantic_layer_target_none = true;
     prepare_placement(f);
     const auto point = placement_point(f, 120, 2);
     placement_press(f, point);
     expect_t422(f.interaction->pending_note_paint_gesture.has_value());
     f.interaction->armed_note_kind = note_kind_t::mine;
-    f.application.semantic_layer.semantic_layer_target_none = false;
-    f.application.semantic_layer.semantic_layer_target = layer_id_t{7};
+    f.application.project.semantic_layer.semantic_layer_target_none = false;
+    f.application.project.semantic_layer.semantic_layer_target = layer_id_t{7};
     placement_release(f, point);
     const auto& notes = f.history.document.charts.front().measures.front().notes;
     const auto placed = std::ranges::find(notes, lane_id_t{2}, &note_t::lane);
@@ -7050,8 +7050,8 @@ TEST_CASE("Production click-click stem holds retain decoded geometry through rel
     const auto short_source = GENERATE(false, true);
     t422_fixture_t f{placement_stem_song()};
     f.interaction->armed_note_kind = note_kind_t::hold;
-    f.application.compose_gesture.draw_source_kind = 1;
-    f.application.compose_gesture.draw_source_id = 1;
+    f.application.project.compose_gesture.draw_source_kind = 1;
+    f.application.project.compose_gesture.draw_source_id = 1;
     prepare_placement(f);
     auto& ui = worm_ui_nuklear_compose_state();
     ui.resource_picker.armed_resource_id = 1;
@@ -7110,7 +7110,7 @@ TEST_CASE("Production virtual lane chords survive independent materialization an
 TEST_CASE("Production unsnapped paint walks adjacent rows with the shared grid path",
           "[frontend-state][event-harness][row-placement]") {
     t422_fixture_t f{t422_song()};
-    f.application.compose_view.edit_snap_enabled = false;
+    f.application.project.compose_view.edit_snap_enabled = false;
     f.interaction->pixels_per_standard_measure = 960;
     prepare_placement(f);
     placement_press(f, placement_point(f, 240, 2));
@@ -7139,7 +7139,7 @@ TEST_CASE("Production pointer paste and note drag use the valid Stop event row",
     if (paste) {
         auto copied = copy_chart_selection(f.history.document, *f.interaction, f.history.document.revision);
         expect_t422(static_cast<bool>(copied));
-        f.application.clipboard.chart_clipboard = std::move(copied.clipboard);
+        f.application.project.clipboard.chart_clipboard = std::move(copied.clipboard);
         std::string status;
         expect_t422(begin_compose_paste(f.application, f.history.document, *f.interaction, status));
         f.project();
@@ -7193,13 +7193,13 @@ TEST_CASE("Production timing span release edits once and rejected release retire
     t422_fixture_t f{std::move(song)};
     f.interaction->selected_objects.clear(); f.interaction->selected_notes.clear();
     f.interaction->pixels_per_standard_measure = 768;
-    f.application.compose_view.editor_preferences.scroll_directions.fill(downscroll ? 2 : 1);
+    f.application.preferences.editor_preferences.scroll_directions.fill(downscroll ? 2 : 1);
     f.project();
     const auto before = t422_native_bytes(f.history.document);
     const auto p = timing_pointer(f, WORM_UI_TIMING_LANE_SPEED, 480);
     placement_press(f, p);
     expect_t422(worm_ui_nuklear_compose_state().timing_drag.kiai_drag_active);
-    if (locked_at_release) f.application.timing_recipe.timing_locked = true;
+    if (locked_at_release) f.application.project.timing_recipe.timing_locked = true;
     // Do not reproject here: exercise the application's rejection after a real UI release.
     const auto end = timing_pointer(f, WORM_UI_TIMING_LANE_SPEED, 720);
     placement_release(f, end);
@@ -7542,7 +7542,7 @@ TEST_CASE("Production Page travel settles its owned destination when playback st
           "[frontend-state][event-harness][navigation-consolidation]") {
     t422_fixture_t f{t422_song()};
     f.interaction->pixels_per_standard_measure = 1536;
-    f.application.compose_view.editor_preferences.scroll_directions.fill(1);
+    f.application.preferences.editor_preferences.scroll_directions.fill(1);
     f.project(); (void)f.harness.frame();
     const auto page = key_event(SDL_EVENT_KEY_DOWN, SDLK_PAGEDOWN, SDL_SCANCODE_PAGEDOWN);
     (void)f.dispatch(f.harness.frame(std::span{&page, 1}));
@@ -7551,7 +7551,7 @@ TEST_CASE("Production Page travel settles its owned destination when playback st
     const auto cursor = f.interaction->cursor;
     const auto previous_scroll = f.interaction->viewport_scroll_pixels;
     expect_t422(previous_scroll != destination);
-    f.application.transport_preview_playing = [] { return true; };
+    f.application.services.transport_preview_playing = [] { return true; };
     f.project();
     (void)f.dispatch(f.harness.frame());
     expect_t422(!f.cache.navigation_travel.target);
@@ -7565,15 +7565,15 @@ TEST_CASE("Production arrow and Alt wheel share stopped paused and playing step 
     const auto mode = GENERATE(0, 1, 2);
     const auto arrow = GENERATE(false, true);
     t422_fixture_t f{t422_song()};
-    f.application.transport_preview_playing = [=] { return mode == 2; };
-    f.application.transport_preview_paused = [=] { return mode == 1; };
+    f.application.services.transport_preview_playing = [=] { return mode == 2; };
+    f.application.services.transport_preview_paused = [=] { return mode == 1; };
     int seeks = 0;
-    f.application.transport_seek = [&](std::uint64_t) { ++seeks; return std::string{}; };
-    f.application.transport.preview_playhead_absolute_row = 480;
-    f.application.compose_view.edit_snap_enabled = true;
-    f.application.compose_view.requested_snap_denominators[1] = 16;
+    f.application.services.transport_seek = [&](std::uint64_t) { ++seeks; return std::string{}; };
+    f.application.project.transport.preview_playhead_absolute_row = 480;
+    f.application.project.compose_view.edit_snap_enabled = true;
+    f.application.project.compose_view.requested_snap_denominators[1] = 16;
     f.interaction->active_snap_denominator = 16;
-    f.application.compose_view.editor_preferences.scroll_directions.fill(1);
+    f.application.preferences.editor_preferences.scroll_directions.fill(1);
     place_cursor_at(*f.interaction, {measure_id_t{1}, 480});
     f.project(); (void)f.harness.frame();
     const auto previous_cursor = f.interaction->cursor;
@@ -7590,7 +7590,7 @@ TEST_CASE("Production arrow and Alt wheel share stopped paused and playing step 
     expect_t422(frame.get().compose_input_count > 0);
     (void)f.dispatch(frame);
     expect_t422(seeks == (mode == 2 ? 1 : 0));
-    expect_t422(f.application.transport.preview_playhead_absolute_row == (mode == 2 ? 720 : 480));
+    expect_t422(f.application.project.transport.preview_playhead_absolute_row == (mode == 2 ? 720 : 480));
     CAPTURE(f.interaction->cursor.row, f.interaction->cursor.measure.value, previous_cursor.row);
     expect_t422(f.interaction->cursor == (mode == 2 ? previous_cursor : local_position_t{previous_cursor.measure, previous_cursor.row + 60}));
     expect_t422(f.history.undo.empty());
@@ -7664,9 +7664,9 @@ TEST_CASE("Production Go to measure modal shares playing position navigation",
     const auto mode = GENERATE(0, 1, 2, 3);
     t422_fixture_t f{t422_song()};
     int seeks = 0;
-    f.application.transport_preview_playing = [=] { return mode >= 2; };
-    f.application.transport_preview_paused = [=] { return mode == 1; };
-    if (mode != 3) f.application.transport_seek = [&](std::uint64_t) { ++seeks; return std::string{}; };
+    f.application.services.transport_preview_playing = [=] { return mode >= 2; };
+    f.application.services.transport_preview_paused = [=] { return mode == 1; };
+    if (mode != 3) f.application.services.transport_seek = [&](std::uint64_t) { ++seeks; return std::string{}; };
     f.project(); (void)f.harness.frame();
     const auto previous = f.interaction->cursor;
     const auto go = key_event(SDL_EVENT_KEY_DOWN, SDLK_G, SDL_SCANCODE_G);
@@ -7718,13 +7718,13 @@ TEST_CASE("Production overview clicks preserve playing paused and stopped prefer
     bool paused = mode == 1 || mode == 2;
     int seeks = 0, stops = 0;
     std::uint64_t sought_frame = 0;
-    f.application.transport_preview_playing = [=] { return mode == 3; };
-    f.application.transport_preview_paused = [&] { return paused; };
-    f.application.transport_seek = [&](std::uint64_t frame) {
+    f.application.services.transport_preview_playing = [=] { return mode == 3; };
+    f.application.services.transport_preview_paused = [&] { return paused; };
+    f.application.services.transport_seek = [&](std::uint64_t frame) {
         sought_frame = frame; ++seeks; return std::string{};
     };
-    f.application.transport_stop = [&] { ++stops; paused = false; };
-    f.application.compose_view.minimap_click_moves_paused_playhead = mode == 2;
+    f.application.services.transport_stop = [&] { ++stops; paused = false; };
+    f.application.preferences.minimap_click_moves_paused_playhead = mode == 2;
     f.project();
     WormUiComposeWaveformOverviewRowView row{};
     prepare_navigation_overview(f, row);
@@ -7753,7 +7753,7 @@ TEST_CASE("Production Ctrl click auditions only a note remaining selected",
         std::erase(f.interaction->selected_objects,
             editor_selection_object_t{editor_selection_object_kind_t::note, object_id_t{101}});
     }
-    f.application.compose_view.editor_preferences.audition_on_click = true;
+    f.application.preferences.editor_preferences.audition_on_click = true;
     f.project(); (void)f.harness.frame();
     const auto note = t422_note_screen_center(f, 101);
     expect_t422(note.has_value());

@@ -130,21 +130,21 @@ auto active_quantize_request(application_command_state_t& application,
                              const wormedit::chart_document_t& chart, std::uint64_t active_snap)
     -> wormedit::quantize_request_t {
     using namespace wormedit;
-    if (application.quantize.quantize_editor && application.quantize.quantize_editor->song == document.id &&
-        application.quantize.quantize_editor->chart == chart.id) {
-        auto request = application.quantize.quantize_editor->request;
+    if (application.project.quantize.quantize_editor && application.project.quantize.quantize_editor->song == document.id &&
+        application.project.quantize.quantize_editor->chart == chart.id) {
+        auto request = application.project.quantize.quantize_editor->request;
         request.objects.clear();
-        if (application.quantize.quantize_editor->preset_index &&
-            *application.quantize.quantize_editor->preset_index >= document.quantization_presets.size())
-            application.quantize.quantize_editor->preset_index.reset();
-        if (application.quantize.quantize_editor->preset_index) {
+        if (application.project.quantize.quantize_editor->preset_index &&
+            *application.project.quantize.quantize_editor->preset_index >= document.quantization_presets.size())
+            application.project.quantize.quantize_editor->preset_index.reset();
+        if (application.project.quantize.quantize_editor->preset_index) {
             const auto& preset =
-                document.quantization_presets[*application.quantize.quantize_editor->preset_index];
+                document.quantization_presets[*application.project.quantize.quantize_editor->preset_index];
             request.divisions = preset.divisions;
             request.space = preset.space;
             request.tie = preset.tie;
             request.holds = preset.holds;
-            application.quantize.quantize_editor->request = request;
+            application.project.quantize.quantize_editor->request = request;
         }
         return request;
     }
@@ -203,15 +203,15 @@ void populate_quantize_applied_report(compose_scene_cache_t& cache,
                                       const application_command_state_t& application,
                                       WormUiComposeView& view) {
     cache.quantize.quantize_applied_row_views.clear();
-    if (!application.quantize.quantize_applied_report ||
-        application.quantize.quantize_applied_report->song != document.id ||
-        application.quantize.quantize_applied_report->chart != chart.id) {
+    if (!application.project.quantize.quantize_applied_report ||
+        application.project.quantize.quantize_applied_report->song != document.id ||
+        application.project.quantize.quantize_applied_report->chart != chart.id) {
         view.quantize_applied_rows = nullptr;
         view.quantize_applied_row_count = view.quantize_applied_total_rows = 0;
         view.quantize_applied_rows_truncated = false;
         return;
     }
-    const auto& report = *application.quantize.quantize_applied_report;
+    const auto& report = *application.project.quantize.quantize_applied_report;
     cache.quantize.quantize_applied_row_views.reserve(report.rows.size());
     for (const auto& row : report.rows)
         cache.quantize.quantize_applied_row_views.push_back(quantize_report_row_view(row));
@@ -252,16 +252,16 @@ void populate_quantize_preview(compose_scene_cache_t& cache,
     view.quantize_space = static_cast<std::uint8_t>(request.space);
     view.quantize_tie = static_cast<std::uint8_t>(request.tie);
     view.quantize_holds = static_cast<std::uint8_t>(request.holds);
-    view.quantize_preview_enabled = application.quantize.quantize_editor &&
-                                    application.quantize.quantize_editor->song == document.id &&
-                                    application.quantize.quantize_editor->chart == chart.id &&
-                                    application.quantize.quantize_editor->preview_enabled;
-    view.quantize_selected_preset_valid = application.quantize.quantize_editor &&
-                                          application.quantize.quantize_editor->song == document.id &&
-                                          application.quantize.quantize_editor->chart == chart.id &&
-                                          application.quantize.quantize_editor->preset_index.has_value();
+    view.quantize_preview_enabled = application.project.quantize.quantize_editor &&
+                                    application.project.quantize.quantize_editor->song == document.id &&
+                                    application.project.quantize.quantize_editor->chart == chart.id &&
+                                    application.project.quantize.quantize_editor->preview_enabled;
+    view.quantize_selected_preset_valid = application.project.quantize.quantize_editor &&
+                                          application.project.quantize.quantize_editor->song == document.id &&
+                                          application.project.quantize.quantize_editor->chart == chart.id &&
+                                          application.project.quantize.quantize_editor->preset_index.has_value();
     view.quantize_selected_preset_index =
-        view.quantize_selected_preset_valid ? *application.quantize.quantize_editor->preset_index : 0;
+        view.quantize_selected_preset_valid ? *application.project.quantize.quantize_editor->preset_index : 0;
     request.selection = wormedit::editor_quantize_selection(state);
     if (request.selection->notes.empty() && request.selection->bgm_events.empty()) {
         view.quantize_preview_rows = nullptr;

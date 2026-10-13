@@ -63,17 +63,17 @@ auto measure_target(const measure_index_t& measures, double playhead, double amo
 // within the window, else the live playhead.
 auto skip_origin_row(const application_command_state_t& application, chart_id_t chart,
                      bool forward) -> double {
-    const auto& record = application.transport.last_playhead_skip;
+    const auto& record = application.project.transport.last_playhead_skip;
     if (record && record->chart == chart && record->forward == forward &&
         playing_seek_now(application) - record->at <= playing_seek_repeat_window)
         return static_cast<double>(record->row);
-    return *application.transport.preview_playhead_absolute_row;
+    return *application.project.transport.preview_playhead_absolute_row;
 }
 
 } // namespace
 
 auto is_preview_playing(const application_command_state_t& application) -> bool {
-    return application.transport_preview_playing && application.transport_preview_playing();
+    return application.services.transport_preview_playing && application.services.transport_preview_playing();
 }
 
 auto playhead_skip_target_row(const measure_index_t& measures, double playhead_row,
@@ -118,7 +118,7 @@ auto playhead_skip_target_row(const measure_index_t& measures, double playhead_r
 auto skip_playing_playhead(application_command_state_t& application, const chart_document_t& chart,
                            std::uint64_t snap_denominator, playhead_skip_unit_t unit,
                            double amount) -> bookmark_command_outcome_t {
-    if (!application.transport.preview_playhead_absolute_row)
+    if (!application.project.transport.preview_playhead_absolute_row)
         return {.status = "The playhead row is not available yet."};
     const auto built = build_measure_index(chart);
     if (!std::holds_alternative<measure_index_t>(built))
@@ -131,17 +131,17 @@ auto skip_playing_playhead(application_command_state_t& application, const chart
                                               snap_denominator);
     const auto position = row ? local_position_for_row(measures, *row) : std::nullopt;
     if (!position) {
-        application.transport.last_playhead_skip.reset();
+        application.project.transport.last_playhead_skip.reset();
         return {.status = "The playhead could not be moved."};
     }
     auto outcome = seek_compose_navigation_position(chart, application, {.position = *position});
     if (!outcome.accepted) {
-        application.transport.last_playhead_skip.reset();
+        application.project.transport.last_playhead_skip.reset();
         return outcome;
     }
     // Chain several skips of one frame from where this one landed.
-    application.transport.preview_playhead_absolute_row = static_cast<double>(*row);
-    application.transport.last_playhead_skip = {chart.id, *row, forward, playing_seek_now(application)};
+    application.project.transport.preview_playhead_absolute_row = static_cast<double>(*row);
+    application.project.transport.last_playhead_skip = {chart.id, *row, forward, playing_seek_now(application)};
     return outcome;
 }
 

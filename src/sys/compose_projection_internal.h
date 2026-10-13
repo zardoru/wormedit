@@ -317,13 +317,13 @@ void populate_semantic_layer_target_state(WormUiComposeView& view,
     view.semantic_layer_target_required_filter =
         view.semantic_layer_target_required_filter ||
         (selected &&
-         std::ranges::find(application_state.semantic_layer.required_semantic_layer_filters, layer.id) !=
-             application_state.semantic_layer.required_semantic_layer_filters.end());
+         std::ranges::find(application_state.project.semantic_layer.required_semantic_layer_filters, layer.id) !=
+             application_state.project.semantic_layer.required_semantic_layer_filters.end());
     view.semantic_layer_target_excluded_filter =
         view.semantic_layer_target_excluded_filter ||
         (selected &&
-         std::ranges::find(application_state.semantic_layer.excluded_semantic_layer_filters, layer.id) !=
-             application_state.semantic_layer.excluded_semantic_layer_filters.end());
+         std::ranges::find(application_state.project.semantic_layer.excluded_semantic_layer_filters, layer.id) !=
+             application_state.project.semantic_layer.excluded_semantic_layer_filters.end());
 }
 
 auto layer_assist_enabled(const application_command_state_t& app, wormedit::chart_id_t chart,

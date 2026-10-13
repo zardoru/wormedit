@@ -807,11 +807,11 @@ void populate_compose_speed_spans(flattened_workspace_t& flattened,
 
 void drop_stale_recipe_preview(application_command_state_t& application_state,
                                const wormedit::chart_document_t& chart, std::uint64_t revision) {
-    auto& preview = application_state.timing_recipe.recipe_preview;
+    auto& preview = application_state.project.timing_recipe.recipe_preview;
     if (!preview)
         return;
     const bool current = preview->chart == chart.id && preview->revision == revision &&
-                         preview->candidate.id.value == application_state.timing_recipe.recipe_selected &&
+                         preview->candidate.id.value == application_state.project.timing_recipe.recipe_selected &&
                          std::ranges::any_of(chart.sv_recipes, [&](const auto& recipe) {
                              return recipe.id == preview->candidate.id;
                          });
@@ -826,15 +826,15 @@ void populate_compose_recipe_form(flattened_workspace_t& flattened,
     flattened.compose.recipe_form_text.clear();
     view.recipe_form = {};
     const auto recipe = std::ranges::find(chart.sv_recipes,
-                                          wormedit::recipe_id_t{application_state.timing_recipe.recipe_selected},
+                                          wormedit::recipe_id_t{application_state.project.timing_recipe.recipe_selected},
                                           &wormedit::sv_recipe_t::id);
-    if (application_state.timing_recipe.recipe_selected == 0 || recipe == chart.sv_recipes.end())
+    if (application_state.project.timing_recipe.recipe_selected == 0 || recipe == chart.sv_recipes.end())
         return;
     flattened.compose.recipe_form_text.reserve(3);
     const auto& name = flattened.compose.recipe_form_text.emplace_back(recipe->name);
     const auto& source = flattened.compose.recipe_form_text.emplace_back(recipe->expression_source);
     const auto& status = flattened.compose.recipe_form_text.emplace_back(
-        application_state.timing_recipe.recipe_preview ? application_state.timing_recipe.recipe_preview->error : std::string{});
+        application_state.project.timing_recipe.recipe_preview ? application_state.project.timing_recipe.recipe_preview->error : std::string{});
     view.recipe_form.visible = true;
     view.recipe_form.recipe_id = recipe->id.value;
     view.recipe_form.enabled = recipe->enabled;

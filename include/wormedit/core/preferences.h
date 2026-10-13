@@ -37,6 +37,7 @@ struct editor_preferences_t {
     std::uint32_t playhead_anchor_percent{20};
     bool note_kind_palette_visible{true};
     bool lane_key_legend_visible{true};
+    // Editor placement audition is distinct from Sounds-panel preview-on-click.
     bool audition_on_click{true};
     bool invert_scroll_wheel{};
     std::uint32_t area_band_alpha{48};

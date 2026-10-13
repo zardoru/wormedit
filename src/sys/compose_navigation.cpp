@@ -18,8 +18,8 @@ auto navigation_frame(const chart_document_t& chart, const application_command_s
     const auto built = build_measure_index(chart);
     const auto timing = build_timing_index(chart, {.allow_bounded_clock = true});
     if (!std::holds_alternative<measure_index_t>(built) || !timing.index) return std::nullopt;
-    const auto end = application.transport_preview_end_frame
-        ? application.transport_preview_end_frame() : std::nullopt;
+    const auto end = application.services.transport_preview_end_frame
+        ? application.services.transport_preview_end_frame() : std::nullopt;
     return bookmark_preview_frame(*timing.index, std::get<measure_index_t>(built), target.position, end);
 }
 
@@ -32,9 +32,9 @@ auto navigation_outcome(const editor_interaction_result_t& result, std::string s
 auto compose_navigation_transport_policy(const application_command_state_t& application,
     bool minimap, bool primary) -> compose_navigation_transport_t {
     if (is_preview_playing(application)) return compose_navigation_transport_t::seek;
-    const bool paused = application.transport_preview_paused && application.transport_preview_paused();
+    const bool paused = application.services.transport_preview_paused && application.services.transport_preview_paused();
     if (!minimap || !paused) return compose_navigation_transport_t::keep;
-    return primary != application.compose_view.minimap_click_moves_paused_playhead
+    return primary != application.preferences.minimap_click_moves_paused_playhead
         ? compose_navigation_transport_t::seek : compose_navigation_transport_t::stop;
 }
 
@@ -42,22 +42,22 @@ auto apply_compose_navigation_transport(application_command_state_t& application
     compose_navigation_transport_t policy, std::optional<std::uint64_t> frame,
     std::optional<std::int64_t> audio_milliseconds) -> bookmark_command_outcome_t {
     if (policy != compose_navigation_transport_t::seek) {
-        if (policy == compose_navigation_transport_t::stop && application.transport_stop)
-            application.transport_stop();
+        if (policy == compose_navigation_transport_t::stop && application.services.transport_stop)
+            application.services.transport_stop();
         return {.accepted = true};
     }
     if (audio_milliseconds) {
-        if (!application.transport_seek_audio_milliseconds)
+        if (!application.services.transport_seek_audio_milliseconds)
             return {.status = "Audio-time bookmark seek is unavailable."};
         application.invalidate_playing_seek_records();
         return {.accepted = true,
-            .status = application.transport_seek_audio_milliseconds(*audio_milliseconds),
-            .feedback_posted = application.transport.transport_seek_posts_feedback};
+            .status = application.services.transport_seek_audio_milliseconds(*audio_milliseconds),
+            .feedback_posted = application.preferences.transport_seek_posts_feedback};
     }
-    if (!frame || !application.transport_seek) return {.status = "Chart preview seek is unavailable."};
+    if (!frame || !application.services.transport_seek) return {.status = "Chart preview seek is unavailable."};
     application.invalidate_playing_seek_records();
-    return {.accepted = true, .status = application.transport_seek(*frame),
-        .feedback_posted = application.transport.transport_seek_posts_feedback};
+    return {.accepted = true, .status = application.services.transport_seek(*frame),
+        .feedback_posted = application.preferences.transport_seek_posts_feedback};
 }
 
 auto move_compose_navigation_cursor(document_history_t& history, editor_interaction_state_t& state,

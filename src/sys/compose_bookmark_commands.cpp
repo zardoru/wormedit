@@ -20,7 +20,7 @@ auto fail(std::string status) -> bookmark_command_outcome_t {
 }
 
 auto is_playing(const application_command_state_t& application) -> bool {
-    return application.transport_preview_playing && application.transport_preview_playing();
+    return application.services.transport_preview_playing && application.services.transport_preview_playing();
 }
 
 auto beat_position_for_audio_milliseconds(const chart_document_t& chart,
@@ -75,7 +75,7 @@ auto bookmark_preview_frame(const timing_index_t& timing, const measure_index_t&
 
 auto playing_seek_now(const application_command_state_t& application)
     -> std::chrono::steady_clock::time_point {
-    return application.bookmark_clock ? application.bookmark_clock()
+    return application.services.bookmark_clock ? application.services.bookmark_clock()
                                       : std::chrono::steady_clock::now();
 }
 
@@ -91,7 +91,7 @@ auto absolute_row_of(const measure_index_t& index, local_position_t position)
 
 auto recent_seek_row(const application_command_state_t& application, chart_id_t chart)
     -> std::optional<std::uint64_t> {
-    const auto& record = application.transport.last_playing_bookmark_seek;
+    const auto& record = application.project.transport.last_playing_bookmark_seek;
     if (!record || record->chart != chart ||
         playing_seek_now(application) - record->at > playing_seek_repeat_window)
         return std::nullopt;
@@ -104,15 +104,15 @@ auto playing_bookmark_origin(const chart_document_t& chart, chart_id_t chart_id,
     -> std::optional<local_position_t> {
     const auto built = build_measure_index(chart);
     if (!std::holds_alternative<measure_index_t>(built) ||
-        !application.transport.preview_playhead_absolute_row ||
-        !std::isfinite(*application.transport.preview_playhead_absolute_row))
+        !application.project.transport.preview_playhead_absolute_row ||
+        !std::isfinite(*application.project.transport.preview_playhead_absolute_row))
         return std::nullopt;
     const auto& index = std::get<measure_index_t>(built);
     if (index.total_rows == 0) return std::nullopt;
     if (direction == marker_navigation_direction_t::previous)
         if (const auto recent = recent_seek_row(application, chart_id))
             return local_position_for_row(index, *recent);
-    const auto row = std::clamp(*application.transport.preview_playhead_absolute_row, 0.0,
+    const auto row = std::clamp(*application.project.transport.preview_playhead_absolute_row, 0.0,
                                 static_cast<double>(index.total_rows - 1));
     // Marker lookup is strict: a fractional playhead must include the row below
     // it when moving backward, and exclude that row when moving forward.
@@ -124,12 +124,12 @@ auto playing_bookmark_origin(const chart_document_t& chart, chart_id_t chart_id,
 void record_playing_seek(const chart_document_t& chart, chart_id_t chart_id,
                          application_command_state_t& application, local_position_t target,
                          bool sought) {
-    application.transport.last_playing_bookmark_seek.reset();
+    application.project.transport.last_playing_bookmark_seek.reset();
     if (!sought) return;
     const auto built = build_measure_index(chart);
     if (!std::holds_alternative<measure_index_t>(built)) return;
     if (const auto row = absolute_row_of(std::get<measure_index_t>(built), target))
-        application.transport.last_playing_bookmark_seek = {chart_id, *row, playing_seek_now(application)};
+        application.project.transport.last_playing_bookmark_seek = {chart_id, *row, playing_seek_now(application)};
 }
 
 } // namespace
@@ -141,7 +141,7 @@ auto navigate_beat_bookmark(document_history_t& history, editor_interaction_stat
     const auto* chart = find_chart(history.document, state.chart);
     if (!chart) return fail("Bookmark navigation requires the active Compose chart.");
     const bool playing = is_playing(application);
-    if (!playing) application.transport.last_playing_bookmark_seek.reset();
+    if (!playing) application.project.transport.last_playing_bookmark_seek.reset();
     const auto origin = playing ? playing_bookmark_origin(*chart, state.chart, application, direction)
                                 : std::optional<local_position_t>{state.cursor};
     if (!origin) return fail("The playhead row is not available yet.");
@@ -202,11 +202,11 @@ auto add_beat_bookmark_here(document_history_t& history, editor_interaction_stat
     auto position = state.cursor;
     if (is_playing(application)) {
         const auto built = build_measure_index(*chart);
-        if (!application.transport.preview_playhead_absolute_row ||
+        if (!application.project.transport.preview_playhead_absolute_row ||
             !std::holds_alternative<measure_index_t>(built))
             return fail("The playhead row is not available yet.");
         const auto& index = std::get<measure_index_t>(built);
-        const auto row = nearest_snap_row(*chart, index, *application.transport.preview_playhead_absolute_row,
+        const auto row = nearest_snap_row(*chart, index, *application.project.transport.preview_playhead_absolute_row,
                                           state.active_snap_denominator);
         const auto snapped = row ? local_position_for_row(index, *row) : std::nullopt;
         if (!snapped) return fail("The playhead is not on an editable row.");

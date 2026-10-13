@@ -124,15 +124,15 @@ TEST_CASE("same sound command adds uses hover selection then dock without histor
     workspace.active_tab = workspace_tab_t::compose;
     workspace.selected_chart = chart_id_t{1};
     wormedit::sys::application_command_state_t application;
-    application.sound_selection.sound_selection_chart = chart_id_t{1};
-    application.sound_selection.sound_selection_revision = history.document.revision;
-    application.sound_selection.sound_selection_dock = {resource_id_t{3}};
-    application.sound_selection.sound_selection_hover = object_id_t{10};
+    application.project.sound_selection.sound_selection_chart = chart_id_t{1};
+    application.project.sound_selection.sound_selection_revision = history.document.revision;
+    application.project.sound_selection.sound_selection_dock = {resource_id_t{3}};
+    application.project.sound_selection.sound_selection_hover = object_id_t{10};
     const auto& chart = history.document.charts[0];
     auto keys =
         wormedit::sys::compose_sound_selection_keys(history.document, chart, *state, application);
     expect_sound(keys.size() == 1 && keys[0].value == 1);
-    application.sound_selection.sound_selection_hover.reset();
+    application.project.sound_selection.sound_selection_hover.reset();
     state->selected_notes = {object_id_t{10}};
     keys =
         wormedit::sys::compose_sound_selection_keys(history.document, chart, *state, application);

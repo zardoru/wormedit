@@ -293,6 +293,17 @@ auto visible_sorted_lanes(const editor_field_scene_layout_source_t& layout)
     return lanes;
 }
 
+auto build_player_video_clock(const player_preview_scene_request_t& request)
+    -> result_t<std::optional<video_preview_clock_t>, video_preview_clock_status_t> {
+    const auto clock = video_preview_clock_t::from(
+        request.visual_layers.video, request.sample_frame, request.sample_rate);
+    if (clock)
+        return std::optional{*clock};
+    if (clock.error() == video_preview_clock_status_t::inactive)
+        return std::nullopt;
+    return std::unexpected(clock.error());
+}
+
 } // namespace
 
 auto build_player_preview_index(const chart_document_t& chart, std::uint64_t document_revision,
@@ -383,10 +394,8 @@ auto player_preview_scene_t::from(const player_preview_index_t& index,
                   "player-preview sample frame exceeds exact time bounds"));
         return result;
     }
-    const auto video_clock = evaluate_video_preview_clock(
-        request.visual_layers.video, request.sample_frame, request.sample_rate);
-    if (video_clock.status != video_preview_clock_status_t::ready &&
-        video_clock.status != video_preview_clock_status_t::inactive) {
+    const auto video_clock = build_player_video_clock(request);
+    if (!video_clock) {
         result.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                                            "player-preview video clock is invalid"));
         return result;
@@ -434,7 +443,7 @@ auto player_preview_scene_t::from(const player_preview_index_t& index,
                                  .pre_zero = pre_zero,
                                  .split_stage = active_layout->layout.split_stage,
                                  .visual_layers = request.visual_layers,
-                                 .video_clock = video_clock.clock,
+                                 .video_clock = *video_clock,
                                  .storyboard_instances = {request.storyboard_instances.begin(),
                                                           request.storyboard_instances.end()},
                                  .composition_operations = 0,

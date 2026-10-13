@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/timing.h>
+#include <wormedit/core/result.h>
 
 #include <cstdint>
 #include <optional>
@@ -19,6 +20,11 @@ enum class video_preview_clock_status_t : std::uint8_t {
 // layer. The reduced media-time fraction is suitable for conversion to a
 // decoder's time base without first passing through floating point.
 struct video_preview_clock_t {
+    [[nodiscard]] static auto from(
+        const std::optional<preview_visual_event_t>& active_video,
+        std::uint64_t sample_frame, std::uint32_t sample_rate) noexcept
+        -> result_t<video_preview_clock_t, video_preview_clock_status_t>;
+
     object_id_t event;
     resource_id_t resource;
     std::uint64_t activation_sample_frame{};
@@ -29,14 +35,8 @@ struct video_preview_clock_t {
     auto operator==(const video_preview_clock_t&) const -> bool = default;
 };
 
-struct video_preview_clock_result_t {
-    video_preview_clock_status_t status{video_preview_clock_status_t::inactive};
-    std::optional<video_preview_clock_t> clock;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == video_preview_clock_status_t::ready && clock.has_value();
-    }
-};
+using video_preview_clock_result_t =
+    result_t<video_preview_clock_t, video_preview_clock_status_t>;
 
 // Evaluates a video activation against the shared transport clock. A new BGA
 // video event always restarts media time at zero; seek and offline rendering

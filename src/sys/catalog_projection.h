@@ -3,6 +3,7 @@
 #include "ui/frontend/catalog.h"
 #include <wormedit/core/catalogs.h>
 #include <array>
+#include <wormedit/audio/playback_rate.h>
 #include <vector>
 #include <wormedit/core/lane_profiles.h>
 
@@ -40,5 +41,18 @@ inline const auto new_project_layout_labels = build_new_project_layout_labels();
 inline const WormUiStringCatalogView new_project_layout_view{
     .entries = new_project_layout_catalog_view.data(), .count = new_project_layout_catalog_view.size(),
     .labels = new_project_layout_labels.data()};
+
+consteval auto build_playback_rate_catalog_view()
+    -> std::array<WormUiKindDescriptorView, audio::playback_rate_count> {
+    std::array<WormUiKindDescriptorView, audio::playback_rate_count> result{};
+    for (std::size_t index = 0; index < audio::playback_rate_catalog.size(); ++index) {
+        const auto& rate = audio::playback_rate_catalog[index];
+        result[index] = {.id = static_cast<std::uint32_t>(rate.id), .label = rate.label.data()};
+    }
+    return result;
+}
+inline constexpr auto playback_rate_catalog_view = build_playback_rate_catalog_view();
+inline constexpr WormUiKindCatalogView playback_rate_view{
+    .entries = playback_rate_catalog_view.data(), .count = playback_rate_catalog_view.size()};
 
 } // namespace wormedit::sys

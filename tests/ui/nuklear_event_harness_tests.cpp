@@ -8322,3 +8322,15 @@ TEST_CASE("New project wizard reads view labels and emits a PMS catalog identity
     click_new_project_text(harness, "Catalog PMS eighteen");
     check_new_project_choice(harness);
 }
+
+TEST_CASE("Transport rate label comes from the view and is selected by stable id", "[frontend-state][event-harness][catalog-wiring]") {
+    nuklear_event_harness_t harness;
+    REQUIRE(harness.ready());
+    static constexpr WormUiKindDescriptorView entries[]{{8, "R@"}, {7, "S@"}};
+    harness.view().playback_rates = {.entries = entries, .count = std::size(entries)};
+    harness.view().transport_rate_id = 8;
+    harness.view().transport_rate_index = 255;
+    harness.view().transport_available = true;
+    static_cast<void>(harness.frame());
+    CHECK(harness.drawn_text().find("R@") != std::string::npos);
+}

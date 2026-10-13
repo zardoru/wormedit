@@ -1550,6 +1550,8 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
         ? "Compose" : workspace_tabs[static_cast<std::size_t>(source.active_tab)].label.data();
     result.view.sound_kinds = sound_kind_view;
     result.view.new_project_layouts = new_project_layout_view;
+    result.view.playback_rates = playback_rate_view;
+    result.view.transport_rate_id = static_cast<std::uint32_t>(audio::playback_rate_id_t::normal);
 
     const workspace_projection_context_t projection{
         result,        source,           document,           stepmania_policy,

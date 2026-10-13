@@ -20,6 +20,11 @@ inline auto set_transport_rate(application_command_state_t& state, std::size_t i
     return true;
 }
 
+inline auto set_transport_rate(application_command_state_t& state, audio::playback_rate_id_t id) -> bool {
+    // The core catalog asserts that dense enum ids are its storage keys.
+    return set_transport_rate(state, static_cast<std::size_t>(id));
+}
+
 inline auto step_transport_rate(application_command_state_t& state, bool faster) -> bool {
     if (state.preferences.transport_rate_index >= audio::playback_rates.size() ||
         (faster && state.preferences.transport_rate_index == audio::playback_rates.size() - 1) ||

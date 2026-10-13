@@ -372,7 +372,7 @@ void refresh_transport_rate_commands(wormedit::command_registry_t& registry,
     (void)wormedit::update_command_state(registry, {"transport.rate_slower"},
                                        available && state.preferences.transport_rate_index > 0, std::nullopt);
     (void)wormedit::update_command_state(registry, {"transport.rate_faster"},
-                                       available && state.preferences.transport_rate_index < 8, std::nullopt);
+                                       available && state.preferences.transport_rate_index < wormedit::audio::playback_rate_catalog.size() - 1, std::nullopt);
 }
 
 using wormedit::sys::external_player_runtime_t;
@@ -4615,6 +4615,9 @@ struct application_t::implementation_t {
             commands.preferences.minimap_click_moves_paused_playhead;
         flattened.view.transport_rate_index =
             static_cast<uint8_t>(commands.preferences.transport_rate_index);
+        flattened.view.transport_rate_id = static_cast<std::uint32_t>(
+            wormedit::audio::playback_rate_catalog[std::min(commands.preferences.transport_rate_index,
+                wormedit::audio::playback_rate_catalog.size() - 1)].id);
         flattened.view.transport_rate_available =
             static_cast<bool>(commands.services.transport_set_playback_rate);
         flattened.view.transport_keep_pitch = commands.preferences.transport_keep_pitch;

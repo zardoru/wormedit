@@ -2768,3 +2768,43 @@ TEST_CASE("Project reset keeps formerly reset view settings project scoped", "[s
     check_transient_transport(!state.project.transport.preview_playhead_absolute_row);
 }
 #endif
+
+namespace {
+wormedit::rational_t catalog_requested_rate;
+auto accept_catalog_rate(wormedit::rational_t rate) -> bool {
+    catalog_requested_rate = rate;
+    return true;
+}
+void check_catalog_rate_dispatch(const wormedit::audio::playback_rate_descriptor_t& entry) {
+    application_command_state_t state;
+    state.services.transport_set_playback_rate = accept_catalog_rate;
+    catalog_requested_rate = {};
+    WormUiWorkspaceAction action{};
+    action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE;
+    action.transport_rate_index = 255; // A contradictory legacy position must not control dispatch.
+    action.transport_rate_id = static_cast<std::uint32_t>(entry.id);
+    wormedit::stepmania_export_policy_t policy;
+    const auto status = dispatch_transport_player_action(action, state, policy, std::nullopt);
+    CHECK((status && *status == "Playback rate changed."));
+    CHECK(catalog_requested_rate == entry.rate);
+    CHECK(state.preferences.transport_rate_index == static_cast<std::size_t>(entry.id));
+}
+} // namespace
+
+TEST_CASE("Transport UI dispatch uses stable playback catalog ids", "[sys][catalog-wiring]") {
+    for (const auto& entry : wormedit::audio::playback_rate_catalog)
+        check_catalog_rate_dispatch(entry);
+}
+
+TEST_CASE("Transport UI dispatch rejects unknown playback catalog ids", "[sys][catalog-wiring]") {
+    application_command_state_t state;
+    state.services.transport_set_playback_rate = accept_catalog_rate;
+    catalog_requested_rate = {};
+    WormUiWorkspaceAction action{};
+    action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE;
+    action.transport_rate_id = 255;
+    wormedit::stepmania_export_policy_t policy;
+    const auto status = dispatch_transport_player_action(action, state, policy, std::nullopt);
+    CHECK((status && *status == "Playback rate unchanged."));
+    CHECK(catalog_requested_rate == wormedit::rational_t{});
+}

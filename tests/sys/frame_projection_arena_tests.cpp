@@ -1,6 +1,7 @@
 #include "sys/frame_timing.h"
 #include "sys/workspace_projection.h"
 #include <wormedit/core/lane_profiles.h>
+#include <wormedit/audio/playback_rate.h>
 #include "sys/timing_view.h"
 #include "sys/metadata_view_projection.h"
 #include <array>
@@ -1444,4 +1445,20 @@ TEST_CASE("Workspace projects every stable new-project catalog identity", "[sys]
     REQUIRE(view.count == wormedit::new_project_layouts().size());
     for (std::size_t i = 0; i < view.count; ++i)
         check_new_project_catalog_entry(view.entries[i], wormedit::new_project_layouts()[i]);
+}
+
+namespace {
+void check_playback_rate_catalog_entry(const WormUiKindDescriptorView& actual,
+                                       const wormedit::audio::playback_rate_descriptor_t& expected) {
+    CHECK(actual.id == static_cast<std::uint32_t>(expected.id));
+    CHECK(std::string_view{actual.label} == expected.label);
+}
+} // namespace
+
+TEST_CASE("Workspace projects playback rate ids and labels from the catalog", "[sys][catalog-wiring]") {
+    wormedit::workspace_view_t model;
+    auto frame = flatten_workspace(model, {}, "ready", {}, false, {}, nullptr);
+    REQUIRE(frame.view.playback_rates.count == wormedit::audio::playback_rate_catalog.size());
+    for (std::size_t i = 0; i < frame.view.playback_rates.count; ++i)
+        check_playback_rate_catalog_entry(frame.view.playback_rates.entries[i], wormedit::audio::playback_rate_catalog[i]);
 }

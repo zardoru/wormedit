@@ -461,6 +461,7 @@ typedef struct WormUiWorkspaceAction {
     uint64_t hover_source_total_frames;
     uint32_t hover_source_sample_rate;
     uint8_t transport_rate_index;
+    uint32_t transport_rate_id;
     bool transport_keep_pitch;
     uint64_t audio_asset_id;
     uint64_t audio_resource_id;

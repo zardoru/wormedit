@@ -1,5 +1,6 @@
 #pragma once
 #include "sys/metronome.h"
+#include <wormedit/audio/playback_rate.h>
 #include "sys/bookmark_navigation.h"
 #include <algorithm>
 
@@ -532,7 +533,7 @@ struct application_command_state_t {
         // Editor placement audition is distinct from Sounds-panel preview-on-click.
         wormedit::editor_preferences_t editor_preferences;
         bool minimap_click_moves_paused_playhead{};
-        std::size_t transport_rate_index{8};
+        std::size_t transport_rate_index{static_cast<std::size_t>(wormedit::audio::playback_rate_id_t::normal)};
         bool transport_keep_pitch{};
         bool transport_keep_pitch_available{};
         // Production seek services publish feedback; legacy/test callbacks leave this false.

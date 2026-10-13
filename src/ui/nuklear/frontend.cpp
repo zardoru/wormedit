@@ -2019,22 +2019,25 @@ static auto workspace_status_line(const WormUiWorkspaceView& view) -> std::strin
 }
 
 static void render_transport_rate(const WormUiWorkspaceView& view, WormUiWorkspaceAction* action) {
-    static const char* labels[]{"1×", "0.9×", "0.8×", "0.75×", "0.5×", "0.33×", "0.25×", "0.2×", "0.1×"};
-    const int index = view.transport_rate_index < 9 ? view.transport_rate_index : 8;
-    const int label_index = 8 - index;
+    const auto& rates = view.playback_rates;
+    if (!rates.entries || rates.count == 0) return;
+    int index = static_cast<int>(rates.count) - 1;
+    for (std::size_t i = 0; i < rates.count; ++i)
+        if (rates.entries[i].id == view.transport_rate_id) index = static_cast<int>(i);
     int target = index;
     nk_spacing(g_context, 1);
     if (!view.transport_rate_available) nk_widget_disable_begin(g_context);
     if (wormedit::ui::chrome::IconButton{Glyph::chevron_left, "Slower playback rate"}.render(g_context) &&
         index > 0) target = index - 1;
-    nk_label(g_context, labels[label_index], NK_TEXT_CENTERED);
+    nk_label(g_context, rates.entries[index].label, NK_TEXT_CENTERED);
     if (wormedit::ui::chrome::IconButton{Glyph::chevron_right, "Faster playback rate"}.render(g_context) &&
-        index < 8) target = index + 1;
+        index + 1 < static_cast<int>(rates.count)) target = index + 1;
     if (!view.transport_rate_available) nk_widget_disable_end(g_context);
     nk_spacing(g_context, 1);
     if (view.transport_rate_available && target != index && action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
         action->kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE;
         action->transport_rate_index = static_cast<uint8_t>(target);
+        action->transport_rate_id = rates.entries[target].id;
     }
     if (!view.transport_keep_pitch_available) nk_widget_disable_begin(g_context);
     const auto* keep_pitch_hint = view.transport_keep_pitch_available

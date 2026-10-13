@@ -1,4 +1,5 @@
 #include "sys/application_lifetime.h"
+#include "sys/application.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <SDL3/SDL_init.h>
@@ -12,6 +13,10 @@
 #include <memory>
 #include <mutex>
 #include <stdexcept>
+#include <type_traits>
+
+static_assert(!std::is_copy_constructible_v<wormedit::sys::application_t>);
+static_assert(!std::is_move_constructible_v<wormedit::sys::application_t>);
 
 namespace {
 void check_lifetime(bool value) { CHECK(value); }

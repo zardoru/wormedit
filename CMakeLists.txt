@@ -525,6 +525,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/chart_import_session.cpp
         src/sys/project_save_paths.cpp
         src/sys/main.cpp
+        src/sys/application.cpp
         src/sys/application_timing_stage.cpp
         src/sys/frame_timing.cpp
         src/sys/timing_view.cpp

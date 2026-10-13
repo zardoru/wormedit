@@ -26,7 +26,7 @@ struct node_state_t {
     std::vector<task_result_t> inputs;
     std::size_t dependencies_left{};
     node_status_t status{node_status_t::blocked};
-    task_result_t result;
+    task_outcome_t result;
 };
 
 struct graph_state_t {
@@ -90,10 +90,6 @@ auto is_terminal(node_status_t status) noexcept -> bool {
            status == node_status_t::cancelled;
 }
 
-auto cancelled_result(task_error_code_t code, std::string message) -> task_result_t {
-    return task_result_t::failure(code, std::move(message));
-}
-
 void enqueue_locked(scheduler_state_t& scheduler, const std::shared_ptr<graph_state_t>& graph,
                     std::uint32_t task) {
     if (scheduler.queue.empty() || scheduler.queue_size >= scheduler.queue.size()) {
@@ -127,19 +123,20 @@ void remove_graph_from_queue_locked(scheduler_state_t& scheduler,
 }
 
 void mark_terminal_locked(scheduler_state_t& scheduler, graph_state_t& graph, std::uint32_t task,
-                          task_result_t result) {
+                          task_outcome_t result) {
     auto& node = graph.nodes[task];
     if (is_terminal(node.status)) {
         return;
     }
     node.result = std::move(result);
-    node.status = node.result.is_successful()
-                      ? node_status_t::succeeded
-                      : (node.result.error->code == task_error_code_t::cancelled ||
-                                 node.result.error->code == task_error_code_t::scheduler_stopped ||
-                                 node.result.error->code == task_error_code_t::dependency_failed
-                             ? node_status_t::cancelled
-                             : node_status_t::failed);
+    node.status =
+        node.result.has_value()
+            ? node_status_t::succeeded
+            : (node.result.error().cause.code == task_error_code_t::cancelled ||
+                       node.result.error().cause.code == task_error_code_t::scheduler_stopped ||
+                       node.result.error().cause.code == task_error_code_t::dependency_failed
+                   ? node_status_t::cancelled
+                   : node_status_t::failed);
     --graph.remaining;
     --scheduler.outstanding;
 }
@@ -159,7 +156,8 @@ void cancel_graph_locked(scheduler_state_t& scheduler, const std::shared_ptr<gra
     for (std::uint32_t task = 0; task < graph->nodes.size(); ++task) {
         auto& node = graph->nodes[task];
         if (node.status == node_status_t::blocked || node.status == node_status_t::queued) {
-            mark_terminal_locked(scheduler, *graph, task, cancelled_result(code, reason));
+            mark_terminal_locked(scheduler, *graph, task,
+                                 std::unexpected(task_failure_t::from(code, reason)));
         }
     }
     prune_graphs_locked(scheduler);
@@ -176,12 +174,13 @@ void push_ready_dependents(graph_state_t& graph, std::uint32_t task) {
 }
 
 void complete_locked(scheduler_state_t& scheduler, const std::shared_ptr<graph_state_t>& graph,
-                     std::uint32_t task, task_result_t result) {
+                     std::uint32_t task, task_outcome_t result) {
     if (scheduler.stopping) {
-        result =
-            cancelled_result(task_error_code_t::scheduler_stopped, "scheduler is shutting down");
+        result = std::unexpected(task_failure_t::from(task_error_code_t::scheduler_stopped,
+                                                      "scheduler is shutting down"));
     } else if (graph->stop_source.stop_requested()) {
-        result = cancelled_result(task_error_code_t::cancelled, "task graph was cancelled");
+        result = std::unexpected(
+            task_failure_t::from(task_error_code_t::cancelled, "task graph was cancelled"));
     }
 
     mark_terminal_locked(scheduler, *graph, task, std::move(result));
@@ -201,18 +200,20 @@ void complete_locked(scheduler_state_t& scheduler, const std::shared_ptr<graph_s
                                                  : task_error_code_t::cancelled;
             const auto* reason =
                 scheduler.stopping ? "scheduler is shutting down" : "task graph was cancelled";
-            mark_terminal_locked(scheduler, *graph, ready, cancelled_result(code, reason));
+            mark_terminal_locked(scheduler, *graph, ready,
+                                 std::unexpected(task_failure_t::from(code, reason)));
             push_ready_dependents(*graph, ready);
         } else if (const auto failed_dependency =
                        std::ranges::find_if(node.dependencies,
                                             [&graph](const auto dependency) {
-                                                return !graph->nodes[dependency].result.succeeded();
+                                                return !graph->nodes[dependency].result.has_value();
                                             });
                    failed_dependency != node.dependencies.end()) {
-            const auto& error = *graph->nodes[*failed_dependency].result.error;
-            mark_terminal_locked(scheduler, *graph, ready,
-                                 cancelled_result(task_error_code_t::dependency_failed,
-                                                  "dependency failed: " + error.message));
+            const auto& error = graph->nodes[*failed_dependency].result.error().cause;
+            mark_terminal_locked(
+                scheduler, *graph, ready,
+                std::unexpected(task_failure_t::from(task_error_code_t::dependency_failed,
+                                                     "dependency failed: " + error.message)));
             push_ready_dependents(*graph, ready);
         } else {
             enqueue_locked(scheduler, graph, ready);
@@ -263,27 +264,30 @@ void worker_loop(const std::shared_ptr<scheduler_state_t>& scheduler, std::stop_
                                                       : task_error_code_t::cancelled;
                 const auto* reason =
                     scheduler->stopping ? "scheduler is shutting down" : "task graph was cancelled";
-                complete_locked(*scheduler, work.graph, work.task, cancelled_result(code, reason));
+                complete_locked(*scheduler, work.graph, work.task,
+                                std::unexpected(task_failure_t::from(code, reason)));
                 continue;
             }
             node.status = node_status_t::running;
             node.inputs.clear();
             for (const auto dependency : node.dependencies) {
-                node.inputs.push_back(work.graph->nodes[dependency].result);
+                node.inputs.push_back(task_result_t::from(work.graph->nodes[dependency].result));
             }
         }
 
-        auto result =
-            task_result_t::failure(task_error_code_t::task_failed, "task did not return a result");
+        task_outcome_t result = std::unexpected(
+            task_failure_t::from(task_error_code_t::task_failed, "task did not return a result"));
         try {
             auto& node = work.graph->nodes[work.task];
             result = node.function(std::span<const task_result_t>(node.inputs),
-                                   work.graph->stop_source.get_token());
+                                   work.graph->stop_source.get_token())
+                         .into_outcome();
         } catch (const std::exception& exception) {
-            result = task_result_t::failure(task_error_code_t::task_threw, exception.what());
+            result = std::unexpected(
+                task_failure_t::from(task_error_code_t::task_threw, exception.what()));
         } catch (...) {
-            result = task_result_t::failure(task_error_code_t::task_threw,
-                                            "task threw a non-standard exception");
+            result = std::unexpected(task_failure_t::from(task_error_code_t::task_threw,
+                                                          "task threw a non-standard exception"));
         }
 
         work.graph->nodes[work.task].inputs.clear();
@@ -296,12 +300,51 @@ void worker_loop(const std::shared_ptr<scheduler_state_t>& scheduler, std::stop_
 
 } // namespace
 
+auto task_result_t::from(task_outcome_t&& outcome) -> task_result_t {
+    if (outcome)
+        return {.payload = std::move(*outcome), .error = std::nullopt};
+    return {.payload = std::move(outcome.error().payload),
+            .error = task_error_t{.code = outcome.error().cause.code,
+                                  .message = std::move(outcome.error().cause.message)}};
+}
+
+auto task_result_t::from(const task_outcome_t& outcome) -> task_result_t {
+    if (outcome)
+        return {.payload = *outcome, .error = std::nullopt};
+    return {.payload = outcome.error().payload,
+            .error = task_error_t{.code = outcome.error().cause.code,
+                                  .message = outcome.error().cause.message}};
+}
+
+auto task_result_t::into_outcome() && -> task_outcome_t {
+    if (!error)
+        return std::move(payload);
+    return std::unexpected(
+        task_failure_t::from(error->code, std::move(error->message), std::move(payload)));
+}
+
+auto task_add_result_t::from(task_add_outcome_t&& outcome) -> task_add_result_t {
+    if (outcome)
+        return {.id = *outcome, .error = std::nullopt};
+    return {.id = std::nullopt,
+            .error = task_error_t{.code = outcome.error().code,
+                                  .message = std::move(outcome.error().message)}};
+}
+
+auto task_submit_result_t::from(task_submit_outcome_t&& outcome) -> task_submit_result_t {
+    if (outcome)
+        return {.graph = std::move(*outcome), .error = std::nullopt};
+    return {.graph = {},
+            .error = task_error_t{.code = outcome.error().code,
+                                  .message = std::move(outcome.error().message)}};
+}
+
 auto task_result_t::success(task_value_t value) -> task_result_t {
-    return {.payload = std::move(value)};
+    return from(task_outcome_t{std::move(value)});
 }
 
 auto task_result_t::failure(task_error_code_t code, std::string message) -> task_result_t {
-    return {.error = task_error_t{.code = code, .message = std::move(message)}};
+    return from(task_outcome_t{std::unexpected(task_failure_t::from(code, std::move(message)))});
 }
 
 task_graph_t::task_graph_t(std::size_t maximum_tasks)
@@ -311,16 +354,16 @@ task_graph_t::task_graph_t(task_graph_t&&) noexcept = default;
 auto task_graph_t::operator=(task_graph_t&&) noexcept -> task_graph_t& = default;
 task_graph_t::~task_graph_t() = default;
 
-auto task_graph_t::add_task(std::span<const task_id_t> dependencies, task_function_t function)
-    -> task_add_result_t {
+auto task_graph_t::create_task(std::span<const task_id_t> dependencies, task_function_t function)
+    -> task_add_outcome_t {
     if (!impl_ || !function) {
-        return {.error = task_error_t{.code = task_error_code_t::invalid_task,
-                                      .message = "task callback is empty"}};
+        return std::unexpected(
+            error_t<task_error_code_t>{task_error_code_t::invalid_task, "task callback is empty"});
     }
     if (impl_->nodes.size() >= impl_->maximum_tasks ||
         impl_->nodes.size() >= std::numeric_limits<std::uint32_t>::max()) {
-        return {.error = task_error_t{.code = task_error_code_t::capacity_exceeded,
-                                      .message = "task graph capacity exceeded"}};
+        return std::unexpected(error_t<task_error_code_t>{task_error_code_t::capacity_exceeded,
+                                                          "task graph capacity exceeded"});
     }
     const auto next = static_cast<std::uint32_t>(impl_->nodes.size());
     impl_t::node_definition_t node{.function = std::move(function)};
@@ -328,14 +371,13 @@ auto task_graph_t::add_task(std::span<const task_id_t> dependencies, task_functi
     for (const auto dependency : dependencies) {
         if (dependency.index >= next ||
             std::ranges::find(node.dependencies, dependency.index) != node.dependencies.end()) {
-            return {.error =
-                        task_error_t{.code = task_error_code_t::invalid_task,
-                                     .message = "dependency must be unique and already added"}};
+            return std::unexpected(error_t<task_error_code_t>{
+                task_error_code_t::invalid_task, "dependency must be unique and already added"});
         }
         node.dependencies.push_back(dependency.index);
     }
     impl_->nodes.push_back(std::move(node));
-    return {.id = task_id_t{next}};
+    return task_id_t{next};
 }
 
 auto task_graph_t::size() const noexcept -> std::size_t {
@@ -366,7 +408,7 @@ void task_graph_handle_t::cancel() const {
     scheduler.changed.notify_all();
 }
 
-auto task_graph_handle_t::result(task_id_t task) const -> std::optional<task_result_t> {
+auto task_graph_handle_t::outcome(task_id_t task) const -> std::optional<task_outcome_t> {
     if (!impl_ || task.index >= impl_->graph->nodes.size()) {
         return std::nullopt;
     }
@@ -425,10 +467,10 @@ task_scheduler_t::~task_scheduler_t() {
     shutdown();
 }
 
-auto task_scheduler_t::submit(task_graph_t graph) -> task_submit_result_t {
+auto task_scheduler_t::begin(task_graph_t graph) -> task_submit_outcome_t {
     if (!impl_ || !graph.impl_ || graph.impl_->nodes.empty()) {
-        return {.error = task_error_t{.code = task_error_code_t::invalid_task,
-                                      .message = "cannot submit an empty task graph"}};
+        return std::unexpected(error_t<task_error_code_t>{task_error_code_t::invalid_task,
+                                                          "cannot submit an empty task graph"});
     }
     auto state = impl_->state;
     auto runtime_graph = std::make_shared<graph_state_t>();
@@ -450,12 +492,12 @@ auto task_scheduler_t::submit(task_graph_t graph) -> task_submit_result_t {
 
     std::lock_guard lock(state->mutex);
     if (state->stopping) {
-        return {.error = task_error_t{.code = task_error_code_t::scheduler_stopped,
-                                      .message = "scheduler is shutting down"}};
+        return std::unexpected(error_t<task_error_code_t>{task_error_code_t::scheduler_stopped,
+                                                          "scheduler is shutting down"});
     }
     if (runtime_graph->nodes.size() > state->maximum_outstanding - state->outstanding) {
-        return {.error = task_error_t{.code = task_error_code_t::capacity_exceeded,
-                                      .message = "scheduler outstanding-task capacity exceeded"}};
+        return std::unexpected(error_t<task_error_code_t>{
+            task_error_code_t::capacity_exceeded, "scheduler outstanding-task capacity exceeded"});
     }
     state->outstanding += runtime_graph->nodes.size();
     prune_graphs_locked(*state);
@@ -471,7 +513,7 @@ auto task_scheduler_t::submit(task_graph_t graph) -> task_submit_result_t {
     handle->scheduler = std::move(state);
     handle->graph = std::move(runtime_graph);
     handle->scheduler->changed.notify_all();
-    return {.graph = task_graph_handle_t(std::move(handle))};
+    return task_graph_handle_t(std::move(handle));
 }
 
 void task_scheduler_t::shutdown() {
@@ -496,8 +538,8 @@ void task_scheduler_t::shutdown() {
                     const auto status = graph->nodes[task].status;
                     if (status == node_status_t::blocked || status == node_status_t::queued) {
                         mark_terminal_locked(*state, *graph, task,
-                                             cancelled_result(task_error_code_t::scheduler_stopped,
-                                                              "scheduler is shutting down"));
+                                             std::unexpected(task_failure_t::from(task_error_code_t::scheduler_stopped,
+                                                                                "scheduler is shutting down")));
                     }
                 }
             }
@@ -550,4 +592,22 @@ auto generation_guard_t::is_current(std::uint64_t generation) const noexcept -> 
     return generation != 0 && current_generation() == generation;
 }
 
+} // namespace wormedit
+
+namespace wormedit {
+auto task_graph_t::add_task(std::span<const task_id_t> dependencies, task_function_t function)
+    -> task_add_result_t {
+    return task_add_result_t::from(create_task(dependencies, std::move(function)));
+}
+
+auto task_scheduler_t::submit(task_graph_t graph) -> task_submit_result_t {
+    return task_submit_result_t::from(begin(std::move(graph)));
+}
+
+auto task_graph_handle_t::result(task_id_t task) const -> std::optional<task_result_t> {
+    auto completed = outcome(task);
+    if (!completed)
+        return std::nullopt;
+    return task_result_t::from(std::move(*completed));
+}
 } // namespace wormedit

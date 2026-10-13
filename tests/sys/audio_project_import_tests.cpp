@@ -16,6 +16,7 @@ auto fixture(std::string_view name) -> std::filesystem::path {
     return std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio" / name;
 }
 
+#if defined(WORMEDIT_HAS_FFMPEG)
 auto tagged_audio_matches(std::string_view extension) -> bool {
     const auto imported = wormedit::sys::inspect_audio_for_project(
         fixture(std::string{"tagged-project."} + std::string{extension}));
@@ -41,6 +42,18 @@ TEST_CASE("Audio project import falls back to the file stem without title tags",
     CHECK(result.artist.empty());
 }
 
+#else
+TEST_CASE("Audio project import succeeds without FFmpeg and leaves metadata empty",
+          "[unit][sys][audio-project-import]") {
+    const auto result = wormedit::sys::inspect_audio_for_project(fixture("tagged-project.ogg"));
+    REQUIRE(result);
+    CHECK(result.title.empty());
+    CHECK(result.artist.empty());
+    CHECK(result.error.empty());
+    CHECK(result.duration_seconds.has_value());
+}
+#endif
+
 TEST_CASE("Audio project import rejects missing, unsupported and undecodable files",
           "[unit][sys][audio-project-import]") {
     CHECK_FALSE(wormedit::sys::inspect_audio_for_project(fixture("missing.mp3")));
@@ -48,6 +61,7 @@ TEST_CASE("Audio project import rejects missing, unsupported and undecodable fil
     CHECK_FALSE(wormedit::sys::inspect_audio_for_project(fixture("README.md")));
 }
 
+#if defined(WORMEDIT_HAS_FFMPEG)
 auto tagged_audio_creates_selectable_project() -> bool {
     using namespace wormedit;
     const auto imported = sys::inspect_audio_for_project(fixture("tagged-project.ogg"));
@@ -76,5 +90,7 @@ TEST_CASE("Tagged audio creates a valid selectable 4K project",
           "[integration][sys][audio-project-import]") {
     CHECK(tagged_audio_creates_selectable_project());
 }
+
+#endif
 
 } // namespace

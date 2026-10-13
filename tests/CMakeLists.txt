@@ -249,6 +249,25 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
             wormedit::audio_decoder
             Catch2::Catch2WithMain
     )
+    if(WORMEDIT_ENABLE_FFMPEG AND TARGET PkgConfig::WORMEDIT_FFMPEG)
+        target_link_libraries(wormedit_audio_tests PRIVATE PkgConfig::WORMEDIT_FFMPEG)
+        target_compile_definitions(wormedit_audio_tests PRIVATE WORMEDIT_HAS_FFMPEG=1)
+
+        # Exercise the tolerant capability branch even on FFmpeg-equipped development hosts.
+        add_executable(wormedit_audio_project_import_no_ffmpeg_tests
+            ../src/sys/audio_project_import.cpp
+            sys/audio_project_import_tests.cpp)
+        target_include_directories(wormedit_audio_project_import_no_ffmpeg_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
+        target_compile_definitions(wormedit_audio_project_import_no_ffmpeg_tests PRIVATE
+            WORMEDIT_FIXTURE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+            WORMEDIT_HAS_AUDIO_DECODER=1)
+        target_link_libraries(wormedit_audio_project_import_no_ffmpeg_tests PRIVATE
+            wormedit::audio_decoder Catch2::Catch2WithMain)
+        catch_discover_tests(wormedit_audio_project_import_no_ffmpeg_tests
+            TEST_PREFIX "audio-no-ffmpeg."
+            PROPERTIES LABELS "unit;audio"
+            DISCOVERY_MODE PRE_TEST)
+    endif()
     catch_discover_tests(wormedit_audio_tests
         TEST_PREFIX "audio."
         PROPERTIES LABELS "unit;audio"

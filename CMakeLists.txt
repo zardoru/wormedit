@@ -35,6 +35,8 @@ option(WORMEDIT_ENABLE_AUDIO_DECODER "Build the headless MP3/Ogg decoder target"
 option(WORMEDIT_ENABLE_IMAGE_DECODER "Build the headless bounded static-image decoder target" ON)
 option(WORMEDIT_WINDOWS_CONSOLE "Keep a console window attached to the Windows executable" OFF)
 option(WORMEDIT_ENABLE_VIDEO_DECODER "Build the optional bounded FFmpeg video-frame decoder" ON)
+option(WORMEDIT_ENABLE_FFMPEG "Enable optional FFmpeg audio metadata prefill" ON)
+option(WORMEDIT_REQUIRE_FFMPEG "Require FFmpeg development libraries for shipped builds" OFF)
 set(WORMEDIT_UI_BACKEND "nuklear" CACHE STRING "Editor UI backend (nuklear, imgui, or clay)")
 set_property(CACHE WORMEDIT_UI_BACKEND PROPERTY STRINGS nuklear imgui clay)
 if(NOT WORMEDIT_UI_BACKEND MATCHES "^(nuklear|imgui|clay)$")
@@ -238,16 +240,23 @@ if(WORMEDIT_ENABLE_IMAGE_DECODER)
     endif()
 endif()
 
-if(WORMEDIT_ENABLE_VIDEO_DECODER)
-    find_package(PkgConfig QUIET)
+if(WORMEDIT_ENABLE_FFMPEG OR WORMEDIT_ENABLE_VIDEO_DECODER OR WORMEDIT_REQUIRE_FFMPEG)
+    set(WORMEDIT_FFMPEG_FIND_MODE QUIET)
+    if(WORMEDIT_REQUIRE_FFMPEG)
+        set(WORMEDIT_FFMPEG_FIND_MODE REQUIRED)
+    endif()
+    find_package(PkgConfig ${WORMEDIT_FFMPEG_FIND_MODE})
     if(PkgConfig_FOUND)
-        pkg_check_modules(WORMEDIT_FFMPEG QUIET IMPORTED_TARGET
+        pkg_check_modules(WORMEDIT_FFMPEG ${WORMEDIT_FFMPEG_FIND_MODE} IMPORTED_TARGET
             libavformat
             libavcodec
             libavutil
             libswscale
         )
     endif()
+endif()
+
+if(WORMEDIT_ENABLE_VIDEO_DECODER)
     if(TARGET PkgConfig::WORMEDIT_FFMPEG)
         add_library(wormedit_video_decoder
             src/visual/video_decoder.cpp
@@ -620,6 +629,12 @@ if(WORMEDIT_BUILD_APP)
     if(WORMEDIT_ENABLE_IMAGE_DECODER)
         target_link_libraries(wormedit PRIVATE wormedit::visual_decoder)
         target_compile_definitions(wormedit PRIVATE WORMEDIT_HAS_IMAGE_DECODER=1)
+    endif()
+
+    if(WORMEDIT_ENABLE_FFMPEG AND TARGET PkgConfig::WORMEDIT_FFMPEG)
+        target_link_libraries(wormedit PRIVATE PkgConfig::WORMEDIT_FFMPEG)
+        set_source_files_properties(src/sys/audio_project_import.cpp TARGET_DIRECTORY wormedit
+            PROPERTIES COMPILE_DEFINITIONS WORMEDIT_HAS_FFMPEG=1)
     endif()
 
     if(TARGET wormedit_video_decoder)

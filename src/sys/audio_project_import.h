@@ -21,7 +21,8 @@ struct audio_project_import_result_t {
 };
 
 // Inspects an MP3 or Ogg Vorbis selected as the starting music for a new
-// project. Embedded TITLE/ARTIST tags take precedence over the filename.
+// project. With FFmpeg, embedded TITLE/ARTIST tags take precedence over the
+// filename. Without FFmpeg, inspection succeeds with empty title/artist fields.
 [[nodiscard]] auto inspect_audio_for_project(const std::filesystem::path& source_path)
     -> audio_project_import_result_t;
 

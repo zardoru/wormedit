@@ -57,7 +57,8 @@
         "WORMEDIT_WINDOWS_RC_COMPILER": "$env{WORMEDIT_WINDOWS_RC_COMPILER}",
         "WORMEDIT_WINDOWS_SYSROOT": "$env{WORMEDIT_WINDOWS_SYSROOT}",
         "WORMEDIT_WINDOWS_TARGET": "$env{WORMEDIT_WINDOWS_TARGET}",
-        "WORMEDIT_CROSS_EMULATOR": "$env{WORMEDIT_CROSS_EMULATOR}"
+        "WORMEDIT_CROSS_EMULATOR": "$env{WORMEDIT_CROSS_EMULATOR}",
+        "WORMEDIT_ENABLE_FFMPEG": "OFF"
       }
     },
     {
@@ -75,7 +76,35 @@
         "WORMEDIT_WINDOWS_CXX_COMPILER": "$env{WORMEDIT_WINDOWS_CXX_COMPILER}",
         "WORMEDIT_WINDOWS_RC_COMPILER": "$env{WORMEDIT_WINDOWS_RC_COMPILER}",
         "WORMEDIT_WINDOWS_SYSROOT": "$env{WORMEDIT_WINDOWS_SYSROOT}",
-        "WORMEDIT_WINDOWS_TARGET": "$env{WORMEDIT_WINDOWS_TARGET}"
+        "WORMEDIT_WINDOWS_TARGET": "$env{WORMEDIT_WINDOWS_TARGET}",
+        "WORMEDIT_ENABLE_FFMPEG": "OFF"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Shipped Linux application (FFmpeg required)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_TESTING": "OFF",
+        "WORMEDIT_BUILD_APP": "ON",
+        "WORMEDIT_ENABLE_AUDIO_DECODER": "ON",
+        "WORMEDIT_ENABLE_VIDEO_DECODER": "ON",
+        "WORMEDIT_ENABLE_FFMPEG": "ON",
+        "WORMEDIT_REQUIRE_FFMPEG": "ON"
+      }
+    },
+    {
+      "name": "windows-cross-release",
+      "displayName": "Shipped Windows application (cross-built FFmpeg required)",
+      "inherits": "windows-cross",
+      "binaryDir": "${sourceDir}/build/windows-cross-release",
+      "cacheVariables": {
+        "WORMEDIT_ENABLE_AUDIO_DECODER": "ON",
+        "WORMEDIT_ENABLE_VIDEO_DECODER": "ON",
+        "WORMEDIT_ENABLE_FFMPEG": "ON",
+        "WORMEDIT_REQUIRE_FFMPEG": "ON"
       }
     }
   ],
@@ -99,6 +128,16 @@
     {
       "name": "windows-cross",
       "configurePreset": "windows-cross"
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "jobs": 4
+    },
+    {
+      "name": "windows-cross-release",
+      "configurePreset": "windows-cross-release",
+      "jobs": 4
     }
   ],
   "testPresets": [

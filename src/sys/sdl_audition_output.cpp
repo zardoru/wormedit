@@ -55,7 +55,12 @@ void sdl_audition_output_t::close() noexcept {
         return;
     }
     static_cast<void>(stop());
-    refill_worker_.request_stop();
+    {
+        // Publish the stop predicate under the waiter's mutex: otherwise the
+        // notification can fall between its false predicate check and wait.
+        const std::scoped_lock lock(refill_mutex_);
+        refill_worker_.request_stop();
+    }
     refill_ready_.notify_all();
     if (refill_worker_.joinable()) refill_worker_.join();
     SDL_DestroyAudioStream(stream_);

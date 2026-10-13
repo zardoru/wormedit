@@ -90,7 +90,7 @@ auto chunk_arena_core_t::operator=(chunk_arena_core_t&& other) noexcept -> chunk
 }
 
 auto chunk_arena_core_t::commit(std::size_t index, std::size_t begin, std::size_t size) noexcept
-    -> allocation_t {
+    -> allocation_location_t {
     auto& chunk = chunks_[index];
     const auto consumed = begin + size - chunk.used;
     auto* address = chunk.storage.get() + begin;
@@ -139,20 +139,25 @@ auto chunk_arena_core_t::add_chunk(std::size_t size, std::size_t alignment) noex
     return arena_error_t::none;
 }
 
-auto chunk_arena_core_t::allocate_bytes(std::size_t size, std::size_t alignment,
-                                        arena_fit_policy_t policy) noexcept -> allocation_t {
+auto chunk_arena_core_t::allocate(std::size_t size, std::size_t alignment,
+                                  arena_fit_policy_t policy) noexcept -> allocation_outcome_t {
     if (!is_power_of_two(alignment) || alignment > max_default_alignment)
-        return {.error = arena_error_t::invalid_alignment};
+        return std::unexpected(arena_error_t::invalid_alignment);
     if (object_count_ >= options_.maximum_objects)
-        return {.error = arena_error_t::object_limit};
+        return std::unexpected(arena_error_t::object_limit);
     if (const auto placement = find_existing(size, alignment, policy); placement.has_value())
         return commit(placement->chunk_index, placement->begin, size);
     if (const auto error = add_chunk(size, alignment); error != arena_error_t::none)
-        return {.error = error};
+        return std::unexpected(error);
     const auto begin = find_space(chunks_.back(), size, alignment);
     if (!begin.has_value())
-        return {.error = arena_error_t::byte_limit};
+        return std::unexpected(arena_error_t::byte_limit);
     return commit(chunks_.size() - 1, *begin, size);
+}
+
+auto chunk_arena_core_t::allocate_bytes(std::size_t size, std::size_t alignment,
+                                        arena_fit_policy_t policy) noexcept -> allocation_t {
+    return allocation_t::from(allocate(size, alignment, policy));
 }
 
 void chunk_arena_core_t::rewind() noexcept {
@@ -193,12 +198,19 @@ frame_arena_t::~frame_arena_t() = default;
 frame_arena_t::frame_arena_t(frame_arena_t&&) noexcept = default;
 auto frame_arena_t::operator=(frame_arena_t&&) noexcept -> frame_arena_t& = default;
 
+auto frame_arena_t::allocate(std::size_t size, std::size_t alignment) noexcept
+    -> arena_allocation_outcome_t {
+    if (!core_)
+        return std::unexpected(arena_error_t::out_of_memory);
+    const auto allocation = core_->allocate(size, alignment, arena_fit_policy_t::any_chunk);
+    if (!allocation)
+        return std::unexpected(allocation.error());
+    return allocation->data;
+}
+
 auto frame_arena_t::allocate_bytes(std::size_t size, std::size_t alignment) noexcept
     -> arena_allocation_t {
-    if (!core_)
-        return {.error = arena_error_t::out_of_memory};
-    const auto allocation = core_->allocate_bytes(size, alignment, arena_fit_policy_t::any_chunk);
-    return {.data = allocation.data, .error = allocation.error};
+    return arena_allocation_t::from(allocate(size, alignment));
 }
 
 void frame_arena_t::reset() noexcept {
@@ -239,18 +251,22 @@ auto append_arena_t::operator=(append_arena_t&& other) noexcept -> append_arena_
     return *this;
 }
 
+auto append_arena_t::append_span(std::size_t size, std::size_t alignment) noexcept
+    -> append_arena_outcome_t {
+    const auto allocation = core_.allocate(size, alignment, arena_fit_policy_t::newest_chunk);
+    if (!allocation)
+        return std::unexpected(allocation.error());
+    payload_bytes_ += size;
+    return append_arena_span_t{.bytes = std::span<std::byte>{allocation->data, size},
+                               .chunk = chunk_handle(allocation->chunk_index),
+                               .chunk_index = allocation->chunk_index,
+                               .offset = allocation->offset,
+                               .alignment = alignment};
+}
+
 auto append_arena_t::append(std::size_t size, std::size_t alignment) noexcept
     -> append_arena_result_t {
-    const auto allocation =
-        core_.allocate_bytes(size, alignment, arena_fit_policy_t::newest_chunk);
-    if (allocation.error != arena_error_t::none)
-        return {.span = {}, .error = allocation.error};
-    payload_bytes_ += size;
-    return {.span = {.bytes = std::span<std::byte>{allocation.data, size},
-                     .chunk = chunk_handle(allocation.chunk_index),
-                     .chunk_index = allocation.chunk_index,
-                     .offset = allocation.offset,
-                     .alignment = alignment}};
+    return append_arena_result_t::from(append_span(size, alignment));
 }
 
 void append_arena_t::mark_stale(std::size_t bytes) noexcept {
@@ -317,38 +333,47 @@ auto is_valid_order(std::span<const std::size_t> order, std::size_t count) -> bo
 
 } // namespace
 
-auto append_arena_t::compact(std::span<const append_arena_span_t> live_spans,
-                             std::span<const std::size_t> order) const noexcept
-    -> append_arena_compaction_t {
-    append_arena_compaction_t result{
-        .arena = append_arena_t{core_.options(), core_.resource()}, .remap = {}};
-    const auto fail = [&](arena_compaction_error_t error, arena_error_t allocation_error) {
-        result.arena = append_arena_t{core_.options(), core_.resource()};
-        result.remap.clear();
-        result.error = error;
-        result.allocation_error = allocation_error;
-        return std::move(result);
-    };
-    if (!std::ranges::all_of(live_spans, [this](const auto& span) { return has_allocation(span); }))
-        return fail(arena_compaction_error_t::foreign_span, arena_error_t::none);
+auto append_arena_t::build_compaction(std::span<const append_arena_span_t> live_spans,
+                                      std::span<const std::size_t> order) const noexcept
+    -> append_arena_compaction_outcome_t {
+    append_arena_snapshot_t result{.arena = append_arena_t{core_.options(), core_.resource()},
+                                   .remap = {}};
+    for (const auto& span : live_spans) {
+        if (!has_allocation(span))
+            return std::unexpected(arena_compaction_failure_t{
+                arena_compaction_error_t::foreign_span, arena_error_t::none, {}});
+    }
     try {
         if (!is_valid_order(order, live_spans.size()))
-            return fail(arena_compaction_error_t::invalid_order, arena_error_t::none);
+            return std::unexpected(arena_compaction_failure_t{
+                arena_compaction_error_t::invalid_order, arena_error_t::none, {}});
         result.remap.resize(live_spans.size());
     } catch (...) {
-        return fail(arena_compaction_error_t::allocation_failed, arena_error_t::out_of_memory);
+        return std::unexpected(arena_compaction_failure_t{
+            arena_compaction_error_t::allocation_failed, arena_error_t::out_of_memory, {}});
     }
     for (std::size_t position = 0; position < live_spans.size(); ++position) {
         const auto index = order.empty() ? position : order[position];
         const auto& source = live_spans[index];
-        auto copy = result.arena.append(source.bytes.size(), source.alignment);
-        if (!copy)
-            return fail(arena_compaction_error_t::allocation_failed, copy.error);
+        auto copy = result.arena.append_span(source.bytes.size(), source.alignment);
+        if (!copy) {
+            result.remap.clear();
+            return std::unexpected(
+                arena_compaction_failure_t{arena_compaction_error_t::allocation_failed,
+                                           copy.error(), std::move(result.remap)});
+        }
         if (!source.bytes.empty())
-            std::memcpy(copy.span.bytes.data(), source.bytes.data(), source.bytes.size());
-        result.remap[index] = std::move(copy.span);
+            std::memcpy(copy->bytes.data(), source.bytes.data(), source.bytes.size());
+        result.remap[index] = std::move(*copy);
     }
     return result;
+}
+
+auto append_arena_t::compact(std::span<const append_arena_span_t> live_spans,
+                             std::span<const std::size_t> order) const noexcept
+    -> append_arena_compaction_t {
+    return append_arena_compaction_t::from(build_compaction(live_spans, order), core_.options(),
+                                           core_.resource());
 }
 
 } // namespace wormedit

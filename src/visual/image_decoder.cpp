@@ -22,10 +22,6 @@
 namespace wormedit::visual {
 namespace {
 
-auto failure(image_status_t status, std::string message) -> image_decode_result_t {
-    return {.status = status, .image = std::nullopt, .message = std::move(message)};
-}
-
 auto checked_geometry(int width, int height, image_decode_limits_t limits, std::size_t& rgba_bytes)
     -> image_status_t {
     if (width <= 0 || height <= 0 || static_cast<std::uint64_t>(width) > limits.maximum_width ||
@@ -59,19 +55,21 @@ auto geometry_message(image_status_t status) -> std::string {
 
 } // namespace
 
-auto decode_image_rgba(const resolved_visual_asset_t& source, std::span<const std::byte> encoded,
-                       image_decode_limits_t limits) -> image_decode_result_t {
+auto rgba_image_t::from(const resolved_visual_asset_t& source, std::span<const std::byte> encoded,
+                        image_decode_limits_t limits) -> image_decode_outcome_t {
     if (source.kind != asset_kind_t::image) {
-        return failure(image_status_t::unsupported_asset_kind,
-                       "only static image assets can be decoded as RGBA frames");
+        return std::unexpected(
+            error_t<image_status_t>{image_status_t::unsupported_asset_kind,
+                                    "only static image assets can be decoded as RGBA frames"});
     }
     if (limits.maximum_input_bytes == 0 || limits.maximum_width == 0 ||
         limits.maximum_height == 0 || limits.maximum_pixels == 0 ||
         limits.maximum_rgba_bytes == 0 || encoded.empty() ||
         encoded.size() > limits.maximum_input_bytes ||
         encoded.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
-        return failure(image_status_t::input_too_large,
-                       "encoded image is empty or exceeds the configured input limit");
+        return std::unexpected(error_t<image_status_t>{
+            image_status_t::input_too_large,
+            "encoded image is empty or exceeds the configured input limit"});
     }
     const auto* bytes = reinterpret_cast<const stbi_uc*>(encoded.data());
     const auto byte_count = static_cast<int>(encoded.size());
@@ -80,19 +78,21 @@ auto decode_image_rgba(const resolved_visual_asset_t& source, std::span<const st
     int source_channels{};
     if (stbi_info_from_memory(bytes, byte_count, &width, &height, &source_channels) == 0) {
         const auto* reason = stbi_failure_reason();
-        return failure(image_status_t::decode_failed,
-                       reason ? std::string{"image header decode failed: "} + reason
-                              : "image header decode failed");
+        return std::unexpected(
+            error_t<image_status_t>{image_status_t::decode_failed,
+                                    reason ? std::string{"image header decode failed: "} + reason
+                                           : "image header decode failed"});
     }
     std::size_t rgba_bytes{};
     const auto geometry = checked_geometry(width, height, limits, rgba_bytes);
     if (geometry != image_status_t::ready) {
-        return failure(geometry, geometry_message(geometry));
+        return std::unexpected(error_t<image_status_t>{geometry, geometry_message(geometry)});
     }
     if ((source.declared_width && *source.declared_width != static_cast<std::uint32_t>(width)) ||
         (source.declared_height && *source.declared_height != static_cast<std::uint32_t>(height))) {
-        return failure(image_status_t::declared_geometry_mismatch,
-                       "decoded image geometry differs from the document declaration");
+        return std::unexpected(error_t<image_status_t>{
+            image_status_t::declared_geometry_mismatch,
+            "decoded image geometry differs from the document declaration"});
     }
     int decoded_width{};
     int decoded_height{};
@@ -104,9 +104,10 @@ auto decode_image_rgba(const resolved_visual_asset_t& source, std::span<const st
         if (decoded != nullptr) {
             stbi_image_free(decoded);
         }
-        return failure(image_status_t::decode_failed,
-                       reason ? std::string{"image pixel decode failed: "} + reason
-                              : "image pixel decode failed");
+        return std::unexpected(
+            error_t<image_status_t>{image_status_t::decode_failed,
+                                    reason ? std::string{"image pixel decode failed: "} + reason
+                                           : "image pixel decode failed"});
     }
     rgba_image_t image{.resource = source.resource,
                        .asset = source.asset,
@@ -116,37 +117,60 @@ auto decode_image_rgba(const resolved_visual_asset_t& source, std::span<const st
                        .pixels = {}};
     image.pixels.assign(decoded, decoded + rgba_bytes);
     stbi_image_free(decoded);
-    return {.status = image_status_t::ready, .image = std::move(image), .message = {}};
+    return image;
 }
 
-auto load_image_rgba(const resolved_visual_asset_t& source, image_decode_limits_t limits)
-    -> image_decode_result_t {
+auto open_image_rgba(const resolved_visual_asset_t& source, image_decode_limits_t limits)
+    -> image_decode_outcome_t {
     if (source.kind != asset_kind_t::image) {
-        return failure(image_status_t::unsupported_asset_kind,
-                       "only static image assets can be loaded as RGBA frames");
+        return std::unexpected(
+            error_t<image_status_t>{image_status_t::unsupported_asset_kind,
+                                    "only static image assets can be loaded as RGBA frames"});
     }
     std::error_code error;
     const auto file_size = std::filesystem::file_size(source.path, error);
     if (error) {
-        return failure(image_status_t::read_failed,
-                       "visual asset size could not be read: " + error.message());
+        return std::unexpected(
+            error_t<image_status_t>{image_status_t::read_failed,
+                                    "visual asset size could not be read: " + error.message()});
     }
     if (file_size == 0 || file_size > limits.maximum_input_bytes ||
         file_size > static_cast<std::uintmax_t>(std::numeric_limits<std::size_t>::max())) {
-        return failure(image_status_t::input_too_large,
-                       "visual asset file is empty or exceeds the configured input limit");
+        return std::unexpected(error_t<image_status_t>{
+            image_status_t::input_too_large,
+            "visual asset file is empty or exceeds the configured input limit"});
     }
     std::ifstream input(source.path, std::ios::binary);
     if (!input) {
-        return failure(image_status_t::read_failed, "visual asset file could not be opened");
+        return std::unexpected(error_t<image_status_t>{image_status_t::read_failed,
+                                                       "visual asset file could not be opened"});
     }
     std::vector<std::byte> encoded(static_cast<std::size_t>(file_size));
     input.read(reinterpret_cast<char*>(encoded.data()),
                static_cast<std::streamsize>(encoded.size()));
     if (!input || input.gcount() != static_cast<std::streamsize>(encoded.size())) {
-        return failure(image_status_t::read_failed, "visual asset file could not be read fully");
+        return std::unexpected(error_t<image_status_t>{
+            image_status_t::read_failed, "visual asset file could not be read fully"});
     }
-    return decode_image_rgba(source, encoded, limits);
+    return rgba_image_t::from(source, encoded, limits);
+}
+
+auto image_decode_result_t::from(image_decode_outcome_t&& outcome) -> image_decode_result_t {
+    if (!outcome)
+        return {.status = outcome.error().code,
+                .image = std::nullopt,
+                .message = std::move(outcome.error().message)};
+    return {.status = image_status_t::ready, .image = std::move(*outcome), .message = {}};
+}
+
+auto decode_image_rgba(const resolved_visual_asset_t& source, std::span<const std::byte> encoded,
+                       image_decode_limits_t limits) -> image_decode_result_t {
+    return image_decode_result_t::from(rgba_image_t::from(source, encoded, limits));
+}
+
+auto load_image_rgba(const resolved_visual_asset_t& source, image_decode_limits_t limits)
+    -> image_decode_result_t {
+    return image_decode_result_t::from(open_image_rgba(source, limits));
 }
 
 } // namespace wormedit::visual

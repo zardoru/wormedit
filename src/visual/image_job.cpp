@@ -57,19 +57,19 @@ auto decode_images(image_cache_t& cache, song_id_t project, std::uint64_t docume
                                        options.maximum_result_rgba_bytes);
             continue;
         }
-        auto decoded = load_image_rgba(source, options.decode_limits);
+        auto decoded = open_image_rgba(source, options.decode_limits);
         if (!decoded) {
             result.items.push_back({.source = source,
-                                    .status = decoded.status,
+                                    .status = decoded.error().code,
                                     .image = {},
-                                    .message = std::move(decoded.message)});
+                                    .message = std::move(decoded.error().message)});
             continue;
         }
         if (stop.stop_requested()) {
             return task_result_t::failure(task_error_code_t::cancelled,
                                           "image decode request was superseded");
         }
-        auto image = std::make_shared<const rgba_image_t>(std::move(*decoded.image));
+        auto image = std::make_shared<const rgba_image_t>(std::move(*decoded));
         append_within_result_limit(result, source, image, result_bytes,
                                    options.maximum_result_rgba_bytes);
         if (result.items.back()) {

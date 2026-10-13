@@ -39,6 +39,11 @@ struct image_decode_limits_t {
 };
 
 struct rgba_image_t {
+    [[nodiscard]] static auto from(const resolved_visual_asset_t& source,
+                                   std::span<const std::byte> encoded,
+                                   image_decode_limits_t limits = {})
+        -> result_t<rgba_image_t, error_t<image_status_t>>;
+
     resource_id_t resource;
     asset_id_t asset;
     std::filesystem::path path;
@@ -47,7 +52,15 @@ struct rgba_image_t {
     std::vector<std::uint8_t> pixels;
 };
 
+using image_decode_outcome_t = result_t<rgba_image_t, error_t<image_status_t>>;
+
+[[nodiscard]] auto open_image_rgba(const resolved_visual_asset_t& source,
+                                   image_decode_limits_t limits = {}) -> image_decode_outcome_t;
+
+// Compatibility boundary for existing sys/UI callers; migrate them before removing this adapter.
 struct image_decode_result_t {
+    [[nodiscard]] static auto from(image_decode_outcome_t&& outcome) -> image_decode_result_t;
+
     image_status_t status{image_status_t::decode_failed};
     std::optional<rgba_image_t> image;
     std::string message;

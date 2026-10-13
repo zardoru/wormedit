@@ -40,6 +40,8 @@ enum class preview_pump_status_t {
 };
 
 struct preview_pump_result_t {
+    [[nodiscard]] static auto from(preview_pump_status_t status) -> preview_pump_result_t;
+
     preview_pump_status_t status{preview_pump_status_t::invalid_request};
     std::size_t active_voices{};
     std::size_t overlapping_voices{};

@@ -8,6 +8,13 @@
 #include <vector>
 
 namespace wormedit::audio {
+
+auto preview_pump_result_t::from(preview_pump_status_t status) -> preview_pump_result_t {
+    auto result = preview_pump_result_t{};
+    result.status = status;
+    return result;
+}
+
 namespace {
 
 auto checked_end(std::uint64_t begin, std::uint64_t count) -> std::optional<std::uint64_t> {
@@ -34,12 +41,6 @@ auto failure_status(block_decode_status_t status) -> preview_pump_status_t {
         return preview_pump_status_t::decode_failed;
     }
     return preview_pump_status_t::decode_failed;
-}
-
-auto empty_result(preview_pump_status_t status) -> preview_pump_result_t {
-    auto result = preview_pump_result_t{};
-    result.status = status;
-    return result;
 }
 
 struct preview_key_plan_t {
@@ -158,17 +159,17 @@ auto pump_preview_lookahead(decoded_source_registry_t& sources, transport_t& tra
     if (options.lookahead_frames == 0 || options.lookahead_frames > maximum_read_frames ||
         options.maximum_voices == 0 || options.maximum_voices > maximum_preview_pump_voices ||
         options.maximum_blocks == 0 || options.maximum_blocks > maximum_preview_pump_blocks) {
-        return empty_result(preview_pump_status_t::invalid_request);
+        return preview_pump_result_t::from(preview_pump_status_t::invalid_request);
     }
     const auto window_end = checked_end(timeline_frame, options.lookahead_frames);
     if (!window_end.has_value())
-        return empty_result(preview_pump_status_t::invalid_request);
+        return preview_pump_result_t::from(preview_pump_status_t::invalid_request);
 
     auto snapshot = transport.snapshot_active_voices(token, options.maximum_voices);
     if (snapshot.status == active_voice_snapshot_status_t::stale_generation)
-        return empty_result(preview_pump_status_t::stale_generation);
+        return preview_pump_result_t::from(preview_pump_status_t::stale_generation);
     if (snapshot.status == active_voice_snapshot_status_t::capacity_exceeded) {
-        auto result = empty_result(preview_pump_status_t::capacity_exceeded);
+        auto result = preview_pump_result_t::from(preview_pump_status_t::capacity_exceeded);
         result.active_voices = options.maximum_voices + 1;
         return result;
     }
@@ -176,7 +177,7 @@ auto pump_preview_lookahead(decoded_source_registry_t& sources, transport_t& tra
     const auto plan = plan_preview_keys(snapshot.voices, timeline_frame, *window_end,
                                         options.maximum_blocks);
     if (plan.status != preview_pump_status_t::ready) {
-        auto result = empty_result(plan.status);
+        auto result = preview_pump_result_t::from(plan.status);
         result.active_voices = snapshot.voices.size();
         result.overlapping_voices = plan.overlapping_voices;
         if (plan.status == preview_pump_status_t::capacity_exceeded) {
@@ -185,13 +186,13 @@ auto pump_preview_lookahead(decoded_source_registry_t& sources, transport_t& tra
         return result;
     }
     if (!is_plan_within_cache(plan, transport.block_cache_limits())) {
-        auto result = empty_result(preview_pump_status_t::capacity_exceeded);
+        auto result = preview_pump_result_t::from(preview_pump_status_t::capacity_exceeded);
         result.active_voices = snapshot.voices.size();
         result.overlapping_voices = plan.overlapping_voices;
         result.requested_blocks = plan.keys.size();
         return result;
     }
-    auto result = empty_result(preview_pump_status_t::ready);
+    auto result = preview_pump_result_t::from(preview_pump_status_t::ready);
     result.active_voices = snapshot.voices.size();
     result.overlapping_voices = plan.overlapping_voices;
     return decode_preview_plan(sources, transport, token, plan, std::move(result));

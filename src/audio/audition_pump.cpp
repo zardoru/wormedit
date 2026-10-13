@@ -6,6 +6,15 @@
 #include <vector>
 
 namespace wormedit::audio {
+
+auto audition_pump_result_t::from(audition_pump_status_t status) -> audition_pump_result_t {
+    return {.status = status,
+            .requested_blocks = 0,
+            .decoded_blocks = 0,
+            .cached_blocks = 0,
+            .failure = std::nullopt};
+}
+
 namespace {
 
 auto is_valid_source(const audio_source_identity_t& source) -> bool {
@@ -37,14 +46,6 @@ auto decode_failure_status(block_decode_status_t status) -> audition_pump_status
         return audition_pump_status_t::decode_failed;
     }
     return audition_pump_status_t::decode_failed;
-}
-
-auto empty_result(audition_pump_status_t status) -> audition_pump_result_t {
-    return {.status = status,
-            .requested_blocks = 0,
-            .decoded_blocks = 0,
-            .cached_blocks = 0,
-            .failure = std::nullopt};
 }
 
 auto is_valid_options(std::span<const audition_clip_t> clips,
@@ -144,7 +145,7 @@ auto prime_resident_audition(transport_t& transport, session_token_t token,
     const auto plan = plan_audition_keys(clips, 0, options.lookahead_frames,
                                          options.maximum_blocks);
     if (plan.status != audition_pump_status_t::ready) return std::nullopt;
-    auto result = empty_result(audition_pump_status_t::ready);
+    auto result = audition_pump_result_t::from(audition_pump_status_t::ready);
     result.requested_blocks = plan.keys.size();
     for (const auto& key : plan.keys) {
         const auto hit = transport.resident_block_hit(token, key);
@@ -159,26 +160,26 @@ auto pump_audition_lookahead(decoded_source_registry_t& sources, transport_t& tr
                              std::uint64_t timeline_frame, audition_pump_options_t options)
     -> audition_pump_result_t {
     if (!transport.is_current(token)) {
-        return empty_result(audition_pump_status_t::stale_generation);
+        return audition_pump_result_t::from(audition_pump_status_t::stale_generation);
     }
     if (!is_valid_options(clips, options)) {
-        return empty_result(audition_pump_status_t::invalid_request);
+        return audition_pump_result_t::from(audition_pump_status_t::invalid_request);
     }
     const auto window_end = checked_end(timeline_frame, options.lookahead_frames);
     if (!window_end.has_value()) {
-        return empty_result(audition_pump_status_t::invalid_request);
+        return audition_pump_result_t::from(audition_pump_status_t::invalid_request);
     }
     const auto plan = plan_audition_keys(clips, timeline_frame, *window_end,
                                          options.maximum_blocks);
     if (plan.status != audition_pump_status_t::ready) {
-        auto result = empty_result(plan.status);
+        auto result = audition_pump_result_t::from(plan.status);
         if (plan.status == audition_pump_status_t::capacity_exceeded) {
             result.requested_blocks = options.maximum_blocks + 1U;
         }
         return result;
     }
     if (!plan.active) {
-        return empty_result(audition_pump_status_t::complete);
+        return audition_pump_result_t::from(audition_pump_status_t::complete);
     }
     return decode_audition_plan(sources, transport, token, plan);
 }

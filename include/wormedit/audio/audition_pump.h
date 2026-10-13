@@ -28,6 +28,8 @@ enum class audition_pump_status_t {
 };
 
 struct audition_pump_result_t {
+    [[nodiscard]] static auto from(audition_pump_status_t status) -> audition_pump_result_t;
+
     audition_pump_status_t status{audition_pump_status_t::invalid_request};
     std::size_t requested_blocks{};
     std::size_t decoded_blocks{};

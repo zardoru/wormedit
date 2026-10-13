@@ -1,4 +1,4 @@
-#include "sys/bookmark_chooser_projection.h"
+#include "sys/bookmark_navigation.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -62,7 +62,7 @@ void check_page_endpoints(const bookmark_chooser_projection_t& page) {
 TEST_CASE("bookmark chooser orders beat and audio anchors with disambiguated labels",
           "[unit][sys][bookmark-chooser]") {
     const auto document = chooser_document();
-    const auto result = project_bookmark_chooser(document, chart_id_t{2}, 0, 16);
+    const auto result = bookmark_navigation_t::build_bookmark_chooser_view(document, chart_id_t{2}, 0, 16);
     REQUIRE(result);
     check_projection_header(result);
     check_first_beat_row(result);
@@ -80,10 +80,10 @@ TEST_CASE("bookmark chooser sorts the complete list before paging beyond sixty-f
             .anchor = marker_anchor_t::beat,
             .position = local_position_t{measure_id_t{10}, 0}});
     }
-    const auto page = project_bookmark_chooser(document, chart_id_t{2}, 64, 8);
+    const auto page = bookmark_navigation_t::build_bookmark_chooser_view(document, chart_id_t{2}, 64, 8);
     REQUIRE(page);
     check_page_endpoints(page);
-    const auto empty = project_bookmark_chooser(document, chart_id_t{2}, 70, 8);
+    const auto empty = bookmark_navigation_t::build_bookmark_chooser_view(document, chart_id_t{2}, 70, 8);
     REQUIRE(empty);
     CHECK(empty.rows.empty());
     CHECK(empty.total_count == 70);
@@ -92,8 +92,8 @@ TEST_CASE("bookmark chooser sorts the complete list before paging beyond sixty-f
 TEST_CASE("bookmark chooser rejects invalid paging and missing charts",
           "[unit][sys][bookmark-chooser]") {
     const auto document = chooser_document();
-    CHECK_FALSE(project_bookmark_chooser(document, chart_id_t{2}, 0, 0));
-    CHECK_FALSE(project_bookmark_chooser(document, chart_id_t{99}, 0, 8));
+    CHECK_FALSE(bookmark_navigation_t::build_bookmark_chooser_view(document, chart_id_t{2}, 0, 0));
+    CHECK_FALSE(bookmark_navigation_t::build_bookmark_chooser_view(document, chart_id_t{99}, 0, 8));
 }
 
 TEST_CASE("bookmark chooser searches every bookmark before paging with case insensitive labels",
@@ -104,16 +104,16 @@ TEST_CASE("bookmark chooser searches every bookmark before paging with case inse
         bookmarks.push_back({.id = object_id_t{id}, .label = id == 279 ? "Final Bridge 東京" : "other",
             .anchor = marker_anchor_t::beat,
             .position = local_position_t{measure_id_t{12}, id}});
-    const auto bridge = project_bookmark_chooser(document, chart_id_t{2}, 0, 12, "BRIDGE");
+    const auto bridge = bookmark_navigation_t::build_bookmark_chooser_view(document, chart_id_t{2}, 0, 12, "BRIDGE");
     REQUIRE(bridge.rows.size() == 1);
     CHECK(bridge.total_count == 1);
     CHECK(bridge.rows.front().bookmark_id == object_id_t{279});
-    const auto cjk = project_bookmark_chooser(document, chart_id_t{2}, 0, 12, "東京");
+    const auto cjk = bookmark_navigation_t::build_bookmark_chooser_view(document, chart_id_t{2}, 0, 12, "東京");
     REQUIRE(cjk.rows.size() == 1);
     CHECK(cjk.rows.front().bookmark_id == object_id_t{279});
-    const auto position = project_bookmark_chooser(document, chart_id_t{2}, 0, 12, "Measure 001");
+    const auto position = bookmark_navigation_t::build_bookmark_chooser_view(document, chart_id_t{2}, 0, 12, "Measure 001");
     CHECK(position.total_count == 2);
-    const auto missing = project_bookmark_chooser(document, chart_id_t{2}, 0, 12, "not present");
+    const auto missing = bookmark_navigation_t::build_bookmark_chooser_view(document, chart_id_t{2}, 0, 12, "not present");
     CHECK(missing.total_count == 0);
     CHECK(missing.rows.empty());
 }

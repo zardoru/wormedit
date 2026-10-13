@@ -34,11 +34,4 @@ struct bookmark_chooser_projection_t {
     [[nodiscard]] explicit operator bool() const noexcept { return status.empty(); }
 };
 
-// Projects a globally ordered page; paging is applied only after every bookmark
-// has been resolved and sorted. A zero row_limit is rejected.
-[[nodiscard]] auto project_bookmark_chooser(const song_document_t& document,
-                                            chart_id_t chart, std::size_t first_row,
-                                            std::size_t row_limit, std::string_view query = {})
-    -> bookmark_chooser_projection_t;
-
 } // namespace wormedit::sys

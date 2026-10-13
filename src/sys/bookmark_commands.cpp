@@ -1,5 +1,5 @@
 #include "sys/compose_navigation.h"
-#include "sys/compose_bookmark_commands.h"
+#include "sys/bookmark_commands.h"
 #include <wormedit/core/snap.h>
 
 #include <wormedit/audio/decoder.h>
@@ -73,12 +73,6 @@ auto bookmark_preview_frame(const timing_index_t& timing, const measure_index_t&
     return frame;
 }
 
-auto playing_seek_now(const application_command_state_t& application)
-    -> std::chrono::steady_clock::time_point {
-    return application.services.bookmark_clock ? application.services.bookmark_clock()
-                                      : std::chrono::steady_clock::now();
-}
-
 namespace {
 
 auto absolute_row_of(const measure_index_t& index, local_position_t position)
@@ -87,15 +81,6 @@ auto absolute_row_of(const measure_index_t& index, local_position_t position)
                                          &measure_index_entry_t::id);
     if (entry == index.entries.end()) return std::nullopt;
     return entry->absolute_begin_row + position.row;
-}
-
-auto recent_seek_row(const application_command_state_t& application, chart_id_t chart)
-    -> std::optional<std::uint64_t> {
-    const auto& record = application.project.transport.last_playing_bookmark_seek;
-    if (!record || record->chart != chart ||
-        playing_seek_now(application) - record->at > playing_seek_repeat_window)
-        return std::nullopt;
-    return record->row;
 }
 
 auto playing_bookmark_origin(const chart_document_t& chart, chart_id_t chart_id,
@@ -110,7 +95,7 @@ auto playing_bookmark_origin(const chart_document_t& chart, chart_id_t chart_id,
     const auto& index = std::get<measure_index_t>(built);
     if (index.total_rows == 0) return std::nullopt;
     if (direction == marker_navigation_direction_t::previous)
-        if (const auto recent = recent_seek_row(application, chart_id))
+        if (const auto recent = application.bookmarks.recent_seek_row(chart_id))
             return local_position_for_row(index, *recent);
     const auto row = std::clamp(*application.project.transport.preview_playhead_absolute_row, 0.0,
                                 static_cast<double>(index.total_rows - 1));
@@ -124,24 +109,24 @@ auto playing_bookmark_origin(const chart_document_t& chart, chart_id_t chart_id,
 void record_playing_seek(const chart_document_t& chart, chart_id_t chart_id,
                          application_command_state_t& application, local_position_t target,
                          bool sought) {
-    application.project.transport.last_playing_bookmark_seek.reset();
+    application.bookmarks.clear_seek_record();
     if (!sought) return;
     const auto built = build_measure_index(chart);
     if (!std::holds_alternative<measure_index_t>(built)) return;
     if (const auto row = absolute_row_of(std::get<measure_index_t>(built), target))
-        application.project.transport.last_playing_bookmark_seek = {chart_id, *row, playing_seek_now(application)};
+        application.bookmarks.record_seek(chart_id, *row);
 }
 
 } // namespace
 
-auto navigate_beat_bookmark(document_history_t& history, editor_interaction_state_t& state,
+auto bookmark_navigation_t::navigate_beat_bookmark(document_history_t& history, editor_interaction_state_t& state,
                             application_command_state_t& application,
                             marker_navigation_direction_t direction) -> bookmark_command_outcome_t {
     const bool previous = direction == marker_navigation_direction_t::previous;
     const auto* chart = find_chart(history.document, state.chart);
     if (!chart) return fail("Bookmark navigation requires the active Compose chart.");
     const bool playing = is_playing(application);
-    if (!playing) application.project.transport.last_playing_bookmark_seek.reset();
+    if (!playing) application.bookmarks.clear_seek_record();
     const auto origin = playing ? playing_bookmark_origin(*chart, state.chart, application, direction)
                                 : std::optional<local_position_t>{state.cursor};
     if (!origin) return fail("The playhead row is not available yet.");
@@ -165,7 +150,7 @@ auto navigate_beat_bookmark(document_history_t& history, editor_interaction_stat
     return outcome;
 }
 
-auto navigate_to_bookmark(document_history_t& history, editor_interaction_state_t& state,
+auto bookmark_navigation_t::navigate_to_bookmark(document_history_t& history, editor_interaction_state_t& state,
                           application_command_state_t& application,
                           std::uint64_t expected_revision, chart_id_t chart_id,
                           object_id_t bookmark_id) -> bookmark_command_outcome_t {
@@ -194,7 +179,7 @@ auto navigate_to_bookmark(document_history_t& history, editor_interaction_state_
     return outcome;
 }
 
-auto add_beat_bookmark_here(document_history_t& history, editor_interaction_state_t& state,
+auto bookmark_navigation_t::add_beat_bookmark_here(document_history_t& history, editor_interaction_state_t& state,
                             application_command_state_t& application)
     -> bookmark_command_outcome_t {
     const auto* chart = find_chart(history.document, state.chart);

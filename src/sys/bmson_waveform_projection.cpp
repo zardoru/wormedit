@@ -167,16 +167,6 @@ auto stem_ready(const bmson_waveform_projection_context_t& context) -> bool {
            context.cache.timing.marker_timing_index && context.stem_analysis;
 }
 
-auto stem_entry(compose_scene_cache_t& cache, object_id_t channel)
-    -> compose_scene_cache_t::stem_waveform_cache_t& {
-    auto found = std::ranges::find(cache.waveform.stem_waveforms, channel,
-                                   &compose_scene_cache_t::stem_waveform_cache_t::channel);
-    if (found != cache.waveform.stem_waveforms.end()) return *found;
-    cache.waveform.stem_waveforms.emplace_back();
-    cache.waveform.stem_waveforms.back().channel = channel;
-    return cache.waveform.stem_waveforms.back();
-}
-
 // The analysis of a stem's audio: the transport's or the selected channel's when it is theirs.
 auto stem_analysis_for(const bmson_waveform_projection_context_t& context, asset_id_t asset)
     -> std::shared_ptr<const audio::waveform_analysis_result_t> {
@@ -310,7 +300,7 @@ auto drawn_stems(const bmson_waveform_projection_context_t& context, const chart
     std::span<const sound_channel_t* const> visible;
     if (context.visible_stems) visible = *context.visible_stems;
     else {
-        fallback_visible = indexed_visible_stem_channels(context.cache.scene.stem_index,
+        fallback_visible = indexed_visible_stem_channels(context.cache.stems.stem_index,
             context.history.document, chart, context.interaction_state->cursor.measure,
             stem_window_measures(context.flattened.view.compose.viewport_height_pixels,
                                  context.flattened.view.compose.pixels_per_standard_measure),
@@ -319,11 +309,11 @@ auto drawn_stems(const bmson_waveform_projection_context_t& context, const chart
     }
     for (const auto* channel : visible) {
         if (channel && stem_lane_for_channel(chart, channel->id))
-            drawn.push_back({channel, indexed_stem_lane(context.cache.scene.stem_index, chart, *channel), selected && selected->channel == channel->id});
+            drawn.push_back({channel, indexed_stem_lane(context.cache.stems.stem_index, chart, *channel), selected && selected->channel == channel->id});
     }
     if (selected && std::ranges::none_of(drawn, [](const auto& item) { return item.selected; })) {
         const auto found = std::ranges::find(chart.sound_channels, selected->channel, &sound_channel_t::id);
-        if (found != chart.sound_channels.end() && stem_lane_for_channel(chart, found->id)) drawn.push_back({&*found, indexed_stem_lane(context.cache.scene.stem_index, chart, *found), true});
+        if (found != chart.sound_channels.end() && stem_lane_for_channel(chart, found->id)) drawn.push_back({&*found, indexed_stem_lane(context.cache.stems.stem_index, chart, *found), true});
     }
     return drawn;
 }
@@ -334,29 +324,29 @@ void publish_stem(compose_scene_cache_t& cache, const drawn_stem_t& item,
                   const compose_scene_cache_t::stem_waveform_cache_t& entry) {
     if (entry.pending) {
         if (!item.selected && item.lane != 0)
-            cache.waveform.stem_waveform_views.push_back({.stem_key = item.channel->id.value, .source_lane_id = item.lane, .rows = nullptr, .row_count = 0,
+            cache.stems.stem_waveform_views.push_back({.stem_key = item.channel->id.value, .source_lane_id = item.lane, .rows = nullptr, .row_count = 0,
                                                  .pending = true});
         return;
     }
     for (const auto& piece : entry.pieces)
         if (!piece.rows.empty())
-            cache.waveform.stem_waveform_views.push_back({.stem_key = item.channel->id.value, .source_lane_id = piece.lane, .rows = piece.rows.data(),
+            cache.stems.stem_waveform_views.push_back({.stem_key = item.channel->id.value, .source_lane_id = piece.lane, .rows = piece.rows.data(),
                                                  .row_count = piece.rows.size(), .pending = false});
     for (const auto& cut : entry.cuts)
-        if (cache.waveform.stem_cut_views.size() < maximum_stem_cuts) cache.waveform.stem_cut_views.push_back(cut);
+        if (cache.stems.stem_cut_views.size() < maximum_stem_cuts) cache.stems.stem_cut_views.push_back(cut);
 }
 
 // The stems near the cursor, each drawn along its slices in the lane of the note or BGM marker
 // that starts the slice, with cut lines at the slice points.
 void populate_stem_waveforms(const bmson_waveform_projection_context_t& context) {
     auto& cache = context.cache;
-    cache.waveform.stem_waveform_views.clear();
-    cache.waveform.stem_cut_views.clear();
+    cache.stems.stem_waveform_views.clear();
+    cache.stems.stem_cut_views.clear();
     if (!stem_ready(context)) return;
     const auto chart = std::ranges::find(context.history.document.charts, *context.workspace.selected_chart,
                                          &chart_document_t::id);
     if (chart == context.history.document.charts.end() || chart->source_family != format_family_t::bmson) {
-        cache.waveform.stem_waveforms.clear();
+        cache.stems.stem_waveforms.clear();
         return;
     }
     const auto selected = context.flattened.view.compose.selected_bmson_bgm_event_id != 0
@@ -364,23 +354,23 @@ void populate_stem_waveforms(const bmson_waveform_projection_context_t& context)
               object_id_t{context.flattened.view.compose.selected_bmson_bgm_event_id})
         : std::nullopt;
     const auto drawn = drawn_stems(context, *chart, selected);
-    cache.waveform.stem_waveforms.reserve(drawn.size());
+    cache.stems.stem_waveforms.reserve(drawn.size());
     // Entries for channels that are no longer drawn go first.
     std::unordered_set<std::uint64_t> drawn_ids;
     drawn_ids.reserve(drawn.size());
     for (const auto& item : drawn) drawn_ids.insert(item.channel->id.value);
-    std::erase_if(cache.waveform.stem_waveforms, [&](const auto& entry) { return !drawn_ids.contains(entry.channel.value); });
+    std::erase_if(cache.stems.stem_waveforms, [&](const auto& entry) { return !drawn_ids.contains(entry.channel.value); });
     for (const auto& item : drawn) {
-        auto& entry = stem_entry(cache, item.channel->id);
+        auto& entry = cache.stems.stem_for(item.channel->id);
         entry.is_selected = item.selected;
         entry.source_lane = item.lane;
         entry.pending = !project_stem(context, *chart, *item.channel, entry);
         publish_stem(cache, item, entry);
     }
-    context.flattened.view.compose.stem_waveforms = cache.waveform.stem_waveform_views.data();
-    context.flattened.view.compose.stem_waveform_count = cache.waveform.stem_waveform_views.size();
-    context.flattened.view.compose.stem_cuts = cache.waveform.stem_cut_views.data();
-    context.flattened.view.compose.stem_cut_count = cache.waveform.stem_cut_views.size();
+    context.flattened.view.compose.stem_waveforms = cache.stems.stem_waveform_views.data();
+    context.flattened.view.compose.stem_waveform_count = cache.stems.stem_waveform_views.size();
+    context.flattened.view.compose.stem_cuts = cache.stems.stem_cut_views.data();
+    context.flattened.view.compose.stem_cut_count = cache.stems.stem_cut_views.size();
 }
 
 // Only packed display pieces extend the last tempo beyond authored geometry.
@@ -400,12 +390,12 @@ auto packed_display_table(const bmson_waveform_projection_context_t& context)
     const auto seconds = packed_seconds(timing, timing.total_rows, timing_boundary_side_t::after_stops);
     const auto scale = packed_tail_seconds_per_row(timing);
     if (!seconds || !scale) return nullptr;
-    auto& table = cache.waveform.packed_waveform_row_table;
-    if (!table.valid || cache.waveform.packed_clock_generation != base.clock_generation) {
+    auto& table = cache.stems.packed_waveform_row_table;
+    if (!table.valid || cache.stems.packed_clock_generation != base.clock_generation) {
         table = base;
         table.segments.push_back({static_cast<double>(base.total_rows), end, *seconds, *scale});
         table.boundaries.push_back({});
-        cache.waveform.packed_clock_generation = base.clock_generation;
+        cache.stems.packed_clock_generation = base.clock_generation;
     }
     table.total_rows = static_cast<std::uint64_t>(end);
     table.segments.back().end_row = end;
@@ -501,39 +491,34 @@ void populate_packed_waveforms(const bmson_waveform_projection_context_t& contex
     const auto chart = std::ranges::find(context.history.document.charts,
         *context.workspace.selected_chart, &chart_document_t::id);
     if (chart == context.history.document.charts.end() || chart->source_family != format_family_t::bmson) return;
-    prepare_packed_waveform_index(cache.waveform.packed_waveform_index, context.history.document,
+    prepare_packed_waveform_index(cache.stems.packed_waveform_index, context.history.document,
         *chart, context.audition_sources.bindings(context.history.document), *cache.timing.marker_timing_index);
     const auto window = packed_window_seconds(*cache.timing.marker_timing_index,
         context.interaction_state->viewport_scroll_pixels, view.viewport_height_pixels,
         view.pixels_per_standard_measure);
     if (!window) return;
-    const auto pieces = visible_packed_waveform_pieces(cache.waveform.packed_waveform_index, window->first, window->second);
+    const auto pieces = visible_packed_waveform_pieces(cache.stems.packed_waveform_index, window->first, window->second);
     std::unordered_set<std::uint64_t> visible;
     for (const auto* piece : pieces) visible.insert(piece->event.value);
-    std::erase_if(cache.waveform.packed_waveforms, [&](const auto& entry) { return !visible.contains(entry.channel.value); });
-    cache.waveform.packed_waveforms.reserve(pieces.size());
+    std::erase_if(cache.stems.packed_waveforms, [&](const auto& entry) { return !visible.contains(entry.channel.value); });
+    cache.stems.packed_waveforms.reserve(pieces.size());
     if (pieces.empty()) return;
     const auto* table = packed_display_table(context);
     if (!table) return;
     const auto downscroll = compose_field_downscroll(*chart);
     for (const auto* piece : pieces) {
-        auto entry = std::ranges::find(cache.waveform.packed_waveforms, piece->event,
-            &compose_scene_cache_t::stem_waveform_cache_t::channel);
-        if (entry == cache.waveform.packed_waveforms.end()) {
-            cache.waveform.packed_waveforms.emplace_back(); entry = std::prev(cache.waveform.packed_waveforms.end());
-            entry->channel = piece->event;
-        }
+        auto* entry = &cache.stems.packed_for(piece->event);
         const auto ready = project_packed_piece(context, *piece, *entry, *table, downscroll);
         const auto band = packed_pending_band(*piece, *table, downscroll);
         if ((!ready && band.first < band.second) || (ready && !entry->rows.empty()))
-            cache.waveform.stem_waveform_views.push_back({.stem_key = piece->event.value,
+            cache.stems.stem_waveform_views.push_back({.stem_key = piece->event.value,
                 .source_lane_id = piece->lane.value, .rows = ready ? entry->rows.data() : nullptr,
                 .row_count = ready ? entry->rows.size() : 0, .pending = !ready,
                 .piece_kind = WORM_UI_WAVEFORM_PIECE_PACKED_EVENT, .bounded = true,
                 .begin_y_pixels = band.first, .end_y_pixels = band.second});
     }
-    context.flattened.view.compose.stem_waveforms = cache.waveform.stem_waveform_views.data();
-    context.flattened.view.compose.stem_waveform_count = cache.waveform.stem_waveform_views.size();
+    context.flattened.view.compose.stem_waveforms = cache.stems.stem_waveform_views.data();
+    context.flattened.view.compose.stem_waveform_count = cache.stems.stem_waveform_views.size();
 }
 
 } // namespace
@@ -548,8 +533,8 @@ auto prepare_compose_display_row_table(compose_scene_cache_t& cache,
         cache.waveform.waveform_envelope_ring.valid = cache.waveform.channel_envelope_ring.valid = false;
         cache.waveform.channel_waveform_projection_valid = false;
         cache.waveform.channel_waveform_slices.reset();
-        for (auto& entry : cache.waveform.packed_waveforms) entry.valid = entry.ring.valid = false;
-        for (auto& entry : cache.waveform.stem_waveforms) {
+        for (auto& entry : cache.stems.packed_waveforms) entry.valid = entry.ring.valid = false;
+        for (auto& entry : cache.stems.stem_waveforms) {
             entry.valid = entry.ring.valid = false;
             entry.slices.reset();
         }

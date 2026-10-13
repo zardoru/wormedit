@@ -73,7 +73,7 @@ TEST_CASE("repeated playing skips within 300 ms continue from the last target",
     const auto chart = skip_chart();
     application_command_state_t application;
     auto now = std::chrono::steady_clock::time_point{} + std::chrono::seconds{5};
-    application.services.bookmark_clock = [&] { return now; };
+    application.bookmarks.fixed_clock = &now;
     std::vector<std::uint64_t> seeks;
     application.services.transport_seek = [&](std::uint64_t frame) {
         seeks.push_back(frame);

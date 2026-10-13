@@ -4,7 +4,7 @@
 #include "sys/compose_actions_internal.h"
 #include "sys/compose_area_actions.h"
 #include "sys/compose_bga_actions.h"
-#include "sys/compose_bookmark_commands.h"
+#include "sys/bookmark_commands.h"
 #include "sys/compose_label_search.h"
 #include "sys/compose_measure_commands.h"
 #include "sys/compose_navigation.h"
@@ -162,7 +162,7 @@ auto dispatch_compose_bookmark_action(compose_action_context_t& context) -> std:
         return compose_action_warning(context, "Finish or cancel the active Compose gesture first.");
     if (!rename) {
         const auto outcome =
-            navigate_to_bookmark(context.environment.document.history, context.state,
+            context.environment.editor.commands.bookmarks.navigate_to_bookmark(context.environment.document.history, context.state,
                                  context.environment.editor.commands,
                                  action.compose_input_document_revision, context.state.chart,
                                  wormedit::object_id_t{action.compose_bookmark_id});
@@ -172,7 +172,7 @@ auto dispatch_compose_bookmark_action(compose_action_context_t& context) -> std:
                                     std::end(action.compose_marker_label), '\0');
     if (label_end == std::end(action.compose_marker_label))
         return compose_action_warning(context, "Bookmark name is too long.");
-    const auto outcome = rename_bookmark(
+    const auto outcome = context.environment.editor.commands.bookmarks.rename_bookmark(
         context.environment.document.history, action.compose_input_document_revision,
         context.state.chart, wormedit::object_id_t{action.compose_bookmark_id},
         std::string_view(action.compose_marker_label, label_end - action.compose_marker_label));

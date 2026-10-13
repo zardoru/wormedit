@@ -99,7 +99,7 @@ auto prepare_frame_stems(const application_frame_projection_context_t& context,
         context.compose_scene_cache.timing.marker_timing_index.has_value();
     const auto* timing = timing_matches ? &*context.compose_scene_cache.timing.marker_timing_index : nullptr;
     const auto bindings = context.audition_sources.bindings(context.history.document);
-    return indexed_visible_stem_channels(context.compose_scene_cache.scene.stem_index,
+    return indexed_visible_stem_channels(context.compose_scene_cache.stems.stem_index,
         context.history.document, *chart, context.compose_interaction_state->cursor.measure,
         stem_window_measures(flattened.view.compose.viewport_height_pixels,
                              flattened.view.compose.pixels_per_standard_measure), bindings, timing);

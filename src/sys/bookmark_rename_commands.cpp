@@ -1,4 +1,4 @@
-#include "sys/bookmark_rename_commands.h"
+#include "sys/bookmark_navigation.h"
 
 #include <wormedit/core/marker_editor.h>
 
@@ -32,7 +32,7 @@ auto find_bookmark(document_history_t& history, chart_id_t chart_id, object_id_t
 
 } // namespace
 
-auto rename_bookmark(document_history_t& history, std::uint64_t expected_revision,
+auto bookmark_navigation_t::rename_bookmark(document_history_t& history, std::uint64_t expected_revision,
                      chart_id_t chart_id, object_id_t bookmark_id, std::string_view label)
     -> bookmark_rename_outcome_t {
     if (history.document.revision != expected_revision)

@@ -1,3 +1,4 @@
+#include "sys/chart_preview_state.h"
 #include "project_audio_sources_fixture.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "sys/application_command_dispatch.h"
@@ -1321,8 +1322,8 @@ TEST_CASE("BMSON stems other than the selected one get their own lane rows or a 
     populate_bmson_waveform_projection(context);
     CHECK(fixture.flattened.view.compose.stem_waveform_count == 1);
     // The selected channel keeps an entry too, for its field taps and cut lines.
-    CHECK(fixture.cache.waveform.stem_waveforms.size() == 2);
-    CHECK(fixture.cache.waveform.stem_waveforms.front().channel == object_id_t{71000});
+    CHECK(fixture.cache.stems.stem_waveforms.size() == 2);
+    CHECK(fixture.cache.stems.stem_waveforms.front().channel == object_id_t{71000});
 
     // Audio that has not finished decoding is a placeholder, never a blocked frame.
     stem_result.reset();
@@ -1432,14 +1433,14 @@ struct prepared_stem_frame_t {
 auto prepare_stem_frame(channel_projection_fixture_t& fixture) -> prepared_stem_frame_t {
     const auto bindings = fixture.sources.bindings();
     const auto& chart = fixture.history.document.charts.front();
-    const auto prepared = indexed_visible_stem_channels(fixture.cache.scene.stem_index,
+    const auto prepared = indexed_visible_stem_channels(fixture.cache.stems.stem_index,
         fixture.history.document, chart, fixture.interaction.cursor.measure, 0,
         bindings, &*fixture.cache.timing.marker_timing_index);
     REQUIRE(prepared.size() == 2);
-    CHECK(fixture.cache.scene.stem_index.cursor == measure_id_t{4});
-    CHECK(fixture.cache.scene.stem_index.window == 0);
+    CHECK(fixture.cache.stems.stem_index.cursor == measure_id_t{4});
+    CHECK(fixture.cache.stems.stem_index.window == 0);
     return {prepared, {prepared[0]->id, prepared[1]->id},
-            fixture.cache.scene.stem_index.bindings, fixture.cache.scene.stem_index.selection_build_count};
+            fixture.cache.stems.stem_index.bindings, fixture.cache.stems.stem_index.selection_build_count};
 }
 
 auto shorten_prepared_stem_source(channel_projection_fixture_t& fixture,
@@ -1469,18 +1470,18 @@ void consume_prepared_stem_frame(channel_projection_fixture_t& fixture,
 
 void check_prepared_stem_channels(const channel_projection_fixture_t& fixture,
                                   const prepared_stem_frame_t& prepared) {
-    REQUIRE(fixture.cache.waveform.stem_waveforms.size() == prepared.ids.size());
+    REQUIRE(fixture.cache.stems.stem_waveforms.size() == prepared.ids.size());
     for (std::size_t i = 0; i < prepared.ids.size(); ++i)
-        CHECK(fixture.cache.waveform.stem_waveforms[i].channel == prepared.ids[i]);
+        CHECK(fixture.cache.stems.stem_waveforms[i].channel == prepared.ids[i]);
 }
 
 void check_prepared_stem_cache(const channel_projection_fixture_t& fixture,
                                const prepared_stem_frame_t& prepared) {
-    CHECK(fixture.cache.scene.stem_index.bindings == prepared.bindings);
-    CHECK(fixture.cache.scene.stem_index.selected.size() == prepared.ids.size());
-    CHECK(fixture.cache.scene.stem_index.cursor == measure_id_t{4});
-    CHECK(fixture.cache.scene.stem_index.window == 0);
-    CHECK(fixture.cache.scene.stem_index.selection_build_count == prepared.selection_build_count);
+    CHECK(fixture.cache.stems.stem_index.bindings == prepared.bindings);
+    CHECK(fixture.cache.stems.stem_index.selected.size() == prepared.ids.size());
+    CHECK(fixture.cache.stems.stem_index.cursor == measure_id_t{4});
+    CHECK(fixture.cache.stems.stem_index.window == 0);
+    CHECK(fixture.cache.stems.stem_index.selection_build_count == prepared.selection_build_count);
 }
 } // namespace
 
@@ -5025,9 +5026,9 @@ void check_mixed_production_projection(channel_projection_fixture_t& fixture,
         {std::nullopt, nullptr}, {asset_id_t{8}, packed_analysis}, 1,
         [&](asset_id_t) { ++requests; return fixture.channel_analysis; }, visible};
     populate_bmson_waveform_projection(context);
-    INFO("requests=" << requests << " cache entries=" << fixture.cache.waveform.stem_waveforms.size()
+    INFO("requests=" << requests << " cache entries=" << fixture.cache.stems.stem_waveforms.size()
          << " projected views=" << fixture.flattened.view.compose.stem_waveform_count);
-    expect_gpu_work(requests == 3 && fixture.cache.waveform.stem_waveforms.size() == 3);
+    expect_gpu_work(requests == 3 && fixture.cache.stems.stem_waveforms.size() == 3);
     expect_gpu_work(fixture.flattened.view.compose.stem_waveform_count == 3);
     expect_gpu_work(fixture.cache.waveform.channel_waveform_rows.empty());
     expect_gpu_work(!fixture.cache.waveform.channel_waveform_slices);
@@ -5506,23 +5507,23 @@ TEST_CASE("BMSON packed waveform uses its native clip and next column event",
     fixture.project_packed();
     check_packed_clip_rows(fixture);
     const auto key = fixture.piece().stem_key;
-    const auto builds = fixture.cache.waveform.packed_waveform_index.builds;
+    const auto builds = fixture.cache.stems.packed_waveform_index.builds;
     fixture.interaction.viewport_scroll_pixels = 1;
     fixture.project_packed();
     expect_gpu_work(fixture.piece().stem_key == key);
-    expect_gpu_work(fixture.cache.waveform.packed_waveform_index.builds == builds);
-    INFO("Scrolled packed rows: " << fixture.cache.waveform.packed_waveforms.front().ring.projected_rows);
-    expect_gpu_work(fixture.cache.waveform.packed_waveforms.front().ring.projected_rows == 1);
-    const auto projected = fixture.cache.waveform.packed_waveforms.front().ring.projected_rows;
-    const auto calls = fixture.cache.waveform.packed_waveforms.front().ring.projection_calls;
-    const auto rows = fixture.cache.waveform.packed_waveforms.front().rows.data();
-    const auto source = fixture.cache.waveform.packed_waveforms.front().source;
+    expect_gpu_work(fixture.cache.stems.packed_waveform_index.builds == builds);
+    INFO("Scrolled packed rows: " << fixture.cache.stems.packed_waveforms.front().ring.projected_rows);
+    expect_gpu_work(fixture.cache.stems.packed_waveforms.front().ring.projected_rows == 1);
+    const auto projected = fixture.cache.stems.packed_waveforms.front().ring.projected_rows;
+    const auto calls = fixture.cache.stems.packed_waveforms.front().ring.projection_calls;
+    const auto rows = fixture.cache.stems.packed_waveforms.front().rows.data();
+    const auto source = fixture.cache.stems.packed_waveforms.front().source;
     fixture.project_packed();
-    expect_gpu_work(fixture.cache.waveform.packed_waveforms.front().ring.projected_rows == projected);
-    expect_gpu_work(fixture.cache.waveform.packed_waveforms.front().ring.projection_calls == calls);
-    expect_gpu_work(fixture.cache.waveform.packed_waveforms.front().rows.data() == rows);
-    expect_gpu_work(fixture.cache.waveform.packed_waveforms.front().source == source);
-    expect_gpu_work(fixture.cache.waveform.packed_waveform_index.builds == builds);
+    expect_gpu_work(fixture.cache.stems.packed_waveforms.front().ring.projected_rows == projected);
+    expect_gpu_work(fixture.cache.stems.packed_waveforms.front().ring.projection_calls == calls);
+    expect_gpu_work(fixture.cache.stems.packed_waveforms.front().rows.data() == rows);
+    expect_gpu_work(fixture.cache.stems.packed_waveforms.front().source == source);
+    expect_gpu_work(fixture.cache.stems.packed_waveform_index.builds == builds);
 }
 TEST_CASE("BMSON packed waveform pending band stays inside its event interval",
           "[sys][frame-timing][stem][bmson][packed-waveform]") {
@@ -5554,7 +5555,7 @@ TEST_CASE("BMSON packed sample tail draws beyond authored timing without changin
     fixture.project_packed();
     const auto& piece = fixture.piece();
     expect_gpu_work(!piece.pending && piece.row_count > 0);
-    expect_gpu_work(fixture.cache.waveform.packed_waveform_row_table.total_rows > authored_rows);
+    expect_gpu_work(fixture.cache.stems.packed_waveform_row_table.total_rows > authored_rows);
     expect_gpu_work(fixture.cache.waveform.waveform_row_table.total_rows == authored_rows);
     expect_gpu_work(fixture.cache.timing.marker_timing_index->total_rows == authored_rows);
     expect_gpu_work(chart.measures.size() == 1);
@@ -5676,30 +5677,30 @@ TEST_CASE("BMSON Draw projection keeps duplicate asset stem and packed resource 
     t475_project(fixture);
     t463_check_projected_rows(fixture);
     t475_check(fixture.flattened.view.compose.draw_source_stem_lane_id == 601);
-    const auto builds = fixture.cache.draw_stem_sources.build_count;
+    const auto builds = fixture.cache.stems.draw_stem_sources.build_count;
     fixture.application.project.compose_gesture.draw_source_id = 102;
     t475_project(fixture);
     t463_check_projected_rows(fixture);
     t475_check(fixture.flattened.view.compose.draw_source_stem_lane_id == 0);
-    t475_check(fixture.cache.draw_stem_sources.build_count == builds);
+    t475_check(fixture.cache.stems.draw_stem_sources.build_count == builds);
 }
 TEST_CASE("BMSON Draw resource ownership cache invalidates revision and replacement identity",
           "[sys][compose][bmson][stem][draw-source]") {
     compose_test_fixture_t fixture(t463_shared_asset_song());
     t475_project(fixture);
-    const auto builds = fixture.cache.draw_stem_sources.build_count;
+    const auto builds = fixture.cache.stems.draw_stem_sources.build_count;
     auto proposed = fixture.history.document;
     proposed.charts.front().bgm_source_lanes[1].stem_channel.reset();
     t475_require(commit_document_command(fixture.history, std::move(proposed), "Unlink stem"));
     t475_project(fixture);
-    t475_check(fixture.cache.draw_stem_sources.build_count == builds + 1);
-    t475_check(!fixture.cache.draw_stem_sources.resource_lanes.contains(101));
+    t475_check(fixture.cache.stems.draw_stem_sources.build_count == builds + 1);
+    t475_check(!fixture.cache.stems.draw_stem_sources.resource_lanes.contains(101));
     compose_test_fixture_t replacement(t463_shared_asset_song());
     replacement.history.document.revision = fixture.history.document.revision;
     replacement.cache = std::move(fixture.cache);
     t475_project(replacement);
     t463_check_projected_rows(replacement);
-    t475_check(replacement.cache.draw_stem_sources.build_count == builds + 2);
+    t475_check(replacement.cache.stems.draw_stem_sources.build_count == builds + 2);
 }
 
 TEST_CASE("BMSON Draw source names remain frame owned after document edits and frame moves",
@@ -5774,7 +5775,7 @@ TEST_CASE("Tool chip projects the actual off-page filtered sound with a retained
     t475_check(std::string_view(fixture.flattened.view.compose.draw_source_label) == "0A 音楽.wav");
     t475_check(!fixture.flattened.view.compose.draw_source_missing);
     t475_check(!fixture.flattened.view.compose.keysound_projected_filters_unrestricted);
-    const auto builds = fixture.cache.draw_stem_sources.build_count;
+    const auto builds = fixture.cache.stems.draw_stem_sources.build_count;
     request.automatic_search[0] = '\0';
     request.primary_resource_id = 179;
     request.automatic_row_limit = 8;
@@ -5784,7 +5785,7 @@ TEST_CASE("Tool chip projects the actual off-page filtered sound with a retained
     t475_check(view.keysound_projected_filters_unrestricted && view.keysound_primary_display_index_valid);
     t475_check(view.keysound_primary_display_index == 80);
     t475_check(view.keysound_display_total_count == 81);
-    t475_check(fixture.cache.draw_stem_sources.build_count == builds);
+    t475_check(fixture.cache.stems.draw_stem_sources.build_count == builds);
 }
 
 TEST_CASE("Tool chip names are bounded UTF-8 and survive a moved frame and source rename",
@@ -6223,9 +6224,9 @@ TEST_CASE("BMSON lane_mode projects current channel ownership in Compose and Sou
     const auto lane = std::ranges::find(lanes, uint64_t{601}, &WormUiComposeBgmLaneView::source_lane_id);
     t475_require(lane != lanes.end());
     t475_check(lane->bmson_channel_id == 301 && lane->bmson_channel_continues);
-    const auto builds = fixture.cache.draw_stem_sources.build_count;
+    const auto builds = fixture.cache.stems.draw_stem_sources.build_count;
     t475_project(fixture);
-    t475_check(fixture.cache.draw_stem_sources.build_count == builds);
+    t475_check(fixture.cache.stems.draw_stem_sources.build_count == builds);
     t475_require(set_bmson_channel_lane_mode(fixture.history, fixture.history.document.revision,
         chart_id_t{1}, object_id_t{302}, bmson_channel_lane_mode_t::stem));
     fixture.binding.workspace->active_tab = workspace_tab_t::audio_slices;
@@ -6339,9 +6340,11 @@ TEST_CASE("Project replacement preserves the live BMSON width service while clea
         requested_project=project;requested_chart=chart;requested_lane=lane;return 116.0;
     };
     state.services.compose_left_dock_pixels=[] { return 240; };
-    state.services.transport_preserve_bookmark_revision=[](auto,auto,auto) { return true; };
+    wormedit::sys::runtime::chart_preview_t preview;
+    state.bookmarks.preview = &preview;
     const auto now=std::chrono::steady_clock::now();
-    state.services.bookmark_clock=[=] { return now; };
+    state.bookmarks.fixed_clock = &now;
+    state.bookmarks.record_seek(wormedit::chart_id_t{7}, 44);
     state.project.semantic_layer.layer_assist_chart=wormedit::chart_id_t{7};
     state.project.semantic_layer.layer_assist_layers={wormedit::layer_id_t{3}};
     wormedit::sys::reset_application_project_edit_state(state);
@@ -6351,11 +6354,11 @@ TEST_CASE("Project replacement preserves the live BMSON width service while clea
     expect_compose_test(requested_chart==7);
     expect_compose_test(requested_lane==44);
     expect_compose_test(static_cast<bool>(state.services.compose_left_dock_pixels));
-    expect_compose_test(static_cast<bool>(state.services.transport_preserve_bookmark_revision));
-    expect_compose_test(static_cast<bool>(state.services.bookmark_clock));
+    expect_compose_test(state.bookmarks.preview == &preview);
+    expect_compose_test(state.bookmarks.fixed_clock == &now);
     expect_compose_test(state.services.compose_left_dock_pixels()==240);
-    expect_compose_test(state.services.transport_preserve_bookmark_revision(wormedit::chart_id_t{7},1,2));
-    expect_compose_test(state.services.bookmark_clock()==now);
+    expect_compose_test(!state.bookmarks.recent_seek_row(wormedit::chart_id_t{7}));
+    expect_compose_test(state.bookmarks.now()==now);
     expect_compose_test(!state.project.semantic_layer.layer_assist_chart);
     expect_compose_test(state.project.semantic_layer.layer_assist_layers.empty());
 }
@@ -6558,11 +6561,11 @@ TEST_CASE("Lane-key dispatcher uses revision-bound decoded geometry for linked B
     f.application.project.compose_gesture.note_paint_mode_active = true;
     f.project();
     f.interaction->cursor = {measure_id_t{1}, 480};
-    f.cache.scene.stem_index.built = true;
-    f.cache.scene.stem_index.document = f.history.document.id;
-    f.cache.scene.stem_index.chart = f.history.document.charts.front().id;
-    f.cache.scene.stem_index.revision = f.history.document.revision;
-    f.cache.scene.stem_index.bindings = {{.asset = asset, .source_sample_rate = 48000,
+    f.cache.stems.stem_index.built = true;
+    f.cache.stems.stem_index.document = f.history.document.id;
+    f.cache.stems.stem_index.chart = f.history.document.charts.front().id;
+    f.cache.stems.stem_index.revision = f.history.document.revision;
+    f.cache.stems.stem_index.bindings = {{.asset = asset, .source_sample_rate = 48000,
                                     .source_frame_count = 480000}};
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
@@ -6833,11 +6836,11 @@ TEST_CASE("Mouse stem entry receives the same decoded source geometry as lane ke
     compose_test_fixture_t fixture{std::move(song)};
     fixture.application.project.compose_gesture.note_paint_mode_active = true;
     fixture.project();
-    fixture.cache.scene.stem_index.built = true;
-    fixture.cache.scene.stem_index.document = fixture.history.document.id;
-    fixture.cache.scene.stem_index.chart = fixture.history.document.charts.front().id;
-    fixture.cache.scene.stem_index.revision = fixture.history.document.revision;
-    fixture.cache.scene.stem_index.bindings = {{.asset = asset_id_t{200}, .source_sample_rate = 48000,
+    fixture.cache.stems.stem_index.built = true;
+    fixture.cache.stems.stem_index.document = fixture.history.document.id;
+    fixture.cache.stems.stem_index.chart = fixture.history.document.charts.front().id;
+    fixture.cache.stems.stem_index.revision = fixture.history.document.revision;
+    fixture.cache.stems.stem_index.bindings = {{.asset = asset_id_t{200}, .source_sample_rate = 48000,
         .source_frame_count = short_source ? 1000U : 480000U}};
     auto action = paint_stroke_inputs(fixture, 100);
     action.compose_inputs[0].paint_intent = 1;
@@ -6939,11 +6942,26 @@ TEST_CASE("Compose scene keys invalidate only on document or chart changes", "[u
     expect_compose_test(!cache.is_scene_key_current(document, chart));
     expect_compose_test(cache.is_scene_key_current(document, chart, compose_scene_key_policy_t::transport));
     expect_compose_test(cache.is_scene_key_current(document, chart, compose_scene_key_policy_t::measure_geometry));
-    cache.scene.stem_index.built = true;
-    cache.scene.stem_index.document = document.id;
-    cache.scene.stem_index.chart = chart.id;
-    cache.scene.stem_index.revision = document.revision;
+    cache.stems.stem_index.built = true;
+    cache.stems.stem_index.document = document.id;
+    cache.stems.stem_index.chart = chart.id;
+    cache.stems.stem_index.revision = document.revision;
     expect_compose_test(cache.is_scene_key_current(document, chart, compose_scene_key_policy_t::stem_geometry));
-    ++cache.scene.stem_index.revision;
+    ++cache.stems.stem_index.revision;
     expect_compose_test(!cache.is_scene_key_current(document, chart, compose_scene_key_policy_t::stem_geometry));
 }
+
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+TEST_CASE("stem display owner keeps channel and packed event cache keys separate", "[sys][stem][ownership]") {
+    wormedit::sys::compose_scene_cache_t cache;
+    cache.stems.stem_waveforms.reserve(8);
+    cache.stems.packed_waveforms.reserve(8);
+    auto& stem = cache.stems.stem_for(object_id_t{7});
+    auto& packed = cache.stems.packed_for(object_id_t{7});
+    CHECK(&stem != &packed);
+    CHECK(&cache.stems.stem_for(object_id_t{7}) == &stem);
+    CHECK(&cache.stems.packed_for(object_id_t{7}) == &packed);
+    CHECK(cache.stems.stem_waveforms.size() == 1);
+    CHECK(cache.stems.packed_waveforms.size() == 1);
+}
+#endif

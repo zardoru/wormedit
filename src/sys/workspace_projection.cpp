@@ -7,7 +7,7 @@
 #include "sys/compose_resource_presenter.h"
 #include "sys/sound_list_projection.h"
 #include "sys/sound_usage_projection.h"
-#include "sys/bookmark_chooser_projection.h"
+#include "sys/bookmark_navigation.h"
 #include "sys/sound_picker_projection.h"
 #include "wormedit/config.h"
 
@@ -1191,7 +1191,7 @@ void populate_bookmark_chooser(const workspace_projection_context_t& projection,
     view.document_revision = projection.document.revision;
     const auto& request = projection.bookmark_chooser_request;
     if (!request.open) return;
-    const auto page = project_bookmark_chooser(projection.document, chart, request.first_row,
+    const auto page = bookmark_navigation_t::build_bookmark_chooser_view(projection.document, chart, request.first_row,
                                                std::clamp(request.row_limit, std::size_t{1}, std::size_t{64}), request.query);
     view.total_count = page.total_count;
     view.first_row = page.first_row;

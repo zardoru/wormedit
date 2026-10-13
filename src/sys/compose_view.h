@@ -1,5 +1,7 @@
 #pragma once
 #include "sys/metronome.h"
+#include "sys/bookmark_navigation.h"
+#include <algorithm>
 
 #include "core/interaction_context.h"
 
@@ -141,8 +143,8 @@ struct compose_scene_cache_t {
         case compose_scene_key_policy_t::projection:
             return scene.attempted && logical_stamp && scene.scene_song == document.id;
         case compose_scene_key_policy_t::stem_geometry:
-            return scene.stem_index.built && scene.stem_index.document == document.id &&
-                scene.stem_index.chart == chart.id && scene.stem_index.revision == document.revision;
+            return stems.stem_index.built && stems.stem_index.document == document.id &&
+                stems.stem_index.chart == chart.id && stems.stem_index.revision == document.revision;
         case compose_scene_key_policy_t::measure_geometry:
             return logical_stamp;
         case compose_scene_key_policy_t::paint_occupancy:
@@ -173,7 +175,7 @@ struct compose_scene_cache_t {
         std::uint64_t source_id{};
         std::string source_label;
         bool source_label_valid{}, source_missing{};
-    } draw_stem_sources;
+    };
     struct channel_waveform_selection_t {
         wormedit::chart_id_t chart;
         std::uint64_t revision{};
@@ -271,7 +273,6 @@ struct compose_scene_cache_t {
         selected_source_location_t selected_note_source, selected_bgm_source;
         std::size_t selected_source_scanned{}, selected_source_reused{}, paint_occupancy_scanned{};
         std::optional<wormedit::measure_index_t> cached_measure_index;
-        wormedit::sys::stem_index_t stem_index;
         std::optional<wormedit::editor_hit_test_index_t> hit_test_index;
         std::shared_ptr<const wormedit::editor_area_geometry_snapshot_t> area_object_geometry;
     } scene;
@@ -316,6 +317,37 @@ struct compose_scene_cache_t {
         wormedit::object_id_t proposed_beat_event;
     } timing;
 
+    struct stem_display_state_t {
+        draw_stem_source_cache_t draw_stem_sources;
+        wormedit::sys::stem_index_t stem_index;
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        // One entry per BMSON stem drawn besides the selected channel (at most eight; the vector is
+        // reserved up front so the view's row pointers stay valid through the frame).
+        std::vector<stem_waveform_cache_t> stem_waveforms;
+        packed_waveform_index_t packed_waveform_index;
+        audio::display_row_table_t packed_waveform_row_table;
+        std::uint64_t packed_clock_generation{};
+        std::vector<stem_waveform_cache_t> packed_waveforms;
+        std::vector<WormUiComposeStemWaveformView> stem_waveform_views;
+        std::vector<WormUiComposeStemCutView> stem_cut_views;
+        auto stem_for(wormedit::object_id_t channel) -> stem_waveform_cache_t& {
+            const auto found = std::ranges::find(stem_waveforms, channel, &stem_waveform_cache_t::channel);
+            if (found != stem_waveforms.end()) return *found;
+            stem_waveforms.emplace_back();
+            stem_waveforms.back().channel = channel;
+            return stem_waveforms.back();
+        }
+        // Packed display keys are BGM event ids, rather than sound-channel ids.
+        auto packed_for(wormedit::object_id_t event) -> stem_waveform_cache_t& {
+            const auto found = std::ranges::find(packed_waveforms, event, &stem_waveform_cache_t::channel);
+            if (found != packed_waveforms.end()) return *found;
+            packed_waveforms.emplace_back();
+            packed_waveforms.back().channel = event;
+            return packed_waveforms.back();
+        }
+#endif
+    } stems;
+
     struct waveform_state_t {
         std::optional<channel_waveform_selection_t> channel_waveform_selection;
         wormedit::object_id_t channel_waveform_channel;
@@ -331,15 +363,6 @@ struct compose_scene_cache_t {
         audio::display_row_table_t waveform_row_table;
         envelope_projection_ring_t waveform_envelope_ring;
         envelope_projection_ring_t channel_envelope_ring;
-        // One entry per BMSON stem drawn besides the selected channel (at most eight; the vector is
-        // reserved up front so the view's row pointers stay valid through the frame).
-        std::vector<stem_waveform_cache_t> stem_waveforms;
-        packed_waveform_index_t packed_waveform_index;
-        audio::display_row_table_t packed_waveform_row_table;
-        std::uint64_t packed_clock_generation{};
-        std::vector<stem_waveform_cache_t> packed_waveforms;
-        std::vector<WormUiComposeStemWaveformView> stem_waveform_views;
-        std::vector<WormUiComposeStemCutView> stem_cut_views;
         std::optional<wormedit::audio::waveform_key_t> waveform_overview_key;
         const void* waveform_overview_identity{};
         std::uint64_t waveform_overview_revision{};
@@ -402,9 +425,6 @@ struct application_command_services_t {
     std::function<bool()> transport_preview_playing;
     std::function<bool()> transport_preview_paused;
     std::function<std::optional<std::uint64_t>()> transport_preview_end_frame;
-    std::function<bool(wormedit::chart_id_t, std::uint64_t, std::uint64_t)>
-        transport_preserve_bookmark_revision;
-    std::function<bool(std::uint64_t, std::uint64_t, std::uint64_t)> open_bookmark_chooser;
     std::function<bool(std::uint64_t, std::uint64_t, std::uint64_t)> open_sound_picker;
     std::function<bool(std::uint64_t, std::uint64_t, std::uint64_t)> open_project_export;
     std::function<bool(WormUiComposeDockCommand, std::uint64_t, std::uint64_t, std::uint64_t)>
@@ -423,7 +443,6 @@ struct application_command_services_t {
     std::function<bool(wormedit::chart_id_t, std::span<const std::uint64_t>)> transport_set_bgm_mix;
     std::function<std::string(external_player_action_t)> external_player;
     std::function<std::string()> transport_cancel_restore;
-    std::function<std::chrono::steady_clock::time_point()> bookmark_clock;
 };
 
 struct bgm_lane_mix_state_t {
@@ -494,13 +513,6 @@ struct application_command_state_t {
         std::uint64_t frame{};
         double cursor_subrow{};
     };
-    // The row a playing bookmark seek last targeted, so a quick repeat steps from it rather
-    // than from a playhead the audio clock has not advanced to yet.
-    struct bookmark_seek_record_t {
-        wormedit::chart_id_t chart{};
-        std::uint64_t row{};
-        std::chrono::steady_clock::time_point at;
-    };
     // The target of the last playing playhead skip (wheel notch or step), for the same reason.
     struct playhead_skip_record_t {
         wormedit::chart_id_t chart{};
@@ -510,6 +522,7 @@ struct application_command_state_t {
     };
 
     application_command_services_t services;
+    bookmark_navigation_t bookmarks;
     metronome_t* metronome{};
     [[nodiscard]] auto metronome_settings() const -> const metronome_settings_t& {
         static const metronome_settings_t defaults;
@@ -617,7 +630,6 @@ struct application_command_state_t {
         struct transport_state_t {
             std::optional<double> preview_playhead_absolute_row;
             std::optional<minimap_start_frame_t> minimap_start_frame;
-            std::optional<bookmark_seek_record_t> last_playing_bookmark_seek;
             std::optional<playhead_skip_record_t> last_playhead_skip;
         } transport;
     } project;
@@ -628,7 +640,7 @@ struct application_command_state_t {
     // Any other seek or a playback-session change breaks a repeat sequence: the next skip or
     // bookmark step must start from the live playhead.
     void invalidate_playing_seek_records() {
-        project.transport.last_playing_bookmark_seek.reset();
+        bookmarks.clear_seek_record();
         project.transport.last_playhead_skip.reset();
     }
 };

@@ -5,7 +5,7 @@
 #include "sys/compose_note_to_bgm.h"
 #include "sys/compose_semantic_layer_commands.h"
 
-#include "sys/compose_bookmark_commands.h"
+#include "sys/bookmark_commands.h"
 #include <wormedit/core/chart_clipboard.h>
 #include "sys/compose_input.h"
 #include "sys/compose_sound_selection.h"
@@ -33,6 +33,7 @@
 
 namespace wormedit::sys {
 void reset_application_project_edit_state(application_command_state_t& current) {
+    current.bookmarks.reset_project();
     current.project = {};
 }
 
@@ -690,7 +691,7 @@ void post_bookmark_outcome(notification_sink_t& sink, command_kind_t kind,
 auto open_bookmark_chooser_command(command_context_t& context) -> std::optional<command_result_t> {
     if (context.command.kind != command_kind_t::navigation_go_to_bookmark) return std::nullopt;
     auto* interaction = context.compose();
-    if (!interaction || !context.environment.editor.commands.services.open_bookmark_chooser)
+    if (!interaction || !context.environment.editor.commands.bookmarks.has_chooser_backend())
         return reject_application_command(context.environment.document.notifications,
                                           "Bookmark chooser requires the active Compose chart.",
                                           notification_severity_t::warning,
@@ -700,7 +701,7 @@ auto open_bookmark_chooser_command(command_context_t& context) -> std::optional<
                                           "Finish or cancel the active Compose gesture first.",
                                           notification_severity_t::warning,
                                           notification_source_t::input);
-    const bool opened = context.environment.editor.commands.services.open_bookmark_chooser(
+    const bool opened = context.environment.editor.commands.bookmarks.open_chooser(
         context.environment.document.history.document.id.value, interaction->chart.value,
         context.environment.document.history.document.revision);
     if (!opened)
@@ -853,13 +854,13 @@ auto bookmark_commands(command_context_t& context) -> std::optional<command_resu
     const auto bookmark_chart = state->chart;
     auto outcome = [&] {
         if (kind == command_kind_t::markers_add_bookmark)
-            return add_beat_bookmark_here(context.environment.document.history, *state,
+            return context.environment.editor.commands.bookmarks.add_beat_bookmark_here(context.environment.document.history, *state,
                                           context.environment.editor.commands);
         const auto downscroll = compose_field_downscroll(
             *chart, context.environment.editor.commands.preferences.editor_preferences);
         // The commands are bound to screen directions: Up is "previous" unless the field is flipped.
         const auto direction = compose_visual_navigation_direction(downscroll, previous);
-        return navigate_beat_bookmark(context.environment.document.history, *state,
+        return context.environment.editor.commands.bookmarks.navigate_beat_bookmark(context.environment.document.history, *state,
                                       context.environment.editor.commands,
                                       direction == interaction_direction_t::backward
                                           ? marker_navigation_direction_t::previous
@@ -869,11 +870,8 @@ auto bookmark_commands(command_context_t& context) -> std::optional<command_resu
     if (outcome.document_changed) {
         const auto rebound = context.rebind();
         if (!rebound.accepted) return rebound;
-        if (kind == command_kind_t::markers_add_bookmark && outcome.accepted &&
-            context.environment.editor.commands
-                .services.transport_preserve_bookmark_revision) {
-            static_cast<void>(context.environment.editor.commands
-                                  .services.transport_preserve_bookmark_revision(
+        if (kind == command_kind_t::markers_add_bookmark && outcome.accepted) {
+            static_cast<void>(context.environment.editor.commands.bookmarks.preserve_preview_revision(
                                       bookmark_chart, previous_revision,
                                       context.environment.document.history.document.revision));
         }

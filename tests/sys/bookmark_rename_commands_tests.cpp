@@ -1,4 +1,4 @@
-#include "sys/bookmark_rename_commands.h"
+#include "sys/bookmark_navigation.h"
 
 #include <wormedit/core/marker_editor.h>
 
@@ -46,7 +46,7 @@ auto rename_song() -> song_document_t {
 TEST_CASE("bookmark rename preserves stable identity and exact beat or audio anchor",
           "[unit][sys][bookmark-rename]") {
     document_history_t history{make_document_history(rename_song())};
-    const auto beat = rename_bookmark(history, 7, chart_id_t{2}, object_id_t{4}, "Étage 🎵");
+    const auto beat = bookmark_navigation_t{}.rename_bookmark(history, 7, chart_id_t{2}, object_id_t{4}, "Étage 🎵");
     require_rename(beat.accepted);
     require_rename(history.document.charts.front().bookmarks.size() == 2);
     check_rename(history.undo.size() == 1);
@@ -67,7 +67,7 @@ TEST_CASE("bookmark rename preserves stable identity and exact beat or audio anc
                   local_position_t{measure_id_t{3}, 315}));
 
     const auto revision = history.document.revision;
-    const auto audio = rename_bookmark(history, revision, chart_id_t{2}, object_id_t{5}, "Intro");
+    const auto audio = bookmark_navigation_t{}.rename_bookmark(history, revision, chart_id_t{2}, object_id_t{5}, "Intro");
     require_rename(audio.accepted);
     const auto& renamed_audio = history.document.charts.front().bookmarks.back();
     check_rename(renamed_audio.id == object_id_t{5});
@@ -80,12 +80,12 @@ TEST_CASE("bookmark rename preserves stable identity and exact beat or audio anc
 TEST_CASE("bookmark rename rejects stale revision and missing bookmark without mutation",
           "[unit][sys][bookmark-rename]") {
     document_history_t history{make_document_history(rename_song())};
-    const auto stale = rename_bookmark(history, 6, chart_id_t{2}, object_id_t{4}, "Stale");
+    const auto stale = bookmark_navigation_t{}.rename_bookmark(history, 6, chart_id_t{2}, object_id_t{4}, "Stale");
     check_rename(!stale.accepted);
     check_rename(history.document.revision == 7);
     check_rename(history.document.charts.front().bookmarks.front().label == "Beat");
 
-    const auto missing = rename_bookmark(history, 7, chart_id_t{2}, object_id_t{99}, "Missing");
+    const auto missing = bookmark_navigation_t{}.rename_bookmark(history, 7, chart_id_t{2}, object_id_t{99}, "Missing");
     check_rename(!missing.accepted);
     check_rename(history.document.revision == 7);
     check_rename(history.document.charts.front().bookmarks.front().label == "Beat");
@@ -94,12 +94,12 @@ TEST_CASE("bookmark rename rejects stale revision and missing bookmark without m
 TEST_CASE("bookmark rename uses existing empty and UTF-8 label validation",
           "[unit][sys][bookmark-rename]") {
     document_history_t history{make_document_history(rename_song())};
-    const auto empty = rename_bookmark(history, 7, chart_id_t{2}, object_id_t{4}, "");
+    const auto empty = bookmark_navigation_t{}.rename_bookmark(history, 7, chart_id_t{2}, object_id_t{4}, "");
     require_rename(empty.accepted);
     check_rename(history.document.charts.front().bookmarks.front().label.empty());
 
     const auto revision = history.document.revision;
-    const auto invalid = rename_bookmark(history, revision, chart_id_t{2}, object_id_t{4}, "bad\xFF");
+    const auto invalid = bookmark_navigation_t{}.rename_bookmark(history, revision, chart_id_t{2}, object_id_t{4}, "bad\xFF");
     check_rename(!invalid.accepted);
     check_rename(history.document.revision == revision);
     check_rename(history.document.charts.front().bookmarks.front().label.empty());

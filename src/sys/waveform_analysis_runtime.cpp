@@ -534,13 +534,13 @@ void append_packed_waveform_assets(const song_document_t& document,
     const auto chart = std::ranges::find(document.charts, *workspace.selected_chart, &chart_document_t::id);
     if (chart == document.charts.end() || chart->source_family != format_family_t::bmson ||
         cache.scene.chart != chart->id || cache.scene.revision != document.revision) return;
-    prepare_packed_waveform_index(cache.waveform.packed_waveform_index, document, *chart,
+    prepare_packed_waveform_index(cache.stems.packed_waveform_index, document, *chart,
                                  sources.bindings(), *cache.timing.marker_timing_index);
     const auto window = packed_window_seconds(*cache.timing.marker_timing_index,
         interaction->viewport_scroll_pixels, interaction->viewport_height_pixels,
         interaction->pixels_per_standard_measure);
     if (!window) return;
-    const auto pieces = visible_packed_waveform_pieces(cache.waveform.packed_waveform_index,
+    const auto pieces = visible_packed_waveform_pieces(cache.stems.packed_waveform_index,
                                                      window->first, window->second);
     std::unordered_set<std::uint64_t> seen;
     for (const auto asset : wanted) seen.insert(asset.value);

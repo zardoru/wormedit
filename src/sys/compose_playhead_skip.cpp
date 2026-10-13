@@ -65,7 +65,7 @@ auto skip_origin_row(const application_command_state_t& application, chart_id_t 
                      bool forward) -> double {
     const auto& record = application.project.transport.last_playhead_skip;
     if (record && record->chart == chart && record->forward == forward &&
-        playing_seek_now(application) - record->at <= playing_seek_repeat_window)
+        application.bookmarks.now() - record->at <= playing_seek_repeat_window)
         return static_cast<double>(record->row);
     return *application.project.transport.preview_playhead_absolute_row;
 }
@@ -141,7 +141,7 @@ auto skip_playing_playhead(application_command_state_t& application, const chart
     }
     // Chain several skips of one frame from where this one landed.
     application.project.transport.preview_playhead_absolute_row = static_cast<double>(*row);
-    application.project.transport.last_playhead_skip = {chart.id, *row, forward, playing_seek_now(application)};
+    application.project.transport.last_playhead_skip = {chart.id, *row, forward, application.bookmarks.now()};
     return outcome;
 }
 

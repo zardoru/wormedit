@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sys/compose_bookmark_commands.h"
+#include "sys/bookmark_commands.h"
 #include "sys/compose_view.h"
 
 #include <cstdint>

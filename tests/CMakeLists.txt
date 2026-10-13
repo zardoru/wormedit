@@ -29,7 +29,7 @@ add_executable(wormedit_core_tests
     ../src/sys/tap_timing_runtime.cpp
     ../src/sys/transport_player_actions.cpp
     ../src/sys/compose_minimap_navigation.cpp
-    ../src/sys/compose_bookmark_commands.cpp
+    ../src/sys/bookmark_commands.cpp
     ../src/sys/compose_navigation.cpp
     ../src/sys/bookmark_rename_commands.cpp
     ../src/sys/compose_playhead_skip.cpp
@@ -629,9 +629,10 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/audio_sounds_workflow_event_harness_tests.cpp
         ui/inspector_resource_workflow_tests.cpp
         ../src/sys/bookmark_chooser_projection.cpp
+        ../src/sys/bookmark_navigation.cpp
         ../src/sys/compose_area_actions.cpp
         ../src/sys/compose_bgm_bar.cpp
-        ../src/sys/compose_bookmark_commands.cpp
+        ../src/sys/bookmark_commands.cpp
         ../src/sys/compose_navigation.cpp
         ../src/sys/compose_dead_spans.cpp
         ../src/sys/compose_input.cpp
@@ -739,6 +740,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/recipe_form.cpp
         ../src/sys/workspace_projection.cpp
         ../src/sys/bookmark_chooser_projection.cpp
+        ../src/sys/bookmark_navigation.cpp
         ../src/sys/sound_list_projection.cpp
         ../src/sys/sound_picker_projection.cpp
         ../src/sys/sound_usage_projection.cpp
@@ -797,7 +799,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/compose_navigation_input.cpp
             ../src/sys/compose_note_to_bgm.cpp
             ../src/sys/compose_minimap_navigation.cpp
-            ../src/sys/compose_bookmark_commands.cpp
+            ../src/sys/bookmark_commands.cpp
             ../src/sys/compose_navigation.cpp
             ../src/sys/compose_playhead_skip.cpp
             ../src/sys/compose_bgm_bar.cpp)
@@ -822,6 +824,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/frame_timing.cpp
         ../src/sys/workspace_projection.cpp
         ../src/sys/bookmark_chooser_projection.cpp
+        ../src/sys/bookmark_navigation.cpp
         ../src/sys/sound_list_projection.cpp
         ../src/sys/sound_picker_projection.cpp
         ../src/sys/timing_view.cpp

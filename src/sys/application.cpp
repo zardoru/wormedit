@@ -174,6 +174,11 @@
 #include <vector>
 
 namespace {
+bool open_bookmark_chooser_backend(void*, std::uint64_t project, std::uint64_t chart,
+                                  std::uint64_t revision) {
+    return worm_ui_frontend_open_bookmark_chooser(project, chart, revision);
+}
+
 using wormedit::sys::begin_timing_stage;
 using wormedit::sys::timing_lane_kind_from_ui;
 using wormedit::sys::timing_position_from_fraction;
@@ -4045,7 +4050,7 @@ struct application_t::implementation_t {
                                                platform.notification_sink);
         session.recovery_scan_configured = startup.recovery_scan_configured;
         session.project_identity.scanned_primary_version = startup.primary_version;
-        commands.services.open_bookmark_chooser = worm_ui_frontend_open_bookmark_chooser;
+        commands.bookmarks.chooser_backend = {.open = open_bookmark_chooser_backend};
         commands.services.open_sound_picker = worm_ui_frontend_open_sound_picker;
         commands.services.compose_dock_command = worm_ui_frontend_compose_dock_command;
         commands.services.open_project_export = worm_ui_frontend_open_project_export;
@@ -4256,18 +4261,6 @@ struct application_t::implementation_t {
         return audio_runtime.preview_state.paused;
     }
 
-    auto on_transport_preserve_bookmark_revision(wormedit::chart_id_t chart,
-                                                 std::uint64_t previous_revision,
-                                                 std::uint64_t next_revision) -> bool {
-        if (!audio_runtime.preview_output.playing() || !session.workspace.selected_chart ||
-            *session.workspace.selected_chart != chart ||
-            audio_runtime.preview_state.chart != chart ||
-            audio_runtime.preview_state.revision != previous_revision)
-            return false;
-        return audio_runtime.preview_state.preserve_bookmark_revision(chart, previous_revision,
-                                                                      next_revision);
-    }
-
     auto on_transport_preview_end_frame() -> std::optional<std::uint64_t> {
         return audio_runtime.preview_state.matches_selection(session.history.document,
                                                              session.workspace)
@@ -4386,12 +4379,9 @@ struct application_t::implementation_t {
         commands.services.transport_preview_paused = [this] {
             return is_transport_preview_paused();
         };
-        commands.services.transport_preserve_bookmark_revision =
-            [this](wormedit::chart_id_t chart, std::uint64_t previous_revision,
-                   std::uint64_t next_revision) {
-                return on_transport_preserve_bookmark_revision(chart, previous_revision,
-                                                               next_revision);
-            };
+        commands.bookmarks.workspace = &session.workspace;
+        commands.bookmarks.preview_output = &audio_runtime.preview_output;
+        commands.bookmarks.preview = &audio_runtime.preview_state;
         commands.services.transport_preview_end_frame = [this]() -> std::optional<std::uint64_t> {
             return on_transport_preview_end_frame();
         };

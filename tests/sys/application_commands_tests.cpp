@@ -1848,36 +1848,66 @@ TEST_CASE("Note context rejects stale and unknown hits without replacing selecti
 namespace {
 void check_bookmark_callback(bool value) { CHECK(value); }
 void require_bookmark_callback(bool value) { REQUIRE(value); }
+struct bookmark_chooser_recorder_t {
+    unsigned calls{};
+    std::uint64_t project{}, chart{}, revision{};
+    bool accepted{true};
+    auto operator==(const bookmark_chooser_recorder_t&) const -> bool = default;
+    static auto open(void* context, std::uint64_t project, std::uint64_t chart,
+                      std::uint64_t revision) -> bool {
+        auto& self = *static_cast<bookmark_chooser_recorder_t*>(context);
+        ++self.calls;
+        self.project = project;
+        self.chart = chart;
+        self.revision = revision;
+        return self.accepted;
+    }
+};
 }
 TEST_CASE("Go To Bookmark command opens the retained chooser with the active context",
           "[sys][application_commands][bookmark]") {
     TimingInsertFixture fixture;
     const auto revision = fixture.fixture.history.document.revision;
     const auto cursor = fixture.compose_state->cursor;
-    unsigned calls{};
-    fixture.application_state.services.open_bookmark_chooser = [&](std::uint64_t project,
-        std::uint64_t chart, std::uint64_t expected_revision) {
-        ++calls;
-        check_bookmark_callback(project == fixture.fixture.history.document.id.value);
-        check_bookmark_callback(chart == fixture.compose_state->chart.value);
-        check_bookmark_callback(expected_revision == revision);
-        return true;
-    };
+    bookmark_chooser_recorder_t chooser;
+    fixture.application_state.bookmarks.chooser_backend = {
+        .open = bookmark_chooser_recorder_t::open, .context = &chooser};
     require_bookmark_callback(fixture.invoke(application_command_kind_t::navigation_go_to_bookmark).accepted);
-    check_bookmark_callback(calls == 1);
+    check_bookmark_callback(chooser.calls == 1);
+    check_bookmark_callback(chooser.project == fixture.fixture.history.document.id.value);
+    check_bookmark_callback(chooser.chart == fixture.compose_state->chart.value);
+    check_bookmark_callback(chooser.revision == revision);
     check_bookmark_callback(fixture.fixture.history.document.revision == revision);
     check_bookmark_callback(fixture.compose_state->cursor == cursor);
     fixture.workspace.active_tab = wormedit::workspace_tab_t::metadata;
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_bookmark).accepted);
-    check_bookmark_callback(calls == 1);
+    check_bookmark_callback(chooser.calls == 1);
 }
 
 TEST_CASE("Go To Bookmark command rejects a missing or blocked chooser callback",
           "[sys][application_commands][bookmark]") {
     TimingInsertFixture fixture;
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_bookmark).accepted);
-    fixture.application_state.services.open_bookmark_chooser = [](auto, auto, auto) { return false; };
+    bookmark_chooser_recorder_t chooser{.accepted = false};
+    fixture.application_state.bookmarks.chooser_backend = {
+        .open = bookmark_chooser_recorder_t::open, .context = &chooser};
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_bookmark).accepted);
+}
+TEST_CASE("Bookmark navigation reset retains the chooser backend and clock and clears project seeks",
+          "[sys][application_commands][bookmark][ownership]") {
+    application_command_state_t state;
+    bookmark_chooser_recorder_t chooser;
+    auto now = std::chrono::steady_clock::time_point{} + std::chrono::seconds{10};
+    state.bookmarks.chooser_backend = {.open = bookmark_chooser_recorder_t::open, .context = &chooser};
+    state.bookmarks.fixed_clock = &now;
+    state.bookmarks.record_seek(wormedit::chart_id_t{7}, 192);
+    reset_application_project_edit_state(state);
+    check_bookmark_callback(!state.bookmarks.recent_seek_row(wormedit::chart_id_t{7}));
+    check_bookmark_callback(state.bookmarks.now() == now);
+    require_bookmark_callback(state.bookmarks.open_chooser(1, 7, 2));
+    check_bookmark_callback(chooser.calls == 1);
+    now += std::chrono::milliseconds{301};
+    check_bookmark_callback(state.bookmarks.now() == now);
 }
 TEST_CASE("Dock commands use the active Compose context without editing history",
           "[sys][application_commands][dock-shortcuts]") {

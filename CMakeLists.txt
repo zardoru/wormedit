@@ -466,9 +466,10 @@ if(WORMEDIT_BUILD_APP)
         src/sys/application_defaults.cpp
         src/sys/application_commands.cpp
         src/sys/compose_minimap_navigation.cpp
-        src/sys/compose_bookmark_commands.cpp
+        src/sys/bookmark_commands.cpp
         src/sys/compose_navigation.cpp
         src/sys/bookmark_chooser_projection.cpp
+        src/sys/bookmark_navigation.cpp
         src/sys/bookmark_rename_commands.cpp
         src/sys/compose_playhead_skip.cpp
         src/sys/compose_bgm_bar.cpp

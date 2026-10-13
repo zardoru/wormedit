@@ -1,4 +1,4 @@
-#include "sys/bookmark_chooser_projection.h"
+#include "sys/bookmark_navigation.h"
 
 #include <wormedit/core/timing.h>
 
@@ -109,7 +109,7 @@ auto matches_query(std::string_view label, std::string_view query) -> bool {
 
 } // namespace
 
-auto project_bookmark_chooser(const song_document_t& document, chart_id_t chart_id,
+auto bookmark_navigation_t::build_bookmark_chooser_view(const song_document_t& document, chart_id_t chart_id,
                               std::size_t first_row, std::size_t row_limit, std::string_view query)
     -> bookmark_chooser_projection_t {
     bookmark_chooser_projection_t result{.chart = chart_id,

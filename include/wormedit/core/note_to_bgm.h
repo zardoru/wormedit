@@ -2,6 +2,7 @@
 
 #include <wormedit/core/command.h>
 #include <wormedit/core/interaction.h>
+#include <wormedit/core/result.h>
 
 #include <cstddef>
 #include <optional>
@@ -26,16 +27,33 @@ struct note_to_bgm_new_lane_t {
     object_id_t id;
     std::string name;
     std::size_t source_order{};
+    auto operator==(const note_to_bgm_new_lane_t&) const -> bool = default;
 };
 
+struct note_to_bgm_allocation_t {
+    [[nodiscard]] static auto
+    from(const chart_document_t& chart, std::span<const resource_entry_t> resources,
+         std::span<const object_id_t> notes, std::optional<object_id_t> preferred_lane,
+         note_to_bgm_policy_t policy = {}) -> diagnosed_t<note_to_bgm_allocation_t>;
+    std::vector<note_to_bgm_assignment_t> assignments;
+    std::vector<note_to_bgm_new_lane_t> new_lanes;
+    std::vector<object_id_t> retained_event_ids;
+    auto operator==(const note_to_bgm_allocation_t&) const -> bool = default;
+};
+using note_to_bgm_allocation_outcome_t = diagnosed_t<note_to_bgm_allocation_t>;
+
 struct note_to_bgm_plan_t {
+    [[nodiscard]] static auto from(note_to_bgm_allocation_outcome_t&& outcome)
+        -> note_to_bgm_plan_t;
+
     std::vector<note_to_bgm_assignment_t> assignments;
     std::vector<note_to_bgm_new_lane_t> new_lanes;
     std::vector<object_id_t> retained_event_ids;
     diagnostic_list_t diagnostics;
 
-    [[nodiscard]] auto is_accepted() const -> bool { return diagnostics.empty(); }
-
+    [[nodiscard]] auto is_accepted() const -> bool {
+        return diagnostics.empty();
+    }
 };
 
 // Pure ordinary-note allocator. Retained linked notes are rejected so callers route BMSON stem
@@ -58,8 +76,7 @@ struct note_to_bgm_plan_t {
 [[nodiscard]] auto move_notes_to_bgm(document_history_t& history, std::uint64_t expected_revision,
                                      chart_id_t chart, std::span<const object_id_t> notes,
                                      std::optional<object_id_t> preferred_lane,
-                                     note_to_bgm_policy_t policy = {})
-    -> document_command_result_t;
+                                     note_to_bgm_policy_t policy = {}) -> document_command_result_t;
 
 struct selected_note_to_bgm_payload_t {
     bool handled{};
@@ -72,8 +89,10 @@ using selected_note_to_bgm_result_t = command_result_with_t<selected_note_to_bgm
 // Ordinary moves retain converted points in the selection. Successive moves take the first
 // selected note in document order and deselect it. Missing notes or stale input reject atomically.
 [[nodiscard]] auto move_editor_selection_to_bgm(document_history_t& history,
-    std::uint64_t expected_revision, editor_interaction_state_t& state,
-    std::optional<object_id_t> lane = std::nullopt, bool successive = false)
+                                                std::uint64_t expected_revision,
+                                                editor_interaction_state_t& state,
+                                                std::optional<object_id_t> lane = std::nullopt,
+                                                bool successive = false)
     -> selected_note_to_bgm_result_t;
 
 // The reverse move, in one undo step: tailless BGM events become taps and end-bearing events
@@ -81,19 +100,21 @@ using selected_note_to_bgm_result_t = command_result_with_t<selected_note_to_bgm
 // A BMSON marker that stands for a stem point becomes the stem's playable tap, keeping its slice
 // point; ordinary events preserve their sound, layers, branch and provenance. Interval collisions
 // or an inactive lane anywhere across a restored hold reject the whole edit.
-[[nodiscard]] auto move_bgm_events_to_lane(document_history_t& history, std::uint64_t expected_revision,
-                                           chart_id_t chart, std::span<const object_id_t> events,
-                                           lane_id_t lane) -> document_command_result_t;
+[[nodiscard]] auto move_bgm_events_to_lane(document_history_t& history,
+                                           std::uint64_t expected_revision, chart_id_t chart,
+                                           std::span<const object_id_t> events, lane_id_t lane)
+    -> document_command_result_t;
 
 // Internal note-part validator/application used by the atomic mixed lane command.
-[[nodiscard]] auto assign_note_lanes(document_history_t& history,
-                                      editor_interaction_state_t& state, lane_id_t lane)
-    -> editor_interaction_result_t;
+[[nodiscard]] auto assign_note_lanes(document_history_t& history, editor_interaction_state_t& state,
+                                     lane_id_t lane) -> editor_interaction_result_t;
 
 // Assigns a mixed selected note/BGM set into a lane as one all-or-nothing undo command.
-[[nodiscard]] auto move_selected_objects_to_lane(
-    document_history_t& history, std::uint64_t expected_revision,
-    const editor_interaction_state_t& state, std::span<const object_id_t> notes,
-    std::span<const object_id_t> events, lane_id_t lane) -> document_command_result_t;
+[[nodiscard]] auto move_selected_objects_to_lane(document_history_t& history,
+                                                 std::uint64_t expected_revision,
+                                                 const editor_interaction_state_t& state,
+                                                 std::span<const object_id_t> notes,
+                                                 std::span<const object_id_t> events,
+                                                 lane_id_t lane) -> document_command_result_t;
 
 } // namespace wormedit

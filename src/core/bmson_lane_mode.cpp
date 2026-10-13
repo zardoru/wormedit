@@ -62,38 +62,45 @@ auto make_stem(chart_document_t& chart, const sound_channel_t& channel,
 
 // Feed display markers to the established T-423 planner as temporary ordinary
 // notes. The proposed source graph and semantic objects never take this shape.
-auto pack_channel(chart_document_t& chart, const sound_channel_t& channel,
-                  const event_ids_t& ids, std::span<const resource_entry_t> resources,
-                  note_to_bgm_policy_t policy) -> note_to_bgm_plan_t {
-    const auto packed_count = std::ranges::count_if(chart.bgm_source_lanes,
-        [](const auto& lane) { return !lane.stem_channel; });
+auto pack_channel(chart_document_t& chart, const sound_channel_t& channel, const event_ids_t& ids,
+                  std::span<const resource_entry_t> resources, note_to_bgm_policy_t policy)
+    -> note_to_bgm_allocation_outcome_t {
+    const auto packed_count = std::ranges::count_if(
+        chart.bgm_source_lanes, [](const auto& lane) { return !lane.stem_channel; });
     if (static_cast<std::size_t>(packed_count) > policy.max_lanes)
-        return {.diagnostics = {{diagnostic_severity_t::error, diagnostic_code_t::invalid_id,
-            "existing packed BGM columns exceed the configured maximum", {}}}};
+        return {.diagnostics = {{diagnostic_severity_t::error,
+                                 diagnostic_code_t::invalid_id,
+                                 "existing packed BGM columns exceed the configured maximum",
+                                 {}}}};
     auto allocation = chart;
     std::vector<object_id_t> selected;
     std::erase_if(allocation.bgm_source_lanes,
-        [&](const auto& lane) { return lane.stem_channel == channel.id; });
+                  [&](const auto& lane) { return lane.stem_channel == channel.id; });
     for (auto& measure : allocation.measures) {
         for (const auto& event : measure.bgm_events) {
-            if (!is_channel_event(event, ids)) continue;
+            if (!is_channel_event(event, ids))
+                continue;
             selected.push_back(event.id);
-            measure.notes.push_back({.id = event.id, .position = event.position,
-                .sound = event.sound, .branch = event.branch});
+            measure.notes.push_back({.id = event.id,
+                                     .position = event.position,
+                                     .sound = event.sound,
+                                     .branch = event.branch});
         }
-        std::erase_if(measure.bgm_events, [&](const auto& event) { return is_channel_event(event, ids); });
+        std::erase_if(measure.bgm_events,
+                      [&](const auto& event) { return is_channel_event(event, ids); });
     }
-    if (selected.empty()) return {};
-    return plan_notes_to_bgm(allocation, resources, selected, std::nullopt, policy);
+    if (selected.empty())
+        return {};
+    return note_to_bgm_allocation_t::from(allocation, resources, selected, std::nullopt, policy);
 }
 
 auto apply_packing(chart_document_t& chart, const sound_channel_t& channel,
-                   const note_to_bgm_plan_t& plan) -> void {
+                   const note_to_bgm_allocation_t& plan) -> void {
     std::erase_if(chart.bgm_source_lanes,
-        [&](const auto& lane) { return lane.stem_channel == channel.id; });
+                  [&](const auto& lane) { return lane.stem_channel == channel.id; });
     for (const auto& lane : plan.new_lanes)
-        chart.bgm_source_lanes.push_back({.id = lane.id, .name = lane.name,
-                                        .source_order = lane.source_order});
+        chart.bgm_source_lanes.push_back(
+            {.id = lane.id, .name = lane.name, .source_order = lane.source_order});
     std::unordered_map<std::uint64_t, object_id_t> assignments;
     for (const auto& assignment : plan.assignments)
         assignments.emplace(assignment.note.value, assignment.lane);
@@ -224,13 +231,17 @@ auto set_bmson_channel_lane_mode(document_history_t& history, std::uint64_t expe
     const auto ids = channel_events(*channel);
     if (mode == bmson_channel_lane_mode_t::stem) {
         const auto error = make_stem(*chart, *channel, ids);
-        if (!error.empty()) return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, error);
+        if (!error.empty())
+            return document_command_transaction_t::rejection(revision,
+                                                             diagnostic_code_t::invalid_id, error);
     } else {
         const auto plan = pack_channel(*chart, *channel, ids, proposed.resources, policy);
-        if (!plan.is_accepted()) return {.revision = revision, .diagnostics = plan.diagnostics};
-        apply_packing(*chart, *channel, plan);
+        if (!plan.diagnostics.empty())
+            return {.revision = revision, .diagnostics = plan.diagnostics};
+        apply_packing(*chart, *channel, plan.value);
         if (convert_continuations_to_restarts)
-            for (auto& event : channel->events) event.continuation = false;
+            for (auto& event : channel->events)
+                event.continuation = false;
     }
     const auto kind = mode == bmson_channel_lane_mode_t::stem ? sound_kind_t::stem : sound_kind_t::keysound;
     for (auto& resource : proposed.resources)

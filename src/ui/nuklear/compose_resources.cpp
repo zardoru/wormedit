@@ -112,7 +112,7 @@ void render_export_dialog(const ResourcePanel& panel) {
     const auto captured = chrome::PopupContextStamp{state.dialogs.export_dialog_project_id,
         state.dialogs.export_dialog_chart_id, state.dialogs.export_dialog_revision, 0};
     if (!chrome::popup_context_matches(captured,
-            {view.project_id, view.chart_id, view.document_revision, 0})) {
+            wormedit::ui::chrome::PopupContextStamp::from(view))) {
         close_export(state);
         return;
     }

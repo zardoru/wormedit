@@ -1,3 +1,6 @@
+#include "ui/field/rect.h"
+#include "ui/nuklear/modal_input.h"
+#include "ui/nuklear/text_fit.h"
 #include "wormedit/config.h"
 #include "ui/nuklear/catalog_confirmation.h"
 #include "ui/workspace_menu.h"
@@ -412,8 +415,8 @@ static bool select_all_in_hovered_dock_list(const SDL_KeyboardEvent& event) {
         worm_ui_keysound_select_all(state.keysound_catalog.keysound_selection, state.keysound_catalog.keysound_shown);
         return true;
     }
-    const auto in_bga = state.bga_catalog.bga_list_valid && x >= state.bga_catalog.bga_list_x && y >= state.bga_catalog.bga_list_y &&
-        x < state.bga_catalog.bga_list_x + state.bga_catalog.bga_list_width && y < state.bga_catalog.bga_list_y + state.bga_catalog.bga_list_height;
+    const auto in_bga = state.bga_catalog.bga_list_valid && wormedit::ui::is_point_in_rect({state.bga_catalog.bga_list_x, state.bga_catalog.bga_list_y,
+            state.bga_catalog.bga_list_width, state.bga_catalog.bga_list_height}, x, y);
     if (!in_bga) return false;
     worm_ui_keysound_select_all(state.bga_catalog.bga_selection, state.bga_catalog.bga_shown);
     return true;
@@ -926,8 +929,8 @@ bool worm_ui_frontend_stage_sound_slot_file(uint64_t project, uint64_t chart, ui
 bool worm_ui_frontend_bga_list_contains(uint32_t window_id, float x, float y) {
     if (!g_context || (window_id && (!g_window || SDL_GetWindowID(g_window) != window_id))) return false;
     const auto& state = worm_ui_nuklear_compose_state();
-    return state.bga_catalog.bga_list_valid && x >= state.bga_catalog.bga_list_x && y >= state.bga_catalog.bga_list_y &&
-        x < state.bga_catalog.bga_list_x + state.bga_catalog.bga_list_width && y < state.bga_catalog.bga_list_y + state.bga_catalog.bga_list_height;
+    return state.bga_catalog.bga_list_valid && wormedit::ui::is_point_in_rect({state.bga_catalog.bga_list_x, state.bga_catalog.bga_list_y,
+            state.bga_catalog.bga_list_width, state.bga_catalog.bga_list_height}, x, y);
 }
 
 bool worm_ui_frontend_sound_list_contains(uint32_t window_id, float x, float y) {
@@ -940,14 +943,12 @@ bool worm_ui_frontend_sound_list_contains(uint32_t window_id, float x, float y) 
         return !g_notification_modal && !project_dialog_active() &&
             !worm_ui_nuklear_sound_import_active() && !g_menu_popup_open &&
             !g_menu_popup_release_pending && audio.import_drop_valid &&
-            x >= audio.import_drop_x && y >= audio.import_drop_y &&
-            x < audio.import_drop_x + audio.import_drop_width &&
-            y < audio.import_drop_y + audio.import_drop_height;
+            wormedit::ui::is_point_in_rect({audio.import_drop_x, audio.import_drop_y,
+                audio.import_drop_width, audio.import_drop_height}, x, y);
     }
     return worm_ui_nuklear_sound_list_contains(x, y) ||
-        (audio.sound_list_valid && x >= audio.sound_list_x && y >= audio.sound_list_y &&
-         x < audio.sound_list_x + audio.sound_list_width &&
-         y < audio.sound_list_y + audio.sound_list_height);
+        (audio.sound_list_valid && wormedit::ui::is_point_in_rect({audio.sound_list_x, audio.sound_list_y,
+             audio.sound_list_width, audio.sound_list_height}, x, y));
 }
 
 static bool notification_document_gesture_active() {
@@ -968,8 +969,8 @@ static bool notification_editor_gesture_active() {
 }
 
 static bool notification_history_contains(struct nk_rect bounds, float x, float y) {
-    return std::isfinite(x) && std::isfinite(y) && x >= bounds.x && y >= bounds.y &&
-           x < bounds.x + bounds.w && y < bounds.y + bounds.h;
+    return std::isfinite(x) && std::isfinite(y) &&
+           wormedit::ui::is_point_in_rect({bounds.x, bounds.y, bounds.w, bounds.h}, x, y);
 }
 
 static bool notification_history_window_visible(bool overlay) {
@@ -1034,7 +1035,7 @@ static bool compose_popup_owns_input(bool include_menu) {
            wormedit::ui::chrome::context_menu_owns_input(compose.layer_editor.layers_menu) || compose.keysound_slots.keysound_slot_confirmation_open ||
            compose.keysound_slots.keysound_slot_batch.open || compose.keysound_catalog.keysound_group_review.open ||
            wormedit::ui::chrome::context_menu_owns_input(compose.keysound_catalog.keysound_group_menu) ||
-           compose.keysound_filters.keysound_filter_popup_open || compose.keysound_filters.keysound_filter_release_pending ||
+           compose.keysound_filters.is_popup_open() || compose.keysound_filters.keysound_filter_release_pending ||
            compose.bga_interaction.bga_stack_open || compose.bga_interaction.bga_stack_release_pending ||
            compose.bga_catalog.bga_renumber_confirmation_open || compose.bga_catalog.bga_renumber_release_pending ||
            compose_note_menu_open() || compose_note_menu_consumed() ||
@@ -1265,10 +1266,7 @@ static bool capture_notification_history_event(const SDL_Event& event) {
 
 static bool capture_sound_slot_key(const SDL_KeyboardEvent& event) {
     if (!worm_ui_nuklear_compose_state().keysound_slots.keysound_slot_confirmation_open) return false;
-    SDL_Event copy{};
-    copy.type = event.type;
-    copy.key = event;
-    (void)nk_sdl_handle_event(g_context, &copy);
+    wormedit::ui::chrome::forward_modal_key(g_context, event);
     return true;
 }
 
@@ -1280,10 +1278,7 @@ static bool capture_inline_offset_key(const SDL_KeyboardEvent& event) {
         if (event.down) compose.inline_offset.inline_offset_cancel_pending = true;
         return true;
     }
-    SDL_Event copy{};
-    copy.type = event.type;
-    copy.key = event;
-    (void)nk_sdl_handle_event(g_context, &copy);
+    wormedit::ui::chrome::forward_modal_key(g_context, event);
     return true;
 }
 
@@ -1299,10 +1294,7 @@ void worm_ui_frontend_bga_move_preview(uint64_t* chart_id, uint64_t* document_re
 
 static bool capture_bga_stack_key(const SDL_KeyboardEvent& event) {
     if (!worm_ui_nuklear_compose_state().bga_interaction.bga_stack_open) return false;
-    SDL_Event copy{};
-    copy.type = event.type;
-    copy.key = event;
-    (void)nk_sdl_handle_event(g_context, &copy);
+    wormedit::ui::chrome::forward_modal_key(g_context, event);
     return true;
 }
 
@@ -1310,10 +1302,7 @@ static bool capture_keysound_group_review_key(const SDL_KeyboardEvent& event) {
     auto& review = worm_ui_nuklear_compose_state().keysound_catalog.keysound_group_review;
     auto& compose = worm_ui_nuklear_compose_state();
     if (compose.keysound_catalog.keysound_group_menu.open) {
-        SDL_Event copy{};
-        copy.type = event.type;
-        copy.key = event;
-        (void)nk_sdl_handle_event(g_context, &copy);
+        wormedit::ui::chrome::forward_modal_key(g_context, event);
         return true;
     }
     if (!review.open) return false;
@@ -1321,27 +1310,18 @@ static bool capture_keysound_group_review_key(const SDL_KeyboardEvent& event) {
         review.open = false;
         compose.keysound_catalog.keysound_group_menu.release_pending = true;
     } else {
-        SDL_Event copy{};
-        copy.type = event.type;
-        copy.key = event;
-        (void)nk_sdl_handle_event(g_context, &copy);
+        wormedit::ui::chrome::forward_modal_key(g_context, event);
     }
     return true;
 }
 
-static void forward_modal_key(const SDL_KeyboardEvent& event) {
-    SDL_Event copy{};
-    copy.type = event.type;
-    copy.key = event;
-    (void)nk_sdl_handle_event(g_context, &copy);
-}
 
 static bool capture_bookmark_editor_key(const SDL_KeyboardEvent& event) {
     auto& compose = worm_ui_nuklear_compose_state();
     const bool chooser = worm_ui_nuklear_bookmark_chooser_owns_input(compose.bookmark_ui.bookmark_chooser);
     const bool rename = compose.bookmark_ui.bookmark_rename.active || compose.bookmark_ui.bookmark_rename.release_pending;
     if (!chooser && !rename) return false;
-    forward_modal_key(event);
+    wormedit::ui::chrome::forward_modal_key(g_context, event);
     if (event.down && !event.repeat && event.key == SDLK_ESCAPE) {
         if (chooser) worm_ui_nuklear_bookmark_chooser_cancel(g_context, compose.bookmark_ui.bookmark_chooser);
         else cancel_compose_bookmark_rename(compose.bookmark_ui.bookmark_rename);
@@ -1356,7 +1336,7 @@ static bool capture_sound_picker_key(const SDL_KeyboardEvent& event) {
     if (g_ime_composition_active && event.down &&
         (event.key == SDLK_RETURN || event.key == SDLK_KP_ENTER))
         return true;
-    forward_modal_key(event);
+    wormedit::ui::chrome::forward_modal_key(g_context, event);
     if (event.down && !event.repeat && event.key == SDLK_ESCAPE)
         cancel_compose_sound_picker(picker);
     return true;
@@ -1365,7 +1345,7 @@ static bool capture_sound_picker_key(const SDL_KeyboardEvent& event) {
 static bool capture_snap_grid_key(const SDL_KeyboardEvent& event) {
     if (!wormedit::ui::chrome::context_menu_owns_input(
             worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu)) return false;
-    forward_modal_key(event);
+    wormedit::ui::chrome::forward_modal_key(g_context, event);
     return true;
 }
 
@@ -1374,14 +1354,14 @@ static bool capture_compose_modal_key(const SDL_KeyboardEvent& event) {
     if (compose.layer_editor.layer_creation_context || compose.dialogs.export_dialog_open) {
         if (g_ime_composition_active && event.down &&
             (event.key == SDLK_RETURN || event.key == SDLK_KP_ENTER)) return true;
-        forward_modal_key(event);
+        wormedit::ui::chrome::forward_modal_key(g_context, event);
         return true;
     }
     if (capture_snap_grid_key(event) || capture_sound_picker_key(event) || capture_bookmark_editor_key(event)) return true;
     const bool escape_menu = g_menu_popup_open || g_menu_popup_release_pending ||
-        compose.keysound_filters.keysound_filter_popup_open || compose.keysound_filters.keysound_filter_release_pending;
+        compose.keysound_filters.is_popup_open() || compose.keysound_filters.keysound_filter_release_pending;
     if (escape_menu && event.key == SDLK_ESCAPE) {
-        forward_modal_key(event);
+        wormedit::ui::chrome::forward_modal_key(g_context, event);
         return true;
     }
     return capture_bga_stack_key(event) || capture_keysound_group_review_key(event);
@@ -1461,7 +1441,7 @@ static bool handle_frontend_keyboard_event(const SDL_KeyboardEvent& event) {
             capture_command_menu_key(g_context, event, g_ime_composition_active)) return true;
         if (capture_context_menu_key(event)) return true;
         if ((g_help_dialog != HelpDialog::none)) {
-            forward_modal_key(event);
+            wormedit::ui::chrome::forward_modal_key(g_context, event);
             return true;
         }
         if (capture_compose_modal_key(event)) return true;
@@ -1470,10 +1450,7 @@ static bool handle_frontend_keyboard_event(const SDL_KeyboardEvent& event) {
             if (event.down && !event.repeat && event.key == SDLK_ESCAPE)
                 worm_ui_sound_slot_batch_cancel(slot_batch);
             else {
-                SDL_Event copy{};
-                copy.type = event.type;
-                copy.key = event;
-                (void)nk_sdl_handle_event(g_context, &copy);
+                wormedit::ui::chrome::forward_modal_key(g_context, event);
             }
             return true;
         }
@@ -1481,10 +1458,7 @@ static bool handle_frontend_keyboard_event(const SDL_KeyboardEvent& event) {
             if (event.down && !event.repeat && event.key == SDLK_ESCAPE)
                 worm_ui_nuklear_reset_sound_import();
             else {
-                SDL_Event copy{};
-                copy.type = event.type;
-                copy.key = event;
-                (void)nk_sdl_handle_event(g_context, &copy);
+                wormedit::ui::chrome::forward_modal_key(g_context, event);
             }
             return true;
         }
@@ -2029,25 +2003,7 @@ static void render_elided_status_label(std::string_view text, nk_flags alignment
                                        struct nk_color color) {
     const auto width = nk_widget_bounds(g_context).w;
     const auto* font = g_context->style.font;
-    const auto measure = [&](std::string_view value) {
-        return font->width(font->userdata, font->height, value.data(), static_cast<int>(value.size()));
-    };
-    std::string label{text};
-    if (font && measure(text) > width) {
-        constexpr std::string_view ellipsis = "…";
-        std::vector<std::size_t> boundaries{0};
-        for (std::size_t index = 1; index <= text.size(); ++index)
-            if (index == text.size() || (static_cast<unsigned char>(text[index]) & 0xc0) != 0x80)
-                boundaries.push_back(index);
-        std::size_t first = 0, last = boundaries.size();
-        const auto available = width - measure(ellipsis);
-        while (first + 1 < last) {
-            const auto middle = first + (last - first) / 2;
-            if (measure(text.substr(0, boundaries[middle])) <= available) first = middle;
-            else last = middle;
-        }
-        label = available < 0 ? "" : std::string{text.substr(0, boundaries[first])} + std::string{ellipsis};
-    }
+    const auto label = wormedit::ui::chrome::fit_text_with_ellipsis(font, text, width);
     nk_label_colored(g_context, label.c_str(), alignment, color);
 }
 
@@ -2359,8 +2315,8 @@ static bool modeless_window_owns_pointer(const char* name, struct nk_rect fallba
     if (nk_input_is_mouse_hovering_rect(&g_context->input, bounds)) return true;
     for (const auto& button : g_context->input.mouse.buttons) {
         if ((button.down || button.clicked) &&
-            button.clicked_pos.x >= bounds.x && button.clicked_pos.x <= bounds.x + bounds.w &&
-            button.clicked_pos.y >= bounds.y && button.clicked_pos.y <= bounds.y + bounds.h)
+            wormedit::ui::is_point_in_rect({bounds.x, bounds.y, bounds.w, bounds.h},
+                button.clicked_pos.x, button.clicked_pos.y, wormedit::ui::rect_edges_t::inclusive))
             return true;
     }
     return false;
@@ -2391,8 +2347,8 @@ static bool options_owns_content_input(const WormUiWorkspaceView& view) {
     const auto bounds = window ? window->bounds : nk_rect(180, 110, 800, 450);
     if (nk_input_is_mouse_hovering_rect(&g_context->input, bounds)) return true;
     for (const auto& button : g_context->input.mouse.buttons) {
-        if (button.down && button.clicked_pos.x >= bounds.x && button.clicked_pos.x <= bounds.x + bounds.w &&
-            button.clicked_pos.y >= bounds.y && button.clicked_pos.y <= bounds.y + bounds.h) return true;
+        if (button.down && wormedit::ui::is_point_in_rect({bounds.x, bounds.y, bounds.w, bounds.h},
+                button.clicked_pos.x, button.clicked_pos.y, wormedit::ui::rect_edges_t::inclusive)) return true;
     }
     return nk_window_is_active(g_context, "Options") && nuklear_text_entry_active();
 }

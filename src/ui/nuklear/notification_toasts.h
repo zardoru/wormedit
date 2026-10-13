@@ -1,4 +1,5 @@
 #pragma once
+#include "ui/field/rect.h"
 
 #include "ui/frontend.h"
 #include "wormedit/nuklear_config.h"
@@ -19,8 +20,8 @@ struct notification_rect_t {
 };
 
 inline auto notification_contains(notification_rect_t bounds, float x, float y) -> bool {
-    return bounds.width > 0 && bounds.height > 0 && x >= bounds.x && y >= bounds.y &&
-           x < bounds.x + bounds.width && y < bounds.y + bounds.height;
+    return bounds.width > 0 && bounds.height > 0 &&
+           is_point_in_rect({bounds.x, bounds.y, bounds.width, bounds.height}, x, y);
 }
 
 inline auto notification_toast_bounds(int width, int height, std::size_t index)

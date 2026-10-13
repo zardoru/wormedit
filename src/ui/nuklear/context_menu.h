@@ -13,11 +13,8 @@ namespace wormedit::ui::chrome {
 // Escape, the release latch that keeps the closing gesture away from covered
 // widgets, and retiring a popup that was closed outside its parent's frame.
 // It draws like the menubar menus (see menu_surface_begin()).
-struct ContextMenu {
+struct ContextMenu : wormedit::ui::chrome::retained_popup_t {
     const char* title{};
-    bool open{};
-    bool release_pending{};
-    bool close_pending{};
     bool opened_this_frame{};
     PopupContextStamp stamp{};
     struct nk_vec2 anchor{};

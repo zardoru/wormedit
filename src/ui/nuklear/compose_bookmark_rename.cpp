@@ -53,7 +53,7 @@ auto visible_bookmark_lines(const WormUiComposeView& view)
 }
 
 auto editor_popup_bounds(nk_context* context, const WormUiComposeView& view,
-                         const bookmark_rename_editor_t& editor, struct nk_rect viewport)
+                         const inline_label_editor_t& editor, struct nk_rect viewport)
     -> struct nk_rect {
     const auto content = nk_window_get_content_region(context);
     if (editor.kind != inline_label_kind_t::bookmark || editor.anchored)
@@ -73,20 +73,20 @@ auto editor_popup_bounds(nk_context* context, const WormUiComposeView& view,
     return nk_rect(x, y, std::min(300.0f, content.w), 58.0f);
 }
 
-void request_editor_close(bookmark_rename_editor_t& editor) {
+void request_editor_close(inline_label_editor_t& editor) {
     editor.active = false;
     editor.focus_pending = false;
     wormedit::ui::chrome::popup_arm_release(editor.release_pending);
     editor.close_pending = editor.popup_open;
 }
 
-void clear_editor_after_close(bookmark_rename_editor_t& editor) {
+void clear_editor_after_close(inline_label_editor_t& editor) {
     const auto release_pending = editor.release_pending;
     editor = {};
     editor.release_pending = release_pending;
 }
 
-void close_pending_popup(nk_context* context, bookmark_rename_editor_t& editor) {
+void close_pending_popup(nk_context* context, inline_label_editor_t& editor) {
     if (!editor.close_pending) {
         clear_editor_after_close(editor);
         return;
@@ -102,7 +102,7 @@ void close_pending_popup(nk_context* context, bookmark_rename_editor_t& editor) 
 }
 
 void stage_rename(WormUiWorkspaceAction& action, const WormUiComposeView& view,
-                  const bookmark_rename_editor_t& editor) {
+                  const inline_label_editor_t& editor) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     if (editor.kind == inline_label_kind_t::note_label) {
         stage_note_label_inline(action, view, editor);
@@ -123,7 +123,7 @@ void stage_rename(WormUiWorkspaceAction& action, const WormUiComposeView& view,
 
 } // namespace
 
-auto begin_compose_bookmark_rename(bookmark_rename_editor_t& editor,
+auto begin_compose_bookmark_rename(inline_label_editor_t& editor,
                                    const WormUiComposeView& view,
                                    std::uint64_t bookmark_id) -> bool {
     if (editor.release_pending) return false;
@@ -140,7 +140,7 @@ auto begin_compose_bookmark_rename(bookmark_rename_editor_t& editor,
     return true;
 }
 
-void cancel_compose_bookmark_rename(bookmark_rename_editor_t& editor) {
+void cancel_compose_bookmark_rename(inline_label_editor_t& editor) {
     if (editor.active || editor.popup_open || editor.close_pending)
         request_editor_close(editor);
 }
@@ -152,14 +152,14 @@ auto compose_bookmark_at(const WormUiComposeView& view, double pointer_x, double
         compose_bookmark_label_zone_height);
 }
 
-auto begin_compose_bookmark_rename_at_double_click(bookmark_rename_editor_t& editor,
+auto begin_compose_bookmark_rename_at_double_click(inline_label_editor_t& editor,
                                                   const WormUiComposeView& view,
                                                   double pointer_x, double pointer_y) -> bool {
     const auto id = compose_bookmark_at(view, pointer_x, pointer_y);
     return id && begin_compose_bookmark_rename(editor, view, *id);
 }
 
-auto compose_bookmark_rename_owns_input(const bookmark_rename_editor_t& editor,
+auto compose_bookmark_rename_owns_input(const inline_label_editor_t& editor,
                                         const WormUiComposeView& view,
                                         bool window_focused) -> bool {
     return editor.active && window_focused && view.visible && view.scene_available &&
@@ -170,7 +170,7 @@ auto compose_bookmark_rename_owns_input(const bookmark_rename_editor_t& editor,
 
 void render_compose_bookmark_rename(nk_context* context, const WormUiComposeView& view,
                                     WormUiWorkspaceAction& action,
-                                    bookmark_rename_editor_t& editor,
+                                    inline_label_editor_t& editor,
                                     struct nk_rect viewport, bool window_focused) {
     (void)wormedit::ui::chrome::popup_update_release_pending(
         context, editor.release_pending, wormedit::ui::chrome::PopupReleaseKeys::text);

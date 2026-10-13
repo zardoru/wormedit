@@ -1,3 +1,4 @@
+#include "ui/nuklear/color.h"
 #include "ui/nuklear/theme.h"
 #include "ui/nuklear/arrow_glyph.h"
 #include <wormedit/core/lane_profiles.h>
@@ -698,16 +699,15 @@ void set_field_waveform_opacity(std::uint32_t percent) {
     ++generation;
 }
 auto field_waveform_color(nk_color color) -> nk_color {
-    color.a = static_cast<nk_byte>((static_cast<std::uint32_t>(color.a) * waveform_opacity_percent + 50) / 100);
-    return color;
+    return chrome::with_alpha(color, chrome::percent_to_alpha(waveform_opacity_percent, color.a));
 }
 auto compose_grid_line_style(std::uint8_t kind, std::uint8_t emphasis, std::uint8_t snap_class)
     -> grid_line_style_t {
     if (colored_grid) {
         const auto rgb = wormedit::ui::arrow_snap_color(snap_class);
         const auto thickness = kind == 3 ? 2.0f : snap_class == 4 ? 1.6f : 1.0f;
-        return {nk_rgba(rgb.red, rgb.green, rgb.blue,
-            static_cast<int>((grid_opacity_percent * 255 + 50) / 100)), thickness};
+        return {nk_rgba(rgb.r, rgb.g, rgb.b,
+            chrome::percent_to_alpha(grid_opacity_percent)), thickness};
     }
     if (kind == 3) return {compose(ComposeColor::measure_line), 1.2f};
     if (kind == 1 || kind == 2)

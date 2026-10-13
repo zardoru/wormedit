@@ -1,3 +1,5 @@
+#include "ui/field/rect.h"
+#include "ui/nuklear/text_fit.h"
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/compose_canvas.h"
 #include "ui/compose_timing_geometry.h"
@@ -391,12 +393,9 @@ static struct nk_rect compose_screen_rect(const WormUiComposeRect* source,
     const auto top = viewport.y + static_cast<float>(source->top) * y_scale;
     const auto right = viewport.x + static_cast<float>(source->right) * x_scale;
     const auto bottom = viewport.y + static_cast<float>(source->bottom) * y_scale;
-    const auto clipped_left = std::max(viewport.x, left);
-    const auto clipped_top = std::max(viewport.y, top);
-    const auto clipped_right = std::min(viewport.x + viewport.w, right);
-    const auto clipped_bottom = std::min(viewport.y + viewport.h, bottom);
-    return nk_rect(clipped_left, clipped_top, std::max(0.0f, clipped_right - clipped_left),
-                   std::max(0.0f, clipped_bottom - clipped_top));
+    const auto overlap = wormedit::ui::rect_intersection(
+        {left, top, right - left, bottom - top}, {viewport.x, viewport.y, viewport.w, viewport.h});
+    return nk_rect(overlap.x, overlap.y, overlap.w, overlap.h);
 }
 
 static auto field_color(nk_color color) -> wormedit::ui::field::color_t {
@@ -1427,8 +1426,8 @@ static void draw_compose_stem_cuts(const ComposePaintContext& paint) {
         const auto rect = compose_stem_lane_rect(paint, cut.bgm_lane_id);
         if (!rect) continue;
         const auto tile = compose_stem_point_tile(paint, cut.object_id, cut.object_is_note);
-        const auto hovered = tile && !view.input_occluded && mouse.x >= tile->first.x && mouse.x < tile->first.x + tile->first.w &&
-                             mouse.y >= tile->first.y && mouse.y < tile->first.y + tile->first.h;
+        const auto hovered = tile && !view.input_occluded && wormedit::ui::is_point_in_rect(
+            {tile->first.x, tile->first.y, tile->first.w, tile->first.h}, mouse.x, mouse.y);
         const auto lit = hovered || (tile && tile->second);
         auto color = cut.restart ? nk_rgb(255, 164, 64) : nk_rgb(96, 214, 120);
         color.a = lit ? 255 : 120;
@@ -2244,16 +2243,11 @@ static auto note_label_is_light(struct nk_color fill) -> bool {
 // Returns -1 when not even one character plus the ellipsis fits.
 static auto fit_label_prefix(const nk_user_font* font, const char* text, int length,
                              float max_width) -> int {
-    constexpr const char* ellipsis = "\xE2\x80\xA6";
-    const auto ellipsis_width = font->width(font->userdata, font->height, ellipsis, 3);
-    int best = -1;
-    for (int end = 1; end < length; ++end) {
-        if ((static_cast<unsigned char>(text[end]) & 0xC0U) == 0x80U) continue;
-        const auto width = font->width(font->userdata, font->height, text, end);
-        if (width + ellipsis_width > max_width) break;
-        best = end;
-    }
-    return best;
+    const auto prefix = wormedit::ui::chrome::fit_text_prefix(
+        std::string_view(text, static_cast<std::size_t>(length)),
+        wormedit::ui::chrome::font_text_width_t{font}, max_width,
+        wormedit::ui::chrome::text_ellipsis, 1);
+    return prefix ? static_cast<int>(*prefix) : -1;
 }
 
 // Marker for "this note has a sound" when no readable label fits the tile.

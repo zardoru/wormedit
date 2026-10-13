@@ -220,7 +220,7 @@ void context_menu_abandon(ContextMenu& menu) {
 }
 
 auto context_menu_owns_input(const ContextMenu& menu) -> bool {
-    return popup_owns_input(menu.open, menu.release_pending);
+    return menu.owns_input();
 }
 
 void context_menu_retire(ContextMenu& menu, nk_context* context) {

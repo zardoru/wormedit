@@ -1,3 +1,4 @@
+#include "ui/field/rect.h"
 #include "ui/nuklear/notification_panel.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/theme.h"
@@ -127,8 +128,8 @@ auto notification_history_pointer_edge(notification_panel_state_t& state, struct
         state.pointer_owned_this_frame = true;
         return route;
     }
-    const bool inside = std::isfinite(x) && std::isfinite(y) && x >= bounds.x && y >= bounds.y &&
-                        x < bounds.x + bounds.w && y < bounds.y + bounds.h;
+    const bool inside = std::isfinite(x) && std::isfinite(y) &&
+                        is_point_in_rect({bounds.x, bounds.y, bounds.w, bounds.h}, x, y);
     if (!down || !allow_capture || !inside) return route_t::none;
     captured = interactive ? route_t::interactive : route_t::blocked;
     state.pointer_owned_this_frame = true;

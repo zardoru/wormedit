@@ -55,7 +55,7 @@ void open_picker(const WormUiComposeView& view) {
     { std::lock_guard lock{picker.mutex};
       if (picker.open) return;
       picker.open = true;
-      picker.origin = wormedit::ui::nuklear::catalog_context(view);
+      picker.origin = wormedit::ui::chrome::PopupContextStamp::from(view);
       picker.paths.clear(); }
     static const SDL_DialogFileFilter filter{"Images", "png;jpg;jpeg;bmp;gif;tga;ppm"};
     SDL_ShowOpenFileDialog(picked, nullptr, SDL_GetKeyboardFocus(), &filter, 1, nullptr, true);
@@ -73,7 +73,7 @@ void import_picked(WormUiWorkspaceAction& action, const WormUiComposeView& view,
       state.bga_catalog.bga_staged_paths = std::move(picker.paths); picker.paths.clear();
       origin = picker.origin; }
     if (!wormedit::ui::chrome::popup_context_matches(origin,
-            wormedit::ui::nuklear::catalog_context(view))) {
+            wormedit::ui::chrome::PopupContextStamp::from(view))) {
         state.bga_catalog.bga_staged_paths.clear();
         return;
     }
@@ -428,8 +428,7 @@ static bool bga_stack_is_valid(const WormUiComposeView& view,
                                const worm_ui_nuklear_compose_state_t& state) {
     const auto expected = wormedit::ui::chrome::PopupContextStamp{
         state.bga_interaction.bga_stack_project_id, state.bga_interaction.bga_stack_chart_id, state.bga_interaction.bga_stack_revision, 0};
-    const auto current = wormedit::ui::chrome::PopupContextStamp{
-        view.project_id, view.chart_id, view.document_revision, 0};
+    const auto current = wormedit::ui::chrome::PopupContextStamp::from(view);
     return view.scene_available && view.bga_lane_visible &&
         wormedit::ui::chrome::popup_context_matches(expected, current) &&
         std::ranges::any_of(std::span(view.bga_events, view.bga_event_count), [&](const auto& event) {

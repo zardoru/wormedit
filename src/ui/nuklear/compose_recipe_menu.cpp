@@ -47,8 +47,7 @@ void render_menu(nk_context* context, const WormUiComposeView& view, WormUiWorks
         chrome::context_menu_close(menu, context);
         return;
     }
-    const chrome::PopupContextStamp current{view.project_id, view.chart_id,
-                                            view.document_revision, menu_recipe};
+    const auto current = wormedit::ui::chrome::PopupContextStamp::from(view, menu_recipe);
     if (!chrome::context_menu_begin(menu, context, current,
                                     nk_vec2(chrome::context_menu_width,
                                             chrome::context_menu_height(3))))

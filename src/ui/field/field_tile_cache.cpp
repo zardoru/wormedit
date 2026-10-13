@@ -1,3 +1,4 @@
+#include "ui/field/rect.h"
 #include "ui/field/field_tile_cache.h"
 #include "ui/field/field_renderer.h"
 #include <algorithm>
@@ -39,9 +40,9 @@ struct raster_geometry_t {
     }
 };
 void subtract_rectangle(SDL_FRect bounds, SDL_FRect hole, std::vector<SDL_FRect>& output) {
-    const auto left = std::max(bounds.x, hole.x), top = std::max(bounds.y, hole.y);
-    const auto right = std::min(bounds.x + bounds.w, hole.x + hole.w);
-    const auto bottom = std::min(bounds.y + bounds.h, hole.y + hole.h);
+    const auto overlap = rect_intersection(bounds, hole);
+    const auto left = overlap.x, top = overlap.y;
+    const auto right = left + overlap.w, bottom = top + overlap.h;
     if (right <= left || bottom <= top) {
         output.push_back(bounds);
         return;

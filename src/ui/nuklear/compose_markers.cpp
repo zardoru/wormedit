@@ -1,3 +1,4 @@
+#include "ui/nuklear/text_fit.h"
 #include "ui/nuklear/compose_menu_command.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/compose_markers.h"
@@ -209,21 +210,6 @@ auto register_click(std::uint64_t key) -> bool {
     return paired;
 }
 
-// The longest prefix of `text` that fits `width`, ending in an ellipsis when it was cut.
-auto fit_text(const nk_user_font* font, const char* text, float width) -> std::string {
-    const auto length = static_cast<int>(std::strlen(text));
-    if (!font || font->width(font->userdata, font->height, text, length) <= width) return text;
-    std::string cut = text;
-    while (!cut.empty()) {
-        do cut.pop_back();
-        while (!cut.empty() && (static_cast<unsigned char>(cut.back()) & 0xC0U) == 0x80U);
-        const auto candidate = cut + "...";
-        if (font->width(font->userdata, font->height, candidate.c_str(),
-                        static_cast<int>(candidate.size())) <= width) return candidate;
-    }
-    return "...";
-}
-
 void draw_row_text(struct nk_context* context, struct nk_rect bounds, const row_spec_t& spec) {
     auto* canvas = nk_window_get_canvas(context);
     const auto* font = context->style.font;
@@ -233,7 +219,8 @@ void draw_row_text(struct nk_context* context, struct nk_rect bounds, const row_
     const auto text_color = wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text);
     const auto muted = wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_muted);
     const auto label_width = std::max(0.0f, bounds.w - 3.0f * row_text_inset - detail_width);
-    const auto label = fit_text(font, spec.label, label_width);
+    const auto label = wormedit::ui::chrome::fit_text_with_ellipsis(font, spec.label, label_width,
+        wormedit::ui::chrome::ellipsis_overflow_t::marker_bytes);
     nk_draw_text(canvas, nk_rect(bounds.x + row_text_inset, bounds.y + 3.0f, label_width, bounds.h - 3.0f),
                  label.c_str(), static_cast<int>(label.size()), font, nk_rgba(0, 0, 0, 0), text_color);
     if (!spec.detail) return;

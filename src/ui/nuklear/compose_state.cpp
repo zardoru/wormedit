@@ -1,3 +1,4 @@
+#include "ui/field/rect.h"
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/compose_resources.h"
 #include "ui/nuklear/popup_lifecycle.h"
@@ -68,7 +69,7 @@ auto compose_kind_fill(const WormUiComposeNoteView& note, nk_color color) -> nk_
 }
 auto compose_snap_fill(std::uint8_t snap_class) -> nk_color {
     const auto color = wormedit::ui::arrow_snap_color(snap_class);
-    return nk_rgb(color.red, color.green, color.blue);
+    return nk_rgb(color.r, color.g, color.b);
 }
 auto next_ordered_resource(std::span<const std::uint64_t> ids,
                            std::uint64_t placed_resource_id) -> std::uint64_t {
@@ -428,9 +429,9 @@ void worm_ui_nuklear_tag_last_compose_input_sound(const worm_ui_nuklear_compose_
 
 auto worm_ui_nuklear_sound_list_contains(float x, float y) -> bool {
     const auto& state = worm_ui_nuklear_compose_state();
-    return state.sounds_dock.sound_list_valid && x >= state.sounds_dock.sound_list_x &&
-           x < state.sounds_dock.sound_list_x + state.sounds_dock.sound_list_width && y >= state.sounds_dock.sound_list_y &&
-           y < state.sounds_dock.sound_list_y + state.sounds_dock.sound_list_height;
+    return state.sounds_dock.sound_list_valid && wormedit::ui::is_point_in_rect(
+        {state.sounds_dock.sound_list_x, state.sounds_dock.sound_list_y,
+         state.sounds_dock.sound_list_width, state.sounds_dock.sound_list_height}, x, y);
 }
 
 auto worm_ui_nuklear_stem_lane_width(const worm_ui_nuklear_compose_state_t& state,

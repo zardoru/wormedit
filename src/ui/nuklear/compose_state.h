@@ -420,7 +420,7 @@ struct worm_ui_nuklear_compose_state_t {
 
     struct bookmark_ui_t {
         bookmark_chooser_state_t bookmark_chooser;
-        bookmark_rename_editor_t bookmark_rename;
+        inline_label_editor_t bookmark_rename;
         // A beat bookmark grabbed on its line; `active` once the pointer moved past the threshold.
         bool bookmark_move_candidate_active{};
         bool bookmark_move_active{};
@@ -609,7 +609,9 @@ struct worm_ui_nuklear_compose_state_t {
         std::size_t keysound_auto_first_row{};
         std::size_t keysound_auto_row_limit{64};
         std::size_t keysound_filter_layer_first{};
-        bool keysound_filter_popup_open{};
+        auto is_popup_open() const -> bool {
+            return keysound_filter_group_popup_open || keysound_layer_filter_popup_open;
+        }
         bool keysound_filter_group_popup_open{};
         bool keysound_layer_filter_popup_open{};
         bool keysound_filter_release_pending{};

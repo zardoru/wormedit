@@ -1,3 +1,6 @@
+#include "ui/field/rect.h"
+#include "core/text_util.h"
+#include "ui/nuklear/text_fit.h"
 #include "ui/nuklear/compose_bookmark_label.h"
 
 #include <algorithm>
@@ -11,60 +14,27 @@ namespace wormedit::ui {
 namespace {
 
 constexpr float padding = 4.0f;
-constexpr std::string_view ellipsis = "\xE2\x80\xA6";
 
-auto sequence_length_for_lead(unsigned char lead) -> std::size_t {
-    if (lead < 0x80) return 1;
-    if (lead >= 0xC2 && lead <= 0xDF) return 2;
-    if (lead >= 0xE0 && lead <= 0xEF) return 3;
-    if (lead >= 0xF0 && lead <= 0xF4) return 4;
-    return 0;
-}
-
-auto valid_scalar_encoding(unsigned char lead, unsigned char second) -> bool {
-    return !((lead == 0xE0 && second < 0xA0) || (lead == 0xED && second >= 0xA0) ||
-             (lead == 0xF0 && second < 0x90) || (lead == 0xF4 && second > 0x8F));
-}
-
-// Length of the UTF-8 sequence starting at `text[index]`, or 0 when malformed.
-auto utf8_sequence_length(std::string_view text, std::size_t index) -> std::size_t {
-    const auto lead = static_cast<unsigned char>(text[index]);
-    const auto length = sequence_length_for_lead(lead);
-    if (length == 0 || index + length > text.size()) return 0;
-    for (std::size_t offset = 1; offset < length; ++offset) {
-        if ((static_cast<unsigned char>(text[index + offset]) & 0xC0) != 0x80) return 0;
+struct bookmark_label_width_t {
+    const bookmark_text_width_t& width_of;
+    auto operator()(std::string_view prefix, std::string_view suffix) const -> float {
+        return width_of(std::string(prefix) + std::string(suffix));
     }
-    if (length >= 3 && !valid_scalar_encoding(lead, static_cast<unsigned char>(text[index + 1])))
-        return 0;
-    return length;
-}
+};
 
-// Byte offsets after each code point, or nullopt when the text is not UTF-8.
-auto code_point_ends(std::string_view text) -> std::optional<std::vector<std::size_t>> {
-    std::vector<std::size_t> ends;
-    for (std::size_t index = 0; index < text.size();) {
-        const auto length = utf8_sequence_length(text, index);
-        if (length == 0) return std::nullopt;
-        index += length;
-        ends.push_back(index);
-    }
-    return ends;
-}
-
-auto shorten_to_fit(std::string_view label, const std::vector<std::size_t>& ends,
-                    const bookmark_text_width_t& width_of, float maximum_width)
-    -> std::optional<std::string> {
+auto shorten_to_fit(std::string_view label, const bookmark_text_width_t& width_of,
+                    float maximum_width) -> std::optional<std::string> {
     if (width_of(label) <= maximum_width) return std::string(label);
-    for (auto kept = ends.size(); kept-- > 0;) {
-        const auto prefix = kept == 0 ? std::size_t{0} : ends[kept - 1];
-        auto candidate = std::string(label.substr(0, prefix)) + std::string(ellipsis);
-        if (width_of(candidate) <= maximum_width) return candidate;
-    }
-    return std::nullopt;
+    const auto prefix = chrome::fit_text_prefix_reverse(label, bookmark_label_width_t{width_of}, maximum_width);
+    if (!prefix) return std::nullopt;
+    return std::string(label.substr(0, *prefix)) + std::string(chrome::text_ellipsis);
 }
 
 auto overlaps(const bookmark_label_box_t& a, const bookmark_label_box_t& b) -> bool {
-    return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+    // Preserve the callback's historical rule for a zero/negative measured box.
+    if (a.w <= 0 || a.h <= 0 || b.w <= 0 || b.h <= 0)
+        return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+    return has_rect_overlap({a.x, a.y, a.w, a.h}, {b.x, b.y, b.w, b.h});
 }
 
 } // namespace
@@ -118,9 +88,8 @@ auto layout_bookmark_label(std::string_view label, const bookmark_text_width_t& 
                            const std::optional<bookmark_label_box_t>& previous)
     -> std::optional<bookmark_label_box_t> {
     if (label.empty() || field.w <= 2.0f * padding || font_height <= 0.0f) return std::nullopt;
-    const auto ends = code_point_ends(label);
-    if (!ends) return std::nullopt;
-    const auto text = shorten_to_fit(label, *ends, width_of,
+    if (text_util::invalid_utf8_offset(label)) return std::nullopt;
+    const auto text = shorten_to_fit(label, width_of,
                                      std::min(field.w * 0.5f, field.w - 2.0f * padding));
     if (!text) return std::nullopt;
     const auto width = width_of(*text);

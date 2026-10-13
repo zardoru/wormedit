@@ -257,15 +257,11 @@ void worm_ui_nuklear_set_metadata_drop_target(
 
 auto worm_ui_nuklear_metadata_drop_target(float x, float y) -> WormUiMetadataDropTarget {
     const auto& state = worm_ui_nuklear_metadata_state();
-    const auto contains = [x, y](const auto& rect) {
-        return rect.width > 0 && rect.height > 0 && x >= rect.x && y >= rect.y &&
-               x < rect.x + rect.width && y < rect.y + rect.height;
-    };
-    if (contains(state.export_drop_rectangle))
+    if (state.export_drop_rectangle.is_point_inside(x, y))
         return {WORM_UI_METADATA_DROP_EXPORT, state.export_drop_group_index};
-    if (contains(state.output_path_drop_rectangle))
+    if (state.output_path_drop_rectangle.is_point_inside(x, y))
         return {WORM_UI_METADATA_DROP_OUTPUT_PATH, state.output_path_drop_group_index};
-    if (contains(state.project_drop_rectangle))
+    if (state.project_drop_rectangle.is_point_inside(x, y))
         return {WORM_UI_METADATA_DROP_PROJECT, 0};
     return {};
 }

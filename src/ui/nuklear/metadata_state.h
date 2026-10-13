@@ -1,4 +1,5 @@
 #pragma once
+#include "ui/field/rect.h"
 #include "ui/nuklear/file_dialog_slot.h"
 
 #include "ui/frontend.h"
@@ -99,6 +100,10 @@ struct worm_ui_nuklear_metadata_state_t {
         float y{};
         float width{};
         float height{};
+        auto is_point_inside(float point_x, float point_y) const -> bool {
+            return width > 0 && height > 0 && wormedit::ui::is_point_in_rect(
+                {x, y, width, height}, point_x, point_y);
+        }
     } project_drop_rectangle, export_drop_rectangle, output_path_drop_rectangle;
     std::size_t export_drop_group_index{};
     std::size_t output_path_drop_group_index{};

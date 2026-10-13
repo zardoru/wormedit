@@ -1,3 +1,4 @@
+#include "ui/nuklear/color.h"
 #include "ui/nuklear/compose_layers_panel.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/compose_action_stamp.h"
@@ -72,14 +73,10 @@ auto captured_layer(const LayersPanel& panel) -> const WormUiComposeSemanticLaye
     return &state.layer_editor.layers_menu_layer;
 }
 
-auto layer_menu_stamp(const LayersPanel& panel) -> wormedit::ui::chrome::PopupContextStamp {
-    return {panel.view->project_id, panel.view->chart_id, panel.view->document_revision,
-            panel.state->layer_editor.layers_menu.stamp.object_id};
-}
 
 auto layer_capture_current(const LayersPanel& panel) -> bool {
     return wormedit::ui::chrome::popup_context_matches(panel.state->layer_editor.layers_menu.stamp,
-                                                       layer_menu_stamp(panel));
+                                                       wormedit::ui::chrome::PopupContextStamp::from(*panel.view, panel.state->layer_editor.layers_menu.stamp.object_id));
 }
 
 void draw_layer_row_text(const LayersPanel& panel,
@@ -205,7 +202,7 @@ void render_layer_menu(const LayersPanel& panel) {
     }
     const auto rows = static_cast<float>(std::size(layer_menu_entries));
     if (!wormedit::ui::chrome::context_menu_begin(
-            menu, context, layer_menu_stamp(panel),
+            menu, context, wormedit::ui::chrome::PopupContextStamp::from(*panel.view, panel.state->layer_editor.layers_menu.stamp.object_id),
             nk_vec2(wormedit::ui::chrome::context_menu_width,
                     wormedit::ui::chrome::context_menu_height(rows))))
         return;
@@ -249,9 +246,6 @@ void render_layer_name_editor(const LayersPanel& panel, const WormUiComposeSeman
     } else if (cancel) close_layer_editors(state);
 }
 
-auto layer_color_byte(float component) -> std::uint8_t {
-    return static_cast<std::uint8_t>(std::lround(std::clamp(component, 0.0f, 1.0f) * 255.0f));
-}
 
 void render_layer_color_editor(const LayersPanel& panel, const WormUiComposeSemanticLayerView& layer) {
     auto* context = panel.context;
@@ -268,10 +262,10 @@ void render_layer_color_editor(const LayersPanel& panel, const WormUiComposeSema
     if (!allowed) nk_widget_disable_end(context);
     const auto cancel = nk_button_label(context, "Cancel");
     if (apply && allowed && raise_captured(panel, WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_COLOR)) {
-        panel.action->compose_semantic_layer_red = layer_color_byte(value.r);
-        panel.action->compose_semantic_layer_green = layer_color_byte(value.g);
-        panel.action->compose_semantic_layer_blue = layer_color_byte(value.b);
-        panel.action->compose_semantic_layer_alpha = layer_color_byte(value.a);
+        panel.action->compose_semantic_layer_red = wormedit::ui::chrome::unit_to_byte(value.r);
+        panel.action->compose_semantic_layer_green = wormedit::ui::chrome::unit_to_byte(value.g);
+        panel.action->compose_semantic_layer_blue = wormedit::ui::chrome::unit_to_byte(value.b);
+        panel.action->compose_semantic_layer_alpha = wormedit::ui::chrome::unit_to_byte(value.a);
         close_layer_editors(state);
     } else if (cancel) close_layer_editors(state);
 }

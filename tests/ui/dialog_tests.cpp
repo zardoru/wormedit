@@ -1,4 +1,8 @@
 #include "ui/nuklear/dialog.h"
+#include "ui/nuklear/text_layout.h"
+#include "ui/nuklear/text_fit.h"
+#include "ui/nuklear/color.h"
+#include "core/text_util.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -237,4 +241,48 @@ TEST_CASE("Dialog movement is opt-in retained independently of resizing and view
     f.frame({});
     verify(f.window.x >= 0 && f.window.y >= 0);
     verify(f.window.x + f.window.w <= f.area.x && f.window.y + f.window.h <= f.area.y);
+}
+
+TEST_CASE("Dialog wraps long unspaced UTF-8 paths within the line width",
+          "[unit][frontend-state][event-harness][dialog][text-layout]") {
+    nk_user_font font{};
+    font.width = glyph_width;
+    const std::string path = "/音楽/長い名前/abcdefghijklmnopqrstuvwxyz0123456789.wav";
+    const auto lines = chrome::wrap_text(&font, path, 96.0f);
+    REQUIRE(lines.size() > 1);
+    std::string joined;
+    for (const auto& line : lines) {
+        verify(chrome::text_width(&font, line) <= 96.0f);
+        verify(!wormedit::text_util::invalid_utf8_offset(line).has_value());
+        joined += line;
+    }
+    verify(joined == path);
+}
+
+TEST_CASE("UI float color bytes round half values and clamp both ends",
+          "[unit][frontend-state][event-harness][color]") {
+    verify(chrome::color_byte(127.5) == 128);
+    verify(chrome::color_byte(254.5) == 255);
+    verify(chrome::color_byte(0.5) == 1);
+    verify(chrome::color_byte(-1.0) == 0);
+    verify(chrome::color_byte(256.0) == 255);
+}
+
+TEST_CASE("Text fitting preserves empty suffix and marker overflow policies",
+          "[unit][frontend-state][event-harness][text-layout]") {
+    nk_user_font font{};
+    font.width = glyph_width;
+    verify(chrome::fit_text_with_ellipsis(&font, "abc", 24) == "abc");
+    verify(chrome::fit_text_with_ellipsis(&font, "abcdef", 8).empty());
+    verify(chrome::fit_text_with_ellipsis(&font, "abcdef", 8,
+        chrome::ellipsis_overflow_t::suffix) == "…");
+    verify(chrome::fit_text_with_ellipsis(&font, "abcdef", 8,
+        chrome::ellipsis_overflow_t::marker_bytes) == "...");
+    verify(chrome::fit_text_with_ellipsis(&font, "日本語abcdef", 48) == "日…");
+    verify(chrome::wrap_text(&font, "one two", 32) == std::vector<std::string>{"one", "two"});
+    verify(chrome::wrap_text(&font, "one\ntwo", 64, chrome::text_wrap_policy_t::tooltip_lines) ==
+          std::vector<std::string>{"one", "two"});
+    verify(chrome::unit_to_byte(0.5f) == 128);
+    verify(chrome::percent_to_alpha(50) == 128);
+    verify(chrome::percent_to_alpha(50, 153) == 77);
 }

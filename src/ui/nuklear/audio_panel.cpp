@@ -1,3 +1,4 @@
+#include "ui/field/rect.h"
 #include "ui/nuklear/bmson_lane_mode_ui.h"
 #include "ui/nuklear/audio_panel.h"
 #include "ui/nuklear/audio_state.h"
@@ -336,12 +337,10 @@ void render_waveform_column(struct nk_context* context, const WormUiAudioSlicesV
     const auto parent_clip = canvas->clip;
     // Clip to the visible part of the widget: the page scrolls, and a scissor of the full
     // bounds would paint the waveform over the tabs above the content group.
-    const auto clip_left = std::max(bounds.x, parent_clip.x);
-    const auto clip_top = std::max(bounds.y, parent_clip.y);
-    const auto clip_right = std::min(bounds.x + bounds.w, parent_clip.x + parent_clip.w);
-    const auto clip_bottom = std::min(bounds.y + bounds.h, parent_clip.y + parent_clip.h);
-    nk_push_scissor(canvas, nk_rect(clip_left, clip_top, std::max(0.0f, clip_right - clip_left),
-                                    std::max(0.0f, clip_bottom - clip_top)));
+    const auto overlap = wormedit::ui::rect_intersection(
+        {bounds.x, bounds.y, bounds.w, bounds.h},
+        {parent_clip.x, parent_clip.y, parent_clip.w, parent_clip.h});
+    nk_push_scissor(canvas, nk_rect(overlap.x, overlap.y, overlap.w, overlap.h));
     nk_fill_rect(canvas, bounds, 2.0f, nk_rgb(22, 25, 33));
     const auto channel_height = bounds.h * 0.5f;
     const auto column_width = bounds.w / static_cast<float>(view->waveform_column_count);
@@ -829,12 +828,11 @@ void worm_ui_nuklear_render_audio_slices(struct nk_context* context,
     if (show_asset_catalog) {
         const auto content = nk_window_get_content_region(context);
         const auto clip = nk_window_get_canvas(context)->clip;
-        const auto left = std::max(content.x, clip.x), top = std::max(content.y, clip.y);
-        const auto right = std::min(content.x + content.w, clip.x + clip.w);
-        const auto bottom = std::min(content.y + content.h, clip.y + clip.h);
-        audio.import_drop_x = left; audio.import_drop_y = top;
-        audio.import_drop_width = std::max(0.0f, right - left);
-        audio.import_drop_height = std::max(0.0f, bottom - top);
+        const auto overlap = wormedit::ui::rect_intersection(
+            {content.x, content.y, content.w, content.h}, {clip.x, clip.y, clip.w, clip.h});
+        audio.import_drop_x = overlap.x; audio.import_drop_y = overlap.y;
+        audio.import_drop_width = overlap.w;
+        audio.import_drop_height = overlap.h;
         audio.import_drop_valid = audio.import_drop_width > 0 && audio.import_drop_height > 0;
         nk_layout_row_dynamic(context, 28, 2);
         if (nk_button_label(context, "Add sounds…"))

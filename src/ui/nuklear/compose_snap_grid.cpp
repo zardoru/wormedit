@@ -8,9 +8,6 @@
 
 namespace {
 using namespace wormedit::ui::chrome;
-auto stamp(const WormUiComposeView& view) -> PopupContextStamp {
-    return {view.project_id, view.chart_id, view.document_revision};
-}
 void emit_snap(nk_context* context, const WormUiComposeView& view,
                WormUiWorkspaceAction& action, std::uint64_t denominator) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
@@ -36,7 +33,7 @@ void render_grid_popup(nk_context* context, const WormUiComposeView& view,
     const auto count = static_cast<int>(std::min<std::size_t>(view.supported_snap_denominator_count, 32));
     if (!available || count == 0) context_menu_close(menu, context);
     const auto height = context_menu_height(static_cast<float>((count + 3) / 4 + 3));
-    if (!context_menu_begin(menu, context, stamp(view), nk_vec2(280, height))) return;
+    if (!context_menu_begin(menu, context, wormedit::ui::chrome::PopupContextStamp::from(view), nk_vec2(280, height))) return;
     std::array<std::array<char, 24>, 32> storage{};
     std::array<const char*, 32> labels{};
     for (int index = 0; index < count; ++index) {
@@ -79,7 +76,7 @@ void render_compose_snap_badge(nk_context* context, const WormUiComposeView& vie
         for (std::size_t index = 0; index < count; ++index)
             if (view.supported_snap_denominators[index] == view.area_snap_denominator)
                 state.snap_grid.snap_grid_choice = static_cast<int>(index);
-        context_menu_open(menu, nk_vec2(bounds.x, bounds.y), stamp(view));
+        context_menu_open(menu, nk_vec2(bounds.x, bounds.y), wormedit::ui::chrome::PopupContextStamp::from(view));
         menu.shared_keyboard_navigation = false;
     }
     render_grid_popup(context, view, action, available);

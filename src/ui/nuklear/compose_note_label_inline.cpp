@@ -9,7 +9,7 @@ constexpr float popup_height = 58.0f;
 constexpr float gap_above_note = 40.0f;
 } // namespace
 
-auto begin_compose_note_label_inline(bookmark_rename_editor_t& editor,
+auto begin_compose_note_label_inline(inline_label_editor_t& editor,
                                      const WormUiComposeView& view, float anchor_x,
                                      float anchor_y) -> bool {
     if (editor.release_pending || view.selected_note_count != 1 ||
@@ -29,7 +29,7 @@ auto begin_compose_note_label_inline(bookmark_rename_editor_t& editor,
     return true;
 }
 
-auto note_label_inline_bounds(const bookmark_rename_editor_t& editor, struct nk_rect content)
+auto note_label_inline_bounds(const inline_label_editor_t& editor, struct nk_rect content)
     -> struct nk_rect {
     const auto width = std::min(popup_width, content.w);
     const auto x = std::clamp(editor.anchor_x - content.x - width * 0.5f, 0.0f,
@@ -40,7 +40,7 @@ auto note_label_inline_bounds(const bookmark_rename_editor_t& editor, struct nk_
 }
 
 void stage_note_label_inline(WormUiWorkspaceAction& action, const WormUiComposeView& view,
-                             const bookmark_rename_editor_t& editor) {
+                             const inline_label_editor_t& editor) {
     action.compose_action = editor.label[0] == '\0' ? WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL
                                                     : WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL;
     action.compose_input_project_id = view.project_id;
@@ -51,7 +51,7 @@ void stage_note_label_inline(WormUiWorkspaceAction& action, const WormUiComposeV
     action.compose_note_label[sizeof(action.compose_note_label) - 1] = '\0';
 }
 
-auto begin_compose_bookmark_rename_anchored(bookmark_rename_editor_t& editor,
+auto begin_compose_bookmark_rename_anchored(inline_label_editor_t& editor,
                                             const WormUiComposeView& view,
                                             std::uint64_t bookmark_id, float anchor_x,
                                             float anchor_y) -> bool {
@@ -62,7 +62,7 @@ auto begin_compose_bookmark_rename_anchored(bookmark_rename_editor_t& editor,
     return true;
 }
 
-auto begin_compose_section_label_inline(bookmark_rename_editor_t& editor,
+auto begin_compose_section_label_inline(inline_label_editor_t& editor,
                                         const WormUiComposeView& view, std::uint64_t section_id,
                                         float anchor_x, float anchor_y) -> bool {
     if (editor.release_pending) return false;
@@ -86,7 +86,7 @@ auto begin_compose_section_label_inline(bookmark_rename_editor_t& editor,
 }
 
 void stage_section_label_inline(WormUiWorkspaceAction& action, const WormUiComposeView& view,
-                                const bookmark_rename_editor_t& editor) {
+                                const inline_label_editor_t& editor) {
     action.compose_action = WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_SECTION_LABEL;
     action.compose_section_id = editor.bookmark_id;
     action.compose_input_project_id = view.project_id;

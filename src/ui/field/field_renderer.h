@@ -1,4 +1,5 @@
 #pragma once
+#include "ui/field/color.h"
 #include "ui/field/field_glyphs.h"
 #include "ui/field/field_tile_cache.h"
 #include <array>
@@ -15,9 +16,7 @@ namespace wormedit::ui::field {
 using layer_t = std::uint16_t;
 enum class waveform_piece_kind_t : std::uint8_t { stem = 0, reserved = 1, packed_event = 2 };
 using waveform_piece_key_t = std::pair<waveform_piece_kind_t, std::uint64_t>;
-struct color_t {
-    std::uint8_t r{}, g{}, b{}, a{255};
-};
+using color_t = wormedit::ui::color_t;
 struct batch_t {
     layer_t layer{};
     SDL_Texture* texture{};

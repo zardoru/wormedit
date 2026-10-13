@@ -16,9 +16,6 @@ bool band_visible{};
 bool sound_layers{};
 chrome::ContextMenu menu{.title = "Area actions"};
 
-auto menu_stamp(const WormUiComposeView& view) -> chrome::PopupContextStamp {
-    return {view.project_id, view.chart_id, view.document_revision, 0};
-}
 
 void retire_sound_layer_window(WormUiWorkspaceAction& action) {
     if (!sound_layers) return;
@@ -143,7 +140,7 @@ void render_menu(nk_context* context, const WormUiComposeView& view,
         close_menu(context, action);
         return;
     }
-    if (!chrome::context_menu_begin(menu, context, menu_stamp(view),
+    if (!chrome::context_menu_begin(menu, context, wormedit::ui::chrome::PopupContextStamp::from(view),
                                     nk_vec2(320.0f, chrome::context_menu_height(sound_layers ? 14 : 12)))) {
         retire_sound_layer_window(action);
         consumed = true;
@@ -310,12 +307,12 @@ void process_compose_area_menu(nk_context* context, const WormUiComposeView& vie
         const auto x = std::clamp(rect.x + rect.w * 0.5f, viewport.x, std::max(viewport.x, static_cast<float>(input_right)));
         const auto y = std::clamp(rect.y + rect.h * 0.5f, viewport.y, viewport.y + viewport.h);
         sound_layers = false;
-        chrome::context_menu_open(menu, nk_vec2(x, y), menu_stamp(view), true);
+        chrome::context_menu_open(menu, nk_vec2(x, y), wormedit::ui::chrome::PopupContextStamp::from(view), true);
         consumed = true;
     }
     if (worm_ui_nuklear_compose_context_click(context, view) && inside) {
         sound_layers = false;
-        chrome::context_menu_open(menu, mouse.pos, menu_stamp(view));
+        chrome::context_menu_open(menu, mouse.pos, wormedit::ui::chrome::PopupContextStamp::from(view));
         consumed = true;
     }
     if (!menu.open && nk_input_is_mouse_pressed(&context->input, NK_BUTTON_LEFT)) {

@@ -1,3 +1,4 @@
+#include "ui/field/rect.h"
 #include "ui/field/field_renderer.h"
 #include <algorithm>
 #include <cmath>
@@ -10,12 +11,6 @@ namespace {
 auto rgba(color_t color) -> SDL_FColor {
     constexpr float unit = 1.0f / 255.0f;
     return {color.r * unit, color.g * unit, color.b * unit, color.a * unit};
-}
-auto intersection(SDL_FRect a, SDL_FRect b) -> SDL_FRect {
-    const auto left = std::max(a.x, b.x), top = std::max(a.y, b.y);
-    const auto right = std::min(a.x + a.w, b.x + b.w);
-    const auto bottom = std::min(a.y + a.h, b.y + b.h);
-    return {left, top, std::max(0.0f, right - left), std::max(0.0f, bottom - top)};
 }
 auto bounds_of(std::span<const SDL_FPoint> points) -> SDL_FRect {
     if (points.empty())
@@ -406,7 +401,7 @@ auto renderer_t::retain_piece_envelope(waveform_piece_key_t key, layer_t layer, 
     coverage = {bounds.x, static_cast<float>(bounds.y + (cache.first_row - mapped_origin) * scaled),
                 bounds.w, cache.height * scaled};
     if (!std::isfinite(coverage.y) || !std::isfinite(coverage.h) ||
-        intersection(coverage, viewport_).h <= 0) return false;
+        rect_intersection(coverage, viewport_).h <= 0) return false;
     cache.active = cache.deferred = true;
     cache.last_drawn = ++envelope_draw_sequence_;
     cache.bounds = bounds;
@@ -638,7 +633,7 @@ void renderer_t::begin(SDL_FRect viewport, SDL_FPoint scale, solid_texture_t sol
 }
 auto renderer_t::push_clip(SDL_FRect clip) -> SDL_FRect {
     const auto previous = viewport_;
-    viewport_ = intersection(viewport_, clip);
+    viewport_ = rect_intersection(viewport_, clip);
     return previous;
 }
 void renderer_t::pop_clip(SDL_FRect clip) { viewport_ = clip; }
@@ -765,7 +760,7 @@ void renderer_t::rect(layer_t layer, SDL_FRect bounds, color_t color) {
         std::max(left + 1.0f / scale_.x, std::round((bounds.x + bounds.w) * scale_.x) / scale_.x);
     const auto bottom =
         std::max(top + 1.0f / scale_.y, std::round((bounds.y + bounds.h) * scale_.y) / scale_.y);
-    bounds = intersection({left, top, right - left, bottom - top}, viewport_);
+    bounds = rect_intersection({left, top, right - left, bottom - top}, viewport_);
     if (bounds.w <= 0 || bounds.h <= 0)
         return;
     const std::array<SDL_FPoint, 4> points{{{bounds.x, bounds.y},
@@ -797,7 +792,7 @@ void renderer_t::line(layer_t layer, SDL_FPoint a, SDL_FPoint b, float width, co
                                             {b.x + offset.x * half, b.y + offset.y * half},
                                             {b.x - offset.x * half, b.y - offset.y * half},
                                             {a.x - offset.x * half, a.y - offset.y * half}}};
-    const auto clipped = intersection(bounds_of(points), viewport_);
+    const auto clipped = rect_intersection(bounds_of(points), viewport_);
     if (clipped.w > 0 && clipped.h > 0)
         quad(layer, points, color);
 }
@@ -819,7 +814,7 @@ void renderer_t::polygon(layer_t layer, std::span<const SDL_FPoint> points, colo
                          float aa_fringe) {
     if (points.size() < 3 || color.a == 0)
         return;
-    const auto clipped = intersection(bounds_of(points), viewport_);
+    const auto clipped = rect_intersection(bounds_of(points), viewport_);
     if (clipped.w <= 0 || clipped.h <= 0)
         return;
     if (!reserve_geometry(points.size()*(aa_fringe>0 ? 2 : 1),
@@ -888,7 +883,7 @@ void renderer_t::stroke_polygon(layer_t layer, std::span<const SDL_FPoint> point
         return;
     const auto bounds = bounds_of(points);
     const auto margin = width * .5f + aa_fringe;
-    const auto visible = intersection({bounds.x - margin, bounds.y - margin,
+    const auto visible = rect_intersection({bounds.x - margin, bounds.y - margin,
                                        bounds.w + margin * 2, bounds.h + margin * 2}, viewport_);
     if (visible.w <= 0 || visible.h <= 0)
         return;
@@ -906,7 +901,7 @@ void renderer_t::glyph(layer_t layer, SDL_FRect bounds, color_t color, SDL_Textu
                        SDL_FPoint uv_min, SDL_FPoint uv_max) {
     if (bounds.w <= 0 || bounds.h <= 0)
         return;
-    const auto clipped = intersection(bounds, viewport_);
+    const auto clipped = rect_intersection(bounds, viewport_);
     if (clipped.w <= 0 || clipped.h <= 0)
         return;
     const SDL_FPoint first{clipped_uv(uv_min.x, uv_max.x, clipped.x - bounds.x, bounds.w),
@@ -996,7 +991,7 @@ auto renderer_t::submit_range(SDL_Renderer* renderer, std::size_t first_index,
         const auto batch_end = std::min(end, batch.index_offset + batch.index_count);
         if (begin >= batch_end)
             continue;
-        const auto region = intersection(batch.clip, viewport_);
+        const auto region = rect_intersection(batch.clip, viewport_);
         const SDL_Rect batch_clip{static_cast<int>(std::floor(region.x)),
             static_cast<int>(std::floor(region.y)),
             static_cast<int>(std::ceil(region.x+region.w)-std::floor(region.x)),

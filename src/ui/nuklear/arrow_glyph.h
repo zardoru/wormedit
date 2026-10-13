@@ -1,4 +1,5 @@
 #pragma once
+#include "ui/field/color.h"
 
 #include <array>
 #include <cstdint>
@@ -28,12 +29,6 @@ auto note_snap_class(std::uint64_t row, std::uint64_t divisions_per_standard_mea
 auto note_snap_class(std::uint64_t whole, std::uint64_t numerator,
                      std::uint64_t denominator, std::uint64_t divisions) -> std::uint8_t;
 
-struct arrow_color_t {
-    std::uint8_t red;
-    std::uint8_t green;
-    std::uint8_t blue;
-};
-
-auto arrow_snap_color(std::uint8_t snap_class) -> arrow_color_t;
+auto arrow_snap_color(std::uint8_t snap_class) -> color_t;
 
 } // namespace wormedit::ui

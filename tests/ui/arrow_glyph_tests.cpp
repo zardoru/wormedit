@@ -44,16 +44,16 @@ TEST_CASE("Arrow snap classes use exact standard-measure rows including tuplets"
 TEST_CASE("Arrow palette preserves the confirmed snap hues and other fallback",
           "[frontend-state][arrow]") {
     const std::array<std::uint8_t, 9> classes{4, 8, 12, 16, 24, 32, 48, 64, 0};
-    const std::array<wormedit::ui::arrow_color_t, 9> expected{{
+    const std::array<wormedit::ui::color_t, 9> expected{{
         {235, 73, 79}, {75, 139, 240}, {170, 98, 223}, {242, 218, 74},
         {239, 118, 191}, {241, 154, 65}, {80, 200, 220}, {96, 200, 110}, {155, 163, 175}}};
     for (std::size_t index = 0; index < classes.size(); ++index) {
         const auto color = wormedit::ui::arrow_snap_color(classes[index]);
-        CHECK(color.red == expected[index].red);
-        CHECK(color.green == expected[index].green);
-        CHECK(color.blue == expected[index].blue);
+        CHECK(color.r == expected[index].r);
+        CHECK(color.g == expected[index].g);
+        CHECK(color.b == expected[index].b);
     }
-    CHECK(wormedit::ui::arrow_snap_color(255).red == expected.back().red);
+    CHECK(wormedit::ui::arrow_snap_color(255).r == expected.back().r);
 }
 
 TEST_CASE("Fractional grid rows classify exactly without rounding or overflow", "[frontend-state][arrow][snap-grid]") {

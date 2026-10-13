@@ -1,3 +1,4 @@
+#include "ui/field/rect.h"
 #include "ui/nuklear/compose_menu_command.h"
 #include "ui/nuklear/compose_inspector.h"
 #include "ui/nuklear/compose_toolbar.h"
@@ -390,8 +391,8 @@ auto quantize_bounds_intersect(struct nk_rect first, struct nk_rect last, struct
     const auto top = first.y;
     const auto right = std::max(first.x + first.w, last.x + last.w);
     const auto bottom = last.y + last.h;
-    return std::max(left, clip.x) < std::min(right, clip.x + clip.w) &&
-           std::max(top, clip.y) < std::min(bottom, clip.y + clip.h);
+    return wormedit::ui::has_rect_overlap({left, top, right - left, bottom - top},
+                                       {clip.x, clip.y, clip.w, clip.h});
 }
 
 
@@ -404,7 +405,7 @@ bool quantize_grid_editing{};
 bool quantize_grid_invalid{};
 std::array<char, 32> quantize_grid_text{};
 enum class QuantizePopup { custom, name, preset };
-wormedit::ui::chrome::ContextMenu quantize_menu{"Quantize settings"};
+wormedit::ui::chrome::ContextMenu quantize_menu{.title = "Quantize settings"};
 QuantizePopup quantize_popup{};
 std::size_t quantize_menu_preset{};
 bool quantize_rename{};
@@ -460,9 +461,6 @@ void set_quantize_action(const ComposeInspectorContext& inspector, WormUiCompose
     action->compose_quantize_preset_index = preset_index;
 }
 
-auto quantize_stamp(const WormUiComposeView& v) -> wormedit::ui::chrome::PopupContextStamp {
-    return {v.project_id, v.chart_id, v.document_revision, quantize_menu_preset};
-}
 void open_quantize_popup(const ComposeInspectorContext& i, QuantizePopup kind) {
     quantize_popup = kind;
     quantize_menu_presets.clear();
@@ -474,7 +472,7 @@ void open_quantize_popup(const ComposeInspectorContext& i, QuantizePopup kind) {
                                          preset.space, preset.tie, preset.holds});
     }
     wormedit::ui::chrome::context_menu_open(quantize_menu, i.context->input.mouse.pos,
-                                            quantize_stamp(*i.view));
+                                            wormedit::ui::chrome::PopupContextStamp::from(*i.view, quantize_menu_preset));
     quantize_menu.shared_keyboard_navigation = kind == QuantizePopup::preset;
 }
 auto quantize_segments(nk_context* c, const char* const* labels, int count, int selected,
@@ -695,7 +693,7 @@ void render_quantize_name_popup(const ComposeInspectorContext& i) {
 void render_quantize_preset_actions(const ComposeInspectorContext& i) {
     auto* c = i.context;
     const auto& v = *i.view;
-    if (!wormedit::ui::chrome::context_menu_begin(quantize_menu, c, quantize_stamp(v),
+    if (!wormedit::ui::chrome::context_menu_begin(quantize_menu, c, wormedit::ui::chrome::PopupContextStamp::from(v, quantize_menu_preset),
                                                   nk_vec2(300, 160)))
         return;
     if (quantize_popup == QuantizePopup::custom)
@@ -843,7 +841,7 @@ void prepare_compose_quantize_input(nk_context* context, const WormUiComposeView
         return;
     }
     if (quantize_menu.open &&
-        (!wormedit::ui::chrome::popup_context_matches(quantize_menu.stamp, quantize_stamp(view)) ||
+        (!wormedit::ui::chrome::popup_context_matches(quantize_menu.stamp, wormedit::ui::chrome::PopupContextStamp::from(view, quantize_menu_preset)) ||
          !quantize_presets_match(view)))
         wormedit::ui::chrome::context_menu_close(quantize_menu);
 }

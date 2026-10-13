@@ -226,7 +226,7 @@ void consume_slot_picker_result(const SoundsPanel& panel, const picker_target_t&
     auto& state = *panel.state;
     if (state.keysound_catalog.keysound_staged_paths.empty()) return;
     if (!wormedit::ui::chrome::popup_context_matches(
-            {target.project, target.chart, target.revision}, wormedit::ui::nuklear::catalog_context(*panel.view)) ||
+            {target.project, target.chart, target.revision}, wormedit::ui::chrome::PopupContextStamp::from(*panel.view)) ||
         !state.keysound_filters.keysound_slots_mode || target.slot == 0 || target.slot > 1295) {
         state.keysound_slots.keysound_slot_feedback = "The WAV slot target changed; choose the files again.";
         state.keysound_catalog.keysound_staged_paths.clear();
@@ -261,7 +261,7 @@ void import_picked_files(const SoundsPanel& panel) {
         return;
     }
     if (!wormedit::ui::chrome::popup_context_matches(
-            {target.project, target.chart, target.revision}, wormedit::ui::nuklear::catalog_context(*panel.view)) ||
+            {target.project, target.chart, target.revision}, wormedit::ui::chrome::PopupContextStamp::from(*panel.view)) ||
         state.keysound_filters.keysound_slots_mode) {
         state.keysound_slots.keysound_slot_feedback = "The project, chart, revision, or mode changed while the picker was open.";
         state.keysound_catalog.keysound_staged_paths.clear();
@@ -938,8 +938,6 @@ auto close_filter_popup_if_requested(const SoundsPanel& panel, bool group_popup,
     wormedit::ui::chrome::safe_combo_end(context);
     if (group_popup) state.keysound_filters.keysound_filter_group_popup_open = false;
     else state.keysound_filters.keysound_layer_filter_popup_open = false;
-    state.keysound_filters.keysound_filter_popup_open = state.keysound_filters.keysound_filter_group_popup_open ||
-                                      state.keysound_filters.keysound_layer_filter_popup_open;
     wormedit::ui::chrome::popup_arm_release(state.keysound_filters.keysound_filter_release_pending);
     return true;
 }
@@ -1021,7 +1019,6 @@ void render_group_filter_choices(const SoundsPanel& panel) {
         wormedit::ui::chrome::safe_combo_begin_label(
             context, label, nk_vec2(nk_widget_width(context), 240));
     state.keysound_filters.keysound_filter_group_popup_open = began;
-    state.keysound_filters.keysound_filter_popup_open = began || state.keysound_filters.keysound_layer_filter_popup_open;
     if (!began && was_open &&
         (nk_input_is_mouse_pressed(&context->input, NK_BUTTON_LEFT) ||
          nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT)))
@@ -1031,8 +1028,6 @@ void render_group_filter_choices(const SoundsPanel& panel) {
         render_group_filter_items(panel);
         wormedit::ui::chrome::safe_combo_end(context);
     }
-    state.keysound_filters.keysound_filter_popup_open = state.keysound_filters.keysound_filter_group_popup_open ||
-                                      state.keysound_filters.keysound_layer_filter_popup_open;
 }
 
 void render_layer_filter_choice(const SoundsPanel& panel) {
@@ -1051,7 +1046,6 @@ void render_layer_filter_choice(const SoundsPanel& panel) {
         wormedit::ui::chrome::safe_combo_begin_label(
             context, layer_label, nk_vec2(nk_widget_width(context), 240));
     state.keysound_filters.keysound_layer_filter_popup_open = began;
-    state.keysound_filters.keysound_filter_popup_open = began || state.keysound_filters.keysound_filter_group_popup_open;
     if (!began && was_open &&
         (nk_input_is_mouse_pressed(&context->input, NK_BUTTON_LEFT) ||
          nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT)))
@@ -1062,14 +1056,11 @@ void render_layer_filter_choice(const SoundsPanel& panel) {
             nk_combo_close(context);
             wormedit::ui::chrome::safe_combo_end(context);
             state.keysound_filters.keysound_layer_filter_popup_open = false;
-            state.keysound_filters.keysound_filter_popup_open = state.keysound_filters.keysound_filter_group_popup_open;
             wormedit::ui::chrome::popup_arm_release(state.keysound_filters.keysound_filter_release_pending);
             return;
         }
         wormedit::ui::chrome::safe_combo_end(context);
     }
-    state.keysound_filters.keysound_filter_popup_open = state.keysound_filters.keysound_filter_group_popup_open ||
-                                      state.keysound_filters.keysound_layer_filter_popup_open;
 }
 
 void clear_sound_filters(const SoundsPanel& panel) {
@@ -1098,7 +1089,7 @@ void render_use_filter(const SoundsPanel& panel) {
     auto* context = panel.context;
     auto& state = *panel.state;
     constexpr std::array labels{"All", "Used", "Unused", "Missing"};
-    const bool blocked = state.keysound_filters.keysound_filter_popup_open || state.keysound_filters.keysound_filter_release_pending ||
+    const bool blocked = state.keysound_filters.is_popup_open() || state.keysound_filters.keysound_filter_release_pending ||
         state.keysound_slots.keysound_renumber_confirmation_open || state.keysound_slots.keysound_renumber_release_pending ||
         state.keysound_slots.keysound_slot_confirmation_open || state.keysound_slots.keysound_slot_release_pending || panel.view->input_occluded;
     if (blocked) nk_widget_disable_begin(context);
@@ -1376,7 +1367,7 @@ void click_row(const SoundsPanel& panel, std::size_t shown_index, std::uint64_t 
 bool keysound_row_input_available(const SoundsPanel& panel) {
     return !panel.view->input_occluded &&
         !wormedit::ui::chrome::context_menu_owns_input(panel.state->keysound_catalog.keysound_group_menu) &&
-        !panel.state->keysound_filters.keysound_filter_popup_open && !panel.state->keysound_filters.keysound_filter_release_pending &&
+        !panel.state->keysound_filters.is_popup_open() && !panel.state->keysound_filters.keysound_filter_release_pending &&
         !panel.state->keysound_slots.keysound_renumber_confirmation_open && !panel.state->keysound_slots.keysound_renumber_release_pending &&
         !panel.state->keysound_slots.keysound_slot_confirmation_open && !panel.state->keysound_slots.keysound_slot_release_pending &&
         !panel.state->keysound_catalog.keysound_group_review.open && !panel.state->keysound_slots.sound_layer_confirmation_open;
@@ -1517,8 +1508,7 @@ void render_sound_group_context_menu(const SoundsPanel& panel) {
         chrome::context_menu_close(menu, context);
         return;
     }
-    const chrome::PopupContextStamp current{panel.view->project_id, panel.view->chart_id,
-                                            panel.view->document_revision, menu.stamp.object_id};
+    const auto current = wormedit::ui::chrome::PopupContextStamp::from(*panel.view, menu.stamp.object_id);
     const auto* menu_row = find_row(*panel.view, menu.stamp.object_id);
     const auto* fallback = menu_row ? find_fallback(*panel.view, menu_row->resource_id) : nullptr;
     const std::size_t candidates = fallback ? fallback->candidate_count : 0;
@@ -1770,7 +1760,7 @@ void worm_ui_nuklear_render_compose_sounds(struct nk_context* context,
                                (state->keysound_slots.keysound_slot_feedback.empty() ? 0.0f : 24.0f);
     const auto remaining = region.y + region.h - nk_widget_position(context).y - footer_height -
                            context->style.window.spacing.y;
-    const auto block_list_pointer = state->keysound_filters.keysound_filter_popup_open ||
+    const auto block_list_pointer = state->keysound_filters.is_popup_open() ||
                                     state->keysound_filters.keysound_filter_release_pending ||
                                     state->keysound_slots.keysound_renumber_confirmation_open ||
                                     state->keysound_slots.keysound_renumber_release_pending ||

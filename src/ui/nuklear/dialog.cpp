@@ -1,4 +1,5 @@
 #include "ui/nuklear/dialog.h"
+#include "ui/nuklear/text_layout.h"
 
 #include <algorithm>
 #include <cmath>
@@ -194,42 +195,12 @@ auto dialog_begin(Dialog& dialog, nk_context* context, const char* id, const cha
     return true;
 }
 
-namespace {
-
-// Greedy word wrap that splits long words by byte so a line never overflows.
-auto wrap_dialog_text(nk_context* context, std::string_view text, float width)
-    -> std::vector<std::string> {
-    std::vector<std::string> lines;
-    const auto* font = context->style.font;
-    const auto measure = [&](std::string_view part) {
-        return font->width(font->userdata, font->height, part.data(), static_cast<int>(part.size()));
-    };
-    std::string line;
-    std::size_t position = 0;
-    while (position < text.size()) {
-        const auto end = text.find(' ', position);
-        const auto word = text.substr(position, end == std::string_view::npos ? end : end - position);
-        position = end == std::string_view::npos ? text.size() : end + 1;
-        const auto candidate = line.empty() ? std::string(word) : line + " " + std::string(word);
-        if (measure(candidate) <= width || line.empty()) {
-            line = candidate;
-            continue;
-        }
-        lines.push_back(line);
-        line = std::string(word);
-    }
-    if (!line.empty() || lines.empty()) lines.push_back(line);
-    return lines;
-}
-
-} // namespace
-
 void dialog_text(Dialog& dialog, nk_context* context, const char* text, struct nk_color tint) {
     (void)dialog;
     const auto width = nk_window_get_content_region(context).w;
     auto& spacing = context->style.window.spacing;
     const auto saved = spacing.y;
-    const auto lines = wrap_dialog_text(context, text ? text : "", width);
+    const auto lines = wrap_text(context->style.font, text ? text : "", width);
     for (std::size_t index = 0; index < lines.size(); ++index) {
         // Lines of one paragraph sit tight; the last row keeps the normal row gap.
         spacing.y = index + 1 < lines.size() ? 2.0f : saved;

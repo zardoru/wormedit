@@ -1,6 +1,7 @@
 #pragma once
 
 #include "wormedit/nuklear_config.h"
+#include "ui/frontend.h"
 
 #include <cstdint>
 #include <initializer_list>
@@ -12,6 +13,20 @@ struct PopupContextStamp {
     std::uint64_t chart_id{};
     std::uint64_t revision{};
     std::uint64_t object_id{};
+
+    static auto from(const WormUiComposeView& view, std::uint64_t object = 0) -> PopupContextStamp {
+        return {view.project_id, view.chart_id, view.document_revision, object};
+    }
+    static auto from(const WormUiSetupView& view, std::uint64_t chart) -> PopupContextStamp {
+        return {view.song_id, view.session_generation, view.document_revision, chart};
+    }
+};
+
+struct retained_popup_t {
+    bool open{};
+    bool release_pending{};
+    bool close_pending{};
+    auto owns_input() const -> bool { return open || release_pending; }
 };
 
 // Window fills saved while a menu surface hides them (see chrome::menu_surface_begin).
@@ -88,8 +103,5 @@ inline auto popup_update_release_pending(const nk_context* context, bool& releas
     return release_pending;
 }
 
-inline auto popup_owns_input(bool open, bool release_pending) -> bool {
-    return open || release_pending;
-}
 
 } // namespace wormedit::ui::chrome

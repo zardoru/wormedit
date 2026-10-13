@@ -106,7 +106,7 @@ void cancel_compose_sound_picker(sound_picker_state_t& state) {
     state.focus_pending = false;
 }
 auto compose_sound_picker_owns_input(const sound_picker_state_t& state) -> bool {
-    return state.open || state.release_pending;
+    return state.owns_input();
 }
 void render_compose_sound_picker(nk_context* context, const WormUiComposeView& view,
     WormUiWorkspaceAction& action, worm_ui_nuklear_compose_state_t& compose, bool focused) {

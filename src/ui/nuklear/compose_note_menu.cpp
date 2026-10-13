@@ -29,12 +29,9 @@ struct NoteMenu {
     bool stem{}, continues{}, bgm{};
 } menu;
 
-auto stamp(const WormUiComposeView& view) -> chrome::PopupContextStamp {
-    return {view.project_id, view.chart_id, view.document_revision, 0};
-}
 
 bool current(const WormUiComposeView& view) {
-    return chrome::popup_context_matches(menu.popup.stamp, stamp(view));
+    return chrome::popup_context_matches(menu.popup.stamp, wormedit::ui::chrome::PopupContextStamp::from(view));
 }
 
 bool raise(const WormUiComposeView& view, WormUiWorkspaceAction& action,
@@ -215,7 +212,7 @@ void render_sound_selection(nk_context* context, WormUiWorkspaceAction& action) 
 void render_channel_menu(nk_context* context, const WormUiComposeView& view,
                          WormUiWorkspaceAction& action) {
     if (chrome::popup_panel(context) || !menu.popup.open) return;
-    if (!chrome::context_menu_begin(menu.popup, context, stamp(view),
+    if (!chrome::context_menu_begin(menu.popup, context, wormedit::ui::chrome::PopupContextStamp::from(view),
             nk_vec2(340, chrome::context_menu_height(1)))) return;
     const auto label = menu.stem ? "Pack into columns" : "Make stem";
     if (chrome::context_menu_item(menu.popup, context, label, nullptr)) {
@@ -260,7 +257,7 @@ void render(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceA
     const auto size = menu.submenu
         ? nk_vec2(392, 422)
         : nk_vec2(root_width + 2 * chrome::menu_padding, chrome::context_menu_height(7));
-    if (!chrome::context_menu_begin(menu.popup, context, stamp(view), size)) {
+    if (!chrome::context_menu_begin(menu.popup, context, wormedit::ui::chrome::PopupContextStamp::from(view), size)) {
         if (!menu.popup.open) finish_close(view, action);
         return;
     }
@@ -314,7 +311,7 @@ void open_from_keyboard(const WormUiComposeView& view, WormUiWorkspaceAction& ac
     menu.channel = 0;
     if (!raise(view, action, WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU)) return;
     chrome::context_menu_open(menu.popup,
-        nk_vec2(viewport.x + viewport.w * 0.5f, viewport.y + viewport.h * 0.5f), stamp(view), true);
+        nk_vec2(viewport.x + viewport.w * 0.5f, viewport.y + viewport.h * 0.5f), wormedit::ui::chrome::PopupContextStamp::from(view), true);
     menu.consumed = true;
 }
 
@@ -330,7 +327,7 @@ void open_at_pointer(nk_context* context, const WormUiComposeView& view,
     menu.bgm = false;
     menu.channel = 0;
     if (channel_at(view, x, y)) {
-        chrome::context_menu_open(menu.popup, mouse, stamp(view));
+        chrome::context_menu_open(menu.popup, mouse, wormedit::ui::chrome::PopupContextStamp::from(view));
         menu.consumed = true;
         menu.submenu = false;
         return;
@@ -339,7 +336,7 @@ void open_at_pointer(nk_context* context, const WormUiComposeView& view,
     if (!note) return;
     menu.note = note;
     if (!raise(view, action, WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU)) return;
-    chrome::context_menu_open(menu.popup, mouse, stamp(view));
+    chrome::context_menu_open(menu.popup, mouse, wormedit::ui::chrome::PopupContextStamp::from(view));
     menu.consumed = true;
     menu.submenu = false;
 }

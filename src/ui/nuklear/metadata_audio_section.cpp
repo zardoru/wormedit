@@ -1,3 +1,4 @@
+#include "ui/field/rect.h"
 #include "ui/nuklear/metadata_audio_section.h"
 #include "ui/nuklear/tooltip.h"
 
@@ -171,14 +172,12 @@ static void metadata_register_drop_target(struct nk_context* context,
         return;
     const auto widget = nk_widget_bounds(context);
     const auto clip = nk_window_get_content_region(context);
-    const auto left = std::max(widget.x, clip.x);
-    const auto top = std::max(widget.y, clip.y);
-    const auto right = std::min(widget.x + widget.w, clip.x + clip.w);
-    const auto bottom = std::min(widget.y + widget.h, clip.y + clip.h);
-    worm_ui_nuklear_set_metadata_drop_target(target, {.x = left,
-                                                      .y = top,
-                                                      .width = std::max(0.0f, right - left),
-                                                      .height = std::max(0.0f, bottom - top)});
+    const auto overlap = wormedit::ui::rect_intersection(
+        {widget.x, widget.y, widget.w, widget.h}, {clip.x, clip.y, clip.w, clip.h});
+    worm_ui_nuklear_set_metadata_drop_target(target, {.x = overlap.x,
+                                                      .y = overlap.y,
+                                                      .width = overlap.w,
+                                                      .height = overlap.h});
 }
 
 static void metadata_read_only_path(struct nk_context* context, const char* label,

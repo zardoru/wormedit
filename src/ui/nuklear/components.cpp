@@ -1,3 +1,4 @@
+#include "ui/nuklear/color.h"
 #include "ui/nuklear/chrome.h"
 
 #include <algorithm>
@@ -78,10 +79,6 @@ void tooltip_if_hovered(nk_context* context, const hit_t& hit, const char* toolt
     if (hit.tooltip_hovered && tooltip && tooltip[0]) nuklear::tooltip::text(context, tooltip);
 }
 
-auto with_alpha(nk_color color, nk_byte alpha) -> nk_color {
-    color.a = alpha;
-    return color;
-}
 
 auto disabled_look() -> ControlLook {
     return {color(UiColor::surface), color(UiColor::border), metrics::text_faint};

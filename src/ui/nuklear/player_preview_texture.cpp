@@ -1,4 +1,5 @@
 #include "ui/nuklear/player_preview_texture.h"
+#include "ui/nuklear/color.h"
 #include "ui/nuklear/image_quad.h"
 
 #include "wormedit/nuklear_config.h"
@@ -209,9 +210,6 @@ auto visual_fit_policy(WormUiVisualFitPolicy fit) -> wormedit::visual_fit_policy
     return wormedit::visual_fit_policy_t::contain;
 }
 
-auto color_byte(double value) -> nk_byte {
-    return static_cast<nk_byte>(std::clamp(value, 0.0, 255.0));
-}
 
 } // namespace
 
@@ -374,8 +372,8 @@ worm_ui_nuklear_preview_visual_result_t worm_ui_nuklear_draw_player_preview_stor
         const auto image = nk_image_ptr(uploaded.texture);
         if (!worm_ui_nuklear_push_image_quad(
                 canvas, &image, points.data(),
-                nk_rgba(color_byte(sprite.red), color_byte(sprite.green), color_byte(sprite.blue),
-                        color_byte(sprite.opacity * 255.0)))) {
+                nk_rgba(wormedit::ui::chrome::color_byte(sprite.red), wormedit::ui::chrome::color_byte(sprite.green), wormedit::ui::chrome::color_byte(sprite.blue),
+                        wormedit::ui::chrome::color_byte(sprite.opacity * 255.0)))) {
             record_failure(sprite.resource_id,
                            worm_ui_nuklear_preview_visual_failure_t::command_capacity);
             continue;

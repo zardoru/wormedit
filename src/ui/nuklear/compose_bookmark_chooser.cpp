@@ -161,7 +161,7 @@ void worm_ui_nuklear_bookmark_chooser_cancel(nk_context* context,
 
 auto worm_ui_nuklear_bookmark_chooser_owns_input(
     const bookmark_chooser_state_t& state) -> bool {
-    return state.open || state.release_pending;
+    return state.owns_input();
 }
 
 auto worm_ui_nuklear_bookmark_chooser_release_pending(

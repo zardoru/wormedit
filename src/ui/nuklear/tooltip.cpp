@@ -1,4 +1,5 @@
 #include "ui/nuklear/tooltip.h"
+#include "ui/nuklear/text_layout.h"
 
 #include <algorithm>
 #include <cmath>
@@ -14,50 +15,9 @@ struct nk_rect app_viewport{};
 // layout edge, so text starting exactly there loses the left side of its first glyph.
 constexpr float text_inset = 4.0F;
 
-auto codepoint_size(std::string_view text, std::size_t offset) -> std::size_t {
-    const auto first = static_cast<unsigned char>(text[offset]);
-    const std::size_t length = first < 0x80 ? 1 : (first & 0xE0) == 0xC0 ? 2
-                              : (first & 0xF0) == 0xE0 ? 3
-                              : (first & 0xF8) == 0xF0 ? 4 : 1;
-    if (length > text.size() - offset) return 1;
-    for (std::size_t index = 1; index < length; ++index)
-        if ((static_cast<unsigned char>(text[offset + index]) & 0xC0) != 0x80) return 1;
-    return length;
-}
-
 auto text_width(nk_context* context, std::string_view text) -> float {
     const auto* font = context->style.font;
     return font->width(font->userdata, font->height, text.data(), static_cast<int>(text.size()));
-}
-
-auto split_lines(nk_context* context, std::string_view text, float max_width)
-    -> std::vector<std::string> {
-    std::vector<std::string> lines;
-    std::string line;
-    for (std::size_t offset = 0; offset < text.size();) {
-        if (text[offset] == '\n') {
-            lines.push_back(std::exchange(line, {}));
-            ++offset;
-            continue;
-        }
-        const auto length = codepoint_size(text, offset);
-        line.append(text.substr(offset, length));
-        offset += length;
-        if (text_width(context, line) <= max_width || line.size() == length) continue;
-
-        const auto break_at = line.find_last_of(" \t", line.size() - length);
-        if (break_at != std::string::npos && break_at != 0) {
-            lines.push_back(line.substr(0, break_at));
-            line.erase(0, break_at);
-        } else {
-            const auto last = line.substr(line.size() - length);
-            line.resize(line.size() - length);
-            if (!line.empty()) lines.push_back(std::exchange(line, {}));
-            line = last;
-        }
-    }
-    lines.push_back(std::move(line));
-    return lines;
 }
 
 auto natural_width(nk_context* context, std::string_view text) -> float {
@@ -124,7 +84,7 @@ auto plan_text(nk_context* context, std::string_view text, float preferred_outer
 
     text_plan_t plan;
     plan.outer_width = outer_width;
-    plan.lines = split_lines(context, text, content_width);
+    plan.lines = chrome::wrap_text(context->style.font, text, content_width, chrome::text_wrap_policy_t::tooltip_lines);
     const auto row_height = context->style.font->height + context->style.text.padding.y * 2.0F +
                             context->style.window.min_row_height_padding * 2.0F;
     plan.content_height = static_cast<float>(plan.lines.size()) *

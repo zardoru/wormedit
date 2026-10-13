@@ -1,4 +1,5 @@
 #pragma once
+#include "ui/nuklear/popup_lifecycle.h"
 
 #include "ui/frontend.h"
 
@@ -8,10 +9,7 @@
 
 struct nk_context;
 
-struct bookmark_chooser_state_t {
-    bool open{};
-    bool release_pending{};
-    bool close_pending{};
+struct bookmark_chooser_state_t : wormedit::ui::chrome::retained_popup_t {
     std::uint64_t project_id{};
     std::uint64_t chart_id{};
     std::uint64_t document_revision{};

@@ -148,7 +148,7 @@ TEST_CASE("Sounds filter popup closes on Escape without a compose action",
     const auto group_filter = harness.drawn_text_center("Groups: all");
     REQUIRE(group_filter.has_value());
     (void)click_filter(harness, group_filter->first, group_filter->second);
-    REQUIRE(worm_ui_nuklear_compose_state().keysound_filters.keysound_filter_popup_open);
+    REQUIRE(worm_ui_nuklear_compose_state().keysound_filters.is_popup_open());
 
     SDL_Event escape_down{};
     escape_down.type = SDL_EVENT_KEY_DOWN;
@@ -162,7 +162,7 @@ TEST_CASE("Sounds filter popup closes on Escape without a compose action",
     escape_up.key.type = SDL_EVENT_KEY_UP;
     escape_up.key.down = false;
     const auto up_action = harness.frame(std::span{&escape_up, 1});
-    CHECK_FALSE(worm_ui_nuklear_compose_state().keysound_filters.keysound_filter_popup_open);
+    CHECK_FALSE(worm_ui_nuklear_compose_state().keysound_filters.is_popup_open());
     CHECK(down_action.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     CHECK(up_action.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
 }

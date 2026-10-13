@@ -1,4 +1,5 @@
 #pragma once
+#include "ui/nuklear/popup_lifecycle.h"
 
 #include "ui/frontend.h"
 #include <array>
@@ -6,8 +7,8 @@
 
 struct nk_context;
 struct worm_ui_nuklear_compose_state_t;
-struct sound_picker_state_t {
-    bool open{}, release_pending{}, close_pending{}, focus_pending{};
+struct sound_picker_state_t : wormedit::ui::chrome::retained_popup_t {
+    bool focus_pending{};
     std::uint64_t project{}, chart{}, revision{};
     std::size_t selected{};
     std::array<char, 96> query{};

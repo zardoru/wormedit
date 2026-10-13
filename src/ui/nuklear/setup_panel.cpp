@@ -1,3 +1,4 @@
+#include "ui/nuklear/text_fit.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/setup_panel.h"
 #include "ui/nuklear/setup_state.h"
@@ -55,7 +56,7 @@ struct project_panel_state_t {
     nk_bool edit_author{};
     nk_bool edit_rating{};
     nk_bool unset_rating{};
-    wormedit::ui::chrome::ContextMenu row_menu{"Chart actions"};
+    wormedit::ui::chrome::ContextMenu row_menu{.title = "Chart actions"};
     wormedit::ui::chrome::Dialog delete_dialog;
     uint64_t menu_chart{};
     bool release_pending{};
@@ -123,10 +124,6 @@ void render_project_batch(nk_context* context, const WormUiSetupView& view, Worm
     }
 }
 
-auto chart_stamp(const WormUiSetupView& view, uint64_t chart)
-    -> wormedit::ui::chrome::PopupContextStamp {
-    return {view.song_id, view.session_generation, view.document_revision, chart};
-}
 
 void render_chart_actions(nk_context* context, const WormUiSetupView& view,
     const WormUiProjectChartRow& row, WormUiWorkspaceAction& action) {
@@ -137,14 +134,14 @@ void render_chart_actions(nk_context* context, const WormUiSetupView& view,
         publish_chart_action(view, action, WORM_UI_PROJECT_CHART_OPEN, row.chart_id);
     if (Button{"⋯", ButtonKind::secondary, "Chart actions"}.render(context)) {
         project_state.menu_chart = row.chart_id;
-        context_menu_open(project_state.row_menu, context->input.mouse.pos, chart_stamp(view, row.chart_id));
+        context_menu_open(project_state.row_menu, context->input.mouse.pos, wormedit::ui::chrome::PopupContextStamp::from(view, row.chart_id));
     }
 }
 
 void render_row_menu(nk_context* context, const WormUiSetupView& view, WormUiWorkspaceAction& action) {
     using namespace wormedit::ui::chrome;
     auto& menu = project_state.row_menu;
-    if (!context_menu_begin(menu, context, chart_stamp(view, project_state.menu_chart),
+    if (!context_menu_begin(menu, context, wormedit::ui::chrome::PopupContextStamp::from(view, project_state.menu_chart),
                             nk_vec2(220, context_menu_height(5)))) return;
     const auto id = project_state.menu_chart;
     if (context_menu_item(menu, context, "Open in Compose"))
@@ -220,25 +217,9 @@ void begin_table_row(nk_context* context, float height, const table_ratios_t& ra
     nk_layout_row(context, NK_DYNAMIC, height, static_cast<int>(column_count), ratios.data());
 }
 
-// Shortens to the cell with "…" and returns the text to draw; a fit leaves it unchanged.
-auto fit_cell_text(const nk_user_font* font, const char* text, float width) -> std::string {
-    constexpr const char* ellipsis = "\xE2\x80\xA6";
-    const auto length = static_cast<int>(std::strlen(text));
-    const float budget = width - cell_padding;
-    if (font->width(font->userdata, font->height, text, length) <= budget) return text;
-    const auto ellipsis_width = font->width(font->userdata, font->height, ellipsis, 3);
-    int keep = 0;
-    for (int end = 1; end < length; ++end) {
-        if ((static_cast<unsigned char>(text[end]) & 0xC0U) == 0x80U) continue;
-        if (font->width(font->userdata, font->height, text, end) + ellipsis_width > budget) break;
-        keep = end;
-    }
-    return std::string(text, static_cast<std::size_t>(keep)) + ellipsis;
-}
-
 // A text cell that ellipsizes and shows the full text in a tooltip when it was shortened.
 void text_cell(nk_context* context, const char* text, float width) {
-    const auto shown = fit_cell_text(context->style.font, text, width);
+    const auto shown = wormedit::ui::chrome::fit_text_with_ellipsis(context->style.font, text, width - cell_padding, wormedit::ui::chrome::ellipsis_overflow_t::suffix);
     nk_label(context, shown.c_str(), NK_TEXT_LEFT);
     if (shown != text && nk_widget_is_hovered(context))
         wormedit::ui::nuklear::tooltip::text(context, text);
@@ -346,7 +327,7 @@ void render_chart_row(nk_context* context, const WormUiSetupView& view,
     if (keyboard_open) {
         project_state.menu_chart = row.chart_id;
         wormedit::ui::chrome::context_menu_open(project_state.row_menu,
-            nk_vec2(row_bounds.x, row_bounds.y + row_bounds.h), chart_stamp(view, row.chart_id), true);
+            nk_vec2(row_bounds.x, row_bounds.y + row_bounds.h), wormedit::ui::chrome::PopupContextStamp::from(view, row.chart_id), true);
     }
     paint_table_row(context, row_bounds, false, selected);
     render_chart_grip(context, view, row.chart_id);
@@ -358,13 +339,14 @@ void render_chart_row(nk_context* context, const WormUiSetupView& view,
         nk_input_is_mouse_hovering_rect(&context->input, name_bounds)) {
         project_state.menu_chart = row.chart_id;
         wormedit::ui::chrome::context_menu_open(project_state.row_menu, context->input.mouse.pos,
-                                               chart_stamp(view, row.chart_id));
+                                               wormedit::ui::chrome::PopupContextStamp::from(view, row.chart_id));
     }
     if (nk_input_mouse_clicked(&context->input, NK_BUTTON_DOUBLE, name_bounds))
         publish_chart_action(view, action, WORM_UI_PROJECT_CHART_OPEN, row.chart_id);
     nk_bool name_selected = selected;
     const auto* label = row.name[0] ? row.name : "Untitled chart";
-    const auto name = fit_cell_text(context->style.font, label, widths[0]);
+    const auto name = wormedit::ui::chrome::fit_text_with_ellipsis(context->style.font, label, widths[0] - cell_padding,
+        wormedit::ui::chrome::ellipsis_overflow_t::suffix);
     if (nk_selectable_label(context, name.c_str(), NK_TEXT_LEFT, &name_selected)) {
         const auto modifiers = SDL_GetModState();
         const auto [ctrl, shift] = shift_or_ctrl(modifiers);

@@ -21,9 +21,6 @@ inline auto catalog_confirmation(worm_ui_nuklear_compose_state_t& state, bool bg
         state.keysound_slots.keysound_renumber_project, state.keysound_slots.keysound_renumber_chart, state.keysound_slots.keysound_renumber_revision,
         state.keysound_slots.keysound_renumber_resources};
 }
-inline auto catalog_context(const WormUiComposeView& view) -> chrome::PopupContextStamp {
-    return {view.project_id, view.chart_id, view.document_revision};
-}
 inline void open_catalog_confirmation(CatalogConfirmation state, const WormUiComposeView& view,
                                      const std::vector<std::uint64_t>& resources) {
     state.open = true;
@@ -45,7 +42,7 @@ inline auto render_catalog_confirmation(nk_context* context, const WormUiCompose
     const auto* title = bga ? "Renumber BMP IDs" : "Renumber WAV IDs";
     const bool available = bga ? view.bga_ids_available : view.keysound_ids_available;
     if (!available || !chrome::popup_context_matches(
-            {state.project, state.chart, state.revision}, catalog_context(view))) {
+            {state.project, state.chart, state.revision}, wormedit::ui::chrome::PopupContextStamp::from(view))) {
         close_catalog_confirmation(state);
         chrome::dismiss_popup(context, title, bounds);
         return std::nullopt;

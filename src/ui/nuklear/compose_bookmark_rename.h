@@ -10,7 +10,7 @@
 // and pointer input through the same flags. `kind` picks the commit action.
 enum class inline_label_kind_t { bookmark, note_label, section_label };
 
-struct bookmark_rename_editor_t {
+struct inline_label_editor_t {
     inline_label_kind_t kind{inline_label_kind_t::bookmark};
     float anchor_x{};
     float anchor_y{};
@@ -30,10 +30,10 @@ struct bookmark_rename_editor_t {
 };
 
 // Opens the editor for a visible bookmark ID, or returns false if it is absent.
-auto begin_compose_bookmark_rename(bookmark_rename_editor_t& editor,
+auto begin_compose_bookmark_rename(inline_label_editor_t& editor,
                                    const WormUiComposeView& view,
                                    std::uint64_t bookmark_id) -> bool;
-void cancel_compose_bookmark_rename(bookmark_rename_editor_t& editor);
+void cancel_compose_bookmark_rename(inline_label_editor_t& editor);
 
 // Roughly one text line; the label box sits just above its bookmark line.
 inline constexpr double compose_bookmark_label_zone_height = 18.0;
@@ -44,15 +44,15 @@ auto compose_bookmark_at(const WormUiComposeView& view, double pointer_x, double
     -> std::optional<std::uint64_t>;
 
 // Double-click entry: the line or its label opens the editor. Notes are the caller's concern.
-auto begin_compose_bookmark_rename_at_double_click(bookmark_rename_editor_t& editor,
+auto begin_compose_bookmark_rename_at_double_click(inline_label_editor_t& editor,
                                                   const WormUiComposeView& view,
                                                   double pointer_x, double pointer_y) -> bool;
 
-auto compose_bookmark_rename_owns_input(const bookmark_rename_editor_t& editor,
+auto compose_bookmark_rename_owns_input(const inline_label_editor_t& editor,
                                         const WormUiComposeView& view,
                                         bool window_focused) -> bool;
 
 void render_compose_bookmark_rename(nk_context* context, const WormUiComposeView& view,
                                     WormUiWorkspaceAction& action,
-                                    bookmark_rename_editor_t& editor,
+                                    inline_label_editor_t& editor,
                                     struct nk_rect viewport, bool window_focused);

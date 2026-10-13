@@ -117,7 +117,7 @@ TEST_CASE("Complete static tiles remain reusable across fractional follow and re
     field.invalidate_envelopes();
     SDL_DestroyRenderer(device); SDL_DestroySurface(surface);
 }
-static bool tile_rect_contains(SDL_FRect rect,float x,float y) {
+static bool tile_is_point_in_rect(SDL_FRect rect,float x,float y) {
     return x>=rect.x && y>=rect.y && x<rect.x+rect.w && y<rect.y+rect.h;
 }
 TEST_CASE("Dynamic holes partition tile coverage without overlapping alpha", "[ui][field][tile]") {
@@ -125,9 +125,9 @@ TEST_CASE("Dynamic holes partition tile coverage without overlapping alpha", "[u
     const auto regions=subtract_rectangles({0,0,11,11},holes);
     for (int y=0; y<11; ++y) for (int x=0; x<11; ++x) {
         std::size_t coverage{};
-        for (const auto region:regions) coverage+=tile_rect_contains(region,x+.5f,y+.5f);
-        const bool excluded=tile_rect_contains(holes[0],x+.5f,y+.5f) ||
-                            tile_rect_contains(holes[1],x+.5f,y+.5f);
+        for (const auto region:regions) coverage+=tile_is_point_in_rect(region,x+.5f,y+.5f);
+        const bool excluded=tile_is_point_in_rect(holes[0],x+.5f,y+.5f) ||
+                            tile_is_point_in_rect(holes[1],x+.5f,y+.5f);
         expect_tile(coverage==(excluded ? 0 : 1));
     }
     expect_tile(subtract_rectangles({0,0,11,11},std::array<SDL_FRect,1>{{{0,0,11,11}}}).empty());

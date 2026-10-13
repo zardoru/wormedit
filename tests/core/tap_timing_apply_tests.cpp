@@ -4,8 +4,32 @@
 
 #include <cmath>
 #include <limits>
+#include <utility>
 
 using namespace wormedit;
+
+TEST_CASE("tap proposal canonical construction retains timing-lock rejection priority",
+          "[unit][core][tap-timing][result]") {
+    const auto outcome = tap_timing_apply_proposal_t::from({}, chart_id_t{99}, {}, 0, 0,
+        tap_bpm_choice_t::raw, true);
+    CHECK_FALSE(outcome.ok());
+    CHECK_FALSE(outcome.value.has_value());
+    REQUIRE(outcome.diagnostics.size() == 1);
+    CHECK(outcome.diagnostics.front().message == "tap timing apply is disabled while timing is locked");
+}
+
+TEST_CASE("tap proposal compatibility retains warning rejection with a payload",
+          "[unit][core][tap-timing][result]") {
+    tap_timing_apply_proposal_outcome_t outcome{
+        .value = tap_timing_apply_proposal_t{},
+        .diagnostics = {{.severity = diagnostic_severity_t::warning,
+                        .code = diagnostic_code_t::approximated_feature, .message = "warning"}}};
+    CHECK(outcome.ok());
+    const auto legacy = tap_timing_apply_proposal_result_t::from(std::move(outcome));
+    REQUIRE(legacy.proposal.has_value());
+    CHECK_FALSE(legacy);
+    CHECK(legacy.diagnostics.front().severity == diagnostic_severity_t::warning);
+}
 
 namespace {
 

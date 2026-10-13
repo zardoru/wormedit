@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/command.h>
+#include <wormedit/core/result.h>
 #include <wormedit/core/tap_tempo.h>
 
 #include <cstdint>
@@ -11,6 +12,12 @@ namespace wormedit {
 enum class tap_bpm_choice_t { raw, nearest_one, nearest_half };
 
 struct tap_timing_apply_proposal_t {
+    [[nodiscard]] static auto from(const song_document_t& document, chart_id_t chart,
+                                  const tap_tempo_estimate_t& estimate, std::uint32_t sample_rate,
+                                  std::uint16_t beats_per_measure, tap_bpm_choice_t choice,
+                                  bool timing_locked = false)
+        -> diagnosed_t<std::optional<tap_timing_apply_proposal_t>>;
+
     chart_id_t chart;
     std::uint64_t document_revision{};
     std::uint32_t sample_rate{};
@@ -21,7 +28,11 @@ struct tap_timing_apply_proposal_t {
     signed_rational_t beat_zero_audio_offset_seconds;
 };
 
+using tap_timing_apply_proposal_outcome_t = diagnosed_t<std::optional<tap_timing_apply_proposal_t>>;
+
 struct tap_timing_apply_proposal_result_t {
+    [[nodiscard]] static auto from(tap_timing_apply_proposal_outcome_t&& outcome)
+        -> tap_timing_apply_proposal_result_t;
     std::optional<tap_timing_apply_proposal_t> proposal;
     diagnostic_list_t diagnostics;
 

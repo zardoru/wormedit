@@ -60,7 +60,7 @@ auto find_chart(song_document_t& document, chart_id_t id) -> chart_document_t* {
 auto lane_definition_t::is_editable() const noexcept -> bool {
     return role != lane_role_t::autoplay && role != lane_role_t::invisible && role != lane_role_t::mine;
 }
-auto lane_layout_t::contains(lane_id_t id) const -> bool { return find(id) != nullptr; }
+auto lane_layout_t::has_lane(lane_id_t id) const -> bool { return find(id) != nullptr; }
 auto lane_layout_t::has_same_shape(const lane_layout_t& other) const -> bool {
     if (profile_id != other.profile_id || lanes.size() != other.lanes.size()) return false;
     for (std::size_t index = 0; index < lanes.size(); ++index) {
@@ -170,12 +170,12 @@ auto measure_error_message(measure_error_t error) -> std::string {
     return "measure is invalid";
 }
 
-auto contains_resource(const std::unordered_set<std::uint64_t>& resources, resource_id_t id)
+auto has_resource(const std::unordered_set<std::uint64_t>& resources, resource_id_t id)
     -> bool {
     return id && resources.contains(id.value);
 }
 
-auto valid_format_family(format_family_t family) -> bool {
+auto is_valid_format_family(format_family_t family) -> bool {
     switch (family) {
     case format_family_t::native_project:
     case format_family_t::bms:
@@ -356,7 +356,7 @@ struct bms_control_visit_context_t {
     std::vector<bms_source_record_t>& source_records;
 };
 
-auto bms_span_is_valid(bms_control_visit_context_t& context, bms_source_span_t span,
+auto is_bms_span_valid(bms_control_visit_context_t& context, bms_source_span_t span,
                        std::string_view description) -> bool {
     auto valid = true;
     if (span.byte_end <= span.byte_begin) {
@@ -406,7 +406,7 @@ auto validate_bms_node_identity(bms_control_visit_context_t& context,
         add_diagnostic(context.diagnostics, diagnostic_code_t::invalid_id,
                        "BMS control node kind requires a numeric value");
     }
-    if (has_positive_control_value(node.kind) && node.value.has_value() &&
+    if (has_control_value(node.kind) && node.value.has_value() &&
         *node.value <= 0) {
         add_diagnostic(context.diagnostics, diagnostic_code_t::invalid_id,
                        "BMS control node requires a positive numeric value");
@@ -472,7 +472,7 @@ auto validate_bms_node_source(bms_control_visit_context_t& context, const bms_co
         }
         return bounds;
     }
-    const auto span_valid = bms_span_is_valid(context, node.source_span, "BMS control node");
+    const auto span_valid = is_bms_span_valid(context, node.source_span, "BMS control node");
     validate_bms_line_metadata(context, node.source_span, node.line_ending, "BMS control node");
     if (node.source_span.byte_begin < parent_begin || node.source_span.byte_end > parent_end) {
         add_diagnostic(context.diagnostics, diagnostic_code_t::invalid_id,
@@ -491,7 +491,7 @@ auto validate_bms_close_source(bms_control_visit_context_t& context, const bms_c
         return;
     }
     const auto close = *node.close_source_span;
-    const auto close_valid = bms_span_is_valid(context, close, "BMS closing directive");
+    const auto close_valid = is_bms_span_valid(context, close, "BMS closing directive");
     if (node.close_line_ending.has_value()) {
         validate_bms_line_metadata(context, close, *node.close_line_ending,
                                    "BMS closing directive");
@@ -638,10 +638,10 @@ auto position_row_or_diagnostic(const measure_index_t& index, local_position_t p
     return row;
 }
 
-auto lane_is_active(const chart_document_t& chart, const measure_index_t& index,
+auto is_lane_active(const chart_document_t& chart, const measure_index_t& index,
                     local_position_t position, lane_id_t lane) -> bool {
     const auto* layout = effective_layout(chart, index, position);
-    return layout != nullptr && layout->contains(lane);
+    return layout != nullptr && layout->has_lane(lane);
 }
 
 auto combined_layout(const chart_document_t& chart) -> lane_layout_t {
@@ -825,11 +825,11 @@ auto validate_chart_note(chart_object_validation_t& context, measure_id_t measur
         add_diagnostic(context.diagnostics, diagnostic_code_t::invalid_measure,
                        "note is stored outside the measure named by its position", note.id);
     }
-    if (!lane_is_active(context.chart, context.index, note.position, note.lane)) {
+    if (!is_lane_active(context.chart, context.index, note.position, note.lane)) {
         add_diagnostic(context.diagnostics, diagnostic_code_t::unknown_lane,
                        "note refers to a lane absent from its active layout", note.id);
     }
-    if (note.sound.has_value() && !contains_resource(context.resources, *note.sound)) {
+    if (note.sound.has_value() && !has_resource(context.resources, *note.sound)) {
         add_diagnostic(context.diagnostics, diagnostic_code_t::dangling_resource,
                        "note refers to an unknown sound resource", note.id);
     }
@@ -854,7 +854,7 @@ auto validate_chart_note(chart_object_validation_t& context, measure_id_t measur
             add_diagnostic(context.diagnostics, diagnostic_code_t::invalid_hold,
                            "hold/roll end must be after its start", note.id);
         }
-        if (!lane_is_active(context.chart, context.index, *note.end, note.lane)) {
+        if (!is_lane_active(context.chart, context.index, *note.end, note.lane)) {
             add_diagnostic(context.diagnostics, diagnostic_code_t::unknown_lane,
                            "hold/roll lane is absent from the layout at its end", note.id);
         }
@@ -874,7 +874,7 @@ auto validate_chart_bgm(chart_object_validation_t& context, measure_id_t measure
         add_diagnostic(context.diagnostics, diagnostic_code_t::invalid_id,
                        "BGM event refers to an unknown source lane", bgm.id);
     }
-    if (bgm.sound.has_value() && !contains_resource(context.resources, *bgm.sound)) {
+    if (bgm.sound.has_value() && !has_resource(context.resources, *bgm.sound)) {
         add_diagnostic(context.diagnostics, diagnostic_code_t::dangling_resource,
                        "BGM event refers to an unknown sound resource", bgm.id);
     }
@@ -1013,7 +1013,7 @@ auto validate_scroll_speed_warp_bga(chart_object_validation_t& context) -> void 
         }
     }
     for (const auto& bga : context.chart.bga_events) {
-        if (!contains_resource(context.resources, bga.resource)) {
+        if (!has_resource(context.resources, bga.resource)) {
             add_diagnostic(context.diagnostics, diagnostic_code_t::dangling_resource,
                            "BGA event refers to an unknown resource", bga.id);
         }
@@ -1085,7 +1085,7 @@ auto validate_sound_channel_event(chart_object_validation_t& context,
         add_diagnostic(context.diagnostics, diagnostic_code_t::unknown_lane,
                        "non-playable BGM sound channel event must use lane zero", event.id);
     } else if (event.playable &&
-               !lane_is_active(context.chart, context.index, event.position, event.lane)) {
+               !is_lane_active(context.chart, context.index, event.position, event.lane)) {
         add_diagnostic(context.diagnostics, diagnostic_code_t::unknown_lane,
                        "sound channel event refers to a lane absent from its active layout",
                        event.id);
@@ -1558,7 +1558,7 @@ auto collect_song_assets(document_validation_work_t& work) -> void {
 
 auto validate_target_identity(document_validation_work_t& work, const resource_entry_t& resource,
                               const target_resource_identity_t& identity) -> void {
-    if (!valid_format_family(identity.family)) {
+    if (!is_valid_format_family(identity.family)) {
         add_diagnostic(work.diagnostics, diagnostic_code_t::invalid_id,
                        "resource target identity has an unknown format family");
         return;

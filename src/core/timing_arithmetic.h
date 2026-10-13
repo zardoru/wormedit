@@ -39,14 +39,14 @@ struct signed_wide_t {
 inline auto combine(signed_wide_t left, signed_wide_t right) -> signed_wide_t {
     if (left.negative == right.negative)
         return {wide_math::add(left.value, right.value), left.negative};
-    if (wide_math::less(left.value, right.value))
+    if (wide_math::u128_less(left.value, right.value))
         return {wide_math::subtract(right.value, left.value), right.negative};
     return {wide_math::subtract(left.value, right.value), left.negative};
 }
 
 inline auto divide_wide(wide_math::u128_t numerator, wide_math::u128_t denominator)
     -> wide_math::divmod_t {
-    if (wide_math::fits_u64(numerator) && wide_math::fits_u64(denominator))
+    if (wide_math::can_fit_u64(numerator) && wide_math::can_fit_u64(denominator))
         return {{0, numerator.low / denominator.low}, {0, numerator.low % denominator.low}};
     return wide_math::divide(numerator, denominator);
 }
@@ -59,7 +59,7 @@ inline auto reduce_sum(signed_wide_t sum, std::uint64_t common,
     const auto numerator = divide_wide(sum.value, {0, divisor}).quotient;
     const auto denominator = wide_math::multiply(left_denominator / common,
                                                  right_denominator / divisor);
-    if (!wide_math::fits_u64(numerator) || !wide_math::fits_u64(denominator))
+    if (!wide_math::can_fit_u64(numerator) || !wide_math::can_fit_u64(denominator))
         return std::nullopt;
     const auto signed_numerator = signed_value(numerator.low, sum.negative);
     if (!signed_numerator) return std::nullopt;
@@ -96,10 +96,10 @@ inline auto rounded_quotient(wide_math::u128_t numerator, wide_math::u128_t deno
     if (denominator == wide_math::u128_t{}) return std::nullopt;
     auto result = divide_wide(numerator, denominator);
     const auto complement = wide_math::subtract(denominator, result.remainder);
-    const auto round_up = wide_math::less(complement, result.remainder) ||
+    const auto round_up = wide_math::u128_less(complement, result.remainder) ||
         (complement == result.remainder && (result.quotient.low & 1U) != 0);
     if (round_up) result.quotient = wide_math::add(result.quotient, 1);
-    if (!wide_math::fits_u64(result.quotient)) return std::nullopt;
+    if (!wide_math::can_fit_u64(result.quotient)) return std::nullopt;
     return result.quotient.low;
 }
 
@@ -158,7 +158,7 @@ inline auto clock_ticks(signed_rational_t seconds) -> std::optional<std::int64_t
     if (clock_quantum % seconds.denominator == 0) {
         const auto product = wide_math::multiply(magnitude(seconds.numerator),
                                                   clock_quantum / seconds.denominator);
-        return wide_math::fits_u64(product) ? signed_value(product.low, seconds.numerator < 0)
+        return wide_math::can_fit_u64(product) ? signed_value(product.low, seconds.numerator < 0)
                                              : std::nullopt;
     }
     const auto ticks = rounded_quotient(wide_math::multiply(magnitude(seconds.numerator),

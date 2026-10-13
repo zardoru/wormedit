@@ -288,7 +288,7 @@ TEST_CASE("audition session primes renders and completes one monotonic click pre
     const auto started = session.start(std::span{&clip, 1});
     require_audition_session(started);
     expect_audition_session(!started.prime.has_value());
-    expect_audition_session(session.active());
+    expect_audition_session(session.is_active());
     expect_audition_session(session.timeline_frame() == 0);
 
     std::vector<float> first(512 * output_channel_count);
@@ -317,7 +317,7 @@ TEST_CASE("audition session primes renders and completes one monotonic click pre
     expect_audition_session(final_render.first_timeline_frame == 512);
     expect_audition_session(final_render.mix.missing_blocks == 0);
     expect_audition_session(!all_zero(tail));
-    expect_audition_session(!session.active());
+    expect_audition_session(!session.is_active());
 
     std::ranges::fill(tail, 1.0F);
     expect_audition_session(session.render(tail).status == audition_session_render_status_t::stopped);
@@ -342,7 +342,7 @@ TEST_CASE("audition session hard Stop silences the next render and invalidates r
     expect_audition_session(!all_zero(before));
     const auto stopped = session.stop();
     expect_audition_session(stopped.scheduled_voices == 1);
-    expect_audition_session(!session.active());
+    expect_audition_session(!session.is_active());
     expect_audition_session(!session.pump());
 
     std::ranges::fill(before, 1.0F);
@@ -367,7 +367,7 @@ TEST_CASE("audition session preserves a live generation on pre-start validation 
     const auto rejected = session.start(std::span{&invalid, 1});
     expect_audition_session(!rejected);
     expect_audition_session(rejected.status == audition_session_start_status_t::transport_failed);
-    expect_audition_session(session.active());
+    expect_audition_session(session.is_active());
     expect_audition_session(transport.is_current(*first.token));
 
     const audition_clip_t unavailable{{"fixture:missing", "unknown:v1"}, 0, 512, 1.0F};
@@ -405,7 +405,7 @@ auto audition_playhead_rejects_external_generation() -> bool {
     if (!started) return false;
     const auto prior = session.playhead();
     static_cast<void>(transport.stop());
-    if (session.active() || session.timeline_frame() != 0 || session.playhead().active) return false;
+    if (session.is_active() || session.timeline_frame() != 0 || session.playhead().active) return false;
     const auto restarted = session.start(std::span{&clip, 1});
     const auto current = session.playhead();
     return restarted && current.active && current.generation > prior.generation &&

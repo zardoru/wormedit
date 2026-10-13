@@ -68,7 +68,7 @@ auto canvas_keyboard_hold_previews(const chart_document_t& chart, const measure_
         const auto anchor =
             hold.anchor_canvas_row ? hold.anchor_canvas_row : absolute_row(index, hold.position);
         const auto end = hold.preview_canvas_row ? hold.preview_canvas_row : anchor;
-        if (!chart_has_virtual_tail(chart) || hold.document_revision != revision || !anchor ||
+        if (!has_chart_virtual_tail(chart) || hold.document_revision != revision || !anchor ||
             !end || *anchor >= canvas_rows || *end >= canvas_rows) {
             return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
                                            "canvas lane hold is stale or outside BMS geometry")};
@@ -290,7 +290,7 @@ auto plan_note_paint(const chart_document_t& chart, const measure_index_t& index
     }
     for (const auto& addition : plan.additions) {
         const auto row = absolute_row(index, addition.position);
-        if (row && head_blocked_by_warp(chart, index, *row, kind))
+        if (row && is_head_blocked_by_warp(chart, index, *row, kind))
             return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
                                            "playable note heads cannot sit inside a warp")};
     }
@@ -320,7 +320,7 @@ using namespace interaction_detail;
 auto validate_virtual_note_target(const editor_edit_context_t& context, lane_id_t lane,
                                   std::string_view description)
     -> std::optional<editor_interaction_result_t> {
-    if (chart_has_virtual_tail(context.scope.chart) && lane &&
+    if (has_chart_virtual_tail(context.scope.chart) && lane &&
         context.state.active_snap_denominator != 0 &&
         context.scope.chart.divisions_per_standard_measure %
                 context.state.active_snap_denominator ==

@@ -244,7 +244,7 @@ auto map_proposed_choices(const bms_branch_selection_request_t& request,
     return choices;
 }
 
-auto same_proposed_selection(const chart_document_t& chart,
+auto proposed_selection_equal(const chart_document_t& chart,
                              const bms_branch_selection_request_t& request,
                              const control_inventory_t& original,
                              const control_inventory_t& rematerialized) -> bool {
@@ -301,7 +301,7 @@ auto parse_proposed_branch_source(std::span<const std::byte> bytes,
                   "$.charts[0].bms_control_tree");
         return std::nullopt;
     }
-    if (!same_proposed_selection(chart, request, original, controls)) {
+    if (!proposed_selection_equal(chart, request, original, controls)) {
         add_error(result, bms_branch_selection_diagnostic_code_t::selection_mismatch,
                   "rematerialized BMS choices differ from the proposed selection",
                   "$.charts[0].active_branch_selection");

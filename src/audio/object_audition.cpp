@@ -21,7 +21,7 @@ auto is_stem_audition_resource(const song_document_t& song, resource_id_t id) ->
 }
 }
 
-auto bound_stem_audition(const song_document_t& song, std::optional<resource_id_t> resource,
+auto is_bound_stem_audition(const song_document_t& song, std::optional<resource_id_t> resource,
     std::span<const audition_source_binding_t> bindings, std::span<audition_clip_t> clips) -> bool {
     if (!resource || !is_stem_audition_resource(song, *resource)) return true;
     for (auto& clip : clips) {

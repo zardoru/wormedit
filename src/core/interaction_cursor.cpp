@@ -15,7 +15,7 @@
 namespace wormedit::interaction_detail {
 namespace {
 
-constexpr auto remainder_rounds_up(std::uint64_t remainder, std::uint64_t capacity) -> bool {
+constexpr auto is_remainder_rounding_up(std::uint64_t remainder, std::uint64_t capacity) -> bool {
     return remainder > capacity - remainder;
 }
 
@@ -93,7 +93,7 @@ auto move_edit_cursor(cursor_navigation_context_t& context,
         return cursor_diagnostic_result(context.edit.history, context.edit.state,
             {error(diagnostic_code_t::invalid_id, "unknown cursor direction")});
     auto canvas_rows = context.edit.scope.measures.total_rows;
-    if (chart_has_virtual_tail(context.edit.scope.chart)) {
+    if (has_chart_virtual_tail(context.edit.scope.chart)) {
         const auto canvas = build_virtual_canvas(context.edit.scope.chart);
         const auto* value = std::get_if<virtual_canvas_t>(&canvas);
         if (!value) return cursor_diagnostic_result(context.edit.history, context.edit.state,
@@ -157,8 +157,8 @@ auto page_edit_cursor(cursor_navigation_context_t& context,
     const auto division = wide_math::divide(scaled, {0, source->row_capacity});
     const auto rounded = wide_math::add(
         division.quotient,
-        remainder_rounds_up(division.remainder.low, source->row_capacity) ? 1U : 0U);
-    if (!wide_math::fits_u64(rounded) ||
+        is_remainder_rounding_up(division.remainder.low, source->row_capacity) ? 1U : 0U);
+    if (!wide_math::can_fit_u64(rounded) ||
         (action.minimum_rows == 0 && rounded.low >= target_measure->row_capacity))
         return cursor_diagnostic_result(context.edit.history, context.edit.state,
             {error(diagnostic_code_t::row_out_of_range,
@@ -242,7 +242,7 @@ auto select_bms_canvas_measure(cursor_navigation_context_t& context,
     -> editor_interaction_result_t {
     auto& state = context.edit.state;
     const auto& chart = context.edit.scope.chart;
-    if (!chart_has_virtual_tail(chart) ||
+    if (!has_chart_virtual_tail(chart) ||
         action.number >= virtual_tail_measure_limit(chart))
         return cursor_diagnostic_result(context.edit.history, state,
             {error(diagnostic_code_t::row_out_of_range,
@@ -302,7 +302,7 @@ namespace wormedit {
 namespace {
 auto cursor_canvas_rows(const chart_document_t& chart, const measure_index_t& index)
     -> std::optional<std::uint64_t> {
-    if (!chart_has_virtual_tail(chart)) return index.total_rows;
+    if (!has_chart_virtual_tail(chart)) return index.total_rows;
     const auto built = build_virtual_canvas(chart);
     const auto* canvas = std::get_if<virtual_canvas_t>(&built);
     return canvas ? std::optional{canvas->total_rows} : std::nullopt;

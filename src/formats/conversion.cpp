@@ -47,7 +47,7 @@ void add_diagnostic(conversion_result_t& result, diagnostic_severity_t severity,
                                   std::move(path)});
 }
 
-auto result_has_errors(const conversion_result_t& result) -> bool {
+auto has_result_errors(const conversion_result_t& result) -> bool {
     return std::ranges::any_of(result.diagnostics, [](const auto& diagnostic) {
         return diagnostic.severity == diagnostic_severity_t::error;
     });
@@ -177,7 +177,7 @@ auto selected_chart(const song_document_t& song, chart_id_t id) -> const chart_d
     return found == nullptr ? nullptr : &*found;
 }
 
-auto valid_staged_relative_path(const std::filesystem::path& staged_path) -> bool {
+auto is_valid_staged_relative_path(const std::filesystem::path& staged_path) -> bool {
     const auto path = staged_path.generic_string();
     return !staged_path.empty() && path.size() <= 4096 && !staged_path.filename().empty() &&
            !staged_path.is_absolute() && !staged_path.has_root_name() &&
@@ -201,7 +201,7 @@ auto prepare_staged_assets(conversion_context_t& context, song_document_t& prepa
     std::unordered_set<std::string> paths;
     for (const auto& staged : context.request.staged_assets) {
         const auto path = staged.relative_path.generic_string();
-        if (!staged.asset || !valid_staged_relative_path(staged.relative_path) ||
+        if (!staged.asset || !is_valid_staged_relative_path(staged.relative_path) ||
             known_assets[staged.asset.value] != 1 ||
             !paths_by_id.emplace(staged.asset.value, staged.relative_path).second ||
             !paths.insert(path).second) {
@@ -523,7 +523,7 @@ auto prepare_bms_slice_resources(conversion_context_t& context, song_document_t&
     return false;
 }
 
-auto compatible_bms_layout(const lane_layout_t& source, const lane_layout_t& target) -> bool {
+auto is_compatible_bms_layout(const lane_layout_t& source, const lane_layout_t& target) -> bool {
     if (source.lanes.size() != target.lanes.size()) return false;
     return std::ranges::all_of(source.lanes, [&](const auto& lane) {
         const auto matching = [&](const auto& other) { return other.role == lane.role && other.stage == lane.stage; };
@@ -549,7 +549,7 @@ auto prepare_bms_slice_layout(conversion_context_t& context, chart_document_t& c
         const auto found = std::ranges::find_if(profiles, [&](const auto& descriptor) {
             return (context.request.target_profile.empty() ||
                     descriptor.profile.layout.profile_id == context.request.target_profile) &&
-                   compatible_bms_layout(segment.layout, descriptor.profile.layout);
+                   is_compatible_bms_layout(segment.layout, descriptor.profile.layout);
         });
         if (found == profiles.end()) {
             add_diagnostic(context.result, diagnostic_severity_t::error,
@@ -563,14 +563,14 @@ auto prepare_bms_slice_layout(conversion_context_t& context, chart_document_t& c
     return true;
 }
 
-auto target_slices_stems(format_family_t target) -> bool {
+auto has_target_stem_slices(format_family_t target) -> bool {
     return target == format_family_t::osu_mania || target == format_family_t::bms ||
            target == format_family_t::stepmania;
 }
 
 auto prepare_slice_exports(conversion_context_t& context, song_document_t& prepared,
                            const std::vector<chart_id_t>& charts) -> bool {
-    if (!target_slices_stems(context.request.target))
+    if (!has_target_stem_slices(context.request.target))
         return true;
     auto options = context.request.slice_options;
     shared_slices_t shared;
@@ -619,7 +619,7 @@ auto prepare_slice_exports(conversion_context_t& context, song_document_t& prepa
     return true;
 }
 
-auto contains_bms_tree(const song_document_t& song, const std::vector<chart_id_t>& charts) -> bool {
+auto has_bms_tree(const song_document_t& song, const std::vector<chart_id_t>& charts) -> bool {
     return std::ranges::any_of(charts, [&](const auto id) {
         const auto* chart = selected_chart(song, id);
         return chart && chart->bms_control_tree.has_value();
@@ -755,7 +755,7 @@ auto validate_selected_target(conversion_context_t& context, const song_document
     }
     if (context.request.target == format_family_t::bms ||
         context.request.target == format_family_t::native_project ||
-        !contains_bms_tree(song, charts)) {
+        !has_bms_tree(song, charts)) {
         return true;
     }
     if (context.request.branches != branch_projection_t::active_projection) {
@@ -802,7 +802,7 @@ void write_native_output(conversion_context_t& context, const song_document_t& p
                        conversion_stage_t::request, context.request.target, std::nullopt,
                        "Unknown native-project target profile: " + context.request.target_profile);
     }
-    if (result_has_errors(context.result)) {
+    if (has_result_errors(context.result)) {
         return;
     }
     const auto written = write_native_project(prepared);
@@ -964,7 +964,7 @@ auto serialize_conversion(conversion_context_t& context, const song_document_t& 
 auto validate_conversion_outputs(conversion_context_t& context,
                                  const stepmania_export_policy_result_t* stepmania_options)
     -> bool {
-    if (result_has_errors(context.result)) {
+    if (has_result_errors(context.result)) {
         context.result.outputs.clear();
         return false;
     }
@@ -1009,7 +1009,7 @@ auto validate_conversion_outputs(conversion_context_t& context,
 } // namespace
 
 auto conversion_result_t::has_errors() const -> bool {
-    return result_has_errors(*this);
+    return has_result_errors(*this);
 }
 
 conversion_result_t::operator bool() const noexcept {
@@ -1023,8 +1023,8 @@ auto plan_conversion_slice_spans(const song_document_t& song, chart_id_t chart,
     return build_slice_span_plan(song, chart, sources, options);
 }
 
-auto conversion_needs_slice_spans(const song_document_t& song, const conversion_request_t& request) -> bool {
-    if (!target_slices_stems(request.target)) return false;
+auto is_conversion_needs_slice_spans(const song_document_t& song, const conversion_request_t& request) -> bool {
+    if (!has_target_stem_slices(request.target)) return false;
     return std::ranges::any_of(song.charts, [&](const auto& chart) {
         const bool selected = request.chart ? chart.id == *request.chart :
             request.charts.empty() || std::ranges::find(request.charts, chart.id) != request.charts.end();
@@ -1040,11 +1040,11 @@ auto convert_document(const song_document_t& song, const conversion_request_t& r
         return result;
     }
     const auto charts = selected_chart_ids(context, song);
-    if (result_has_errors(result) || !validate_selected_target(context, song, charts)) {
+    if (has_result_errors(result) || !validate_selected_target(context, song, charts)) {
         return result;
     }
     auto prepared = prepare_document(context, song, charts);
-    if (!prepared || result_has_errors(result)) {
+    if (!prepared || has_result_errors(result)) {
         result.outputs.clear();
         return result;
     }

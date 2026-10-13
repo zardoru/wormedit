@@ -178,7 +178,7 @@ struct pane_signature_t {
     std::span<const positioned_note_t> notes;
 };
 
-auto equal(const pane_signature_t& left, const pane_signature_t& right) -> bool {
+auto pane_signature_equal(const pane_signature_t& left, const pane_signature_t& right) -> bool {
     return left.in_range == right.in_range && std::ranges::equal(left.layout, right.layout) &&
            std::ranges::equal(left.notes, right.notes, {}, &positioned_note_t::signature,
                               &positioned_note_t::signature);
@@ -458,9 +458,9 @@ auto build_difference_panes(const chart_compare_work_t& work, rational_t positio
     panes.reserve(work.projections.size());
     for (std::size_t index = 0; index < work.projections.size(); ++index) {
         const auto differs = work.request.mode == chart_compare_mode_t::baseline_first
-                                 ? index == 0 || !equal(signatures[index], signatures.front())
+                                 ? index == 0 || !pane_signature_equal(signatures[index], signatures.front())
                                  : std::ranges::any_of(signatures, [&](const auto& other) {
-                                       return !equal(signatures[index], other);
+                                       return !pane_signature_equal(signatures[index], other);
                                    });
         chart_compare_pane_row_t pane{
             .chart = work.projections[index].chart->id,
@@ -494,7 +494,7 @@ auto append_difference_rows(chart_compare_work_t& work) -> bool {
     for (const auto position : work.candidates) {
         const auto signatures = pane_signatures_at(work, position);
         if (std::ranges::all_of(signatures, [&](const auto& item) {
-                return equal(item, signatures.front());
+                return pane_signature_equal(item, signatures.front());
             })) {
             continue;
         }

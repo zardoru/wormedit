@@ -106,7 +106,7 @@ TEST_CASE(
 
     CHECK_FALSE(loop.tick(document, true, start + 5min - 1ms, target));
     CHECK_FALSE(loop.tick(document, false, start + 5min, target));
-    CHECK_FALSE(loop.busy());
+    CHECK_FALSE(loop.is_busy());
     CHECK_FALSE(std::filesystem::exists(target.backup_path));
 
     CHECK_FALSE(loop.tick(document, true, start + 5min, target));
@@ -158,7 +158,7 @@ TEST_CASE("autosave loop resumes existing sequence and backs off after publicati
     CHECK(read_text(target.backup_path) == previous_good_backup);
 
     CHECK_FALSE(loop.tick(document, true, start + 5min + 5s, target));
-    CHECK_FALSE(loop.busy());
+    CHECK_FALSE(loop.is_busy());
     CHECK(read_text(target.backup_path) == previous_good_backup);
 
     CHECK_FALSE(loop.tick(document, true, start + 5min + 11s, target));
@@ -199,7 +199,7 @@ TEST_CASE("autosave loop permits one in-flight snapshot and refuses session repl
     for (auto attempt = 0; attempt < 2000 && !entered.load(std::memory_order_acquire); ++attempt)
         std::this_thread::sleep_for(1ms);
     REQUIRE(entered.load(std::memory_order_acquire));
-    CHECK(loop.busy());
+    CHECK(loop.is_busy());
     CHECK(scheduler.outstanding_tasks() == 1);
     CHECK_FALSE(loop.tick(song(71, 3), true, start + 5min + 1s, target));
     CHECK(scheduler.outstanding_tasks() == 1);
@@ -210,7 +210,7 @@ TEST_CASE("autosave loop permits one in-flight snapshot and refuses session repl
     for (auto attempt = 0; attempt < 2000 && scheduler.outstanding_tasks() != 0; ++attempt)
         std::this_thread::sleep_for(1ms);
     REQUIRE(scheduler.outstanding_tasks() == 0);
-    CHECK(loop.busy()); // Completed, but still owned until the main thread collects it.
+    CHECK(loop.is_busy()); // Completed, but still owned until the main thread collects it.
     loop.mark_explicit_save({.project_id = document.id, .revision = document.revision});
     CHECK_FALSE(
         loop.reset_session(start + 6min, native_project_document_version_t{song_id_t{72}, 1}, 20));
@@ -218,7 +218,7 @@ TEST_CASE("autosave loop permits one in-flight snapshot and refuses session repl
     REQUIRE(completed.has_value());
     CHECK(completed->status == native_project_autosave_status_t::published);
     CHECK(completed->revision == 2);
-    CHECK_FALSE(loop.busy());
+    CHECK_FALSE(loop.is_busy());
     CHECK(scheduler.outstanding_tasks() == 0);
 
     auto next_revision = song(71, 3);
@@ -284,7 +284,7 @@ TEST_CASE("autosave worker errors retain an explicit-save baseline deferred duri
         throw std::runtime_error("injected worker failure");
     };
     CHECK_FALSE(loop.tick(document, true, start + 5min, target, std::move(throws_in_worker)));
-    REQUIRE(loop.busy());
+    REQUIRE(loop.is_busy());
     loop.mark_explicit_save({.project_id = document.id, .revision = document.revision});
     const auto failed = wait_for_result(loop, document, start + 5min + 1ms, target);
     REQUIRE(failed.has_value());
@@ -313,7 +313,7 @@ TEST_CASE("autosave interval changes preserve successful cadence and survive pen
     expect_autosave_interval(!loop.set_interval(0min));
     expect_autosave_interval(!loop.tick(document, true, start + 1min - 1ms, target));
     expect_autosave_interval(!loop.tick(document, true, start + 1min, target));
-    require_autosave_interval(loop.busy());
+    require_autosave_interval(loop.is_busy());
     require_autosave_interval(loop.set_interval(10min));
     const auto first = wait_for_result(loop, document, start + 1min, target);
     require_autosave_interval(first.has_value());
@@ -321,7 +321,7 @@ TEST_CASE("autosave interval changes preserve successful cadence and survive pen
     expect_autosave_interval(loop.session_sequence() == 5);
     ++document.revision;
     expect_autosave_interval(!loop.tick(document, true, start + 6min, target));
-    expect_autosave_interval(!loop.busy());
+    expect_autosave_interval(!loop.is_busy());
     expect_autosave_interval(!loop.tick(document, true, start + 11min, target));
     const auto second = wait_for_result(loop, document, start + 11min, target);
     require_autosave_interval(second.has_value());
@@ -329,7 +329,7 @@ TEST_CASE("autosave interval changes preserve successful cadence and survive pen
     expect_autosave_interval(loop.session_sequence() == 6);
     require_autosave_interval(loop.set_interval(1min));
     expect_autosave_interval(!loop.tick(document, true, start + 20min, target));
-    expect_autosave_interval(!loop.busy());
+    expect_autosave_interval(!loop.is_busy());
 }
 
 namespace {
@@ -461,7 +461,7 @@ auto throwing_notification_clock_does_not_change_failed_result() -> bool {
     if (!failed || failed->status != native_project_autosave_status_t::failed)
         return false;
     const auto quiet_poll = loop.tick(document, true, start + 5min + 5s, target);
-    return !quiet_poll && !loop.busy();
+    return !quiet_poll && !loop.is_busy();
 }
 } // namespace
 

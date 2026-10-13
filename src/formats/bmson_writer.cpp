@@ -293,13 +293,13 @@ auto bmson_info_metadata_value(const format_metadata_t* group, const std::string
     return value;
 }
 
-auto changed_metadata_value(const format_metadata_t* group,
+auto is_metadata_value_changed(const format_metadata_t* group,
                             const std::optional<json_t>& value,
                             const std::optional<json_t>& source) -> bool {
     return group && value != source;
 }
 
-auto valid_bmson_info_value(std::string_view key, const json_t& value) -> bool {
+auto is_valid_bmson_info_value(std::string_view key, const json_t& value) -> bool {
     const auto string_field = key == "subtitle" || key == "genre";
     const auto string_array = key == "subartists";
     const auto number_field = key == "judge_rank" || key == "total";
@@ -318,8 +318,8 @@ auto select_bmson_info_value(const std::string& name, const format_metadata_t* s
     const auto key = std::string_view(name).substr(std::string_view("info.").size());
     const auto source_value = source_info.contains(key)
                                   ? std::optional<json_t>{source_info[key]} : std::nullopt;
-    const auto song_changed = changed_metadata_value(song_group, song_value, source_value);
-    const auto chart_changed = changed_metadata_value(chart_group, chart_value, source_value);
+    const auto song_changed = is_metadata_value_changed(song_group, song_value, source_value);
+    const auto chart_changed = is_metadata_value_changed(chart_group, chart_value, source_value);
     if (song_changed && chart_changed && song_value != chart_value)
         fail(bmson_write_diagnostic_code_t::invalid_document,
              "song and chart BMSON metadata disagree on the same edited info field", "$." + name);
@@ -337,7 +337,7 @@ void apply_bmson_info_field(const std::string& key, const format_metadata_t* son
         info.erase(key);
         return;
     }
-    if (!valid_bmson_info_value(key, *selected))
+    if (!is_valid_bmson_info_value(key, *selected))
         fail(bmson_write_diagnostic_code_t::invalid_document,
              "BMSON info metadata must contain a valid JSON value of the expected type", "$." + name);
     info[key] = *selected;
@@ -355,9 +355,9 @@ auto apply_bmson_info_metadata(const song_document_t& song, const chart_document
     const auto source_genre = source_info.contains("genre")
                                   ? std::optional<json_t>{source_info["genre"]} : std::nullopt;
     const auto genre_edited =
-        changed_metadata_value(song_group, bmson_info_metadata_value(song_group, genre_name),
+        is_metadata_value_changed(song_group, bmson_info_metadata_value(song_group, genre_name),
                                source_genre) ||
-        changed_metadata_value(chart_group, bmson_info_metadata_value(chart_group, genre_name),
+        is_metadata_value_changed(chart_group, bmson_info_metadata_value(chart_group, genre_name),
                                source_genre);
     for (const auto key : {"subtitle", "subartists", "genre", "judge_rank", "total"})
         apply_bmson_info_field(key, song_group, chart_group, source_info, info);
@@ -431,7 +431,7 @@ auto bmson_mode_hint(std::string_view profile) -> std::optional<std::string> {
     return std::nullopt;
 }
 
-auto lane_layout_matches(const lane_layout_t& initial, const lane_layout_t& other) -> bool {
+auto is_lane_layout_current(const lane_layout_t& initial, const lane_layout_t& other) -> bool {
     if (other.profile_id != initial.profile_id || other.lanes.size() != initial.lanes.size() ||
         other.split_stage != initial.split_stage ||
         other.split_after_column != initial.split_after_column ||
@@ -448,7 +448,7 @@ auto lane_layout_matches(const lane_layout_t& initial, const lane_layout_t& othe
 void validate_chart_lane_layouts(const chart_document_t& chart,
                                  const lane_layout_t& initial) {
     for (std::size_t segment = 1; segment < chart.lane_layouts.size(); ++segment) {
-        if (!lane_layout_matches(initial, chart.lane_layouts[segment].layout))
+        if (!is_lane_layout_current(initial, chart.lane_layouts[segment].layout))
             fail(bmson_write_diagnostic_code_t::unsupported_feature,
                  "BMSON has one chart-wide key layout; changing layouts are not representable",
                  "$.info.mode_hint");

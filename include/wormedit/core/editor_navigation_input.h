@@ -26,7 +26,8 @@ struct editor_navigation_action_batch_t {
         actions{};
     std::size_t count{};
 
-    [[nodiscard]] auto empty() const noexcept -> bool { return count == 0; }
+    [[nodiscard]] auto is_empty() const noexcept -> bool { return count == 0; }
+
     [[nodiscard]] auto operator[](std::size_t index) const noexcept
         -> editor_navigation_action_t {
         return actions[index];
@@ -68,7 +69,8 @@ class editor_navigation_input_controller_t {
     void text_input_started() noexcept;
     void modal_opened() noexcept;
 
-    [[nodiscard]] auto active() const noexcept -> bool;
+    [[nodiscard]] auto is_active() const noexcept -> bool;
+
 
   private:
     [[nodiscard]] auto repeat_interval_at(std::uint64_t now_milliseconds) const noexcept

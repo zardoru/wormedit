@@ -164,7 +164,7 @@ auto default_comparison_charts(const song_document_t& document, std::size_t maxi
     return result;
 }
 
-auto comparison_selection_valid(const song_document_t& document,
+auto is_comparison_selection_valid(const song_document_t& document,
                                 const std::vector<chart_id_t>& charts, std::size_t maximum)
     -> bool {
     if (charts.size() > maximum ||
@@ -201,7 +201,7 @@ auto find_clip(const song_document_t& document, clip_id_t id) -> clip_location_t
     return result;
 }
 
-auto contains_object_id(const song_document_t& document, object_id_t id) -> bool {
+auto has_object_id(const song_document_t& document, object_id_t id) -> bool {
     if (!id) {
         return false;
     }
@@ -229,7 +229,7 @@ auto contains_object_id(const song_document_t& document, object_id_t id) -> bool
     return false;
 }
 
-auto contains_focus_target(const song_document_t& document, const workspace_focus_target_t& target)
+auto has_focus_target(const song_document_t& document, const workspace_focus_target_t& target)
     -> bool {
     return std::visit(
         [&document](const auto& id) -> bool {
@@ -239,7 +239,7 @@ auto contains_focus_target(const song_document_t& document, const workspace_focu
             } else if constexpr (std::is_same_v<id_t, chart_id_t>) {
                 return static_cast<bool>(id) && document.find_chart(id) != nullptr;
             } else if constexpr (std::is_same_v<id_t, object_id_t>) {
-                return contains_object_id(document, id);
+                return has_object_id(document, id);
             } else if constexpr (std::is_same_v<id_t, asset_id_t>) {
                 return static_cast<bool>(id) &&
                        (document.find_audio_asset(id) != nullptr ||
@@ -285,7 +285,7 @@ auto enforce_summary_cap(std::size_t value, const workspace_controller_t& worksp
     return false;
 }
 
-auto audio_clip_is_valid_for_asset(const audio_clip_t& clip, const audio_asset_t& asset) -> bool {
+auto is_audio_clip_valid_for_asset(const audio_clip_t& clip, const audio_asset_t& asset) -> bool {
     if (clip.begin_frame >
         asset.stream.frame_count.value_or(std::numeric_limits<std::uint64_t>::max())) {
         return false;
@@ -415,7 +415,7 @@ auto index_branch_selections(branch_outline_context_t& context) -> void {
     context.active_selections.resize(count);
 }
 
-auto branch_row_allowed(branch_outline_context_t& context, std::size_t depth) -> bool {
+auto is_branch_row_allowed(branch_outline_context_t& context, std::size_t depth) -> bool {
     if (context.outline.rows_truncated)
         return false;
     if (depth > context.limits.maximum_bms_branch_depth) {
@@ -441,7 +441,7 @@ auto prepare_branch_row(branch_outline_context_t& context, const bms_control_nod
                         std::size_t depth, bool active, bool selected)
     -> std::optional<branch_row_info_t> {
     auto& outline = context.outline;
-    if (!branch_row_allowed(context, depth))
+    if (!is_branch_row_allowed(context, depth))
         return std::nullopt;
     if (!node.id || !context.node_ids.insert(node.id.value).second)
         add_branch_diagnostic(context, diagnostic_code_t::invalid_id,
@@ -748,7 +748,7 @@ auto report_unmatched_branch_selections(branch_outline_context_t& context) -> vo
 }
 
 
-auto branch_cache_choices_match(const workspace_bms_branch_outline_cache_t& cache,
+auto is_branch_cache_choices_current(const workspace_bms_branch_outline_cache_t& cache,
                                  const chart_document_t& chart) -> bool {
     return std::ranges::equal(cache.choices, chart.active_branch_selection,
         [](const auto& retained, const auto& active) {
@@ -764,7 +764,7 @@ auto project_branch_outline(const song_document_t& document, const chart_documen
     if (cache->valid && cache->document_identity == &document &&
         cache->chart_identity == &chart && cache->song == document.id &&
         cache->chart == chart.id && cache->revision == document.revision &&
-        cache->limits == limits && branch_cache_choices_match(*cache, chart))
+        cache->limits == limits && is_branch_cache_choices_current(*cache, chart))
         return cache->outline;
     auto outline = workspace_bms_branch_outline_t::from(chart, limits);
     cache->valid = false;
@@ -801,7 +801,7 @@ auto workspace_bms_branch_outline_t::from(const chart_document_t& chart,
     return outline;
 }
 
-auto workspace_tab_enabled(workspace_tab_t tab) noexcept -> bool {
+auto is_workspace_tab_enabled(workspace_tab_t tab) noexcept -> bool {
     // The Timing screen is retired: Compose's timing focus mode carries its functions.
     return index_of(tab).has_value() && tab != workspace_tab_t::storyboard &&
            tab != workspace_tab_t::timing;
@@ -862,7 +862,7 @@ auto rebind_transport(workspace_transport_t& transport, const song_document_t& d
     if (transport.selected_clip.has_value()) {
         const auto clip = find_clip(document, *transport.selected_clip);
         if (clip.clip == nullptr || clip.duplicate || clip.clip->source != asset->id ||
-            !audio_clip_is_valid_for_asset(*clip.clip, *asset)) {
+            !is_audio_clip_valid_for_asset(*clip.clip, *asset)) {
             transport.selected_clip.reset();
         }
     }
@@ -876,7 +876,7 @@ auto rebind_transport(workspace_transport_t& transport, const song_document_t& d
 
 auto rebind_selection(workspace_controller_t& workspace, const song_document_t& document) -> void {
     if (!index_of(workspace.active_tab).has_value() ||
-        !workspace_tab_enabled(workspace.active_tab)) {
+        !is_workspace_tab_enabled(workspace.active_tab)) {
         workspace.active_tab = workspace_tab_t::setup;
     }
     if (!workspace.selected_chart.has_value() ||
@@ -884,14 +884,14 @@ auto rebind_selection(workspace_controller_t& workspace, const song_document_t& 
         workspace.selected_chart =
             document.charts.empty() ? std::nullopt : std::optional{document.charts.front().id};
     }
-    if (!comparison_selection_valid(document, workspace.comparison_charts,
+    if (!is_comparison_selection_valid(document, workspace.comparison_charts,
                                     workspace.limits.maximum_comparison_charts)) {
         workspace.comparison_charts =
             default_comparison_charts(document, workspace.limits.maximum_comparison_charts);
     }
     for (auto& focus : workspace.tab_focus) {
         if (focus.region.size() > workspace.limits.maximum_focus_region_bytes ||
-            !contains_focus_target(document, focus.target)) {
+            !has_focus_target(document, focus.target)) {
             focus = {};
         }
     }
@@ -951,7 +951,7 @@ auto apply_action(workspace_action_context_t& context, const workspace_switch_ta
     -> void {
     if (!index_of(action.tab).has_value()) {
         context.reject(diagnostic_code_t::invalid_id, "workspace tab value is invalid");
-    } else if (!workspace_tab_enabled(action.tab)) {
+    } else if (!is_workspace_tab_enabled(action.tab)) {
         context.reject(diagnostic_code_t::unsupported_feature,
                        "storyboard editing is not available yet");
     } else {
@@ -994,14 +994,14 @@ auto apply_action(workspace_action_context_t& context,
 auto apply_action(workspace_action_context_t& context, const workspace_set_focus_action_t& action)
     -> void {
     const auto tab_index = index_of(action.tab);
-    if (!tab_index.has_value() || !workspace_tab_enabled(action.tab)) {
+    if (!tab_index.has_value() || !is_workspace_tab_enabled(action.tab)) {
         context.reject(diagnostic_code_t::unsupported_feature,
                        "focus cannot be assigned to an invalid or disabled tab");
     } else if (action.region.empty() ||
                action.region.size() > context.proposal.limits.maximum_focus_region_bytes) {
         context.reject(diagnostic_code_t::invalid_resolution,
                        "logical focus region is empty or exceeds its byte cap");
-    } else if (!contains_focus_target(context.document, action.target)) {
+    } else if (!has_focus_target(context.document, action.target)) {
         context.reject(diagnostic_code_t::invalid_id,
                        "logical focus target does not exist in the bound document");
     } else {
@@ -1066,7 +1066,7 @@ auto apply_action(workspace_action_context_t& context, const workspace_select_cl
         return;
     }
     const auto* asset = context.document.find_audio_asset(clip.clip->source);
-    if (asset == nullptr || !audio_clip_is_valid_for_asset(*clip.clip, *asset)) {
+    if (asset == nullptr || !is_audio_clip_valid_for_asset(*clip.clip, *asset)) {
         context.reject(diagnostic_code_t::invalid_id,
                        "selected audio clip refers to an invalid source range");
         return;
@@ -1455,7 +1455,7 @@ auto workspace_view_t::from(const workspace_controller_t& workspace,
                   "workspace selected chart no longer exists; rebind the workspace");
         return result;
     }
-    if (!comparison_selection_valid(document, workspace.comparison_charts,
+    if (!is_comparison_selection_valid(document, workspace.comparison_charts,
                                     workspace.limits.maximum_comparison_charts)) {
         add_error(result.diagnostics, diagnostic_code_t::invalid_id,
                   "workspace comparison selection is invalid; rebind the workspace");
@@ -1464,7 +1464,7 @@ auto workspace_view_t::from(const workspace_controller_t& workspace,
     const auto& focus = workspace.tab_focus[*tab_index];
     if ((!focus.region.empty() &&
          focus.region.size() > workspace.limits.maximum_focus_region_bytes) ||
-        !contains_focus_target(document, focus.target)) {
+        !has_focus_target(document, focus.target)) {
         add_error(result.diagnostics, diagnostic_code_t::invalid_id,
                   "workspace active-tab focus is invalid; rebind the workspace");
         return result;
@@ -1481,7 +1481,7 @@ auto workspace_view_t::from(const workspace_controller_t& workspace,
         .song = document.id,
         .document_revision = document.revision,
         .active_tab = requested_tab,
-        .tab_enabled = workspace_tab_enabled(requested_tab),
+        .tab_enabled = is_workspace_tab_enabled(requested_tab),
         .selected_difficulty = selected_difficulty,
         .transport = workspace.transport,
         .selected_visual_asset = workspace.selected_visual_asset,

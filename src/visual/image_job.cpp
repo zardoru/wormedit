@@ -11,7 +11,7 @@ namespace {
 constexpr std::size_t hard_maximum_sources_per_request = 32;
 constexpr std::size_t hard_maximum_image_jobs = 8;
 
-auto same_source(const image_cache_entry_t& entry, song_id_t project,
+auto is_image_source_current(const image_cache_entry_t& entry, song_id_t project,
                  std::uint64_t document_revision, const resolved_visual_asset_t& source) -> bool {
     return entry.project == project && entry.document_revision == document_revision &&
            entry.source.resource == source.resource && entry.source.asset == source.asset &&
@@ -92,7 +92,7 @@ auto image_cache_t::find(song_id_t project, std::uint64_t document_revision,
     -> std::shared_ptr<const rgba_image_t> {
     std::lock_guard lock(mutex_);
     const auto found = std::ranges::find_if(entries_, [&](const auto& entry) {
-        return same_source(entry, project, document_revision, source);
+        return is_image_source_current(entry, project, document_revision, source);
     });
     if (found == entries_.end()) {
         return {};
@@ -113,7 +113,7 @@ auto image_cache_t::insert(song_id_t project, std::uint64_t document_revision,
     const auto bytes = image->pixels.size();
     std::lock_guard lock(mutex_);
     const auto found = std::ranges::find_if(entries_, [&](const auto& entry) {
-        return same_source(entry, project, document_revision, source);
+        return is_image_source_current(entry, project, document_revision, source);
     });
     if (found != entries_.end()) {
         auto entry = std::move(*found);
@@ -274,7 +274,7 @@ void image_job_t::cancel() noexcept {
     }
 }
 
-auto image_job_t::busy() const noexcept -> bool {
+auto image_job_t::is_busy() const noexcept -> bool {
     return current_generation_ != 0;
 }
 

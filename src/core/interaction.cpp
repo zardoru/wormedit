@@ -129,7 +129,7 @@ auto existing_ids(const chart_document_t& chart, editor_selection_object_kind_t 
     return ids;
 }
 
-auto span_measures_exist(const chart_document_t& chart, const position_span_t& span) -> bool {
+auto has_span_measures(const chart_document_t& chart, const position_span_t& span) -> bool {
     const auto has = [&](measure_id_t id) {
         return std::ranges::any_of(chart.measures,
                                    [id](const auto& measure) { return measure.id == id; });
@@ -192,7 +192,7 @@ auto resolve_canvas_cursor(const chart_document_t& chart, const measure_index_t&
         return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                        "editor cursor lies outside chart geometry")};
     auto rows = index.total_rows;
-    if (chart_has_virtual_tail(chart)) {
+    if (has_chart_virtual_tail(chart)) {
         const auto canvas = build_virtual_canvas(chart);
         if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&canvas)) return *diagnostics;
         const auto& built = std::get<virtual_canvas_t>(canvas);
@@ -211,7 +211,7 @@ auto resolve_canvas_cursor(const chart_document_t& chart, const measure_index_t&
     return canvas_cursor_t{.absolute_row = *absolute, .canvas_rows = rows};
 }
 
-auto valid_view_snap(const chart_document_t& chart,
+auto is_valid_view_snap(const chart_document_t& chart,
                      const editor_interaction_state_t& state) -> bool {
     return state.active_snap_denominator != 0 &&
         std::ranges::find(state.supported_snap_denominators, state.active_snap_denominator) !=
@@ -219,7 +219,7 @@ auto valid_view_snap(const chart_document_t& chart,
         chart.divisions_per_standard_measure % state.active_snap_denominator == 0;
 }
 
-auto valid_viewport(const chart_document_t& chart, const measure_index_t& index,
+auto is_valid_viewport(const chart_document_t& chart, const measure_index_t& index,
                     const editor_interaction_state_t& state) -> bool {
     const auto maximum = maximum_viewport_scroll(
         chart, index, state.pixels_per_standard_measure, state.viewport_height_pixels, state.viewport_end_margin_fraction);
@@ -227,7 +227,7 @@ auto valid_viewport(const chart_document_t& chart, const measure_index_t& index,
         state.pixels_per_standard_measure < minimum_pixels_per_standard_measure ||
         state.pixels_per_standard_measure > maximum_pixels_per_standard_measure ||
         !maximum || !std::isfinite(state.viewport_scroll_pixels) ||
-        !editor_viewport_margins_valid(state.viewport_minimum_margin_fraction,
+        !is_editor_viewport_margins_valid(state.viewport_minimum_margin_fraction,
                                        state.viewport_end_margin_fraction) ||
         state.viewport_scroll_pixels < -state.viewport_height_pixels * state.viewport_minimum_margin_fraction ||
         state.viewport_scroll_pixels > *maximum) return false;
@@ -264,7 +264,7 @@ auto resolve_view_geometry(const document_history_t& history,
         return *diagnostics;
     const auto cursor = std::get<canvas_cursor_t>(canvas);
     if (state.selected_canvas_measure &&
-        (!chart_has_virtual_tail(*chart) ||
+        (!has_chart_virtual_tail(*chart) ||
          *state.selected_canvas_measure >= virtual_tail_measure_limit(*chart)))
         return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                        "selected BMS measure is outside #000-#999")};
@@ -276,10 +276,10 @@ auto resolve_view_geometry(const document_history_t& history,
     if (!lane)
         return diagnostic_list_t{error(diagnostic_code_t::unknown_lane,
                                        "active editor lane is unavailable at the cursor")};
-    if (!valid_view_snap(*chart, state))
+    if (!is_valid_view_snap(*chart, state))
         return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
                                        "active editor snap is invalid for this chart")};
-    if (!valid_viewport(*chart, index, state))
+    if (!is_valid_viewport(*chart, index, state))
         return diagnostic_list_t{
             error(diagnostic_code_t::invalid_resolution, "editor viewport geometry is invalid")};
     return view_geometry_t{.chart = chart,
@@ -342,7 +342,7 @@ auto make_space_range_preview(const document_history_t& history,
             std::move(objects))}};
 }
 
-auto valid_retained_canvas_range(const editor_interaction_state_t& state,
+auto is_valid_retained_canvas_range(const editor_interaction_state_t& state,
                                  std::uint64_t canvas_rows) -> bool {
     return !state.retained_canvas_selection_range ||
         (state.retained_canvas_selection_range->begin_row < canvas_rows &&
@@ -374,7 +374,7 @@ auto make_view(const document_history_t& history, const editor_interaction_state
             ? normalized_position_span(geometry.index, state.retained_selection_range->begin,
                                        state.retained_selection_range->end)
             : std::optional<position_span_t>{};
-    if (!valid_retained_canvas_range(state, geometry.canvas_rows))
+    if (!is_valid_retained_canvas_range(state, geometry.canvas_rows))
         return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                        "retained canvas range lies outside chart geometry")};
     auto keyboard_previews = canvas_keyboard_hold_previews(
@@ -488,7 +488,7 @@ auto diagnostic_result(const document_history_t& history, const editor_interacti
     return result;
 }
 
-auto playhead_gesture_active(const editor_interaction_state_t& state) -> bool {
+auto is_playhead_gesture_active(const editor_interaction_state_t& state) -> bool {
     return has_pending_editor_gesture(state);
 }
 
@@ -541,7 +541,7 @@ auto prepare_follow_view_state(const document_history_t& history, const chart_do
                                const measure_index_t& index,
                                const editor_interaction_state_t& state, double fraction)
     -> std::variant<editor_interaction_state_t, diagnostic_list_t> {
-    if (!editor_viewport_margins_valid(state.viewport_minimum_margin_fraction,
+    if (!is_editor_viewport_margins_valid(state.viewport_minimum_margin_fraction,
                                        state.viewport_end_margin_fraction))
         return diagnostic_list_t{
             error(diagnostic_code_t::invalid_resolution, "playhead viewport margin is invalid")};
@@ -549,7 +549,7 @@ auto prepare_follow_view_state(const document_history_t& history, const chart_do
     proposed.viewport_minimum_margin_fraction =
         std::max(editor_cursor_edge_margin_fraction, fraction);
     proposed.viewport_end_margin_fraction = std::min(editor_cursor_edge_margin_fraction, fraction);
-    if (!note_kind_allowed(chart, proposed.armed_note_kind))
+    if (!is_note_kind_allowed(chart, proposed.armed_note_kind))
         proposed.armed_note_kind = note_kind_t::tap;
     const auto maximum = maximum_viewport_scroll(chart, index, proposed.pixels_per_standard_measure,
                                                  proposed.viewport_height_pixels,
@@ -577,7 +577,7 @@ auto follow_editor_playhead(document_history_t& history, editor_interaction_stat
         geometry.document_revision != history.document.revision ||
         !std::isfinite(target_scroll) || !std::isfinite(following_anchor_fraction) ||
         !std::isfinite(cursor_subrow) ||
-        following_anchor_fraction < 0.0 || following_anchor_fraction > 1.0 || playhead_gesture_active(state))
+        following_anchor_fraction < 0.0 || following_anchor_fraction > 1.0 || is_playhead_gesture_active(state))
         return {.diagnostics = {error(diagnostic_code_t::invalid_id,
                                      "playhead geometry is stale or playback editing is blocked")}};
     const auto& index = *geometry.index;
@@ -728,7 +728,7 @@ auto recover_editor_interaction(const document_history_t& history,
         *previous.fixed_cursor_screen_y_pixels <= result.state->viewport_height_pixels) {
         set_cursor_screen_anchor(*result.state, previous.fixed_cursor_screen_y_pixels, previous.scroll_direction);
     }
-    if (note_kind_allowed(*chart, previous.armed_note_kind))
+    if (is_note_kind_allowed(*chart, previous.armed_note_kind))
         result.state->armed_note_kind = previous.armed_note_kind;
     const auto view = make_view(history, *result.state);
     if (const auto* recovered = std::get_if<editor_interaction_view_model_t>(&view)) {
@@ -1163,7 +1163,7 @@ auto assign_selected_notes_to_lane(editor_edit_context_t& context,
 }
 
 
-auto precedes(const lane_move_candidate_t& left, const lane_move_candidate_t& right) -> bool {
+auto lane_move_candidate_less(const lane_move_candidate_t& left, const lane_move_candidate_t& right) -> bool {
     return std::tie(left.measure, left.row, left.kind, left.lane.value, left.id.value) <
            std::tie(right.measure, right.row, right.kind, right.lane.value, right.id.value);
 }
@@ -1177,7 +1177,7 @@ auto first_selected_lane_object(const chart_document_t& chart,
     for (const auto id : bgm_events) event_ids.insert(id.value);
     std::optional<lane_move_candidate_t> first;
     const auto consider = [&](lane_move_candidate_t candidate) {
-        if (!first || precedes(candidate, *first)) first = candidate;
+        if (!first || lane_move_candidate_less(candidate, *first)) first = candidate;
     };
     for (std::size_t index = 0; index < chart.measures.size(); ++index) {
         const auto& measure = chart.measures[index];
@@ -1346,7 +1346,7 @@ auto scroll_editor_view(editor_edit_context_t& context, const scroll_editor_view
     };
 }
 
-auto keyboard_entry_editable(const chart_document_t& chart, const note_t& note) -> bool {
+auto is_keyboard_entry_editable(const chart_document_t& chart, const note_t& note) -> bool {
     return !note.branch && std::ranges::all_of(note.semantic_layers, [&](layer_id_t id) {
         const auto layer = std::ranges::find(chart.semantic_layers, id, &semantic_layer_t::id);
         return layer != chart.semantic_layers.end() && layer->visible && !layer->locked;
@@ -1368,7 +1368,7 @@ auto keyboard_entry_occupant(const chart_document_t& chart, const measure_index_
                     "Lane-key entry overlaps a hold body or multiple note heads", note.id)};
             found = &note;
         }
-    if (found && !keyboard_entry_editable(chart, *found))
+    if (found && !is_keyboard_entry_editable(chart, *found))
         return diagnostic_list_t{error(diagnostic_code_t::collision,
             "Lane-key entry cannot change a hidden, locked or conditional note", found->id)};
     return found;
@@ -1515,7 +1515,7 @@ auto interaction_detail::update_canvas_keyboard_holds(editor_edit_context_t& con
     -> editor_interaction_result_t {
     auto& state = context.state;
     const auto before = state;
-    if (!state.pending_hold || !chart_has_virtual_tail(context.scope.chart))
+    if (!state.pending_hold || !has_chart_virtual_tail(context.scope.chart))
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "canvas hold movement requires a BMS lane key")});
@@ -1723,7 +1723,7 @@ auto select_editor_objects(editor_edit_context_t& context,
 }
 
 
-auto virtual_cursor_action_allowed(const editor_interaction_state_t& state,
+auto is_virtual_cursor_action_allowed(const editor_interaction_state_t& state,
                                    const editor_interaction_action_t& action) -> bool {
     return std::holds_alternative<move_edit_cursor_action_t>(action) ||
         std::holds_alternative<page_edit_cursor_action_t>(action) ||
@@ -1787,14 +1787,14 @@ auto validate_virtual_cursor_action(const document_history_t& history,
                                     const editor_interaction_state_t& state,
                                     const editor_interaction_action_t& action)
     -> std::optional<editor_interaction_result_t> {
-    if (!state.virtual_bms_cursor_row || virtual_cursor_action_allowed(state, action))
+    if (!state.virtual_bms_cursor_row || is_virtual_cursor_action_allowed(state, action))
         return std::nullopt;
     return diagnostic_result(history, state,
                              {error(diagnostic_code_t::row_out_of_range,
                                     "this edit requires a materialized cursor measure")});
 }
 
-auto note_kind_allowed(const chart_document_t& chart, note_kind_t kind) -> bool {
+auto is_note_kind_allowed(const chart_document_t& chart, note_kind_t kind) -> bool {
     if (kind == note_kind_t::tap || kind == note_kind_t::hold || kind == note_kind_t::mine)
         return true;
     switch (chart.source_family) {
@@ -1814,7 +1814,7 @@ auto note_kind_allowed(const chart_document_t& chart, note_kind_t kind) -> bool 
 auto arm_note_kind(const document_history_t& history, editor_interaction_state_t& state,
                     note_kind_t kind) -> editor_interaction_result_t {
     const auto* chart = history.document.find_chart(state.chart);
-    if (!chart || !note_kind_allowed(*chart, kind))
+    if (!chart || !is_note_kind_allowed(*chart, kind))
         return diagnostic_result(history, state,
             {error(diagnostic_code_t::invalid_binding, "Note kind is unavailable for this chart profile.")});
     if (state.pending_hold || state.pending_note_paint_gesture)
@@ -1829,19 +1829,19 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
                                  const editor_interaction_action_t& action) -> editor_interaction_result_t;
 } // namespace
 
-template <class Action> auto committing_action(const editor_interaction_action_t& action) -> bool {
+template <class Action> auto is_committing_action(const editor_interaction_action_t& action) -> bool {
     const auto* update = std::get_if<Action>(&action);
     return update && update->phase == editor_gesture_phase_t::commit;
 }
 
-auto terminal_editor_gesture_action(const editor_interaction_state_t& state,
+auto is_terminal_editor_gesture_action(const editor_interaction_state_t& state,
                                     const editor_interaction_action_t& action) -> bool {
     return std::holds_alternative<commit_hold_action_t>(action) ||
            std::holds_alternative<place_virtual_bms_hold_action_t>(action) ||
            std::holds_alternative<release_alt_pointer_hold_gesture_action_t>(action) ||
            std::holds_alternative<release_lane_key_hold_gesture_action_t>(action) ||
-           committing_action<update_note_duration_gesture_action_t>(action) ||
-           committing_action<update_note_move_gesture_action_t>(action) ||
+           is_committing_action<update_note_duration_gesture_action_t>(action) ||
+           is_committing_action<update_note_move_gesture_action_t>(action) ||
            std::holds_alternative<end_note_paint_gesture_action_t>(action) ||
            std::holds_alternative<update_semantic_layer_paint_gesture_action_t>(action) ||
            std::holds_alternative<update_editor_area_selection_action_t>(action) ||
@@ -1853,14 +1853,14 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                             const editor_interaction_action_t& action) -> editor_interaction_result_t {
     if (auto canceled = handle_editor_cancellation(history, state, action))
         return *canceled;
-    if (editor_gestures_stale(state, history.document.revision)) {
+    if (is_editor_gestures_stale(state, history.document.revision)) {
         clear_editor_gestures(state);
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "Editor gesture is stale after a document edit.")});
     }
     auto result = dispatch_editor_action_impl(history, state, action);
-    if (!result && terminal_editor_gesture_action(state, action)) {
+    if (!result && is_terminal_editor_gesture_action(state, action)) {
         clear_editor_gestures(state);
         return diagnostic_result(history, state, std::move(result.diagnostics));
     }
@@ -2199,7 +2199,7 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
     if (auto rejected = validate_virtual_cursor_action(history, state, action))
         return *rejected;
     const auto* chart = history.document.find_chart(state.chart);
-    if (chart && !note_kind_allowed(*chart, state.armed_note_kind))
+    if (chart && !is_note_kind_allowed(*chart, state.armed_note_kind))
         state.armed_note_kind = note_kind_t::tap;
     const auto initial_view = make_view(history, state);
     if (std::holds_alternative<diagnostic_list_t>(initial_view)) {
@@ -2222,7 +2222,7 @@ auto scoped_selection(const editor_interaction_state_t& state,
     const std::set selected(current.begin(), current.end());
     std::vector<editor_selection_object_t> result;
     for (const auto object : current)
-        if (!editor_selection_scope_accepts(scope, object.kind))
+        if (!is_editor_selection_scope_accepted(scope, object.kind))
             result.push_back(object);
     for (const auto object : available)
         if (!invert || !selected.contains(object))
@@ -2299,7 +2299,7 @@ auto prune_stale_selection(const chart_document_t& chart, std::uint64_t document
         return !exists(object.kind, object.id);
     });
     bool changed = before != state.selected_notes.size() + state.selected_objects.size();
-    if (state.retained_selection_range && !span_measures_exist(chart, *state.retained_selection_range)) {
+    if (state.retained_selection_range && !has_span_measures(chart, *state.retained_selection_range)) {
         state.retained_selection_range.reset();
         changed = true;
     }
@@ -2312,7 +2312,7 @@ namespace wormedit {
 auto has_pending_editor_gesture(const editor_interaction_state_t& state) -> bool {
     bool pending{};
     visit_editor_gestures(state, [&](auto, const auto& field) {
-        pending |= editor_gesture_pending(field);
+        pending |= is_editor_gesture_pending(field);
     });
     return pending;
 }

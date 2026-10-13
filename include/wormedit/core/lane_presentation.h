@@ -12,11 +12,13 @@ namespace wormedit {
     std::size_t columns, std::size_t column, double left, double width, double gutter)
     -> std::pair<double, double>;
 // Scratch visuals include playable osu SpecialStyle columns; authored roles stay intact.
-[[nodiscard]] auto editor_lane_has_scratch_class(const lane_definition_t& lane) -> bool;
+[[nodiscard]] auto has_editor_lane_scratch_class(const lane_definition_t& lane) -> bool;
+
 // View-only scratch sides: null retains authored ordering, false left, true right.
 using editor_scratch_presentation_t = std::array<std::optional<bool>, 2>;
-[[nodiscard]] auto editor_scratch_presentation_active(const lane_layout_t& layout,
+[[nodiscard]] auto is_editor_scratch_presentation_active(const lane_layout_t& layout,
     const editor_scratch_presentation_t& sides) -> bool;
+
 [[nodiscard]] auto editor_presented_lanes(const lane_layout_t& layout,
     const editor_scratch_presentation_t& sides = {}) -> std::vector<const lane_definition_t*>;
 [[nodiscard]] auto editor_presented_column(const lane_layout_t& layout, lane_id_t lane,

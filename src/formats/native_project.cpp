@@ -788,53 +788,53 @@ void from_json(const json& value, song_document_t& song) {
 
 namespace {
 
-template <typename enum_t> auto enum_at_most(enum_t value, enum_t maximum) -> bool {
+template <typename enum_t> auto is_enum_at_most(enum_t value, enum_t maximum) -> bool {
     using underlying_t = std::underlying_type_t<enum_t>;
     const auto numeric = static_cast<underlying_t>(value);
     return numeric >= 0 && numeric <= static_cast<underlying_t>(maximum);
 }
 
-auto valid_provenance(const source_provenance_t& provenance) -> bool {
-    return enum_at_most(provenance.family, format_family_t::quaver);
+auto is_valid_provenance(const source_provenance_t& provenance) -> bool {
+    return is_enum_at_most(provenance.family, format_family_t::quaver);
 }
 
-auto valid_encoding(const encoding_provenance_t& encoding) -> bool {
-    return enum_at_most(encoding.detected, text_encoding_t::windows_1252) &&
+auto is_valid_encoding(const encoding_provenance_t& encoding) -> bool {
+    return is_enum_at_most(encoding.detected, text_encoding_t::windows_1252) &&
            (!encoding.user_override.has_value() ||
-            enum_at_most(*encoding.user_override, text_encoding_t::windows_1252));
+            is_enum_at_most(*encoding.user_override, text_encoding_t::windows_1252));
 }
 
-auto valid_metadata(const format_metadata_t& metadata) -> bool {
-    return enum_at_most(metadata.family, format_family_t::quaver) &&
-           valid_encoding(metadata.encoding);
+auto is_valid_metadata(const format_metadata_t& metadata) -> bool {
+    return is_enum_at_most(metadata.family, format_family_t::quaver) &&
+           is_valid_encoding(metadata.encoding);
 }
 
-auto valid_quantization_preset(const quantization_preset_t& preset) -> bool {
+auto is_valid_quantization_preset(const quantization_preset_t& preset) -> bool {
     return !preset.name.empty() &&
-           text_util::valid_bounded_text(preset.name, quantization_preset_t::maximum_name_bytes) &&
+           text_util::is_valid_bounded_text(preset.name, quantization_preset_t::maximum_name_bytes) &&
            preset.divisions > 0 &&
-           enum_at_most(preset.space, quantization_space_t::authored_measure) &&
-           enum_at_most(preset.tie, quantization_tie_t::reject) &&
-           enum_at_most(preset.holds, quantization_hold_t::both_endpoints);
+           is_enum_at_most(preset.space, quantization_space_t::authored_measure) &&
+           is_enum_at_most(preset.tie, quantization_tie_t::reject) &&
+           is_enum_at_most(preset.holds, quantization_hold_t::both_endpoints);
 }
 
-auto valid_quantization_presets(const std::vector<quantization_preset_t>& presets) -> bool {
+auto is_valid_quantization_presets(const std::vector<quantization_preset_t>& presets) -> bool {
     if (presets.size() > quantization_preset_t::maximum_count) return false;
     std::set<std::string_view> names;
     for (const auto& preset : presets)
-        if (!valid_quantization_preset(preset) || !names.insert(preset.name).second) return false;
+        if (!is_valid_quantization_preset(preset) || !names.insert(preset.name).second) return false;
     return true;
 }
 
-auto valid_control_node(const bms_control_node_t& root, std::size_t maximum_depth) -> bool {
+auto is_valid_control_node(const bms_control_node_t& root, std::size_t maximum_depth) -> bool {
     std::vector<std::pair<const bms_control_node_t*, std::size_t>> pending{{&root, 1}};
     while (!pending.empty()) {
         const auto [node, depth] = pending.back();
         pending.pop_back();
-        if (depth > maximum_depth || !enum_at_most(node->kind, bms_control_kind_t::skip) ||
-            !enum_at_most(node->line_ending, bms_line_ending_t::cr) ||
+        if (depth > maximum_depth || !is_enum_at_most(node->kind, bms_control_kind_t::skip) ||
+            !is_enum_at_most(node->line_ending, bms_line_ending_t::cr) ||
             (node->close_line_ending.has_value() &&
-             !enum_at_most(*node->close_line_ending, bms_line_ending_t::cr))) {
+             !is_enum_at_most(*node->close_line_ending, bms_line_ending_t::cr))) {
             return false;
         }
         for (const auto& child : node->children) {
@@ -844,13 +844,13 @@ auto valid_control_node(const bms_control_node_t& root, std::size_t maximum_dept
     return true;
 }
 
-auto valid_resource_enum_domains(const song_document_t& song) -> bool {
+auto is_valid_resource_enum_domains(const song_document_t& song) -> bool {
     for (const auto& resource : song.resources) {
-        if (!valid_provenance(resource.provenance) ||
+        if (!is_valid_provenance(resource.provenance) ||
             !std::ranges::all_of(resource.roles,
-                                 [](auto role) { return enum_at_most(role, resource_role_t::preview); }) ||
+                                 [](auto role) { return is_enum_at_most(role, resource_role_t::preview); }) ||
             !std::ranges::all_of(resource.target_identities, [](const auto& identity) {
-                return enum_at_most(identity.family, format_family_t::quaver);
+                return is_enum_at_most(identity.family, format_family_t::quaver);
             })) {
             return false;
         }
@@ -858,36 +858,36 @@ auto valid_resource_enum_domains(const song_document_t& song) -> bool {
     return true;
 }
 
-auto valid_chart_layout_domains(const chart_document_t& chart) -> bool {
-    if (!enum_at_most(chart.source_family, format_family_t::quaver) ||
-        !std::ranges::all_of(chart.metadata.format_groups, valid_metadata)) {
+auto is_valid_chart_layout_domains(const chart_document_t& chart) -> bool {
+    if (!is_enum_at_most(chart.source_family, format_family_t::quaver) ||
+        !std::ranges::all_of(chart.metadata.format_groups, is_valid_metadata)) {
         return false;
     }
     for (const auto& segment : chart.lane_layouts) {
         for (const auto& lane : segment.layout.lanes) {
-            if (!enum_at_most(lane.role, lane_role_t::foot_pedal) ||
-                !enum_at_most(lane.stage, stage_group_t::right) ||
-                !enum_at_most(lane.glyph, lane_glyph_t::arrow_center) ||
-                !enum_at_most(lane.key_color, lane_key_color_t::pms_red)) {
+            if (!is_enum_at_most(lane.role, lane_role_t::foot_pedal) ||
+                !is_enum_at_most(lane.stage, stage_group_t::right) ||
+                !is_enum_at_most(lane.glyph, lane_glyph_t::arrow_center) ||
+                !is_enum_at_most(lane.key_color, lane_key_color_t::pms_red)) {
                 return false;
             }
         }
     }
     return std::ranges::all_of(chart.input_profile.bindings, [](const auto& binding) {
-        return enum_at_most(binding.key, physical_key_t::key_m);
+        return is_enum_at_most(binding.key, physical_key_t::key_m);
     });
 }
 
-auto valid_chart_measure_domains(const chart_document_t& chart) -> bool {
+auto is_valid_chart_measure_domains(const chart_document_t& chart) -> bool {
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes) {
-            if (!enum_at_most(note.kind, note_kind_t::fake) ||
-                !valid_provenance(note.provenance)) {
+            if (!is_enum_at_most(note.kind, note_kind_t::fake) ||
+                !is_valid_provenance(note.provenance)) {
                 return false;
             }
         }
         if (!std::ranges::all_of(measure.bgm_events, [](const auto& bgm) {
-                return valid_provenance(bgm.provenance);
+                return is_valid_provenance(bgm.provenance);
             })) {
             return false;
         }
@@ -895,101 +895,101 @@ auto valid_chart_measure_domains(const chart_document_t& chart) -> bool {
     return true;
 }
 
-auto valid_chart_timing_domains(const chart_document_t& chart) -> bool {
+auto is_valid_chart_timing_domains(const chart_document_t& chart) -> bool {
     if (!std::ranges::all_of(chart.bpms, [](const auto& event) {
-            return valid_provenance(event.provenance);
+            return is_valid_provenance(event.provenance);
         })) {
         return false;
     }
     if (!std::ranges::all_of(chart.pauses, [](const auto& pause) {
-            return enum_at_most(pause.kind, pause_kind_t::delay) &&
-                   enum_at_most(pause.source_unit, pause_unit_t::beats) &&
-                   valid_provenance(pause.provenance);
+            return is_enum_at_most(pause.kind, pause_kind_t::delay) &&
+                   is_enum_at_most(pause.source_unit, pause_unit_t::beats) &&
+                   is_valid_provenance(pause.provenance);
         })) {
         return false;
     }
     if (!std::ranges::all_of(chart.bms_pause_projections, [](const auto& projection) {
-            return enum_at_most(projection.imported_kind, pause_kind_t::delay) &&
-                   enum_at_most(projection.imported_source_unit, pause_unit_t::beats);
+            return is_enum_at_most(projection.imported_kind, pause_kind_t::delay) &&
+                   is_enum_at_most(projection.imported_source_unit, pause_unit_t::beats);
         })) {
         return false;
     }
     return std::ranges::all_of(chart.warps, [](const auto& warp) {
-        return enum_at_most(warp.source_encoding, warp_provenance_t::negative_stop) &&
-               valid_provenance(warp.provenance);
+        return is_enum_at_most(warp.source_encoding, warp_provenance_t::negative_stop) &&
+               is_valid_provenance(warp.provenance);
     });
 }
 
-auto valid_chart_effect_domains(const chart_document_t& chart) -> bool {
+auto is_valid_chart_effect_domains(const chart_document_t& chart) -> bool {
     if (!std::ranges::all_of(chart.scrolls, [](const auto& item) {
-            return valid_provenance(item.provenance);
+            return is_valid_provenance(item.provenance);
         }) ||
         !std::ranges::all_of(chart.speeds, [](const auto& item) {
-            return valid_provenance(item.provenance);
+            return is_valid_provenance(item.provenance);
         })) {
         return false;
     }
     if (!std::ranges::all_of(chart.sv_recipes, [](const auto& recipe) {
-            return enum_at_most(recipe.output, sv_recipe_output_t::speeds) &&
-                   enum_at_most(recipe.curve, sv_recipe_curve_t::lua_expression) &&
-                   enum_at_most(recipe.sampling.mode, sv_recipe_sampling_mode_t::adaptive);
+            return is_enum_at_most(recipe.output, sv_recipe_output_t::speeds) &&
+                   is_enum_at_most(recipe.curve, sv_recipe_curve_t::lua_expression) &&
+                   is_enum_at_most(recipe.sampling.mode, sv_recipe_sampling_mode_t::adaptive);
         })) {
         return false;
     }
     return std::ranges::all_of(chart.kiai, [](const auto& item) {
-        return valid_provenance(item.provenance);
+        return is_valid_provenance(item.provenance);
     });
 }
 
-auto valid_chart_visual_domains(const chart_document_t& chart) -> bool {
+auto is_valid_chart_visual_domains(const chart_document_t& chart) -> bool {
     const auto valid_anchor = [](const auto& item) {
-        return enum_at_most(item.anchor, marker_anchor_t::audio_time);
+        return is_enum_at_most(item.anchor, marker_anchor_t::audio_time);
     };
     if (!std::ranges::all_of(chart.bookmarks, valid_anchor) ||
         !std::ranges::all_of(chart.sections, valid_anchor)) {
         return false;
     }
     if (!std::ranges::all_of(chart.bga_events, [](const auto& event) {
-            return enum_at_most(event.kind, visual_event_kind_t::layer2) &&
-                   valid_provenance(event.provenance);
+            return is_enum_at_most(event.kind, visual_event_kind_t::layer2) &&
+                   is_valid_provenance(event.provenance);
         })) {
         return false;
     }
     return std::ranges::all_of(chart.sound_channels, [](const auto& channel) {
         return std::ranges::all_of(channel.events, [](const auto& event) {
-            return valid_provenance(event.provenance);
+            return is_valid_provenance(event.provenance);
         });
     });
 }
 
-auto valid_chart_enum_domains(const chart_document_t& chart, std::size_t maximum_depth) -> bool {
-    return valid_chart_layout_domains(chart) && valid_chart_measure_domains(chart) &&
-           valid_chart_timing_domains(chart) && valid_chart_effect_domains(chart) &&
-           valid_chart_visual_domains(chart) &&
+auto is_valid_chart_enum_domains(const chart_document_t& chart, std::size_t maximum_depth) -> bool {
+    return is_valid_chart_layout_domains(chart) && is_valid_chart_measure_domains(chart) &&
+           is_valid_chart_timing_domains(chart) && is_valid_chart_effect_domains(chart) &&
+           is_valid_chart_visual_domains(chart) &&
            (!chart.bms_control_tree.has_value() ||
-            valid_control_node(*chart.bms_control_tree, maximum_depth));
+            is_valid_control_node(*chart.bms_control_tree, maximum_depth));
 }
 
-auto valid_enum_domains(const song_document_t& song, std::size_t maximum_depth) -> bool {
-    if (!std::ranges::all_of(song.metadata.format_groups, valid_metadata) ||
-        !valid_resource_enum_domains(song) ||
-        !valid_quantization_presets(song.quantization_presets)) {
+auto is_valid_enum_domains(const song_document_t& song, std::size_t maximum_depth) -> bool {
+    if (!std::ranges::all_of(song.metadata.format_groups, is_valid_metadata) ||
+        !is_valid_resource_enum_domains(song) ||
+        !is_valid_quantization_presets(song.quantization_presets)) {
         return false;
     }
     if (!std::ranges::all_of(song.visual_assets, [](const auto& asset) {
-            return enum_at_most(asset.kind, asset_kind_t::midi);
+            return is_enum_at_most(asset.kind, asset_kind_t::midi);
         }) ||
         !std::ranges::all_of(song.output_groups, [](const auto& group) {
-            return enum_at_most(group.family, format_family_t::quaver);
+            return is_enum_at_most(group.family, format_family_t::quaver);
         })) {
         return false;
     }
     return std::ranges::all_of(song.charts, [&](const auto& chart) {
-        return valid_chart_enum_domains(chart, maximum_depth);
+        return is_valid_chart_enum_domains(chart, maximum_depth);
     });
 }
 
-auto lexical_nesting_within(std::string_view source, std::size_t maximum_depth) -> bool {
+auto is_lexical_nesting_within(std::string_view source, std::size_t maximum_depth) -> bool {
     std::size_t depth{};
     bool in_string{};
     bool escaped{};
@@ -1071,10 +1071,10 @@ class json_limit_sax_t final : public nlohmann::json_sax<json> {
         return false;
     }
 
-    [[nodiscard]] auto limit_exceeded() const noexcept -> bool {
+    [[nodiscard]] auto is_limit_exceeded() const noexcept -> bool {
         return limit_exceeded_;
     }
-    [[nodiscard]] auto malformed() const noexcept -> bool {
+    [[nodiscard]] auto is_malformed() const noexcept -> bool {
         return malformed_;
     }
 
@@ -1113,7 +1113,7 @@ auto is_signed_numeric_field(std::string_view key, bool signed_array) -> bool {
            key == "loop_start_time_ms" || signed_array;
 }
 
-auto unsigned_fits_schema_field(std::string_view key, json::number_unsigned_t number) -> bool {
+auto is_unsigned_fits_schema_field(std::string_view key, json::number_unsigned_t number) -> bool {
     const auto at_most = [number](std::uint64_t maximum) { return number <= maximum; };
     if ((key == "red" || key == "green" || key == "blue" || key == "alpha" ||
          key == "value_count" || key == "channel" || key == "note") &&
@@ -1155,7 +1155,7 @@ auto strict_numeric_shape(const json& value, std::string_view key = {}, bool sig
                                          std::numeric_limits<std::int64_t>::max())) {
             return false;
         }
-        return unsigned_fits_schema_field(key, number);
+        return is_unsigned_fits_schema_field(key, number);
     }
     if (value.is_array()) {
         const auto elements_are_signed = key == "audio_millisecond_span";
@@ -1181,10 +1181,10 @@ enum class schema_shape_context_t {
     bgm_event_entry,
 };
 
-auto same_schema_shape(const json& input, const json& canonical,
+auto schema_shape_equal(const json& input, const json& canonical,
                        schema_shape_context_t context) -> bool;
 
-auto allows_legacy_object_shape(const json& input, const json& canonical,
+auto is_allows_legacy_object_shape(const json& input, const json& canonical,
                                 schema_shape_context_t context) -> bool {
     if (input.size() + 1 != canonical.size()) {
         return false;
@@ -1230,51 +1230,51 @@ auto array_child_context(schema_shape_context_t context) -> schema_shape_context
     return schema_shape_context_t::ordinary;
 }
 
-auto same_object_schema_shape(const json& input, const json& canonical,
+auto object_schema_shape_equal(const json& input, const json& canonical,
                               schema_shape_context_t context) -> bool {
     if (!input.is_object() || !canonical.is_object()) {
         return false;
     }
-    const auto legacy_shape = allows_legacy_object_shape(input, canonical, context);
+    const auto legacy_shape = is_allows_legacy_object_shape(input, canonical, context);
     if (input.size() != canonical.size() && !legacy_shape) {
         return false;
     }
     for (const auto& [key, value] : input.items()) {
         const auto expected = canonical.find(key);
         if (expected == canonical.end() ||
-            !same_schema_shape(value, *expected, object_child_context(key))) {
+            !schema_shape_equal(value, *expected, object_child_context(key))) {
             return false;
         }
     }
     return true;
 }
 
-auto same_array_schema_shape(const json& input, const json& canonical,
+auto array_schema_shape_equal(const json& input, const json& canonical,
                              schema_shape_context_t context) -> bool {
     if (!input.is_array() || !canonical.is_array() || input.size() != canonical.size()) {
         return false;
     }
     const auto child_context = array_child_context(context);
     for (std::size_t index = 0; index < input.size(); ++index) {
-        if (!same_schema_shape(input[index], canonical[index], child_context)) {
+        if (!schema_shape_equal(input[index], canonical[index], child_context)) {
             return false;
         }
     }
     return true;
 }
 
-auto same_schema_shape(const json& input, const json& canonical,
+auto schema_shape_equal(const json& input, const json& canonical,
                        schema_shape_context_t context = schema_shape_context_t::ordinary) -> bool {
     if (input.is_object() || canonical.is_object()) {
-        return same_object_schema_shape(input, canonical, context);
+        return object_schema_shape_equal(input, canonical, context);
     }
     if (input.is_array() || canonical.is_array()) {
-        return same_array_schema_shape(input, canonical, context);
+        return array_schema_shape_equal(input, canonical, context);
     }
     return true;
 }
 
-auto json_nodes_within(const json& root, std::size_t maximum_nodes, std::size_t maximum_depth)
+auto is_json_nodes_within(const json& root, std::size_t maximum_nodes, std::size_t maximum_depth)
     -> bool {
     std::vector<std::pair<const json*, std::size_t>> pending{{&root, 1}};
     std::size_t nodes{};
@@ -1345,7 +1345,7 @@ auto write_native_project(const song_document_t& song, native_project_limits_t l
              "document schema version is unsupported", "$.document.schema_version"});
         return result;
     }
-    if (!valid_enum_domains(song, limits.maximum_nesting_depth)) {
+    if (!is_valid_enum_domains(song, limits.maximum_nesting_depth)) {
         result.diagnostics.push_back(
             {diagnostic_severity_t::error, native_project_diagnostic_code_t::invalid_document,
              "document contains an enum value outside the native-project schema", "$.document"});
@@ -1383,7 +1383,7 @@ auto write_native_project(const song_document_t& song, native_project_limits_t l
         const json root{{"format", native_project_format},
                         {"format_version", native_project_format_version},
                         {"document", std::move(serialized_document)}};
-        if (!json_nodes_within(root, limits.maximum_json_nodes, limits.maximum_nesting_depth)) {
+        if (!is_json_nodes_within(root, limits.maximum_json_nodes, limits.maximum_nesting_depth)) {
             result.diagnostics.push_back(
                 {diagnostic_severity_t::error, native_project_diagnostic_code_t::resource_limit,
                  "native project exceeds the configured JSON node or nesting-depth limit", "$"});
@@ -1425,7 +1425,7 @@ auto parse_native_project_with_migrations(std::string_view bytes, native_project
                                       "native project exceeds the configured byte limit", "$"});
         return result;
     }
-    if (!lexical_nesting_within(bytes, limits.maximum_nesting_depth)) {
+    if (!is_lexical_nesting_within(bytes, limits.maximum_nesting_depth)) {
         result.diagnostics.push_back(
             {diagnostic_severity_t::error, native_project_diagnostic_code_t::resource_limit,
              "native project exceeds the configured nesting-depth limit", "$"});
@@ -1435,9 +1435,9 @@ auto parse_native_project_with_migrations(std::string_view bytes, native_project
     if (!json::sax_parse(bytes.begin(), bytes.end(), &sax)) {
         result.diagnostics.push_back(
             {diagnostic_severity_t::error,
-             sax.limit_exceeded() ? native_project_diagnostic_code_t::resource_limit
+             sax.is_limit_exceeded() ? native_project_diagnostic_code_t::resource_limit
                                   : native_project_diagnostic_code_t::malformed_json,
-             sax.limit_exceeded()
+             sax.is_limit_exceeded()
                  ? "native project exceeds the configured JSON node or nesting-depth limit"
                  : "native project JSON is malformed",
              "$"});
@@ -1483,7 +1483,7 @@ auto parse_native_project_with_migrations(std::string_view bytes, native_project
         }
         auto song = document.get<song_document_t>();
         const json canonical_document = song;
-        if (!same_schema_shape(document, canonical_document)) {
+        if (!schema_shape_equal(document, canonical_document)) {
             result.diagnostics.push_back(
                 {diagnostic_severity_t::error, native_project_diagnostic_code_t::malformed_json,
                  "native project fields do not match the selected schema version", "$.document"});
@@ -1496,7 +1496,7 @@ auto parse_native_project_with_migrations(std::string_view bytes, native_project
                                           "$.document.schema_version"});
             return result;
         }
-        if (!valid_enum_domains(song, limits.maximum_nesting_depth)) {
+        if (!is_valid_enum_domains(song, limits.maximum_nesting_depth)) {
             result.diagnostics.push_back(
                 {diagnostic_severity_t::error, native_project_diagnostic_code_t::invalid_document,
                  "native project contains an enum value outside the schema", "$.document"});

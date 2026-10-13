@@ -287,7 +287,7 @@ auto append_arena_t::chunk_handle(std::size_t chunk_index) const noexcept
     return chunks[chunk_index].storage;
 }
 
-auto append_arena_t::owns(const append_arena_span_t& span) const noexcept -> bool {
+auto append_arena_t::has_allocation(const append_arena_span_t& span) const noexcept -> bool {
     const auto chunks = core_.chunks();
     if (span.chunk_index >= chunks.size())
         return false;
@@ -329,7 +329,7 @@ auto append_arena_t::compact(std::span<const append_arena_span_t> live_spans,
         result.allocation_error = allocation_error;
         return std::move(result);
     };
-    if (!std::ranges::all_of(live_spans, [this](const auto& span) { return owns(span); }))
+    if (!std::ranges::all_of(live_spans, [this](const auto& span) { return has_allocation(span); }))
         return fail(arena_compaction_error_t::foreign_span, arena_error_t::none);
     try {
         if (!is_valid_order(order, live_spans.size()))

@@ -210,7 +210,8 @@ class append_arena_t {
         -> append_arena_compaction_t;
 
   private:
-    [[nodiscard]] auto owns(const append_arena_span_t& span) const noexcept -> bool;
+    [[nodiscard]] auto has_allocation(const append_arena_span_t& span) const noexcept -> bool;
+
 
     chunk_arena_core_t core_;
     std::size_t payload_bytes_{};

@@ -151,7 +151,7 @@ auto error_bound(double input, rational_t candidate) -> long double {
     return error_center(input, candidate) + rounding_allowance;
 }
 
-auto better_candidate(double input, rational_t left, rational_t right) -> bool {
+auto candidate_error_less(double input, rational_t left, rational_t right) -> bool {
     const auto left_error = error_center(input, left);
     const auto right_error = error_center(input, right);
     if (left_error != right_error) {
@@ -197,7 +197,7 @@ struct convergent_search_t {
 };
 
 auto consider_candidate(convergent_search_t& search, rational_t candidate) -> void {
-    if (better_candidate(search.input, candidate, search.best)) {
+    if (candidate_error_less(search.input, candidate, search.best)) {
         search.best = candidate;
     }
 }

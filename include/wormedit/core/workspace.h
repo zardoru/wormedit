@@ -29,7 +29,9 @@ enum class workspace_tab_t : std::uint8_t {
 
 inline constexpr std::size_t workspace_tab_count = 7;
 
-[[nodiscard]] auto workspace_tab_enabled(workspace_tab_t tab) noexcept -> bool;
+[[nodiscard]] auto is_workspace_tab_enabled(workspace_tab_t tab) noexcept -> bool;
+// Compatibility for the coordinated sys/UI migration.
+inline auto workspace_tab_enabled(workspace_tab_t tab) noexcept -> bool { return is_workspace_tab_enabled(tab); }
 
 struct workspace_limits_t {
     std::size_t maximum_charts{1'024};

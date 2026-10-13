@@ -60,7 +60,9 @@ class audition_session_t {
 
     // Lock-free reads of a snapshot published by start/render/stop.
     [[nodiscard]] auto playhead() const noexcept -> playhead_state_t;
-    [[nodiscard]] auto active() const -> bool;
+    [[nodiscard]] auto is_active() const -> bool;
+    // Compatibility for the coordinated sys/UI migration.
+    inline auto active() const -> bool { return is_active(); }
     [[nodiscard]] auto timeline_frame() const -> std::uint64_t;
 
   private:

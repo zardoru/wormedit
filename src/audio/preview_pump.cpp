@@ -110,7 +110,7 @@ auto maximum_cached_plan_blocks(std::size_t maximum_frames, std::size_t maximum_
     return std::min(maximum_frames, byte_frame_limit) / maximum_read_frames;
 }
 
-auto plan_fits_cache(const preview_key_plan_t& plan, block_cache_limits_t limits) -> bool {
+auto is_plan_within_cache(const preview_key_plan_t& plan, block_cache_limits_t limits) -> bool {
     const auto global_block_limit =
         maximum_cached_plan_blocks(limits.maximum_frames, limits.maximum_bytes);
     if (plan.keys.size() > global_block_limit) {
@@ -184,7 +184,7 @@ auto pump_preview_lookahead(decoded_source_registry_t& sources, transport_t& tra
         }
         return result;
     }
-    if (!plan_fits_cache(plan, transport.block_cache_limits())) {
+    if (!is_plan_within_cache(plan, transport.block_cache_limits())) {
         auto result = empty_result(preview_pump_status_t::capacity_exceeded);
         result.active_voices = snapshot.voices.size();
         result.overlapping_voices = plan.overlapping_voices;

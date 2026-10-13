@@ -119,7 +119,7 @@ auto load_existing_event(const chart_document_t& chart, timing_lane_kind_t kind,
     return false;
 }
 
-auto existing_target_matches(const chart_document_t& chart,
+auto is_existing_target_current(const chart_document_t& chart,
                              const timing_lane_pseudonote_preview_t& preview) -> bool {
     if (!preview.existing_event) {
         return true;
@@ -129,7 +129,7 @@ auto existing_target_matches(const chart_document_t& chart,
     return load_existing_event(chart, preview.kind, *preview.existing_event, position, value);
 }
 
-auto value_matches_kind(timing_lane_kind_t kind, const timing_lane_value_t& value) -> bool {
+auto is_value_of_kind(timing_lane_kind_t kind, const timing_lane_value_t& value) -> bool {
     switch (kind) {
     case timing_lane_kind_t::bpm:
         return std::holds_alternative<timing_bpm_value_t>(value);
@@ -150,7 +150,7 @@ auto value_matches_kind(timing_lane_kind_t kind, const timing_lane_value_t& valu
     return false;
 }
 
-auto same_row_is_occupied(const chart_document_t& chart, timing_lane_kind_t kind,
+auto is_same_row_is_occupied(const chart_document_t& chart, timing_lane_kind_t kind,
                           local_position_t position) -> bool {
     switch (kind) {
     case timing_lane_kind_t::bpm:
@@ -191,7 +191,7 @@ auto selected_event(std::span<const timing_lane_event_ref_t> events, timing_lane
     });
 }
 
-auto target_occupied_by_unselected(const chart_document_t& chart, timing_lane_kind_t kind,
+auto is_target_occupied_by_unselected(const chart_document_t& chart, timing_lane_kind_t kind,
                                    local_position_t position,
                                    std::span<const timing_lane_event_ref_t> events) -> bool {
     const auto occupied = [&](const auto& values) {
@@ -312,7 +312,7 @@ auto prepare_timing_group_moves(const document_history_t& history, const chart_d
             return false;
         }
         if (row_delta != 0 &&
-            target_occupied_by_unselected(chart, event.kind, *target, events)) {
+            is_target_occupied_by_unselected(chart, event.kind, *target, events)) {
             result.diagnostics = {error(diagnostic_code_t::collision,
                                         "timing group destination contains another event")};
             return false;
@@ -333,7 +333,7 @@ auto validate_position(const chart_document_t& chart, local_position_t position,
 
 auto validate_warp_value(const chart_document_t& chart, local_position_t position,
                          const timing_warp_value_t& warp, diagnostic_list_t& diagnostics) -> bool {
-    if (!valid_warp_encoding(warp.source_encoding)) {
+    if (!is_valid_warp_encoding(warp.source_encoding)) {
         diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                                     "warp event has an unknown source encoding"));
         return false;
@@ -363,7 +363,7 @@ auto validate_value(const chart_document_t& chart, timing_lane_pseudonote_previe
     const auto kind = preview.kind;
     const auto& value = preview.value;
     auto& diagnostics = preview.diagnostics;
-    if (!value_matches_kind(kind, value)) {
+    if (!is_value_of_kind(kind, value)) {
         diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                                     "timing pseudo-note value does not match its lane kind"));
         return false;
@@ -395,7 +395,7 @@ auto validate_value(const chart_document_t& chart, timing_lane_pseudonote_previe
                                         "pause duration must be a nonnegative exact rational"));
             return false;
         }
-        if (!valid_pause_unit(pause->source_unit) ||
+        if (!is_valid_pause_unit(pause->source_unit) ||
             (pause->source_unit == pause_unit_t::bms_stop_ticks &&
              kind != timing_lane_kind_t::stop)) {
             diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
@@ -434,13 +434,13 @@ auto initial_status(timing_lane_pseudonote_preview_t& preview, const document_hi
         preview.status = timing_lane_pseudonote_status_t::rejected;
         return false;
     }
-    if (!value_matches_kind(preview.kind, preview.value)) {
+    if (!is_value_of_kind(preview.kind, preview.value)) {
         reject(preview, diagnostic_code_t::invalid_resolution,
                "timing pseudo-note value does not match its lane kind");
         preview.status = timing_lane_pseudonote_status_t::rejected;
         return false;
     }
-    if (!preview.existing_event && same_row_is_occupied(*chart, preview.kind, preview.position)) {
+    if (!preview.existing_event && is_same_row_is_occupied(*chart, preview.kind, preview.position)) {
         reject(preview, diagnostic_code_t::collision,
                "timing lane row already contains an event of this type");
         preview.status = timing_lane_pseudonote_status_t::rejected;
@@ -705,7 +705,7 @@ auto update_timing_lane_pseudonote(const document_history_t& history,
         preview.status = timing_lane_pseudonote_status_t::cancelled;
         return false;
     }
-    if (!existing_target_matches(*chart, preview)) {
+    if (!is_existing_target_current(*chart, preview)) {
         reject(preview, diagnostic_code_t::invalid_id,
                "existing timing event no longer matches the staged target");
         preview.status = timing_lane_pseudonote_status_t::cancelled;
@@ -713,7 +713,7 @@ auto update_timing_lane_pseudonote(const document_history_t& history,
     }
     preview.value = std::move(value);
     preview.diagnostics.clear();
-    if (!preview.existing_event && same_row_is_occupied(*chart, preview.kind, preview.position)) {
+    if (!preview.existing_event && is_same_row_is_occupied(*chart, preview.kind, preview.position)) {
         reject(preview, diagnostic_code_t::collision,
                "timing lane row already contains an event of this type");
         return false;
@@ -735,7 +735,7 @@ auto move_existing_timing_lane_pseudonote(const document_history_t& history,
         return false;
     }
     const auto* chart = history.document.find_chart(preview.chart);
-    if (chart == nullptr || !existing_target_matches(*chart, preview)) {
+    if (chart == nullptr || !is_existing_target_current(*chart, preview)) {
         reject(preview, diagnostic_code_t::invalid_id,
                "existing timing event no longer matches the staged target");
         preview.status = timing_lane_pseudonote_status_t::cancelled;
@@ -844,7 +844,7 @@ auto confirm_timing_lane_pseudonote(document_history_t& history,
         result.diagnostics = preview.diagnostics;
         return result;
     }
-    if (!existing_target_matches(*chart, preview)) {
+    if (!is_existing_target_current(*chart, preview)) {
         reject(preview, diagnostic_code_t::invalid_id,
                "existing timing event no longer matches the staged target");
         preview.status = timing_lane_pseudonote_status_t::cancelled;
@@ -860,7 +860,7 @@ auto confirm_timing_lane_pseudonote(document_history_t& history,
         result.diagnostics = preview.diagnostics;
         return result;
     }
-    if (!preview.existing_event && same_row_is_occupied(*chart, preview.kind, preview.position)) {
+    if (!preview.existing_event && is_same_row_is_occupied(*chart, preview.kind, preview.position)) {
         reject(preview, diagnostic_code_t::collision,
                "timing lane row already contains an event of this type");
         preview.status = timing_lane_pseudonote_status_t::rejected;

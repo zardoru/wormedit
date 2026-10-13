@@ -120,7 +120,7 @@ TEST_CASE("automatic BGM planning groups sounds and retains deterministic event 
     const auto& chart = song.charts.front();
     const std::array selected{object_id_t{1}, object_id_t{3}};
     const auto plan = plan_notes_to_bgm(chart, song.resources, selected, std::nullopt);
-    require_move(plan.accepted());
+    require_move(plan.is_accepted());
     require_move(plan.assignments.size() == 2);
     check_move(plan.assignments[0].note == object_id_t{1});
     check_move(plan.assignments[0].lane == object_id_t{10});
@@ -130,7 +130,7 @@ TEST_CASE("automatic BGM planning groups sounds and retains deterministic event 
 
     const std::array reversed{object_id_t{3}, object_id_t{1}};
     const auto permuted = plan_notes_to_bgm(chart, song.resources, reversed, std::nullopt);
-    require_move(permuted.accepted());
+    require_move(permuted.is_accepted());
     check_move(permuted.assignments == plan.assignments);
 }
 
@@ -141,7 +141,7 @@ TEST_CASE("same-asset ungrouped resources do not join a tagged sound group",
     const auto& chart = song.charts.front();
     const std::array selected{object_id_t{1}, object_id_t{3}};
     const auto plan = plan_notes_to_bgm(chart, song.resources, selected, std::nullopt);
-    require_move(plan.accepted());
+    require_move(plan.is_accepted());
     check_move(plan.assignments[0].lane == object_id_t{10});
     check_move(plan.assignments[1].lane == object_id_t{9});
 }
@@ -170,7 +170,7 @@ TEST_CASE("tagged groups and implicit resource keys stay distinct with determini
          .sound = resource_id_t{1}}};
     const std::array selected{object_id_t{1}, object_id_t{2}};
     const auto plan = plan_notes_to_bgm(chart, song.resources, selected, std::nullopt);
-    require_move(plan.accepted());
+    require_move(plan.is_accepted());
     check_move(plan.assignments[0].lane == object_id_t{9});
     check_move(plan.assignments[1].lane == object_id_t{10});
 }
@@ -185,14 +185,14 @@ TEST_CASE("automatic BGM planning spills same-row notes and keeps silent notes o
     chart.measures[0].notes[1].sound = resource_id_t{2};
     const std::array both{object_id_t{2}, object_id_t{1}};
     const auto plan = plan_notes_to_bgm(chart, song.resources, both, std::nullopt);
-    require_move(plan.accepted());
+    require_move(plan.is_accepted());
     check_move(plan.assignments[0].lane == object_id_t{10});
     check_move(plan.assignments[1].lane == object_id_t{9});
 
     chart.measures[0].notes[0].sound.reset();
     const std::array silent{object_id_t{1}};
     const auto silent_plan = plan_notes_to_bgm(chart, song.resources, silent, std::nullopt);
-    require_move(silent_plan.accepted());
+    require_move(silent_plan.is_accepted());
     check_move(silent_plan.assignments.front().lane == object_id_t{9});
 }
 
@@ -207,14 +207,14 @@ TEST_CASE("automatic allocation keeps first-appearance cohorts and silent notes 
     chart.measures[0].notes[1].sound = resource_id_t{1};
     const std::array both{object_id_t{1}, object_id_t{2}};
     const auto silent_first = plan_notes_to_bgm(chart, song.resources, both, std::nullopt);
-    require_move(silent_first.accepted());
+    require_move(silent_first.is_accepted());
     check_move(silent_first.assignments[0].note == object_id_t{1});
     check_move(silent_first.assignments[0].lane == object_id_t{9});
     check_move(silent_first.assignments[1].lane == object_id_t{101});
 
     std::swap(chart.measures[0].notes[0], chart.measures[0].notes[1]);
     const auto keyed_first = plan_notes_to_bgm(chart, song.resources, both, std::nullopt);
-    require_move(keyed_first.accepted());
+    require_move(keyed_first.is_accepted());
     check_move(keyed_first.assignments[0].note == object_id_t{2});
     check_move(keyed_first.assignments[0].lane == object_id_t{9});
     check_move(keyed_first.assignments[1].lane == object_id_t{101});
@@ -242,7 +242,7 @@ TEST_CASE("a remembered spill lane outranks a newly free lower lane for later gr
          .sound = resource_id_t{1}}};
     const std::array selected{object_id_t{1}, object_id_t{3}};
     const auto plan = plan_notes_to_bgm(chart, song.resources, selected, std::nullopt);
-    require_move(plan.accepted());
+    require_move(plan.is_accepted());
     check_move(plan.assignments[0].lane == object_id_t{9});
     check_move(plan.assignments[1].lane == object_id_t{9});
 }
@@ -255,17 +255,17 @@ TEST_CASE("BGM source-order exhaustion only rejects required growth",
         .source_order = std::numeric_limits<std::size_t>::max() - 1}};
     const std::array two{object_id_t{1}, object_id_t{2}};
     const auto final_order = plan_notes_to_bgm(chart, song.resources, two, std::nullopt);
-    require_move(final_order.accepted());
+    require_move(final_order.is_accepted());
     require_move(final_order.new_lanes.size() == 1);
     check_move(final_order.new_lanes.front().source_order == std::numeric_limits<std::size_t>::max());
 
     chart.bgm_source_lanes.front().source_order = std::numeric_limits<std::size_t>::max();
     const std::array one{object_id_t{1}};
     const auto existing_lane = plan_notes_to_bgm(chart, song.resources, one, std::nullopt);
-    require_move(existing_lane.accepted());
+    require_move(existing_lane.is_accepted());
     check_move(existing_lane.new_lanes.empty());
     const auto exhausted = plan_notes_to_bgm(chart, song.resources, two, std::nullopt);
-    check_move(!exhausted.accepted());
+    check_move(!exhausted.is_accepted());
 }
 
 TEST_CASE("manual BGM placement keeps the right-then-left fallback and new-lane policy is atomic",
@@ -274,7 +274,7 @@ TEST_CASE("manual BGM placement keeps the right-then-left fallback and new-lane 
     auto& chart = song.charts.front();
     const std::array reversed{object_id_t{2}, object_id_t{1}};
     const auto manual = plan_notes_to_bgm(chart, song.resources, reversed, object_id_t{9});
-    require_move(manual.accepted());
+    require_move(manual.is_accepted());
     check_move(manual.assignments[0].note == object_id_t{2});
     check_move(manual.assignments[0].lane == object_id_t{9});
     check_move(manual.assignments[1].lane == object_id_t{10});
@@ -282,10 +282,10 @@ TEST_CASE("manual BGM placement keeps the right-then-left fallback and new-lane 
         {.id = object_id_t{20}, .position = {measure_id_t{1}, 240}, .source_lane = object_id_t{10}}};
     const std::array one{object_id_t{1}};
     const auto fallback = plan_notes_to_bgm(chart, song.resources, one, object_id_t{10});
-    require_move(fallback.accepted());
+    require_move(fallback.is_accepted());
     check_move(fallback.assignments.front().lane == object_id_t{9});
     const auto invalid_target = plan_notes_to_bgm(chart, song.resources, one, object_id_t{0});
-    require_move(invalid_target.accepted());
+    require_move(invalid_target.is_accepted());
     check_move(invalid_target.assignments.front().lane == object_id_t{9});
 
     chart.measures[0].notes.push_back(
@@ -294,7 +294,7 @@ TEST_CASE("manual BGM placement keeps the right-then-left fallback and new-lane 
     const std::array three{object_id_t{1}, object_id_t{2}, object_id_t{4}};
     const auto denied = plan_notes_to_bgm(chart, song.resources, three, std::nullopt,
                                            {.allow_new_lanes = false, .max_lanes = 2});
-    check_move(!denied.accepted());
+    check_move(!denied.is_accepted());
     auto history = document_history_t::from(song);
     const auto before = history.document;
     const auto rejected = move_notes_to_bgm(history, history.document.revision, chart_id_t{1}, three,
@@ -560,7 +560,7 @@ TEST_CASE("sparse BGM plan handles many selected notes in one lane",
     }
     const auto& chart = song.charts.front();
     const auto plan = plan_notes_to_bgm(chart, song.resources, selected, std::nullopt);
-    require_move(plan.accepted());
+    require_move(plan.is_accepted());
     check_move(plan.assignments.size() == selected.size());
     check_move(std::ranges::all_of(plan.assignments, [](const auto& item) {
         return item.lane == object_id_t{9};
@@ -640,7 +640,7 @@ TEST_CASE("pure ordinary planning rejects linked BMSON notes while mixed command
     const std::array unlinked_ids{object_id_t{1}};
     const auto unlinked = plan_notes_to_bgm(unlinked_song.charts.front(), unlinked_song.resources,
         unlinked_ids, std::nullopt);
-    require_move(unlinked.accepted());
+    require_move(unlinked.is_accepted());
 
     std::ifstream input(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bmson" / "published-vox-slicing.bmson",
                         std::ios::binary);
@@ -669,7 +669,7 @@ TEST_CASE("pure ordinary planning rejects linked BMSON notes while mixed command
     const std::array mixed{marker.id, ordinary_id};
     const auto& linked_chart = history.document.charts.front();
     const auto pure = plan_notes_to_bgm(linked_chart, history.document.resources, mixed, std::nullopt);
-    check_move(!pure.accepted());
+    check_move(!pure.is_accepted());
     check_move(pure.diagnostics.front().code == diagnostic_code_t::unsupported_feature);
 
     const auto before_undo = history.undo.size();

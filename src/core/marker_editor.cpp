@@ -15,27 +15,27 @@
 namespace wormedit {
 namespace {
 
-using text_util::valid_utf8;
+using text_util::is_valid_utf8;
 
-auto valid_label(std::string_view label, const marker_edit_limits_t& limits, bool allow_empty)
+auto is_valid_label(std::string_view label, const marker_edit_limits_t& limits, bool allow_empty)
     -> bool {
-    return (allow_empty || !label.empty()) && text_util::valid_bounded_text(label, limits.maximum_label_bytes);
+    return (allow_empty || !label.empty()) && text_util::is_valid_bounded_text(label, limits.maximum_label_bytes);
 }
 
 auto checked_add(std::size_t& total, std::size_t value, std::size_t maximum) -> bool {
     return checked_math::account_size(total, value, maximum);
 }
 
-auto marker_text_fits(const chart_document_t& chart, const marker_edit_limits_t& limits) -> bool {
+auto is_marker_text_within_limit(const chart_document_t& chart, const marker_edit_limits_t& limits) -> bool {
     std::size_t total{};
     for (const auto& bookmark : chart.bookmarks) {
-        if (!valid_label(bookmark.label, limits, true) ||
+        if (!is_valid_label(bookmark.label, limits, true) ||
             !checked_add(total, bookmark.label.size(), limits.maximum_total_label_bytes)) {
             return false;
         }
     }
     for (const auto& section : chart.sections) {
-        if (!valid_label(section.label, limits, true) ||
+        if (!is_valid_label(section.label, limits, true) ||
             !checked_add(total, section.label.size(), limits.maximum_total_label_bytes)) {
             return false;
         }
@@ -147,7 +147,7 @@ auto validate_section_anchor(const chart_document_t& chart, marker_anchor_t anch
     return false;
 }
 
-auto same_span(const std::optional<position_span_t>& left,
+auto span_equal(const std::optional<position_span_t>& left,
                const std::optional<position_span_t>& right) -> bool {
     if (left.has_value() != right.has_value()) {
         return false;
@@ -207,7 +207,7 @@ auto allocate_marker_id(marker_edit_context_t& context, const chart_document_t& 
 
 auto validate_marker_label(marker_edit_context_t& context, std::string_view label,
                            std::string_view marker) -> bool {
-    if (valid_label(label, context.limits, true))
+    if (is_valid_label(label, context.limits, true))
         return true;
     reject(context.result, diagnostic_code_t::unsupported_feature,
            std::string(marker) +
@@ -316,7 +316,7 @@ void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart
         return;
     }
     context.changed = found->label != edit.label || found->anchor != edit.anchor ||
-                      !same_span(found->beat_span, edit.beat_span) ||
+                      !span_equal(found->beat_span, edit.beat_span) ||
                       found->audio_millisecond_span != edit.audio_millisecond_span;
     if (!context.changed)
         return;
@@ -460,7 +460,7 @@ auto apply_marker_edit(document_history_t& history, std::uint64_t expected_revis
         return result;
     }
     const auto chart = proposed.find_chart(context.edited_chart);
-    if (chart == nullptr || !marker_text_fits(*chart, limits)) {
+    if (chart == nullptr || !is_marker_text_within_limit(*chart, limits)) {
         reject(result, diagnostic_code_t::unsupported_feature,
                "marker labels exceed the configured UTF-8 text limits");
         return result;

@@ -163,7 +163,7 @@ void time_stretch_t::finish() noexcept {
     final_output_frames_ = output_frames_for(input_end_, rate_).value_or(produced_);
 }
 
-auto time_stretch_t::complete() const noexcept -> bool {
+auto time_stretch_t::is_complete() const noexcept -> bool {
     return finished_ && produced_ >= final_output_frames_;
 }
 

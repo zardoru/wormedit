@@ -1061,7 +1061,7 @@ TEST_CASE("scroll and speed evaluation is exact, composable, and seekable",
     REQUIRE(timing);
     const auto built = build_scroll_speed_index(chart, *timing.index);
     REQUIRE(built);
-    CHECK(scroll_speed_index_matches(*built.index, chart, *timing.index));
+    CHECK(is_scroll_speed_index_current(*built.index, chart, *timing.index));
 
     const auto midpoint = scroll_speed_at(*built.index, *timing.index, {120, 1});
     REQUIRE(midpoint);
@@ -1479,7 +1479,7 @@ TEST_CASE("scroll and speed compilation rejects stale malformed and over-cap inp
     REQUIRE(built);
     auto changed = chart;
     changed.scrolls[0].multiplier = {2, 1};
-    CHECK_FALSE(scroll_speed_index_matches(*built.index, changed, *timing.index));
+    CHECK_FALSE(is_scroll_speed_index_current(*built.index, changed, *timing.index));
     const auto negative_row = scroll_speed_at(*built.index, *timing.index, {-1, 1});
     const auto invalid_row = scroll_speed_at(*built.index, *timing.index, {0, 0});
     REQUIRE_FALSE(negative_row);

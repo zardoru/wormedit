@@ -66,7 +66,7 @@ auto verify_decoding(audio::decoder_t& decoder, const slice_span_t& span,
     return true;
 }
 
-auto plain_filename(const std::string& name) -> bool {
+auto is_plain_filename(const std::string& name) -> bool {
     const std::filesystem::path path{name};
     return !name.empty() && name.size() <= 240 && path == path.filename() && name != "." && name != ".." &&
         name.find_first_of("/\\") == std::string::npos &&
@@ -81,7 +81,7 @@ auto preflight(const song_document_t& song, const slice_span_plan_t& plan,
     std::set<std::string> names;
     std::set<std::tuple<std::uint64_t, std::uint64_t, std::uint64_t>> spans;
     for (const auto& span : plan.spans) {
-        if (!plain_filename(span.filename) || !names.insert(span.filename).second ||
+        if (!is_plain_filename(span.filename) || !names.insert(span.filename).second ||
             !spans.emplace(span.asset.value, span.begin_frame, span.end_frame).second)
             return reject(result, "Invalid or duplicate span filename/identity", span.asset);
         std::error_code error;
@@ -187,7 +187,7 @@ auto render_slice_span_plan(const song_document_t& song, const slice_span_plan_t
 }
 
 namespace {
-auto conversion_chart_selected(chart_id_t id, const conversion_request_t& request) -> bool {
+auto is_conversion_chart_selected(chart_id_t id, const conversion_request_t& request) -> bool {
     if (request.chart) return id == *request.chart;
     return request.charts.empty() || std::ranges::find(request.charts, id) != request.charts.end();
 }
@@ -209,7 +209,7 @@ auto conversion_slice_assets(const song_document_t& song, const conversion_reque
     -> std::set<asset_id_t> {
     std::set<asset_id_t> assets;
     for (const auto& chart : song.charts) {
-        if (chart.source_family != format_family_t::bmson || !conversion_chart_selected(chart.id, request)) continue;
+        if (chart.source_family != format_family_t::bmson || !is_conversion_chart_selected(chart.id, request)) continue;
         for (const auto& channel : chart.sound_channels)
             if (!channel.events.empty()) assets.insert(channel.source_clip.source);
         collect_slice_resource_assets(song, chart, assets);
@@ -224,7 +224,7 @@ auto copy_conversion_asset(const song_document_t& song, const conversion_asset_c
     if (audio != nullptr) source = audio->source_path;
     else if (visual != song.visual_assets.end()) source = visual->source_path;
     else return "Missing retained export asset " + std::to_string(copy.asset.value);
-    if (!plain_filename(copy.relative_path.generic_string())) return "Unsafe retained asset filename";
+    if (!is_plain_filename(copy.relative_path.generic_string())) return "Unsafe retained asset filename";
     if (options.stop.stop_requested()) return "Asset copying cancelled";
     if (!source.is_absolute()) source = options.source_directory / source;
     std::error_code error;

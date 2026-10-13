@@ -47,7 +47,7 @@ auto grid_measure(const measure_index_t& index, long double row,
                           static_cast<long double>(entry.absolute_begin_row) + entry.row_capacity};
 }
 
-auto valid_grid_input(long double row, long double step, std::uint64_t standard_rows,
+auto is_valid_grid_input(long double row, long double step, std::uint64_t standard_rows,
                       std::uint64_t canvas_rows) noexcept -> bool {
     return std::isfinite(row) && std::isfinite(step) && step > 0 && standard_rows > 0 &&
            row >= 0 && row < canvas_rows;
@@ -65,7 +65,7 @@ auto snap_step(const chart_document_t& chart, std::uint64_t denominator) noexcep
 auto adjacent_measure_grid_row(const measure_index_t& index, long double row,
     long double step, std::uint64_t standard_rows, std::uint64_t canvas_rows,
     bool forward) noexcept -> std::optional<long double> {
-    if (!valid_grid_input(row, step, standard_rows, canvas_rows)) return std::nullopt;
+    if (!is_valid_grid_input(row, step, standard_rows, canvas_rows)) return std::nullopt;
     if (!forward && row == 0) return std::nullopt;
     // Looking just before an exact head makes backward navigation use the preceding
     // measure's grid, rather than subtracting this measure's step past its origin.
@@ -84,7 +84,7 @@ auto snap_canvas_row(const chart_document_t& chart, const measure_index_t& index
     long double row, std::uint64_t denominator, std::uint64_t canvas_rows) noexcept
     -> std::optional<std::uint64_t> {
     const auto step = snap_step(chart, denominator);
-    if (!step || !valid_grid_input(row, *step, chart.divisions_per_standard_measure, canvas_rows))
+    if (!step || !is_valid_grid_input(row, *step, chart.divisions_per_standard_measure, canvas_rows))
         return std::nullopt;
     const auto measure = grid_measure(index, row, chart.divisions_per_standard_measure);
     if (!measure) return std::nullopt;

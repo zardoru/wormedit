@@ -33,11 +33,11 @@ auto has_lane(const editor_field_scene_layout_source_t* layout, lane_id_t lane) 
            });
 }
 
-auto finite_nonnegative(double value) -> bool {
+auto is_finite_nonnegative(double value) -> bool {
     return std::isfinite(value) && value >= 0.0;
 }
 
-auto viewport_scroll_in_range(double scroll, double height, long double maximum,
+auto is_viewport_scroll_in_range(double scroll, double height, long double maximum,
                               double minimum_fraction) -> bool {
     return std::isfinite(scroll) && scroll >= -height * minimum_fraction &&
            static_cast<long double>(scroll) <= maximum;
@@ -54,7 +54,7 @@ auto endpoint_vertical_bounds(double snap_y, double height, lane_glyph_t glyph,
         direction == editor_field_scroll_direction_t::down);
 }
 
-auto rect_intersects_viewport(const editor_field_rect_t& rect, double height) -> bool {
+auto is_rect_intersecting_viewport(const editor_field_rect_t& rect, double height) -> bool {
     return rect.bottom >= 0.0 && rect.top <= height;
 }
 
@@ -497,7 +497,7 @@ auto build_editor_field_scene_index(const chart_document_t& chart, std::uint64_t
 
 namespace {
 
-auto valid_scene_index(const chart_document_t& chart, const editor_field_scene_index_t& index,
+auto is_valid_scene_index(const chart_document_t& chart, const editor_field_scene_index_t& index,
                        const editor_interaction_view_model_t& view) -> bool {
     return chart.id == index.chart && view.chart == chart.id &&
            view.document_revision == index.document_revision && index.measures.total_rows != 0 &&
@@ -511,11 +511,11 @@ auto valid_scene_index(const chart_document_t& chart, const editor_field_scene_i
            index.bgm_tree_max_end.size() == index.bgm_tree_leaf_base * 2;
 }
 
-auto valid_scene_request_geometry(const editor_field_scene_request_t& request,
+auto is_valid_scene_request_geometry(const editor_field_scene_request_t& request,
                                   double viewport_height) -> bool {
-    return finite_nonnegative(request.field_left_pixels) &&
+    return is_finite_nonnegative(request.field_left_pixels) &&
            std::isfinite(request.field_width_pixels) && request.field_width_pixels > 0.0 &&
-           finite_nonnegative(request.split_stage_gutter_pixels) &&
+           is_finite_nonnegative(request.split_stage_gutter_pixels) &&
            std::isfinite(request.note_head_height_pixels) &&
            request.note_head_height_pixels > 0.0 &&
            (request.scroll_direction == editor_field_scroll_direction_t::down ||
@@ -528,17 +528,17 @@ auto valid_scene_request_geometry(const editor_field_scene_request_t& request,
            request.comparison_difference_height_pixels > 0.0 &&
            std::isfinite(request.hold_body_width_ratio) && request.hold_body_width_ratio > 0.0 &&
            request.hold_body_width_ratio <= 1.0 &&
-           finite_nonnegative(request.bgm_pane_left_pixels) &&
-           finite_nonnegative(request.bgm_pane_width_pixels) &&
+           is_finite_nonnegative(request.bgm_pane_left_pixels) &&
+           is_finite_nonnegative(request.bgm_pane_width_pixels) &&
            std::isfinite(request.bgm_pane_left_pixels + request.bgm_pane_width_pixels) &&
            std::isfinite(request.bgm_lane_width_pixels) && request.bgm_lane_width_pixels > 0.0 &&
-           finite_nonnegative(request.bgm_horizontal_scroll_pixels) &&
-           finite_nonnegative(request.bga_pane_left_pixels) &&
-           finite_nonnegative(request.bga_pane_width_pixels) &&
+           is_finite_nonnegative(request.bgm_horizontal_scroll_pixels) &&
+           is_finite_nonnegative(request.bga_pane_left_pixels) &&
+           is_finite_nonnegative(request.bga_pane_width_pixels) &&
            std::isfinite(request.bga_pane_left_pixels + request.bga_pane_width_pixels);
 }
 
-auto valid_scene_request_limits(const editor_field_scene_request_t& request) -> bool {
+auto is_valid_scene_request_limits(const editor_field_scene_request_t& request) -> bool {
     return request.maximum_grid_lines != 0 && request.maximum_authored_groupings != 0 &&
            request.authored_groupings.size() <= request.maximum_authored_groupings &&
            request.maximum_comparison_difference_rows != 0 &&
@@ -547,13 +547,13 @@ auto valid_scene_request_limits(const editor_field_scene_request_t& request) -> 
            request.maximum_scene_primitives != 0 && request.maximum_composition_operations != 0;
 }
 
-auto valid_scene_view(const editor_interaction_view_model_t& view) -> bool {
+auto is_valid_scene_view(const editor_interaction_view_model_t& view) -> bool {
     return std::isfinite(view.pixels_per_standard_measure) &&
            view.pixels_per_standard_measure >= minimum_pixels_per_standard_measure &&
            view.pixels_per_standard_measure <= maximum_pixels_per_standard_measure &&
            std::isfinite(view.viewport_scroll_pixels) &&
            std::isfinite(view.viewport_height_pixels) && view.viewport_height_pixels > 0.0 &&
-           editor_viewport_margins_valid(view.viewport_minimum_margin_fraction,
+           is_editor_viewport_margins_valid(view.viewport_minimum_margin_fraction,
                                          view.viewport_end_margin_fraction);
 }
 
@@ -779,7 +779,7 @@ struct regular_hold_rows_t {
     std::optional<std::uint64_t> moving;
 };
 
-auto valid_regular_hold_placement(const pending_hold_placement_preview_t& preview,
+auto is_valid_regular_hold_placement(const pending_hold_placement_preview_t& preview,
                                   regular_hold_rows_t rows, std::optional<std::uint64_t> head,
                                   std::optional<std::uint64_t> tail) -> bool {
     const auto final_tail = tail.value_or(head.value_or(0));
@@ -798,7 +798,7 @@ auto append_placed_hold(scene_geometry_context_t& context, hold_proposals_t& hol
     const auto head = absolute_row(context.index.measures, preview.head);
     const auto tail = preview.tail ? absolute_row(context.index.measures, *preview.tail)
                                    : std::optional<std::uint64_t>{};
-    if (!valid_regular_hold_placement(preview, rows, head, tail)) {
+    if (!is_valid_regular_hold_placement(preview, rows, head, tail)) {
         context.diagnostics.push_back(
             error(diagnostic_code_t::invalid_hold,
                   "field-scene hold placement preview is malformed or does not cover its gesture"));
@@ -877,7 +877,7 @@ auto append_virtual_hold(scene_geometry_context_t& context, hold_proposals_t& ho
                          const editor_interaction_view_model_t::virtual_hold_preview_t& pending,
                          Operate&& operate) -> bool {
     if (pending.document_revision != context.index.document_revision ||
-        !chart_has_virtual_tail(context.chart) ||
+        !has_chart_virtual_tail(context.chart) ||
         !context.request.include_virtual_bms_tail || pending.anchor_row >= context.canvas_rows ||
         pending.end_row >= context.canvas_rows || context.index.layouts.empty() ||
         !has_lane(&context.index.layouts.back(), pending.lane)) {
@@ -927,7 +927,7 @@ auto collect_virtual_holds(scene_geometry_context_t& context, hold_proposals_t& 
     return true;
 }
 
-auto valid_move_display_rows(const note_move_preview_t& preview, note_kind_t kind,
+auto is_valid_move_display_rows(const note_move_preview_t& preview, note_kind_t kind,
                              std::uint64_t chart_rows) -> bool {
     if (!preview.display_begin_row && !preview.display_end_row)
         return preview.conflict != note_move_conflict_t::out_of_chart;
@@ -942,7 +942,7 @@ auto valid_move_display_rows(const note_move_preview_t& preview, note_kind_t kin
            (begin < 0 || *preview.display_end_row >= chart_rows);
 }
 
-auto valid_move_conflict(const editor_field_scene_index_t& index,
+auto is_valid_move_conflict(const editor_field_scene_index_t& index,
                          const note_move_preview_t& preview) -> bool {
     switch (preview.conflict) {
     case note_move_conflict_t::none:
@@ -970,7 +970,7 @@ auto append_move_proposal(scene_geometry_context_t& context, const note_move_pre
                           std::unordered_set<std::uint64_t>& expected, move_proposals_t& moves,
                           Operate&& operate) -> bool {
     if (!operate() || preview.note.value == 0 || !expected.erase(preview.note.value) ||
-        !valid_move_conflict(context.index, preview)) {
+        !is_valid_move_conflict(context.index, preview)) {
         context.diagnostics.push_back(
             error(diagnostic_code_t::invalid_id,
                   "field-scene note move preview does not match its selected notes"));
@@ -990,7 +990,7 @@ auto append_move_proposal(scene_geometry_context_t& context, const note_move_pre
         return false;
     }
     const auto& source = context.index.notes[found->second];
-    if (!valid_move_display_rows(preview, source.kind, context.index.measures.total_rows)) {
+    if (!is_valid_move_display_rows(preview, source.kind, context.index.measures.total_rows)) {
         context.diagnostics.push_back(error(diagnostic_code_t::invalid_hold,
                                             "field-scene note move display rows are malformed"));
         return false;
@@ -1171,7 +1171,7 @@ auto proposal_lane_bounds(const proposal_render_context_t& render, const visible
     const auto gutter = split > 0 && split < columns ? request.split_stage_gutter_pixels : 0.0;
     const auto width = (request.field_width_pixels - gutter) / static_cast<double>(columns);
     const auto column =
-        layout && editor_scratch_presentation_active(*layout, request.scratch_on_right)
+        layout && is_editor_scratch_presentation_active(*layout, request.scratch_on_right)
             ? static_cast<double>(*proposal.display_column)
             : layout ? proposal_physical_column(
                   *layout, *proposal.display_column,
@@ -1256,7 +1256,7 @@ auto append_proposal_endpoint(proposal_render_context_t& render,
         endpoint_vertical_bounds(y, render.geometry.request.note_head_height_pixels, bounds->glyph,
                                  render.geometry.request.scroll_direction);
     const editor_field_rect_t rect{bounds->left, top, bounds->right, bottom};
-    if (!rect_intersects_viewport(rect, render.geometry.view.viewport_height_pixels)) {
+    if (!is_rect_intersecting_viewport(rect, render.geometry.view.viewport_height_pixels)) {
         return true;
     }
     if (!consume()) {
@@ -1362,7 +1362,7 @@ auto compose_note_proposals(scene_proposal_composition_t& composition, Operate&&
     return true;
 }
 
-auto note_visible_in_scene(const editor_field_scene_note_source_t& note,
+auto is_note_visible_in_scene(const editor_field_scene_note_source_t& note,
                            const scene_geometry_context_t& context) -> bool {
     if (static_cast<long double>(note.end_row) < context.query_low ||
         static_cast<long double>(note.begin_row) > context.query_high) {
@@ -1377,7 +1377,7 @@ auto note_visible_in_scene(const editor_field_scene_note_source_t& note,
            !std::ranges::any_of(request.excluded_semantic_layers, has_layer);
 }
 
-auto bgm_event_visible_in_scene(const editor_field_scene_bgm_source_t& event,
+auto is_bgm_event_visible_in_scene(const editor_field_scene_bgm_source_t& event,
                                 const editor_field_scene_request_t& request) -> bool {
     const auto has_layer = [&](layer_id_t layer) {
         return std::ranges::find(event.semantic_layers, layer) != event.semantic_layers.end();
@@ -1480,7 +1480,7 @@ auto append_indexed_note_endpoint(scene_note_composition_t& composition,
         endpoint_vertical_bounds(y, composition.geometry.request.note_head_height_pixels,
                                  bounds->glyph, composition.geometry.request.scroll_direction);
     const editor_field_rect_t rect{bounds->left, top, bounds->right, bottom};
-    if (!rect_intersects_viewport(rect, composition.geometry.view.viewport_height_pixels)) {
+    if (!is_rect_intersecting_viewport(rect, composition.geometry.view.viewport_height_pixels)) {
         return true;
     }
     if (!consume()) {
@@ -1517,7 +1517,7 @@ auto append_indexed_note(scene_note_composition_t& composition,
                          const editor_field_scene_note_source_t& note, Operate&& operate,
                          Consume&& consume, YForRow&& y_for_row, BandForRow&& band_for_row)
     -> bool {
-    if (!note_visible_in_scene(note, composition.geometry)) {
+    if (!is_note_visible_in_scene(note, composition.geometry)) {
         return true;
     }
     if (!record_paint_overlaps(note, composition.paint, operate)) {
@@ -1664,7 +1664,7 @@ auto append_visible_paint_target(scene_geometry_context_t& context, scene_paint_
     const auto [top, bottom] = endpoint_vertical_bounds(
         y, context.request.note_head_height_pixels, lane->glyph, context.request.scroll_direction);
     const editor_field_rect_t bounds{lane->left, top, lane->right, bottom};
-    if (rect_intersects_viewport(bounds, context.view.viewport_height_pixels)) {
+    if (is_rect_intersecting_viewport(bounds, context.view.viewport_height_pixels)) {
         paint.visible_cells.insert(cell);
         paint.visible_rows_by_lane[target.lane.value].push_back(*row);
         paint.visible_targets.push_back({.cell = cell, .glyph = lane->glyph, .bounds = bounds});
@@ -1828,7 +1828,7 @@ auto compose_comparison_rows(scene_geometry_context_t& context, Operate&& operat
                                          context.request.field_left_pixels +
                                              context.request.field_width_pixels,
                                          y + half_height};
-        if (rect_intersects_viewport(bounds, context.view.viewport_height_pixels)) {
+        if (is_rect_intersecting_viewport(bounds, context.view.viewport_height_pixels)) {
             context.scene.comparison_differences.push_back(
                 {.position = position, .bounds = bounds});
         }
@@ -1969,7 +1969,7 @@ auto append_bgm_geometry(scene_geometry_context_t& context,
                           const visible_bgm_lanes_t& lanes,
                           const std::unordered_set<std::uint64_t>& selected,
                           Consume&& consume, YForRow&& y_for_row) -> bool {
-    if (!bgm_event_visible_in_scene(event, context.request)) return true;
+    if (!is_bgm_event_visible_in_scene(event, context.request)) return true;
     const auto lane = lanes.find(event.source_lane.value);
     if (lane == lanes.end()) return true;
     const auto [top, bottom] = endpoint_vertical_bounds(
@@ -1983,7 +1983,7 @@ auto append_bgm_geometry(scene_geometry_context_t& context,
         bounds.top = std::min(bounds.top, tail_y);
         bounds.bottom = std::max(bounds.bottom, tail_y);
     }
-    if (!rect_intersects_viewport(bounds, context.view.viewport_height_pixels)) return true;
+    if (!is_rect_intersecting_viewport(bounds, context.view.viewport_height_pixels)) return true;
     if (!consume()) return false;
     context.scene.bgm_events.push_back(
         {.event = event.event, .source_lane = event.source_lane, .sound = event.sound,
@@ -2141,7 +2141,7 @@ auto append_bga_lane_events(scene_geometry_context_t& context,
         const auto [top, bottom] = endpoint_vertical_bounds(
             y, request.note_head_height_pixels, lane_glyph_t::bar, request.scroll_direction);
         const editor_field_rect_t bounds{x, top, x + width, bottom};
-        if (!rect_intersects_viewport(bounds, context.view.viewport_height_pixels)) continue;
+        if (!is_rect_intersecting_viewport(bounds, context.view.viewport_height_pixels)) continue;
         if (!consume()) {
             context.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                                                 "field-scene BGA events exceed primitive cap"));
@@ -2192,7 +2192,7 @@ auto compose_bga_lane(scene_geometry_context_t& context, Operate&& operate, Cons
 auto scene_canvas_rows(const chart_document_t& chart, const editor_field_scene_index_t& index,
                        const editor_field_scene_request_t& request, diagnostic_list_t& diagnostics)
     -> std::optional<std::uint64_t> {
-    if (!request.include_virtual_bms_tail || !chart_has_virtual_tail(chart)) {
+    if (!request.include_virtual_bms_tail || !has_chart_virtual_tail(chart)) {
         return index.measures.total_rows;
     }
     auto built = build_virtual_canvas(chart);
@@ -2203,7 +2203,7 @@ auto scene_canvas_rows(const chart_document_t& chart, const editor_field_scene_i
     return std::get<virtual_canvas_t>(built).total_rows;
 }
 
-auto valid_scene_paint_preview(const editor_interaction_view_model_t& view,
+auto is_valid_scene_paint_preview(const editor_interaction_view_model_t& view,
                                const editor_field_scene_index_t& index,
                                diagnostic_list_t& diagnostics) -> bool {
     if (!view.pending_note_paint_gesture) {
@@ -2224,7 +2224,7 @@ auto valid_scene_paint_preview(const editor_interaction_view_model_t& view,
     return true;
 }
 
-auto valid_scene_semantic_filter(const chart_document_t& chart,
+auto is_valid_scene_semantic_filter(const chart_document_t& chart,
                                  const editor_field_scene_request_t& request) -> bool {
     const auto known_layer = [&](layer_id_t id) {
         return std::ranges::find(chart.semantic_layers, id, &semantic_layer_t::id) !=
@@ -2287,9 +2287,9 @@ auto prepare_scene_visible_rows(const chart_document_t& chart,
                                 const editor_field_scene_request_t& request,
                                 diagnostic_list_t& diagnostics)
     -> std::optional<scene_visible_rows_t> {
-    if (!valid_scene_index(chart, index, view) ||
-        !valid_scene_request_geometry(request, view.viewport_height_pixels) ||
-        !valid_scene_request_limits(request) || !valid_scene_view(view)) {
+    if (!is_valid_scene_index(chart, index, view) ||
+        !is_valid_scene_request_geometry(request, view.viewport_height_pixels) ||
+        !is_valid_scene_request_limits(request) || !is_valid_scene_view(view)) {
         diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                                     "field-scene index, view, or geometry is invalid"));
         return std::nullopt;
@@ -2303,16 +2303,16 @@ auto prepare_scene_visible_rows(const chart_document_t& chart,
     const auto maximum_scroll =
         editor_maximum_viewport_scroll(content_height, view.viewport_height_pixels,
                                        view.viewport_end_margin_fraction);
-    if (!viewport_scroll_in_range(view.viewport_scroll_pixels, view.viewport_height_pixels,
+    if (!is_viewport_scroll_in_range(view.viewport_scroll_pixels, view.viewport_height_pixels,
                                   maximum_scroll, view.viewport_minimum_margin_fraction)) {
         diagnostics.push_back(error(diagnostic_code_t::row_out_of_range,
                                     "field-scene viewport scroll exceeds chart content"));
         return std::nullopt;
     }
-    if (!valid_scene_paint_preview(view, index, diagnostics)) {
+    if (!is_valid_scene_paint_preview(view, index, diagnostics)) {
         return std::nullopt;
     }
-    if (!valid_scene_semantic_filter(chart, request)) {
+    if (!is_valid_scene_semantic_filter(chart, request)) {
         diagnostics.push_back(
             error(diagnostic_code_t::invalid_id,
                   "field-scene semantic-layer filter refers to invalid chart layers"));
@@ -2321,7 +2321,7 @@ auto prepare_scene_visible_rows(const chart_document_t& chart,
     return visible_scene_rows(chart, view, request, *canvas_rows);
 }
 
-auto valid_note_transform_previews(const editor_interaction_view_model_t& view,
+auto is_valid_note_transform_previews(const editor_interaction_view_model_t& view,
                                    diagnostic_list_t& diagnostics) -> bool {
     const auto count = static_cast<unsigned>(view.pending_hold.has_value() ||
                                              view.pending_virtual_hold.has_value() ||
@@ -2447,7 +2447,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
     for (const auto note : view.selected_notes) {
         selected.insert(note.value);
     }
-    if (!valid_note_transform_previews(view, result.diagnostics)) {
+    if (!is_valid_note_transform_previews(view, result.diagnostics)) {
         return result;
     }
     duration_proposals_t duration;
@@ -2509,13 +2509,13 @@ auto window_request_scalars(const editor_field_scene_request_t& request) {
         request.grid_density.minimum_beat_spacing_pixels,
         request.grid_density.minimum_active_snap_spacing_pixels};
 }
-auto window_has_edit_preview(const editor_interaction_view_model_t& view) -> bool {
+auto has_window_edit_preview(const editor_interaction_view_model_t& view) -> bool {
     return view.pending_hold || !view.additional_keyboard_holds.empty() ||
         view.pending_virtual_hold || !view.pending_canvas_keyboard_holds.empty() ||
         view.pending_note_duration_gesture || view.pending_note_move_gesture ||
         view.pending_note_paint_gesture;
 }
-auto window_bgm_widths_match(const editor_field_scene_window_t& window,
+auto is_window_bgm_width_current(const editor_field_scene_window_t& window,
                              const editor_field_scene_request_t& request) -> bool {
     const auto widths = request.bgm_lane_widths_pixels;
     if (window.bgm_lane_widths_snapshot.size() != widths.size()) return false;
@@ -2531,7 +2531,7 @@ auto scene_window_height(const editor_interaction_view_model_t& view,
     return view.viewport_height_pixels * 3.0 +
            request.retained_window_minimum_margin_pixels * 2.0;
 }
-auto window_key_matches(const editor_field_scene_window_t& window,
+auto is_window_key_current(const editor_field_scene_window_t& window,
                         const editor_interaction_view_model_t& view,
                         const editor_field_scene_request_t& request) -> bool {
     const auto& previous = window.view;
@@ -2546,12 +2546,12 @@ auto window_key_matches(const editor_field_scene_window_t& window,
         previous.active_snap_denominator == view.active_snap_denominator &&
         previous.selected_notes == view.selected_notes &&
         previous.selected_objects == view.selected_objects &&
-        window_bgm_widths_match(window, request) &&
+        is_window_bgm_width_current(window, request) &&
         window_request_scalars(window.request) == window_request_scalars(request) &&
         window.request.required_semantic_layers == request.required_semantic_layers &&
         window.request.excluded_semantic_layers == request.excluded_semantic_layers;
 }
-auto window_contains_view(const editor_field_scene_window_t& window,
+auto is_view_within_window(const editor_field_scene_window_t& window,
                           const editor_interaction_view_model_t& view) -> bool {
     const auto begin = window.view.viewport_scroll_pixels;
     const auto end = begin + window.view.viewport_height_pixels;
@@ -2587,7 +2587,7 @@ void project_window_rects(const std::vector<Geometry>& source, std::vector<Geome
         translated.bounds = translated_window_rect(value.bounds, shift);
         if constexpr (std::is_same_v<Geometry, editor_field_bgm_event_geometry_t>)
             translated.head_bounds = translated_window_rect(value.head_bounds, shift);
-        if (rect_intersects_viewport(translated.bounds, height))
+        if (is_rect_intersecting_viewport(translated.bounds, height))
             target.push_back(std::move(translated));
     }
 }
@@ -2614,28 +2614,28 @@ void project_window_grid(const editor_field_scene_t& source, editor_field_scene_
         target.grid_lines.push_back(std::move(translated));
     }
 }
-auto valid_window_request(const chart_document_t& chart, const editor_field_scene_index_t& index,
+auto is_valid_window_request(const chart_document_t& chart, const editor_field_scene_index_t& index,
                           const editor_interaction_view_model_t& view,
                           const editor_field_scene_request_t& request) -> bool {
     return std::isfinite(request.retained_window_minimum_margin_pixels) &&
            request.retained_window_minimum_margin_pixels >= 0 &&
            std::isfinite(scene_window_height(view, request)) &&
-           !window_has_edit_preview(view) && request.authored_groupings.empty() &&
-           request.comparison_difference_rows.empty() && valid_scene_index(chart, index, view) &&
-           valid_scene_view(view) &&
-           valid_scene_request_geometry(request, view.viewport_height_pixels);
+           !has_window_edit_preview(view) && request.authored_groupings.empty() &&
+           request.comparison_difference_rows.empty() && is_valid_scene_index(chart, index, view) &&
+           is_valid_scene_view(view) &&
+           is_valid_scene_request_geometry(request, view.viewport_height_pixels);
 }
-auto reusable_window_matches(const editor_field_scene_window_t& window,
+auto is_reusable_window_current(const editor_field_scene_window_t& window,
                              const editor_interaction_view_model_t& view,
                              const editor_field_scene_request_t& request) -> bool {
-    return window_key_matches(window, view, request) && window_contains_view(window, view);
+    return is_window_key_current(window, view, request) && is_view_within_window(window, view);
 }
-auto window_scroll_valid(const chart_document_t& chart, const editor_interaction_view_model_t& view,
+auto is_window_scroll_valid(const chart_document_t& chart, const editor_interaction_view_model_t& view,
                          const editor_field_scene_window_t& window) -> bool {
     const auto content_height = static_cast<double>(window.canvas_rows) *
                                 view.pixels_per_standard_measure /
                                 static_cast<double>(chart.divisions_per_standard_measure);
-    return viewport_scroll_in_range(
+    return is_viewport_scroll_in_range(
         view.viewport_scroll_pixels, view.viewport_height_pixels,
         editor_maximum_viewport_scroll(content_height, view.viewport_height_pixels,
                                        view.viewport_end_margin_fraction),
@@ -2713,7 +2713,7 @@ auto project_scene_window(const chart_document_t& chart, const editor_field_scen
                          view.viewport_height_pixels);
     return result;
 }
-auto projected_window_fits_limit(const editor_field_scene_result_t& result,
+auto is_projected_window_within_limit(const editor_field_scene_result_t& result,
                                  const editor_field_scene_request_t& request) -> bool {
     if (!result)
         return false;
@@ -2768,9 +2768,9 @@ auto can_reuse_editor_field_scene_window(const chart_document_t& chart,
                                          const editor_interaction_view_model_t& view,
                                          const editor_field_scene_request_t& request,
                                          const editor_field_scene_window_t& window) -> bool {
-    return valid_window_request(chart, index, view, request) &&
-           reusable_window_matches(window, view, request) &&
-           window_scroll_valid(chart, view, window);
+    return is_valid_window_request(chart, index, view, request) &&
+           is_reusable_window_current(window, view, request) &&
+           is_window_scroll_valid(chart, view, window);
 }
 auto project_editor_field_scene_window_metadata(const chart_document_t& chart,
                                                 const editor_field_scene_index_t& index,
@@ -2781,7 +2781,7 @@ auto project_editor_field_scene_window_metadata(const chart_document_t& chart,
     if (!can_reuse_editor_field_scene_window(chart, index, view, request, window))
         return {};
     auto metadata = project_scene_window_metadata_unchecked(chart, index, view, request, window);
-    if (!projected_window_fits_limit(metadata.projection, request))
+    if (!is_projected_window_within_limit(metadata.projection, request))
         return {};
     return metadata;
 }
@@ -2794,19 +2794,19 @@ auto make_editor_field_scene_reusing_window(const chart_document_t& chart,
     -> editor_field_scene_result_t {
     // Complex transient previews and authored grouping/comparison overlays keep
     // their existing validation and composition path.
-    if (!valid_window_request(chart, index, view, request)) {
+    if (!is_valid_window_request(chart, index, view, request)) {
         window.scene.reset();
         return make_editor_field_scene(chart, index, view, request);
     }
-    const auto matched = reusable_window_matches(window, view, request);
+    const auto matched = is_reusable_window_current(window, view, request);
     if (!matched && !rebuild_scene_window(chart, index, view, request, window)) {
         window.scene.reset();
         return make_editor_field_scene(chart, index, view, request);
     }
-    if (!window_scroll_valid(chart, view, window))
+    if (!is_window_scroll_valid(chart, view, window))
         return make_editor_field_scene(chart, index, view, request);
     auto result = project_scene_window(chart, index, view, request, window);
-    if (!projected_window_fits_limit(result, request)) {
+    if (!is_projected_window_within_limit(result, request)) {
         window.scene.reset();
         return make_editor_field_scene(chart, index, view, request);
     }

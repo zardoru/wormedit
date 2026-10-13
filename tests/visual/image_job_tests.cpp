@@ -102,7 +102,7 @@ TEST_CASE("image job publishes only the newest revision-bound request",
     const auto current = job.request(song_id_t{3}, 11, std::span{&source_b, 1U});
     REQUIRE(current);
     CHECK(current.generation != superseded.generation);
-    CHECK(job.busy());
+    CHECK(job.is_busy());
 
     const auto completion = job.wait();
     REQUIRE(completion);
@@ -113,7 +113,7 @@ TEST_CASE("image job publishes only the newest revision-bound request",
     REQUIRE(completion->result->items.size() == 1);
     REQUIRE(completion->result->items.front());
     CHECK(completion->result->items.front().image->pixels.size() == 8);
-    CHECK_FALSE(job.busy());
+    CHECK_FALSE(job.is_busy());
 }
 
 TEST_CASE("image job retains per-source failures and bounds aggregate publication",

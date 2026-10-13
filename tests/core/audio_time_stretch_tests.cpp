@@ -38,7 +38,7 @@ auto render(std::span<const float> input, rational_t rate, std::size_t block_fra
         output.insert(output.end(), block.begin(), block.begin() + result.produced_frames * 2);
     }
     stretch.finish();
-    while (!stretch.complete()) {
+    while (!stretch.is_complete()) {
         const auto result = stretch.process({}, block);
         expect(result.produced_frames != 0);
         output.insert(output.end(), block.begin(), block.begin() + result.produced_frames * 2);
@@ -88,7 +88,7 @@ TEST_CASE("audio.time_stretch reset clears pending audio and rejects invalid spa
     expect(stretch.buffered_source_frames() == 0);
     expect(stretch.process(std::span(source).first(3), output).consumed_frames == 0);
     stretch.finish();
-    expect(stretch.complete());
+    expect(stretch.is_complete());
 }
 
 namespace {

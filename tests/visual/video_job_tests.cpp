@@ -79,7 +79,7 @@ TEST_CASE("video frame job publishes only the newest revision-bound request",
     const auto current = job.request(song_id_t{1}, 3, item, clock(item.resource, 3, 2));
     REQUIRE(current);
     CHECK(current.generation != superseded.generation);
-    CHECK(job.busy());
+    CHECK(job.is_busy());
 
     const auto completion = job.wait();
     REQUIRE(completion);
@@ -92,7 +92,7 @@ TEST_CASE("video frame job publishes only the newest revision-bound request",
     CHECK(completion->result->clock.media_time_numerator == 3);
     CHECK(completion->result->clock.media_time_denominator == 2);
     CHECK(completion->result->frame->pixels.size() == 1024);
-    CHECK_FALSE(job.busy());
+    CHECK_FALSE(job.is_busy());
     CHECK(cache.size() >= 1);
 }
 

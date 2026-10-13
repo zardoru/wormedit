@@ -24,7 +24,7 @@ auto to_begin_frame(long double frame, const waveform_viewport_t& viewport) noex
 
 } // namespace
 
-auto waveform_viewport_valid(const waveform_viewport_t& viewport) noexcept -> bool {
+auto is_waveform_viewport_valid(const waveform_viewport_t& viewport) noexcept -> bool {
     return viewport.total_frames != 0 && viewport.pixel_width != 0 &&
            std::isfinite(viewport.frames_per_pixel) &&
            viewport.frames_per_pixel >= minimum_waveform_frames_per_pixel &&
@@ -61,7 +61,7 @@ auto clamp_waveform_viewport(waveform_viewport_t viewport) noexcept -> waveform_
 
 auto zoom_waveform_viewport(const waveform_viewport_t& viewport, double anchor_pixel,
                             double factor) noexcept -> waveform_viewport_t {
-    if (!waveform_viewport_valid(viewport) || !std::isfinite(anchor_pixel) ||
+    if (!is_waveform_viewport_valid(viewport) || !std::isfinite(anchor_pixel) ||
         !std::isfinite(factor) || factor <= 0.0)
         return viewport;
     const auto anchor = std::clamp(anchor_pixel, 0.0, static_cast<double>(viewport.pixel_width));
@@ -78,7 +78,7 @@ auto zoom_waveform_viewport(const waveform_viewport_t& viewport, double anchor_p
 
 auto pan_waveform_viewport(const waveform_viewport_t& viewport, double delta_pixels) noexcept
     -> waveform_viewport_t {
-    if (!waveform_viewport_valid(viewport) || !std::isfinite(delta_pixels)) return viewport;
+    if (!is_waveform_viewport_valid(viewport) || !std::isfinite(delta_pixels)) return viewport;
     auto panned = viewport;
     panned.begin_frame = to_begin_frame(
         static_cast<long double>(viewport.begin_frame) +
@@ -89,7 +89,7 @@ auto pan_waveform_viewport(const waveform_viewport_t& viewport, double delta_pix
 
 auto project_waveform_viewport(const waveform_t& waveform, const waveform_viewport_t& viewport)
     -> waveform_projection_result_t {
-    if (!waveform_viewport_valid(viewport) || viewport.total_frames != waveform.total_frames)
+    if (!is_waveform_viewport_valid(viewport) || viewport.total_frames != waveform.total_frames)
         return {.status = waveform_projection_status_t::invalid_window, .level_frames_per_bin = 0,
                 .columns = {}};
     return project_waveform(waveform, {.begin_frame = viewport.begin_frame,

@@ -8,7 +8,7 @@
 namespace wormedit::audio {
 namespace {
 
-auto valid_source(const audio_source_identity_t& source) -> bool {
+auto is_valid_source(const audio_source_identity_t& source) -> bool {
     return !source.asset_identity.empty() && !source.source_identity.empty();
 }
 
@@ -19,10 +19,10 @@ auto checked_end(std::uint64_t start, std::uint64_t count) -> std::optional<std:
     return start + count;
 }
 
-auto valid_voice(const transport_voice_t& voice) -> bool {
+auto is_valid_voice(const transport_voice_t& voice) -> bool {
     return voice.id != 0 &&
            static_cast<std::size_t>(voice.kind) < static_cast<std::size_t>(voice_kind_t::count) &&
-           valid_source(voice.source) && voice.frame_count != 0 && std::isfinite(voice.gain) &&
+           is_valid_source(voice.source) && voice.frame_count != 0 && std::isfinite(voice.gain) &&
            voice.gain >= 0.0F &&
            checked_end(voice.timeline_start_frame, voice.frame_count).has_value() &&
            checked_end(voice.source_start_frame, voice.frame_count).has_value();
@@ -255,7 +255,7 @@ auto transport_t::schedule_voice(session_token_t token, transport_voice_t voice)
 
 auto transport_t::schedule_voices(session_token_t token, std::span<const transport_voice_t> voices)
     -> voice_schedule_status_t {
-    if (voices.empty() || !std::ranges::all_of(voices, valid_voice)) {
+    if (voices.empty() || !std::ranges::all_of(voices, is_valid_voice)) {
         return voice_schedule_status_t::invalid_voice;
     }
     for (std::size_t index = 0; index < voices.size(); ++index) {

@@ -14,15 +14,15 @@
 namespace wormedit {
 namespace {
 
-using text_util::valid_utf8;
+using text_util::is_valid_utf8;
 
-using text_util::valid_bounded_text;
+using text_util::is_valid_bounded_text;
 
 auto checked_add(std::size_t& total, std::size_t value, std::size_t maximum) -> bool {
     return checked_math::account_size(total, value, maximum);
 }
 
-auto metadata_fits(const song_document_t& song, const metadata_edit_limits_t& limits) -> bool {
+auto is_metadata_within_limits(const song_document_t& song, const metadata_edit_limits_t& limits) -> bool {
     std::size_t total{};
     const auto account = [&](std::string_view text) {
         return checked_add(total, text.size(), limits.maximum_total_metadata_bytes);
@@ -32,27 +32,27 @@ auto metadata_fits(const song_document_t& song, const metadata_edit_limits_t& li
             if (group.ordered_fields.size() > limits.maximum_fields_per_group)
                 return false;
             for (const auto& [name, value] : group.ordered_fields) {
-                if (name.empty() || !valid_bounded_text(name, limits.maximum_field_name_bytes) ||
-                    !valid_bounded_text(value, limits.maximum_field_value_bytes) || !account(name) ||
+                if (name.empty() || !is_valid_bounded_text(name, limits.maximum_field_name_bytes) ||
+                    !is_valid_bounded_text(value, limits.maximum_field_value_bytes) || !account(name) ||
                     !account(value))
                     return false;
             }
         }
         return true;
     };
-    if (!valid_bounded_text(song.metadata.title, limits.maximum_title_bytes) ||
-        !valid_bounded_text(song.metadata.artist, limits.maximum_artist_bytes) ||
+    if (!is_valid_bounded_text(song.metadata.title, limits.maximum_title_bytes) ||
+        !is_valid_bounded_text(song.metadata.artist, limits.maximum_artist_bytes) ||
         !account(song.metadata.title) || !account(song.metadata.artist) ||
         song.metadata.ordered_search_tags.size() > limits.maximum_search_tags)
         return false;
     for (const auto& tag : song.metadata.ordered_search_tags)
-        if (!valid_bounded_text(tag, limits.maximum_search_tag_bytes) || !account(tag))
+        if (!is_valid_bounded_text(tag, limits.maximum_search_tag_bytes) || !account(tag))
             return false;
     if (!account_groups(song.metadata.format_groups))
         return false;
     for (const auto& chart : song.charts)
-        if (!valid_bounded_text(chart.metadata.name, limits.maximum_chart_text_bytes) ||
-            !valid_bounded_text(chart.metadata.author, limits.maximum_chart_text_bytes) ||
+        if (!is_valid_bounded_text(chart.metadata.name, limits.maximum_chart_text_bytes) ||
+            !is_valid_bounded_text(chart.metadata.author, limits.maximum_chart_text_bytes) ||
             !account(chart.metadata.name) || !account(chart.metadata.author) ||
             !account_groups(chart.metadata.format_groups))
             return false;
@@ -121,8 +121,8 @@ auto mirrored_source_fields(song_document_t& song, const format_metadata_target_
 
 auto validate_field(std::string_view name, std::string_view value,
                     const metadata_edit_limits_t& limits, diagnostic_list_t& diagnostics) -> bool {
-    if (name.empty() || !valid_bounded_text(name, limits.maximum_field_name_bytes) ||
-        !valid_bounded_text(value, limits.maximum_field_value_bytes)) {
+    if (name.empty() || !is_valid_bounded_text(name, limits.maximum_field_name_bytes) ||
+        !is_valid_bounded_text(value, limits.maximum_field_value_bytes)) {
         diagnostics.push_back(
             error(diagnostic_code_t::unsupported_feature,
                   "format field is empty, invalid UTF-8, NUL-bearing, or over its byte cap"));
@@ -141,10 +141,10 @@ struct metadata_edit_context_t {
 auto apply_metadata_action(metadata_edit_context_t& context,
                            const set_song_metadata_action_t& edit) -> void {
     const auto invalid_tag = std::ranges::any_of(edit.ordered_search_tags, [&](const auto& tag) {
-        return !valid_bounded_text(tag, context.limits.maximum_search_tag_bytes);
+        return !is_valid_bounded_text(tag, context.limits.maximum_search_tag_bytes);
     });
-    if (!valid_bounded_text(edit.title, context.limits.maximum_title_bytes) ||
-        !valid_bounded_text(edit.artist, context.limits.maximum_artist_bytes) ||
+    if (!is_valid_bounded_text(edit.title, context.limits.maximum_title_bytes) ||
+        !is_valid_bounded_text(edit.artist, context.limits.maximum_artist_bytes) ||
         edit.ordered_search_tags.size() > context.limits.maximum_search_tags || invalid_tag) {
         context.result.diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,
             "song metadata is invalid UTF-8, NUL-bearing, or over its cap"));
@@ -166,8 +166,8 @@ auto apply_metadata_action(metadata_edit_context_t& context,
             "chart metadata edit refers to an unknown difficulty"));
         return;
     }
-    if (!valid_bounded_text(edit.name, context.limits.maximum_chart_text_bytes) ||
-        !valid_bounded_text(edit.author, context.limits.maximum_chart_text_bytes) ||
+    if (!is_valid_bounded_text(edit.name, context.limits.maximum_chart_text_bytes) ||
+        !is_valid_bounded_text(edit.author, context.limits.maximum_chart_text_bytes) ||
         (edit.rating && edit.rating->denominator == 0)) {
         context.result.diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,
             "chart metadata is invalid UTF-8, NUL-bearing, over its cap, or has an invalid rating"));
@@ -189,7 +189,7 @@ auto apply_metadata_action(metadata_edit_context_t& context,
         return;
     }
     if (edit.relative_output_path.empty() ||
-        !valid_bounded_text(edit.relative_output_path, context.limits.maximum_output_path_bytes) ||
+        !is_valid_bounded_text(edit.relative_output_path, context.limits.maximum_output_path_bytes) ||
         edit.relative_output_path.find('\\') != std::string::npos ||
         edit.relative_output_path.find(':') != std::string::npos) {
         context.result.diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,
@@ -327,7 +327,7 @@ auto output_path_from_drop(const std::filesystem::path& project_directory,
     const auto text = relative.generic_string();
     if (relative.empty() || relative == "." || directory == relative.has_extension() ||
         !export_asset_directory(relative) || text.empty() ||
-        !valid_bounded_text(text, limits.maximum_output_path_bytes) ||
+        !is_valid_bounded_text(text, limits.maximum_output_path_bytes) ||
         text.find('\\') != std::string::npos || text.find(':') != std::string::npos)
         return std::nullopt;
     return relative;
@@ -394,7 +394,7 @@ auto apply_batch_chart_metadata_edit(document_history_t& history, std::uint64_t 
     auto& result = transaction.outcome;
     if (expected_revision != history.document.revision) return transaction.reject(diagnostic_code_t::invalid_id, "metadata editor document revision is stale");
     if (action.charts.empty() || action.charts.size() > 256) return transaction.reject(diagnostic_code_t::invalid_id, "select between 1 and 256 charts");
-    if ((action.author && !valid_bounded_text(*action.author, limits.maximum_chart_text_bytes)) ||
+    if ((action.author && !is_valid_bounded_text(*action.author, limits.maximum_chart_text_bytes)) ||
         (action.edit_rating && action.rating && action.rating->denominator == 0))
         return transaction.reject(diagnostic_code_t::invalid_id, "batch metadata has invalid author text or rating");
     auto& proposed = transaction.copy_document();
@@ -416,7 +416,7 @@ auto apply_batch_chart_metadata_edit(document_history_t& history, std::uint64_t 
         }
     }
     if (!changed) return result;
-    if (limits.maximum_total_metadata_bytes == 0 || !metadata_fits(proposed, limits))
+    if (limits.maximum_total_metadata_bytes == 0 || !is_metadata_within_limits(proposed, limits))
         return transaction.reject(diagnostic_code_t::invalid_id, "document metadata exceeds its total byte cap");
     return transaction.commit("Edit chart metadata batch");
 }
@@ -444,7 +444,7 @@ auto apply_metadata_edit(document_history_t& history, std::uint64_t expected_rev
 
     if (!result.diagnostics.empty() || !context.changed)
         return result;
-    if (!metadata_fits(proposed, limits)) {
+    if (!is_metadata_within_limits(proposed, limits)) {
         result.diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,
                                            "document metadata exceeds its total byte cap"));
         return result;

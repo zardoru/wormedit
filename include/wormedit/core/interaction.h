@@ -46,12 +46,13 @@ template <typename T>
 
 // Following may extend the chart-start margin to its validated anchor. The chart-end
 // margin may shrink to that anchor; ordinary callers retain the original 20 percent.
-[[nodiscard]] inline auto editor_viewport_margins_valid(double minimum_fraction,
+[[nodiscard]] inline auto is_editor_viewport_margins_valid(double minimum_fraction,
                                                        double end_fraction) noexcept -> bool {
     return std::isfinite(minimum_fraction) && minimum_fraction >= editor_cursor_edge_margin_fraction &&
            minimum_fraction <= 1.0 && std::isfinite(end_fraction) && end_fraction >= 0.0 &&
            end_fraction <= editor_cursor_edge_margin_fraction;
 }
+
 
 enum class interaction_direction_t {
     backward,
@@ -1187,7 +1188,9 @@ auto clear_editor_double_click_state(editor_double_click_state_t& state) -> void
     -> std::variant<std::vector<editor_selection_object_t>, diagnostic_list_t>;
 
 // The chart source family determines which authoring kinds are available.
-[[nodiscard]] auto note_kind_allowed(const chart_document_t& chart, note_kind_t kind) -> bool;
+[[nodiscard]] auto is_note_kind_allowed(const chart_document_t& chart, note_kind_t kind) -> bool;
+// Compatibility for the coordinated sys/UI migration.
+inline auto note_kind_allowed(const chart_document_t& chart, note_kind_t kind) -> bool { return is_note_kind_allowed(chart, kind); }
 [[nodiscard]] auto arm_note_kind(const document_history_t& history,
                                  editor_interaction_state_t& state, note_kind_t kind)
     -> editor_interaction_result_t;
@@ -1202,8 +1205,9 @@ auto clear_editor_double_click_state(editor_double_click_state_t& state) -> void
 // Typed objects are authoritative; legacy note-only callers fall back to their note list.
 [[nodiscard]] auto editor_selection_targets(const editor_interaction_state_t& state)
     -> std::vector<editor_selection_object_t>;
-[[nodiscard]] auto editor_selection_scope_accepts(editor_selection_scope_t scope,
+[[nodiscard]] auto is_editor_selection_scope_accepted(editor_selection_scope_t scope,
     editor_selection_object_kind_t kind) -> bool;
+
 
 // Select/invert only the requested families; selections outside that scope survive.
 [[nodiscard]] auto select_editor_scope(document_history_t& history, editor_interaction_state_t& state,

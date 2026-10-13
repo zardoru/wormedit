@@ -34,7 +34,8 @@ struct note_to_bgm_plan_t {
     std::vector<object_id_t> retained_event_ids;
     diagnostic_list_t diagnostics;
 
-    [[nodiscard]] auto accepted() const -> bool { return diagnostics.empty(); }
+    [[nodiscard]] auto is_accepted() const -> bool { return diagnostics.empty(); }
+
 };
 
 // Pure ordinary-note allocator. Retained linked notes are rejected so callers route BMSON stem

@@ -71,7 +71,7 @@ auto is_playable_family(bms_raw_channel_kind_t kind) -> bool {
            kind == bms_raw_channel_kind_t::long_note || kind == bms_raw_channel_kind_t::mine;
 }
 
-auto profile_maps_channel(const lane_layout_t& layout, std::string_view channel) -> bool {
+auto has_profile_channel(const lane_layout_t& layout, std::string_view channel) -> bool {
     return std::ranges::any_of(layout.lanes, [channel](const auto& lane) {
         const auto matches = [channel](const std::optional<std::string>& candidate) {
             return candidate && *candidate == channel;
@@ -124,7 +124,7 @@ auto observed_channel_families(const std::vector<const bms_raw_channel_t*>& obse
     return result;
 }
 
-auto complete_channel_family_match(const lane_layout_t& layout,
+auto is_complete_channel_family_match(const lane_layout_t& layout,
                                    const channel_family_sets_t& observed) -> bool {
     for (std::size_t family_index = 0; family_index < playable_channel_families.size();
          ++family_index) {
@@ -146,7 +146,7 @@ auto complete_channel_family_match(const lane_layout_t& layout,
     return false;
 }
 
-auto extension_is_known(std::string_view extension) -> bool {
+auto is_known_extension(std::string_view extension) -> bool {
     return extension == ".BMS" || extension == ".BME" || extension == ".BML" || extension == ".PMS";
 }
 
@@ -185,7 +185,7 @@ auto primary_channel_families(const lane_layout_t& layout) -> channel_family_set
     return result;
 }
 
-auto complete_primary_family_match(const lane_layout_t& layout,
+auto is_complete_primary_family_match(const lane_layout_t& layout,
                                    const channel_family_sets_t& observed) -> bool {
     const auto primary = primary_channel_families(layout);
     bool complete = false;
@@ -197,7 +197,7 @@ auto complete_primary_family_match(const lane_layout_t& layout,
     return complete;
 }
 
-auto primary_detection_hints_match(const bms_lane_profile_descriptor_t& spec,
+auto is_primary_detection_hint_match(const bms_lane_profile_descriptor_t& spec,
                                    const bms_profile_detection_request_t& request,
                                    std::string_view extension) -> bool {
     const bool scratchless_ten_key = is_scratchless_ten_key(spec);
@@ -246,7 +246,7 @@ auto extension_weight(const bms_lane_profile_descriptor_t& spec, std::string_vie
 
 void add_extension_evidence(const bms_lane_profile_descriptor_t& spec, std::string_view extension,
                             double& score, std::vector<bms_profile_evidence_t>& evidence) {
-    if (extension_is_known(extension)) {
+    if (is_known_extension(extension)) {
         const auto weight = extension_weight(spec, extension);
         score += weight;
         evidence.push_back({
@@ -390,16 +390,16 @@ auto make_candidates(std::span<const bms_lane_profile_descriptor_t> specs,
         candidate.profile = spec.profile;
         for (const auto* channel : channels) {
             const auto canonical = channel->canonical_spelling.value_or(channel->raw_spelling);
-            if (!profile_maps_channel(candidate.profile.layout, canonical)) {
+            if (!has_profile_channel(candidate.profile.layout, canonical)) {
                 candidate.unmapped_playable_channels.push_back(channel->raw_spelling);
             }
         }
         candidate.maps_all_playable_channels = candidate.unmapped_playable_channels.empty();
         candidate.complete_channel_family_match =
-            complete_channel_family_match(candidate.profile.layout, families);
+            is_complete_channel_family_match(candidate.profile.layout, families);
         candidate.automatic_selection_eligible = spec.family != bms_lane_profile_family_t::special ||
             (is_scratchless_ten_key(spec) && candidate.complete_channel_family_match &&
-             primary_detection_hints_match(spec, request, extension));
+             is_primary_detection_hint_match(spec, request, extension));
         candidates.push_back(std::move(candidate));
     }
     return candidates;
@@ -509,14 +509,14 @@ auto select_complete_primary_profile(std::span<const bms_lane_profile_descriptor
     const auto observed = observed_channel_families(channels);
     bms_profile_candidate_t* chosen = nullptr;
     for (const auto& spec : specs) {
-        if (!primary_detection_hints_match(spec, request, extension)) continue;
+        if (!is_primary_detection_hint_match(spec, request, extension)) continue;
         // Free-zone and pedal variants are identical on their primary lanes.
         // Use the catalog's ordinary variant only while every auxiliary channel is unused.
         if (std::ranges::any_of(spec.profile.layout.lanes, [](const auto& lane) {
             return lane.role == lane_role_t::foot_pedal;
         })) continue;
         auto* candidate = find_candidate(result.candidates, spec.profile.layout.profile_id);
-        if (!candidate || !complete_primary_family_match(candidate->profile.layout, observed)) continue;
+        if (!candidate || !is_complete_primary_family_match(candidate->profile.layout, observed)) continue;
         if (!choose_primary_candidate(chosen, *candidate)) return false;
     }
     if (!chosen) return false;

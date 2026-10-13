@@ -33,7 +33,7 @@ auto is_sound(const resource_entry_t& resource) -> bool {
 auto normalize_name(song_document_t& song, sound_group_id_t except, std::string& name,
                     document_command_result_t& result) -> bool {
     name = trim(std::move(name));
-    if (name.empty() || !text_util::valid_bounded_text(name, maximum_sound_group_name_bytes)) {
+    if (name.empty() || !text_util::is_valid_bounded_text(name, maximum_sound_group_name_bytes)) {
         reject(result, diagnostic_code_t::invalid_id, "sound group name must contain 1 to 64 bytes");
         return false;
     }
@@ -165,7 +165,7 @@ auto sound_group_for_edit(const song_document_t&,
     return std::nullopt;
 }
 
-auto wav_resource(const resource_entry_t& resource) -> bool {
+auto is_wav_resource(const resource_entry_t& resource) -> bool {
     return std::ranges::any_of(resource.target_identities, [](const auto& identity) {
         return identity.family == format_family_t::bms && identity.namespace_name == "WAV";
     });
@@ -177,7 +177,7 @@ auto renumber_edited_groups(song_document_t& song,
     auto allocation = song;
     for (auto& resource : allocation.resources) {
         if (!resource.sound_group ||
-            std::ranges::find(groups, *resource.sound_group) == groups.end() || !wav_resource(resource))
+            std::ranges::find(groups, *resource.sound_group) == groups.end() || !is_wav_resource(resource))
             continue;
         std::erase_if(resource.target_identities, [](const auto& identity) {
             return identity.family == format_family_t::bms && identity.namespace_name == "WAV";
@@ -186,7 +186,7 @@ auto renumber_edited_groups(song_document_t& song,
     for (const auto group : groups) {
         auto members = std::vector<const resource_entry_t*>{};
         for (const auto& resource : song.resources)
-            if (resource.sound_group == group && wav_resource(resource)) members.push_back(&resource);
+            if (resource.sound_group == group && is_wav_resource(resource)) members.push_back(&resource);
         if (members.empty()) continue;
         std::ranges::sort(members, [](const auto* left, const auto* right) {
             if (natural_name_less(left->name, right->name)) return true;
@@ -211,7 +211,7 @@ auto renumber_edited_groups(song_document_t& song,
 auto wav_group_member_count(const song_document_t& song, sound_group_id_t group)
     -> std::size_t {
     return static_cast<std::size_t>(std::ranges::count_if(song.resources, [&](const auto& resource) {
-        return resource.sound_group == group && wav_resource(resource);
+        return resource.sound_group == group && is_wav_resource(resource);
     }));
 }
 
@@ -226,18 +226,18 @@ auto action_sound_ids(const sound_group_edit_action_t& action)
     }, action);
 }
 
-auto same_target(const target_resource_identity_t& left,
+auto target_identity_equal(const target_resource_identity_t& left,
                  const target_resource_identity_t& right) -> bool {
     return left == right;
 }
 
-auto same_target_vectors(const std::vector<resource_entry_t>& left,
+auto target_vectors_equal(const std::vector<resource_entry_t>& left,
                          const std::vector<resource_entry_t>& right) -> bool {
     if (left.size() != right.size()) return false;
     for (std::size_t index = 0; index < left.size(); ++index)
         if (left[index].id != right[index].id ||
             !std::ranges::equal(left[index].target_identities,
-                                right[index].target_identities, same_target)) return false;
+                                right[index].target_identities, target_identity_equal)) return false;
     return true;
 }
 
@@ -288,7 +288,7 @@ auto apply_sound_group_edits(document_history_t& history, std::uint64_t expected
         });
         if (!renumber_edited_groups(proposed, groups, result)) return result;
     }
-    const auto preserve_sources = same_target_vectors(history.document.resources,
+    const auto preserve_sources = target_vectors_equal(history.document.resources,
                                                       proposed.resources);
     const auto label = labels.size() == 1 ? labels.front() : "Edit sound groups";
     return transaction.commit(label, {.preserve_retained_source_flags = preserve_sources});

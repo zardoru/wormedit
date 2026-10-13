@@ -11,7 +11,7 @@ auto failed(offline_mix_status_t status, std::string message) -> offline_mix_res
     return {.status = status, .interleaved_stereo = {}, .message = std::move(message)};
 }
 
-auto valid_request(std::uint32_t sample_rate, std::uint64_t begin, std::uint64_t end,
+auto is_valid_request(std::uint32_t sample_rate, std::uint64_t begin, std::uint64_t end,
                    const offline_mix_options_t& options, std::size_t& output_samples)
     -> offline_mix_status_t {
     if (sample_rate != output_sample_rate || begin >= end || end > options.maximum_timeline_frames ||
@@ -119,7 +119,7 @@ auto render_chunks(preview_session_t& session, std::span<float> chunk,
         if (!render_chunk(session, samples, frames)) return offline_mix_status_t::incomplete_mix;
         copy_selected_frames(samples, current, begin, end, output);
         current += frames;
-        if (!session.active() && current < end) return offline_mix_status_t::incomplete_mix;
+        if (!session.is_active() && current < end) return offline_mix_status_t::incomplete_mix;
     }
     return offline_mix_status_t::mixed;
 }
@@ -149,7 +149,7 @@ auto render_offline_interval(decoded_source_registry_t& sources, const preview_s
                              offline_mix_options_t options, std::stop_token stop)
     -> offline_mix_result_t {
     std::size_t output_samples{};
-    const auto valid = valid_request(schedule.sample_rate, begin_frame, end_frame, options, output_samples);
+    const auto valid = is_valid_request(schedule.sample_rate, begin_frame, end_frame, options, output_samples);
     if (valid != offline_mix_status_t::mixed)
         return failed(valid, valid == offline_mix_status_t::capacity_exceeded
                                  ? "Selected interval exceeds offline mix limits."

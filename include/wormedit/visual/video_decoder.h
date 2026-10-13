@@ -97,8 +97,11 @@ struct video_decoder_session_open_result_t {
     -> video_decoder_session_open_result_t;
 
 // A missing next timestamp denotes the final frame and an open-ended interval.
-[[nodiscard]] auto video_frame_covers_clock(const rgba_video_frame_t& frame,
+[[nodiscard]] auto is_video_frame_covering_clock(const rgba_video_frame_t& frame,
                                             const video_preview_clock_t& clock) noexcept -> bool;
+// Compatibility for the coordinated sys/UI migration.
+inline auto video_frame_covers_clock(const rgba_video_frame_t& frame,
+                                            const video_preview_clock_t& clock) noexcept -> bool { return is_video_frame_covering_clock(frame, clock); }
 
 struct video_frame_decode_result_t {
     video_frame_status_t status{video_frame_status_t::decode_failed};

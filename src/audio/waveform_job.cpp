@@ -124,7 +124,7 @@ void waveform_job_t::cancel() noexcept {
         worker.graph.cancel();
 }
 
-auto waveform_job_t::busy() const noexcept -> bool {
+auto waveform_job_t::is_busy() const noexcept -> bool {
     return current_generation_ != 0;
 }
 

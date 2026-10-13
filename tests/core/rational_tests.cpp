@@ -159,10 +159,10 @@ void check_explicit_trim_policy() {
     CHECK(text_util::trim("\v value\t", " \t") == "\v value");
 }
 void check_bounded_utf8_validation() {
-    CHECK(text_util::valid_bounded_text("é", 2));
-    CHECK_FALSE(text_util::valid_bounded_text("é", 1));
-    CHECK_FALSE(text_util::valid_bounded_text(std::string_view{"a\0b", 3}, 4));
-    CHECK_FALSE(text_util::valid_bounded_text("\xc0\x80", 4));
+    CHECK(text_util::is_valid_bounded_text("é", 2));
+    CHECK_FALSE(text_util::is_valid_bounded_text("é", 1));
+    CHECK_FALSE(text_util::is_valid_bounded_text(std::string_view{"a\0b", 3}, 4));
+    CHECK_FALSE(text_util::is_valid_bounded_text("\xc0\x80", 4));
 }
 void check_utf8_truncation_and_base36_policy() {
     CHECK(text_util::truncate_utf8("aéz", 2) == "a");

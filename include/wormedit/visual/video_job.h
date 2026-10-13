@@ -97,7 +97,9 @@ class video_frame_job_t {
     [[nodiscard]] auto poll() -> std::optional<video_job_completion_t>;
     [[nodiscard]] auto wait() -> std::optional<video_job_completion_t>;
     void cancel() noexcept;
-    [[nodiscard]] auto busy() const noexcept -> bool;
+    [[nodiscard]] auto is_busy() const noexcept -> bool;
+    // Compatibility for the coordinated sys/UI migration.
+    inline auto busy() const noexcept -> bool { return is_busy(); }
 
   private:
     struct decode_request_t {

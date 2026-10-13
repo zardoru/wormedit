@@ -95,7 +95,9 @@ class decoded_block_cache_t {
     }
     [[nodiscard]] auto cached_frame_count(const audio_block_key_t& key)
         -> std::optional<std::size_t>;
-    [[nodiscard]] auto contains(const audio_block_key_t& key) -> bool;
+    [[nodiscard]] auto has_block(const audio_block_key_t& key) -> bool;
+    // Compatibility for the coordinated sys/UI migration.
+    inline auto contains(const audio_block_key_t& key) -> bool { return has_block(key); }
     [[nodiscard]] auto store(const audio_block_key_t& key, std::size_t frame_count,
                              std::span<const float> interleaved_stereo) -> block_store_status_t;
     void clear();

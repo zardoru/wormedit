@@ -18,7 +18,7 @@ TEST_CASE("timing discontinuity profiles resolve explicitly or from source famil
                                                timing_discontinuity_profile_t::canonical) ==
           timing_discontinuity_profile_t::canonical);
     CHECK_FALSE(
-        valid_timing_discontinuity_profile(static_cast<timing_discontinuity_profile_t>(255)));
+        is_valid_timing_discontinuity_profile(static_cast<timing_discontinuity_profile_t>(255)));
 }
 
 TEST_CASE("legacy BMS discontinuities share presentation-first ordering",

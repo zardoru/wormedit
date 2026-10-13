@@ -213,7 +213,7 @@ auto encode_bms_identifier(std::size_t value, std::size_t base) -> std::string {
 
 auto has_role(const resource_entry_t& resource, resource_role_t role) -> bool;
 
-auto bms_resource_matches_namespace(const resource_entry_t& resource, std::string_view name_space)
+auto is_bms_resource_in_namespace(const resource_entry_t& resource, std::string_view name_space)
     -> bool {
     if (name_space == "BMP") return has_role(resource, resource_role_t::bga);
     return has_role(resource, resource_role_t::sample) || has_role(resource, resource_role_t::bgm) ||
@@ -231,7 +231,7 @@ auto renumber_resources(const song_document_t& document,
     auto ids = action.resources;
     if (ids.empty())
         for (const auto& resource : document.resources)
-            if (bms_resource_matches_namespace(resource, action.name_space))
+            if (is_bms_resource_in_namespace(resource, action.name_space))
                 ids.push_back(resource.id);
     std::ranges::sort(ids, {}, &resource_id_t::value);
     if (std::ranges::adjacent_find(ids) != ids.end()) {
@@ -241,7 +241,7 @@ auto renumber_resources(const song_document_t& document,
     std::vector<const resource_entry_t*> resources;
     for (const auto id : ids) {
         const auto item = std::ranges::find(document.resources, id, &resource_entry_t::id);
-        if (item == document.resources.end() || !bms_resource_matches_namespace(*item, action.name_space)) {
+        if (item == document.resources.end() || !is_bms_resource_in_namespace(*item, action.name_space)) {
             reject(result, diagnostic_code_t::invalid_id,
                    "BMS identifier selection has an unknown or incompatible resource");
             return std::nullopt;
@@ -1398,7 +1398,7 @@ auto apply_resource_creation(document_history_t& history, std::uint64_t expected
         reject(result, diagnostic_code_t::invalid_id, "resource creation document revision is stale");
         return result;
     }
-    if (history.document.resources.size() >= 100'000 || !text_util::valid_bounded_text(action.name, 255)) {
+    if (history.document.resources.size() >= 100'000 || !text_util::is_valid_bounded_text(action.name, 255)) {
         reject(result, diagnostic_code_t::invalid_resolution,
                "resource catalog is full or the resource name is invalid");
         return result;
@@ -1434,7 +1434,7 @@ auto apply_resource_creation(document_history_t& history, std::uint64_t expected
         const auto& source_path = audio_role ? audio->source_path : visual->source_path;
         name = source_path.filename().generic_string();
     }
-    if (!text_util::valid_bounded_text(name, 255)) {
+    if (!text_util::is_valid_bounded_text(name, 255)) {
         reject(result, diagnostic_code_t::invalid_resolution,
                "resource source filename exceeds the bounded name limit");
         return result;
@@ -1483,7 +1483,7 @@ auto validate_import_source_paths(const import_resource_asset_action_t& action,
     -> std::optional<std::pair<std::filesystem::path, std::optional<std::filesystem::path>>> {
     const auto path = action.source_path.lexically_normal();
     const auto text = path.generic_string();
-    if (!path.is_absolute() || path.filename().empty() || !text_util::valid_bounded_text(text, 4096)) {
+    if (!path.is_absolute() || path.filename().empty() || !text_util::is_valid_bounded_text(text, 4096)) {
         reject(result, diagnostic_code_t::invalid_id,
                "resource import requires a bounded absolute source file path");
         return std::nullopt;
@@ -1500,7 +1500,7 @@ auto validate_import_source_paths(const import_resource_asset_action_t& action,
         const auto copied_text = candidate.generic_string();
         if (candidate.empty() || candidate.is_absolute() || candidate.has_root_name() ||
             candidate.has_root_directory() ||
-            candidate.filename().empty() || !text_util::valid_bounded_text(copied_text, 4096) ||
+            candidate.filename().empty() || !text_util::is_valid_bounded_text(copied_text, 4096) ||
             std::ranges::any_of(candidate, [](const auto& part) { return part == ".."; }) ||
             candidate.parent_path() != "assets" ||
             !candidate.filename().string().starts_with(
@@ -1957,7 +1957,7 @@ auto apply_resource_asset_relink(document_history_t& history, std::uint64_t expe
     }
     const auto path = action.source_path.lexically_normal();
     const auto path_text = path.generic_string();
-    if (path.empty() || path.filename().empty() || !text_util::valid_bounded_text(path_text, 4096) ||
+    if (path.empty() || path.filename().empty() || !text_util::is_valid_bounded_text(path_text, 4096) ||
         (path.has_root_name() && !path.is_absolute())) {
         reject(result, diagnostic_code_t::invalid_id,
                "resource asset relink path is empty, malformed, or too long");
@@ -2013,7 +2013,7 @@ using text_util::ascii_fold;
 auto normalized_resource_name(std::string_view name) -> std::optional<std::string> {
     name = text_util::trim(name, " \t\r\n");
     if (name.empty()) return std::nullopt;
-    if (!text_util::valid_bounded_text(name, 256) || std::ranges::any_of(name, [](unsigned char c) {
+    if (!text_util::is_valid_bounded_text(name, 256) || std::ranges::any_of(name, [](unsigned char c) {
             return c < 32 || c == 127;
         })) return std::nullopt;
     return std::string{name};
@@ -2021,7 +2021,7 @@ auto normalized_resource_name(std::string_view name) -> std::optional<std::strin
 
 auto normalized_sound_tag(std::string_view tag) -> std::optional<std::string> {
     tag = text_util::trim(tag, " \t");
-    if (tag.empty() || !text_util::valid_bounded_text(tag, maximum_sound_tag_bytes) ||
+    if (tag.empty() || !text_util::is_valid_bounded_text(tag, maximum_sound_tag_bytes) ||
         std::ranges::any_of(tag, [](char c) {
             return static_cast<unsigned char>(c) < 0x20 || c == 0x7f;
         })) {

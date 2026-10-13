@@ -8,7 +8,7 @@
 namespace wormedit::audio {
 namespace {
 
-auto valid_clip(const audition_clip_t& clip) -> bool {
+auto is_valid_clip(const audition_clip_t& clip) -> bool {
     return !clip.source.asset_identity.empty() && !clip.source.source_identity.empty() &&
            clip.frame_count != 0 &&
            clip.frame_count <=
@@ -26,7 +26,7 @@ auto audition_transport_bridge_t::start(std::span<const audition_clip_t> clips)
     if (clips.size() > maximum_layers_) {
         return {.status = audition_start_status_t::too_many_layers, .token = std::nullopt};
     }
-    if (!std::ranges::all_of(clips, valid_clip)) {
+    if (!std::ranges::all_of(clips, is_valid_clip)) {
         return {.status = audition_start_status_t::invalid_clip, .token = std::nullopt};
     }
 

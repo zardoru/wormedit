@@ -2,7 +2,7 @@
 
 namespace wormedit {
 
-auto valid_timing_discontinuity_profile(timing_discontinuity_profile_t profile) noexcept -> bool {
+auto is_valid_timing_discontinuity_profile(timing_discontinuity_profile_t profile) noexcept -> bool {
     return profile == timing_discontinuity_profile_t::canonical ||
            profile == timing_discontinuity_profile_t::bms_legacy ||
            profile == timing_discontinuity_profile_t::bmson_1_0 ||
@@ -12,7 +12,7 @@ auto valid_timing_discontinuity_profile(timing_discontinuity_profile_t profile) 
 auto resolve_timing_discontinuity_profile(
     format_family_t source_family, std::optional<timing_discontinuity_profile_t> requested) noexcept
     -> timing_discontinuity_profile_t {
-    if (requested && valid_timing_discontinuity_profile(*requested)) {
+    if (requested && is_valid_timing_discontinuity_profile(*requested)) {
         return *requested;
     }
     switch (source_family) {

@@ -119,7 +119,7 @@ auto render_elapsed(preview_session_t& session, std::span<float> scratch,
                     double wall_ms) -> render_result_t {
     constexpr std::size_t callback_frames = 4'096;
     render_result_t result;
-    while (frames_to_render > 0 && session.active()) {
+    while (frames_to_render > 0 && session.is_active()) {
         const auto frames = std::min<std::uint64_t>(frames_to_render, callback_frames);
         const auto before = session.timeline_frame();
         const auto samples = static_cast<std::size_t>(frames) * output_channel_count;
@@ -201,7 +201,7 @@ auto run_mode(const char* label, bool charge_pump_time, const std::filesystem::p
               << " schedule_events=" << schedule.playable.size() + schedule.bgm.size()
               << " bound_objects=" << bindings.size() << " end_frame=" << end_frame << '\n';
 
-    while (session.active()) {
+    while (session.is_active()) {
         const auto pump_start = clock_t::now();
         const auto pumped = session.pump();
         const auto wall_ms = std::chrono::duration<double, std::milli>(

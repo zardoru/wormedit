@@ -96,7 +96,7 @@ void editor_navigation_input_controller_t::focus_lost() noexcept { cancel(); }
 void editor_navigation_input_controller_t::text_input_started() noexcept { cancel(); }
 void editor_navigation_input_controller_t::modal_opened() noexcept { cancel(); }
 
-auto editor_navigation_input_controller_t::active() const noexcept -> bool {
+auto editor_navigation_input_controller_t::is_active() const noexcept -> bool {
     return held_action_.has_value();
 }
 

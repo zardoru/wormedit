@@ -30,7 +30,7 @@ auto ordered_segments(const chart_document_t& chart, const measure_index_t& inde
     return ordered;
 }
 
-auto has_lane(const lane_layout_t& layout, lane_id_t lane) -> bool { return layout.contains(lane); }
+auto has_lane(const lane_layout_t& layout, lane_id_t lane) -> bool { return layout.has_lane(lane); }
 
 // Notes whose lane is missing from the layout active at their position.
 auto count_unmapped_notes(const chart_document_t& chart) -> std::optional<std::size_t> {
@@ -61,7 +61,7 @@ struct layout_edit_context_t {
     std::string label;
 };
 
-auto position_allowed(const layout_edit_context_t& context, local_position_t position) -> bool {
+auto is_position_allowed(const layout_edit_context_t& context, local_position_t position) -> bool {
     if (context.policy == lane_layout_change_policy_t::measure_boundaries_only &&
         position.row != 0) {
         reject(context.result, diagnostic_code_t::invalid_measure,
@@ -90,7 +90,7 @@ auto find_segment(layout_edit_context_t& context, object_id_t id)
 }
 
 void apply_edit(layout_edit_context_t& context, const insert_lane_layout_action_t& edit) {
-    if (!position_allowed(context, edit.position)) return;
+    if (!is_position_allowed(context, edit.position)) return;
     const auto occupied = std::ranges::any_of(context.chart.lane_layouts, [&](const auto& segment) {
         return segment.position == edit.position;
     });

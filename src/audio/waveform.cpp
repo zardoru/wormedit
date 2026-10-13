@@ -89,7 +89,7 @@ auto waveform_worker_count(std::size_t bin_count, const waveform_analysis_option
     return std::min({bin_count, options.maximum_parallel_workers, maximum_waveform_workers});
 }
 
-auto valid_source(const audio_source_identity_t& source) -> bool {
+auto is_valid_source(const audio_source_identity_t& source) -> bool {
     return !source.asset_identity.empty() && !source.source_identity.empty();
 }
 
@@ -124,7 +124,7 @@ auto waveform_bytes(const waveform_t& waveform) -> std::optional<std::size_t> {
     return result;
 }
 
-auto valid_bin(const waveform_bin_t& bin, std::uint64_t frames_per_bin) -> bool {
+auto is_valid_bin(const waveform_bin_t& bin, std::uint64_t frames_per_bin) -> bool {
     if (bin.frame_count == 0 || bin.frame_count > frames_per_bin) {
         return false;
     }
@@ -139,7 +139,7 @@ auto valid_bin(const waveform_bin_t& bin, std::uint64_t frames_per_bin) -> bool 
     return true;
 }
 
-auto valid_bins(std::span<const waveform_bin_t> bins, std::uint64_t total_frames,
+auto is_valid_bins(std::span<const waveform_bin_t> bins, std::uint64_t total_frames,
                 std::uint64_t frames_per_bin) -> bool {
     if (total_frames == 0 || frames_per_bin == 0 || bins.empty()) {
         return false;
@@ -150,7 +150,7 @@ auto valid_bins(std::span<const waveform_bin_t> bins, std::uint64_t total_frames
     }
     std::uint64_t accounted_frames{};
     for (const auto& bin : bins) {
-        if (!valid_bin(bin, frames_per_bin) ||
+        if (!is_valid_bin(bin, frames_per_bin) ||
             bin.frame_count > std::numeric_limits<std::uint64_t>::max() - accounted_frames) {
             return false;
         }
@@ -169,8 +169,8 @@ auto waveform_frames(const waveform_t& waveform) -> std::uint64_t {
                ? end - waveform.key.begin_frame : 0;
 }
 
-auto valid_waveform_geometry(const waveform_t& waveform) -> bool {
-    if (!valid_source(waveform.key.source) || waveform.key.frames_per_bin == 0 ||
+auto is_valid_waveform_geometry(const waveform_t& waveform) -> bool {
+    if (!is_valid_source(waveform.key.source) || waveform.key.frames_per_bin == 0 ||
         waveform.sample_rate != output_sample_rate || waveform_frames(waveform) == 0 ||
         waveform.bins.empty()) {
         return false;
@@ -193,13 +193,13 @@ auto valid_waveform_geometry(const waveform_t& waveform) -> bool {
     return waveform.coarser_levels.empty() || expected_bins == 1;
 }
 
-auto valid_waveform(const waveform_t& waveform, std::size_t maximum_bins) -> bool {
-    if (!valid_source(waveform.key.source) || waveform.key.frames_per_bin == 0 ||
+auto is_valid_waveform(const waveform_t& waveform, std::size_t maximum_bins) -> bool {
+    if (!is_valid_source(waveform.key.source) || waveform.key.frames_per_bin == 0 ||
         waveform.sample_rate != output_sample_rate || waveform.bins.empty() ||
         waveform.bins.size() > maximum_bins) {
         return false;
     }
-    if (!valid_bins(waveform.bins, waveform_frames(waveform), waveform.key.frames_per_bin)) {
+    if (!is_valid_bins(waveform.bins, waveform_frames(waveform), waveform.key.frames_per_bin)) {
         return false;
     }
     auto prior_frames_per_bin = static_cast<std::uint64_t>(waveform.key.frames_per_bin);
@@ -208,7 +208,7 @@ auto valid_waveform(const waveform_t& waveform, std::size_t maximum_bins) -> boo
         if (prior_frames_per_bin > std::numeric_limits<std::uint64_t>::max() / 2U ||
             level.frames_per_bin != prior_frames_per_bin * 2U ||
             level.bins.size() != (prior_bin_count + 1U) / 2U ||
-            !valid_bins(level.bins, waveform_frames(waveform), level.frames_per_bin)) {
+            !is_valid_bins(level.bins, waveform_frames(waveform), level.frames_per_bin)) {
             return false;
         }
         prior_frames_per_bin = level.frames_per_bin;
@@ -417,7 +417,7 @@ auto waveform_cache_t::find_entry(const waveform_key_t& key) -> entry_iterator_t
 
 auto waveform_cache_t::find(const waveform_key_t& key) -> std::optional<waveform_t> {
     std::scoped_lock lock(mutex_);
-    if (!valid_source(key.source) || key.frames_per_bin == 0) {
+    if (!is_valid_source(key.source) || key.frames_per_bin == 0) {
         ++stats_.misses;
         return std::nullopt;
     }
@@ -432,7 +432,7 @@ auto waveform_cache_t::find(const waveform_key_t& key) -> std::optional<waveform
 }
 
 auto waveform_cache_t::store(waveform_t waveform) -> waveform_store_status_t {
-    if (!valid_waveform(waveform, limits_.maximum_bins_per_entry)) {
+    if (!is_valid_waveform(waveform, limits_.maximum_bins_per_entry)) {
         std::scoped_lock lock(mutex_);
         ++stats_.rejected_stores;
         return waveform_store_status_t::invalid_waveform;
@@ -505,7 +505,7 @@ auto analyze_waveform(decoder_t& decoder, decoded_block_cache_t& block_cache,
                       std::stop_token stop) -> waveform_analysis_result_t {
     const waveform_key_t key{.source = std::move(source), .frames_per_bin = frames_per_bin,
                              .begin_frame = options.begin_frame, .end_frame = options.end_frame};
-    if (!valid_source(key.source) || frames_per_bin == 0) {
+    if (!is_valid_source(key.source) || frames_per_bin == 0) {
         return {.status = waveform_analysis_status_t::invalid_request};
     }
     if (stop.stop_requested()) {
@@ -621,7 +621,7 @@ auto waveform_level_for_zoom(const waveform_t& waveform, double source_frames_pe
 
 auto project_waveform(const waveform_t& waveform, waveform_projection_request_t request)
     -> waveform_projection_result_t {
-    if (!valid_waveform_geometry(waveform)) {
+    if (!is_valid_waveform_geometry(waveform)) {
         return {.status = waveform_projection_status_t::invalid_waveform};
     }
     if (request.begin_frame >= request.end_frame ||
@@ -668,7 +668,7 @@ auto project_waveform(const waveform_t& waveform, waveform_projection_request_t 
         const auto last_bin = (end_frame - 1U - waveform.key.begin_frame) / level->frames_per_bin;
         for (auto bin_index = first_bin; bin_index <= last_bin; ++bin_index) {
             const auto& bin = level->bins[static_cast<std::size_t>(bin_index)];
-            if (!valid_bin(bin, level->frames_per_bin)) {
+            if (!is_valid_bin(bin, level->frames_per_bin)) {
                 return {.status = waveform_projection_status_t::invalid_waveform};
             }
             weighted_frames += static_cast<double>(bin.frame_count);

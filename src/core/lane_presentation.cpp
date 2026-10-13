@@ -18,7 +18,7 @@ auto editor_presented_lane_bounds(const lane_layout_t& layout, std::size_t colum
     const auto begin = left + lane_width * column + (column >= split ? gap : 0.0);
     return {begin, begin + lane_width};
 }
-auto editor_lane_has_scratch_class(const lane_definition_t& lane) -> bool {
+auto has_editor_lane_scratch_class(const lane_definition_t& lane) -> bool {
     return lane.role == lane_role_t::scratch ||
         (lane.role == lane_role_t::playable && lane.key_color == lane_key_color_t::scratch);
 }
@@ -30,14 +30,14 @@ auto side(const lane_definition_t& lane, const editor_scratch_presentation_t& si
 }
 auto category(const lane_definition_t& lane, const editor_scratch_presentation_t& sides) -> int {
     const auto placement = side(lane, sides);
-    if (!editor_lane_has_scratch_class(lane) || !placement) return 0;
+    if (!has_editor_lane_scratch_class(lane) || !placement) return 0;
     return *placement ? 1 : -1;
 }
 }
-auto editor_scratch_presentation_active(const lane_layout_t& layout,
+auto is_editor_scratch_presentation_active(const lane_layout_t& layout,
                                          const editor_scratch_presentation_t& sides) -> bool {
     return std::ranges::any_of(layout.lanes, [&](const auto& lane) {
-        return editor_lane_has_scratch_class(lane) && side(lane, sides).has_value();
+        return has_editor_lane_scratch_class(lane) && side(lane, sides).has_value();
     });
 }
 auto editor_presented_lanes(const lane_layout_t& layout, const editor_scratch_presentation_t& sides)
@@ -58,7 +58,7 @@ auto editor_presented_lanes(const lane_layout_t& layout, const editor_scratch_pr
 }
 auto editor_presented_column(const lane_layout_t& layout, lane_id_t lane,
                               const editor_scratch_presentation_t& sides) -> std::int64_t {
-    if (!editor_scratch_presentation_active(layout, sides)) {
+    if (!is_editor_scratch_presentation_active(layout, sides)) {
         const auto found = layout.find(lane);
         return found != nullptr && (*found).is_editable()
             ? static_cast<std::int64_t>(found->display_order) : -1;
@@ -75,7 +75,7 @@ auto editor_lane_across_presented_layouts(const lane_layout_t& source, const lan
     if (original == nullptr) return std::nullopt;
     const auto source_column = editor_presented_column(source, lane, sides);
     std::unordered_map<std::uint64_t, std::int64_t> columns;
-    if (editor_scratch_presentation_active(target, sides)) {
+    if (is_editor_scratch_presentation_active(target, sides)) {
         const auto ordered = editor_presented_lanes(target, sides);
         for (std::size_t index = 0; index < ordered.size(); ++index)
             columns.emplace(ordered[index]->id.value, index);
@@ -100,7 +100,7 @@ auto editor_lane_across_presented_layouts(const lane_layout_t& source, const lan
 auto editor_lane_at_presented_column(const lane_layout_t& layout, std::int64_t column,
                                      const editor_scratch_presentation_t& sides)
     -> const lane_definition_t* {
-    if (!editor_scratch_presentation_active(layout, sides)) {
+    if (!is_editor_scratch_presentation_active(layout, sides)) {
         const auto found = std::ranges::find_if(layout.lanes, [&](const auto& lane) {
             return (lane).is_editable() && static_cast<std::int64_t>(lane.display_order) == column;
         });

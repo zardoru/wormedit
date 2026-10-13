@@ -198,7 +198,7 @@ auto remap_node_ids(const bms_control_node_t& baseline, bms_control_node_t& upda
 void remap_active_branch_ids(
     song_document_t& song, const std::unordered_map<std::uint64_t, std::uint64_t>& mapping);
 
-auto same_identities(const std::vector<target_resource_identity_t>& left,
+auto identities_equal(const std::vector<target_resource_identity_t>& left,
                      const std::vector<target_resource_identity_t>& right) -> bool {
     return left == right;
 }
@@ -245,11 +245,11 @@ auto remap_lanes(const chart_document_t& source, chart_document_t& target) -> bo
 auto unique_resource_match(const song_document_t& source, const resource_entry_t& resource)
     -> const resource_entry_t* {
     const auto matches = std::ranges::count_if(source.resources, [&](const auto& item) {
-        return same_identities(item.target_identities, resource.target_identities);
+        return identities_equal(item.target_identities, resource.target_identities);
     });
     if (matches != 1) return nullptr;
     const auto found = std::ranges::find_if(source.resources, [&](const auto& item) {
-        return same_identities(item.target_identities, resource.target_identities);
+        return identities_equal(item.target_identities, resource.target_identities);
     });
     return found == source.resources.end() ? nullptr : &*found;
 }
@@ -548,7 +548,7 @@ auto restore_baseline_node_ids(const bms_control_node_t& original,
     assign_unmatched_baseline_ids(baseline, maximum_id, matched);
 }
 
-auto all_selected_branches_present(const chart_document_t& chart) -> bool {
+auto is_all_selected_branches_present(const chart_document_t& chart) -> bool {
     if (!chart.bms_control_tree) return false;
     return std::ranges::all_of(chart.active_branch_selection, [&](const auto& selection) {
         return tree_node(*chart.bms_control_tree, selection.branch) != nullptr;
@@ -760,7 +760,7 @@ auto parse_unselected(std::span<const std::byte> bytes, const chart_document_t& 
     return parse_candidate(bytes, chart, {});
 }
 
-auto block_leaves_empty(const bms_control_node_t& random) -> bool {
+auto is_block_leaves_empty(const bms_control_node_t& random) -> bool {
     if (random.kind != bms_control_kind_t::random || random.children.size() != 1 ||
         !random.close_source_span || !random.close_text) return false;
     const auto& group = random.children.front();
@@ -801,7 +801,7 @@ auto create_block(document_history_t& history, const chart_document_t& chart,
     }
     (void)restore_baseline_node_ids(*chart.bms_control_tree, *baseline_chart.bms_control_tree);
     baseline_chart.active_branch_selection = chart.active_branch_selection;
-    if (!all_selected_branches_present(baseline_chart)) {
+    if (!is_all_selected_branches_present(baseline_chart)) {
         add_block_error(result, "serialized BMS source no longer contains an existing branch choice");
         return result;
     }
@@ -843,7 +843,7 @@ auto remove_block(document_history_t& history, const chart_document_t& chart,
         old_node->source_span.byte_begin != request.expected_source_span.byte_begin ||
         old_node->source_span.byte_end != request.expected_source_span.byte_end ||
         old_node->original_text != request.expected_original_text ||
-        !block_leaves_empty(*old_node)) {
+        !is_block_leaves_empty(*old_node)) {
         add_block_error(result, "BMS branch block is stale, nonempty, or not removable");
         return result;
     }
@@ -865,12 +865,12 @@ auto remove_block(document_history_t& history, const chart_document_t& chart,
     }
     (void)restore_baseline_node_ids(*chart.bms_control_tree, *baseline_chart.bms_control_tree);
     baseline_chart.active_branch_selection = chart.active_branch_selection;
-    if (!all_selected_branches_present(baseline_chart)) {
+    if (!is_all_selected_branches_present(baseline_chart)) {
         add_block_error(result, "serialized BMS source no longer contains an existing branch choice");
         return result;
     }
     const auto* block = tree_node(*baseline_chart.bms_control_tree, request.random_block);
-    if (block == nullptr || !block_leaves_empty(*block) || !block->close_source_span) {
+    if (block == nullptr || !is_block_leaves_empty(*block) || !block->close_source_span) {
         add_block_error(result, "serialized BMS branch block is no longer empty and removable");
         return result;
     }
@@ -904,7 +904,7 @@ struct leaf_swap_t {
     std::size_t lower_body_end{};
 };
 
-auto movable_leaf(const bms_control_node_t& leaf) -> bool {
+auto is_movable_leaf(const bms_control_node_t& leaf) -> bool {
     return (leaf.kind == bms_control_kind_t::if_branch ||
             leaf.kind == bms_control_kind_t::else_if_branch) &&
            std::ranges::all_of(leaf.children, [](const auto& child) {
@@ -941,7 +941,7 @@ auto find_leaf_swap(const bms_control_node_t& block, branch_id_t leaf_id,
     }
     const auto& upper = group->children[up ? index - 1 : index];
     const auto& lower = group->children[up ? index : index + 1];
-    if (!movable_leaf(upper) || !movable_leaf(lower)) {
+    if (!is_movable_leaf(upper) || !is_movable_leaf(lower)) {
         add_block_error(result, "only plain #IF and #ELSEIF leaves without nested blocks can be reordered");
         return std::nullopt;
     }
@@ -1004,7 +1004,7 @@ auto leaf_move(document_history_t& history, const chart_document_t& chart,
     (void)restore_baseline_node_ids(*chart.bms_control_tree, *baseline_chart.bms_control_tree);
     baseline_chart.active_branch_selection = chart.active_branch_selection;
     const auto* block = tree_node(*baseline_chart.bms_control_tree, request.random_block);
-    if (!all_selected_branches_present(baseline_chart) || block == nullptr) {
+    if (!is_all_selected_branches_present(baseline_chart) || block == nullptr) {
         add_block_error(result, "serialized BMS source no longer contains the branch block");
         return result;
     }

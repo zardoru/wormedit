@@ -6,7 +6,7 @@
 #include <vector>
 
 namespace wormedit {
-inline auto valid_pause_unit(pause_unit_t unit) -> bool {
+inline auto is_valid_pause_unit(pause_unit_t unit) -> bool {
     switch (unit) {
     case pause_unit_t::seconds:
     case pause_unit_t::milliseconds:
@@ -17,7 +17,7 @@ inline auto valid_pause_unit(pause_unit_t unit) -> bool {
     return false;
 }
 
-inline auto valid_warp_encoding(warp_provenance_t encoding) -> bool {
+inline auto is_valid_warp_encoding(warp_provenance_t encoding) -> bool {
     switch (encoding) {
     case warp_provenance_t::native:
     case warp_provenance_t::negative_bpm:

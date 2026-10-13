@@ -395,7 +395,7 @@ auto occupied_marker_lanes(const chart_document_t& chart, const measure_index_t&
 
 
 
-auto editable_lane_at(const chart_document_t& chart, const measure_index_t& index,
+auto is_editable_lane_at(const chart_document_t& chart, const measure_index_t& index,
                       lane_id_t lane, std::uint64_t row) -> bool {
     const auto* layout = layout_at(chart, index, row);
     return layout && std::ranges::any_of(layout->lanes, [&](const auto& candidate) {
@@ -419,7 +419,7 @@ auto validate_marker_targets(const chart_document_t& chart, const measure_index_
         if (!*marker.playable_lane || !row)
             return document_command_transaction_t::rejection(revision, diagnostic_code_t::unknown_lane,
                             "BMSON marker has an invalid playable lane");
-        if (!editable_lane_at(chart, index, *marker.playable_lane, *row))
+        if (!is_editable_lane_at(chart, index, *marker.playable_lane, *row))
             return document_command_transaction_t::rejection(revision, diagnostic_code_t::unknown_lane,
                             "BMSON marker playable lane is unavailable at its row");
         const auto& intervals = occupied.at(marker.playable_lane->value);
@@ -643,7 +643,7 @@ auto find_semantic_event(const chart_document_t& chart, object_id_t id)
     return result;
 }
 
-auto valid_semantic_event(const semantic_event_refs_t& refs) -> bool {
+auto is_valid_semantic_event(const semantic_event_refs_t& refs) -> bool {
     return !((refs.note == nullptr) == (refs.bgm == nullptr)) &&
         (!refs.note || (((refs.note->kind == note_kind_t::tap && !refs.note->end) ||
                          (refs.note->kind == note_kind_t::hold && refs.note->end)) &&
@@ -695,11 +695,11 @@ auto assignment_lane_covers_hold(const chart_document_t& chart, const measure_in
     for (const auto& segment : chart.lane_layouts) {
         const auto transition = absolute_row(index, segment.position);
         if (transition && begin < *transition && *transition <= finish &&
-            !editable_lane_at(chart, index, lane, *transition))
+            !is_editable_lane_at(chart, index, lane, *transition))
             return document_command_transaction_t::rejection(revision, diagnostic_code_t::unknown_lane,
                             "Target lane is unavailable within the BMSON hold span");
     }
-    if (!editable_lane_at(chart, index, lane, finish))
+    if (!is_editable_lane_at(chart, index, lane, finish))
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::unknown_lane,
                         "Target lane is unavailable at the BMSON hold end");
     return std::nullopt;
@@ -715,7 +715,7 @@ auto target_assignment_lane(const chart_document_t& chart, const measure_index_t
     if (!row)
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::row_out_of_range,
                         "BMSON sound assignment target is outside chart geometry");
-    if (!editable_lane_at(chart, index, *lane, *row))
+    if (!is_editable_lane_at(chart, index, *lane, *row))
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::unknown_lane,
                         "Target playable lane is unavailable at the BMSON marker");
     const auto semantic_end = refs.note ? refs.note->end : refs.bgm->end;
@@ -852,7 +852,7 @@ auto assign_bmson_sound_event(document_history_t& history, std::uint64_t expecte
                         "BMSON sound assignment requires valid measure geometry");
     const auto& index = std::get<measure_index_t>(built);
     const auto refs = find_semantic_event(*found_chart, semantic_event);
-    if (!valid_semantic_event(refs))
+    if (!is_valid_semantic_event(refs))
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id,
                         "BMSON sound assignment requires one supported linked event");
     const auto semantic_position = refs.note ? refs.note->position : refs.bgm->position;
@@ -926,7 +926,7 @@ auto find_chart_at_revision(document_history_t& history, std::uint64_t expected_
 
 using timing_arithmetic::subtract_exact;
 
-auto geometry_fits_clip(const sound_channel_t& channel,
+auto is_geometry_within_clip(const sound_channel_t& channel,
                         const bmson_source_geometry_t& geometry) -> bool {
     return geometry.sample_rate != 0 && geometry.frame_count != 0 &&
            channel.source_clip.begin_frame < geometry.frame_count &&
@@ -1060,7 +1060,7 @@ auto resolve_stem_geometry(const chart_document_t& chart, const sound_channel_t&
                            std::optional<bmson_source_geometry_t> geometry,
                            std::uint64_t revision)
     -> std::variant<std::optional<sound_slice_result_t>, document_command_result_t> {
-    if (geometry && (geometry->asset != asset.id || !geometry_fits_clip(channel, *geometry)))
+    if (geometry && (geometry->asset != asset.id || !is_geometry_within_clip(channel, *geometry)))
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id,
                         "Decoded BMSON stem geometry does not match its source asset");
     if (!geometry && asset.stream.frame_count &&
@@ -1101,7 +1101,7 @@ auto has_resource_role(const resource_entry_t& resource, resource_role_t role) -
     return std::ranges::find(resource.roles, role) != resource.roles.end();
 }
 
-auto eligible_empty_stem_resource(const resource_entry_t& resource) -> bool {
+auto is_eligible_empty_stem_resource(const resource_entry_t& resource) -> bool {
     return !resource.missing && has_resource_role(resource, resource_role_t::bgm) &&
            (resource.sound_kind == sound_kind_t::stem ||
             resource.sound_kind == sound_kind_t::unspecified);
@@ -1121,7 +1121,7 @@ auto empty_stem_fallbacks_t::from(const song_document_t& document, const chart_d
             [channel->second->name].push_back(channel->first);
     }
     for (const auto& resource : document.resources) {
-        if (!eligible_empty_stem_resource(resource)) continue;
+        if (!is_eligible_empty_stem_resource(resource)) continue;
         ++result.resource_counts[resource.asset.value][resource.name];
     }
     return result;

@@ -86,7 +86,7 @@ struct decode_context_t {
     return std::nullopt;
 }
 
-[[nodiscard]] auto valid_newlines(std::string_view text) -> bool {
+[[nodiscard]] auto is_valid_newlines(std::string_view text) -> bool {
     for (std::size_t index = 0; index < text.size(); ++index) {
         if (text[index] == '\n' && (index == 0 || text[index - 1] != '\r')) return false;
         if (text[index] == '\r' && (index + 1 == text.size() || text[index + 1] != '\n'))
@@ -96,7 +96,7 @@ struct decode_context_t {
 }
 
 [[nodiscard]] auto split_payload(std::string_view text, grammar_t grammar) -> line_result_t {
-    if (!valid_newlines(text)) return {{}, "BMS clipboard must use consistent CRLF line endings."};
+    if (!is_valid_newlines(text)) return {{}, "BMS clipboard must use consistent CRLF line endings."};
     const auto header_end = text.find("\r\n");
     if (header_end == std::string_view::npos)
         return {{}, "BMS clipboard is missing its header or record separator."};
@@ -250,7 +250,7 @@ auto base36_digit(char byte) -> std::optional<std::uint32_t> {
     return match;
 }
 
-[[nodiscard]] auto note_channel(std::string_view channel) -> bool {
+[[nodiscard]] auto is_note_channel(std::string_view channel) -> bool {
     if (channel.size() != 2 || (channel[0] != '1' && channel[0] != '2')) return false;
     return channel[1] >= '1' && channel[1] <= '9';
 }
@@ -260,7 +260,7 @@ auto base36_digit(char byte) -> std::optional<std::uint32_t> {
     if (channel == "09") return object_kind_t::stop;
     if (channel == "SC") return object_kind_t::scroll;
     if (channel == "SP") return object_kind_t::speed;
-    if (note_channel(channel)) return object_kind_t::note;
+    if (is_note_channel(channel)) return object_kind_t::note;
     if (channel == "04" || channel == "06" || channel == "07") return std::nullopt;
     return std::nullopt;
 }
@@ -661,7 +661,7 @@ void append_record_object(chart_clipboard_t& clipboard, const record_t& record,
     }
 }
 
-[[nodiscard]] auto same_long_note_group(const record_t& left, const record_t& right) -> bool {
+[[nodiscard]] auto long_note_group_equal(const record_t& left, const record_t& right) -> bool {
     return left.lane_index == right.lane_index;
 }
 
@@ -676,7 +676,7 @@ void append_record_object(chart_clipboard_t& clipboard, const record_t& record,
     while (group_start < endpoints.size()) {
         auto group_end = group_start + 1;
         while (group_end < endpoints.size() &&
-               same_long_note_group(*endpoints[group_start], *endpoints[group_end])) ++group_end;
+               long_note_group_equal(*endpoints[group_start], *endpoints[group_end])) ++group_end;
         if ((group_end - group_start) % 2 != 0)
             return "BMS long-note endpoints do not form complete same-lane, same-resource pairs.";
         for (auto index = group_start; index < group_end; index += 2) {

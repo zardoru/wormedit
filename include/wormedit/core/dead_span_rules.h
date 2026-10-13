@@ -14,15 +14,21 @@ namespace wormedit {
 //    valid for every placement source; visual pixel bands never exclude chart rows.
 
 // Tap, hold, roll and lift can be hit by the player; mine, invisible and fake cannot.
-[[nodiscard]] auto note_kind_is_playable(note_kind_t kind) noexcept -> bool;
+[[nodiscard]] auto is_note_kind_playable(note_kind_t kind) noexcept -> bool;
+
 
 // True when `absolute` lies strictly inside a warp, excluding its first and last row.
-[[nodiscard]] auto row_in_warp(const chart_document_t& chart, const measure_index_t& index,
+[[nodiscard]] auto is_row_in_warp(const chart_document_t& chart, const measure_index_t& index,
                                std::uint64_t absolute) -> bool;
 
+
 // True when a note of `kind` whose head sits at `absolute` is not allowed there.
-[[nodiscard]] auto head_blocked_by_warp(const chart_document_t& chart,
+[[nodiscard]] auto is_head_blocked_by_warp(const chart_document_t& chart,
                                         const measure_index_t& index, std::uint64_t absolute,
                                         note_kind_t kind) -> bool;
+// Compatibility for the coordinated sys/UI migration.
+inline auto head_blocked_by_warp(const chart_document_t& chart,
+                                        const measure_index_t& index, std::uint64_t absolute,
+                                        note_kind_t kind) -> bool { return is_head_blocked_by_warp(chart, index, absolute, kind); }
 
 } // namespace wormedit

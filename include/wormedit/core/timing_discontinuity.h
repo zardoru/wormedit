@@ -28,8 +28,9 @@ enum class preview_discontinuity_kind_t : std::uint8_t {
     stop,
 };
 
-[[nodiscard]] auto valid_timing_discontinuity_profile(
+[[nodiscard]] auto is_valid_timing_discontinuity_profile(
     timing_discontinuity_profile_t profile) noexcept -> bool;
+
 
 [[nodiscard]] auto resolve_timing_discontinuity_profile(
     format_family_t source_family,

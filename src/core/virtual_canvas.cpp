@@ -47,7 +47,7 @@ auto virtual_tail_measure_limit(const chart_document_t& chart) -> std::size_t {
         : std::max(chart.measures.size(), static_cast<std::size_t>(chart.virtual_tail_measures));
 }
 
-auto chart_has_virtual_tail(const chart_document_t& chart) -> bool {
+auto has_chart_virtual_tail(const chart_document_t& chart) -> bool {
     return virtual_tail_measure_limit(chart) != 0;
 }
 

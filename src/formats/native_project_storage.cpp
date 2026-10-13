@@ -40,7 +40,7 @@ constexpr std::uint64_t recovery_format_version = 1;
 
 // The envelope records the document schema of its payload. The payload is a native project, so any
 // schema the project reader can migrate (1-5) or read directly (6) is acceptable here.
-constexpr auto recovery_schema_readable(std::uint64_t schema) -> bool {
+constexpr auto is_recovery_schema_readable(std::uint64_t schema) -> bool {
     return schema >= 1 && schema <= 6;
 }
 constexpr std::size_t maximum_diagnostics = 8;
@@ -86,7 +86,7 @@ void add_diagnostic(std::vector<native_project_storage_diagnostic_t>& diagnostic
                            .path = path});
 }
 
-auto stage_allowed(const native_project_storage_options_t& options,
+auto is_stage_allowed(const native_project_storage_options_t& options,
                    native_project_storage_stage_t stage, const std::filesystem::path& path) noexcept
     -> bool {
     if (!options.allow_stage) {
@@ -151,7 +151,7 @@ void copy_codec_diagnostics(std::vector<native_project_storage_diagnostic_t>& de
     }
 }
 
-auto matches(const song_document_t& song, expected_document_t expected) -> bool {
+auto is_document_current(const song_document_t& song, expected_document_t expected) -> bool {
     return song.id == expected.id && song.revision == expected.revision;
 }
 
@@ -276,7 +276,7 @@ auto recovery_envelope(const song_document_t& song, std::string_view payload,
                        const native_project_storage_options_t& options,
                        std::vector<native_project_storage_diagnostic_t>& diagnostics)
     -> std::optional<std::string> {
-    if (!stage_allowed(options, native_project_storage_stage_t::checksum, {})) {
+    if (!is_stage_allowed(options, native_project_storage_stage_t::checksum, {})) {
         add_diagnostic(diagnostics, native_project_storage_diagnostic_code_t::checksum_failure,
                        stage_failure(native_project_storage_stage_t::checksum));
         return std::nullopt;
@@ -346,7 +346,7 @@ auto validate_native_payload(std::string_view bytes, expected_document_t expecte
         }
         return false;
     }
-    if (!matches(*parsed.song, expected)) {
+    if (!is_document_current(*parsed.song, expected)) {
         add_diagnostic(
             diagnostics, native_project_storage_diagnostic_code_t::identity_mismatch,
             "validated native project ID or revision differs from the requested snapshot", path);
@@ -436,7 +436,7 @@ class recovery_envelope_sax_t final : public nlohmann::json_sax<json> {
         return false;
     }
 
-    [[nodiscard]] auto limit_exceeded() const noexcept -> bool {
+    [[nodiscard]] auto is_limit_exceeded() const noexcept -> bool {
         return limit_exceeded_;
     }
 
@@ -489,9 +489,9 @@ auto parse_recovery_impl(std::string_view bytes, native_project_limits_t limits,
     if (!json::sax_parse(bytes.begin(), bytes.end(), &sax)) {
         add_diagnostic(
             diagnostics,
-            sax.limit_exceeded() ? native_project_storage_diagnostic_code_t::resource_limit
+            sax.is_limit_exceeded() ? native_project_storage_diagnostic_code_t::resource_limit
                                  : native_project_storage_diagnostic_code_t::validation_failure,
-            sax.limit_exceeded() ? "recovery envelope exceeds its node, depth, or string limit"
+            sax.is_limit_exceeded() ? "recovery envelope exceeds its node, depth, or string limit"
                                  : "recovery envelope JSON is malformed",
             path);
         return std::nullopt;
@@ -501,7 +501,7 @@ auto parse_recovery_impl(std::string_view bytes, native_project_limits_t limits,
         if (!root.is_object() || root.size() != 13 ||
             root.value("format", std::string{}) != recovery_format ||
             strict_unsigned(root.at("format_version")) != recovery_format_version ||
-            !recovery_schema_readable(strict_unsigned(root.at("schema_version")))) {
+            !is_recovery_schema_readable(strict_unsigned(root.at("schema_version")))) {
             add_diagnostic(diagnostics,
                            native_project_storage_diagnostic_code_t::validation_failure,
                            "recovery envelope schema is unsupported or malformed", path);
@@ -541,7 +541,7 @@ auto parse_recovery_impl(std::string_view bytes, native_project_limits_t limits,
             return std::nullopt;
         }
         const expected_document_t expected{.id = song_id_t{project_id}, .revision = revision};
-        if (!matches(*parsed_song.song, expected)) {
+        if (!is_document_current(*parsed_song.song, expected)) {
             add_diagnostic(
                 diagnostics, native_project_storage_diagnostic_code_t::identity_mismatch,
                 "recovery envelope ID or revision differs from its native-project payload", path);
@@ -614,7 +614,7 @@ void add_scan_diagnostic(std::vector<native_project_storage_diagnostic_t>& diagn
                            .path = path});
 }
 
-auto recovery_kind(native_project_recovery_candidate_kind_t kind) -> bool {
+auto is_recovery_kind(native_project_recovery_candidate_kind_t kind) -> bool {
     return kind != native_project_recovery_candidate_kind_t::primary;
 }
 
@@ -969,7 +969,7 @@ auto reserve_temporary_file(const std::filesystem::path& destination,
     for (int attempt = 0; attempt < 32; ++attempt) {
         const auto sequence = temporary_sequence.fetch_add(1, std::memory_order_relaxed);
         temporary.path = make_temporary_path(destination, sequence);
-        if (!stage_allowed(options, native_project_storage_stage_t::create_temporary,
+        if (!is_stage_allowed(options, native_project_storage_stage_t::create_temporary,
                            temporary.path)) {
             add_diagnostic(diagnostics,
                            native_project_storage_diagnostic_code_t::temporary_file_failure,
@@ -1025,7 +1025,7 @@ auto publish_prevalidated_bytes(const std::filesystem::path& destination, std::s
         return result;
     }
 
-    if (!stage_allowed(options, native_project_storage_stage_t::write_temporary, temporary.path)) {
+    if (!is_stage_allowed(options, native_project_storage_stage_t::write_temporary, temporary.path)) {
         add_diagnostic(result.diagnostics, native_project_storage_diagnostic_code_t::write_failure,
                        stage_failure(native_project_storage_stage_t::write_temporary),
                        temporary.path);
@@ -1047,7 +1047,7 @@ auto publish_prevalidated_bytes(const std::filesystem::path& destination, std::s
         return result;
     }
 
-    if (!stage_allowed(options, native_project_storage_stage_t::flush_temporary, temporary.path)) {
+    if (!is_stage_allowed(options, native_project_storage_stage_t::flush_temporary, temporary.path)) {
         add_diagnostic(result.diagnostics, native_project_storage_diagnostic_code_t::flush_failure,
                        stage_failure(native_project_storage_stage_t::flush_temporary),
                        temporary.path);
@@ -1068,7 +1068,7 @@ auto publish_prevalidated_bytes(const std::filesystem::path& destination, std::s
         return result;
     }
 
-    if (!stage_allowed(options, native_project_storage_stage_t::close_temporary, temporary.path)) {
+    if (!is_stage_allowed(options, native_project_storage_stage_t::close_temporary, temporary.path)) {
         add_diagnostic(result.diagnostics, native_project_storage_diagnostic_code_t::write_failure,
                        stage_failure(native_project_storage_stage_t::close_temporary),
                        temporary.path);
@@ -1089,7 +1089,7 @@ auto publish_prevalidated_bytes(const std::filesystem::path& destination, std::s
         return result;
     }
 
-    if (!stage_allowed(options, native_project_storage_stage_t::reopen_temporary, temporary.path)) {
+    if (!is_stage_allowed(options, native_project_storage_stage_t::reopen_temporary, temporary.path)) {
         add_diagnostic(result.diagnostics, native_project_storage_diagnostic_code_t::read_failure,
                        stage_failure(native_project_storage_stage_t::reopen_temporary),
                        temporary.path);
@@ -1103,7 +1103,7 @@ auto publish_prevalidated_bytes(const std::filesystem::path& destination, std::s
         return result;
     }
 
-    if (!stage_allowed(options, native_project_storage_stage_t::validate_reopened,
+    if (!is_stage_allowed(options, native_project_storage_stage_t::validate_reopened,
                        temporary.path)) {
         add_diagnostic(
             result.diagnostics, native_project_storage_diagnostic_code_t::validation_failure,
@@ -1114,7 +1114,7 @@ auto publish_prevalidated_bytes(const std::filesystem::path& destination, std::s
         return result;
     }
 
-    if (!stage_allowed(options, native_project_storage_stage_t::replace_destination, destination)) {
+    if (!is_stage_allowed(options, native_project_storage_stage_t::replace_destination, destination)) {
         add_diagnostic(
             result.diagnostics, native_project_storage_diagnostic_code_t::replacement_failure,
             stage_failure(native_project_storage_stage_t::replace_destination), destination);
@@ -1143,7 +1143,7 @@ auto publish_prevalidated_bytes(const std::filesystem::path& destination, std::s
     }
 
     std::string directory_failure;
-    if (!stage_allowed(options, native_project_storage_stage_t::sync_destination_directory,
+    if (!is_stage_allowed(options, native_project_storage_stage_t::sync_destination_directory,
                        destination) ||
         !sync_directory(destination, directory_failure)) {
         if (directory_failure.empty()) {
@@ -1551,7 +1551,7 @@ void scan_recovery_candidate(const recovery_candidate_spec_t& spec,
     if (bytes) {
         parse_recovery_candidate(candidate, spec, *bytes, options.codec_limits, diagnostics,
                                  maximum_diagnostics);
-        if (recovery_kind(candidate.kind) &&
+        if (is_recovery_kind(candidate.kind) &&
             candidate.status == native_project_recovery_candidate_status_t::invalid)
             candidate.quarantine =
                 native_project_recovery_quarantine_t::recommend_quarantine_corrupt;
@@ -1749,7 +1749,7 @@ auto publish_native_project_create_only(const std::filesystem::path& destination
         false);
 }
 
-auto recovery_action_stage_allowed(const native_project_recovery_action_options_t& options,
+auto is_recovery_action_stage_allowed(const native_project_recovery_action_options_t& options,
                                    native_project_recovery_action_stage_t stage,
                                    const std::filesystem::path& path) noexcept -> bool {
     if (!options.allow_stage) {
@@ -1862,7 +1862,7 @@ auto parse_scanned_artifact(const native_project_recovery_candidate_t& candidate
     return std::nullopt;
 }
 
-auto same_path_for_action(const std::filesystem::path& left, const std::filesystem::path& right)
+auto is_same_path_for_action(const std::filesystem::path& left, const std::filesystem::path& right)
     -> bool {
     std::error_code left_error;
     std::error_code right_error;
@@ -1970,13 +1970,13 @@ void save_recovery_as_new_project(const native_project_recovery_scan_result_t& s
     }
     for (const auto& entry : scan.candidates) {
         if (entry.kind == native_project_recovery_candidate_kind_t::primary &&
-            same_path_for_action(destination, entry.path)) {
+            is_same_path_for_action(destination, entry.path)) {
             add_action_error(result, native_project_storage_diagnostic_code_t::invalid_destination,
                              "save-as cannot target the primary project", destination);
             return;
         }
     }
-    if (same_path_for_action(destination, candidate.path)) {
+    if (is_same_path_for_action(destination, candidate.path)) {
         add_action_error(result, native_project_storage_diagnostic_code_t::invalid_destination,
                          "save-as cannot target the scanned recovery artifact", destination);
         return;
@@ -1993,7 +1993,7 @@ void save_recovery_as_new_project(const native_project_recovery_scan_result_t& s
                          "save-as destination already exists", destination);
         return;
     }
-    if (!recovery_action_stage_allowed(options,
+    if (!is_recovery_action_stage_allowed(options,
                                        native_project_recovery_action_stage_t::before_save_as_publish,
                                        destination)) {
         add_action_error(result, native_project_storage_diagnostic_code_t::write_failure,
@@ -2032,7 +2032,7 @@ void quarantine_scanned_recovery(const native_project_recovery_scan_result_t& sc
                                  const native_project_recovery_candidate_t& candidate,
                                  const native_project_recovery_action_options_t& options,
                                  native_project_recovery_action_result_t& result) {
-    if (!recovery_action_stage_allowed(options,
+    if (!is_recovery_action_stage_allowed(options,
                                        native_project_recovery_action_stage_t::before_mutation,
                                        candidate.path)) {
         add_action_error(result,
@@ -2058,7 +2058,7 @@ void quarantine_scanned_recovery(const native_project_recovery_scan_result_t& sc
         return;
     }
     result.quarantined_path = destination;
-    if (!recovery_action_stage_allowed(
+    if (!is_recovery_action_stage_allowed(
             options, native_project_recovery_action_stage_t::after_quarantine_move, destination)) {
         add_action_error(result,
                          native_project_storage_diagnostic_code_t::recovery_quarantine_failure,
@@ -2138,7 +2138,7 @@ auto publish_native_project_atomic(const std::filesystem::path& destination,
                                    native_project_storage_options_t options)
     -> native_project_storage_result_t {
     native_project_storage_result_t result;
-    if (!stage_allowed(options, native_project_storage_stage_t::serialize, destination)) {
+    if (!is_stage_allowed(options, native_project_storage_stage_t::serialize, destination)) {
         add_diagnostic(result.diagnostics,
                        native_project_storage_diagnostic_code_t::serialization_failure,
                        stage_failure(native_project_storage_stage_t::serialize), destination);
@@ -2154,7 +2154,7 @@ auto publish_native_project_atomic(const std::filesystem::path& destination,
         }
         return result;
     }
-    if (!stage_allowed(options, native_project_storage_stage_t::preflight_validate, destination)) {
+    if (!is_stage_allowed(options, native_project_storage_stage_t::preflight_validate, destination)) {
         add_diagnostic(
             result.diagnostics, native_project_storage_diagnostic_code_t::validation_failure,
             stage_failure(native_project_storage_stage_t::preflight_validate), destination);
@@ -2200,7 +2200,7 @@ auto publish_native_project_recovery_atomic(const std::filesystem::path& destina
             "last explicit-save revision cannot be newer than the recovery snapshot", destination);
         return result;
     }
-    if (!stage_allowed(options, native_project_storage_stage_t::serialize, destination)) {
+    if (!is_stage_allowed(options, native_project_storage_stage_t::serialize, destination)) {
         add_diagnostic(result.diagnostics,
                        native_project_storage_diagnostic_code_t::serialization_failure,
                        stage_failure(native_project_storage_stage_t::serialize), destination);
@@ -2216,7 +2216,7 @@ auto publish_native_project_recovery_atomic(const std::filesystem::path& destina
         }
         return result;
     }
-    if (!stage_allowed(options, native_project_storage_stage_t::preflight_validate, destination)) {
+    if (!is_stage_allowed(options, native_project_storage_stage_t::preflight_validate, destination)) {
         add_diagnostic(
             result.diagnostics, native_project_storage_diagnostic_code_t::validation_failure,
             stage_failure(native_project_storage_stage_t::preflight_validate), destination);
@@ -2242,7 +2242,7 @@ auto publish_native_project_recovery_atomic(const std::filesystem::path& destina
         [limits = options.codec_limits, expected](std::string_view reopened, auto& diagnostics,
                                                   const auto& path) {
             const auto parsed = parse_recovery_impl(reopened, limits, diagnostics, path);
-            return parsed.has_value() && matches(parsed->snapshot.song, expected);
+            return parsed.has_value() && is_document_current(parsed->snapshot.song, expected);
         });
 }
 
@@ -2283,7 +2283,7 @@ auto apply_native_project_recovery_action(const native_project_recovery_scan_res
         return result;
     }
 
-    const auto allowed = recovery_action_stage_allowed(
+    const auto allowed = is_recovery_action_stage_allowed(
         options, native_project_recovery_action_stage_t::before_revalidate, candidate.path);
     if (!allowed) {
         add_action_error(result, native_project_storage_diagnostic_code_t::read_failure,

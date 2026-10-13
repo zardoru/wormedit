@@ -44,7 +44,7 @@ auto materialize_initial_profile_target(document_history_t& scratch, chart_id_t 
     auto found = scratch.document.find_chart(chart);
     if (found == nullptr) return std::nullopt;
     if (found->measures.empty()) {
-        if (!chart_has_virtual_tail(*found) || virtual_tail_measure_limit(*found) == 0)
+        if (!has_chart_virtual_tail(*found) || virtual_tail_measure_limit(*found) == 0)
             return std::nullopt;
         const auto materialized = apply_measure_edit(
             scratch, scratch.document.revision, materialize_measures_action_t{chart, 1});
@@ -122,7 +122,7 @@ auto insert_initial_lane_profile(document_history_t& history, chart_id_t chart,
 
 } // namespace
 
-auto lane_layout_supports_key_profiles(const lane_layout_t& layout) -> bool {
+auto can_use_lane_key_profiles(const lane_layout_t& layout) -> bool {
     return !layout.lanes.empty() && layout.lanes.size() <= 18 &&
         std::ranges::all_of(layout.lanes, [](const auto& lane) {
             return lane.role == lane_role_t::playable;
@@ -183,7 +183,7 @@ auto active_lane_layout_segment(const chart_document_t& chart, local_position_t 
 }
 
 namespace {
-auto adopts_specialstyle_geometry(const lane_layout_t& current, const lane_layout_t& target) -> bool {
+auto has_specialstyle_geometry(const lane_layout_t& current, const lane_layout_t& target) -> bool {
     const auto base = "osu-mania-" + std::to_string(target.lanes.size()) + "k";
     return (target.lanes.size() == 12 || target.lanes.size() == 16) &&
         (target.profile_id == base + "-specialstyle" ||
@@ -207,7 +207,7 @@ auto retarget_lane_layout(const lane_layout_t& current, const lane_layout_t& tar
     order_by_visual_position(current, ordered_current);
     order_by_visual_position(target, ordered_target);
     auto result = current;
-    const auto adopt_geometry = adopts_specialstyle_geometry(current, target);
+    const auto adopt_geometry = has_specialstyle_geometry(current, target);
     if (adopt_geometry) {
         result.split_stage = target.split_stage;
         result.split_after_column = target.split_after_column;

@@ -9,7 +9,7 @@ namespace {
 
 constexpr std::size_t hard_maximum_video_jobs = 4;
 
-auto same_source(const resolved_visual_asset_t& left, const resolved_visual_asset_t& right)
+auto video_source_equal(const resolved_visual_asset_t& left, const resolved_visual_asset_t& right)
     -> bool {
     return left.resource == right.resource && left.asset == right.asset &&
            left.kind == right.kind && left.path == right.path &&
@@ -17,11 +17,11 @@ auto same_source(const resolved_visual_asset_t& left, const resolved_visual_asse
            left.declared_height == right.declared_height;
 }
 
-auto same_key(const video_frame_cache_entry_t& entry, song_id_t project,
+auto is_video_key_current(const video_frame_cache_entry_t& entry, song_id_t project,
               std::uint64_t document_revision, const resolved_visual_asset_t& source,
               const video_preview_clock_t& clock) -> bool {
     return entry.project == project && entry.document_revision == document_revision &&
-           same_source(entry.source, source) &&
+           video_source_equal(entry.source, source) &&
            entry.media_time_numerator == clock.media_time_numerator &&
            entry.media_time_denominator == clock.media_time_denominator;
 }
@@ -40,7 +40,7 @@ auto video_frame_cache_t::find(song_id_t project, std::uint64_t document_revisio
     -> std::shared_ptr<const rgba_video_frame_t> {
     std::lock_guard lock(mutex_);
     const auto found = std::ranges::find_if(entries_, [&](const auto& entry) {
-        return same_key(entry, project, document_revision, source, clock);
+        return is_video_key_current(entry, project, document_revision, source, clock);
     });
     if (found == entries_.end()) {
         return {};
@@ -62,7 +62,7 @@ auto video_frame_cache_t::insert(song_id_t project, std::uint64_t document_revis
     const auto bytes = frame->pixels.size();
     std::lock_guard lock(mutex_);
     const auto found = std::ranges::find_if(entries_, [&](const auto& entry) {
-        return same_key(entry, project, document_revision, source, clock);
+        return is_video_key_current(entry, project, document_revision, source, clock);
     });
     if (found != entries_.end()) {
         auto entry = std::move(*found);
@@ -129,7 +129,7 @@ auto video_frame_job_t::decode_uncached_frame(const decode_request_t& request,
     std::unique_lock session_lock(session_mutex_);
     if (!session_ || session_project_ != request.project ||
         session_document_revision_ != request.document_revision ||
-        !same_source(session_->source(), request.source)) {
+        !video_source_equal(session_->source(), request.source)) {
         session_.reset();
         session_project_ = {};
         session_document_revision_ = 0;
@@ -285,7 +285,7 @@ void video_frame_job_t::cancel() noexcept {
     }
 }
 
-auto video_frame_job_t::busy() const noexcept -> bool {
+auto video_frame_job_t::is_busy() const noexcept -> bool {
     return current_generation_ != 0;
 }
 

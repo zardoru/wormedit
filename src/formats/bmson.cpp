@@ -845,7 +845,7 @@ struct bmson_resource_catalog_t {
         return {id, true};
     }
 
-    auto resource_missing(const std::filesystem::path& source_path) const -> bool {
+    auto is_resource_missing(const std::filesystem::path& source_path) const -> bool {
         if (!options.asset_base_directory.has_value()) return true;
         std::error_code error;
         return !std::filesystem::exists(*options.asset_base_directory / source_path, error) || error;
@@ -856,7 +856,7 @@ struct bmson_resource_catalog_t {
                       std::filesystem::path source_path, std::string path,
                       std::string source_spelling) -> resource_id_t {
         const auto id = resource_ids.take<resource_id_t>();
-        const bool missing = resource_missing(source_path);
+        const bool missing = is_resource_missing(source_path);
         song.resources.push_back({.id = id,
                                   .name = std::move(name),
                                   .asset = asset,

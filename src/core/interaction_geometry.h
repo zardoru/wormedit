@@ -38,7 +38,7 @@ inline auto maximum_viewport_scroll(const chart_document_t& chart, const measure
                              double scale, double viewport_height,
                              double end_fraction = editor_cursor_edge_margin_fraction) -> std::optional<double> {
     auto total_rows = index.total_rows;
-    if (chart_has_virtual_tail(chart)) {
+    if (has_chart_virtual_tail(chart)) {
         const auto canvas = build_virtual_canvas(chart);
         if (!std::holds_alternative<virtual_canvas_t>(canvas)) {
             return std::nullopt;
@@ -51,7 +51,7 @@ inline auto maximum_viewport_scroll(const chart_document_t& chart, const measure
         viewport_height <= 0.0) {
         return std::nullopt;
     }
-    if (!editor_viewport_margins_valid(editor_cursor_edge_margin_fraction, end_fraction))
+    if (!is_editor_viewport_margins_valid(editor_cursor_edge_margin_fraction, end_fraction))
         return std::nullopt;
     return editor_maximum_viewport_scroll(content_height, viewport_height, end_fraction);
 }

@@ -196,7 +196,7 @@ auto pump_error_for_schedule(voice_schedule_status_t status)
     }
 }
 
-auto valid_source(const audio_source_identity_t& source) -> bool {
+auto is_valid_source(const audio_source_identity_t& source) -> bool {
     return !source.asset_identity.empty() && !source.source_identity.empty();
 }
 
@@ -244,27 +244,27 @@ void prepare_resumes(std::span<const preview_audio_event_t> events, std::uint64_
     }
 }
 
-auto valid_voice_source(const preview_voice_source_t& source) -> bool {
-    return valid_source(source.source) && source.frame_count != 0 &&
+auto is_valid_voice_source(const preview_voice_source_t& source) -> bool {
+    return is_valid_source(source.source) && source.frame_count != 0 &&
            source.frame_count <=
                std::numeric_limits<std::uint64_t>::max() - source.source_start_frame &&
            std::isfinite(source.gain) && source.gain >= 0.0F;
 }
 
-auto valid_accent(metronome_accent_t accent) -> bool {
+auto is_valid_accent(metronome_accent_t accent) -> bool {
     return static_cast<std::uint8_t>(accent) <=
            static_cast<std::uint8_t>(metronome_accent_t::measure);
 }
 
-auto sorted_events(const auto& events) -> bool {
+auto is_sorted_events(const auto& events) -> bool {
     return std::ranges::is_sorted(events, {}, &preview_audio_event_t::sample_frame);
 }
 
-auto sorted_metronome_events(const auto& events) -> bool {
+auto is_sorted_metronome_events(const auto& events) -> bool {
     return std::ranges::is_sorted(events, {}, &preview_metronome_event_t::sample_frame);
 }
 
-auto valid_assist_grid(const preview_assist_click_grid_t& grid) -> bool {
+auto is_valid_assist_grid(const preview_assist_click_grid_t& grid) -> bool {
     return std::isfinite(grid.bpm) && grid.bpm > 0 &&
         static_cast<long double>(grid.sample_rate) * 60 / grid.bpm >= 1 &&
         std::isfinite(grid.phase_source_frame) && grid.sample_rate == output_sample_rate &&
@@ -331,8 +331,8 @@ auto preview_transport_bridge_t::start(
     if (schedule.sample_rate != output_sample_rate) {
         return {.status = preview_bridge_start_status_t::unsupported_sample_rate};
     }
-    if (!sorted_events(schedule.playable) || !sorted_events(schedule.bgm) ||
-        !sorted_metronome_events(schedule.metronome)) {
+    if (!is_sorted_events(schedule.playable) || !is_sorted_events(schedule.bgm) ||
+        !is_sorted_metronome_events(schedule.metronome)) {
         return {.status = preview_bridge_start_status_t::invalid_schedule};
     }
     std::size_t total_voices{};
@@ -350,10 +350,10 @@ auto preview_transport_bridge_t::start(
                              [](const auto& binding) {
                                  return static_cast<bool>(binding.object) &&
                                         !binding.voices.empty() &&
-                                        std::ranges::all_of(binding.voices, valid_voice_source);
+                                        std::ranges::all_of(binding.voices, is_valid_voice_source);
                              }) ||
         !std::ranges::all_of(metronome, [](const auto& binding) {
-            return valid_accent(binding.accent) && valid_voice_source(binding.voice);
+            return is_valid_accent(binding.accent) && is_valid_voice_source(binding.voice);
         })) {
         return {.status = preview_bridge_start_status_t::invalid_source_binding};
     }
@@ -498,11 +498,11 @@ auto preview_transport_bridge_t::set_metronome_volume(std::uint8_t volume_percen
 
 auto preview_transport_bridge_t::set_assist_grid(bool active,
     std::optional<preview_assist_click_grid_t> grid, std::uint64_t current_frame) -> bool {
-    if (grid && !valid_assist_grid(*grid)) return false;
+    if (grid && !is_valid_assist_grid(*grid)) return false;
     const bool reset_voices = active != assist_active_ || (assist_grid_ && !grid);
     if (reset_voices) {
         transport_.set_clicks_enabled(false);
-        transport_.set_clicks_enabled(metronome_enabled());
+        transport_.set_clicks_enabled(is_metronome_enabled());
         last_assist_handed_frame_.reset();
         if (!active && schedule_)
             seek_preview_queue(std::span<const preview_metronome_event_t>{schedule_->metronome},
@@ -522,7 +522,7 @@ void preview_transport_bridge_t::record_assist_handoff(bool assist, std::uint64_
 void preview_transport_bridge_t::refill_assist_clicks(std::uint64_t end, std::uint64_t current_frame) {
     assist_count_ = assist_head_ = 0;
     assist_begin_frame_ = std::max(assist_begin_frame_, current_frame);
-    if (!assist_active_ || !assist_grid_ || !metronome_enabled()) return;
+    if (!assist_active_ || !assist_grid_ || !is_metronome_enabled()) return;
     if (last_assist_handed_frame_ == std::numeric_limits<std::uint64_t>::max()) return;
     const auto minimum = last_assist_handed_frame_
         ? std::max(assist_begin_frame_, *last_assist_handed_frame_ + 1) : assist_begin_frame_;
@@ -560,7 +560,7 @@ auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_f
     const auto playable = std::span<const preview_audio_event_t>{schedule_->playable};
     const auto bgm = std::span<const preview_audio_event_t>{schedule_->bgm};
     const auto clicks = std::span<const preview_metronome_event_t>{schedule_->metronome};
-    if (!metronome_enabled() || assist_active_)
+    if (!is_metronome_enabled() || assist_active_)
         seek_preview_queue(clicks, metronome_head_, exclusive_end_frame);
 
     while (true) {
@@ -625,7 +625,7 @@ auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_f
     return result;
 }
 
-auto preview_transport_bridge_t::exhausted() const noexcept -> bool {
+auto preview_transport_bridge_t::is_exhausted() const noexcept -> bool {
     return schedule_ != nullptr && playable_head_.index == schedule_->playable.size() &&
            bgm_head_.index == schedule_->bgm.size() &&
            resumed_playable_head_.index == resumed_playable_.size() &&

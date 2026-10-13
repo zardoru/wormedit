@@ -552,7 +552,7 @@ struct note_cell_sound_t {
     std::string suffix;
 };
 
-auto cell_has_sound_slot(char symbol) -> bool {
+auto has_cell_sound_slot(char symbol) -> bool {
     return symbol != '0' && symbol != '3';
 }
 
@@ -584,7 +584,7 @@ void register_referenced_keysounds(keysound_context_t& context,
     for (const auto& rows : measures)
         for (const auto& row : rows)
             for (std::size_t lane = 0; lane < row.suffixes.size(); ++lane)
-                if (cell_has_sound_slot(row.symbols[lane]))
+                if (has_cell_sound_slot(row.symbols[lane]))
                     if (const auto index = parse_keysound_index(context.list, row.suffixes[lane]))
                         referenced.insert(*index);
     for (const auto index : referenced)
@@ -1020,7 +1020,7 @@ void append_note_symbol(stepmania_parse_state_t& context, chart_document_t& char
 auto cell_sound(const keysound_context_t& context, const note_row_t& row, std::uint32_t lane,
                 std::size_t measure, const field_t& field,
                 std::vector<stepmania_parse_diagnostic_t>& diagnostics) -> note_cell_sound_t {
-    if (row.suffixes.empty() || row.suffixes[lane].empty() || !cell_has_sound_slot(row.symbols[lane]))
+    if (row.suffixes.empty() || row.suffixes[lane].empty() || !has_cell_sound_slot(row.symbols[lane]))
         return {};
     note_cell_sound_t result{.suffix = "[" + row.suffixes[lane] + "]"};
     const auto index = parse_keysound_index(context.list, row.suffixes[lane]);
@@ -1500,7 +1500,7 @@ auto absolute_row_for(const chart_document_t& chart, local_position_t position)
     return index * chart.divisions_per_standard_measure + position.row;
 }
 
-auto valid_tag_key(std::string_view key) -> bool {
+auto is_valid_tag_key(std::string_view key) -> bool {
     if (key.empty() || key.size() > 64 ||
         !((key.front() >= 'A' && key.front() <= 'Z') || (key.front() >= 'a' && key.front() <= 'z')))
         return false;
@@ -1510,14 +1510,14 @@ auto valid_tag_key(std::string_view key) -> bool {
     });
 }
 
-auto valid_tag_value(std::string_view value) -> bool {
+auto is_valid_tag_value(std::string_view value) -> bool {
     return value.find(';') == std::string_view::npos && value.find('\0') == std::string_view::npos;
 }
 
 auto emit_field(std::string& output, std::string_view key, std::string_view value,
                 std::vector<stepmania_write_diagnostic_t>& diagnostics,
                 std::size_t max_output_bytes) -> void {
-    if (!valid_tag_key(key) || !valid_tag_value(value)) {
+    if (!is_valid_tag_key(key) || !is_valid_tag_value(value)) {
         diagnostics.push_back(
             {diagnostic_severity_t::error, stepmania_write_diagnostic_code_t::invalid_metadata,
              "StepMania field contains an unsafe tag key or value delimiter", std::string(key)});
@@ -1555,7 +1555,7 @@ auto group_value(const format_metadata_t* group, std::string_view key) -> std::s
     return std::string(trim(result));
 }
 
-auto group_has_field(const format_metadata_t* group, std::string_view key) -> bool {
+auto has_group_field(const format_metadata_t* group, std::string_view key) -> bool {
     return group && std::ranges::any_of(group->ordered_fields, [&](const auto& field) {
                return text_util::ascii_upper(std::string(field.first)) == key;
            });
@@ -2524,12 +2524,12 @@ struct stepmania_writer_t {
         constexpr std::array<std::string_view, 7> timing_keys{
             "OFFSET", "BPMS", "STOPS", "DELAYS", "WARPS", "SCROLLS", "SPEEDS"};
         for (const auto key : timing_keys) {
-            if (!group_has_field(song_group, key))
+            if (!has_group_field(song_group, key))
                 continue;
             bool chart_override{};
             for (const auto* chart : charts)
                 chart_override = chart_override ||
-                                 group_has_field(family_group(chart->metadata.format_groups), key);
+                                 has_group_field(family_group(chart->metadata.format_groups), key);
             if (chart_override)
                 continue;
             const auto first = std::ranges::find(timing_by_chart.front(), key,

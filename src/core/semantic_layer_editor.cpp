@@ -18,10 +18,10 @@
 namespace wormedit {
 namespace {
 
-using text_util::valid_utf8;
+using text_util::is_valid_utf8;
 
-auto valid_name(std::string_view name, const semantic_layer_edit_limits_t& limits) -> bool {
-    return !name.empty() && text_util::valid_bounded_text(name, limits.maximum_name_bytes);
+auto is_valid_name(std::string_view name, const semantic_layer_edit_limits_t& limits) -> bool {
+    return !name.empty() && text_util::is_valid_bounded_text(name, limits.maximum_name_bytes);
 }
 
 auto add_size(std::size_t& total, std::size_t value, std::size_t maximum) -> bool {
@@ -32,7 +32,7 @@ auto validate_layer_names(const chart_document_t& chart, const semantic_layer_ed
                           document_command_result_t& result) -> bool {
     std::size_t total{};
     for (const auto& layer : chart.semantic_layers) {
-        if (!valid_name(layer.name, limits)) {
+        if (!is_valid_name(layer.name, limits)) {
             reject(result, diagnostic_code_t::unsupported_feature,
                    "semantic layer name is empty, invalid UTF-8, contains NUL, or exceeds its byte "
                    "cap");
@@ -64,12 +64,12 @@ auto validate_layer_ids(const chart_document_t& chart, document_command_result_t
     return true;
 }
 
-auto valid_color(semantic_layer_rgba_t color) -> bool {
-    const auto in_range = [](double component) {
+auto is_valid_color(semantic_layer_rgba_t color) -> bool {
+    const auto is_color_component_in_range = [](double component) {
         return std::isfinite(component) && component >= 0.0 && component <= 1.0;
     };
-    return in_range(color.red) && in_range(color.green) && in_range(color.blue) &&
-           in_range(color.alpha);
+    return is_color_component_in_range(color.red) && is_color_component_in_range(color.green) && is_color_component_in_range(color.blue) &&
+           is_color_component_in_range(color.alpha);
 }
 
 auto color_channel(double component) -> std::uint8_t {
@@ -308,7 +308,7 @@ auto membership_layer_index(const chart_document_t& chart) -> membership_layer_i
     return layers;
 }
 
-auto editable_membership_layer(const membership_layer_index_t& layers, layer_id_t id,
+auto is_editable_membership_layer(const membership_layer_index_t& layers, layer_id_t id,
                                 document_command_result_t& result) -> bool {
     const auto found = layers.find(id.value);
     if (!id || found == layers.end()) {
@@ -336,7 +336,7 @@ auto validate_clear_note_layers(const membership_layer_index_t& layers, const no
                    "note contains a duplicated semantic layer membership");
             return false;
         }
-        if (!editable_membership_layer(layers, layer_id, result)) return false;
+        if (!is_editable_membership_layer(layers, layer_id, result)) return false;
     }
     return true;
 }
@@ -349,7 +349,7 @@ auto validate_bgm_layers(const membership_layer_index_t& layers, const bgm_event
         return false;
     }
     for (const auto layer : event.semantic_layers)
-        if (!editable_membership_layer(layers, layer, result)) return false;
+        if (!is_editable_membership_layer(layers, layer, result)) return false;
     return true;
 }
 
@@ -409,7 +409,7 @@ auto replace_note_memberships(chart_document_t& chart, const std::vector<object_
                                const semantic_layer_edit_limits_t& limits,
                                document_command_result_t& result) -> bool {
     const auto layers = membership_layer_index(chart);
-    if (target && !editable_membership_layer(layers, *target, result)) return false;
+    if (target && !is_editable_membership_layer(layers, *target, result)) return false;
     const auto selected = collect_replacement_notes(chart, notes, layers, limits, result);
     if (!selected) return false;
     bool changed = false;
@@ -473,7 +473,7 @@ auto apply_bgm_memberships(chart_document_t& chart, const std::vector<object_id_
                            const semantic_layer_edit_limits_t& limits,
                            document_command_result_t& result) -> bool {
     const auto layers = membership_layer_index(chart);
-    if (target && !editable_membership_layer(layers, *target, result)) return false;
+    if (target && !is_editable_membership_layer(layers, *target, result)) return false;
     auto selected = collect_bgm_memberships(chart, ids, layers, limits, result);
     if (!selected) return false;
     bool changed = false;
@@ -520,12 +520,12 @@ auto insert_semantic_layer(chart_document_t& chart,
                "semantic layer insertion would exceed the configured layer cap");
         return false;
     }
-    if (!valid_name(edit.name, limits)) {
+    if (!is_valid_name(edit.name, limits)) {
         reject(result, diagnostic_code_t::unsupported_feature,
                "semantic layer name is empty, invalid UTF-8, contains NUL, or exceeds its byte cap");
         return false;
     }
-    if (!valid_color(edit.color)) {
+    if (!is_valid_color(edit.color)) {
         reject(result, diagnostic_code_t::invalid_resolution,
                "semantic layer RGBA components must be finite values between zero and one");
         return false;
@@ -565,12 +565,12 @@ auto update_semantic_layer(chart_document_t& chart,
     if (layer == nullptr) {
         return false;
     }
-    if (!valid_name(edit.name, limits)) {
+    if (!is_valid_name(edit.name, limits)) {
         reject(result, diagnostic_code_t::unsupported_feature,
                "semantic layer name is empty, invalid UTF-8, contains NUL, or exceeds its byte cap");
         return false;
     }
-    if (!valid_color(edit.color)) {
+    if (!is_valid_color(edit.color)) {
         reject(result, diagnostic_code_t::invalid_resolution,
                "semantic layer RGBA components must be finite values between zero and one");
         return false;

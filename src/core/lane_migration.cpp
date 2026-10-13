@@ -67,7 +67,7 @@ auto ordered_lanes(const lane_layout_t& layout) -> std::vector<lane_definition_t
     return lanes;
 }
 
-auto target_layout_has_unique_ids(const lane_layout_t& layout) -> bool {
+auto has_target_layout_unique_ids(const lane_layout_t& layout) -> bool {
     std::unordered_set<std::uint64_t> ids;
     for (const auto& lane : layout.lanes)
         if (!lane.id || !ids.insert(lane.id.value).second) return false;
@@ -181,7 +181,7 @@ auto changed_binding_count(const input_profile_t& before, const input_profile_t&
 
 
 
-auto same_input(const input_profile_t& left, const input_profile_t& right) -> bool {
+auto input_profile_equal(const input_profile_t& left, const input_profile_t& right) -> bool {
     if (left.profile_id != right.profile_id || left.stage_count != right.stage_count ||
         left.requires_focused_stage != right.requires_focused_stage ||
         left.bindings.size() != right.bindings.size()) return false;
@@ -190,14 +190,14 @@ auto same_input(const input_profile_t& left, const input_profile_t& right) -> bo
     return true;
 }
 
-auto same_target(const lane_input_profile_t& left, const lane_input_profile_t& right) -> bool {
-    return (left.layout == right.layout) && same_input(left.input, right.input);
+auto target_profile_equal(const lane_input_profile_t& left, const lane_input_profile_t& right) -> bool {
+    return (left.layout == right.layout) && input_profile_equal(left.input, right.input);
 }
 
-auto same_preview(const lane_migration_proposal_t& proposal,
+auto is_preview_current(const lane_migration_proposal_t& proposal,
                   const lane_migration_proposal_payload_t& canonical) -> bool {
     return proposal.song == canonical.song && proposal.chart == canonical.chart &&
-           proposal.revision == canonical.revision && same_target(proposal.target, canonical.target) &&
+           proposal.revision == canonical.revision && target_profile_equal(proposal.target, canonical.target) &&
            proposal.mapping == canonical.mapping && proposal.dropped_notes == canonical.dropped_notes &&
            proposal.dropped_sound_channel_events == canonical.dropped_sound_channel_events &&
            proposal.collisions == canonical.collisions &&
@@ -274,7 +274,7 @@ auto collect_linked_event_ids(const chart_document_t& chart)
     return linked;
 }
 
-auto linked_event_lanes_match(const chart_document_t& chart,
+auto is_linked_event_lane_match(const chart_document_t& chart,
                               const std::unordered_map<std::uint64_t,
                                   std::optional<lane_id_t>>& mapping,
                               lane_migration_proposal_t& proposal) -> bool {
@@ -472,7 +472,7 @@ auto lane_channel(const lane_definition_t& lane, bms_channel_slot_t slot)
     return lane.bms_channels.visible;
 }
 
-auto branch_note_identity_preserved(
+auto is_branch_note_identity_preserved(
     const chart_document_t& chart, const note_t& note,
     const std::unordered_map<std::uint64_t, std::optional<lane_id_t>>& mapping,
     const lane_layout_t& target) -> bool {
@@ -490,7 +490,7 @@ auto branch_note_identity_preserved(
     return slot && lane_channel(*target_lane, *slot) == lane_channel(*source_lane, *slot);
 }
 
-auto branch_identity_preserved(const chart_document_t& chart,
+auto is_branch_identity_preserved(const chart_document_t& chart,
                                const std::unordered_map<std::uint64_t, std::optional<lane_id_t>>& mapping,
                                const lane_layout_t& target) -> bool {
     if (!chart.bms_control_tree) return true;
@@ -499,7 +499,7 @@ auto branch_identity_preserved(const chart_document_t& chart,
     for (const auto& measure : chart.measures)
         for (const auto& note : measure.notes)
             if ((note.branch || branch_orders.contains(note.provenance.source_order)) &&
-                !branch_note_identity_preserved(chart, note, mapping, target)) return false;
+                !is_branch_note_identity_preserved(chart, note, mapping, target)) return false;
     return true;
 }
 
@@ -565,7 +565,7 @@ auto propose_lane_migration(const song_document_t& song, std::uint64_t expected_
              "The selected difficulty is no longer available.");
         return proposal;
     }
-    if (!target_layout_has_unique_ids(proposal.target.layout)) {
+    if (!has_target_layout_unique_ids(proposal.target.layout)) {
         fail(proposal, lane_migration_issue_t::invalid_target_profile,
              "The target layout must contain nonzero unique lane identities.");
         return proposal;
@@ -591,7 +591,7 @@ auto propose_lane_migration(const song_document_t& song, std::uint64_t expected_
         [](std::size_t count, const auto& measure) { return count + measure.notes.size(); }));
     if (!append_mapped_note_items(*chart, *index, mapping, source_lanes_by_target,
                                   proposal, items)) return proposal;
-    if (!linked_event_lanes_match(*chart, mapping, proposal)) return proposal;
+    if (!is_linked_event_lane_match(*chart, mapping, proposal)) return proposal;
     const auto linked_events = collect_linked_event_ids(*chart);
     if (!append_unlinked_event_items(*chart, *index, mapping, linked_events,
                                      proposal, items)) return proposal;
@@ -603,7 +603,7 @@ auto propose_lane_migration(const song_document_t& song, std::uint64_t expected_
                     proposal.dropped_sound_channel_events.end()),
         proposal.dropped_sound_channel_events.end());
     proposal.changed_bindings = changed_binding_count(chart->input_profile, proposal.target.input);
-    if (!branch_identity_preserved(*chart, mapping, proposal.target.layout))
+    if (!is_branch_identity_preserved(*chart, mapping, proposal.target.layout))
         fail(proposal, lane_migration_issue_t::unsupported_branch_identity,
              "The migration cannot preserve a retained BMS branch channel identity.");
     if (proposal.issue == lane_migration_issue_t::none)
@@ -617,7 +617,7 @@ auto apply_lane_migration(document_history_t& history,
     if (proposal.issue != lane_migration_issue_t::none)
         return apply_failure(proposal.issue, proposal.message, history.document.revision);
     const auto canonical = lane_migration_proposal_access_t::canonical(proposal);
-    if (!canonical || !same_preview(proposal, *canonical))
+    if (!canonical || !is_preview_current(proposal, *canonical))
         return apply_failure(lane_migration_issue_t::invalid_mapping,
                              "Lane migration preview data was changed after proposal.",
                              history.document.revision);
@@ -627,7 +627,7 @@ auto apply_lane_migration(document_history_t& history,
                              history.document.revision);
     const auto verified = propose_lane_migration(history.document, canonical->revision,
         canonical->chart, canonical->target, canonical->mapping);
-    if (!verified || !same_preview(verified, *canonical))
+    if (!verified || !is_preview_current(verified, *canonical))
         return apply_failure(verified.issue == lane_migration_issue_t::none
                                  ? lane_migration_issue_t::stale_revision : verified.issue,
                              verified.message.empty() ? "The source chart changed after preview."

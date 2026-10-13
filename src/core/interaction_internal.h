@@ -65,7 +65,7 @@ struct hold_row_expansion_t {
     std::unordered_set<std::uint64_t> removals;
     hold_overlap_policy_t overlap_policy{hold_overlap_policy_t::merge_plain};
 
-    auto intersects(std::uint64_t begin, std::uint64_t end) const -> bool {
+    auto is_intersecting(std::uint64_t begin, std::uint64_t end) const -> bool {
         return begin <= end_row && end >= begin_row;
     }
 
@@ -78,7 +78,7 @@ struct hold_row_expansion_t {
                 const auto note_begin = absolute_row(index, note.position);
                 const auto note_end = note.end ? absolute_row(index, *note.end) : note_begin;
                 if (!note_begin || !note_end || *note_end < *note_begin ||
-                    !intersects(*note_begin, *note_end))
+                    !is_intersecting(*note_begin, *note_end))
                     continue;
                 if (!is_plain_editable_note(note) &&
                     !(overlap_policy == hold_overlap_policy_t::remove_sound &&
@@ -120,7 +120,7 @@ void add_ids(std::unordered_set<std::uint64_t>& ids, const Values& values) {
 auto existing_ids(const chart_document_t& chart, editor_selection_object_kind_t kind)
     -> std::unordered_set<std::uint64_t>;
 
-auto span_measures_exist(const chart_document_t& chart, const position_span_t& span) -> bool;
+auto has_span_measures(const chart_document_t& chart, const position_span_t& span) -> bool;
 
 inline auto find_active_lane(const chart_document_t& chart, const measure_index_t& index,
                       local_position_t position, lane_id_t id) -> const lane_definition_t* {
@@ -167,7 +167,7 @@ inline auto absolute_row_at_y_pixels(const chart_document_t& chart, const measur
                               const editor_interaction_view_model_t& view, double y_pixels,
                               bool include_virtual_bms_tail = false) -> std::optional<std::uint64_t> {
     auto total_rows = index.total_rows;
-    if (include_virtual_bms_tail && chart_has_virtual_tail(chart)) {
+    if (include_virtual_bms_tail && has_chart_virtual_tail(chart)) {
         const auto built_canvas = build_virtual_canvas(chart);
         if (const auto* canvas = std::get_if<virtual_canvas_t>(&built_canvas))
             total_rows = canvas->total_rows;
@@ -213,10 +213,10 @@ auto resolve_canvas_cursor(const chart_document_t& chart, const measure_index_t&
                            const editor_interaction_state_t& state)
     -> std::variant<canvas_cursor_t, diagnostic_list_t>;
 
-auto valid_view_snap(const chart_document_t& chart, const editor_interaction_state_t& state)
+auto is_valid_view_snap(const chart_document_t& chart, const editor_interaction_state_t& state)
     -> bool;
 
-auto valid_viewport(const chart_document_t& chart, const measure_index_t& index,
+auto is_valid_viewport(const chart_document_t& chart, const measure_index_t& index,
                     const editor_interaction_state_t& state) -> bool;
 
 auto resolve_view_geometry(const document_history_t& history,
@@ -236,7 +236,7 @@ auto make_space_range_preview(const document_history_t& history,
                               const view_geometry_t& geometry)
     -> std::variant<std::optional<space_range_selection_preview_t>, diagnostic_list_t>;
 
-auto valid_retained_canvas_range(const editor_interaction_state_t& state, std::uint64_t canvas_rows)
+auto is_valid_retained_canvas_range(const editor_interaction_state_t& state, std::uint64_t canvas_rows)
     -> bool;
 
 auto area_selection_anchor_y(const pending_editor_area_selection_t& pending, double viewport_scroll)
@@ -291,7 +291,7 @@ auto plan_hold_placement(const chart_document_t& chart, const measure_index_t& i
     // and end on a row outside it).
     const auto single_row = rows.head_row == rows.tail_row;
     const auto head_kind = single_row ? armed_kind : held_note_kind(armed_kind);
-    if ((committing || !single_row) && head_blocked_by_warp(chart, index, rows.head_row, head_kind))
+    if ((committing || !single_row) && is_head_blocked_by_warp(chart, index, rows.head_row, head_kind))
         return diagnostic_list_t{
             error(diagnostic_code_t::invalid_hold, "playable note heads cannot sit inside a warp")};
     const auto head = position_at(index, rows.head_row);
@@ -593,7 +593,7 @@ struct moved_stem_events_t {
     std::vector<std::size_t> channels;
     std::vector<object_id_t> events;
 
-    [[nodiscard]] auto contains(object_id_t id) const -> bool {
+    [[nodiscard]] auto has_object(object_id_t id) const -> bool {
         return std::ranges::find(events, id) != events.end();
     }
 };
@@ -654,7 +654,7 @@ struct note_move_context_t {
                        : std::max<std::size_t>(1, count(effective_layout(chart, index, source)));
     }
 
-    auto lane_available_across(std::uint64_t begin, std::uint64_t end, lane_id_t lane) const
+    auto is_lane_available_across(std::uint64_t begin, std::uint64_t end, lane_id_t lane) const
         -> bool {
         const auto first = position_at(index, begin);
         const auto last = position_at(index, end);
@@ -818,7 +818,7 @@ struct note_move_collision_sweep_t {
 auto merged_move_ranges(const std::vector<duration_collision_interval_t>& collisions,
                         std::size_t moved_count) -> std::vector<duration_collision_interval_t>;
 
-auto overlaps_move_range(const duration_collision_interval_t& interval,
+auto is_overlapping_move_range(const duration_collision_interval_t& interval,
                          const std::vector<duration_collision_interval_t>& ranges) -> bool;
 
 void mark_move_collisions(std::vector<duration_collision_interval_t>& collisions,
@@ -877,7 +877,7 @@ auto move_conflict_count(const note_move_plan_t& plan) -> std::size_t;
 auto diagnostic_result(const document_history_t& history, const editor_interaction_state_t& state,
                        diagnostic_list_t diagnostics) -> editor_interaction_result_t;
 
-auto playhead_gesture_active(const editor_interaction_state_t& state) -> bool;
+auto is_playhead_gesture_active(const editor_interaction_state_t& state) -> bool;
 
 auto proposed_playhead_cursor(const document_history_t& history, const chart_document_t& chart,
                               const measure_index_t& index, const editor_interaction_state_t& state,
@@ -1009,7 +1009,7 @@ struct lane_move_candidate_t {
     object_id_t id;
     lane_id_t lane;
 };
-auto precedes(const lane_move_candidate_t& left, const lane_move_candidate_t& right) -> bool;
+auto lane_move_candidate_less(const lane_move_candidate_t& left, const lane_move_candidate_t& right) -> bool;
 auto first_selected_lane_object(const chart_document_t& chart, std::span<const object_id_t> notes,
                                 std::span<const object_id_t> bgm_events)
     -> std::optional<lane_move_candidate_t>;
@@ -1098,7 +1098,7 @@ auto preserve_keyboard_hold_after_scroll(editor_edit_context_t& context,
     -> std::optional<editor_interaction_result_t>;
 auto scroll_editor_view(editor_edit_context_t& context, const scroll_editor_view_action_t& action)
     -> editor_interaction_result_t;
-auto keyboard_entry_editable(const chart_document_t& chart, const note_t& note) -> bool;
+auto is_keyboard_entry_editable(const chart_document_t& chart, const note_t& note) -> bool;
 auto keyboard_entry_occupant(const chart_document_t& chart, const measure_index_t& index,
                              lane_id_t lane, local_position_t target)
     -> std::variant<const note_t*, diagnostic_list_t>;
@@ -1257,7 +1257,7 @@ struct area_selection_context_t {
     editor_edit_context_t& edit;
     const std::variant<editor_interaction_view_model_t, diagnostic_list_t>& initial_view;
 };
-auto valid_area_selection_capture(const begin_editor_area_selection_action_t& request,
+auto is_valid_area_selection_capture(const begin_editor_area_selection_action_t& request,
                                   double viewport_height) -> bool;
 auto begin_area_selection_gesture(area_selection_context_t& context,
                                   const begin_editor_area_selection_action_t& request)
@@ -1278,27 +1278,27 @@ auto recovered_editor_view(document_history_t& history, editor_interaction_state
 auto handle_editor_cancellation(document_history_t& history, editor_interaction_state_t& state,
                                 const editor_interaction_action_t& action)
     -> std::optional<editor_interaction_result_t>;
-template <class... Actions> auto gesture_action_is(const editor_interaction_action_t& action) -> bool {
+template <class... Actions> auto is_gesture_action(const editor_interaction_action_t& action) -> bool {
     return (std::holds_alternative<Actions>(action) || ...);
 }
-auto keyboard_hold_action_allowed(const editor_interaction_action_t& action) -> bool;
-auto hold_gesture_action_allowed(const editor_interaction_state_t& state,
+auto is_keyboard_hold_action_allowed(const editor_interaction_action_t& action) -> bool;
+auto is_hold_gesture_action_allowed(const editor_interaction_state_t& state,
                                  const editor_interaction_action_t& action) -> bool;
-auto gesture_action_allowed(editor_gesture_kind_t kind, const editor_interaction_state_t& state,
+auto is_gesture_action_allowed(editor_gesture_kind_t kind, const editor_interaction_state_t& state,
                             const editor_interaction_action_t& action) -> bool;
 auto gesture_finish_message(editor_gesture_kind_t kind) -> const char*;
 auto validate_active_gesture_action(const document_history_t& history,
                                     const editor_interaction_state_t& state,
                                     const editor_interaction_action_t& action)
     -> std::optional<editor_interaction_result_t>;
-auto virtual_cursor_action_allowed(const editor_interaction_state_t& state,
+auto is_virtual_cursor_action_allowed(const editor_interaction_state_t& state,
                                    const editor_interaction_action_t& action) -> bool;
 auto interaction_view_result(const document_history_t& history,
                              const editor_interaction_state_t& state, bool changed)
     -> editor_interaction_result_t;
 auto apply_duration_resize_plan(document_history_t& history, editor_interaction_state_t& state,
                                 const duration_resize_plan_t& plan) -> editor_interaction_result_t;
-auto note_move_changes(const chart_document_t& chart, const note_move_plan_t& plan) -> bool;
+auto has_note_move_changes(const chart_document_t& chart, const note_move_plan_t& plan) -> bool;
 auto relocate_moved_notes(chart_document_t& chart, const note_move_plan_t& plan,
                           document_history_t& history, editor_interaction_state_t& state)
     -> std::optional<diagnostic_t>;

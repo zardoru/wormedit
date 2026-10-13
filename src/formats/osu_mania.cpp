@@ -1340,7 +1340,7 @@ class osu_resource_catalog_t {
                                   .roles = {role},
                                   .target_identities = {{format_family_t::osu_mania,
                                                          std::string(name), "audio-path"}},
-                                  .missing = resource_is_missing(*path),
+                                  .missing = is_resource_missing(*path),
                                   .provenance = {format_family_t::osu_mania, "osu-mania",
                                                  std::move(source_field), std::string(name),
                                                  source_order}});
@@ -1370,7 +1370,7 @@ class osu_resource_catalog_t {
                                   .roles = {role},
                                   .target_identities = {{format_family_t::osu_mania,
                                                          std::string(name), "visual-path"}},
-                                  .missing = resource_is_missing(*path),
+                                  .missing = is_resource_missing(*path),
                                   .provenance = {format_family_t::osu_mania, "osu-mania",
                                                  std::move(source_field), std::string(name),
                                                  source_order}});
@@ -1386,7 +1386,7 @@ class osu_resource_catalog_t {
             existing->roles.push_back(role);
     }
 
-    auto resource_is_missing(const std::filesystem::path& path) const -> bool {
+    auto is_resource_missing(const std::filesystem::path& path) const -> bool {
         if (!options.asset_base_directory) return true;
         std::error_code error;
         return !std::filesystem::exists(*options.asset_base_directory / path, error) || error;
@@ -1838,13 +1838,13 @@ auto path_utf8(const std::filesystem::path& path) -> std::string {
     return text_util::path_utf8(path);
 }
 
-auto writer_safe_text(std::string_view value) -> bool {
+auto is_writer_safe_text(std::string_view value) -> bool {
     return value.find('\0') == std::string_view::npos &&
            value.find('\n') == std::string_view::npos &&
            value.find('\r') == std::string_view::npos && !valid_utf8(value).has_value();
 }
 
-auto writer_safe_key(std::string_view value) -> bool {
+auto is_writer_safe_key(std::string_view value) -> bool {
     if (value.empty())
         return false;
     return std::ranges::all_of(value, [](unsigned char character) {
@@ -1907,7 +1907,7 @@ auto osu_resource_path(const song_document_t& song, resource_id_t id, bool expec
     }
     const auto name = path_utf8(asset_path);
     const auto safe = safe_relative_path(name);
-    if (!safe || !writer_safe_text(name))
+    if (!safe || !is_writer_safe_text(name))
         return std::nullopt;
     return safe->generic_string();
 }
@@ -2048,7 +2048,7 @@ void append_passthrough_event(std::vector<passthrough_field_t>& output,
                               std::string_view identity, std::string_view key,
                               std::string_view value, bool is_storyboard_line) {
     if (is_storyboard_line) return;
-    if (key != "[]" || !writer_safe_text(value) || value.empty() || value.front() == '[') {
+    if (key != "[]" || !is_writer_safe_text(value) || value.empty() || value.front() == '[') {
         if (key == "[]") warn_omitted_passthrough(diagnostics, identity);
         return;
     }
@@ -2078,7 +2078,7 @@ void append_passthrough_field(std::vector<passthrough_field_t>& output,
         return;
     }
     if (key == "[]") {
-        if (section.empty() || !writer_safe_key(section) || !writer_safe_text(value) ||
+        if (section.empty() || !is_writer_safe_key(section) || !is_writer_safe_text(value) ||
             value.empty() || value.front() == '[') {
             warn_omitted_passthrough(diagnostics, identity);
             return;
@@ -2086,7 +2086,7 @@ void append_passthrough_field(std::vector<passthrough_field_t>& output,
         output.push_back({std::string(section), std::string(value)});
         return;
     }
-    if (!writer_safe_key(section) || !writer_safe_key(key) || !writer_safe_text(value)) {
+    if (!is_writer_safe_key(section) || !is_writer_safe_key(key) || !is_writer_safe_text(value)) {
         warn_omitted_passthrough(diagnostics, identity);
         return;
     }
@@ -2818,7 +2818,7 @@ template <typename fail_t>
 auto collect_osu_tags(const song_document_t& song, const chart_document_t& chart,
                       fail_t&& fail) -> std::string {
     const auto check = [&](std::string_view value, std::string_view field) {
-        if (!writer_safe_text(value))
+        if (!is_writer_safe_text(value))
             fail(osu_mania_write_diagnostic_code_t::invalid_metadata,
                  "metadata cannot contain newlines or NUL bytes", std::string(field));
     };
@@ -3168,7 +3168,7 @@ void append_osu_bgm_events(
     }
 }
 
-auto osu_sound_event_projected(const chart_document_t& chart, const sound_channel_event_t& event,
+auto is_osu_sound_event_projected(const chart_document_t& chart, const sound_channel_event_t& event,
                                resource_id_t resource) -> bool {
     return std::ranges::any_of(chart.measures, [&](const auto& measure) {
         return std::ranges::any_of(measure.notes, [&](const auto& note) {
@@ -3197,7 +3197,7 @@ void append_osu_sound_channels(
                  "sound channel asset has no resource entry", "sound_channels");
         for (const auto& event : channel.events) {
             if (event.playable) {
-                if (!osu_sound_event_projected(chart, event, resource->id))
+                if (!is_osu_sound_event_projected(chart, event, resource->id))
                     fail(osu_mania_write_diagnostic_code_t::unsupported_feature,
                          "playable sound-channel event has no equivalent sampled hit object",
                          "sound_channels");

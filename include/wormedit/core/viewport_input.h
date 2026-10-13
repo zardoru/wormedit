@@ -37,9 +37,11 @@ struct viewport_action_batch_t {
     std::array<viewport_action_t, maximum_viewport_actions_per_input> actions{};
     std::size_t count{};
 
-    [[nodiscard]] auto empty() const noexcept -> bool {
+    [[nodiscard]] auto is_empty() const noexcept -> bool {
         return count == 0;
     }
+    // Compatibility for the coordinated sys/UI migration.
+    inline auto empty() const noexcept -> bool { return is_empty(); }
     [[nodiscard]] auto operator[](std::size_t index) const noexcept -> const viewport_action_t& {
         return actions[index];
     }
@@ -112,11 +114,18 @@ class viewport_input_controller_t {
     void modal_opened() noexcept;
     // Call before dispatching an ordinary edit press. Returns true if a latched
     // autoscroll was canceled and the press can then be handled normally.
-    [[nodiscard]] auto normal_edit_press() noexcept -> bool;
+    [[nodiscard]] auto is_normal_edit_press() noexcept -> bool;
+    // Compatibility for the coordinated sys/UI migration.
+    inline auto normal_edit_press() noexcept -> bool { return is_normal_edit_press(); }
 
-    [[nodiscard]] auto autoscroll_active() const noexcept -> bool;
-    [[nodiscard]] auto momentum_active() const noexcept -> bool;
-    [[nodiscard]] auto trackpad_active() const noexcept -> bool;
+    [[nodiscard]] auto is_autoscroll_active() const noexcept -> bool;
+    // Compatibility for the coordinated sys/UI migration.
+    inline auto autoscroll_active() const noexcept -> bool { return is_autoscroll_active(); }
+    [[nodiscard]] auto is_momentum_active() const noexcept -> bool;
+    // Compatibility for the coordinated sys/UI migration.
+    inline auto momentum_active() const noexcept -> bool { return is_momentum_active(); }
+    [[nodiscard]] auto is_trackpad_active() const noexcept -> bool;
+
 
   private:
     enum class routed_gesture_t {

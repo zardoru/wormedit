@@ -40,7 +40,7 @@ auto eviction_class(notification_severity_t severity) noexcept -> int {
     return 0;
 }
 
-auto same_message(const notification_entry_t& left, const notification_entry_t& right) -> bool {
+auto notification_message_equal(const notification_entry_t& left, const notification_entry_t& right) -> bool {
     return left.severity == right.severity && left.source == right.source &&
            left.message == right.message;
 }
@@ -56,7 +56,7 @@ auto try_merge(std::vector<notification_entry_t>& entries, const notification_en
     if (entries.empty())
         return false;
     auto& newest = entries.back();
-    if (!same_message(newest, incoming) ||
+    if (!notification_message_equal(newest, incoming) ||
         incoming.first_timestamp - newest.timestamp > notification_dedupe_window)
         return false;
     newest.count = saturating_count(newest.count, incoming.count);

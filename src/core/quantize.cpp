@@ -256,7 +256,7 @@ auto validate_layout_effects(const chart_document_t& chart, const detail::quanti
         }
     }
 
-    const auto lane_is_active = [&](local_position_t position, lane_id_t lane) {
+    const auto is_lane_active = [&](local_position_t position, lane_id_t lane) {
         const auto* layout = effective_quantize_layout(chart, index, position);
         return layout != nullptr &&
                std::ranges::any_of(layout->lanes,
@@ -264,8 +264,8 @@ auto validate_layout_effects(const chart_document_t& chart, const detail::quanti
     };
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes) {
-            if (!lane_is_active(note.position, note.lane) ||
-                (note.end.has_value() && !lane_is_active(*note.end, note.lane))) {
+            if (!is_lane_active(note.position, note.lane) ||
+                (note.end.has_value() && !is_lane_active(*note.end, note.lane))) {
                 error(diagnostics, diagnostic_code_t::unknown_lane,
                       "quantization would move a note outside its active lane layout", note.id);
             }
@@ -274,8 +274,8 @@ auto validate_layout_effects(const chart_document_t& chart, const detail::quanti
     for (const auto& channel : chart.sound_channels) {
         for (const auto& event : channel.events) {
             if (event.playable &&
-                (!lane_is_active(event.position, event.lane) ||
-                 (event.end.has_value() && !lane_is_active(*event.end, event.lane)))) {
+                (!is_lane_active(event.position, event.lane) ||
+                 (event.end.has_value() && !is_lane_active(*event.end, event.lane)))) {
                 error(diagnostics, diagnostic_code_t::unknown_lane,
                       "quantization would move a sound event outside its active lane layout",
                       event.id);
@@ -413,7 +413,7 @@ struct quantization_selection_t {
     std::set<key_t> matched;
     bool typed{};
 
-    auto includes(object_id_t object, quantize_object_family_t family) -> bool {
+    auto has_object(object_id_t object, quantize_object_family_t family) -> bool {
         if (!typed && selected.empty()) return true;
         const key_t key{typed ? family : quantize_object_family_t::other, object.value};
         if (!selected.contains(key)) return false;
@@ -576,7 +576,7 @@ auto quantize_chart_exact(const chart_document_t& chart, const quantize_request_
     bool failed = false;
     const auto transform = [&](local_position_t& position, object_id_t object,
                                position_role_t role, quantize_object_family_t family = quantize_object_family_t::other) {
-        if (!selected.includes(object, family)) {
+        if (!selected.has_object(object, family)) {
             return;
         }
         const auto before = position;

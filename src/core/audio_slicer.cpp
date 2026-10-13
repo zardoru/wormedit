@@ -64,7 +64,7 @@ auto validate(const audio_slicer_request_t& request) -> std::vector<audio_slicer
 
 // Slice length in seconds is 60 * bpm_den / (bpm_num * division); it must cover
 // at least one frame so every slice is non-empty and the skip count is bounded.
-auto slice_covers_a_frame(const audio_slicer_request_t& request) -> bool {
+auto is_slice_covering_frame(const audio_slicer_request_t& request) -> bool {
     const auto& bpm = request.beats_per_minute;
     return 60ULL * bpm.denominator * request.sample_rate >=
                bpm.numerator * static_cast<std::uint64_t>(request.division);
@@ -98,7 +98,7 @@ auto round_quotient(const wide_math::divmod_t& division, const u128_t& denominat
     } else if (rounding == sample_rounding_t::nearest_ties_to_even && has_remainder) {
         const auto doubled = u128_t{(division.remainder.high << 1) | (division.remainder.low >> 63),
                                     division.remainder.low << 1};
-        const bool above = wide_math::less(denominator, doubled);
+        const bool above = wide_math::u128_less(denominator, doubled);
         const bool tie = doubled == denominator;
         quotient += (above || (tie && (quotient & 1U) != 0)) ? 1U : 0U;
     }
@@ -113,7 +113,7 @@ auto boundary_frame(const grid_t& grid, const audio_slicer_request_t& request,
     if (!steps) return request.source_frames;
     u128_t total = *steps;
     if (grid.lead != u128_t{}) {
-        if (!wide_math::less(grid.lead, total)) return 0;
+        if (!wide_math::u128_less(grid.lead, total)) return 0;
         total = wide_math::subtract(total, grid.lead);
     } else {
         total = u128_t{total.high + (total.low + positive_offset.low < total.low ? 1U : 0U) +
@@ -121,7 +121,7 @@ auto boundary_frame(const grid_t& grid, const audio_slicer_request_t& request,
                        total.low + positive_offset.low};
     }
     const auto division = wide_math::divide(total, grid.denominator);
-    if (!wide_math::fits_u64(division.quotient)) return request.source_frames;
+    if (!wide_math::can_fit_u64(division.quotient)) return request.source_frames;
     return std::min(round_quotient(division, grid.denominator, request.rounding),
                     request.source_frames);
 }
@@ -132,7 +132,7 @@ auto compute_audio_slices(const audio_slicer_request_t& request) -> audio_slicer
     audio_slicer_result_t result;
     result.diagnostics = validate(request);
     if (!result.diagnostics.empty()) return result;
-    if (!slice_covers_a_frame(request)) {
+    if (!is_slice_covering_frame(request)) {
         result.diagnostics.push_back({audio_slicer_error_code_t::slice_shorter_than_one_frame,
                                       "slices must be at least one frame long"});
         return result;
@@ -153,7 +153,7 @@ auto compute_audio_slices(const audio_slicer_request_t& request) -> audio_slicer
     std::uint64_t index = 0;
     if (grid->lead != u128_t{}) {
         const auto skipped = wide_math::divide(grid->lead, grid->step).quotient;
-        if (!wide_math::fits_u64(skipped)) {
+        if (!wide_math::can_fit_u64(skipped)) {
             result.diagnostics.push_back(
                 {audio_slicer_error_code_t::invalid_offset, "offset is out of range"});
             return result;

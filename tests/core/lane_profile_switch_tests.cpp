@@ -420,7 +420,7 @@ TEST_CASE("Unknown seven-key profiles switch by compatible lanes with one undo a
     auto history = document_history_t::from(song);
     const auto target = make_osu_mania_profile(7);
     require_profile(target.has_value());
-    check_profile(lane_layout_supports_key_profiles(original));
+    check_profile(can_use_lane_key_profiles(original));
     require_profile(static_cast<bool>(apply_lane_profile_switch(history, 4, chart_id_t{2},
         {measure_id_t{3}, 0}, target->layout)));
     const auto& chart = history.document.charts.front();
@@ -444,9 +444,9 @@ TEST_CASE("Equal counts cannot relabel scratch or auxiliary lanes as ordinary ke
     auto current = make_bms_7k_profile().layout;
     const auto target = make_osu_mania_profile(static_cast<std::uint32_t>(current.lanes.size()));
     require_profile(target.has_value());
-    check_profile(!lane_layout_supports_key_profiles(current));
+    check_profile(!can_use_lane_key_profiles(current));
     check_profile(!retarget_lane_layout(current, target->layout));
-    check_profile(lane_layout_supports_key_profiles(make_bms_10k_scratchless_profile().layout));
+    check_profile(can_use_lane_key_profiles(make_bms_10k_scratchless_profile().layout));
     auto song = switch_song(8, "osu");
     auto& chart = song.charts.front();
     chart.lane_layouts.front().layout = current;

@@ -128,7 +128,7 @@ auto audition_session_t::playhead() const noexcept -> playhead_state_t {
     return state;
 }
 
-auto audition_session_t::active() const -> bool {
+auto audition_session_t::is_active() const -> bool {
     return playhead().active;
 }
 

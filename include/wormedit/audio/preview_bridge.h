@@ -113,9 +113,10 @@ class preview_transport_bridge_t {
     [[nodiscard]] auto metronome_volume() const noexcept -> std::uint8_t {
         return transport_.click_preview_volume();
     }
-    [[nodiscard]] auto metronome_enabled() const noexcept -> bool {
+    [[nodiscard]] auto is_metronome_enabled() const noexcept -> bool {
         return metronome_enabled_.load(std::memory_order_acquire);
     }
+
 
     // Replaces predictions still held by the bridge. Already handed voices survive
     // estimate updates; new predictions begin after the last handed frame.
@@ -131,7 +132,9 @@ class preview_transport_bridge_t {
     [[nodiscard]] auto session_token() const noexcept -> std::optional<session_token_t> {
         return token_;
     }
-    [[nodiscard]] auto exhausted() const noexcept -> bool;
+    [[nodiscard]] auto is_exhausted() const noexcept -> bool;
+    // Compatibility for the coordinated sys/UI migration.
+    inline auto exhausted() const noexcept -> bool { return is_exhausted(); }
 
   private:
     [[nodiscard]] auto begin_session(std::uint64_t seek_frame) -> preview_bridge_start_result_t;

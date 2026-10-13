@@ -45,7 +45,7 @@ struct file_identity_t {
 using output_ownership_t = std::map<std::string, std::map<std::string, file_identity_t>>;
 
 auto sync_file(const fs::path& path) -> bool;
-auto same_bytes(const fs::path& path, const std::string& expected) -> bool;
+auto file_bytes_equal(const fs::path& path, const std::string& expected) -> bool;
 
 auto file_identity(const fs::path& path) -> std::optional<file_identity_t> {
     std::ifstream stream(path, std::ios::binary);
@@ -81,14 +81,14 @@ auto hex_hash(std::uint64_t value) -> std::string {
     return result;
 }
 
-auto safe_field(std::string_view value) -> bool {
+auto is_safe_field(std::string_view value) -> bool {
     return !value.empty() && value.size() <= 4096 &&
            std::ranges::none_of(value, [](unsigned char c) { return c < 0x20 || c == 0x7f; });
 }
 
-auto safe_name(std::string_view value) -> bool {
+auto is_safe_name(std::string_view value) -> bool {
     const fs::path path{value};
-    return value.size() <= 240 && safe_field(value) && value != manifest_name &&
+    return value.size() <= 240 && is_safe_field(value) && value != manifest_name &&
            !path.is_absolute() && !path.has_root_name() && !path.has_parent_path() &&
            path.filename() == path && path != "." && path != "..";
 }
@@ -142,7 +142,7 @@ auto read_ownership(const fs::path& directory, output_ownership_t& owners, std::
             std::from_chars(size_text.data(), size_text.data() + size_text.size(), identity.bytes);
         const auto hash_parse = std::from_chars(
             hash_text.data(), hash_text.data() + hash_text.size(), identity.hash, 16);
-        if (!safe_field(group) || !safe_name(filename) || size_parse.ec != std::errc{} ||
+        if (!is_safe_field(group) || !is_safe_name(filename) || size_parse.ec != std::errc{} ||
             size_parse.ptr != size_text.data() + size_text.size() || hash_text.size() != 16 ||
             hash_parse.ec != std::errc{} || hash_parse.ptr != hash_text.data() + hash_text.size() ||
             hex_hash(identity.hash) != hash_text ||
@@ -161,12 +161,12 @@ auto write_ownership(const fs::path& directory, const output_ownership_t& owners
     std::string bytes{manifest_header};
     std::size_t count{};
     for (const auto& [group, filenames] : owners) {
-        if (!safe_field(group)) {
+        if (!is_safe_field(group)) {
             failure = "Output ownership group path is invalid.";
             return false;
         }
         for (const auto& [filename, identity] : filenames) {
-            if (!safe_name(filename) || ++count > maximum_manifest_entries) {
+            if (!is_safe_name(filename) || ++count > maximum_manifest_entries) {
                 failure = "Output ownership record is invalid or exceeds its entry limit.";
                 return false;
             }
@@ -188,7 +188,7 @@ auto write_ownership(const fs::path& directory, const output_ownership_t& owners
             return false;
         }
     }
-    if (!sync_file(path) || !same_bytes(path, bytes)) {
+    if (!sync_file(path) || !file_bytes_equal(path, bytes)) {
         failure = "Could not flush or verify the output ownership manifest.";
         return false;
     }
@@ -205,7 +205,7 @@ struct temporary_directory_t {
     }
 };
 
-auto allowed(const conversion_publication_options_t& options, conversion_publication_stage_t stage)
+auto is_allowed(const conversion_publication_options_t& options, conversion_publication_stage_t stage)
     -> bool {
     return !options.allow_stage || options.allow_stage(stage);
 }
@@ -243,7 +243,7 @@ auto sync_directory(const fs::path& path) -> bool {
 #endif
 }
 
-auto same_bytes(const fs::path& path, const std::string& expected) -> bool {
+auto file_bytes_equal(const fs::path& path, const std::string& expected) -> bool {
     std::error_code error;
     if (fs::file_size(path, error) != expected.size() || error)
         return false;
@@ -263,7 +263,7 @@ auto same_bytes(const fs::path& path, const std::string& expected) -> bool {
     return true;
 }
 
-auto same_files(const fs::path& left, const fs::path& right) -> bool {
+auto files_equal(const fs::path& left, const fs::path& right) -> bool {
     std::error_code error;
     if (fs::file_size(left, error) != fs::file_size(right, error) || error)
         return false;
@@ -309,7 +309,7 @@ auto copy_existing(const fs::path& source, const fs::path& staging,
             }
             bytes += size;
             if (!fs::copy_file(it->path(), target, fs::copy_options::none, error) || error ||
-                !sync_file(target) || !same_files(it->path(), target)) {
+                !sync_file(target) || !files_equal(it->path(), target)) {
                 failure = "Could not copy and flush an existing output file.";
                 return false;
             }
@@ -406,13 +406,13 @@ auto collect_owned_chart_names(const conversion_publication_plan_t& plan,
     for (const auto& file : plan.files) {
         const auto relative = file.project_relative_path.lexically_relative(relative_directory);
         const auto filename = relative.generic_string();
-        if (!safe_name(filename) || !current_files.insert(filename).second) {
+        if (!is_safe_name(filename) || !current_files.insert(filename).second) {
             return "A generated chart filename cannot be tracked safely.";
         }
     }
     for (const auto& file : plan.generated_files) {
         const auto name = file.lexically_relative(relative_directory).generic_string();
-        if (!safe_name(name) || !current_files.insert(name).second)
+        if (!is_safe_name(name) || !current_files.insert(name).second)
             return "A generated audio filename cannot be tracked safely.";
     }
     for (const auto& [other_group, filenames] : ownership) {
@@ -483,7 +483,7 @@ auto write_generated_charts(staged_chart_write_t context) -> std::optional<std::
     std::error_code error;
     context.ownership[context.group_key].clear();
     for (const auto& file : context.plan.files) {
-        if (!allowed(context.options, conversion_publication_stage_t::write_output)) {
+        if (!is_allowed(context.options, conversion_publication_stage_t::write_output)) {
             return "Output writing was interrupted.";
         }
         const auto relative =
@@ -502,7 +502,7 @@ auto write_generated_charts(staged_chart_write_t context) -> std::optional<std::
                 return "Could not write a staged chart file.";
             }
         }
-        if (!sync_file(path) || !same_bytes(path, bytes)) {
+        if (!sync_file(path) || !file_bytes_equal(path, bytes)) {
             return "Staged chart bytes could not be flushed or verified.";
         }
         const auto identity = file_identity(path);
@@ -585,7 +585,7 @@ struct publication_commit_t {
 };
 
 void install_staged_conversion(publication_commit_t context) {
-    if (!allowed(context.options, conversion_publication_stage_t::validate_staging)) {
+    if (!is_allowed(context.options, conversion_publication_stage_t::validate_staging)) {
         context.result.errors.emplace_back("Staging validation was interrupted.");
         return;
     }
@@ -600,14 +600,14 @@ void install_staged_conversion(publication_commit_t context) {
         }
     }
     std::string failure;
-    if (!allowed(context.options, conversion_publication_stage_t::update_manifest) ||
+    if (!is_allowed(context.options, conversion_publication_stage_t::update_manifest) ||
         !write_ownership(context.staging.path, context.ownership, failure)) {
         context.result.errors.push_back(failure.empty() ? "Output ownership update was interrupted."
                                                         : failure);
         return;
     }
     if (!sync_tree_directories(context.staging.path) ||
-        !allowed(context.options, conversion_publication_stage_t::exchange_directory)) {
+        !is_allowed(context.options, conversion_publication_stage_t::exchange_directory)) {
         context.result.errors.emplace_back(
             "Output directory could not be flushed or publication was interrupted.");
         return;
@@ -678,7 +678,7 @@ auto publish_conversion_group_atomic(const fs::path& project_directory, const ou
     }
     std::error_code error;
     std::string failure;
-    if (destination_exists && (!allowed(options, conversion_publication_stage_t::copy_existing) ||
+    if (destination_exists && (!is_allowed(options, conversion_publication_stage_t::copy_existing) ||
                                !copy_existing(destination, staging.path, options, failure))) {
         result.errors.push_back(failure.empty() ? "Existing-output copy was interrupted."
                                                 : failure);

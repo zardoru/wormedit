@@ -106,7 +106,7 @@ auto rasterize_channel_columns(const channel_row_context_t& context,
     }
 }
 
-auto valid_channel_waveform_request(const aligned_waveform_request_t& request) -> bool {
+auto is_valid_channel_waveform_request(const aligned_waveform_request_t& request) -> bool {
     return std::isfinite(request.viewport_scroll_pixels) &&
            std::isfinite(request.viewport_height_pixels) &&
            std::isfinite(request.pixels_per_standard_measure) &&
@@ -114,7 +114,7 @@ auto valid_channel_waveform_request(const aligned_waveform_request_t& request) -
            request.pixels_per_standard_measure > 0.0 && request.maximum_rows != 0;
 }
 
-auto valid_channel_source(const waveform_t& waveform, const sound_channel_t& channel,
+auto is_valid_channel_source(const waveform_t& waveform, const sound_channel_t& channel,
                           channel_waveform_source_geometry_t source) -> bool {
     return source.sample_rate != 0 && waveform.sample_rate != 0 &&
            waveform.total_frames != 0 &&
@@ -123,7 +123,7 @@ auto valid_channel_source(const waveform_t& waveform, const sound_channel_t& cha
            (!source.total_frames || channel.source_clip.begin_frame < *source.total_frames);
 }
 
-auto channel_window_within_capacity(const aligned_waveform_request_t& request) -> bool {
+auto is_channel_window_within_capacity(const aligned_waveform_request_t& request) -> bool {
     return request.viewport_height_pixels <= static_cast<double>(request.maximum_rows) &&
            request.viewport_height_pixels <=
                static_cast<double>(maximum_aligned_waveform_rows);
@@ -204,18 +204,18 @@ auto project_channel_waveform(const waveform_t& waveform, const sound_channel_t&
                               channel_waveform_source_geometry_t source)
     -> aligned_waveform_result_t {
     aligned_waveform_result_t result;
-    if (!valid_channel_waveform_request(request))
+    if (!is_valid_channel_waveform_request(request))
         return result;
     if (timing.divisions_per_standard_measure == 0 || timing.total_rows == 0 ||
         timing.rows.empty()) {
         result.status = aligned_waveform_status_t::invalid_timing;
         return result;
     }
-    if (!valid_channel_source(waveform, channel, source)) {
+    if (!is_valid_channel_source(waveform, channel, source)) {
         result.status = aligned_waveform_status_t::invalid_waveform;
         return result;
     }
-    if (!channel_window_within_capacity(request)) {
+    if (!is_channel_window_within_capacity(request)) {
         result.status = aligned_waveform_status_t::capacity_exceeded;
         return result;
     }
@@ -357,13 +357,13 @@ auto project_channel_waveform(const waveform_t& waveform, const sound_channel_t&
     const display_row_table_t& table, aligned_waveform_request_t request,
     const sound_slice_result_t& slices, channel_waveform_source_geometry_t source) -> aligned_waveform_result_t {
     aligned_waveform_result_t result;
-    if (!valid_channel_waveform_request(request)) return result;
+    if (!is_valid_channel_waveform_request(request)) return result;
     if (!table.valid || !slices) { result.status = aligned_waveform_status_t::invalid_timing; return result; }
     if (table.zoom != request.pixels_per_standard_measure) return result;
-    if (!valid_channel_source(waveform, channel, source)) {
+    if (!is_valid_channel_source(waveform, channel, source)) {
         result.status = aligned_waveform_status_t::invalid_waveform; return result;
     }
-    if (!channel_window_within_capacity(request)) {
+    if (!is_channel_window_within_capacity(request)) {
         result.status = aligned_waveform_status_t::capacity_exceeded; return result;
     }
     const auto visible = visible_display_slices(waveform, table, slices, source);

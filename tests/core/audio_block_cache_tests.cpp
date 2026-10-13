@@ -78,12 +78,12 @@ TEST_CASE("decoded block cache applies deterministic global and per-asset LRU ev
         REQUIRE(cache.store(oldest, 1, one_frame) == wormedit::audio::block_store_status_t::stored);
         REQUIRE(cache.store(refreshed, 1, one_frame) ==
                 wormedit::audio::block_store_status_t::stored);
-        CHECK(cache.contains(oldest)); // Makes asset A newer than asset B.
+        CHECK(cache.has_block(oldest)); // Makes asset A newer than asset B.
         REQUIRE(cache.store(incoming, 1, one_frame) ==
                 wormedit::audio::block_store_status_t::stored);
-        CHECK(cache.contains(oldest));
-        CHECK_FALSE(cache.contains(refreshed));
-        CHECK(cache.contains(incoming));
+        CHECK(cache.has_block(oldest));
+        CHECK_FALSE(cache.has_block(refreshed));
+        CHECK(cache.has_block(incoming));
         const auto state = cache.stats();
         CHECK(state.evictions == 1);
         CHECK(state.cached_frames == 2);
@@ -106,12 +106,12 @@ TEST_CASE("decoded block cache applies deterministic global and per-asset LRU ev
         REQUIRE(cache.store(second, 1, one_frame) == wormedit::audio::block_store_status_t::stored);
         REQUIRE(cache.store(other_asset, 1, one_frame) ==
                 wormedit::audio::block_store_status_t::stored);
-        REQUIRE(cache.contains(second));
+        REQUIRE(cache.has_block(second));
         REQUIRE(cache.store(third, 1, one_frame) == wormedit::audio::block_store_status_t::stored);
-        CHECK_FALSE(cache.contains(first));
-        CHECK(cache.contains(second));
-        CHECK(cache.contains(third));
-        CHECK(cache.contains(other_asset));
+        CHECK_FALSE(cache.has_block(first));
+        CHECK(cache.has_block(second));
+        CHECK(cache.has_block(third));
+        CHECK(cache.has_block(other_asset));
         CHECK(cache.stats().evictions == 1);
     }
 }
@@ -206,7 +206,7 @@ TEST_CASE("Stop invalidates stale generations and clears only the session queue"
 
     // Stop cancels pending transport work, while source PCM remains a reusable
     // derived cache entry and cannot itself start playback.
-    CHECK(cache.contains(source_key));
+    CHECK(cache.has_block(source_key));
     CHECK(cache.stats().entries == 1);
     const auto next_session = session.start();
     REQUIRE(next_session.has_value());
@@ -263,7 +263,7 @@ TEST_CASE("fixture block decode is bounded, cached, and session-gated",
     CHECK(wormedit::audio::decode_and_cache_block(decoder, cache, session, *token, block_key)
               .status == wormedit::audio::block_decode_status_t::stale_generation);
     CHECK(session.pending_count() == 0);
-    CHECK(cache.contains(block_key));
+    CHECK(cache.has_block(block_key));
 }
 
 namespace {

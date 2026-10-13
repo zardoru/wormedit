@@ -8,7 +8,7 @@
 namespace wormedit::audio {
 namespace {
 
-auto valid_source(const audio_source_identity_t& source) -> bool {
+auto is_valid_source(const audio_source_identity_t& source) -> bool {
     return !source.asset_identity.empty() && !source.source_identity.empty();
 }
 
@@ -47,15 +47,15 @@ auto empty_result(audition_pump_status_t status) -> audition_pump_result_t {
             .failure = std::nullopt};
 }
 
-auto valid_options(std::span<const audition_clip_t> clips,
+auto is_valid_options(std::span<const audition_clip_t> clips,
                    audition_pump_options_t options) -> bool {
     return !clips.empty() && clips.size() <= maximum_audition_pump_clips &&
            options.lookahead_frames != 0 && options.lookahead_frames <= maximum_read_frames &&
            options.maximum_blocks != 0 && options.maximum_blocks <= maximum_audition_pump_blocks;
 }
 
-auto valid_clip(const audition_clip_t& clip) -> bool {
-    return valid_source(clip.source) && clip.frame_count != 0 && std::isfinite(clip.gain) &&
+auto is_valid_clip(const audition_clip_t& clip) -> bool {
+    return is_valid_source(clip.source) && clip.frame_count != 0 && std::isfinite(clip.gain) &&
            clip.gain >= 0.0F && checked_end(clip.source_start_frame, clip.frame_count).has_value();
 }
 
@@ -98,7 +98,7 @@ auto plan_audition_keys(std::span<const audition_clip_t> clips, std::uint64_t ti
     audition_key_plan_t plan;
     plan.keys.reserve(maximum_blocks);
     for (const auto& clip : clips) {
-        if (!valid_clip(clip)) {
+        if (!is_valid_clip(clip)) {
             plan.status = audition_pump_status_t::invalid_request;
             return plan;
         }
@@ -140,7 +140,7 @@ auto prime_resident_audition(transport_t& transport, session_token_t token,
                               std::span<const audition_clip_t> clips)
     -> std::optional<audition_pump_result_t> {
     const audition_pump_options_t options;
-    if (!valid_options(clips, options)) return std::nullopt;
+    if (!is_valid_options(clips, options)) return std::nullopt;
     const auto plan = plan_audition_keys(clips, 0, options.lookahead_frames,
                                          options.maximum_blocks);
     if (plan.status != audition_pump_status_t::ready) return std::nullopt;
@@ -161,7 +161,7 @@ auto pump_audition_lookahead(decoded_source_registry_t& sources, transport_t& tr
     if (!transport.is_current(token)) {
         return empty_result(audition_pump_status_t::stale_generation);
     }
-    if (!valid_options(clips, options)) {
+    if (!is_valid_options(clips, options)) {
         return empty_result(audition_pump_status_t::invalid_request);
     }
     const auto window_end = checked_end(timeline_frame, options.lookahead_frames);

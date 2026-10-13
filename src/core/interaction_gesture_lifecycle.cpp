@@ -1340,8 +1340,8 @@ auto handle_editor_cancellation(document_history_t& history, editor_interaction_
 
 namespace wormedit {
 using namespace interaction_detail;
-auto keyboard_hold_action_allowed(const editor_interaction_action_t& action) -> bool {
-    return gesture_action_is<move_edit_cursor_action_t, page_edit_cursor_action_t,
+auto is_keyboard_hold_action_allowed(const editor_interaction_action_t& action) -> bool {
+    return is_gesture_action<move_edit_cursor_action_t, page_edit_cursor_action_t,
                              scroll_editor_view_action_t, begin_lane_key_hold_gesture_action_t,
                              release_lane_key_hold_gesture_action_t,
                              place_virtual_bms_hold_action_t>(action);
@@ -1350,43 +1350,43 @@ auto keyboard_hold_action_allowed(const editor_interaction_action_t& action) -> 
 
 namespace wormedit {
 using namespace interaction_detail;
-auto hold_gesture_action_allowed(const editor_interaction_state_t& state,
+auto is_hold_gesture_action_allowed(const editor_interaction_state_t& state,
                                  const editor_interaction_action_t& action) -> bool {
     if (!state.pending_hold || !state.pending_hold->gesture_source)
         return true;
     if (*state.pending_hold->gesture_source == hold_gesture_source_t::keyboard_lane)
-        return keyboard_hold_action_allowed(action);
-    return gesture_action_is<update_alt_pointer_hold_gesture_action_t,
+        return is_keyboard_hold_action_allowed(action);
+    return is_gesture_action<update_alt_pointer_hold_gesture_action_t,
                              release_alt_pointer_hold_gesture_action_t>(action);
 }
 } // namespace wormedit
 
 namespace wormedit {
 using namespace interaction_detail;
-auto gesture_action_allowed(editor_gesture_kind_t kind, const editor_interaction_state_t& state,
+auto is_gesture_action_allowed(editor_gesture_kind_t kind, const editor_interaction_state_t& state,
                             const editor_interaction_action_t& action) -> bool {
     switch (kind) {
     case editor_gesture_kind_t::hold:
-        return hold_gesture_action_allowed(state, action);
+        return is_hold_gesture_action_allowed(state, action);
     case editor_gesture_kind_t::keyboard_holds:
         // The authorized lane action delegates its begin/preview/commit to these
         // legacy verbs.
-        return keyboard_hold_action_allowed(action) ||
-               gesture_action_is<begin_hold_action_t, update_hold_preview_action_t,
+        return is_keyboard_hold_action_allowed(action) ||
+               is_gesture_action<begin_hold_action_t, update_hold_preview_action_t,
                                  commit_hold_action_t, place_virtual_bms_hold_action_t>(action);
     case editor_gesture_kind_t::duration:
-        return gesture_action_is<update_note_duration_gesture_action_t>(action);
+        return is_gesture_action<update_note_duration_gesture_action_t>(action);
     case editor_gesture_kind_t::move:
-        return gesture_action_is<update_note_move_gesture_action_t>(action);
+        return is_gesture_action<update_note_move_gesture_action_t>(action);
     case editor_gesture_kind_t::paint:
-        return gesture_action_is<update_note_paint_gesture_action_t,
+        return is_gesture_action<update_note_paint_gesture_action_t,
                                  end_note_paint_gesture_action_t>(action);
     case editor_gesture_kind_t::semantic_paint:
-        return gesture_action_is<update_semantic_layer_paint_gesture_action_t>(action);
+        return is_gesture_action<update_semantic_layer_paint_gesture_action_t>(action);
     case editor_gesture_kind_t::area:
-        return gesture_action_is<update_editor_area_selection_action_t>(action);
+        return is_gesture_action<update_editor_area_selection_action_t>(action);
     case editor_gesture_kind_t::range:
-        return gesture_action_is<space_range_selection_action_t, move_edit_cursor_action_t,
+        return is_gesture_action<space_range_selection_action_t, move_edit_cursor_action_t,
                                  page_edit_cursor_action_t, jump_edit_cursor_action_t,
                                  cycle_edit_snap_action_t, set_edit_snap_action_t,
                                  adjust_editor_zoom_action_t, scroll_editor_view_action_t>(action);
@@ -1427,8 +1427,8 @@ auto validate_active_gesture_action(const document_history_t& history,
     -> std::optional<editor_interaction_result_t> {
     std::optional<editor_gesture_kind_t> blocked;
     visit_editor_gestures(state, [&](auto kind, const auto& field) {
-        if (!blocked && editor_gesture_pending(field) &&
-            !gesture_action_allowed(kind, state, action))
+        if (!blocked && is_editor_gesture_pending(field) &&
+            !is_gesture_action_allowed(kind, state, action))
             blocked = kind;
     });
     if (!blocked)

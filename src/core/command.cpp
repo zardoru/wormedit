@@ -36,7 +36,7 @@ void mark_retained_sources_changed(song_document_t& document) {
     }
 }
 
-auto quantized_stem_audio_valid(const song_document_t& song, const chart_document_t& before,
+auto is_quantized_stem_audio_valid(const song_document_t& song, const chart_document_t& before,
                                 const chart_document_t& chart,
                                 diagnostic_list_t& diagnostics) -> bool {
     for (std::size_t i = 0; i < chart.sound_channels.size(); ++i) {
@@ -222,7 +222,7 @@ auto apply_quantize_command(document_history_t& history, chart_id_t chart_id,
         return result;
     }
 
-    if (request.selection && !quantized_stem_audio_valid(history.document, *chart, *proposal.chart,
+    if (request.selection && !is_quantized_stem_audio_valid(history.document, *chart, *proposal.chart,
                                                         result.command.diagnostics)) return result;
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed_document = transaction.copy_document();

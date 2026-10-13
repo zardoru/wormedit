@@ -16,10 +16,10 @@ namespace wormedit {
 namespace {
 using json_t = nlohmann::json;
 
-auto valid_string(std::string_view value) -> bool {
-    return text_util::valid_bounded_text(value, maximum_preference_string_bytes);
+auto is_valid_string(std::string_view value) -> bool {
+    return text_util::is_valid_bounded_text(value, maximum_preference_string_bytes);
 }
-auto supported_rate(rational_t rate) -> bool {
+auto is_supported_rate(rational_t rate) -> bool {
     return std::ranges::find(audio::playback_rates, rate) != audio::playback_rates.end();
 }
 
@@ -64,7 +64,7 @@ struct preference_reader_t {
     void string(const json_t& object, const char* key, std::string& value) {
         const auto found = object.find(key);
         if (found == object.end()) return;
-        if (!found->is_string() || !valid_string(found->get_ref<const std::string&>())) {
+        if (!found->is_string() || !is_valid_string(found->get_ref<const std::string&>())) {
             warn(std::string{key} + " must be a bounded string without NUL; default retained."); return;
         }
         value = found->get<std::string>();
@@ -108,7 +108,7 @@ void read_editor(preference_reader_t& reader, const json_t& root) {
     for (std::size_t index = 0; index < scroll_keys.size(); ++index)
         reader.integer(scroll, scroll_keys[index], value.scroll_directions[index], 0, 2);
 }
-auto valid_editor(const editor_preferences_t& value) -> bool {
+auto is_valid_editor(const editor_preferences_t& value) -> bool {
     return static_cast<std::uint32_t>(value.move_collision_policy) <= 1 && value.default_snap >= 1 && value.default_snap <= 1920 &&
         value.playhead_anchor_percent <= 100 && value.area_band_alpha <= 255 &&
         std::ranges::all_of(value.scroll_directions, [](auto direction) { return direction <= 2; });
@@ -149,7 +149,7 @@ void read_editor_audio(preference_reader_t& reader, const json_t& root) {
     reader.check_keys(rate, {"numerator", "denominator"});
     reader.integer(rate, "numerator", values.audio.playback_rate.numerator, 1, std::numeric_limits<std::uint64_t>::max());
     reader.integer(rate, "denominator", values.audio.playback_rate.denominator, 1, std::numeric_limits<std::uint64_t>::max());
-    if (!supported_rate(values.audio.playback_rate)) {
+    if (!is_supported_rate(values.audio.playback_rate)) {
         values.audio.playback_rate = {1, 1};
         reader.warn("playback_rate is unsupported; default retained.");
     }
@@ -180,12 +180,12 @@ void read_field_scheme_overrides(preference_reader_t& reader, const json_t& disp
     }
     auto& overrides = reader.result.preferences.display.field_scheme_overrides;
     for (const auto& [key, value] : found->items()) {
-        if (key.empty() || !valid_string(key) || !value.is_string()) {
+        if (key.empty() || !is_valid_string(key) || !value.is_string()) {
             reader.warn("Invalid layout skin override ignored.");
             continue;
         }
         const auto& scheme = value.get_ref<const std::string&>();
-        if (scheme.empty() || !valid_string(scheme)) {
+        if (scheme.empty() || !is_valid_string(scheme)) {
             reader.warn("Invalid or inherited layout skin override ignored.");
             continue;
         }
@@ -247,18 +247,18 @@ void read_players(preference_reader_t& reader, const json_t& root) {
     reader.integer(section, "selected", value.selected, 0, value.players.size() - 1);
 }
 
-auto valid_preferences(const program_preferences_t& value) -> bool {
+auto is_valid_preferences(const program_preferences_t& value) -> bool {
     return value.general.autosave_minutes >= 1 && value.general.autosave_minutes <= 30 &&
         value.general.recent_files_count >= 1 && value.general.recent_files_count <= 100 &&
-        valid_string(value.general.shortcut_profile_path) && !value.general.shortcut_profile_path.empty() &&
-        valid_editor(value.editor) &&
-        supported_rate(value.audio.playback_rate) && value.audio.keysound_budget_mib >= 256 &&
-        value.audio.keysound_budget_mib <= 8192 && valid_string(value.display.theme) && valid_string(value.display.field_scheme) && valid_field_scheme_overrides(value.display) &&
+        is_valid_string(value.general.shortcut_profile_path) && !value.general.shortcut_profile_path.empty() &&
+        is_valid_editor(value.editor) &&
+        is_supported_rate(value.audio.playback_rate) && value.audio.keysound_budget_mib >= 256 &&
+        value.audio.keysound_budget_mib <= 8192 && is_valid_string(value.display.theme) && is_valid_string(value.display.field_scheme) && is_valid_field_scheme_overrides(value.display) &&
         std::ranges::all_of(value.display.scratch_positions, [](auto side) { return side <= 3; }) &&
         value.display.snap_grid_opacity_percent <= 100 && value.display.field_waveform_opacity_percent <= 100 &&
         (value.display.ui_scale_percent == 0 ||
             (value.display.ui_scale_percent >= 100 && value.display.ui_scale_percent <= 200)) &&
-        valid_external_player_preferences(value.players) && valid_string(value.layout.dock_layout);
+        is_valid_external_player_preferences(value.players) && is_valid_string(value.layout.dock_layout);
 }
 
 auto preferences_json(const program_preferences_t& value) -> json_t {
@@ -300,21 +300,21 @@ auto resolve_field_scheme(const display_preferences_t& display, std::string_view
     return display.field_scheme.empty() ? std::string_view{"wormedit"} : std::string_view{display.field_scheme};
 }
 
-auto valid_field_scheme_overrides(const display_preferences_t& display) -> bool {
+auto is_valid_field_scheme_overrides(const display_preferences_t& display) -> bool {
     if (display.field_scheme_overrides.size() > maximum_field_scheme_overrides) return false;
     return std::ranges::all_of(display.field_scheme_overrides, [](const auto& entry) {
-        return !entry.first.empty() && valid_string(entry.first) &&
-               !entry.second.empty() && valid_string(entry.second);
+        return !entry.first.empty() && is_valid_string(entry.first) &&
+               !entry.second.empty() && is_valid_string(entry.second);
     });
 }
 
 auto program_preferences_t::with_defaults() -> program_preferences_t { return {}; }
-auto valid_external_player_preferences(const external_player_preferences_t& value) -> bool {
+auto is_valid_external_player_preferences(const external_player_preferences_t& value) -> bool {
     if (value.players.empty() || value.players.size() > maximum_external_players || value.selected >= value.players.size())
         return false;
     return std::ranges::all_of(value.players, [](const auto& player) {
-        return valid_string(player.name) && valid_string(player.path) && valid_string(player.start_arguments) &&
-            valid_string(player.here_arguments) && valid_string(player.stop_arguments);
+        return is_valid_string(player.name) && is_valid_string(player.path) && is_valid_string(player.start_arguments) &&
+            is_valid_string(player.here_arguments) && is_valid_string(player.stop_arguments);
     });
 }
 
@@ -349,7 +349,7 @@ auto parse_program_preferences(std::string_view bytes) -> preferences_parse_resu
 }
 
 auto serialize_program_preferences(const program_preferences_t& value) -> std::optional<std::string> {
-    if (!valid_preferences(value)) return std::nullopt;
+    if (!is_valid_preferences(value)) return std::nullopt;
     try {
         auto bytes = preferences_json(value).dump(2);
         if (bytes.size() > maximum_preferences_bytes) return std::nullopt;
@@ -416,7 +416,7 @@ auto load_legacy_external_player_preferences(const std::filesystem::path& path,
               std::quoted(player.stop_arguments))) return "Invalid external-player preferences entry.";
     }
     input >> std::ws;
-    if (!input.eof() || !valid_external_player_preferences(candidate)) return "Invalid external-player preferences.";
+    if (!input.eof() || !is_valid_external_player_preferences(candidate)) return "Invalid external-player preferences.";
     preferences = std::move(candidate);
     return {};
 }

@@ -75,7 +75,7 @@ auto compare_row(const exact_chart_row_t& left, const exact_chart_row_t& right) 
     return compare_fraction(left.fractional_rows, right.fractional_rows);
 }
 
-auto same_row(const exact_chart_row_t& left, const exact_chart_row_t& right) -> bool {
+auto row_equal(const exact_chart_row_t& left, const exact_chart_row_t& right) -> bool {
     return compare_row(left, right) == 0;
 }
 
@@ -127,7 +127,7 @@ auto is_interior(row_offset_t offset, std::uint64_t capacity) -> bool {
     return offset.whole < capacity;
 }
 
-auto at_or_after(std::uint64_t measure_begin, row_offset_t offset, std::uint64_t row) -> bool {
+auto is_at_or_after(std::uint64_t measure_begin, row_offset_t offset, std::uint64_t row) -> bool {
     const auto absolute = absolute_position(measure_begin, offset);
     return absolute.has_value() && absolute->whole_rows >= row;
 }
@@ -156,7 +156,7 @@ auto first_visible_beat(std::uint64_t divisions, std::uint64_t denominator,
         return std::nullopt;
     }
     const auto last = offset_for_beat(last_beat, divisions, denominator);
-    if (!last.has_value() || !at_or_after(entry.absolute_begin_row, *last, visible_begin)) {
+    if (!last.has_value() || !is_at_or_after(entry.absolute_begin_row, *last, visible_begin)) {
         return std::nullopt;
     }
     auto low = std::uint64_t{1};
@@ -164,7 +164,7 @@ auto first_visible_beat(std::uint64_t divisions, std::uint64_t denominator,
     while (low < high) {
         const auto middle = low + (high - low) / 2;
         const auto offset = offset_for_beat(middle, divisions, denominator);
-        if (offset.has_value() && at_or_after(entry.absolute_begin_row, *offset, visible_begin)) {
+        if (offset.has_value() && is_at_or_after(entry.absolute_begin_row, *offset, visible_begin)) {
             high = middle;
         } else {
             low = middle + 1;
@@ -172,7 +172,7 @@ auto first_visible_beat(std::uint64_t divisions, std::uint64_t denominator,
     }
     const auto offset = offset_for_beat(low, divisions, denominator);
     if (!offset.has_value() || !is_interior(*offset, entry.row_capacity) ||
-        !at_or_after(entry.absolute_begin_row, *offset, visible_begin)) {
+        !is_at_or_after(entry.absolute_begin_row, *offset, visible_begin)) {
         return std::nullopt;
     }
     return low;
@@ -626,7 +626,7 @@ auto thin_grid_candidates(editor_grid_build_context_t& context) -> void {
     std::vector<editor_grid_line_t> unique_lines;
     unique_lines.reserve(candidates.size());
     for (const auto& candidate : candidates) {
-        if (!unique_lines.empty() && same_row(unique_lines.back().chart_row, candidate.chart_row)) {
+        if (!unique_lines.empty() && row_equal(unique_lines.back().chart_row, candidate.chart_row)) {
             if (priority(candidate.kind) > priority(unique_lines.back().kind))
                 unique_lines.back() = candidate;
         } else {
@@ -671,7 +671,7 @@ auto make_editor_grid_lines(const chart_document_t& chart, const editor_grid_req
     }
     const auto& measure_index = std::get<measure_index_t>(built_index);
     std::optional<virtual_canvas_t> virtual_canvas;
-    if (request.include_virtual_bms_tail && chart_has_virtual_tail(chart)) {
+    if (request.include_virtual_bms_tail && has_chart_virtual_tail(chart)) {
         auto built_canvas = build_virtual_canvas(chart);
         if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built_canvas)) {
             result.diagnostics = *diagnostics;

@@ -478,7 +478,7 @@ auto collect_existing_intervals(std::vector<paste_interval_t>& intervals,
     return true;
 }
 
-auto overlapping_paste_intervals(std::vector<paste_interval_t> intervals) -> bool {
+auto has_overlapping_paste_intervals(std::vector<paste_interval_t> intervals) -> bool {
     std::ranges::sort(intervals, {}, [](const auto& interval) {
         return std::tuple{interval.bgm, interval.lane, interval.begin, interval.proposed};
     });
@@ -500,7 +500,7 @@ auto overlapping_paste_intervals(std::vector<paste_interval_t> intervals) -> boo
     return false;
 }
 
-auto paste_collides(const chart_document_t& chart, const chart_paste_proposal_t& proposal,
+auto has_paste_collision(const chart_document_t& chart, const chart_paste_proposal_t& proposal,
                    const measure_index_t& index) -> bool {
     std::vector<paste_interval_t> intervals;
     if (!collect_existing_intervals(intervals, chart, index)) return true;
@@ -510,7 +510,7 @@ auto paste_collides(const chart_document_t& chart, const chart_paste_proposal_t&
         }, object);
         if (!appended) return true;
     }
-    return overlapping_paste_intervals(std::move(intervals));
+    return has_overlapping_paste_intervals(std::move(intervals));
 }
 
 void append_paste_object(chart_document_t& chart, chart_clipboard_payload_t object) {
@@ -708,7 +708,7 @@ auto propose_chart_paste(const song_document_t& document, chart_id_t chart_id,
         }
         result.objects.push_back(*object);
     }
-    if (paste_collides(*chart, result, *index)) {
+    if (has_paste_collision(*chart, result, *index)) {
         result.error = "Paste collides with existing chart objects.";
         return result;
     }

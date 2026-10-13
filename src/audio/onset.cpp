@@ -12,7 +12,7 @@ struct window_rms_t {
     double value{};
 };
 
-auto valid_request(const onset_request_t& request, std::uint64_t total_frames) -> bool {
+auto is_valid_request(const onset_request_t& request, std::uint64_t total_frames) -> bool {
     return request.begin_frame < request.end_frame && request.end_frame <= total_frames &&
         request.window_frames != 0 && request.maximum_onsets != 0 &&
         request.maximum_onsets <= maximum_onset_frames &&
@@ -29,7 +29,7 @@ auto window_end(std::uint64_t begin, std::uint64_t window, std::uint64_t total)
     return begin + std::min(window, total - begin);
 }
 
-auto valid_rms(const waveform_bin_t& bin) -> bool {
+auto is_valid_rms(const waveform_bin_t& bin) -> bool {
     return std::ranges::all_of(bin.rms, [](float value) {
         return std::isfinite(value) && value >= 0.0F;
     });
@@ -49,7 +49,7 @@ auto read_window(const waveform_t& waveform, std::uint64_t begin, std::uint64_t 
         const auto bin_begin = waveform.key.begin_frame + index * width;
         const auto expected = std::min<std::uint64_t>(width, extent - bin_begin);
         if (bin.frame_count < expected) return {};
-        if (bin.frame_count > expected || !valid_rms(bin))
+        if (bin.frame_count > expected || !is_valid_rms(bin))
             return {onset_status_t::invalid_waveform};
         const auto overlap = std::min(end, bin_begin + expected) - std::max(begin, bin_begin);
         for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
@@ -68,7 +68,7 @@ auto initial_baseline(const waveform_t& waveform, std::uint64_t first,
     return read_window(waveform, first - window, first);
 }
 
-auto qualifies(double current, double previous, const onset_request_t& request,
+auto is_qualifying_onset(double current, double previous, const onset_request_t& request,
                 std::uint64_t frame, std::optional<std::uint64_t> last) -> bool {
     return frame >= request.begin_frame && current >= request.minimum_rms &&
         current - previous >= request.minimum_rms_rise &&
@@ -87,7 +87,7 @@ auto scan_windows(const waveform_t& waveform, const onset_request_t& request)
         const auto end = window_end(begin, request.window_frames, waveform.total_frames);
         const auto rms = read_window(waveform, begin, end);
         if (rms.status != onset_status_t::detected) return {rms.status, {}};
-        if (qualifies(rms.value, previous, request, begin, last)) {
+        if (is_qualifying_onset(rms.value, previous, request, begin, last)) {
             if (result.frames.size() == request.maximum_onsets)
                 return {onset_status_t::capacity_exceeded, {}};
             result.frames.push_back(begin);
@@ -103,7 +103,7 @@ auto scan_windows(const waveform_t& waveform, const onset_request_t& request)
 
 auto detect_waveform_onsets(const waveform_t& waveform, onset_request_t request)
     -> onset_result_t {
-    if (!valid_request(request, waveform.total_frames)) return {};
+    if (!is_valid_request(request, waveform.total_frames)) return {};
     if (waveform.sample_rate == 0 || waveform.key.frames_per_bin == 0 ||
         waveform.key.begin_frame >= cache_end(waveform) || cache_end(waveform) > waveform.total_frames)
         return {onset_status_t::invalid_waveform, {}};

@@ -41,7 +41,7 @@ auto warning(diagnostic_code_t code, std::string message) -> diagnostic_t {
     });
 }
 
-[[nodiscard]] auto valid_stable_text(std::string_view value, std::size_t maximum,
+[[nodiscard]] auto is_valid_stable_text(std::string_view value, std::size_t maximum,
                                      bool allow_empty = false) -> bool {
     if (value.size() > maximum || (!allow_empty && value.empty())) {
         return false;
@@ -52,7 +52,7 @@ auto warning(diagnostic_code_t code, std::string message) -> diagnostic_t {
     });
 }
 
-[[nodiscard]] auto valid_chord(const shortcut_chord_t& chord, bool event = false) -> bool {
+[[nodiscard]] auto is_valid_chord(const shortcut_chord_t& chord, bool event = false) -> bool {
     const auto key = static_cast<std::uint16_t>(chord.key);
     const auto modifier_keys_begin = std::uint16_t{0xe0};
     const auto modifier_keys_end = std::uint16_t{0xe7};
@@ -65,12 +65,12 @@ auto warning(diagnostic_code_t code, std::string message) -> diagnostic_t {
     return valid_key && valid_modifier_bits && event_has_only_real_modifiers;
 }
 
-[[nodiscard]] auto valid_chord_list(const std::vector<shortcut_chord_t>& chords) -> bool {
+[[nodiscard]] auto is_valid_chord_list(const std::vector<shortcut_chord_t>& chords) -> bool {
     if (chords.size() > maximum_shortcuts_per_command) {
         return false;
     }
     for (std::size_t i = 0; i < chords.size(); ++i) {
-        if (!valid_chord(chords[i])) {
+        if (!is_valid_chord(chords[i])) {
             return false;
         }
         if (std::ranges::find(chords.begin(), chords.begin() + static_cast<std::ptrdiff_t>(i),
@@ -84,7 +84,7 @@ auto warning(diagnostic_code_t code, std::string message) -> diagnostic_t {
 [[nodiscard]] auto valid_registration(const command_registration_t& registration)
     -> diagnostic_list_t {
     diagnostic_list_t diagnostics;
-    if (!valid_stable_text(registration.definition.id.value, maximum_command_id_bytes)) {
+    if (!is_valid_stable_text(registration.definition.id.value, maximum_command_id_bytes)) {
         diagnostics.push_back(
             error(diagnostic_code_t::invalid_id, "command ID must be bounded stable ASCII text"));
     }
@@ -93,7 +93,7 @@ auto warning(diagnostic_code_t code, std::string message) -> diagnostic_t {
         diagnostics.push_back(error(diagnostic_code_t::invalid_binding,
                                     "command display name is empty or exceeds its byte limit"));
     }
-    if (!valid_stable_text(registration.definition.localization_key,
+    if (!is_valid_stable_text(registration.definition.localization_key,
                            maximum_localization_key_bytes)) {
         diagnostics.push_back(error(diagnostic_code_t::invalid_binding,
                                     "command localization key must be bounded stable ASCII text"));
@@ -102,8 +102,8 @@ auto warning(diagnostic_code_t code, std::string message) -> diagnostic_t {
         diagnostics.push_back(error(diagnostic_code_t::invalid_binding,
                                     "command focus context exceeds its byte limit"));
     }
-    if (!valid_chord_list(registration.definition.default_shortcuts) ||
-        (registration.current_shortcuts && !valid_chord_list(*registration.current_shortcuts))) {
+    if (!is_valid_chord_list(registration.definition.default_shortcuts) ||
+        (registration.current_shortcuts && !is_valid_chord_list(*registration.current_shortcuts))) {
         diagnostics.push_back(
             error(diagnostic_code_t::invalid_binding,
                   "command shortcuts are invalid, duplicated, or exceed the cap"));
@@ -154,7 +154,7 @@ auto warning(diagnostic_code_t code, std::string message) -> diagnostic_t {
     return modifiers;
 }
 
-[[nodiscard]] auto chords_match(const shortcut_chord_t& binding, const shortcut_chord_t& event,
+[[nodiscard]] auto is_chord_match(const shortcut_chord_t& binding, const shortcut_chord_t& event,
                                 shortcut_primary_modifier_t primary_modifier) -> bool {
     return binding.key == event.key &&
            normalized_modifiers(binding.modifiers, primary_modifier) == event.modifiers;
@@ -182,7 +182,7 @@ auto warning(diagnostic_code_t code, std::string message) -> diagnostic_t {
     return std::ranges::find(focus.visible_tabs, tab) != focus.visible_tabs.end();
 }
 
-[[nodiscard]] auto eligible(const command_t& command, const command_focus_t& focus) -> bool {
+[[nodiscard]] auto is_eligible(const command_t& command, const command_focus_t& focus) -> bool {
     if (focus.ime_composition_active) {
         return command.definition.focus_scope == command_focus_scope_t::ime &&
                (command.definition.focus_context.empty() ||
@@ -228,7 +228,7 @@ auto warning(diagnostic_code_t code, std::string message) -> diagnostic_t {
 [[nodiscard]] auto has_binding(const command_t& command, const shortcut_chord_t& chord,
                                shortcut_primary_modifier_t primary_modifier) -> bool {
     return std::ranges::any_of(command.current_shortcuts, [&](const shortcut_chord_t& binding) {
-        return chords_match(binding, chord, primary_modifier);
+        return is_chord_match(binding, chord, primary_modifier);
     });
 }
 
@@ -246,7 +246,7 @@ auto warning(diagnostic_code_t code, std::string message) -> diagnostic_t {
     return std::nullopt;
 }
 
-[[nodiscard]] auto scopes_overlap(const command_t& left, const command_t& right) -> bool {
+[[nodiscard]] auto is_scope_overlap(const command_t& left, const command_t& right) -> bool {
     const auto restricted = [](command_focus_scope_t scope) {
         return scope == command_focus_scope_t::modal ||
                scope == command_focus_scope_t::text_entry || scope == command_focus_scope_t::ime;
@@ -286,7 +286,7 @@ auto warning(diagnostic_code_t code, std::string message) -> diagnostic_t {
         for (std::size_t right_index = left_index + 1; right_index < registry.commands.size();
              ++right_index) {
             const auto& right = registry.commands[right_index];
-            if (!scopes_overlap(left, right)) {
+            if (!is_scope_overlap(left, right)) {
                 continue;
             }
             const auto collides = std::ranges::any_of(
@@ -321,7 +321,7 @@ auto warning(diagnostic_code_t code, std::string message) -> diagnostic_t {
 
 [[nodiscard]] auto valid_profile(const shortcut_profile_t& profile) -> diagnostic_list_t {
     diagnostic_list_t diagnostics;
-    if (!valid_stable_text(profile.id, maximum_command_id_bytes)) {
+    if (!is_valid_stable_text(profile.id, maximum_command_id_bytes)) {
         diagnostics.push_back(error(diagnostic_code_t::invalid_id,
                                     "shortcut profile ID must be bounded stable ASCII text"));
     }
@@ -332,7 +332,7 @@ auto warning(diagnostic_code_t code, std::string message) -> diagnostic_t {
     }
     std::set<command_id_t> ids;
     for (const auto& binding : profile.bindings) {
-        if (!valid_stable_text(binding.command.value, maximum_command_id_bytes)) {
+        if (!is_valid_stable_text(binding.command.value, maximum_command_id_bytes)) {
             diagnostics.push_back(error(diagnostic_code_t::invalid_id,
                                         "shortcut profile contains an invalid command ID"));
         }
@@ -340,7 +340,7 @@ auto warning(diagnostic_code_t code, std::string message) -> diagnostic_t {
             diagnostics.push_back(error(diagnostic_code_t::duplicate_id,
                                         "shortcut profile contains duplicate command bindings"));
         }
-        if (!valid_chord_list(binding.shortcuts)) {
+        if (!is_valid_chord_list(binding.shortcuts)) {
             diagnostics.push_back(error(diagnostic_code_t::invalid_binding,
                                         "shortcut profile contains invalid or excessive chords"));
         }
@@ -451,7 +451,7 @@ auto find_shortcut_conflicts(const command_registry_t& registry,
 auto remap_command(command_registry_t& registry, const command_id_t& id,
                    std::vector<shortcut_chord_t> shortcuts) -> command_registry_result_t {
     command_registry_result_t result;
-    if (!valid_chord_list(shortcuts)) {
+    if (!is_valid_chord_list(shortcuts)) {
         result.diagnostics.push_back(error(diagnostic_code_t::invalid_binding,
                                            "replacement shortcuts are invalid or exceed the cap"));
         return result;
@@ -626,7 +626,7 @@ auto shortcut_candidates(const command_registry_t& registry, const shortcut_even
         if (restricted && command.definition.focus_scope != *restricted) {
             continue;
         }
-        if (eligible(command, focus) && has_binding(command, event.chord, primary_modifier)) {
+        if (is_eligible(command, focus) && has_binding(command, event.chord, primary_modifier)) {
             candidates.push_back(&command);
         }
     }
@@ -639,7 +639,7 @@ auto dispatch_shortcut(const command_registry_t& registry, const shortcut_event_
                        const command_focus_t& focus, shortcut_primary_modifier_t primary_modifier)
     -> command_dispatch_result_t {
     command_dispatch_result_t result;
-    if (!valid_chord(event.chord, true) ||
+    if (!is_valid_chord(event.chord, true) ||
         focus.modal_context.size() > maximum_focus_context_bytes ||
         focus.text_entry_context.size() > maximum_focus_context_bytes ||
         focus.ime_context.size() > maximum_focus_context_bytes ||
@@ -741,7 +741,7 @@ auto invoke_command(const command_registry_t& registry, const command_id_t& id,
         result.status = command_dispatch_status_t::focus_consumed;
         return result;
     }
-    if (!eligible(*command, focus)) {
+    if (!is_eligible(*command, focus)) {
         result.status = command_dispatch_status_t::focus_consumed;
         return result;
     }

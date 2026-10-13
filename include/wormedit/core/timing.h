@@ -368,9 +368,10 @@ struct scroll_speed_transition_spans_result_t {
 // Recompute the stored source hash once when a chart revision is published or
 // a cached evaluator is reused; this is O(scroll + speed events), so it should
 // not be called in a per-frame render loop.
-[[nodiscard]] auto scroll_speed_index_matches(const scroll_speed_index_t& index,
+[[nodiscard]] auto is_scroll_speed_index_current(const scroll_speed_index_t& index,
                                               const chart_document_t& chart,
                                               const timing_index_t& timing) -> bool;
+
 
 // The absolute row may be fractional, which lets playback and rendering query
 // the same compiled curves between authored grid positions.

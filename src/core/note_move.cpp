@@ -198,10 +198,10 @@ namespace wormedit::interaction_detail {
 auto landed_on_taken_row(const sound_channel_t& channel, const moved_stem_events_t& moved)
     -> const sound_channel_event_t* {
     for (const auto& event : channel.events) {
-        if (!moved.contains(event.id))
+        if (!moved.has_object(event.id))
             continue;
         const auto taken = std::ranges::any_of(channel.events, [&](const auto& other) {
-            return !moved.contains(other.id) && other.position == event.position &&
+            return !moved.has_object(other.id) && other.position == event.position &&
                    other.playable == event.playable;
         });
         if (taken)
@@ -376,9 +376,9 @@ auto move_one_note(note_move_context_t& context, object_id_t id, note_move_plan_
         return *failure;
     const auto target = std::get<move_destination_t>(destination);
     const auto available =
-        target.available && context.lane_available_across(moved_begin, moved_end, target.lane);
+        target.available && context.is_lane_available_across(moved_begin, moved_end, target.lane);
     auto conflict = available ? note_move_conflict_t::none : note_move_conflict_t::out_of_lane;
-    if (available && head_blocked_by_warp(context.chart, context.index, moved_begin, note->kind))
+    if (available && is_head_blocked_by_warp(context.chart, context.index, moved_begin, note->kind))
         conflict = note_move_conflict_t::other;
     if (outside)
         conflict = note_move_conflict_t::out_of_chart;
@@ -430,7 +430,7 @@ auto merged_move_ranges(const std::vector<duration_collision_interval_t>& collis
 } // namespace wormedit::interaction_detail
 
 namespace wormedit::interaction_detail {
-auto overlaps_move_range(const duration_collision_interval_t& interval,
+auto is_overlapping_move_range(const duration_collision_interval_t& interval,
                          const std::vector<duration_collision_interval_t>& ranges) -> bool {
     const auto key = std::pair{interval.lane.value, interval.begin};
     const auto found = std::ranges::lower_bound(
@@ -447,7 +447,7 @@ void mark_move_collisions(std::vector<duration_collision_interval_t>& collisions
     // Keeping all moved intervals preserves selected-selected conflicts,
     // including clipped invalid hold portions.
     std::erase_if(collisions, [&](const auto& interval) {
-        return !interval.resizing && !overlaps_move_range(interval, ranges);
+        return !interval.resizing && !is_overlapping_move_range(interval, ranges);
     });
     std::ranges::sort(collisions, [](const auto& left, const auto& right) {
         return std::tie(left.lane.value, left.begin, left.end, left.resizing, left.note.value) <
@@ -844,7 +844,7 @@ auto apply_duration_resize_plan(document_history_t& history, editor_interaction_
 
 namespace wormedit {
 using namespace interaction_detail;
-auto note_move_changes(const chart_document_t& chart, const note_move_plan_t& plan) -> bool {
+auto has_note_move_changes(const chart_document_t& chart, const note_move_plan_t& plan) -> bool {
     for (const auto& candidate : plan.moved) {
         const auto* note = chart.find_note(candidate.id);
         if (!note || note->position != candidate.position || note->lane != candidate.lane ||
@@ -944,7 +944,7 @@ auto apply_note_move_plan(document_history_t& history, editor_interaction_state_
     transaction.adopt_document(plan.staged_bgm_document.value_or(history.document));
     auto& proposed = transaction.copy_document();
     auto* chart = proposed.find_chart(state.chart);
-    const auto changed = plan.staged_bgm_document.has_value() || note_move_changes(*chart, plan) ||
+    const auto changed = plan.staged_bgm_document.has_value() || has_note_move_changes(*chart, plan) ||
                          std::ranges::any_of(plan.bgm_moves, [&](const auto& move) {
                              const auto* source = (*chart).find_bgm_event(move.note);
                              return !source || source->position != move.position ||

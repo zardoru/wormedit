@@ -21,7 +21,7 @@ namespace {
 
 
 
-auto scope_accepts(editor_selection_scope_t scope, editor_selection_object_kind_t kind) -> bool {
+auto is_scope_accepted(editor_selection_scope_t scope, editor_selection_object_kind_t kind) -> bool {
     switch (kind) {
     case editor_selection_object_kind_t::note: return scope.notes;
     case editor_selection_object_kind_t::bgm_event: return scope.bgm;
@@ -102,7 +102,7 @@ struct note_area_query_t {
         return after == layouts.begin() ? nullptr : std::prev(after)->layout;
     }
 
-    auto lane_intersects(const lane_layout_t* layout, lane_id_t lane) -> bool {
+    auto is_lane_intersecting(const lane_layout_t* layout, lane_id_t lane) -> bool {
         if (!layout) return false;
         auto cached = lane_bounds.find(layout);
         if (cached == lane_bounds.end()) {
@@ -124,17 +124,17 @@ struct note_area_query_t {
                                            : bounds.left < right && bounds.right > left;
     }
 
-    auto point_intersects(lane_id_t lane, std::uint64_t row) -> bool {
+    auto is_point_intersecting(lane_id_t lane, std::uint64_t row) -> bool {
         const auto y = static_cast<long double>(row) *
             static_cast<long double>(view.pixels_per_standard_measure) /
             static_cast<long double>(chart.divisions_per_standard_measure) -
             static_cast<long double>(view.viewport_scroll_pixels);
         return y >= static_cast<long double>(bounds.top) &&
                y <= static_cast<long double>(bounds.bottom) &&
-               lane_intersects(layout_at(static_cast<long double>(row)), lane);
+               is_lane_intersecting(layout_at(static_cast<long double>(row)), lane);
     }
 
-    auto body_intersects(lane_id_t lane, std::uint64_t begin_row,
+    auto is_body_intersecting(lane_id_t lane, std::uint64_t begin_row,
                          std::uint64_t end_row) -> bool {
         auto begin = std::max(bounds.minimum_row, static_cast<long double>(begin_row));
         auto end = std::min(bounds.maximum_row, static_cast<long double>(end_row));
@@ -142,7 +142,7 @@ struct note_area_query_t {
         if (begin == end)
             return begin > static_cast<long double>(begin_row) &&
                    begin < static_cast<long double>(end_row) &&
-                   lane_intersects(layout_at(begin), lane);
+                   is_lane_intersecting(layout_at(begin), lane);
         auto after = std::ranges::upper_bound(layouts, begin, {}, &area_layout_segment_t::row);
         if (after == layouts.begin()) return false;
         auto segment = std::prev(after);
@@ -151,7 +151,7 @@ struct note_area_query_t {
             const auto segment_begin = std::max(begin, static_cast<long double>(segment->row));
             const auto segment_end = next == layouts.end()
                 ? end : std::min(end, static_cast<long double>(next->row));
-            if (segment_begin < segment_end && lane_intersects(segment->layout, lane)) return true;
+            if (segment_begin < segment_end && is_lane_intersecting(segment->layout, lane)) return true;
             if (next == layouts.end() || static_cast<long double>(next->row) >= end) break;
             segment = next;
         }
@@ -159,7 +159,7 @@ struct note_area_query_t {
     }
 };
 
-auto valid_area_note_request(const chart_document_t& chart, const editor_hit_test_index_t& index,
+auto is_valid_area_note_request(const chart_document_t& chart, const editor_hit_test_index_t& index,
                              const editor_interaction_view_model_t& view,
                              const editor_area_selection_request_t& request) -> bool {
     return index.chart == chart.id && view.chart == chart.id &&
@@ -238,9 +238,9 @@ auto collect_area_note_spans(note_area_query_t& query, std::vector<object_id_t>&
     if (last - first == 1) {
         if (first >= index.note_spans.size()) return;
         const auto& span = index.note_spans[first];
-        if (query.point_intersects(span.lane, span.begin_row) ||
-            query.point_intersects(span.lane, span.end_row) ||
-            query.body_intersects(span.lane, span.begin_row, span.end_row))
+        if (query.is_point_intersecting(span.lane, span.begin_row) ||
+            query.is_point_intersecting(span.lane, span.end_row) ||
+            query.is_body_intersecting(span.lane, span.begin_row, span.end_row))
             selected.push_back(span.note);
         return;
     }
@@ -256,7 +256,7 @@ auto editor_notes_in_area_selection(const chart_document_t& chart,
                                     const editor_interaction_view_model_t& view,
                                     const editor_area_selection_request_t& request)
     -> std::variant<std::vector<object_id_t>, diagnostic_list_t> {
-    if (!valid_area_note_request(chart, index, view, request))
+    if (!is_valid_area_note_request(chart, index, view, request))
         return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
                                        "area selection geometry or hit-test index is invalid")};
     auto query = note_area_query_t{.chart = chart, .index = index, .view = view,
@@ -273,7 +273,7 @@ auto editor_notes_in_area_selection(const chart_document_t& chart,
 
 namespace {
 
-auto valid_row_selection_index(const chart_document_t& chart,
+auto is_valid_row_selection_index(const chart_document_t& chart,
                                const editor_hit_test_index_t& index,
                                std::uint64_t first_row, std::uint64_t last_row) -> bool {
     return index.chart == chart.id && index.measures.total_rows != 0 && first_row <= last_row &&
@@ -285,7 +285,7 @@ auto valid_row_selection_index(const chart_document_t& chart,
 
 auto validate_row_canvas(const chart_document_t& chart, std::uint64_t last_row)
     -> std::optional<diagnostic_list_t> {
-    if (!chart_has_virtual_tail(chart))
+    if (!has_chart_virtual_tail(chart))
         return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                        "selection row interval is outside the chart")};
     const auto canvas = build_virtual_canvas(chart);
@@ -306,7 +306,7 @@ auto collect_row_selection(const chart_document_t& chart, const editor_hit_test_
         if (first >= index.selection_spans.size()) return;
         const auto& span = index.selection_spans[first];
         if (span.begin_row > last_row || span.end_row < first_row ||
-            !scope_accepts(scope, span.object.kind)) return;
+            !is_scope_accepted(scope, span.object.kind)) return;
         if (span.object.kind == editor_selection_object_kind_t::note) {
             const auto position = position_at(index.measures, span.begin_row);
             if (!position || !span.lane ||
@@ -324,16 +324,16 @@ auto collect_row_selection(const chart_document_t& chart, const editor_hit_test_
 
 } // namespace
 
-auto editor_selection_scope_accepts(editor_selection_scope_t scope,
+auto is_editor_selection_scope_accepted(editor_selection_scope_t scope,
     editor_selection_object_kind_t kind) -> bool {
-    return scope_accepts(scope, kind);
+    return is_scope_accepted(scope, kind);
 }
 
 auto editor_objects_in_row_range(const chart_document_t& chart,
                                  const editor_hit_test_index_t& index, std::uint64_t first_row,
                                  std::uint64_t last_row, editor_selection_scope_t scope)
     -> std::variant<std::vector<editor_selection_object_t>, diagnostic_list_t> {
-    if (!valid_row_selection_index(chart, index, first_row, last_row))
+    if (!is_valid_row_selection_index(chart, index, first_row, last_row))
         return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
                                        "selection index or row interval is invalid")};
     if (last_row >= index.measures.total_rows) {
@@ -356,7 +356,7 @@ auto editor_objects_in_row_range(const chart_document_t& chart,
 
 namespace {
 
-auto valid_non_note_area(const chart_document_t& chart, const editor_hit_test_index_t& index,
+auto is_valid_non_note_area(const chart_document_t& chart, const editor_hit_test_index_t& index,
                          const editor_interaction_view_model_t& view,
                          const editor_area_selection_request_t& request,
                          std::optional<double> maximum_scroll) -> bool {
@@ -389,7 +389,7 @@ auto collect_float_selection(const editor_hit_test_index_t& index,
         const auto& span = index.selection_spans[first];
         if (static_cast<long double>(span.begin_row) > high ||
             static_cast<long double>(span.end_row) < low ||
-            !scope_accepts(scope, span.object.kind)) return;
+            !is_scope_accepted(scope, span.object.kind)) return;
         selected.push_back(span.object);
         return;
     }
@@ -414,14 +414,14 @@ auto append_note_area_selection(const chart_document_t& chart,
     return std::nullopt;
 }
 
-auto valid_area_object_geometry(const editor_area_object_geometry_t& item) -> bool {
+auto is_valid_area_object_geometry(const editor_area_object_geometry_t& item) -> bool {
     return item.object.kind != editor_selection_object_kind_t::note && item.object.id.value != 0 &&
         std::isfinite(item.left_pixels) && std::isfinite(item.right_pixels) &&
         std::isfinite(item.top_pixels) && std::isfinite(item.bottom_pixels) &&
         item.left_pixels <= item.right_pixels && item.top_pixels <= item.bottom_pixels;
 }
 
-auto valid_area_geometry_projection(const editor_area_geometry_snapshot_t& snapshot,
+auto is_valid_area_geometry_projection(const editor_area_geometry_snapshot_t& snapshot,
                                     const editor_interaction_view_model_t& view) -> bool {
     if (!snapshot.projection) return true;
     const auto& projection = *snapshot.projection;
@@ -435,7 +435,7 @@ auto append_projected_area_selection(const chart_document_t& chart,
     std::vector<editor_selection_object_t>& selected) -> std::optional<diagnostic_list_t> {
     const auto& snapshot = *request.object_geometry;
     if (snapshot.chart != chart.id || snapshot.document_revision != view.document_revision ||
-        snapshot.objects.size() > 200000 || !valid_area_geometry_projection(snapshot, view) ||
+        snapshot.objects.size() > 200000 || !is_valid_area_geometry_projection(snapshot, view) ||
         !std::isfinite(request.start_x_pixels) || !std::isfinite(request.end_x_pixels) ||
         !std::isfinite(request.start_y_pixels) || !std::isfinite(request.end_y_pixels))
         return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
@@ -447,10 +447,10 @@ auto append_projected_area_selection(const chart_document_t& chart,
     const auto top = std::min(request.start_y_pixels, request.end_y_pixels) + scroll_delta;
     const auto bottom = std::max(request.start_y_pixels, request.end_y_pixels) + scroll_delta;
     for (const auto& item : snapshot.objects) {
-        if (!valid_area_object_geometry(item))
+        if (!is_valid_area_object_geometry(item))
             return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
                                            "projected selection rectangle is invalid")};
-        if (scope_accepts(request.scope, item.object.kind) &&
+        if (is_scope_accepted(request.scope, item.object.kind) &&
             item.left_pixels <= right && item.right_pixels >= left &&
             item.top_pixels <= bottom && item.bottom_pixels >= top)
             selected.push_back(item.object);
@@ -469,7 +469,7 @@ auto append_non_note_area_selection(const chart_document_t& chart,
     if (!(request.scope.bgm || request.scope.timing || request.scope.bga)) return std::nullopt;
     const auto maximum_scroll = maximum_viewport_scroll(
         chart, index.measures, view.pixels_per_standard_measure, view.viewport_height_pixels);
-    if (!valid_non_note_area(chart, index, view, request, maximum_scroll))
+    if (!is_valid_non_note_area(chart, index, view, request, maximum_scroll))
         return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
                                        "area selection geometry or index is invalid")};
     const auto top = std::max(0.0, std::min(request.start_y_pixels, request.end_y_pixels));
@@ -668,7 +668,7 @@ auto update_space_range_selection(space_range_selection_context_t& context,
 
 namespace wormedit {
 using namespace interaction_detail;
-auto valid_area_selection_capture(const begin_editor_area_selection_action_t& request,
+auto is_valid_area_selection_capture(const begin_editor_area_selection_action_t& request,
                                   double viewport_height) -> bool {
     return std::isfinite(request.x_pixels) && std::isfinite(request.y_pixels) &&
            std::isfinite(request.field_left_pixels) && std::isfinite(request.field_width_pixels) &&
@@ -698,7 +698,7 @@ auto begin_area_selection_gesture(area_selection_context_t& context,
         return diagnostic_result(
             history, state,
             {error(diagnostic_code_t::invalid_hold, "another editor gesture is already active")});
-    if (!valid_area_selection_capture(request, state.viewport_height_pixels))
+    if (!is_valid_area_selection_capture(request, state.viewport_height_pixels))
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_resolution,
                                         "area selection must begin inside the chart field")});
@@ -818,7 +818,7 @@ auto snapped_area_selection_row(const area_selection_context_t& context,
         return std::nullopt;
     const auto denominator = edit_snap_denominator(context.edit.scope.chart, context.edit.state);
     auto total_rows = context.edit.scope.measures.total_rows;
-    if (chart_has_virtual_tail(context.edit.scope.chart)) {
+    if (has_chart_virtual_tail(context.edit.scope.chart)) {
         const auto canvas = build_virtual_canvas(context.edit.scope.chart);
         const auto* geometry = std::get_if<virtual_canvas_t>(&canvas);
         if (!geometry)

@@ -4714,9 +4714,9 @@ TEST_CASE("Compose note kind availability follows the chart family", "[interacti
             const bool common = kind == note_kind_t::tap || kind == note_kind_t::hold || kind == note_kind_t::mine;
             const bool expected = common || (family == format_family_t::bms && kind == note_kind_t::invisible) ||
                 (family == format_family_t::stepmania && (kind == note_kind_t::roll || kind == note_kind_t::lift || kind == note_kind_t::fake));
-            check_note_kind_condition(note_kind_allowed(chart, kind) == expected);
+            check_note_kind_condition(is_note_kind_allowed(chart, kind) == expected);
         }
-        check_note_kind_condition(!(note_kind_allowed(chart, static_cast<note_kind_t>(100))));
+        check_note_kind_condition(!(is_note_kind_allowed(chart, static_cast<note_kind_t>(100))));
     }
 }
 

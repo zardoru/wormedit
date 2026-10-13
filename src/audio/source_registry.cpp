@@ -8,7 +8,7 @@
 namespace wormedit::audio {
 namespace {
 
-auto valid_source(const audio_source_identity_t& source) -> bool {
+auto is_valid_source(const audio_source_identity_t& source) -> bool {
     return !source.asset_identity.empty() && !source.source_identity.empty();
 }
 
@@ -114,7 +114,7 @@ auto decoded_source_registry_t::add_entry(std::shared_ptr<entry_t> candidate)
 
 auto decoded_source_registry_t::register_source_pending(
     decoded_source_registration_t registration) -> source_registration_result_t {
-    if (!registration.asset || registration.path.empty() || !valid_source(registration.source)) {
+    if (!registration.asset || registration.path.empty() || !is_valid_source(registration.source)) {
         return {.status = source_registration_status_t::invalid_request,
                 .binding = std::nullopt,
                 .message = "decoded source registration is incomplete"};
@@ -367,7 +367,7 @@ void decoded_source_registry_t::trim_idle_decoders() {
 
 auto decoded_source_registry_t::register_generated_source(
     generated_source_registration_t registration) -> source_registration_result_t {
-    if (!valid_source(registration.source) || registration.interleaved_stereo.empty() ||
+    if (!is_valid_source(registration.source) || registration.interleaved_stereo.empty() ||
         registration.interleaved_stereo.size() % output_channel_count != 0) {
         return {.status = source_registration_status_t::invalid_request,
                 .binding = std::nullopt,
@@ -464,7 +464,7 @@ auto decoded_source_registry_t::binding(asset_id_t asset) const
 
 auto decoded_source_registry_t::decode_block(transport_t& transport, session_token_t token,
                                              audio_block_key_t key) -> block_decode_result_t {
-    if (!valid_source(key.source)) {
+    if (!is_valid_source(key.source)) {
         return invalid_decode();
     }
     if (const auto resident = transport.resident_block_hit(token, key)) {

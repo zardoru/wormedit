@@ -231,23 +231,23 @@ void viewport_input_controller_t::modal_opened() noexcept {
     escape();
 }
 
-auto viewport_input_controller_t::normal_edit_press() noexcept -> bool {
-    const auto was_active = autoscroll_active();
+auto viewport_input_controller_t::is_normal_edit_press() noexcept -> bool {
+    const auto was_active = is_autoscroll_active();
     if (was_active)
         cancel_autoscroll();
     stop_momentum();
     return was_active;
 }
 
-auto viewport_input_controller_t::autoscroll_active() const noexcept -> bool {
+auto viewport_input_controller_t::is_autoscroll_active() const noexcept -> bool {
     return routed_gesture_ == routed_gesture_t::autoscroll;
 }
 
-auto viewport_input_controller_t::momentum_active() const noexcept -> bool {
+auto viewport_input_controller_t::is_momentum_active() const noexcept -> bool {
     return routed_gesture_ == routed_gesture_t::momentum;
 }
 
-auto viewport_input_controller_t::trackpad_active() const noexcept -> bool {
+auto viewport_input_controller_t::is_trackpad_active() const noexcept -> bool {
     return routed_gesture_ == routed_gesture_t::trackpad;
 }
 

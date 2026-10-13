@@ -476,7 +476,7 @@ auto parse_integer(std::string_view text) -> std::optional<std::int64_t> {
     return value;
 }
 
-auto base36_digit(char byte) -> bool {
+auto is_base36_digit(char byte) -> bool {
     return bms36_value(static_cast<unsigned char>(byte)) >= 0;
 }
 
@@ -510,7 +510,7 @@ auto parse_measure_command(std::string_view token)
     if (token.size() != 5 ||
         !std::ranges::all_of(token.substr(0, 3),
                              [](unsigned char c) { return c >= '0' && c <= '9'; }) ||
-        !base36_digit(token[3]) || !base36_digit(token[4])) {
+        !is_base36_digit(token[3]) || !is_base36_digit(token[4])) {
         return std::nullopt;
     }
     std::size_t measure{};
@@ -1436,7 +1436,7 @@ void add_choice_diagnostic(bms_parse_result_t& result, const bms_control_node_t&
                         std::move(message), node_source_line(node));
 }
 
-auto branch_choice_is_valid(const bms_control_node_t& node, std::int64_t value) -> bool {
+auto is_branch_choice_valid(const bms_control_node_t& node, std::int64_t value) -> bool {
     if (node.kind == bms_control_kind_t::random)
         return node.value && value >= 1 && value <= *node.value;
     const auto has_case = std::ranges::any_of(node.children, [&](const auto& child) {
@@ -1489,7 +1489,7 @@ void validate_branch_choices(branch_choice_map_t& choices,
             continue;
         }
         const auto& node = *found->second;
-        if (!branch_choice_is_valid(node, choice->second)) {
+        if (!is_branch_choice_valid(node, choice->second)) {
             add_choice_diagnostic(result, node, node.kind == bms_control_kind_t::random
                 ? "RANDOM choice is outside the block's declared range; its branches remain unprojected"
                 : "SWITCH choice matches no CASE and has no DEFAULT; its branches remain unprojected");
@@ -1719,8 +1719,8 @@ auto is_bms_text_encoding_supported(text_encoding_t encoding) -> bool {
 }
 
 auto is_resource_header(std::string_view token, std::string_view prefix) -> bool {
-    return token.size() == 5 && token.starts_with(prefix) && base36_digit(token[3]) &&
-           base36_digit(token[4]);
+    return token.size() == 5 && token.starts_with(prefix) && is_base36_digit(token[3]) &&
+           is_base36_digit(token[4]);
 }
 
 auto retain_non_control_header(const source_line_t& line, const parsed_line_t& parsed,
@@ -1759,7 +1759,7 @@ auto retain_measure_command(const source_line_t& line, const parsed_line_t& pars
     const auto payload = trim_ascii(parsed.raw_value);
     const auto valid_payload = !payload.empty() && payload.size() % 2 == 0 &&
                                std::ranges::all_of(payload, [](char character) {
-                                   return base36_digit(character);
+                                   return is_base36_digit(character);
                                });
     if (!valid_payload) {
         add_line_diagnostic(result, diagnostic_severity_t::error,
@@ -1789,7 +1789,7 @@ void retain_malformed_control(control_tree_build_context_t& context,
                         bms_parse_diagnostic_code_t::malformed_control, std::move(message), line);
 }
 
-auto control_nesting_limit_reached(control_tree_build_context_t& context,
+auto is_control_nesting_limit_reached(control_tree_build_context_t& context,
                                    const source_line_t& line, const parsed_line_t& parsed) -> bool {
     if (context.frames.size() < context.options.max_nesting_depth) {
         return false;
@@ -1831,7 +1831,7 @@ auto open_control_block(control_tree_build_context_t& context, const source_line
             add_simple_control(context, line, parsed, kind, value);
             return true;
         }
-        if (control_nesting_limit_reached(context, line, parsed)) {
+        if (is_control_nesting_limit_reached(context, line, parsed)) {
             return true;
         }
         const auto path = append_node(context.root, context.current_path,
@@ -1842,7 +1842,7 @@ auto open_control_block(control_tree_build_context_t& context, const source_line
         return true;
     }
     if (token == "IF") {
-        if (control_nesting_limit_reached(context, line, parsed)) {
+        if (is_control_nesting_limit_reached(context, line, parsed)) {
             return true;
         }
         const auto value = parse_control_value(context, line, parsed);
@@ -1862,7 +1862,7 @@ auto open_control_block(control_tree_build_context_t& context, const source_line
         return true;
     }
     if (token == "SWITCH") {
-        if (control_nesting_limit_reached(context, line, parsed)) {
+        if (is_control_nesting_limit_reached(context, line, parsed)) {
             return true;
         }
         const auto value = parse_control_value(context, line, parsed);
@@ -2217,7 +2217,7 @@ auto collect_measure_length_statement(active_statement_scan_context_t& context,
 
 auto is_bpm_definition(std::string_view token) -> bool {
     return token == "BPM" || (token.size() == 5 && token.starts_with("BPM") &&
-                               base36_digit(token[3]) && base36_digit(token[4]));
+                               is_base36_digit(token[3]) && is_base36_digit(token[4]));
 }
 
 auto collect_bpm_statement(active_statement_scan_context_t& context,
@@ -2253,8 +2253,8 @@ auto collect_bpm_statement(active_statement_scan_context_t& context,
 }
 
 auto is_stop_definition(std::string_view token) -> bool {
-    return token.size() == 6 && token.starts_with("STOP") && base36_digit(token[4]) &&
-           base36_digit(token[5]);
+    return token.size() == 6 && token.starts_with("STOP") && is_base36_digit(token[4]) &&
+           is_base36_digit(token[5]);
 }
 
 auto collect_stop_statement(active_statement_scan_context_t& context,
@@ -2300,7 +2300,7 @@ void collect_channel_statement(active_statement_scan_context_t& context,
         return;
     }
     if (value.empty() || value.size() % 2 != 0 ||
-        !std::ranges::all_of(value, [](char character) { return base36_digit(character); })) {
+        !std::ranges::all_of(value, [](char character) { return is_base36_digit(character); })) {
         return;
     }
     const auto& [measure_number, channel] = *command;
@@ -3300,18 +3300,18 @@ void shift_inserted_document_orders(song_document_t& song, chart_document_t& cha
     }
 }
 
-auto bms_provenance_claims(const source_provenance_t& provenance, std::size_t order) -> bool {
+auto has_bms_provenance_claim(const source_provenance_t& provenance, std::size_t order) -> bool {
     return provenance.family == format_family_t::bms && provenance.source_order == order;
 }
 
 template <typename Events>
-auto any_bms_event_claims(const Events& events, std::size_t order) -> bool {
+auto has_bms_event_claim(const Events& events, std::size_t order) -> bool {
     return std::ranges::any_of(events, [order](const auto& event) {
-        return bms_provenance_claims(event.provenance, order);
+        return has_bms_provenance_claim(event.provenance, order);
     });
 }
 
-auto metadata_claims_source_order(const std::vector<format_metadata_t>& groups,
+auto has_metadata_source_order_claim(const std::vector<format_metadata_t>& groups,
                                  std::size_t order) -> bool {
     return std::ranges::any_of(groups, [order](const auto& group) {
         return group.family == format_family_t::bms &&
@@ -3322,25 +3322,25 @@ auto metadata_claims_source_order(const std::vector<format_metadata_t>& groups,
 
 auto has_projected_bms_identity(const song_document_t& song, const chart_document_t& chart,
                                 std::size_t order) -> bool {
-    if (any_bms_event_claims(song.resources, order) ||
-        metadata_claims_source_order(song.metadata.format_groups, order) ||
-        metadata_claims_source_order(chart.metadata.format_groups, order)) {
+    if (has_bms_event_claim(song.resources, order) ||
+        has_metadata_source_order_claim(song.metadata.format_groups, order) ||
+        has_metadata_source_order_claim(chart.metadata.format_groups, order)) {
         return true;
     }
     for (const auto& measure : chart.measures) {
-        if (any_bms_event_claims(measure.notes, order) ||
-            any_bms_event_claims(measure.bgm_events, order)) {
+        if (has_bms_event_claim(measure.notes, order) ||
+            has_bms_event_claim(measure.bgm_events, order)) {
             return true;
         }
     }
-    if (any_bms_event_claims(chart.bpms, order) || any_bms_event_claims(chart.pauses, order) ||
-        any_bms_event_claims(chart.warps, order) || any_bms_event_claims(chart.scrolls, order) ||
-        any_bms_event_claims(chart.speeds, order) || any_bms_event_claims(chart.kiai, order) ||
-        any_bms_event_claims(chart.bga_events, order)) {
+    if (has_bms_event_claim(chart.bpms, order) || has_bms_event_claim(chart.pauses, order) ||
+        has_bms_event_claim(chart.warps, order) || has_bms_event_claim(chart.scrolls, order) ||
+        has_bms_event_claim(chart.speeds, order) || has_bms_event_claim(chart.kiai, order) ||
+        has_bms_event_claim(chart.bga_events, order)) {
         return true;
     }
     for (const auto& channel : chart.sound_channels) {
-        if (any_bms_event_claims(channel.events, order)) {
+        if (has_bms_event_claim(channel.events, order)) {
             return true;
         }
     }
@@ -3561,7 +3561,7 @@ auto validate_deletion_closures(const deletion_target_scan_t& targets,
     return true;
 }
 
-auto deletion_spans_are_safe(const bms_control_node_t& root, branch_id_t target,
+auto is_deletion_spans_are_safe(const bms_control_node_t& root, branch_id_t target,
                              std::size_t source_size, bms_source_span_t deleted) -> bool {
     const auto span_is_safe = [source_size, deleted](bms_source_span_t span, bool is_root) {
         if (span.byte_begin > span.byte_end || span.byte_end > source_size) {
@@ -3933,7 +3933,7 @@ auto delete_bms_inactive_branch_statement(const song_document_t& song,
         return result;
     }
 
-    if (!deletion_spans_are_safe(*chart->bms_control_tree, target->id, source_size, target_span)) {
+    if (!is_deletion_spans_are_safe(*chart->bms_control_tree, target->id, source_size, target_span)) {
         reject(bms_branch_statement_edit_diagnostic_code_t::provenance_mismatch,
                "another retained source span overlaps or escapes the deleted statement range",
                path);

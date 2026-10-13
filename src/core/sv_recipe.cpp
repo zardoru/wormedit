@@ -31,7 +31,7 @@ void reject(diagnostic_list_t& diagnostics, diagnostic_code_t code, std::string 
 
 using wormedit::to_long_double;
 
-auto valid_bounded_rational(signed_rational_t value, long double maximum) -> bool {
+auto is_valid_bounded_rational(signed_rational_t value, long double maximum) -> bool {
     if (value.denominator == 0 || value.denominator > maximum_parameter_denominator) {
         return false;
     }
@@ -179,7 +179,7 @@ auto curve_value(const sv_recipe_t& recipe, long double p) -> long double {
     return std::numeric_limits<long double>::quiet_NaN();
 }
 
-auto valid_curve_result(long double value, sv_recipe_output_t output) -> bool {
+auto is_valid_curve_result(long double value, sv_recipe_output_t output) -> bool {
     return std::isfinite(value) && std::abs(value) <= maximum_curve_output &&
            (output != sv_recipe_output_t::speeds || value >= 0.0L);
 }
@@ -195,7 +195,7 @@ auto ensure_sample_point(std::map<std::uint64_t, long double>& points, std::uint
                          const std::pair<std::uint64_t, std::uint64_t>& range,
                          diagnostic_list_t& diagnostics) -> bool {
     const auto value = curve_value(recipe, recipe_position_for_row(range, row));
-    if (!valid_curve_result(value, recipe.output)) {
+    if (!is_valid_curve_result(value, recipe.output)) {
         reject(diagnostics, diagnostic_code_t::invalid_rational,
                "SV recipe evaluates to a non-finite, oversized, or target-invalid value");
         return false;
@@ -251,7 +251,7 @@ auto recipe_by_id(chart_document_t& chart, recipe_id_t id) -> sv_recipe_t* {
     return found == chart.sv_recipes.end() ? nullptr : &*found;
 }
 
-auto globally_used_recipe_id(const song_document_t& song, recipe_id_t id) -> bool {
+auto is_globally_used_recipe_id(const song_document_t& song, recipe_id_t id) -> bool {
     if (std::ranges::any_of(song.generator_recipes,
                             [id](const auto& recipe) { return recipe.id == id; })) {
         return true;
@@ -307,7 +307,7 @@ void reject_drag(sv_recipe_range_drag_t& drag, diagnostic_code_t code, std::stri
     }
 }
 
-auto valid_recipe_enum_domains(const sv_recipe_t& recipe, diagnostic_list_t& diagnostics) -> bool {
+auto is_valid_recipe_enum_domains(const sv_recipe_t& recipe, diagnostic_list_t& diagnostics) -> bool {
     const auto valid =
         static_cast<unsigned int>(recipe.output) <=
             static_cast<unsigned int>(sv_recipe_output_t::speeds) &&
@@ -322,14 +322,14 @@ auto valid_recipe_enum_domains(const sv_recipe_t& recipe, diagnostic_list_t& dia
     return valid;
 }
 
-auto valid_recipe_parameters(const sv_recipe_parameters_t& params) -> bool {
-    return valid_bounded_rational(params.value_from, maximum_parameter_magnitude) &&
-           valid_bounded_rational(params.value_to, maximum_parameter_magnitude) &&
-           valid_bounded_rational(params.shape, maximum_parameter_magnitude) &&
-           valid_bounded_rational(params.bump_start, maximum_parameter_magnitude) &&
-           valid_bounded_rational(params.bump_length, maximum_parameter_magnitude) &&
-           valid_bounded_rational(params.bump_x, maximum_parameter_magnitude) &&
-           valid_bounded_rational(params.bump_y, maximum_parameter_magnitude);
+auto is_valid_recipe_parameters(const sv_recipe_parameters_t& params) -> bool {
+    return is_valid_bounded_rational(params.value_from, maximum_parameter_magnitude) &&
+           is_valid_bounded_rational(params.value_to, maximum_parameter_magnitude) &&
+           is_valid_bounded_rational(params.shape, maximum_parameter_magnitude) &&
+           is_valid_bounded_rational(params.bump_start, maximum_parameter_magnitude) &&
+           is_valid_bounded_rational(params.bump_length, maximum_parameter_magnitude) &&
+           is_valid_bounded_rational(params.bump_x, maximum_parameter_magnitude) &&
+           is_valid_bounded_rational(params.bump_y, maximum_parameter_magnitude);
 }
 
 void validate_bump_region(const sv_recipe_t& recipe, std::uint64_t span,
@@ -403,7 +403,7 @@ void validate_sampling(const sv_recipe_t& recipe, std::uint64_t span,
     } else if (sampling.fixed_point_count.has_value() || sampling.fixed_step_rows.has_value() ||
                sampling.max_points < 2 ||
                sampling.max_points > maximum_sv_recipe_sample_points ||
-               !valid_bounded_rational(sampling.tolerance, 1'000.0L) ||
+               !is_valid_bounded_rational(sampling.tolerance, 1'000.0L) ||
                to_long_double(sampling.tolerance) <= 0.0L) {
         reject(diagnostics, diagnostic_code_t::invalid_resolution,
                "adaptive SV sampling requires tolerance > 0 and a point cap in 2..4096");
@@ -424,7 +424,7 @@ void validate_expression_source(const sv_recipe_t& recipe, diagnostic_list_t& di
                "only a Lua expression SV recipe may carry expression source");
     }
     if (is_expression && (recipe.expression_source.empty() ||
-                          !text_util::valid_bounded_text(recipe.expression_source, maximum_expression_source_bytes))) {
+                          !text_util::is_valid_bounded_text(recipe.expression_source, maximum_expression_source_bytes))) {
         reject(diagnostics, diagnostic_code_t::invalid_id,
                "a Lua expression SV recipe needs 1 to 16384 non-NUL bytes of source");
     }
@@ -433,20 +433,20 @@ void validate_expression_source(const sv_recipe_t& recipe, diagnostic_list_t& di
 void validate_curve_outputs(const sv_recipe_t& recipe, diagnostic_list_t& diagnostics) {
     const auto& params = recipe.parameters;
     if (recipe.curve == sv_recipe_curve_t::constant &&
-        !valid_curve_result(to_long_double(params.value_from), recipe.output)) {
+        !is_valid_curve_result(to_long_double(params.value_from), recipe.output)) {
         reject(diagnostics, diagnostic_code_t::invalid_rational,
                "constant SV recipe value is invalid for its output family");
     }
     if ((recipe.curve == sv_recipe_curve_t::linear ||
          recipe.curve == sv_recipe_curve_t::exponential) &&
-        (!valid_curve_result(to_long_double(params.value_from), recipe.output) ||
-         !valid_curve_result(to_long_double(params.value_to), recipe.output))) {
+        (!is_valid_curve_result(to_long_double(params.value_from), recipe.output) ||
+         !is_valid_curve_result(to_long_double(params.value_to), recipe.output))) {
         reject(diagnostics, diagnostic_code_t::invalid_rational,
                "SV recipe endpoints are invalid for its output family");
     }
     if (recipe.curve == sv_recipe_curve_t::bump &&
-        (!valid_curve_result(to_long_double(params.bump_x), recipe.output) ||
-         !valid_curve_result(to_long_double(params.bump_y), recipe.output))) {
+        (!is_valid_curve_result(to_long_double(params.bump_x), recipe.output) ||
+         !is_valid_curve_result(to_long_double(params.bump_y), recipe.output))) {
         reject(diagnostics, diagnostic_code_t::invalid_rational,
                "bump values are invalid for its output family");
     }
@@ -461,11 +461,11 @@ auto validate_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe
         reject(diagnostics, diagnostic_code_t::invalid_id,
                "SV recipe must have a non-zero stable ID");
     }
-    if (recipe.name.empty() || !text_util::valid_bounded_text(recipe.name, 256)) {
+    if (recipe.name.empty() || !text_util::is_valid_bounded_text(recipe.name, 256)) {
         reject(diagnostics, diagnostic_code_t::invalid_id,
                "SV recipe name must contain 1 to 256 non-NUL bytes");
     }
-    if (!valid_recipe_enum_domains(recipe, diagnostics)) {
+    if (!is_valid_recipe_enum_domains(recipe, diagnostics)) {
         return diagnostics;
     }
 
@@ -481,7 +481,7 @@ auto validate_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe
         return diagnostics;
     }
     const auto span = range->second - range->first;
-    if (!valid_recipe_parameters(recipe.parameters)) {
+    if (!is_valid_recipe_parameters(recipe.parameters)) {
         reject(diagnostics, diagnostic_code_t::invalid_rational,
                "SV recipe parameters require bounded finite rational values");
         return diagnostics;
@@ -568,7 +568,7 @@ auto refine_adaptive_interval(adaptive_sampling_context_t& context, std::uint64_
     const auto ratio = static_cast<long double>(middle - left) /
                        static_cast<long double>(right - left);
     const auto expected = left_value + (right_value - left_value) * ratio;
-    if (!valid_curve_result(actual, context.recipe.output)) {
+    if (!is_valid_curve_result(actual, context.recipe.output)) {
         reject(context.diagnostics, diagnostic_code_t::invalid_rational,
                "adaptive SV recipe evaluates to an invalid value");
         return;
@@ -784,7 +784,7 @@ auto compose_recipe_point(const recipe_composition_context_t& context, std::uint
             transition_source = recipe;
         }
     }
-    if (!valid_curve_result(value, context.output)) {
+    if (!is_valid_curve_result(value, context.output)) {
         reject(diagnostics, diagnostic_code_t::invalid_rational,
                "composed SV recipe value is non-finite, oversized, or target-invalid");
         return std::nullopt;
@@ -1130,7 +1130,7 @@ auto active_recipe_ranges(const chart_document_t& chart, sv_recipe_output_t outp
     return ranges;
 }
 
-auto row_in_ranges(std::uint64_t row,
+auto is_row_in_ranges(std::uint64_t row,
                    const std::vector<std::pair<std::uint64_t, std::uint64_t>>& ranges) -> bool {
     return std::ranges::any_of(
         ranges, [row](const auto& range) { return row >= range.first && row <= range.second; });
@@ -1169,7 +1169,7 @@ auto bake_scroll_events(chart_document_t& chart, const measure_index_t& index,
     }
     std::erase_if(chart.scrolls, [&](const auto& event) {
         const auto row = absolute_row(index, event.position);
-        return row && row_in_ranges(*row, ranges);
+        return row && is_row_in_ranges(*row, ranges);
     });
     for (std::size_t order = 0; order < points->size(); ++order) {
         const auto& point = (*points)[order];
@@ -1203,7 +1203,7 @@ auto bake_speed_events(chart_document_t& chart, const measure_index_t& index,
     }
     std::erase_if(chart.speeds, [&](const auto& event) {
         const auto row = absolute_row(index, event.position);
-        return row && row_in_ranges(*row, ranges);
+        return row && is_row_in_ranges(*row, ranges);
     });
     for (std::size_t order = 0; order < points->size(); ++order) {
         const auto& point = (*points)[order];
@@ -1497,7 +1497,7 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
             return;
         }
         recipe.id = *id;
-    } else if (globally_used_recipe_id(context.proposed, recipe.id)) {
+    } else if (is_globally_used_recipe_id(context.proposed, recipe.id)) {
         reject(context.result.diagnostics, diagnostic_code_t::duplicate_id,
                "SV recipe ID is already used by a generator recipe");
         return;

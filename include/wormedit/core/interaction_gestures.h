@@ -26,10 +26,11 @@ void visit_editor_gestures(State& state, Visitor&& visit) {
 }
 
 template<class Field>
-auto editor_gesture_pending(const Field& field) -> bool {
+auto is_editor_gesture_pending(const Field& field) -> bool {
     if constexpr (requires { field.has_value(); }) return field.has_value();
     else return !field.empty();
 }
+
 
 template<class Field>
 void clear_editor_gesture(Field& field) {
@@ -42,7 +43,7 @@ inline void clear_editor_gestures(editor_interaction_state_t& state) {
 }
 
 template<class Field>
-auto editor_gesture_stale(const Field& field, std::uint64_t revision) -> bool {
+auto is_editor_gesture_stale(const Field& field, std::uint64_t revision) -> bool {
     if constexpr (requires { field.has_value(); })
         return field && field->document_revision != revision;
     else {
@@ -52,13 +53,17 @@ auto editor_gesture_stale(const Field& field, std::uint64_t revision) -> bool {
     }
 }
 
-inline auto editor_gestures_stale(const editor_interaction_state_t& state,
+
+inline auto is_editor_gestures_stale(const editor_interaction_state_t& state,
                                   std::uint64_t revision) -> bool {
     bool stale{};
     visit_editor_gestures(state, [&](auto, const auto& field) {
-        stale |= editor_gesture_stale(field, revision);
+        stale |= is_editor_gesture_stale(field, revision);
     });
     return stale;
 }
+// Compatibility for the coordinated sys/UI migration.
+inline auto editor_gestures_stale(const editor_interaction_state_t& state,
+                                  std::uint64_t revision) -> bool { return is_editor_gestures_stale(state, revision); }
 
 } // namespace wormedit

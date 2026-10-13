@@ -121,7 +121,7 @@ struct note_interval_t {
     object_id_t note;
 };
 
-auto lanes_free_of_overlap(const chart_document_t& chart, const row_shifter_t& rows,
+auto is_lanes_free_of_overlap(const chart_document_t& chart, const row_shifter_t& rows,
                            time_shift_result_t& result) -> bool {
     std::map<std::uint64_t, std::vector<note_interval_t>> lanes;
     for (const auto& measure : chart.measures) {
@@ -145,7 +145,7 @@ auto lanes_free_of_overlap(const chart_document_t& chart, const row_shifter_t& r
     return true;
 }
 
-auto retains_bms_control_flow(const chart_document_t& chart) -> bool {
+auto has_bms_control_flow(const chart_document_t& chart) -> bool {
     return chart.bms_control_tree.has_value() || !chart.bms_measure_length_projections.empty() ||
            !chart.bms_bpm_projections.empty() || !chart.bms_pause_projections.empty();
 }
@@ -174,7 +174,7 @@ auto prepare_shift(const document_history_t& history, std::uint64_t expected_rev
         reject(result.command, diagnostic_code_t::invalid_id, "time shift refers to an unknown chart");
         return std::nullopt;
     }
-    if (retains_bms_control_flow(*chart)) {
+    if (has_bms_control_flow(*chart)) {
         reject(result.command, diagnostic_code_t::unsupported_feature,
                "time shift is not supported on a chart with retained BMS control flow");
         return std::nullopt;
@@ -196,7 +196,7 @@ auto finish_shift(document_history_t& history, prepared_shift_t& prepared,
         return std::move(result);
     rehome(*prepared.chart, &measure_chunk_t::notes);
     rehome(*prepared.chart, &measure_chunk_t::bgm_events);
-    if (!lanes_free_of_overlap(*prepared.chart, shifter, result))
+    if (!is_lanes_free_of_overlap(*prepared.chart, shifter, result))
         return std::move(result);
     auto transaction = document_command_transaction_t::from(history);
     transaction.adopt_document(std::move(prepared.proposed));

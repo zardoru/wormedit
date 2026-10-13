@@ -4,12 +4,12 @@
 
 namespace wormedit {
 
-auto note_kind_is_playable(note_kind_t kind) noexcept -> bool {
+auto is_note_kind_playable(note_kind_t kind) noexcept -> bool {
     return kind == note_kind_t::tap || kind == note_kind_t::hold || kind == note_kind_t::roll ||
            kind == note_kind_t::lift;
 }
 
-auto row_in_warp(const chart_document_t& chart, const measure_index_t& index,
+auto is_row_in_warp(const chart_document_t& chart, const measure_index_t& index,
                  std::uint64_t absolute) -> bool {
     return std::ranges::any_of(chart.warps, [&](const auto& warp) {
         const auto begin = absolute_row(index, warp.span.begin);
@@ -18,9 +18,9 @@ auto row_in_warp(const chart_document_t& chart, const measure_index_t& index,
     });
 }
 
-auto head_blocked_by_warp(const chart_document_t& chart, const measure_index_t& index,
+auto is_head_blocked_by_warp(const chart_document_t& chart, const measure_index_t& index,
                           std::uint64_t absolute, note_kind_t kind) -> bool {
-    return note_kind_is_playable(kind) && row_in_warp(chart, index, absolute);
+    return is_note_kind_playable(kind) && is_row_in_warp(chart, index, absolute);
 }
 
 } // namespace wormedit

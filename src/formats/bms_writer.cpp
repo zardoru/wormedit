@@ -182,7 +182,7 @@ auto encode_normalized_bms(std::string_view utf8_with_bom, text_encoding_t encod
 #endif
 }
 
-auto base36_digit(char byte) -> bool {
+auto is_base36_digit(char byte) -> bool {
     return bms36_value(static_cast<unsigned char>(byte), bms36_case_policy_t::uppercase_only) >= 0;
 }
 
@@ -205,7 +205,7 @@ auto bms_identity(const resource_entry_t& resource, std::string_view name_space)
         return std::nullopt;
     }
     auto result = text_util::ascii_upper(identity->identifier);
-    if (!base36_digit(result[0]) || !base36_digit(result[1]) || result == "00") {
+    if (!is_base36_digit(result[0]) || !is_base36_digit(result[1]) || result == "00") {
         return std::nullopt;
     }
     return result;
@@ -222,7 +222,7 @@ auto has_edge_whitespace(std::string_view value) -> bool {
                               std::isspace(static_cast<unsigned char>(value.back())) != 0);
 }
 
-auto safe_metadata_token(std::string_view token) -> bool {
+auto is_safe_metadata_token(std::string_view token) -> bool {
     if (token.empty() || !((token.front() >= 'A' && token.front() <= 'Z') ||
                            (token.front() >= 'a' && token.front() <= 'z'))) {
         return false;
@@ -248,7 +248,7 @@ auto generated_or_channel_token(std::string_view token) -> bool {
         upper == "DEF") {
         return true;
     }
-    const auto is_base36 = [](char value) { return base36_digit(value); };
+    const auto is_base36 = [](char value) { return is_base36_digit(value); };
     if ((upper.size() == 5 && upper.starts_with("WAV") && is_base36(upper[3]) &&
          is_base36(upper[4])) ||
         (upper.size() == 5 && upper.starts_with("BMP") && is_base36(upper[3]) &&
@@ -264,7 +264,7 @@ auto generated_or_channel_token(std::string_view token) -> bool {
            is_base36(upper[4]);
 }
 
-using text_util::valid_utf8;
+using text_util::is_valid_utf8;
 
 auto retained_source_bytes(const song_document_t& song, const chart_document_t& chart)
     -> std::shared_ptr<const std::vector<std::byte>> {
@@ -411,7 +411,7 @@ struct source_measure_line_t {
     bms_line_ending_t line_ending{bms_line_ending_t::none};
 };
 
-auto source_measure_line_matches_bytes(const source_measure_line_t& source,
+auto is_source_measure_line_current(const source_measure_line_t& source,
                                        std::span<const std::byte> original_bytes) -> bool {
     if (source.source_span.byte_end <= source.source_span.byte_begin ||
         source.source_span.byte_end > original_bytes.size() ||
@@ -509,10 +509,10 @@ auto parse_long_note_source_field(std::string_view field)
         label != "source" || !(stream >> label) || label != "line" || !(stream >> end_line) ||
         end_line == 0 || start_channel.size() != 2 || end_channel.size() != 2 ||
         start_object.size() != 2 || end_object.size() != 2 ||
-        !std::ranges::all_of(start_channel, base36_digit) ||
-        !std::ranges::all_of(end_channel, base36_digit) ||
-        !std::ranges::all_of(start_object, base36_digit) ||
-        !std::ranges::all_of(end_object, base36_digit)) {
+        !std::ranges::all_of(start_channel, is_base36_digit) ||
+        !std::ranges::all_of(end_channel, is_base36_digit) ||
+        !std::ranges::all_of(start_object, is_base36_digit) ||
+        !std::ranges::all_of(end_object, is_base36_digit)) {
         return std::nullopt;
     }
     std::string trailing;
@@ -545,7 +545,7 @@ auto parse_channel_slot_field(std::string_view field) -> std::optional<channel_s
         std::from_chars(slot_text.data(), slot_text.data() + slot_text.size(), slot);
     const auto object_id = field.substr(object_marker + 8);
     if (parsed_slot.ec != std::errc{} || parsed_slot.ptr != slot_text.data() + slot_text.size() ||
-        object_id.size() != 2 || !base36_digit(object_id[0]) || !base36_digit(object_id[1])) {
+        object_id.size() != 2 || !is_base36_digit(object_id[0]) || !is_base36_digit(object_id[1])) {
         return std::nullopt;
     }
     return channel_slot_field_t{std::string(field.substr(0, 2)), slot,
@@ -569,7 +569,7 @@ auto branch_channel_slot_field(std::string_view field) -> std::optional<channel_
         const auto object_id = field.substr(value_marker + 7);
         if (parsed_slot.ec != std::errc{} ||
             parsed_slot.ptr != slot_text.data() + slot_text.size() || object_id.size() != 2 ||
-            !base36_digit(object_id[0]) || !base36_digit(object_id[1])) {
+            !is_base36_digit(object_id[0]) || !is_base36_digit(object_id[1])) {
             return std::nullopt;
         }
         return channel_slot_field_t{"03", slot, ascii_upper(std::string(object_id))};
@@ -586,7 +586,7 @@ auto branch_channel_slot_field(std::string_view field) -> std::optional<channel_
         const auto object_id = field.substr(bpm_marker + 4);
         if (parsed_slot.ec != std::errc{} ||
             parsed_slot.ptr != slot_text.data() + slot_text.size() || object_id.size() != 2 ||
-            !base36_digit(object_id[0]) || !base36_digit(object_id[1])) {
+            !is_base36_digit(object_id[0]) || !is_base36_digit(object_id[1])) {
             return std::nullopt;
         }
         return channel_slot_field_t{"08", slot, ascii_upper(std::string(object_id))};
@@ -603,7 +603,7 @@ auto branch_channel_slot_field(std::string_view field) -> std::optional<channel_
         const auto object_id = field.substr(stop_marker + 5);
         if (parsed_slot.ec != std::errc{} ||
             parsed_slot.ptr != slot_text.data() + slot_text.size() || object_id.size() != 2 ||
-            !base36_digit(object_id[0]) || !base36_digit(object_id[1])) {
+            !is_base36_digit(object_id[0]) || !is_base36_digit(object_id[1])) {
             return std::nullopt;
         }
         return channel_slot_field_t{"09", slot, ascii_upper(std::string(object_id))};
@@ -611,12 +611,12 @@ auto branch_channel_slot_field(std::string_view field) -> std::optional<channel_
     return std::nullopt;
 }
 
-auto retained_line_matches_bytes(std::string_view text, bms_source_span_t source_span,
+auto is_retained_line_current(std::string_view text, bms_source_span_t source_span,
                                  bms_line_ending_t line_ending,
                                  std::span<const std::byte> original_bytes) -> bool {
     source_measure_line_t source{
         .text = std::string(text), .source_span = source_span, .line_ending = line_ending};
-    return source_measure_line_matches_bytes(source, original_bytes);
+    return is_source_measure_line_current(source, original_bytes);
 }
 
 struct branch_tree_analysis_t {
@@ -665,7 +665,7 @@ auto replace_retained_header_value(std::string_view line, std::string_view expec
     if (separator == std::string_view::npos ||
         ascii_upper(std::string(line.substr(1, separator - 1))) != expected_token ||
         line.substr(separator + 1) != expected_value || has_line_break_or_nul(replacement) ||
-        !valid_utf8(replacement)) {
+        !is_valid_utf8(replacement)) {
         return std::nullopt;
     }
     std::string result(line.substr(0, separator + 1));
@@ -687,10 +687,10 @@ auto is_measure_length_command(std::string_view token) -> std::optional<std::siz
 
 auto is_timing_command(std::string_view token) -> bool {
     if (token == "BPM" ||
-        (token.size() == 5 && token.starts_with("BPM") && base36_digit(token[3]) &&
-         base36_digit(token[4])) ||
-        (token.size() == 6 && token.starts_with("STOP") && base36_digit(token[4]) &&
-         base36_digit(token[5]))) {
+        (token.size() == 5 && token.starts_with("BPM") && is_base36_digit(token[3]) &&
+         is_base36_digit(token[4])) ||
+        (token.size() == 6 && token.starts_with("STOP") && is_base36_digit(token[4]) &&
+         is_base36_digit(token[5]))) {
         return true;
     }
     return token.size() == 5 && token[0] >= '0' && token[0] <= '9' && token[1] >= '0' &&
@@ -699,10 +699,10 @@ auto is_timing_command(std::string_view token) -> bool {
 }
 
 auto is_timing_declaration(std::string_view token) -> bool {
-    return (token.size() == 5 && token.starts_with("BPM") && base36_digit(token[3]) &&
-            base36_digit(token[4])) ||
-           (token.size() == 6 && token.starts_with("STOP") && base36_digit(token[4]) &&
-            base36_digit(token[5]));
+    return (token.size() == 5 && token.starts_with("BPM") && is_base36_digit(token[3]) &&
+            is_base36_digit(token[4])) ||
+           (token.size() == 6 && token.starts_with("STOP") && is_base36_digit(token[4]) &&
+            is_base36_digit(token[5]));
 }
 
 auto source_line_for_node(const bms_control_node_t& node,
@@ -732,7 +732,7 @@ auto branch_channel_line(const bms_control_node_t& node, std::string_view token)
     -> std::optional<retained_channel_line_t> {
     if (is_measure_length_command(token) || token.size() != 5 || token[0] < '0' || token[0] > '9' ||
         token[1] < '0' || token[1] > '9' || token[2] < '0' || token[2] > '9' ||
-        !base36_digit(token[3]) || !base36_digit(token[4]) || node.original_text.size() < 7 ||
+        !is_base36_digit(token[3]) || !is_base36_digit(token[4]) || node.original_text.size() < 7 ||
         node.original_text[6] != ':') {
         return std::nullopt;
     }
@@ -747,7 +747,7 @@ auto branch_channel_line(const bms_control_node_t& node, std::string_view token)
 void analyze_branch_raw_statement(const bms_control_node_t& node, std::string_view token,
                                   branch_tree_analysis_t& result) {
     result.branch_source_orders.insert(node.source_order);
-    if (safe_metadata_token(token) &&
+    if (is_safe_metadata_token(token) &&
         (!generated_or_channel_token(token) || token == "PLAYER")) {
         result.metadata_fields.emplace(node.source_order,
                                        std::pair{std::string(token), node.raw_value});
@@ -768,7 +768,7 @@ void analyze_branch_raw_statement(const bms_control_node_t& node, std::string_vi
         }
     }
     if ((token.starts_with("WAV") || token.starts_with("BMP")) && token.size() == 5 &&
-        base36_digit(token[3]) && base36_digit(token[4])) {
+        is_base36_digit(token[3]) && is_base36_digit(token[4])) {
         result.branch_resource_ids.emplace(std::string(token.substr(0, 3)),
                                            std::string(token.substr(3, 2)));
         result.branch_resource_fields.emplace(
@@ -783,7 +783,7 @@ void analyze_branch_raw_statement(const bms_control_node_t& node, std::string_vi
 
 void analyze_root_raw_statement(const bms_control_node_t& node, std::string_view token,
                                 branch_tree_analysis_t& result) {
-    if (safe_metadata_token(token)) {
+    if (is_safe_metadata_token(token)) {
         result.metadata_fields.emplace(node.source_order,
                                        std::pair{std::string(token), node.raw_value});
     }
@@ -796,11 +796,11 @@ void analyze_root_raw_statement(const bms_control_node_t& node, std::string_view
         if (token == "BPM") {
             result.root_direct_bpm_lines.push_back(source_line_for_node(node));
         }
-    } else if (safe_metadata_token(token) || generated_or_channel_token(token) ||
+    } else if (is_safe_metadata_token(token) || generated_or_channel_token(token) ||
                is_measure_length_command(token)) {
         result.root_source_orders.insert(node.source_order);
     }
-    if (!safe_metadata_token(token) && !generated_or_channel_token(token)) {
+    if (!is_safe_metadata_token(token) && !generated_or_channel_token(token)) {
         result.has_unmodeled_root_statement = true;
         result.root_unmodeled_lines.emplace_back(node.source_order, node.original_text);
     }
@@ -961,7 +961,7 @@ auto branch_measure_length_edits(
             effective == effective_sources.end() ||
             effective->second.first != projection->source_order ||
             effective->second.second != projection->imported_length || !source_bytes ||
-            !source_measure_line_matches_bytes(line->second, *source_bytes)) {
+            !is_source_measure_line_current(line->second, *source_bytes)) {
             fail(bms_write_diagnostic_code_t::branch_provenance,
                  "an edited branch-controlled measure length does not map to one unchanged "
                  "active source statement",
@@ -979,7 +979,7 @@ auto branch_measure_length_edits(
 // Comments and unknown headers are copied byte for byte, so only single-line
 // UTF-8 text is safe to place in the normalized (UTF-8) output.
 auto can_emit_unmodeled_root_line(const std::string& text) -> bool {
-    return !text.empty() && !has_line_break_or_nul(text) && valid_utf8(text);
+    return !text.empty() && !has_line_break_or_nul(text) && is_valid_utf8(text);
 }
 
 auto prepare_branch_write_state(const song_document_t& song, const chart_document_t& chart,
@@ -1037,7 +1037,7 @@ auto replace_retained_measure_length(std::string_view line, std::size_t expected
         is_measure_length_command(ascii_upper(std::string(line.substr(1, 5)))) !=
             std::optional<std::size_t>{expected_measure} ||
         line.substr(7) != expected_value || has_line_break_or_nul(replacement) ||
-        !valid_utf8(replacement)) {
+        !is_valid_utf8(replacement)) {
         return std::nullopt;
     }
     std::string result(line.substr(0, 7));
@@ -1161,7 +1161,7 @@ auto branch_bpm_edit(const bpm_event_t& bpm, const chart_document_t& chart,
              "$.charts[].bpms");
     if (bpm.provenance.source_field != "BPM" ||
         bpm.provenance.source_spelling != source->second.text || !source_bytes ||
-        !source_measure_line_matches_bytes(source->second, *source_bytes))
+        !is_source_measure_line_current(source->second, *source_bytes))
         fail(bms_write_diagnostic_code_t::branch_provenance,
              "edited branch BPM source provenance does not match the retained source bytes",
              "$.charts[].bpms");
@@ -1239,8 +1239,8 @@ auto export_title_artist(const song_document_t& song, const chart_document_t& ch
     auto title = song.metadata.title.empty() ? chart.metadata.name : song.metadata.title;
     auto artist = song.metadata.artist.empty() ? chart.metadata.author : song.metadata.artist;
     if (has_line_break_or_nul(title) || has_line_break_or_nul(artist) ||
-        has_edge_whitespace(title) || has_edge_whitespace(artist) || !valid_utf8(title) ||
-        !valid_utf8(artist))
+        has_edge_whitespace(title) || has_edge_whitespace(artist) || !is_valid_utf8(title) ||
+        !is_valid_utf8(artist))
         fail(bms_write_diagnostic_code_t::invalid_document,
              "BMS title and artist must be valid UTF-8 single-line values without edge whitespace",
              "$.metadata");
@@ -1255,7 +1255,7 @@ struct export_lane_channels_t {
 auto normalize_lane_channel(std::string channel, bool long_note,
                             std::set<std::string>& used) -> std::string {
     channel = text_util::ascii_upper(std::move(channel));
-    if (channel.size() != 2 || !base36_digit(channel[0]) || !base36_digit(channel[1]) ||
+    if (channel.size() != 2 || !is_base36_digit(channel[0]) || !is_base36_digit(channel[1]) ||
         (long_note && channel[0] != '5' && channel[0] != '6') || !used.insert(channel).second)
         fail(bms_write_diagnostic_code_t::invalid_document,
              long_note ? "lane profile has an invalid or duplicate long-note BMS channel"
@@ -1302,7 +1302,7 @@ auto resource_namespace(const song_document_t& song, const resource_entry_t& res
         fail(bms_write_diagnostic_code_t::unresolved_resource,
              "resource must refer to exactly one available audio or visual asset", "$.resources[]");
     if (resource.name.empty() || has_line_break_or_nul(resource.name) ||
-        has_edge_whitespace(resource.name) || !valid_utf8(resource.name))
+        has_edge_whitespace(resource.name) || !is_valid_utf8(resource.name))
         fail(bms_write_diagnostic_code_t::unresolved_resource,
              "resource path must be a valid UTF-8 single-line value without edge whitespace",
              "$.resources[].name");
@@ -1442,7 +1442,7 @@ void apply_branch_channel_slot_edit(branch_event_edit_state_t& state, std::size_
                               const retained_channel_line_t& source, std::size_t old_slot,
                               std::size_t new_slot, std::string_view object_id,
                               std::string_view path) {
-    if (!state.source_bytes || !retained_line_matches_bytes(source.text, source.source_span,
+    if (!state.source_bytes || !is_retained_line_current(source.text, source.source_span,
                                                              source.line_ending, *state.source_bytes))
         fail(bms_write_diagnostic_code_t::branch_provenance,
              "edited branch channel line does not match unchanged imported source bytes",
@@ -1452,7 +1452,7 @@ void apply_branch_channel_slot_edit(branch_event_edit_state_t& state, std::size_
         const auto colon = source.text.find(':');
         const auto payload = trim_ascii_whitespace(source.raw_value);
         if (colon != 6 || source.text.substr(7) != source.raw_value || payload.empty() ||
-            payload.size() % 2 != 0 || !std::ranges::all_of(payload, base36_digit))
+            payload.size() % 2 != 0 || !std::ranges::all_of(payload, is_base36_digit))
             fail(bms_write_diagnostic_code_t::branch_provenance,
                  "edited branch channel payload is not a valid retained BMS slot line",
                  std::string(path));
@@ -1467,7 +1467,7 @@ void apply_branch_channel_slot_edit(branch_event_edit_state_t& state, std::size_
     auto& patch = edit->second;
     const auto slots = patch.payload.size() / 2;
     if (old_slot >= slots || new_slot >= slots || object_id.size() != 2 ||
-        !std::ranges::all_of(object_id, base36_digit))
+        !std::ranges::all_of(object_id, is_base36_digit))
         fail(bms_write_diagnostic_code_t::branch_provenance,
              "edited branch event position or identifier does not fit its retained source line",
              std::string(path));
@@ -1507,7 +1507,7 @@ void validate_branch_timing_declaration_edit(
     const std::shared_ptr<const std::vector<std::byte>>& source_bytes,
     const retained_timing_declaration_t& declaration, std::string_view identifier,
     std::string_view channel, std::string_view path) {
-    if (!source_bytes || !retained_line_matches_bytes(declaration.text, declaration.source_span,
+    if (!source_bytes || !is_retained_line_current(declaration.text, declaration.source_span,
                                                       declaration.line_ending, *source_bytes))
         fail(bms_write_diagnostic_code_t::branch_provenance,
              "edited branch timing declaration does not match unchanged imported source bytes",
@@ -2544,14 +2544,14 @@ auto derive_playlevel_from_rating(const chart_document_t& chart,
     return std::nullopt;
 }
 
-auto metadata_field_is_branch(const branch_tree_analysis_t& tree,
+auto is_branch_metadata_field(const branch_tree_analysis_t& tree,
                               const format_metadata_t& group, std::size_t field_index) -> bool {
     if (group.family != format_family_t::bms || field_index >= group.ordered_field_source_orders.size())
         return false;
     return tree.branch_source_orders.contains(group.ordered_field_source_orders[field_index]);
 }
 
-auto retained_playlevel_matches(const std::vector<const format_metadata_t*>& groups,
+auto is_retained_playlevel_current(const std::vector<const format_metadata_t*>& groups,
                                 std::optional<std::uint32_t> projected,
                                 bool& found) -> bool {
     bool matches = true;
@@ -2578,7 +2578,7 @@ void record_metadata_source_field(const format_metadata_t& group, std::size_t fi
                                   metadata_source_state_t& state,
                                   std::optional<std::size_t>& previous) {
     const auto& [token, value] = group.ordered_fields[field_index];
-    if (!safe_metadata_token(token))
+    if (!is_safe_metadata_token(token))
         fail(bms_write_diagnostic_code_t::invalid_document,
              "retained BMS metadata contains an unsafe command token",
              "$.metadata.format_groups[].ordered_fields[]");
@@ -2591,7 +2591,7 @@ void record_metadata_source_field(const format_metadata_t& group, std::size_t fi
              "retained BMS metadata source order or command token does not identify one unique source statement",
              "$.metadata.format_groups[].ordered_fields[]");
     previous = order;
-    const bool branch = metadata_field_is_branch(tree, group, field_index);
+    const bool branch = is_branch_metadata_field(tree, group, field_index);
     const auto normalized = ascii_upper(token);
     if (branch) {
         const auto branch_field = tree.branch_metadata_fields.find(order);
@@ -2600,7 +2600,7 @@ void record_metadata_source_field(const format_metadata_t& group, std::size_t fi
             fail(bms_write_diagnostic_code_t::branch_provenance,
                  "branch metadata source identity does not match its retained source statement",
                  "$.metadata.format_groups[].ordered_fields[]");
-        if (has_line_break_or_nul(value) || !valid_utf8(value))
+        if (has_line_break_or_nul(value) || !is_valid_utf8(value))
             fail(bms_write_diagnostic_code_t::branch_provenance,
                  "edited branch metadata must be valid UTF-8 single-line text",
                  "$.metadata.format_groups[].ordered_fields[]");
@@ -2673,7 +2673,7 @@ struct metadata_output_context_t {
 auto has_retained_root_player(const metadata_output_context_t& context) -> bool {
     for (const auto* group : context.groups) {
         for (std::size_t index = 0; index < group->ordered_fields.size(); ++index) {
-            if (!metadata_field_is_branch(context.tree, *group, index) &&
+            if (!is_branch_metadata_field(context.tree, *group, index) &&
                 ascii_upper(group->ordered_fields[index].first) == "PLAYER")
                 return true;
         }
@@ -2684,13 +2684,13 @@ auto has_retained_root_player(const metadata_output_context_t& context) -> bool 
 auto metadata_field_output(metadata_output_context_t& context, std::size_t group_index,
                            std::size_t field_index) -> std::optional<std::string> {
     const auto& fields = context.groups[group_index]->ordered_fields;
-    if (metadata_field_is_branch(context.tree, *context.groups[group_index], field_index))
+    if (is_branch_metadata_field(context.tree, *context.groups[group_index], field_index))
         return std::nullopt;
     const auto& [token, retained_value] = fields[field_index];
     const auto upper_token = ascii_upper(token);
     const auto path = "$.metadata.format_groups[" + std::to_string(group_index) +
                       "].ordered_fields[" + std::to_string(field_index) + "]";
-    if (!safe_metadata_token(token) ||
+    if (!is_safe_metadata_token(token) ||
         (upper_token != "PLAYER" && generated_or_channel_token(token)))
         fail(bms_write_diagnostic_code_t::invalid_document,
              "retained BMS metadata contains an unsafe or writer-owned command token", path);
@@ -2723,7 +2723,7 @@ auto metadata_field_output(metadata_output_context_t& context, std::size_t group
         if (!context.offset_is_branch) value = context.offset;
         context.offset_emitted = true;
     }
-    if (has_line_break_or_nul(value) || !valid_utf8(value))
+    if (has_line_break_or_nul(value) || !is_valid_utf8(value))
         fail(bms_write_diagnostic_code_t::invalid_document,
              "retained BMS metadata values must be valid UTF-8 single-line text", path);
     std::string line = "#" + token;
@@ -2870,7 +2870,7 @@ void append_measure_ratio_lines(const chart_document_t& chart,
     }
     for (const auto& line : tree.root_measure_ratio_lines) {
         if (!tree.branch_measure_indices.contains(line.measure_index)) continue;
-        if (has_line_break_or_nul(line.text) || !valid_utf8(line.text))
+        if (has_line_break_or_nul(line.text) || !is_valid_utf8(line.text))
             fail(bms_write_diagnostic_code_t::branch_provenance,
                  "retained BMS measure-ratio statements must be valid UTF-8 single lines",
                  "$.charts[].bms_control_tree");
@@ -3078,7 +3078,7 @@ auto emit_preserved_branch_lines(const branch_tree_analysis_t& tree,
     -> std::vector<std::string> {
     context.output.reserve(tree.preserved_lines.size());
     for (const auto& [order, line] : tree.preserved_lines) {
-        if (has_line_break_or_nul(line) || !valid_utf8(line))
+        if (has_line_break_or_nul(line) || !is_valid_utf8(line))
             fail(bms_write_diagnostic_code_t::branch_provenance,
                  "retained BMS control-tree statements must be valid UTF-8 single lines",
                  "$.charts[].bms_control_tree");
@@ -3242,7 +3242,7 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     const auto playlevel_from_rating = derive_playlevel_from_rating(chart, diagnostics);
     bool has_ordered_playlevel = false;
     const bool ordered_playlevel_matches_rating =
-        retained_playlevel_matches(bms_metadata_groups, playlevel_from_rating,
+        is_retained_playlevel_current(bms_metadata_groups, playlevel_from_rating,
                                    has_ordered_playlevel);
     if (has_ordered_playlevel && playlevel_from_rating && !ordered_playlevel_matches_rating)
         warn(diagnostics, bms_write_diagnostic_code_t::lossy_transform,

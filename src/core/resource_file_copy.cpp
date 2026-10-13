@@ -29,14 +29,14 @@ auto failure(project_asset_copy_status_t status, std::string message)
             .published_identity = std::nullopt};
 }
 
-auto valid_relative(const std::filesystem::path& path) -> bool {
+auto is_valid_relative(const std::filesystem::path& path) -> bool {
     if (path.empty() || path.is_absolute() || path.has_root_name() || path.has_root_directory()) {
         return false;
     }
     return std::ranges::none_of(path, [](const auto& part) { return part == ".."; });
 }
 
-auto same_bytes(const std::filesystem::path& first, const std::filesystem::path& second,
+auto file_bytes_equal(const std::filesystem::path& first, const std::filesystem::path& second,
                 std::stop_token stop) -> bool {
     std::error_code error;
     if (std::filesystem::file_size(first, error) != std::filesystem::file_size(second, error) ||
@@ -102,13 +102,13 @@ auto published_identity(const std::filesystem::path& path)
     return error ? std::nullopt : std::optional{identity};
 }
 
-auto same_identity(const project_asset_copy_result_t::published_identity_t& first,
+auto published_identity_equal(const project_asset_copy_result_t::published_identity_t& first,
                    const project_asset_copy_result_t::published_identity_t& second) -> bool {
     return first.volume == second.volume && first.file == second.file &&
            first.size == second.size && first.modified == second.modified;
 }
 
-auto existing_copy_directory_is_safe(const std::filesystem::path& project_directory,
+auto is_existing_copy_directory_safe(const std::filesystem::path& project_directory,
                                      const std::filesystem::path& relative_directory) -> bool {
     namespace fs = std::filesystem;
     std::error_code error;
@@ -132,7 +132,7 @@ auto discard_unlinked_copy(const project_asset_copy_request_t& request,
                            const project_asset_copy_result_t& copy) -> bool {
     namespace fs = std::filesystem;
     if (copy.status != project_asset_copy_status_t::copied || !copy.published_identity ||
-        !request.project_directory.is_absolute() || !valid_relative(relative_directory) ||
+        !request.project_directory.is_absolute() || !is_valid_relative(relative_directory) ||
         request.source_path.filename().empty())
         return false;
     const auto relative = relative_directory / (std::to_string(request.asset.value) + "-" +
@@ -141,18 +141,18 @@ auto discard_unlinked_copy(const project_asset_copy_request_t& request,
         copy.absolute_path != request.project_directory / relative)
         return false;
     std::error_code error;
-    if (!existing_copy_directory_is_safe(request.project_directory, relative_directory))
+    if (!is_existing_copy_directory_safe(request.project_directory, relative_directory))
         return false;
     const auto identity = published_identity(copy.absolute_path);
-    if (!identity || !same_identity(*identity, *copy.published_identity))
+    if (!identity || !published_identity_equal(*identity, *copy.published_identity))
         return false;
     const auto source = request.source_path.is_absolute()
                             ? request.source_path
                             : request.project_directory / request.source_path;
-    if (!same_bytes(source, copy.absolute_path, {}))
+    if (!file_bytes_equal(source, copy.absolute_path, {}))
         return false;
     const auto final_identity = published_identity(copy.absolute_path);
-    if (!final_identity || !same_identity(*final_identity, *copy.published_identity))
+    if (!final_identity || !published_identity_equal(*final_identity, *copy.published_identity))
         return false;
     return fs::remove(copy.absolute_path, error) && !error;
 }
@@ -322,7 +322,7 @@ auto publish_copy(const project_asset_copy_request_t& request, const copy_locati
     std::error_code error;
     const auto copied = write_flushed(temporary, location.source, request.maximum_bytes, stop);
     if (copied != project_asset_copy_status_t::copied || stop.stop_requested() ||
-        !same_bytes(location.source, temporary, stop)) {
+        !file_bytes_equal(location.source, temporary, stop)) {
         fs::remove(temporary, error);
         const auto status = stop.stop_requested() ? project_asset_copy_status_t::cancelled
                             : copied != project_asset_copy_status_t::copied
@@ -362,7 +362,7 @@ auto publish_copy(const project_asset_copy_request_t& request, const copy_locati
         const auto destination_status = fs::symlink_status(location.destination, error);
         if (!error && !fs::is_symlink(destination_status) &&
             fs::is_regular_file(destination_status) &&
-            same_bytes(location.source, location.destination, stop)) {
+            file_bytes_equal(location.source, location.destination, stop)) {
             return copy_success(location, project_asset_copy_status_t::reused);
         }
         return failure(fs::exists(location.destination, error)
@@ -388,8 +388,8 @@ static auto copy_resource_file_to_relative_directory(
     namespace fs = std::filesystem;
     if (!request.asset || !request.project_directory.is_absolute() || request.source_path.empty() ||
         request.maximum_bytes == 0 ||
-        (!request.source_path.is_absolute() && !valid_relative(request.source_path)) ||
-        !valid_relative(relative_directory)) {
+        (!request.source_path.is_absolute() && !is_valid_relative(request.source_path)) ||
+        !is_valid_relative(relative_directory)) {
         return failure(project_asset_copy_status_t::invalid_request,
                        "Asset, project directory, or source path is invalid.");
     }
@@ -430,7 +430,7 @@ static auto copy_resource_file_to_relative_directory(
     const auto destination_status = fs::symlink_status(location.destination, error);
     if (!error) {
         if (!fs::is_symlink(destination_status) && fs::is_regular_file(destination_status) &&
-            same_bytes(source, location.destination, stop)) {
+            file_bytes_equal(source, location.destination, stop)) {
             return copy_success(location, project_asset_copy_status_t::reused);
         }
         return failure(stop.stop_requested() ? project_asset_copy_status_t::cancelled
@@ -460,7 +460,7 @@ auto inspect_project_asset_copy(const project_asset_copy_request_t& request, std
 
 auto export_asset_directory(const std::filesystem::path& relative_output_path)
     -> std::optional<std::filesystem::path> {
-    if (!valid_relative(relative_output_path) || relative_output_path.filename().empty() ||
+    if (!is_valid_relative(relative_output_path) || relative_output_path.filename().empty() ||
         relative_output_path.filename() == "." || relative_output_path.filename() == "..")
         return std::nullopt;
     return (relative_output_path.has_extension() ? relative_output_path.parent_path()
@@ -472,7 +472,7 @@ auto export_asset_reference_path(const std::filesystem::path& relative_output_pa
                                  const std::filesystem::path& copied_project_relative_path)
     -> std::optional<std::filesystem::path> {
     const auto directory = export_asset_directory(relative_output_path);
-    if (!directory || !valid_relative(copied_project_relative_path) ||
+    if (!directory || !is_valid_relative(copied_project_relative_path) ||
         copied_project_relative_path.parent_path() != *directory ||
         copied_project_relative_path.filename().empty())
         return std::nullopt;

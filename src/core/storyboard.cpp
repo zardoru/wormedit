@@ -111,11 +111,11 @@ auto opcode_name(storyboard_opcode_t opcode) noexcept -> std::string_view {
     return {};
 }
 
-auto valid_opcode(storyboard_opcode_t opcode) noexcept -> bool {
+auto is_valid_opcode(storyboard_opcode_t opcode) noexcept -> bool {
     return !opcode_name(opcode).empty();
 }
 
-auto valid_easing(std::int32_t easing) noexcept -> bool {
+auto is_valid_easing(std::int32_t easing) noexcept -> bool {
     return easing >= 0 && easing <= 34;
 }
 
@@ -223,22 +223,22 @@ auto line_prefix(std::size_t indentation) -> std::string {
     return std::string(indentation, ' ');
 }
 
-auto valid_single_line(std::string_view value) noexcept -> bool {
+auto is_valid_single_line(std::string_view value) noexcept -> bool {
     return value.find('\n') == std::string_view::npos && value.find('\r') == std::string_view::npos;
 }
 
-auto valid_header_token(std::string_view value) noexcept -> bool {
-    return valid_single_line(value) && value.find(',') == std::string_view::npos &&
+auto is_valid_header_token(std::string_view value) noexcept -> bool {
+    return is_valid_single_line(value) && value.find(',') == std::string_view::npos &&
            value.find('"') == std::string_view::npos;
 }
 
-auto valid_emit_node(const storyboard_node_t& node, std::size_t depth,
+auto is_valid_emit_node(const storyboard_node_t& node, std::size_t depth,
                      std::size_t node_count) -> bool {
     if (depth > 128 || node_count >= 250'000 ||
         (node.kind != storyboard_node_kind_t::command &&
          node.kind != storyboard_node_kind_t::loop &&
          node.kind != storyboard_node_kind_t::retained_line) ||
-        !valid_opcode(node.command.opcode) ||
+        !is_valid_opcode(node.command.opcode) ||
         !std::ranges::all_of(node.command.from,
                              [](double value) { return std::isfinite(value); }) ||
         !std::ranges::all_of(node.command.to, [](double value) { return std::isfinite(value); })) {
@@ -277,7 +277,7 @@ auto emit_command_node(std::string& output, const storyboard_node_t& node,
                        std::size_t indentation, std::size_t maximum_bytes) -> bool {
     const auto& command = node.command;
     if (command.value_count != expected_value_count(command.opcode) ||
-        !valid_easing(command.easing) || command.start_time_ms > command.end_time_ms ||
+        !is_valid_easing(command.easing) || command.start_time_ms > command.end_time_ms ||
         !append_bounded(output, line_prefix(indentation), maximum_bytes) ||
         !append_bounded(output, opcode_name(command.opcode), maximum_bytes) ||
         !append_bounded(output, ",", maximum_bytes) || !append_integer(output, command.easing) ||
@@ -304,12 +304,12 @@ auto emit_command_node(std::string& output, const storyboard_node_t& node,
 
 auto emit_node(std::string& output, const storyboard_node_t& node, std::size_t indentation,
                std::size_t maximum_bytes, std::size_t depth, std::size_t& node_count) -> bool {
-    if (!valid_emit_node(node, depth, node_count)) {
+    if (!is_valid_emit_node(node, depth, node_count)) {
         return false;
     }
     ++node_count;
     if (node.kind == storyboard_node_kind_t::retained_line) {
-        return valid_single_line(node.retained_line) &&
+        return is_valid_single_line(node.retained_line) &&
                append_bounded(output, node.retained_line, maximum_bytes) &&
                append_bounded(output, "\n", maximum_bytes);
     }
@@ -333,9 +333,9 @@ auto extent_of_node(const storyboard_node_t& node, std::size_t depth, std::size_
     ++node_count;
     extent = 0;
     if (node.kind == storyboard_node_kind_t::command) {
-        if (!valid_opcode(node.command.opcode) ||
+        if (!is_valid_opcode(node.command.opcode) ||
             node.command.value_count != expected_value_count(node.command.opcode) ||
-            !valid_easing(node.command.easing) ||
+            !is_valid_easing(node.command.easing) ||
             node.command.start_time_ms > node.command.end_time_ms) {
             return storyboard_diagnostic_code_t::invalid_model;
         }
@@ -567,9 +567,9 @@ void evaluate_command_node(const storyboard_node_t& node, std::int64_t parent_st
     if (start > query_time_ms) {
         return;
     }
-    if (!valid_opcode(command.opcode) ||
+    if (!is_valid_opcode(command.opcode) ||
         command.value_count != expected_value_count(command.opcode) ||
-        !valid_easing(command.easing)) {
+        !is_valid_easing(command.easing)) {
         set_evaluation_error(context, storyboard_diagnostic_code_t::invalid_model,
                              "storyboard command has invalid fields or easing");
         return;
@@ -985,7 +985,7 @@ class osb_parser_t {
             !parse_integer(fields[2], command.start_time_ms)) {
             return false;
         }
-        if (!valid_easing(command.easing)) {
+        if (!is_valid_easing(command.easing)) {
             fail(storyboard_diagnostic_code_t::invalid_command,
                  "OSB easing value must be between 0 and 34");
             return false;
@@ -1164,8 +1164,8 @@ auto append_osb_sprite_header(std::string& output, const storyboard_sprite_t& sp
                               storyboard_emit_result_t& result) -> bool {
     if (sprite.layer.empty() || sprite.origin.empty() || sprite.path.empty() ||
         sprite.path.size() > storyboard_default_maximum_path_bytes ||
-        !valid_header_token(sprite.layer) || !valid_header_token(sprite.origin) ||
-        !valid_single_line(sprite.path) || !std::isfinite(sprite.x) || !std::isfinite(sprite.y)) {
+        !is_valid_header_token(sprite.layer) || !is_valid_header_token(sprite.origin) ||
+        !is_valid_single_line(sprite.path) || !std::isfinite(sprite.x) || !std::isfinite(sprite.y)) {
         result.diagnostics.push_back({storyboard_diagnostic_code_t::invalid_model, 0,
                                       "OSB sprite has an invalid header"});
         return false;
@@ -1194,7 +1194,7 @@ auto emit_osb_top_item(std::string& output, const storyboard_document_model_t& d
                        std::size_t& node_count, storyboard_emit_result_t& result) -> bool {
     if (!item.sprite) {
         const auto& line = document.retained_top_level_lines[item.index].text;
-        if (valid_single_line(line) && append_bounded(output, line, maximum_bytes) &&
+        if (is_valid_single_line(line) && append_bounded(output, line, maximum_bytes) &&
             append_bounded(output, "\n", maximum_bytes)) {
             return true;
         }
@@ -1276,7 +1276,7 @@ auto schedule_node_times(const storyboard_node_t& node, storyboard_schedule_opti
                          storyboard_schedule_result_t& result)
     -> std::optional<std::pair<std::int64_t, std::int64_t>> {
     if (node.kind == storyboard_node_kind_t::command) {
-        if (!valid_opcode(node.command.opcode) ||
+        if (!is_valid_opcode(node.command.opcode) ||
             node.command.value_count != expected_value_count(node.command.opcode) ||
             node.command.start_time_ms > node.command.end_time_ms) {
             result.diagnostics.push_back({storyboard_diagnostic_code_t::invalid_model, 0,

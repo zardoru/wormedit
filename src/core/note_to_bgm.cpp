@@ -363,7 +363,7 @@ auto apply_ordinary_plan(document_history_t& scratch, chart_id_t chart_id,
     if (ids.empty()) return std::nullopt;
     const auto current = scratch.document.find_chart(chart_id);
     const auto plan = plan_allocation(*current, scratch.document.resources, ids, preferred_lane, policy);
-    if (!plan.accepted())
+    if (!plan.is_accepted())
         return document_command_transaction_t::rejection(live_revision, plan.diagnostics);
     auto& planned = *scratch.document.find_chart(chart_id);
     if (!apply_plan(planned, plan))
@@ -419,7 +419,7 @@ auto find_bgm(chart_document_t& chart, object_id_t id) -> std::optional<located_
     return std::nullopt;
 }
 
-auto blocked_by_note(const chart_document_t& chart, const measure_index_t& index,
+auto is_blocked_by_note(const chart_document_t& chart, const measure_index_t& index,
                      lane_id_t lane, std::uint64_t begin, std::uint64_t finish) -> bool {
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes) {
@@ -433,7 +433,7 @@ auto blocked_by_note(const chart_document_t& chart, const measure_index_t& index
     return false;
 }
 
-auto editable_lane_at(const chart_document_t& chart, local_position_t position,
+auto is_editable_lane_at(const chart_document_t& chart, local_position_t position,
                       lane_id_t lane) -> bool {
     const auto* segment = active_lane_layout_segment(chart, position);
     if (!segment) return false;
@@ -442,21 +442,21 @@ auto editable_lane_at(const chart_document_t& chart, local_position_t position,
     });
 }
 
-auto layout_covers_hold(const chart_document_t& chart, const measure_index_t& index,
+auto is_layout_covering_hold(const chart_document_t& chart, const measure_index_t& index,
                         const bgm_event_t& event, lane_id_t lane,
                         std::uint64_t begin, std::uint64_t finish) -> bool {
-    if (!event.end || !editable_lane_at(chart, event.position, lane) ||
-        !editable_lane_at(chart, *event.end, lane)) return false;
+    if (!event.end || !is_editable_lane_at(chart, event.position, lane) ||
+        !is_editable_lane_at(chart, *event.end, lane)) return false;
     for (const auto& segment : chart.lane_layouts) {
         const auto row = absolute_row(index, segment.position);
-        if (row && *row > begin && *row <= finish && !editable_lane_at(chart, segment.position, lane))
+        if (row && *row > begin && *row <= finish && !is_editable_lane_at(chart, segment.position, lane))
             return false;
     }
     return true;
 }
 
 // Validate a restored tap/hold against inclusive note intervals and lane-layout transitions.
-auto valid_restore_span(const chart_document_t& chart, const bgm_event_t& event,
+auto is_valid_restore_span(const chart_document_t& chart, const bgm_event_t& event,
                         lane_id_t lane) -> bool {
     if (!event.end) {
         return std::ranges::none_of(chart.measures, [&](const auto& measure) {
@@ -471,8 +471,8 @@ auto valid_restore_span(const chart_document_t& chart, const bgm_event_t& event,
     const auto begin = absolute_row(index, event.position);
     const auto finish = absolute_row(index, *event.end);
     return begin && finish && *finish > *begin &&
-           !blocked_by_note(chart, index, lane, *begin, *finish) &&
-           layout_covers_hold(chart, index, event, lane, *begin, *finish);
+           !is_blocked_by_note(chart, index, lane, *begin, *finish) &&
+           is_layout_covering_hold(chart, index, event, lane, *begin, *finish);
 }
 
 auto convert_bgm_event(chart_document_t& chart, object_id_t id, lane_id_t lane) -> bool {
@@ -481,7 +481,7 @@ auto convert_bgm_event(chart_document_t& chart, object_id_t id, lane_id_t lane) 
     const auto event = *located->event;
     const auto position = event.position;
     const auto end = event.end;
-    if (!valid_restore_span(chart, event, lane)) return false;
+    if (!is_valid_restore_span(chart, event, lane)) return false;
     note_t note{.id = event.id, .position = position, .lane = lane,
                 .kind = end ? note_kind_t::hold : note_kind_t::tap,
                 .end = end, .sound = event.sound};
@@ -579,7 +579,7 @@ auto move_selected_objects_to_lane(document_history_t& history, std::uint64_t ex
 }
 
 namespace {
-auto note_conversion_pending(const editor_interaction_state_t& state) -> bool {
+auto is_note_conversion_pending(const editor_interaction_state_t& state) -> bool {
     return has_pending_editor_gesture(state);
 }
 
@@ -625,7 +625,7 @@ auto move_editor_selection_to_bgm(document_history_t& history, std::uint64_t exp
     auto moving = selected_conversion_notes(state);
     if (moving.empty()) return {};
     selected_note_to_bgm_result_t result{.payload = {.handled = true}};
-    if (expected_revision != history.document.revision || note_conversion_pending(state)) {
+    if (expected_revision != history.document.revision || is_note_conversion_pending(state)) {
         result.command = document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id,
                                    "note move to BGM has stale input or an active gesture");
         return result;

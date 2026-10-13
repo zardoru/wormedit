@@ -451,7 +451,7 @@ auto video_decoder_session_t::decode(const video_preview_clock_t& clock,
                    "video decode exceeded the configured packet limit");
 }
 
-auto video_frame_covers_clock(const rgba_video_frame_t& frame,
+auto is_video_frame_covering_clock(const rgba_video_frame_t& frame,
                               const video_preview_clock_t& clock) noexcept -> bool {
     if (frame.resource != clock.resource || frame.time_base_numerator <= 0 ||
         frame.time_base_denominator <= 0) {

@@ -150,7 +150,7 @@ TEST_CASE("trackpad and momentum keep their starting pane while pointer routing 
     CHECK(scroll_at(trackpad, 1).delta_y_pixels == 4.0);
 
     controller.begin_momentum(viewport_pane_t::chart, 100.0, 80.0);
-    REQUIRE(controller.momentum_active());
+    REQUIRE(controller.is_momentum_active());
     const auto momentum = controller.advance(0.1);
     REQUIRE(momentum.count == 2);
     CHECK(scroll_at(momentum).pane == viewport_pane_t::bgm);
@@ -168,8 +168,8 @@ TEST_CASE("trackpad and momentum keep their starting pane while pointer routing 
     });
     REQUIRE(interrupting.count == 1);
     CHECK(scroll_at(interrupting).pane == viewport_pane_t::chart);
-    CHECK_FALSE(controller.momentum_active());
-    CHECK(controller.advance(0.1).empty());
+    CHECK_FALSE(controller.is_momentum_active());
+    CHECK(controller.advance(0.1).is_empty());
 }
 
 TEST_CASE("zoom requests are cursor anchored and bounded", "[unit][core][viewport-input]") {
@@ -196,7 +196,7 @@ TEST_CASE("zoom requests are cursor anchored and bounded", "[unit][core][viewpor
         .cursor_x_pixels = std::numeric_limits<double>::quiet_NaN(),
         .cursor_y_pixels = 1.0,
     });
-    CHECK(invalid_cursor.empty());
+    CHECK(invalid_cursor.is_empty());
 }
 
 TEST_CASE("latched autoscroll emits two-axis movement and toggles off on middle click",
@@ -206,7 +206,7 @@ TEST_CASE("latched autoscroll emits two-axis movement and toggles off on middle 
         .autoscroll_speed_per_second_per_pixel = 2.0,
     });
     controller.middle_click(viewport_pane_t::chart, 100.0, 100.0);
-    REQUIRE(controller.autoscroll_active());
+    REQUIRE(controller.is_autoscroll_active());
     controller.update_autoscroll_pointer(110.0, 80.0);
     const auto movement = controller.advance(0.1);
     REQUIRE(movement.count == 1);
@@ -215,8 +215,8 @@ TEST_CASE("latched autoscroll emits two-axis movement and toggles off on middle 
     CHECK(scroll_at(movement).delta_y_pixels == -4.0);
 
     controller.middle_click(viewport_pane_t::chart, 500.0, 500.0);
-    CHECK_FALSE(controller.autoscroll_active());
-    CHECK(controller.advance(0.1).empty());
+    CHECK_FALSE(controller.is_autoscroll_active());
+    CHECK(controller.advance(0.1).is_empty());
 }
 
 TEST_CASE("autoscroll cancels on escape, focus loss, modal opening, and edit press",
@@ -224,20 +224,20 @@ TEST_CASE("autoscroll cancels on escape, focus loss, modal opening, and edit pre
     viewport_input_controller_t controller;
     controller.middle_click(viewport_pane_t::chart, 10.0, 10.0);
     controller.escape();
-    CHECK_FALSE(controller.autoscroll_active());
+    CHECK_FALSE(controller.is_autoscroll_active());
 
     controller.middle_click(viewport_pane_t::chart, 10.0, 10.0);
     controller.focus_lost();
-    CHECK_FALSE(controller.autoscroll_active());
+    CHECK_FALSE(controller.is_autoscroll_active());
 
     controller.middle_click(viewport_pane_t::chart, 10.0, 10.0);
     controller.modal_opened();
-    CHECK_FALSE(controller.autoscroll_active());
+    CHECK_FALSE(controller.is_autoscroll_active());
 
     controller.middle_click(viewport_pane_t::chart, 10.0, 10.0);
-    CHECK(controller.normal_edit_press());
-    CHECK_FALSE(controller.autoscroll_active());
-    CHECK_FALSE(controller.normal_edit_press());
+    CHECK(controller.is_normal_edit_press());
+    CHECK_FALSE(controller.is_autoscroll_active());
+    CHECK_FALSE(controller.is_normal_edit_press());
 }
 
 TEST_CASE("invalid deltas, velocities, cursors, settings, and time steps stay bounded",
@@ -257,12 +257,12 @@ TEST_CASE("invalid deltas, velocities, cursors, settings, and time steps stay bo
         .delta_x = std::numeric_limits<double>::infinity(),
         .delta_y = std::numeric_limits<double>::quiet_NaN(),
     });
-    CHECK(invalid.empty());
+    CHECK(invalid.is_empty());
 
     controller.begin_momentum(viewport_pane_t::chart, std::numeric_limits<double>::infinity(),
                               100.0);
-    CHECK(controller.momentum_active());
-    CHECK(controller.advance(std::numeric_limits<double>::quiet_NaN()).empty());
+    CHECK(controller.is_momentum_active());
+    CHECK(controller.advance(std::numeric_limits<double>::quiet_NaN()).is_empty());
     const auto huge_step = controller.advance(10'000.0);
     REQUIRE(huge_step.count == 1);
     CHECK(std::abs(scroll_at(huge_step).delta_y_pixels) <=
@@ -274,9 +274,9 @@ TEST_CASE("invalid middle click and pointer positions cannot poison autoscroll",
     viewport_input_controller_t controller;
     const auto nan = std::numeric_limits<double>::quiet_NaN();
     controller.middle_click(viewport_pane_t::chart, nan, 10.0);
-    CHECK_FALSE(controller.autoscroll_active());
+    CHECK_FALSE(controller.is_autoscroll_active());
 
     controller.middle_click(viewport_pane_t::chart, 10.0, 10.0);
     controller.update_autoscroll_pointer(nan, std::numeric_limits<double>::infinity());
-    CHECK(controller.advance(0.1).empty());
+    CHECK(controller.advance(0.1).is_empty());
 }

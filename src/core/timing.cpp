@@ -944,7 +944,7 @@ auto build_timing_index(const chart_document_t& chart, timing_build_options_t op
     -> timing_build_result_t {
     timing_build_result_t result;
     if (options.discontinuity_profile &&
-        !valid_timing_discontinuity_profile(*options.discontinuity_profile)) {
+        !is_valid_timing_discontinuity_profile(*options.discontinuity_profile)) {
         result.diagnostics.push_back(error(timing_error_code_t::invalid_document,
                                            "timing discontinuity profile is not recognized"));
         return result;
@@ -1168,7 +1168,7 @@ auto timing_at(const timing_index_t& index, const measure_index_t& measures,
 
 namespace {
 
-auto selected_bpm_is_last_before_beat(const chart_document_t& chart,
+auto is_selected_bpm_last_before_beat(const chart_document_t& chart,
                                       const measure_index_t& measures, object_id_t selected,
                                       std::uint64_t anchor_row, std::uint64_t beat_row) -> bool {
     for (const auto& event : chart.bpms) {
@@ -1183,7 +1183,7 @@ auto selected_bpm_is_last_before_beat(const chart_document_t& chart,
     return true;
 }
 
-auto locked_anchors_preserved(const chart_document_t& chart, const measure_index_t& measures,
+auto is_locked_anchors_preserved(const chart_document_t& chart, const measure_index_t& measures,
                               const timing_index_t& fitted, std::uint64_t anchor_row,
                               std::uint32_t sample_rate) -> bool {
     for (const auto& anchor : chart.timing_anchors) {
@@ -1225,7 +1225,7 @@ auto beat_fit_selection(const chart_document_t& chart, const measure_index_t& me
         return error(timing_error_code_t::position_out_of_range,
                      "fitted beat must follow the selected BPM event");
     }
-    if (!selected_bpm_is_last_before_beat(chart, measures, bpm_event, *anchor_row, *beat_row)) {
+    if (!is_selected_bpm_last_before_beat(chart, measures, bpm_event, *anchor_row, *beat_row)) {
         return error(timing_error_code_t::invalid_fit,
                      "selected BPM event is not the last unambiguous change before beat");
     }
@@ -1313,7 +1313,7 @@ auto fit_beat_interval(const chart_document_t& chart, object_id_t bpm_event, loc
         return reject(timing_error_code_t::invalid_fit,
                       "fitted BPM does not reach the exact target frame");
     }
-    if (!locked_anchors_preserved(chart, measures, *fitted_build.index, selected.anchor_row,
+    if (!is_locked_anchors_preserved(chart, measures, *fitted_build.index, selected.anchor_row,
                                   sample_rate)) {
         return reject(timing_error_code_t::locked_anchor_conflict,
                       "beat fit would move a locked timing anchor");
@@ -1601,7 +1601,7 @@ auto sample_frame_at(signed_rational_t seconds, std::uint32_t sample_rate,
     } else {
         const auto quotient = wide_math::divide(
             wide_math::multiply(numerator, reduced_rate), {0, denominator});
-        if (!wide_math::fits_u64(quotient.quotient)) {
+        if (!wide_math::can_fit_u64(quotient.quotient)) {
             return {.error = error(timing_error_code_t::arithmetic_overflow,
                                    "sample-frame conversion overflows")};
         }
@@ -2109,7 +2109,7 @@ auto build_scroll_speed_index(const chart_document_t& chart, const timing_index_
     return result;
 }
 
-auto scroll_speed_index_matches(const scroll_speed_index_t& index, const chart_document_t& chart,
+auto is_scroll_speed_index_current(const scroll_speed_index_t& index, const chart_document_t& chart,
                                 const timing_index_t& timing) -> bool {
     return index.divisions_per_standard_measure == chart.divisions_per_standard_measure &&
            timing.divisions_per_standard_measure == chart.divisions_per_standard_measure &&
@@ -2445,7 +2445,7 @@ auto scroll_speed_transition_span_at(const scroll_speed_index_t& index,
                                                    .clipped = resolved.clipped}};
 }
 
-auto scroll_speed_span_index_matches(const scroll_speed_index_t& index,
+auto is_scroll_speed_span_index_current(const scroll_speed_index_t& index,
                                      const timing_index_t& timing) -> bool {
     return index.divisions_per_standard_measure == timing.divisions_per_standard_measure &&
            index.total_rows == timing.total_rows &&
@@ -2461,7 +2461,7 @@ auto scroll_speed_transition_span(const scroll_speed_index_t& index, const timin
         return scroll_speed_transition_span_result_t{
             .error = error(code, std::move(message), source_event)};
     };
-    if (!scroll_speed_span_index_matches(index, timing)) {
+    if (!is_scroll_speed_span_index_current(index, timing)) {
         return span_error(timing_error_code_t::invalid_document,
                           "scroll/speed index does not match the timing index");
     }
@@ -2478,7 +2478,7 @@ auto scroll_speed_transition_spans(const scroll_speed_index_t& index, const timi
                                    scroll_speed_transition_spans_options_t options)
     -> scroll_speed_transition_spans_result_t {
     scroll_speed_transition_spans_result_t result;
-    if (!scroll_speed_span_index_matches(index, timing)) {
+    if (!is_scroll_speed_span_index_current(index, timing)) {
         result.diagnostics.push_back(error(timing_error_code_t::invalid_document,
                                            "scroll/speed index does not match the timing index"));
         return result;
@@ -2973,7 +2973,7 @@ auto build_preview_schedule(const chart_document_t& chart, const timing_index_t&
     preview_schedule_result_t result;
     if (options.sample_rate == 0 ||
         timing.divisions_per_standard_measure != chart.divisions_per_standard_measure ||
-        !valid_timing_discontinuity_profile(timing.discontinuity_profile)) {
+        !is_valid_timing_discontinuity_profile(timing.discontinuity_profile)) {
         result.diagnostics.push_back(
             error(timing_error_code_t::invalid_document,
                   "preview schedule and timing index must use the same positive chart resolution"));

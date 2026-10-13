@@ -56,9 +56,11 @@ struct task_result_t {
     task_value_t payload;
     std::optional<task_error_t> error;
 
-    [[nodiscard]] auto succeeded() const noexcept -> bool {
+    [[nodiscard]] auto is_successful() const noexcept -> bool {
         return !error.has_value();
     }
+    // Compatibility for the coordinated sys/UI migration.
+    inline auto succeeded() const noexcept -> bool { return is_successful(); }
 
     [[nodiscard]] static auto success(task_value_t value = {}) -> task_result_t;
     [[nodiscard]] static auto failure(task_error_code_t code, std::string message) -> task_result_t;
@@ -71,7 +73,7 @@ template <typename value_t>
 
 template <typename value_t>
 [[nodiscard]] auto task_value_cast(const task_result_t& result) -> std::shared_ptr<const value_t> {
-    if (!result.succeeded() || result.payload.type == nullptr ||
+    if (!result.is_successful() || result.payload.type == nullptr ||
         *result.payload.type != typeid(value_t)) {
         return {};
     }

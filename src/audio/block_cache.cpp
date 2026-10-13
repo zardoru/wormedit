@@ -7,12 +7,12 @@
 namespace wormedit::audio {
 namespace {
 
-auto valid_source(const audio_source_identity_t& source) -> bool {
+auto is_valid_source(const audio_source_identity_t& source) -> bool {
     return !source.asset_identity.empty() && !source.source_identity.empty();
 }
 
-auto valid_key(const audio_block_key_t& key) -> bool {
-    return valid_source(key.source);
+auto is_valid_key(const audio_block_key_t& key) -> bool {
+    return is_valid_source(key.source);
 }
 
 auto block_bytes(std::size_t frames) -> std::optional<std::size_t> {
@@ -53,7 +53,7 @@ auto decoded_block_cache_t::find_entry(const audio_block_key_t& key) -> entry_it
 auto decoded_block_cache_t::find(const audio_block_key_t& key)
     -> std::optional<decoded_audio_block_t> {
     std::scoped_lock lock(mutex_);
-    if (!valid_key(key)) {
+    if (!is_valid_key(key)) {
         ++stats_.misses;
         return std::nullopt;
     }
@@ -70,7 +70,7 @@ auto decoded_block_cache_t::find(const audio_block_key_t& key)
 auto decoded_block_cache_t::cached_frame_count(const audio_block_key_t& key)
     -> std::optional<std::size_t> {
     std::scoped_lock lock(mutex_);
-    if (!valid_key(key)) {
+    if (!is_valid_key(key)) {
         ++stats_.misses;
         return std::nullopt;
     }
@@ -85,7 +85,7 @@ auto decoded_block_cache_t::cached_frame_count(const audio_block_key_t& key)
     return frame_count;
 }
 
-auto decoded_block_cache_t::contains(const audio_block_key_t& key) -> bool {
+auto decoded_block_cache_t::has_block(const audio_block_key_t& key) -> bool {
     return cached_frame_count(key).has_value();
 }
 
@@ -93,7 +93,7 @@ auto decoded_block_cache_t::store(const audio_block_key_t& key, std::size_t fram
                                   std::span<const float> interleaved_stereo)
     -> block_store_status_t {
     const auto required_bytes = block_bytes(frame_count);
-    if (!valid_key(key)) {
+    if (!is_valid_key(key)) {
         std::scoped_lock lock(mutex_);
         ++stats_.rejected_stores;
         return block_store_status_t::invalid_key;
@@ -251,7 +251,7 @@ auto decode_session_t::is_current(session_token_t token) const noexcept -> bool 
 auto decode_session_t::publish_if_current(session_token_t token,
                                           const audio_block_key_t& key)
     -> session_publish_status_t {
-    if (!valid_key(key)) {
+    if (!is_valid_key(key)) {
         return session_publish_status_t::invalid_key;
     }
     std::scoped_lock lock(mutex_);
@@ -289,7 +289,7 @@ auto decode_and_cache_block(decoder_t& decoder, decoded_block_cache_t& cache,
     if (!session.is_current(token)) {
         return {.status = block_decode_status_t::stale_generation};
     }
-    if (!valid_key(key)) {
+    if (!is_valid_key(key)) {
         return {.status = block_decode_status_t::invalid_key};
     }
 

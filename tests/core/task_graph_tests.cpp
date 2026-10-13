@@ -56,7 +56,7 @@ TEST_CASE("task graph waits for fan-in dependencies and preserves input order",
     REQUIRE(submitted.graph.wait());
     const auto result = submitted.graph.result(*joined.id);
     REQUIRE(result.has_value());
-    REQUIRE(result->succeeded());
+    REQUIRE(result->is_successful());
     CHECK(*task_value_cast<int>(*result) == 42);
     CHECK_FALSE(task_value_cast<std::string>(*result));
     CHECK(execution_order == std::vector<int>{1, 2, 3});

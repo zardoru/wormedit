@@ -64,7 +64,7 @@ auto unique_measure(chart_document_t& chart, measure_id_t id, document_command_r
     return found;
 }
 
-auto same_definition(const measure_definition_t& left, const measure_definition_t& right) -> bool {
+auto measure_definition_equal(const measure_definition_t& left, const measure_definition_t& right) -> bool {
     return left.length == right.length && left.meter == right.meter;
 }
 
@@ -132,7 +132,7 @@ void for_each_free_position(Chart& chart, Visit&& visit) {
     }
 }
 
-auto retains_bms_control_flow(const chart_document_t& chart) -> bool {
+auto has_bms_control_flow(const chart_document_t& chart) -> bool {
     return chart.bms_control_tree.has_value() || !chart.bms_bpm_projections.empty() ||
            !chart.bms_pause_projections.empty();
 }
@@ -140,7 +140,7 @@ auto retains_bms_control_flow(const chart_document_t& chart) -> bool {
 // Rejects removals that would silently drop linked or branch-owned content.
 auto removal_blocker(const chart_document_t& chart, const measure_chunk_t& measure)
     -> const char* {
-    if (retains_bms_control_flow(chart))
+    if (has_bms_control_flow(chart))
         return "measure removal is not supported on a chart with retained BMS control flow";
     const auto linked = [](const auto& value) {
         return value.branch.has_value();
@@ -312,7 +312,7 @@ auto apply_measure_action(measure_edit_context_t& context,
         !validate_definition(*chart, edit.definition, context.limits, context.result)) {
         return;
     }
-    if (same_definition(measure->definition, edit.definition)) {
+    if (measure_definition_equal(measure->definition, edit.definition)) {
         return;
     }
     measure->definition = edit.definition;
@@ -345,7 +345,7 @@ auto apply_measure_action(measure_edit_context_t& context,
         if (measure == nullptr) {
             return;
         }
-        if (!same_definition(measure->definition, edit.definition)) {
+        if (!measure_definition_equal(measure->definition, edit.definition)) {
             measure->definition = edit.definition;
             context.changed = true;
         }
@@ -559,7 +559,7 @@ void apply_measure_action(measure_edit_context_t& context, const split_measure_a
 struct pause_range_t {
     std::uint64_t begin{}, end{};
     pause_kind_t kind{};
-    auto contains(std::uint64_t row) const -> bool {
+    auto has_row(std::uint64_t row) const -> bool {
         return kind == pause_kind_t::stop ? row > begin && row <= end
                                          : row >= begin && row < end;
     }
@@ -577,11 +577,11 @@ auto conversion_row(const measure_index_t& index, local_position_t position,
     return absolute_row(index, position);
 }
 
-auto conversion_configuration(const chart_document_t& chart, const local_position_t* position) -> bool {
+auto is_conversion_configuration(const chart_document_t& chart, const local_position_t* position) -> bool {
     return std::ranges::any_of(chart.bpms, [position](const auto& event) { return &event.position == position; });
 }
 
-auto conversion_timing_blocked(const chart_document_t& chart, const measure_index_t& index,
+auto is_conversion_timing_blocked(const chart_document_t& chart, const measure_index_t& index,
                                const pause_range_t& range) -> bool {
     const auto closed = [&](local_position_t position) {
         const auto row = absolute_row(index, position);
@@ -599,12 +599,12 @@ auto conversion_timing_blocked(const chart_document_t& chart, const measure_inde
     return bpm || warp || std::ranges::any_of(chart.pauses, [&](const auto& event) { return closed(event.position); });
 }
 
-auto conversion_points_clear(const chart_document_t& chart, const measure_index_t& index,
+auto is_conversion_points_clear(const chart_document_t& chart, const measure_index_t& index,
                              const pause_range_t& range) -> bool {
     bool clear = true;
     const auto visit = [&](const local_position_t& position, free_position_kind_t) {
         const auto row = absolute_row(index, position);
-        if (!row || (range.contains(*row) && !conversion_configuration(chart, &position))) clear = false;
+        if (!row || (range.has_row(*row) && !is_conversion_configuration(chart, &position))) clear = false;
     };
     for_each_free_position(chart, visit);
     for (const auto& measure : chart.measures) {
@@ -618,7 +618,7 @@ auto conversion_points_clear(const chart_document_t& chart, const measure_index_
     for (const auto& recipe : chart.sv_recipes) {
         const auto first = conversion_row(index, recipe.range.begin);
         const auto last = conversion_row(index, recipe.range.end, true);
-        if (!first || !last || range.contains(*first) || range.contains(*last)) clear = false;
+        if (!first || !last || range.has_row(*first) || range.has_row(*last)) clear = false;
     }
     return clear;
 }
@@ -674,7 +674,7 @@ auto collect_conversion_extras(chart_document_t& chart, const measure_index_t& b
     return true;
 }
 
-auto conversion_times_match(const timing_index_t& before, const timing_index_t& after,
+auto is_conversion_times_match(const timing_index_t& before, const timing_index_t& after,
                             std::span<const std::uint64_t> rows, const pause_range_t& range) -> bool {
     for (const auto row : rows) {
         if (row == range.begin && range.kind == pause_kind_t::delay) continue; // configuration only
@@ -708,7 +708,7 @@ auto adjust_conversion_transitions(chart_document_t& chart, const measure_index_
         const auto length = conversion_transition_rows(speed.transition_beats, chart.divisions_per_standard_measure);
         if (!start || !length || *length > std::numeric_limits<std::uint64_t>::max() - *start) return false;
         const auto end = *start + *length;
-        if (range.contains(end)) return false;
+        if (range.has_row(end)) return false;
         if (*start >= range.end || end < range.begin) continue;
         const auto beats = rows_to_beat_fraction(range.shifted(end) - range.shifted(*start),
                                              chart.divisions_per_standard_measure);
@@ -751,7 +751,7 @@ auto convert_pause_geometry(chart_document_t& chart, const measure_index_t& befo
     pause.position = *start;
     chart.pauses.push_back(std::move(pause));
     const auto new_timing = build_timing_index(chart);
-    return new_timing && conversion_times_match(*timing.index, *new_timing.index, rows, range);
+    return new_timing && is_conversion_times_match(*timing.index, *new_timing.index, rows, range);
 }
 
 void apply_measure_action(measure_edit_context_t& context, const convert_range_to_pause_action_t& edit) {
@@ -768,12 +768,12 @@ void apply_measure_action(measure_edit_context_t& context, const convert_range_t
     }
     const pause_range_t range{*first, *last, edit.kind};
     if ((chart->bms_control_tree && has_conditional_measures(*chart->bms_control_tree)) ||
-        conversion_timing_blocked(*chart, *before, range)) {
+        is_conversion_timing_blocked(*chart, *before, range)) {
         reject(context.result, diagnostic_code_t::unsupported_feature,
                "The range crosses BPM, pause, warp or retained BMS branch timing; choose an uninterrupted interval.");
         return;
     }
-    if (!conversion_points_clear(*chart, *before, range)) {
+    if (!is_conversion_points_clear(*chart, *before, range)) {
         reject(context.result, diagnostic_code_t::invalid_measure,
                edit.kind == pause_kind_t::stop
                    ? "Stop conversion needs an empty interval after its start, including its end; use Delay for an object at the end."
@@ -810,7 +810,7 @@ auto apply_measure_action(measure_edit_context_t& context,
     }
     const auto highest = *std::ranges::max_element(edit.measure_indices);
     if (highest >= chart->measures.size()) {
-        if (!chart_has_virtual_tail(*chart) || highest >= virtual_tail_measure_limit(*chart) ||
+        if (!has_chart_virtual_tail(*chart) || highest >= virtual_tail_measure_limit(*chart) ||
             !append_default_measures(*chart, highest + 1, context.limits)) {
             reject(context.result, diagnostic_code_t::invalid_measure,
                    "the measure lies beyond the chart and its virtual canvas");
@@ -826,7 +826,7 @@ auto apply_measure_action(measure_edit_context_t& context,
         return;
     }
     for (const auto at : sorted) {
-        if (same_definition(chart->measures[at].definition, edit.definition)) continue;
+        if (measure_definition_equal(chart->measures[at].definition, edit.definition)) continue;
         const measure_assignment_t assignment{at, edit.definition};
         if (!resize_keeping_rows(*chart, std::span{&assignment, 1}, context.limits)) {
             reject(context.result, diagnostic_code_t::invalid_measure,
@@ -853,7 +853,7 @@ auto apply_measure_action(measure_edit_context_t& context,
     }
     const auto second = edit.measure_index + 1;
     if (second >= chart->measures.size()) {
-        if (!chart_has_virtual_tail(*chart) || second >= virtual_tail_measure_limit(*chart) ||
+        if (!has_chart_virtual_tail(*chart) || second >= virtual_tail_measure_limit(*chart) ||
             !append_default_measures(*chart, second + 1, context.limits)) {
             reject(context.result, diagnostic_code_t::invalid_measure,
                    "the bar line lies beyond the chart and its virtual canvas");
@@ -876,8 +876,8 @@ auto apply_measure_action(measure_edit_context_t& context,
                "moving a bar line must keep the two measures' combined length");
         return;
     }
-    if (same_definition(chart->measures[edit.measure_index].definition, edit.before) &&
-        same_definition(chart->measures[second].definition, edit.after)) {
+    if (measure_definition_equal(chart->measures[edit.measure_index].definition, edit.before) &&
+        measure_definition_equal(chart->measures[second].definition, edit.after)) {
         return;
     }
     const std::array assignments{measure_assignment_t{edit.measure_index, edit.before},
@@ -897,7 +897,7 @@ auto apply_measure_action(measure_edit_context_t& context,
     if (chart == nullptr || edit.count <= chart->measures.size()) {
         return;
     }
-    if (!chart_has_virtual_tail(*chart) || edit.count > virtual_tail_measure_limit(*chart) ||
+    if (!has_chart_virtual_tail(*chart) || edit.count > virtual_tail_measure_limit(*chart) ||
         !append_default_measures(*chart, edit.count, context.limits)) {
         reject(context.result, diagnostic_code_t::invalid_measure,
                "the measure lies beyond the chart and its virtual canvas");
@@ -954,7 +954,7 @@ auto apply_measure_action(measure_edit_context_t& context,
 
 } // namespace
 
-auto measure_holds_positioned_objects(const chart_document_t& chart, measure_id_t measure) -> bool {
+auto has_measure_positioned_objects(const chart_document_t& chart, measure_id_t measure) -> bool {
     if (std::ranges::any_of(chart.lane_layouts, [&](const auto& segment) {
             return segment.position.measure == measure;
         }))

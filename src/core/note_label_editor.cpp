@@ -12,7 +12,7 @@
 namespace wormedit {
 namespace {
 
-using text_util::valid_utf8;
+using text_util::is_valid_utf8;
 
 struct requested_note_index_t {
     std::unordered_map<std::uint64_t, std::size_t> occurrences;
@@ -139,7 +139,7 @@ auto validate_note_label_request(const set_note_label_action_t& action,
         return false;
     }
     if (action.label.has_value() &&
-        (!text_util::valid_bounded_text(*action.label, limits.maximum_label_bytes))) {
+        (!text_util::is_valid_bounded_text(*action.label, limits.maximum_label_bytes))) {
         reject(result, diagnostic_code_t::unsupported_feature,
                "note label must be bounded UTF-8 without embedded NUL bytes");
         return false;

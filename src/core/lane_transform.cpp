@@ -18,7 +18,7 @@ using lane_chooser_t =
 
 
 
-auto has_lane(const lane_layout_t* layout, lane_id_t lane) -> bool { return layout != nullptr && layout->contains(lane); }
+auto has_lane(const lane_layout_t* layout, lane_id_t lane) -> bool { return layout != nullptr && layout->has_lane(lane); }
 
 
 
@@ -36,7 +36,7 @@ auto mirror_lane(const lane_layout_t& layout, lane_id_t lane) -> std::optional<l
     return stage[reversed]->id;
 }
 
-auto valid_permutation(const std::vector<lane_permutation_entry_t>& permutation) -> bool {
+auto is_valid_permutation(const std::vector<lane_permutation_entry_t>& permutation) -> bool {
     std::set<std::uint64_t> sources;
     std::set<std::uint64_t> targets;
     for (const auto& entry : permutation) {
@@ -79,7 +79,7 @@ struct lane_interval_t {
 };
 
 // Rejects overlapping or stacked notes on any lane that received a note.
-auto lanes_free_of_overlap(const chart_document_t& chart, const measure_index_t& index,
+auto is_lanes_free_of_overlap(const chart_document_t& chart, const measure_index_t& index,
                            const std::set<std::uint64_t>& touched,
                            document_command_result_t& result) -> bool {
     std::map<std::uint64_t, std::vector<lane_interval_t>> lanes;
@@ -162,7 +162,7 @@ auto apply_lane_assignment(document_history_t& history, std::uint64_t expected_r
         if (!move_note(*note, *target, *chart, measures, result))
             return result;
     }
-    if (touched.empty() || !lanes_free_of_overlap(*chart, measures, touched, result))
+    if (touched.empty() || !is_lanes_free_of_overlap(*chart, measures, touched, result))
         return result;
     return transaction.commit(label);
 }
@@ -179,7 +179,7 @@ auto apply_lane_mirror(document_history_t& history, std::uint64_t expected_revis
 auto apply_lane_remap(document_history_t& history, std::uint64_t expected_revision,
                       const remap_lanes_action_t& action, lane_transform_limits_t limits)
     -> document_command_result_t {
-    if (!valid_permutation(action.permutation)) {
+    if (!is_valid_permutation(action.permutation)) {
         document_command_result_t result{.revision = history.document.revision};
         reject(result, diagnostic_code_t::invalid_resolution,
                "lane remap must be a non-empty bijection over the lanes it names");

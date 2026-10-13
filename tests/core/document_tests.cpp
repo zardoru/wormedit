@@ -816,7 +816,7 @@ TEST_CASE("Document owner queries preserve first matches and mutable access", "[
 
 TEST_CASE("Lane query equality keeps full identity separate from source shape", "[unit][document]") {
     lane_layout_t layout{.profile_id = "test", .lanes = {{.id = lane_id_t{1}, .name = "Key"}}};
-    check_owner_query(layout.contains(lane_id_t{1}) && !layout.contains(lane_id_t{2}));
+    check_owner_query(layout.has_lane(lane_id_t{1}) && !layout.has_lane(lane_id_t{2}));
     check_owner_query(layout.find(lane_id_t{1}) == &layout.lanes.front());
     check_owner_query(layout.lanes.front().is_editable());
     auto changed = layout;
@@ -867,7 +867,6 @@ TEST_CASE("BMS control predicates keep random scope distinctions", "[unit][docum
     check_owner_query(is_switch_branch(bms_control_kind_t::default_branch));
     check_owner_query(!is_conditional_branch(bms_control_kind_t::default_branch));
     check_owner_query(has_control_value(bms_control_kind_t::set_random));
-    check_owner_query(has_positive_control_value(bms_control_kind_t::set_random));
     check_owner_query(!has_control_value(bms_control_kind_t::else_branch));
     check_owner_query(can_have_control_close(bms_control_kind_t::switch_block));
     check_owner_query(!is_valid_control_kind(static_cast<bms_control_kind_t>(100)));

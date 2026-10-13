@@ -80,12 +80,12 @@ auto resolve_marker_position_row(const measure_lookup_t& measures, local_positio
     return measure->row_of(position.row);
 }
 
-auto valid_direction(marker_navigation_direction_t direction) -> bool {
+auto is_valid_direction(marker_navigation_direction_t direction) -> bool {
     return direction == marker_navigation_direction_t::previous ||
            direction == marker_navigation_direction_t::next;
 }
 
-auto valid_anchor(marker_anchor_t anchor) -> bool {
+auto is_valid_anchor(marker_anchor_t anchor) -> bool {
     return anchor == marker_anchor_t::beat || anchor == marker_anchor_t::audio_time;
 }
 
@@ -107,7 +107,7 @@ auto kind_order(marker_navigation_kind_t kind) -> std::uint8_t {
 }
 
 template <typename coordinate_t>
-auto precedes(const candidate_t<coordinate_t>& left, const candidate_t<coordinate_t>& right)
+auto marker_candidate_less(const candidate_t<coordinate_t>& left, const candidate_t<coordinate_t>& right)
     -> bool {
     return std::tuple{left.coordinate, left.item.source_order, kind_order(left.item.kind)} <
            std::tuple{right.coordinate, right.item.source_order, kind_order(right.item.kind)};
@@ -128,7 +128,7 @@ struct marker_search_t {
             (direction == marker_navigation_direction_t::previous && coordinate >= cursor)) return;
         candidate_t<coordinate_t> candidate{.coordinate = coordinate, .item = std::move(item)};
         if (!best || (direction == marker_navigation_direction_t::next
-                          ? precedes(candidate, *best) : precedes(*best, candidate)))
+                          ? marker_candidate_less(candidate, *best) : marker_candidate_less(*best, candidate)))
             best = std::move(candidate);
     }
 };
@@ -136,7 +136,7 @@ struct marker_search_t {
 template <typename coordinate_t>
 void consider_bookmark(marker_search_t<coordinate_t>& search,
                        const bookmark_t& bookmark) {
-    if (!valid_anchor(bookmark.anchor)) {
+    if (!is_valid_anchor(bookmark.anchor)) {
         reject(search.diagnostics, diagnostic_code_t::invalid_id,
                "bookmark has an unknown anchor kind", bookmark.id);
         return;
@@ -228,7 +228,7 @@ void consider_audio_section(marker_search_t<coordinate_t>& search, const section
 
 template <typename coordinate_t>
 void consider_section(marker_search_t<coordinate_t>& search, const section_t& section) {
-    if (!valid_anchor(section.anchor)) {
+    if (!is_valid_anchor(section.anchor)) {
         reject(search.diagnostics, diagnostic_code_t::invalid_id,
                "section has an unknown anchor kind", section.id);
         return;
@@ -387,7 +387,7 @@ auto navigate_impl(const song_document_t& song, std::uint64_t expected_revision,
         result.diagnostics = std::move(query.diagnostics);
         return result;
     }
-    if (!valid_direction(direction)) {
+    if (!is_valid_direction(direction)) {
         result.status = marker_navigation_status_t::invalid_request;
         reject(result.diagnostics, diagnostic_code_t::invalid_id,
                "marker navigation direction is unknown");

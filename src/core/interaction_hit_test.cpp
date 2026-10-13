@@ -535,16 +535,16 @@ struct nearby_note_candidate_t {
     double distance{std::numeric_limits<double>::infinity()};
 };
 
-auto valid_hit_geometry(const editor_hit_test_request_t& request) -> bool {
+auto is_valid_hit_geometry(const editor_hit_test_request_t& request) -> bool {
     return std::isfinite(request.note_head_height_pixels) && request.note_head_height_pixels >= 0.0 &&
         std::isfinite(request.split_stage_gutter_pixels) && request.split_stage_gutter_pixels >= 0.0 &&
         request.split_stage_gutter_pixels < request.field_width_pixels;
 }
 
-auto valid_hit_request(const chart_document_t& chart, const editor_hit_test_index_t& index,
+auto is_valid_hit_request(const chart_document_t& chart, const editor_hit_test_index_t& index,
                        const editor_interaction_view_model_t& view,
                        const editor_hit_test_request_t& request) -> bool {
-    return valid_hit_geometry(request) && index.chart == chart.id && view.chart == chart.id &&
+    return is_valid_hit_geometry(request) && index.chart == chart.id && view.chart == chart.id &&
            index.document_revision == view.document_revision &&
            index.measure_buckets.size() == index.measures.entries.size() &&
            std::isfinite(request.x_pixels) && std::isfinite(request.y_pixels) &&
@@ -582,7 +582,7 @@ auto note_target_kind(const editor_hit_test_entry_t& entry) -> editor_hit_target
     return editor_hit_target_kind_t::note;
 }
 
-auto improves_candidate(const nearby_note_candidate_t& current, editor_hit_target_kind_t kind,
+auto is_improves_candidate(const nearby_note_candidate_t& current, editor_hit_target_kind_t kind,
                         double distance, object_id_t note) -> bool {
     const auto priority = hit_priority(kind);
     if (priority != current.priority) return priority > current.priority;
@@ -638,7 +638,7 @@ auto nearby_note_points(const chart_document_t& chart, const editor_hit_test_ind
                 effective_layout(chart, index.measures, entry->position), lane, y, request);
             if (distance > request.note_hit_radius_pixels) continue;
             const auto kind = note_target_kind(*entry);
-            if (!improves_candidate(best, kind, distance, entry->note)) continue;
+            if (!is_improves_candidate(best, kind, distance, entry->note)) continue;
             best.target = {.kind = kind, .lane = lane, .note = entry->note,
                            .note_kind = entry->kind, .position = entry->position};
             best.priority = hit_priority(kind);
@@ -688,7 +688,7 @@ auto hit_test_editor(const chart_document_t& chart, const editor_hit_test_index_
                      const editor_interaction_view_model_t& view,
                      const editor_hit_test_request_t& request)
     -> std::optional<editor_hit_target_t> {
-    if (!valid_hit_request(chart, index, view, request)) return std::nullopt;
+    if (!is_valid_hit_request(chart, index, view, request)) return std::nullopt;
     const auto position = position_at_row_y_pixels(chart, index.measures, view, request.y_pixels);
     const auto row = absolute_row_at_y_pixels(chart, index.measures, view, request.y_pixels);
     if (!position || !row || request.x_pixels < request.field_left_pixels ||
@@ -710,7 +710,7 @@ auto hit_test_editor(const chart_document_t& chart, const editor_hit_test_index_
 
 namespace {
 
-auto valid_hover_request(const chart_document_t& chart, const editor_hit_test_index_t& index,
+auto is_valid_hover_request(const chart_document_t& chart, const editor_hit_test_index_t& index,
                          const editor_interaction_view_model_t& view,
                          const editor_object_hover_request_t& request) -> bool {
     const auto right = request.field_left_pixels + request.field_width_pixels;
@@ -757,7 +757,7 @@ auto hover_editor_object(const chart_document_t& chart, const editor_hit_test_in
                          const editor_interaction_view_model_t& view,
                          const editor_object_hover_request_t& request)
     -> std::optional<editor_object_hover_state_t> {
-    if (!valid_hover_request(chart, index, view, request)) return std::nullopt;
+    if (!is_valid_hover_request(chart, index, view, request)) return std::nullopt;
     const auto pointer_row =
         absolute_row_at_y_pixels(chart, index.measures, view, request.y_pixels);
     if (!pointer_row.has_value())

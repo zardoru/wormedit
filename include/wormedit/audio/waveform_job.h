@@ -48,7 +48,9 @@ class waveform_job_t {
     // Intended for tests and orderly shutdown paths, not the UI frame loop.
     [[nodiscard]] auto wait() -> std::optional<waveform_job_completion_t>;
     void cancel() noexcept;
-    [[nodiscard]] auto busy() const noexcept -> bool;
+    [[nodiscard]] auto is_busy() const noexcept -> bool;
+    // Compatibility for the coordinated sys/UI migration.
+    inline auto busy() const noexcept -> bool { return is_busy(); }
 
   private:
     struct worker_t {

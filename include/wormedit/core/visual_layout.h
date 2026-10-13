@@ -78,7 +78,8 @@ struct visual_image_quad_t {
     std::array<visual_point_t, 4> points;
 };
 
-[[nodiscard]] auto valid_visual_fit_policy(visual_fit_policy_t fit) noexcept -> bool;
+[[nodiscard]] auto is_valid_visual_fit_policy(visual_fit_policy_t fit) noexcept -> bool;
+
 
 // Produces deterministic renderer-neutral geometry. Contain letterboxes in
 // destination space; cover center-crops whole source pixels; stretch uses both

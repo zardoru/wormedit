@@ -453,7 +453,7 @@ TEST_CASE("resizing a measure keeps every object on its row from the start of th
 TEST_CASE("resizing materializes virtual tail measures and keeps coverage",
           "[unit][core][measure-editor][keep-rows]") {
     auto history = document_history_t::from(measure_song());
-    REQUIRE(chart_has_virtual_tail(history.document.charts.front()));
+    REQUIRE(has_chart_virtual_tail(history.document.charts.front()));
     const auto grown = apply_measure_edit(
         history, 5,
         resize_measure_keep_rows_action_t{.chart = chart_id_t{2},
@@ -559,8 +559,8 @@ TEST_CASE("an empty leading measure that anchors BPM and layout cannot be delete
                                          .imported_beats_per_minute = {120, 1}});
     REQUIRE(validate_document(song).empty());
     const auto& base = song.charts.front();
-    CHECK(measure_holds_positioned_objects(base, measure_id_t{10}));
-    CHECK_FALSE(measure_holds_positioned_objects(base, measure_id_t{11}));
+    CHECK(has_measure_positioned_objects(base, measure_id_t{10}));
+    CHECK_FALSE(has_measure_positioned_objects(base, measure_id_t{11}));
     CHECK_FALSE(propose_measure_removal(base, measure_id_t{10}));
     auto history = document_history_t::from(std::move(song));
     const auto plain = apply_measure_edit(history, history.document.revision,

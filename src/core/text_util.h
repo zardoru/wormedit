@@ -69,12 +69,15 @@ inline auto invalid_utf8_offset(std::string_view source) -> std::optional<std::s
     }
     return std::nullopt;
 }
-inline auto valid_utf8(std::string_view text) noexcept -> bool {
+inline auto is_valid_utf8(std::string_view text) noexcept -> bool {
     return !invalid_utf8_offset(text);
 }
-inline auto valid_bounded_text(std::string_view text, std::size_t maximum_bytes) noexcept -> bool {
-    return text.size() <= maximum_bytes && text.find('\0') == std::string_view::npos && valid_utf8(text);
+
+inline auto is_valid_bounded_text(std::string_view text, std::size_t maximum_bytes) noexcept -> bool {
+    return text.size() <= maximum_bytes && text.find('\0') == std::string_view::npos && is_valid_utf8(text);
 }
+// Compatibility for the coordinated sys/UI migration.
+inline auto valid_bounded_text(std::string_view text, std::size_t maximum_bytes) noexcept -> bool { return is_valid_bounded_text(text, maximum_bytes); }
 inline auto path_from_utf8(std::string_view value) -> std::filesystem::path {
     std::u8string text;
     text.reserve(value.size());

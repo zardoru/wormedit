@@ -274,7 +274,7 @@ auto apply_move_chart_group_command(document_history_t& history, std::uint64_t r
 }
 
 namespace {
-auto output_group_path_valid(const std::filesystem::path& path) -> bool {
+auto is_output_group_path_valid(const std::filesystem::path& path) -> bool {
     if (path.empty() || path.is_absolute() || path.has_root_name() || path.has_root_directory() ||
         path != path.lexically_normal()) return false;
     for (const auto& part : path) {
@@ -293,7 +293,7 @@ auto output_group_error(const song_document_t& doc, std::optional<std::size_t> i
     for (std::size_t i = 0; i < doc.output_groups.size(); ++i)
         if (i != index && doc.output_groups[i].name == group.name) return "Output group name is already used.";
     if (group.family < format_family_t::native_project || group.family > format_family_t::bmson) return "Output format is not supported.";
-    if (!output_group_path_valid(group.relative_output_path)) return "Output path must be a safe project-relative path.";
+    if (!is_output_group_path_valid(group.relative_output_path)) return "Output path must be a safe project-relative path.";
     if (group.relative_output_path.has_extension() && group.charts.size() > 1 &&
         group.family != format_family_t::stepmania && group.family != format_family_t::native_project)
         return "Use an output directory for multiple chart files.";

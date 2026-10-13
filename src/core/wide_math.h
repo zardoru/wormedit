@@ -13,11 +13,11 @@ struct u128_t {
     auto operator==(const u128_t&) const -> bool = default;
 };
 
-[[nodiscard]] constexpr auto less(const u128_t& left, const u128_t& right) -> bool {
+[[nodiscard]] constexpr auto u128_less(const u128_t& left, const u128_t& right) -> bool {
     return left.high != right.high ? left.high < right.high : left.low < right.low;
 }
 
-[[nodiscard]] constexpr auto fits_u64(const u128_t& value) -> bool { return value.high == 0; }
+[[nodiscard]] constexpr auto can_fit_u64(const u128_t& value) -> bool { return value.high == 0; }
 
 [[nodiscard]] constexpr auto multiply(std::uint64_t left, std::uint64_t right) -> u128_t {
     constexpr std::uint64_t mask = 0xFFFFFFFFULL;
@@ -60,7 +60,7 @@ struct divmod_t {
                                       : (dividend.low >> bit) & 1U;
         result.remainder = {(result.remainder.high << 1) | (result.remainder.low >> 63),
                             (result.remainder.low << 1) | source};
-        if (!less(result.remainder, divisor)) {
+        if (!u128_less(result.remainder, divisor)) {
             result.remainder = subtract(result.remainder, divisor);
             if (bit >= 64) result.quotient.high |= std::uint64_t{1} << (bit - 64);
             else result.quotient.low |= std::uint64_t{1} << bit;

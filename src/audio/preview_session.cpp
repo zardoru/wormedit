@@ -23,7 +23,7 @@ auto checked_window_end(std::uint64_t timeline_frame, std::size_t lookahead_fram
     return timeline_frame + lookahead_frames;
 }
 
-auto materialize_succeeded(preview_bridge_pump_status_t status) -> bool {
+auto is_materialize_succeeded(preview_bridge_pump_status_t status) -> bool {
     return status == preview_bridge_pump_status_t::ready ||
            status == preview_bridge_pump_status_t::capacity_limited;
 }
@@ -92,7 +92,7 @@ auto preview_session_t::prime_started(preview_bridge_start_result_t started,
     }
     const auto materialized = bridge_.materialize_until(*window_end, timeline_frame);
     result.materialize = materialized;
-    if (!materialize_succeeded(materialized.status)) {
+    if (!is_materialize_succeeded(materialized.status)) {
         static_cast<void>(bridge_.stop());
         clear_state();
         result.status = preview_session_start_status_t::materialize_failed;
@@ -134,7 +134,7 @@ auto preview_session_t::pump(preview_pump_options_t options) -> preview_session_
             return result;
         }
         result.materialize = bridge_.materialize_until(*window_end, timeline_frame);
-        if (!materialize_succeeded(result.materialize->status)) {
+        if (!is_materialize_succeeded(result.materialize->status)) {
             result.status = preview_session_pump_status_t::materialize_failed;
             return result;
         }
@@ -216,7 +216,7 @@ auto preview_session_t::render(std::span<float> interleaved_stereo,
     }
     timeline_frame_ += mixed.frames;
     publish_playhead();
-    if (mixed.missing_blocks == 0 && !loop_region_ && bridge_.exhausted() &&
+    if (mixed.missing_blocks == 0 && !loop_region_ && bridge_.is_exhausted() &&
         transport_.scheduled_voice_count() == 0 &&
         timeline_frame_ >= minimum_end_frame_) {
         static_cast<void>(bridge_.stop());
@@ -266,8 +266,8 @@ void preview_session_t::set_metronome_enabled(bool enabled) {
     bridge_.set_metronome_enabled(enabled, timeline_frame_);
 }
 
-auto preview_session_t::metronome_enabled() const -> bool {
-    return bridge_.metronome_enabled();
+auto preview_session_t::is_metronome_enabled() const -> bool {
+    return bridge_.is_metronome_enabled();
 }
 
 auto preview_session_t::set_metronome_volume(std::uint8_t volume_percent) noexcept -> bool {
@@ -301,7 +301,7 @@ auto preview_session_t::playhead() const noexcept -> playhead_state_t {
     return {.generation = playhead_.read().generation};
 }
 
-auto preview_session_t::active() const -> bool {
+auto preview_session_t::is_active() const -> bool {
     return playhead().active;
 }
 

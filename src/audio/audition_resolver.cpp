@@ -36,7 +36,7 @@ auto slice_derivation_error(const sound_slice_result_t& derived, object_id_t lay
     return error(code, std::move(message), layer);
 }
 
-auto unavailable_preview_source(const audition_resolve_result_t& resolved,
+auto is_unavailable_preview_source(const audition_resolve_result_t& resolved,
                                 audition_resolve_options_t options) -> bool {
     return options.skip_unavailable_preview_sources &&
            resolved.diagnostics.size() == 1 &&
@@ -480,7 +480,7 @@ auto resolve_preview_bindings(const song_document_t& song, chart_id_t chart_id,
         // A point past the end of its sample resolves to no clips and no error: it is silent.
         if (resolved.clips.empty() && resolved.diagnostics.empty()) continue;
         if (!resolved) {
-            if (unavailable_preview_source(resolved, options)) {
+            if (is_unavailable_preview_source(resolved, options)) {
                 ++result.skipped_unavailable_objects;
                 continue;
             }

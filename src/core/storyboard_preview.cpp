@@ -32,7 +32,7 @@ auto invalid_index(std::string message) -> storyboard_preview_index_result_t {
     return result;
 }
 
-auto evaluation_failed(const storyboard_evaluation_result_t& result,
+auto is_evaluation_failed(const storyboard_evaluation_result_t& result,
                        storyboard_frame_result_t& frame) -> bool {
     if (!result.failed)
         return false;
@@ -40,7 +40,7 @@ auto evaluation_failed(const storyboard_evaluation_result_t& result,
     return true;
 }
 
-auto newer_than(const storyboard_evaluation_result_t& candidate,
+auto is_storyboard_instance_newer(const storyboard_evaluation_result_t& candidate,
                 const storyboard_evaluation_result_t& current) noexcept -> bool {
     if (!candidate.value.present)
         return false;
@@ -68,17 +68,17 @@ auto apply_frame_evaluations(storyboard_draw_instance_t& instance,
         instance.x = move.value.values[0];
         instance.y = move.value.values[1];
     }
-    if (newer_than(move_x, move)) {
+    if (is_storyboard_instance_newer(move_x, move)) {
         instance.x = move_x.value.values[0];
     }
-    if (newer_than(move_y, move)) {
+    if (is_storyboard_instance_newer(move_y, move)) {
         instance.y = move_y.value.values[0];
     }
     if (scale.value.present) {
         instance.scale_x = scale.value.values[0];
         instance.scale_y = scale.value.values[0];
     }
-    if (newer_than(vector_scale, scale)) {
+    if (is_storyboard_instance_newer(vector_scale, scale)) {
         instance.scale_x = vector_scale.value.values[0];
         instance.scale_y = vector_scale.value.values[1];
     }
@@ -210,7 +210,7 @@ auto evaluate_storyboard_frame(const storyboard_document_model_t& document,
         const std::array evaluations{&fade,  &move,         &move_x, &move_y,
                                      &scale, &vector_scale, &rotate, &color};
         if (std::ranges::any_of(evaluations, [&](const auto* evaluation) {
-                return evaluation_failed(*evaluation, result);
+                return is_evaluation_failed(*evaluation, result);
             })) {
             return result;
         }

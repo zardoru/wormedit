@@ -38,7 +38,8 @@ class tap_tempo_estimator_t {
   public:
     // Zero sample rate or a meter outside 1..32 is invalid, without allocation.
     explicit tap_tempo_estimator_t(tap_tempo_options_t options = {});
-    auto valid() const -> bool;
+    auto is_valid() const -> bool;
+
     void reset();
     auto tap(std::uint64_t source_frame) -> tap_tempo_result_t;
     // Also permits a caller to expire a session during silence before another tap.

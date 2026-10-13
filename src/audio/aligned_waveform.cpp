@@ -82,14 +82,14 @@ auto accumulate_column(aligned_waveform_row_t& row, const waveform_column_t& col
     }
 }
 
-auto waveform_covers(const waveform_t& waveform, std::uint64_t begin, std::uint64_t end) -> bool {
+auto is_waveform_covering(const waveform_t& waveform, std::uint64_t begin, std::uint64_t end) -> bool {
     const auto finish = waveform.key.end_frame == 0 ? waveform.total_frames : waveform.key.end_frame;
     return waveform.key.frames_per_bin != 0 && begin >= waveform.key.begin_frame && end <= finish;
 }
 
 auto bin_span(const waveform_t& waveform, std::uint64_t begin, std::uint64_t end)
     -> std::optional<waveform_column_t> {
-    if (!waveform_covers(waveform, begin, end) || begin >= end) return std::nullopt;
+    if (!is_waveform_covering(waveform, begin, end) || begin >= end) return std::nullopt;
     const auto first = (begin - waveform.key.begin_frame) / waveform.key.frames_per_bin;
     const auto last = (end - 1U - waveform.key.begin_frame) / waveform.key.frames_per_bin;
     if (last >= waveform.bins.size()) return std::nullopt;
@@ -239,7 +239,7 @@ void append_composed_rows(aligned_waveform_result_t& result, const waveform_colu
 
 namespace {
 using wormedit::to_double;
-auto display_clock_matches(const display_row_table_t& table, const timing_index_t& timing,
+auto is_display_clock_current(const display_row_table_t& table, const timing_index_t& timing,
                            display_row_table_identity_t identity) -> bool {
     return table.valid && table.identity == identity && table.timing_identity == &timing &&
         table.fingerprint == timing.source_fingerprint &&
@@ -280,7 +280,7 @@ void rebuild_display_clock(display_row_table_t& table, const timing_index_t& tim
             distance > 0 ? (to_double(segment.end_seconds) - begin) / distance : 0.0});
     }
 }
-auto valid_display_request(aligned_waveform_request_t request, bool padding = true) -> bool {
+auto is_valid_display_request(aligned_waveform_request_t request, bool padding = true) -> bool {
     return std::isfinite(request.viewport_scroll_pixels) && std::abs(request.viewport_scroll_pixels) <= 1e12 &&
         std::isfinite(request.viewport_height_pixels) && request.viewport_height_pixels > 0 &&
         request.viewport_height_pixels <= maximum_aligned_waveform_rows - (padding ? 2 : 0) &&
@@ -325,13 +325,13 @@ auto display_seconds_at(const display_row_table_t& table, double row, timing_bou
 
 auto prepare_display_row_table(display_row_table_t& table, const timing_index_t& timing,
     aligned_waveform_request_t request, display_row_table_identity_t identity) -> bool {
-    if (!valid_display_request(request) || timing.divisions_per_standard_measure == 0 ||
+    if (!is_valid_display_request(request) || timing.divisions_per_standard_measure == 0 ||
         timing.total_rows == 0 || timing.rows.empty()) {
         table.valid = false;
         table.rows.clear();
         return false;
     }
-    const bool same_clock = display_clock_matches(table, timing, identity);
+    const bool same_clock = is_display_clock_current(table, timing, identity);
     if (!same_clock) rebuild_display_clock(table, timing, identity);
     const auto count = static_cast<std::size_t>(std::ceil(request.viewport_height_pixels)) + 2;
     const auto first = static_cast<std::int64_t>(std::floor(request.viewport_scroll_pixels)) - 1;
@@ -437,13 +437,13 @@ auto sample_display_waveform_span(const waveform_t& waveform, std::uint64_t begi
     return result;
 }
 
-auto aligned_waveform_detail_range_t::covers(aligned_waveform_window_t window) const noexcept -> bool {
+auto aligned_waveform_detail_range_t::is_covering_window(aligned_waveform_window_t window) const noexcept -> bool {
     return begin_frame <= window.begin_frame && end_frame >= window.end_frame;
 }
 
-auto aligned_waveform_detail_range_t::needs_refill(aligned_waveform_window_t window,
+auto aligned_waveform_detail_range_t::is_refill_needed(aligned_waveform_window_t window,
                                                   int direction) const noexcept -> bool {
-    if (!covers(window)) return true;
+    if (!is_covering_window(window)) return true;
     const auto span = window.end_frame - window.begin_frame;
     return direction < 0 ? window.begin_frame - begin_frame <= span
                          : end_frame - window.end_frame <= span;
@@ -661,7 +661,7 @@ auto project_composed_aligned_waveform(const waveform_t& overview, const wavefor
     const display_row_table_t& table, aligned_waveform_request_t request,
     decoded_block_cache_t* blocks, aligned_waveform_style_t style) -> aligned_waveform_result_t {
     aligned_waveform_result_t result;
-    if (!table.valid || !valid_display_request(request, false) ||
+    if (!table.valid || !is_valid_display_request(request, false) ||
         table.zoom != request.pixels_per_standard_measure) return result;
     // Exact cached PCM polylines retain their existing sample-position path.
     if (style.sample_points && table.timing_identity)

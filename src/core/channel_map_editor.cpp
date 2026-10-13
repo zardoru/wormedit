@@ -60,13 +60,13 @@ auto fail_apply(channel_map_issue_t issue, std::string message, std::uint64_t re
             .payload = {.issue = issue, .message = std::move(message)}};
 }
 
-auto base36_digit(char byte) -> bool {
+auto is_base36_digit(char byte) -> bool {
     return bms36_value(static_cast<unsigned char>(byte)) >= 0;
 }
 
 
 
-auto channel_matches_family(std::string_view channel, std::size_t slot) -> bool {
+auto is_channel_in_family(std::string_view channel, std::size_t slot) -> bool {
     if (channel.size() != 2) return false;
     switch (slot) {
     case 0: return (channel[0] == '1' || channel[0] == '2') && channel[1] != '0';
@@ -80,10 +80,10 @@ auto channel_matches_family(std::string_view channel, std::size_t slot) -> bool 
 
 auto normalize_channel(std::optional<std::string>& channel, std::size_t slot) -> bool {
     if (!channel) return true;
-    if (channel->size() != 2 || !base36_digit((*channel)[0]) || !base36_digit((*channel)[1]))
+    if (channel->size() != 2 || !is_base36_digit((*channel)[0]) || !is_base36_digit((*channel)[1]))
         return false;
     for (auto& character : *channel) character = text_util::ascii_upper(character);
-    return channel_matches_family(*channel, slot);
+    return is_channel_in_family(*channel, slot);
 }
 
 auto normalize_map(bms_channel_map_t& channels) -> bool {
@@ -101,7 +101,7 @@ auto map_slots(const bms_channel_map_t& channels)
 
 
 
-auto same_export_channel(const std::optional<std::string>& left,
+auto export_channel_equal(const std::optional<std::string>& left,
                          const std::optional<std::string>& right) -> bool {
     if (!left || !right) return left.has_value() == right.has_value();
     return text_util::ascii_upper(*left) == text_util::ascii_upper(*right);
@@ -152,11 +152,11 @@ auto source_note_channel_slot(const note_t& note, const lane_definition_t& lane)
     return note_channel_slot(note.kind);
 }
 
-auto same_channel_map(const bms_channel_map_t& left, const bms_channel_map_t& right) -> bool {
+auto channel_map_equal(const bms_channel_map_t& left, const bms_channel_map_t& right) -> bool {
     const auto left_slots = map_slots(left);
     const auto right_slots = map_slots(right);
     for (std::size_t index = 0; index < left_slots.size(); ++index)
-        if (!same_export_channel(*left_slots[index], *right_slots[index])) return false;
+        if (!export_channel_equal(*left_slots[index], *right_slots[index])) return false;
     return true;
 }
 
@@ -175,7 +175,7 @@ auto count_affected_notes(const chart_document_t& chart, const lane_layout_segme
             if (lane == nullptr) continue;
             const auto old_channel = map_slots(lane->bms_channels)[*slot];
             const auto new_channel = map_slots(*replacement->second)[*slot];
-            if (same_export_channel(*old_channel, *new_channel)) continue;
+            if (export_channel_equal(*old_channel, *new_channel)) continue;
             if (!*new_channel) missing_export_channel = true;
             else ++count;
         }
@@ -217,13 +217,13 @@ void collect_branch_orders(const bms_control_node_t& node, bool nested,
     for (const auto& child : node.children) collect_branch_orders(child, in_branch, orders);
 }
 
-auto branch_note(note_kind_t kind) -> bool {
+auto is_branch_note(note_kind_t kind) -> bool {
     return kind == note_kind_t::tap || kind == note_kind_t::hold ||
            kind == note_kind_t::roll || kind == note_kind_t::invisible ||
            kind == note_kind_t::mine;
 }
 
-auto branch_channel_changed(const chart_document_t& chart,
+auto is_branch_channel_changed(const chart_document_t& chart,
                             const lane_layout_segment_t& segment,
                             const std::unordered_map<std::uint64_t,
                                 const bms_channel_map_t*>& replacements) -> bool {
@@ -233,7 +233,7 @@ auto branch_channel_changed(const chart_document_t& chart,
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes) {
             if ((!note.branch && !branch_orders.contains(note.provenance.source_order)) ||
-                !branch_note(note.kind) || active_lane_layout_segment(chart, note.position) != &segment)
+                !is_branch_note(note.kind) || active_lane_layout_segment(chart, note.position) != &segment)
                 continue;
             const auto found = replacements.find(note.lane.value);
             const auto lane = segment.layout.find(note.lane);
@@ -241,15 +241,15 @@ auto branch_channel_changed(const chart_document_t& chart,
             const auto has_source_identity = source_channel(note.provenance.source_field).has_value();
             const auto slot = source_note_channel_slot(note, *lane);
             if (has_source_identity && !slot &&
-                !same_channel_map(lane->bms_channels, *found->second)) return true;
-            if (slot && !same_export_channel(*map_slots(lane->bms_channels)[*slot],
+                !channel_map_equal(lane->bms_channels, *found->second)) return true;
+            if (slot && !export_channel_equal(*map_slots(lane->bms_channels)[*slot],
                                              *map_slots(*found->second)[*slot])) return true;
         }
     }
     return false;
 }
 
-auto same_proposal(const channel_map_proposal_t& proposal,
+auto is_proposal_current(const channel_map_proposal_t& proposal,
                    const channel_map_proposal_payload_t& canonical) -> bool {
     return proposal.song == canonical.song && proposal.chart == canonical.chart &&
            proposal.layout_segment == canonical.segment && proposal.revision == canonical.revision &&
@@ -269,7 +269,7 @@ auto overlay_replacements(lane_layout_t& layout,
     return true;
 }
 
-auto same_revision_document(const document_history_t& history,
+auto is_document_current(const document_history_t& history,
                             const channel_map_proposal_payload_t& canonical) -> bool {
     return history.document.id == canonical.song &&
            history.document.revision == canonical.revision;
@@ -354,7 +354,7 @@ auto propose_bms_channel_map_edit(const song_document_t& song,
              "A channel used by an existing note cannot be removed.");
         return proposal;
     }
-    if (branch_channel_changed(*chart, *segment, replacements)) {
+    if (is_branch_channel_changed(*chart, *segment, replacements)) {
         fail(proposal, channel_map_issue_t::unsupported_branch_channel,
              "Branch-local BMS notes must retain their source channel identity.");
         return proposal;
@@ -374,18 +374,18 @@ auto apply_bms_channel_map_edit(document_history_t& history,
     if (proposal.issue != channel_map_issue_t::none)
         return fail_apply(proposal.issue, proposal.message, history.document.revision);
     const auto canonical = channel_map_proposal_access_t::canonical(proposal);
-    if (!canonical || !same_proposal(proposal, *canonical))
+    if (!canonical || !is_proposal_current(proposal, *canonical))
         return fail_apply(channel_map_issue_t::invalid_replacement,
                           "Channel-map preview data changed after proposal.",
                           history.document.revision);
-    if (!same_revision_document(history, *canonical))
+    if (!is_document_current(history, *canonical))
         return fail_apply(channel_map_issue_t::stale_revision,
                           "The document changed after channel-map preview.",
                           history.document.revision);
     const auto verified = propose_bms_channel_map_edit(
         history.document, canonical->revision, canonical->chart, canonical->segment,
         canonical->replacements);
-    if (!verified || !same_proposal(verified, *canonical))
+    if (!verified || !is_proposal_current(verified, *canonical))
         return fail_apply(verified.issue == channel_map_issue_t::none
                               ? channel_map_issue_t::stale_revision : verified.issue,
                           verified.message.empty() ? "The chart changed after preview."

@@ -186,7 +186,7 @@ TEST_CASE("transport Stop clears every voice class and silences the next callbac
     CHECK(all_zero(after_stop));
     CHECK(transport.decode_block(decoder, *token, key).status ==
           wormedit::audio::block_decode_status_t::stale_generation);
-    CHECK(blocks.contains(key));
+    CHECK(blocks.has_block(key));
 
     const auto next_token = transport.start();
     REQUIRE(next_token.has_value());

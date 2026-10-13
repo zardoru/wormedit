@@ -133,7 +133,7 @@ void mark_terminal_locked(scheduler_state_t& scheduler, graph_state_t& graph, st
         return;
     }
     node.result = std::move(result);
-    node.status = node.result.succeeded()
+    node.status = node.result.is_successful()
                       ? node_status_t::succeeded
                       : (node.result.error->code == task_error_code_t::cancelled ||
                                  node.result.error->code == task_error_code_t::scheduler_stopped ||

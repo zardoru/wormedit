@@ -544,12 +544,12 @@ auto quantize_bpm(signed_rational_t bpm, signed_rational_t step)
                                                  static_cast<std::uint64_t>(step.numerator));
     const auto division = wide_math::divide(numerator, denominator);
     auto multiples = division.quotient;
-    if (!wide_math::less(division.remainder,
+    if (!wide_math::u128_less(division.remainder,
                          wide_math::subtract(denominator, division.remainder)))
         multiples = wide_math::add(multiples, 1);
     const auto step_numerator = static_cast<std::uint64_t>(step.numerator);
     constexpr auto int64_max = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
-    if (!wide_math::fits_u64(multiples) || multiples.low > int64_max / step_numerator ||
+    if (!wide_math::can_fit_u64(multiples) || multiples.low > int64_max / step_numerator ||
         multiples.low == 0)
         return std::nullopt;
     const auto result_numerator = multiples.low * step_numerator;

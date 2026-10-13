@@ -7,7 +7,7 @@
 namespace wormedit {
 
 tap_tempo_estimator_t::tap_tempo_estimator_t(tap_tempo_options_t options) : options_(options) {}
-auto tap_tempo_estimator_t::valid() const -> bool {
+auto tap_tempo_estimator_t::is_valid() const -> bool {
     return options_.sample_rate != 0 && options_.beats_per_measure != 0 &&
         options_.beats_per_measure <= maximum_tap_beats_per_measure &&
         (options_.mode == tap_tempo_mode_t::last_four_measures ||
@@ -56,7 +56,7 @@ auto tap_tempo_estimator_t::fit() const -> std::optional<fit_t> {
 }
 auto tap_tempo_estimator_t::estimate() const -> std::optional<tap_tempo_estimate_t> {
     const auto fitted = fit();
-    if (!valid() || !fitted) return std::nullopt;
+    if (!is_valid() || !fitted) return std::nullopt;
     const auto bpm = static_cast<double>(60.0L * options_.sample_rate / fitted->slope);
     const auto rational = rationalize_positive_double(bpm);
     if (!rational) return std::nullopt;
@@ -76,7 +76,7 @@ auto tap_tempo_estimator_t::expire(std::uint64_t source_frame) -> bool {
     return true;
 }
 auto tap_tempo_estimator_t::tap(std::uint64_t source_frame) -> tap_tempo_result_t {
-    if (!valid()) return tap_tempo_result_t::invalid_configuration;
+    if (!is_valid()) return tap_tempo_result_t::invalid_configuration;
     const auto restarted = expire(source_frame);
     if (count_ == 0) {
         append(source_frame, 0);

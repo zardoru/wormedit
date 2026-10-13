@@ -8,7 +8,7 @@
 namespace wormedit {
 namespace {
 
-auto valid_destination(const visual_destination_rect_t& destination) noexcept -> bool {
+auto is_valid_destination(const visual_destination_rect_t& destination) noexcept -> bool {
     return std::isfinite(destination.left) && std::isfinite(destination.top) &&
            std::isfinite(destination.width) && destination.width > 0.0 &&
            std::isfinite(destination.height) && destination.height > 0.0;
@@ -16,7 +16,7 @@ auto valid_destination(const visual_destination_rect_t& destination) noexcept ->
 
 } // namespace
 
-auto valid_visual_fit_policy(visual_fit_policy_t fit) noexcept -> bool {
+auto is_valid_visual_fit_policy(visual_fit_policy_t fit) noexcept -> bool {
     switch (fit) {
     case visual_fit_policy_t::stretch:
     case visual_fit_policy_t::contain:
@@ -29,7 +29,7 @@ auto valid_visual_fit_policy(visual_fit_policy_t fit) noexcept -> bool {
 auto visual_image_layout_t::from(const visual_layout_request_t& request)
     -> std::optional<visual_image_layout_t> {
     if (request.source_width == 0 || request.source_height == 0 ||
-        !valid_destination(request.destination) || !valid_visual_fit_policy(request.fit)) {
+        !is_valid_destination(request.destination) || !is_valid_visual_fit_policy(request.fit)) {
         return std::nullopt;
     }
     visual_image_layout_t layout{
@@ -62,7 +62,7 @@ auto visual_image_layout_t::from(const visual_layout_request_t& request)
                 static_cast<long double>(request.destination.height) * source_aspect);
             layout.destination.left += (request.destination.width - layout.destination.width) * 0.5;
         }
-        return valid_destination(layout.destination) ? std::optional{layout} : std::nullopt;
+        return is_valid_destination(layout.destination) ? std::optional{layout} : std::nullopt;
     }
 
     if (source_aspect > destination_aspect) {
@@ -82,7 +82,7 @@ auto visual_image_layout_t::from(const visual_layout_request_t& request)
 auto visual_image_quad_t::from(const visual_image_quad_request_t& request)
     -> std::optional<visual_image_quad_t> {
     if (request.source_width == 0 || request.source_height == 0 ||
-        !valid_destination(request.destination) || !std::isfinite(request.logical_width) ||
+        !is_valid_destination(request.destination) || !std::isfinite(request.logical_width) ||
         request.logical_width <= 0.0 || !std::isfinite(request.logical_height) ||
         request.logical_height <= 0.0 || !std::isfinite(request.x) || !std::isfinite(request.y) ||
         !std::isfinite(request.origin_x) || request.origin_x < 0.0 || request.origin_x > 1.0 ||

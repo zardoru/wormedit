@@ -94,7 +94,7 @@ auto native_project_autosave_loop_t::set_interval(clock_t::duration interval) no
 
 void native_project_autosave_loop_t::mark_explicit_save(
     native_project_document_version_t saved_version) noexcept {
-    if (busy()) {
+    if (is_busy()) {
         deferred_explicit_save_ = saved_version;
         return;
     }
@@ -121,7 +121,7 @@ auto native_project_autosave_loop_t::tick(const song_document_t& song, bool dirt
     -> std::optional<native_project_autosave_result_t> {
     std::optional<native_project_autosave_result_t> completed;
     collect_completed(now, completed);
-    if (busy() || !dirty || target.backup_path.empty() || (retry_after_ && now < *retry_after_) ||
+    if (is_busy() || !dirty || target.backup_path.empty() || (retry_after_ && now < *retry_after_) ||
         !coordinator_.is_due(song, now)) {
         return completed;
     }
@@ -180,7 +180,7 @@ auto native_project_autosave_loop_t::tick(const song_document_t& song, bool dirt
     return completed;
 }
 
-auto native_project_autosave_loop_t::busy() const noexcept -> bool {
+auto native_project_autosave_loop_t::is_busy() const noexcept -> bool {
     return worker_.has_value();
 }
 

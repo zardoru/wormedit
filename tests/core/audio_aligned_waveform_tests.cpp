@@ -280,12 +280,12 @@ struct detail_follow_simulation_t {
         update_aligned_waveform_style(style, window.frames_per_pixel);
         if (pending && --remaining == 0) {
             if (reject_next) { reject_next = false; ++rejected; }
-            else if (pending->covers(window)) { completed = pending; ready = true; }
+            else if (pending->is_covering_window(window)) { completed = pending; ready = true; }
             else ++discarded;
             pending.reset();
         }
-        if (ready) stable = stable && completed->covers(window) && style.detail_level && !style.sample_points;
-        if (!pending && (!completed || completed->needs_refill(window, 1))) {
+        if (ready) stable = stable && completed->is_covering_window(window) && style.detail_level && !style.sample_points;
+        if (!pending && (!completed || completed->is_refill_needed(window, 1))) {
             pending = padded_aligned_waveform_range(window);
             remaining = 5;
             ++requests;
@@ -886,8 +886,8 @@ TEST_CASE("aligned waveform detail ranges align and bound both playback directio
     const auto reverse = padded_aligned_waveform_range(window, -1);
     REQUIRE(forward);
     REQUIRE(reverse);
-    CHECK(forward->covers(window));
-    CHECK(reverse->covers(window));
+    CHECK(forward->is_covering_window(window));
+    CHECK(reverse->is_covering_window(window));
     CHECK(forward->begin_frame % 65536 == 0);
     CHECK(forward->end_frame % 65536 == 0);
 }

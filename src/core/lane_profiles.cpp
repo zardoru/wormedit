@@ -1048,13 +1048,13 @@ void assign_lane_key_colors(lane_layout_t& layout) {
 
 namespace {
 
-auto beat_skin_family(std::string_view profile) -> bool {
+auto is_beat_skin_family(std::string_view profile) -> bool {
     return profile.starts_with("bms-5k-") || profile.starts_with("bms-10k-") ||
            profile.starts_with("bme-7k-") || profile.starts_with("bme-14k-") ||
            profile.starts_with("bmson-beat-");
 }
 
-auto canonical_beat_stages(const lane_layout_t& layout, std::ptrdiff_t keys_per_stage, bool double_play) -> bool {
+auto is_canonical_beat_stages(const lane_layout_t& layout, std::ptrdiff_t keys_per_stage, bool double_play) -> bool {
     if (!double_play) return true;
     for (const auto stage : {stage_group_t::left, stage_group_t::right}) {
         const auto count = [&](lane_role_t role) {
@@ -1073,7 +1073,7 @@ auto beat_skin_layout_key(const lane_layout_t& layout) -> std::string {
     const auto stages = double_play ? 2 : 1;
     const auto playable = count(lane_role_t::playable);
     if (count(lane_role_t::scratch) != stages || (playable != 5 * stages && playable != 7 * stages)) return {};
-    if (!canonical_beat_stages(layout, playable / stages, double_play)) return {};
+    if (!is_canonical_beat_stages(layout, playable / stages, double_play)) return {};
     auto result = std::string(double_play ? "bms-dp" : "bms-sp") + std::to_string(playable / stages);
     if (count(lane_role_t::free_zone)) result += "-free-zone";
     if (count(lane_role_t::foot_pedal)) result += "-foot-pedal";
@@ -1085,7 +1085,7 @@ auto beat_skin_layout_key(const lane_layout_t& layout) -> std::string {
 auto field_skin_layout_key(const lane_layout_t& layout) -> std::string {
     const auto& profile = layout.profile_id;
     if (profile == "bms-10k-scratchless") return "osu-mania-10k";
-    if (beat_skin_family(profile)) {
+    if (is_beat_skin_family(profile)) {
         const auto beat = beat_skin_layout_key(layout);
         if (!beat.empty()) return beat;
     }

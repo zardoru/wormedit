@@ -95,8 +95,12 @@ struct aligned_waveform_style_t {
 struct aligned_waveform_detail_range_t {
     std::uint64_t begin_frame{};
     std::uint64_t end_frame{};
-    [[nodiscard]] auto covers(aligned_waveform_window_t window) const noexcept -> bool;
-    [[nodiscard]] auto needs_refill(aligned_waveform_window_t window, int direction) const noexcept -> bool;
+    [[nodiscard]] auto is_covering_window(aligned_waveform_window_t window) const noexcept -> bool;
+    // Compatibility for the coordinated sys/UI migration.
+    inline auto covers(aligned_waveform_window_t window) const noexcept -> bool { return is_covering_window(window); }
+    [[nodiscard]] auto is_refill_needed(aligned_waveform_window_t window, int direction) const noexcept -> bool;
+    // Compatibility for the coordinated sys/UI migration.
+    inline auto needs_refill(aligned_waveform_window_t window, int direction) const noexcept -> bool { return is_refill_needed(window, direction); }
     auto operator==(const aligned_waveform_detail_range_t&) const -> bool = default;
 };
 [[nodiscard]] auto padded_aligned_waveform_range(aligned_waveform_window_t window,

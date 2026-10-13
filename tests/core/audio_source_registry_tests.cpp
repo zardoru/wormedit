@@ -54,7 +54,7 @@ TEST_CASE("decoded source registry exposes authoritative geometry and exact iden
     const auto decoded = registry.decode_block(transport, *token, key);
     CHECK(decoded.status == block_decode_status_t::decoded);
     CHECK(decoded.frames > 0);
-    CHECK(cache.contains(key));
+    CHECK(cache.has_block(key));
 
     const auto unknown = registry.decode_block(
         transport, *token, {.source = {"fixture:unknown", "missing:v1"}, .block_index = 0});

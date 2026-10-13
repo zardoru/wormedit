@@ -227,7 +227,9 @@ struct lane_layout_t {
     auto operator==(const lane_layout_t&) const -> bool = default;
     [[nodiscard]] auto find(lane_id_t id) const -> const lane_definition_t*;
     [[nodiscard]] auto find(lane_id_t id) -> lane_definition_t*;
-    [[nodiscard]] auto contains(lane_id_t id) const -> bool;
+    [[nodiscard]] auto has_lane(lane_id_t id) const -> bool;
+    // Compatibility for the coordinated sys/UI migration.
+    inline auto contains(lane_id_t id) const -> bool { return has_lane(id); }
     // Branch reprojection compares source lane shape, ignoring generated IDs/presentation.
     [[nodiscard]] auto has_same_shape(const lane_layout_t& other) const -> bool;
 };
@@ -709,7 +711,6 @@ inline auto has_control_value(bms_control_kind_t kind) -> bool {
     return false;
 }
 
-inline auto has_positive_control_value(bms_control_kind_t kind) -> bool { return has_control_value(kind); }
 
 inline auto is_valid_control_kind(bms_control_kind_t kind) -> bool {
     switch (kind) {

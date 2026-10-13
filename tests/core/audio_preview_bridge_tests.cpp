@@ -635,7 +635,7 @@ TEST_CASE("preview bridge assist excludes music EOF and cannot extend completed 
     require_metronome(bridge.set_assist_grid(true, assist_grid(), 0));
     require_metronome(bridge.materialize_until(30'000, 0).scheduled_events == 1);
     require_metronome(bridge.materialize_until(30'000, 20'000).scheduled_events == 0);
-    require_metronome(bridge.exhausted());
+    require_metronome(bridge.is_exhausted());
     require_metronome(bridge.materialize_until(40'000, 22'050).scheduled_events == 0);
     const auto voices = transport.snapshot_active_voices(*started.token);
     require_metronome(voices.voices.size() == 1 && voices.voices.front().timeline_start_frame == 0);

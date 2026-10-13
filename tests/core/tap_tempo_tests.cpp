@@ -145,7 +145,7 @@ TEST_CASE("Tap tempo rejects invalid configuration and nonmonotonic taps", "[cor
     wormedit::tap_tempo_estimator_t zero_rate({0, 4});
     wormedit::tap_tempo_estimator_t zero_meter({sample_rate, 0});
     wormedit::tap_tempo_estimator_t huge_meter({sample_rate, 33});
-    CHECK(std::tuple{zero_rate.valid(), zero_meter.valid(), huge_meter.valid()} == std::tuple{false, false, false});
+    CHECK(std::tuple{zero_rate.is_valid(), zero_meter.is_valid(), huge_meter.is_valid()} == std::tuple{false, false, false});
     CHECK(zero_rate.tap(0) == wormedit::tap_tempo_result_t::invalid_configuration);
     wormedit::tap_tempo_estimator_t estimator;
     regular_taps(estimator, 123'456, beat_frames, 8);

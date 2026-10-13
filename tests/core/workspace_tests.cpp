@@ -188,7 +188,7 @@ TEST_CASE("workspace tabs retain chart, transport, and isolated logical focus",
     CHECK((workspace.comparison_charts == std::vector{chart_id_t{1}, chart_id_t{2}}));
 
     CHECK_FALSE(apply(workspace, song, workspace_switch_tab_action_t{workspace_tab_t::timing}));
-    CHECK_FALSE(workspace_tab_enabled(workspace_tab_t::timing));
+    CHECK_FALSE(is_workspace_tab_enabled(workspace_tab_t::timing));
     REQUIRE(apply(workspace, song, workspace_switch_tab_action_t{workspace_tab_t::metadata}));
     REQUIRE(apply(
         workspace, song,
@@ -450,8 +450,8 @@ TEST_CASE("storyboard is visible as a disabled placeholder and cannot be activat
     auto bound = workspace_controller_t::from(song);
     REQUIRE(bound);
     auto& workspace = *bound.workspace;
-    CHECK(workspace_tab_enabled(workspace_tab_t::setup));
-    CHECK_FALSE(workspace_tab_enabled(workspace_tab_t::storyboard));
+    CHECK(is_workspace_tab_enabled(workspace_tab_t::setup));
+    CHECK_FALSE(is_workspace_tab_enabled(workspace_tab_t::storyboard));
 
     const auto placeholder = workspace_view_t::from(workspace, song, workspace_tab_t::storyboard);
     REQUIRE(placeholder);

@@ -11,7 +11,7 @@
 namespace wormedit::win32_codepage {
 namespace {
 
-auto fits_int(std::size_t size) -> bool {
+auto can_fit_int(std::size_t size) -> bool {
     return size <= static_cast<std::size_t>(std::numeric_limits<int>::max());
 }
 
@@ -19,7 +19,7 @@ auto multibyte_to_wide(unsigned code_page, std::string_view input) -> std::optio
     if (input.empty()) {
         return std::wstring{};
     }
-    if (!fits_int(input.size())) {
+    if (!can_fit_int(input.size())) {
         return std::nullopt;
     }
     const auto count = static_cast<int>(input.size());
@@ -42,7 +42,7 @@ auto wide_to_multibyte(unsigned code_page, std::wstring_view wide, bool& used_de
     if (wide.empty()) {
         return std::string{};
     }
-    if (!fits_int(wide.size())) {
+    if (!can_fit_int(wide.size())) {
         return std::nullopt;
     }
     const auto count = static_cast<int>(wide.size());

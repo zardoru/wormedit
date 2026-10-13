@@ -10,7 +10,7 @@
 namespace wormedit {
 namespace {
 
-auto draw_ordered_before(const preview_visual_event_t& left, const preview_visual_event_t& right)
+auto visual_draw_order_less(const preview_visual_event_t& left, const preview_visual_event_t& right)
     -> bool {
     return std::tie(left.sample_frame, left.draw_order, left.source_order, left.object.value) <
            std::tie(right.sample_frame, right.draw_order, right.source_order, right.object.value);
@@ -34,7 +34,7 @@ auto layer_slot(visual_event_kind_t kind) -> std::optional<std::size_t> {
     return std::nullopt;
 }
 
-auto valid_kind(visual_event_kind_t kind) -> bool {
+auto is_valid_kind(visual_event_kind_t kind) -> bool {
     return static_cast<std::uint8_t>(kind) <=
            static_cast<std::uint8_t>(visual_event_kind_t::layer2);
 }
@@ -62,9 +62,9 @@ auto layer_value(bga_layer_state_t& state, std::size_t slot)
 auto bga_preview_queue_t::start(const preview_schedule_t& schedule, std::uint64_t sample_frame)
     -> bga_preview_position_result_t {
     if (schedule.sample_rate == 0 || schedule.bga.size() > maximum_events_ ||
-        !std::ranges::is_sorted(schedule.bga, draw_ordered_before) ||
+        !std::ranges::is_sorted(schedule.bga, visual_draw_order_less) ||
         !std::ranges::all_of(schedule.bga,
-                             [](const auto& event) { return valid_kind(event.kind); })) {
+                             [](const auto& event) { return is_valid_kind(event.kind); })) {
         return {
             .status = schedule.bga.size() > maximum_events_
                           ? bga_preview_status_t::capacity_exceeded

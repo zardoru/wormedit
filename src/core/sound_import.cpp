@@ -339,7 +339,7 @@ auto validate_import_group_name(const song_document_t& song,
                                 std::unordered_set<std::uint64_t>& existing_ids,
                                 std::string& name, document_command_result_t& result) -> bool {
     name = trim_group_name(group.name);
-    if (name.empty() || !text_util::valid_bounded_text(name, maximum_sound_group_name_bytes)) {
+    if (name.empty() || !text_util::is_valid_bounded_text(name, maximum_sound_group_name_bytes)) {
         reject(result, diagnostic_code_t::invalid_id, "sound group name must contain 1 to 64 bytes");
         return false;
     }

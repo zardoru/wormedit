@@ -14,7 +14,7 @@
 namespace wormedit {
 namespace {
 
-auto valid_pause_kind(pause_kind_t kind) -> bool {
+auto is_valid_pause_kind(pause_kind_t kind) -> bool {
     switch (kind) {
     case pause_kind_t::stop:
     case pause_kind_t::delay:
@@ -27,11 +27,11 @@ auto valid_pause_kind(pause_kind_t kind) -> bool {
 
 auto validate_pause_values(pause_kind_t kind, signed_rational_t duration, pause_unit_t unit,
                            document_command_result_t& result) -> bool {
-    if (!valid_pause_kind(kind)) {
+    if (!is_valid_pause_kind(kind)) {
         reject(result, diagnostic_code_t::invalid_resolution, "pause event has an unknown kind");
         return false;
     }
-    if (!valid_pause_unit(unit) ||
+    if (!is_valid_pause_unit(unit) ||
         (unit == pause_unit_t::bms_stop_ticks && kind != pause_kind_t::stop)) {
         reject(result, diagnostic_code_t::invalid_resolution,
                "BMS STOP ticks are valid only for stop events; pause kind and unit must agree");
@@ -260,7 +260,7 @@ auto insert_warp(pause_warp_edit_context_t& context, chart_document_t& chart,
         return;
     }
     if (!validate_span(chart, edit.span, context.result)) return;
-    if (!valid_warp_encoding(edit.source_encoding)) {
+    if (!is_valid_warp_encoding(edit.source_encoding)) {
         reject(context.result, diagnostic_code_t::invalid_resolution,
                "warp event has an unknown source encoding");
         return;
@@ -290,7 +290,7 @@ auto update_warp(pause_warp_edit_context_t& context, chart_document_t& chart,
     }
     auto* event = unique_event(chart, chart.warps, edit.event, "warp", context.result);
     if (!event || !validate_span(chart, edit.span, context.result)) return;
-    if (edit.source_encoding && !valid_warp_encoding(*edit.source_encoding)) {
+    if (edit.source_encoding && !is_valid_warp_encoding(*edit.source_encoding)) {
         reject(context.result, diagnostic_code_t::invalid_resolution,
                "warp event has an unknown source encoding");
         return;

@@ -63,7 +63,7 @@ auto string_field(const json& object, const char* key, bool required = false) ->
     return found->get<std::string>();
 }
 
-auto bool_field(const json& object, const char* key) -> bool {
+auto is_field_true(const json& object, const char* key) -> bool {
     const auto found = object.find(key);
     if (found == object.end()) return false;
     if (!found->is_boolean()) throw request_error_t{std::string("field '") + key + "' must be a boolean"};
@@ -126,7 +126,7 @@ void parse_policies(const json& object, conversion_request_t& conversion) {
     if (const auto name = string_field(object, "branches"); !name.empty())
         conversion.branches = lookup(branches, name, "branches");
     conversion.encoding = parse_encoding(string_field(object, "encoding"));
-    conversion.overwrite = bool_field(object, "overwrite");
+    conversion.overwrite = is_field_true(object, "overwrite");
     if (const auto found = object.find("stepmania"); found != object.end() && !found->is_null())
         conversion.stepmania = parse_stepmania_policy(*found);
 }
@@ -238,7 +238,7 @@ auto write_outputs(const conversion_result_t& converted, const std::filesystem::
 }
 
 auto prepare_cli_slices(const song_document_t& song, cli_request_t& request) -> std::optional<std::string> {
-    if (!conversion_needs_slice_spans(song, request.conversion)) return std::nullopt;
+    if (!is_conversion_needs_slice_spans(song, request.conversion)) return std::nullopt;
 #ifdef WORMEDIT_HAS_AUDIO_DECODER
     return prepare_conversion_slice_sources(song, request.conversion, request.input.parent_path());
 #else
@@ -301,7 +301,7 @@ auto run_request(const json& body) -> std::pair<int, json> {
         result["error"] = *conflict;
         return {1, result};
     }
-    const auto failure = conversion_needs_slice_spans(*opened.document, request.conversion)
+    const auto failure = is_conversion_needs_slice_spans(*opened.document, request.conversion)
         ? publish_cli_slices(*opened.document, request, converted, result["artifacts"])
         : write_outputs(converted, request.output_directory, result["artifacts"]);
     if (failure) {

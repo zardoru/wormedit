@@ -33,7 +33,7 @@ auto object_key(const song_document_t& song, const chart_document_t& chart,
         return event ? channel_key(chart, *event) : std::nullopt;
     return sound ? sound_selection_resource_key(song, chart, *sound) : std::nullopt;
 }
-auto in_range(const measure_index_t& index, local_position_t position,
+auto is_in_range(const measure_index_t& index, local_position_t position,
               std::optional<local_position_t> end, const sound_selection_query_t& query) -> bool {
     if (!query.visible)
         return true;
@@ -42,7 +42,7 @@ auto in_range(const measure_index_t& index, local_position_t position,
     return begin && tail && static_cast<double>(*begin) <= query.visible->end_row &&
            static_cast<double>(*tail) >= query.visible->begin_row;
 }
-auto layers_visible(std::span<const layer_id_t> layers, const chart_document_t& chart,
+auto has_visible_layer(std::span<const layer_id_t> layers, const chart_document_t& chart,
                     const sound_selection_query_t& query) -> bool {
     if (!query.visible)
         return true;
@@ -98,7 +98,7 @@ auto sound_match_index_t::from(const song_document_t& song, const chart_document
     -> sound_match_index_t {
     return sound_match_index_t::from(song, chart, query);
 }
-auto key_matches(const chart_document_t& chart, const sound_match_index_t& index,
+auto is_sound_key_match(const chart_document_t& chart, const sound_match_index_t& index,
                  std::optional<resource_id_t> sound, std::optional<object_id_t> event) -> bool {
     if (chart.source_family == format_family_t::bmson) {
         if (!event)
@@ -113,7 +113,7 @@ auto key_matches(const chart_document_t& chart, const sound_match_index_t& index
     const auto asset = index.resource_assets.find(sound->value);
     return asset != index.resource_assets.end() && index.assets.contains(asset->second);
 }
-auto lane_visible(const chart_document_t& chart, const note_t& note,
+auto is_lane_visible(const chart_document_t& chart, const note_t& note,
                   const sound_selection_query_t& query) -> bool {
     if (!query.visible)
         return true;
@@ -127,12 +127,12 @@ auto lane_visible(const chart_document_t& chart, const note_t& note,
            lane->role != lane_role_t::autoplay && lane->role != lane_role_t::mine;
 }
 template <typename Object>
-auto matches(const chart_document_t& chart, const sound_match_index_t& sounds,
+auto is_matching_selection(const chart_document_t& chart, const sound_match_index_t& sounds,
              const measure_index_t& index, const Object& object,
              const sound_selection_query_t& query) -> bool {
-    const bool same_sound = key_matches(chart, sounds, object.sound, object.sound_channel_event);
-    return same_sound && in_range(index, object.position, object.end, query) &&
-           layers_visible(object.semantic_layers, chart, query);
+    const bool same_sound = is_sound_key_match(chart, sounds, object.sound, object.sound_channel_event);
+    return same_sound && is_in_range(index, object.position, object.end, query) &&
+           has_visible_layer(object.semantic_layers, chart, query);
 }
 auto sound_bindings(const song_document_t& song, const chart_document_t& chart)
     -> std::unordered_map<std::uint64_t, sound_selection_key_t> {
@@ -224,15 +224,15 @@ auto select_same_sound(const song_document_t& song, const chart_document_t& char
     const auto sounds = sound_match_index_t::from(song, chart, query);
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes) {
-            if (!lane_visible(chart, note, query))
+            if (!is_lane_visible(chart, note, query))
                 continue;
-            if (matches(chart, sounds, *index, note, query))
+            if (is_matching_selection(chart, sounds, *index, note, query))
                 result.push_back({editor_selection_object_kind_t::note, note.id});
         }
     }
     for (const auto& measure : chart.measures)
         for (const auto& bgm : measure.bgm_events)
-            if (matches(chart, sounds, *index, bgm, query))
+            if (is_matching_selection(chart, sounds, *index, bgm, query))
                 result.push_back({editor_selection_object_kind_t::bgm_event, bgm.id});
     return result;
 }

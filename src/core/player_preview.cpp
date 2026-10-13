@@ -25,17 +25,17 @@ auto timing_error(const timing_diagnostic_t& source) -> diagnostic_t {
             .object = source.object};
 }
 
-auto valid_skin(player_preview_skin_t skin) -> bool {
+auto is_valid_skin(player_preview_skin_t skin) -> bool {
     return skin == player_preview_skin_t::neutral || skin == player_preview_skin_t::mania ||
            skin == player_preview_skin_t::arrows;
 }
 
-auto valid_direction(player_preview_scroll_direction_t direction) -> bool {
+auto is_valid_direction(player_preview_scroll_direction_t direction) -> bool {
     return direction == player_preview_scroll_direction_t::toward_top ||
            direction == player_preview_scroll_direction_t::toward_bottom;
 }
 
-auto visible_lane(const lane_definition_t& lane) -> bool {
+auto is_visible_lane(const lane_definition_t& lane) -> bool {
     return lane.role != lane_role_t::autoplay && lane.role != lane_role_t::invisible;
 }
 
@@ -49,26 +49,26 @@ auto glyph_for_skin(const lane_definition_t& lane, player_preview_skin_t skin) -
     return lane.glyph;
 }
 
-auto finite_positive(double value) -> bool {
+auto is_finite_positive(double value) -> bool {
     return std::isfinite(value) && value > 0.0;
 }
 
-auto valid_visual_layer(const std::optional<preview_visual_event_t>& event,
+auto is_valid_visual_layer(const std::optional<preview_visual_event_t>& event,
                         visual_event_kind_t expected_kind, std::uint64_t sample_frame) -> bool {
     return !event || (event->object && event->resource && event->kind == expected_kind &&
                       event->sample_frame <= sample_frame);
 }
 
-auto valid_visual_layers(const bga_layer_state_t& layers, std::uint64_t sample_frame) -> bool {
-    return valid_visual_layer(layers.background, visual_event_kind_t::background, sample_frame) &&
-           valid_visual_layer(layers.poor, visual_event_kind_t::poor, sample_frame) &&
-           valid_visual_layer(layers.layer, visual_event_kind_t::layer, sample_frame) &&
-           valid_visual_layer(layers.layer2, visual_event_kind_t::layer2, sample_frame) &&
-           valid_visual_layer(layers.video, visual_event_kind_t::video, sample_frame) &&
-           valid_visual_layer(layers.storyboard, visual_event_kind_t::storyboard, sample_frame);
+auto is_valid_visual_layers(const bga_layer_state_t& layers, std::uint64_t sample_frame) -> bool {
+    return is_valid_visual_layer(layers.background, visual_event_kind_t::background, sample_frame) &&
+           is_valid_visual_layer(layers.poor, visual_event_kind_t::poor, sample_frame) &&
+           is_valid_visual_layer(layers.layer, visual_event_kind_t::layer, sample_frame) &&
+           is_valid_visual_layer(layers.layer2, visual_event_kind_t::layer2, sample_frame) &&
+           is_valid_visual_layer(layers.video, visual_event_kind_t::video, sample_frame) &&
+           is_valid_visual_layer(layers.storyboard, visual_event_kind_t::storyboard, sample_frame);
 }
 
-auto valid_storyboard_instance(const storyboard_draw_instance_t& instance) -> bool {
+auto is_valid_storyboard_instance(const storyboard_draw_instance_t& instance) -> bool {
     return instance.stable_id != 0 && instance.layer_order <= 4 && !instance.layer.empty() &&
            !instance.origin.empty() && !instance.path.empty() && std::isfinite(instance.x) &&
            std::isfinite(instance.y) && std::isfinite(instance.scale_x) &&
@@ -235,14 +235,14 @@ auto append_index_note(player_preview_index_t& index,
          .semantic_color = source.semantic_color});
 }
 
-auto valid_scene_request(const player_preview_index_t& index,
+auto is_valid_scene_request(const player_preview_index_t& index,
                          const player_preview_scene_request_t& request) -> bool {
     return index.chart && index.document_revision != 0 && request.sample_rate != 0 &&
-           finite_positive(request.viewport_width_pixels) &&
-           finite_positive(request.viewport_height_pixels) &&
-           finite_positive(request.pixels_per_beat) &&
-           finite_positive(request.note_head_height_pixels) &&
-           finite_positive(request.receptor_height_pixels) &&
+           is_finite_positive(request.viewport_width_pixels) &&
+           is_finite_positive(request.viewport_height_pixels) &&
+           is_finite_positive(request.pixels_per_beat) &&
+           is_finite_positive(request.note_head_height_pixels) &&
+           is_finite_positive(request.receptor_height_pixels) &&
            std::isfinite(request.receptor_y_pixels) && request.receptor_y_pixels >= 0.0 &&
            request.receptor_y_pixels <= request.viewport_height_pixels &&
            std::isfinite(request.split_stage_gutter_pixels) &&
@@ -252,10 +252,10 @@ auto valid_scene_request(const player_preview_index_t& index,
            request.maximum_composition_operations != 0 &&
            request.maximum_storyboard_instances != 0 &&
            request.storyboard_instances.size() <= request.maximum_storyboard_instances &&
-           std::ranges::all_of(request.storyboard_instances, valid_storyboard_instance) &&
-           valid_skin(request.skin) && valid_direction(request.direction) &&
-           valid_visual_fit_policy(request.visual_fit) && !index.layouts.empty() &&
-           valid_visual_layers(request.visual_layers, request.sample_frame) &&
+           std::ranges::all_of(request.storyboard_instances, is_valid_storyboard_instance) &&
+           is_valid_skin(request.skin) && is_valid_direction(request.direction) &&
+           is_valid_visual_fit_policy(request.visual_fit) && !index.layouts.empty() &&
+           is_valid_visual_layers(request.visual_layers, request.sample_frame) &&
            !index.timing.rows.empty() && index.note_tree_leaf_base != 0 &&
            index.note_tree_max_end.size() == index.note_tree_leaf_base * 2;
 }
@@ -281,7 +281,7 @@ auto visible_sorted_lanes(const editor_field_scene_layout_source_t& layout)
     -> std::vector<const lane_definition_t*> {
     std::vector<const lane_definition_t*> lanes;
     for (const auto& lane : layout.layout.lanes) {
-        if (visible_lane(lane)) {
+        if (is_visible_lane(lane)) {
             lanes.push_back(&lane);
         }
     }
@@ -371,7 +371,7 @@ auto player_preview_scene_t::from(const player_preview_index_t& index,
                                   const player_preview_scene_request_t& request)
     -> player_preview_scene_result_t {
     player_preview_scene_result_t result;
-    if (!valid_scene_request(index, request)) {
+    if (!is_valid_scene_request(index, request)) {
         result.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                                            "player-preview scene request or index is invalid"));
         return result;
@@ -446,7 +446,7 @@ auto player_preview_scene_t::from(const player_preview_index_t& index,
     const auto gutter = active_layout->layout.split_stage ? request.split_stage_gutter_pixels : 0.0;
     const auto lane_width =
         (request.viewport_width_pixels - gutter) / static_cast<double>(lanes.size());
-    if (!finite_positive(lane_width)) {
+    if (!is_finite_positive(lane_width)) {
         result.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                                            "player-preview lanes do not fit the viewport"));
         return result;

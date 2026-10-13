@@ -31,7 +31,7 @@ auto channel_events(const sound_channel_t& channel) -> event_ids_t {
     for (const auto& event : channel.events) ids.insert(event.id.value);
     return ids;
 }
-auto belongs(const bgm_event_t& event, const event_ids_t& ids) -> bool {
+auto is_channel_event(const bgm_event_t& event, const event_ids_t& ids) -> bool {
     return event.sound_channel_event && ids.contains(event.sound_channel_event->value);
 }
 
@@ -56,7 +56,7 @@ auto make_stem(chart_document_t& chart, const sound_channel_t& channel,
     }
     for (auto& measure : chart.measures)
         for (auto& event : measure.bgm_events)
-            if (belongs(event, ids)) event.source_lane = lane->id;
+            if (is_channel_event(event, ids)) event.source_lane = lane->id;
     return {};
 }
 
@@ -76,12 +76,12 @@ auto pack_channel(chart_document_t& chart, const sound_channel_t& channel,
         [&](const auto& lane) { return lane.stem_channel == channel.id; });
     for (auto& measure : allocation.measures) {
         for (const auto& event : measure.bgm_events) {
-            if (!belongs(event, ids)) continue;
+            if (!is_channel_event(event, ids)) continue;
             selected.push_back(event.id);
             measure.notes.push_back({.id = event.id, .position = event.position,
                 .sound = event.sound, .branch = event.branch});
         }
-        std::erase_if(measure.bgm_events, [&](const auto& event) { return belongs(event, ids); });
+        std::erase_if(measure.bgm_events, [&](const auto& event) { return is_channel_event(event, ids); });
     }
     if (selected.empty()) return {};
     return plan_notes_to_bgm(allocation, resources, selected, std::nullopt, policy);
@@ -159,7 +159,7 @@ auto empty_channel_binding(const empty_bindings_t& index, const resource_entry_t
     if (!result.ambiguous) result.channel = channels->second.front();
     return result;
 }
-auto already_matches(const song_document_t& document, const chart_document_t& chart,
+auto is_lane_mode_current(const song_document_t& document, const chart_document_t& chart,
                      const sound_channel_t& channel, std::span<const resource_id_t> resources,
                      bmson_channel_lane_mode_t mode) -> bool {
     const auto kind = mode == bmson_channel_lane_mode_t::stem ? sound_kind_t::stem : sound_kind_t::keysound;
@@ -173,7 +173,7 @@ auto already_matches(const song_document_t& document, const chart_document_t& ch
         const auto ids = channel_events(channel);
         for (const auto& measure : chart.measures)
             for (const auto& event : measure.bgm_events)
-                if (belongs(event, ids) && event.source_lane != lane->id) return false;
+                if (is_channel_event(event, ids) && event.source_lane != lane->id) return false;
     }
     return true;
 }
@@ -219,7 +219,7 @@ auto set_bmson_channel_lane_mode(document_history_t& history, std::uint64_t expe
         [](const auto& event) { return event.continuation; });
     if (mode == bmson_channel_lane_mode_t::packed && continues && !convert_continuations_to_restarts)
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "continuation points need a stem lane");
-    if (!convert_continuations_to_restarts && already_matches(proposed, *chart, *channel, resources, mode))
+    if (!convert_continuations_to_restarts && is_lane_mode_current(proposed, *chart, *channel, resources, mode))
         return {.revision = revision};
     const auto ids = channel_events(*channel);
     if (mode == bmson_channel_lane_mode_t::stem) {
@@ -227,7 +227,7 @@ auto set_bmson_channel_lane_mode(document_history_t& history, std::uint64_t expe
         if (!error.empty()) return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, error);
     } else {
         const auto plan = pack_channel(*chart, *channel, ids, proposed.resources, policy);
-        if (!plan.accepted()) return {.revision = revision, .diagnostics = plan.diagnostics};
+        if (!plan.is_accepted()) return {.revision = revision, .diagnostics = plan.diagnostics};
         apply_packing(*chart, *channel, plan);
         if (convert_continuations_to_restarts)
             for (auto& event : channel->events) event.continuation = false;

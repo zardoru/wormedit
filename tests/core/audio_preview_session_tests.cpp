@@ -100,10 +100,10 @@ auto preview_session_survives_underrun_and_completes() -> bool {
     const auto underrun = session.render(output);
     const bool underrun_kept_session =
         underrun.status == preview_session_render_status_t::underrun &&
-        underrun.mix.dropped_voices == 1 && session.active() && session.timeline_frame() == 32;
+        underrun.mix.dropped_voices == 1 && session.is_active() && session.timeline_frame() == 32;
     const auto completed = session.render(output);
     return underrun_kept_session && completed.status == preview_session_render_status_t::complete &&
-           completed.first_timeline_frame == 32 && !session.active();
+           completed.first_timeline_frame == 32 && !session.is_active();
 }
 
 auto contiguous_music_segments(const wormedit::audio::active_voice_snapshot_t& active) -> bool {
@@ -337,7 +337,7 @@ TEST_CASE("preview session primes advances refills and completes one chart timel
     CHECK(started.materialize->scheduled_events == 2);
     REQUIRE(started.prime.has_value());
     CHECK(started.prime->overlapping_voices == 2);
-    CHECK(session.active());
+    CHECK(session.is_active());
 
     std::vector<float> first(512 * output_channel_count);
     const auto first_render = session.render(first);
@@ -353,7 +353,7 @@ TEST_CASE("preview session primes advances refills and completes one chart timel
     CHECK(completed.status == preview_session_render_status_t::complete);
     CHECK(completed.first_timeline_frame == 512);
     CHECK(any_nonzero(tail));
-    CHECK_FALSE(session.active());
+    CHECK_FALSE(session.is_active());
     CHECK(session.timeline_frame() == 0);
 }
 
@@ -475,7 +475,7 @@ TEST_CASE("preview session keeps the visual timeline moving through unavailable 
 
     std::vector<float> output(32 * output_channel_count, 1.0F);
     const auto first = session.render(output);
-    const bool first_active = session.active();
+    const bool first_active = session.is_active();
     const auto first_frame = session.timeline_frame();
     const bool silent = std::ranges::all_of(output, [](float sample) { return sample == 0.0F; });
 
@@ -484,7 +484,7 @@ TEST_CASE("preview session keeps the visual timeline moving through unavailable 
         started.materialize->missing_sources == 1,
         first.status == preview_session_render_status_t::mixed,
         first_active, first_frame == 32, silent,
-        final.status == preview_session_render_status_t::complete, !session.active(),
+        final.status == preview_session_render_status_t::complete, !session.is_active(),
     };
     CHECK(std::ranges::all_of(checks, [](bool value) { return value; }));
 }
@@ -556,7 +556,7 @@ TEST_CASE("Stop cancels pending preview work and external generation changes cle
     expect_pending(fixture.cache.stats().entries == 0);
     expect_pending(fixture.session.start(fixture.schedule, std::span{&fixture.binding, 1}));
     static_cast<void>(fixture.transport.stop());
-    expect_pending(!fixture.session.active());
+    expect_pending(!fixture.session.is_active());
     expect_pending(fixture.session.timeline_frame() == 0);
     expect_pending(!fixture.session.playhead().active);
 }
@@ -648,7 +648,7 @@ TEST_CASE("in-flight old preview pump cannot activate rapid-seek audio or undo S
     expect_pending(std::ranges::all_of(output, [](float value) { return value == -0.5F; }));
     in_flight_preview_fixture_t stopped;
     expect_pending(stopped.supersede_blocked_pump(true));
-    expect_pending(!stopped.session.active());
+    expect_pending(!stopped.session.is_active());
     expect_pending(!stopped.session.pump());
 }
 

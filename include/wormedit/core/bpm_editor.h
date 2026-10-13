@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/command.h>
+#include <wormedit/core/result.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -64,6 +65,21 @@ using bpm_edit_action_t =
     -> document_command_result_t;
 
 struct beat_interval_drag_t {
+    [[nodiscard]] static auto from(const song_document_t& document, chart_id_t chart,
+                                  object_id_t bpm_event, local_position_t beat,
+                                  std::uint32_t sample_rate, bool timing_locked = false)
+        -> diagnosed_t<std::optional<beat_interval_drag_t>>;
+    [[nodiscard]] static auto from(const song_document_t& document, chart_id_t chart,
+                                  local_position_t anchor, local_position_t beat,
+                                  std::uint32_t sample_rate, bool timing_locked = false)
+        -> diagnosed_t<std::optional<beat_interval_drag_t>>;
+    [[nodiscard]] auto revise(const song_document_t& document, std::uint64_t target_sample_frame,
+                              bool timing_locked = false) const
+        -> diagnosed_t<std::optional<beat_interval_drag_t>>;
+    [[nodiscard]] auto revise(const song_document_t& document, signed_rational_t target_bpm,
+                              bool timing_locked = false) const
+        -> diagnosed_t<std::optional<beat_interval_drag_t>>;
+
     chart_id_t chart;
     std::uint64_t document_revision{};
     // Existing BPM event being updated, or a placeholder id when insert_bpm is set.
@@ -81,7 +97,12 @@ struct beat_interval_drag_t {
     signed_rational_t snap_step{1, 1};
 };
 
+using beat_interval_drag_outcome_t = diagnosed_t<std::optional<beat_interval_drag_t>>;
+
 struct beat_interval_drag_result_t {
+    [[nodiscard]] static auto from(beat_interval_drag_outcome_t&& outcome)
+        -> beat_interval_drag_result_t;
+
     std::optional<beat_interval_drag_t> drag;
     diagnostic_list_t diagnostics;
 

@@ -395,8 +395,8 @@ void project_compose_proposed_grid(flattened_workspace_t& flattened,
         view.truncated = true;
         return;
     }
-    const compose_chart_scope_t<> scope{
-        {chart, cache.scene.index->measures}, source_view, downscroll, pixels_per_row};
+    const auto scope = compose_chart_scope_t<>::from(
+        {chart, cache.scene.index->measures}, source_view, downscroll, pixels_per_row);
     proposed_grid_context_t projection{scope,    flattened,   cache,           original,
                                        proposed, interaction, *composed.scene, *rows};
     append_proposed_grid_lines(projection);

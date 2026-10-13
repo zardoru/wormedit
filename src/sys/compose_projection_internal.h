@@ -139,8 +139,7 @@ void populate_lane_layout_segments(flattened_workspace_t& flattened,
 
 namespace wormedit::sys::compose_projection_detail {
 struct compose_scene_projection_context_t {
-    const compose_frame_inputs_t& frame;
-    const compose_chart_scope_t<>& scope;
+    const compose_projection_context_t<>& inputs;
     const wormedit::editor_field_scene_index_t& index;
     const wormedit::editor_field_scene_t& scene;
     double field_left_pixels;
@@ -149,7 +148,7 @@ struct compose_scene_projection_context_t {
     const compose_bga_move_preview_input_t* bga_move_preview{};
     std::uint64_t bga_move_snap_denominator{};
     auto history() const -> const wormedit::document_history_t& {
-        return frame.history;
+        return inputs.history();
     }
 };
 
@@ -200,8 +199,8 @@ auto compose_endpoint_snap_class(const compose_scene_projection_context_t& proje
     return wormedit::ui::note_snap_class(
         compose_measure_local_row(
             projection.index.measures, tail ? source.end_row : source.begin_row,
-            projection.scope.chart_scope.chart.divisions_per_standard_measure),
-        projection.scope.chart_scope.chart.divisions_per_standard_measure);
+            projection.inputs.scope.chart_scope.chart.divisions_per_standard_measure),
+        projection.inputs.scope.chart_scope.chart.divisions_per_standard_measure);
 }
 
 template <class T>
@@ -258,14 +257,14 @@ void project_compose_draft_marker(const compose_scene_projection_context_t& proj
                                   const auto& marker,
                                   const wormedit::editor_field_rect_t* bgm_bounds) {
     const auto& scene = projection.scene;
-    const auto& view = projection.frame.view();
-    const auto& interaction_view = projection.scope.interaction_view;
+    const auto& view = projection.inputs.frame.view();
+    const auto& interaction_view = projection.inputs.scope.interaction_view;
     const auto row = wormedit::absolute_row(projection.index.measures, marker.position);
     if (!row)
         return;
-    const auto y = compose_project_y(*row, projection.scope.pixels_per_row,
+    const auto y = compose_project_y(*row, projection.inputs.scope.pixels_per_row,
                                      interaction_view.viewport_scroll_pixels,
-                                     view.viewport_height_pixels, projection.scope.downscroll);
+                                     view.viewport_height_pixels, projection.inputs.scope.downscroll);
     if (y < -8.0 || y > view.viewport_height_pixels + 8.0)
         return;
     const wormedit::editor_field_rect_t* bounds = bgm_bounds;
@@ -278,7 +277,7 @@ void project_compose_draft_marker(const compose_scene_projection_context_t& proj
     }
     if (!bounds)
         return;
-    projection.frame.flattened.compose.bgm.draft.push_back(
+    projection.inputs.frame.flattened.compose.bgm.draft.push_back(
         {.bounds = {bounds->left, y - 8.0, bounds->right, y + 8.0},
          .restart = marker.restart,
          .playable = marker.playable_lane.has_value()});
@@ -508,18 +507,11 @@ auto compose_timing_marker_selected(const wormedit::editor_interaction_view_mode
 auto compose_bga_event_selected(const wormedit::editor_interaction_view_model_t& interaction,
                                 std::uint64_t id) -> bool;
 
-struct compose_marker_projection_context_t {
-    const compose_frame_inputs_t& frame;
-    const compose_chart_scope_t<>& scope;
-    auto cache() const -> const compose_scene_cache_t& {
-        return frame.cache;
-    }
-};
 
-void project_compose_beat_markers(const compose_marker_projection_context_t& input);
+void project_compose_beat_markers(const compose_projection_context_t<>& input);
 
 std::optional<double>
-project_compose_audio_marker_y(const compose_marker_projection_context_t& input,
+project_compose_audio_marker_y(const compose_projection_context_t<>& input,
                                const auto& timing_index, std::int64_t milliseconds) {
     const auto projected = timing_index.row_at(wormedit::signed_rational_t{milliseconds, 1'000});
     if (!projected || !projected.absolute_row || projected.absolute_row->denominator == 0)
@@ -540,7 +532,7 @@ project_compose_audio_marker_y(const compose_marker_projection_context_t& input,
 
 bool compose_audio_marker_y_visible(double y, const WormUiComposeView& view);
 
-void project_compose_audio_bookmarks(const compose_marker_projection_context_t& input,
+void project_compose_audio_bookmarks(const compose_projection_context_t<>& input,
                                      const auto& timing_index) {
     for (std::size_t index = 0; index < input.frame.view().audio_bookmark_count; ++index) {
         auto& bookmark = input.frame.flattened.compose.audio_marker.bookmark[index];
@@ -553,7 +545,7 @@ void project_compose_audio_bookmarks(const compose_marker_projection_context_t& 
     }
 }
 
-void project_compose_audio_sections(const compose_marker_projection_context_t& input,
+void project_compose_audio_sections(const compose_projection_context_t<>& input,
                                     const auto& timing_index) {
     auto& view = input.frame.view();
     for (std::size_t index = 0; index < view.audio_section_count; ++index) {
@@ -581,11 +573,10 @@ void project_compose_audio_sections(const compose_marker_projection_context_t& i
     }
 }
 
-void project_compose_audio_markers(const compose_marker_projection_context_t& input);
+void project_compose_audio_markers(const compose_projection_context_t<>& input);
 
 void project_compose_markers(
-    const compose_frame_inputs_t& frame,
-    const compose_chart_scope_t<wormedit::editor_interaction_view_model_t>& source);
+    const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& source);
 
 auto cached_compose_timing_payloads(const wormedit::song_document_t& document,
                                     const wormedit::chart_document_t& chart,
@@ -850,17 +841,13 @@ inspect_compose_interaction(const compose_interaction_population_context_t& inpu
 std::optional<wormedit::editor_interaction_view_model_t>
 prepare_compose_interaction(const compose_interaction_population_context_t& input);
 
-struct compose_final_projection_context_t {
-    compose_frame_inputs_t& frame;
-    const compose_chart_scope_t<wormedit::editor_interaction_view_model_t>& scope;
-};
 
 WormUiComposeSelectionMode
 compose_scalar_selection_mode(wormedit::editor_area_selection_mode_t mode);
 
-std::uint64_t prepare_compose_projection_state(const compose_final_projection_context_t& input);
+std::uint64_t prepare_compose_projection_state(const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input);
 
-void populate_compose_pending_previews(const compose_final_projection_context_t& input);
+void populate_compose_pending_previews(const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input);
 
 template <class T> auto compose_vector_bytes(const std::vector<T>& values) -> std::size_t {
     return values.capacity() * sizeof(T);
@@ -976,7 +963,7 @@ void discard_scalar_projection(flattened_workspace_t& flattened);
 auto reusable_scalar_source(const compose_scene_cache_t& cache, const WormUiComposeView& view)
     -> bool;
 
-auto project_reused_scalar_scene(const compose_final_projection_context_t& input, double field_left,
+auto project_reused_scalar_scene(const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input, double field_left,
                                  double field_width, double pixels_per_row, bool downscroll,
                                  bool bindings_truncated) -> bool;
 
@@ -987,7 +974,7 @@ void prepare_compose_bgm_widths(const wormedit::chart_document_t& chart, std::ui
 auto compose_has_bgm_pane(const chart_document_t& chart,
                           const editor_interaction_view_model_t& view) -> bool;
 
-bool compose_project_scene(const compose_final_projection_context_t& input,
+bool compose_project_scene(const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input,
                            std::uint64_t canvas_rows);
 
 void append_area_object_geometry(wormedit::editor_area_geometry_snapshot_t& snapshot,
@@ -1004,7 +991,7 @@ void append_area_timing_geometry(wormedit::editor_area_geometry_snapshot_t& snap
 void append_area_visual_geometry(wormedit::editor_area_geometry_snapshot_t& snapshot,
                                  const WormUiComposeView& view, bool downscroll);
 
-void cache_area_object_geometry(const compose_final_projection_context_t& input);
+void cache_area_object_geometry(const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input);
 
 auto paste_timing_ghost_lane(const wormedit::chart_clipboard_payload_t& object)
     -> std::optional<WormUiTimingLaneKind>;
@@ -1012,20 +999,20 @@ auto paste_timing_ghost_lane(const wormedit::chart_clipboard_payload_t& object)
 auto paste_timing_ghost_span(const wormedit::chart_clipboard_payload_t& object)
     -> std::pair<wormedit::local_position_t, wormedit::local_position_t>;
 
-void append_paste_timing_ghosts(const compose_final_projection_context_t& input,
+void append_paste_timing_ghosts(const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input,
                                 application_command_state_t::paste_session_t& session);
 
-void populate_compose_paste_projection(const compose_final_projection_context_t& input);
+void populate_compose_paste_projection(const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input);
 
-auto compose_paint_head_occupied(const compose_final_projection_context_t& input,
+auto compose_paint_head_occupied(const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input,
                                  const wormedit::editor_hit_target_t& target, std::uint64_t row)
     -> bool;
 
-void populate_compose_paint_ghost(const compose_final_projection_context_t& input);
+void populate_compose_paint_ghost(const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input);
 
-void populate_compose_bgm_mix(const compose_final_projection_context_t& input);
+void populate_compose_bgm_mix(const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input);
 
-void populate_compose_final_projection(const compose_final_projection_context_t& input);
+void populate_compose_final_projection(const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input);
 
 void populate_bgm_only_compose_projection(
     flattened_workspace_t& flattened, wormedit::document_history_t& history,

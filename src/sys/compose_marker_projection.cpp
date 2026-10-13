@@ -365,7 +365,7 @@ auto compose_bga_event_selected(const wormedit::editor_interaction_view_model_t&
            });
 }
 
-void project_compose_beat_markers(const compose_marker_projection_context_t& input) {
+void project_compose_beat_markers(const compose_projection_context_t<>& input) {
     auto& flattened = input.frame.flattened;
     const auto& interaction_view = input.scope.interaction_view;
     auto& view = input.frame.view();
@@ -417,7 +417,7 @@ bool compose_audio_marker_y_visible(double y, const WormUiComposeView& view) {
     return std::isfinite(y) && y >= 0.0 && y <= view.viewport_height_pixels;
 }
 
-void project_compose_audio_markers(const compose_marker_projection_context_t& input) {
+void project_compose_audio_markers(const compose_projection_context_t<>& input) {
     if (!input.cache().timing.marker_timing_index)
         return;
     const auto& timing_index = *input.cache().timing.marker_timing_index;
@@ -426,11 +426,9 @@ void project_compose_audio_markers(const compose_marker_projection_context_t& in
 }
 
 void project_compose_markers(
-    const compose_frame_inputs_t& frame,
-    const compose_chart_scope_t<wormedit::editor_interaction_view_model_t>& source) {
-    const compose_chart_scope_t<> scope{source.chart_scope, source.interaction_view,
-                                        source.downscroll, source.pixels_per_row};
-    const compose_marker_projection_context_t input{frame, scope};
+    const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& source) {
+    const auto scope = source.scope.for_view(std::as_const(source.scope.interaction_view));
+    const auto input = compose_projection_context_t<>::from(source.frame, scope);
     project_compose_beat_markers(input);
     project_compose_audio_markers(input);
 }

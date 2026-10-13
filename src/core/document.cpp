@@ -25,6 +25,7 @@ auto error(diagnostic_code_t code, std::string message, std::optional<object_id_
 
 
 namespace {
+using wormedit::text_util::ascii_lowercase;
 template<class Values, class Id>
 auto find_id(Values& values, Id id) -> decltype(&values.front()) {
     for (auto& value : values) if (value.id == id) return &value;
@@ -1600,10 +1601,6 @@ auto validate_song_resources(document_validation_work_t& work) -> void {
     }
 }
 
-auto ascii_fold(std::string_view text) -> std::string {
-    return text_util::ascii_fold(std::string{text});
-}
-
 auto validate_song_sound_groups(const song_document_t& song, diagnostic_list_t& diagnostics)
     -> void {
     check_unique_ids(diagnostics, song.sound_groups, [](const auto& group) { return group.id; },
@@ -1613,7 +1610,7 @@ auto validate_song_sound_groups(const song_document_t& song, diagnostic_list_t& 
     std::unordered_set<std::uint64_t> populated;
     for (const auto& group : song.sound_groups) {
         if (group.id) group_ids.insert(group.id.value);
-        const auto folded = ascii_fold(group.name);
+        const auto folded = ascii_lowercase(group.name);
         const auto first = group.name.find_first_not_of(" \t\n\r\f\v");
         const auto last = group.name.find_last_not_of(" \t\n\r\f\v");
         if (group.name.empty() || group.name.size() > 64 || group.name.find('\0') != std::string::npos ||

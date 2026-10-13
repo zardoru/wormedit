@@ -1,3 +1,4 @@
+#include "core/text_util.h"
 #include <wormedit/core/rational.h>
 #include "sys/bookmark_navigation.h"
 
@@ -5,7 +6,6 @@
 
 #include <algorithm>
 #include <cstdio>
-#include <cctype>
 #include <iterator>
 #include <limits>
 #include <tuple>
@@ -92,7 +92,7 @@ auto ordered_before(const ordered_row_t& left, const ordered_row_t& right) -> bo
 auto matches_query(std::string_view label, std::string_view query) -> bool {
     return std::search(label.begin(), label.end(), query.begin(), query.end(),
         [](unsigned char left, unsigned char right) {
-            return std::tolower(left) == std::tolower(right);
+            return wormedit::text_util::ascii_iequal(static_cast<char>(left), static_cast<char>(right));
         }) != label.end();
 }
 

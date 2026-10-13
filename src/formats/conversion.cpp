@@ -114,7 +114,7 @@ auto slug(std::string_view source, std::string_view fallback, std::size_t capaci
                 result.push_back('-');
             separator = false;
             if (result.size() < capacity)
-                result.push_back(static_cast<char>(text_util::ascii_fold(static_cast<char>(value))));
+                result.push_back(static_cast<char>(text_util::ascii_lowercase(static_cast<char>(value))));
         } else {
             separator = true;
         }

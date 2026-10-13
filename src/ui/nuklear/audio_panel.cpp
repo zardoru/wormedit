@@ -1,3 +1,4 @@
+#include "core/text_util.h"
 #include "ui/field/rect.h"
 #include "ui/nuklear/bmson_lane_mode_ui.h"
 #include "ui/nuklear/audio_panel.h"
@@ -22,6 +23,7 @@
 #include <vector>
 
 namespace {
+using wormedit::text_util::ascii_lowercase;
 
 auto& audio = worm_ui_nuklear_audio_state();
 
@@ -407,15 +409,6 @@ void render_waveform_column(struct nk_context* context, const WormUiAudioSlicesV
     }
 }
 
-auto folded(const char* text) -> std::string {
-    std::string result = text ? text : "";
-    for (auto& c : result) {
-        if (c >= 'A' && c <= 'Z')
-            c = static_cast<char>(c + 32);
-    }
-    return result;
-}
-
 auto sound_usage_kind_name(int kind) -> const char* {
     switch (kind) {
     case 0:
@@ -439,8 +432,8 @@ auto row_matches(const WormUiSoundRowView& row, const std::string& needle) -> bo
     if (needle.empty()) {
         return true;
     }
-    return folded(row.name).find(needle) != std::string::npos ||
-           folded(row.tags_text).find(needle) != std::string::npos;
+    return ascii_lowercase(row.name ? row.name : "").find(needle) != std::string::npos ||
+           ascii_lowercase(row.tags_text ? row.tags_text : "").find(needle) != std::string::npos;
 }
 
 void select_sound(const WormUiAudioSlicesView& view, const WormUiSoundRowView& row,
@@ -472,7 +465,7 @@ using sound_rows_t = std::vector<const WormUiSoundRowView*>;
 
 auto filtered_sound_rows(const WormUiAudioSlicesView& view) -> sound_rows_t {
     sound_rows_t rows;
-    const auto needle = folded(audio.search_text);
+    const auto needle = ascii_lowercase(audio.search_text);
     for (std::size_t index = 0; index < view.sound_row_count; ++index)
         if (row_matches(view.sound_rows[index], needle)) rows.push_back(&view.sound_rows[index]);
     return rows;

@@ -3,7 +3,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <cstdint>
 #include <iterator>
 #include <optional>
@@ -795,7 +794,7 @@ auto make_stepmania_profile(std::string_view step_type,
 
 auto stepmania_lane_specs(std::string_view step_type) -> std::span<const stepmania_lane_spec_t> {
     const auto same = [&](std::string_view name) {
-        return std::ranges::equal(step_type, name, text_util::ascii_iequal);
+        return text_util::ascii_iequal(step_type, name);
     };
     if (same("pump-single"))
         return pump_single_specs;
@@ -1268,7 +1267,7 @@ constexpr std::array project_layouts{
 auto stepmania_step_types() -> std::span<const stepmania_step_type_descriptor_t> { return step_types; }
 auto stepmania_key_count(std::string_view step_type) -> std::optional<std::uint32_t> {
     for (const auto& entry : step_types)
-        if (std::ranges::equal(entry.id, step_type, text_util::ascii_iequal)) return entry.keys;
+        if (text_util::ascii_iequal(entry.id, step_type)) return entry.keys;
     return std::nullopt;
 }
 auto default_stepmania_step_type(std::size_t keys) -> std::string_view {

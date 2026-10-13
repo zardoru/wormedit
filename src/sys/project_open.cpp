@@ -1,3 +1,4 @@
+#include "core/text_util.h"
 #include "sys/project_open.h"
 #include "sys/project_view.h"
 
@@ -11,7 +12,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
@@ -26,17 +26,11 @@
 
 namespace wormedit::sys {
 namespace {
+using wormedit::text_util::ascii_lowercase;
+using text_util::lowercase_extension;
 
 constexpr std::size_t chart_source_limit = 16U * 1024U * 1024U;
 constexpr std::size_t native_source_limit = 64U * 1024U * 1024U;
-
-auto lowercase_extension(const std::filesystem::path& path) -> std::string {
-    auto extension = path.extension().string();
-    std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char value) {
-        return static_cast<char>(std::tolower(value));
-    });
-    return extension;
-}
 
 auto supported_source_limit(std::string_view extension) -> std::size_t {
     if (extension == ".wormedit") return native_source_limit;
@@ -90,15 +84,6 @@ auto utf8_path(const std::filesystem::path& path) -> std::string {
     return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
 }
 
-auto ascii_lower(std::string value) -> std::string {
-    std::transform(value.begin(), value.end(), value.begin(), [](char character) {
-        return character >= 'A' && character <= 'Z'
-                   ? static_cast<char>(character - 'A' + 'a')
-                   : character;
-    });
-    return value;
-}
-
 struct bms_asset_directory_inventory_t {
     std::map<std::string, std::vector<std::filesystem::path>> directories;
     std::map<std::pair<std::string, std::string>, std::vector<std::filesystem::path>> files;
@@ -119,10 +104,10 @@ auto directory_inventory(bms_asset_directory_cache_t& cache,
         std::error_code type_error;
         const auto path = entry->path();
         if (entry->is_directory(type_error) && !type_error) {
-            inventory.directories[ascii_lower(utf8_path(path.filename()))].push_back(path);
+            inventory.directories[ascii_lowercase(utf8_path(path.filename()))].push_back(path);
         } else if (entry->is_regular_file(type_error) && !type_error) {
-            inventory.files[{ascii_lower(utf8_path(path.stem())),
-                             ascii_lower(utf8_path(path.extension()))}]
+            inventory.files[{ascii_lowercase(utf8_path(path.stem())),
+                             ascii_lowercase(utf8_path(path.extension()))}]
                 .push_back(path);
         }
     }
@@ -164,8 +149,8 @@ auto resolved_asset_directory(const std::filesystem::path& source,
             warning = "Unsafe " + std::string(label) + " path: " + utf8_path(source);
             return std::nullopt;
         }
-        const auto folded_name = ascii_lower(utf8_path(part));
-        const auto& matches = matching_directories(cache, directory, folded_name);
+        const auto lowercase_name = ascii_lowercase(utf8_path(part));
+        const auto& matches = matching_directories(cache, directory, lowercase_name);
         const auto exact = std::find_if(matches.begin(), matches.end(), [&](const auto& match) {
             return match.filename() == part;
         });
@@ -213,8 +198,8 @@ auto existing_bms_asset_path(const std::filesystem::path& source,
     const auto label = std::string(format) + " " + std::string(kind);
     const auto directory = resolved_asset_directory(normalized, asset_base, cache, label, warning);
     if (!directory) return std::nullopt;
-    const auto stem = ascii_lower(utf8_path(normalized.stem()));
-    const auto authored_extension = ascii_lower(utf8_path(normalized.extension()));
+    const auto stem = ascii_lowercase(utf8_path(normalized.stem()));
+    const auto authored_extension = ascii_lowercase(utf8_path(normalized.extension()));
     const auto& same_extension = extension_matches(cache, *directory, stem, authored_extension);
     const auto exact =
         std::find_if(same_extension.begin(), same_extension.end(), [&](const auto& match) {
@@ -296,7 +281,7 @@ void resolve_visual_assets(song_document_t& document, const std::filesystem::pat
     for (auto& asset : document.visual_assets) {
         std::span<const std::string_view> extensions;
         std::string_view kind;
-        const auto authored_extension = ascii_lower(utf8_path(asset.source_path.extension()));
+        const auto authored_extension = ascii_lowercase(utf8_path(asset.source_path.extension()));
         if (asset.kind == asset_kind_t::video ||
             std::ranges::find(video_extensions, authored_extension) != video_extensions.end()) {
             asset.kind = asset_kind_t::video;

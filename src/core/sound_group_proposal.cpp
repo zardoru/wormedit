@@ -10,10 +10,7 @@
 
 namespace wormedit {
 namespace {
-
-auto ascii_fold(std::string_view text) -> std::string {
-    return text_util::ascii_fold(std::string{text});
-}
+using wormedit::text_util::ascii_lowercase;
 
 auto filename_part(std::string_view name) -> std::string_view {
     const auto separator = name.find_last_of("/\\");
@@ -61,7 +58,7 @@ auto filename_stem(std::string_view name) -> stem_t {
 auto existing_group_by_name(const std::vector<sound_group_t>& groups)
     -> std::map<std::string, sound_group_id_t> {
     auto result = std::map<std::string, sound_group_id_t>{};
-    for (const auto& group : groups) result.emplace(ascii_fold(group.name), group.id);
+    for (const auto& group : groups) result.emplace(ascii_lowercase(group.name), group.id);
     return result;
 }
 
@@ -75,7 +72,7 @@ auto propose_sound_groups(const std::vector<std::string>& names,
     auto candidates = std::map<std::string, candidate_t>{};
     for (const auto& name : names) {
         auto stem = filename_stem(name);
-        const auto key = ascii_fold(stem.value);
+        const auto key = ascii_lowercase(stem.value);
         const auto existing = group_ids.find(key);
         if (stem.value.empty() || (!stem.numbered && existing == group_ids.end())) {
             result.ungrouped_names.push_back(name);

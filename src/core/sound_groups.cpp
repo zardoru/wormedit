@@ -37,9 +37,8 @@ auto normalize_name(song_document_t& song, sound_group_id_t except, std::string&
         reject(result, diagnostic_code_t::invalid_id, "sound group name must contain 1 to 64 bytes");
         return false;
     }
-    const auto folded = text_util::ascii_fold(std::string(name));
     for (const auto& group : song.sound_groups) {
-        if (group.id != except && text_util::ascii_fold(std::string(group.name)) == folded) {
+        if (group.id != except && text_util::ascii_iequal(group.name, name)) {
             reject(result, diagnostic_code_t::invalid_id, "sound group name is already in use");
             return false;
         }

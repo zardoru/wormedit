@@ -1,13 +1,14 @@
+#include "../../src/core/text_util.h"
 #include <wormedit/formats/slice_spans.h>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
-#include <cctype>
 #include <cstdint>
 #include <vector>
 
 namespace {
+using wormedit::text_util::ascii_iequal;
 using namespace wormedit;
 
 void check_span(bool value) { CHECK(value); }
@@ -159,13 +160,6 @@ void check_rejected_sources(const slice_fixture_t& fixture,
     require_rejected(fixture, fixture.chart, sources);
 }
 
-auto ascii_equal(std::string_view left, std::string_view right) -> bool {
-    if (left.size() != right.size()) return false;
-    return std::equal(left.begin(), left.end(), right.begin(), [](char a, char b) {
-        return std::tolower(static_cast<unsigned char>(a)) ==
-               std::tolower(static_cast<unsigned char>(b));
-    });
-}
 } // namespace
 
 TEST_CASE("slice_spans plan deduplicates repeated continuations and maps semantic sounds",
@@ -226,7 +220,7 @@ TEST_CASE("slice_spans plan filenames and wrapper output are deterministic",
     const auto skipped = build_slice_span_plan(fixture.song, fixture.chart, fixture.sources, occupied);
     require_span(static_cast<bool>(skipped));
     check_span(std::ranges::none_of(skipped.spans, [&](const auto& span) {
-        return ascii_equal(span.filename, collision);
+        return ascii_iequal(span.filename, collision);
     }));
     const auto repeated = build_slice_span_plan(fixture.song, fixture.chart, fixture.sources, occupied);
     check_span(skipped.spans == repeated.spans);

@@ -242,7 +242,8 @@ auto find_notes_by_label(const chart_document_t& chart, std::string_view text)
         std::vector<const note_t*> matches;
         for (const auto& note : measure.notes) {
             if (note.label.has_value() &&
-                !std::ranges::search(*note.label, text, text_util::ascii_iequal).empty()) {
+                !std::ranges::search(*note.label, text,
+                    static_cast<bool (*)(char, char) noexcept>(text_util::ascii_iequal)).empty()) {
                 matches.push_back(&note);
             }
         }

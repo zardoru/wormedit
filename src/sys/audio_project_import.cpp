@@ -90,7 +90,7 @@ auto inspect_audio_for_project(const std::filesystem::path& source_path)
     -> audio_project_import_result_t {
     audio_project_import_result_t result;
     result.source_path = source_path;
-    const auto extension = text_util::ascii_fold(source_path.extension().string());
+    const auto extension = text_util::lowercase_extension(source_path);
     if (extension != ".mp3" && extension != ".ogg") {
         result.error = "Select an MP3 or Ogg Vorbis audio file.";
         return result;

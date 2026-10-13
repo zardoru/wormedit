@@ -1,3 +1,4 @@
+#include "core/text_util.h"
 #include "sys/catalog_projection.h"
 #include "sys/application.h"
 #include "sys/application_edit_inputs.h"
@@ -151,7 +152,6 @@
 #include <array>
 #include <bit>
 #include <charconv>
-#include <cctype>
 #include <chrono>
 #include <cstdlib>
 #include <cmath>
@@ -2400,10 +2400,8 @@ struct application_t::implementation_t {
                                   "Choose a native project path to save.");
             return false;
         }
-        auto extension = destination.extension().string();
-        std::transform(extension.begin(), extension.end(), extension.begin(),
-                       [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
-        if (extension.empty())
+        const auto extension = text_util::lowercase_extension(destination);
+            if (extension.empty())
             destination += ".wormedit";
         else if (extension != ".wormedit") {
             post_project_feedback(notification_severity_t::warning, notification_source_t::document,

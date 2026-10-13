@@ -4,10 +4,6 @@
 namespace wormedit {
 namespace {
 
-auto folded(unsigned char value) noexcept -> unsigned char {
-    return static_cast<unsigned char>(text_util::ascii_fold(static_cast<char>(value)));
-}
-
 auto compare_digits(std::string_view left, std::size_t& li, std::string_view right,
                     std::size_t& ri) noexcept -> int {
     while (li < left.size() && left[li] == '0') ++li;
@@ -28,16 +24,6 @@ auto compare_digits(std::string_view left, std::size_t& li, std::string_view rig
     return 0;
 }
 
-auto folded_text_less(std::string_view left, std::string_view right) noexcept -> bool {
-    const auto count = left.size() < right.size() ? left.size() : right.size();
-    for (std::size_t index = 0; index < count; ++index) {
-        const auto lchar = folded(static_cast<unsigned char>(left[index]));
-        const auto rchar = folded(static_cast<unsigned char>(right[index]));
-        if (lchar != rchar) return lchar < rchar;
-    }
-    if (left.size() != right.size()) return left.size() < right.size();
-    return left < right;
-}
 
 } // namespace
 
@@ -52,14 +38,14 @@ auto natural_name_less(std::string_view left, std::string_view right) noexcept -
             if (order != 0) return order < 0;
             continue;
         }
-        const auto lchar = folded(static_cast<unsigned char>(left[li]));
-        const auto rchar = folded(static_cast<unsigned char>(right[ri]));
+        const auto lchar = static_cast<unsigned char>(text_util::ascii_lowercase(left[li]));
+        const auto rchar = static_cast<unsigned char>(text_util::ascii_lowercase(right[ri]));
         if (lchar != rchar) return lchar < rchar;
         ++li;
         ++ri;
     }
     if (li != left.size() || ri != right.size()) return li == left.size();
-    return folded_text_less(left, right);
+    return text_util::ascii_iequal(left, right) ? left < right : text_util::ascii_iless(left, right);
 }
 
 } // namespace wormedit

@@ -1,8 +1,9 @@
 #pragma once
 
+#include "core/text_util.h"
+
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <filesystem>
 #include <map>
 #include <string>
@@ -28,12 +29,7 @@ struct audio_fallback_t {
 };
 
 namespace audio_fallback_detail {
-
-inline auto fold(std::string text) -> std::string {
-    for (auto& character : text)
-        character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
-    return text;
-}
+using text_util::ascii_lowercase;
 
 inline auto extension_rank(const std::string& folded_extension) -> int {
     constexpr std::array<const char*, 3> extensions{".wav", ".ogg", ".flac"};
@@ -73,7 +69,7 @@ inline auto resolve_audio_fallback(const std::filesystem::path& authored,
     if (unsafe) return result;
     std::error_code error;
     const auto directory = resolved.parent_path();
-    const auto stem = fold(authored.stem().string());
+    const auto stem = ascii_lowercase(authored.stem().string());
     struct found_t { int rank; std::string name; };
     std::vector<found_t> found;
     audio_directory_cache_t local;
@@ -86,8 +82,8 @@ inline auto resolve_audio_fallback(const std::filesystem::path& authored,
         listing = listings.emplace(directory, std::move(names)).first;
     }
     for (const auto& path : listing->second) {
-        const auto rank = extension_rank(fold(path.extension().string()));
-        if (rank < 0 || fold(path.stem().string()) != stem || !is_file(path)) continue;
+        const auto rank = extension_rank(text_util::lowercase_extension(path));
+        if (rank < 0 || !text_util::ascii_iequal(path.stem().string(), stem) || !is_file(path)) continue;
         found.push_back({rank, path.filename().string()});
     }
     std::ranges::sort(found, [](const auto& left, const auto& right) {

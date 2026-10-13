@@ -1,3 +1,4 @@
+#include "core/text_util.h"
 #include "sys/sound_picker_projection.h"
 
 #include <algorithm>
@@ -6,15 +7,10 @@
 
 namespace wormedit::sys {
 namespace {
-auto fold(std::string_view text) -> std::string {
-    std::string result{text};
-    for (auto& ch : result)
-        if (ch >= 'A' && ch <= 'Z') ch = static_cast<char>(ch + ('a' - 'A'));
-    return result;
-}
+using wormedit::text_util::ascii_lowercase;
 auto slot_for(const resource_entry_t& resource) -> std::string {
     const auto found = std::ranges::find_if(resource.target_identities, [](const auto& identity) {
-        return identity.family == format_family_t::bms && fold(identity.namespace_name) == "wav";
+        return identity.family == format_family_t::bms && text_util::ascii_iequal(identity.namespace_name, "wav");
     });
     return found == resource.target_identities.end() ? std::string{} : found->identifier;
 }
@@ -64,7 +60,7 @@ auto score(std::string_view text, std::string_view query) -> std::optional<score
 }
 struct match_t { std::size_t index{}; score_t score; };
 void search(sound_picker_cache_t& cache, std::string_view query) {
-    cache.query = fold(query);
+    cache.query = ascii_lowercase(query);
     cache.query_valid = true;
     cache.result = {};
     std::vector<match_t> best;
@@ -78,9 +74,9 @@ void search(sound_picker_cache_t& cache, std::string_view query) {
     };
     for (std::size_t index = 0; index < cache.catalog.size(); ++index) {
         const auto& row = cache.catalog[index];
-        auto rank = score(fold(row.name), cache.query);
+        auto rank = score(ascii_lowercase(row.name), cache.query);
         if (!row.slot.empty()) {
-            const auto slot = score(fold(row.slot), cache.query);
+            const auto slot = score(ascii_lowercase(row.slot), cache.query);
             if (slot && (!rank || *slot < *rank)) rank = slot;
         }
         if (!rank) continue;
@@ -100,7 +96,7 @@ auto project_sound_picker(sound_picker_cache_t& cache, const song_document_t& do
     if (!cache.valid || cache.document != &document || cache.chart_address != &chart ||
         cache.project != document.id.value || cache.revision != document.revision ||
         cache.chart != chart.id.value) rebuild_catalog(cache, document, chart);
-    if (!cache.query_valid || cache.query != fold(query)) search(cache, query);
+    if (!cache.query_valid || !text_util::ascii_iequal(cache.query, query)) search(cache, query);
     return cache.result;
 }
 } // namespace wormedit::sys

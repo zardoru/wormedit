@@ -87,15 +87,40 @@ inline auto path_utf8(const std::filesystem::path& path) -> std::string {
     const auto text = path.generic_u8string();
     return {reinterpret_cast<const char*>(text.data()), text.size()};
 }
-inline constexpr auto ascii_fold(char byte) noexcept -> char {
+// ASCII only: preserve every non-ASCII byte; Unicode folding is a separate operation.
+inline constexpr auto ascii_lowercase(char byte) noexcept -> char {
     return byte >= 'A' && byte <= 'Z' ? static_cast<char>(byte + ('a' - 'A')) : byte;
 }
 inline constexpr auto ascii_iequal(char left, char right) noexcept -> bool {
-    return ascii_fold(left) == ascii_fold(right);
+    return ascii_lowercase(left) == ascii_lowercase(right);
 }
-inline auto ascii_fold(std::string text) -> std::string {
-    for (auto& character : text) character = ascii_fold(character);
+inline auto ascii_lowercase(std::string text) -> std::string {
+    for (auto& character : text) character = ascii_lowercase(character);
     return text;
+}
+inline auto ascii_lowercase(std::string_view text) -> std::string {
+    return ascii_lowercase(std::string{text});
+}
+inline auto ascii_lowercase(const char* text) -> std::string {
+    return ascii_lowercase(std::string_view{text});
+}
+inline constexpr auto ascii_iequal(std::string_view left, std::string_view right) noexcept -> bool {
+    if (left.size() != right.size()) return false;
+    for (std::size_t index = 0; index < left.size(); ++index)
+        if (!ascii_iequal(left[index], right[index])) return false;
+    return true;
+}
+inline constexpr auto ascii_iless(std::string_view left, std::string_view right) noexcept -> bool {
+    const auto count = std::min(left.size(), right.size());
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto lbyte = static_cast<unsigned char>(ascii_lowercase(left[index]));
+        const auto rbyte = static_cast<unsigned char>(ascii_lowercase(right[index]));
+        if (lbyte != rbyte) return lbyte < rbyte;
+    }
+    return left.size() < right.size();
+}
+inline auto lowercase_extension(const std::filesystem::path& path) -> std::string {
+    return ascii_lowercase(path.extension().string());
 }
 inline constexpr auto trim(std::string_view text, std::string_view whitespace) noexcept
     -> std::string_view {

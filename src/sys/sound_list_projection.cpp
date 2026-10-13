@@ -1,3 +1,4 @@
+#include "core/text_util.h"
 #include <wormedit/core/document_index.h>
 #include "sys/sound_list_projection.h"
 
@@ -11,14 +12,7 @@
 
 namespace wormedit::sys {
 namespace {
-
-auto fold(std::string_view text) -> std::string {
-    std::string result{text};
-    for (auto& c : result) {
-        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c + 32);
-    }
-    return result;
-}
+using wormedit::text_util::ascii_lowercase;
 
 struct sound_resource_metadata_t {
     resource_reference_counts_t counts;
@@ -63,13 +57,13 @@ auto joined(const std::vector<std::string>& tags) -> std::string {
 auto matches(const resource_entry_t& resource, const std::string& search, const std::string& tag)
     -> bool {
     if (!tag.empty() && std::ranges::none_of(resource.tags, [&](const auto& candidate) {
-            return fold(candidate) == tag;
+            return text_util::ascii_iequal(candidate, tag);
         }))
         return false;
     if (search.empty()) return true;
-    return fold(resource.name).find(search) != std::string::npos ||
+    return ascii_lowercase(resource.name).find(search) != std::string::npos ||
            std::ranges::any_of(resource.tags, [&](const auto& candidate) {
-               return fold(candidate).find(search) != std::string::npos;
+               return ascii_lowercase(candidate).find(search) != std::string::npos;
            });
 }
 
@@ -88,23 +82,23 @@ auto effective_sound_kind(const resource_entry_t& resource) -> sound_kind_t {
 auto project_sound_list(const song_document_t& document, const sound_list_request_t& request)
     -> sound_list_t {
     sound_list_t list;
-    const auto search = fold(request.search);
-    const auto tag = fold(request.tag);
+    const auto search = ascii_lowercase(request.search);
+    const auto tag = ascii_lowercase(request.tag);
     const auto counts = count_resource_references(document);
     std::vector<const resource_entry_t*> matched;
     for (const auto& resource : document.resources) {
         const auto* asset = document.find_audio_asset(resource.asset);
         if (!asset) continue;
         for (const auto& candidate : resource.tags) {
-            const auto key = fold(candidate);
+            const auto key = ascii_lowercase(candidate);
             if (std::ranges::none_of(list.all_tags,
-                                     [&](const auto& known) { return fold(known) == key; }))
+                                     [&](const auto& known) { return text_util::ascii_iequal(known, key); }))
                 list.all_tags.push_back(candidate);
         }
         if (matches(resource, search, tag)) matched.push_back(&resource);
     }
     std::ranges::sort(list.all_tags, [](const auto& left, const auto& right) {
-        return fold(left) < fold(right);
+        return text_util::ascii_iless(left, right);
     });
     list.total_matching = matched.size();
     list.first_row = std::min(request.first_row, matched.size());
@@ -152,7 +146,7 @@ namespace {
 
 auto keysound_slot(const resource_entry_t& resource) -> std::string {
     const auto identity = std::ranges::find_if(resource.target_identities, [](const auto& item) {
-        return item.family == format_family_t::bms && fold(item.namespace_name) == "wav";
+        return item.family == format_family_t::bms && text_util::ascii_iequal(item.namespace_name, "wav");
     });
     return identity == resource.target_identities.end() ? std::string{} : identity->identifier;
 }
@@ -160,8 +154,8 @@ auto keysound_slot(const resource_entry_t& resource) -> std::string {
 auto keysound_resource_less(const resource_entry_t& left, const resource_entry_t& right,
                             dock_sort_t sort) -> bool {
     if (sort == dock_sort_t::bms_id) {
-        const auto left_slot = fold(keysound_slot(left));
-        const auto right_slot = fold(keysound_slot(right));
+        const auto left_slot = ascii_lowercase(keysound_slot(left));
+        const auto right_slot = ascii_lowercase(keysound_slot(right));
         if (left_slot != right_slot) {
             if (left_slot.empty()) return false;
             if (right_slot.empty()) return true;
@@ -213,8 +207,8 @@ auto keysound_matches_request(const resource_entry_t& resource,
                               const keysound_list_request_t& request,
                               std::string_view folded_search) -> bool {
     if (!folded_search.empty() &&
-        fold(resource.name).find(folded_search) == std::string::npos &&
-        fold(keysound_slot(resource)).find(folded_search) == std::string::npos)
+        ascii_lowercase(resource.name).find(folded_search) == std::string::npos &&
+        ascii_lowercase(keysound_slot(resource)).find(folded_search) == std::string::npos)
         return false;
     const auto group_id = resource.sound_group ? resource.sound_group->value : 0;
     if (request.group_filter_active) {
@@ -423,7 +417,7 @@ auto collect_keysound_resources(const song_document_t& document,
         list.all_resources.push_back(resource.id);
         resources.add(resource);
         if (!matches_resource_use(request.use_filter, metadata.uses(resource.id), resource.missing)) continue;
-        const auto row_search = fold(std::string{metadata.path(resource.asset)}).find(search) !=
+        const auto row_search = ascii_lowercase(std::string{metadata.path(resource.asset)}).find(search) !=
             std::string::npos ? std::string_view{} : search;
         if (!keysound_matches_request(resource, chart, request, row_search)) continue;
         const auto group_id = resource.sound_group ? resource.sound_group->value : 0;
@@ -505,7 +499,7 @@ auto project_keysound_list_request_impl(const song_document_t& document,
     auto sections = make_keysound_sections(document, request, section_indices, ungrouped_index);
     const auto metadata = sound_resource_metadata(document);
     const auto resources_by_id = collect_keysound_resources(document, chart, request,
-        fold(request.search), list, sections, section_indices, ungrouped_index, audio_asset_ids, metadata);
+        ascii_lowercase(request.search), list, sections, section_indices, ungrouped_index, audio_asset_ids, metadata);
     list.total = list.all_resources.size();
     sort_keysound_sections(sections, request.ids_available ? request.sort
                                                           : dock_sort_t::natural_name);
@@ -631,9 +625,9 @@ auto project_keysound_list_cached(keysound_list_cache_t& cache,
 namespace {
 constexpr std::string_view slot_digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 auto slot_number(const target_resource_identity_t& id) -> std::size_t {
-    if (id.family != format_family_t::bms || fold(id.namespace_name) != "wav" ||
+    if (id.family != format_family_t::bms || !text_util::ascii_iequal(id.namespace_name, "wav") ||
         id.identifier.size() != 2) return 0;
-    const auto text = fold(id.identifier);
+    const auto text = ascii_lowercase(id.identifier);
     constexpr std::string_view digits = "0123456789abcdefghijklmnopqrstuvwxyz";
     const auto high = digits.find(text[0]), low = digits.find(text[1]);
     if (high == digits.npos || low == digits.npos) return 0;
@@ -649,9 +643,9 @@ auto sound_slot_matches(const resource_entry_t* resource, std::size_t number,
     if (!matches_resource_use(filter, uses, resource && resource->missing)) return false;
     const auto path = resource ? metadata.path(resource->asset) : std::string_view{};
     const auto name = resource ? resource->name : "(empty)";
-    return fold(slot_identifier(number)).find(query) != std::string::npos ||
-        fold(name).find(query) != std::string::npos ||
-        fold(path).find(query) != std::string::npos;
+    return ascii_lowercase(slot_identifier(number)).find(query) != std::string::npos ||
+        ascii_lowercase(name).find(query) != std::string::npos ||
+        ascii_lowercase(path).find(query) != std::string::npos;
 }
 } // namespace
 
@@ -662,7 +656,7 @@ auto project_sound_slots(const song_document_t& document, const sound_slot_reque
         for (const auto& identity : resource.target_identities)
             if (const auto number = slot_number(identity); number != 0) owners[number] = &resource;
     const auto metadata = sound_resource_metadata(document);
-    const auto query = fold(request.search);
+    const auto query = ascii_lowercase(request.search);
     std::vector<std::size_t> matching;
     for (std::size_t number = 1; number < owners.size(); ++number) {
         const auto* resource = owners[number];

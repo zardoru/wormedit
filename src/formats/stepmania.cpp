@@ -368,7 +368,7 @@ auto make_layout(std::string step_type, std::uint32_t count, id_source_t& ids) -
     layout.display_name = step_type;
     static constexpr std::array<std::string_view, 10> dance_names{
         "Left", "Down", "Up", "Right", "Left 2", "Down 2", "Up 2", "Right 2", "Center", "Diagonal"};
-    const auto folded_step_type = text_util::ascii_fold(step_type);
+    const auto folded_step_type = text_util::ascii_lowercase(step_type);
     const bool cardinal_dance = folded_step_type == "dance-single" ||
                                 folded_step_type == "dance-double" ||
                                 folded_step_type == "dance-couple";

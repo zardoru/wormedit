@@ -10,16 +10,9 @@
 #include <utility>
 
 namespace {
+using wormedit::text_util::lowercase_extension;
 
 constexpr std::size_t maximum_name_bytes = 255;
-
-auto lower_extension(const std::string& path) -> std::string {
-    auto extension = std::filesystem::path{path}.extension().string();
-    std::ranges::transform(extension, extension.begin(), [](unsigned char c) {
-        return static_cast<char>(c >= 'A' && c <= 'Z' ? c + 32 : c);
-    });
-    return extension;
-}
 
 auto is_stem_friendly(const std::string& extension) -> bool {
     return extension == ".wav" || extension == ".ogg" || extension == ".flac";
@@ -41,13 +34,13 @@ void choose_phase(worm_ui_sound_import_state_t& state, bool chart_has_bgm) {
         return;
     }
     const bool ambiguous = !state.fixed_kind && !chart_has_bgm &&
-                           is_stem_friendly(lower_extension(state.items.front().path));
+                           is_stem_friendly(lowercase_extension(state.items.front().path));
     state.phase = ambiguous ? worm_ui_sound_import_phase_t::choose_kind
                             : worm_ui_sound_import_phase_t::ready;
 }
 
 auto default_kind(const std::string& path, bool chart_has_bgm) -> std::uint8_t {
-    return !chart_has_bgm && is_stem_friendly(lower_extension(path))
+    return !chart_has_bgm && is_stem_friendly(lowercase_extension(path))
                ? WORM_UI_SOUND_IMPORT_STEM
                : WORM_UI_SOUND_IMPORT_KEYSOUND;
 }
@@ -60,7 +53,7 @@ auto valid_kind(std::uint8_t kind) -> bool {
 
 auto worm_ui_nuklear_sound_import_is_audio_path(const std::string& path) -> bool {
     static constexpr std::array<std::string_view, 4> extensions{".wav", ".ogg", ".flac", ".mp3"};
-    const auto extension = lower_extension(path);
+    const auto extension = lowercase_extension(path);
     return std::ranges::find(extensions, extension) != extensions.end();
 }
 

@@ -1,3 +1,4 @@
+#include "core/text_util.h"
 #include "sys/application_frame_services.h"
 #include "sys/application_edit_inputs.h"
 
@@ -12,7 +13,6 @@
 #include <SDL3/SDL_timer.h>
 
 #include <algorithm>
-#include <cctype>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -34,9 +34,7 @@ auto offer_dropped_audio_project(const SDL_Event& event, SDL_Window* window,
         notifications.post(notification_severity_t::warning, notification_source_t::import_, "Drop an absolute local MP3 or Ogg file within the path limit.");
         return true;
     }
-    auto extension = std::filesystem::path{dropped}.extension().string();
-    std::transform(extension.begin(), extension.end(), extension.begin(),
-                   [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
+    const auto extension = text_util::lowercase_extension(std::filesystem::path{dropped});
     if (extension != ".mp3" && extension != ".ogg") return false;
     pending_audio_project_path.assign(dropped);
     notifications.post(notification_severity_t::hint, notification_source_t::import_, "Choose the chart layout to import this audio as a new project.");

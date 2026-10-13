@@ -7,7 +7,6 @@
 #include <SDL3/SDL_process.h>
 
 #include <algorithm>
-#include <cctype>
 #include <cerrno>
 #include <optional>
 #include <sstream>
@@ -95,7 +94,7 @@ auto file_identity(const std::filesystem::path& path) -> std::optional<file_iden
 }
 
 auto preview_path(const std::filesystem::path& source) -> std::filesystem::path {
-    const auto extension = text_util::ascii_fold(source.extension().string());
+    const auto extension = text_util::lowercase_extension(source);
     if (!is_bms_extension(extension)) return {};
     return source.parent_path() / ("___wormedit_preview" + extension);
 }

@@ -1,17 +1,12 @@
+#include "core/text_util.h"
 #include "sys/bga_list_projection.h"
-#include <cctype>
 #include <wormedit/core/resource_assignment.h>
 #include <algorithm>
 #include <unordered_map>
 #include <wormedit/core/natural_order.h>
 namespace wormedit::sys {
 namespace {
-auto folded(std::string value) -> std::string {
-    std::ranges::transform(value, value.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
-    return value;
-}
+using wormedit::text_util::ascii_lowercase;
 
 auto bga_slot(const resource_entry_t& resource) -> std::string {
     for (const auto& identity : resource.target_identities)
@@ -22,8 +17,8 @@ auto bga_slot(const resource_entry_t& resource) -> std::string {
 auto bga_resource_less(const resource_entry_t& left, const resource_entry_t& right,
                        dock_sort_t sort) -> bool {
     if (sort == dock_sort_t::bms_id) {
-        const auto left_slot = folded(bga_slot(left));
-        const auto right_slot = folded(bga_slot(right));
+        const auto left_slot = ascii_lowercase(bga_slot(left));
+        const auto right_slot = ascii_lowercase(bga_slot(right));
         if (left_slot != right_slot) {
             if (left_slot.empty()) return false;
             if (right_slot.empty()) return true;
@@ -47,9 +42,9 @@ auto bga_matches(const resource_entry_t& resource, const visual_asset_t* asset,
     const auto usage = count == uses.end() ? 0 : count->second;
     if (!matches_resource_use(filter, usage, resource.missing || !asset)) return false;
     const auto path = asset ? asset->source_path.generic_string() : std::string{};
-    return folded(path).find(query) != std::string::npos ||
-        folded(bga_slot(resource)).find(query) != std::string::npos ||
-        folded(resource.name).find(query) != std::string::npos;
+    return ascii_lowercase(path).find(query) != std::string::npos ||
+        ascii_lowercase(bga_slot(resource)).find(query) != std::string::npos ||
+        ascii_lowercase(resource.name).find(query) != std::string::npos;
 }
 
 }
@@ -64,7 +59,7 @@ auto project_bga_list(const song_document_t& document, const bga_list_request_t&
         return found == assets.end() ? nullptr : found->second;
     };
     std::vector<const resource_entry_t*> matching;
-    const auto query = folded(request.search);
+    const auto query = ascii_lowercase(request.search);
     for (const auto& resource : document.resources) {
         if (std::ranges::find(resource.roles, resource_role_t::bga) == resource.roles.end()) continue;
         result.all_resource_ids.push_back(resource.id);

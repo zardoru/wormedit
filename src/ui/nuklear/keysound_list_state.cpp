@@ -3,18 +3,13 @@
 #include "core/text_util.h"
 
 #include <algorithm>
-#include <cctype>
 #include <unordered_set>
 
 namespace {
 
-auto fold(char value) -> char {
-    return static_cast<char>(std::tolower(static_cast<unsigned char>(value)));
-}
-
 auto contains_folded(std::string_view text, std::string_view query) -> bool {
     const auto found = std::ranges::search(text, query, [](char a, char b) {
-        return fold(a) == fold(b);
+        return wormedit::text_util::ascii_iequal(a, b);
     });
     return !found.empty();
 }

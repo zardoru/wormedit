@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sys/sound_usage_projection.h"
+#include "sys/sound_usage_view.h"
 
 #include <ui/frontend.h>
 #include <wormedit/core/interaction.h>

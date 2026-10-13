@@ -468,7 +468,7 @@ struct dead_span_fixture_t : compose_notification_fixture_t {
         REQUIRE(std::holds_alternative<measure_index_t>(measures));
         const auto timing = build_timing_index(history.document.charts.front());
         REQUIRE(timing);
-        cache.timing.dead_spans = project_dead_spans(history.document.charts.front(),
+        cache.timing.dead_spans = build_dead_spans_view(history.document.charts.front(),
             std::get<measure_index_t>(measures), *timing.index, 64);
         state.viewport_height_pixels = 400;
         state.pixels_per_standard_measure = 480;
@@ -479,7 +479,7 @@ struct dead_span_fixture_t : compose_notification_fixture_t {
     // Screen y at the middle of the Stop band.
     auto stop_band_y() const -> double {
         const auto& chart = history.document.charts.front();
-        const auto bands = project_dead_span_bands(*cache.timing.dead_spans,
+        const auto bands = build_dead_span_bands_view(*cache.timing.dead_spans,
             state.pixels_per_standard_measure / 960.0, state.viewport_scroll_pixels,
             state.viewport_height_pixels,
             compose_field_downscroll(chart, application.preferences.editor_preferences),

@@ -218,7 +218,7 @@ void populate_compose_keysound_fallbacks(flattened_workspace_t& flattened,
     auto* arena = flattened.arena();
     if (!arena || asset_base.empty())
         return;
-    const auto found = project_keysound_fallbacks(history.document, asset_base,
+    const auto found = build_keysound_fallbacks_view(history.document, asset_base,
                                                   WORM_UI_KEYSOUND_FALLBACK_CAPACITY);
     if (found.empty())
         return;

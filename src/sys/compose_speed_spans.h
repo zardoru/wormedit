@@ -40,7 +40,7 @@ struct speed_spans_t {
 
 // Evaluates the chart's SPEEDS through the exact core evaluator. Never mutates the chart; a chart
 // whose SPEEDS cannot be evaluated yields no spans.
-[[nodiscard]] auto project_speed_spans(const chart_document_t& chart, const timing_index_t& timing,
+[[nodiscard]] auto build_speed_spans_view(const chart_document_t& chart, const timing_index_t& timing,
                                        std::size_t limit) -> speed_spans_t;
 
 // The speed multiplier as a continuous curve over the viewport's source rows [first_row,

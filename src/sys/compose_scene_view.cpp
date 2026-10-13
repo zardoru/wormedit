@@ -1,4 +1,4 @@
-#include "sys/compose_projection_internal.h"
+#include "sys/compose_view_internal.h"
 namespace wormedit::sys::compose_projection_detail {
 void populate_compose_sound_labels(const compose_scene_projection_context_t& projection) {
     auto& flattened = projection.inputs.frame.flattened;
@@ -63,7 +63,7 @@ auto compose_measure_local_row(const wormedit::measure_index_t& measures, std::u
     return after == measures.entries.begin() ? row : row - std::prev(after)->absolute_begin_row;
 }
 
-void project_compose_grid_lines(const compose_scene_projection_context_t& projection) {
+void build_compose_grid_lines_view(const compose_scene_projection_context_t& projection) {
     auto& flattened = projection.inputs.frame.flattened;
     const auto& chart = projection.inputs.scope.chart_scope.chart;
     const auto& scene = projection.scene;
@@ -125,7 +125,7 @@ void project_compose_grid_lines(const compose_scene_projection_context_t& projec
     view.truncated = view.truncated || line_count != lines.size();
 }
 
-void project_compose_scene_objects(const compose_scene_projection_context_t& projection) {
+void build_compose_scene_objects_view(const compose_scene_projection_context_t& projection) {
     auto& flattened = projection.inputs.frame.flattened;
     const auto& scene = projection.scene;
     auto& view = projection.inputs.frame.view();
@@ -221,7 +221,7 @@ void project_compose_scene_objects(const compose_scene_projection_context_t& pro
                      hold_count != holds.size() || endpoint_count != endpoints.size();
 }
 
-void project_compose_layout_and_notes(const compose_scene_projection_context_t& projection) {
+void build_compose_layout_and_notes_view(const compose_scene_projection_context_t& projection) {
     auto& flattened = projection.inputs.frame.flattened;
     const auto& scene = projection.scene;
     auto& view = projection.inputs.frame.view();
@@ -262,13 +262,13 @@ void project_compose_layout_and_notes(const compose_scene_projection_context_t& 
                                      .key_color = static_cast<std::uint8_t>(lane.key_color)},
                                     view.truncated);
     }
-    project_compose_grid_lines(projection);
-    project_compose_scene_objects(projection);
+    build_compose_grid_lines_view(projection);
+    build_compose_scene_objects_view(projection);
     view.truncated = view.truncated || projection.lane_key_bindings_truncated ||
                      band_count != bands.size() || lane_count != lanes.size();
 }
 
-void project_compose_bgm_events(
+void build_compose_bgm_events_view(
     flattened_workspace_t& flattened,
     const std::vector<wormedit::editor_field_bgm_event_geometry_t>& events,
     WormUiComposeView& view) {
@@ -333,7 +333,7 @@ auto compose_stem_filename(const compose_scene_projection_context_t& projection,
                         {reinterpret_cast<const char*>(name.data()), name.size()});
 }
 
-void project_compose_bgm_lane_modes(const compose_scene_projection_context_t& projection,
+void build_compose_bgm_lane_modes_view(const compose_scene_projection_context_t& projection,
                                     const compose_scene_cache_t& cache) {
     using namespace wormedit;
     const auto& chart = projection.inputs.scope.chart_scope.chart;
@@ -352,7 +352,7 @@ void project_compose_bgm_lane_modes(const compose_scene_projection_context_t& pr
     }
 }
 
-void project_compose_bgm(const compose_scene_projection_context_t& projection,
+void build_compose_bgm_view(const compose_scene_projection_context_t& projection,
                          const compose_scene_cache_t& cache) {
     auto& flattened = projection.inputs.frame.flattened;
     const auto& scene = projection.scene;
@@ -382,8 +382,8 @@ void project_compose_bgm(const compose_scene_projection_context_t& projection,
                              : compose_stem_filename(projection, *source)},
             view.truncated);
     }
-    project_compose_bgm_events(flattened, scene.bgm_events, view);
-    project_compose_bgm_lane_modes(projection, cache);
+    build_compose_bgm_events_view(flattened, scene.bgm_events, view);
+    build_compose_bgm_lane_modes_view(projection, cache);
     view.truncated = view.truncated || bgm_lane_count != bgm_lanes.size();
 }
 
@@ -440,7 +440,7 @@ auto bga_preview_target_row(const compose_scene_projection_context_t& projection
     return bga_preview_virtual_row(projection, source_y);
 }
 
-void project_compose_bga_move_preview(const compose_scene_projection_context_t& projection) {
+void build_compose_bga_move_preview_view(const compose_scene_projection_context_t& projection) {
     auto& view = projection.inputs.frame.view();
     view.bga_move_preview_valid = false;
     const auto* input = projection.bga_move_preview;
@@ -465,7 +465,7 @@ void project_compose_bga_move_preview(const compose_scene_projection_context_t& 
                           view.viewport_height_pixels, projection.inputs.scope.downscroll);
 }
 
-void project_compose_bga(const compose_scene_projection_context_t& projection) {
+void build_compose_bga_view(const compose_scene_projection_context_t& projection) {
     static_assert(wormedit::bga_lane_overlap_stack_threshold ==
                   WORM_UI_COMPOSE_BGA_OVERLAP_STACK_THRESHOLD);
     auto& flattened = projection.inputs.frame.flattened;
@@ -534,10 +534,10 @@ void project_compose_bga(const compose_scene_projection_context_t& projection) {
             view.truncated);
     }
     view.truncated = view.truncated || count != scene.bga_events.size();
-    project_compose_bga_move_preview(projection);
+    build_compose_bga_move_preview_view(projection);
 }
 
-void project_compose_marker_draft(const compose_scene_projection_context_t& projection) {
+void build_compose_marker_draft_view(const compose_scene_projection_context_t& projection) {
     const auto& draft = projection.inputs.frame.application_state.project.compose_gesture.bmson_marker_draft;
     if (!draft || projection.inputs.scope.pixels_per_row <= 0.0)
         return;
@@ -550,13 +550,13 @@ void project_compose_marker_draft(const compose_scene_projection_context_t& proj
     });
     const auto* bounds = lane == projection.scene.bgm_lanes.end() ? nullptr : &lane->bounds;
     for (const auto& marker : draft->markers)
-        project_compose_draft_marker(projection, marker, bounds);
+        build_compose_draft_marker_view(projection, marker, bounds);
 }
 
-void project_compose_marker_previews(const compose_scene_projection_context_t& projection) {
+void build_compose_marker_previews_view(const compose_scene_projection_context_t& projection) {
     auto& flattened = projection.inputs.frame.flattened;
     const auto& scene = projection.scene;
-    project_compose_marker_draft(projection);
+    build_compose_marker_draft_view(projection);
     if (scene.cursor) {
         flattened.compose.cursor = WormUiComposeCursorView{
             .bounds = to_frontend_rect(scene.cursor->bounds),

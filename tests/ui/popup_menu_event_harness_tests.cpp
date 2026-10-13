@@ -1,7 +1,7 @@
 #include "nuklear_event_harness.h"
 #include "ui/nuklear/compose_note_menu.h"
 #include "ui/nuklear/compose_state.h"
-#include "sys/menu_command_projection.h"
+#include "sys/menu_command_view.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -156,7 +156,7 @@ TEST_CASE("Global menus dismiss on Escape and right outside click and switch by 
     require_popup(harness.ready());
     auto& view = harness.view();
     view.compose.clipboard_copy_available = true;
-    wormedit::sys::project_menu_commands(wormedit::command_registry_t::from({}), view);
+    wormedit::sys::build_menu_commands_view(wormedit::command_registry_t::from({}), view);
     (void)harness.frame();
 
     const auto file_title = harness.drawn_text_center("File");

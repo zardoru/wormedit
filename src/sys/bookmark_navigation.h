@@ -1,5 +1,5 @@
 #pragma once
-#include "sys/bookmark_chooser_projection.h"
+#include "sys/bookmark_chooser_view.h"
 #include "sys/bookmark_rename_commands.h"
 #include <wormedit/core/command.h>
 #include <wormedit/core/interaction.h>

@@ -31,7 +31,7 @@ auto speed(std::uint64_t id, std::size_t measure, std::uint64_t row, std::int64_
 auto project(const chart_document_t& chart, std::size_t limit = 64) -> speed_spans_t {
     const auto timing = build_timing_index(chart);
     REQUIRE(timing);
-    return project_speed_spans(chart, *timing.index, limit);
+    return build_speed_spans_view(chart, *timing.index, limit);
 }
 
 } // namespace

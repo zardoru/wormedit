@@ -1,6 +1,6 @@
 #include "core/text_util.h"
 #include <wormedit/core/document_index.h>
-#include "sys/sound_list_projection.h"
+#include "sys/sound_list_view.h"
 
 #include <algorithm>
 #include <limits>
@@ -79,7 +79,7 @@ auto effective_sound_kind(const resource_entry_t& resource) -> sound_kind_t {
                                                       : sound_kind_t::keysound;
 }
 
-auto project_sound_list(const song_document_t& document, const sound_list_request_t& request)
+auto build_sound_list_view(const song_document_t& document, const sound_list_request_t& request)
     -> sound_list_t {
     sound_list_t list;
     const auto search = ascii_lowercase(request.search);
@@ -120,7 +120,7 @@ auto project_sound_list(const song_document_t& document, const sound_list_reques
     return list;
 }
 
-auto project_sound_properties(const song_document_t& document, resource_id_t resource_id)
+auto build_sound_properties_view(const song_document_t& document, resource_id_t resource_id)
     -> sound_properties_t {
     const auto resource = std::ranges::find(document.resources, resource_id, &resource_entry_t::id);
     if (!resource_id || resource == document.resources.end()) return {};
@@ -295,7 +295,7 @@ void populate_note_conflicts(const chart_document_t& chart, keysound_list_t& lis
 } // namespace
 
 namespace {
-auto project_keysound_list_legacy_impl(const song_document_t& document,
+auto build_keysound_list_legacy_impl_view(const song_document_t& document,
     const chart_document_t* chart, std::size_t maximum_rows, dock_sort_t sort,
     bool ids_available, const std::unordered_set<std::uint64_t>* audio_asset_ids)
     -> keysound_list_t {
@@ -335,10 +335,10 @@ auto project_keysound_list_legacy_impl(const song_document_t& document,
 }
 } // namespace
 
-auto project_keysound_list(const song_document_t& document, const chart_document_t* chart,
+auto build_keysound_list_view(const song_document_t& document, const chart_document_t* chart,
                            std::size_t maximum_rows, dock_sort_t sort,
                            bool ids_available) -> keysound_list_t {
-    return project_keysound_list_legacy_impl(document, chart, maximum_rows, sort,
+    return build_keysound_list_legacy_impl_view(document, chart, maximum_rows, sort,
                                               ids_available, nullptr);
 }
 
@@ -465,7 +465,7 @@ void append_selected_keysounds(keysound_list_t& list, const chart_document_t* ch
 } // namespace
 
 namespace {
-auto project_keysound_list_request_impl(const song_document_t& document,
+auto build_keysound_list_request_impl_view(const song_document_t& document,
     const chart_document_t* chart, const keysound_list_request_t& request,
     const std::unordered_set<std::uint64_t>* audio_asset_ids) -> keysound_list_t {
     keysound_list_t list;
@@ -520,9 +520,9 @@ auto project_keysound_list_request_impl(const song_document_t& document,
 }
 } // namespace
 
-auto project_keysound_list(const song_document_t& document, const chart_document_t* chart,
+auto build_keysound_list_view(const song_document_t& document, const chart_document_t* chart,
                            const keysound_list_request_t& request) -> keysound_list_t {
-    return project_keysound_list_request_impl(document, chart, request, nullptr);
+    return build_keysound_list_request_impl_view(document, chart, request, nullptr);
 }
 
 namespace {
@@ -591,14 +591,14 @@ auto keysound_list_cache_t::asset_ids_for(const song_document_t& document)
     return audio_asset_ids_;
 }
 
-auto project_keysound_list_cached(keysound_list_cache_t& cache,
+auto build_keysound_list_cached_view(keysound_list_cache_t& cache,
     const song_document_t& document, const chart_document_t* chart, std::size_t maximum_rows,
     dock_sort_t sort, bool ids_available) -> const keysound_list_t& {
     const keysound_list_cache_t::legacy_key_t key{.identity = projection_identity(document, chart),
         .maximum_rows = maximum_rows, .sort = sort, .ids_available = ids_available};
     if (cache.legacy_valid_ && cache.legacy_key_ == key) return cache.legacy_result_;
     const auto& asset_ids = cache.asset_ids_for(document);
-    cache.legacy_result_ = project_keysound_list_legacy_impl(document, chart, maximum_rows,
+    cache.legacy_result_ = build_keysound_list_legacy_impl_view(document, chart, maximum_rows,
         sort, ids_available, &asset_ids);
     cache.legacy_key_ = key;
     cache.legacy_valid_ = true;
@@ -606,7 +606,7 @@ auto project_keysound_list_cached(keysound_list_cache_t& cache,
     return cache.legacy_result_;
 }
 
-auto project_keysound_list_cached(keysound_list_cache_t& cache,
+auto build_keysound_list_cached_view(keysound_list_cache_t& cache,
     const song_document_t& document, const chart_document_t* chart,
     const keysound_list_request_t& request) -> const keysound_list_t& {
     const auto identity = projection_identity(document, chart);
@@ -614,7 +614,7 @@ auto project_keysound_list_cached(keysound_list_cache_t& cache,
         same_request(cache.request_key_, request)) return cache.request_result_;
     const auto owned_key = copy_request_key(identity, request);
     const auto& asset_ids = cache.asset_ids_for(document);
-    cache.request_result_ = project_keysound_list_request_impl(document, chart, request,
+    cache.request_result_ = build_keysound_list_request_impl_view(document, chart, request,
                                                                 &asset_ids);
     cache.request_key_ = std::move(owned_key);
     cache.request_valid_ = true;
@@ -649,7 +649,7 @@ auto sound_slot_matches(const resource_entry_t* resource, std::size_t number,
 }
 } // namespace
 
-auto project_sound_slots(const song_document_t& document, const sound_slot_request_t& request)
+auto build_sound_slots_view(const song_document_t& document, const sound_slot_request_t& request)
     -> sound_slot_list_t {
     std::array<const resource_entry_t*, 1296> owners{};
     for (const auto& resource : document.resources)
@@ -701,7 +701,7 @@ struct fallback_cache_t {
 };
 } // namespace
 
-auto project_keysound_fallbacks(const song_document_t& document,
+auto build_keysound_fallbacks_view(const song_document_t& document,
                                 const std::filesystem::path& asset_base, std::size_t limit)
     -> std::vector<keysound_fallback_t> {
     static thread_local fallback_cache_t cache;

@@ -138,7 +138,7 @@ struct timing_stage_value_context_t {
 };
 
 template <typename Value>
-void project_timing_stage_value(timing_stage_value_context_t& context, const Value& value) {
+void build_timing_stage_value_view(timing_stage_value_context_t& context, const Value& value) {
     auto& view = context.view;
     const auto set_primary = [&](std::int64_t numerator, std::uint64_t denominator) {
         (void)std::snprintf(view.stage_primary_numerator_text,
@@ -232,7 +232,7 @@ void populate_timing_stage_view(
                                                    stage_row};
         std::visit(
             [&](const auto& value) {
-                project_timing_stage_value(value_context, value);
+                build_timing_stage_value_view(value_context, value);
             },
             stage->value);
         if (!stage->diagnostics.empty()) {

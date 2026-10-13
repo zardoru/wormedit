@@ -21,7 +21,7 @@ struct kiai_projection_t {
 // Projects the Kiai events into merged intervals. Events are ordered by absolute row, then by
 // source order and id; an "on" while already on and an "off" while already off are ignored, so
 // overlapping or duplicate areas merge. Never mutates the chart.
-[[nodiscard]] auto project_kiai_spans(const chart_document_t& chart,
+[[nodiscard]] auto build_kiai_spans_view(const chart_document_t& chart,
                                       const measure_index_t& measures, std::size_t limit)
     -> kiai_projection_t;
 

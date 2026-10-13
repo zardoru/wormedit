@@ -1,6 +1,6 @@
 #include "nuklear_event_harness.h"
 #include "wormedit/config.h"
-#include "sys/menu_command_projection.h"
+#include "sys/menu_command_view.h"
 #include "ui/nuklear/menu_bar.h"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -65,7 +65,7 @@ void check_dispatch(std::string_view menu, std::string_view label, std::string_v
         ++invocations;
         return wormedit::command_invocation_result_t{true, {}};
     });
-    wormedit::sys::project_menu_commands(registry, harness.view());
+    wormedit::sys::build_menu_commands_view(registry, harness.view());
     (void)harness.frame();
     (void)click_menu(harness, menu);
     (void)harness.frame();
@@ -116,14 +116,14 @@ TEST_CASE("Menu projections follow remaps unbinding platform modifiers and regis
     (void)update_command_state(registry, {"timing.toggle_lock"}, true, true);
     nuklear_event_harness_t harness{1280, 900};
     require_menu(harness.ready());
-    sys::project_menu_commands(registry, harness.view(), shortcut_primary_modifier_t::control);
+    sys::build_menu_commands_view(registry, harness.view(), shortcut_primary_modifier_t::control);
     auto model = ui::build_workspace_menu(harness.view(), false, false, false);
     using Action = ui::workspace_menu_action_t;
     check_menu(std::string_view{item(model, Action::undo).shortcut} == "Ctrl+Shift+U");
     check_menu(!(item(model, Action::undo).enabled));
     check_menu(std::string_view{item(model, Action::redo).shortcut}.empty());
     check_menu(item(model, Action::timing_lock).checked);
-    sys::project_menu_commands(registry, harness.view(), shortcut_primary_modifier_t::meta);
+    sys::build_menu_commands_view(registry, harness.view(), shortcut_primary_modifier_t::meta);
     model = ui::build_workspace_menu(harness.view(), false, false, false);
     check_menu(std::string_view{item(model, Action::undo).shortcut} == "Shift+⌘+U");
     (void)harness.frame();
@@ -140,7 +140,7 @@ TEST_CASE("Menu groups preserve existing actions and block missing or modal comm
     using Action = ui::workspace_menu_action_t;
     nuklear_event_harness_t harness{1280, 900};
     require_menu(harness.ready());
-    sys::project_menu_commands(command_registry_t::from({}), harness.view());
+    sys::build_menu_commands_view(command_registry_t::from({}), harness.view());
     const auto model = ui::build_workspace_menu(harness.view(), false, false, true);
     for (const auto action : {Action::open, Action::save_as, Action::close, Action::options,
         Action::copy, Action::cut, Action::paste, Action::select_same_sound, Action::move_to_bgm,
@@ -200,7 +200,7 @@ TEST_CASE("All six menu titles switch without dispatching the covered menu",
           "[frontend-state][event-harness][menu-bar]") {
     nuklear_event_harness_t harness{1280, 900};
     require_menu(harness.ready());
-    wormedit::sys::project_menu_commands(wormedit::command_registry_t::from({}), harness.view());
+    wormedit::sys::build_menu_commands_view(wormedit::command_registry_t::from({}), harness.view());
     (void)harness.frame();
     constexpr std::array labels{"Open chart or project...", "Undo", "Player preview", "New chart",
                                 "Play from cursor / Pause", "About WormEdit"};
@@ -221,7 +221,7 @@ TEST_CASE("Help shortcut sheet follows remaps and releases modal lane input on E
     (void)remap_command(registry, {"view.open_layers"},
         {{shortcut_key_t::u, shortcut_modifier_t::primary | shortcut_modifier_t::shift}});
     (void)remap_command(registry, {"view.toggle_sounds"}, {});
-    sys::project_menu_commands(registry, harness.view(), shortcut_primary_modifier_t::meta);
+    sys::build_menu_commands_view(registry, harness.view(), shortcut_primary_modifier_t::meta);
     const WormUiComposeLaneKeyBinding binding{.scancode = SDL_SCANCODE_1, .lane_id = 1};
     harness.view().compose.lane_key_bindings = &binding;
     harness.view().compose.lane_key_binding_count = 1;
@@ -339,7 +339,7 @@ TEST_CASE("Menu selection and its release cannot switch the covered Compose work
           "[frontend-state][event-harness][menu-bar][menu-capture]") {
     nuklear_event_harness_t harness{1280, 900};
     require_menu(harness.ready());
-    wormedit::sys::project_menu_commands(wormedit::command_registry_t::from({}), harness.view());
+    wormedit::sys::build_menu_commands_view(wormedit::command_registry_t::from({}), harness.view());
     (void)harness.frame();
     (void)click_menu(harness, "File");
     (void)harness.frame();

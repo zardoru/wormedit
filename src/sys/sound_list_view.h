@@ -70,7 +70,7 @@ struct sound_list_t {
 // resources and keysound otherwise.
 [[nodiscard]] auto effective_sound_kind(const resource_entry_t& resource) -> sound_kind_t;
 
-[[nodiscard]] auto project_sound_list(const song_document_t& document,
+[[nodiscard]] auto build_sound_list_view(const song_document_t& document,
                                       const sound_list_request_t& request) -> sound_list_t;
 
 struct sound_properties_t {
@@ -89,7 +89,7 @@ struct sound_properties_t {
 };
 
 // Invalid (valid == false) when the resource is unknown or not audio.
-[[nodiscard]] auto project_sound_properties(const song_document_t& document,
+[[nodiscard]] auto build_sound_properties_view(const song_document_t& document,
                                             resource_id_t resource) -> sound_properties_t;
 
 // The fallback outcome of each audio resource whose authored file is absent (up to `limit`,
@@ -99,7 +99,7 @@ struct keysound_fallback_t {
     resource_id_t resource;
     audio_fallback_t result;
 };
-[[nodiscard]] auto project_keysound_fallbacks(const song_document_t& document,
+[[nodiscard]] auto build_keysound_fallbacks_view(const song_document_t& document,
                                               const std::filesystem::path& asset_base,
                                               std::size_t limit) -> std::vector<keysound_fallback_t>;
 
@@ -232,9 +232,9 @@ struct keysound_list_cache_t {
     }
 
 public:
-    friend auto project_keysound_list_cached(keysound_list_cache_t&, const song_document_t&,
+    friend auto build_keysound_list_cached_view(keysound_list_cache_t&, const song_document_t&,
         const chart_document_t*, std::size_t, dock_sort_t, bool) -> const keysound_list_t&;
-    friend auto project_keysound_list_cached(keysound_list_cache_t&, const song_document_t&,
+    friend auto build_keysound_list_cached_view(keysound_list_cache_t&, const song_document_t&,
         const chart_document_t*, const keysound_list_request_t&) -> const keysound_list_t&;
 
     struct identity_t {
@@ -286,7 +286,7 @@ private:
     std::size_t projection_builds_{}, asset_index_builds_{};
 };
 
-[[nodiscard]] auto project_keysound_list(const song_document_t& document,
+[[nodiscard]] auto build_keysound_list_view(const song_document_t& document,
                                          const chart_document_t* chart,
                                          std::size_t maximum_rows,
                                          dock_sort_t sort = dock_sort_t::natural_name,
@@ -295,15 +295,15 @@ private:
 
 // Filter the complete placeable catalog first, then flatten group sections and
 // return only the requested display window. ID-only lists retain full filtered order.
-[[nodiscard]] auto project_keysound_list(const song_document_t& document,
+[[nodiscard]] auto build_keysound_list_view(const song_document_t& document,
                                          const chart_document_t* chart,
                                          const keysound_list_request_t& request)
     -> keysound_list_t;
-[[nodiscard]] auto project_keysound_list_cached(keysound_list_cache_t& cache,
+[[nodiscard]] auto build_keysound_list_cached_view(keysound_list_cache_t& cache,
     const song_document_t& document, const chart_document_t* chart, std::size_t maximum_rows,
     dock_sort_t sort = dock_sort_t::natural_name, bool ids_available = true)
     -> const keysound_list_t&;
-[[nodiscard]] auto project_keysound_list_cached(keysound_list_cache_t& cache,
+[[nodiscard]] auto build_keysound_list_cached_view(keysound_list_cache_t& cache,
     const song_document_t& document, const chart_document_t* chart,
     const keysound_list_request_t& request) -> const keysound_list_t&;
 
@@ -331,7 +331,7 @@ struct sound_slot_list_t {
     // Index in the filtered virtual list, or SIZE_MAX when the selected slot is hidden.
     std::size_t selected_row{SIZE_MAX};
 };
-[[nodiscard]] auto project_sound_slots(const song_document_t& document,
+[[nodiscard]] auto build_sound_slots_view(const song_document_t& document,
                                        const sound_slot_request_t& request) -> sound_slot_list_t;
 
 } // namespace wormedit::sys

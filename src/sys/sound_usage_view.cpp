@@ -1,4 +1,4 @@
-#include "sys/sound_usage_projection.h"
+#include "sys/sound_usage_view.h"
 
 #include <algorithm>
 #include <queue>
@@ -174,7 +174,7 @@ void append_asset_uses(const chart_document_t& chart, std::size_t chart_index, a
 
 } // namespace
 
-auto project_sound_usage(const song_document_t& document, resource_id_t resource)
+auto build_sound_usage_view(const song_document_t& document, resource_id_t resource)
     -> sound_usage_projection_t {
     sound_usage_projection_t projection{
         .song = document.id, .revision = document.revision, .resource = resource};

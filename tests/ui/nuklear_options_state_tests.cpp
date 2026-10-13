@@ -521,11 +521,11 @@ TEST_CASE("Recent files persist normalized successful paths newest first", "[opt
     expect_options(reloaded.warnings.empty());
     reloaded.preferences.general.recent_files_count = 1;
     WormUiWorkspaceView view{};
-    project_recent_files(reloaded, view);
+    build_recent_files_view(reloaded, view);
     require_recent(view.recent_file_count == 1);
     expect_options(std::string_view{view.recent_files[0].path} == runtime.recent_files[0].path);
     reloaded.preferences.general.recent_files_count = 100;
-    project_recent_files(reloaded, view);
+    build_recent_files_view(reloaded, view);
     expect_options(view.recent_file_count == 2);
 }
 

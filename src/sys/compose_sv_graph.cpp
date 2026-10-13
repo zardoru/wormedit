@@ -6,7 +6,7 @@
 
 namespace wormedit::sys {
 
-auto project_sv_steps(const chart_document_t& chart, const measure_index_t& measures,
+auto build_sv_steps_view(const chart_document_t& chart, const measure_index_t& measures,
                       std::size_t limit) -> sv_steps_t {
     struct placed_t {
         std::uint64_t row;

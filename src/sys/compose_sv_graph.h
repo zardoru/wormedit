@@ -24,7 +24,7 @@ struct sv_steps_t {
     bool truncated{false};
 };
 
-[[nodiscard]] auto project_sv_steps(const chart_document_t& chart, const measure_index_t& measures,
+[[nodiscard]] auto build_sv_steps_view(const chart_document_t& chart, const measure_index_t& measures,
                                     std::size_t limit) -> sv_steps_t;
 
 // A point of the drawn graph. `x` is the value normalized to the visible range in [0, 1] and `y`

@@ -1,13 +1,13 @@
-#include "sys/catalog_projection.h"
+#include "sys/catalog_view.h"
 #include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/catalogs.h>
 #include <wormedit/formats/bms.h>
 #include "sys/frame_timing.h"
-#include "sys/workspace_projection.h"
+#include "sys/workspace_view.h"
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/audio/playback_rate.h>
 #include "sys/timing_view.h"
-#include "sys/metadata_view_projection.h"
+#include "sys/metadata_view.h"
 #include <array>
 #include <cstring>
 #include <limits>

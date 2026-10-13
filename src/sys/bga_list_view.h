@@ -1,7 +1,7 @@
 #pragma once
 #include <wormedit/core/document.h>
 #include <wormedit/core/resource_assignment.h>
-#include "sys/sound_list_projection.h"
+#include "sys/sound_list_view.h"
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -29,6 +29,6 @@ struct bga_list_t {
     std::size_t total_matching{}, first_row{};
     bms_identifier_capacity_t bms_capacity{};
 };
-[[nodiscard]] auto project_bga_list(const song_document_t& document,
+[[nodiscard]] auto build_bga_list_view(const song_document_t& document,
                                    const bga_list_request_t& request) -> bga_list_t;
 }

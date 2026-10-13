@@ -1,5 +1,5 @@
 #include "core/text_util.h"
-#include "sys/bga_list_projection.h"
+#include "sys/bga_list_view.h"
 #include <wormedit/core/resource_assignment.h>
 #include <algorithm>
 #include <unordered_map>
@@ -48,7 +48,7 @@ auto bga_matches(const resource_entry_t& resource, const visual_asset_t* asset,
 }
 
 }
-auto project_bga_list(const song_document_t& document, const bga_list_request_t& request) -> bga_list_t {
+auto build_bga_list_view(const song_document_t& document, const bga_list_request_t& request) -> bga_list_t {
     bga_list_t result;
     result.bms_capacity = bms_identifier_capacity(document, "BMP");
     const auto uses = count_resource_references(document);

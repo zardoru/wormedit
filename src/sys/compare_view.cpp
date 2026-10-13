@@ -77,7 +77,7 @@ auto build_workspace_frame_model(compare_scene_cache_t& cache,
 
 namespace {
 
-void project_diagnostics(compare_scene_cache_t& cache,
+void build_diagnostics_view(compare_scene_cache_t& cache,
                          const wormedit::song_document_t& document,
                          const wormedit::chart_document_t& chart) {
     cache_compare_diagnostics(cache, document);
@@ -128,7 +128,7 @@ auto compare_local_difference_positions(const wormedit::chart_compare_result_t& 
 
 namespace {
 
-void project_pane(flattened_workspace_t& pane, wormedit::document_history_t& history,
+void build_pane_view(flattened_workspace_t& pane, wormedit::document_history_t& history,
                   const wormedit::workspace_controller_t& workspace, wormedit::chart_id_t chart,
                   compose_scene_cache_t& scene, std::optional<wormedit::editor_interaction_state_t>& state,
                   application_command_state_t& app, int width, int height,
@@ -187,7 +187,7 @@ void populate_compare_view(flattened_workspace_t& result, flattened_workspace_t&
     view.chart_ids = cache.chart_ids.data();
     view.chart_names = cache.chart_name_pointers.data();
     if (first) {
-        project_diagnostics(cache, history.document, *first);
+        build_diagnostics_view(cache, history.document, *first);
         view.diagnostic_count = cache.diagnostic_labels.size();
         view.diagnostic_labels = cache.diagnostic_label_pointers.data();
         view.diagnostic_rows = cache.diagnostic_rows.data();
@@ -227,7 +227,7 @@ void populate_compare_view(flattened_workspace_t& result, flattened_workspace_t&
         wormedit::set_viewport_scroll_pixels(*cache.first_state,
             cache.shared_scroll_measures * cache.pixels_per_measure);
     }
-    project_pane(first_pane, history, workspace, first_id, cache.first_scene, cache.first_state,
+    build_pane_view(first_pane, history, workspace, first_id, cache.first_scene, cache.first_state,
                  first_app, window_width, window_height, first_rows);
     if (cache.first_state) {
         cache.pixels_per_measure = cache.first_state->pixels_per_standard_measure;
@@ -239,7 +239,7 @@ void populate_compare_view(flattened_workspace_t& result, flattened_workspace_t&
         wormedit::set_viewport_scroll_pixels(*cache.second_state,
             cache.shared_scroll_measures * cache.pixels_per_measure);
     }
-    project_pane(second_pane, history, workspace, second_id, cache.second_scene, cache.second_state,
+    build_pane_view(second_pane, history, workspace, second_id, cache.second_scene, cache.second_state,
                  second_app, window_width, window_height, second_rows);
     view.first_pane = &first_pane.view.compose;
     view.second_pane = &second_pane.view.compose;

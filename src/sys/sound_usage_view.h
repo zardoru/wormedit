@@ -43,7 +43,7 @@ struct sound_usage_projection_t {
 inline constexpr std::size_t sound_usage_projection_limit = 1024;
 
 // Projects direct resource references and chart uses of the resource's shared audio asset.
-[[nodiscard]] auto project_sound_usage(const song_document_t& document, resource_id_t resource)
+[[nodiscard]] auto build_sound_usage_view(const song_document_t& document, resource_id_t resource)
     -> sound_usage_projection_t;
 
 } // namespace wormedit::sys

@@ -1,4 +1,4 @@
-#include "sys/sound_usage_projection.h"
+#include "sys/sound_usage_view.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -59,7 +59,7 @@ auto usage_song() -> song_document_t {
 TEST_CASE("sound usage distinguishes direct refs, shared-resource refs and asset-backed channels",
           "[unit][sys][sounds][usage]") {
     const auto song = usage_song();
-    const auto result = project_sound_usage(song, resource_id_t{1});
+    const auto result = build_sound_usage_view(song, resource_id_t{1});
     require_sound_usage(result.valid);
     check_sound_usage(result.song == song_id_t{1});
     check_sound_usage(result.revision == 7);
@@ -90,16 +90,16 @@ TEST_CASE("unused, missing and absent sound resources produce deterministic empt
           "[unit][sys][sounds][usage]") {
     auto song = usage_song();
     song.resources.push_back({.id = resource_id_t{4}, .name = "Unused", .asset = asset_id_t{11}});
-    const auto unused = project_sound_usage(song, resource_id_t{4});
+    const auto unused = build_sound_usage_view(song, resource_id_t{4});
     require_sound_usage(unused.valid);
     check_sound_usage(unused.rows.empty());
     check_sound_usage(unused.total_matching == 0);
-    const auto absent = project_sound_usage(song, resource_id_t{999});
+    const auto absent = build_sound_usage_view(song, resource_id_t{999});
     check_sound_usage(!(absent.valid));
     check_sound_usage(absent.rows.empty());
 
     song.resources[0].missing = true;
-    const auto missing = project_sound_usage(song, resource_id_t{1});
+    const auto missing = build_sound_usage_view(song, resource_id_t{1});
     check_sound_usage(missing.valid);
     check_sound_usage(missing.rows.size() == 7);
 }
@@ -125,7 +125,7 @@ TEST_CASE("sound usage cap reports truncation and keeps storage bounded",
     chart.sound_channels = {channel};
     chart.measures = {measure};
     song.charts = {chart};
-    const auto result = project_sound_usage(song, resource_id_t{1});
+    const auto result = build_sound_usage_view(song, resource_id_t{1});
     check_sound_usage(result.total_matching == sound_usage_projection_limit + 2);
     check_sound_usage(result.truncated);
     check_sound_usage(result.rows.size() == sound_usage_projection_limit);

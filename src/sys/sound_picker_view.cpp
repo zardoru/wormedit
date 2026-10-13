@@ -1,5 +1,5 @@
 #include "core/text_util.h"
-#include "sys/sound_picker_projection.h"
+#include "sys/sound_picker_view.h"
 
 #include <algorithm>
 #include <unordered_set>
@@ -90,7 +90,7 @@ void search(sound_picker_cache_t& cache, std::string_view query) {
 }
 } // namespace
 
-auto project_sound_picker(sound_picker_cache_t& cache, const song_document_t& document,
+auto build_sound_picker_view(sound_picker_cache_t& cache, const song_document_t& document,
                           const chart_document_t& chart, std::string_view query)
     -> const sound_picker_result_t& {
     if (!cache.valid || cache.document != &document || cache.chart_address != &chart ||

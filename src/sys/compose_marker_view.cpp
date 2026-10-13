@@ -1,5 +1,5 @@
 #include <wormedit/core/rational.h>
-#include "sys/compose_projection_internal.h"
+#include "sys/compose_view_internal.h"
 namespace wormedit::sys::compose_projection_detail {
 auto populate_compose_audio_bookmark(
     compose_marker_storage_t<WormUiComposeAudioBookmarkView>& storage,
@@ -362,7 +362,7 @@ auto compose_bga_event_selected(const wormedit::editor_interaction_view_model_t&
            });
 }
 
-void project_compose_beat_markers(const compose_projection_context_t<>& input) {
+void build_compose_beat_markers_view(const compose_projection_context_t<>& input) {
     auto& flattened = input.frame.flattened;
     const auto& interaction_view = input.scope.interaction_view;
     auto& view = input.frame.view();
@@ -414,20 +414,20 @@ bool compose_audio_marker_y_visible(double y, const WormUiComposeView& view) {
     return std::isfinite(y) && y >= 0.0 && y <= view.viewport_height_pixels;
 }
 
-void project_compose_audio_markers(const compose_projection_context_t<>& input) {
+void build_compose_audio_markers_view(const compose_projection_context_t<>& input) {
     if (!input.cache().timing.marker_timing_index)
         return;
     const auto& timing_index = *input.cache().timing.marker_timing_index;
-    project_compose_audio_bookmarks(input, timing_index);
-    project_compose_audio_sections(input, timing_index);
+    build_compose_audio_bookmarks_view(input, timing_index);
+    build_compose_audio_sections_view(input, timing_index);
 }
 
-void project_compose_markers(
+void build_compose_markers_view(
     const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& source) {
     const auto scope = source.scope.for_view(std::as_const(source.scope.interaction_view));
     const auto input = compose_projection_context_t<>::from(source.frame, scope);
-    project_compose_beat_markers(input);
-    project_compose_audio_markers(input);
+    build_compose_beat_markers_view(input);
+    build_compose_audio_markers_view(input);
 }
 
 auto cached_compose_timing_payloads(const wormedit::song_document_t& document,
@@ -576,7 +576,7 @@ void populate_compose_dead_spans(flattened_workspace_t& flattened,
     view.dead_span_count = 0;
     if (!cache.timing.dead_spans)
         return;
-    const auto bands = wormedit::sys::project_dead_span_bands(
+    const auto bands = wormedit::sys::build_dead_span_bands_view(
         *cache.timing.dead_spans, pixels_per_row, interaction_view.viewport_scroll_pixels,
         view.viewport_height_pixels, downscroll, wormedit::sys::dead_span_pause_band_pixels);
     const auto count = std::min<std::size_t>(bands.size(), WORM_UI_COMPOSE_DEAD_SPAN_CAPACITY);

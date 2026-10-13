@@ -1,4 +1,4 @@
-#include "sys/bmson_waveform_projection.h"
+#include "sys/bmson_waveform_view.h"
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 
@@ -69,7 +69,7 @@ auto channel_ring_slot(std::int64_t row, std::size_t count) -> std::size_t {
     const auto remainder = row % static_cast<std::int64_t>(count);
     return static_cast<std::size_t>(remainder < 0 ? remainder + static_cast<std::int64_t>(count) : remainder);
 }
-void project_channel_ring_range(const channel_ring_context_t& context, std::int64_t begin,
+void build_channel_ring_range_view(const channel_ring_context_t& context, std::int64_t begin,
                                 std::size_t count) {
     auto& cache = context.application.cache;
     auto& ring = context.target.ring;
@@ -133,7 +133,7 @@ auto populate_channel_ring(const channel_ring_context_t& context, bool downscrol
         const auto begin = index++;
         while (index < count && ring.rows[channel_ring_slot(first + static_cast<std::int64_t>(index), count)].world_row !=
                                     first + static_cast<std::int64_t>(index)) ++index;
-        project_channel_ring_range(context, first + static_cast<std::int64_t>(begin), index - begin);
+        build_channel_ring_range_view(context, first + static_cast<std::int64_t>(begin), index - begin);
     }
     rows.reserve(count);
     for (std::size_t row = 0; row < count; ++row) {
@@ -234,7 +234,7 @@ void split_stem_by_lane(const stem_split_context_t& context) {
 }
 
 // Projects one stem whose audio is decoded; false leaves it as a placeholder.
-auto project_stem(const bmson_waveform_projection_context_t& context, const chart_document_t& chart,
+auto build_stem_view(const bmson_waveform_projection_context_t& context, const chart_document_t& chart,
                   const sound_channel_t& channel, compose_scene_cache_t::stem_waveform_cache_t& entry) -> bool {
     const auto asset = channel.source_clip.source;
     const auto binding = context.audition_sources.binding(context.history.document, asset);
@@ -363,7 +363,7 @@ void populate_stem_waveforms(const bmson_waveform_projection_context_t& context)
         auto& entry = cache.stems.stem_for(item.channel->id);
         entry.is_selected = item.selected;
         entry.source_lane = item.lane;
-        entry.pending = !project_stem(context, *chart, *item.channel, entry);
+        entry.pending = !build_stem_view(context, *chart, *item.channel, entry);
         publish_stem(cache, item, entry);
     }
     context.flattened.view.compose.stem_waveforms = cache.stems.stem_waveform_views.data();
@@ -435,7 +435,7 @@ auto packed_slice_matches(const std::optional<sound_slice_result_t>& slices,
         first.source_end_frame == piece.clip.end_frame &&
         (!piece.next_row || slices->slices.back().absolute_row == *piece.next_row);
 }
-auto project_packed_piece(const bmson_waveform_projection_context_t& context,
+auto build_packed_piece_view(const bmson_waveform_projection_context_t& context,
     const packed_waveform_piece_t& piece, compose_scene_cache_t::stem_waveform_cache_t& entry,
     const audio::display_row_table_t& table, bool downscroll) -> bool {
     const auto binding = context.audition_sources.binding(context.history.document, piece.clip.source);
@@ -506,7 +506,7 @@ void populate_packed_waveforms(const bmson_waveform_projection_context_t& contex
     const auto downscroll = compose_field_downscroll(*chart);
     for (const auto* piece : pieces) {
         auto* entry = &cache.stems.packed_for(piece->event);
-        const auto ready = project_packed_piece(context, *piece, *entry, *table, downscroll);
+        const auto ready = build_packed_piece_view(context, *piece, *entry, *table, downscroll);
         const auto band = packed_pending_band(*piece, *table, downscroll);
         if ((!ready && band.first < band.second) || (ready && !entry->rows.empty()))
             cache.stems.stem_waveform_views.push_back({.stem_key = piece->event.value,

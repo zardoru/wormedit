@@ -7,7 +7,7 @@
 #include "sys/timing_edit_runtime.h"
 #include "sys/timing_view.h"
 #include "sys/workspace_frame_view.h"
-#include "sys/workspace_projection.h"
+#include "sys/workspace_view.h"
 
 #include <wormedit/window.h>
 
@@ -67,7 +67,7 @@ struct application_frame_projection_context_t {
 #endif
 };
 
-[[nodiscard]] auto project_application_frame(const application_frame_projection_context_t& context)
+[[nodiscard]] auto build_application_frame_view(const application_frame_projection_context_t& context)
     -> flattened_workspace_t;
 
 } // namespace wormedit::sys

@@ -1,4 +1,4 @@
-#include "sys/menu_command_projection.h"
+#include "sys/menu_command_view.h"
 #include "sys/shortcut_rows.h"
 #include "ui/workspace_menu.h"
 #include <cstdio>
@@ -21,7 +21,7 @@ auto menu_shortcut(shortcut_chord_t chord, shortcut_primary_modifier_t primary) 
 }
 }
 
-void project_menu_commands(const command_registry_t& registry, WormUiWorkspaceView& view, shortcut_primary_modifier_t primary) {
+void build_menu_commands_view(const command_registry_t& registry, WormUiWorkspaceView& view, shortcut_primary_modifier_t primary) {
     static_assert(ui::workspace_menu_command_ids.size() <= WORM_UI_MENU_COMMAND_CAPACITY);
     view.menu_command_count = 0;
     for (const auto* id : ui::workspace_menu_command_ids) {

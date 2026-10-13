@@ -19,7 +19,7 @@ auto recipe_row(const measure_index_t& measures, local_position_t position, bool
 
 } // namespace
 
-auto project_recipe_areas(const chart_document_t& chart, const measure_index_t& measures,
+auto build_recipe_areas_view(const chart_document_t& chart, const measure_index_t& measures,
                           std::size_t limit) -> recipe_areas_t {
     recipe_areas_t result;
     for (const auto& recipe : chart.sv_recipes) {

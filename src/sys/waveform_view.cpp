@@ -1,7 +1,7 @@
 #include <wormedit/core/rational.h>
-#include "sys/waveform_view_projection.h"
+#include "sys/waveform_view.h"
 #include <wormedit/audio/waveform_viewport.h>
-#include "sys/bmson_waveform_projection.h"
+#include "sys/bmson_waveform_view.h"
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include <wormedit/audio/aligned_waveform.h>
@@ -171,7 +171,7 @@ auto prepare_cpu_envelope(const envelope_projection_context_t& context, std::siz
     ring.projected_rows = ring.reused_rows = ring.projection_calls = 0;
     return changed;
 }
-void project_cpu_envelope_range(const envelope_projection_context_t& context,
+void build_cpu_envelope_range_view(const envelope_projection_context_t& context,
                                 std::int64_t first, std::size_t count) {
     auto& ring = context.ring;
     auto request = context.request;
@@ -221,7 +221,7 @@ auto populate_cpu_envelope(const envelope_projection_context_t& context,
         const auto begin = index++;
         while (index < count && cpu_row_needs_projection(ring, first + static_cast<std::int64_t>(index), changed))
             ++index;
-        project_cpu_envelope_range(context, first + static_cast<std::int64_t>(begin), index - begin);
+        build_cpu_envelope_range_view(context, first + static_cast<std::int64_t>(begin), index - begin);
     }
     for (std::size_t row = 0; row < count; ++row) {
         const auto world = first + static_cast<std::int64_t>(row);

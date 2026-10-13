@@ -1,4 +1,4 @@
-#include "sys/compose_projection_internal.h"
+#include "sys/compose_view_internal.h"
 #include "sys/compose_input_internal.h"
 #include "sys/options_runtime.h"
 #include "sys/chart_preview_state.h"
@@ -6,7 +6,7 @@
 #include "../sys/application_dispatch_fixture.h"
 #include "sys/application_command_dispatch.h"
 #include "sys/application_defaults.h"
-#include "sys/bmson_waveform_projection.h"
+#include "sys/bmson_waveform_view.h"
 #include "sys/compare_view.h"
 #include "sys/compose_actions.h"
 #include "sys/compose_area_actions.h"
@@ -18,7 +18,7 @@
 #include "sys/recipe_form.h"
 #include "sys/timing_view.h"
 #include "sys/waveform_analysis_runtime.h"
-#include "sys/waveform_view_projection.h"
+#include "sys/waveform_view.h"
 #include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>

@@ -96,7 +96,7 @@ void bga_dock_runtime_t::project(const song_document_t& document, const std::fil
     if (state.revision != document.revision) { state.failed.clear(); state.revision = document.revision; }
     if (!request.visible) return;
     state.search.assign(request.search, std::find(request.search, request.search + sizeof(request.search), '\0'));
-    state.list = project_bga_list(document, {state.search, request.first_row,
+    state.list = build_bga_list_view(document, {state.search, request.first_row,
         std::min<std::size_t>(64, request.row_limit),
         request.sort_by_id ? dock_sort_t::bms_id : dock_sort_t::natural_name,
         request.ids_available, static_cast<resource_use_filter_t>(request.use_filter)});

@@ -35,7 +35,7 @@ auto project(const chart_document_t& chart, std::size_t limit = 64) -> dead_span
     REQUIRE(std::holds_alternative<measure_index_t>(measures));
     const auto timing = build_timing_index(chart);
     REQUIRE(timing);
-    return project_dead_spans(chart, std::get<measure_index_t>(measures), *timing.index, limit);
+    return build_dead_spans_view(chart, std::get<measure_index_t>(measures), *timing.index, limit);
 }
 
 } // namespace
@@ -125,7 +125,7 @@ TEST_CASE("pause bands sit on their time side of the row and warps cover their r
                          .begin_row = 200, .end_row = 200, .seconds = {1, 1}},
                         {.kind = dead_span_kind_t::warp, .object = object_id_t{3},
                          .begin_row = 300, .end_row = 400, .seconds = {0, 1}}};
-    const auto up = project_dead_span_bands(projection, 1.0, 0.0, 1000.0, false, 10.0);
+    const auto up = build_dead_span_bands_view(projection, 1.0, 0.0, 1000.0, false, 10.0);
     REQUIRE(up.size() == 3);
     CHECK(up[0].top == 90.0);
     CHECK(up[0].bottom == 100.0);
@@ -136,12 +136,12 @@ TEST_CASE("pause bands sit on their time side of the row and warps cover their r
     CHECK(pointer_in_dead_span(up, 95.0));
     CHECK_FALSE(pointer_in_dead_span(up, 100.0));
     CHECK(pointer_in_dead_span(up, 399.0));
-    const auto down = project_dead_span_bands(projection, 1.0, 0.0, 1000.0, true, 10.0);
+    const auto down = build_dead_span_bands_view(projection, 1.0, 0.0, 1000.0, true, 10.0);
     CHECK(down[1].top == 790.0);
     CHECK(down[1].bottom == 800.0);
     CHECK(down[0].top == 900.0);
     CHECK(down[0].bottom == 910.0);
-    const auto scrolled = project_dead_span_bands(projection, 1.0, 250.0, 100.0, false, 10.0);
+    const auto scrolled = build_dead_span_bands_view(projection, 1.0, 250.0, 100.0, false, 10.0);
     REQUIRE(scrolled.size() == 1);
     CHECK(scrolled[0].top == 50.0);
 }
@@ -160,7 +160,7 @@ auto project_pause_with_boundaries(signed_rational_t earlier, signed_rational_t 
     row->before_delays_seconds = earlier;
     row->event_seconds = earlier;
     row->after_stops_seconds = later;
-    return project_dead_spans(chart, std::get<measure_index_t>(measures), *timing.index, 64);
+    return build_dead_spans_view(chart, std::get<measure_index_t>(measures), *timing.index, 64);
 }
 void check_reduced_pause_span(signed_rational_t earlier, signed_rational_t later,
                              signed_rational_t expected) {

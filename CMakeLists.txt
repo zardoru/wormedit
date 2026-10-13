@@ -468,14 +468,14 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose_minimap_navigation.cpp
         src/sys/bookmark_commands.cpp
         src/sys/compose_navigation.cpp
-        src/sys/bookmark_chooser_projection.cpp
+        src/sys/bookmark_chooser_view.cpp
         src/sys/bookmark_navigation.cpp
         src/sys/bookmark_rename_commands.cpp
         src/sys/compose_playhead_skip.cpp
         src/sys/compose_bgm_bar.cpp
-        src/sys/sound_list_projection.cpp
-        src/sys/sound_picker_projection.cpp
-        src/sys/sound_usage_projection.cpp
+        src/sys/sound_list_view.cpp
+        src/sys/sound_picker_view.cpp
+        src/sys/sound_usage_view.cpp
         src/sys/sound_usage_actions.cpp
         src/sys/compose_measure_commands.cpp
         src/sys/compose_selection_transform.cpp
@@ -490,10 +490,10 @@ if(WORMEDIT_BUILD_APP)
         src/sys/application_command_dispatch.cpp
         src/sys/compose_resource_presenter.cpp
         src/sys/compose_view.cpp
-        src/sys/compose_scene_projection.cpp
-        src/sys/compose_marker_projection.cpp
-        src/sys/compose_selection_projection.cpp
-        src/sys/compose_draw_source_projection.cpp
+        src/sys/compose_scene_view.cpp
+        src/sys/compose_marker_view.cpp
+        src/sys/compose_selection_view.cpp
+        src/sys/compose_draw_source_view.cpp
         src/sys/compose_hover_timing.cpp
         src/sys/compare_view.cpp
         src/sys/compose_input.cpp
@@ -508,7 +508,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose_marker_actions.cpp
         src/sys/compose_sound_actions.cpp
         src/sys/compose_bga_actions.cpp
-        src/sys/bga_list_projection.cpp
+        src/sys/bga_list_view.cpp
         src/sys/bga_dock_runtime.cpp
         src/sys/compose_audition_requests.cpp
         src/sys/crash_backtrace.cpp
@@ -516,7 +516,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/project_audio_sources.cpp
         src/sys/metronome.cpp
         src/sys/application_edit_helpers.cpp
-        src/sys/application_frame_projection.cpp
+        src/sys/application_frame_view.cpp
         src/sys/application_frame_services.cpp
         src/sys/resource_drop_router.cpp
         src/sys/frame_pacing.cpp
@@ -537,20 +537,20 @@ if(WORMEDIT_BUILD_APP)
         src/sys/metadata_drop_state.cpp
         src/sys/metadata_asset_runtime.cpp
         src/sys/metadata_actions.cpp
-        src/sys/metadata_view_projection.cpp
-        src/sys/waveform_view_projection.cpp
-        src/sys/bmson_waveform_projection.cpp
+        src/sys/metadata_view.cpp
+        src/sys/waveform_view.cpp
+        src/sys/bmson_waveform_view.cpp
         src/sys/compose_waveform_overlays.cpp
         src/sys/resource_job_state.cpp
         src/sys/player_preview_presenter.cpp
-        src/sys/workspace_projection.cpp
+        src/sys/workspace_view.cpp
         src/sys/workspace_frame_view.cpp
         src/sys/transport_player_actions.cpp
         src/sys/external_player.cpp
         src/sys/preferences_runtime.cpp
         src/sys/options_runtime.cpp
         src/sys/shortcut_rows.cpp
-        src/sys/menu_command_projection.cpp
+        src/sys/menu_command_view.cpp
         src/sys/notification_history_runtime.cpp
         src/sys/project_view.cpp
         src/sys/tap_timing_runtime.cpp

@@ -75,7 +75,7 @@ void add_warp_spans(const chart_document_t& chart, const measure_index_t& measur
 
 } // namespace
 
-auto project_dead_spans(const chart_document_t& chart, const measure_index_t& measures,
+auto build_dead_spans_view(const chart_document_t& chart, const measure_index_t& measures,
                         const timing_index_t& timing, std::size_t limit)
     -> dead_span_projection_t {
     dead_span_projection_t result;
@@ -92,7 +92,7 @@ auto project_dead_spans(const chart_document_t& chart, const measure_index_t& me
     return result;
 }
 
-auto project_dead_span_bands(const dead_span_projection_t& projection, double pixels_per_row,
+auto build_dead_span_bands_view(const dead_span_projection_t& projection, double pixels_per_row,
                              double scroll_pixels, double viewport_height, bool downscroll,
                              double pause_band_pixels) -> std::vector<dead_span_band_t> {
     std::vector<dead_span_band_t> bands;

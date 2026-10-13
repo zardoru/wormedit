@@ -1,5 +1,5 @@
 #include "nuklear_event_harness.h"
-#include "sys/catalog_projection.h"
+#include "sys/catalog_view.h"
 #include <wormedit/core/workspace.h>
 
 #include "ui/nuklear/compose_panel.h"

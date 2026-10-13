@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sys/sound_list_projection.h"
+#include "sys/sound_list_view.h"
 #include "sys/projection_notification_feedback.h"
 #include "ui/frontend.h"
 
@@ -220,7 +220,7 @@ struct flattened_workspace_t {
 
 // Borrowed notification strings remain valid until the center's next frame-
 // thread mutation. Project after draining, then draw before dispatching actions.
-[[nodiscard]] auto project_notification_view(const notification_center_t& center,
+[[nodiscard]] auto build_notification_view(const notification_center_t& center,
                                              notification_time_t now)
     -> WormUiNotificationView;
 

@@ -1,4 +1,4 @@
-#include "sys/compose_projection_internal.h"
+#include "sys/compose_view_internal.h"
 namespace wormedit::sys::compose_projection_detail {
 auto converted_bgm_preview_count(const wormedit::editor_interaction_state_t& state) -> std::size_t {
     if (!state.pending_note_move_gesture)
@@ -353,7 +353,7 @@ auto quantize_endpoint_anchor(const WormUiComposeRect& bounds, wormedit::lane_gl
     return {center_x, y};
 }
 
-auto project_quantize_endpoint(const quantize_projection_scope_t& scope,
+auto build_quantize_endpoint_view(const quantize_projection_scope_t& scope,
                                wormedit::lane_id_t lane_id, std::uint64_t absolute_row,
                                bool promoted) -> std::optional<quantize_endpoint_projection_t> {
     const auto& index = scope.index;
@@ -389,9 +389,9 @@ auto make_quantize_ghost_geometry(const quantize_projection_scope_t& scope,
     const auto& scale = scope.scale;
 
     const auto before_head =
-        project_quantize_endpoint(scope, note.lane, report.start_before_absolute_row, false);
+        build_quantize_endpoint_view(scope, note.lane, report.start_before_absolute_row, false);
     const auto after_head =
-        project_quantize_endpoint(scope, note.lane, report.start_after_absolute_row, true);
+        build_quantize_endpoint_view(scope, note.lane, report.start_after_absolute_row, true);
     if (!before_head || !after_head)
         return std::nullopt;
     WormUiComposeQuantizeGhostView ghost{};
@@ -420,9 +420,9 @@ auto add_quantize_tail_geometry(const quantize_projection_scope_t& scope,
 
     if (!report.has_end_before || !report.has_end_after)
         return true;
-    const auto before = project_quantize_endpoint(scope, wormedit::lane_id_t{report.lane_id},
+    const auto before = build_quantize_endpoint_view(scope, wormedit::lane_id_t{report.lane_id},
                                                   report.end_before_absolute_row, false);
-    const auto after = project_quantize_endpoint(scope, wormedit::lane_id_t{report.lane_id},
+    const auto after = build_quantize_endpoint_view(scope, wormedit::lane_id_t{report.lane_id},
                                                  report.end_after_absolute_row, true);
     if (!before || !after)
         return false;

@@ -6,7 +6,7 @@
 
 #include "core/interaction_context.h"
 
-#include "sys/workspace_projection.h"
+#include "sys/workspace_view.h"
 #include "sys/compose_navigation_travel.h"
 #include "common/static_interval_index.h"
 #include "sys/compose_bgm_bar.h"

@@ -1,13 +1,13 @@
 #include <wormedit/core/rational.h>
-#include "sys/application_frame_projection.h"
+#include "sys/application_frame_view.h"
 #include "sys/compose_hover_timing.h"
 #include "sys/frame_timing.h"
 
-#include "sys/bmson_waveform_projection.h"
+#include "sys/bmson_waveform_view.h"
 #include "sys/compose_view.h"
 #include "sys/compose_waveform_overlays.h"
-#include "sys/metadata_view_projection.h"
-#include "sys/waveform_view_projection.h"
+#include "sys/metadata_view.h"
+#include "sys/waveform_view.h"
 
 #include <wormedit/audio/playback_rate.h>
 #include <wormedit/window.h>
@@ -17,7 +17,7 @@
 namespace wormedit::sys {
 namespace {
 
-void project_hover_timing(flattened_workspace_t& flattened, const document_history_t& history,
+void build_hover_timing_view(flattened_workspace_t& flattened, const document_history_t& history,
                           const workspace_controller_t& workspace, compose_scene_cache_t& cache) {
     auto& view = flattened.view.compose;
     view.hover_timing_valid = false;
@@ -107,7 +107,7 @@ auto prepare_frame_stems(const application_frame_projection_context_t& context,
 
 } // namespace
 
-auto project_application_frame(const application_frame_projection_context_t& context)
+auto build_application_frame_view(const application_frame_projection_context_t& context)
     -> flattened_workspace_t {
     frame_phase_scope_t frame_projection(frame_phase_t::workspace);
     flattened_workspace_t flattened;
@@ -316,7 +316,7 @@ auto project_application_frame(const application_frame_projection_context_t& con
             flattened.view.compose.bgm_bar_row_count != 0 ||
             flattened.view.compose.waveform_overview_row_count != 0;
     }
-    project_hover_timing(flattened, context.history, context.workspace,
+    build_hover_timing_view(flattened, context.history, context.workspace,
                          context.compose_scene_cache);
     return flattened;
 }

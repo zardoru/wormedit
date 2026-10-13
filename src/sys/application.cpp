@@ -1,5 +1,5 @@
 #include "core/text_util.h"
-#include "sys/catalog_projection.h"
+#include "sys/catalog_view.h"
 #include "sys/application.h"
 #include "sys/application_edit_inputs.h"
 #include "sys/external_player_runtime.h"
@@ -20,7 +20,7 @@
 #include "sys/application_startup_feedback.h"
 #include "sys/frontend_notification_sink.h"
 #include "sys/application_frame_services.h"
-#include "sys/application_frame_projection.h"
+#include "sys/application_frame_view.h"
 #include "sys/application_command_dispatch.h"
 #include "sys/application_defaults.h"
 #include "sys/audio_project_import.h"
@@ -32,7 +32,7 @@
 #include "sys/compose_actions.h"
 #include "sys/application_edit_helpers.h"
 #include "sys/recipe_form.h"
-#include "sys/workspace_projection.h"
+#include "sys/workspace_view.h"
 #include "sys/workspace_frame_view.h"
 #include "sys/transport_player_actions.h"
 #include "sys/compose_minimap_navigation.h"
@@ -45,7 +45,7 @@
 #include "sys/metadata_drop_state.h"
 #include "sys/metadata_asset_runtime.h"
 #include "sys/metadata_actions.h"
-#include "sys/metadata_view_projection.h"
+#include "sys/metadata_view.h"
 #include "sys/platform_recovery.h"
 #include "sys/recovery_notification_feedback.h"
 #include "sys/platform_shortcut_profile.h"
@@ -53,7 +53,7 @@
 #include "sys/preferences_runtime.h"
 #include "sys/options_runtime.h"
 #include "sys/shortcut_rows.h"
-#include "sys/menu_command_projection.h"
+#include "sys/menu_command_view.h"
 #include <set>
 #include "sys/notification_history_runtime.h"
 #include <SDL3/SDL_clipboard.h>
@@ -68,8 +68,8 @@
 #include "sys/project_import_feedback.h"
 #include "sys/project_save_paths.h"
 #include "sys/player_preview_presenter.h"
-#include "sys/waveform_view_projection.h"
-#include "sys/bmson_waveform_projection.h"
+#include "sys/waveform_view.h"
+#include "sys/bmson_waveform_view.h"
 #include "sys/compose_audition_requests.h"
 #include "sys/crash_backtrace.h"
 #include "sys/inline_preview_cursor.h"
@@ -433,7 +433,7 @@ void attach_shortcut_rows(WormUiOptionsView& view, const wormedit::sys::options_
         editor.capture.reset();
         return;
     }
-    wormedit::sys::project_shortcut_rows(registry, application_primary_modifier(), editor.rows);
+    wormedit::sys::build_shortcut_rows_view(registry, application_primary_modifier(), editor.rows);
     view.shortcut_rows = editor.rows.rows.data();
     view.shortcut_row_count = editor.rows.rows.size();
     const auto capturing = editor.capture ? std::ranges::find(editor.rows.commands, *editor.capture)
@@ -592,7 +592,7 @@ auto external_source_measure(const wormedit::chart_document_t& chart,
 
 
 
-void project_external_player_view(external_player_runtime_t& runtime, WormUiWorkspaceView& view) {
+void build_external_player_view(external_player_runtime_t& runtime, WormUiWorkspaceView& view) {
     runtime.views.clear();
     for (const auto& player : runtime.preferences.players)
         runtime.views.push_back({player.name.c_str(), player.path.c_str(), player.start_arguments.c_str(),
@@ -994,7 +994,7 @@ void consume_menu_shortcut(WormUiWorkspaceAction& action,
     action.shortcut_event_count = retained;
 }
 
-void project_command_menu(const wormedit::command_registry_t& registry, WormUiWorkspaceView& view) {
+void build_command_menu_view(const wormedit::command_registry_t& registry, WormUiWorkspaceView& view) {
     view.command_menu_count = std::min(registry.commands.size(),
         static_cast<std::size_t>(WORM_UI_COMMAND_MENU_CAPACITY));
     for (std::size_t i = 0; i < view.command_menu_count; ++i) {
@@ -1355,7 +1355,7 @@ auto requested_project_transition(WormUiWorkspaceActionKind kind) -> std::option
 
 
 
-void project_bga_dock(wormedit::sys::bga_dock_runtime_t& runtime,
+void build_bga_dock_view(wormedit::sys::bga_dock_runtime_t& runtime,
     const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
     const std::filesystem::path& base, WormUiComposeView& view) {
     WormUiBgaDockRequest request{};
@@ -1685,13 +1685,13 @@ auto notification_frame_time() -> wormedit::notification_time_t {
         std::chrono::steady_clock::now().time_since_epoch());
 }
 
-auto project_application_notifications(const wormedit::notification_center_t& center,
+auto build_application_notifications_view(const wormedit::notification_center_t& center,
     wormedit::notification_time_t now,
     const std::optional<wormedit::editor_interaction_state_t>& interaction,
     wormedit::sys::notification_history_runtime_t& runtime,
     const wormedit::song_document_t& document, std::uint64_t document_generation)
     -> WormUiNotificationView {
-    auto view = wormedit::sys::project_notification_view(center, now);
+    auto view = wormedit::sys::build_notification_view(center, now);
     view.history_available = true;
     view.history = runtime.project(center, document, now, document_generation);
     view.edit_gesture_active = interaction && editor_interaction_has_pending_gesture(*interaction);
@@ -1794,7 +1794,7 @@ auto tap_music_available(const wormedit::song_document_t& document, const WormUi
     });
 }
 
-void project_tap_timing(wormedit::sys::tap_timing_runtime_t& runtime,
+void build_tap_timing_view(wormedit::sys::tap_timing_runtime_t& runtime,
                         const wormedit::song_document_t& document,
                         const std::function<wormedit::sys::tap_timing_clock_t()>& read_clock,
                         wormedit::command_registry_t& registry, WormUiWorkspaceView& view) {
@@ -4539,7 +4539,7 @@ struct application_t::implementation_t {
     }
 
     auto build_frame_notifications(notification_time_t now) -> WormUiNotificationView {
-        return project_application_notifications(
+        return build_application_notifications_view(
             platform.notifications, now, views.compose_interaction_state,
             views.notification_history, session.history.document,
             views.project_chart_runtime.session_generation);
@@ -4554,7 +4554,7 @@ struct application_t::implementation_t {
         worm_ui_frontend_bga_move_preview(&bga_move_preview.chart_id,
                                           &bga_move_preview.document_revision,
                                           &bga_move_preview.event_id, &bga_move_preview.y_pixels);
-        return wormedit::sys::project_application_frame({
+        return wormedit::sys::build_application_frame_view({
             .model = model,
             .history = session.history,
             .workspace = session.workspace,
@@ -4624,14 +4624,14 @@ struct application_t::implementation_t {
         flattened.view.close_confirmation = close_confirmation_view(
             views.pending_close, session.project_identity.native_project_loaded &&
                                      !session.project_identity.active_project_path.empty());
-        project_external_player_view(preferences.external_player_runtime, flattened.view);
+        build_external_player_view(preferences.external_player_runtime, flattened.view);
         wormedit::sys::project_chart_view(views.project_chart_runtime, session.history.document,
                                           flattened.view.setup);
         flattened.view.setup.selected_chart_id = flattened.view.selected_chart_id;
-        project_tap_timing(views.tap_runtime, session.history.document, views.tap_clock,
+        build_tap_timing_view(views.tap_runtime, session.history.document, views.tap_clock,
                            command_registry, flattened.view);
         publish_tap_assist();
-        wormedit::sys::project_recent_files(preferences.program_preferences, flattened.view);
+        wormedit::sys::build_recent_files_view(preferences.program_preferences, flattened.view);
         flattened.view.project_loaded = session.project_identity.session_loaded;
         flattened.view.project_has_native_path = session.project_identity.native_project_loaded;
         flattened.view.pending_new_project_audio_path =
@@ -4640,7 +4640,7 @@ struct application_t::implementation_t {
             session.project_identity.pending_import.bms_encoding_path.c_str();
         // Projection returns by value; refresh view pointers after any move.
         flattened.rebind_view_pointers();
-        project_bga_dock(views.bga_dock_runtime, session.history, session.workspace,
+        build_bga_dock_view(views.bga_dock_runtime, session.history, session.workspace,
                          session.project_identity.asset_base, flattened.view.compose);
     }
 
@@ -4705,8 +4705,8 @@ struct application_t::implementation_t {
             wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::nuklear);
         refresh_application_command_states(command_registry, session.history, session.workspace,
                                            views.compose_interaction_state, commands);
-        wormedit::sys::project_menu_commands(command_registry, flattened.view);
-        project_command_menu(command_registry, flattened.view);
+        wormedit::sys::build_menu_commands_view(command_registry, flattened.view);
+        build_command_menu_view(command_registry, flattened.view);
 #if defined(WORMEDIT_HAS_MACOS_MENU)
         wormedit::sys::refresh_macos_menu_shortcuts(command_registry);
 #endif

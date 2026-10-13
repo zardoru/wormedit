@@ -43,7 +43,7 @@ struct recipe_areas_t {
 
 // One area per stored recipe whose range lies inside the chart. Sampling is read-only; nothing
 // is written to the chart.
-[[nodiscard]] auto project_recipe_areas(const chart_document_t& chart,
+[[nodiscard]] auto build_recipe_areas_view(const chart_document_t& chart,
                                         const measure_index_t& measures, std::size_t limit)
     -> recipe_areas_t;
 

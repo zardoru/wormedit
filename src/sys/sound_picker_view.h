@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sys/sound_list_projection.h"
+#include "sys/sound_list_view.h"
 
 namespace wormedit::sys {
 struct sound_picker_row_t {
@@ -24,7 +24,7 @@ struct sound_picker_cache_t {
 };
 // Full dock catalog, irrespective of its filters/sections/window. ASCII case
 // folding preserves other UTF-8 bytes. Exact/prefix/substring precede subsequences.
-[[nodiscard]] auto project_sound_picker(sound_picker_cache_t& cache,
+[[nodiscard]] auto build_sound_picker_view(sound_picker_cache_t& cache,
     const song_document_t& document, const chart_document_t& chart, std::string_view query)
     -> const sound_picker_result_t&;
 } // namespace wormedit::sys

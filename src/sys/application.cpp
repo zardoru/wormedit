@@ -1924,7 +1924,7 @@ auto process_compose_frame_action(Context& context, WormUiWorkspaceAction& actio
          (context.environment.workspace_ref.active_tab == wormedit::workspace_tab_t::compose &&
           action.compose_input_chart_id != 0)) &&
         context.environment.compose_interaction_state_ref) {
-        (void)dispatch_compose_input_action(action, context.environment,
+        (void)dispatch_compose_input_action(action, context.environment.compose_inputs(),
                                             *context.environment.compose_interaction_state_ref,
                                             viewport_delta_seconds, true);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
@@ -3005,7 +3005,7 @@ void dispatch_workspace_frame_action(Context& context, const WormUiWorkspaceActi
                    action, history, workspace, context.notification_sink_ref)) {
         static_cast<void>(selection_status);
     } else if (const auto metadata_status = wormedit::sys::dispatch_metadata_action(
-                   action, context, application_command_state.audio_offset_edits_locked(),
+                   action, context.metadata_inputs(), application_command_state.audio_offset_edits_locked(),
                    context.resource_copy_runtime_ref.busy(), context.export_runtime_ref.busy(),
                    true)) {
         static_cast<void>(metadata_status);
@@ -3014,7 +3014,7 @@ void dispatch_workspace_frame_action(Context& context, const WormUiWorkspaceActi
                                                 context.notification_sink_ref)) {
         // The timing producer publishes feedback and consumes this action.
     } else if (wormedit::sys::dispatch_compose_workspace_action(
-                   action, context, compose_viewport_height_pixels,
+                   action, context.compose_actions(), compose_viewport_height_pixels,
                    metadata_asset_runtime.import_pending())) {
         // The Compose producer publishes feedback and consumes this action.
     }
@@ -3529,7 +3529,7 @@ auto dispatch_registered_application_command(
         }
         return wormedit::command_invocation_result_t{.accepted = true};
     }
-    return wormedit::sys::invoke_application_command(*command, environment);
+    return wormedit::sys::invoke_application_command(*command, environment.command_inputs());
 }
 
 
@@ -4227,7 +4227,7 @@ struct application_t::implementation_t {
         {
             wormedit::sys::frame_phase_scope_t input(wormedit::sys::frame_phase_t::events_input);
             if (!wormedit::sys::poll_frontend_events(
-                    platform.lifetime.runtime.window, context,
+                    platform.lifetime.runtime.window, context.frontend_inputs(),
                     can_offer_audio_project_drop(session.project_identity.session_loaded,
                                                  session.project_identity.fresh_blank_project,
                                                  session.history),

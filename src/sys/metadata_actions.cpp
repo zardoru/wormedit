@@ -1,5 +1,5 @@
 #include "sys/metadata_actions.h"
-#include "sys/application_dispatch_context.h"
+#include "sys/application_edit_inputs.h"
 #include "wormedit/core/numeric_text.h"
 
 #include "sys/application_edit_helpers.h"
@@ -390,17 +390,17 @@ auto lane_profile_family_targets(const chart_document_t& chart) -> std::vector<l
 }
 
 auto dispatch_metadata_action(const WormUiWorkspaceAction& action,
-                              application_dispatch_context_t& environment, bool timing_locked,
+                              const metadata_action_inputs_t& environment, bool timing_locked,
                               bool resource_copy_busy, bool export_busy, bool post_notifications)
     -> std::optional<std::string> {
-    auto& history = environment.history_ref;
-    auto& workspace = environment.workspace_ref;
-    auto& metadata_drop = environment.metadata_drop_ref;
-    auto& metadata_asset_runtime = environment.metadata_asset_runtime_ref;
-    auto& asset_base = environment.project_identity_ref.asset_base;
-    auto& resource_copy_scheduler = environment.resource_copy_scheduler_ref;
+    auto& history = environment.document.history;
+    auto& workspace = environment.document.workspace;
+    auto& metadata_drop = environment.import.drop;
+    auto& metadata_asset_runtime = environment.import.runtime;
+    auto& asset_base = environment.asset_base;
+    auto& resource_copy_scheduler = environment.import.scheduler;
     const std::optional<notification_sink_t> notifications =
-        post_notifications ? std::optional{environment.notification_sink_ref} : std::nullopt;
+        post_notifications ? std::optional{environment.document.notifications} : std::nullopt;
 
     if (action.metadata_edit != WORM_UI_METADATA_EDIT_NONE) {
         auto feedback = dispatch_metadata_edit(action, history, workspace, timing_locked, metadata_drop);

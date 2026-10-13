@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sys/application_dispatch_context.h"
+#include "sys/application_edit_inputs.h"
 
 #include "sys/metadata_asset_runtime.h"
 #include "sys/metadata_drop_state.h"
@@ -31,7 +31,7 @@ namespace wormedit::sys {
 // Returns text only when a metadata action was handled. Edit outcomes post here;
 // copy/import start and completion outcomes are owned by the configured runtime.
 auto dispatch_metadata_action(const WormUiWorkspaceAction& action,
-                              application_dispatch_context_t& environment, bool timing_locked,
+                              const metadata_action_inputs_t& environment, bool timing_locked,
                               bool resource_copy_busy, bool export_busy,
                               bool post_notifications = true) -> std::optional<std::string>;
 

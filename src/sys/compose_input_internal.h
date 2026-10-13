@@ -1,5 +1,5 @@
 #pragma once
-#include "sys/application_dispatch_context.h"
+#include "sys/application_edit_inputs.h"
 #include "sys/compose_input.h"
 #include "sys/compose_minimap_navigation.h"
 #include "sys/compose_navigation.h"
@@ -337,7 +337,7 @@ auto dispatch_compose_lane_key_release(const WormUiComposeInputAction& input,
                                        std::string_view& accepted) -> compose_input_family_result_t;
 
 struct bmson_compose_context_t {
-    application_dispatch_context_t& environment;
+    const compose_input_inputs_t& environment;
     const WormUiWorkspaceAction& action;
     wormedit::editor_interaction_state_t& state;
     bool gesture_active;
@@ -377,8 +377,8 @@ auto update_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_
                            VirtualBmsRowAt&& virtual_bms_row_at) -> compose_input_family_result_t {
     using namespace wormedit;
     auto& [environment, action, state, gesture_active] = context;
-    auto& history = environment.history_ref;
-    auto& workspace = environment.workspace_ref;
+    auto& history = environment.document.history;
+    auto& workspace = environment.document.workspace;
     if (!state.pending_note_move_gesture ||
         state.pending_note_move_gesture->reference_note != object_id_t{input.object_id})
         return "BGM event drag expired before release.";
@@ -453,9 +453,9 @@ auto insert_bmson_stem_point(const WormUiComposeInputAction& input,
     -> compose_input_family_result_t {
     using namespace wormedit;
     auto& [environment, action, state, gesture_active] = context;
-    auto& history = environment.history_ref;
-    auto& workspace = environment.workspace_ref;
-    auto& application_state = environment.application_command_state_ref;
+    auto& history = environment.document.history;
+    auto& workspace = environment.document.workspace;
+    auto& application_state = environment.commands;
     if (gesture_active || !application_state.project.compose_gesture.note_paint_mode_active ||
         !wormedit::ui::compose_notes_editable(compose_mode_of(application_state)))
         return "Draw requires an editable chart without an active gesture.";
@@ -490,14 +490,14 @@ auto insert_bmson_stem_point(const WormUiComposeInputAction& input,
 template <typename PositionAtComposeY, typename VirtualBmsRowAt>
 auto dispatch_bmson_compose_input(const WormUiWorkspaceAction& ui_action,
                                   const WormUiComposeInputAction& input,
-                                  application_dispatch_context_t& environment,
+                                  const compose_input_inputs_t& environment,
                                   wormedit::editor_interaction_state_t& state, bool gesture_active,
                                   PositionAtComposeY&& position_at_compose_y,
                                   VirtualBmsRowAt&& virtual_bms_row_at)
     -> compose_input_family_result_t {
-    auto& history = environment.history_ref;
-    auto& application_state = environment.application_command_state_ref;
-    auto& scene_cache = environment.compose_scene_cache_ref;
+    auto& history = environment.document.history;
+    auto& application_state = environment.commands;
+    auto& scene_cache = environment.controls.cache;
 
     auto context = bmson_compose_context_t{environment, ui_action, state, gesture_active};
     switch (input.kind) {
@@ -508,7 +508,7 @@ auto dispatch_bmson_compose_input(const WormUiWorkspaceAction& ui_action,
         return update_bmson_bgm_move(input, context, position_at_compose_y, virtual_bms_row_at);
     case WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_CANCEL:
         if (context.state.pending_note_move_gesture)
-            (void)wormedit::dispatch_editor_action(context.environment.history_ref, context.state,
+            (void)wormedit::dispatch_editor_action(context.environment.document.history, context.state,
                                                    wormedit::cancel_editor_gesture_action_t{});
         return compose_input_family_result_t::stop_with_feedback(
             "BMSON BGM marker drag canceled.", wormedit::notification_severity_t::hint,
@@ -568,7 +568,7 @@ void update_compose_pointer_hover(const WormUiWorkspaceAction& ui_action, bool g
                                   const wormedit::editor_preferences_t& preferences);
 
 struct compose_input_context_t {
-    application_dispatch_context_t& environment;
+    const compose_input_inputs_t& environment;
     WormUiWorkspaceAction& ui_action;
     wormedit::editor_interaction_state_t& state;
     const wormedit::notification_sink_t* notifications{};
@@ -581,19 +581,19 @@ struct compose_input_context_t {
     double field_width_pixels{};
 
     auto input_is_current() const -> bool {
-        return environment.history_ref.document.revision ==
+        return environment.document.history.document.revision ==
                    ui_action.compose_input_document_revision &&
-               environment.workspace_ref.active_tab == wormedit::workspace_tab_t::compose &&
-               environment.workspace_ref.selected_chart &&
-               environment.workspace_ref.selected_chart->value ==
+               environment.document.workspace.active_tab == wormedit::workspace_tab_t::compose &&
+               environment.document.workspace.selected_chart &&
+               environment.document.workspace.selected_chart->value ==
                    ui_action.compose_input_chart_id &&
                state.chart.value == ui_action.compose_input_chart_id;
     }
 
     auto chart() const -> const wormedit::chart_document_t* {
-        const auto found = std::ranges::find(environment.history_ref.document.charts, state.chart,
+        const auto found = std::ranges::find(environment.document.history.document.charts, state.chart,
                                              &wormedit::chart_document_t::id);
-        return found == environment.history_ref.document.charts.end() ? nullptr : &*found;
+        return found == environment.document.history.document.charts.end() ? nullptr : &*found;
     }
     auto selection_mode(WormUiComposeSelectionMode mode) const
         -> std::optional<wormedit::editor_area_selection_mode_t> {
@@ -613,7 +613,7 @@ struct compose_input_context_t {
             y, state.viewport_height_pixels,
             input_chart &&
                 compose_field_downscroll(
-                    *input_chart, environment.application_command_state_ref.preferences.editor_preferences));
+                    *input_chart, environment.commands.preferences.editor_preferences));
     }
     auto hit_target_at(const wormedit::chart_document_t& chart,
                        const wormedit::editor_interaction_view_model_t& view, double x_pixels,
@@ -642,33 +642,33 @@ struct compose_input_context_t {
                                  const wormedit::editor_interaction_view_model_t& view,
                                  double x_pixels, double y_pixels)
         -> std::optional<wormedit::editor_hit_target_t> {
-        if (!environment.compose_scene_cache_ref.scene.hit_test_index) {
+        if (!environment.controls.cache.scene.hit_test_index) {
             auto built = wormedit::build_editor_hit_test_index(
-                chart, environment.history_ref.document.revision);
+                chart, environment.document.history.document.revision);
             if (!std::holds_alternative<wormedit::editor_hit_test_index_t>(built))
                 return std::nullopt;
-            environment.compose_scene_cache_ref.scene.hit_test_index =
+            environment.controls.cache.scene.hit_test_index =
                 std::get<wormedit::editor_hit_test_index_t>(std::move(built));
         }
-        if (environment.application_command_state_ref.project.compose_gesture.note_paint_mode_active)
+        if (environment.commands.project.compose_gesture.note_paint_mode_active)
             return resolve_compose_paint_cell(
-                chart, *environment.compose_scene_cache_ref.scene.hit_test_index, view, x_pixels,
+                chart, *environment.controls.cache.scene.hit_test_index, view, x_pixels,
                 y_pixels, field_left_pixels, field_width_pixels,
                 compose_field_downscroll(
-                    chart, environment.application_command_state_ref.preferences.editor_preferences),
+                    chart, environment.commands.preferences.editor_preferences),
                 wormedit::edit_snap_denominator(chart, state));
         return wormedit::hit_test_editor(
-            chart, *environment.compose_scene_cache_ref.scene.hit_test_index, view,
+            chart, *environment.controls.cache.scene.hit_test_index, view,
             {.x_pixels = x_pixels,
              .y_pixels = compose_source_y(
                  y_pixels, view.viewport_height_pixels,
                  compose_field_downscroll(
-                     chart, environment.application_command_state_ref.preferences.editor_preferences)),
+                     chart, environment.commands.preferences.editor_preferences)),
              .field_left_pixels = field_left_pixels,
              .field_width_pixels = field_width_pixels,
              .note_head_height_pixels =
-                 environment.compose_scene_cache_ref.frame.preview_scene_request.note_head_height_pixels,
-             .split_stage_gutter_pixels = environment.compose_scene_cache_ref.frame.preview_scene_request
+                 environment.controls.cache.frame.preview_scene_request.note_head_height_pixels,
+             .split_stage_gutter_pixels = environment.controls.cache.frame.preview_scene_request
                                               .split_stage_gutter_pixels});
     }
     auto position_at_compose_y(const wormedit::chart_document_t& chart,
@@ -685,7 +685,7 @@ struct compose_input_context_t {
             compose_source_y(
                 y_pixels, view.viewport_height_pixels,
                 compose_field_downscroll(
-                    chart, environment.application_command_state_ref.preferences.editor_preferences)));
+                    chart, environment.commands.preferences.editor_preferences)));
     }
     auto virtual_bms_row_at(const wormedit::chart_document_t& chart,
                             const wormedit::editor_interaction_view_model_t& view,
@@ -701,7 +701,7 @@ struct compose_input_context_t {
         const auto source_y = compose_source_y(
             y_pixels, view.viewport_height_pixels,
             compose_field_downscroll(chart,
-                                     environment.application_command_state_ref.preferences.editor_preferences));
+                                     environment.commands.preferences.editor_preferences));
         const auto row = (static_cast<long double>(view.viewport_scroll_pixels) + source_y) *
                          chart.divisions_per_standard_measure / view.pixels_per_standard_measure;
         if (!std::isfinite(row) || row < 0.0L ||
@@ -715,15 +715,15 @@ struct compose_input_context_t {
                             const wormedit::editor_interaction_view_model_t& view, double x_pixels,
                             double y_pixels)
         -> std::optional<std::pair<std::uint64_t, wormedit::lane_id_t>> {
-        if (!environment.compose_scene_cache_ref.scene.index)
+        if (!environment.controls.cache.scene.index)
             return std::nullopt;
         const auto row = virtual_bms_row_at(chart, view, y_pixels);
         if (!row)
             return std::nullopt;
-        auto request = environment.compose_scene_cache_ref.frame.preview_scene_request;
+        auto request = environment.controls.cache.frame.preview_scene_request;
         request.include_virtual_bms_tail = true;
         const auto composed = wormedit::make_editor_field_scene(
-            chart, *environment.compose_scene_cache_ref.scene.index, view, request);
+            chart, *environment.controls.cache.scene.index, view, request);
         if (!composed.scene || composed.has_errors())
             return std::nullopt;
         for (const auto& lane : composed.scene->lanes) {
@@ -736,7 +736,7 @@ struct compose_input_context_t {
 };
 
 struct compose_gesture_context_t {
-    application_dispatch_context_t& environment;
+    const compose_input_inputs_t& environment;
     wormedit::editor_interaction_state_t& state;
     wormedit::editor_interaction_result_t& result;
     std::string_view& accepted;
@@ -749,7 +749,7 @@ auto begin_alt_pointer_gesture(const WormUiComposeInputAction& input,
     -> compose_input_family_result_t {
     using namespace wormedit;
     auto& [environment, state, result, accepted] = context;
-    auto& history = environment.history_ref;
+    auto& history = environment.document.history;
     const auto chart =
         std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
     const auto view = compose_view_for_state(history, state);
@@ -790,8 +790,8 @@ auto update_alt_pointer_gesture(const WormUiComposeInputAction& input,
     -> compose_input_family_result_t {
     using namespace wormedit;
     auto& [environment, state, result, accepted] = context;
-    auto& history = environment.history_ref;
-    auto& application_state = environment.application_command_state_ref;
+    auto& history = environment.document.history;
+    auto& application_state = environment.commands;
     const auto chart =
         std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
     const auto view = compose_view_for_state(history, state);
@@ -859,8 +859,8 @@ auto dispatch_note_paint_gesture(const WormUiComposeInputAction& input,
     -> compose_input_family_result_t {
     using namespace wormedit;
     auto& [environment, state, result, accepted] = context;
-    auto& history = environment.history_ref;
-    auto& application_state = environment.application_command_state_ref;
+    auto& history = environment.document.history;
+    auto& application_state = environment.commands;
     if (!application_state.project.compose_gesture.note_paint_mode_active) {
         if (state.pending_note_paint_gesture) {
             result = dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
@@ -969,9 +969,9 @@ auto dispatch_semantic_layer_paint_gesture(const WormUiComposeInputAction& input
                                            HitTargetAt&& hit_target_at, BgmEventAt&& bgm_event_at)
     -> compose_input_family_result_t {
     using namespace wormedit;
-    auto& history = context.environment.history_ref;
+    auto& history = context.environment.document.history;
     auto& state = context.state;
-    auto& application_state = context.environment.application_command_state_ref;
+    auto& application_state = context.environment.commands;
     if (!semantic_layer_paint_armed(application_state))
         return handle_inactive_semantic_layer_paint(context);
     const auto chart =
@@ -1005,8 +1005,8 @@ auto dispatch_note_move_gesture(const WormUiComposeInputAction& input,
     -> compose_input_family_result_t {
     using namespace wormedit;
     auto& [environment, state, result, accepted] = context;
-    auto& history = environment.history_ref;
-    auto& application_state = environment.application_command_state_ref;
+    auto& history = environment.document.history;
+    auto& application_state = environment.commands;
     const auto chart =
         std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
     const auto view = compose_view_for_state(history, state);
@@ -1064,14 +1064,14 @@ auto dispatch_note_move_gesture(const WormUiComposeInputAction& input,
 
 template <typename HitTargetAt, typename BgmEventAt, typename PositionAtComposeY>
 auto dispatch_compose_gesture_input(const WormUiComposeInputAction& input,
-                                    application_dispatch_context_t& environment,
+                                    const compose_input_inputs_t& environment,
                                     wormedit::editor_interaction_state_t& state,
                                     wormedit::editor_interaction_result_t& result,
                                     std::string_view& accepted, HitTargetAt&& hit_target_at,
                                     BgmEventAt&& bgm_event_at,
                                     PositionAtComposeY&& position_at_compose_y)
     -> compose_input_family_result_t {
-    const auto& cache = environment.compose_scene_cache_ref;
+    const auto& cache = environment.controls.cache;
 
     auto context = compose_gesture_context_t{environment, state, result, accepted};
     switch (input.kind) {
@@ -1305,20 +1305,20 @@ auto place_note_from_pointer(const WormUiComposeInputAction& input,
     const auto sound =
         context.state.pending_hold ? context.state.pending_hold->sound : note_paint_sound(input);
     result = dispatch_editor_action(
-        context.environment.history_ref, context.state,
+        context.environment.document.history, context.state,
         context.state.pending_hold
             ? editor_interaction_action_t{commit_hold_action_t{
                   target.position,
-                  compose_stem_geometry(context.environment.history_ref, context.state,
-                                        context.environment.compose_scene_cache_ref, sound)}}
+                  compose_stem_geometry(context.environment.document.history, context.state,
+                                        context.environment.controls.cache, sound)}}
             : editor_interaction_action_t{place_tap_action_t{
                   target.position, sound,
-                  compose_stem_geometry(context.environment.history_ref, context.state,
-                                        context.environment.compose_scene_cache_ref, sound)}});
+                  compose_stem_geometry(context.environment.document.history, context.state,
+                                        context.environment.controls.cache, sound)}});
     advance_sound_after_paint_commit(result, sound, result.created_note.has_value());
     audition_created_note(
-        context.environment.application_command_state_ref.preferences.editor_preferences.audition_on_click,
-        context.environment.history_ref, context.state, result);
+        context.environment.commands.preferences.editor_preferences.audition_on_click,
+        context.environment.document.history, context.state, result);
     accepted =
         context.state.pending_hold ? "Hold gesture started; click its end row." : "Note placed.";
 }
@@ -1603,7 +1603,7 @@ auto consume_minimap_preferences(WormUiWorkspaceAction& action,
                                  application_command_state_t& application) -> bool;
 
 auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
-                                        application_dispatch_context_t& environment,
+                                        const compose_input_inputs_t& environment,
                                         wormedit::editor_interaction_state_t& state,
                                         double viewport_delta_seconds,
                                         const wormedit::notification_sink_t* notifications)

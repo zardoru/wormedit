@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sys/application_dispatch_context.h"
+#include "sys/application_edit_inputs.h"
 
 #include "sys/compose_view.h"
 
@@ -39,7 +39,7 @@ auto dispatch_compose_bgm_mix_inputs(WormUiWorkspaceAction& action,
     application_command_state_t& application,
     const wormedit::notification_sink_t* notifications = nullptr) -> std::string;
 auto dispatch_compose_input_action(WormUiWorkspaceAction& ui_action,
-                                   application_dispatch_context_t& environment,
+                                   const compose_input_inputs_t& environment,
                                    wormedit::editor_interaction_state_t& state,
                                    double viewport_delta_seconds, bool post_notifications = true)
     -> std::string;

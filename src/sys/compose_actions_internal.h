@@ -1,5 +1,5 @@
 #pragma once
-#include "sys/application_dispatch_context.h"
+#include "sys/application_edit_inputs.h"
 #include "sys/application_edit_helpers.h"
 #include "sys/bookmark_rename_commands.h"
 #include "sys/compose_actions.h"
@@ -82,7 +82,7 @@
 
 namespace wormedit::sys::compose_action_detail {
 struct compose_action_context_t {
-    application_dispatch_context_t& environment;
+    const compose_action_inputs_t& environment;
     const WormUiWorkspaceAction& action;
     wormedit::editor_interaction_state_t& state;
     double viewport_height;

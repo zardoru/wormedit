@@ -9,8 +9,8 @@ auto finish_marker_edit_feedback(compose_action_context_t& context,
         return publish_compose_diagnostic(context, applied.diagnostics.front(), source);
     if (!applied.applied)
         return compose_action_info(context, std::move(unchanged), source);
-    const auto rebound = wormedit::rebind_workspace(context.environment.workspace_ref,
-                                                    context.environment.history_ref);
+    const auto rebound = wormedit::rebind_workspace(context.environment.document.workspace,
+                                                    context.environment.document.history);
     if (!rebound)
         return compose_mutation_rebind_failure(context, rebound, std::move(success),
                                                std::move(rebind_failure), source);
@@ -106,7 +106,7 @@ std::optional<std::string> edit_beat_section(compose_action_context_t& context) 
         return compose_action_warning(
             context, "Finish or cancel the active Compose gesture before editing sections.");
     const auto* chart =
-        selected_chart(context.environment.history_ref, context.environment.workspace_ref);
+        selected_chart(context.environment.document.history, context.environment.document.workspace);
     if (!chart)
         return compose_action_warning(context, "Choose a chart before editing sections.");
     marker_edit_action_t edit;
@@ -124,7 +124,7 @@ std::optional<std::string> edit_beat_section(compose_action_context_t& context) 
         edit = std::get<marker_edit_action_t>(std::move(made));
     }
     const auto applied =
-        apply_marker_edit(context.environment.history_ref,
+        apply_marker_edit(context.environment.document.history,
                           context.action.compose_input_document_revision, std::move(edit));
     return finish_marker_edit_feedback(
         context, applied, beat_section_success(context.action, from_selection),
@@ -180,7 +180,7 @@ std::optional<std::string> edit_audio_bookmark(compose_action_context_t& context
             context, "Finish or cancel the active Compose gesture before editing bookmarks.",
             notification_source_t::edit);
     const auto* chart =
-        selected_chart(context.environment.history_ref, context.environment.workspace_ref);
+        selected_chart(context.environment.document.history, context.environment.document.workspace);
     if (!chart)
         return compose_action_warning(context,
                                       "Choose a chart before editing audio-time bookmarks.",
@@ -188,7 +188,7 @@ std::optional<std::string> edit_audio_bookmark(compose_action_context_t& context
     auto built = make_audio_bookmark_edit(context, *chart);
     if (const auto* error = std::get_if<std::string>(&built))
         return compose_action_warning(context, *error, notification_source_t::edit);
-    const auto applied = apply_marker_edit(context.environment.history_ref,
+    const auto applied = apply_marker_edit(context.environment.document.history,
                                            context.action.compose_input_document_revision,
                                            std::get<marker_edit_action_t>(std::move(built)));
     const auto success =
@@ -251,14 +251,14 @@ std::optional<std::string> edit_audio_section(compose_action_context_t& context)
             context, "Finish or cancel the active Compose gesture before editing sections.",
             notification_source_t::edit);
     const auto* chart =
-        selected_chart(context.environment.history_ref, context.environment.workspace_ref);
+        selected_chart(context.environment.document.history, context.environment.document.workspace);
     if (!chart)
         return compose_action_warning(context, "Choose a chart before editing audio-time sections.",
                                       notification_source_t::edit);
     auto built = make_audio_section_edit(context, *chart);
     if (const auto* error = std::get_if<std::string>(&built))
         return compose_action_warning(context, *error, notification_source_t::edit);
-    const auto applied = apply_marker_edit(context.environment.history_ref,
+    const auto applied = apply_marker_edit(context.environment.document.history,
                                            context.action.compose_input_document_revision,
                                            std::get<marker_edit_action_t>(std::move(built)));
     const auto success =
@@ -317,13 +317,13 @@ std::optional<std::string> edit_beat_bookmark(compose_action_context_t& context)
         return compose_action_warning(
             context, "Finish or cancel the active Compose gesture before editing bookmarks.");
     const auto* chart =
-        selected_chart(context.environment.history_ref, context.environment.workspace_ref);
+        selected_chart(context.environment.document.history, context.environment.document.workspace);
     if (!chart)
         return compose_action_warning(context, "Choose a chart before editing bookmarks.");
     auto built = make_beat_bookmark_edit(context, *chart);
     if (const auto* error = std::get_if<std::string>(&built))
         return compose_action_warning(context, *error);
-    const auto applied = apply_marker_edit(context.environment.history_ref,
+    const auto applied = apply_marker_edit(context.environment.document.history,
                                            context.action.compose_input_document_revision,
                                            std::get<marker_edit_action_t>(std::move(built)));
     const auto success = operation == WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK
@@ -362,7 +362,7 @@ std::optional<std::string> edit_selected_note_labels(compose_action_context_t& c
                            ? std::optional<std::string>{context.action.compose_note_label}
                            : std::nullopt;
     const auto applied = apply_note_label_edit(
-        context.environment.history_ref, context.action.compose_input_document_revision,
+        context.environment.document.history, context.action.compose_input_document_revision,
         {.chart = context.state.chart, .notes = context.state.selected_notes, .label = label});
     if (!applied.diagnostics.empty())
         return publish_compose_diagnostic(context, applied.diagnostics.front());
@@ -372,7 +372,7 @@ std::optional<std::string> edit_selected_note_labels(compose_action_context_t& c
                                          : "Selected notes already have no label.",
                                    notification_source_t::edit);
     const auto rebound =
-        rebind_workspace(context.environment.workspace_ref, context.environment.history_ref);
+        rebind_workspace(context.environment.document.workspace, context.environment.document.history);
     if (!rebound)
         return compose_mutation_rebind_failure(
             context, rebound, label ? "Note label applied." : "Note labels cleared.",
@@ -382,7 +382,7 @@ std::optional<std::string> edit_selected_note_labels(compose_action_context_t& c
 
 std::string navigate_audio_marker(compose_action_context_t& context) {
     using namespace wormedit;
-    auto& app = context.environment.application_command_state_ref;
+    auto& app = context.environment.editor.commands;
     if (!app.services.transport_audio_milliseconds || !app.services.transport_seek_audio_milliseconds)
         return compose_action_warning(
             context, "Start chart preview once before navigating audio-time markers.",
@@ -396,8 +396,8 @@ std::string navigate_audio_marker(compose_action_context_t& context) {
         context.action.compose_action == WORM_UI_COMPOSE_ACTION_NAVIGATE_PREVIOUS_AUDIO_MARKER
             ? marker_navigation_direction_t::previous
             : marker_navigation_direction_t::next;
-    const auto marker = navigate_markers(context.environment.history_ref.document,
-                                         context.environment.history_ref.document.revision,
+    const auto marker = navigate_markers(context.environment.document.history.document,
+                                         context.environment.document.history.document.revision,
                                          context.state.chart, *cursor, direction);
     if (marker.status == marker_navigation_status_t::no_result)
         return compose_action_hint(context,
@@ -430,7 +430,7 @@ std::string search_selected_note_labels(compose_action_context_t& context) {
             ? label_search_step_t::previous
             : label_search_step_t::first;
     auto severity = notification_severity_t::warning;
-    auto status = run_label_search(context.environment.history_ref, context.state,
+    auto status = run_label_search(context.environment.document.history, context.state,
                                    context.action.compose_note_label, step, &severity);
     return publish_compose_feedback(context, std::move(status), severity,
                                     notification_source_t::input);
@@ -458,14 +458,14 @@ std::string transform_selected_notes(compose_action_context_t& context,
     if (editor_interaction_has_pending_gesture(context.state))
         return compose_action_warning(
             context, "Finish or cancel the active Compose gesture before transforming notes.");
-    if (context.environment.history_ref.document.revision !=
+    if (context.environment.document.history.document.revision !=
         context.action.compose_input_document_revision)
         return compose_action_warning(context, "Transform ignored because the document changed.");
     auto severity = notification_severity_t::warning;
-    auto status = apply_selection_transform(context.environment.history_ref, context.state,
+    auto status = apply_selection_transform(context.environment.document.history, context.state,
                                             transform, &severity);
     const auto rebound =
-        rebind_workspace(context.environment.workspace_ref, context.environment.history_ref);
+        rebind_workspace(context.environment.document.workspace, context.environment.document.history);
     if (!rebound) {
         static_cast<void>(
             publish_compose_feedback(context, status, severity, notification_source_t::edit));
@@ -481,15 +481,15 @@ std::string transform_selected_notes(compose_action_context_t& context,
 std::string edit_cursor_measure(compose_action_context_t& context,
                                 cursor_measure_command_t command) {
     if (const auto error = compose_measure_edit_rejection(
-            context.environment.history_ref, context.state,
-            context.environment.application_command_state_ref.project.clipboard.paste_session.has_value(),
+            context.environment.document.history, context.state,
+            context.environment.editor.commands.project.clipboard.paste_session.has_value(),
             context.action.compose_input_document_revision))
         return compose_action_warning(context, *error);
     auto severity = notification_severity_t::warning;
-    auto status = apply_cursor_measure_command(context.environment.history_ref, context.state,
+    auto status = apply_cursor_measure_command(context.environment.document.history, context.state,
                                                command, &severity);
     const auto rebound =
-        rebind_workspace(context.environment.workspace_ref, context.environment.history_ref);
+        rebind_workspace(context.environment.document.workspace, context.environment.document.history);
     if (!rebound) {
         static_cast<void>(
             publish_compose_feedback(context, status, severity, notification_source_t::edit));
@@ -503,12 +503,12 @@ std::string edit_cursor_measure(compose_action_context_t& context,
 }
 
 auto recipe_form_target(compose_action_context_t& context) -> std::optional<recipe_form_target_t> {
-    if (context.environment.history_ref.document.revision !=
+    if (context.environment.document.history.document.revision !=
         context.action.compose_input_document_revision)
         return std::nullopt;
-    const auto chart = std::ranges::find(context.environment.history_ref.document.charts,
+    const auto chart = std::ranges::find(context.environment.document.history.document.charts,
                                          context.state.chart, &chart_document_t::id);
-    if (chart == context.environment.history_ref.document.charts.end() ||
+    if (chart == context.environment.document.history.document.charts.end() ||
         chart->id.value != context.action.compose_input_chart_id)
         return std::nullopt;
     const auto recipe = std::ranges::find(
@@ -524,14 +524,14 @@ std::string preview_recipe_form_action(compose_action_context_t& context) {
         return compose_action_warning(
             context, "SV recipe form ignored because the recipe or the document changed.");
     auto preview = wormedit::sys::preview_recipe_form(
-        *target->chart, context.environment.history_ref.document.revision, *target->recipe,
+        *target->chart, context.environment.document.history.document.revision, *target->recipe,
         context.action.compose_recipe_form);
     const auto status =
         preview.error.empty() ? std::string{"SV recipe preview updated."} : preview.error;
     const auto severity = preview.error.empty() ? notification_severity_t::hint : preview.severity;
     const auto source =
         preview.error.empty() ? notification_source_t::input : notification_source_t::edit;
-    context.environment.application_command_state_ref.project.timing_recipe.recipe_preview = std::move(preview);
+    context.environment.editor.commands.project.timing_recipe.recipe_preview = std::move(preview);
     return publish_compose_feedback(context, status, severity, source);
 }
 
@@ -540,19 +540,19 @@ std::string apply_recipe_form_action(compose_action_context_t& context) {
     if (!target)
         return compose_action_warning(
             context, "SV recipe form ignored because the recipe or the document changed.");
-    if (context.environment.application_command_state_ref.project.timing_recipe.timing_locked)
+    if (context.environment.editor.commands.project.timing_recipe.timing_locked)
         return compose_action_warning(context, "Timing is locked.");
     bool applied = false;
     auto severity = notification_severity_t::warning;
     auto status = wormedit::sys::apply_recipe_form(
-        context.environment.history_ref, target->chart->id, target->recipe->id,
+        context.environment.document.history, target->chart->id, target->recipe->id,
         context.action.compose_recipe_form, applied, &severity);
     if (!applied)
         return publish_compose_feedback(context, std::move(status), severity,
                                         notification_source_t::edit);
-    context.environment.application_command_state_ref.project.timing_recipe.recipe_preview.reset();
+    context.environment.editor.commands.project.timing_recipe.recipe_preview.reset();
     const auto rebound =
-        rebind_workspace(context.environment.workspace_ref, context.environment.history_ref);
+        rebind_workspace(context.environment.document.workspace, context.environment.document.history);
     if (!rebound) {
         static_cast<void>(
             publish_compose_feedback(context, status, severity, notification_source_t::edit));
@@ -567,15 +567,15 @@ std::string set_cursor_measure_meter(compose_action_context_t& context) {
     if (editor_interaction_has_pending_gesture(context.state))
         return compose_action_warning(
             context, "Finish or cancel the active Compose gesture before editing measures.");
-    if (context.environment.history_ref.document.revision !=
+    if (context.environment.document.history.document.revision !=
         context.action.compose_input_document_revision)
         return compose_action_warning(context, "Meter edit ignored because the document changed.");
     auto severity = notification_severity_t::warning;
     auto status = apply_cursor_measure_meter(
-        context.environment.history_ref, context.state, context.action.timing_meter_numerator_text,
+        context.environment.document.history, context.state, context.action.timing_meter_numerator_text,
         context.action.timing_meter_denominator_text, &severity);
     const auto rebound =
-        rebind_workspace(context.environment.workspace_ref, context.environment.history_ref);
+        rebind_workspace(context.environment.document.workspace, context.environment.document.history);
     if (!rebound) {
         static_cast<void>(
             publish_compose_feedback(context, status, severity, notification_source_t::edit));
@@ -590,17 +590,17 @@ std::string set_measures_meter(compose_action_context_t& context) {
     if (editor_interaction_has_pending_gesture(context.state))
         return compose_action_warning(
             context, "Finish or cancel the active Compose gesture before editing measures.");
-    if (context.environment.history_ref.document.revision !=
+    if (context.environment.document.history.document.revision !=
         context.action.compose_input_document_revision)
         return compose_action_warning(context, "Meter edit ignored because the document changed.");
     auto severity = notification_severity_t::warning;
     const auto ids = std::span<const std::uint64_t>{context.action.compose_measure_ids,
                                                     context.action.compose_measure_id_count};
-    auto status = apply_measures_meter(context.environment.history_ref, context.state, ids,
+    auto status = apply_measures_meter(context.environment.document.history, context.state, ids,
                                        context.action.timing_meter_numerator_text,
                                        context.action.timing_meter_denominator_text, &severity);
     const auto rebound =
-        rebind_workspace(context.environment.workspace_ref, context.environment.history_ref);
+        rebind_workspace(context.environment.document.workspace, context.environment.document.history);
     if (!rebound) {
         static_cast<void>(
             publish_compose_feedback(context, status, severity, notification_source_t::edit));
@@ -615,7 +615,7 @@ std::string move_bar_line(compose_action_context_t& context) {
     if (editor_interaction_has_pending_gesture(context.state))
         return compose_action_warning(
             context, "Finish or cancel the active Compose gesture before editing measures.");
-    if (context.environment.history_ref.document.revision !=
+    if (context.environment.document.history.document.revision !=
             context.action.compose_input_document_revision ||
         context.action.compose_measure_id_count != 1 || !context.action.compose_measure_ids)
         return compose_action_warning(context,
@@ -626,12 +626,12 @@ std::string move_bar_line(compose_action_context_t& context) {
         return static_cast<std::uint32_t>(std::strtoul(text, nullptr, 10));
     };
     auto status = apply_bar_line_move(
-        context.environment.history_ref, context.state, action.compose_measure_ids[0],
+        context.environment.document.history, context.state, action.compose_measure_ids[0],
         {parse(action.timing_meter_numerator_text), parse(action.timing_meter_denominator_text)},
         {action.compose_second_meter_numerator, action.compose_second_meter_denominator},
         &severity);
     const auto rebound =
-        rebind_workspace(context.environment.workspace_ref, context.environment.history_ref);
+        rebind_workspace(context.environment.document.workspace, context.environment.document.history);
     if (!rebound) {
         static_cast<void>(
             publish_compose_feedback(context, status, severity, notification_source_t::edit));
@@ -654,7 +654,7 @@ std::optional<std::string> dispatch_compose_marker_action(compose_action_context
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_SV_RECIPE_FORM)
         return apply_recipe_form_action(context);
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_CLEAR_SV_RECIPE_PREVIEW) {
-        context.environment.application_command_state_ref.project.timing_recipe.recipe_preview.reset();
+        context.environment.editor.commands.project.timing_recipe.recipe_preview.reset();
         return compose_action_hint(context, "SV recipe preview cleared.");
     }
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS)

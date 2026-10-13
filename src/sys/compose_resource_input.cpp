@@ -6,7 +6,7 @@ auto resource_pointer_spec(const WormUiComposeInputAction& input, compose_input_
     if (context.gesture_active)
         return "Finish or cancel the active Compose gesture before editing a resource.";
     if (!context.chart() ||
-        !compose_view_for_state(context.environment.history_ref, context.state) ||
+        !compose_view_for_state(context.environment.document.history, context.state) ||
         input.object_id == 0)
         return "The selected chart or armed resource is no longer available.";
     const auto kind = input.resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE
@@ -26,7 +26,7 @@ auto resource_pointer_spec(const WormUiComposeInputAction& input, compose_input_
                           : kind == resource_placement_kind_t::bgm_event ? resource_role_t::bgm
                                                                          : resource_role_t::bga;
     document_command_result_t validation{};
-    if (!validate_resource_role(context.environment.history_ref.document,
+    if (!validate_resource_role(context.environment.document.history.document,
                                 resource_id_t{input.object_id}, required, validation))
         return validation.diagnostics.front().message;
     return resource_pointer_spec_t{resource_id_t{input.object_id}, kind, required,
@@ -62,14 +62,14 @@ auto place_virtual_sample_resource(const WormUiComposeInputAction& input,
     if (!virtual_hit)
         return false;
     result = wormedit::dispatch_editor_action(
-        context.environment.history_ref, context.state,
+        context.environment.document.history, context.state,
         wormedit::place_virtual_bms_tap_action_t{virtual_hit->first, virtual_hit->second,
                                                  spec.resource});
     audition_created_note(
-        context.environment.application_command_state_ref.preferences.editor_preferences.audition_on_click,
-        context.environment.history_ref, context.state, result);
+        context.environment.commands.preferences.editor_preferences.audition_on_click,
+        context.environment.document.history, context.state, result);
     if (result.document_changed)
-        advance_dock_after_placement(context.environment.history_ref.document, spec.resource,
+        advance_dock_after_placement(context.environment.document.history.document, spec.resource,
                                      spec.required_role);
     accepted = "Sample placed in BMS measure.";
     return true;
@@ -90,7 +90,7 @@ auto place_virtual_source_resource(const WormUiComposeInputAction& input,
     if (!row)
         return false;
     const auto applied = apply_virtual_bms_resource_placement(
-        context.environment.history_ref, context.ui_action.compose_input_document_revision,
+        context.environment.document.history, context.ui_action.compose_input_document_revision,
         {.chart = context.state.chart,
          .resource = spec.resource,
          .canvas_row = *row,
@@ -105,7 +105,7 @@ auto place_virtual_source_resource(const WormUiComposeInputAction& input,
     result.document_changed = applied.applied;
     result.diagnostics = applied.diagnostics;
     if (applied.applied)
-        advance_dock_after_placement(context.environment.history_ref.document, spec.resource,
+        advance_dock_after_placement(context.environment.document.history.document, spec.resource,
                                      spec.required_role);
     accepted = spec.kind == resource_placement_kind_t::bgm_event ? "BGM placed in BMS measure."
                                                                  : "BGA placed in BMS measure.";
@@ -190,7 +190,7 @@ auto dispatch_resource_pointer(const WormUiComposeInputAction& input,
         return *error;
     const auto& spec = std::get<resource_pointer_spec_t>(spec_result);
     const auto* chart = context.chart();
-    const auto view = compose_view_for_state(context.environment.history_ref, context.state);
+    const auto view = compose_view_for_state(context.environment.document.history, context.state);
     if (!chart || !view)
         return "The selected chart or armed resource is no longer available.";
     const auto target_result =
@@ -215,13 +215,13 @@ auto dispatch_resource_pointer(const WormUiComposeInputAction& input,
         if (const auto* error = std::get_if<std::string>(&replacement))
             return *error;
         applied = apply_resource_assignment(
-            context.environment.history_ref, context.ui_action.compose_input_document_revision,
+            context.environment.document.history, context.ui_action.compose_input_document_revision,
             {.chart = context.state.chart,
              .resource = spec.resource,
              .objects = {std::get<editor_selection_object_t>(replacement)}});
     } else {
         applied = apply_resource_placement(
-            context.environment.history_ref, context.ui_action.compose_input_document_revision,
+            context.environment.document.history, context.ui_action.compose_input_document_revision,
             {.chart = context.state.chart,
              .resource = spec.resource,
              .position = *position,
@@ -233,7 +233,7 @@ auto dispatch_resource_pointer(const WormUiComposeInputAction& input,
              .semantic_layers = context.state.armed_note_layers,
              .bga_kind = resource_pointer_bga_kind(input, spec.kind)});
         if (applied.applied)
-            advance_dock_after_placement(context.environment.history_ref.document, spec.resource,
+            advance_dock_after_placement(context.environment.document.history.document, spec.resource,
                                          spec.required_role);
     }
     const auto unchanged = spec.replacing && !applied.applied && applied.diagnostics.empty();

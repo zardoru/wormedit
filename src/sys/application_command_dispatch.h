@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sys/application_dispatch_context.h"
+#include "sys/application_edit_inputs.h"
 
 #include "sys/application_commands.h"
 #include "sys/compose_view.h"
@@ -52,7 +52,7 @@ inline auto compose_menu_command_is_current(const WormUiWorkspaceAction& action,
 // publication at their typed producer bridge. Their returned text is retained for
 // legacy callers; this dispatcher does not classify or repost that prose.
 auto invoke_application_command(application_command_t command,
-                                application_dispatch_context_t& environment)
+                                const command_dispatch_inputs_t& environment)
     -> wormedit::command_invocation_result_t;
 
 } // namespace wormedit::sys

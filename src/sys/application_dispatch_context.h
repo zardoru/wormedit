@@ -2,7 +2,8 @@
 
 #include "sys/application_commands.h"
 #include "sys/compose_view.h"
-#include "sys/external_player.h"
+#include "sys/external_player_runtime.h"
+#include "sys/application_edit_inputs.h"
 #include "sys/metadata_asset_runtime.h"
 #include "sys/metadata_drop_state.h"
 #include "sys/preferences_runtime.h"
@@ -20,15 +21,7 @@
 #include <wormedit/formats/stepmania.h>
 
 namespace wormedit::sys {
-struct external_player_runtime_t {
-    wormedit::sys::external_player_t player;
-    wormedit::sys::external_player_preferences_t preferences =
-        wormedit::sys::default_external_player_preferences();
-    wormedit::sys::program_preferences_runtime_t* program_preferences{};
-    bool visible{};
-    std::uint64_t revision{};
-    std::vector<WormUiExternalPlayerDefinitionView> views;
-};
+
 
 // Live references only. Build once per synchronous frame or registry invocation.
 // Never capture this object in a callback or worker job.
@@ -62,5 +55,29 @@ struct application_dispatch_context_t {
     native_project_recovery_controller_t& recovery_controller_ref;
     external_player_runtime_t& external_player_runtime_ref;
     project_chart_runtime_t& project_chart_runtime_ref;
+    auto document_inputs() const -> document_edit_inputs_t {
+        return {history_ref, workspace_ref, notification_sink_ref};
+    }
+    auto command_inputs() const -> command_dispatch_inputs_t {
+        return {document_inputs(), {application_command_state_ref, compose_interaction_state_ref, timing_stage_ref}};
+    }
+    auto compose_actions() const -> compose_action_inputs_t {
+        return {document_inputs(), {application_command_state_ref, compose_interaction_state_ref},
+            {project_identity_ref.asset_base,
+             {resource_copy_scheduler_ref, resource_copy_runtime_ref, export_runtime_ref},
+             {metadata_drop_ref, metadata_asset_runtime_ref}}};
+    }
+    auto compose_inputs() const -> compose_input_inputs_t {
+        return {document_inputs(), application_command_state_ref,
+            {compose_scene_cache_ref, compose_viewport_input_ref, compose_navigation_input_ref}};
+    }
+    auto metadata_inputs() const -> metadata_action_inputs_t {
+        return {document_inputs(), {metadata_drop_ref, metadata_asset_runtime_ref, resource_copy_scheduler_ref},
+            project_identity_ref.asset_base};
+    }
+    auto frontend_inputs() const -> frontend_event_inputs_t {
+        return {document_inputs(), metadata_drop_ref, project_identity_ref};
+    }
+
 };
 } // namespace wormedit::sys

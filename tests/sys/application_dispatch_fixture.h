@@ -85,7 +85,7 @@ inline auto dispatch_compose_view_action(
         defaults.external_player_runtime,
         defaults.project_chart_runtime,
     };
-    return dispatch_compose_view_action(action, environment, state, viewport_height,
+    return dispatch_compose_view_action(action, environment.compose_actions(), state, viewport_height,
                                         metadata_import_busy, bool(notifications));
 }
 
@@ -132,7 +132,7 @@ inline auto dispatch_compose_workspace_action(
         defaults.external_player_runtime,
         defaults.project_chart_runtime,
     };
-    return dispatch_compose_workspace_action(action, environment, viewport_height,
+    return dispatch_compose_workspace_action(action, environment.compose_actions(), viewport_height,
                                              metadata_import_busy);
 }
 
@@ -177,7 +177,7 @@ inline auto dispatch_compose_input_action(
         defaults.external_player_runtime,
         defaults.project_chart_runtime,
     };
-    return dispatch_compose_input_action(ui_action, environment, state, viewport_delta_seconds,
+    return dispatch_compose_input_action(ui_action, environment.compose_inputs(), state, viewport_delta_seconds,
                                          notifications != nullptr);
 }
 
@@ -220,7 +220,7 @@ invoke_application_command(application_command_t command, wormedit::document_his
         defaults.external_player_runtime,
         defaults.project_chart_runtime,
     };
-    return invoke_application_command(command, environment);
+    return invoke_application_command(command, environment.command_inputs());
 }
 
 inline auto dispatch_metadata_action(
@@ -264,7 +264,7 @@ inline auto dispatch_metadata_action(
         defaults.external_player_runtime,
         defaults.project_chart_runtime,
     };
-    return dispatch_metadata_action(action, environment, timing_locked, resource_copy_busy,
+    return dispatch_metadata_action(action, environment.metadata_inputs(), timing_locked, resource_copy_busy,
                                     export_busy, bool(notifications));
 }
 } // namespace wormedit::sys

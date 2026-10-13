@@ -1,11 +1,18 @@
 #pragma once
 // Compatibility of existing fixture setup only; no old dispatcher signatures remain in production.
 #include "sys/application_command_dispatch.h"
-#include "sys/application_dispatch_context.h"
+#include "sys/application_edit_inputs.h"
 #include "sys/application_frame_services.h"
 #include "sys/compose_actions.h"
 #include "sys/compose_input.h"
+#include "sys/external_player_runtime.h"
 #include "sys/metadata_actions.h"
+#include "sys/project_view.h"
+#include "sys/timing_edit_runtime.h"
+#include "sys/timing_view.h"
+#include <wormedit/core/autosave_loop.h>
+#include <wormedit/core/recovery_controller.h>
+#include <wormedit/formats/stepmania.h>
 namespace wormedit::sys {
 namespace test_dispatch {
 struct defaults_t {
@@ -54,38 +61,13 @@ inline auto dispatch_compose_view_action(
     test_dispatch::defaults_t defaults;
     defaults.project_identity.asset_base = asset_base;
     auto& sink = notifications ? *notifications : defaults.notification_sink;
-    application_dispatch_context_t environment{
-        defaults.program_preferences,
-        defaults.running,
-        sink,
-        defaults.close_feedback,
-        history,
-        workspace,
-        defaults.project_identity,
-        application_state,
-        defaults.stepmania_export_policy,
-        defaults.audio_offset_drag,
-        defaults.audio_offset_drag_tab,
-        defaults.command_registry,
-        defaults.compose_interaction_state,
-        defaults.metadata_drop,
-        defaults.metadata_asset_runtime,
-        resource_copy_scheduler,
-        resource_copy_runtime,
-        export_runtime,
-        defaults.timing_grid,
-        defaults.timing_edit,
-        defaults.timing_stage,
-        defaults.timing_scene_cache,
-        defaults.compose_scene_cache,
-        defaults.compose_viewport_input,
-        defaults.compose_navigation_input,
-        defaults.autosave_loop,
-        defaults.recovery_controller,
-        defaults.external_player_runtime,
-        defaults.project_chart_runtime,
-    };
-    return dispatch_compose_view_action(action, environment.compose_actions(), state, viewport_height,
+    const compose_action_inputs_t environment{
+        {history, workspace, sink},
+        {application_state, defaults.compose_interaction_state},
+        {defaults.project_identity.asset_base,
+         {resource_copy_scheduler, resource_copy_runtime, export_runtime},
+         {defaults.metadata_drop, defaults.metadata_asset_runtime}}};
+    return dispatch_compose_view_action(action, environment, state, viewport_height,
                                         metadata_import_busy, bool(notifications));
 }
 
@@ -101,38 +83,13 @@ inline auto dispatch_compose_workspace_action(
     -> bool {
     test_dispatch::defaults_t defaults;
     defaults.project_identity.asset_base = asset_base;
-    application_dispatch_context_t environment{
-        defaults.program_preferences,
-        defaults.running,
-        notifications,
-        defaults.close_feedback,
-        history,
-        workspace,
-        defaults.project_identity,
-        application_state,
-        defaults.stepmania_export_policy,
-        defaults.audio_offset_drag,
-        defaults.audio_offset_drag_tab,
-        defaults.command_registry,
-        interaction_state,
-        metadata_drop,
-        metadata_asset_runtime,
-        resource_copy_scheduler,
-        resource_copy_runtime,
-        export_runtime,
-        defaults.timing_grid,
-        defaults.timing_edit,
-        defaults.timing_stage,
-        defaults.timing_scene_cache,
-        defaults.compose_scene_cache,
-        defaults.compose_viewport_input,
-        defaults.compose_navigation_input,
-        defaults.autosave_loop,
-        defaults.recovery_controller,
-        defaults.external_player_runtime,
-        defaults.project_chart_runtime,
-    };
-    return dispatch_compose_workspace_action(action, environment.compose_actions(), viewport_height,
+    const compose_action_inputs_t environment{
+        {history, workspace, notifications},
+        {application_state, interaction_state},
+        {defaults.project_identity.asset_base,
+         {resource_copy_scheduler, resource_copy_runtime, export_runtime},
+         {metadata_drop, metadata_asset_runtime}}};
+    return dispatch_compose_workspace_action(action, environment, viewport_height,
                                              metadata_import_busy);
 }
 
@@ -146,38 +103,10 @@ inline auto dispatch_compose_input_action(
     -> std::string {
     test_dispatch::defaults_t defaults;
     auto sink = notifications ? *notifications : defaults.notification_sink;
-    application_dispatch_context_t environment{
-        defaults.program_preferences,
-        defaults.running,
-        sink,
-        defaults.close_feedback,
-        history,
-        workspace,
-        defaults.project_identity,
-        application_state,
-        defaults.stepmania_export_policy,
-        defaults.audio_offset_drag,
-        defaults.audio_offset_drag_tab,
-        defaults.command_registry,
-        defaults.compose_interaction_state,
-        defaults.metadata_drop,
-        defaults.metadata_asset_runtime,
-        defaults.resource_copy_scheduler,
-        defaults.resource_copy_runtime,
-        defaults.export_runtime,
-        defaults.timing_grid,
-        defaults.timing_edit,
-        defaults.timing_stage,
-        defaults.timing_scene_cache,
-        scene_cache,
-        viewport_input,
-        navigation_input,
-        defaults.autosave_loop,
-        defaults.recovery_controller,
-        defaults.external_player_runtime,
-        defaults.project_chart_runtime,
-    };
-    return dispatch_compose_input_action(ui_action, environment.compose_inputs(), state, viewport_delta_seconds,
+    const compose_input_inputs_t environment{{history, workspace, sink},
+                                             application_state,
+                                             {scene_cache, viewport_input, navigation_input}};
+    return dispatch_compose_input_action(ui_action, environment, state, viewport_delta_seconds,
                                          notifications != nullptr);
 }
 
@@ -189,38 +118,9 @@ invoke_application_command(application_command_t command, wormedit::document_his
                            application_command_state_t& application_state,
                            notification_sink_t& sink) -> wormedit::command_invocation_result_t {
     test_dispatch::defaults_t defaults;
-    application_dispatch_context_t environment{
-        defaults.program_preferences,
-        defaults.running,
-        sink,
-        defaults.close_feedback,
-        history,
-        workspace,
-        defaults.project_identity,
-        application_state,
-        defaults.stepmania_export_policy,
-        defaults.audio_offset_drag,
-        defaults.audio_offset_drag_tab,
-        defaults.command_registry,
-        compose_state,
-        defaults.metadata_drop,
-        defaults.metadata_asset_runtime,
-        defaults.resource_copy_scheduler,
-        defaults.resource_copy_runtime,
-        defaults.export_runtime,
-        defaults.timing_grid,
-        defaults.timing_edit,
-        timing_stage,
-        defaults.timing_scene_cache,
-        defaults.compose_scene_cache,
-        defaults.compose_viewport_input,
-        defaults.compose_navigation_input,
-        defaults.autosave_loop,
-        defaults.recovery_controller,
-        defaults.external_player_runtime,
-        defaults.project_chart_runtime,
-    };
-    return invoke_application_command(command, environment.command_inputs());
+    const command_dispatch_inputs_t environment{{history, workspace, sink},
+                                                {application_state, compose_state, timing_stage}};
+    return invoke_application_command(command, environment);
 }
 
 inline auto dispatch_metadata_action(
@@ -233,38 +133,11 @@ inline auto dispatch_metadata_action(
     test_dispatch::defaults_t defaults;
     defaults.project_identity.asset_base = asset_base;
     auto& sink = notifications ? *notifications : defaults.notification_sink;
-    application_dispatch_context_t environment{
-        defaults.program_preferences,
-        defaults.running,
-        sink,
-        defaults.close_feedback,
-        history,
-        workspace,
-        defaults.project_identity,
-        defaults.application_command_state,
-        defaults.stepmania_export_policy,
-        defaults.audio_offset_drag,
-        defaults.audio_offset_drag_tab,
-        defaults.command_registry,
-        defaults.compose_interaction_state,
-        metadata_drop,
-        metadata_asset_runtime,
-        resource_copy_scheduler,
-        defaults.resource_copy_runtime,
-        defaults.export_runtime,
-        defaults.timing_grid,
-        defaults.timing_edit,
-        defaults.timing_stage,
-        defaults.timing_scene_cache,
-        defaults.compose_scene_cache,
-        defaults.compose_viewport_input,
-        defaults.compose_navigation_input,
-        defaults.autosave_loop,
-        defaults.recovery_controller,
-        defaults.external_player_runtime,
-        defaults.project_chart_runtime,
-    };
-    return dispatch_metadata_action(action, environment.metadata_inputs(), timing_locked, resource_copy_busy,
+    const metadata_action_inputs_t environment{
+        {history, workspace, sink},
+        {metadata_drop, metadata_asset_runtime, resource_copy_scheduler},
+        defaults.project_identity.asset_base};
+    return dispatch_metadata_action(action, environment, timing_locked, resource_copy_busy,
                                     export_busy, bool(notifications));
 }
 } // namespace wormedit::sys

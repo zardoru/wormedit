@@ -29,13 +29,15 @@ struct audition_fixture_t {
         center.drain_inbox(notification_time_t{0});
         return center.snapshot(notification_capacity);
     }
+    auto inputs() -> compose_audition_inputs_t {
+        return {{preview_session, preview, preview_state},
+                {sources, object_audition, output}, sink};
+    }
     void catalog(std::optional<resource_id_t>& request) {
-        process_sound_audition_request(request, history, sources, preview_session, preview,
-            preview_state, output, sink);
+        process_sound_audition_request(request, history, inputs());
     }
     void compose() {
-        process_compose_audition_requests(cache, history, sources, object_audition,
-            preview_session, preview, preview_state, output, sink);
+        process_compose_audition_requests(cache, history, inputs());
     }
 };
 struct audio_lifetime_t { ~audio_lifetime_t() { SDL_QuitSubSystem(SDL_INIT_AUDIO); } };

@@ -1,4 +1,6 @@
-#include "sys/application_dispatch_context.h"
+#include "sys/application_edit_inputs.h"
+#include "sys/timing_edit_runtime.h"
+#include "sys/timing_view.h"
 #if defined(WORMEDIT_HAS_MACOS_MENU)
 #include "sys/macos_menu.h"
 #endif

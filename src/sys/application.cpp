@@ -1,5 +1,6 @@
 #include "sys/application.h"
-#include "sys/application_dispatch_context.h"
+#include "sys/application_edit_inputs.h"
+#include "sys/external_player_runtime.h"
 #include "sys/application_timing_stage.h"
 #include "sys/compose_note_to_bgm.h"
 #include "sys/compose_sound_selection.h"
@@ -177,7 +178,7 @@ using wormedit::sys::timing_lane_kind_from_ui;
 using wormedit::sys::timing_position_from_fraction;
 using wormedit::sys::timing_stage_value;
 
-using wormedit::sys::application_dispatch_context_t;
+
 
 using wormedit::sys::flatten_workspace;
 using wormedit::sys::flattened_workspace_t;
@@ -333,168 +334,23 @@ auto audio_milliseconds_to_frame(std::int64_t milliseconds, std::uint32_t sample
 }
 #endif
 
-struct AudioOffsetDragContext {
-    application_dispatch_context_t& environment;
-    const WormUiWorkspaceAction& action;
-    bool timing_locked;
-    std::optional<std::uint32_t> selected_sample_rate;
-};
 
-auto post_audio_offset_feedback(AudioOffsetDragContext& context,
-    wormedit::notification_severity_t severity, std::string message) -> std::string {
-    return post_callback_feedback(context.environment.notification_sink_ref, severity,
-                                  wormedit::notification_source_t::edit, std::move(message));
-}
 
-auto post_audio_offset_diagnostic(AudioOffsetDragContext& context, const auto& diagnostics,
-    std::string fallback, wormedit::notification_severity_t fallback_severity) -> std::string {
-    if (!diagnostics.empty())
-        return post_audio_offset_feedback(context, notification_severity_for(diagnostics.front().severity),
-                                          diagnostics.front().message);
-    return post_audio_offset_feedback(context, fallback_severity, std::move(fallback));
-}
 
-auto clear_audio_offset_drag(AudioOffsetDragContext& context, std::string message,
-    wormedit::notification_severity_t severity = wormedit::notification_severity_t::warning) -> std::string {
-    context.environment.audio_offset_drag_ref.reset();
-    context.environment.audio_offset_drag_tab_ref.reset();
-    return post_audio_offset_feedback(context, severity, std::move(message));
-}
 
-auto audio_offset_drag_context_matches(const AudioOffsetDragContext& context) -> bool {
-    using namespace wormedit;
-    const auto supported_tab =
-        context.environment.workspace_ref.active_tab == workspace_tab_t::audio_slices ||
-        context.environment.workspace_ref.active_tab == workspace_tab_t::metadata ||
-        context.environment.workspace_ref.active_tab == workspace_tab_t::compose;
-    const auto context_matches =
-        supported_tab && context.environment.workspace_ref.selected_chart &&
-        context.environment.workspace_ref.selected_chart->value ==
-            context.action.audio_offset_drag_chart_id &&
-        context.environment.history_ref.document.revision ==
-            context.action.audio_offset_drag_document_revision &&
-        context.selected_sample_rate &&
-        *context.selected_sample_rate == context.action.audio_offset_drag_sample_rate;
-    return context_matches;
-}
 
-auto nudge_audio_offset_drag(AudioOffsetDragContext& context) -> std::string {
-    using namespace wormedit;
-    if (context.environment.audio_offset_drag_ref) {
-        return post_audio_offset_feedback(
-            context, notification_severity_t::warning,
-            "Finish or cancel the active audio offset drag before nudging.");
-    }
-    const auto begun = begin_audio_offset_drag(
-        context.environment.history_ref.document, *context.environment.workspace_ref.selected_chart,
-        *context.selected_sample_rate, context.timing_locked);
-    if (!begun) {
-        return post_audio_offset_diagnostic(context, begun.diagnostics,
-                                            "Audio offset nudge could not start.",
-                                            notification_severity_t::warning);
-    }
-    const auto updated = update_audio_offset_drag(
-        context.environment.history_ref.document, *begun.drag,
-        context.action.audio_offset_drag_delta_frames, context.timing_locked);
-    if (!updated) {
-        return post_audio_offset_diagnostic(context, updated.diagnostics,
-                                            "Audio offset nudge was rejected.",
-                                            notification_severity_t::warning);
-    }
-    const auto committed = commit_audio_offset_drag(context.environment.history_ref, *updated.drag,
-                                                    context.timing_locked);
-    if (!committed.applied) {
-        return post_audio_offset_diagnostic(context, committed.diagnostics,
-                                            "Audio offset was unchanged.",
-                                            notification_severity_t::info);
-    }
-    const auto rebound =
-        rebind_workspace(context.environment.workspace_ref, context.environment.history_ref);
-    return post_audio_offset_feedback(
-        context, rebound ? notification_severity_t::success : notification_severity_t::error,
-        rebound ? "Audio offset nudged by an exact frame count."
-                : "Audio offset changed, but workspace rebinding failed.");
-}
 
-auto begin_audio_offset_drag_action(AudioOffsetDragContext& context) -> std::string {
-    using namespace wormedit;
-    const auto begun = begin_audio_offset_drag(
-        context.environment.history_ref.document, *context.environment.workspace_ref.selected_chart,
-        *context.selected_sample_rate, context.timing_locked);
-    context.environment.audio_offset_drag_ref = begun.drag;
-    context.environment.audio_offset_drag_tab_ref =
-        begun ? std::optional{context.environment.workspace_ref.active_tab} : std::nullopt;
-    if (begun)
-        return post_audio_offset_feedback(context, notification_severity_t::hint,
-                                          "Dragging waveform offset; release to apply.");
-    return post_audio_offset_diagnostic(context, begun.diagnostics, "Audio offset drag could not start.",
-                                       notification_severity_t::warning);
-}
 
-auto continue_audio_offset_drag(AudioOffsetDragContext& context) -> std::string {
-    using namespace wormedit;
-    const auto& action = context.action;
-    auto& history = context.environment.history_ref;
-    auto& workspace = context.environment.workspace_ref;
-    auto& drag = context.environment.audio_offset_drag_ref;
-    auto& drag_tab = context.environment.audio_offset_drag_tab_ref;
-    const auto timing_locked = context.timing_locked;
-    if (!drag || !drag_tab || *drag_tab != workspace.active_tab ||
-        drag->chart != *workspace.selected_chart ||
-        drag->document_revision != action.audio_offset_drag_document_revision ||
-        drag->sample_rate != *context.selected_sample_rate) {
-        return clear_audio_offset_drag(context,
-                                       "Audio offset drag has no matching captured transaction.");
-    }
-    const auto updated = update_audio_offset_drag(
-        history.document, *drag, action.audio_offset_drag_delta_frames, timing_locked);
-    if (!updated) {
-        drag.reset();
-        drag_tab.reset();
-        return post_audio_offset_diagnostic(context, updated.diagnostics, "Audio offset preview was rejected.",
-                notification_severity_t::warning);
-    }
-    drag = updated.drag;
-    if (action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_UPDATE)
-        return post_audio_offset_feedback(context, notification_severity_t::hint, "Previewing exact waveform offset.");
-    if (action.audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_COMMIT) {
-        drag.reset();
-        drag_tab.reset();
-        return post_audio_offset_feedback(context, notification_severity_t::warning, "Invalid audio offset drag action.");
-    }
-    const auto committed = commit_audio_offset_drag(history, *drag, timing_locked);
-    drag.reset();
-    drag_tab.reset();
-    if (!committed.applied) {
-        return post_audio_offset_diagnostic(context, committed.diagnostics, "Audio offset was unchanged.",
-                notification_severity_t::info);
-    }
-    const auto rebound = rebind_workspace(workspace, history);
-    if (rebound) return post_audio_offset_feedback(context, notification_severity_t::success,
-        "Audio offset updated from waveform drag.");
-    return post_audio_offset_diagnostic(context, rebound.diagnostics,
-        "Audio offset changed, but workspace rebinding failed.", notification_severity_t::error);
-}
 
-auto dispatch_audio_offset_drag_action(const WormUiWorkspaceAction& action,
-                                       application_dispatch_context_t& environment,
-                                       bool timing_locked,
-                                       std::optional<std::uint32_t> selected_sample_rate)
-    -> std::string {
 
-    AudioOffsetDragContext context{environment, action, timing_locked, selected_sample_rate};
-    if (action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_CANCEL)
-        return clear_audio_offset_drag(context, "Audio offset drag cancelled.",
-                                      wormedit::notification_severity_t::hint);
-    if (!audio_offset_drag_context_matches(context))
-        return clear_audio_offset_drag(context,
-                                       "Audio offset drag expired after its chart or waveform changed.");
-    if (action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_NUDGE)
-        return nudge_audio_offset_drag(context);
-    if (action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_BEGIN)
-        return begin_audio_offset_drag_action(context);
-    return continue_audio_offset_drag(context);
-}
+
+
+
+
+
+
+
+
 
 auto inline_preview_active(const application_command_state_t& state) -> bool {
     return state.services.transport_inline_active && state.services.transport_inline_active();
@@ -524,77 +380,15 @@ auto loop_region_for_selection(const wormedit::chart_document_t& chart,
     return audio::preview_loop_region_t{*begin_frame, *end_frame};
 }
 
-auto apply_loop_selection(auto& history, auto& workspace, auto& interaction_state,
-    auto& inline_preview_cursor, auto& preview_session,
-    auto& preview_state, auto& audition_sources, auto& metronome_bindings,
-    auto& audition_output, auto& preview_output, wormedit::chart_id_t chart_id,
-    std::uint64_t expected_revision, std::uint64_t begin_row,
-    std::uint64_t end_row, bool enabled) -> bool {
-    if (!workspace.selected_chart || *workspace.selected_chart != chart_id ||
-        history.document.revision != expected_revision) return false;
-    if (!enabled) return preview_output.set_loop_region(std::nullopt);
-    const auto* chart = selected_chart(history, workspace);
-    if (workspace.active_tab != wormedit::workspace_tab_t::compose || !chart ||
-        chart->id != chart_id || !interaction_state || interaction_state->chart != chart_id ||
-        !interaction_state->retained_selection_range) return false;
-    const auto region = loop_region_for_selection(*chart,
-        *interaction_state->retained_selection_range, begin_row, end_row);
-    if (!region || (preview_output.playing() &&
-                    !preview_state.matches_selection(history.document, workspace)))
-        return false;
-    if (!preview_output.set_loop_region(region)) return false;
-    if (preview_output.playing()) {
-        const auto sought = preview_output.seek(region->begin_frame);
-        if (!sought) {
-            static_cast<void>(preview_output.set_loop_region(std::nullopt));
-            return false;
-        }
-        preview_state.resume_frame = region->begin_frame;
-        preview_state.paused = false;
-    } else {
-        const auto previous_frame = preview_state.resume_frame;
-        const auto was_paused = preview_state.paused;
-        preview_state.resume_frame = region->begin_frame;
-        preview_state.paused = false;
-        static_cast<void>(preview_state.play_pause(chart, history.document, audition_sources,
-            metronome_bindings, audition_output, preview_session, preview_output,
-            std::nullopt, false, region->begin_frame));
-        if (!preview_output.playing()) {
-            preview_state.resume_frame = previous_frame;
-            preview_state.paused = was_paused;
-            static_cast<void>(preview_output.set_loop_region(std::nullopt));
-            return false;
-        }
-    }
-    inline_preview_cursor.capture(interaction_state ? &*interaction_state : nullptr);
-    inline_preview_cursor.capture_follow_anchor(history,
-        interaction_state ? &*interaction_state : nullptr);
-    return true;
-}
 
 
 
 
 
-void sync_bgm_mix_selection(const auto& state, const auto& history, const auto& workspace,
-                             auto& preview_state, auto& preview_session) {
-    const auto* chart = wormedit::sys::selected_chart(history, workspace);
-    const auto found = chart ? state.project.bgm.bgm_lane_mix.find(chart->id.value) : state.project.bgm.bgm_lane_mix.end();
-    const auto muted = chart && found != state.project.bgm.bgm_lane_mix.end()
-        ? wormedit::sys::compose_bgm_muted_lanes(*chart, found->second) : std::vector<std::uint64_t>{};
-    preview_state.set_bgm_mix(chart ? chart->id : wormedit::chart_id_t{}, muted, preview_session);
-}
 
-void sync_layer_assist_selection(const auto& state, const auto& workspace,
-                                 auto& preview_state, auto& preview_session) {
-    if (state.project.semantic_layer.layer_assist_chart == workspace.selected_chart) {
-        (void)preview_state.set_layer_assist(workspace.selected_chart.value_or(wormedit::chart_id_t{}),
-                                            state.project.semantic_layer.layer_assist_layers, preview_session);
-    } else {
-        (void)preview_state.set_layer_assist(workspace.selected_chart.value_or(wormedit::chart_id_t{}),
-                                            {}, preview_session);
-    }
-}
+
+
+
 
 
 
@@ -813,45 +607,10 @@ auto configure_field_skin(const wormedit::lane_layout_t* layout,
     return lanes;
 }
 
-void dispatch_options_frame_action(wormedit::sys::options_runtime_t& options,
-    wormedit::sys::program_preferences_runtime_t& program, const WormUiOptionsAction& action,
-    external_player_runtime_t& players, application_command_state_t& state,
-    wormedit::native_project_autosave_loop_t& autosave, wormedit::notification_sink_t& notifications) {
-    const bool accepted = wormedit::sys::apply_options_action(options, program, action);
-    worm_ui_frontend_set_snap_grid_opacity(options.visible
-        ? options.draft.display.snap_grid_opacity_percent
-        : program.preferences.display.snap_grid_opacity_percent);
-    worm_ui_frontend_set_field_waveform_opacity(options.visible
-        ? options.draft.display.field_waveform_opacity_percent
-        : program.preferences.display.field_waveform_opacity_percent);
-    update_scratch_presentation(options.visible ? options.draft.display
-        : program.preferences.display, state);
-    if (options.notification) notifications.post(*options.notification);
-    if (!accepted) return;
-    if (options.category == WORM_UI_OPTIONS_GENERAL)
-        (void)autosave.set_interval(std::chrono::minutes{program.preferences.general.autosave_minutes});
-    if (options.category == WORM_UI_OPTIONS_EDITOR) {
-        state.preferences.editor_preferences = program.preferences.editor;
-        state.preferences.minimap_click_moves_paused_playhead = program.preferences.minimap.click_moves_paused_playhead;
-    }
-    if (options.category == WORM_UI_OPTIONS_PLAYERS) {
-        players.preferences = program.preferences.players;
-        ++players.revision;
-    }
-    if (options.category == WORM_UI_OPTIONS_AUDIO) initialize_preferred_transport(program.preferences, state);
-    if (options.category == WORM_UI_OPTIONS_DISPLAY) {
-        worm_ui_frontend_set_snap_colored_grid(program.preferences.display.snap_colored_grid);
-    }
-}
+
 
 // Shortcut-editor actions never reach the program-preference runtime.
-void dispatch_options_page_action(shortcut_editor_runtime_t& editor, wormedit::sys::options_runtime_t& options,
-    wormedit::sys::program_preferences_runtime_t& program, const WormUiOptionsAction& action,
-    external_player_runtime_t& players, application_command_state_t& state,
-    wormedit::native_project_autosave_loop_t& autosave, wormedit::notification_sink_t& notifications) {
-    if (handle_shortcut_editor_action(editor, action, options, notifications)) return;
-    dispatch_options_frame_action(options, program, action, players, state, autosave, notifications);
-}
+
 
 auto external_source_measure(const wormedit::chart_document_t& chart,
     const std::optional<wormedit::editor_interaction_state_t>& interaction) -> std::optional<std::uint64_t> {
@@ -865,55 +624,7 @@ auto external_source_measure(const wormedit::chart_document_t& chart,
     return measure ? std::optional<std::uint64_t>{measure->number} : std::nullopt;
 }
 
-auto launch_external_player(external_player_runtime_t& runtime,
-    wormedit::sys::external_player_action_t action, const wormedit::document_history_t& history,
-    const wormedit::workspace_controller_t& workspace,
-    const std::optional<wormedit::editor_interaction_state_t>& interaction,
-    const wormedit::sys::project_identity_t& project, wormedit::notification_sink_t& notifications) -> std::string {
-    using namespace wormedit::sys;
-    const auto& asset_base = project.asset_base;
-    if (runtime.preferences.selected >= runtime.preferences.players.size()) {
-        runtime.visible = true;
-        return post_callback_feedback(notifications, wormedit::notification_severity_t::warning,
-                                      wormedit::notification_source_t::audio, "Choose an external player in Preferences.");
-    }
-    const auto& player = runtime.preferences.players[runtime.preferences.selected];
-    if (player.path.empty()) {
-        runtime.visible = true;
-        return post_callback_feedback(notifications, wormedit::notification_severity_t::warning,
-                                      wormedit::notification_source_t::audio, "Choose an external player in Preferences.");
-    }
-    const auto* chart = selected_chart(history, workspace);
-    if (action != external_player_action_t::stop && (!chart || chart->source_family != wormedit::format_family_t::bms))
-        return post_callback_feedback(notifications, wormedit::notification_severity_t::warning,
-                                      wormedit::notification_source_t::audio, "External preview requires a selected BMS chart.");
-    std::uint64_t measure{};
-    if (action == external_player_action_t::play_here) {
-        const auto source_measure = external_source_measure(*chart, interaction);
-        if (!source_measure) return post_callback_feedback(notifications, wormedit::notification_severity_t::hint,
-            wormedit::notification_source_t::audio, "Place the Compose cursor before playing externally from here.");
-        measure = *source_measure;
-    }
-    auto source = project.external_player_source_path;
-    if (source.empty() && chart && !asset_base.empty()) {
-        // Native projects retain the authoritative resource directory, but no imported basename.
-        bool popn{};
-        for (const auto& layout : chart->lane_layouts)
-            popn = popn || layout.layout.profile_id.starts_with("pms-");
-        source = asset_base / (popn ? "chart.pms" : "chart.bms");
-    }
-    const char* application_path = SDL_GetBasePath();
-    const auto result = runtime.player.launch(player, action, history.document,
-        chart ? chart->id : wormedit::chart_id_t{}, source, measure,
-        application_path ? application_path : "");
-    if (result.open_preferences) runtime.visible = true;
-    return post_callback_feedback(notifications,
-        result.launched ? wormedit::notification_severity_t::success
-                       : (result.open_preferences ? wormedit::notification_severity_t::warning
-                                                  : wormedit::notification_severity_t::error),
-        wormedit::notification_source_t::audio,
-        result.launched ? "External player command launched." : result.error);
-}
+
 
 void project_external_player_view(external_player_runtime_t& runtime, WormUiWorkspaceView& view) {
     runtime.views.clear();
@@ -1010,95 +721,9 @@ void remember_startup_file(wormedit::sys::program_preferences_runtime_t& prefere
 
 // Project tab "Import chart…": begin, read a chart file, tick difficulties, import or cancel.
 // Reading and planning never change the document; Import commits one undoable command.
-bool dispatch_chart_import_action(wormedit::sys::chart_import_session_t& session,
-    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
-    wormedit::workspace_controller_t& workspace, const std::filesystem::path& asset_base,
-    wormedit::notification_sink_t& notifications, bool loaded,
-    wormedit::sys::program_preferences_runtime_t& preferences) {
-    using namespace wormedit;
-    const auto& request = action.chart_import;
-    const bool picked = action.kind == WORM_UI_WORKSPACE_ACTION_IMPORT_CHART_FILE;
-    if (!loaded || (request.kind == WORM_UI_CHART_IMPORT_NONE && !picked)) return false;
-    if (request.kind == WORM_UI_CHART_IMPORT_BEGIN) sys::chart_import_begin(session);
-    else if (request.kind == WORM_UI_CHART_IMPORT_CANCEL) sys::chart_import_cancel(session);
-    else if (request.kind == WORM_UI_CHART_IMPORT_LOAD || picked) {
-        sys::chart_import_begin(session);
-        sys::chart_import_load(session, std::filesystem::path{std::string{action.project_path}},
-                               history.document, asset_base);
-    } else if (request.kind == WORM_UI_CHART_IMPORT_TOGGLE) {
-        sys::chart_import_toggle(session, chart_id_t{request.chart_id}, history.document, asset_base);
-    } else if (request.kind == WORM_UI_CHART_IMPORT_CONFIRM) {
-        const auto source_path = session.path_text;
-        const auto imported = sys::chart_import_confirm(session, history, request.document_revision, asset_base);
-        if (imported.command.applied) {
-            remember_project_file(preferences, source_path, notifications);
-            notifications.post(notification_severity_t::success, notification_source_t::document,
-                               imported.payload.charts.size() == 1 ? "Chart imported." : "Charts imported.");
-            const auto rebound = rebind_workspace(workspace, history);
-            if (!rebound)
-                notifications.post(notification_severity_t::error, notification_source_t::document,
-                                   rebound.diagnostics.empty() ? "Charts imported, but workspace rebinding failed."
-                                                               : rebound.diagnostics.front().message);
-        } else {
-            notifications.post(notification_severity_t::warning, notification_source_t::document, session.error);
-        }
-    }
-    return true;
-}
 
-bool dispatch_project_chart_action(const WormUiWorkspaceAction& frame_action,
-                                   wormedit::sys::application_dispatch_context_t& environment,
-                                   bool handled) {
-    auto& runtime = environment.project_chart_runtime_ref;
-    auto& history = environment.history_ref;
-    auto& workspace = environment.workspace_ref;
-    auto& interaction = environment.compose_interaction_state_ref;
-    auto& application = environment.application_command_state_ref;
-    auto& notifications = environment.notification_sink_ref;
-    auto& loaded = environment.project_identity_ref.session_loaded;
-    auto& scheduler = environment.resource_copy_scheduler_ref;
 
-    if (handled) return true;
-    const auto& action = frame_action.project_chart;
-    const auto& group = frame_action.project_output_group;
-    const bool group_action = group.kind != WORM_UI_PROJECT_OUTPUT_GROUP_NONE;
-    if (!loaded || (!group_action && action.kind == WORM_UI_PROJECT_CHART_NONE)) return false;
-    if (group_action && (application.project.clipboard.paste_session ||
-        (interaction && editor_interaction_has_pending_gesture(*interaction)))) {
-        notifications.post(wormedit::notification_severity_t::warning, wormedit::notification_source_t::document,
-            "Finish or cancel the editor gesture before changing output groups.");
-        return true;
-    }
-    const auto previous_chart = workspace.selected_chart;
-    auto result = group_action
-        ? wormedit::sys::apply_project_output_group_ui_action(runtime, history, group, scheduler)
-        : wormedit::sys::apply_project_chart_ui_action(runtime, history, action, workspace.selected_chart);
-    notifications.post(result.severity, wormedit::notification_source_t::document, result.status);
-    if (result.applied) {
-        const auto rebound = wormedit::rebind_workspace(workspace, history);
-        if (!rebound) {
-            if (rebound.diagnostics.empty())
-                notifications.post(wormedit::notification_severity_t::error,
-                                   wormedit::notification_source_t::document,
-                                   "Project changed, but workspace rebinding failed.");
-            else
-                notifications.post(notification_severity_for(rebound.diagnostics.front().severity),
-                                   wormedit::notification_source_t::document,
-                                   rebound.diagnostics.front().message);
-            return true;
-        }
-    }
-    if (result.open_chart) {
-        if (application.services.transport_stop) application.services.transport_stop();
-        const auto error = open_project_chart(history, workspace, interaction, *result.open_chart);
-        if (!error.empty()) notifications.post(wormedit::notification_severity_t::error,
-                                              wormedit::notification_source_t::document, error);
-    } else if (previous_chart != workspace.selected_chart) {
-        if (application.services.transport_stop) application.services.transport_stop();
-        interaction.reset();
-    }
-    return true;
-}
+
 
 auto layer_tool_target_editable(const wormedit::chart_document_t* chart,
     std::optional<wormedit::layer_id_t> target) -> bool {
@@ -1422,130 +1047,11 @@ auto command_menu_invoker(wormedit::command_invoker_t invoke) -> wormedit::comma
     };
 }
 
-void dispatch_menu_command(WormUiWorkspaceAction& action,
-                                  wormedit::command_registry_t& registry,
-                                  wormedit::document_history_t& history,
-                                  wormedit::workspace_controller_t& workspace,
-                                  const std::optional<wormedit::editor_interaction_state_t>& compose,
-                                  application_command_state_t& application,
-                                  wormedit::notification_sink_t& notifications) {
-    const auto* command_id = action.command_menu_invoked
-        ? action.command_menu_command_id : action.menu_command_id;
-    if (!command_id[0]) return;
-    if (action.command_menu_invoked &&
-        (!action.shortcut_window_focused || action.shortcut_ime_composition_active ||
-         action.compose_input_project_id != history.document.id.value ||
-         action.compose_input_chart_id != (workspace.selected_chart ? workspace.selected_chart->value : 0) ||
-         action.compose_input_document_revision != history.document.revision ||
-         static_cast<int>(action.tab) != static_cast<int>(workspace.active_tab))) return;
-    if (!wormedit::sys::compose_menu_command_is_current(action, history, workspace)) return;
-    // SDL forwards key events before AppKit invokes key equivalents. Retire that
-    // same chord so a menu shortcut cannot run the registry command twice.
-    if (!action.command_menu_invoked) consume_menu_shortcut(action, registry);
-    refresh_application_command_states(registry, history, workspace, compose, application);
-    auto focus = application_command_focus(action, workspace);
-    // Activation closes the palette; its own search field must not consume the command.
-    if (action.command_menu_invoked || action.compose_menu_command) focus.text_entry_active = false;
-    const auto result = wormedit::invoke_command(registry, {command_id}, focus);
-    if (!result.diagnostics.empty()) post_shortcut_rejection(notifications, registry, result);
-}
 
-auto dispatch_application_shortcuts(
-    const WormUiWorkspaceAction& action, wormedit::command_registry_t& registry,
-    const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
-    const std::optional<wormedit::editor_interaction_state_t>& compose_state,
-    application_command_state_t& application_state, wormedit::notification_sink_t& notifications,
-    std::optional<std::uint64_t>& tap_event_ns, bool& preserves_editor_gesture) -> bool {
-    using namespace wormedit;
-    preserves_editor_gesture = true;
-    if (action.shortcut_overflowed ||
-        action.shortcut_event_count > WORM_UI_SHORTCUT_EVENT_CAPACITY) {
-        notifications.post(notification_severity_t::warning, notification_source_t::input,
-                           "Shortcut input exceeded its per-frame capacity and was discarded.");
-        preserves_editor_gesture = false;
-        return true;
-    }
-    bool handled{};
-    for (std::size_t index = 0; index < action.shortcut_event_count; ++index) {
-        refresh_application_command_states(registry, history, workspace, compose_state,
-                                           application_state);
-        const auto& input = action.shortcut_events[index];
-        tap_event_ns = input.timestamp_ns;
-        const auto dispatched = input.tap_timing_space
-            ? invoke_command(registry, {"timing.tap"}, application_command_focus(action, workspace))
-            : dispatch_shortcut(
-            registry,
-            {.chord = {.key = static_cast<shortcut_key_t>(input.hid_usage),
-                       .modifiers = input.modifiers},
-             .auto_repeat = input.repeat},
-            application_command_focus(action, workspace), application_primary_modifier());
-        tap_event_ns.reset();
-        if (!dispatched.command || (dispatched.command->value != "timing.tap" &&
-            dispatched.command->value != "workspace.options" &&
-            dispatched.command->value != "view.notifications")) preserves_editor_gesture = false;
-        if (dispatched.status == command_dispatch_status_t::invoked) {
-            handled = true;
-        } else if (dispatched.status == command_dispatch_status_t::disabled) {
-            handled = true;
-            notifications.post(notification_severity_t::warning, notification_source_t::input,
-                               dispatched.command
-                                   ? "Command is currently unavailable: " + dispatched.command->value
-                                   : "Command is currently unavailable.");
-        } else if (dispatched.status == command_dispatch_status_t::conflict ||
-                   dispatched.status == command_dispatch_status_t::invalid_event ||
-                   dispatched.status == command_dispatch_status_t::rejected) {
-            handled = true;
-            post_shortcut_rejection(notifications, registry, dispatched);
-        } else if (dispatched.status == command_dispatch_status_t::repeat_suppressed) {
-            handled = true;
-        }
-    }
-    return handled;
-}
 
-void dispatch_timing_stage_value_action(
-    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
-    bool timing_locked, std::uint64_t active_snap_denominator,
-    wormedit::chart_document_t* chart,
-    std::optional<wormedit::timing_lane_pseudonote_preview_t>& timing_stage,
-    wormedit::notification_sink_t& notifications) {
-    const auto value = chart == nullptr
-                           ? std::optional<wormedit::timing_lane_value_t>{}
-                           : timing_stage_value(*timing_stage, *chart, action,
-                                                active_snap_denominator);
-    if (!value) {
-        timing_stage->valid = false;
-        timing_stage->diagnostics = {{
-            .severity = wormedit::diagnostic_severity_t::error,
-            .code = wormedit::diagnostic_code_t::invalid_rational,
-            .message = "Enter a bounded exact rational for this timing value.",
-        }};
-        notifications.post(wormedit::notification_severity_t::warning,
-                           wormedit::notification_source_t::edit,
-                           "Timing value is outside its supported bounds.");
-        return;
-    }
 
-    const bool valid = wormedit::update_timing_lane_pseudonote(
-        history, *timing_stage, *value, timing_locked);
-    if (action.timing_stage_action == WORM_UI_TIMING_STAGE_CONFIRM && valid) {
-        const auto result = wormedit::confirm_timing_lane_pseudonote(
-            history, *timing_stage, timing_locked);
-        const auto edited_existing = timing_stage->existing_event.has_value();
-        if (result)
-            notifications.post(wormedit::notification_severity_t::success,
-                               wormedit::notification_source_t::edit,
-                               edited_existing ? "Timing event updated." : "Timing event inserted.");
-        else if (result.diagnostics.empty() && edited_existing)
-            notifications.post(wormedit::notification_severity_t::info,
-                               wormedit::notification_source_t::edit, "Timing event was unchanged.");
-        else
-            post_edit_rejection(notifications, result.diagnostics, "Timing event insertion was rejected.");
-        timing_stage.reset();
-    } else if (action.timing_stage_action == WORM_UI_TIMING_STAGE_CONFIRM) {
-        post_edit_rejection(notifications, timing_stage->diagnostics, "Timing event values are invalid.");
-    }
-}
+
+
 
 auto timing_stage_binding_matches(const WormUiWorkspaceAction& action,
                                  const wormedit::document_history_t& history,
@@ -1580,55 +1086,9 @@ void delete_staged_timing_event(const WormUiWorkspaceAction& action,
     wormedit::cancel_timing_lane_pseudonote(stage);
 }
 
-void move_staged_timing_event(const WormUiWorkspaceAction& action,
-                              wormedit::document_history_t& history, bool timing_locked,
-                              std::uint64_t active_snap_denominator,
-                              wormedit::chart_document_t* chart,
-                              wormedit::timing_lane_pseudonote_preview_t& stage,
-                              wormedit::notification_sink_t& notifications) {
-    const auto target =
-        chart == nullptr || !stage.existing_event || !action.timing_has_target_y
-            ? std::optional<wormedit::local_position_t>{}
-            : timing_position_from_fraction(
-                  *chart, wormedit::sys::timing_target_fraction(action.timing_target),
-                  active_snap_denominator);
-    if (!target ||
-        !wormedit::move_existing_timing_lane_pseudonote(history, stage, *target, timing_locked)) {
-        post_edit_rejection(notifications, stage.diagnostics, "The timing marker cannot move to that row.");
-    } else {
-        notifications.post_transient_hint(
-                           wormedit::notification_source_t::edit,
-                           "Timing marker moved in the staged preview; apply to commit.");
-    }
-}
 
-void dispatch_active_timing_stage_action(
-    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
-    wormedit::workspace_controller_t& workspace, bool timing_locked,
-    std::uint64_t active_snap_denominator, timing_edit_t& timing_edit,
-    wormedit::notification_sink_t& notifications) {
-    auto& stage = timing_edit.stage;
-    if (!stage) return;
-    if (!timing_stage_binding_matches(action, history, workspace, *stage)) {
-        wormedit::cancel_timing_lane_pseudonote(*stage);
-        stage.reset();
-        post_edit_rejection(notifications, {}, "Timing event staging expired because its chart or revision changed.");
-        return;
-    }
-    const auto chart = std::ranges::find(history.document.charts, stage->chart,
-                                         &wormedit::chart_document_t::id);
-    auto* chart_ptr = chart == history.document.charts.end() ? nullptr : &*chart;
-    if (action.timing_stage_action == WORM_UI_TIMING_STAGE_DELETE) {
-        delete_staged_timing_event(action, history, timing_locked, *stage, notifications);
-        stage.reset();
-    } else if (action.timing_stage_action == WORM_UI_TIMING_STAGE_MOVE) {
-        move_staged_timing_event(action, history, timing_locked, active_snap_denominator,
-                                 chart_ptr, *stage, notifications);
-    } else {
-        dispatch_timing_stage_value_action(action, history, timing_locked,
-                                           active_snap_denominator, chart_ptr, stage, notifications);
-    }
-}
+
+
 
 // Timing focus: begin a new event with its default value and confirm it at once.
 void quick_insert_timing_event(const WormUiWorkspaceAction& action,
@@ -1650,50 +1110,10 @@ void quick_insert_timing_event(const WormUiWorkspaceAction& action,
         post_edit_rejection(notifications, result.diagnostics, "Timing event insertion was rejected.");
 }
 
-void dispatch_timing_stage_action(
-    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
-    wormedit::workspace_controller_t& workspace, bool timing_locked,
-    std::uint64_t active_snap_denominator, timing_edit_t& timing_edit,
-    wormedit::notification_sink_t& notifications) {
-    using status_t = wormedit::timing_lane_pseudonote_status_t;
-    auto& timing_stage = timing_edit.stage;
-    if (action.timing_stage_action == WORM_UI_TIMING_STAGE_BEGIN) {
-        if (!timing_stage) {
-            auto candidate = begin_timing_stage(action, history, workspace, timing_locked,
-                                                active_snap_denominator);
-            if (candidate.status == status_t::editing) {
-                timing_stage = std::move(candidate);
-                notifications.post_transient_hint(
-                                   wormedit::notification_source_t::edit,
-                                   timing_stage->existing_event.has_value()
-                                       ? "Timing event loaded; apply to update it."
-                                       : "Timing event staged; confirm to insert it.");
-            } else {
-                post_edit_rejection(notifications, candidate.diagnostics, "Timing event could not be staged at that row.");
-            }
-        }
-    } else if (action.timing_stage_action == WORM_UI_TIMING_STAGE_QUICK_INSERT) {
-        if (timing_stage) {
-            post_edit_rejection(notifications, {}, "Confirm or cancel the open timing edit before inserting another event.");
-        } else {
-            quick_insert_timing_event(action, history, workspace, timing_locked,
-                                      active_snap_denominator, notifications);
-        }
-    } else if (action.timing_stage_action == WORM_UI_TIMING_STAGE_CANCEL) {
-        if (timing_stage) {
-            wormedit::cancel_timing_lane_pseudonote(*timing_stage);
-            timing_stage.reset();
-            notifications.post_transient_hint(
-                               wormedit::notification_source_t::edit, "Timing event staging cancelled.");
-        }
-    } else if (timing_stage) {
-        dispatch_active_timing_stage_action(action, history, workspace, timing_locked,
-                                            active_snap_denominator, timing_edit, notifications);
-    }
-}
+
 
 auto post_workspace_selection_feedback(wormedit::notification_sink_t& notifications,
-    const auto& result, std::string accepted, std::string rejected) -> std::string {
+    const wormedit::workspace_action_result_t& result, std::string accepted, std::string rejected) -> std::string {
     if (result) return post_callback_feedback(notifications, wormedit::notification_severity_t::hint,
                                              wormedit::notification_source_t::input, std::move(accepted));
     if (!result.diagnostics.empty())
@@ -1712,7 +1132,7 @@ auto dispatch_comparison_selection(const WormUiWorkspaceAction& action,
     auto second = selected;
     if (first == second) {
         const auto other = std::ranges::find_if(history.document.charts,
-            [first](const auto& chart) { return chart.id != first; });
+            [first](const wormedit::chart_document_t& chart) { return chart.id != first; });
         if (other == history.document.charts.end()) return post_callback_feedback(notifications, wormedit::notification_severity_t::hint,
             wormedit::notification_source_t::input, "Add another difficulty to compare.");
         second = other->id;
@@ -1785,27 +1205,7 @@ auto dispatch_workspace_selection_action(const WormUiWorkspaceAction& action,
     }
 }
 
-bool dispatch_timing_workspace_action(
-    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
-    wormedit::workspace_controller_t& workspace,
-    application_command_state_t& application_state, timing_grid_state_t& timing_grid,
-    timing_edit_t& timing_edit, wormedit::notification_sink_t& notifications) {
-    if (action.timing_stage_action != WORM_UI_TIMING_STAGE_NONE) {
-        const auto chart = std::ranges::find(history.document.charts,
-                                             wormedit::chart_id_t{action.timing_chart_id},
-                                             &wormedit::chart_document_t::id);
-        const auto denominator =
-            chart == history.document.charts.end()
-                ? timing_grid.active_denominator
-                : wormedit::effective_edit_snap_denominator(
-                      *chart, timing_grid.active_denominator, application_state.project.compose_view.edit_snap_enabled);
-        dispatch_timing_stage_action(action, history, workspace,
-                                     application_state.project.timing_recipe.timing_locked, denominator, timing_edit,
-                                     notifications);
-        return true;
-    }
-    return false;
-}
+
 
 void cancel_stale_compose_interaction(
     std::optional<wormedit::editor_interaction_state_t>& compose_interaction_state,
@@ -1848,13 +1248,7 @@ void cancel_stale_compose_interaction(
     }
 }
 
-void dispatch_bgm_mix_frame_action(auto& action, auto& context, bool shortcut_handled) {
-    if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT)
-        (void)dispatch_compose_bgm_mix_inputs(action, context.environment.history_ref,
-                                              context.environment.workspace_ref,
-                                              context.environment.application_command_state_ref,
-                                              &context.environment.notification_sink_ref);
-}
+
 
 void refresh_sound_selection_context(const WormUiWorkspaceAction& action,
     application_command_state_t& sound_context) {
@@ -1876,118 +1270,9 @@ auto has_fresh_shortcut_key(const WormUiWorkspaceAction& action) -> bool {
     return false;
 }
 
-template <typename Context>
-auto process_compose_frame_action(Context& context, WormUiWorkspaceAction& action,
-                                  double viewport_delta_seconds,
-                                  const std::optional<wormedit::document_command_result_t>& tap_applied) -> bool {
-    // Apply consumed this frame's document snapshot. Never replay its shortcuts,
-    // pointer input or navigation against the newly committed timing revision.
-    if (tap_applied && tap_applied->applied) return true;
-    // Complete a prior measure move before a new keyboard command can edit its destination.
-    if (has_fresh_shortcut_key(action) && context.environment.compose_interaction_state_ref)
-        context.environment.compose_scene_cache_ref.navigation_travel.finish(
-            *context.environment.compose_interaction_state_ref,
-            context.environment.history_ref.document.revision);
-    bool preserves_editor_gesture{};
-    const bool shortcut_handled =
-        action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
-        dispatch_application_shortcuts(
-            action, context.environment.command_registry_ref, context.environment.history_ref,
-            context.environment.workspace_ref, context.environment.compose_interaction_state_ref,
-            context.environment.application_command_state_ref,
-            context.environment.notification_sink_ref, context.tap_event_ns_ref,
-            preserves_editor_gesture);
-    if (!context.environment.project_identity_ref.session_loaded)
-        return shortcut_handled;
-    if (shortcut_handled && !preserves_editor_gesture &&
-        context.environment.compose_interaction_state_ref &&
-        editor_interaction_has_pending_gesture(
-            *context.environment.compose_interaction_state_ref)) {
-        (void)wormedit::dispatch_editor_action(context.environment.history_ref,
-                                               *context.environment.compose_interaction_state_ref,
-                                               wormedit::cancel_editor_gesture_action_t{});
-    }
-    if (shortcut_handled && !preserves_editor_gesture) {
-        context.environment.audio_offset_drag_ref.reset();
-        context.environment.audio_offset_drag_tab_ref.reset();
-        context.environment.compose_scene_cache_ref.clear_beat_fit_capture();
-        if (context.environment.compose_interaction_state_ref)
-            context.environment.compose_scene_cache_ref.navigation_travel.finish(
-                *context.environment.compose_interaction_state_ref,
-                context.environment.history_ref.document.revision);
-        context.environment.compose_scene_cache_ref.timing.offset_fit_drag.reset();
-    }
-    dispatch_bgm_mix_frame_action(action, context, shortcut_handled);
-    if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
-        (action.compose_input_count != 0 || action.compose_viewport_input_count != 0 ||
-         action.compose_has_pointer_hover ||
-         (context.environment.workspace_ref.active_tab == wormedit::workspace_tab_t::compose &&
-          action.compose_input_chart_id != 0)) &&
-        context.environment.compose_interaction_state_ref) {
-        (void)dispatch_compose_input_action(action, context.environment.compose_inputs(),
-                                            *context.environment.compose_interaction_state_ref,
-                                            viewport_delta_seconds, true);
-#if defined(WORMEDIT_HAS_AUDIO_DECODER)
-        wormedit::sys::process_compose_audition_requests(
-            context.environment.compose_scene_cache_ref, context.environment.history_ref,
-            context.audition_sources_ref, context.object_audition_ref, context.preview_session_ref,
-            context.preview_output_ref, context.preview_state_ref, context.audition_output_ref,
-            context.environment.notification_sink_ref);
-#else
-        wormedit::sys::process_compose_audition_requests(
-            context.environment.compose_scene_cache_ref, context.environment.history_ref,
-            context.environment.notification_sink_ref);
-#endif
-    }
-    refresh_compose_editor_width(action, context.environment.history_ref,
-                                 context.environment.workspace_ref,
-                                 context.environment.application_command_state_ref);
-#if defined(WORMEDIT_HAS_AUDIO_DECODER)
-    wormedit::sys::process_sound_audition_request(
-        context.environment.application_command_state_ref.project.sound_selection.pending_sound_audition,
-        context.environment.history_ref, context.audition_sources_ref, context.preview_session_ref,
-        context.preview_output_ref, context.preview_state_ref, context.audition_output_ref,
-        context.environment.notification_sink_ref);
-#else
-    wormedit::sys::process_sound_audition_request(
-        context.environment.application_command_state_ref.project.sound_selection.pending_sound_audition,
-        context.environment.notification_sink_ref);
-#endif
-    if (context.environment.workspace_ref.active_tab != wormedit::workspace_tab_t::compose) {
-        context.environment.application_command_state_ref.project.semantic_layer.note_layer_menu_row_count = 0;
-        context.environment.compose_viewport_input_ref.escape();
-        context.environment.compose_scene_cache_ref.frame.viewport_autoscroll_active = false;
-        if (context.environment.compose_interaction_state_ref)
-            context.environment.compose_scene_cache_ref.navigation_travel.finish(
-                *context.environment.compose_interaction_state_ref,
-                context.environment.history_ref.document.revision);
-    }
-    if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
-        context.environment.compose_interaction_state_ref &&
-        context.environment.workspace_ref.active_tab == wormedit::workspace_tab_t::compose) {
-        (void)dispatch_compose_navigation_actions(
-            context.environment.compose_navigation_input_ref.advance(
-                static_cast<std::uint64_t>(SDL_GetTicks())),
-            context.environment.history_ref, *context.environment.compose_interaction_state_ref,
-            &context.environment.application_command_state_ref,
-            &context.environment.notification_sink_ref);
-    } else if (context.environment.workspace_ref.active_tab != wormedit::workspace_tab_t::compose) {
-        context.environment.compose_navigation_input_ref.cancel();
-    }
-    return shortcut_handled;
-}
 
-void tick_loaded_project_autosave(
-    bool session_loaded, wormedit::native_project_autosave_loop_t& autosave_loop,
-    const wormedit::document_history_t& history, bool native_project_loaded,
-    const std::filesystem::path& active_project_path,
-    const std::filesystem::path& recovery_path, wormedit::notification_sink_t& notifications,
-    const std::filesystem::path& asset_base) {
-    if (!session_loaded) return;
-    wormedit::sys::tick_application_autosave(
-        autosave_loop, history, native_project_loaded, active_project_path,
-        recovery_path, notifications, asset_base);
-}
+
+
 
 auto can_offer_audio_project_drop(bool session_loaded, bool fresh_blank_project,
                                   const wormedit::document_history_t& history) -> bool {
@@ -2052,178 +1337,15 @@ void validate_minimap_start_frame(application_command_state_t& application,
 }
 
 
-template <typename Context>
-void post_project_feedback(Context& context, wormedit::notification_severity_t severity,
-                           wormedit::notification_source_t source, std::string message, std::string_view detail = {}) {
-    // The close confirmation retains its own scoped feedback; it is not a
-    // global notification producer or a replacement status-line channel.
-    context.close_feedback_ref = std::move(message);
-    if (severity == wormedit::notification_severity_t::hint)
-        context.notification_sink_ref.post_transient_hint(source, context.close_feedback_ref);
-    else
-        context.notification_sink_ref.post(
-            wormedit::notification_post_t{.severity = severity,
-                                          .source = source,
-                                          .message = context.close_feedback_ref,
-                                          .detail = std::string(detail),
-                                          .target = {}});
-}
 
-template <typename Context>
-void begin_project_session(Context& context, wormedit::sys::project_identity_t replacement) {
-    wormedit::sys::begin_project_session(context.project_identity_ref,
-        context.project_chart_runtime_ref, std::move(replacement));
-    context.audio_offset_drag_ref.reset();
-    context.audio_offset_drag_tab_ref.reset();
-    context.compose_interaction_state_ref.reset();
-    context.timing_edit_ref = {};
-    context.timing_scene_cache_ref = {};
-    context.compose_scene_cache_ref = {};
-    context.timing_grid_ref = {};
-    context.compose_viewport_input_ref.escape();
-    context.compose_navigation_input_ref.cancel();
-    context.metadata_drop_ref = {};
-    wormedit::sys::reset_application_project_edit_state(context.application_command_state_ref);
-#if defined(WORMEDIT_HAS_AUDIO_DECODER)
-    post_audio_inventory_feedback(
-        wormedit::sys::reconcile_audition_sources(context.audition_reconciliation_ref, true),
-        context.notification_sink_ref);
-#endif
-}
 
-template <typename Context>
-auto replace_project_session(Context& context, wormedit::song_document_t document,
-                             bool loaded, bool saved, bool native_project,
-                             std::filesystem::path native_path,
-                             std::filesystem::path asset_base) -> bool {
-    using namespace wormedit;
-    wormedit::sys::refresh_project_audio_availability(document, asset_base);
-    auto replacement_history = make_document_history(std::move(document), 128, saved);
-    auto replacement_binding = make_workspace_controller(replacement_history);
-    if (!replacement_binding) {
-        post_project_feedback(context, notification_severity_t::error, notification_source_t::document,
-                              "The selected document could not be bound to a workspace.");
-        return false;
-    }
-    const auto saved_version = saved && native_project
-        ? std::optional<native_project_document_version_t>{
-              {.project_id = replacement_history.document.id,
-               .revision = replacement_history.document.revision}}
-        : std::nullopt;
-    if (!context.autosave_loop_ref.reset_session(
-            native_project_autosave_loop_t::clock_t::now(), saved_version, 0)) {
-        post_project_feedback(context, notification_severity_t::warning, notification_source_t::document,
-                              "Wait for the current autosave to finish before changing projects.");
-        return false;
-    }
-    context.history_ref = std::move(replacement_history);
-    context.workspace_ref = std::move(*replacement_binding.workspace);
-    begin_project_session(context, {.session_loaded = loaded,
-        .native_project_loaded = native_project,
-        .active_project_path = std::move(native_path), .asset_base = std::move(asset_base),
-        .scanned_primary_version = saved_version});
-    return true;
-}
 
-template <typename Context>
-auto project_transition_ready(Context& context) -> bool {
-    if (context.autosave_loop_ref.busy() || context.resource_copy_runtime_ref.busy() ||
-        context.export_runtime_ref.busy() || context.metadata_asset_runtime_ref.import_pending()) {
-        post_project_feedback(context, wormedit::notification_severity_t::warning, wormedit::notification_source_t::document,
-                              "Wait for the current file operation before changing projects.");
-        return false;
-    }
-    if (context.project_identity_ref.session_loaded && wormedit::is_document_dirty(context.history_ref)) {
-        post_project_feedback(context, wormedit::notification_severity_t::warning, wormedit::notification_source_t::document,
-                              "Save the current project before replacing or closing it.");
-        return false;
-    }
-    return true;
-}
 
-template <typename Context>
-auto save_project_session(Context& context, const WormUiWorkspaceAction& action) -> bool {
-    using namespace wormedit;
-    if (!context.project_identity_ref.session_loaded) {
-        post_project_feedback(context, notification_severity_t::warning, notification_source_t::document,
-                              "Create or open a project before saving.");
-        return false;
-    }
-    if (context.resource_copy_runtime_ref.busy() || context.export_runtime_ref.busy() ||
-        context.metadata_asset_runtime_ref.import_pending()) {
-        post_project_feedback(context, notification_severity_t::warning, notification_source_t::document,
-                              "Wait for the current file operation before saving.");
-        return false;
-    }
-    auto destination = action.project_path[0] != '\0' ? std::filesystem::path{action.project_path}
-                                                      : context.project_identity_ref.active_project_path;
-    if (destination.empty()) {
-        post_project_feedback(context, notification_severity_t::hint, notification_source_t::document,
-                              "Choose a native project path to save.");
-        return false;
-    }
-    auto extension = destination.extension().string();
-    std::transform(extension.begin(), extension.end(), extension.begin(),
-                   [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
-    if (extension.empty()) destination += ".wormedit";
-    else if (extension != ".wormedit") {
-        post_project_feedback(context, notification_severity_t::warning, notification_source_t::document,
-                              "Choose a .wormedit project filename.");
-        return false;
-    }
-    std::error_code path_error;
-    const auto destination_base = std::filesystem::absolute(destination, path_error).parent_path();
-    if (path_error) {
-        post_project_feedback(context, notification_severity_t::error, notification_source_t::document,
-                              "Could not resolve the project destination: " + path_error.message());
-        return false;
-    }
-    auto saved_document = context.history_ref.document;
-    wormedit::sys::rebase_project_paths(saved_document, context.project_identity_ref.asset_base, destination_base);
-    const auto result = publish_native_project_atomic(destination, saved_document);
-    if (!result.published) {
-        post_project_feedback(context,
-            result.diagnostics.empty() ? notification_severity_t::error
-                : notification_severity_for(result.diagnostics.front().severity), notification_source_t::document,
-            result.diagnostics.empty() ? "Could not save the project." : result.diagnostics.front().message);
-        return false;
-    }
-    wormedit::sys::rebase_project_paths(context.history_ref.document,
-                                        context.project_identity_ref.asset_base, destination_base);
-    for (auto& entry : context.history_ref.undo) {
-        wormedit::sys::rebase_project_paths(entry.before, context.project_identity_ref.asset_base, destination_base);
-        wormedit::sys::rebase_project_paths(entry.after, context.project_identity_ref.asset_base, destination_base);
-    }
-    for (auto& entry : context.history_ref.redo) {
-        wormedit::sys::rebase_project_paths(entry.before, context.project_identity_ref.asset_base, destination_base);
-        wormedit::sys::rebase_project_paths(entry.after, context.project_identity_ref.asset_base, destination_base);
-    }
-    mark_document_saved(context.history_ref);
-    const auto version = native_project_document_version_t{
-        .project_id = context.history_ref.document.id,
-        .revision = context.history_ref.document.revision};
-    context.autosave_loop_ref.mark_explicit_save(version);
-    context.project_identity_ref.scanned_primary_version = version;
-    context.project_identity_ref.active_project_path = destination;
-    remember_project_file(context.program_preferences_ref, destination,
-                          context.notification_sink_ref);
-    context.project_identity_ref.native_project_loaded = true;
-    context.project_identity_ref.asset_base = destination_base;
-    context.project_identity_ref.external_player_source_path.clear();
-#if defined(WORMEDIT_HAS_AUDIO_DECODER)
-    post_audio_inventory_feedback(
-        wormedit::sys::reconcile_audition_sources(context.audition_reconciliation_ref, true),
-        context.notification_sink_ref);
-#endif
-    auto message = "Project saved to " + destination.string();
-    auto severity = notification_severity_t::success;
-    if (!result.diagnostics.empty()) {
-        message += " " + result.diagnostics.front().message;
-        severity = std::max(severity, notification_severity_for(result.diagnostics.front().severity));
-    }
-    post_project_feedback(context, severity, notification_source_t::document, std::move(message));
-    return true;
-}
+
+
+
+
+
 
 enum class close_target_t { none, application, project, new_project, open_file };
 struct pending_close_t {
@@ -2239,83 +1361,16 @@ struct pending_close_t {
     std::string save_failure;
 };
 
-template <typename Context>
-void create_new_project_session(Context& context, const WormUiWorkspaceAction& action);
-template <typename Context>
-void open_project_session(Context& context, const WormUiWorkspaceAction& action);
 
-template <typename Context>
-void finish_confirmed_project_replacement(pending_close_t& pending, Context& context) {
-    WormUiWorkspaceAction action{};
-    action.new_project_layout_index = pending.layout_index;
-    action.bms_encoding_index = pending.encoding_index;
-    std::snprintf(action.project_path, sizeof(action.project_path), "%s", pending.project_path.c_str());
-    if (pending.target == close_target_t::new_project)
-        create_new_project_session(context, action);
-    else
-        open_project_session(context, action);
-    // Encoding choice continues the same approved replacement of this document version.
-    if (pending.target == close_target_t::open_file && !pending.project_path.empty() &&
-        context.project_identity_ref.pending_import.bms_encoding_path == pending.project_path) {
-        pending.awaiting_encoding = true;
-        return;
-    }
-    pending = {};
-}
 
-template <typename Context>
-auto project_replacement_busy(Context& context) -> bool {
-    if (!context.autosave_loop_ref.busy() && !context.resource_copy_runtime_ref.busy() &&
-        !context.export_runtime_ref.busy() && !context.metadata_asset_runtime_ref.import_pending())
-        return false;
-    post_project_feedback(context, wormedit::notification_severity_t::warning, wormedit::notification_source_t::document,
-                          "Wait for the current file operation before closing the project.");
-    return true;
-}
 
-template <typename Context>
-auto finish_confirmed_close(pending_close_t& pending, Context& context) -> bool {
-    if (pending.target == close_target_t::application) {
-        context.running_ref = false;
-        pending = {};
-        return true;
-    }
-    if (project_replacement_busy(context)) return false;
-    if (pending.target == close_target_t::new_project || pending.target == close_target_t::open_file) {
-        finish_confirmed_project_replacement(pending, context);
-        return true;
-    }
-    if (!replace_project_session(context, wormedit::sys::empty_session_document(
-        wormedit::sys::new_session_project_id()), false, true, false, {}, {})) return false;
-    pending = {};
-    post_project_feedback(context, wormedit::notification_severity_t::info, wormedit::notification_source_t::document,
-                          "No project loaded.");
-    return true;
-}
 
-template <typename Context>
-void confirm_unsaved_changes(pending_close_t& pending, close_target_t target, Context& context,
-                             bool confirm, const WormUiWorkspaceAction* replacement = nullptr) {
-    if (target != close_target_t::application && project_replacement_busy(context)) return;
-    // A close request ends transient gestures; cancellation returns a usable editor.
-    context.compose_navigation_input_ref.cancel();
-    context.compose_viewport_input_ref.escape();
-    if (context.compose_interaction_state_ref)
-        (void)wormedit::dispatch_editor_action(context.history_ref,
-                                               *context.compose_interaction_state_ref,
-                                               wormedit::cancel_editor_gesture_action_t{});
-    pending = {.target = target,
-               .project = context.history_ref.document.id,
-               .revision = context.history_ref.document.revision};
-    if (replacement) {
-        pending.project_path = replacement->project_path;
-        pending.layout_index = replacement->new_project_layout_index;
-        pending.encoding_index = replacement->bms_encoding_index;
-    }
-    if (!confirm || !context.project_identity_ref.session_loaded ||
-        !wormedit::is_document_dirty(context.history_ref))
-        (void)finish_confirmed_close(pending, context);
-}
+
+
+
+
+
+
 
 auto requested_project_transition(WormUiWorkspaceActionKind kind) -> std::optional<close_target_t> {
     switch (kind) {
@@ -2327,273 +1382,25 @@ auto requested_project_transition(WormUiWorkspaceActionKind kind) -> std::option
     }
 }
 
-template <typename Context>
-auto resume_confirmed_encoding(pending_close_t& pending, Context& context,
-                               const WormUiWorkspaceAction& action) -> bool {
-    if (!pending.awaiting_encoding || action.kind != WORM_UI_WORKSPACE_ACTION_OPEN_FILE ||
-        pending.project_path != action.project_path ||
-        pending.project != context.history_ref.document.id ||
-        pending.revision != context.history_ref.document.revision)
-        return false;
-    pending.encoding_index = action.bms_encoding_index;
-    pending.awaiting_encoding = false;
-    (void)finish_confirmed_close(pending, context);
-    return true;
-}
 
-template <typename Context>
-void save_before_confirmed_close(pending_close_t& pending, Context& context, const WormUiWorkspaceAction& action) {
-    const auto id = context.history_ref.document.id;
-    const auto revision = context.history_ref.document.revision;
-    if (id != pending.project) {
-        post_project_feedback(context, wormedit::notification_severity_t::warning, wormedit::notification_source_t::document,
-                              "The project changed while closing. Cancel and review the current project.");
-        return;
-    }
-    pending.save_failure.clear();
-    const bool saved = save_project_session(context, action);
-    if (!saved)
-        pending.save_failure = "Save failed: " + context.close_feedback_ref;
-    if (saved && context.history_ref.document.id == id &&
-        context.history_ref.document.revision == revision &&
-        !wormedit::is_document_dirty(context.history_ref))
-        (void)finish_confirmed_close(pending, context);
-}
 
-template <typename Context>
-auto dispatch_close_confirmation(pending_close_t& pending, Context& context,
-    const WormUiWorkspaceAction& action, bool confirm) -> bool {
-    if (pending.awaiting_encoding && action.kind == WORM_UI_WORKSPACE_ACTION_CANCEL_BMS_ENCODING) {
-        pending = {};
-        return false;
-    }
-    if (resume_confirmed_encoding(pending, context, action)) return true;
-    if (const auto target = requested_project_transition(action.kind)) {
-        const bool replacing = *target == close_target_t::new_project || *target == close_target_t::open_file;
-        confirm_unsaved_changes(pending, *target, context, confirm || replacing, &action);
-        return true;
-    }
-    if (pending.target == close_target_t::none || pending.awaiting_encoding) return false;
-    if (action.close_decision != WORM_UI_CLOSE_NONE) {
-        if (action.close_project_id != pending.project.value || action.close_revision != pending.revision) return true;
-        if (action.close_decision == WORM_UI_CLOSE_CANCEL) { pending = {}; return true; }
-        if (context.history_ref.document.id != pending.project ||
-            context.history_ref.document.revision != pending.revision) {
-            pending.project = context.history_ref.document.id;
-            pending.revision = context.history_ref.document.revision;
-            post_project_feedback(context, wormedit::notification_severity_t::warning, wormedit::notification_source_t::document,
-                                  "The project changed. Review it before confirming close.");
-            return true;
-        }
-        if (action.close_decision == WORM_UI_CLOSE_DISCARD) { (void)finish_confirmed_close(pending, context); return true; }
-        if (action.close_decision == WORM_UI_CLOSE_SAVE) pending.save_requested = true;
-    }
-    if (pending.save_requested && action.kind == WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT)
-        save_before_confirmed_close(pending, context, action);
-    return true; // Confirmation blocks authoring and shortcut dispatch.
-}
 
-template <typename Context>
-void open_project_session(Context& context, const WormUiWorkspaceAction& action) {
-    constexpr std::array<wormedit::text_encoding_t, 5> encodings{
-        wormedit::text_encoding_t::utf8, wormedit::text_encoding_t::cp932,
-        wormedit::text_encoding_t::euc_kr, wormedit::text_encoding_t::cp949,
-        wormedit::text_encoding_t::windows_1252};
-    if (action.bms_encoding_index > encodings.size()) {
-        post_project_feedback(context, wormedit::notification_severity_t::warning, wormedit::notification_source_t::import_,
-                              "Choose a supported BMS text encoding.");
-        return;
-    }
-    const auto encoding = action.bms_encoding_index == 0
-        ? std::optional<wormedit::text_encoding_t>{}
-        : std::optional{encodings[action.bms_encoding_index - 1]};
-    auto opened = wormedit::sys::open_project_file(action.project_path, encoding);
-    if (!opened) {
-        post_project_feedback(context,
-            opened.needs_encoding_choice ? wormedit::notification_severity_t::warning : wormedit::notification_severity_t::error,
-            wormedit::notification_source_t::import_, opened.error);
-        if (opened.needs_encoding_choice)
-            context.project_identity_ref.pending_import.bms_encoding_path = action.project_path;
-        else if (encoding)
-            context.project_identity_ref.pending_import.bms_encoding_path.clear();
-        return;
-    }
-    auto document = std::move(*opened.document);
-    if (!opened.native_project) document.id = wormedit::sys::new_session_project_id();
-    if (replace_project_session(context, std::move(document), true, true,
-                                opened.native_project,
-                                opened.native_project ? opened.source_path : std::filesystem::path{},
-                                opened.asset_base)) {
-        remember_project_file(context.program_preferences_ref, opened.source_path,
-                              context.notification_sink_ref);
-        context.project_identity_ref.external_player_source_path =
-            opened.native_project ? std::filesystem::path{} : opened.source_path;
-        post_project_feedback(context, wormedit::notification_severity_t::success,
-            opened.native_project ? wormedit::notification_source_t::document : wormedit::notification_source_t::import_,
-            opened.native_project
-            ? "Project opened: " + opened.source_path.string()
-            : "Chart imported from " + opened.source_path.string() + ". Save it as a project.");
-        if (!opened.warnings.empty()) {
-            auto warning = wormedit::sys::project_import_warning(opened.warnings);
-            post_project_feedback(context, wormedit::notification_severity_t::warning,
-                wormedit::notification_source_t::import_, std::move(warning.message), warning.detail);
-        }
-    }
-}
 
-template <typename Context>
-void create_audio_project_session(Context& context, const char* path,
-                                  std::uint32_t lane_count) {
-    const auto audio = wormedit::sys::inspect_audio_for_project(path);
-    if (!audio) {
-        post_project_feedback(context, wormedit::notification_severity_t::error, wormedit::notification_source_t::import_, audio.error);
-        context.project_identity_ref.pending_import.audio_project_path.clear();
-        return;
-    }
-    auto document = wormedit::sys::audio_project_document(
-        wormedit::sys::new_session_project_id(), audio.source_path,
-        audio.title, audio.artist, lane_count, audio.stream);
-    if (!document) {
-        post_project_feedback(context, wormedit::notification_severity_t::error, wormedit::notification_source_t::import_,
-                              "Could not create the selected audio chart layout.");
-        return;
-    }
-    if (!replace_project_session(context, std::move(*document), true, true, false,
-                                 {}, audio.source_path.parent_path())) return;
-    for (const auto& chart : context.history_ref.document.charts)
-        remember_snap_denominator(
-            context.application_command_state_ref, chart.id,
-            context.application_command_state_ref.preferences.editor_preferences.default_snap);
-    const auto selected = wormedit::apply_workspace_action(
-        context.workspace_ref, context.history_ref.document, context.history_ref.document.revision,
-        wormedit::workspace_select_asset_action_t{
-            .asset = context.history_ref.document.audio_assets.front().id,
-            .slot = wormedit::workspace_asset_slot_t::audio});
-    post_project_feedback(context,
-        selected ? wormedit::notification_severity_t::success : wormedit::notification_severity_t::warning,
-        wormedit::notification_source_t::import_, selected
-        ? "Audio imported as a new " + std::to_string(lane_count) + "K project."
-        : "Audio project created; select the music asset to preview it.");
-}
 
-template <typename Context>
-void create_new_project_session(Context& context, const WormUiWorkspaceAction& action) {
-    const auto lane_count = requested_project_lane_count(action.new_project_layout_index);
-    if (!lane_count) {
-        post_project_feedback(context, wormedit::notification_severity_t::warning, wormedit::notification_source_t::document,
-                              "Choose a supported chart layout.");
-        return;
-    }
-    if (action.project_path[0] != '\0') {
-        create_audio_project_session(context, action.project_path, *lane_count);
-        return;
-    }
-    auto document = wormedit::sys::initial_document(
-        wormedit::sys::new_session_project_id(), *lane_count);
-    if (!document) {
-        post_project_feedback(context, wormedit::notification_severity_t::error, wormedit::notification_source_t::document,
-                              "Could not create the selected chart layout.");
-        return;
-    }
-    if (replace_project_session(context, std::move(*document), true, true, false, {}, {})) {
-        for (const auto& chart : context.history_ref.document.charts)
-            remember_snap_denominator(
-                context.application_command_state_ref, chart.id,
-                context.application_command_state_ref.preferences.editor_preferences.default_snap);
-        context.project_identity_ref.fresh_blank_project = true;
-        post_project_feedback(context, wormedit::notification_severity_t::success, wormedit::notification_source_t::document,
-                              "New " + std::to_string(*lane_count) + "K project created. Save it to keep your work.");
-    }
-}
 
-template <typename Context>
-auto dispatch_project_session_action(Context& context,
-                                     const WormUiWorkspaceAction& action) -> bool {
-    if (action.kind == WORM_UI_WORKSPACE_ACTION_CANCEL_BMS_ENCODING) {
-        context.project_identity_ref.pending_import.bms_encoding_path.clear();
-        post_project_feedback(context, wormedit::notification_severity_t::hint, wormedit::notification_source_t::import_, "BMS import canceled.");
-        return true;
-    }
-    if (action.kind == WORM_UI_WORKSPACE_ACTION_CANCEL_AUDIO_PROJECT) {
-        context.project_identity_ref.pending_import.audio_project_path.clear();
-        post_project_feedback(context, wormedit::notification_severity_t::hint, wormedit::notification_source_t::import_, "Audio import canceled.");
-        return true;
-    }
-    if (action.kind == WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT) {
-        save_project_session(context, action);
-        return true;
-    }
-    if (action.kind != WORM_UI_WORKSPACE_ACTION_NEW_PROJECT &&
-        action.kind != WORM_UI_WORKSPACE_ACTION_OPEN_FILE &&
-        action.kind != WORM_UI_WORKSPACE_ACTION_CLOSE_PROJECT) return false;
-    if (!project_transition_ready(context)) return true;
-    if (action.kind == WORM_UI_WORKSPACE_ACTION_CLOSE_PROJECT) {
-        if (replace_project_session(context, wormedit::sys::empty_session_document(
-                wormedit::sys::new_session_project_id()), false, true, false, {}, {}))
-            post_project_feedback(context, wormedit::notification_severity_t::info, wormedit::notification_source_t::document, "No project loaded.");
-        return true;
-    }
-    if (action.kind == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT) {
-        create_new_project_session(context, action);
-        return true;
-    }
-    open_project_session(context, action);
-    return true;
-}
 
-template <typename Context>
-void dispatch_dropped_chart_project(Context& context, std::string& pending_path,
-                                    pending_close_t& pending, bool confirm) {
-    if (pending_path.empty()) return;
-    const auto path = std::exchange(pending_path, {});
-    if (path.size() >= WORM_UI_PROJECT_PATH_CAPACITY) {
-        post_project_feedback(context, wormedit::notification_severity_t::warning, wormedit::notification_source_t::import_,
-                              "The dropped chart or project path is too long.");
-        return;
-    }
-    WormUiWorkspaceAction action{};
-    action.kind = WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
-    std::memcpy(action.project_path, path.c_str(), path.size() + 1);
-    (void)dispatch_close_confirmation(pending, context, action, confirm);
-}
 
-template <typename Context>
-auto dispatch_recovery_workspace_action(Context& context,
-                                        const WormUiWorkspaceAction& action) -> bool {
-    if (action.kind < WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT ||
-        action.kind > WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE) return false;
-    if (context.autosave_loop_ref.busy()) {
-        context.notification_sink_ref.post(
-            wormedit::notification_severity_t::warning, wormedit::notification_source_t::recovery,
-            "Wait for the current autosave to finish before recovering a session.");
-        return true;
-    }
-    bool recovered = false;
-    (void)wormedit::sys::dispatch_recovery_ui_action(
-        action, context.recovery_controller_ref, context.history_ref, context.workspace_ref,
-        context.project_identity_ref.scanned_primary_version, context.autosave_loop_ref, recovered,
-        context.notification_sink_ref);
-    if (recovered) {
-        begin_project_session(context, {.session_loaded = true});
-    }
-    return true;
-}
 
-template <typename Context>
-auto dispatch_clipboard_menu(Context& context, const WormUiWorkspaceAction& action) -> bool {
-    if (action.clipboard == WORM_UI_CLIPBOARD_NONE) return false;
-    const auto id = action.clipboard == WORM_UI_CLIPBOARD_COPY ? "edit.copy"
-                  : action.clipboard == WORM_UI_CLIPBOARD_CUT ? "edit.cut" : "edit.paste";
-    auto& registry = context.command_registry_ref;
-    refresh_application_command_states(registry, context.history_ref, context.workspace_ref,
-                                       context.compose_interaction_state_ref,
-                                       context.application_command_state_ref);
-    const auto result = wormedit::invoke_command(
-        registry, {id}, application_command_focus(action, context.workspace_ref));
-    if (!result.diagnostics.empty())
-        post_shortcut_rejection(context.notification_sink_ref, registry, result);
-    return true;
-}
+
+
+
+
+
+
+
+
+
+
 
 
 void project_bga_dock(wormedit::sys::bga_dock_runtime_t& runtime,
@@ -2644,7 +1451,7 @@ auto stage_sound_import(const wormedit::song_document_t& document, wormedit::cha
     for (const auto& group : document.sound_groups)
         groups.push_back({group.name.c_str(), group.id.value, nullptr, 0});
     const bool has_bgm = !target->sound_channels.empty() ||
-        std::ranges::any_of(target->measures, [](const auto& measure) { return !measure.bgm_events.empty(); });
+        std::ranges::any_of(target->measures, [](const wormedit::measure_chunk_t& measure) { return !measure.bgm_events.empty(); });
     const auto staged = worm_ui_frontend_stage_sound_import(document.id.value, chart.value,
         document.revision, items.data(), items.size(), groups.data(), groups.size(), has_bgm,
         prepared.message.c_str());
@@ -2890,19 +1697,7 @@ auto dispatch_compare_diagnostic_jump(
         wormedit::notification_source_t::input, "Moved to validation diagnostic.");
 }
 
-template <typename Context>
-void dispatch_audio_offset_lock_feedback(Context& context, const WormUiWorkspaceAction& action) {
-    const auto was_locked = context.application_command_state_ref.project.timing_recipe.audio_offset_locked;
-    const auto feedback = toggle_compose_audio_offset_lock(
-        action, context.history_ref, context.workspace_ref, context.application_command_state_ref,
-        context.compose_scene_cache_ref, context.audio_offset_drag_ref,
-        context.audio_offset_drag_tab_ref);
-    context.notification_sink_ref.post(
-        was_locked != context.application_command_state_ref.project.timing_recipe.audio_offset_locked
-            ? wormedit::notification_severity_t::success
-            : wormedit::notification_severity_t::warning,
-        wormedit::notification_source_t::edit, feedback);
-}
+
 
 auto dispatch_audio_sound_audition(const WormUiWorkspaceAction& action,
     wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace,
@@ -2936,89 +1731,7 @@ auto dispatch_reviewed_sound_edit(const WormUiWorkspaceAction& action,
         dispatch_reviewed_sound_import(action, history, workspace, application, interaction, notifications);
 }
 
-template <typename Context>
-void dispatch_workspace_frame_action(Context& context, const WormUiWorkspaceAction& action,
-                                     bool shortcut_handled,
-                                     std::optional<std::uint32_t> sample_rate,
-                                     int compose_viewport_height_pixels) {
-    auto& running = context.running_ref;
-    auto& history = context.history_ref;
-    auto& workspace = context.workspace_ref;
-    auto& application_command_state = context.application_command_state_ref;
-    auto& stepmania_export_policy = context.stepmania_export_policy_ref;
-    auto& command_registry = context.command_registry_ref;
-    auto& compose_interaction_state = context.compose_interaction_state_ref;
-    auto& metadata_asset_runtime = context.metadata_asset_runtime_ref;
-    auto& timing_grid = context.timing_grid_ref;
-    auto& timing_edit = context.timing_edit_ref;
-    if (action.kind == WORM_UI_WORKSPACE_ACTION_QUIT) {
-        running = false;
-    } else if (dispatch_project_session_action(context, action)) {
-        // Project transitions are handled before editor actions.
-    } else if (dispatch_recovery_workspace_action(context, action)) {
-        // Recovery can open a document from the empty landing state.
-    } else if (!context.project_identity_ref.session_loaded) {
-        // The landing view only accepts project and recovery actions.
-    } else if (shortcut_handled) {
-        // Registry commands take precedence over widget actions emitted
-        // by the same input frame, preventing duplicate mutations.
-    } else if (dispatch_clipboard_menu(context, action)) {
-        // Clipboard menu actions use the same typed registry as shortcuts.
-    } else if (dispatch_reviewed_sound_edit(action, history, workspace, application_command_state,
-                                            compose_interaction_state,
-                                            context.notification_sink_ref)) {
-        // Properties and reviewed imports share a revision-checked sound edit boundary.
-    } else if (action.compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK) {
-        dispatch_audio_offset_lock_feedback(context, action);
-    } else if (action.audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE) {
-        static_cast<void>(dispatch_audio_offset_drag_action(
-            action, context, application_command_state.audio_offset_edits_locked(), sample_rate));
-    } else if (const auto common_status = wormedit::sys::dispatch_transport_player_action(
-                   action, application_command_state, stepmania_export_policy,
-                   context.notification_sink_ref)) {
-        // Typed producer callbacks already publish this transport outcome.
-    } else if (action.kind == WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE) {
-        static_cast<void>(dispatch_sound_usage_jump(
-            action, history, workspace, compose_interaction_state, context.notification_sink_ref));
-    } else if (action.kind == WORM_UI_WORKSPACE_ACTION_COMPARE_DIAGNOSTIC_JUMP) {
-        static_cast<void>(dispatch_compare_diagnostic_jump(
-            action, history, workspace, compose_interaction_state, context.notification_sink_ref));
-    } else if (action.kind == WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER ||
-               action.kind == WORM_UI_WORKSPACE_ACTION_NAVIGATE_NEXT_MARKER) {
-        const auto command =
-            wormedit::command_id_t{action.kind == WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER
-                                       ? "navigation.previous_marker"
-                                       : "navigation.next_marker"};
-        refresh_application_command_states(command_registry, history, workspace,
-                                           compose_interaction_state, application_command_state);
-        const auto dispatched = wormedit::invoke_command(
-            command_registry, command, application_command_focus(action, workspace));
-        if (dispatched.status == wormedit::command_dispatch_status_t::disabled) {
-            context.notification_sink_ref.post_transient_hint(
-                wormedit::notification_source_t::input,
-                "No beat-anchored bookmarks or section boundaries are available.");
-        } else if (dispatched.status != wormedit::command_dispatch_status_t::invoked &&
-                   !dispatched.diagnostics.empty()) {
-            post_shortcut_rejection(context.notification_sink_ref, command_registry, dispatched);
-        }
-    } else if (const auto selection_status = dispatch_workspace_selection_action(
-                   action, history, workspace, context.notification_sink_ref)) {
-        static_cast<void>(selection_status);
-    } else if (const auto metadata_status = wormedit::sys::dispatch_metadata_action(
-                   action, context.metadata_inputs(), application_command_state.audio_offset_edits_locked(),
-                   context.resource_copy_runtime_ref.busy(), context.export_runtime_ref.busy(),
-                   true)) {
-        static_cast<void>(metadata_status);
-    } else if (dispatch_timing_workspace_action(action, history, workspace,
-                                                application_command_state, timing_grid, timing_edit,
-                                                context.notification_sink_ref)) {
-        // The timing producer publishes feedback and consumes this action.
-    } else if (wormedit::sys::dispatch_compose_workspace_action(
-                   action, context.compose_actions(), compose_viewport_height_pixels,
-                   metadata_asset_runtime.import_pending())) {
-        // The Compose producer publishes feedback and consumes this action.
-    }
-}
+
 
 auto notification_frame_time() -> wormedit::notification_time_t {
     return std::chrono::duration_cast<wormedit::notification_time_t>(
@@ -3084,53 +1797,13 @@ void seed_notification_history_smoke(wormedit::notification_center_t& center,
     }
 }
 
-struct notification_frame_context_t {
-    application_dispatch_context_t& environment;
-    wormedit::notification_center_t& center;
-    wormedit::sys::notification_history_runtime_t& runtime;
-};
 
-void copy_notification_details(notification_frame_context_t& context, std::uint64_t id) {
-    const auto* entry = wormedit::sys::find_notification(context.center, id);
-    if (!entry) {
-        context.environment.notification_sink_ref.post(wormedit::notification_severity_t::error,
-                                                       wormedit::notification_source_t::input,
-                                                       "Notification no longer exists");
-        return;
-    }
-    const auto& text = entry->detail.empty() ? entry->message : entry->detail;
-    const bool copied = SDL_SetClipboardText(text.c_str());
-    const auto message = copied ? "Notification details copied."
-                            : "Could not copy notification details to the clipboard.";
-    context.environment.notification_sink_ref.post(copied
-                                                       ? wormedit::notification_severity_t::success
-                                                       : wormedit::notification_severity_t::error,
-                                                   wormedit::notification_source_t::input, message);
-}
 
-void apply_notification_action(notification_frame_context_t& context,
-                                const WormUiNotificationAction& action) {
-    if (context.runtime.apply(action, context.center)) return;
-    if (action.kind == WORM_UI_NOTIFICATION_ACTION_COPY_DETAILS)
-        copy_notification_details(context, action.id);
-    else if (action.kind == WORM_UI_NOTIFICATION_ACTION_GO_TO) {
-        const auto error = wormedit::sys::go_to_notification(
-            context.center, action.id, context.environment.history_ref,
-            context.environment.workspace_ref, context.environment.compose_interaction_state_ref);
-        const auto message = error ? *error : "Moved to notification target.";
-        context.environment.notification_sink_ref.post(
-            error ? wormedit::notification_severity_t::error
-                  : wormedit::notification_severity_t::success,
-            wormedit::notification_source_t::document, message);
-    }
-}
 
-void begin_notification_frame(notification_frame_context_t& context,
-                              WormUiNotificationAction& pending, wormedit::notification_time_t now) {
-    apply_notification_action(context, pending);
-    pending = {};
-    context.center.drain_inbox(now);
-}
+
+
+
+
 
 auto close_confirmation_view(const pending_close_t& pending, bool has_native_path)
     -> WormUiCloseConfirmationView {
@@ -3139,44 +1812,7 @@ auto close_confirmation_view(const pending_close_t& pending, bool has_native_pat
         .project_id = pending.project.value, .revision = pending.revision, .status_text = pending.save_failure.c_str()};
 }
 
-template <typename Model, typename Context>
-auto handle_workspace_view_error(const Model& model, Context& context,
-    const WormUiNotificationView& notifications, WormUiNotificationAction& pending_notification,
-    pending_close_t& pending_close, bool confirm,
-    wormedit::sys::projection_notification_feedback_t& feedback) -> bool {
-    const wormedit::sys::projection_identity_t identity{
-        context.history_ref.document.id, context.history_ref.document.revision,
-        context.workspace_ref.selected_chart.value_or(wormedit::chart_id_t{}),
-        context.project_chart_runtime_ref.session_generation};
-    if (model) {
-        feedback.publish(identity, {}, context.notification_sink_ref);
-        return false;
-    }
-    const auto diagnostic = model.diagnostics.empty() ? std::string{"Workspace view unavailable"}
-        : model.diagnostics.front().message;
-    feedback.publish(identity,
-                     {{wormedit::sys::projection_feedback_kind_t::workspace_view, 0,
-                       wormedit::sys::projection_diagnostic_severity(model.diagnostics),
-                       wormedit::notification_source_t::document, diagnostic}},
-                     context.notification_sink_ref);
-    const auto close =
-        close_confirmation_view(pending_close, context.project_identity_ref.native_project_loaded &&
-                                                   !context.project_identity_ref.active_project_path.empty());
-    const auto action = worm_ui_frontend_workspace_error(diagnostic.c_str(), &notifications, &close);
-    pending_notification = action.notifications;
-    if (dispatch_close_confirmation(pending_close, context, action, confirm)) return true;
-    if (action.kind == WORM_UI_WORKSPACE_ACTION_SWITCH_TAB) {
-        const auto changed = wormedit::apply_workspace_action(
-            context.workspace_ref, context.history_ref.document,
-            context.history_ref.document.revision,
-            wormedit::workspace_switch_tab_action_t{wormedit::workspace_tab_t::setup});
-        if (!changed && !changed.diagnostics.empty())
-            context.notification_sink_ref.post(
-                wormedit::sys::projection_diagnostic_severity(changed.diagnostics),
-                wormedit::notification_source_t::document, changed.diagnostics.front().message);
-    }
-    return true;
-}
+
 
 auto retained_compose_geometry(const compose_scene_cache_t& cache)
     -> wormedit::editor_measure_geometry_t {
@@ -3184,51 +1820,7 @@ auto retained_compose_geometry(const compose_scene_cache_t& cache)
             cache.scene.cached_measure_index ? &*cache.scene.cached_measure_index : nullptr};
 }
 
-void prepare_bound_workspace_frame(
-    const wormedit::document_history_t& history,
-    const wormedit::workspace_controller_t& workspace,
-    application_command_state_t& application_command_state, timing_grid_state_t& timing_grid,
-    std::optional<wormedit::audio_offset_drag_t>& audio_offset_drag,
-    std::optional<wormedit::workspace_tab_t>& audio_offset_drag_tab,
-    compose_scene_cache_t& compose_scene_cache) {
-    wormedit::sys::frame_phase_scope_t preparation(
-        wormedit::sys::frame_phase_t::workspace_preparation);
-    if (workspace.selected_chart) {
-        const auto chart =
-            std::ranges::find(history.document.charts, *workspace.selected_chart,
-                              &wormedit::chart_document_t::id);
-        if (chart != history.document.charts.end()) {
-            timing_grid = refresh_timing_grid(*chart, application_command_state);
-        }
-    }
-    if (audio_offset_drag &&
-        (!audio_offset_drag_tab || workspace.active_tab != *audio_offset_drag_tab ||
-         !workspace.selected_chart || *workspace.selected_chart != audio_offset_drag->chart ||
-         history.document.revision != audio_offset_drag->document_revision ||
-         application_command_state.audio_offset_edits_locked())) {
-        audio_offset_drag.reset();
-        audio_offset_drag_tab.reset();
-    }
-    if (compose_scene_cache.timing.beat_fit_drag &&
-        (workspace.active_tab != wormedit::workspace_tab_t::compose ||
-         !workspace.selected_chart ||
-         *workspace.selected_chart != compose_scene_cache.timing.beat_fit_drag->chart ||
-         history.document.revision != compose_scene_cache.timing.beat_fit_drag->document_revision ||
-         workspace.transport.audio_asset != compose_scene_cache.timing.beat_fit_asset ||
-         application_command_state.project.timing_recipe.timing_locked)) {
-        compose_scene_cache.clear_beat_fit_capture();
-    }
-    if (compose_scene_cache.timing.offset_fit_drag &&
-        (workspace.active_tab != wormedit::workspace_tab_t::compose ||
-         !workspace.selected_chart ||
-         *workspace.selected_chart != compose_scene_cache.timing.offset_fit_drag->beat.chart ||
-         history.document.revision !=
-             compose_scene_cache.timing.offset_fit_drag->beat.document_revision ||
-         workspace.transport.audio_asset != compose_scene_cache.timing.offset_fit_drag->asset ||
-         application_command_state.audio_offset_edits_locked())) {
-        compose_scene_cache.timing.offset_fit_drag.reset();
-    }
-}
+
 
 auto dispatch_tap_panel_action(wormedit::sys::tap_timing_runtime_t& runtime,
                                const WormUiTapTimingAction& action,
@@ -3249,7 +1841,7 @@ auto dispatch_tap_panel_action(wormedit::sys::tap_timing_runtime_t& runtime,
 
 auto tap_music_available(const wormedit::song_document_t& document, const WormUiWorkspaceView& view) -> bool {
     if (view.tap_timing.source_available || view.metadata.selected_music_asset_id != 0) return true;
-    return std::ranges::any_of(document.resources, [&](const auto& resource) {
+    return std::ranges::any_of(document.resources, [&](const wormedit::resource_entry_t& resource) {
         return std::ranges::find(resource.roles, wormedit::resource_role_t::music) != resource.roles.end() &&
             std::ranges::find(document.audio_assets, resource.asset, &wormedit::audio_asset_t::id) != document.audio_assets.end();
     });
@@ -3365,7 +1957,7 @@ auto tap_meter_at(const wormedit::song_document_t& document,
     }
     const auto found = std::upper_bound(cache.entries.begin(), cache.entries.end(),
         row < 0 ? 0 : static_cast<std::uint64_t>(row),
-        [](std::uint64_t target, const auto& entry) { return target < entry.first; });
+        [](std::uint64_t target, const std::pair<std::uint64_t, std::uint32_t>& entry) { return target < entry.first; });
     const auto beats = found == cache.entries.begin() ? 4 : std::prev(found)->second;
     return beats >= 1 && beats <= 32 ? static_cast<std::uint16_t>(beats) : 4;
 }
@@ -3474,76 +2066,12 @@ auto create_chart_from_registered_command(wormedit::document_history_t& history,
     return wormedit::command_invocation_result_t{.accepted = true};
 }
 
-auto dispatch_registered_application_command(
-    const wormedit::command_invocation_context_t& invocation,
-    wormedit::sys::application_dispatch_context_t& environment,
-    wormedit::sys::tap_timing_runtime_t& tap_runtime,
-    const std::function<wormedit::sys::tap_timing_clock_t()>& tap_clock,
-    const std::optional<std::uint64_t>& tap_event_ns) {
-    auto& program = environment.program_preferences_ref;
-    auto& history = environment.history_ref;
-    auto& workspace = environment.workspace_ref;
-    auto& compose_interaction_state = environment.compose_interaction_state_ref;
-    auto& application_command_state = environment.application_command_state_ref;
-    auto& notifications = environment.notification_sink_ref;
 
-    using severity_t = wormedit::notification_severity_t;
-    using source_t = wormedit::notification_source_t;
-    if (auto toggled = dispatch_click_audition_toggle(invocation, program, application_command_state,
-            notifications)) return *toggled;
-    const auto command = parse_application_command(invocation.command.value);
-    if (!command) {
-        return wormedit::sys::reject_application_command(
-            notifications, "Command is not implemented by the application.", severity_t::error, source_t::system);
-    }
-    if (command->kind == wormedit::sys::application_command_kind_t::document_new_project) {
-        if (!worm_ui_frontend_request_new_project())
-            return wormedit::sys::reject_application_command(notifications, "Finish the open project dialog first.",
-                                                             severity_t::warning, source_t::document);
-        notifications.post_transient_hint(source_t::document, "Choose the layout for the new project.");
-        return wormedit::command_invocation_result_t{.accepted = true};
-    }
-    if (command->kind == wormedit::sys::application_command_kind_t::document_save_project) {
-        if (!worm_ui_frontend_request_save_project(history.document.id.value))
-            return wormedit::sys::reject_application_command(notifications, "Finish the open dialog first.",
-                                                             severity_t::warning, source_t::document);
-        return wormedit::command_invocation_result_t{.accepted = true};
-    }
-    if (command->kind == wormedit::sys::application_command_kind_t::document_new_chart)
-        return create_chart_from_registered_command(history, workspace, compose_interaction_state,
-                                                    application_command_state, notifications);
-    if (command->kind == wormedit::sys::application_command_kind_t::timing_tap_assistant) {
-        tap_runtime.toggle();
-        (void)tap_runtime.observe(tap_clock());
-        return wormedit::command_invocation_result_t{.accepted = true};
-    }
-    if (command->kind == wormedit::sys::application_command_kind_t::timing_tap) {
-        const auto clock = tap_clock();
-        const auto result = tap_runtime.tap(tap_event_ns.value_or(clock.observed_ns), clock);
-        const auto state = tap_runtime.state();
-        if (state.status) {
-            const bool guidance = result == wormedit::sys::tap_timing_result_t::ignored ||
-                                  result == wormedit::sys::tap_timing_result_t::not_playing;
-            static_cast<void>(post_callback_feedback(notifications,
-                guidance ? severity_t::hint : severity_t::warning, source_t::input, state.status));
-        }
-        return wormedit::command_invocation_result_t{.accepted = true};
-    }
-    return wormedit::sys::invoke_application_command(*command, environment.command_inputs());
-}
 
 
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-template <typename WaveformRuntime, typename Workspace>
-auto selected_waveform_rate(const WaveformRuntime& waveform, const Workspace& workspace)
-    -> std::optional<std::uint32_t> {
-    if (waveform.waveform_analysis() && waveform.waveform_analysis()->waveform &&
-        waveform.waveform_asset() && workspace.transport.audio_asset == waveform.waveform_asset()) {
-        return waveform.waveform_analysis()->waveform->sample_rate;
-    }
-    return std::nullopt;
-}
+
 #endif
 
 void retain_compose_hover_timing(
@@ -3590,16 +2118,18 @@ void retain_compose_bgm_window_capture(
 }
 
 void publish_project_portability_notice(wormedit::sys::project_portability_notice_t& notice,
-    const wormedit::document_history_t& history, std::uint64_t session,
-    wormedit::notification_sink_t& sink) {
+                                        const wormedit::document_history_t& history,
+                                        std::uint64_t session,
+                                        wormedit::notification_sink_t& sink) {
     if (notice.update(history.document, session))
-        sink.post(wormedit::notification_severity_t::warning, wormedit::notification_source_t::document,
-            "Some assets are linked by absolute paths or paths outside the project folder. "
-            "Moving this project to another environment may break those links. Copy the assets into the project to make it portable.");
+        sink.post(wormedit::notification_severity_t::warning,
+                  wormedit::notification_source_t::document,
+                  "Some assets are linked by absolute paths or paths outside the project folder. "
+                  "Moving this project to another environment may break those links. Copy the "
+                  "assets into the project to make it portable.");
 }
 
 } // namespace
-
 
 namespace wormedit::sys {
 struct application_t::implementation_t {
@@ -3619,9 +2149,13 @@ struct application_t::implementation_t {
         workspace_controller_t workspace{};
         project_identity_t project_identity{};
         task_scheduler_t autosave_scheduler{1, 1, background_scheduler_options()};
-        native_project_autosave_loop_t autosave_loop{
-            native_project_autosave_loop_t::clock_t::now(), autosave_scheduler, {}, 0,
-            std::chrono::minutes{5}, std::chrono::seconds{30}, notifications};
+        native_project_autosave_loop_t autosave_loop{native_project_autosave_loop_t::clock_t::now(),
+                                                     autosave_scheduler,
+                                                     {},
+                                                     0,
+                                                     std::chrono::minutes{5},
+                                                     std::chrono::seconds{30},
+                                                     notifications};
         native_project_recovery_controller_t recovery_controller{};
         recovery_scan_notification_publisher_t recovery_scan_feedback{};
         bool recovery_scan_configured{};
@@ -3637,7 +2171,8 @@ struct application_t::implementation_t {
         visual::image_cache_t player_image_cache{};
         task_scheduler_t player_image_scheduler{1, 4, background_scheduler_options()};
         visual::image_job_t player_image_job{player_image_cache, player_image_scheduler,
-            WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER_CAPACITY + WORM_UI_PLAYER_PREVIEW_STORYBOARD_CAPACITY};
+                                             WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER_CAPACITY +
+                                                 WORM_UI_PLAYER_PREVIEW_STORYBOARD_CAPACITY};
 #endif
 #if defined(WORMEDIT_HAS_VIDEO_DECODER)
         visual::video_frame_cache_t player_video_cache{};
@@ -3654,13 +2189,16 @@ struct application_t::implementation_t {
         audio::transport_t audition_transport{audition_cache};
         audio::audition_transport_bridge_t audition_bridge{audition_transport};
         audio::object_audition_controller_t object_audition{audition_bridge};
-        audio::audition_session_t audition_session{audition_sources, audition_transport, audition_bridge};
+        audio::audition_session_t audition_session{audition_sources, audition_transport,
+                                                   audition_bridge};
         sdl_audition_output_t audition_output{audition_session};
         audio::decoded_block_cache_t preview_cache{audio::preview_block_cache_limits()};
-        runtime::waveform_analysis_t waveform_runtime{audition_sources, &preview_cache, notifications};
+        runtime::waveform_analysis_t waveform_runtime{audition_sources, &preview_cache,
+                                                      notifications};
         audio::transport_t preview_transport{preview_cache};
         audio::preview_transport_bridge_t preview_bridge{preview_transport};
-        audio::preview_session_t preview_session{audition_sources, preview_transport, preview_bridge};
+        audio::preview_session_t preview_session{audition_sources, preview_transport,
+                                                 preview_bridge};
         audio::resident_sample_store_t resident_samples{};
         sdl_preview_output_t preview_output{preview_session};
         runtime::chart_preview_t preview_state{};
@@ -3699,7 +2237,8 @@ struct application_t::implementation_t {
         runtime::timing_edit_t timing_edit{};
         compose_scene_cache_t compose_scene_cache{};
         compare_scene_cache_t compare_scene_cache{};
-        frame_arena_t frame_projection_arena{{.chunk_bytes = 1024 * 1024, .maximum_bytes = 16 * 1024 * 1024}};
+        frame_arena_t frame_projection_arena{
+            {.chunk_bytes = 1024 * 1024, .maximum_bytes = 16 * 1024 * 1024}};
         player_preview_presenter_t player_preview_presenter{};
         std::optional<editor_interaction_state_t> compose_interaction_state{};
         viewport_input_controller_t compose_viewport_input{};
@@ -3720,26 +2259,32 @@ struct application_t::implementation_t {
         project_portability_notice_t portability_notice{};
     } views;
 
-    tap_clock_context_t tap_clock_context{views.tap_epoch, views.tap_epoch_begin_ns,
+    tap_clock_context_t tap_clock_context{
+        views.tap_epoch,
+        views.tap_epoch_begin_ns,
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-        session.history.document, audio_runtime.preview_state, audio_runtime.preview_bridge,
+        session.history.document,
+        audio_runtime.preview_state,
+        audio_runtime.preview_bridge,
         audio_runtime.preview_output,
 #endif
     };
     std::optional<std::uint64_t>* current_tap_event_{};
     static constexpr std::size_t worker_count = 3
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
-        + 1
+                                                + 1
 #endif
 #if defined(WORMEDIT_HAS_VIDEO_DECODER)
-        + 1
+                                                + 1
 #endif
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-        + 2
+                                                + 2
 #endif
         ;
     std::array<task_scheduler_t*, worker_count> worker_schedulers{
-        &session.autosave_scheduler, &jobs.resource_copy_scheduler, &jobs.export_runtime.scheduler,
+        &session.autosave_scheduler,
+        &jobs.resource_copy_scheduler,
+        &jobs.export_runtime.scheduler,
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
         &jobs.player_image_scheduler,
 #endif
@@ -3747,89 +2292,1758 @@ struct application_t::implementation_t {
         &jobs.player_video_scheduler,
 #endif
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-        &audio_runtime.waveform_runtime.worker_scheduler(), &audio_runtime.audition_probe_scheduler,
+        &audio_runtime.waveform_runtime.worker_scheduler(),
+        &audio_runtime.audition_probe_scheduler,
 #endif
     };
     application_worker_set_t workers{platform.lifetime, worker_schedulers};
     bool& running;
     bool started_{}, shutdown_started_{};
 
-    struct compose_frame_action_context_t {
-        application_dispatch_context_t& environment;
-        std::optional<std::uint64_t>& tap_event_ns_ref;
+    struct AudioOffsetDragContext {
+        const WormUiWorkspaceAction& action;
+        bool timing_locked;
+        std::optional<std::uint32_t> selected_sample_rate;
+    };
+    auto document_inputs() -> document_edit_inputs_t {
+        return {session.history, session.workspace, platform.notification_sink};
+    }
+    auto command_inputs() -> command_dispatch_inputs_t {
+        return {document_inputs(),
+                {commands, views.compose_interaction_state, views.timing_edit.stage}};
+    }
+    auto compose_actions() -> compose_action_inputs_t {
+        return {document_inputs(),
+                {commands, views.compose_interaction_state},
+                {session.project_identity.asset_base,
+                 {jobs.resource_copy_scheduler, jobs.resource_copy_runtime, jobs.export_runtime},
+                 {views.metadata_drop, jobs.metadata_asset_runtime}}};
+    }
+    auto compose_inputs() -> compose_input_inputs_t {
+        return {document_inputs(),
+                commands,
+                {views.compose_scene_cache, views.compose_viewport_input,
+                 views.compose_navigation_input}};
+    }
+    auto metadata_inputs() -> metadata_action_inputs_t {
+        return {document_inputs(),
+                {views.metadata_drop, jobs.metadata_asset_runtime, jobs.resource_copy_scheduler},
+                session.project_identity.asset_base};
+    }
+    auto frontend_inputs() -> frontend_event_inputs_t {
+        return {document_inputs(), views.metadata_drop, session.project_identity};
+    }
+
+    void post_project_feedback(wormedit::notification_severity_t severity,
+                               wormedit::notification_source_t source, std::string message,
+                               std::string_view detail = {}) {
+        // The close confirmation retains its own scoped feedback; it is not a
+        // global notification producer or a replacement status-line channel.
+        views.close_feedback = std::move(message);
+        if (severity == wormedit::notification_severity_t::hint)
+            platform.notification_sink.post_transient_hint(source, views.close_feedback);
+        else
+            platform.notification_sink.post(
+                wormedit::notification_post_t{.severity = severity,
+                                              .source = source,
+                                              .message = views.close_feedback,
+                                              .detail = std::string(detail),
+                                              .target = {}});
+    }
+
+    auto can_transition_project() -> bool {
+        if (session.autosave_loop.busy() || jobs.resource_copy_runtime.busy() ||
+            jobs.export_runtime.busy() || jobs.metadata_asset_runtime.import_pending()) {
+            post_project_feedback(wormedit::notification_severity_t::warning,
+                                  wormedit::notification_source_t::document,
+                                  "Wait for the current file operation before changing projects.");
+            return false;
+        }
+        if (session.project_identity.session_loaded &&
+            wormedit::is_document_dirty(session.history)) {
+            post_project_feedback(wormedit::notification_severity_t::warning,
+                                  wormedit::notification_source_t::document,
+                                  "Save the current project before replacing or closing it.");
+            return false;
+        }
+        return true;
+    }
+
+    void tick_loaded_project_autosave() {
+        if (!session.project_identity.session_loaded)
+            return;
+        wormedit::sys::tick_application_autosave(
+            session.autosave_loop, session.history, session.project_identity.native_project_loaded,
+            session.project_identity.active_project_path, platform.recovery_directory.path,
+            platform.notification_sink, session.project_identity.asset_base);
+    }
+
+    void apply_notification_action(const WormUiNotificationAction& action) {
+        if (views.notification_history.apply(action, platform.notifications))
+            return;
+        if (action.kind == WORM_UI_NOTIFICATION_ACTION_COPY_DETAILS)
+            copy_notification_details(action.id);
+        else if (action.kind == WORM_UI_NOTIFICATION_ACTION_GO_TO) {
+            const auto error = wormedit::sys::go_to_notification(platform.notifications, action.id,
+                                                                 session.history, session.workspace,
+                                                                 views.compose_interaction_state);
+            const auto message = error ? *error : "Moved to notification target.";
+            platform.notification_sink.post(error ? wormedit::notification_severity_t::error
+                                                  : wormedit::notification_severity_t::success,
+                                            wormedit::notification_source_t::document, message);
+        }
+    }
+
+    void move_staged_timing_event(const WormUiWorkspaceAction& action, bool timing_locked,
+                                  std::uint64_t active_snap_denominator,
+                                  wormedit::chart_document_t* chart,
+                                  wormedit::timing_lane_pseudonote_preview_t& stage) {
+        const auto target =
+            chart == nullptr || !stage.existing_event || !action.timing_has_target_y
+                ? std::optional<wormedit::local_position_t>{}
+                : timing_position_from_fraction(
+                      *chart, wormedit::sys::timing_target_fraction(action.timing_target),
+                      active_snap_denominator);
+        if (!target || !wormedit::move_existing_timing_lane_pseudonote(session.history, stage,
+                                                                       *target, timing_locked)) {
+            post_edit_rejection(platform.notification_sink, stage.diagnostics,
+                                "The timing marker cannot move to that row.");
+        } else {
+            platform.notification_sink.post_transient_hint(
+                wormedit::notification_source_t::edit,
+                "Timing marker moved in the staged preview; apply to commit.");
+        }
+    }
+
+    auto finish_confirmed_close(pending_close_t& pending) -> bool {
+        if (pending.target == close_target_t::application) {
+            running = false;
+            pending = {};
+            return true;
+        }
+        if (is_project_replacement_busy())
+            return false;
+        if (pending.target == close_target_t::new_project ||
+            pending.target == close_target_t::open_file) {
+            finish_confirmed_project_replacement(pending);
+            return true;
+        }
+        if (!replace_project_session(
+                wormedit::sys::empty_session_document(wormedit::sys::new_session_project_id()),
+                false, true, false, {}, {}))
+            return false;
+        pending = {};
+        post_project_feedback(wormedit::notification_severity_t::info,
+                              wormedit::notification_source_t::document, "No project loaded.");
+        return true;
+    }
+
+    auto save_project_session(const WormUiWorkspaceAction& action) -> bool {
+        using namespace wormedit;
+        if (!session.project_identity.session_loaded) {
+            post_project_feedback(notification_severity_t::warning, notification_source_t::document,
+                                  "Create or open a project before saving.");
+            return false;
+        }
+        if (jobs.resource_copy_runtime.busy() || jobs.export_runtime.busy() ||
+            jobs.metadata_asset_runtime.import_pending()) {
+            post_project_feedback(notification_severity_t::warning, notification_source_t::document,
+                                  "Wait for the current file operation before saving.");
+            return false;
+        }
+        auto destination = action.project_path[0] != '\0'
+                               ? std::filesystem::path{action.project_path}
+                               : session.project_identity.active_project_path;
+        if (destination.empty()) {
+            post_project_feedback(notification_severity_t::hint, notification_source_t::document,
+                                  "Choose a native project path to save.");
+            return false;
+        }
+        auto extension = destination.extension().string();
+        std::transform(extension.begin(), extension.end(), extension.begin(),
+                       [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
+        if (extension.empty())
+            destination += ".wormedit";
+        else if (extension != ".wormedit") {
+            post_project_feedback(notification_severity_t::warning, notification_source_t::document,
+                                  "Choose a .wormedit project filename.");
+            return false;
+        }
+        std::error_code path_error;
+        const auto destination_base =
+            std::filesystem::absolute(destination, path_error).parent_path();
+        if (path_error) {
+            post_project_feedback(notification_severity_t::error, notification_source_t::document,
+                                  "Could not resolve the project destination: " +
+                                      path_error.message());
+            return false;
+        }
+        auto saved_document = session.history.document;
+        wormedit::sys::rebase_project_paths(saved_document, session.project_identity.asset_base,
+                                            destination_base);
+        const auto result = publish_native_project_atomic(destination, saved_document);
+        if (!result.published) {
+            post_project_feedback(
+                result.diagnostics.empty()
+                    ? notification_severity_t::error
+                    : notification_severity_for(result.diagnostics.front().severity),
+                notification_source_t::document,
+                result.diagnostics.empty() ? "Could not save the project."
+                                           : result.diagnostics.front().message);
+            return false;
+        }
+        wormedit::sys::rebase_project_paths(session.history.document,
+                                            session.project_identity.asset_base, destination_base);
+        for (auto& entry : session.history.undo) {
+            wormedit::sys::rebase_project_paths(entry.before, session.project_identity.asset_base,
+                                                destination_base);
+            wormedit::sys::rebase_project_paths(entry.after, session.project_identity.asset_base,
+                                                destination_base);
+        }
+        for (auto& entry : session.history.redo) {
+            wormedit::sys::rebase_project_paths(entry.before, session.project_identity.asset_base,
+                                                destination_base);
+            wormedit::sys::rebase_project_paths(entry.after, session.project_identity.asset_base,
+                                                destination_base);
+        }
+        mark_document_saved(session.history);
+        const auto version =
+            native_project_document_version_t{.project_id = session.history.document.id,
+                                              .revision = session.history.document.revision};
+        session.autosave_loop.mark_explicit_save(version);
+        session.project_identity.scanned_primary_version = version;
+        session.project_identity.active_project_path = destination;
+        remember_project_file(preferences.program_preferences, destination,
+                              platform.notification_sink);
+        session.project_identity.native_project_loaded = true;
+        session.project_identity.asset_base = destination_base;
+        session.project_identity.external_player_source_path.clear();
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-        wormedit::audio::decoded_source_registry_t& audition_sources_ref;
-        wormedit::audio::object_audition_controller_t& object_audition_ref;
-        wormedit::audio::preview_session_t& preview_session_ref;
-        wormedit::sys::sdl_preview_output_t& preview_output_ref;
-        wormedit::sys::runtime::chart_preview_t& preview_state_ref;
-        wormedit::sys::sdl_audition_output_t& audition_output_ref;
+        post_audio_inventory_feedback(
+            wormedit::sys::reconcile_audition_sources((*audio_runtime.reconciliation), true),
+            platform.notification_sink);
 #endif
-    };
+        auto message = "Project saved to " + destination.string();
+        auto severity = notification_severity_t::success;
+        if (!result.diagnostics.empty()) {
+            message += " " + result.diagnostics.front().message;
+            severity =
+                std::max(severity, notification_severity_for(result.diagnostics.front().severity));
+        }
+        post_project_feedback(severity, notification_source_t::document, std::move(message));
+        return true;
+    }
+
+    void create_audio_project_session(const char* path, std::uint32_t lane_count) {
+        const auto audio = wormedit::sys::inspect_audio_for_project(path);
+        if (!audio) {
+            post_project_feedback(wormedit::notification_severity_t::error,
+                                  wormedit::notification_source_t::import_, audio.error);
+            session.project_identity.pending_import.audio_project_path.clear();
+            return;
+        }
+        auto document = wormedit::sys::audio_project_document(
+            wormedit::sys::new_session_project_id(), audio.source_path, audio.title, audio.artist,
+            lane_count, audio.stream);
+        if (!document) {
+            post_project_feedback(wormedit::notification_severity_t::error,
+                                  wormedit::notification_source_t::import_,
+                                  "Could not create the selected audio chart layout.");
+            return;
+        }
+        if (!replace_project_session(std::move(*document), true, true, false, {},
+                                     audio.source_path.parent_path()))
+            return;
+        for (const auto& chart : session.history.document.charts)
+            remember_snap_denominator(commands, chart.id,
+                                      commands.preferences.editor_preferences.default_snap);
+        const auto selected = wormedit::apply_workspace_action(
+            session.workspace, session.history.document, session.history.document.revision,
+            wormedit::workspace_select_asset_action_t{
+                .asset = session.history.document.audio_assets.front().id,
+                .slot = wormedit::workspace_asset_slot_t::audio});
+        post_project_feedback(
+            selected ? wormedit::notification_severity_t::success
+                     : wormedit::notification_severity_t::warning,
+            wormedit::notification_source_t::import_,
+            selected ? "Audio imported as a new " + std::to_string(lane_count) + "K project."
+                     : "Audio project created; select the music asset to preview it.");
+    }
+
+    void dispatch_audio_offset_lock_feedback(const WormUiWorkspaceAction& action) {
+        const auto was_locked = commands.project.timing_recipe.audio_offset_locked;
+        const auto feedback = toggle_compose_audio_offset_lock(
+            action, session.history, session.workspace, commands, views.compose_scene_cache,
+            views.audio_offset_drag, views.audio_offset_drag_tab);
+        platform.notification_sink.post(was_locked !=
+                                                commands.project.timing_recipe.audio_offset_locked
+                                            ? wormedit::notification_severity_t::success
+                                            : wormedit::notification_severity_t::warning,
+                                        wormedit::notification_source_t::edit, feedback);
+    }
+
+    void begin_notification_frame(WormUiNotificationAction& pending,
+                                  wormedit::notification_time_t now) {
+        apply_notification_action(pending);
+        pending = {};
+        platform.notifications.drain_inbox(now);
+    }
+
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-    struct workspace_frame_action_context_t : wormedit::sys::application_dispatch_context_t {
-        const wormedit::sys::audition_source_reconciliation_context_t& audition_reconciliation_ref;
-    };
+    void sync_layer_assist_selection() {
+        if (commands.project.semantic_layer.layer_assist_chart ==
+            session.workspace.selected_chart) {
+            (void)audio_runtime.preview_state.set_layer_assist(
+                session.workspace.selected_chart.value_or(wormedit::chart_id_t{}),
+                commands.project.semantic_layer.layer_assist_layers, audio_runtime.preview_session);
+        } else {
+            (void)audio_runtime.preview_state.set_layer_assist(
+                session.workspace.selected_chart.value_or(wormedit::chart_id_t{}), {},
+                audio_runtime.preview_session);
+        }
+    }
+#endif
+
+    void dispatch_dropped_chart_project(std::string& pending_path, pending_close_t& pending,
+                                        bool confirm) {
+        if (pending_path.empty())
+            return;
+        const auto path = std::exchange(pending_path, {});
+        if (path.size() >= WORM_UI_PROJECT_PATH_CAPACITY) {
+            post_project_feedback(wormedit::notification_severity_t::warning,
+                                  wormedit::notification_source_t::import_,
+                                  "The dropped chart or project path is too long.");
+            return;
+        }
+        WormUiWorkspaceAction action{};
+        action.kind = WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
+        std::memcpy(action.project_path, path.c_str(), path.size() + 1);
+        (void)dispatch_close_confirmation(pending, action, confirm);
+    }
+
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    auto selected_waveform_rate() -> std::optional<std::uint32_t> {
+        if (audio_runtime.waveform_runtime.waveform_analysis() &&
+            audio_runtime.waveform_runtime.waveform_analysis()->waveform &&
+            audio_runtime.waveform_runtime.waveform_asset() &&
+            session.workspace.transport.audio_asset ==
+                audio_runtime.waveform_runtime.waveform_asset()) {
+            return audio_runtime.waveform_runtime.waveform_analysis()->waveform->sample_rate;
+        }
+        return std::nullopt;
+    }
+#endif
+
+    auto dispatch_close_confirmation(pending_close_t& pending, const WormUiWorkspaceAction& action,
+                                     bool confirm) -> bool {
+        if (pending.awaiting_encoding &&
+            action.kind == WORM_UI_WORKSPACE_ACTION_CANCEL_BMS_ENCODING) {
+            pending = {};
+            return false;
+        }
+        if (resume_confirmed_encoding(pending, action))
+            return true;
+        if (const auto target = requested_project_transition(action.kind)) {
+            const bool replacing =
+                *target == close_target_t::new_project || *target == close_target_t::open_file;
+            confirm_unsaved_changes(pending, *target, confirm || replacing, &action);
+            return true;
+        }
+        if (pending.target == close_target_t::none || pending.awaiting_encoding)
+            return false;
+        if (action.close_decision != WORM_UI_CLOSE_NONE) {
+            if (action.close_project_id != pending.project.value ||
+                action.close_revision != pending.revision)
+                return true;
+            if (action.close_decision == WORM_UI_CLOSE_CANCEL) {
+                pending = {};
+                return true;
+            }
+            if (session.history.document.id != pending.project ||
+                session.history.document.revision != pending.revision) {
+                pending.project = session.history.document.id;
+                pending.revision = session.history.document.revision;
+                post_project_feedback(wormedit::notification_severity_t::warning,
+                                      wormedit::notification_source_t::document,
+                                      "The project changed. Review it before confirming close.");
+                return true;
+            }
+            if (action.close_decision == WORM_UI_CLOSE_DISCARD) {
+                (void)finish_confirmed_close(pending);
+                return true;
+            }
+            if (action.close_decision == WORM_UI_CLOSE_SAVE)
+                pending.save_requested = true;
+        }
+        if (pending.save_requested && action.kind == WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT)
+            save_before_confirmed_close(pending, action);
+        return true; // Confirmation blocks authoring and shortcut dispatch.
+    }
+
+    auto continue_audio_offset_drag(AudioOffsetDragContext& context) -> std::string {
+        using namespace wormedit;
+        const auto& action = context.action;
+        auto& history = session.history;
+        auto& workspace = session.workspace;
+        auto& drag = views.audio_offset_drag;
+        auto& drag_tab = views.audio_offset_drag_tab;
+        const auto timing_locked = context.timing_locked;
+        if (!drag || !drag_tab || *drag_tab != workspace.active_tab ||
+            drag->chart != *workspace.selected_chart ||
+            drag->document_revision != action.audio_offset_drag_document_revision ||
+            drag->sample_rate != *context.selected_sample_rate) {
+            return clear_audio_offset_drag(
+                context, "Audio offset drag has no matching captured transaction.");
+        }
+        const auto updated = update_audio_offset_drag(
+            history.document, *drag, action.audio_offset_drag_delta_frames, timing_locked);
+        if (!updated) {
+            drag.reset();
+            drag_tab.reset();
+            return post_audio_offset_diagnostic(context, updated.diagnostics,
+                                                "Audio offset preview was rejected.",
+                                                notification_severity_t::warning);
+        }
+        drag = updated.drag;
+        if (action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_UPDATE)
+            return post_audio_offset_feedback(context, notification_severity_t::hint,
+                                              "Previewing exact waveform offset.");
+        if (action.audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_COMMIT) {
+            drag.reset();
+            drag_tab.reset();
+            return post_audio_offset_feedback(context, notification_severity_t::warning,
+                                              "Invalid audio offset drag action.");
+        }
+        const auto committed = commit_audio_offset_drag(history, *drag, timing_locked);
+        drag.reset();
+        drag_tab.reset();
+        if (!committed.applied) {
+            return post_audio_offset_diagnostic(context, committed.diagnostics,
+                                                "Audio offset was unchanged.",
+                                                notification_severity_t::info);
+        }
+        const auto rebound = rebind_workspace(workspace, history);
+        if (rebound)
+            return post_audio_offset_feedback(context, notification_severity_t::success,
+                                              "Audio offset updated from waveform drag.");
+        return post_audio_offset_diagnostic(context, rebound.diagnostics,
+                                            "Audio offset changed, but workspace rebinding failed.",
+                                            notification_severity_t::error);
+    }
+
+    auto launch_external_player(wormedit::sys::external_player_action_t action) -> std::string {
+        using namespace wormedit::sys;
+        const auto& asset_base = session.project_identity.asset_base;
+        if (preferences.external_player_runtime.preferences.selected >=
+            preferences.external_player_runtime.preferences.players.size()) {
+            preferences.external_player_runtime.visible = true;
+            return post_callback_feedback(platform.notification_sink,
+                                          wormedit::notification_severity_t::warning,
+                                          wormedit::notification_source_t::audio,
+                                          "Choose an external player in Preferences.");
+        }
+        const auto& player = preferences.external_player_runtime.preferences
+                                 .players[preferences.external_player_runtime.preferences.selected];
+        if (player.path.empty()) {
+            preferences.external_player_runtime.visible = true;
+            return post_callback_feedback(platform.notification_sink,
+                                          wormedit::notification_severity_t::warning,
+                                          wormedit::notification_source_t::audio,
+                                          "Choose an external player in Preferences.");
+        }
+        const auto* chart = selected_chart(session.history, session.workspace);
+        if (action != external_player_action_t::stop &&
+            (!chart || chart->source_family != wormedit::format_family_t::bms))
+            return post_callback_feedback(platform.notification_sink,
+                                          wormedit::notification_severity_t::warning,
+                                          wormedit::notification_source_t::audio,
+                                          "External preview requires a selected BMS chart.");
+        std::uint64_t measure{};
+        if (action == external_player_action_t::play_here) {
+            const auto source_measure =
+                external_source_measure(*chart, views.compose_interaction_state);
+            if (!source_measure)
+                return post_callback_feedback(
+                    platform.notification_sink, wormedit::notification_severity_t::hint,
+                    wormedit::notification_source_t::audio,
+                    "Place the Compose cursor before playing externally from here.");
+            measure = *source_measure;
+        }
+        auto source = session.project_identity.external_player_source_path;
+        if (source.empty() && chart && !asset_base.empty()) {
+            // Native projects retain the authoritative resource directory, but no imported
+            // basename.
+            bool popn{};
+            for (const auto& layout : chart->lane_layouts)
+                popn = popn || layout.layout.profile_id.starts_with("pms-");
+            source = asset_base / (popn ? "chart.pms" : "chart.bms");
+        }
+        const char* application_path = SDL_GetBasePath();
+        const auto result = preferences.external_player_runtime.player.launch(
+            player, action, session.history.document, chart ? chart->id : wormedit::chart_id_t{},
+            source, measure, application_path ? application_path : "");
+        if (result.open_preferences)
+            preferences.external_player_runtime.visible = true;
+        return post_callback_feedback(
+            platform.notification_sink,
+            result.launched ? wormedit::notification_severity_t::success
+                            : (result.open_preferences ? wormedit::notification_severity_t::warning
+                                                       : wormedit::notification_severity_t::error),
+            wormedit::notification_source_t::audio,
+            result.launched ? "External player command launched." : result.error);
+    }
+
+    auto dispatch_application_shortcuts(const WormUiWorkspaceAction& action,
+                                        std::optional<std::uint64_t>& tap_event_ns,
+                                        bool& preserves_editor_gesture) -> bool {
+        using namespace wormedit;
+        preserves_editor_gesture = true;
+        if (action.shortcut_overflowed ||
+            action.shortcut_event_count > WORM_UI_SHORTCUT_EVENT_CAPACITY) {
+            platform.notification_sink.post(
+                notification_severity_t::warning, notification_source_t::input,
+                "Shortcut input exceeded its per-frame capacity and was discarded.");
+            preserves_editor_gesture = false;
+            return true;
+        }
+        bool handled{};
+        for (std::size_t index = 0; index < action.shortcut_event_count; ++index) {
+            refresh_application_command_states(command_registry, session.history, session.workspace,
+                                               views.compose_interaction_state, commands);
+            const auto& input = action.shortcut_events[index];
+            tap_event_ns = input.timestamp_ns;
+            const auto dispatched =
+                input.tap_timing_space
+                    ? invoke_command(command_registry, {"timing.tap"},
+                                     application_command_focus(action, session.workspace))
+                    : dispatch_shortcut(
+                          command_registry,
+                          {.chord = {.key = static_cast<shortcut_key_t>(input.hid_usage),
+                                     .modifiers = input.modifiers},
+                           .auto_repeat = input.repeat},
+                          application_command_focus(action, session.workspace),
+                          application_primary_modifier());
+            tap_event_ns.reset();
+            if (!dispatched.command || (dispatched.command->value != "timing.tap" &&
+                                        dispatched.command->value != "workspace.options" &&
+                                        dispatched.command->value != "view.notifications"))
+                preserves_editor_gesture = false;
+            if (dispatched.status == command_dispatch_status_t::invoked) {
+                handled = true;
+            } else if (dispatched.status == command_dispatch_status_t::disabled) {
+                handled = true;
+                platform.notification_sink.post(
+                    notification_severity_t::warning, notification_source_t::input,
+                    dispatched.command
+                        ? "Command is currently unavailable: " + dispatched.command->value
+                        : "Command is currently unavailable.");
+            } else if (dispatched.status == command_dispatch_status_t::conflict ||
+                       dispatched.status == command_dispatch_status_t::invalid_event ||
+                       dispatched.status == command_dispatch_status_t::rejected) {
+                handled = true;
+                post_shortcut_rejection(platform.notification_sink, command_registry, dispatched);
+            } else if (dispatched.status == command_dispatch_status_t::repeat_suppressed) {
+                handled = true;
+            }
+        }
+        return handled;
+    }
+
+    void begin_project_session(wormedit::sys::project_identity_t replacement) {
+        wormedit::sys::begin_project_session(session.project_identity, views.project_chart_runtime,
+                                             std::move(replacement));
+        views.audio_offset_drag.reset();
+        views.audio_offset_drag_tab.reset();
+        views.compose_interaction_state.reset();
+        views.timing_edit = {};
+        views.timing_scene_cache = {};
+        views.compose_scene_cache = {};
+        views.timing_grid = {};
+        views.compose_viewport_input.escape();
+        views.compose_navigation_input.cancel();
+        views.metadata_drop = {};
+        wormedit::sys::reset_application_project_edit_state(commands);
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        post_audio_inventory_feedback(
+            wormedit::sys::reconcile_audition_sources((*audio_runtime.reconciliation), true),
+            platform.notification_sink);
+#endif
+    }
+
+    auto begin_audio_offset_drag_action(AudioOffsetDragContext& context) -> std::string {
+        using namespace wormedit;
+        const auto begun =
+            begin_audio_offset_drag(session.history.document, *session.workspace.selected_chart,
+                                    *context.selected_sample_rate, context.timing_locked);
+        views.audio_offset_drag = begun.drag;
+        views.audio_offset_drag_tab =
+            begun ? std::optional{session.workspace.active_tab} : std::nullopt;
+        if (begun)
+            return post_audio_offset_feedback(context, notification_severity_t::hint,
+                                              "Dragging waveform offset; release to apply.");
+        return post_audio_offset_diagnostic(context, begun.diagnostics,
+                                            "Audio offset drag could not start.",
+                                            notification_severity_t::warning);
+    }
+
+    void save_before_confirmed_close(pending_close_t& pending,
+                                     const WormUiWorkspaceAction& action) {
+        const auto id = session.history.document.id;
+        const auto revision = session.history.document.revision;
+        if (id != pending.project) {
+            post_project_feedback(
+                wormedit::notification_severity_t::warning,
+                wormedit::notification_source_t::document,
+                "The project changed while closing. Cancel and review the current project.");
+            return;
+        }
+        pending.save_failure.clear();
+        const bool saved = save_project_session(action);
+        if (!saved)
+            pending.save_failure = "Save failed: " + views.close_feedback;
+        if (saved && session.history.document.id == id &&
+            session.history.document.revision == revision &&
+            !wormedit::is_document_dirty(session.history))
+            (void)finish_confirmed_close(pending);
+    }
+
+    auto is_audio_offset_drag_context_current(const AudioOffsetDragContext& context) -> bool {
+        using namespace wormedit;
+        const auto supported_tab = session.workspace.active_tab == workspace_tab_t::audio_slices ||
+                                   session.workspace.active_tab == workspace_tab_t::metadata ||
+                                   session.workspace.active_tab == workspace_tab_t::compose;
+        const auto context_matches =
+            supported_tab && session.workspace.selected_chart &&
+            session.workspace.selected_chart->value == context.action.audio_offset_drag_chart_id &&
+            session.history.document.revision ==
+                context.action.audio_offset_drag_document_revision &&
+            context.selected_sample_rate &&
+            *context.selected_sample_rate == context.action.audio_offset_drag_sample_rate;
+        return context_matches;
+    }
+
+    auto replace_project_session(wormedit::song_document_t document, bool loaded, bool saved,
+                                 bool native_project, std::filesystem::path native_path,
+                                 std::filesystem::path asset_base) -> bool {
+        using namespace wormedit;
+        wormedit::sys::refresh_project_audio_availability(document, asset_base);
+        auto replacement_history = make_document_history(std::move(document), 128, saved);
+        auto replacement_binding = make_workspace_controller(replacement_history);
+        if (!replacement_binding) {
+            post_project_feedback(notification_severity_t::error, notification_source_t::document,
+                                  "The selected document could not be bound to a workspace.");
+            return false;
+        }
+        const auto saved_version =
+            saved && native_project
+                ? std::optional<native_project_document_version_t>{{.project_id =
+                                                                        replacement_history.document
+                                                                            .id,
+                                                                    .revision =
+                                                                        replacement_history.document
+                                                                            .revision}}
+                : std::nullopt;
+        if (!session.autosave_loop.reset_session(native_project_autosave_loop_t::clock_t::now(),
+                                                 saved_version, 0)) {
+            post_project_feedback(
+                notification_severity_t::warning, notification_source_t::document,
+                "Wait for the current autosave to finish before changing projects.");
+            return false;
+        }
+        session.history = std::move(replacement_history);
+        session.workspace = std::move(*replacement_binding.workspace);
+        begin_project_session({.session_loaded = loaded,
+                               .native_project_loaded = native_project,
+                               .active_project_path = std::move(native_path),
+                               .asset_base = std::move(asset_base),
+                               .scanned_primary_version = saved_version});
+        return true;
+    }
+
+    auto is_project_replacement_busy() -> bool {
+        if (!session.autosave_loop.busy() && !jobs.resource_copy_runtime.busy() &&
+            !jobs.export_runtime.busy() && !jobs.metadata_asset_runtime.import_pending())
+            return false;
+        post_project_feedback(wormedit::notification_severity_t::warning,
+                              wormedit::notification_source_t::document,
+                              "Wait for the current file operation before closing the project.");
+        return true;
+    }
+
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    void sync_bgm_mix_selection() {
+        const auto* chart = wormedit::sys::selected_chart(session.history, session.workspace);
+        const auto found = chart ? commands.project.bgm.bgm_lane_mix.find(chart->id.value)
+                                 : commands.project.bgm.bgm_lane_mix.end();
+        const auto muted = chart && found != commands.project.bgm.bgm_lane_mix.end()
+                               ? wormedit::sys::compose_bgm_muted_lanes(*chart, found->second)
+                               : std::vector<std::uint64_t>{};
+        audio_runtime.preview_state.set_bgm_mix(chart ? chart->id : wormedit::chart_id_t{}, muted,
+                                                audio_runtime.preview_session);
+    }
+#endif
+
+    auto dispatch_audio_offset_drag_action(const WormUiWorkspaceAction& action, bool timing_locked,
+                                           std::optional<std::uint32_t> selected_sample_rate)
+        -> std::string {
+
+        AudioOffsetDragContext context{action, timing_locked, selected_sample_rate};
+        if (action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_CANCEL)
+            return clear_audio_offset_drag(context, "Audio offset drag cancelled.",
+                                           wormedit::notification_severity_t::hint);
+        if (!is_audio_offset_drag_context_current(context))
+            return clear_audio_offset_drag(
+                context, "Audio offset drag expired after its chart or waveform changed.");
+        if (action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_NUDGE)
+            return nudge_audio_offset_drag(context);
+        if (action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_BEGIN)
+            return begin_audio_offset_drag_action(context);
+        return continue_audio_offset_drag(context);
+    }
+
+    auto resume_confirmed_encoding(pending_close_t& pending, const WormUiWorkspaceAction& action)
+        -> bool {
+        if (!pending.awaiting_encoding || action.kind != WORM_UI_WORKSPACE_ACTION_OPEN_FILE ||
+            pending.project_path != action.project_path ||
+            pending.project != session.history.document.id ||
+            pending.revision != session.history.document.revision)
+            return false;
+        pending.encoding_index = action.bms_encoding_index;
+        pending.awaiting_encoding = false;
+        (void)finish_confirmed_close(pending);
+        return true;
+    }
+
+    auto dispatch_clipboard_menu(const WormUiWorkspaceAction& action) -> bool {
+        if (action.clipboard == WORM_UI_CLIPBOARD_NONE)
+            return false;
+        const auto id = action.clipboard == WORM_UI_CLIPBOARD_COPY  ? "edit.copy"
+                        : action.clipboard == WORM_UI_CLIPBOARD_CUT ? "edit.cut"
+                                                                    : "edit.paste";
+        auto& registry = command_registry;
+        refresh_application_command_states(registry, session.history, session.workspace,
+                                           views.compose_interaction_state, commands);
+        const auto result = wormedit::invoke_command(
+            registry, {id}, application_command_focus(action, session.workspace));
+        if (!result.diagnostics.empty())
+            post_shortcut_rejection(platform.notification_sink, registry, result);
+        return true;
+    }
+
+    auto clear_audio_offset_drag(AudioOffsetDragContext& context, std::string message,
+                                 wormedit::notification_severity_t severity =
+                                     wormedit::notification_severity_t::warning) -> std::string {
+        views.audio_offset_drag.reset();
+        views.audio_offset_drag_tab.reset();
+        return post_audio_offset_feedback(context, severity, std::move(message));
+    }
+
+    auto dispatch_recovery_workspace_action(const WormUiWorkspaceAction& action) -> bool {
+        if (action.kind < WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT ||
+            action.kind > WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE)
+            return false;
+        if (session.autosave_loop.busy()) {
+            platform.notification_sink.post(
+                wormedit::notification_severity_t::warning,
+                wormedit::notification_source_t::recovery,
+                "Wait for the current autosave to finish before recovering a session.");
+            return true;
+        }
+        bool recovered = false;
+        (void)wormedit::sys::dispatch_recovery_ui_action(
+            action, session.recovery_controller, session.history, session.workspace,
+            session.project_identity.scanned_primary_version, session.autosave_loop, recovered,
+            platform.notification_sink);
+        if (recovered) {
+            begin_project_session({.session_loaded = true});
+        }
+        return true;
+    }
+
+    void open_project_session(const WormUiWorkspaceAction& action) {
+        constexpr std::array<wormedit::text_encoding_t, 5> encodings{
+            wormedit::text_encoding_t::utf8, wormedit::text_encoding_t::cp932,
+            wormedit::text_encoding_t::euc_kr, wormedit::text_encoding_t::cp949,
+            wormedit::text_encoding_t::windows_1252};
+        if (action.bms_encoding_index > encodings.size()) {
+            post_project_feedback(wormedit::notification_severity_t::warning,
+                                  wormedit::notification_source_t::import_,
+                                  "Choose a supported BMS text encoding.");
+            return;
+        }
+        const auto encoding = action.bms_encoding_index == 0
+                                  ? std::optional<wormedit::text_encoding_t>{}
+                                  : std::optional{encodings[action.bms_encoding_index - 1]};
+        auto opened = wormedit::sys::open_project_file(action.project_path, encoding);
+        if (!opened) {
+            post_project_feedback(opened.needs_encoding_choice
+                                      ? wormedit::notification_severity_t::warning
+                                      : wormedit::notification_severity_t::error,
+                                  wormedit::notification_source_t::import_, opened.error);
+            if (opened.needs_encoding_choice)
+                session.project_identity.pending_import.bms_encoding_path = action.project_path;
+            else if (encoding)
+                session.project_identity.pending_import.bms_encoding_path.clear();
+            return;
+        }
+        auto document = std::move(*opened.document);
+        if (!opened.native_project)
+            document.id = wormedit::sys::new_session_project_id();
+        if (replace_project_session(std::move(document), true, true, opened.native_project,
+                                    opened.native_project ? opened.source_path
+                                                          : std::filesystem::path{},
+                                    opened.asset_base)) {
+            remember_project_file(preferences.program_preferences, opened.source_path,
+                                  platform.notification_sink);
+            session.project_identity.external_player_source_path =
+                opened.native_project ? std::filesystem::path{} : opened.source_path;
+            post_project_feedback(wormedit::notification_severity_t::success,
+                                  opened.native_project ? wormedit::notification_source_t::document
+                                                        : wormedit::notification_source_t::import_,
+                                  opened.native_project
+                                      ? "Project opened: " + opened.source_path.string()
+                                      : "Chart imported from " + opened.source_path.string() +
+                                            ". Save it as a project.");
+            if (!opened.warnings.empty()) {
+                auto warning = wormedit::sys::project_import_warning(opened.warnings);
+                post_project_feedback(wormedit::notification_severity_t::warning,
+                                      wormedit::notification_source_t::import_,
+                                      std::move(warning.message), warning.detail);
+            }
+        }
+    }
+
+    void dispatch_workspace_frame_action(const WormUiWorkspaceAction& action, bool shortcut_handled,
+                                         std::optional<std::uint32_t> sample_rate,
+                                         int compose_viewport_height_pixels) {
+        auto& running = this->running;
+        auto& history = session.history;
+        auto& workspace = session.workspace;
+        auto& application_command_state = commands;
+        auto& stepmania_export_policy = views.stepmania_export_policy;
+        auto& command_registry = this->command_registry;
+        auto& compose_interaction_state = views.compose_interaction_state;
+        auto& metadata_asset_runtime = jobs.metadata_asset_runtime;
+        auto& timing_grid = views.timing_grid;
+        auto& timing_edit = views.timing_edit;
+        if (action.kind == WORM_UI_WORKSPACE_ACTION_QUIT) {
+            running = false;
+        } else if (dispatch_project_session_action(action)) {
+            // Project transitions are handled before editor actions.
+        } else if (dispatch_recovery_workspace_action(action)) {
+            // Recovery can open a document from the empty landing state.
+        } else if (!session.project_identity.session_loaded) {
+            // The landing view only accepts project and recovery actions.
+        } else if (shortcut_handled) {
+            // Registry commands take precedence over widget actions emitted
+            // by the same input frame, preventing duplicate mutations.
+        } else if (dispatch_clipboard_menu(action)) {
+            // Clipboard menu actions use the same typed registry as shortcuts.
+        } else if (dispatch_reviewed_sound_edit(
+                       action, history, workspace, application_command_state,
+                       compose_interaction_state, platform.notification_sink)) {
+            // Properties and reviewed imports share a revision-checked sound edit boundary.
+        } else if (action.compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK) {
+            dispatch_audio_offset_lock_feedback(action);
+        } else if (action.audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE) {
+            static_cast<void>(dispatch_audio_offset_drag_action(
+                action, application_command_state.audio_offset_edits_locked(), sample_rate));
+        } else if (const auto common_status = wormedit::sys::dispatch_transport_player_action(
+                       action, application_command_state, stepmania_export_policy,
+                       platform.notification_sink)) {
+            // Typed producer callbacks already publish this transport outcome.
+        } else if (action.kind == WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE) {
+            static_cast<void>(dispatch_sound_usage_jump(
+                action, history, workspace, compose_interaction_state, platform.notification_sink));
+        } else if (action.kind == WORM_UI_WORKSPACE_ACTION_COMPARE_DIAGNOSTIC_JUMP) {
+            static_cast<void>(dispatch_compare_diagnostic_jump(
+                action, history, workspace, compose_interaction_state, platform.notification_sink));
+        } else if (action.kind == WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER ||
+                   action.kind == WORM_UI_WORKSPACE_ACTION_NAVIGATE_NEXT_MARKER) {
+            const auto command = wormedit::command_id_t{
+                action.kind == WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER
+                    ? "navigation.previous_marker"
+                    : "navigation.next_marker"};
+            refresh_application_command_states(command_registry, history, workspace,
+                                               compose_interaction_state,
+                                               application_command_state);
+            const auto dispatched = wormedit::invoke_command(
+                command_registry, command, application_command_focus(action, workspace));
+            if (dispatched.status == wormedit::command_dispatch_status_t::disabled) {
+                platform.notification_sink.post_transient_hint(
+                    wormedit::notification_source_t::input,
+                    "No beat-anchored bookmarks or section boundaries are available.");
+            } else if (dispatched.status != wormedit::command_dispatch_status_t::invoked &&
+                       !dispatched.diagnostics.empty()) {
+                post_shortcut_rejection(platform.notification_sink, command_registry, dispatched);
+            }
+        } else if (const auto selection_status = dispatch_workspace_selection_action(
+                       action, history, workspace, platform.notification_sink)) {
+            static_cast<void>(selection_status);
+        } else if (const auto metadata_status = wormedit::sys::dispatch_metadata_action(
+                       action, metadata_inputs(),
+                       application_command_state.audio_offset_edits_locked(),
+                       jobs.resource_copy_runtime.busy(), jobs.export_runtime.busy(), true)) {
+            static_cast<void>(metadata_status);
+        } else if (dispatch_timing_workspace_action(action, application_command_state)) {
+            // The timing producer publishes feedback and consumes this action.
+        } else if (wormedit::sys::dispatch_compose_workspace_action(
+                       action, compose_actions(), compose_viewport_height_pixels,
+                       metadata_asset_runtime.import_pending())) {
+            // The Compose producer publishes feedback and consumes this action.
+        }
+    }
+
+    void copy_notification_details(std::uint64_t id) {
+        const auto* entry = wormedit::sys::find_notification(platform.notifications, id);
+        if (!entry) {
+            platform.notification_sink.post(wormedit::notification_severity_t::error,
+                                            wormedit::notification_source_t::input,
+                                            "Notification no longer exists");
+            return;
+        }
+        const auto& text = entry->detail.empty() ? entry->message : entry->detail;
+        const bool copied = SDL_SetClipboardText(text.c_str());
+        const auto message = copied ? "Notification details copied."
+                                    : "Could not copy notification details to the clipboard.";
+        platform.notification_sink.post(copied ? wormedit::notification_severity_t::success
+                                               : wormedit::notification_severity_t::error,
+                                        wormedit::notification_source_t::input, message);
+    }
+
+    auto dispatch_project_session_action(const WormUiWorkspaceAction& action) -> bool {
+        if (action.kind == WORM_UI_WORKSPACE_ACTION_CANCEL_BMS_ENCODING) {
+            session.project_identity.pending_import.bms_encoding_path.clear();
+            post_project_feedback(wormedit::notification_severity_t::hint,
+                                  wormedit::notification_source_t::import_, "BMS import canceled.");
+            return true;
+        }
+        if (action.kind == WORM_UI_WORKSPACE_ACTION_CANCEL_AUDIO_PROJECT) {
+            session.project_identity.pending_import.audio_project_path.clear();
+            post_project_feedback(wormedit::notification_severity_t::hint,
+                                  wormedit::notification_source_t::import_,
+                                  "Audio import canceled.");
+            return true;
+        }
+        if (action.kind == WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT) {
+            save_project_session(action);
+            return true;
+        }
+        if (action.kind != WORM_UI_WORKSPACE_ACTION_NEW_PROJECT &&
+            action.kind != WORM_UI_WORKSPACE_ACTION_OPEN_FILE &&
+            action.kind != WORM_UI_WORKSPACE_ACTION_CLOSE_PROJECT)
+            return false;
+        if (!can_transition_project())
+            return true;
+        if (action.kind == WORM_UI_WORKSPACE_ACTION_CLOSE_PROJECT) {
+            if (replace_project_session(
+                    wormedit::sys::empty_session_document(wormedit::sys::new_session_project_id()),
+                    false, true, false, {}, {}))
+                post_project_feedback(wormedit::notification_severity_t::info,
+                                      wormedit::notification_source_t::document,
+                                      "No project loaded.");
+            return true;
+        }
+        if (action.kind == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT) {
+            create_new_project_session(action);
+            return true;
+        }
+        open_project_session(action);
+        return true;
+    }
+
+    bool dispatch_chart_import_action(const WormUiWorkspaceAction& action) {
+        using namespace wormedit;
+        const auto& request = action.chart_import;
+        const bool picked = action.kind == WORM_UI_WORKSPACE_ACTION_IMPORT_CHART_FILE;
+        if (!session.project_identity.session_loaded ||
+            (request.kind == WORM_UI_CHART_IMPORT_NONE && !picked))
+            return false;
+        if (request.kind == WORM_UI_CHART_IMPORT_BEGIN)
+            sys::chart_import_begin(views.chart_import);
+        else if (request.kind == WORM_UI_CHART_IMPORT_CANCEL)
+            sys::chart_import_cancel(views.chart_import);
+        else if (request.kind == WORM_UI_CHART_IMPORT_LOAD || picked) {
+            sys::chart_import_begin(views.chart_import);
+            sys::chart_import_load(views.chart_import,
+                                   std::filesystem::path{std::string{action.project_path}},
+                                   session.history.document, session.project_identity.asset_base);
+        } else if (request.kind == WORM_UI_CHART_IMPORT_TOGGLE) {
+            sys::chart_import_toggle(views.chart_import, chart_id_t{request.chart_id},
+                                     session.history.document, session.project_identity.asset_base);
+        } else if (request.kind == WORM_UI_CHART_IMPORT_CONFIRM) {
+            const auto source_path = views.chart_import.path_text;
+            const auto imported = sys::chart_import_confirm(views.chart_import, session.history,
+                                                            request.document_revision,
+                                                            session.project_identity.asset_base);
+            if (imported.command.applied) {
+                remember_project_file(preferences.program_preferences, source_path,
+                                      platform.notification_sink);
+                platform.notification_sink.post(
+                    notification_severity_t::success, notification_source_t::document,
+                    imported.payload.charts.size() == 1 ? "Chart imported." : "Charts imported.");
+                const auto rebound = rebind_workspace(session.workspace, session.history);
+                if (!rebound)
+                    platform.notification_sink.post(
+                        notification_severity_t::error, notification_source_t::document,
+                        rebound.diagnostics.empty()
+                            ? "Charts imported, but workspace rebinding failed."
+                            : rebound.diagnostics.front().message);
+            } else {
+                platform.notification_sink.post(notification_severity_t::warning,
+                                                notification_source_t::document,
+                                                views.chart_import.error);
+            }
+        }
+        return true;
+    }
+
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    auto apply_loop_selection(wormedit::chart_id_t chart_id, std::uint64_t expected_revision,
+                              std::uint64_t begin_row, std::uint64_t end_row, bool enabled)
+        -> bool {
+        if (!session.workspace.selected_chart || *session.workspace.selected_chart != chart_id ||
+            session.history.document.revision != expected_revision)
+            return false;
+        if (!enabled)
+            return audio_runtime.preview_output.set_loop_region(std::nullopt);
+        const auto* chart = selected_chart(session.history, session.workspace);
+        if (session.workspace.active_tab != wormedit::workspace_tab_t::compose || !chart ||
+            chart->id != chart_id || !views.compose_interaction_state ||
+            views.compose_interaction_state->chart != chart_id ||
+            !views.compose_interaction_state->retained_selection_range)
+            return false;
+        const auto region = loop_region_for_selection(
+            *chart, *views.compose_interaction_state->retained_selection_range, begin_row, end_row);
+        if (!region || (audio_runtime.preview_output.playing() &&
+                        !audio_runtime.preview_state.matches_selection(session.history.document,
+                                                                       session.workspace)))
+            return false;
+        if (!audio_runtime.preview_output.set_loop_region(region))
+            return false;
+        if (audio_runtime.preview_output.playing()) {
+            const auto sought = audio_runtime.preview_output.seek(region->begin_frame);
+            if (!sought) {
+                static_cast<void>(audio_runtime.preview_output.set_loop_region(std::nullopt));
+                return false;
+            }
+            audio_runtime.preview_state.resume_frame = region->begin_frame;
+            audio_runtime.preview_state.paused = false;
+        } else {
+            const auto previous_frame = audio_runtime.preview_state.resume_frame;
+            const auto was_paused = audio_runtime.preview_state.paused;
+            audio_runtime.preview_state.resume_frame = region->begin_frame;
+            audio_runtime.preview_state.paused = false;
+            static_cast<void>(audio_runtime.preview_state.play_pause(
+                chart, session.history.document, audio_runtime.audition_sources,
+                audio_runtime.preview_metronome_bindings, audio_runtime.audition_output,
+                audio_runtime.preview_session, audio_runtime.preview_output, std::nullopt, false,
+                region->begin_frame));
+            if (!audio_runtime.preview_output.playing()) {
+                audio_runtime.preview_state.resume_frame = previous_frame;
+                audio_runtime.preview_state.paused = was_paused;
+                static_cast<void>(audio_runtime.preview_output.set_loop_region(std::nullopt));
+                return false;
+            }
+        }
+        views.inline_preview_cursor.capture(
+            views.compose_interaction_state ? &*views.compose_interaction_state : nullptr);
+        views.inline_preview_cursor.capture_follow_anchor(
+            session.history,
+            views.compose_interaction_state ? &*views.compose_interaction_state : nullptr);
+        return true;
+    }
+#endif
+
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    auto audition_inputs() -> wormedit::sys::compose_audition_inputs_t {
+        return {{audio_runtime.preview_session, audio_runtime.preview_output,
+                 audio_runtime.preview_state},
+                {audio_runtime.audition_sources, audio_runtime.object_audition,
+                 audio_runtime.audition_output},
+                platform.notification_sink};
+    }
+#endif
+
+    auto process_compose_frame_action(
+        WormUiWorkspaceAction& action, double viewport_delta_seconds,
+        const std::optional<wormedit::document_command_result_t>& tap_applied) -> bool {
+        auto& tap_event_ns = current_tap_event_ ? *current_tap_event_ : views.last_tap_event_ns;
+
+        // Apply consumed this frame's document snapshot. Never replay its shortcuts,
+        // pointer input or navigation against the newly committed timing revision.
+        if (tap_applied && tap_applied->applied)
+            return true;
+        // Complete a prior measure move before a new keyboard command can edit its destination.
+        if (has_fresh_shortcut_key(action) && views.compose_interaction_state)
+            views.compose_scene_cache.navigation_travel.finish(*views.compose_interaction_state,
+                                                               session.history.document.revision);
+        bool preserves_editor_gesture{};
+        const bool shortcut_handled =
+            action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
+            dispatch_application_shortcuts(action, tap_event_ns, preserves_editor_gesture);
+        if (!session.project_identity.session_loaded)
+            return shortcut_handled;
+        if (shortcut_handled && !preserves_editor_gesture && views.compose_interaction_state &&
+            editor_interaction_has_pending_gesture(*views.compose_interaction_state)) {
+            (void)wormedit::dispatch_editor_action(session.history,
+                                                   *views.compose_interaction_state,
+                                                   wormedit::cancel_editor_gesture_action_t{});
+        }
+        if (shortcut_handled && !preserves_editor_gesture) {
+            views.audio_offset_drag.reset();
+            views.audio_offset_drag_tab.reset();
+            views.compose_scene_cache.clear_beat_fit_capture();
+            if (views.compose_interaction_state)
+                views.compose_scene_cache.navigation_travel.finish(
+                    *views.compose_interaction_state, session.history.document.revision);
+            views.compose_scene_cache.timing.offset_fit_drag.reset();
+        }
+        dispatch_bgm_mix_frame_action(action, shortcut_handled);
+        if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
+            (action.compose_input_count != 0 || action.compose_viewport_input_count != 0 ||
+             action.compose_has_pointer_hover ||
+             (session.workspace.active_tab == wormedit::workspace_tab_t::compose &&
+              action.compose_input_chart_id != 0)) &&
+            views.compose_interaction_state) {
+            (void)dispatch_compose_input_action(action, compose_inputs(),
+                                                *views.compose_interaction_state,
+                                                viewport_delta_seconds, true);
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+            wormedit::sys::process_compose_audition_requests(views.compose_scene_cache,
+                                                             session.history, audition_inputs());
 #else
-    using workspace_frame_action_context_t = wormedit::sys::application_dispatch_context_t;
+            wormedit::sys::process_compose_audition_requests(
+                views.compose_scene_cache, session.history, platform.notification_sink);
 #endif
-    auto make_dispatch_context() -> application_dispatch_context_t {
-        return {
-                        preferences.program_preferences,
-                        running,
-                        platform.notification_sink,
-                        views.close_feedback,
-                        session.history,
-                        session.workspace,
-                        session.project_identity,
-                        commands,
-                        views.stepmania_export_policy,
-                        views.audio_offset_drag,
-                        views.audio_offset_drag_tab,
-                        command_registry,
-                        views.compose_interaction_state,
-                        views.metadata_drop,
-                        jobs.metadata_asset_runtime,
-                        jobs.resource_copy_scheduler,
-                        jobs.resource_copy_runtime,
-                        jobs.export_runtime,
-                        views.timing_grid,
-                        views.timing_edit,
-                        views.timing_edit.stage,
-                        views.timing_scene_cache,
-                        views.compose_scene_cache,
-                        views.compose_viewport_input,
-                        views.compose_navigation_input,
-                        session.autosave_loop,
-                        session.recovery_controller,
-                        preferences.external_player_runtime,
-                        views.project_chart_runtime,
-                    
-        };
+        }
+        refresh_compose_editor_width(action, session.history, session.workspace, commands);
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        wormedit::sys::process_sound_audition_request(
+            commands.project.sound_selection.pending_sound_audition, session.history,
+            audition_inputs());
+#else
+        wormedit::sys::process_sound_audition_request(
+            commands.project.sound_selection.pending_sound_audition, platform.notification_sink);
+#endif
+        if (session.workspace.active_tab != wormedit::workspace_tab_t::compose) {
+            commands.project.semantic_layer.note_layer_menu_row_count = 0;
+            views.compose_viewport_input.escape();
+            views.compose_scene_cache.frame.viewport_autoscroll_active = false;
+            if (views.compose_interaction_state)
+                views.compose_scene_cache.navigation_travel.finish(
+                    *views.compose_interaction_state, session.history.document.revision);
+        }
+        if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
+            views.compose_interaction_state &&
+            session.workspace.active_tab == wormedit::workspace_tab_t::compose) {
+            (void)dispatch_compose_navigation_actions(
+                views.compose_navigation_input.advance(static_cast<std::uint64_t>(SDL_GetTicks())),
+                session.history, *views.compose_interaction_state, &commands,
+                &platform.notification_sink);
+        } else if (session.workspace.active_tab != wormedit::workspace_tab_t::compose) {
+            views.compose_navigation_input.cancel();
+        }
+        return shortcut_handled;
+    }
+
+    void finish_confirmed_project_replacement(pending_close_t& pending) {
+        WormUiWorkspaceAction action{};
+        action.new_project_layout_index = pending.layout_index;
+        action.bms_encoding_index = pending.encoding_index;
+        std::snprintf(action.project_path, sizeof(action.project_path), "%s",
+                      pending.project_path.c_str());
+        if (pending.target == close_target_t::new_project)
+            create_new_project_session(action);
+        else
+            open_project_session(action);
+        // Encoding choice continues the same approved replacement of this document version.
+        if (pending.target == close_target_t::open_file && !pending.project_path.empty() &&
+            session.project_identity.pending_import.bms_encoding_path == pending.project_path) {
+            pending.awaiting_encoding = true;
+            return;
+        }
+        pending = {};
+    }
+
+    auto nudge_audio_offset_drag(AudioOffsetDragContext& context) -> std::string {
+        using namespace wormedit;
+        if (views.audio_offset_drag) {
+            return post_audio_offset_feedback(
+                context, notification_severity_t::warning,
+                "Finish or cancel the active audio offset drag before nudging.");
+        }
+        const auto begun =
+            begin_audio_offset_drag(session.history.document, *session.workspace.selected_chart,
+                                    *context.selected_sample_rate, context.timing_locked);
+        if (!begun) {
+            return post_audio_offset_diagnostic(context, begun.diagnostics,
+                                                "Audio offset nudge could not start.",
+                                                notification_severity_t::warning);
+        }
+        const auto updated = update_audio_offset_drag(session.history.document, *begun.drag,
+                                                      context.action.audio_offset_drag_delta_frames,
+                                                      context.timing_locked);
+        if (!updated) {
+            return post_audio_offset_diagnostic(context, updated.diagnostics,
+                                                "Audio offset nudge was rejected.",
+                                                notification_severity_t::warning);
+        }
+        const auto committed =
+            commit_audio_offset_drag(session.history, *updated.drag, context.timing_locked);
+        if (!committed.applied) {
+            return post_audio_offset_diagnostic(context, committed.diagnostics,
+                                                "Audio offset was unchanged.",
+                                                notification_severity_t::info);
+        }
+        const auto rebound = rebind_workspace(session.workspace, session.history);
+        return post_audio_offset_feedback(
+            context, rebound ? notification_severity_t::success : notification_severity_t::error,
+            rebound ? "Audio offset nudged by an exact frame count."
+                    : "Audio offset changed, but workspace rebinding failed.");
+    }
+
+    auto post_audio_offset_diagnostic(AudioOffsetDragContext& context,
+                                      const diagnostic_list_t& diagnostics, std::string fallback,
+                                      wormedit::notification_severity_t fallback_severity)
+        -> std::string {
+        if (!diagnostics.empty())
+            return post_audio_offset_feedback(
+                context, notification_severity_for(diagnostics.front().severity),
+                diagnostics.front().message);
+        return post_audio_offset_feedback(context, fallback_severity, std::move(fallback));
+    }
+
+    bool dispatch_timing_workspace_action(const WormUiWorkspaceAction& action,
+                                          application_command_state_t& application_state) {
+        if (action.timing_stage_action != WORM_UI_TIMING_STAGE_NONE) {
+            const auto chart = std::ranges::find(session.history.document.charts,
+                                                 wormedit::chart_id_t{action.timing_chart_id},
+                                                 &wormedit::chart_document_t::id);
+            const auto denominator =
+                chart == session.history.document.charts.end()
+                    ? views.timing_grid.active_denominator
+                    : wormedit::effective_edit_snap_denominator(
+                          *chart, views.timing_grid.active_denominator,
+                          application_state.project.compose_view.edit_snap_enabled);
+            dispatch_timing_stage_action(
+                action, application_state.project.timing_recipe.timing_locked, denominator);
+            return true;
+        }
+        return false;
+    }
+
+    void prepare_bound_workspace_frame() {
+        wormedit::sys::frame_phase_scope_t preparation(
+            wormedit::sys::frame_phase_t::workspace_preparation);
+        if (session.workspace.selected_chart) {
+            const auto chart = std::ranges::find(session.history.document.charts,
+                                                 *session.workspace.selected_chart,
+                                                 &wormedit::chart_document_t::id);
+            if (chart != session.history.document.charts.end()) {
+                views.timing_grid = refresh_timing_grid(*chart, commands);
+            }
+        }
+        if (views.audio_offset_drag &&
+            (!views.audio_offset_drag_tab ||
+             session.workspace.active_tab != *views.audio_offset_drag_tab ||
+             !session.workspace.selected_chart ||
+             *session.workspace.selected_chart != views.audio_offset_drag->chart ||
+             session.history.document.revision != views.audio_offset_drag->document_revision ||
+             commands.audio_offset_edits_locked())) {
+            views.audio_offset_drag.reset();
+            views.audio_offset_drag_tab.reset();
+        }
+        if (views.compose_scene_cache.timing.beat_fit_drag &&
+            (session.workspace.active_tab != wormedit::workspace_tab_t::compose ||
+             !session.workspace.selected_chart ||
+             *session.workspace.selected_chart !=
+                 views.compose_scene_cache.timing.beat_fit_drag->chart ||
+             session.history.document.revision !=
+                 views.compose_scene_cache.timing.beat_fit_drag->document_revision ||
+             session.workspace.transport.audio_asset !=
+                 views.compose_scene_cache.timing.beat_fit_asset ||
+             commands.project.timing_recipe.timing_locked)) {
+            views.compose_scene_cache.clear_beat_fit_capture();
+        }
+        if (views.compose_scene_cache.timing.offset_fit_drag &&
+            (session.workspace.active_tab != wormedit::workspace_tab_t::compose ||
+             !session.workspace.selected_chart ||
+             *session.workspace.selected_chart !=
+                 views.compose_scene_cache.timing.offset_fit_drag->beat.chart ||
+             session.history.document.revision !=
+                 views.compose_scene_cache.timing.offset_fit_drag->beat.document_revision ||
+             session.workspace.transport.audio_asset !=
+                 views.compose_scene_cache.timing.offset_fit_drag->asset ||
+             commands.audio_offset_edits_locked())) {
+            views.compose_scene_cache.timing.offset_fit_drag.reset();
+        }
+    }
+
+    void confirm_unsaved_changes(pending_close_t& pending, close_target_t target, bool confirm,
+                                 const WormUiWorkspaceAction* replacement = nullptr) {
+        if (target != close_target_t::application && is_project_replacement_busy())
+            return;
+        // A close request ends transient gestures; cancellation returns a usable editor.
+        views.compose_navigation_input.cancel();
+        views.compose_viewport_input.escape();
+        if (views.compose_interaction_state)
+            (void)wormedit::dispatch_editor_action(session.history,
+                                                   *views.compose_interaction_state,
+                                                   wormedit::cancel_editor_gesture_action_t{});
+        pending = {.target = target,
+                   .project = session.history.document.id,
+                   .revision = session.history.document.revision};
+        if (replacement) {
+            pending.project_path = replacement->project_path;
+            pending.layout_index = replacement->new_project_layout_index;
+            pending.encoding_index = replacement->bms_encoding_index;
+        }
+        if (!confirm || !session.project_identity.session_loaded ||
+            !wormedit::is_document_dirty(session.history))
+            (void)finish_confirmed_close(pending);
+    }
+
+    void dispatch_bgm_mix_frame_action(WormUiWorkspaceAction& action, bool shortcut_handled) {
+        if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT)
+            (void)dispatch_compose_bgm_mix_inputs(action, session.history, session.workspace,
+                                                  commands, &platform.notification_sink);
+    }
+
+    bool dispatch_project_chart_action(const WormUiWorkspaceAction& frame_action, bool handled) {
+        auto& runtime = views.project_chart_runtime;
+        auto& history = session.history;
+        auto& workspace = session.workspace;
+        auto& interaction = views.compose_interaction_state;
+        auto& application = commands;
+        auto& notifications = platform.notification_sink;
+        auto& loaded = session.project_identity.session_loaded;
+        auto& scheduler = jobs.resource_copy_scheduler;
+
+        if (handled)
+            return true;
+        const auto& action = frame_action.project_chart;
+        const auto& group = frame_action.project_output_group;
+        const bool group_action = group.kind != WORM_UI_PROJECT_OUTPUT_GROUP_NONE;
+        if (!loaded || (!group_action && action.kind == WORM_UI_PROJECT_CHART_NONE))
+            return false;
+        if (group_action &&
+            (application.project.clipboard.paste_session ||
+             (interaction && editor_interaction_has_pending_gesture(*interaction)))) {
+            notifications.post(
+                wormedit::notification_severity_t::warning,
+                wormedit::notification_source_t::document,
+                "Finish or cancel the editor gesture before changing output groups.");
+            return true;
+        }
+        const auto previous_chart = workspace.selected_chart;
+        auto result = group_action
+                          ? wormedit::sys::apply_project_output_group_ui_action(runtime, history,
+                                                                                group, scheduler)
+                          : wormedit::sys::apply_project_chart_ui_action(runtime, history, action,
+                                                                         workspace.selected_chart);
+        notifications.post(result.severity, wormedit::notification_source_t::document,
+                           result.status);
+        if (result.applied) {
+            const auto rebound = wormedit::rebind_workspace(workspace, history);
+            if (!rebound) {
+                if (rebound.diagnostics.empty())
+                    notifications.post(wormedit::notification_severity_t::error,
+                                       wormedit::notification_source_t::document,
+                                       "Project changed, but workspace rebinding failed.");
+                else
+                    notifications.post(
+                        notification_severity_for(rebound.diagnostics.front().severity),
+                        wormedit::notification_source_t::document,
+                        rebound.diagnostics.front().message);
+                return true;
+            }
+        }
+        if (result.open_chart) {
+            if (application.services.transport_stop)
+                application.services.transport_stop();
+            const auto error =
+                open_project_chart(history, workspace, interaction, *result.open_chart);
+            if (!error.empty())
+                notifications.post(wormedit::notification_severity_t::error,
+                                   wormedit::notification_source_t::document, error);
+        } else if (previous_chart != workspace.selected_chart) {
+            if (application.services.transport_stop)
+                application.services.transport_stop();
+            interaction.reset();
+        }
+        return true;
+    }
+
+    void create_new_project_session(const WormUiWorkspaceAction& action) {
+        const auto lane_count = requested_project_lane_count(action.new_project_layout_index);
+        if (!lane_count) {
+            post_project_feedback(wormedit::notification_severity_t::warning,
+                                  wormedit::notification_source_t::document,
+                                  "Choose a supported chart layout.");
+            return;
+        }
+        if (action.project_path[0] != '\0') {
+            create_audio_project_session(action.project_path, *lane_count);
+            return;
+        }
+        auto document =
+            wormedit::sys::initial_document(wormedit::sys::new_session_project_id(), *lane_count);
+        if (!document) {
+            post_project_feedback(wormedit::notification_severity_t::error,
+                                  wormedit::notification_source_t::document,
+                                  "Could not create the selected chart layout.");
+            return;
+        }
+        if (replace_project_session(std::move(*document), true, true, false, {}, {})) {
+            for (const auto& chart : session.history.document.charts)
+                remember_snap_denominator(commands, chart.id,
+                                          commands.preferences.editor_preferences.default_snap);
+            session.project_identity.fresh_blank_project = true;
+            post_project_feedback(wormedit::notification_severity_t::success,
+                                  wormedit::notification_source_t::document,
+                                  "New " + std::to_string(*lane_count) +
+                                      "K project created. Save it to keep your work.");
+        }
+    }
+
+    void dispatch_menu_command(WormUiWorkspaceAction& action) {
+        const auto* command_id =
+            action.command_menu_invoked ? action.command_menu_command_id : action.menu_command_id;
+        if (!command_id[0])
+            return;
+        if (action.command_menu_invoked &&
+            (!action.shortcut_window_focused || action.shortcut_ime_composition_active ||
+             action.compose_input_project_id != session.history.document.id.value ||
+             action.compose_input_chart_id !=
+                 (session.workspace.selected_chart ? session.workspace.selected_chart->value : 0) ||
+             action.compose_input_document_revision != session.history.document.revision ||
+             static_cast<int>(action.tab) != static_cast<int>(session.workspace.active_tab)))
+            return;
+        if (!wormedit::sys::compose_menu_command_is_current(action, session.history,
+                                                            session.workspace))
+            return;
+        // SDL forwards key events before AppKit invokes key equivalents. Retire that
+        // same chord so a menu shortcut cannot run the registry command twice.
+        if (!action.command_menu_invoked)
+            consume_menu_shortcut(action, command_registry);
+        refresh_application_command_states(command_registry, session.history, session.workspace,
+                                           views.compose_interaction_state, commands);
+        auto focus = application_command_focus(action, session.workspace);
+        // Activation closes the palette; its own search field must not consume the command.
+        if (action.command_menu_invoked || action.compose_menu_command)
+            focus.text_entry_active = false;
+        const auto result = wormedit::invoke_command(command_registry, {command_id}, focus);
+        if (!result.diagnostics.empty())
+            post_shortcut_rejection(platform.notification_sink, command_registry, result);
+    }
+
+    auto dispatch_registered_application_command(
+        const wormedit::command_invocation_context_t& invocation,
+        const std::optional<std::uint64_t>& tap_event_ns) -> command_invocation_result_t {
+        auto& program = preferences.program_preferences;
+        auto& history = session.history;
+        auto& workspace = session.workspace;
+        auto& compose_interaction_state = views.compose_interaction_state;
+        auto& application_command_state = commands;
+        auto& notifications = platform.notification_sink;
+
+        using severity_t = wormedit::notification_severity_t;
+        using source_t = wormedit::notification_source_t;
+        if (auto toggled = dispatch_click_audition_toggle(invocation, program,
+                                                          application_command_state, notifications))
+            return *toggled;
+        const auto command = parse_application_command(invocation.command.value);
+        if (!command) {
+            return wormedit::sys::reject_application_command(
+                notifications, "Command is not implemented by the application.", severity_t::error,
+                source_t::system);
+        }
+        if (command->kind == wormedit::sys::application_command_kind_t::document_new_project) {
+            if (!worm_ui_frontend_request_new_project())
+                return wormedit::sys::reject_application_command(
+                    notifications, "Finish the open project dialog first.", severity_t::warning,
+                    source_t::document);
+            notifications.post_transient_hint(source_t::document,
+                                              "Choose the layout for the new project.");
+            return wormedit::command_invocation_result_t{.accepted = true};
+        }
+        if (command->kind == wormedit::sys::application_command_kind_t::document_save_project) {
+            if (!worm_ui_frontend_request_save_project(history.document.id.value))
+                return wormedit::sys::reject_application_command(
+                    notifications, "Finish the open dialog first.", severity_t::warning,
+                    source_t::document);
+            return wormedit::command_invocation_result_t{.accepted = true};
+        }
+        if (command->kind == wormedit::sys::application_command_kind_t::document_new_chart)
+            return create_chart_from_registered_command(history, workspace,
+                                                        compose_interaction_state,
+                                                        application_command_state, notifications);
+        if (command->kind == wormedit::sys::application_command_kind_t::timing_tap_assistant) {
+            views.tap_runtime.toggle();
+            (void)views.tap_runtime.observe(views.tap_clock());
+            return wormedit::command_invocation_result_t{.accepted = true};
+        }
+        if (command->kind == wormedit::sys::application_command_kind_t::timing_tap) {
+            const auto clock = views.tap_clock();
+            const auto result =
+                views.tap_runtime.tap(tap_event_ns.value_or(clock.observed_ns), clock);
+            const auto state = views.tap_runtime.state();
+            if (state.status) {
+                const bool guidance = result == wormedit::sys::tap_timing_result_t::ignored ||
+                                      result == wormedit::sys::tap_timing_result_t::not_playing;
+                static_cast<void>(post_callback_feedback(
+                    notifications, guidance ? severity_t::hint : severity_t::warning,
+                    source_t::input, state.status));
+            }
+            return wormedit::command_invocation_result_t{.accepted = true};
+        }
+        return wormedit::sys::invoke_application_command(*command, command_inputs());
+    }
+
+    auto post_audio_offset_feedback(AudioOffsetDragContext& context,
+                                    wormedit::notification_severity_t severity, std::string message)
+        -> std::string {
+        return post_callback_feedback(platform.notification_sink, severity,
+                                      wormedit::notification_source_t::edit, std::move(message));
+    }
+
+    void dispatch_timing_stage_value_action(
+        const WormUiWorkspaceAction& action, bool timing_locked,
+        std::uint64_t active_snap_denominator, wormedit::chart_document_t* chart,
+        std::optional<wormedit::timing_lane_pseudonote_preview_t>& timing_stage) {
+        const auto value = chart == nullptr ? std::optional<wormedit::timing_lane_value_t>{}
+                                            : timing_stage_value(*timing_stage, *chart, action,
+                                                                 active_snap_denominator);
+        if (!value) {
+            timing_stage->valid = false;
+            timing_stage->diagnostics = {{
+                .severity = wormedit::diagnostic_severity_t::error,
+                .code = wormedit::diagnostic_code_t::invalid_rational,
+                .message = "Enter a bounded exact rational for this timing value.",
+            }};
+            platform.notification_sink.post(wormedit::notification_severity_t::warning,
+                                            wormedit::notification_source_t::edit,
+                                            "Timing value is outside its supported bounds.");
+            return;
+        }
+
+        const bool valid = wormedit::update_timing_lane_pseudonote(session.history, *timing_stage,
+                                                                   *value, timing_locked);
+        if (action.timing_stage_action == WORM_UI_TIMING_STAGE_CONFIRM && valid) {
+            const auto result = wormedit::confirm_timing_lane_pseudonote(
+                session.history, *timing_stage, timing_locked);
+            const auto edited_existing = timing_stage->existing_event.has_value();
+            if (result)
+                platform.notification_sink.post(wormedit::notification_severity_t::success,
+                                                wormedit::notification_source_t::edit,
+                                                edited_existing ? "Timing event updated."
+                                                                : "Timing event inserted.");
+            else if (result.diagnostics.empty() && edited_existing)
+                platform.notification_sink.post(wormedit::notification_severity_t::info,
+                                                wormedit::notification_source_t::edit,
+                                                "Timing event was unchanged.");
+            else
+                post_edit_rejection(platform.notification_sink, result.diagnostics,
+                                    "Timing event insertion was rejected.");
+            timing_stage.reset();
+        } else if (action.timing_stage_action == WORM_UI_TIMING_STAGE_CONFIRM) {
+            post_edit_rejection(platform.notification_sink, timing_stage->diagnostics,
+                                "Timing event values are invalid.");
+        }
+    }
+
+    void dispatch_timing_stage_action(const WormUiWorkspaceAction& action, bool timing_locked,
+                                      std::uint64_t active_snap_denominator) {
+        using status_t = wormedit::timing_lane_pseudonote_status_t;
+        auto& timing_stage = views.timing_edit.stage;
+        if (action.timing_stage_action == WORM_UI_TIMING_STAGE_BEGIN) {
+            if (!timing_stage) {
+                auto candidate = begin_timing_stage(action, session.history, session.workspace,
+                                                    timing_locked, active_snap_denominator);
+                if (candidate.status == status_t::editing) {
+                    timing_stage = std::move(candidate);
+                    platform.notification_sink.post_transient_hint(
+                        wormedit::notification_source_t::edit,
+                        timing_stage->existing_event.has_value()
+                            ? "Timing event loaded; apply to update it."
+                            : "Timing event staged; confirm to insert it.");
+                } else {
+                    post_edit_rejection(platform.notification_sink, candidate.diagnostics,
+                                        "Timing event could not be staged at that row.");
+                }
+            }
+        } else if (action.timing_stage_action == WORM_UI_TIMING_STAGE_QUICK_INSERT) {
+            if (timing_stage) {
+                post_edit_rejection(
+                    platform.notification_sink, {},
+                    "Confirm or cancel the open timing edit before inserting another event.");
+            } else {
+                quick_insert_timing_event(action, session.history, session.workspace, timing_locked,
+                                          active_snap_denominator, platform.notification_sink);
+            }
+        } else if (action.timing_stage_action == WORM_UI_TIMING_STAGE_CANCEL) {
+            if (timing_stage) {
+                wormedit::cancel_timing_lane_pseudonote(*timing_stage);
+                timing_stage.reset();
+                platform.notification_sink.post_transient_hint(
+                    wormedit::notification_source_t::edit, "Timing event staging cancelled.");
+            }
+        } else if (timing_stage) {
+            dispatch_active_timing_stage_action(action, timing_locked, active_snap_denominator);
+        }
+    }
+
+    void dispatch_options_page_action(const WormUiOptionsAction& action) {
+        if (handle_shortcut_editor_action(preferences.shortcut_editor, action,
+                                          preferences.options_runtime, platform.notification_sink))
+            return;
+        dispatch_options_frame_action(action);
+    }
+
+    auto handle_workspace_view_error(const workspace_view_result_t& model,
+                                     const WormUiNotificationView& notifications, bool confirm)
+        -> bool {
+        const wormedit::sys::projection_identity_t identity{
+            session.history.document.id, session.history.document.revision,
+            session.workspace.selected_chart.value_or(wormedit::chart_id_t{}),
+            views.project_chart_runtime.session_generation};
+        if (model) {
+            views.workspace_view_feedback.publish(identity, {}, platform.notification_sink);
+            return false;
+        }
+        const auto diagnostic = model.diagnostics.empty()
+                                    ? std::string{"Workspace view unavailable"}
+                                    : model.diagnostics.front().message;
+        views.workspace_view_feedback.publish(
+            identity,
+            {{wormedit::sys::projection_feedback_kind_t::workspace_view, 0,
+              wormedit::sys::projection_diagnostic_severity(model.diagnostics),
+              wormedit::notification_source_t::document, diagnostic}},
+            platform.notification_sink);
+        const auto close = close_confirmation_view(
+            views.pending_close, session.project_identity.native_project_loaded &&
+                                     !session.project_identity.active_project_path.empty());
+        const auto action =
+            worm_ui_frontend_workspace_error(diagnostic.c_str(), &notifications, &close);
+        views.pending_notification = action.notifications;
+        if (dispatch_close_confirmation(views.pending_close, action, confirm))
+            return true;
+        if (action.kind == WORM_UI_WORKSPACE_ACTION_SWITCH_TAB) {
+            const auto changed = wormedit::apply_workspace_action(
+                session.workspace, session.history.document, session.history.document.revision,
+                wormedit::workspace_switch_tab_action_t{wormedit::workspace_tab_t::setup});
+            if (!changed && !changed.diagnostics.empty())
+                platform.notification_sink.post(
+                    wormedit::sys::projection_diagnostic_severity(changed.diagnostics),
+                    wormedit::notification_source_t::document, changed.diagnostics.front().message);
+        }
+        return true;
+    }
+
+    void dispatch_options_frame_action(const WormUiOptionsAction& action) {
+        const bool accepted = wormedit::sys::apply_options_action(
+            preferences.options_runtime, preferences.program_preferences, action);
+        worm_ui_frontend_set_snap_grid_opacity(
+            preferences.options_runtime.visible
+                ? preferences.options_runtime.draft.display.snap_grid_opacity_percent
+                : preferences.program_preferences.preferences.display.snap_grid_opacity_percent);
+        worm_ui_frontend_set_field_waveform_opacity(
+            preferences.options_runtime.visible
+                ? preferences.options_runtime.draft.display.field_waveform_opacity_percent
+                : preferences.program_preferences.preferences.display
+                      .field_waveform_opacity_percent);
+        update_scratch_presentation(preferences.options_runtime.visible
+                                        ? preferences.options_runtime.draft.display
+                                        : preferences.program_preferences.preferences.display,
+                                    commands);
+        if (preferences.options_runtime.notification)
+            platform.notification_sink.post(*preferences.options_runtime.notification);
+        if (!accepted)
+            return;
+        if (preferences.options_runtime.category == WORM_UI_OPTIONS_GENERAL)
+            (void)session.autosave_loop.set_interval(std::chrono::minutes{
+                preferences.program_preferences.preferences.general.autosave_minutes});
+        if (preferences.options_runtime.category == WORM_UI_OPTIONS_EDITOR) {
+            commands.preferences.editor_preferences =
+                preferences.program_preferences.preferences.editor;
+            commands.preferences.minimap_click_moves_paused_playhead =
+                preferences.program_preferences.preferences.minimap.click_moves_paused_playhead;
+        }
+        if (preferences.options_runtime.category == WORM_UI_OPTIONS_PLAYERS) {
+            preferences.external_player_runtime.preferences =
+                preferences.program_preferences.preferences.players;
+            ++preferences.external_player_runtime.revision;
+        }
+        if (preferences.options_runtime.category == WORM_UI_OPTIONS_AUDIO)
+            initialize_preferred_transport(preferences.program_preferences.preferences, commands);
+        if (preferences.options_runtime.category == WORM_UI_OPTIONS_DISPLAY) {
+            worm_ui_frontend_set_snap_colored_grid(
+                preferences.program_preferences.preferences.display.snap_colored_grid);
+        }
+    }
+
+    void dispatch_active_timing_stage_action(const WormUiWorkspaceAction& action,
+                                             bool timing_locked,
+                                             std::uint64_t active_snap_denominator) {
+        auto& stage = views.timing_edit.stage;
+        if (!stage)
+            return;
+        if (!timing_stage_binding_matches(action, session.history, session.workspace, *stage)) {
+            wormedit::cancel_timing_lane_pseudonote(*stage);
+            stage.reset();
+            post_edit_rejection(
+                platform.notification_sink, {},
+                "Timing event staging expired because its chart or revision changed.");
+            return;
+        }
+        const auto chart = std::ranges::find(session.history.document.charts, stage->chart,
+                                             &wormedit::chart_document_t::id);
+        auto* chart_ptr = chart == session.history.document.charts.end() ? nullptr : &*chart;
+        if (action.timing_stage_action == WORM_UI_TIMING_STAGE_DELETE) {
+            delete_staged_timing_event(action, session.history, timing_locked, *stage,
+                                       platform.notification_sink);
+            stage.reset();
+        } else if (action.timing_stage_action == WORM_UI_TIMING_STAGE_MOVE) {
+            move_staged_timing_event(action, timing_locked, active_snap_denominator, chart_ptr,
+                                     *stage);
+        } else {
+            dispatch_timing_stage_value_action(action, timing_locked, active_snap_denominator,
+                                               chart_ptr, stage);
+        }
     }
 
     auto start() -> bool {
-        if (shutdown_started_) return false;
-        if (started_) return true;
-        if (!initialize_sdl_runtime(platform.lifetime.runtime)) return false;
+        if (shutdown_started_)
+            return false;
+        if (started_)
+            return true;
+        if (!initialize_sdl_runtime(platform.lifetime.runtime))
+            return false;
         const auto& requested_primary_path = platform.arguments.requested_primary_path;
         auto startup_request = std::move(platform.arguments.request);
-        platform.recovery_directory = prepare_platform_recovery_directory(platform.notification_sink);
+        platform.recovery_directory =
+            prepare_platform_recovery_directory(platform.notification_sink);
         if (platform.recovery_directory) {
             startup_request.recovery_directories.push_back(platform.recovery_directory.path);
             platform.lifetime.crash_marker = crash_marker_path(platform.recovery_directory.path);
             startup_request.crash_marker_path = platform.lifetime.crash_marker;
         }
-        auto startup = prepare_native_project_startup(empty_session_document(new_session_project_id()),
-                                                      std::move(startup_request));
+        auto startup = prepare_native_project_startup(
+            empty_session_document(new_session_project_id()), std::move(startup_request));
         if (!platform.lifetime.crash_marker.empty()) {
-            if (const auto error = write_crash_marker(platform.lifetime.crash_marker, startup.document.id); !error.empty())
-                platform.notification_sink.post(notification_severity_t::warning, notification_source_t::recovery, error);
+            if (const auto error =
+                    write_crash_marker(platform.lifetime.crash_marker, startup.document.id);
+                !error.empty())
+                platform.notification_sink.post(notification_severity_t::warning,
+                                                notification_source_t::recovery, error);
         }
-        if (!initialize_application_runtime(platform.lifetime.runtime)) return false;
+        if (!initialize_application_runtime(platform.lifetime.runtime))
+            return false;
         platform.frontend_notifications.emplace(platform.notification_sink);
-        session.project_identity.asset_base = startup.loaded_primary
-            ? std::filesystem::absolute(requested_primary_path).parent_path() : std::filesystem::path{};
+        session.project_identity.asset_base =
+            startup.loaded_primary ? std::filesystem::absolute(requested_primary_path).parent_path()
+                                   : std::filesystem::path{};
         refresh_project_audio_availability(startup.document, session.project_identity.asset_base);
         session.history = make_document_history(std::move(startup.document), 128, true);
         auto binding = make_workspace_controller(session.history);
@@ -3838,39 +4052,55 @@ struct application_t::implementation_t {
             return false;
         }
         session.workspace = std::move(*binding.workspace);
-        const auto sequence = native_project_recovery_session_sequence(startup.recovery_scan, session.history.document.id);
-        (void)session.autosave_loop.reset_session(native_project_autosave_loop_t::clock_t::now(), startup.primary_version, sequence);
-        post_initial_application_feedback(platform.notification_sink, startup.loaded_primary, requested_primary_path, platform.recovery_directory);
+        const auto sequence = native_project_recovery_session_sequence(startup.recovery_scan,
+                                                                       session.history.document.id);
+        (void)session.autosave_loop.reset_session(native_project_autosave_loop_t::clock_t::now(),
+                                                  startup.primary_version, sequence);
+        post_initial_application_feedback(platform.notification_sink, startup.loaded_primary,
+                                          requested_primary_path, platform.recovery_directory);
         seed_notification_smoke(platform.notifications);
         seed_notification_history_smoke(platform.notifications, session.history.document);
         session.project_identity.session_loaded = startup.loaded_primary;
         session.project_identity.native_project_loaded = startup.loaded_primary;
-        session.project_identity.active_project_path = startup.loaded_primary ? requested_primary_path : std::filesystem::path{};
+        session.project_identity.active_project_path =
+            startup.loaded_primary ? requested_primary_path : std::filesystem::path{};
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-        audio_runtime.resident_samples.set_listener([this](audio::resident_snapshot_ptr_t snapshot) {
-            audio_runtime.audition_transport.set_resident_snapshot(snapshot);
-            audio_runtime.preview_transport.set_resident_snapshot(std::move(snapshot));
-        });
+        audio_runtime.resident_samples.set_listener(
+            [this](audio::resident_snapshot_ptr_t snapshot) {
+                audio_runtime.audition_transport.set_resident_snapshot(snapshot);
+                audio_runtime.preview_transport.set_resident_snapshot(std::move(snapshot));
+            });
         audio_runtime.resident_loader.set_head_cache(&audio_runtime.preview_cache);
         audio_runtime.reconciliation.emplace(audition_source_reconciliation_context_t{
-            session.history.document, session.project_identity.asset_base, audio_runtime.audition_source_project, audio_runtime.audition_asset_inventory,
-            audio_runtime.audition_source_generation, audio_runtime.audition_sources, audio_runtime.preview_metronome_bindings,
-            [this] { (void)audio_runtime.audition_output.stop(); (void)audio_runtime.preview_output.stop(); },
+            session.history.document, session.project_identity.asset_base,
+            audio_runtime.audition_source_project, audio_runtime.audition_asset_inventory,
+            audio_runtime.audition_source_generation, audio_runtime.audition_sources,
+            audio_runtime.preview_metronome_bindings,
+            [this] {
+                (void)audio_runtime.audition_output.stop();
+                (void)audio_runtime.preview_output.stop();
+            },
             [this] { audio_runtime.waveform_runtime.reset_sources(); },
-            [this] { audio_runtime.preview_state.invalidate(); }, &audio_runtime.audition_probe_scheduler, &audio_runtime.resident_loader});
-        post_audio_inventory_feedback(reconcile_audition_sources((*audio_runtime.reconciliation), false), platform.notification_sink);
+            [this] { audio_runtime.preview_state.invalidate(); },
+            &audio_runtime.audition_probe_scheduler, &audio_runtime.resident_loader});
+        post_audio_inventory_feedback(
+            reconcile_audition_sources((*audio_runtime.reconciliation), false),
+            platform.notification_sink);
         audio_runtime.audition_reconciled_revision = session.history.document.revision;
         std::string audition_output_error;
         if (!audio_runtime.audition_output.open(&audition_output_error))
-            platform.notification_sink.post(notification_severity_t::error, notification_source_t::audio,
-                                   "Audio output unavailable: " + audition_output_error);
+            platform.notification_sink.post(notification_severity_t::error,
+                                            notification_source_t::audio,
+                                            "Audio output unavailable: " + audition_output_error);
         std::string preview_output_error;
         if (!audio_runtime.preview_output.open(&preview_output_error))
-            platform.notification_sink.post(notification_severity_t::error, notification_source_t::audio,
-                                   "Chart preview output unavailable: " + preview_output_error);
+            platform.notification_sink.post(
+                notification_severity_t::error, notification_source_t::audio,
+                "Chart preview output unavailable: " + preview_output_error);
 #endif
         install_startup_recovery_scan(session.recovery_controller, startup);
-        session.recovery_scan_feedback.publish(session.recovery_controller.view(), platform.notification_sink);
+        session.recovery_scan_feedback.publish(session.recovery_controller.view(),
+                                               platform.notification_sink);
         session.recovery_scan_configured = startup.recovery_scan_configured;
         session.project_identity.scanned_primary_version = startup.primary_version;
         commands.services.open_bookmark_chooser = worm_ui_frontend_open_bookmark_chooser;
@@ -3880,29 +4110,44 @@ struct application_t::implementation_t {
         commands.services.compose_left_dock_pixels = worm_ui_frontend_compose_left_dock_pixels;
         commands.services.compose_bgm_lane_width = worm_ui_frontend_compose_bgm_lane_width;
         preferences.program_preferences = load_program_preferences_runtime();
-        remember_startup_file(preferences.program_preferences, startup.loaded_primary, requested_primary_path);
-        initialize_program_preferences(preferences.program_preferences, preferences.external_player_runtime, commands, platform.notification_sink);
-        worm_ui_frontend_select_field_scheme(preferences.program_preferences.preferences.display.field_scheme.c_str());
+        remember_startup_file(preferences.program_preferences, startup.loaded_primary,
+                              requested_primary_path);
+        initialize_program_preferences(preferences.program_preferences,
+                                       preferences.external_player_runtime, commands,
+                                       platform.notification_sink);
+        worm_ui_frontend_select_field_scheme(
+            preferences.program_preferences.preferences.display.field_scheme.c_str());
         update_scratch_presentation(preferences.program_preferences.preferences.display, commands);
-        worm_ui_frontend_set_snap_colored_grid(preferences.program_preferences.preferences.display.snap_colored_grid);
-        worm_ui_frontend_set_snap_grid_opacity(preferences.program_preferences.preferences.display.snap_grid_opacity_percent);
-        worm_ui_frontend_set_field_waveform_opacity(preferences.program_preferences.preferences.display.field_waveform_opacity_percent);
+        worm_ui_frontend_set_snap_colored_grid(
+            preferences.program_preferences.preferences.display.snap_colored_grid);
+        worm_ui_frontend_set_snap_grid_opacity(
+            preferences.program_preferences.preferences.display.snap_grid_opacity_percent);
+        worm_ui_frontend_set_field_waveform_opacity(
+            preferences.program_preferences.preferences.display.field_waveform_opacity_percent);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-        audio_runtime.resident_loader.set_budget_bytes(static_cast<std::size_t>(preferences.program_preferences.preferences.audio.keysound_budget_mib) * 1024ULL * 1024ULL);
+        audio_runtime.resident_loader.set_budget_bytes(
+            static_cast<std::size_t>(
+                preferences.program_preferences.preferences.audio.keysound_budget_mib) *
+            1024ULL * 1024ULL);
 #endif
-        (void)session.autosave_loop.set_interval(std::chrono::minutes{preferences.program_preferences.preferences.general.autosave_minutes});
+        (void)session.autosave_loop.set_interval(std::chrono::minutes{
+            preferences.program_preferences.preferences.general.autosave_minutes});
         commands.services.external_player = [this](external_player_action_t action) -> std::string {
-            return launch_external_player(preferences.external_player_runtime, action, session.history, session.workspace,
-                                          views.compose_interaction_state, session.project_identity, platform.notification_sink);
+            return launch_external_player(action);
         };
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         configure_transport_commands();
 #endif
         initialize_preferred_transport(preferences.program_preferences.preferences, commands);
-        views.tap_clock = [this]() -> tap_timing_clock_t { return read_tap_clock(tap_clock_context); };
-        command_registry = make_default_editor_command_registry(command_menu_invoker(
-            [this](const command_invocation_context_t& invocation) { return invoke_registry_command(invocation); }));
-        const auto shortcut_startup = load_preferred_shortcuts(preferences.program_preferences, command_registry);
+        views.tap_clock = [this]() -> tap_timing_clock_t {
+            return read_tap_clock(tap_clock_context);
+        };
+        command_registry = make_default_editor_command_registry(
+            command_menu_invoker([this](const command_invocation_context_t& invocation) {
+                return invoke_registry_command(invocation);
+            }));
+        const auto shortcut_startup =
+            load_preferred_shortcuts(preferences.program_preferences, command_registry);
         post_shortcut_startup_diagnostic(platform.notification_sink, shortcut_startup);
         views.compose_viewport_last_ticks = static_cast<std::uint64_t>(SDL_GetTicks());
         started_ = true;
@@ -3910,7 +4155,8 @@ struct application_t::implementation_t {
     }
 
     void shutdown() noexcept {
-        if (shutdown_started_) return;
+        if (shutdown_started_)
+            return;
         shutdown_started_ = true;
         jobs.resource_copy_runtime.cancel();
         jobs.metadata_asset_runtime.cancel();
@@ -3939,49 +4185,60 @@ struct application_t::implementation_t {
 
     void publish_tap_assist() {
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-        publish_tap_assist_grid(views.tap_runtime, audio_runtime.preview_session, views.published_assist);
+        publish_tap_assist_grid(views.tap_runtime, audio_runtime.preview_session,
+                                views.published_assist);
 #endif
     }
 
-    auto invoke_registry_command(const command_invocation_context_t& invocation) -> command_invocation_result_t {
-        return dispatch_options_or_editor_command(invocation, preferences.options_runtime,
-            preferences.program_preferences.preferences, views.notification_history, platform.notifications, [this, &invocation] {
-                auto environment = make_dispatch_context();
-                const auto& tap_event_ns = current_tap_event_ ? *current_tap_event_ : views.last_tap_event_ns;
-                return dispatch_registered_application_command(invocation, environment, views.tap_runtime, views.tap_clock, tap_event_ns);
+    auto invoke_registry_command(const command_invocation_context_t& invocation)
+        -> command_invocation_result_t {
+        return dispatch_options_or_editor_command(
+            invocation, preferences.options_runtime, preferences.program_preferences.preferences,
+            views.notification_history, platform.notifications, [this, &invocation] {
+                const auto& tap_event_ns =
+                    current_tap_event_ ? *current_tap_event_ : views.last_tap_event_ns;
+                return dispatch_registered_application_command(invocation, tap_event_ns);
             });
     }
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     auto on_transport_play_pause() -> std::string {
         commands.invalidate_playing_seek_records();
-        const auto compose_cursor = session.workspace.active_tab == wormedit::workspace_tab_t::compose &&
-                                            views.compose_interaction_state && session.workspace.selected_chart &&
-                                            views.compose_interaction_state->chart == *session.workspace.selected_chart
-                                        ? &*views.compose_interaction_state
-                                        : nullptr;
-        if (!audio_runtime.preview_output.playing() && !audio_runtime.preview_state.paused && compose_cursor &&
-            compose_cursor->virtual_bms_cursor_row)
-            return post_callback_feedback(platform.notification_sink, wormedit::notification_severity_t::warning,
-                                          wormedit::notification_source_t::audio,
-                                          "Materialize the cursor measure before starting chart preview.");
-        const bool starting = !audio_runtime.preview_output.playing() && !audio_runtime.preview_state.paused;
-        const auto exact_start = starting ? wormedit::sys::compose_minimap_start_frame(commands, session.history, compose_cursor) : std::nullopt;
+        const auto compose_cursor =
+            session.workspace.active_tab == wormedit::workspace_tab_t::compose &&
+                    views.compose_interaction_state && session.workspace.selected_chart &&
+                    views.compose_interaction_state->chart == *session.workspace.selected_chart
+                ? &*views.compose_interaction_state
+                : nullptr;
+        if (!audio_runtime.preview_output.playing() && !audio_runtime.preview_state.paused &&
+            compose_cursor && compose_cursor->virtual_bms_cursor_row)
+            return post_callback_feedback(
+                platform.notification_sink, wormedit::notification_severity_t::warning,
+                wormedit::notification_source_t::audio,
+                "Materialize the cursor measure before starting chart preview.");
+        const bool starting =
+            !audio_runtime.preview_output.playing() && !audio_runtime.preview_state.paused;
+        const auto exact_start = starting ? wormedit::sys::compose_minimap_start_frame(
+                                                commands, session.history, compose_cursor)
+                                          : std::nullopt;
         const auto result = audio_runtime.preview_state.play_pause(
-            selected_chart(session.history, session.workspace), session.history.document, audio_runtime.audition_sources,
-            audio_runtime.preview_metronome_bindings, audio_runtime.audition_output,
-            audio_runtime.preview_session, audio_runtime.preview_output,
-            compose_cursor ? std::optional{compose_cursor->cursor} : std::nullopt, false, exact_start,
-            compose_cursor ? compose_cursor->cursor_subrow : 0.0);
+            selected_chart(session.history, session.workspace), session.history.document,
+            audio_runtime.audition_sources, audio_runtime.preview_metronome_bindings,
+            audio_runtime.audition_output, audio_runtime.preview_session,
+            audio_runtime.preview_output,
+            compose_cursor ? std::optional{compose_cursor->cursor} : std::nullopt, false,
+            exact_start, compose_cursor ? compose_cursor->cursor_subrow : 0.0);
         if (starting && audio_runtime.preview_output.playing()) {
             commands.project.transport.minimap_start_frame.reset();
             views.inline_preview_cursor.capture(compose_cursor);
         }
-        if (audio_runtime.preview_output.playing()) views.inline_preview_cursor.capture_follow_anchor(session.history, compose_cursor);
-        return post_callback_feedback(platform.notification_sink,
-            routine_transport_severity(audio_runtime.preview_state.feedback.severity, audio_runtime.preview_state.feedback.accepted),
+        if (audio_runtime.preview_output.playing())
+            views.inline_preview_cursor.capture_follow_anchor(session.history, compose_cursor);
+        return post_callback_feedback(
+            platform.notification_sink,
+            routine_transport_severity(audio_runtime.preview_state.feedback.severity,
+                                       audio_runtime.preview_state.feedback.accepted),
             wormedit::notification_source_t::audio, result);
-    
     }
 
     auto on_transport_seek(std::uint64_t frame) -> std::string {
@@ -3989,223 +4246,271 @@ struct application_t::implementation_t {
             session.workspace.active_tab == wormedit::workspace_tab_t::compose &&
             views.compose_interaction_state && session.workspace.selected_chart &&
             views.compose_interaction_state->chart == *session.workspace.selected_chart) {
-            if (wormedit::sys::editor_interaction_has_pending_gesture(*views.compose_interaction_state))
-                return post_callback_feedback(platform.notification_sink, wormedit::notification_severity_t::warning,
-                    wormedit::notification_source_t::input, "Finish or cancel the active Compose gesture before seeking.");
+            if (wormedit::sys::editor_interaction_has_pending_gesture(
+                    *views.compose_interaction_state))
+                return post_callback_feedback(
+                    platform.notification_sink, wormedit::notification_severity_t::warning,
+                    wormedit::notification_source_t::input,
+                    "Finish or cancel the active Compose gesture before seeking.");
             return wormedit::sys::seek_stopped_compose_transport(
-                session.history, *views.compose_interaction_state, views.compose_scene_cache, frame, platform.notification_sink);
+                session.history, *views.compose_interaction_state, views.compose_scene_cache, frame,
+                platform.notification_sink);
         }
-        const auto result = audio_runtime.preview_state.seek(frame, session.history.document, session.workspace, audio_runtime.audition_output,
-                                               audio_runtime.preview_session, audio_runtime.preview_output);
-        return post_callback_feedback(platform.notification_sink, audio_runtime.preview_state.feedback.severity,
+        const auto result = audio_runtime.preview_state.seek(
+            frame, session.history.document, session.workspace, audio_runtime.audition_output,
+            audio_runtime.preview_session, audio_runtime.preview_output);
+        return post_callback_feedback(platform.notification_sink,
+                                      audio_runtime.preview_state.feedback.severity,
                                       wormedit::notification_source_t::audio, result);
-    
     }
 
     auto on_transport_audio_milliseconds() -> std::optional<std::int64_t> {
-        return audio_runtime.preview_state.audio_milliseconds(session.history.document, session.workspace, audio_runtime.preview_session);
-    
+        return audio_runtime.preview_state.audio_milliseconds(
+            session.history.document, session.workspace, audio_runtime.preview_session);
     }
 
     auto on_transport_seek_audio_milliseconds(std::int64_t milliseconds) -> std::string {
         const auto result = audio_runtime.preview_state.seek_audio_milliseconds(
-            milliseconds, session.history.document, session.workspace, audio_runtime.audition_output,
-            audio_runtime.preview_session, audio_runtime.preview_output);
-        return post_callback_feedback(platform.notification_sink, audio_runtime.preview_state.feedback.severity,
+            milliseconds, session.history.document, session.workspace,
+            audio_runtime.audition_output, audio_runtime.preview_session,
+            audio_runtime.preview_output);
+        return post_callback_feedback(platform.notification_sink,
+                                      audio_runtime.preview_state.feedback.severity,
                                       wormedit::notification_source_t::audio, result);
-    
     }
 
-    auto on_transport_set_bgm_mix(wormedit::chart_id_t chart, std::span<const std::uint64_t> muted) -> bool {
-        if (session.workspace.selected_chart != chart) return false;
+    auto on_transport_set_bgm_mix(wormedit::chart_id_t chart, std::span<const std::uint64_t> muted)
+        -> bool {
+        if (session.workspace.selected_chart != chart)
+            return false;
         audio_runtime.preview_state.set_bgm_mix(chart, muted, audio_runtime.preview_session);
         return true;
-    
     }
 
-    auto on_transport_set_layer_assist(wormedit::chart_id_t chart, std::span<const wormedit::layer_id_t> layers) -> bool {
-        return session.workspace.selected_chart == chart && audio_runtime.preview_state.set_layer_assist(chart, layers, audio_runtime.preview_session);
-    
+    auto on_transport_set_layer_assist(wormedit::chart_id_t chart,
+                                       std::span<const wormedit::layer_id_t> layers) -> bool {
+        return session.workspace.selected_chart == chart &&
+               audio_runtime.preview_state.set_layer_assist(chart, layers,
+                                                            audio_runtime.preview_session);
     }
 
-    auto on_transport_set_metronome(bool enabled) -> void { audio_runtime.preview_session.set_metronome_enabled(enabled); 
+    auto on_transport_set_metronome(bool enabled) -> void {
+        audio_runtime.preview_session.set_metronome_enabled(enabled);
     }
 
     auto on_transport_set_metronome_volume(std::uint8_t volume) -> void {
         (void)audio_runtime.preview_session.set_metronome_volume(volume);
-    
     }
 
     auto on_transport_set_metronome_count_in(std::uint8_t measures) -> void {
         if (audio_runtime.preview_session.set_metronome_count_in(measures))
             audio_runtime.preview_state.count_in_measures = measures;
-    
     }
 
-    auto on_transport_set_keep_pitch(bool enabled) -> bool { return audio_runtime.preview_output.set_keep_pitch(enabled); 
+    auto on_transport_set_keep_pitch(bool enabled) -> bool {
+        return audio_runtime.preview_output.set_keep_pitch(enabled);
     }
 
     auto on_transport_set_playback_rate(wormedit::rational_t rate) -> bool {
         return audio_runtime.preview_output.set_playback_rate(rate);
-    
     }
 
     auto is_transport_active() -> bool {
-        return audio_runtime.audition_session.active() || audio_runtime.preview_output.playing() || audio_runtime.preview_state.paused;
-    
+        return audio_runtime.audition_session.active() || audio_runtime.preview_output.playing() ||
+               audio_runtime.preview_state.paused;
     }
 
-    auto is_transport_preview_playing() -> bool { return audio_runtime.preview_output.playing(); 
+    auto is_transport_preview_playing() -> bool {
+        return audio_runtime.preview_output.playing();
     }
 
-    auto is_transport_preview_paused() -> bool { return audio_runtime.preview_state.paused; 
+    auto is_transport_preview_paused() -> bool {
+        return audio_runtime.preview_state.paused;
     }
 
-    auto on_transport_preserve_bookmark_revision(wormedit::chart_id_t chart, std::uint64_t previous_revision,
-            std::uint64_t next_revision) -> bool {
-            if (!audio_runtime.preview_output.playing() || !session.workspace.selected_chart ||
-                *session.workspace.selected_chart != chart || audio_runtime.preview_state.chart != chart ||
-                audio_runtime.preview_state.revision != previous_revision)
-                return false;
-            return audio_runtime.preview_state.preserve_bookmark_revision(
-                chart, previous_revision, next_revision);
-        
+    auto on_transport_preserve_bookmark_revision(wormedit::chart_id_t chart,
+                                                 std::uint64_t previous_revision,
+                                                 std::uint64_t next_revision) -> bool {
+        if (!audio_runtime.preview_output.playing() || !session.workspace.selected_chart ||
+            *session.workspace.selected_chart != chart ||
+            audio_runtime.preview_state.chart != chart ||
+            audio_runtime.preview_state.revision != previous_revision)
+            return false;
+        return audio_runtime.preview_state.preserve_bookmark_revision(chart, previous_revision,
+                                                                      next_revision);
     }
 
     auto on_transport_preview_end_frame() -> std::optional<std::uint64_t> {
-        return audio_runtime.preview_state.matches_selection(session.history.document, session.workspace)
-            ? std::optional{audio_runtime.preview_state.end_frame} : std::nullopt;
-    
+        return audio_runtime.preview_state.matches_selection(session.history.document,
+                                                             session.workspace)
+                   ? std::optional{audio_runtime.preview_state.end_frame}
+                   : std::nullopt;
     }
 
     auto is_transport_inline_active() -> bool {
         return audio_runtime.preview_output.playing() || audio_runtime.preview_state.paused;
-    
     }
 
     auto on_transport_play_from_start() -> std::string {
         commands.invalidate_playing_seek_records();
         commands.project.transport.minimap_start_frame.reset();
-        const bool starting = !audio_runtime.preview_output.playing() && !audio_runtime.preview_state.paused;
-        const auto* compose_cursor = session.workspace.active_tab == wormedit::workspace_tab_t::compose &&
-                                             views.compose_interaction_state && session.workspace.selected_chart &&
-                                             views.compose_interaction_state->chart == *session.workspace.selected_chart
-                                         ? &*views.compose_interaction_state
-                                         : nullptr;
+        const bool starting =
+            !audio_runtime.preview_output.playing() && !audio_runtime.preview_state.paused;
+        const auto* compose_cursor =
+            session.workspace.active_tab == wormedit::workspace_tab_t::compose &&
+                    views.compose_interaction_state && session.workspace.selected_chart &&
+                    views.compose_interaction_state->chart == *session.workspace.selected_chart
+                ? &*views.compose_interaction_state
+                : nullptr;
         const auto result = audio_runtime.preview_state.play_pause(
-            selected_chart(session.history, session.workspace), session.history.document, audio_runtime.audition_sources,
-            audio_runtime.preview_metronome_bindings, audio_runtime.audition_output,
-            audio_runtime.preview_session, audio_runtime.preview_output,
-            std::nullopt, true);
-        if (starting && audio_runtime.preview_output.playing()) views.inline_preview_cursor.capture(compose_cursor);
-        if (audio_runtime.preview_output.playing()) views.inline_preview_cursor.capture_follow_anchor(session.history, compose_cursor);
-        return post_callback_feedback(platform.notification_sink,
-            routine_transport_severity(audio_runtime.preview_state.feedback.severity, audio_runtime.preview_state.feedback.accepted),
+            selected_chart(session.history, session.workspace), session.history.document,
+            audio_runtime.audition_sources, audio_runtime.preview_metronome_bindings,
+            audio_runtime.audition_output, audio_runtime.preview_session,
+            audio_runtime.preview_output, std::nullopt, true);
+        if (starting && audio_runtime.preview_output.playing())
+            views.inline_preview_cursor.capture(compose_cursor);
+        if (audio_runtime.preview_output.playing())
+            views.inline_preview_cursor.capture_follow_anchor(session.history, compose_cursor);
+        return post_callback_feedback(
+            platform.notification_sink,
+            routine_transport_severity(audio_runtime.preview_state.feedback.severity,
+                                       audio_runtime.preview_state.feedback.accepted),
             wormedit::notification_source_t::audio, result);
-    
     }
 
     auto on_transport_stop() -> void {
         commands.invalidate_playing_seek_records();
         commands.project.transport.minimap_start_frame.reset();
-        audio_runtime.preview_state.stop(audio_runtime.audition_output, audio_runtime.preview_output);
+        audio_runtime.preview_state.stop(audio_runtime.audition_output,
+                                         audio_runtime.preview_output);
         views.inline_preview_cursor.anchor.reset();
-    
     }
 
     auto has_transport_loop_selection() -> bool {
         return audio_runtime.preview_session.has_loop_region();
-    
     }
 
     auto on_transport_set_loop_selection(wormedit::chart_id_t chart_id,
-        std::uint64_t expected_revision, std::uint64_t begin_row,
-        std::uint64_t end_row, bool enabled) -> bool {
-        return apply_loop_selection(session.history, session.workspace, views.compose_interaction_state,
-            views.inline_preview_cursor, audio_runtime.preview_session, audio_runtime.preview_state,
-            audio_runtime.audition_sources, audio_runtime.preview_metronome_bindings, audio_runtime.audition_output, audio_runtime.preview_output,
-            chart_id, expected_revision, begin_row, end_row, enabled);
-    
+                                         std::uint64_t expected_revision, std::uint64_t begin_row,
+                                         std::uint64_t end_row, bool enabled) -> bool {
+        return apply_loop_selection(chart_id, expected_revision, begin_row, end_row, enabled);
     }
 
     auto on_transport_cancel_restore() -> std::string {
-        audio_runtime.preview_state.stop(audio_runtime.audition_output, audio_runtime.preview_output);
+        audio_runtime.preview_state.stop(audio_runtime.audition_output,
+                                         audio_runtime.preview_output);
         const bool restored = views.inline_preview_cursor.restore(
-            session.history, views.compose_interaction_state ? &*views.compose_interaction_state : nullptr);
-        return post_callback_feedback(platform.notification_sink, wormedit::notification_severity_t::hint,
-                                      wormedit::notification_source_t::audio,
-                                      restored ? "Chart preview stopped; cursor restored." : "Chart preview stopped.");
-    
+            session.history,
+            views.compose_interaction_state ? &*views.compose_interaction_state : nullptr);
+        return post_callback_feedback(
+            platform.notification_sink, wormedit::notification_severity_t::hint,
+            wormedit::notification_source_t::audio,
+            restored ? "Chart preview stopped; cursor restored." : "Chart preview stopped.");
     }
 
     void configure_transport_play_pause() {
-    commands.services.transport_play_pause = [this]() -> std::string { return on_transport_play_pause(); };
-
+        commands.services.transport_play_pause = [this]() -> std::string {
+            return on_transport_play_pause();
+        };
     }
 
     void configure_transport_seek_commands() {
-    commands.preferences.transport_seek_posts_feedback = true;
-    commands.services.transport_seek = [this](std::uint64_t frame) -> std::string { return on_transport_seek(frame); };
-    commands.services.transport_audio_milliseconds = [this]() { return on_transport_audio_milliseconds(); };
-    commands.services.transport_seek_audio_milliseconds = [this](std::int64_t milliseconds) -> std::string { return on_transport_seek_audio_milliseconds(milliseconds); };
-
+        commands.preferences.transport_seek_posts_feedback = true;
+        commands.services.transport_seek = [this](std::uint64_t frame) -> std::string {
+            return on_transport_seek(frame);
+        };
+        commands.services.transport_audio_milliseconds = [this]() {
+            return on_transport_audio_milliseconds();
+        };
+        commands.services.transport_seek_audio_milliseconds =
+            [this](std::int64_t milliseconds) -> std::string {
+            return on_transport_seek_audio_milliseconds(milliseconds);
+        };
     }
 
     void configure_bgm_mix_command() {
-    commands.services.transport_set_bgm_mix = [this](wormedit::chart_id_t chart, std::span<const std::uint64_t> muted) { return on_transport_set_bgm_mix(chart, muted); };
-
+        commands.services.transport_set_bgm_mix = [this](wormedit::chart_id_t chart,
+                                                         std::span<const std::uint64_t> muted) {
+            return on_transport_set_bgm_mix(chart, muted);
+        };
     }
 
     void configure_transport_commands() {
-    commands.preferences.transport_metronome_available = audio_runtime.preview_output.available() && !audio_runtime.preview_metronome_bindings.empty();
-    commands.services.transport_set_layer_assist = [this](wormedit::chart_id_t chart, std::span<const wormedit::layer_id_t> layers) { return on_transport_set_layer_assist(chart, layers); };
-    configure_bgm_mix_command();
-    commands.services.transport_set_metronome = [this](bool enabled) { return on_transport_set_metronome(enabled); };
-    audio_runtime.preview_session.set_metronome_enabled(commands.preferences.transport_metronome_enabled);
-    commands.services.transport_set_metronome_volume = [this](std::uint8_t volume) { return on_transport_set_metronome_volume(volume); };
-    commands.services.transport_set_metronome_count_in = [this](std::uint8_t measures) { return on_transport_set_metronome_count_in(measures); };
-    (void)audio_runtime.preview_session.set_metronome_volume(commands.preferences.metronome_volume);
-    (void)audio_runtime.preview_session.set_metronome_count_in(commands.preferences.metronome_count_in);
-    audio_runtime.preview_state.count_in_measures = commands.preferences.metronome_count_in;
-    commands.preferences.transport_keep_pitch_available = audio_runtime.preview_output.available();
-    commands.services.transport_set_keep_pitch = [this](bool enabled) { return on_transport_set_keep_pitch(enabled); };
-    commands.services.transport_set_playback_rate = [this](wormedit::rational_t rate) { return on_transport_set_playback_rate(rate); };
-    commands.services.transport_active = [this] { return is_transport_active(); };
-    commands.services.transport_preview_playing = [this] { return is_transport_preview_playing(); };
-    commands.services.transport_preview_paused = [this] { return is_transport_preview_paused(); };
-    commands.services.transport_preserve_bookmark_revision =
-        [this](wormedit::chart_id_t chart, std::uint64_t previous_revision,
-            std::uint64_t next_revision) { return on_transport_preserve_bookmark_revision(chart, previous_revision, next_revision); };
-    commands.services.transport_preview_end_frame = [this]() -> std::optional<std::uint64_t> { return on_transport_preview_end_frame(); };
-    commands.services.transport_inline_active = [this] { return is_transport_inline_active(); };
-    configure_transport_play_pause();
-    commands.services.transport_play_from_start = [this]() -> std::string { return on_transport_play_from_start(); };
-    configure_transport_seek_commands();
-    commands.services.transport_stop = [this] { return on_transport_stop(); };
-    commands.services.transport_loop_selection_active = [this] { return has_transport_loop_selection(); };
-    commands.services.transport_set_loop_selection = [this](wormedit::chart_id_t chart_id,
-        std::uint64_t expected_revision, std::uint64_t begin_row,
-        std::uint64_t end_row, bool enabled) { return on_transport_set_loop_selection(chart_id, expected_revision, begin_row, end_row, enabled); };
-    commands.services.transport_cancel_restore = [this]() -> std::string { return on_transport_cancel_restore(); };
-
+        commands.preferences.transport_metronome_available =
+            audio_runtime.preview_output.available() &&
+            !audio_runtime.preview_metronome_bindings.empty();
+        commands.services.transport_set_layer_assist =
+            [this](wormedit::chart_id_t chart, std::span<const wormedit::layer_id_t> layers) {
+                return on_transport_set_layer_assist(chart, layers);
+            };
+        configure_bgm_mix_command();
+        commands.services.transport_set_metronome = [this](bool enabled) {
+            return on_transport_set_metronome(enabled);
+        };
+        audio_runtime.preview_session.set_metronome_enabled(
+            commands.preferences.transport_metronome_enabled);
+        commands.services.transport_set_metronome_volume = [this](std::uint8_t volume) {
+            return on_transport_set_metronome_volume(volume);
+        };
+        commands.services.transport_set_metronome_count_in = [this](std::uint8_t measures) {
+            return on_transport_set_metronome_count_in(measures);
+        };
+        (void)audio_runtime.preview_session.set_metronome_volume(
+            commands.preferences.metronome_volume);
+        (void)audio_runtime.preview_session.set_metronome_count_in(
+            commands.preferences.metronome_count_in);
+        audio_runtime.preview_state.count_in_measures = commands.preferences.metronome_count_in;
+        commands.preferences.transport_keep_pitch_available =
+            audio_runtime.preview_output.available();
+        commands.services.transport_set_keep_pitch = [this](bool enabled) {
+            return on_transport_set_keep_pitch(enabled);
+        };
+        commands.services.transport_set_playback_rate = [this](wormedit::rational_t rate) {
+            return on_transport_set_playback_rate(rate);
+        };
+        commands.services.transport_active = [this] { return is_transport_active(); };
+        commands.services.transport_preview_playing = [this] {
+            return is_transport_preview_playing();
+        };
+        commands.services.transport_preview_paused = [this] {
+            return is_transport_preview_paused();
+        };
+        commands.services.transport_preserve_bookmark_revision =
+            [this](wormedit::chart_id_t chart, std::uint64_t previous_revision,
+                   std::uint64_t next_revision) {
+                return on_transport_preserve_bookmark_revision(chart, previous_revision,
+                                                               next_revision);
+            };
+        commands.services.transport_preview_end_frame = [this]() -> std::optional<std::uint64_t> {
+            return on_transport_preview_end_frame();
+        };
+        commands.services.transport_inline_active = [this] { return is_transport_inline_active(); };
+        configure_transport_play_pause();
+        commands.services.transport_play_from_start = [this]() -> std::string {
+            return on_transport_play_from_start();
+        };
+        configure_transport_seek_commands();
+        commands.services.transport_stop = [this] { return on_transport_stop(); };
+        commands.services.transport_loop_selection_active = [this] {
+            return has_transport_loop_selection();
+        };
+        commands.services.transport_set_loop_selection =
+            [this](wormedit::chart_id_t chart_id, std::uint64_t expected_revision,
+                   std::uint64_t begin_row, std::uint64_t end_row, bool enabled) {
+                return on_transport_set_loop_selection(chart_id, expected_revision, begin_row,
+                                                       end_row, enabled);
+            };
+        commands.services.transport_cancel_restore = [this]() -> std::string {
+            return on_transport_cancel_restore();
+        };
     }
 
 #endif
-    struct frame_action_inputs_t {
-        workspace_frame_action_context_t& workspace;
-        compose_frame_action_context_t& compose;
-        double viewport_delta_seconds{};
-        static auto from(workspace_frame_action_context_t& workspace,
-                         compose_frame_action_context_t& compose, double delta)
-            -> frame_action_inputs_t {
-            return {workspace, compose, delta};
-        }
-    };
     struct composed_frame_inputs_t {
         const workspace_view_t& model;
         const WormUiNotificationView& notifications;
         std::span<const WormUiComposeLaneView> field_skin_lanes;
-        const frame_action_inputs_t& actions;
+        double viewport_delta_seconds{};
     };
 
     void publish_frame_notice() {
@@ -4214,40 +4519,39 @@ struct application_t::implementation_t {
                                            platform.notification_sink);
     }
 
-    void begin_frame(notification_frame_context_t& context, notification_time_t now) {
+    void begin_frame(notification_time_t now) {
         session.recovery_scan_feedback.publish(session.recovery_controller.view(),
                                                platform.notification_sink);
-        begin_notification_frame(context, views.pending_notification, now);
+        begin_notification_frame(views.pending_notification, now);
         wormedit::sys::frame_timing().begin_frame();
         views.frame_projection_arena.reset();
         wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::events);
     }
 
-    void poll_frame_events(workspace_frame_action_context_t& context) {
+    void poll_frame_events() {
         {
             wormedit::sys::frame_phase_scope_t input(wormedit::sys::frame_phase_t::events_input);
             if (!wormedit::sys::poll_frontend_events(
-                    platform.lifetime.runtime.window, context.frontend_inputs(),
+                    platform.lifetime.runtime.window, frontend_inputs(),
                     can_offer_audio_project_drop(session.project_identity.session_loaded,
                                                  session.project_identity.fresh_blank_project,
                                                  session.history),
                     session.project_identity.pending_import.chart_project_path,
                     views.sound_drop_transaction, views.pending_resource_batches))
                 confirm_unsaved_changes(
-                    views.pending_close, close_target_t::application, context,
+                    views.pending_close, close_target_t::application,
                     preferences.program_preferences.preferences.general.confirm_unsaved_close);
         }
     }
 
-    void import_frame_drops(workspace_frame_action_context_t& context) {
+    void import_frame_drops() {
         {
             wormedit::sys::frame_phase_scope_t drops(wormedit::sys::frame_phase_t::events_drops);
             import_dropped_resources(session.project_identity.session_loaded, session.history,
                                      session.workspace, views.pending_resource_batches,
                                      platform.notification_sink);
             dispatch_dropped_chart_project(
-                context, session.project_identity.pending_import.chart_project_path,
-                views.pending_close,
+                session.project_identity.pending_import.chart_project_path, views.pending_close,
                 preferences.program_preferences.preferences.general.confirm_unsaved_close);
         }
     }
@@ -4262,11 +4566,7 @@ struct application_t::implementation_t {
                 session.history, session.workspace, session.project_identity.asset_base);
             compose_viewport_delta_seconds =
                 wormedit::sys::compose_frame_delta_seconds(views.compose_viewport_last_ticks);
-            tick_loaded_project_autosave(
-                session.project_identity.session_loaded, session.autosave_loop, session.history,
-                session.project_identity.native_project_loaded,
-                session.project_identity.active_project_path, platform.recovery_directory.path,
-                platform.notification_sink, session.project_identity.asset_base);
+            tick_loaded_project_autosave();
         }
         return compose_viewport_delta_seconds;
     }
@@ -4287,10 +4587,8 @@ struct application_t::implementation_t {
         if (const auto loading = audio_runtime.resident_loader.drain_progress()) {
             platform.notification_sink.post(*loading);
         }
-        sync_layer_assist_selection(commands, session.workspace, audio_runtime.preview_state,
-                                    audio_runtime.preview_session);
-        sync_bgm_mix_selection(commands, session.history, session.workspace,
-                               audio_runtime.preview_state, audio_runtime.preview_session);
+        sync_layer_assist_selection();
+        sync_bgm_mix_selection();
         wormedit::sys::service_audio_transport_frame(
             session.history.document, session.workspace, audio_runtime.preview_state,
             audio_runtime.preview_session, audio_runtime.audition_output,
@@ -4357,9 +4655,7 @@ struct application_t::implementation_t {
     }
 
     auto prepare_bound_frame_view(const workspace_view_t& model) -> flattened_workspace_t {
-        prepare_bound_workspace_frame(session.history, session.workspace, commands,
-                                      views.timing_grid, views.audio_offset_drag,
-                                      views.audio_offset_drag_tab, views.compose_scene_cache);
+        prepare_bound_workspace_frame();
         prepare_tap_proposal(views.tap_runtime, views.tap_clock, session.history.document,
                              commands.audio_offset_edits_locked(), views.compose_scene_cache);
         wormedit::sys::compose_bga_move_preview_input_t bga_move_preview{};
@@ -4455,12 +4751,9 @@ struct application_t::implementation_t {
     }
 
     void dispatch_confirmed_workspace_actions(
-        const frame_action_inputs_t& frame, WormUiWorkspaceAction& action,
+        double viewport_delta_seconds, WormUiWorkspaceAction& action,
         const std::optional<std::uint32_t>& selected_waveform_sample_rate, double viewport_height) {
-        dispatch_options_page_action(preferences.shortcut_editor, preferences.options_runtime,
-                                     preferences.program_preferences, action.options,
-                                     preferences.external_player_runtime, commands,
-                                     session.autosave_loop, platform.notification_sink);
+        dispatch_options_page_action(action.options);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         audio_runtime.resident_loader.set_budget_bytes(
             static_cast<std::size_t>(
@@ -4475,27 +4768,24 @@ struct application_t::implementation_t {
         publish_tap_assist();
         consume_shortcut_capture(preferences.shortcut_editor, action, command_registry,
                                  preferences.program_preferences, platform.notification_sink);
-        const bool shortcut_handled = process_compose_frame_action(
-            frame.compose, action, frame.viewport_delta_seconds, tap_applied);
+        const bool shortcut_handled =
+            process_compose_frame_action(action, viewport_delta_seconds, tap_applied);
         const bool external_handled =
             dispatch_external_player_action(preferences.external_player_runtime,
                                             action.external_player, commands,
                                             platform.notification_sink) ||
-            dispatch_chart_import_action(
-                views.chart_import, action, session.history, session.workspace,
-                session.project_identity.asset_base, platform.notification_sink,
-                session.project_identity.session_loaded, preferences.program_preferences);
+            dispatch_chart_import_action(action);
         const auto previous_selected_chart = session.workspace.selected_chart;
-        const bool project_handled = dispatch_project_chart_action(
-            action, frame.workspace, shortcut_handled || external_handled);
+        const bool project_handled =
+            dispatch_project_chart_action(action, shortcut_handled || external_handled);
         remember_created_chart_snap(commands, project_handled, action.project_chart.kind,
                                     previous_selected_chart, session.workspace.selected_chart);
         apply_compare_scroll_action(views.compare_scene_cache, action);
-        dispatch_workspace_frame_action(frame.workspace, action, project_handled,
-                                        selected_waveform_sample_rate, viewport_height);
+        dispatch_workspace_frame_action(action, project_handled, selected_waveform_sample_rate,
+                                        viewport_height);
     }
 
-    void dispatch_frame_action(const frame_action_inputs_t& frame, flattened_workspace_t& flattened,
+    void dispatch_frame_action(double viewport_delta_seconds, flattened_workspace_t& flattened,
                                WormUiWorkspaceAction& action) {
         {
 
@@ -4503,20 +4793,20 @@ struct application_t::implementation_t {
                 wormedit::sys::frame_phase_t::workspace_actions);
             std::optional<std::uint32_t> selected_waveform_sample_rate;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-            selected_waveform_sample_rate =
-                selected_waveform_rate(audio_runtime.waveform_runtime, session.workspace);
+            selected_waveform_sample_rate = selected_waveform_rate();
 #endif
 
             if (dispatch_close_confirmation(
-                    views.pending_close, frame.workspace, action,
+                    views.pending_close, action,
                     preferences.program_preferences.preferences.general.confirm_unsaved_close))
                 return;
-            dispatch_confirmed_workspace_actions(frame, action, selected_waveform_sample_rate,
+            dispatch_confirmed_workspace_actions(viewport_delta_seconds, action,
+                                                 selected_waveform_sample_rate,
                                                  flattened.view.compose.viewport_height_pixels);
         }
     }
 
-    void compose_frame_ui(flattened_workspace_t& flattened, const frame_action_inputs_t& frame) {
+    void compose_frame_ui(flattened_workspace_t& flattened, double viewport_delta_seconds) {
         const auto frame_nuklear_previous =
             wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::nuklear);
         refresh_application_command_states(command_registry, session.history, session.workspace,
@@ -4528,15 +4818,13 @@ struct application_t::implementation_t {
 #endif
         auto action = worm_ui_frontend_compose(&flattened.view);
         refresh_sound_selection_context(action, commands);
-        dispatch_menu_command(action, command_registry, session.history, session.workspace,
-                              views.compose_interaction_state, commands,
-                              platform.notification_sink);
+        dispatch_menu_command(action);
         retain_compose_hover_timing(views.compose_scene_cache, flattened.view, action);
         retain_compose_bgm_window_capture(commands, flattened.view, action);
         views.pending_notification = action.notifications;
         wormedit::sys::frame_timing().restore(frame_nuklear_previous);
 
-        dispatch_frame_action(frame, flattened, action);
+        dispatch_frame_action(viewport_delta_seconds, flattened, action);
     }
 
     void compose_bound_frame(const composed_frame_inputs_t& frame) {
@@ -4557,7 +4845,7 @@ struct application_t::implementation_t {
             views.compare_scene_cache, commands, compare_width, compare_height);
 
         complete_frame_view(flattened, frame);
-        compose_frame_ui(flattened, frame.actions);
+        compose_frame_ui(flattened, frame.viewport_delta_seconds);
     }
 
     void finish_frame(std::uint64_t frame_start_ns) {
@@ -4582,30 +4870,12 @@ struct application_t::implementation_t {
             }
         } tap_event_frame{*this, tap_event_ns};
 
-#if defined(WORMEDIT_HAS_AUDIO_DECODER)
-        workspace_frame_action_context_t workspace_frame_action_context{
-            make_dispatch_context(), (*audio_runtime.reconciliation)};
-#else
-        auto workspace_frame_action_context = make_dispatch_context();
-#endif
-
-        compose_frame_action_context_t compose_frame_action_context{
-            workspace_frame_action_context, tap_event_ns,
-#if defined(WORMEDIT_HAS_AUDIO_DECODER)
-            audio_runtime.audition_sources, audio_runtime.object_audition,
-            audio_runtime.preview_session,  audio_runtime.preview_output,
-            audio_runtime.preview_state,    audio_runtime.audition_output,
-#endif
-        };
-        notification_frame_context_t notification_context{
-            workspace_frame_action_context, platform.notifications, views.notification_history};
-
         publish_frame_notice();
         const auto frame_start_ns = SDL_GetTicksNS();
         const auto notification_now = notification_frame_time();
-        begin_frame(notification_context, notification_now);
-        poll_frame_events(workspace_frame_action_context);
-        import_frame_drops(workspace_frame_action_context);
+        begin_frame(notification_now);
+        poll_frame_events();
+        import_frame_drops();
         const auto viewport_delta = poll_frame_jobs();
         wormedit::sys::frame_timing().restore(wormedit::sys::frame_phase_t::count);
         service_frame_audio();
@@ -4614,13 +4884,9 @@ struct application_t::implementation_t {
         prepare_frame_model(model);
         const auto notification_view = build_frame_notifications(notification_now);
         if (!handle_workspace_view_error(
-                model, workspace_frame_action_context, notification_view,
-                views.pending_notification, views.pending_close,
-                preferences.program_preferences.preferences.general.confirm_unsaved_close,
-                views.workspace_view_feedback)) {
-            const auto actions = frame_action_inputs_t::from(
-                workspace_frame_action_context, compose_frame_action_context, viewport_delta);
-            compose_bound_frame({*model.view, notification_view, field_skin_lanes, actions});
+                model, notification_view,
+                preferences.program_preferences.preferences.general.confirm_unsaved_close)) {
+            compose_bound_frame({*model.view, notification_view, field_skin_lanes, viewport_delta});
         }
         finish_frame(frame_start_ns);
     }

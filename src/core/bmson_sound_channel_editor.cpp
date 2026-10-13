@@ -518,7 +518,7 @@ auto insert_bmson_sound_markers(document_history_t& history, std::uint64_t expec
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id,
                         "BMSON marker insertion requires a known chart and BGM event");
     const auto built = build_measure_index(*found_chart);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built))
+    if (std::holds_alternative<diagnostic_list_t>(built))
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_measure,
                         "BMSON chart has invalid measure geometry");
     const auto& index = std::get<measure_index_t>(built);

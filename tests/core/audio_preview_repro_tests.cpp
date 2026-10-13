@@ -46,6 +46,7 @@ auto pump_status(preview_session_pump_status_t status) -> const char* {
     case preview_session_pump_status_t::invalid_timeline: return "invalid_timeline";
     case preview_session_pump_status_t::materialize_failed: return "materialize_failed";
     case preview_session_pump_status_t::decode_failed: return "decode_failed";
+    case preview_session_pump_status_t::loop_boundary: return "unknown";
     }
     return "unknown";
 }

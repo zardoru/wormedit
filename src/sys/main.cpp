@@ -292,44 +292,7 @@ auto refresh_timing_grid(const wormedit::chart_document_t& chart,
 }
 
 
-#if defined(WORMEDIT_HAS_AUDIO_DECODER)
-auto audio_frame_to_milliseconds(std::uint64_t frame, std::uint32_t sample_rate)
-    -> std::optional<std::int64_t> {
-    if (sample_rate == 0) {
-        return std::nullopt;
-    }
-    const auto whole_seconds = frame / sample_rate;
-    const auto remaining_frames = frame % sample_rate;
-    constexpr auto maximum = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
-    if (whole_seconds > maximum / 1'000) {
-        return std::nullopt;
-    }
-    const auto milliseconds = whole_seconds * 1'000 + remaining_frames * 1'000 / sample_rate;
-    if (milliseconds > maximum) {
-        return std::nullopt;
-    }
-    return static_cast<std::int64_t>(milliseconds);
-}
 
-auto audio_milliseconds_to_frame(std::int64_t milliseconds, std::uint32_t sample_rate)
-    -> std::uint64_t {
-    if (milliseconds <= 0 || sample_rate == 0) {
-        return 0;
-    }
-    const auto unsigned_milliseconds = static_cast<std::uint64_t>(milliseconds);
-    const auto whole_seconds = unsigned_milliseconds / 1'000;
-    const auto remainder = unsigned_milliseconds % 1'000;
-    if (whole_seconds > std::numeric_limits<std::uint64_t>::max() / sample_rate) {
-        return std::numeric_limits<std::uint64_t>::max();
-    }
-    const auto base = whole_seconds * sample_rate;
-    const auto fractional_frames = (remainder * sample_rate + 999) / 1'000;
-    if (fractional_frames > std::numeric_limits<std::uint64_t>::max() - base) {
-        return std::numeric_limits<std::uint64_t>::max();
-    }
-    return base + fractional_frames;
-}
-#endif
 
 struct AudioOffsetDragContext {
     application_dispatch_context_t& environment;
@@ -572,7 +535,7 @@ auto apply_loop_selection(auto& history, auto& workspace, auto& interaction_stat
 
 void configure_transport_play_pause(auto& state, auto& history, auto& workspace,
                                  auto& compose_interaction_state, auto& inline_preview_cursor,
-                                 auto& audition_session, auto& preview_session, auto& preview_state,
+                                 auto&, auto& preview_session, auto& preview_state,
                                  auto& audition_sources, auto& preview_metronome_bindings,
                                  auto& audition_output, auto& preview_output, auto& notifications) {
     state.transport_play_pause = [&]() -> std::string {

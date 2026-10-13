@@ -1625,7 +1625,6 @@ static void draw_compose_measure_resize_affordance(const ComposePaintContext& pa
     const auto& view = *paint.view;
     if (state.measure_resize.measure_resize_active || view.input_occluded || view.measure_row_count == 0 ||
         view.viewport_height_pixels <= 0.0 || (SDL_GetModState() & SDL_KMOD_ALT) == 0) return;
-    const auto scale = paint.viewport.h / static_cast<float>(view.viewport_height_pixels);
     const auto band = 6.0f;
     const auto inside = nk_input_is_mouse_hovering_rect(&paint.context->input, paint.viewport);
     const auto mouse_y = paint.context->input.mouse.pos.y;

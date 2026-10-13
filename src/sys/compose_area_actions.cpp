@@ -64,7 +64,7 @@ auto snap_area_row(const wormedit::chart_document_t& chart, std::uint64_t row,
 }
 
 std::string quantize_compose_area_selection(area_action_context_t& context,
-                                            const wormedit::chart_document_t& chart) {
+                                            const wormedit::chart_document_t&) {
     using namespace wormedit;
     const auto& action = context.action;
     auto request = quantize_request_from_action(action, {});

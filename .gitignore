@@ -1,4 +1,6 @@
 build/
+build-clang/
+build-clang-libcxx/
 cmake-build-*/
 CMakeFiles/
 CMakeCache.txt

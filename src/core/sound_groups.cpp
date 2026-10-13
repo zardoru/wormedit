@@ -157,7 +157,7 @@ auto edit_existing_group(song_document_t& song, const sound_group_edit_action_t&
     return std::visit([&](const auto& edit) { return edit_group_action(song, edit, result); }, action);
 }
 
-auto sound_group_for_edit(const song_document_t& song,
+auto sound_group_for_edit(const song_document_t&,
                           const sound_group_edit_action_t& action)
     -> std::optional<sound_group_id_t> {
     if (const auto* create = std::get_if<create_sound_group_action_t>(&action)) return create->group;

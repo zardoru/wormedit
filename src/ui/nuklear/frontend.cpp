@@ -161,7 +161,6 @@ static std::array<WormUiShortcutEvent, WORM_UI_SHORTCUT_EVENT_CAPACITY> g_shortc
 static size_t g_shortcut_event_count{};
 static bool g_tap_timing_visible{};
 static bool g_tap_key_captured{};
-static bool g_tap_space_captured{};
 static bool g_shortcut_events_overflowed{};
 static bool g_ime_composition_active{};
 static int g_last_window_width{};
@@ -1581,7 +1580,6 @@ static bool handle_workspace_frontend_event(const SDL_Event* event) {
         cancel_command_menu();
         wormedit::ui::chrome::context_menu_cancel_keyboard();
         g_tap_key_captured = false;
-        g_tap_space_captured = false;
         g_audio.offset_cancel_pending = true;
         worm_ui_nuklear_compose_state().inline_offset.inline_offset_cancel_pending = true;
         g_shortcut_event_count = 0;
@@ -1797,7 +1795,11 @@ static bool native_menu_active() {
 
 int worm_ui_frontend_title_bar_height(void) { return native_menu_active() ? 0 : 36; }
 
-static void service_native_menu(const WormUiWorkspaceView& view, WormUiWorkspaceAction& action) {
+static void service_native_menu(const WormUiWorkspaceView& view, WormUiWorkspaceAction&
+#if defined(WORMEDIT_HAS_MACOS_MENU)
+                                action
+#endif
+) {
     refresh_workspace_menu_model(view);
 #if defined(WORMEDIT_HAS_MACOS_MENU)
     if (!native_menu_active()) return;

@@ -1856,7 +1856,7 @@ TEST_CASE("Relinking a missing sound to a fallback candidate is one undo step",
 TEST_CASE("Lane-less chart fallback relink preserves revision guards and undo",
           "[compose-action-notifications][audio-fallback][missing-audio]") {
     action_notification_fixture_t fixture;
-    const auto base = std::filesystem::temp_directory_path() / "wormedit-fallback-relink";
+    const auto base = std::filesystem::temp_directory_path() / "wormedit-fallback-relink-lane-less";
     std::error_code error;
     std::filesystem::remove_all(base, error);
     std::filesystem::create_directories(base);

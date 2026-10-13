@@ -10,10 +10,6 @@
 namespace wormedit {
 namespace {
 
-constexpr auto maximum_i64_magnitude =
-    static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
-constexpr auto minimum_i64_magnitude = maximum_i64_magnitude + 1;
-
 using checked_math::magnitude;
 
 using checked_math::checked_multiply;

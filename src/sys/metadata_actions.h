@@ -14,8 +14,8 @@
 #include <vector>
 
 namespace wormedit {
-class document_history_t;
-class workspace_controller_t;
+struct document_history_t;
+struct workspace_controller_t;
 class task_scheduler_t;
 }
 

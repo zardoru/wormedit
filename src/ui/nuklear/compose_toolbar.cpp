@@ -320,7 +320,7 @@ static void render_compose_bgm_column_count_controls(const ComposeToolbarContext
     const bool field_clicked = nk_input_is_mouse_click_in_rect(
         &context->input, NK_BUTTON_LEFT, field_bounds);
     const auto flags = wormedit::ui::chrome::worm_ui_nuklear_text_field(
-        context, static_cast<nk_flags>(NK_EDIT_FIELD | NK_EDIT_SIG_ENTER), draft.text.data(),
+        context, static_cast<nk_flags>(static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER), draft.text.data(),
         static_cast<int>(draft.text.size()), nk_filter_decimal);
     const bool edit_active = (flags & NK_EDIT_ACTIVE) != 0;
     const bool deactivated = (flags & NK_EDIT_DEACTIVATED) != 0;
@@ -382,7 +382,7 @@ static void render_inline_offset(const ComposeToolbarContext& toolbar, bool in_i
         return;
     }
     const auto flags = wormedit::ui::chrome::autofocus_text_field(context,
-        NK_EDIT_FIELD | NK_EDIT_SIG_ENTER | NK_EDIT_AUTO_SELECT,
+        static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER | NK_EDIT_AUTO_SELECT,
         state.inline_offset.inline_offset_text.data(), static_cast<int>(state.inline_offset.inline_offset_text.size()),
         nk_filter_default, state.inline_offset.inline_offset_focus_pending);
     worm_ui_nuklear_update_inline_offset(state, view, *toolbar.action,

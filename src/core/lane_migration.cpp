@@ -405,7 +405,7 @@ auto collect_merge_collisions(std::vector<migration_item_t>& items,
                 const auto prior_event = std::ranges::find_if(expirations, [&](const auto& entry) {
                     return entry.second.source_lane == *other && entry.second.id.value == prior_id;
                 });
-                proposal.collisions.push_back({prior_id, item.id, item.target_lane,
+                proposal.collisions.push_back({object_id_t{prior_id}, item.id, item.target_lane,
                     prior_event != expirations.end() && prior_event->second.sound_channel_event,
                     item.sound_channel_event});
             }

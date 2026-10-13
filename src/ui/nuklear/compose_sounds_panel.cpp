@@ -48,8 +48,6 @@ struct SoundsPanel {
 };
 
 void prepare_pending_group_review(const SoundsPanel& panel);
-void render_sound_row_context_menu(const SoundsPanel& panel, std::size_t shown_index,
-                                   std::uint64_t id, struct nk_rect bounds);
 void render_sound_group_context_menu(const SoundsPanel& panel);
 
 // ---- Multi-file picker. SDL may call back from another thread. ----

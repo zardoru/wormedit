@@ -636,7 +636,7 @@ auto add_adaptive_sample_points(std::map<std::uint64_t, long double>& sampled,
     return result.diagnostics.empty();
 }
 
-auto materialize_sample_points(const chart_document_t& chart, const sv_recipe_t& recipe,
+auto materialize_sample_points(const chart_document_t&, const sv_recipe_t& recipe,
                                const measure_index_t& index,
                                const std::pair<std::uint64_t, std::uint64_t>& range,
                                std::map<std::uint64_t, long double>& sampled,

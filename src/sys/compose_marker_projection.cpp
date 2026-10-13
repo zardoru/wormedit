@@ -2,7 +2,7 @@
 namespace wormedit::sys::compose_projection_detail {
 auto populate_compose_audio_bookmark(
     compose_marker_storage_t<WormUiComposeAudioBookmarkView>& storage,
-    const wormedit::bookmark_t& bookmark, WormUiComposeView& view) -> bool {
+    const wormedit::bookmark_t& bookmark, WormUiComposeView&) -> bool {
     if (!bookmark.audio_milliseconds || bookmark.position) {
         report_compose_projection(storage.flattened, projection_feedback_kind_t::audio_bookmark,
                                   wormedit::notification_severity_t::error,
@@ -26,7 +26,7 @@ auto populate_compose_audio_bookmark(
 auto populate_compose_beat_bookmark(compose_marker_storage_t<WormUiComposeBookmarkView>& storage,
                                     const wormedit::bookmark_t& bookmark,
                                     const wormedit::measure_index_t& measures,
-                                    WormUiComposeView& view) -> bool {
+                                    WormUiComposeView&) -> bool {
     if (!bookmark.position) {
         report_compose_projection(
             storage.flattened, projection_feedback_kind_t::beat_bookmark_position,
@@ -93,7 +93,7 @@ bool populate_compose_bookmark_storage(flattened_workspace_t& flattened,
 
 auto populate_compose_audio_section(
     compose_marker_storage_t<WormUiComposeAudioSectionView>& storage,
-    const wormedit::section_t& section, WormUiComposeView& view) -> bool {
+    const wormedit::section_t& section, WormUiComposeView&) -> bool {
     if (!section.audio_millisecond_span || section.beat_span ||
         section.audio_millisecond_span->second <= section.audio_millisecond_span->first) {
         report_compose_projection(storage.flattened, projection_feedback_kind_t::audio_section,
@@ -124,7 +124,7 @@ auto populate_compose_audio_section(
 auto populate_compose_beat_section(compose_marker_storage_t<WormUiComposeSectionView>& storage,
                                    const wormedit::section_t& section,
                                    const wormedit::measure_index_t& measures,
-                                   WormUiComposeView& view) -> bool {
+                                   WormUiComposeView&) -> bool {
     if (!section.beat_span) {
         report_compose_projection(
             storage.flattened, projection_feedback_kind_t::beat_section_position,

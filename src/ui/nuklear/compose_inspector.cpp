@@ -648,7 +648,7 @@ void render_quantize_custom_popup(const ComposeInspectorContext& i) {
     nk_label(c, "Grid divisions", NK_TEXT_LEFT);
     nk_layout_row_dynamic(c, 25, 1);
     const auto edit = wormedit::ui::chrome::worm_ui_nuklear_text_field(
-        c, NK_EDIT_FIELD | NK_EDIT_SIG_ENTER, quantize_grid_text.data(), quantize_grid_text.size(),
+        c, static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER, quantize_grid_text.data(), quantize_grid_text.size(),
         nk_filter_decimal);
     quantize_grid_editing = (edit & NK_EDIT_ACTIVE) != 0;
     nk_layout_row_dynamic(c, 25, 1);

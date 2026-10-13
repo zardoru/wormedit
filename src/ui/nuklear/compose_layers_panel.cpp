@@ -232,7 +232,7 @@ void render_layer_name_editor(const LayersPanel& panel, const WormUiComposeSeman
     const auto allowed = layer_editor_allowed(panel, layer);
     if (!allowed) nk_widget_disable_begin(context);
     nk_layout_row_dynamic(context, 24, 1);
-    (void)wormedit::ui::chrome::autofocus_text_field(context, NK_EDIT_FIELD | NK_EDIT_AUTO_SELECT,
+    (void)wormedit::ui::chrome::autofocus_text_field(context, static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_AUTO_SELECT,
         state.layer_editor.semantic_layer_name.data(), static_cast<int>(state.layer_editor.semantic_layer_name.size()),
         nk_filter_default, state.layer_editor.semantic_layer_name_focus_pending);
     if (!allowed) nk_widget_disable_end(context);

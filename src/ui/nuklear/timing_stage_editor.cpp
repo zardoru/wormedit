@@ -17,14 +17,6 @@
 
 static auto& state = worm_ui_nuklear_timing_state();
 
-static constexpr std::array<WormUiTimingLaneKind, 8> timing_lane_kinds{
-    WORM_UI_TIMING_LANE_BPM, WORM_UI_TIMING_LANE_SCROLL, WORM_UI_TIMING_LANE_SPEED,
-    WORM_UI_TIMING_LANE_STOP, WORM_UI_TIMING_LANE_DELAY, WORM_UI_TIMING_LANE_WARP,
-    WORM_UI_TIMING_LANE_KIAI, WORM_UI_TIMING_LANE_ANCHOR};
-static constexpr std::array<const char*, 8> timing_lane_labels{
-    "BPM", "Scroll / SV", "SPEEDS", "Stop", "Delay", "Warp", "Kiai", "Anchor"};
-
-
 static auto valid_timing_view_header(const WormUiTimingView& view) -> bool {
     return view.speed_count <= WORM_UI_TIMING_SPEED_CAPACITY &&
         (view.speed_count == 0 || view.speeds) &&

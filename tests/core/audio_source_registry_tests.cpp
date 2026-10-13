@@ -340,7 +340,7 @@ TEST_CASE("long streaming sources keep their decoder open when idle decoders are
     using namespace wormedit::audio;
     const auto long_path = write_long_wav();
     decoded_source_registry_t registry{64, 1};
-    REQUIRE(registry.register_source({.asset = 100, .path = long_path,
+    REQUIRE(registry.register_source({.asset = {100}, .path = long_path,
                                       .source = {"fixture:long", "generated-v1:long"}}).status ==
             source_registration_status_t::registered);
     decoded_block_cache_t cache;

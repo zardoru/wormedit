@@ -106,6 +106,28 @@
         "WORMEDIT_ENABLE_FFMPEG": "ON",
         "WORMEDIT_REQUIRE_FFMPEG": "ON"
       }
+    },
+    {
+      "name": "linux-clang",
+      "displayName": "Linux Clang with libstdc++",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-clang",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_TESTING": "ON",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "linux-clang-libcxx",
+      "displayName": "Linux Clang with libc++",
+      "inherits": "linux-clang",
+      "binaryDir": "${sourceDir}/build-clang-libcxx",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-stdlib=libc++"
+      }
     }
   ],
   "buildPresets": [
@@ -138,6 +160,16 @@
       "name": "windows-cross-release",
       "configurePreset": "windows-cross-release",
       "jobs": 4
+    },
+    {
+      "name": "linux-clang",
+      "configurePreset": "linux-clang",
+      "jobs": 4
+    },
+    {
+      "name": "linux-clang-libcxx",
+      "configurePreset": "linux-clang-libcxx",
+      "jobs": 4
     }
   ],
   "testPresets": [
@@ -165,6 +197,26 @@
     {
       "name": "windows-cross-headless",
       "configurePreset": "windows-cross-headless",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-clang",
+      "configurePreset": "linux-clang",
+      "execution": {
+        "jobs": 2
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-clang-libcxx",
+      "configurePreset": "linux-clang-libcxx",
+      "execution": {
+        "jobs": 2
+      },
       "output": {
         "outputOnFailure": true
       }

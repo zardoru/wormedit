@@ -1220,7 +1220,6 @@ void populate_bookmark_chooser(const workspace_projection_context_t& projection,
 void populate_compose_tab(const workspace_projection_context_t& projection, const wormedit::workspace_compose_view_t& tab) {
     auto& result = projection.result;
     const auto& source = projection.source;
-    const auto& document = projection.document;
                 result.view.compose.visible = true;
                 const auto& outline = tab.bms_branch_outline;
                 auto& compose = result.view.compose;

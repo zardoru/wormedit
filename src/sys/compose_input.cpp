@@ -462,7 +462,7 @@ auto lane_key_sound(const wormedit::editor_interaction_state_t& state, std::uint
 
 auto dispatch_compose_lane_key_release(const WormUiComposeInputAction& input,
                                        wormedit::document_history_t& history,
-                                       wormedit::workspace_controller_t& workspace,
+                                       wormedit::workspace_controller_t&,
                                        wormedit::editor_interaction_state_t& state,
                                        wormedit::editor_interaction_result_t& result,
                                        std::string_view& accepted)

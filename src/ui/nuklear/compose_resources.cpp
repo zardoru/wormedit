@@ -169,7 +169,7 @@ void render_layer_creation(const ResourcePanel& panel) {
         nk_layout_row_dynamic(panel.context, 20, 1);
         nk_label(panel.context, "Name", NK_TEXT_LEFT);
         nk_layout_row_dynamic(panel.context, 28, 1);
-        chrome::autofocus_text_field(panel.context, NK_EDIT_FIELD | NK_EDIT_AUTO_SELECT,
+        chrome::autofocus_text_field(panel.context, static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_AUTO_SELECT,
             state.layer_editor.layer_creation_name.data(), static_cast<int>(state.layer_editor.layer_creation_name.size()),
             nk_filter_default, state.layer_editor.layer_creation_focus_pending);
         const auto valid = std::string_view(state.layer_editor.layer_creation_name.data()).find_first_not_of(" \t\r\n") !=

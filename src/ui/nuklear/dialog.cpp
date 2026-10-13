@@ -138,7 +138,7 @@ void draw_title_row(Dialog& dialog, nk_context* context, const char* title, cons
         dialog.drag_handle.w = title_bounds.x + title_bounds.w - grip.x;
         if (nk_input_is_mouse_hovering_rect(&context->input, dialog.drag_handle))
             nuklear::tooltip::text(context, "Drag to move window");
-        if (!(context->current->flags & (NK_WINDOW_ROM | NK_WINDOW_NO_INPUT)) &&
+        if (!(context->current->flags & (static_cast<nk_flags>(NK_WINDOW_ROM) | NK_WINDOW_NO_INPUT)) &&
             nk_input_is_mouse_pressed(&context->input, NK_BUTTON_LEFT) &&
             nk_input_is_mouse_hovering_rect(&context->input, dialog.drag_handle)) {
             dialog.dragging = true;

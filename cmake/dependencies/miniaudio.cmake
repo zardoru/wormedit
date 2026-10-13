@@ -45,7 +45,7 @@ target_include_directories(wormedit_audio_decoder
     PUBLIC "${CMAKE_SOURCE_DIR}/include"
     PRIVATE "${wormedit_miniaudio_source_dir}"
 )
-target_compile_features(wormedit_audio_decoder PUBLIC cxx_std_20)
+target_compile_features(wormedit_audio_decoder PUBLIC cxx_std_23)
 target_compile_definitions(wormedit_audio_decoder PRIVATE
     MA_NO_DEVICEIO
     MA_NO_ENCODING

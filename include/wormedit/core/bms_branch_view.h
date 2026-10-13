@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/result.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -28,9 +29,29 @@ struct bms_branch_projection_diagnostic_t {
     bms_branch_projection_status_t code{bms_branch_projection_status_t::invalid_tree};
     std::string message;
     branch_id_t branch;
+    [[nodiscard]] constexpr auto is_error() const noexcept -> bool {
+        return true;
+    }
+    auto operator==(const bms_branch_projection_diagnostic_t&) const -> bool = default;
 };
 
+struct bms_branch_projection_t {
+    [[nodiscard]] static auto from(const bms_control_node_t& root,
+                                   const std::vector<branch_selection_t>& selections,
+                                   bms_branch_projection_limits_t limits = {})
+        -> diagnosed_t<bms_branch_projection_t, std::vector<bms_branch_projection_diagnostic_t>>;
+    std::vector<branch_id_t> active_statement_ids;
+    std::vector<std::size_t> active_statement_source_orders;
+    std::vector<branch_id_t> visited_selection_controls;
+    auto operator==(const bms_branch_projection_t&) const -> bool = default;
+};
+using bms_branch_projection_outcome_t =
+    diagnosed_t<bms_branch_projection_t, std::vector<bms_branch_projection_diagnostic_t>>;
+
 struct bms_branch_projection_result_t {
+    [[nodiscard]] static auto from(bms_branch_projection_outcome_t&& outcome)
+        -> bms_branch_projection_result_t;
+
     bms_branch_projection_status_t status{bms_branch_projection_status_t::invalid_tree};
     std::vector<branch_id_t> active_statement_ids;
     std::vector<std::size_t> active_statement_source_orders;

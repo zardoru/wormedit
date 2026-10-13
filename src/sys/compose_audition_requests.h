@@ -12,7 +12,7 @@
 #include "sys/sdl_audition_output.h"
 #include "sys/sdl_preview_output.h"
 #include <wormedit/audio/object_audition.h>
-#include <wormedit/audio/source_registry.h>
+#include "sys/project_audio_sources.h"
 #endif
 
 namespace wormedit::sys {
@@ -25,7 +25,7 @@ struct preview_audition_inputs_t {
 };
 
 struct object_audition_inputs_t {
-    audio::decoded_source_registry_t& sources;
+    project_audio_sources_t& sources;
     audio::object_audition_controller_t& controller;
     sdl_audition_output_t& output;
 };

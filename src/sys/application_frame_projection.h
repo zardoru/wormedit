@@ -19,7 +19,7 @@
 #include "sys/waveform_analysis_runtime.h"
 #include <wormedit/audio/audition_session.h>
 #include <wormedit/audio/preview_session.h>
-#include <wormedit/audio/source_registry.h>
+#include "sys/project_audio_sources.h"
 #endif
 
 #include <filesystem>
@@ -58,7 +58,7 @@ struct application_frame_projection_context_t {
 #endif
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     runtime::waveform_analysis_t& waveform_runtime;
-    audio::decoded_source_registry_t& audition_sources;
+    project_audio_sources_t& audition_sources;
     std::uint64_t audition_source_generation{};
     audio::audition_session_t& audition_session;
     audio::preview_session_t& preview_session;

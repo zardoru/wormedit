@@ -1,3 +1,4 @@
+#include "project_audio_sources_fixture.h"
 #include "sys/compose_audition_requests.h"
 #include "sys/audio_transport_frame.h"
 #include <SDL3/SDL_timer.h>
@@ -12,7 +13,8 @@ void expect_audition(bool value) { REQUIRE(value); }
 struct audition_fixture_t {
     notification_center_t center;
     notification_sink_t sink{center};
-    audio::decoded_source_registry_t sources;
+    wormedit::sys::project_audio_sources_t project_sources;
+    wormedit::audio::decoded_source_registry_t& sources = project_sources.registry();
     audio::decoded_block_cache_t blocks;
     audio::transport_t transport{blocks};
     audio::audition_transport_bridge_t audition_bridge{transport};
@@ -31,7 +33,7 @@ struct audition_fixture_t {
     }
     auto inputs() -> compose_audition_inputs_t {
         return {{preview_session, preview, preview_state},
-                {sources, object_audition, output}, sink};
+                {retained_sources_for(history.document, project_sources), object_audition, output}, sink};
     }
     void catalog(std::optional<resource_id_t>& request) {
         process_sound_audition_request(request, history, inputs());

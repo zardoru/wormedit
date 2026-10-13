@@ -3,7 +3,7 @@
 #include "sys/compose_input.h"
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-#include <wormedit/audio/source_registry.h>
+#include "sys/project_audio_sources.h"
 #include <wormedit/audio/waveform_job.h>
 
 #include <functional>
@@ -27,7 +27,7 @@ struct bmson_waveform_projection_context_t {
     const wormedit::workspace_controller_t& workspace;
     wormedit::editor_interaction_state_t* interaction_state;
     compose_scene_cache_t& cache;
-    wormedit::audio::decoded_source_registry_t& audition_sources;
+    project_audio_sources_t& audition_sources;
     waveform_analysis_slot_t transport_waveform;
     waveform_analysis_slot_t channel_waveform;
     std::uint64_t audition_source_generation;

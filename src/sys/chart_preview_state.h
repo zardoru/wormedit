@@ -2,7 +2,7 @@
 
 #include <wormedit/audio/preview_bridge.h>
 #include <wormedit/audio/preview_session.h>
-#include <wormedit/audio/source_registry.h>
+#include "sys/project_audio_sources.h"
 #include <wormedit/audio/audition_session.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/workspace.h>
@@ -64,14 +64,14 @@ struct chart_preview_t {
                                          const workspace_controller_t& workspace) const;
     [[nodiscard]] auto compile_if_needed(
         const chart_document_t& selected_chart, const song_document_t& document,
-        const audio::decoded_source_registry_t& sources,
+        project_audio_sources_t& sources,
         const std::vector<audio::preview_metronome_source_binding_t>& metronome_bindings)
         -> std::optional<std::string>;
     [[nodiscard]] bool playing(const audio::preview_session_t& session) const;
     [[nodiscard]] std::uint64_t current_frame(const audio::preview_session_t& session) const;
     [[nodiscard]] auto play_pause(
         const chart_document_t* selected_chart, const song_document_t& document,
-        const audio::decoded_source_registry_t& sources,
+        project_audio_sources_t& sources,
         const std::vector<audio::preview_metronome_source_binding_t>& metronome_bindings,
         sdl_audition_output_t& audition_output,
         audio::preview_session_t& preview_session, sdl_preview_output_t& preview_output,

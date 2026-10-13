@@ -66,14 +66,15 @@ void process_object_request(const editor_object_audition_request_t& request,
         return;
     }
 
-    inputs.audition.sources.await_pending();
+    inputs.audition.sources.ensure_current(history.document);
+    inputs.audition.sources.registry().await_pending();
     auto prepared = inputs.audition.controller.prepare(
         history.document, {request.document_revision, request.chart, request.object.id},
-        inputs.audition.sources.bindings());
+        inputs.audition.sources.bindings(history.document));
     if (prepared) {
         if (!audio::bound_stem_audition(
                 history.document, object_sound(history.document, request.chart, request.object.id),
-                inputs.audition.sources.bindings(), prepared.prepared->clips)) {
+                inputs.audition.sources.bindings(history.document), prepared.prepared->clips)) {
             inputs.notifications.post(notification_severity_t::warning,
                                       notification_source_t::audio,
                                       "The stem preview has invalid decoded source geometry.");
@@ -102,7 +103,8 @@ void process_object_request(const editor_object_audition_request_t& request,
 
 void process_draft_request(const bmson_draft_audition_request_t& request,
                            document_history_t& history, const compose_audition_inputs_t& inputs) {
-    inputs.audition.sources.await_pending();
+    inputs.audition.sources.ensure_current(history.document);
+    inputs.audition.sources.registry().await_pending();
     const auto resolved =
         audio::resolve_bmson_draft_audition(history.document,
                                             {.expected_revision = request.revision,
@@ -110,7 +112,7 @@ void process_draft_request(const bmson_draft_audition_request_t& request,
                                              .reference_bgm_event = request.reference,
                                              .markers = request.markers,
                                              .marker_index = request.marker_index},
-                                            inputs.audition.sources.bindings());
+                                            inputs.audition.sources.bindings(history.document));
     if (resolved) {
         pause_preview(inputs.preview.session, inputs.preview.output, inputs.preview.state);
         const auto started = inputs.audition.output.start(resolved.clips);
@@ -142,8 +144,9 @@ void process_sound_audition_request(std::optional<resource_id_t>& request,
                                   "That sound is no longer in the list.");
         return;
     }
-    inputs.audition.sources.await_pending();
-    const auto bindings = inputs.audition.sources.bindings();
+    inputs.audition.sources.ensure_current(history.document);
+    inputs.audition.sources.registry().await_pending();
+    const auto bindings = inputs.audition.sources.bindings(history.document);
     const auto binding =
         std::ranges::find(bindings, resource->asset, &audio::audition_source_binding_t::asset);
     if (binding == bindings.end() || binding->output_frame_count == 0) {

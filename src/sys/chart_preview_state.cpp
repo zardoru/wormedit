@@ -68,11 +68,11 @@ auto preview_diagnostic_feedback(chart_preview_t& preview, const auto& diagnosti
 constexpr object_id_t preview_music_object{std::numeric_limits<std::uint64_t>::max()};
 
 auto registered_music_asset(const song_document_t& document,
-                            const audio::decoded_source_registry_t& sources)
+                            project_audio_sources_t& sources)
     -> std::optional<std::pair<resource_id_t, asset_id_t>> {
     const auto music = std::ranges::find_if(document.resources, [&](const auto& resource) {
         return std::ranges::find(resource.roles, resource_role_t::music) != resource.roles.end() &&
-               sources.binding(resource.asset).has_value();
+               sources.binding(document, resource.asset).has_value();
     });
     if (music == document.resources.end()) return std::nullopt;
     return std::pair{music->id, music->asset};
@@ -192,10 +192,11 @@ auto chart_preview_t::set_layer_assist(chart_id_t selected, std::span<const laye
 
 auto chart_preview_t::compile_if_needed(
     const chart_document_t& selected_chart, const song_document_t& document,
-    const audio::decoded_source_registry_t& sources,
+    project_audio_sources_t& sources,
     const std::vector<audio::preview_metronome_source_binding_t>& metronome_bindings)
     -> std::optional<std::string> {
-    sources.await_pending();
+    sources.ensure_current(document);
+    sources.registry().await_pending();
     const auto selected_music = registered_music_asset(document, sources);
     const auto selected_music_asset = selected_music
                                           ? std::optional<asset_id_t>{selected_music->second}
@@ -220,13 +221,13 @@ auto chart_preview_t::compile_if_needed(
     if (!built_schedule)
         return preview_diagnostic_feedback(*this, built_schedule.diagnostics, "Chart preview could not be compiled.");
     auto resolved = audio::resolve_preview_bindings(
-        document, selected_chart.id, *built_schedule.schedule, sources.bindings(),
+        document, selected_chart.id, *built_schedule.schedule, sources.bindings(document),
         {.skip_unavailable_preview_sources = true});
     if (!resolved)
         return preview_diagnostic_feedback(*this, resolved.diagnostics, "Chart audio could not be resolved.");
 
     if (selected_music) {
-        const auto source = sources.binding(selected_music->second);
+        const auto source = sources.binding(document, selected_music->second);
         if (source && source->output_frame_count != 0) {
             built_schedule.schedule->music = make_preview_music_event(
                 selected_music->first, source->output_frame_count);
@@ -312,7 +313,7 @@ auto milliseconds_to_frame(std::int64_t milliseconds, std::uint32_t sample_rate)
 
 auto chart_preview_t::play_pause(
     const chart_document_t* selected_chart, const song_document_t& document,
-    const audio::decoded_source_registry_t& sources,
+    project_audio_sources_t& sources,
     const std::vector<audio::preview_metronome_source_binding_t>& metronome_bindings,
     sdl_audition_output_t& audition_output, audio::preview_session_t& preview_session,
     sdl_preview_output_t& preview_output, std::optional<local_position_t> start_cursor,

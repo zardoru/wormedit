@@ -511,6 +511,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose_audition_requests.cpp
         src/sys/crash_backtrace.cpp
         src/sys/audio_source_registration.cpp
+        src/sys/project_audio_sources.cpp
         src/sys/application_edit_helpers.cpp
         src/sys/application_frame_projection.cpp
         src/sys/application_frame_services.cpp
@@ -691,4 +692,8 @@ if(BUILD_TESTING)
             -P "${CMAKE_SOURCE_DIR}/cmake/check_chart_editor_docs.cmake"
     )
     set_tests_properties(documentation.chart_editor_state PROPERTIES LABELS "unit;documentation")
+endif()
+
+if(WORMEDIT_BUILD_APP AND WORMEDIT_ENABLE_AUDIO_DECODER)
+    target_compile_definitions(wormedit PRIVATE WORMEDIT_HAS_PROJECT_AUDIO_OUTPUTS=1 WORMEDIT_HAS_PROJECT_AUDIO_WAVEFORMS=1)
 endif()

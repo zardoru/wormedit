@@ -1,3 +1,4 @@
+#include "project_audio_sources_fixture.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "sys/application_command_dispatch.h"
 #include "sys/application_defaults.h"
@@ -869,7 +870,8 @@ TEST_CASE("Idle Compose timing projection does not build a measure index", "[sys
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 TEST_CASE("Waveform runtime reports decoder failures instead of silently losing the waveform",
           "[sys][waveform-projection]") {
-    audio::decoded_source_registry_t sources;
+    wormedit::sys::project_audio_sources_t project_sources;
+    wormedit::audio::decoded_source_registry_t& sources = project_sources.registry();
     notification_center_t center;
     notification_sink_t sink{center};
     runtime::waveform_analysis_t waveform(sources, nullptr, sink);
@@ -1217,7 +1219,8 @@ TEST_CASE("Compose envelope padding stays private at zero fractional and normal 
 namespace {
 struct channel_projection_fixture_t : envelope_projection_fixture_t {
     workspace_controller_t workspace;
-    audio::decoded_source_registry_t sources;
+    wormedit::sys::project_audio_sources_t project_sources;
+    wormedit::audio::decoded_source_registry_t& sources = project_sources.registry();
     std::optional<asset_id_t> asset{asset_id_t{7}};
     std::shared_ptr<const audio::waveform_analysis_result_t> channel_analysis;
     channel_projection_fixture_t() {
@@ -1264,7 +1267,7 @@ struct channel_projection_fixture_t : envelope_projection_fixture_t {
     void project_channel() {
         cache.waveform.channel_waveform_rows.clear();
         const bmson_waveform_projection_context_t context{flattened, history, workspace, &interaction,
-            cache, sources, {asset, channel_analysis}, {asset, channel_analysis}, 1};
+            cache, retained_sources_for(history.document, project_sources), {asset, channel_analysis}, {asset, channel_analysis}, 1};
         populate_bmson_waveform_projection(context);
         expect_published_waveform_rows(cache.waveform.channel_waveform_rows, flattened.view.compose.viewport_height_pixels);
     }
@@ -1300,7 +1303,7 @@ TEST_CASE("BMSON stems other than the selected one get their own lane rows or a 
     channel_projection_fixture_t fixture;
     std::shared_ptr<const audio::waveform_analysis_result_t> stem_result = fixture.channel_analysis;
     const bmson_waveform_projection_context_t context{fixture.flattened, fixture.history, fixture.workspace,
-        &fixture.interaction, fixture.cache, fixture.sources, {fixture.asset, fixture.channel_analysis},
+        &fixture.interaction, fixture.cache, retained_sources_for(fixture.history.document, fixture.project_sources), {fixture.asset, fixture.channel_analysis},
         {fixture.asset, fixture.channel_analysis}, 1,
         [&](asset_id_t) { return stem_result; }};
 
@@ -1324,7 +1327,7 @@ TEST_CASE("BMSON stems other than the selected one get their own lane rows or a 
     // Audio that has not finished decoding is a placeholder, never a blocked frame.
     stem_result.reset();
     const bmson_waveform_projection_context_t pending_context{fixture.flattened, fixture.history, fixture.workspace,
-        &fixture.interaction, fixture.cache, fixture.sources, {fixture.asset, nullptr},
+        &fixture.interaction, fixture.cache, retained_sources_for(fixture.history.document, fixture.project_sources), {fixture.asset, nullptr},
         {std::nullopt, nullptr}, 1, [&](asset_id_t) { return stem_result; }};
     populate_bmson_waveform_projection(pending_context);
     CHECK(fixture.flattened.view.compose.stem_waveform_count == 1);
@@ -1338,7 +1341,7 @@ auto project_stable_stem_keys(channel_projection_fixture_t& fixture, bool pendin
     -> std::vector<std::uint64_t> {
     fixture.flattened.view.compose.selected_bmson_bgm_event_id = 0;
     const bmson_waveform_projection_context_t context{fixture.flattened, fixture.history,
-        fixture.workspace, &fixture.interaction, fixture.cache, fixture.sources,
+        fixture.workspace, &fixture.interaction, fixture.cache, retained_sources_for(fixture.history.document, fixture.project_sources),
         {fixture.asset, fixture.channel_analysis}, {std::nullopt, nullptr}, 1,
         [&](asset_id_t) { return pending ? nullptr : fixture.channel_analysis; }};
     populate_bmson_waveform_projection(context);
@@ -1457,7 +1460,7 @@ void consume_prepared_stem_frame(channel_projection_fixture_t& fixture,
     runtime.service_compose_stem_waveforms(fixture.history.document, fixture.workspace,
         fixture.cache, &fixture.interaction, channels);
     const bmson_waveform_projection_context_t context{fixture.flattened, fixture.history,
-        fixture.workspace, &fixture.interaction, fixture.cache, fixture.sources,
+        fixture.workspace, &fixture.interaction, fixture.cache, retained_sources_for(fixture.history.document, fixture.project_sources),
         {fixture.asset, fixture.channel_analysis}, {fixture.asset, fixture.channel_analysis}, 1,
         [](asset_id_t) { return std::shared_ptr<const audio::waveform_analysis_result_t>{}; },
         channels};
@@ -5018,7 +5021,7 @@ void check_mixed_production_projection(channel_projection_fixture_t& fixture,
     if (supply_all) visible = all;
     std::size_t requests{};
     const bmson_waveform_projection_context_t context{fixture.flattened, fixture.history,
-        fixture.workspace, &fixture.interaction, fixture.cache, fixture.sources,
+        fixture.workspace, &fixture.interaction, fixture.cache, retained_sources_for(fixture.history.document, fixture.project_sources),
         {std::nullopt, nullptr}, {asset_id_t{8}, packed_analysis}, 1,
         [&](asset_id_t) { ++requests; return fixture.channel_analysis; }, visible};
     populate_bmson_waveform_projection(context);
@@ -5473,7 +5476,7 @@ struct packed_projection_fixture_t : channel_projection_fixture_t {
         const std::optional<asset_id_t> absent;
         const std::shared_ptr<const audio::waveform_analysis_result_t> missing;
         const bmson_waveform_projection_context_t context{flattened, history, workspace,
-            &interaction, cache, sources, {absent, missing}, {absent, missing}, 1,
+            &interaction, cache, retained_sources_for(history.document, project_sources), {absent, missing}, {absent, missing}, 1,
             [&](asset_id_t) { return ready ? channel_analysis : nullptr; }};
         populate_bmson_waveform_projection(context);
     }

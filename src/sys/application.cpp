@@ -72,6 +72,7 @@
 #include "sys/crash_backtrace.h"
 #include "sys/inline_preview_cursor.h"
 #include "sys/audio_source_registration.h"
+#include "sys/project_audio_sources.h"
 #include "sys/compose_waveform_overlays.h"
 #include "ui/frontend.h"
 #include "wormedit/config.h"
@@ -1252,17 +1253,6 @@ void post_audio_inventory_feedback(std::optional<std::size_t> unavailable,
             std::to_string(*unavailable) + " audio asset(s) are unavailable for preview.");
 }
 
-// Registers audio assets added or removed by document edits (linking, undo, redo) so
-// playback and the waveform see them without a save or reload.
-void reconcile_audition_sources_after_edit(
-    const wormedit::sys::audition_source_reconciliation_context_t& reconciliation,
-    std::uint64_t revision, std::uint64_t& reconciled_revision,
-    const wormedit::notification_sink_t& notifications) {
-    if (revision == reconciled_revision) return;
-    reconciled_revision = revision;
-    post_audio_inventory_feedback(
-        wormedit::sys::reconcile_audition_sources(reconciliation, true), notifications);
-}
 #endif
 
 auto requested_project_lane_count(std::uint8_t index) -> std::optional<std::uint32_t> {
@@ -2146,32 +2136,26 @@ struct application_t::implementation_t {
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     struct audio_runtime_t {
         notification_sink_t& notifications;
-        audio::decoded_source_registry_t audition_sources{};
+        project_audio_sources_t project_sources{};
         audio::decoded_block_cache_t audition_cache{};
         audio::transport_t audition_transport{audition_cache};
         audio::audition_transport_bridge_t audition_bridge{audition_transport};
         audio::object_audition_controller_t object_audition{audition_bridge};
-        audio::audition_session_t audition_session{audition_sources, audition_transport,
+        audio::audition_session_t audition_session{project_sources.registry(), audition_transport,
                                                    audition_bridge};
         sdl_audition_output_t audition_output{audition_session};
         audio::decoded_block_cache_t preview_cache{audio::preview_block_cache_limits()};
-        runtime::waveform_analysis_t waveform_runtime{audition_sources, &preview_cache,
+        runtime::waveform_analysis_t waveform_runtime{project_sources.registry(), &preview_cache,
                                                       notifications};
         audio::transport_t preview_transport{preview_cache};
         audio::preview_transport_bridge_t preview_bridge{preview_transport};
-        audio::preview_session_t preview_session{audition_sources, preview_transport,
+        audio::preview_session_t preview_session{project_sources.registry(), preview_transport,
                                                  preview_bridge};
         audio::resident_sample_store_t resident_samples{};
         sdl_preview_output_t preview_output{preview_session};
         runtime::chart_preview_t preview_state{};
-        std::vector<audio::preview_metronome_source_binding_t> preview_metronome_bindings{};
-        std::optional<song_id_t> audition_source_project{};
-        std::vector<audition_asset_entry_t> audition_asset_inventory{};
-        std::uint64_t audition_source_generation{};
         task_scheduler_t audition_probe_scheduler{2, 4, background_scheduler_options()};
         resident_sample_loader_t resident_loader{resident_samples, audition_probe_scheduler};
-        std::optional<audition_source_reconciliation_context_t> reconciliation{};
-        std::uint64_t audition_reconciled_revision{};
     } audio_runtime{platform.notification_sink};
 #endif
 
@@ -2482,7 +2466,7 @@ struct application_t::implementation_t {
         session.project_identity.external_player_source_path.clear();
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         post_audio_inventory_feedback(
-            wormedit::sys::reconcile_audition_sources((*audio_runtime.reconciliation), true),
+            audio_runtime.project_sources.reconcile(session.history.document, session.project_identity.asset_base),
             platform.notification_sink);
 #endif
         auto message = "Project saved to " + destination.string();
@@ -2828,7 +2812,7 @@ struct application_t::implementation_t {
         wormedit::sys::reset_application_project_edit_state(commands);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         post_audio_inventory_feedback(
-            wormedit::sys::reconcile_audition_sources((*audio_runtime.reconciliation), true),
+            audio_runtime.project_sources.reconcile(session.history.document, session.project_identity.asset_base),
             platform.notification_sink);
 #endif
     }
@@ -3298,8 +3282,8 @@ struct application_t::implementation_t {
             audio_runtime.preview_state.resume_frame = region->begin_frame;
             audio_runtime.preview_state.paused = false;
             static_cast<void>(audio_runtime.preview_state.play_pause(
-                chart, session.history.document, audio_runtime.audition_sources,
-                audio_runtime.preview_metronome_bindings, audio_runtime.audition_output,
+                chart, session.history.document, audio_runtime.project_sources,
+                audio_runtime.project_sources.metronome_bindings, audio_runtime.audition_output,
                 audio_runtime.preview_session, audio_runtime.preview_output, std::nullopt, false,
                 region->begin_frame));
             if (!audio_runtime.preview_output.playing()) {
@@ -3322,7 +3306,7 @@ struct application_t::implementation_t {
     auto audition_inputs() -> wormedit::sys::compose_audition_inputs_t {
         return {{audio_runtime.preview_session, audio_runtime.preview_output,
                  audio_runtime.preview_state},
-                {audio_runtime.audition_sources, audio_runtime.object_audition,
+                {audio_runtime.project_sources, audio_runtime.object_audition,
                  audio_runtime.audition_output},
                 platform.notification_sink};
     }
@@ -4034,22 +4018,16 @@ struct application_t::implementation_t {
                 audio_runtime.preview_transport.set_resident_snapshot(std::move(snapshot));
             });
         audio_runtime.resident_loader.set_head_cache(&audio_runtime.preview_cache);
-        audio_runtime.reconciliation.emplace(audition_source_reconciliation_context_t{
-            session.history.document, session.project_identity.asset_base,
-            audio_runtime.audition_source_project, audio_runtime.audition_asset_inventory,
-            audio_runtime.audition_source_generation, audio_runtime.audition_sources,
-            audio_runtime.preview_metronome_bindings,
-            [this] {
-                (void)audio_runtime.audition_output.stop();
-                (void)audio_runtime.preview_output.stop();
-            },
-            [this] { audio_runtime.waveform_runtime.reset_sources(); },
-            [this] { audio_runtime.preview_state.invalidate(); },
-            &audio_runtime.audition_probe_scheduler, &audio_runtime.resident_loader});
+        audio_runtime.project_sources.probe_scheduler = &audio_runtime.audition_probe_scheduler;
+        audio_runtime.project_sources.resident_loader = &audio_runtime.resident_loader;
+        audio_runtime.project_sources.notifications = &platform.notification_sink;
+        audio_runtime.project_sources.audition_output = &audio_runtime.audition_output;
+        audio_runtime.project_sources.preview_output = &audio_runtime.preview_output;
+        audio_runtime.project_sources.waveform = &audio_runtime.waveform_runtime;
+        audio_runtime.project_sources.preview = &audio_runtime.preview_state;
         post_audio_inventory_feedback(
-            reconcile_audition_sources((*audio_runtime.reconciliation), false),
-            platform.notification_sink);
-        audio_runtime.audition_reconciled_revision = session.history.document.revision;
+            audio_runtime.project_sources.reconcile(session.history.document,
+                session.project_identity.asset_base, false), platform.notification_sink);
         std::string audition_output_error;
         if (!audio_runtime.audition_output.open(&audition_output_error))
             platform.notification_sink.post(notification_severity_t::error,
@@ -4186,7 +4164,7 @@ struct application_t::implementation_t {
                                           : std::nullopt;
         const auto result = audio_runtime.preview_state.play_pause(
             selected_chart(session.history, session.workspace), session.history.document,
-            audio_runtime.audition_sources, audio_runtime.preview_metronome_bindings,
+            audio_runtime.project_sources, audio_runtime.project_sources.metronome_bindings,
             audio_runtime.audition_output, audio_runtime.preview_session,
             audio_runtime.preview_output,
             compose_cursor ? std::optional{compose_cursor->cursor} : std::nullopt, false,
@@ -4327,7 +4305,7 @@ struct application_t::implementation_t {
                 : nullptr;
         const auto result = audio_runtime.preview_state.play_pause(
             selected_chart(session.history, session.workspace), session.history.document,
-            audio_runtime.audition_sources, audio_runtime.preview_metronome_bindings,
+            audio_runtime.project_sources, audio_runtime.project_sources.metronome_bindings,
             audio_runtime.audition_output, audio_runtime.preview_session,
             audio_runtime.preview_output, std::nullopt, true);
         if (starting && audio_runtime.preview_output.playing())
@@ -4401,7 +4379,7 @@ struct application_t::implementation_t {
     void configure_transport_commands() {
         commands.preferences.transport_metronome_available =
             audio_runtime.preview_output.available() &&
-            !audio_runtime.preview_metronome_bindings.empty();
+            !audio_runtime.project_sources.metronome_bindings.empty();
         commands.services.transport_set_layer_assist =
             [this](wormedit::chart_id_t chart, std::span<const wormedit::layer_id_t> layers) {
                 return on_transport_set_layer_assist(chart, layers);
@@ -4537,11 +4515,11 @@ struct application_t::implementation_t {
     void service_frame_audio() {
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::audio_service);
-        reconcile_audition_sources_after_edit(
-            (*audio_runtime.reconciliation), session.history.document.revision,
-            audio_runtime.audition_reconciled_revision, platform.notification_sink);
+        post_audio_inventory_feedback(
+            audio_runtime.project_sources.reconcile_if_needed(session.history.document),
+            platform.notification_sink);
         if (const auto failed =
-                wormedit::sys::drain_audition_probe_failures(audio_runtime.audition_sources)) {
+                wormedit::sys::drain_audition_probe_failures(audio_runtime.project_sources.registry())) {
             platform.notification_sink.post(*failed);
         }
         if (const auto streaming = audio_runtime.resident_loader.drain_report()) {
@@ -4656,8 +4634,8 @@ struct application_t::implementation_t {
 #endif
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
             .waveform_runtime = audio_runtime.waveform_runtime,
-            .audition_sources = audio_runtime.audition_sources,
-            .audition_source_generation = audio_runtime.audition_source_generation,
+            .audition_sources = audio_runtime.project_sources,
+            .audition_source_generation = audio_runtime.project_sources.generation,
             .audition_session = audio_runtime.audition_session,
             .preview_session = audio_runtime.preview_session,
             .preview_state = audio_runtime.preview_state,

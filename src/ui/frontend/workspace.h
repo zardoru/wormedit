@@ -1,5 +1,6 @@
 #pragma once
 #include "options_notifications.h"
+#include "catalog.h"
 
 typedef enum WormUiCloseDecision {
     WORM_UI_CLOSE_NONE = 0, WORM_UI_CLOSE_CANCEL, WORM_UI_CLOSE_DISCARD, WORM_UI_CLOSE_SAVE
@@ -120,4 +121,5 @@ typedef struct WormUiWorkspaceView {
     struct WormUiExternalPlayerView external_player;
     size_t command_menu_count;
     WormUiCommandMenuRow command_menu_rows[WORM_UI_COMMAND_MENU_CAPACITY];
+    WormUiKindCatalogView sound_kinds;
 } WormUiWorkspaceView;

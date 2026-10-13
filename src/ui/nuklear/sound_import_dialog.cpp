@@ -1,6 +1,7 @@
 #include "ui/nuklear/sound_import_dialog.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/dialog.h"
+#include "ui/nuklear/catalog_view.h"
 
 #include <algorithm>
 #include <array>
@@ -13,6 +14,10 @@
 
 namespace {
 
+static_assert(static_cast<unsigned>(wormedit::sound_kind_t::stem) == WORM_UI_SOUND_IMPORT_STEM);
+static_assert(static_cast<unsigned>(wormedit::sound_kind_t::keysound) == WORM_UI_SOUND_IMPORT_KEYSOUND);
+static_assert(static_cast<unsigned>(wormedit::sound_kind_t::sample) == WORM_UI_SOUND_IMPORT_SAMPLE);
+
 constexpr float row_height = 26.0F;
 
 auto member_count(const worm_ui_sound_import_state_t& state, std::size_t group) -> std::size_t {
@@ -21,19 +26,22 @@ auto member_count(const worm_ui_sound_import_state_t& state, std::size_t group) 
     }));
 }
 
-void render_kind_choice(nk_context* context, worm_ui_sound_import_item_t& item) {
-    const char* label = "Sound";
-    if (item.kind == WORM_UI_SOUND_IMPORT_STEM) label = "Stem";
-    else if (item.kind == WORM_UI_SOUND_IMPORT_SAMPLE) label = "Sample";
+void render_kind_choice(nk_context* context, worm_ui_sound_import_item_t& item,
+                        const WormUiKindCatalogView& catalog) {
+    const auto* label = wormedit::ui::kind_label(catalog, item.kind, "Sound");
     if (!wormedit::ui::chrome::safe_combo_begin_label(context, label, nk_vec2(130, 120))) return;
     nk_layout_row_dynamic(context, 24, 1);
-    if (nk_combo_item_label(context, "Sound", NK_TEXT_LEFT)) item.kind = WORM_UI_SOUND_IMPORT_KEYSOUND;
-    if (nk_combo_item_label(context, "Stem", NK_TEXT_LEFT)) item.kind = WORM_UI_SOUND_IMPORT_STEM;
-    if (nk_combo_item_label(context, "Sample", NK_TEXT_LEFT)) item.kind = WORM_UI_SOUND_IMPORT_SAMPLE;
+    // Keep the import dialog's Keysound, Stem, Sample order; unspecified is not offered.
+    constexpr worm_ui_sound_import_kind_t order[]{WORM_UI_SOUND_IMPORT_KEYSOUND,
+        WORM_UI_SOUND_IMPORT_STEM, WORM_UI_SOUND_IMPORT_SAMPLE};
+    for (const auto kind : order)
+        if (nk_combo_item_label(context, wormedit::ui::kind_label(catalog, kind, "Sound"), NK_TEXT_LEFT))
+            item.kind = kind;
     wormedit::ui::chrome::safe_combo_end(context);
 }
 
-void render_import_items(nk_context* context, worm_ui_sound_import_state_t& state) {
+void render_import_items(nk_context* context, worm_ui_sound_import_state_t& state,
+                         const WormUiKindCatalogView& catalog) {
     nk_layout_row_dynamic(context, 20, 1);
     nk_label(context, "Files", NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, 112, 1);
@@ -60,9 +68,11 @@ void render_import_items(nk_context* context, worm_ui_sound_import_state_t& stat
         if (std::string_view{name.data()} != previous_name)
             item.name = name.data();
         if (state.fixed_kind)
-            nk_label(context, state.fixed_kind == WORM_UI_SOUND_IMPORT_STEM ? "Stem" : "Keysound",
+            nk_label(context, wormedit::ui::kind_label(catalog,
+                state.fixed_kind == WORM_UI_SOUND_IMPORT_STEM
+                    ? WORM_UI_SOUND_IMPORT_STEM : WORM_UI_SOUND_IMPORT_KEYSOUND, "Sound"),
                       NK_TEXT_LEFT);
-        else render_kind_choice(context, item);
+        else render_kind_choice(context, item, catalog);
         if (nk_button_label(context, "×"))
             worm_ui_nuklear_sound_import_remove(state, static_cast<std::size_t>(index));
     }
@@ -257,7 +267,8 @@ void render_group_rows(nk_context* context, worm_ui_sound_import_state_t& state)
 
 auto worm_ui_nuklear_render_sound_import_dialog(nk_context* context,
                                                 worm_ui_sound_import_state_t& state,
-                                                int window_width, int window_height)
+                                                int window_width, int window_height,
+                                                const WormUiKindCatalogView& catalog)
     -> worm_ui_sound_import_dialog_action_t {
     if (!context || state.phase == worm_ui_sound_import_phase_t::closed)
         return worm_ui_sound_import_dialog_action_t::none;
@@ -272,7 +283,7 @@ auto worm_ui_nuklear_render_sound_import_dialog(nk_context* context,
                                               static_cast<float>(window_height))})) {
         nk_layout_row_dynamic(context, body_height, 1);
         if (nk_group_begin(context, "Sound import review body", NK_WINDOW_BORDER)) {
-            render_import_items(context, state);
+            render_import_items(context, state, catalog);
             render_group_rows(context, state);
             nk_group_end(context);
         }

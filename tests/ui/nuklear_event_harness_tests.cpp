@@ -5355,6 +5355,7 @@ TEST_CASE("Review sound import dialog has Cancel and Confirm with Enter and no h
         stage_grouped_import(harness);
         (void)harness.frame();
         CHECK(harness.drawn_text().find("Review sound import") != std::string::npos);
+        CHECK(harness.drawn_text_center("Keysound").has_value());
         CHECK(harness.drawn_text().find("Review names, kinds") == std::string::npos);
         const auto cancel = harness.drawn_text_center("Cancel");
         REQUIRE(cancel);

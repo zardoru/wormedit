@@ -106,6 +106,7 @@ typedef enum WormUiWorkspaceTab {
 typedef struct WormUiWorkspaceTabItem {
     const char* label;
     bool enabled;
+    WormUiWorkspaceTab id;
 } WormUiWorkspaceTabItem;
 
 typedef enum WormUiStepmaniaFileProfile {

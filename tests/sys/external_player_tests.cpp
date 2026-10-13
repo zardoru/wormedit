@@ -193,3 +193,17 @@ TEST_CASE("external_player actual stub receives quoted filenames source measure 
     check_stop_stub(player, definition, log);
 }
 #endif
+
+TEST_CASE("external_player accepts BML source extension through the shared catalog", "[external_player][catalog-wiring]") {
+    temporary_directory_t directory;
+    const auto preview = directory.path / "___wormedit_preview.bml";
+    { std::ofstream existing(preview); existing << "foreign preview"; }
+    const auto song = simple_song();
+    external_player_t player;
+    const external_player_definition_t definition{"Missing", "/nonexistent/wormedit-player", "", "", ""};
+    const auto result = player.launch(definition, external_player_action_t::play_start,
+        song, song.charts.front().id, directory.path / "source.BML", 0, {});
+    CHECK(result.preview_path == preview);
+    CHECK_FALSE(result.launched);
+    CHECK(read(preview) == "foreign preview");
+}

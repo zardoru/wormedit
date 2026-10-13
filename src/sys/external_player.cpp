@@ -1,4 +1,6 @@
 #include "sys/external_player.h"
+#include "core/text_util.h"
+#include <wormedit/core/catalogs.h>
 
 #include <wormedit/formats/bms_writer.h>
 #include <SDL3/SDL_error.h>
@@ -93,11 +95,8 @@ auto file_identity(const std::filesystem::path& path) -> std::optional<file_iden
 }
 
 auto preview_path(const std::filesystem::path& source) -> std::filesystem::path {
-    auto extension = source.extension().string();
-    std::ranges::transform(extension, extension.begin(), [](unsigned char character) {
-        return static_cast<char>(std::tolower(character));
-    });
-    if (extension != ".bms" && extension != ".bme" && extension != ".pms") return {};
+    const auto extension = text_util::ascii_fold(source.extension().string());
+    if (!is_bms_extension(extension)) return {};
     return source.parent_path() / ("___wormedit_preview" + extension);
 }
 
@@ -239,7 +238,7 @@ auto external_player_t::prepare_preview(const song_document_t& song, chart_id_t 
     const auto absolute_source = std::filesystem::absolute(source, path_error);
     result.preview_path = path_error ? std::filesystem::path{} : preview_path(absolute_source);
     if (source.empty() || result.preview_path.empty() || absolute_source == result.preview_path)
-        return {.error = "External preview requires a BMS, BME, or PMS source chart."};
+        return {.error = "External preview requires a BMS, BME, BML, or PMS source chart."};
     for (auto iterator = temporary_files_.begin(); iterator != temporary_files_.end(); ++iterator) {
         if (iterator->path != result.preview_path) continue;
         if (iterator->process && !SDL_WaitProcess(iterator->process, false, nullptr))

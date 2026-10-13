@@ -1,5 +1,6 @@
 #include <wormedit/core/bmson_lane_mode.h>
 #include "sys/workspace_projection.h"
+#include "sys/catalog_projection.h"
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -72,9 +73,13 @@ auto arena_format(frame_arena_t& arena, const char* format, ...) noexcept -> con
 }
 namespace {
 
-constexpr std::array<const char*, WORM_UI_WORKSPACE_TAB_COUNT> tab_labels{
-    "Project", "Metadata", nullptr, "Compose", "Storyboard", "Audio / Slices", "Compare / Validate",
-};
+static_assert(static_cast<unsigned>(workspace_tab_t::setup) == WORM_UI_WORKSPACE_TAB_SETUP);
+static_assert(static_cast<unsigned>(workspace_tab_t::metadata) == WORM_UI_WORKSPACE_TAB_METADATA);
+static_assert(static_cast<unsigned>(workspace_tab_t::timing) == WORM_UI_WORKSPACE_TAB_TIMING);
+static_assert(static_cast<unsigned>(workspace_tab_t::compose) == WORM_UI_WORKSPACE_TAB_COMPOSE);
+static_assert(static_cast<unsigned>(workspace_tab_t::storyboard) == WORM_UI_WORKSPACE_TAB_STORYBOARD);
+static_assert(static_cast<unsigned>(workspace_tab_t::audio_slices) == WORM_UI_WORKSPACE_TAB_AUDIO_SLICES);
+static_assert(static_cast<unsigned>(workspace_tab_t::compare_validate) == WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE);
 
 auto ui_stepmania_file_profile(wormedit::stepmania_profile_t profile)
     -> WormUiStepmaniaFileProfile {
@@ -1532,14 +1537,18 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
     result.view.undo_depth = source.history.undo_depth;
     result.view.redo_depth = source.history.redo_depth;
     populate_recovery_view(result, recovery, recovery_scan_configured);
-    for (std::size_t tab = 0; tab < tab_labels.size(); ++tab) {
-        result.view.tabs[tab] = {
-            .label = tab_labels[tab],
-            .enabled = wormedit::workspace_tab_enabled(static_cast<wormedit::workspace_tab_t>(tab)),
+    static_assert(workspace_tab_count == WORM_UI_WORKSPACE_TAB_COUNT);
+    for (const auto& tab : workspace_tabs) {
+        const auto index = static_cast<std::size_t>(tab.kind);
+        result.view.tabs[index] = {
+            .label = tab.kind == workspace_tab_t::timing ? nullptr : tab.label.data(),
+            .enabled = is_workspace_tab_enabled(tab.kind),
+            .id = static_cast<WormUiWorkspaceTab>(tab.kind),
         };
     }
-    const char* heading = tab_labels[static_cast<std::size_t>(source.active_tab)];
-    result.view.tab_heading = heading ? heading : "Compose";
+    result.view.tab_heading = source.active_tab == workspace_tab_t::timing
+        ? "Compose" : workspace_tabs[static_cast<std::size_t>(source.active_tab)].label.data();
+    result.view.sound_kinds = sound_kind_view;
 
     const workspace_projection_context_t projection{
         result,        source,           document,           stepmania_policy,
@@ -1554,6 +1563,7 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
     result.view.compose.chart_id = selected.value;
     result.view.compose.document_revision = document.revision;
     populate_compose_output_groups(projection, selected);
+    result.view.audio_slices.sound_kinds = sound_kind_view;
     return result;
 }
 

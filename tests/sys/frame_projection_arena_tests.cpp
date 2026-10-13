@@ -1419,3 +1419,11 @@ TEST_CASE("Project export catalog includes groups outside the selected Compose d
     check_frame_storage(frame.view.compose.output_groups[1].document_index == 1);
     check_frame_storage(!frame.view.compose.output_groups_truncated);
 }
+
+TEST_CASE("Workspace projection uses the canonical Audio Slices tab label", "[sys][catalog-wiring]") {
+    wormedit::workspace_view_t model;
+    model.active_tab = wormedit::workspace_tab_t::audio_slices;
+    auto frame = flatten_workspace(model, {}, "ready", {}, false, {}, nullptr);
+    CHECK(std::string_view{frame.view.tabs[WORM_UI_WORKSPACE_TAB_AUDIO_SLICES].label} == "Audio Slices");
+    CHECK(std::string_view{frame.view.tab_heading} == "Audio Slices");
+}

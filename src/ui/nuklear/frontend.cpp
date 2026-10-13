@@ -1932,7 +1932,7 @@ static void render_workspace_tabs(const WormUiWorkspaceView* view,
         if (clicked && item.enabled && !selected &&
             action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
             action->kind = WORM_UI_WORKSPACE_ACTION_SWITCH_TAB;
-            action->tab = static_cast<WormUiWorkspaceTab>(tab);
+            action->tab = item.id;
         }
     }
 }

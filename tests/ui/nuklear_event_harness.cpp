@@ -1,4 +1,6 @@
 #include "nuklear_event_harness.h"
+#include "sys/catalog_projection.h"
+#include <wormedit/core/workspace.h>
 
 #include "ui/nuklear/compose_panel.h"
 #include "ui/nuklear/player_preview.h"
@@ -22,6 +24,8 @@ class modifier_scope_t {
 };
 
 void initialize_compose_view(WormUiWorkspaceView& workspace, int width, int height) {
+    workspace.sound_kinds = wormedit::sys::sound_kind_view;
+    workspace.audio_slices.sound_kinds = wormedit::sys::sound_kind_view;
     workspace.project_loaded = true;
     workspace.project_id = 1;
     workspace.selected_chart_id = 1;
@@ -33,11 +37,13 @@ void initialize_compose_view(WormUiWorkspaceView& workspace, int width, int heig
     workspace.git_hash = "test";
     workspace.active_tab = WORM_UI_WORKSPACE_TAB_COMPOSE;
     workspace.tab_heading = "Compose";
-    constexpr const char* tab_names[WORM_UI_WORKSPACE_TAB_COUNT]{
-        "Project", "Metadata", nullptr, "Compose", "Storyboard", "Audio / Slices",
-        "Compare / Validate"};
-    for (std::size_t index = 0; index < WORM_UI_WORKSPACE_TAB_COUNT; ++index)
-        workspace.tabs[index] = {.label = tab_names[index], .enabled = tab_names[index] != nullptr};
+    for (const auto& tab : wormedit::workspace_tabs) {
+        const auto index = static_cast<std::size_t>(tab.kind);
+        workspace.tabs[index] = {
+            .label = tab.kind == wormedit::workspace_tab_t::timing ? nullptr : tab.label.data(),
+            .enabled = wormedit::is_workspace_tab_enabled(tab.kind),
+            .id = static_cast<WormUiWorkspaceTab>(tab.kind)};
+    }
 
     auto& timing = workspace.timing;
     timing.scene_available = true;

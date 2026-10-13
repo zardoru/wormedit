@@ -1,3 +1,4 @@
+#include <wormedit/core/rational.h>
 #include "sys/compose_projection_internal.h"
 namespace wormedit::sys::compose_projection_detail {
 auto populate_compose_audio_bookmark(
@@ -220,7 +221,7 @@ auto compose_timing_short_number(wormedit::signed_rational_t value) -> std::stri
         return "?";
     std::array<char, 96> buffer{};
     const auto number =
-        static_cast<double>(value.numerator) / static_cast<double>(value.denominator);
+        wormedit::to_double(value);
     const auto formatted = std::to_chars(buffer.data(), buffer.data() + buffer.size(), number,
                                          std::chars_format::general, 5);
     if (formatted.ec != std::errc{})
@@ -246,7 +247,7 @@ auto compose_timing_decimal_detail(wormedit::signed_rational_t value) -> std::st
         return exact;
     std::array<char, 96> buffer{};
     const auto number =
-        static_cast<double>(value.numerator) / static_cast<double>(value.denominator);
+        wormedit::to_double(value);
     const auto formatted =
         std::to_chars(buffer.data(), buffer.data() + buffer.size(), number,
                       std::chars_format::general, std::numeric_limits<double>::max_digits10);
@@ -563,7 +564,7 @@ std::string dead_span_label(const wormedit::sys::dead_span_band_t& band) {
     if (band.kind == dead_span_kind_t::warp)
         return "WARP";
     const auto seconds =
-        static_cast<double>(band.seconds.numerator) / static_cast<double>(band.seconds.denominator);
+        wormedit::to_double(band.seconds);
     char text[48]{};
     std::snprintf(text, sizeof(text), "%s %.3fs",
                   band.kind == dead_span_kind_t::stop ? "STOP" : "DELAY", seconds);

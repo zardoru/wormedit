@@ -1,3 +1,4 @@
+#include "core/timing_arithmetic.h"
 #include "sys/compose_input_internal.h"
 namespace wormedit::sys::compose_input_detail {
 auto compose_timing_identity(WormUiTimingLaneKind lane)
@@ -198,10 +199,7 @@ auto speed_transition_between(const wormedit::chart_document_t& chart,
         return rational_t{0, 1};
     if (!speed.transition_is_seconds) {
         const auto numerator = (end_row - begin_row) * 4;
-        const auto divisor = std::gcd(numerator, chart.divisions_per_standard_measure);
-        if (divisor == 0)
-            return std::nullopt;
-        return rational_t{numerator / divisor, chart.divisions_per_standard_measure / divisor};
+        return rows_to_fraction(numerator, chart.divisions_per_standard_measure);
     }
     if (!timing)
         return std::nullopt;
@@ -209,17 +207,7 @@ auto speed_transition_between(const wormedit::chart_document_t& chart,
     const auto end = timing_at(*timing, end_row);
     if (!begin.seconds || !end.seconds)
         return std::nullopt;
-    const auto left = static_cast<__int128>(end.seconds->numerator) * begin.seconds->denominator;
-    const auto right = static_cast<__int128>(begin.seconds->numerator) * end.seconds->denominator;
-    const auto denominator =
-        static_cast<__int128>(end.seconds->denominator) * begin.seconds->denominator;
-    const auto difference = left - right;
-    if (difference < 0 || difference > UINT64_MAX || denominator > UINT64_MAX)
-        return std::nullopt;
-    const auto divisor =
-        std::gcd(static_cast<std::uint64_t>(difference), static_cast<std::uint64_t>(denominator));
-    return rational_t{static_cast<std::uint64_t>(difference) / divisor,
-                      static_cast<std::uint64_t>(denominator) / divisor};
+    return timing_arithmetic::subtract_exact<rational_t>(*end.seconds, *begin.seconds);
 }
 
 auto edit_compose_speed_span(const WormUiComposeInputAction& input,

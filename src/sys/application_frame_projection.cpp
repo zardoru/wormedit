@@ -1,3 +1,4 @@
+#include <wormedit/core/rational.h>
 #include "sys/application_frame_projection.h"
 #include "sys/compose_hover_timing.h"
 #include "sys/frame_timing.h"
@@ -253,18 +254,12 @@ auto project_application_frame(const application_frame_projection_context_t& con
                  .pixels_per_standard_measure =
                      flattened.view.compose.pixels_per_standard_measure});
         }
+        const auto rate_index = std::min<std::size_t>(
+            context.application_command_state.preferences.transport_rate_index,
+            audio::playback_rate_count - 1);
         context.waveform_runtime.service_compose_detail(
             context.workspace.transport.audio_asset, detail_window,
-            flattened.view.transport_playing,
-            static_cast<double>(
-                audio::playback_rates[std::min<std::size_t>(
-                                          context.application_command_state.preferences.transport_rate_index,
-                                          8)]
-                    .numerator) /
-                audio::playback_rates[std::min<std::size_t>(
-                                          context.application_command_state.preferences.transport_rate_index,
-                                          8)]
-                    .denominator);
+            flattened.view.transport_playing, wormedit::to_double(audio::playback_rates[rate_index]));
         compose_waveform_overview_available = populate_compose_waveform_projection(
             flattened, context.compose_scene_cache, compose_waveform_analysis,
             context.waveform_runtime.waveform_job().busy(),

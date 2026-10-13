@@ -1,3 +1,4 @@
+#include <wormedit/core/rational.h>
 #include "sys/frame_timing.h"
 #include "sys/thread_priority.h"
 #include "sys/sdl_preview_output.h"
@@ -586,10 +587,10 @@ void SDLCALL sdl_preview_output_t::stream_callback(void* userdata, SDL_AudioStre
     if (output == nullptr || stream == nullptr) return;
     const audio_stream_callback_scope_t callback_lock;
     const auto old_ratio = output->keep_pitch() ? 1.0L :
-        static_cast<long double>(output->playback_rate().numerator) / output->playback_rate().denominator;
+        wormedit::to_long_double(output->playback_rate());
     if (output->apply_output_mode(stream)) {
         const auto new_ratio = output->keep_pitch() ? 1.0L :
-            static_cast<long double>(output->playback_rate().numerator) / output->playback_rate().denominator;
+            wormedit::to_long_double(output->playback_rate());
         // SDL computed this callback's byte budget before the ratio changed.
         // Refill the whole request on the new input clock, including a window
         // of headroom for the freshly reset converter's lookahead.

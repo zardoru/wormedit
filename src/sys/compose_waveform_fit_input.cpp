@@ -1,3 +1,4 @@
+#include <wormedit/core/rational.h>
 #include "sys/compose_input_internal.h"
 namespace wormedit::sys::compose_input_detail {
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
@@ -377,13 +378,12 @@ auto seek_compose_waveform(const WormUiComposeInputAction& input, compose_input_
         musical_position_at(timing, signed_rational_t{frame, cache.waveform.waveform_overview_sample_rate});
     long double row = 0.0L;
     if (musical && musical.absolute_row && musical.absolute_row->denominator != 0) {
-        row = static_cast<long double>(musical.absolute_row->numerator) /
-              musical.absolute_row->denominator;
+        row = wormedit::to_long_double(*musical.absolute_row);
     } else {
         const auto end = timing_at(timing, timing.total_rows);
         if (end && end.seconds) {
             const auto end_seconds =
-                static_cast<long double>(end.seconds->numerator) / end.seconds->denominator;
+                wormedit::to_long_double(*end.seconds);
             const auto audio_seconds =
                 static_cast<long double>(frame) / cache.waveform.waveform_overview_sample_rate;
             row = audio_seconds >= end_seconds ? static_cast<long double>(timing.total_rows) : 0.0L;

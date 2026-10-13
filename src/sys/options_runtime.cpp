@@ -1,3 +1,4 @@
+#include "core/text_util.h"
 #include "sys/options_runtime.h"
 #include <wormedit/audio/playback_rate.h>
 #include <algorithm>
@@ -41,9 +42,6 @@ auto category_equal(const program_preferences_t& a, const program_preferences_t&
 void diagnose(options_runtime_t& runtime, WormUiOptionsField field, bool valid, const char* message) {
     if (!valid) runtime.diagnostics.push_back({field, message});
 }
-auto valid_text(const std::string& value) -> bool {
-    return value.size() <= maximum_preference_string_bytes && value.find('\0') == std::string::npos;
-}
 void validate_general(options_runtime_t& r) {
     diagnose(r, WORM_UI_OPTIONS_FIELD_AUTOSAVE, r.draft.general.autosave_minutes >= 1 &&
         r.draft.general.autosave_minutes <= 30, "Autosave must be between 1 and 30 minutes.");
@@ -71,11 +69,11 @@ void validate_display(options_runtime_t& r) {
     diagnose(r, WORM_UI_OPTIONS_FIELD_P2_SCRATCH_POSITION, r.draft.display.scratch_positions[1] <= 3, "Choose Skin default, Chart layout, Left, or Right for P2 scratch.");
     diagnose(r, WORM_UI_OPTIONS_FIELD_FIELD_WAVEFORM_OPACITY, r.draft.display.field_waveform_opacity_percent <= 100, "Field waveform opacity must be between 0 and 100 percent.");
     diagnose(r, WORM_UI_OPTIONS_FIELD_SNAP_GRID_OPACITY, r.draft.display.snap_grid_opacity_percent <= 100, "Grid opacity must be between 0 and 100 percent.");
-    diagnose(r, WORM_UI_OPTIONS_FIELD_FIELD_SCHEME, valid_text(r.draft.display.field_scheme), "Field scheme name is too long or contains a null character.");
-    diagnose(r, WORM_UI_OPTIONS_FIELD_THEME, valid_text(r.draft.display.theme), "Theme path is too long or contains a null character.");
+    diagnose(r, WORM_UI_OPTIONS_FIELD_FIELD_SCHEME, text_util::is_valid_bounded_text(r.draft.display.field_scheme, maximum_preference_string_bytes), "Field scheme name is too long or contains a null character.");
+    diagnose(r, WORM_UI_OPTIONS_FIELD_THEME, text_util::is_valid_bounded_text(r.draft.display.theme, maximum_preference_string_bytes), "Theme path is too long or contains a null character.");
     const auto scale = r.draft.display.ui_scale_percent;
     diagnose(r, WORM_UI_OPTIONS_FIELD_SCALE, scale == 0 || (scale >= 100 && scale <= 200), "Scale must be automatic or between 100 and 200 percent.");
-    diagnose(r, WORM_UI_OPTIONS_FIELD_LAYOUT, valid_text(r.draft.layout.dock_layout), "Layout is too long or contains a null character.");
+    diagnose(r, WORM_UI_OPTIONS_FIELD_LAYOUT, text_util::is_valid_bounded_text(r.draft.layout.dock_layout, maximum_preference_string_bytes), "Layout is too long or contains a null character.");
 }
 void validate_draft(options_runtime_t& r) {
     r.diagnostics.clear();
@@ -88,7 +86,7 @@ void validate_draft(options_runtime_t& r) {
             "Playback rate is unsupported."); break;
     case WORM_UI_OPTIONS_DISPLAY: validate_display(r); break;
     case WORM_UI_OPTIONS_INPUT:
-        diagnose(r, WORM_UI_OPTIONS_FIELD_SHORTCUT_PATH, valid_text(r.draft.general.shortcut_profile_path) &&
+        diagnose(r, WORM_UI_OPTIONS_FIELD_SHORTCUT_PATH, text_util::is_valid_bounded_text(r.draft.general.shortcut_profile_path, maximum_preference_string_bytes) &&
             !r.draft.general.shortcut_profile_path.empty(), "Shortcut profile path must be nonempty and at most 4096 bytes."); break;
     case WORM_UI_OPTIONS_PLAYERS:
         diagnose(r, WORM_UI_OPTIONS_FIELD_PLAYERS, valid_external_player_preferences(r.draft.players), "External-player definitions are invalid."); break;
@@ -153,8 +151,7 @@ auto edit_audio(program_preferences_t& p, const WormUiOptionsAction& a) -> bool 
 }
 auto edit_layout_field_scheme(program_preferences_t& p, const WormUiOptionsAction& action,
                               std::string_view layout_key) -> bool {
-    if (layout_key.empty() || layout_key.size() > maximum_preference_string_bytes ||
-        layout_key.find('\0') != std::string_view::npos) return false;
+    if (layout_key.empty() || !text_util::is_valid_bounded_text(layout_key, maximum_preference_string_bytes)) return false;
     auto& overrides = p.display.field_scheme_overrides;
     if (!action.text[0]) overrides.erase(std::string{layout_key});
     else overrides.insert_or_assign(std::string{layout_key}, action.text);
@@ -243,8 +240,8 @@ auto toggle_audition_on_click(program_preferences_runtime_t& program, bool& enab
     return error;
 }
 void set_options_field_layout(options_runtime_t& r, std::string_view key, std::string_view name) {
-    if (key.size() > maximum_preference_string_bytes || key.find('\0') != std::string_view::npos) key = {};
-    if (name.size() > maximum_preference_string_bytes || name.find('\0') != std::string_view::npos) name = {};
+    if (!text_util::is_valid_bounded_text(key, maximum_preference_string_bytes)) key = {};
+    if (!text_util::is_valid_bounded_text(name, maximum_preference_string_bytes)) name = {};
     if (key != r.current_field_layout_key && r.visible) ++r.revision;
     r.current_field_layout_key = key;
     r.current_field_layout_name = name;

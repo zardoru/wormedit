@@ -1,3 +1,4 @@
+#include <wormedit/core/rational.h>
 #include "sys/sound_usage_actions.h"
 
 #include <wormedit/core/chart_editor.h>
@@ -47,11 +48,10 @@ auto interaction_for_jump(const document_history_t& history, const chart_documen
     }
     if (!active || active->layout.lanes.empty())
         return std::nullopt;
-    constexpr std::array<std::uint64_t, 6> snaps{4, 8, 16, 32, 48, 64};
     const auto setup = make_editor_interaction(
         history, chart.id, active->layout.lanes.front().id, position,
         previous ? std::span<const std::uint64_t>{previous->supported_snap_denominators}
-                 : std::span<const std::uint64_t>{snaps},
+                 : std::span<const std::uint64_t>{wormedit::default_snap_denominators},
         previous ? previous->active_snap_denominator : 16,
         previous ? previous->viewport_height_pixels : 1.0);
     return setup.state;

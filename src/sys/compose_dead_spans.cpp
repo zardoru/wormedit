@@ -1,3 +1,4 @@
+#include "core/timing_arithmetic.h"
 #include "sys/compose_dead_spans.h"
 
 #include <algorithm>
@@ -7,36 +8,14 @@
 namespace wormedit::sys {
 namespace {
 
-auto gcd128(__int128 left, __int128 right) -> __int128 {
-    while (right != 0) {
-        const auto remainder = left % right;
-        left = right;
-        right = remainder;
-    }
-    return left;
-}
-
-auto seconds_between(signed_rational_t later, signed_rational_t earlier)
-    -> std::optional<signed_rational_t> {
-    const auto left = static_cast<__int128>(later.numerator) * earlier.denominator;
-    const auto right = static_cast<__int128>(earlier.numerator) * later.denominator;
-    const auto denominator = static_cast<__int128>(later.denominator) * earlier.denominator;
-    const auto difference = left - right;
-    if (denominator > UINT64_MAX || difference > INT64_MAX || difference < INT64_MIN)
-        return std::nullopt;
-    const auto scale = std::max<__int128>(1, gcd128(difference < 0 ? -difference : difference, denominator));
-    return signed_rational_t{static_cast<std::int64_t>(difference / scale),
-                             static_cast<std::uint64_t>(denominator / scale)};
-}
-
 auto pause_seconds(const timing_index_t& timing, std::uint64_t row, pause_kind_t kind)
     -> std::optional<signed_rational_t> {
     const auto before = timing_at(timing, row, timing_boundary_side_t::before_delays);
     const auto event = timing_at(timing, row, timing_boundary_side_t::event);
     const auto after = timing_at(timing, row, timing_boundary_side_t::after_stops);
     if (!before.seconds || !event.seconds || !after.seconds) return std::nullopt;
-    return kind == pause_kind_t::delay ? seconds_between(*event.seconds, *before.seconds)
-                                       : seconds_between(*after.seconds, *event.seconds);
+    return kind == pause_kind_t::delay ? timing_arithmetic::subtract_exact(*event.seconds, *before.seconds)
+                                       : timing_arithmetic::subtract_exact(*after.seconds, *event.seconds);
 }
 
 struct pause_group_t {

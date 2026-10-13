@@ -1,3 +1,4 @@
+#include <wormedit/core/rational.h>
 #include "sys/compose_navigation.h"
 #include "sys/compose_minimap_navigation.h"
 #include "sys/compose_scroll_geometry.h"
@@ -11,12 +12,11 @@ namespace {
 auto row_for_time(const timing_index_t& timing, signed_rational_t seconds) -> long double {
     const auto position = musical_position_at(timing, seconds);
     if (position && position.absolute_row)
-        return std::clamp(static_cast<long double>(position.absolute_row->numerator) /
-                          position.absolute_row->denominator, 0.0L,
+        return std::clamp(wormedit::to_long_double(*position.absolute_row), 0.0L,
                           static_cast<long double>(timing.total_rows));
     const auto end = timing_at(timing, timing.total_rows);
-    if (end && end.seconds && static_cast<long double>(seconds.numerator) / seconds.denominator >=
-        static_cast<long double>(end.seconds->numerator) / end.seconds->denominator)
+    if (end && end.seconds && wormedit::to_long_double(seconds) >=
+        wormedit::to_long_double(*end.seconds))
         return static_cast<long double>(timing.total_rows);
     return 0.0L;
 }
@@ -108,7 +108,7 @@ void retain_compose_minimap_start(application_command_state_t& application,
     const auto end = timing_at(timing, timing.total_rows);
     if (playing || paused || !end || !end.seconds) return;
     if (static_cast<long double>(target.frame) / audio::output_sample_rate <=
-        static_cast<long double>(end.seconds->numerator) / end.seconds->denominator) return;
+        wormedit::to_long_double(*end.seconds)) return;
     application.project.transport.minimap_start_frame = application_command_state_t::minimap_start_frame_t{
         state.chart, history.document.revision, state.cursor, target.frame, state.cursor_subrow};
 }

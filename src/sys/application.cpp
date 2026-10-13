@@ -1580,11 +1580,10 @@ auto compare_jump_interaction(const wormedit::document_history_t& history,
         }
     }
     if (!active || active->layout.lanes.empty()) return std::nullopt;
-    constexpr std::array<std::uint64_t, 6> default_snaps{4, 8, 16, 32, 48, 64};
     const auto setup = wormedit::make_editor_interaction(history, chart.id,
         active->layout.lanes.front().id, position,
         previous ? std::span<const std::uint64_t>{previous->supported_snap_denominators}
-                 : std::span<const std::uint64_t>{default_snaps},
+                 : std::span<const std::uint64_t>{wormedit::default_snap_denominators},
         previous ? previous->active_snap_denominator : 16,
         previous ? previous->viewport_height_pixels : 1.0);
     return setup.state;
@@ -1830,8 +1829,7 @@ void project_tap_timing(wormedit::sys::tap_timing_runtime_t& runtime,
     target.apply_available = proposal.has_value();
     if (proposal) {
         target.apply_revision = proposal->document_revision;
-        target.proposed_bpm = static_cast<double>(proposal->beats_per_minute.numerator) /
-                             proposal->beats_per_minute.denominator;
+        target.proposed_bpm = wormedit::to_double(proposal->beats_per_minute);
         target.proposed_offset_ms = 1000.0 * proposal->beat_zero_audio_offset_seconds.numerator /
                                    proposal->beat_zero_audio_offset_seconds.denominator;
     }

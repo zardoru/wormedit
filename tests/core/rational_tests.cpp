@@ -219,3 +219,16 @@ TEST_CASE("rationalization rejection retains preview error bounds and iterations
     CHECK(rejected.error().absolute_error_bound == preview->absolute_error_bound);
     CHECK(rejected.error().iterations == preview->iterations);
 }
+TEST_CASE("exact subtraction retains the unsigned duration range", "[core][helpers]") {
+    const auto value = timing_arithmetic::subtract_exact<rational_t>({INT64_MAX, 1}, {INT64_MIN, 1});
+    REQUIRE(value);
+    CHECK(value->numerator == UINT64_MAX);
+    CHECK(value->denominator == 1);
+}
+TEST_CASE("unsigned exact subtraction rejects negatives and malformed fractions but retains zero", "[core][helpers]") {
+    CHECK_FALSE(timing_arithmetic::subtract_exact<rational_t>({1, 1}, {2, 1}));
+    CHECK_FALSE(timing_arithmetic::subtract_exact<rational_t>({1, 0}, {1, 1}));
+    const auto zero = timing_arithmetic::subtract_exact<rational_t>({1, 1}, {1, 1});
+    REQUIRE(zero);
+    CHECK(zero->numerator == 0);
+}

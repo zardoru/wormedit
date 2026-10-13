@@ -536,8 +536,7 @@ project_compose_audio_marker_y(const compose_marker_projection_context_t& input,
         timing_index, wormedit::signed_rational_t{milliseconds, 1'000});
     if (!projected || !projected.absolute_row || projected.absolute_row->denominator == 0)
         return std::nullopt;
-    const auto row = static_cast<long double>(projected.absolute_row->numerator) /
-                     static_cast<long double>(projected.absolute_row->denominator);
+    const auto row = wormedit::to_long_double(*projected.absolute_row);
     const auto pixels_per_row =
         static_cast<long double>(input.scope.interaction_view.pixels_per_standard_measure) /
         static_cast<long double>(input.scope.chart_scope.chart.divisions_per_standard_measure);

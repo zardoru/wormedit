@@ -1,3 +1,4 @@
+#include <wormedit/core/rational.h>
 #include "sys/compose_waveform_overlays.h"
 #include "sys/frontend_geometry.h"
 
@@ -14,12 +15,6 @@
 namespace wormedit::sys {
 namespace {
 
-auto rational_as_long_double(signed_rational_t value) -> long double {
-    if (value.denominator == 0)
-        return 0.0L;
-    return static_cast<long double>(value.numerator) /
-           static_cast<long double>(value.denominator);
-}
 
 auto proposed_visible_source_rows(const wormedit::timing_index_t& original,
                                   const wormedit::timing_index_t& proposed, double scroll,
@@ -45,11 +40,11 @@ auto proposed_visible_source_rows(const wormedit::timing_index_t& original,
     const auto source_row = [&](wormedit::signed_rational_t seconds) -> std::optional<long double> {
         const auto position = wormedit::musical_position_at(proposed, seconds);
         if (position)
-            return rational_as_long_double(*position.absolute_row);
-        const auto time = rational_as_long_double(seconds);
-        if (time < rational_as_long_double(proposed.rows.front().before_delays_seconds))
+            return to_long_double(*position.absolute_row);
+        const auto time = to_long_double(seconds);
+        if (time < to_long_double(proposed.rows.front().before_delays_seconds))
             return 0.0L;
-        if (time > rational_as_long_double(proposed.rows.back().after_stops_seconds))
+        if (time > to_long_double(proposed.rows.back().after_stops_seconds))
             return static_cast<long double>(proposed.total_rows);
         return std::nullopt;
     };
@@ -551,7 +546,7 @@ void project_beat_fit_positions(WormUiComposeView& compose,
     if (!target) return;
     const auto& row = *target.absolute_row;
     const auto source_y = static_cast<double>(
-        static_cast<long double>(row.numerator) / row.denominator *
+        wormedit::to_long_double(row) *
         compose.pixels_per_standard_measure / timing.divisions_per_standard_measure -
         interaction.viewport_scroll_pixels);
     compose.beat_fit_target_y_pixels = compose_source_y(

@@ -1,3 +1,6 @@
+#include "sys/compose_projection_internal.h"
+#include "sys/compose_input_internal.h"
+#include "sys/options_runtime.h"
 #include "sys/chart_preview_state.h"
 #include "project_audio_sources_fixture.h"
 #include "../sys/application_dispatch_fixture.h"
@@ -6965,3 +6968,94 @@ TEST_CASE("stem display owner keeps channel and packed event cache keys separate
     CHECK(cache.stems.packed_waveforms.size() == 1);
 }
 #endif
+
+namespace {
+void check_options_text_diagnostic(const options_runtime_t& runtime, WormUiOptionsField field) {
+    CHECK(std::ranges::find(runtime.diagnostics, field, &options_diagnostic_t::field) != runtime.diagnostics.end());
+}
+}
+TEST_CASE("Options identifies malformed UTF8 in each display text field", "[sys][shared-text]") {
+    options_runtime_t runtime;
+    open_options(runtime, program_preferences_t::with_defaults());
+    runtime.category = WORM_UI_OPTIONS_DISPLAY;
+    runtime.draft.display.field_scheme = "\x80";
+    runtime.draft.display.theme = "\x80";
+    runtime.draft.layout.dock_layout = "\x80";
+    (void)options_view(runtime);
+    CHECK(runtime.diagnostics.size() == 3);
+    check_options_text_diagnostic(runtime, WORM_UI_OPTIONS_FIELD_FIELD_SCHEME);
+    check_options_text_diagnostic(runtime, WORM_UI_OPTIONS_FIELD_THEME);
+    check_options_text_diagnostic(runtime, WORM_UI_OPTIONS_FIELD_LAYOUT);
+}
+TEST_CASE("Options identifies malformed UTF8 in the shortcut profile path", "[sys][shared-text]") {
+    options_runtime_t runtime;
+    open_options(runtime, program_preferences_t::with_defaults());
+    runtime.category = WORM_UI_OPTIONS_INPUT;
+    runtime.draft.general.shortcut_profile_path = "\x80";
+    (void)options_view(runtime);
+    check_options_text_diagnostic(runtime, WORM_UI_OPTIONS_FIELD_SHORTCUT_PATH);
+}
+TEST_CASE("Options discards malformed UTF8 layout identities and display names", "[sys][shared-text]") {
+    options_runtime_t runtime;
+    set_options_field_layout(runtime, "\x80", "\x80");
+    CHECK(runtime.current_field_layout_key.empty());
+    CHECK(runtime.current_field_layout_name.empty());
+}
+TEST_CASE("Timing stage converts transition fractions through the shared careful rounding", "[sys][shared-arithmetic]") {
+    auto history = document_history_t::from(dense_song());
+    auto binding = workspace_controller_t::from(history);
+    REQUIRE(binding.workspace);
+    binding.workspace->selected_chart = chart_id_t{1};
+    flattened_workspace_t flattened;
+    timing_scene_cache_t cache;
+    timing_lane_pseudonote_preview_t stage{
+        .status = timing_lane_pseudonote_status_t::editing,
+        .chart = chart_id_t{1}, .kind = timing_lane_kind_t::speed,
+        .position = {measure_id_t{1}, 0},
+        .value = timing_speed_value_t{.transition_beats = {9'007'199'254'740'993ULL, 3}},
+        .document_revision = history.document.revision, .valid = true};
+    populate_timing_view_for_compose(flattened, history, *binding.workspace, cache, 1280, 980, {}, &stage);
+    CHECK(flattened.view.timing.stage_secondary_value == 3'002'399'751'580'331.0);
+}
+
+namespace {
+auto speed_span_transition_at_boundaries(signed_rational_t earlier, signed_rational_t later)
+    -> std::optional<rational_t> {
+    auto chart = dense_song().charts.front();
+    timing_index_t timing{.divisions_per_standard_measure = chart.divisions_per_standard_measure,
+                          .total_rows = 960};
+    timing.rows = {
+        {.absolute_row = 0, .before_delays_seconds = earlier, .event_seconds = earlier,
+         .after_stops_seconds = earlier, .effective_bpm = {120, 1}},
+        {.absolute_row = 960, .before_delays_seconds = later, .event_seconds = later,
+         .after_stops_seconds = later, .effective_bpm = {120, 1}}};
+    const speed_event_t speed{.transition_is_seconds = true};
+    return compose_input_detail::speed_transition_between(chart, &timing, speed, 0, 960);
+}
+void check_speed_span_transition(signed_rational_t earlier, signed_rational_t later, rational_t expected) {
+    const auto transition = speed_span_transition_at_boundaries(earlier, later);
+    REQUIRE(transition);
+    CHECK(*transition == expected);
+}
+}
+TEST_CASE("Speed spans reduce denominator intermediates before rejecting durations", "[sys][shared-arithmetic]") {
+    check_speed_span_transition({1, 10'000'000'000ULL}, {2, 10'000'000'000ULL}, {1, 10'000'000'000ULL});
+}
+TEST_CASE("Speed spans reduce numerator intermediates before rejecting durations", "[sys][shared-arithmetic]") {
+    check_speed_span_transition({1, 1'000'000}, {30'000'000'000'000LL, 1'000'000}, {29'999'999'999'999ULL, 1'000'000});
+}
+TEST_CASE("Speed spans subtract opposite signed boundaries without wide overflow", "[sys][shared-arithmetic]") {
+    const auto denominator = std::numeric_limits<std::uint64_t>::max();
+    check_speed_span_transition({std::numeric_limits<std::int64_t>::min(), denominator},
+                               {std::numeric_limits<std::int64_t>::max(), denominator}, {1, 1});
+}
+TEST_CASE("Speed spans retain the full unsigned duration range", "[sys][shared-arithmetic]") {
+    check_speed_span_transition({std::numeric_limits<std::int64_t>::min(), 1},
+                               {std::numeric_limits<std::int64_t>::max(), 1},
+                               {std::numeric_limits<std::uint64_t>::max(), 1});
+}
+
+TEST_CASE("Dead span labels use the guarded shared conversion for malformed fractions", "[sys][shared-arithmetic]") {
+    const dead_span_band_t band{.kind = dead_span_kind_t::stop, .seconds = {1, 0}};
+    CHECK(compose_projection_detail::dead_span_label(band) == "STOP 0.000s");
+}

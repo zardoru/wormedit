@@ -82,3 +82,11 @@ TEST_CASE("sv graph normalizes to the visible window", "[unit][sys][sv-graph]") 
     CHECK(window.one_x < 0.0);
     CHECK(build_sv_graph(steps, 10, 10, y_of).points.empty());
 }
+
+TEST_CASE("SV projection converts fractions with shared careful rounding", "[sys][sv-graph][shared-arithmetic]") {
+    auto chart = base_chart();
+    add_scroll(chart, 1, 0, 0, 9'007'199'254'740'993LL, 3);
+    const auto projection = project(chart);
+    REQUIRE(projection.steps.size() == 1);
+    CHECK(projection.steps.front().value == 3'002'399'751'580'331.0);
+}

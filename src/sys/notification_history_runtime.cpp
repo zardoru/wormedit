@@ -1,3 +1,4 @@
+#include <wormedit/core/rational.h>
 #include "sys/notification_history_runtime.h"
 #include "sys/application_command_dispatch.h"
 
@@ -166,9 +167,8 @@ auto navigation_interaction(const document_history_t& history,
     if (previous && previous->chart == target.chart) return previous;
     const auto chart = std::ranges::find(history.document.charts, target.chart, &chart_document_t::id);
     if (chart == history.document.charts.end()) return std::nullopt;
-    constexpr std::array<std::uint64_t, 6> default_snaps{4, 8, 16, 32, 48, 64};
     const auto snaps = previous ? std::span<const std::uint64_t>{previous->supported_snap_denominators}
-                                : std::span<const std::uint64_t>{default_snaps};
+                                : std::span<const std::uint64_t>{wormedit::default_snap_denominators};
     auto setup = make_editor_interaction(history, target.chart, target_lane(*chart, target.position),
         target.position, snaps, previous ? previous->active_snap_denominator : 16,
         previous ? previous->viewport_height_pixels : 1.0);

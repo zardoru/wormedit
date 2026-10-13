@@ -1,3 +1,4 @@
+#include "core/text_util.h"
 #include "sys/compose_area_actions.h"
 #include "sys/compose_note_to_bgm.h"
 #include "sys/compose_resource_presenter.h"
@@ -102,10 +103,7 @@ auto bounded_draw_source_label(const wormedit::resource_entry_t& resource) -> st
     constexpr std::size_t limit = 512;
     if (text.size() <= limit)
         return text;
-    auto end = limit - 3;
-    while (end && (static_cast<unsigned char>(text[end]) & 0xc0U) == 0x80U)
-        --end;
-    text.resize(end);
+    text.resize(wormedit::text_util::truncate_utf8(text, limit - 3).size());
     text += "…";
     return text;
 }

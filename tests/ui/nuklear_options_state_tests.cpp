@@ -183,7 +183,8 @@ TEST_CASE("Options oversized invalid text rejects the active page before prefere
     candidate.display.theme = std::string(1, static_cast<char>(0xff));
     expect_options(edit_options_draft(r, r.revision, candidate));
     const auto view = options_view(r);
-    expect_options(!view.can_apply && view.diagnostics[0].field == WORM_UI_OPTIONS_FIELD_PAGE);
+    expect_options(!view.can_apply && view.diagnostic_count == 1 &&
+                   view.diagnostics[0].field == WORM_UI_OPTIONS_FIELD_THEME);
 }
 
 TEST_CASE("Options registered page field actions update only the current draft", "[options]") {

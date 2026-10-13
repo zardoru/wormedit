@@ -1,3 +1,4 @@
+#include <wormedit/core/rational.h>
 #include "sys/waveform_view_projection.h"
 #include <wormedit/audio/waveform_viewport.h>
 #include "sys/bmson_waveform_projection.h"
@@ -333,8 +334,7 @@ void populate_bgm_bar_bookmarks(flattened_workspace_t& flattened, const compose_
             const auto time = timing_at(*cache.timing.marker_timing_index, bookmark.chart_row,
                                         timing_boundary_side_t::before_delays);
             if (!time.seconds || time.seconds->denominator == 0) continue;
-            add(frames_to_fraction(static_cast<long double>(time.seconds->numerator) /
-                                   time.seconds->denominator),
+            add(frames_to_fraction(wormedit::to_long_double(*time.seconds)),
                 bookmark.label, false);
         }
     }

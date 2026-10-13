@@ -1,3 +1,4 @@
+#include <wormedit/core/rational.h>
 #include "sys/bookmark_navigation.h"
 
 #include <wormedit/core/timing.h>
@@ -76,8 +77,7 @@ auto make_row(const bookmark_t& bookmark, const measure_index_t& measures,
             const auto musical = musical_position_at(*timing,
                 signed_rational_t{*bookmark.audio_milliseconds, 1'000});
             if (musical.absolute_row) {
-                absolute = static_cast<long double>(musical.absolute_row->numerator) /
-                           static_cast<long double>(musical.absolute_row->denominator);
+                absolute = wormedit::to_long_double(*musical.absolute_row);
             }
         }
     }

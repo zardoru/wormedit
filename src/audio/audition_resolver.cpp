@@ -425,7 +425,7 @@ auto transient_audition_event(const chart_document_t& chart, local_position_t ta
 auto resolve_object_audition(const song_document_t& song, chart_id_t chart_id, object_id_t object,
                              std::span<const audition_source_binding_t> bindings,
                              audition_resolve_options_t options) -> audition_resolve_result_t {
-    const auto* chart = find_chart(song, chart_id);
+    const auto* chart = song.find_chart(chart_id);
     if (chart == nullptr) {
         auto result = audition_resolve_result_t{.document_revision = song.revision,
                                                 .chart = chart_id,
@@ -447,7 +447,7 @@ auto resolve_preview_bindings(const song_document_t& song, chart_id_t chart_id,
     -> preview_bindings_resolve_result_t {
     auto result = preview_bindings_resolve_result_t{
         .document_revision = song.revision, .chart = chart_id, .bindings = {}, .diagnostics = {}};
-    const auto* chart = find_chart(song, chart_id);
+    const auto* chart = song.find_chart(chart_id);
     if (chart == nullptr) {
         result.diagnostics.push_back(
             error(audition_resolve_code_t::missing_chart, "audition chart does not exist"));
@@ -528,7 +528,7 @@ auto resolve_bmson_draft_audition(const song_document_t& song,
             "BMSON draft audition has a stale revision or unknown marker"));
         return result;
     }
-    const auto* original = find_chart(song, chart_id);
+    const auto* original = song.find_chart(chart_id);
     if (!original || original->source_family != format_family_t::bmson) {
         result.diagnostics.push_back(error(
             audition_resolve_code_t::missing_chart,
@@ -568,7 +568,7 @@ auto resolve_bmson_draft_audition(const song_document_t& song,
             audition_resolve_code_t::invalid_link, message, reference_bgm_event));
         return result;
     }
-    const auto* transient_chart = find_chart(temporary.document, chart_id);
+    const auto* transient_chart = temporary.document.find_chart(chart_id);
     if (!transient_chart) {
         result.diagnostics.push_back(error(
             audition_resolve_code_t::missing_chart,

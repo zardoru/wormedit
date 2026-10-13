@@ -156,7 +156,7 @@ struct chart_id_remap_t {
 auto check_chart(const document_history_t& history, std::uint64_t revision, chart_id_t id)
     -> std::optional<document_command_result_t> {
     if (history.document.revision != revision) return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "chart command revision is stale");
-    if (find_chart(history.document, id) == nullptr)
+    if (history.document.find_chart(id) == nullptr)
         return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "chart command refers to an unknown chart");
     return std::nullopt;
 }
@@ -206,7 +206,7 @@ auto apply_add_chart_command(document_history_t& history, std::uint64_t revision
     chart_id_t template_chart) -> duplicate_chart_result_t {
     if (auto invalid = check_chart(history, revision, template_chart))
         return {.command = std::move(*invalid)};
-    const auto source = find_chart(history.document, template_chart);
+    const auto source = history.document.find_chart(template_chart);
     if (source->lane_layouts.empty())
         return {.command = document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "new chart template has no initial lane layout")};
     lane_input_profile_t profile{.layout = source->lane_layouts.front().layout,
@@ -224,7 +224,7 @@ auto apply_duplicate_chart_command(document_history_t& history, std::uint64_t re
     const auto ceiling = history_id_ceiling(history);
     if (ceiling == std::numeric_limits<std::uint64_t>::max())
         return {.command = document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "chart ID sequence is exhausted")};
-    auto duplicate = *find_chart(history.document, id);
+    auto duplicate = *history.document.find_chart(id);
     chart_id_remap_t remap{.next = ceiling + 1};
     visit_chart_ids(duplicate, remap);
     if (remap.exhausted) return {.command = document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "chart ID sequence is exhausted")};
@@ -255,9 +255,9 @@ auto apply_reorder_chart_command(document_history_t& history, std::uint64_t revi
     if (destination >= history.document.charts.size()) return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "chart destination is out of range");
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
-    const auto source = std::ranges::find(proposed.charts, id, &chart_document_t::id);
+    const auto source = proposed.find_chart(id);
     auto moved = std::move(*source);
-    proposed.charts.erase(source);
+    proposed.charts.erase(proposed.charts.begin() + (source - proposed.charts.data()));
     proposed.charts.insert(proposed.charts.begin() + static_cast<std::ptrdiff_t>(destination), std::move(moved));
     return transaction.commit("Reorder charts");
 }
@@ -299,7 +299,7 @@ auto output_group_error(const song_document_t& doc, std::optional<std::size_t> i
         return "Use an output directory for multiple chart files.";
     std::vector<chart_id_t> seen;
     for (const auto chart : group.charts) {
-        if (find_chart(doc, chart) == nullptr) return "Output group contains an unknown chart.";
+        if (doc.find_chart(chart) == nullptr) return "Output group contains an unknown chart.";
         if (std::ranges::find(seen, chart) != seen.end()) return "Output group repeats a chart.";
         seen.push_back(chart);
     }

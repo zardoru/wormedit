@@ -373,11 +373,11 @@ auto apply_ordinary_plan(document_history_t& scratch, chart_id_t chart_id,
                          note_to_bgm_policy_t policy, std::uint64_t live_revision)
     -> std::optional<document_command_result_t> {
     if (ids.empty()) return std::nullopt;
-    const auto current = std::ranges::find(scratch.document.charts, chart_id, &chart_document_t::id);
+    const auto current = scratch.document.find_chart(chart_id);
     const auto plan = plan_allocation(*current, scratch.document.resources, ids, preferred_lane, policy);
     if (!plan.accepted())
         return document_command_transaction_t::rejection(live_revision, plan.diagnostics);
-    auto& planned = *std::ranges::find(scratch.document.charts, chart_id, &chart_document_t::id);
+    auto& planned = *scratch.document.find_chart(chart_id);
     if (!apply_plan(planned, plan))
         return document_command_transaction_t::rejection(live_revision, diagnostic_code_t::invalid_id,
                         "the BGM allocation plan could not be applied");
@@ -401,8 +401,8 @@ auto move_notes_to_bgm(document_history_t& history, std::uint64_t expected_revis
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "note move to BGM has a stale document revision");
     if (notes.empty() || notes.size() > 4096)
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "note move to BGM needs 1 to 4096 notes");
-    const auto found = std::ranges::find(history.document.charts, chart_id, &chart_document_t::id);
-    if (!chart_id || found == history.document.charts.end())
+    const auto found = history.document.find_chart(chart_id);
+    if (!chart_id || found == nullptr)
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "note move to BGM refers to an unknown chart");
     const auto selection = partition_selected_notes(*found, notes);
     if (selection.error) return document_command_transaction_t::rejection(revision, {*selection.error});
@@ -450,8 +450,7 @@ auto editable_lane_at(const chart_document_t& chart, local_position_t position,
     const auto* segment = active_lane_layout_segment(chart, position);
     if (!segment) return false;
     return std::ranges::any_of(segment->layout.lanes, [lane](const auto& item) {
-        return item.id == lane && item.role != lane_role_t::autoplay &&
-               item.role != lane_role_t::invisible && item.role != lane_role_t::mine;
+        return item.id == lane && item.is_editable();
     });
 }
 
@@ -502,8 +501,8 @@ auto convert_bgm_event(chart_document_t& chart, object_id_t id, lane_id_t lane) 
     note.branch = located->event->branch;
     note.provenance = located->event->provenance;
     located->measure->bgm_events.erase(located->event);
-    const auto destination = std::ranges::find(chart.measures, position.measure, &measure_chunk_t::id);
-    if (destination == chart.measures.end()) return false;
+    const auto destination = chart.find_measure(position.measure);
+    if (destination == nullptr) return false;
     destination->notes.push_back(std::move(note));
     return true;
 }
@@ -517,11 +516,11 @@ auto move_bgm_events_to_lane(document_history_t& history, std::uint64_t expected
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "BGM move has a stale document revision");
     if (events.empty() || events.size() > 4096 || !lane)
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "BGM move needs 1 to 4096 events and a lane");
-    if (std::ranges::find(history.document.charts, chart_id, &chart_document_t::id) == history.document.charts.end())
+    if (history.document.find_chart(chart_id) == nullptr)
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "BGM move refers to an unknown chart");
     auto scratch = make_document_history(history.document);
     for (const auto id : events) {
-        auto& chart = *std::ranges::find(scratch.document.charts, chart_id, &chart_document_t::id);
+        auto& chart = *scratch.document.find_chart(chart_id);
         const auto located = find_bgm(chart, id);
         if (!located)
             return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "BGM move names an unknown event");
@@ -535,7 +534,7 @@ auto move_bgm_events_to_lane(document_history_t& history, std::uint64_t expected
         }
         auto scratch_transaction = document_command_transaction_t::from(scratch);
         auto& proposed = scratch_transaction.copy_document();
-        auto& proposed_chart = *std::ranges::find(proposed.charts, chart_id, &chart_document_t::id);
+        auto& proposed_chart = *proposed.find_chart(chart_id);
         if (!convert_bgm_event(proposed_chart, id, lane))
             return document_command_transaction_t::rejection(revision, diagnostic_code_t::collision,
                             "the target lane conflicts with the event row or hold span");
@@ -643,8 +642,8 @@ auto move_editor_selection_to_bgm(document_history_t& history, std::uint64_t exp
                                    "note move to BGM has stale input or an active gesture");
         return result;
     }
-    const auto chart = std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
-    if (chart == history.document.charts.end()) {
+    const auto chart = history.document.find_chart(state.chart);
+    if (chart == nullptr) {
         result.command = document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id,
                                    "note move to BGM refers to an unknown chart");
         return result;

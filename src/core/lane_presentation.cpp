@@ -23,10 +23,7 @@ auto editor_lane_has_scratch_class(const lane_definition_t& lane) -> bool {
         (lane.role == lane_role_t::playable && lane.key_color == lane_key_color_t::scratch);
 }
 namespace {
-auto editable(const lane_definition_t& lane) -> bool {
-    return lane.role != lane_role_t::autoplay && lane.role != lane_role_t::invisible &&
-           lane.role != lane_role_t::mine;
-}
+
 auto side(const lane_definition_t& lane, const editor_scratch_presentation_t& sides)
     -> std::optional<bool> {
     return sides[lane.stage == stage_group_t::right ? 1 : 0];
@@ -46,7 +43,7 @@ auto editor_scratch_presentation_active(const lane_layout_t& layout,
 auto editor_presented_lanes(const lane_layout_t& layout, const editor_scratch_presentation_t& sides)
     -> std::vector<const lane_definition_t*> {
     std::vector<const lane_definition_t*> lanes;
-    for (const auto& lane : layout.lanes) if (editable(lane)) lanes.push_back(&lane);
+    for (const auto& lane : layout.lanes) if ((lane).is_editable()) lanes.push_back(&lane);
     const auto has_stage = [&](stage_group_t stage) {
         return std::ranges::any_of(lanes, [stage](const auto* lane) { return lane->stage == stage; });
     };
@@ -62,8 +59,8 @@ auto editor_presented_lanes(const lane_layout_t& layout, const editor_scratch_pr
 auto editor_presented_column(const lane_layout_t& layout, lane_id_t lane,
                               const editor_scratch_presentation_t& sides) -> std::int64_t {
     if (!editor_scratch_presentation_active(layout, sides)) {
-        const auto found = std::ranges::find(layout.lanes, lane, &lane_definition_t::id);
-        return found != layout.lanes.end() && editable(*found)
+        const auto found = layout.find(lane);
+        return found != nullptr && (*found).is_editable()
             ? static_cast<std::int64_t>(found->display_order) : -1;
     }
     const auto lanes = editor_presented_lanes(layout, sides);
@@ -74,8 +71,8 @@ auto editor_presented_column(const lane_layout_t& layout, lane_id_t lane,
 auto editor_lane_across_presented_layouts(const lane_layout_t& source, const lane_layout_t& target,
                                           lane_id_t lane, const editor_scratch_presentation_t& sides)
     -> std::optional<lane_id_t> {
-    const auto original = std::ranges::find(source.lanes, lane, &lane_definition_t::id);
-    if (original == source.lanes.end()) return std::nullopt;
+    const auto original = source.find(lane);
+    if (original == nullptr) return std::nullopt;
     const auto source_column = editor_presented_column(source, lane, sides);
     std::unordered_map<std::uint64_t, std::int64_t> columns;
     if (editor_scratch_presentation_active(target, sides)) {
@@ -90,7 +87,7 @@ auto editor_lane_across_presented_layouts(const lane_layout_t& source, const lan
     const lane_definition_t* same_role{};
     const lane_definition_t* first{};
     for (const auto& candidate : target.lanes) {
-        if (!editable(candidate)) continue;
+        if (!(candidate).is_editable()) continue;
         if (!first || column(candidate) < column(*first)) first = &candidate;
         if (!same_role && candidate.role == original->role) same_role = &candidate;
         if (column(candidate) != source_column) continue;
@@ -105,7 +102,7 @@ auto editor_lane_at_presented_column(const lane_layout_t& layout, std::int64_t c
     -> const lane_definition_t* {
     if (!editor_scratch_presentation_active(layout, sides)) {
         const auto found = std::ranges::find_if(layout.lanes, [&](const auto& lane) {
-            return editable(lane) && static_cast<std::int64_t>(lane.display_order) == column;
+            return (lane).is_editable() && static_cast<std::int64_t>(lane.display_order) == column;
         });
         return found == layout.lanes.end() ? nullptr : &*found;
     }

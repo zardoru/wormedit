@@ -128,8 +128,8 @@ auto retained_resource_name(std::string_view candidate, std::string_view asset_n
 
 auto asset_path(const song_document_t& song, asset_id_t id, std::string path)
     -> std::string {
-    const auto asset = std::ranges::find(song.audio_assets, id, &audio_asset_t::id);
-    if (asset == song.audio_assets.end()) {
+    const auto asset = song.find_audio_asset(id);
+    if (asset == nullptr) {
         fail(bmson_write_diagnostic_code_t::unresolved_resource,
              "sound channel refers to an unknown audio asset", std::move(path));
     }
@@ -875,8 +875,8 @@ auto resource_name_for_identity(const song_document_t& song, std::string_view na
 auto selected_chart(const song_document_t& song, bmson_write_options_t options)
     -> const chart_document_t& {
     if (options.chart) {
-        const auto found = std::ranges::find(song.charts, *options.chart, &chart_document_t::id);
-        if (found != song.charts.end()) return *found;
+        const auto found = song.find_chart(*options.chart);
+        if (found != nullptr) return *found;
         fail(bmson_write_diagnostic_code_t::missing_chart,
              "requested chart ID does not exist in this song", "$.charts");
     }

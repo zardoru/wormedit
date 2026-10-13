@@ -200,25 +200,10 @@ void remap_active_branch_ids(
 
 auto same_identities(const std::vector<target_resource_identity_t>& left,
                      const std::vector<target_resource_identity_t>& right) -> bool {
-    return left.size() == right.size() &&
-           std::ranges::equal(left, right, [](const auto& a, const auto& b) {
-               return a.family == b.family && a.identifier == b.identifier &&
-                      a.namespace_name == b.namespace_name;
-           });
+    return left == right;
 }
 
-auto same_lane_shape(const lane_layout_t& left, const lane_layout_t& right) -> bool {
-    if (left.profile_id != right.profile_id || left.lanes.size() != right.lanes.size()) return false;
-    for (std::size_t index = 0; index < left.lanes.size(); ++index) {
-        const auto& a = left.lanes[index];
-        const auto& b = right.lanes[index];
-        if (a.name != b.name || a.role != b.role || a.bms_channels.visible != b.bms_channels.visible ||
-            a.bms_channels.invisible != b.bms_channels.invisible ||
-            a.bms_channels.long_note != b.bms_channels.long_note ||
-            a.bms_channels.mine != b.bms_channels.mine) return false;
-    }
-    return true;
-}
+
 
 auto remap_lanes(const chart_document_t& source, chart_document_t& target) -> bool {
     if (source.lane_layouts.size() != target.lane_layouts.size() ||
@@ -228,7 +213,7 @@ auto remap_lanes(const chart_document_t& source, chart_document_t& target) -> bo
     for (std::size_t segment = 0; segment < source.lane_layouts.size(); ++segment) {
         const auto& old_layout = source.lane_layouts[segment].layout;
         auto& new_layout = target.lane_layouts[segment].layout;
-        if (!same_lane_shape(old_layout, new_layout)) return false;
+        if (!old_layout.has_same_shape(new_layout)) return false;
         target.lane_layouts[segment].id = source.lane_layouts[segment].id;
         for (std::size_t lane = 0; lane < old_layout.lanes.size(); ++lane) {
             lane_ids.emplace(new_layout.lanes[lane].id.value, old_layout.lanes[lane].id);
@@ -275,8 +260,8 @@ auto add_resource_mapping(const song_document_t& source, const resource_entry_t&
                           std::unordered_map<std::uint64_t, asset_id_t>& audio,
                           std::unordered_map<std::uint64_t, asset_id_t>& visual) -> bool {
     resources.emplace(parsed.id.value, old.id);
-    const auto audio_asset = std::ranges::find(source.audio_assets, old.asset, &audio_asset_t::id);
-    if (audio_asset != source.audio_assets.end()) {
+    const auto audio_asset = source.find_audio_asset(old.asset);
+    if (audio_asset != nullptr) {
         const auto [mapped, inserted] = audio.emplace(parsed.asset.value, old.asset);
         return inserted || mapped->second == old.asset;
     }
@@ -319,8 +304,8 @@ auto restore_audio_assets(const song_document_t& source, song_document_t& target
     for (auto& asset : target.audio_assets) {
         const auto mapped = mapping.find(asset.id.value);
         if (mapped == mapping.end()) return false;
-        const auto old = std::ranges::find(source.audio_assets, mapped->second, &audio_asset_t::id);
-        if (old == source.audio_assets.end()) return false;
+        const auto old = source.find_audio_asset(mapped->second);
+        if (old == nullptr) return false;
         asset.id = old->id;
         asset.source_path = old->source_path;
         asset.stream = old->stream;
@@ -1121,8 +1106,8 @@ auto apply_bms_branch_choice_command(document_history_t& history, std::uint64_t 
     bms_branch_selection_request_t request{.chart = choice.chart};
     if (expected_revision == history.document.revision) {
         const auto chart =
-            std::ranges::find(history.document.charts, choice.chart, &chart_document_t::id);
-        if (chart != history.document.charts.end()) {
+            history.document.find_chart(choice.chart);
+        if (chart != nullptr) {
             request.proposed = chart->active_branch_selection;
             const auto selected =
                 std::ranges::find(request.proposed, choice.branch, &branch_selection_t::branch);
@@ -1149,7 +1134,7 @@ auto apply_bms_branch_block_create_command(document_history_t& history,
         add_block_error(result, "BMS branch block creation revision is stale");
         return result;
     }
-    const auto* chart = find_chart(history.document, request.chart);
+    const auto* chart = history.document.find_chart(request.chart);
     if (chart == nullptr) {
         add_block_error(result, "selected BMS chart no longer exists");
         return result;
@@ -1167,7 +1152,7 @@ auto apply_bms_branch_block_remove_command(document_history_t& history,
         add_block_error(result, "BMS branch block removal revision is stale");
         return result;
     }
-    const auto* chart = find_chart(history.document, request.chart);
+    const auto* chart = history.document.find_chart(request.chart);
     if (chart == nullptr) {
         add_block_error(result, "selected BMS chart no longer exists");
         return result;
@@ -1184,7 +1169,7 @@ auto apply_bms_branch_leaf_move_command(document_history_t& history, std::uint64
         add_block_error(result, "BMS branch leaf move revision is stale");
         return result;
     }
-    const auto* chart = find_chart(history.document, request.chart);
+    const auto* chart = history.document.find_chart(request.chart);
     if (chart == nullptr) {
         add_block_error(result, "selected BMS chart no longer exists");
         return result;

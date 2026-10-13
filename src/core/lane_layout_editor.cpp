@@ -30,10 +30,7 @@ auto ordered_segments(const chart_document_t& chart, const measure_index_t& inde
     return ordered;
 }
 
-auto has_lane(const lane_layout_t& layout, lane_id_t lane) -> bool {
-    return std::ranges::any_of(layout.lanes,
-                               [lane](const auto& definition) { return definition.id == lane; });
-}
+auto has_lane(const lane_layout_t& layout, lane_id_t lane) -> bool { return layout.contains(lane); }
 
 // Notes whose lane is missing from the layout active at their position.
 auto count_unmapped_notes(const chart_document_t& chart) -> std::optional<std::size_t> {
@@ -157,8 +154,8 @@ auto apply_lane_layout_edit(document_history_t& history, std::uint64_t expected_
     }
     const auto chart_id = std::visit([](const auto& edit) { return edit.chart; }, action);
     auto& proposed = transaction.copy_document();
-    const auto chart = std::ranges::find(proposed.charts, chart_id, &chart_document_t::id);
-    if (!chart_id || chart == proposed.charts.end()) {
+    const auto chart = proposed.find_chart(chart_id);
+    if (!chart_id || chart == nullptr) {
         reject(result, diagnostic_code_t::invalid_id, "lane layout edit refers to an unknown chart");
         return result;
     }

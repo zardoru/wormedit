@@ -21,14 +21,9 @@ auto fail(bms_branch_projection_status_t status, std::string message, branch_id_
     return result;
 }
 
-auto is_choice_control(bms_control_kind_t kind) -> bool {
-    return kind == bms_control_kind_t::random || kind == bms_control_kind_t::switch_block;
-}
 
-auto is_switch_branch(bms_control_kind_t kind) -> bool {
-    return kind == bms_control_kind_t::case_branch ||
-           kind == bms_control_kind_t::default_branch;
-}
+
+
 
 struct branch_tree_validation_context_t {
     bms_branch_projection_limits_t limits;

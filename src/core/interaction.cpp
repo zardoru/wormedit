@@ -243,7 +243,7 @@ auto valid_viewport(const chart_document_t& chart, const measure_index_t& index,
 auto resolve_view_geometry(const document_history_t& history,
                            const editor_interaction_state_t& state, const measure_index_t* retained)
     -> std::variant<view_geometry_t, diagnostic_list_t> {
-    const auto* chart = find_chart(history.document, state.chart);
+    const auto* chart = history.document.find_chart(state.chart);
     if (!chart)
         return diagnostic_list_t{
             error(diagnostic_code_t::invalid_id, "editor interaction refers to an unknown chart")};
@@ -460,31 +460,11 @@ auto make_view(const document_history_t& history, const editor_interaction_state
 // The kind a note takes once it has a tail: rolls and fakes keep their kind, all else is a hold.
 
 
-auto find_note(const chart_document_t& chart, object_id_t id) -> const note_t* {
-    for (const auto& measure : chart.measures) {
-        const auto found = std::ranges::find(measure.notes, id, &note_t::id);
-        if (found != measure.notes.end())
-            return &*found;
-    }
-    return nullptr;
-}
 
-auto find_note(chart_document_t& chart, object_id_t id) -> note_t* {
-    for (auto& measure : chart.measures) {
-        const auto found = std::ranges::find(measure.notes, id, &note_t::id);
-        if (found != measure.notes.end())
-            return &*found;
-    }
-    return nullptr;
-}
 
-auto find_bgm_event(const chart_document_t& chart, object_id_t id) -> const bgm_event_t* {
-    for (const auto& measure : chart.measures) {
-        const auto event = std::ranges::find(measure.bgm_events, id, &bgm_event_t::id);
-        if (event != measure.bgm_events.end()) return &*event;
-    }
-    return nullptr;
-}
+
+
+
 
 
 // Gives each moved tap's retained slice event the tap's new position (and lane, when playable).
@@ -592,7 +572,7 @@ auto follow_editor_playhead(document_history_t& history, editor_interaction_stat
                             editor_measure_geometry_t geometry, local_position_t position,
                             double target_scroll, double following_anchor_fraction,
                             double cursor_subrow) -> editor_interaction_result_t {
-    const auto* chart = find_chart(history.document, state.chart);
+    const auto* chart = history.document.find_chart(state.chart);
     if (!chart || !geometry.index || geometry.chart != state.chart ||
         geometry.document_revision != history.document.revision ||
         !std::isfinite(target_scroll) || !std::isfinite(following_anchor_fraction) ||
@@ -640,7 +620,7 @@ auto make_editor_interaction(const document_history_t& history, chart_id_t chart
                              std::uint64_t requested_snap_denominator,
                              double viewport_height_pixels) -> editor_interaction_setup_t {
     editor_interaction_setup_t result;
-    const auto* chart = find_chart(history.document, chart_id);
+    const auto* chart = history.document.find_chart(chart_id);
     if (chart == nullptr) {
         result.diagnostics.push_back(
             error(diagnostic_code_t::invalid_id, "editor interaction refers to an unknown chart"));
@@ -693,7 +673,7 @@ auto recover_editor_interaction(const document_history_t& history,
                                 const editor_interaction_state_t& previous)
     -> editor_interaction_setup_t {
     editor_interaction_setup_t result;
-    const auto* chart = find_chart(history.document, previous.chart);
+    const auto* chart = history.document.find_chart(previous.chart);
     if (chart == nullptr) {
         result.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
                                            "editor interaction refers to an unknown chart"));
@@ -712,7 +692,7 @@ auto recover_editor_interaction(const document_history_t& history,
         const auto row = absolute_row(index, segment.position);
         if (!row || *row >= first_row)
             continue;
-        const auto editable = std::ranges::find_if(segment.layout.lanes, editable_lane);
+        const auto editable = std::ranges::find_if(segment.layout.lanes, &lane_definition_t::is_editable);
         if (editable == segment.layout.lanes.end())
             continue;
         first_row = *row;
@@ -939,7 +919,7 @@ auto delete_editor_selection(editor_edit_context_t& context) -> editor_interacti
     auto staged = stage_delete_stem_points(proposed, context, ids);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&staged))
         return diagnostic_result(context.history, context.state, *diagnostics);
-    auto* chart = find_chart(proposed, context.state.chart);
+    auto* chart = proposed.find_chart(context.state.chart);
     auto removed = std::get<std::size_t>(staged);
     const auto selected = ids.total() != 0;
     removed += std::erase_if(chart->bookmarks, [&](const auto& bookmark) {
@@ -1106,11 +1086,11 @@ auto apply_note_lane_assignment_document(document_history_t& history, chart_id_t
     -> document_command_result_t {
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
-    auto* chart = find_chart(proposed, chart_id);
+    auto* chart = proposed.find_chart(chart_id);
     note_move_plan_t plan;
     plan.moved.reserve(candidates.size());
     for (const auto& candidate : candidates) {
-        auto* note = find_note(*chart, candidate.note->id);
+        auto* note = (*chart).find_note(candidate.note->id);
         if (!note) return {.revision = history.document.revision,
             .diagnostics = {error(diagnostic_code_t::invalid_id, "lane assignment target disappeared")}};
         plan.moved.push_back({.id = note->id, .lane = lane, .position = note->position,
@@ -1435,7 +1415,7 @@ auto place_keyboard_entry(document_history_t& scratch, editor_interaction_state_
         scratch, scratch.document.revision, state.chart, *stem, target, lane, geometry);
     if (!inserted)
         return inserted.diagnostics;
-    const auto* chart = find_chart(scratch.document, state.chart);
+    const auto* chart = scratch.document.find_chart(state.chart);
     for (const auto& measure : chart->measures)
         for (const auto& note : measure.notes)
             if (note.position == target && note.lane == lane)
@@ -1598,8 +1578,8 @@ auto begin_semantic_paint(editor_edit_context_t& context, layer_id_t layer_id,
             history, state,
             {error(diagnostic_code_t::invalid_id,
                    "semantic-layer paint must target one note or BGM event")});
-    if ((note_id && !find_note(context.scope.chart, note_id)) ||
-        (bgm_event && !find_bgm_event(context.scope.chart, *bgm_event)))
+    if ((note_id && !context.scope.chart.find_note(note_id)) ||
+        (bgm_event && !context.scope.chart.find_bgm_event(*bgm_event)))
         return diagnostic_result(history, state,
             {error(diagnostic_code_t::invalid_id,
                    "semantic-layer paint target is not in the chart", note_id ? note_id : *bgm_event)});
@@ -1833,7 +1813,7 @@ auto note_kind_allowed(const chart_document_t& chart, note_kind_t kind) -> bool 
 
 auto arm_note_kind(const document_history_t& history, editor_interaction_state_t& state,
                     note_kind_t kind) -> editor_interaction_result_t {
-    const auto* chart = find_chart(history.document, state.chart);
+    const auto* chart = history.document.find_chart(state.chart);
     if (!chart || !note_kind_allowed(*chart, kind))
         return diagnostic_result(history, state,
             {error(diagnostic_code_t::invalid_binding, "Note kind is unavailable for this chart profile.")});
@@ -2218,7 +2198,7 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
         return *rejected;
     if (auto rejected = validate_virtual_cursor_action(history, state, action))
         return *rejected;
-    const auto* chart = find_chart(history.document, state.chart);
+    const auto* chart = history.document.find_chart(state.chart);
     if (chart && !note_kind_allowed(*chart, state.armed_note_kind))
         state.armed_note_kind = note_kind_t::tap;
     const auto initial_view = make_view(history, state);
@@ -2253,7 +2233,7 @@ auto scoped_selection(const editor_interaction_state_t& state,
 
 auto select_editor_scope(document_history_t& history, editor_interaction_state_t& state,
     editor_selection_scope_t scope, bool invert) -> editor_interaction_result_t {
-    const auto* chart = find_chart(history.document, state.chart);
+    const auto* chart = history.document.find_chart(state.chart);
     if (!chart) return diagnostic_result(history, state,
         {error(diagnostic_code_t::invalid_id, "Selection chart is unavailable")});
     const auto built = build_editor_hit_test_index(*chart, history.document.revision);
@@ -2290,7 +2270,7 @@ namespace wormedit {
 
 auto assign_note_lanes(document_history_t& history, editor_interaction_state_t& state,
                        lane_id_t lane) -> editor_interaction_result_t {
-    const auto* chart = find_chart(history.document, state.chart);
+    const auto* chart = history.document.find_chart(state.chart);
     if (!chart)
         return diagnostic_result(history, state, {error(diagnostic_code_t::invalid_id,
                                                         "lane assignment chart is unavailable")});

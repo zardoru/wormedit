@@ -165,8 +165,8 @@ auto apply_note_label_edit(document_history_t& history, std::uint64_t expected_r
     auto transaction = document_command_transaction_t::from(history);
 
     auto& proposed = transaction.copy_document();
-    const auto chart = std::ranges::find(proposed.charts, action.chart, &chart_document_t::id);
-    if (!action.chart || chart == proposed.charts.end()) {
+    const auto chart = proposed.find_chart(action.chart);
+    if (!action.chart || chart == nullptr) {
         reject(result, diagnostic_code_t::invalid_id, "note-label edit refers to an unknown chart");
         return result;
     }

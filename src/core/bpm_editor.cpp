@@ -70,8 +70,8 @@ struct bpm_edit_context_t {
 
 auto edit_context(song_document_t& document, chart_id_t id, bpm_edit_limits_t limits,
                   document_command_result_t& result) -> chart_document_t* {
-    const auto found = std::ranges::find(document.charts, id, &chart_document_t::id);
-    if (!id || found == document.charts.end()) {
+    const auto found = document.find_chart(id);
+    if (!id || found == nullptr) {
         reject(result, diagnostic_code_t::invalid_id, "BPM edit refers to an unknown chart");
         return nullptr;
     }
@@ -395,8 +395,8 @@ auto begin_beat_interval_drag(const song_document_t& document, chart_id_t chart,
         result.diagnostics.push_back(*precondition);
         return result;
     }
-    const auto selected = std::ranges::find(document.charts, chart, &chart_document_t::id);
-    if (!chart || selected == document.charts.end()) {
+    const auto selected = document.find_chart(chart);
+    if (!chart || selected == nullptr) {
         result.diagnostics.push_back(
             error(diagnostic_code_t::invalid_id, "beat fit refers to an unknown chart"));
         return result;
@@ -416,8 +416,8 @@ auto begin_beat_interval_anchor_drag(const song_document_t& document, chart_id_t
                                      std::uint32_t sample_rate, bool timing_locked)
     -> beat_interval_drag_result_t {
     beat_interval_drag_result_t result;
-    const auto selected = std::ranges::find(document.charts, chart, &chart_document_t::id);
-    if (!chart || selected == document.charts.end()) {
+    const auto selected = document.find_chart(chart);
+    if (!chart || selected == nullptr) {
         result.diagnostics.push_back(
             error(diagnostic_code_t::invalid_id, "beat fit refers to an unknown chart"));
         return result;
@@ -444,8 +444,8 @@ auto update_beat_interval_drag(const song_document_t& document, const beat_inter
                           : "beat fit expired after the document changed"));
         return result;
     }
-    const auto chart = std::ranges::find(document.charts, drag.chart, &chart_document_t::id);
-    if (chart == document.charts.end()) {
+    const auto chart = document.find_chart(drag.chart);
+    if (chart == nullptr) {
         result.diagnostics.push_back(
             error(diagnostic_code_t::invalid_id, "beat fit chart is unavailable"));
         return result;
@@ -491,8 +491,8 @@ auto update_beat_interval_drag_to_bpm(const song_document_t& document,
                                                      timing_locked);
     if (!validated) return validated;
     auto updated = *validated.drag;
-    auto chart = std::ranges::find(document.charts, drag.chart, &chart_document_t::id);
-    if (chart == document.charts.end()) return validated;
+    auto chart = document.find_chart(drag.chart);
+    if (chart == nullptr) return validated;
     const auto candidate = chart_with_anchor_bpm(*chart, drag, target_bpm);
     if (!candidate) return validated;
     const auto measures = build_measure_index(*candidate);

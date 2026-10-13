@@ -173,8 +173,8 @@ void append_target_diagnostics(conversion_result_t& result,
 }
 
 auto selected_chart(const song_document_t& song, chart_id_t id) -> const chart_document_t* {
-    const auto found = std::ranges::find(song.charts, id, &chart_document_t::id);
-    return found == song.charts.end() ? nullptr : &*found;
+    const auto found = song.find_chart(id);
+    return found == nullptr ? nullptr : &*found;
 }
 
 auto valid_staged_relative_path(const std::filesystem::path& staged_path) -> bool {
@@ -241,8 +241,8 @@ auto apply_quantization(conversion_context_t& context, song_document_t& prepared
         return false;
     }
     for (const auto chart_id : charts) {
-        const auto found = std::ranges::find(prepared.charts, chart_id, &chart_document_t::id);
-        if (found == prepared.charts.end()) {
+        const auto found = prepared.find_chart(chart_id);
+        if (found == nullptr) {
             add_diagnostic(context.result, diagnostic_severity_t::error,
                            conversion_diagnostic_code_t::chart_not_found,
                            conversion_stage_t::transform, context.request.target, chart_id,
@@ -276,7 +276,7 @@ auto prepare_document(conversion_context_t& context, const song_document_t& song
         std::vector<chart_document_t> selected;
         selected.reserve(charts.size());
         for (const auto id : charts) {
-            const auto found = std::ranges::find(prepared.charts, id, &chart_document_t::id);
+            const auto found = prepared.find_chart(id);
             selected.push_back(*found);
         }
         prepared.charts = std::move(selected);
@@ -511,7 +511,7 @@ auto prepare_bms_slice_resources(conversion_context_t& context, song_document_t&
     const auto used = referenced_slice_export_resources(song, charts);
     std::erase_if(song.resources, [&](const auto& resource) { return !used.contains(resource.id.value); });
     const auto count = std::ranges::count_if(song.resources, [&](const auto& resource) {
-        return std::ranges::find(song.audio_assets, resource.asset, &audio_asset_t::id) != song.audio_assets.end();
+        return song.find_audio_asset(resource.asset) != nullptr;
     });
     constexpr std::size_t capacity = 1295;
     if (static_cast<std::size_t>(count) <= capacity) return true;
@@ -575,7 +575,7 @@ auto prepare_slice_exports(conversion_context_t& context, song_document_t& prepa
     auto options = context.request.slice_options;
     shared_slices_t shared;
     for (const auto id : charts) {
-        auto chart = std::ranges::find(prepared.charts, id, &chart_document_t::id);
+        auto chart = prepared.find_chart(id);
         if (chart->source_family != format_family_t::bmson) continue;
         auto plan = build_slice_span_plan(prepared, id, context.request.slice_sources, options);
         if (!plan) {

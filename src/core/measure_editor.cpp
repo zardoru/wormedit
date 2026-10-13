@@ -50,16 +50,16 @@ auto next_measure_id(const chart_document_t& chart) -> std::optional<measure_id_
 }
 
 auto unique_measure(chart_document_t& chart, measure_id_t id, document_command_result_t& result)
-    -> std::vector<measure_chunk_t>::iterator {
-    const auto found = std::ranges::find(chart.measures, id, &measure_chunk_t::id);
-    if (!id || found == chart.measures.end()) {
+    -> measure_chunk_t* {
+    const auto found = chart.find_measure(id);
+    if (!id || found == nullptr) {
         reject(result, diagnostic_code_t::invalid_id, "measure edit refers to an unknown measure");
-        return chart.measures.end();
+        return nullptr;
     }
     if (std::ranges::count(chart.measures, id, &measure_chunk_t::id) != 1) {
         reject(result, diagnostic_code_t::duplicate_id,
                "measure ID is ambiguous because it appears more than once");
-        return chart.measures.end();
+        return nullptr;
     }
     return found;
 }
@@ -218,8 +218,8 @@ void retarget_free_positions(chart_document_t& chart, measure_id_t removed,
 auto remove_measure_contents(chart_document_t& chart, measure_id_t id)
     -> measure_removal_proposal_t {
     measure_removal_proposal_t proposal;
-    const auto found = std::ranges::find(chart.measures, id, &measure_chunk_t::id);
-    if (!id || found == chart.measures.end()) {
+    const auto found = chart.find_measure(id);
+    if (!id || found == nullptr) {
         proposal.diagnostics.push_back(
             error(diagnostic_code_t::invalid_id, "measure edit refers to an unknown measure"));
         return proposal;
@@ -233,7 +233,7 @@ auto remove_measure_contents(chart_document_t& chart, measure_id_t id)
         proposal.diagnostics.push_back(error(diagnostic_code_t::unsupported_feature, blocker));
         return proposal;
     }
-    const auto index = static_cast<std::size_t>(std::distance(chart.measures.begin(), found));
+    const auto index = static_cast<std::size_t>(found - chart.measures.data());
     std::optional<measure_id_t> next;
     if (index + 1 < chart.measures.size()) next = chart.measures[index + 1].id;
     proposal.deleted_notes = found->notes.size();
@@ -256,8 +256,8 @@ struct measure_edit_context_t {
 };
 
 auto target_measure_chart(measure_edit_context_t& context, chart_id_t id) -> chart_document_t* {
-    const auto chart = std::ranges::find(context.proposed.charts, id, &chart_document_t::id);
-    if (!id || chart == context.proposed.charts.end()) {
+    const auto chart = context.proposed.find_chart(id);
+    if (!id || chart == nullptr) {
         reject(context.result, diagnostic_code_t::invalid_id,
                "measure edit refers to an unknown chart");
         return nullptr;
@@ -308,7 +308,7 @@ auto apply_measure_action(measure_edit_context_t& context,
         return;
     }
     const auto measure = unique_measure(*chart, edit.measure, context.result);
-    if (measure == chart->measures.end() ||
+    if (measure == nullptr ||
         !validate_definition(*chart, edit.definition, context.limits, context.result)) {
         return;
     }
@@ -342,7 +342,7 @@ auto apply_measure_action(measure_edit_context_t& context,
         }
         seen.push_back(id);
         const auto measure = unique_measure(*chart, id, context.result);
-        if (measure == chart->measures.end()) {
+        if (measure == nullptr) {
             return;
         }
         if (!same_definition(measure->definition, edit.definition)) {
@@ -435,7 +435,7 @@ auto place_lifted_objects(chart_document_t& chart, const measure_index_t& after,
         *item.position = *position;
     }
     const auto bucket_of = [&](measure_id_t id) -> measure_chunk_t& {
-        return *std::ranges::find(chart.measures, id, &measure_chunk_t::id);
+        return *chart.find_measure(id);
     };
     for (auto& item : notes) {
         const auto position = place(item.row);
@@ -507,15 +507,15 @@ auto split_measure_at(chart_document_t& chart, local_position_t position,
                       const measure_edit_limits_t& limits) -> bool {
     const auto old_index = build_measure_index(chart);
     const auto* before = std::get_if<measure_index_t>(&old_index);
-    const auto target = std::ranges::find(chart.measures, position.measure, &measure_chunk_t::id);
-    if (!before || target == chart.measures.end() || !absolute_row(*before, position)) return false;
+    const auto target = chart.find_measure(position.measure);
+    if (!before || target == nullptr || !absolute_row(*before, position)) return false;
     const auto capacity = validate_measure(chart.divisions_per_standard_measure, target->definition);
     if (!capacity || position.row == 0 || position.row >= *capacity.row_capacity ||
         chart.measures.size() >= limits.maximum_measures ||
         std::max(position.row, *capacity.row_capacity - position.row) > limits.maximum_rows_per_measure) return false;
     const auto id = next_measure_id(chart);
     if (!id) return false;
-    const auto at = static_cast<std::size_t>(target - chart.measures.begin());
+    const auto at = static_cast<std::size_t>(target - chart.measures.data());
     std::vector<rowed_note_t> notes;
     std::vector<rowed_bgm_t> bgm;
     std::vector<rowed_free_t> free_rows;
@@ -914,7 +914,7 @@ auto apply_measure_action(measure_edit_context_t& context,
         return;
     }
     const auto measure = unique_measure(*chart, edit.measure, context.result);
-    if (measure == chart->measures.end()) {
+    if (measure == nullptr) {
         return;
     }
     if (chart->measures.size() == 1) {
@@ -928,8 +928,8 @@ auto apply_measure_action(measure_edit_context_t& context,
         return;
     }
     const auto removed_index =
-        static_cast<std::size_t>(std::distance(chart->measures.begin(), measure));
-    chart->measures.erase(measure);
+        static_cast<std::size_t>(measure - chart->measures.data());
+    chart->measures.erase(chart->measures.begin() + (measure - chart->measures.data()));
     shift_projections_for_delete(*chart, removed_index);
     context.label = "Delete measure";
     context.changed = true;
@@ -1031,8 +1031,8 @@ auto extend_native_charts_to_audio_end(song_document_t& document) -> bool {
     for (const auto& resource : document.resources) {
         if (std::ranges::find(resource.roles, resource_role_t::music) == resource.roles.end() &&
             std::ranges::find(resource.roles, resource_role_t::bgm) == resource.roles.end()) continue;
-        const auto asset = std::ranges::find(document.audio_assets, resource.asset, &audio_asset_t::id);
-        if (asset == document.audio_assets.end() || !asset->stream.frame_count ||
+        const auto asset = document.find_audio_asset(resource.asset);
+        if (asset == nullptr || !asset->stream.frame_count ||
             asset->stream.sample_rate == 0) continue;
         const auto seconds = static_cast<long double>(*asset->stream.frame_count) /
                              asset->stream.sample_rate;

@@ -420,7 +420,7 @@ auto commit_virtual_hold(editor_edit_context_t& context,
                          const place_virtual_bms_hold_action_t& action,
                          const virtual_hold_rows_t& rows) -> editor_interaction_result_t {
     auto scratch = make_document_history(context.history.document);
-    auto* chart = find_chart(scratch.document, context.state.chart);
+    auto* chart = scratch.document.find_chart(context.state.chart);
     if (const auto failure = extend_virtual_chart(*chart, rows.measure_count))
         return diagnostic_result(context.history, context.state, *failure);
     const auto built = build_measure_index(*chart);
@@ -532,7 +532,7 @@ auto place_virtual_bms_tap(editor_edit_context_t& context,
         return diagnostic_result(context.history, context.state, *failure);
     const auto resolved = std::get<virtual_tap_target_t>(target);
     auto scratch = make_document_history(context.history.document);
-    auto* chart = find_chart(scratch.document, context.state.chart);
+    auto* chart = scratch.document.find_chart(context.state.chart);
     if (const auto failure = extend_virtual_chart(*chart, resolved.measure + 1))
         return diagnostic_result(context.history, context.state, *failure);
     auto staged = context.state;
@@ -724,7 +724,7 @@ auto append_semantic_paint_note(editor_edit_context_t& context, object_id_t note
             history, state,
             {error(diagnostic_code_t::invalid_hold,
                    "semantic-layer paint gesture is stale after a document edit")});
-    if (!find_note(context.scope.chart, note_id))
+    if (!context.scope.chart.find_note(note_id))
         return diagnostic_result(
             history, state,
             {error(diagnostic_code_t::invalid_id,
@@ -763,7 +763,7 @@ auto append_semantic_paint_bgm_event(editor_edit_context_t& context, object_id_t
             history, state,
             {error(diagnostic_code_t::invalid_hold,
                    "semantic-layer paint gesture is stale after a document edit")});
-    if (!find_bgm_event(context.scope.chart, event_id))
+    if (!context.scope.chart.find_bgm_event(event_id))
         return diagnostic_result(
             history, state,
             {error(diagnostic_code_t::invalid_id,

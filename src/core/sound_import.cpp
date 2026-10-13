@@ -323,8 +323,8 @@ auto import_entry(document_history_t& draft, const bulk_sound_import_entry_t& en
         resource.roles.push_back(resource_role_t::bgm);
     if (!stem_chart) return true;
     // Each command replaces the draft document, so resolve the chart afresh.
-    const auto chart = std::ranges::find(draft.document.charts, stem_chart, &chart_document_t::id);
-    return chart != draft.document.charts.end() &&
+    const auto chart = draft.document.find_chart(stem_chart);
+    return chart != nullptr &&
            append_stem(*chart, resource, next_channel_source_index(draft.document, *chart), ids,
                        result);
 }
@@ -453,9 +453,8 @@ auto apply_bulk_sound_import(document_history_t& history, std::uint64_t expected
     chart_id_t stem_chart{};
     object_id_scan_t ids;
     if (action.chart) {
-        const auto found = std::ranges::find(draft.document.charts, action.chart,
-                                             &chart_document_t::id);
-        if (found == draft.document.charts.end()) {
+        const auto found = draft.document.find_chart(action.chart);
+        if (found == nullptr) {
             reject(result, diagnostic_code_t::invalid_id, "sound import chart is unknown");
             return result;
         }

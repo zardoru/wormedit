@@ -147,8 +147,8 @@ auto build_proposal(const song_document_t& document, chart_id_t chart_id,
                "tap timing estimate contains an invalid BPM or phase");
         return std::nullopt;
     }
-    const auto chart = std::ranges::find(document.charts, chart_id, &chart_document_t::id);
-    if (!chart_id || chart == document.charts.end()) {
+    const auto chart = document.find_chart(chart_id);
+    if (!chart_id || chart == nullptr) {
         reject(result, diagnostic_code_t::invalid_id, "tap timing apply refers to an unknown chart");
         return std::nullopt;
     }
@@ -219,8 +219,8 @@ auto proposed_document(const song_document_t& document,
         verified->beat_zero_audio_offset_seconds != proposal.beat_zero_audio_offset_seconds)
         return std::nullopt;
     auto proposed = document;
-    const auto chart = std::ranges::find(proposed.charts, proposal.chart, &chart_document_t::id);
-    if (chart == proposed.charts.end() || !apply_proposal_to_chart(*chart, *verified) ||
+    const auto chart = proposed.find_chart(proposal.chart);
+    if (chart == nullptr || !apply_proposal_to_chart(*chart, *verified) ||
         !extend_native_charts_to_audio_end(proposed)) return std::nullopt;
     const auto diagnostics = validate_document(proposed);
     if (std::ranges::any_of(diagnostics, [](const auto& item) {
@@ -253,8 +253,8 @@ auto build_tap_timing_preview(const song_document_t& document,
     if (proposal.document_revision != document.revision) return std::nullopt;
     const auto proposed = proposed_document(document, proposal);
     if (!proposed) return std::nullopt;
-    const auto chart = std::ranges::find(proposed->charts, proposal.chart, &chart_document_t::id);
-    return chart == proposed->charts.end() ? std::nullopt
+    const auto chart = proposed->find_chart(proposal.chart);
+    return chart == nullptr ? std::nullopt
                                            : std::optional<chart_document_t>{*chart};
 }
 

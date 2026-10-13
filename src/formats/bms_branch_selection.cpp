@@ -21,16 +21,9 @@ auto add_error(bms_branch_selection_result_t& result, bms_branch_selection_diagn
         {diagnostic_severity_t::error, code, std::move(message), std::move(path)});
 }
 
-auto is_choice_control(bms_control_kind_t kind) -> bool {
-    return kind == bms_control_kind_t::random || kind == bms_control_kind_t::switch_block;
-}
 
-auto begins_branch_scope(bms_control_kind_t kind) -> bool {
-    return kind == bms_control_kind_t::random || kind == bms_control_kind_t::if_group ||
-           kind == bms_control_kind_t::if_branch || kind == bms_control_kind_t::else_if_branch ||
-           kind == bms_control_kind_t::else_branch || kind == bms_control_kind_t::switch_block ||
-           kind == bms_control_kind_t::case_branch || kind == bms_control_kind_t::default_branch;
-}
+
+
 
 struct control_signature_t {
     bms_control_kind_t kind{bms_control_kind_t::root};
@@ -75,7 +68,7 @@ auto control_inventory(const bms_control_node_t& root) -> control_inventory_t {
                 result.choices.push_back({node.id, node.source_order});
             }
         }
-        const auto child_inside_branch = inside_branch || begins_branch_scope(node.kind);
+        const auto child_inside_branch = inside_branch || is_branch_boundary(node.kind);
         for (const auto& child : node.children) {
             self(self, child, depth + 1, child_inside_branch);
         }
@@ -133,11 +126,11 @@ void retain_runtime_asset_metadata(const song_document_t& original,
             continue;
         }
         const auto old_audio =
-            std::ranges::find(original.audio_assets, old_resource->asset, &audio_asset_t::id);
+            original.find_audio_asset(old_resource->asset);
         const auto new_audio =
-            std::ranges::find(rematerialized.audio_assets, resource.asset, &audio_asset_t::id);
-        if (old_audio != original.audio_assets.end() &&
-            new_audio != rematerialized.audio_assets.end()) {
+            rematerialized.find_audio_asset(resource.asset);
+        if (old_audio != nullptr &&
+            new_audio != nullptr) {
             new_audio->source_path = old_audio->source_path;
             new_audio->stream = old_audio->stream;
             new_audio->waveform_cache_path = old_audio->waveform_cache_path;
@@ -368,9 +361,9 @@ auto rematerialize_bms_branch_selection(const song_document_t& song,
     }
 
     const auto chart = request.chart.has_value()
-                           ? std::ranges::find(song.charts, *request.chart, &chart_document_t::id)
-                           : song.charts.begin();
-    if (chart == song.charts.end()) {
+                           ? song.find_chart(*request.chart)
+                           : &song.charts.front();
+    if (chart == nullptr) {
         add_error(result, bms_branch_selection_diagnostic_code_t::missing_chart,
                   "requested chart ID does not exist", "$.charts");
         return result;

@@ -141,11 +141,7 @@ auto binding_diagnostics(const song_document_t& document, const workspace_limits
     return cache->diagnostics;
 }
 
-auto find_audio_asset(const song_document_t& document, asset_id_t id) -> const audio_asset_t* {
-    const auto found = std::ranges::find_if(document.audio_assets,
-                                            [id](const auto& asset) { return asset.id == id; });
-    return found == document.audio_assets.end() ? nullptr : &*found;
-}
+
 
 auto default_comparison_charts(const song_document_t& document, std::size_t maximum)
     -> std::vector<chart_id_t> {
@@ -171,7 +167,7 @@ auto comparison_selection_valid(const song_document_t& document,
     std::unordered_set<std::uint64_t> seen;
     seen.reserve(charts.size());
     return std::ranges::all_of(charts, [&](const auto chart) {
-        return chart && seen.insert(chart.value).second && find_chart(document, chart) != nullptr;
+        return chart && seen.insert(chart.value).second && document.find_chart(chart) != nullptr;
     });
 }
 
@@ -233,12 +229,12 @@ auto contains_focus_target(const song_document_t& document, const workspace_focu
             if constexpr (std::is_same_v<id_t, std::monostate>) {
                 return true;
             } else if constexpr (std::is_same_v<id_t, chart_id_t>) {
-                return static_cast<bool>(id) && find_chart(document, id) != nullptr;
+                return static_cast<bool>(id) && document.find_chart(id) != nullptr;
             } else if constexpr (std::is_same_v<id_t, object_id_t>) {
                 return contains_object_id(document, id);
             } else if constexpr (std::is_same_v<id_t, asset_id_t>) {
                 return static_cast<bool>(id) &&
-                       (find_audio_asset(document, id) != nullptr ||
+                       (document.find_audio_asset(id) != nullptr ||
                         std::ranges::any_of(document.visual_assets,
                                             [id](const auto& asset) { return asset.id == id; }) ||
                         std::ranges::any_of(document.midi_assets,
@@ -297,13 +293,9 @@ auto audio_clip_is_valid_for_asset(const audio_clip_t& clip, const audio_asset_t
                asset.stream.frame_count.value_or(std::numeric_limits<std::uint64_t>::max());
 }
 
-auto is_branch_choice_control(bms_control_kind_t kind) -> bool {
-    return kind == bms_control_kind_t::random || kind == bms_control_kind_t::switch_block;
-}
 
-auto is_switch_branch(bms_control_kind_t kind) -> bool {
-    return kind == bms_control_kind_t::case_branch || kind == bms_control_kind_t::default_branch;
-}
+
+
 
 auto branch_kind_name(bms_control_kind_t kind) -> std::string_view {
     switch (kind) {
@@ -486,7 +478,7 @@ auto prepare_branch_row(branch_outline_context_t& context, const bms_control_nod
                            .choice_value = {},
                            .choice_identity_unambiguous = true};
     const auto choice_indices = context.selections_by_id.find(node.id.value);
-    if (is_branch_choice_control(node.kind) && choice_indices != context.selections_by_id.end()) {
+    if (is_choice_control(node.kind) && choice_indices != context.selections_by_id.end()) {
         for (const auto index : choice_indices->second) {
             context.matched_selections[index] = true;
             context.active_selections[index] = context.active_selections[index] || active;
@@ -821,7 +813,7 @@ auto make_workspace_controller(const song_document_t& document, workspace_limits
     const auto music = std::ranges::find_if(document.resources, [](const auto& resource) {
         return std::ranges::find(resource.roles, resource_role_t::music) != resource.roles.end();
     });
-    if (music != document.resources.end() && find_audio_asset(document, music->asset))
+    if (music != document.resources.end() && document.find_audio_asset(music->asset))
         workspace.transport.audio_asset = music->asset;
     workspace.comparison_charts =
         default_comparison_charts(document, limits.maximum_comparison_charts);
@@ -845,7 +837,7 @@ auto rebind_transport(workspace_transport_t& transport, const song_document_t& d
     if (!transport.audio_asset.has_value()) {
         return;
     }
-    const auto* asset = find_audio_asset(document, *transport.audio_asset);
+    const auto* asset = document.find_audio_asset(*transport.audio_asset);
     if (asset == nullptr) {
         transport = {};
         return;
@@ -875,7 +867,7 @@ auto rebind_selection(workspace_controller_t& workspace, const song_document_t& 
         workspace.active_tab = workspace_tab_t::setup;
     }
     if (!workspace.selected_chart.has_value() ||
-        find_chart(document, *workspace.selected_chart) == nullptr) {
+        document.find_chart(*workspace.selected_chart) == nullptr) {
         workspace.selected_chart =
             document.charts.empty() ? std::nullopt : std::optional{document.charts.front().id};
     }
@@ -958,7 +950,7 @@ auto apply_action(workspace_action_context_t& context,
                   const workspace_select_chart_action_t& action) -> void {
     if (!action.chart) {
         context.reject(diagnostic_code_t::invalid_id, "selected chart uses the reserved zero ID");
-    } else if (find_chart(context.document, action.chart) == nullptr) {
+    } else if (context.document.find_chart(action.chart) == nullptr) {
         context.reject(diagnostic_code_t::invalid_id,
                        "selected chart does not exist in the bound document");
     } else {
@@ -976,7 +968,7 @@ auto apply_action(workspace_action_context_t& context,
     }
     std::unordered_set<std::uint64_t> charts;
     for (const auto chart : action.charts) {
-        if (!chart || find_chart(context.document, chart) == nullptr ||
+        if (!chart || context.document.find_chart(chart) == nullptr ||
             !charts.insert(chart.value).second) {
             context.reject(diagnostic_code_t::invalid_id,
                            "comparison charts must be present and unique");
@@ -1017,7 +1009,7 @@ auto apply_action(workspace_action_context_t& context, const workspace_clear_foc
 auto apply_audio_selection(workspace_action_context_t& context,
                            const workspace_select_asset_action_t& action) -> void {
     if (action.asset.has_value() &&
-        (!*action.asset || find_audio_asset(context.document, *action.asset) == nullptr)) {
+        (!*action.asset || context.document.find_audio_asset(*action.asset) == nullptr)) {
         context.reject(diagnostic_code_t::invalid_id,
                        "selected audio asset does not exist in the bound document");
     } else if (context.proposal.transport.audio_asset != action.asset) {
@@ -1060,7 +1052,7 @@ auto apply_action(workspace_action_context_t& context, const workspace_select_cl
                        "selected audio clip does not exist in the bound document");
         return;
     }
-    const auto* asset = find_audio_asset(context.document, clip.clip->source);
+    const auto* asset = context.document.find_audio_asset(clip.clip->source);
     if (asset == nullptr || !audio_clip_is_valid_for_asset(*clip.clip, *asset)) {
         context.reject(diagnostic_code_t::invalid_id,
                        "selected audio clip refers to an invalid source range");
@@ -1079,7 +1071,7 @@ auto apply_action(workspace_action_context_t& context, const workspace_seek_acti
         context.reject(diagnostic_code_t::invalid_id, "cannot seek without a selected audio asset");
         return;
     }
-    const auto* asset = find_audio_asset(context.document, *context.proposal.transport.audio_asset);
+    const auto* asset = context.document.find_audio_asset(*context.proposal.transport.audio_asset);
     if (asset == nullptr ||
         (asset->stream.frame_count.has_value() && action.frame > *asset->stream.frame_count)) {
         context.reject(diagnostic_code_t::invalid_resolution,
@@ -1111,7 +1103,7 @@ auto apply_action(workspace_action_context_t& context, const workspace_set_loop_
         return;
     }
     const auto [begin, end] = *action.frames;
-    const auto* asset = find_audio_asset(context.document, *context.proposal.transport.audio_asset);
+    const auto* asset = context.document.find_audio_asset(*context.proposal.transport.audio_asset);
     if (begin >= end || asset == nullptr ||
         (asset->stream.frame_count.has_value() && end > *asset->stream.frame_count)) {
         context.reject(diagnostic_code_t::invalid_resolution,
@@ -1445,7 +1437,7 @@ auto make_workspace_view(const workspace_controller_t& workspace, const song_doc
         return result;
     }
     if (workspace.selected_chart.has_value() &&
-        find_chart(document, *workspace.selected_chart) == nullptr) {
+        document.find_chart(*workspace.selected_chart) == nullptr) {
         add_error(result.diagnostics, diagnostic_code_t::invalid_id,
                   "workspace selected chart no longer exists; rebind the workspace");
         return result;
@@ -1468,7 +1460,7 @@ auto make_workspace_view(const workspace_controller_t& workspace, const song_doc
     std::optional<workspace_chart_option_t> selected_difficulty;
     const chart_document_t* chart = nullptr;
     if (workspace.selected_chart.has_value()) {
-        chart = find_chart(document, *workspace.selected_chart);
+        chart = document.find_chart(*workspace.selected_chart);
         selected_difficulty = make_chart_option(*chart);
     }
 

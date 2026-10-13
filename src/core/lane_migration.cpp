@@ -179,28 +179,7 @@ auto changed_binding_count(const input_profile_t& before, const input_profile_t&
     return missing(before.bindings, after.bindings) + missing(after.bindings, before.bindings);
 }
 
-auto same_layout(const lane_layout_t& left, const lane_layout_t& right) -> bool {
-    if (left.profile_id != right.profile_id || left.display_name != right.display_name ||
-        left.split_stage != right.split_stage || left.split_after_column != right.split_after_column ||
-        left.bmson_generic_keys_only != right.bmson_generic_keys_only ||
-        left.lanes.size() != right.lanes.size()) return false;
-    for (std::size_t i = 0; i < left.lanes.size(); ++i) {
-        const auto& a = left.lanes[i];
-        const auto& b = right.lanes[i];
-        if (a.id != b.id || a.name != b.name || a.role != b.role || a.stage != b.stage ||
-            a.display_order != b.display_order || a.glyph != b.glyph ||
-            a.bms_channels.visible != b.bms_channels.visible ||
-            a.bms_channels.invisible != b.bms_channels.invisible ||
-            a.bms_channels.long_note != b.bms_channels.long_note ||
-            a.bms_channels.mine != b.bms_channels.mine ||
-            a.key_color != b.key_color ||
-            a.midi_destination.has_value() != b.midi_destination.has_value()) return false;
-        if (a.midi_destination &&
-            (a.midi_destination->channel != b.midi_destination->channel ||
-             a.midi_destination->note != b.midi_destination->note)) return false;
-    }
-    return true;
-}
+
 
 auto same_input(const input_profile_t& left, const input_profile_t& right) -> bool {
     if (left.profile_id != right.profile_id || left.stage_count != right.stage_count ||
@@ -212,7 +191,7 @@ auto same_input(const input_profile_t& left, const input_profile_t& right) -> bo
 }
 
 auto same_target(const lane_input_profile_t& left, const lane_input_profile_t& right) -> bool {
-    return same_layout(left.layout, right.layout) && same_input(left.input, right.input);
+    return (left.layout == right.layout) && same_input(left.input, right.input);
 }
 
 auto same_preview(const lane_migration_proposal_t& proposal,
@@ -454,16 +433,11 @@ auto source_bms_note_channel(const note_t& note) -> std::optional<std::string_vi
     return std::nullopt;
 }
 
-auto branch_scope_node(bms_control_kind_t kind) -> bool {
-    return kind == bms_control_kind_t::if_group || kind == bms_control_kind_t::if_branch ||
-           kind == bms_control_kind_t::else_if_branch || kind == bms_control_kind_t::else_branch ||
-           kind == bms_control_kind_t::switch_block || kind == bms_control_kind_t::case_branch ||
-           kind == bms_control_kind_t::default_branch;
-}
+
 
 void collect_branch_source_orders(const bms_control_node_t& node, bool inside_branch,
                                   std::unordered_set<std::size_t>& orders) {
-    const auto in_branch = inside_branch || branch_scope_node(node.kind);
+    const auto in_branch = inside_branch || is_branch_scope(node.kind);
     if (in_branch && node.kind == bms_control_kind_t::raw_statement)
         orders.insert(node.source_order);
     for (const auto& child : node.children)
@@ -506,11 +480,9 @@ auto branch_note_identity_preserved(
     if (mapped == mapping.end() || !mapped->second) return false;
     const auto* original = active_lane_layout_segment(chart, note.position);
     if (!original) return false;
-    const auto source_lane = std::ranges::find(original->layout.lanes, note.lane,
-                                               &lane_definition_t::id);
-    const auto target_lane = std::ranges::find(target.lanes, *mapped->second,
-                                               &lane_definition_t::id);
-    if (source_lane == original->layout.lanes.end() || target_lane == target.lanes.end())
+    const auto source_lane = original->layout.find(note.lane);
+    const auto target_lane = target.find(*mapped->second);
+    if (source_lane == nullptr || target_lane == nullptr)
         return false;
     const auto source_channel = source_bms_note_channel(note);
     if (!source_channel) return false;
@@ -587,8 +559,8 @@ auto propose_lane_migration(const song_document_t& song, std::uint64_t expected_
              "The document changed before lane migration preview.");
         return proposal;
     }
-    const auto chart = std::ranges::find(song.charts, chart_id, &chart_document_t::id);
-    if (chart == song.charts.end()) {
+    const auto chart = song.find_chart(chart_id);
+    if (chart == nullptr) {
         fail(proposal, lane_migration_issue_t::chart_not_found,
              "The selected difficulty is no longer available.");
         return proposal;
@@ -670,15 +642,14 @@ auto apply_lane_migration(document_history_t& history,
         return apply_failure(lane_migration_issue_t::lane_collision,
                              "The mapping merges notes that overlap in the target lane.",
                              history.document.revision);
-    const auto chart = std::ranges::find(history.document.charts, canonical->chart,
-                                         &chart_document_t::id);
+    const auto chart = history.document.find_chart(canonical->chart);
     std::unordered_map<std::uint64_t, std::optional<lane_id_t>> mapping;
     for (const auto& item : canonical->mapping) mapping.emplace(item.source_lane.value,
                                                               item.target_lane);
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
     const auto updated = apply_mapping(*chart, mapping, canonical->target);
-    *std::ranges::find(proposed.charts, canonical->chart, &chart_document_t::id) = updated;
+    *proposed.find_chart(canonical->chart) = updated;
     auto command = transaction.commit("Migrate chart lane profile");
     const auto applied = static_cast<bool>(command);
     return {.command = std::move(command),

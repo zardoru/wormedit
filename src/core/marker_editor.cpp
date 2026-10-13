@@ -173,8 +173,8 @@ struct marker_edit_target_t {
 
 auto prepare_marker_target(marker_edit_context_t& context, chart_id_t id)
     -> std::optional<marker_edit_target_t> {
-    const auto found = std::ranges::find(context.proposed.charts, id, &chart_document_t::id);
-    if (!id || found == context.proposed.charts.end() ||
+    const auto found = context.proposed.find_chart(id);
+    if (!id || found == nullptr ||
         std::ranges::count(context.proposed.charts, id, &chart_document_t::id) != 1) {
         reject(context.result, diagnostic_code_t::invalid_id,
                "marker edit refers to an unknown or ambiguous chart");
@@ -459,9 +459,8 @@ auto apply_marker_edit(document_history_t& history, std::uint64_t expected_revis
     if (!result.diagnostics.empty() || !context.changed) {
         return result;
     }
-    const auto chart = std::ranges::find(proposed.charts, context.edited_chart,
-                                         &chart_document_t::id);
-    if (chart == proposed.charts.end() || !marker_text_fits(*chart, limits)) {
+    const auto chart = proposed.find_chart(context.edited_chart);
+    if (chart == nullptr || !marker_text_fits(*chart, limits)) {
         reject(result, diagnostic_code_t::unsupported_feature,
                "marker labels exceed the configured UTF-8 text limits");
         return result;

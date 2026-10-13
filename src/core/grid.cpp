@@ -301,9 +301,8 @@ auto validate_authored_groupings(
                                         "editor grid grouping has a missing or duplicate measure ID"));
             continue;
         }
-        const auto measure = std::ranges::find(chart.measures, grouping.measure,
-                                               &measure_chunk_t::id);
-        if (measure == chart.measures.end() || !measure->definition.meter) {
+        const auto measure = chart.find_measure(grouping.measure);
+        if (measure == nullptr || !measure->definition.meter) {
             diagnostics.push_back(error(diagnostic_code_t::unknown_measure,
                                         "editor grid grouping requires a metered chart measure"));
             continue;

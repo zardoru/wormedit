@@ -21,13 +21,72 @@ auto error(diagnostic_code_t code, std::string message, std::optional<object_id_
     return {.severity = diagnostic_severity_t::error, .code = code,
             .message = std::move(message), .object = object};
 }
+
+
+
+namespace {
+template<class Values, class Id>
+auto find_id(Values& values, Id id) -> decltype(&values.front()) {
+    for (auto& value : values) if (value.id == id) return &value;
+    return nullptr;
+}
+template<class Chart, class Id, class Member>
+auto find_measure_object(Chart& chart, Id id, Member member)
+    -> decltype(&(chart.measures.front().*member).front()) {
+    for (auto& measure : chart.measures) {
+        if (auto* found = find_id(measure.*member, id)) return found;
+    }
+    return nullptr;
+}
+} // namespace
+auto song_document_t::find_chart(chart_id_t id) -> chart_document_t* { return find_id(charts, id); }
+auto song_document_t::find_chart(chart_id_t id) const -> const chart_document_t* { return find_id(charts, id); }
+auto song_document_t::find_audio_asset(asset_id_t id) -> audio_asset_t* { return find_id(audio_assets, id); }
+auto song_document_t::find_audio_asset(asset_id_t id) const -> const audio_asset_t* { return find_id(audio_assets, id); }
+auto chart_document_t::find_measure(measure_id_t id) -> measure_chunk_t* { return find_id(measures, id); }
+auto chart_document_t::find_measure(measure_id_t id) const -> const measure_chunk_t* { return find_id(measures, id); }
+auto chart_document_t::find_note(object_id_t id) -> note_t* { return find_measure_object(*this, id, &measure_chunk_t::notes); }
+auto chart_document_t::find_note(object_id_t id) const -> const note_t* { return find_measure_object(*this, id, &measure_chunk_t::notes); }
+auto chart_document_t::find_bgm_event(object_id_t id) -> bgm_event_t* { return find_measure_object(*this, id, &measure_chunk_t::bgm_events); }
+auto chart_document_t::find_bgm_event(object_id_t id) const -> const bgm_event_t* { return find_measure_object(*this, id, &measure_chunk_t::bgm_events); }
+auto lane_layout_t::find(lane_id_t id) -> lane_definition_t* { return find_id(lanes, id); }
+auto lane_layout_t::find(lane_id_t id) const -> const lane_definition_t* { return find_id(lanes, id); }
 auto find_chart(const song_document_t& document, chart_id_t id) -> const chart_document_t* {
-    const auto found = std::ranges::find(document.charts, id, &chart_document_t::id);
-    return found == document.charts.end() ? nullptr : &*found;
+    return document.find_chart(id);
 }
 auto find_chart(song_document_t& document, chart_id_t id) -> chart_document_t* {
-    const auto found = std::ranges::find(document.charts, id, &chart_document_t::id);
-    return found == document.charts.end() ? nullptr : &*found;
+    return document.find_chart(id);
+}
+auto lane_definition_t::is_editable() const noexcept -> bool {
+    return role != lane_role_t::autoplay && role != lane_role_t::invisible && role != lane_role_t::mine;
+}
+auto lane_layout_t::contains(lane_id_t id) const -> bool { return find(id) != nullptr; }
+auto lane_layout_t::has_same_shape(const lane_layout_t& other) const -> bool {
+    if (profile_id != other.profile_id || lanes.size() != other.lanes.size()) return false;
+    for (std::size_t index = 0; index < lanes.size(); ++index) {
+        const auto& a = lanes[index];
+        const auto& b = other.lanes[index];
+        if (a.name != b.name || a.role != b.role || a.bms_channels != b.bms_channels) return false;
+    }
+    return true;
+}
+auto layout_at(const chart_document_t& chart, const measure_index_t& index,
+    std::uint64_t row) -> const lane_layout_t* {
+    const lane_layout_t* selected{};
+    std::uint64_t selected_row{};
+    for (const auto& segment : chart.lane_layouts) {
+        const auto candidate = absolute_row(index, segment.position);
+        if (candidate && *candidate <= row && (!selected || *candidate >= selected_row)) {
+            selected = &segment.layout;
+            selected_row = *candidate;
+        }
+    }
+    return selected;
+}
+auto layout_at(const chart_document_t& chart, const measure_index_t& index,
+    local_position_t position) -> const lane_layout_t* {
+    const auto row = absolute_row(index, position);
+    return row ? layout_at(chart, index, *row) : nullptr;
 }
 
 namespace {
@@ -169,81 +228,17 @@ auto first_source_byte(const bms_control_node_t& node) -> std::optional<std::siz
     return std::nullopt;
 }
 
-auto control_kind_has_value(bms_control_kind_t kind) -> bool {
-    switch (kind) {
-    case bms_control_kind_t::random:
-    case bms_control_kind_t::set_random:
-    case bms_control_kind_t::if_branch:
-    case bms_control_kind_t::else_if_branch:
-    case bms_control_kind_t::switch_block:
-    case bms_control_kind_t::set_switch:
-    case bms_control_kind_t::case_branch:
-        return true;
-    case bms_control_kind_t::root:
-    case bms_control_kind_t::raw_statement:
-    case bms_control_kind_t::if_group:
-    case bms_control_kind_t::else_branch:
-    case bms_control_kind_t::default_branch:
-    case bms_control_kind_t::skip:
-        return false;
-    }
-    return false;
-}
 
-auto control_kind_requires_positive_value(bms_control_kind_t kind) -> bool {
-    switch (kind) {
-    case bms_control_kind_t::random:
-    case bms_control_kind_t::set_random:
-    case bms_control_kind_t::if_branch:
-    case bms_control_kind_t::else_if_branch:
-    case bms_control_kind_t::switch_block:
-    case bms_control_kind_t::set_switch:
-    case bms_control_kind_t::case_branch:
-        return true;
-    case bms_control_kind_t::root:
-    case bms_control_kind_t::raw_statement:
-    case bms_control_kind_t::if_group:
-    case bms_control_kind_t::else_branch:
-    case bms_control_kind_t::default_branch:
-    case bms_control_kind_t::skip:
-        return false;
-    }
-    return false;
-}
 
-auto valid_control_kind(bms_control_kind_t kind) -> bool {
-    switch (kind) {
-    case bms_control_kind_t::root:
-    case bms_control_kind_t::raw_statement:
-    case bms_control_kind_t::random:
-    case bms_control_kind_t::set_random:
-    case bms_control_kind_t::if_group:
-    case bms_control_kind_t::if_branch:
-    case bms_control_kind_t::else_if_branch:
-    case bms_control_kind_t::else_branch:
-    case bms_control_kind_t::switch_block:
-    case bms_control_kind_t::set_switch:
-    case bms_control_kind_t::case_branch:
-    case bms_control_kind_t::default_branch:
-    case bms_control_kind_t::skip:
-        return true;
-    }
-    return false;
-}
 
-auto is_conditional_branch(bms_control_kind_t kind) -> bool {
-    return kind == bms_control_kind_t::if_branch || kind == bms_control_kind_t::else_if_branch ||
-           kind == bms_control_kind_t::else_branch;
-}
 
-auto control_kind_may_have_close(bms_control_kind_t kind) -> bool {
-    return kind == bms_control_kind_t::random || kind == bms_control_kind_t::if_group ||
-           kind == bms_control_kind_t::switch_block;
-}
 
-auto is_switch_branch(bms_control_kind_t kind) -> bool {
-    return kind == bms_control_kind_t::case_branch || kind == bms_control_kind_t::default_branch;
-}
+
+
+
+
+
+
 
 struct bms_source_record_t {
     bms_source_span_t span;
@@ -394,15 +389,15 @@ auto validate_bms_node_identity(bms_control_visit_context_t& context,
         add_diagnostic(context.diagnostics, diagnostic_code_t::invalid_id,
                        "nested BMS control node has root kind");
     }
-    if (!valid_control_kind(node.kind)) {
+    if (!is_valid_control_kind(node.kind)) {
         add_diagnostic(context.diagnostics, diagnostic_code_t::invalid_id,
                        "BMS control node has an unknown kind");
     }
-    if (control_kind_has_value(node.kind) && !node.value.has_value()) {
+    if (has_control_value(node.kind) && !node.value.has_value()) {
         add_diagnostic(context.diagnostics, diagnostic_code_t::invalid_id,
                        "BMS control node kind requires a numeric value");
     }
-    if (control_kind_requires_positive_value(node.kind) && node.value.has_value() &&
+    if (has_positive_control_value(node.kind) && node.value.has_value() &&
         *node.value <= 0) {
         add_diagnostic(context.diagnostics, diagnostic_code_t::invalid_id,
                        "BMS control node requires a positive numeric value");
@@ -418,11 +413,11 @@ auto validate_bms_close_fields(bms_control_visit_context_t& context, const bms_c
         add_diagnostic(context.diagnostics, diagnostic_code_t::invalid_id,
                        "BMS control node closing source fields must be present together");
     }
-    if (has_close_span && !control_kind_may_have_close(node.kind)) {
+    if (has_close_span && !can_have_control_close(node.kind)) {
         add_diagnostic(context.diagnostics, diagnostic_code_t::invalid_id,
                        "BMS control node kind cannot carry a closing directive");
     }
-    if (control_kind_may_have_close(node.kind) && !has_close_span) {
+    if (can_have_control_close(node.kind) && !has_close_span) {
         add_diagnostic(context.diagnostics, diagnostic_code_t::invalid_id,
                        "BMS control block is missing its closing directive");
     }
@@ -638,9 +633,7 @@ auto position_row_or_diagnostic(const measure_index_t& index, local_position_t p
 auto lane_is_active(const chart_document_t& chart, const measure_index_t& index,
                     local_position_t position, lane_id_t lane) -> bool {
     const auto* layout = effective_layout(chart, index, position);
-    return layout != nullptr && std::ranges::any_of(layout->lanes, [lane](const auto& candidate) {
-               return candidate.id == lane;
-           });
+    return layout != nullptr && layout->contains(lane);
 }
 
 auto combined_layout(const chart_document_t& chart) -> lane_layout_t {
@@ -1674,11 +1667,10 @@ auto diagnostic_chart_name(const chart_document_t& chart) -> std::string {
 
 auto diagnostic_location_text(const chart_document_t& chart,
                               const diagnostic_object_location_t& location) -> std::string {
-    const auto measure = std::ranges::find(chart.measures, location.position.measure,
-                                           &measure_chunk_t::id);
-    auto text = measure == chart.measures.end()
+    const auto measure = chart.find_measure(location.position.measure);
+    auto text = measure == nullptr
         ? ", unknown measure id " + std::to_string(location.position.measure.value)
-        : ", measure " + std::to_string(std::distance(chart.measures.begin(), measure) + 1) +
+        : ", measure " + std::to_string(measure - chart.measures.data() + 1) +
           " (id " + std::to_string(location.position.measure.value) + ")";
     text += ", row " + std::to_string(location.position.row);
     if (location.lane) text += ", lane " + std::to_string(location.lane.value);

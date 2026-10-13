@@ -67,8 +67,8 @@ struct scroll_speed_edit_context_t {
 };
 
 auto target_chart(scroll_speed_edit_context_t& context, chart_id_t id) -> chart_document_t* {
-    const auto found = std::ranges::find(context.proposed.charts, id, &chart_document_t::id);
-    if (!id || found == context.proposed.charts.end()) {
+    const auto found = context.proposed.find_chart(id);
+    if (!id || found == nullptr) {
         reject(context.result, diagnostic_code_t::invalid_id,
                "scroll/speed edit refers to an unknown chart");
         return nullptr;

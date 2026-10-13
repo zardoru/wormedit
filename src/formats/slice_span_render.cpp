@@ -27,9 +27,9 @@ auto open_source(const song_document_t& song, const slice_span_plan_t& plan, ass
                  const slice_span_render_options_t& options, decoders_t& decoders,
                  slice_span_render_result_t& result) -> bool {
     if (decoders.contains(id.value)) return true;
-    const auto asset = std::ranges::find(song.audio_assets, id, &audio_asset_t::id);
+    const auto asset = song.find_audio_asset(id);
     const auto geometry = std::ranges::find(plan.sources, id, &slice_span_source_t::asset);
-    if (asset == song.audio_assets.end() || geometry == plan.sources.end() ||
+    if (asset == nullptr || geometry == plan.sources.end() ||
         std::ranges::count(song.audio_assets, id, &audio_asset_t::id) != 1 ||
         std::ranges::count(plan.sources, id, &slice_span_source_t::asset) != 1)
         return reject(result, "Missing or ambiguous decoded audio asset " + std::to_string(id.value), id);
@@ -219,9 +219,9 @@ auto conversion_slice_assets(const song_document_t& song, const conversion_reque
 auto copy_conversion_asset(const song_document_t& song, const conversion_asset_copy_t& copy,
     const slice_span_render_options_t& options) -> std::optional<std::string> {
     std::filesystem::path source;
-    const auto audio = std::ranges::find(song.audio_assets, copy.asset, &audio_asset_t::id);
+    const auto audio = song.find_audio_asset(copy.asset);
     const auto visual = std::ranges::find(song.visual_assets, copy.asset, &visual_asset_t::id);
-    if (audio != song.audio_assets.end()) source = audio->source_path;
+    if (audio != nullptr) source = audio->source_path;
     else if (visual != song.visual_assets.end()) source = visual->source_path;
     else return "Missing retained export asset " + std::to_string(copy.asset.value);
     if (!plain_filename(copy.relative_path.generic_string())) return "Unsafe retained asset filename";
@@ -242,8 +242,8 @@ auto prepare_conversion_slice_sources(const song_document_t& song, conversion_re
     std::vector<slice_span_source_t> sources;
     for (const auto id : conversion_slice_assets(song, request)) {
         if (stop.stop_requested()) return "Slice geometry preparation cancelled";
-        const auto asset = std::ranges::find(song.audio_assets, id, &audio_asset_t::id);
-        if (asset == song.audio_assets.end()) return "Missing audio asset " + std::to_string(id.value);
+        const auto asset = song.find_audio_asset(id);
+        if (asset == nullptr) return "Missing audio asset " + std::to_string(id.value);
         audio::decoder_t decoder;
         std::string error;
         const auto path = asset->source_path.is_absolute() ? asset->source_path : source_directory / asset->source_path;

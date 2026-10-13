@@ -182,8 +182,8 @@ auto prepare_shift(const document_history_t& history, std::uint64_t expected_rev
         return std::nullopt;
     prepared_shift_t prepared{.proposed = history.document};
     const auto chart =
-        std::ranges::find(prepared.proposed.charts, chart_id, &chart_document_t::id);
-    if (!chart_id || chart == prepared.proposed.charts.end()) {
+        prepared.proposed.find_chart(chart_id);
+    if (!chart_id || chart == nullptr) {
         reject(result.command, diagnostic_code_t::invalid_id, "time shift refers to an unknown chart");
         return std::nullopt;
     }

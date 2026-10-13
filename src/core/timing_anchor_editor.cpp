@@ -128,8 +128,8 @@ auto apply_timing_anchor_edit(document_history_t& history, std::uint64_t expecte
     std::visit(
         [&](const auto& edit) {
             const auto chart =
-                std::ranges::find(proposed.charts, edit.chart, &chart_document_t::id);
-            if (!edit.chart || chart == proposed.charts.end()) {
+                proposed.find_chart(edit.chart);
+            if (!edit.chart || chart == nullptr) {
                 reject(result, diagnostic_code_t::invalid_id,
                        "timing anchor edit refers to an unknown chart");
                 return;

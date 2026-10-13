@@ -129,7 +129,7 @@ inline auto find_active_lane(const chart_document_t& chart, const measure_index_
         return nullptr;
     }
     for (const auto& lane : layout->lanes) {
-        if (lane.id == id && editable_lane(lane)) return &lane;
+        if (lane.id == id && lane.is_editable()) return &lane;
     }
     return nullptr;
 }
@@ -406,11 +406,8 @@ auto plan_note_paint(const chart_document_t& chart, const measure_index_t& index
 
 auto chart_note_ids(const chart_document_t& chart) -> std::unordered_set<std::uint64_t>;
 
-auto find_note(const chart_document_t& chart, object_id_t id) -> const note_t*;
 
-auto find_note(chart_document_t& chart, object_id_t id) -> note_t*;
 
-auto find_bgm_event(const chart_document_t& chart, object_id_t id) -> const bgm_event_t*;
 
 struct resized_note_t {
     object_id_t id;
@@ -655,7 +652,7 @@ struct note_move_context_t {
 
     auto display_columns(local_position_t position, local_position_t source) const -> std::size_t {
         const auto count = [](const lane_layout_t* layout) -> std::size_t {
-            return layout ? std::ranges::count_if(layout->lanes, editable_lane) : 0;
+            return layout ? std::ranges::count_if(layout->lanes, &lane_definition_t::is_editable) : 0;
         };
         const auto current = count(effective_layout(chart, index, position));
         return current ? current

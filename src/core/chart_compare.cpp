@@ -119,8 +119,8 @@ auto lane_signature_at(const chart_projection_t& projection, rational_t position
     if (positioned == nullptr) {
         return std::nullopt;
     }
-    const auto found = std::ranges::find(positioned->layout->lanes, lane, &lane_definition_t::id);
-    if (found == positioned->layout->lanes.end()) {
+    const auto found = positioned->layout->find(lane);
+    if (found == nullptr) {
         return std::nullopt;
     }
     return chart_compare_lane_signature_t{
@@ -266,8 +266,8 @@ auto append_chart_projection(chart_compare_work_t& work, chart_id_t chart_id) ->
         return fail_compare(work, diagnostic_code_t::duplicate_id,
                             "chart comparison IDs must be present and unique");
     }
-    const auto chart = std::ranges::find(work.song.charts, chart_id, &chart_document_t::id);
-    if (chart == work.song.charts.end()) {
+    const auto chart = work.song.find_chart(chart_id);
+    if (chart == nullptr) {
         return fail_compare(work, diagnostic_code_t::invalid_id,
                             "chart comparison refers to a chart outside the document");
     }

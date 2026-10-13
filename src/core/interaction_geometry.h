@@ -4,9 +4,7 @@
 #include <wormedit/core/virtual_canvas.h>
 #include <cmath>
 namespace wormedit {
-inline auto editable_lane(const lane_definition_t& lane) -> bool {
-    return lane.role != lane_role_t::autoplay && lane.role != lane_role_t::invisible && lane.role != lane_role_t::mine;
-}
+
 inline auto position_at(const measure_index_t& index, std::uint64_t absolute) -> std::optional<local_position_t> {
     return position_at_absolute_row(index, absolute);
 }
@@ -34,7 +32,7 @@ struct measure_row_resolver_t {
 };
 inline auto effective_layout(const chart_document_t& chart, const measure_index_t& index,
                              local_position_t position) -> const lane_layout_t* {
-    return effective_layout_by_row(chart, position, measure_row_resolver_t{index});
+    return layout_at(chart, index, position);
 }
 inline auto maximum_viewport_scroll(const chart_document_t& chart, const measure_index_t& index,
                              double scale, double viewport_height,

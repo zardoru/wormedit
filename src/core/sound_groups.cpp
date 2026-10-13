@@ -228,8 +228,7 @@ auto action_sound_ids(const sound_group_edit_action_t& action)
 
 auto same_target(const target_resource_identity_t& left,
                  const target_resource_identity_t& right) -> bool {
-    return left.family == right.family && left.identifier == right.identifier &&
-           left.namespace_name == right.namespace_name;
+    return left == right;
 }
 
 auto same_target_vectors(const std::vector<resource_entry_t>& left,

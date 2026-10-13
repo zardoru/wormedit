@@ -755,8 +755,8 @@ auto apply_semantic_layer_action(song_document_t& proposed,
     -> semantic_layer_edit_outcome_t {
     return std::visit(
         [&](const auto& edit) -> semantic_layer_edit_outcome_t {
-            const auto chart = std::ranges::find(proposed.charts, edit.chart, &chart_document_t::id);
-            if (!edit.chart || chart == proposed.charts.end() ||
+            const auto chart = proposed.find_chart(edit.chart);
+            if (!edit.chart || chart == nullptr ||
                 std::ranges::count(proposed.charts, edit.chart, &chart_document_t::id) != 1) {
                 reject(result, diagnostic_code_t::invalid_id,
                        "semantic layer edit refers to an unknown or ambiguous chart");
@@ -964,8 +964,8 @@ auto apply_sound_layer_defaults(document_history_t& history, std::uint64_t expec
     }
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
-    const auto chart = std::ranges::find(proposed.charts, action.chart, &chart_document_t::id);
-    if (!action.chart || chart == proposed.charts.end()) {
+    const auto chart = proposed.find_chart(action.chart);
+    if (!action.chart || chart == nullptr) {
         reject(result, diagnostic_code_t::invalid_id,
                "sound layer defaults refer to an unknown chart");
         return result;
@@ -1057,8 +1057,8 @@ auto apply_sound_layer_membership(document_history_t& history, std::uint64_t exp
     }
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
-    const auto chart = std::ranges::find(proposed.charts, action.chart, &chart_document_t::id);
-    if (!action.chart || chart == proposed.charts.end()) {
+    const auto chart = proposed.find_chart(action.chart);
+    if (!action.chart || chart == nullptr) {
         reject(result, diagnostic_code_t::invalid_id,
                "sound layer membership refers to an unknown chart");
         return result;
@@ -1136,8 +1136,8 @@ auto add_selected_sounds_to_semantic_layer(document_history_t& history,
         reject(result, diagnostic_code_t::invalid_id, "selected sound layers document revision is stale");
         return result;
     }
-    const auto chart = std::ranges::find(history.document.charts, action.chart, &chart_document_t::id);
-    if (!action.chart || chart == history.document.charts.end()) {
+    const auto chart = history.document.find_chart(action.chart);
+    if (!action.chart || chart == nullptr) {
         reject(result, diagnostic_code_t::invalid_id, "selected sound layers refer to an unknown chart");
         return result;
     }

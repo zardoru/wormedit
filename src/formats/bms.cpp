@@ -1108,12 +1108,7 @@ auto push_raw_statement(bms_control_node_t& root, const std::vector<std::size_t>
                       make_node(line, parsed, bms_control_kind_t::raw_statement, allocator));
 }
 
-auto is_branch_boundary(bms_control_kind_t kind) -> bool {
-    return kind == bms_control_kind_t::random || kind == bms_control_kind_t::switch_block ||
-           kind == bms_control_kind_t::if_group || kind == bms_control_kind_t::if_branch ||
-           kind == bms_control_kind_t::else_if_branch || kind == bms_control_kind_t::else_branch ||
-           kind == bms_control_kind_t::case_branch || kind == bms_control_kind_t::default_branch;
-}
+
 
 auto is_control_token(std::string_view token) -> bool {
     constexpr std::array<std::string_view, 13> tokens{
@@ -1135,18 +1130,7 @@ void visit_active_branch(const bms_control_node_t& node,
                         std::optional<std::int64_t> random_value, bool inside_active_branch,
                         bool* switch_stopped, active_branch_walk_context_t& context);
 
-auto is_branch_body(bms_control_kind_t kind) -> bool {
-    switch (kind) {
-    case bms_control_kind_t::if_branch:
-    case bms_control_kind_t::else_if_branch:
-    case bms_control_kind_t::else_branch:
-    case bms_control_kind_t::case_branch:
-    case bms_control_kind_t::default_branch:
-        return true;
-    default:
-        return false;
-    }
-}
+
 
 auto selected_if_branch(const bms_control_node_t& group, std::int64_t random_value)
     -> const bms_control_node_t* {
@@ -2772,13 +2756,13 @@ auto select_branch_edit_chart(const song_document_t& song, std::optional<chart_i
     auto index = std::size_t{};
     const chart_document_t* chart{};
     if (requested) {
-        const auto found = std::ranges::find(song.charts, *requested, &chart_document_t::id);
-        if (found == song.charts.end()) {
+        const auto found = song.find_chart(*requested);
+        if (found == nullptr) {
             reject_branch_edit(result, bms_branch_statement_edit_diagnostic_code_t::missing_chart,
                                "requested chart ID does not exist", "$.charts");
             return std::nullopt;
         }
-        index = static_cast<std::size_t>(found - song.charts.begin());
+        index = static_cast<std::size_t>(found - song.charts.data());
         chart = &*found;
     } else if (song.charts.size() == 1) {
         chart = &song.charts.front();
@@ -2917,11 +2901,7 @@ auto encode_replacement_line(const retained_source_t& source, const bms_control_
     return encoded.text;
 }
 
-auto is_leaf_branch_kind(bms_control_kind_t kind) -> bool {
-    return kind == bms_control_kind_t::if_branch || kind == bms_control_kind_t::else_if_branch ||
-           kind == bms_control_kind_t::else_branch || kind == bms_control_kind_t::case_branch ||
-           kind == bms_control_kind_t::default_branch;
-}
+
 
 struct insertion_target_scan_t {
     branch_id_t leaf_id;
@@ -2983,7 +2963,7 @@ auto validate_insertion_targets(insertion_target_scan_t scan,
                            path);
         return std::nullopt;
     }
-    if (!is_leaf_branch_kind(scan.leaf->kind) || scan.leaf != scan.anchor_parent ||
+    if (!is_branch_body(scan.leaf->kind) || scan.leaf != scan.anchor_parent ||
         scan.anchor->kind != bms_control_kind_t::raw_statement) {
         reject_branch_edit(
             result, bms_branch_statement_edit_diagnostic_code_t::target_not_branch_statement,
@@ -3450,7 +3430,7 @@ auto validate_deletion_targets(deletion_target_scan_t scan,
                               scan.leaf_parent->kind == (if_branch
                                                              ? bms_control_kind_t::if_group
                                                              : bms_control_kind_t::switch_block);
-    if (!is_leaf_branch_kind(scan.leaf->kind) || !valid_parent ||
+    if (!is_branch_body(scan.leaf->kind) || !valid_parent ||
         scan.target->kind != bms_control_kind_t::raw_statement ||
         scan.target_parent != scan.leaf) {
         reject_branch_edit(

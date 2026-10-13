@@ -188,8 +188,8 @@ auto referenced_export_assets(const song_document_t& song, const output_group_t&
         }
     }
     for (const auto chart_id : group.charts) {
-        const auto chart = std::ranges::find(song.charts, chart_id, &chart_document_t::id);
-        if (chart == song.charts.end()) {
+        const auto chart = song.find_chart(chart_id);
+        if (chart == nullptr) {
             result.errors.emplace_back("Output group refers to a missing chart.");
             return std::nullopt;
         }
@@ -205,13 +205,13 @@ auto referenced_export_assets(const song_document_t& song, const output_group_t&
 auto append_discovered_asset(const song_document_t& song, const output_group_t& group,
                              const std::filesystem::path& project_directory, asset_id_t asset,
                              std::stop_token stop, staged_asset_discovery_t& result) -> bool {
-    const auto audio = std::ranges::find(song.audio_assets, asset, &audio_asset_t::id);
+    const auto audio = song.find_audio_asset(asset);
     const auto visual = std::ranges::find(song.visual_assets, asset, &visual_asset_t::id);
-    if ((audio == song.audio_assets.end()) == (visual == song.visual_assets.end())) {
+    if ((audio == nullptr) == (visual == song.visual_assets.end())) {
         result.errors.emplace_back("A resource has no unique source asset.");
         return false;
     }
-    const auto& source = audio != song.audio_assets.end() ? audio->source_path : visual->source_path;
+    const auto& source = audio != nullptr ? audio->source_path : visual->source_path;
     const auto inspected = inspect_export_asset_copy({.project_directory = project_directory,
                                                        .source_path = source,
                                                        .relative_output_path = group.relative_output_path,

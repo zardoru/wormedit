@@ -170,6 +170,7 @@ enum class lane_glyph_t {
 struct midi_destination_t {
     std::uint8_t channel{};
     std::uint8_t note{};
+    auto operator==(const midi_destination_t&) const -> bool = default;
 };
 
 struct bms_channel_map_t {
@@ -177,6 +178,7 @@ struct bms_channel_map_t {
     std::optional<std::string> invisible;
     std::optional<std::string> long_note;
     std::optional<std::string> mine;
+    auto operator==(const bms_channel_map_t&) const -> bool = default;
 };
 
 // Instrument color class of a lane. Appended-only: the integer value is stored
@@ -205,6 +207,8 @@ struct lane_definition_t {
     bms_channel_map_t bms_channels;
     std::optional<midi_destination_t> midi_destination;
     lane_key_color_t key_color{lane_key_color_t::generic};
+    auto operator==(const lane_definition_t&) const -> bool = default;
+    [[nodiscard]] auto is_editable() const noexcept -> bool;
 };
 
 struct lane_layout_t {
@@ -214,6 +218,12 @@ struct lane_layout_t {
     bool split_stage{false};
     std::optional<std::uint32_t> split_after_column;
     bool bmson_generic_keys_only{false};
+    auto operator==(const lane_layout_t&) const -> bool = default;
+    [[nodiscard]] auto find(lane_id_t id) const -> const lane_definition_t*;
+    [[nodiscard]] auto find(lane_id_t id) -> lane_definition_t*;
+    [[nodiscard]] auto contains(lane_id_t id) const -> bool;
+    // Branch reprojection compares source lane shape, ignoring generated IDs/presentation.
+    [[nodiscard]] auto has_same_shape(const lane_layout_t& other) const -> bool;
 };
 
 struct lane_layout_segment_t {
@@ -597,6 +607,7 @@ struct target_resource_identity_t {
     std::string identifier;
     // Format-specific namespace, required for BMS WAV versus BMP IDs.
     std::string namespace_name;
+    auto operator==(const target_resource_identity_t&) const -> bool = default;
 };
 
 // How the user classifies a sound in the Sounds tab. Unspecified keeps the
@@ -670,6 +681,87 @@ enum class bms_control_kind_t {
     default_branch,
     skip,
 };
+
+inline auto has_control_value(bms_control_kind_t kind) -> bool {
+    switch (kind) {
+    case bms_control_kind_t::random:
+    case bms_control_kind_t::set_random:
+    case bms_control_kind_t::if_branch:
+    case bms_control_kind_t::else_if_branch:
+    case bms_control_kind_t::switch_block:
+    case bms_control_kind_t::set_switch:
+    case bms_control_kind_t::case_branch:
+        return true;
+    case bms_control_kind_t::root:
+    case bms_control_kind_t::raw_statement:
+    case bms_control_kind_t::if_group:
+    case bms_control_kind_t::else_branch:
+    case bms_control_kind_t::default_branch:
+    case bms_control_kind_t::skip:
+        return false;
+    }
+    return false;
+}
+
+inline auto has_positive_control_value(bms_control_kind_t kind) -> bool { return has_control_value(kind); }
+
+inline auto is_valid_control_kind(bms_control_kind_t kind) -> bool {
+    switch (kind) {
+    case bms_control_kind_t::root:
+    case bms_control_kind_t::raw_statement:
+    case bms_control_kind_t::random:
+    case bms_control_kind_t::set_random:
+    case bms_control_kind_t::if_group:
+    case bms_control_kind_t::if_branch:
+    case bms_control_kind_t::else_if_branch:
+    case bms_control_kind_t::else_branch:
+    case bms_control_kind_t::switch_block:
+    case bms_control_kind_t::set_switch:
+    case bms_control_kind_t::case_branch:
+    case bms_control_kind_t::default_branch:
+    case bms_control_kind_t::skip:
+        return true;
+    }
+    return false;
+}
+
+inline auto is_conditional_branch(bms_control_kind_t kind) -> bool {
+    return kind == bms_control_kind_t::if_branch || kind == bms_control_kind_t::else_if_branch ||
+           kind == bms_control_kind_t::else_branch;
+}
+
+inline auto can_have_control_close(bms_control_kind_t kind) -> bool {
+    return kind == bms_control_kind_t::random || kind == bms_control_kind_t::if_group ||
+           kind == bms_control_kind_t::switch_block;
+}
+
+inline auto is_switch_branch(bms_control_kind_t kind) -> bool {
+    return kind == bms_control_kind_t::case_branch || kind == bms_control_kind_t::default_branch;
+}
+
+inline auto is_choice_control(bms_control_kind_t kind) -> bool {
+    return kind == bms_control_kind_t::random || kind == bms_control_kind_t::switch_block;
+}
+
+inline auto is_branch_boundary(bms_control_kind_t kind) -> bool {
+    return kind == bms_control_kind_t::random || kind == bms_control_kind_t::if_group ||
+           kind == bms_control_kind_t::if_branch || kind == bms_control_kind_t::else_if_branch ||
+           kind == bms_control_kind_t::else_branch || kind == bms_control_kind_t::switch_block ||
+           kind == bms_control_kind_t::case_branch || kind == bms_control_kind_t::default_branch;
+}
+
+inline auto is_branch_body(bms_control_kind_t kind) -> bool {
+    return kind == bms_control_kind_t::if_branch || kind == bms_control_kind_t::else_if_branch ||
+           kind == bms_control_kind_t::else_branch || kind == bms_control_kind_t::case_branch ||
+           kind == bms_control_kind_t::default_branch;
+}
+
+inline auto is_branch_scope(bms_control_kind_t kind) -> bool {
+    return kind == bms_control_kind_t::if_group || kind == bms_control_kind_t::if_branch ||
+           kind == bms_control_kind_t::else_if_branch || kind == bms_control_kind_t::else_branch ||
+           kind == bms_control_kind_t::switch_block || kind == bms_control_kind_t::case_branch ||
+           kind == bms_control_kind_t::default_branch;
+}
 
 enum class bms_line_ending_t {
     none,
@@ -764,6 +856,12 @@ struct chart_document_t {
     // Derived, never serialized: number of addressable measures the virtual canvas
     // exposes for non-BMS charts. Kept in sync by sync_virtual_tails().
     std::uint64_t virtual_tail_measures{};
+    [[nodiscard]] auto find_note(object_id_t id) const -> const note_t*;
+    [[nodiscard]] auto find_note(object_id_t id) -> note_t*;
+    [[nodiscard]] auto find_bgm_event(object_id_t id) const -> const bgm_event_t*;
+    [[nodiscard]] auto find_bgm_event(object_id_t id) -> bgm_event_t*;
+    [[nodiscard]] auto find_measure(measure_id_t id) const -> const measure_chunk_t*;
+    [[nodiscard]] auto find_measure(measure_id_t id) -> measure_chunk_t*;
 };
 
 struct midi_event_t {
@@ -863,6 +961,10 @@ struct song_document_t {
     std::vector<chart_document_t> charts;
     std::vector<output_group_t> output_groups;
     std::vector<quantization_preset_t> quantization_presets;
+    [[nodiscard]] auto find_chart(chart_id_t id) const -> const chart_document_t*;
+    [[nodiscard]] auto find_chart(chart_id_t id) -> chart_document_t*;
+    [[nodiscard]] auto find_audio_asset(asset_id_t id) const -> const audio_asset_t*;
+    [[nodiscard]] auto find_audio_asset(asset_id_t id) -> audio_asset_t*;
 };
 
 enum class warp_encoding_t {
@@ -1013,6 +1115,11 @@ struct redivision_result_t {
         return chart.has_value();
     }
 };
+
+[[nodiscard]] auto layout_at(const chart_document_t& chart, const measure_index_t& index,
+    local_position_t position) -> const lane_layout_t*;
+[[nodiscard]] auto layout_at(const chart_document_t& chart, const measure_index_t& index,
+    std::uint64_t row) -> const lane_layout_t*;
 
 [[nodiscard]] auto build_measure_index(const chart_document_t& chart)
     -> std::variant<measure_index_t, diagnostic_list_t>;

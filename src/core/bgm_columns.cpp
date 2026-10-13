@@ -92,8 +92,8 @@ auto apply_bgm_column_count(document_history_t& history, std::uint64_t expected_
     }
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
-    const auto target = std::ranges::find(proposed.charts, chart, &chart_document_t::id);
-    if (!chart || target == proposed.charts.end()) {
+    const auto target = proposed.find_chart(chart);
+    if (!chart || target == nullptr) {
         reject(result, diagnostic_code_t::invalid_id, "BGM column chart is missing");
         return result;
     }

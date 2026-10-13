@@ -1490,10 +1490,10 @@ auto absolute_row_for(const chart_document_t& chart, local_position_t position)
     -> std::optional<std::uint64_t> {
     if (position.row >= chart.divisions_per_standard_measure)
         return std::nullopt;
-    const auto found = std::ranges::find(chart.measures, position.measure, &measure_chunk_t::id);
-    if (found == chart.measures.end())
+    const auto found = chart.find_measure(position.measure);
+    if (found == nullptr)
         return std::nullopt;
-    const auto index = static_cast<std::uint64_t>(std::distance(chart.measures.begin(), found));
+    const auto index = static_cast<std::uint64_t>(found - chart.measures.data());
     if (index > (std::numeric_limits<std::uint64_t>::max() - position.row) /
                     chart.divisions_per_standard_measure)
         return std::nullopt;
@@ -1963,9 +1963,9 @@ struct note_map_builder_t {
         diagnostics.push_back({diagnostic_severity_t::error, code, std::move(message), "NOTES"});
     }
     auto lane_index(lane_id_t lane) const -> std::optional<std::uint32_t> {
-        const auto found = std::ranges::find(layout.lanes, lane, &lane_definition_t::id);
-        if (found == layout.lanes.end()) return std::nullopt;
-        return static_cast<std::uint32_t>(std::distance(layout.lanes.begin(), found));
+        const auto found = layout.find(lane);
+        if (found == nullptr) return std::nullopt;
+        return static_cast<std::uint32_t>(found - layout.lanes.data());
     }
     auto put_cell(local_position_t position, std::uint32_t column, char symbol,
                   std::string suffix) -> bool {
@@ -2168,8 +2168,8 @@ auto note_map_text(const chart_document_t& chart,
     const auto changing_layout = std::ranges::any_of(chart.lane_layouts, [&](const auto& segment) {
         return segment.layout.lanes.size() != layout.lanes.size() ||
             std::ranges::any_of(segment.layout.lanes, [&](const auto& lane) {
-                return std::ranges::find(layout.lanes, lane.id, &lane_definition_t::id) ==
-                       layout.lanes.end();
+                return layout.find(lane.id) ==
+                       nullptr;
             });
     });
     if (changing_layout) {
@@ -2356,8 +2356,8 @@ struct stepmania_writer_t {
             music = &resource;
         }
         if (!music) return std::nullopt;
-        const auto asset = std::ranges::find(song.audio_assets, music->asset, &audio_asset_t::id);
-        if (asset == song.audio_assets.end() || asset->source_path.empty()) {
+        const auto asset = song.find_audio_asset(music->asset);
+        if (asset == nullptr || asset->source_path.empty()) {
             report(stepmania_write_diagnostic_code_t::invalid_metadata,
                    "Music resource has no audio asset path", "MUSIC");
             return std::nullopt;
@@ -2401,8 +2401,8 @@ struct stepmania_writer_t {
     // The name a resource has in #KEYSOUNDS, or nothing when its file cannot be
     // written as a relative path that survives the comma-separated list.
     auto keysound_name(const resource_entry_t& resource) const -> std::optional<std::string> {
-        const auto asset = std::ranges::find(song.audio_assets, resource.asset, &audio_asset_t::id);
-        if (asset == song.audio_assets.end()) return std::nullopt;
+        const auto asset = song.find_audio_asset(resource.asset);
+        if (asset == nullptr) return std::nullopt;
         const auto authored = std::ranges::find_if(
             resource.target_identities, [](const auto& identity) {
                 return identity.family == format_family_t::stepmania &&

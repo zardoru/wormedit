@@ -337,7 +337,7 @@ auto validate_resource_role(const song_document_t& document, resource_id_t id,
     }
     const auto audio_role = role == resource_role_t::sample || role == resource_role_t::bgm;
     const auto asset_present = audio_role
-        ? std::ranges::find(document.audio_assets, resource->asset, &audio_asset_t::id) != document.audio_assets.end()
+        ? document.find_audio_asset(resource->asset) != nullptr
         : role == resource_role_t::bga &&
           std::ranges::find(document.visual_assets, resource->asset, &visual_asset_t::id) != document.visual_assets.end();
     // Background events may play ordinary keysounds as well as BGM-only sources.
@@ -504,8 +504,8 @@ auto resolve_placement_target(const song_document_t& document,
                               const place_resource_action_t& action,
                               document_command_result_t& result)
     -> std::optional<resource_placement_target_t> {
-    const auto chart = std::ranges::find(document.charts, action.chart, &chart_document_t::id);
-    if (!action.chart || chart == document.charts.end()) {
+    const auto chart = document.find_chart(action.chart);
+    if (!action.chart || chart == nullptr) {
         reject(result, diagnostic_code_t::invalid_id, "resource placement refers to an unknown chart");
         return std::nullopt;
     }
@@ -531,7 +531,7 @@ auto resolve_placement_target(const song_document_t& document,
         return std::nullopt;
     }
     return resource_placement_target_t{
-        static_cast<std::size_t>(chart - document.charts.begin()), *index, *position, *row, *first_id};
+        static_cast<std::size_t>(chart - document.charts.data()), *index, *position, *row, *first_id};
 }
 
 struct resource_placement_context_t {
@@ -561,8 +561,7 @@ auto place_sample_note(resource_placement_context_t& context) -> bool {
             active_row = *begin;
         }
     }
-    if (!active || std::ranges::find(active->layout.lanes, action.lane,
-                                      &lane_definition_t::id) == active->layout.lanes.end()) {
+    if (!active || active->layout.find(action.lane) == nullptr) {
         reject(context.result, diagnostic_code_t::unknown_lane,
                "Sample placement lane is absent at the cursor row");
         return false;
@@ -688,8 +687,8 @@ auto apply_resource_placement(document_history_t& history, std::uint64_t expecte
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
     auto& chart = proposed.charts[target->chart_offset];
-    auto measure = std::ranges::find(chart.measures, target->position.measure, &measure_chunk_t::id);
-    if (measure == chart.measures.end()) {
+    auto measure = chart.find_measure(target->position.measure);
+    if (measure == nullptr) {
         reject(result, diagnostic_code_t::invalid_measure, "resource placement measure is missing");
         return result;
     }
@@ -719,9 +718,8 @@ auto apply_bga_stroke(document_history_t& history, std::uint64_t expected_revisi
                "BGA stroke exceeds the per-gesture target cap");
         return result;
     }
-    const auto source_chart = std::ranges::find(history.document.charts, chart_id,
-                                                &chart_document_t::id);
-    if (!chart_id || source_chart == history.document.charts.end()) {
+    const auto source_chart = history.document.find_chart(chart_id);
+    if (!chart_id || source_chart == nullptr) {
         reject(result, diagnostic_code_t::invalid_id, "BGA stroke chart is missing");
         return result;
     }
@@ -737,7 +735,7 @@ auto apply_bga_stroke(document_history_t& history, std::uint64_t expected_revisi
     auto resolved = resolve_bga_stroke_targets(*index, targets, asset_kind, erase, result);
     if (!resolved) return result;
     if (resolved->empty()) return result;
-    const auto chart_offset = static_cast<std::size_t>(source_chart - history.document.charts.begin());
+    const auto chart_offset = static_cast<std::size_t>(source_chart - history.document.charts.data());
     return commit_bga_stroke_targets(history, chart_offset, *index, *resolved, resource, erase);
 }
 
@@ -779,9 +777,9 @@ auto validate_bgm_stroke_resource(const song_document_t& document, const chart_d
                "cannot place a resource with a missing source");
         return false;
     }
-    const auto audio = std::ranges::find(document.audio_assets, entry->asset, &audio_asset_t::id);
+    const auto audio = document.find_audio_asset(entry->asset);
     if ((!has_role(*entry, resource_role_t::bgm) && !has_role(*entry, resource_role_t::sample)) ||
-        audio == document.audio_assets.end()) {
+        audio == nullptr) {
         reject(result, diagnostic_code_t::unsupported_feature,
                "resource is incompatible with the requested placement");
         return false;
@@ -877,9 +875,8 @@ auto commit_bgm_stroke_draw(document_history_t& history, std::size_t chart_offse
     const auto layers = resolve_placement_layers(chart, std::nullopt, sound);
     auto next_id = first_id->value;
     for (const auto& cell : additions) {
-        const auto measure = std::ranges::find(chart.measures, cell.position.measure,
-                                               &measure_chunk_t::id);
-        if (measure == chart.measures.end()) {
+        const auto measure = chart.find_measure(cell.position.measure);
+        if (measure == nullptr) {
             reject(unchanged, diagnostic_code_t::invalid_measure,
                    "BGM stroke measure is missing");
             return unchanged;
@@ -909,9 +906,8 @@ auto apply_bgm_stroke(document_history_t& history, std::uint64_t expected_revisi
                "BGM stroke exceeds the per-gesture target cap");
         return result;
     }
-    const auto source_chart = std::ranges::find(history.document.charts, chart_id,
-                                                &chart_document_t::id);
-    if (!chart_id || source_chart == history.document.charts.end()) {
+    const auto source_chart = history.document.find_chart(chart_id);
+    if (!chart_id || source_chart == nullptr) {
         reject(result, diagnostic_code_t::invalid_id, "BGM stroke chart is missing");
         return result;
     }
@@ -929,19 +925,13 @@ auto apply_bgm_stroke(document_history_t& history, std::uint64_t expected_revisi
     }
     const auto cells = resolve_bgm_stroke_cells(*index, targets, result);
     if (!cells || cells->empty()) return result;
-    const auto chart_offset = static_cast<std::size_t>(source_chart - history.document.charts.begin());
+    const auto chart_offset = static_cast<std::size_t>(source_chart - history.document.charts.data());
     return erase ? commit_bgm_stroke_erase(history, chart_offset, *index, source_lane, *cells)
                  : commit_bgm_stroke_draw(history, chart_offset, *index, source_lane, *resource,
                                           *cells);
 }
 
-auto find_bgm_event(const chart_document_t& chart, object_id_t id) -> const bgm_event_t* {
-    for (const auto& measure : chart.measures) {
-        const auto found = std::ranges::find(measure.bgm_events, id, &bgm_event_t::id);
-        if (found != measure.bgm_events.end()) return &*found;
-    }
-    return nullptr;
-}
+
 
 auto is_branch_bgm_event(const chart_document_t& chart, const bgm_event_t& event) -> bool {
     return event.sound_channel_event || event.branch ||
@@ -990,9 +980,8 @@ auto apply_bgm_event_move(document_history_t& history, std::uint64_t expected_re
         reject(result, diagnostic_code_t::invalid_id, "BGM move document revision is stale");
         return result;
     }
-    const auto source_chart = std::ranges::find(history.document.charts, action.chart,
-                                                &chart_document_t::id);
-    if (!action.chart || source_chart == history.document.charts.end() || !action.event) {
+    const auto source_chart = history.document.find_chart(action.chart);
+    if (!action.chart || source_chart == nullptr || !action.event) {
         reject(result, diagnostic_code_t::invalid_id, "BGM move chart or event is missing");
         return result;
     }
@@ -1008,7 +997,7 @@ auto apply_bgm_event_move(document_history_t& history, std::uint64_t expected_re
         reject(result, diagnostic_code_t::row_out_of_range, "BGM move row is outside the chart");
         return result;
     }
-    const auto* original = find_bgm_event(*source_chart, action.event);
+    const auto* original = (*source_chart).find_bgm_event(action.event);
     if (!original) {
         reject(result, diagnostic_code_t::invalid_id, "BGM move event no longer exists");
         return result;
@@ -1055,7 +1044,7 @@ auto apply_bgm_event_move(document_history_t& history, std::uint64_t expected_re
         return result;
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
-    auto& chart = proposed.charts[static_cast<std::size_t>(source_chart - history.document.charts.begin())];
+    auto& chart = proposed.charts[static_cast<std::size_t>(source_chart - history.document.charts.data())];
     if (!destination_lane) {
         destination_lane = create_bgm_source_lane(chart, result);
         if (!destination_lane) return result;
@@ -1074,8 +1063,7 @@ auto apply_bgm_event_move(document_history_t& history, std::uint64_t expected_re
     moved.source_lane = destination_lane;
     moved.structural_slot = 0;
     moved.provenance = {};
-    const auto destination = std::ranges::find(chart.measures, target->measure,
-                                               &measure_chunk_t::id);
+    const auto destination = chart.find_measure(target->measure);
     destination->bgm_events.push_back(std::move(moved));
     return transaction.commit("Move BGM event");
 }
@@ -1087,9 +1075,8 @@ auto apply_bga_event_move(document_history_t& history, std::uint64_t expected_re
         reject(result, diagnostic_code_t::invalid_id, "BGA move document revision is stale");
         return result;
     }
-    const auto source_chart = std::ranges::find(history.document.charts, action.chart,
-                                                &chart_document_t::id);
-    if (!action.chart || source_chart == history.document.charts.end() || !action.event) {
+    const auto source_chart = history.document.find_chart(action.chart);
+    if (!action.chart || source_chart == nullptr || !action.event) {
         reject(result, diagnostic_code_t::invalid_id, "BGA move chart or event is missing");
         return result;
     }
@@ -1121,7 +1108,7 @@ auto apply_bga_event_move(document_history_t& history, std::uint64_t expected_re
     if (*target == found->position && *kind == found->kind) return result;
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
-    const auto chart_offset = static_cast<std::size_t>(source_chart - history.document.charts.begin());
+    const auto chart_offset = static_cast<std::size_t>(source_chart - history.document.charts.data());
     const auto moved = std::ranges::find(proposed.charts[chart_offset].bga_events,
                                          action.event, &bga_event_t::id);
     if (moved == proposed.charts[chart_offset].bga_events.end()) {
@@ -1142,9 +1129,8 @@ auto apply_virtual_bms_resource_placement(
                "virtual resource placement document revision is stale");
         return result;
     }
-    const auto source_chart = std::ranges::find(history.document.charts, action.chart,
-                                                &chart_document_t::id);
-    if (source_chart == history.document.charts.end() ||
+    const auto source_chart = history.document.find_chart(action.chart);
+    if (source_chart == nullptr ||
         source_chart->source_family != format_family_t::bms) {
         reject(result, diagnostic_code_t::invalid_id,
                "virtual resource placement requires a BMS chart");
@@ -1185,7 +1171,7 @@ auto apply_virtual_bms_resource_placement(
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
     auto& chart = proposed.charts[static_cast<std::size_t>(
-        source_chart - history.document.charts.begin())];
+        source_chart - history.document.charts.data())];
     const auto required = destination->number + 1 - chart.measures.size();
     std::uint64_t last_measure_id{};
     for (const auto& measure : chart.measures)
@@ -1230,9 +1216,8 @@ auto apply_virtual_bms_bgm_event_move(
                "virtual BGM move document revision is stale");
         return result;
     }
-    const auto source_chart = std::ranges::find(history.document.charts, action.chart,
-                                                &chart_document_t::id);
-    if (!action.chart || source_chart == history.document.charts.end() ||
+    const auto source_chart = history.document.find_chart(action.chart);
+    if (!action.chart || source_chart == nullptr ||
         source_chart->source_family != format_family_t::bms) {
         reject(result, diagnostic_code_t::invalid_id,
                "virtual BGM move requires a BMS chart");
@@ -1273,7 +1258,7 @@ auto apply_virtual_bms_bgm_event_move(
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
     auto& chart = proposed.charts[static_cast<std::size_t>(
-        source_chart - history.document.charts.begin())];
+        source_chart - history.document.charts.data())];
     const auto required = destination->number + 1 - chart.measures.size();
     std::uint64_t last_measure_id{};
     for (const auto& measure : chart.measures)
@@ -1311,9 +1296,8 @@ auto apply_virtual_bms_bga_event_move(
         reject(result, diagnostic_code_t::invalid_id, "virtual BGA move document revision is stale");
         return result;
     }
-    const auto source_chart = std::ranges::find(history.document.charts, action.chart,
-                                                &chart_document_t::id);
-    if (!action.chart || source_chart == history.document.charts.end() ||
+    const auto source_chart = history.document.find_chart(action.chart);
+    if (!action.chart || source_chart == nullptr ||
         source_chart->source_family != format_family_t::bms || !action.event) {
         reject(result, diagnostic_code_t::invalid_id, "virtual BGA move requires a BMS chart and event");
         return result;
@@ -1351,7 +1335,7 @@ auto apply_virtual_bms_bga_event_move(
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
     auto& chart = proposed.charts[static_cast<std::size_t>(
-        source_chart - history.document.charts.begin())];
+        source_chart - history.document.charts.data())];
     const auto required = destination->number + 1 - chart.measures.size();
     std::uint64_t last_measure_id{};
     for (const auto& measure : chart.measures)
@@ -1428,10 +1412,10 @@ auto apply_resource_creation(document_history_t& history, std::uint64_t expected
         return result;
     }
     const auto& document = history.document;
-    const auto audio = std::ranges::find(document.audio_assets, action.asset, &audio_asset_t::id);
+    const auto audio = document.find_audio_asset(action.asset);
     const auto visual =
         std::ranges::find(document.visual_assets, action.asset, &visual_asset_t::id);
-    if (!action.asset || (audio_role && audio == document.audio_assets.end()) ||
+    if (!action.asset || (audio_role && audio == nullptr) ||
         (visual_role && visual == document.visual_assets.end())) {
         reject(result, diagnostic_code_t::dangling_asset,
                "resource creation requires a registered asset of the selected type");
@@ -1624,8 +1608,8 @@ auto find_primary_music_resource(const song_document_t& document)
     -> std::vector<resource_entry_t>::const_iterator {
     return std::ranges::find_if(document.resources, [&](const resource_entry_t& resource) {
         return std::ranges::find(resource.roles, resource_role_t::music) != resource.roles.end() &&
-               std::ranges::find(document.audio_assets, resource.asset, &audio_asset_t::id) !=
-                   document.audio_assets.end();
+               document.find_audio_asset(resource.asset) !=
+                   nullptr;
     });
 }
 
@@ -1655,7 +1639,7 @@ auto relink_primary_music(document_history_t& history, const resource_entry_t& m
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
-    const auto asset = std::ranges::find(proposed.audio_assets, music.asset, &audio_asset_t::id);
+    const auto asset = proposed.find_audio_asset(music.asset);
     if (asset->source_path.lexically_normal() == source) return result;
     asset->source_path = source;
     asset->stream = *action.audio_stream;
@@ -1987,20 +1971,19 @@ auto apply_resource_asset_relink(document_history_t& history, std::uint64_t expe
                "relative resource paths cannot escape the project directory");
         return result;
     }
-    const auto audio = std::ranges::find(history.document.audio_assets, action.asset,
-                                          &audio_asset_t::id);
+    const auto audio = history.document.find_audio_asset(action.asset);
     const auto visual = std::ranges::find(history.document.visual_assets, action.asset,
                                            &visual_asset_t::id);
     if (!action.asset ||
-        (audio == history.document.audio_assets.end() &&
+        (audio == nullptr &&
          visual == history.document.visual_assets.end()) ||
-        (audio != history.document.audio_assets.end() &&
+        (audio != nullptr &&
          visual != history.document.visual_assets.end())) {
         reject(result, diagnostic_code_t::invalid_id,
                "resource asset relink requires one known audio or image asset");
         return result;
     }
-    const auto current = audio != history.document.audio_assets.end()
+    const auto current = audio != nullptr
                              ? audio->source_path
                              : visual->source_path;
     if (current == path) {
@@ -2008,9 +1991,9 @@ auto apply_resource_asset_relink(document_history_t& history, std::uint64_t expe
     }
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
-    if (audio != history.document.audio_assets.end()) {
+    if (audio != nullptr) {
         const auto index = static_cast<std::size_t>(audio -
-                                                    history.document.audio_assets.begin());
+                                                    history.document.audio_assets.data());
         proposed.audio_assets[index].source_path = path;
         // The user pointed the asset at a file they chose, so its sounds are no longer missing.
         for (auto& resource : proposed.resources)
@@ -2309,8 +2292,8 @@ auto apply_resource_assignment(document_history_t& history, std::uint64_t expect
     if (!selected) return result;
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
-    const auto chart = std::ranges::find(proposed.charts, action.chart, &chart_document_t::id);
-    if (!action.chart || chart == proposed.charts.end()) {
+    const auto chart = proposed.find_chart(action.chart);
+    if (!action.chart || chart == nullptr) {
         reject(result, diagnostic_code_t::invalid_id,
                "resource assignment refers to an unknown chart");
         return result;

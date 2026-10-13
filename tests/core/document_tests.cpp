@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 #include <variant>
+#include <type_traits>
 
 using namespace wormedit;
 
@@ -781,3 +782,97 @@ TEST_CASE("BMS field and measure projection provenance validates as parallel bou
     CHECK(has_message(invalid_projection, "unknown measure index"));
     CHECK(has_message(invalid_projection, "baseline must be positive"));
 }
+
+namespace {
+void check_owner_query(bool value) { CHECK(value); }
+void require_owner_query(bool value) { REQUIRE(value); }
+}
+
+TEST_CASE("Document owner queries preserve first matches and mutable access", "[unit][document]") {
+    song_document_t song;
+    song.charts = {{.id = chart_id_t{7}}, {.id = chart_id_t{7}}};
+    song.audio_assets = {{.id = asset_id_t{9}}, {.id = asset_id_t{9}}};
+    auto& chart = song.charts.front();
+    chart.measures = {{.id = measure_id_t{3}}, {.id = measure_id_t{4}}};
+    chart.measures.front().notes = {{.id = object_id_t{10}}};
+    chart.measures.back().notes = {{.id = object_id_t{10}}};
+    chart.measures.front().bgm_events = {{.id = object_id_t{11}}};
+    chart.measures.back().bgm_events = {{.id = object_id_t{11}}};
+    check_owner_query(song.find_chart(chart_id_t{7}) == &song.charts.front());
+    check_owner_query(find_chart(song, chart_id_t{7}) == song.find_chart(chart_id_t{7}));
+    check_owner_query(song.find_audio_asset(asset_id_t{9}) == &song.audio_assets.front());
+    check_owner_query(chart.find_measure(measure_id_t{4}) == &chart.measures.back());
+    check_owner_query(chart.find_note(object_id_t{10}) == &chart.measures.front().notes.front());
+    check_owner_query(chart.find_bgm_event(object_id_t{11}) == &chart.measures.front().bgm_events.front());
+    chart.find_note(object_id_t{10})->label = "changed";
+    const auto& read_only = song;
+    check_owner_query(read_only.find_chart(chart_id_t{7})->find_note(object_id_t{10})->label == "changed");
+    check_owner_query(read_only.find_audio_asset(asset_id_t{9}) == &song.audio_assets.front());
+    check_owner_query(!song.find_chart(chart_id_t{8}) && !song.find_audio_asset(asset_id_t{8}));
+    check_owner_query(!chart.find_measure(measure_id_t{8}) && !chart.find_note(object_id_t{8}) &&
+                       !chart.find_bgm_event(object_id_t{8}));
+}
+
+TEST_CASE("Lane query equality keeps full identity separate from source shape", "[unit][document]") {
+    lane_layout_t layout{.profile_id = "test", .lanes = {{.id = lane_id_t{1}, .name = "Key"}}};
+    check_owner_query(layout.contains(lane_id_t{1}) && !layout.contains(lane_id_t{2}));
+    check_owner_query(layout.find(lane_id_t{1}) == &layout.lanes.front());
+    check_owner_query(layout.lanes.front().is_editable());
+    auto changed = layout;
+    changed.lanes.front().id = lane_id_t{2};
+    changed.lanes.front().stage = stage_group_t::left;
+    changed.display_name = "Presentation";
+    check_owner_query(changed != layout && changed.has_same_shape(layout));
+    changed.lanes.front().bms_channels.mine = "D1";
+    check_owner_query(!changed.has_same_shape(layout));
+    for (const auto role : {lane_role_t::autoplay, lane_role_t::invisible, lane_role_t::mine}) {
+        changed.lanes.front().role = role;
+        check_owner_query(!changed.lanes.front().is_editable());
+    }
+    const target_resource_identity_t id{format_family_t::bms, "01", "wav"};
+    auto other = id;
+    check_owner_query(id == other);
+    other.namespace_name = "bmp";
+    check_owner_query(id != other);
+}
+
+TEST_CASE("Layout query row overload preserves unordered segments and later ties", "[unit][document]") {
+    chart_document_t chart{.divisions_per_standard_measure = 960};
+    chart.measures = {{.id = measure_id_t{1}}};
+    chart.lane_layouts = {
+        {.position = {measure_id_t{1}, 240}, .layout = {.profile_id = "first"}},
+        {.position = {measure_id_t{1}, 0}, .layout = {.profile_id = "zero"}},
+        {.position = {measure_id_t{1}, 240}, .layout = {.profile_id = "last"}},
+        {.position = {measure_id_t{2}, 0}, .layout = {.profile_id = "invalid"}},
+    };
+    const auto built = build_measure_index(chart);
+    require_owner_query(std::holds_alternative<measure_index_t>(built));
+    const auto& index = std::get<measure_index_t>(built);
+    check_owner_query(layout_at(chart, index, std::uint64_t{239}) == &chart.lane_layouts[1].layout);
+    check_owner_query(layout_at(chart, index, std::uint64_t{240}) == &chart.lane_layouts[2].layout);
+    check_owner_query(layout_at(chart, index, local_position_t{measure_id_t{1}, 240}) ==
+                       layout_at(chart, index, std::uint64_t{240}));
+    check_owner_query(!layout_at(chart, index, local_position_t{measure_id_t{2}, 0}));
+    // Row callers deliberately support virtual chart tails.
+    check_owner_query(layout_at(chart, index, std::uint64_t{1920}) == &chart.lane_layouts[2].layout);
+}
+
+TEST_CASE("BMS control predicates keep random scope distinctions", "[unit][document]") {
+    check_owner_query(is_choice_control(bms_control_kind_t::random));
+    check_owner_query(is_branch_boundary(bms_control_kind_t::random));
+    check_owner_query(!is_branch_scope(bms_control_kind_t::random));
+    check_owner_query(is_branch_scope(bms_control_kind_t::if_group));
+    check_owner_query(is_branch_body(bms_control_kind_t::case_branch));
+    check_owner_query(is_switch_branch(bms_control_kind_t::default_branch));
+    check_owner_query(!is_conditional_branch(bms_control_kind_t::default_branch));
+    check_owner_query(has_control_value(bms_control_kind_t::set_random));
+    check_owner_query(has_positive_control_value(bms_control_kind_t::set_random));
+    check_owner_query(!has_control_value(bms_control_kind_t::else_branch));
+    check_owner_query(can_have_control_close(bms_control_kind_t::switch_block));
+    check_owner_query(!is_valid_control_kind(static_cast<bms_control_kind_t>(100)));
+}
+
+static_assert(std::is_aggregate_v<song_document_t>);
+static_assert(std::is_aggregate_v<chart_document_t>);
+static_assert(std::is_aggregate_v<lane_layout_t>);
+static_assert(std::is_aggregate_v<lane_definition_t>);

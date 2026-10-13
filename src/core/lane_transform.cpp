@@ -16,36 +16,14 @@ namespace {
 using lane_chooser_t =
     std::function<std::optional<lane_id_t>(const lane_layout_t&, lane_id_t)>;
 
-auto layout_at(const chart_document_t& chart, const measure_index_t& index,
-               local_position_t position) -> const lane_layout_t* {
-    const auto row = absolute_row(index, position);
-    if (!row)
-        return nullptr;
-    const lane_layout_t* selected = nullptr;
-    std::uint64_t selected_row{};
-    for (const auto& segment : chart.lane_layouts) {
-        const auto segment_row = absolute_row(index, segment.position);
-        if (segment_row && *segment_row <= *row && (selected == nullptr || *segment_row >= selected_row)) {
-            selected = &segment.layout;
-            selected_row = *segment_row;
-        }
-    }
-    return selected;
-}
 
-auto has_lane(const lane_layout_t* layout, lane_id_t lane) -> bool {
-    return layout != nullptr && std::ranges::any_of(layout->lanes, [lane](const auto& candidate) {
-               return candidate.id == lane;
-           });
-}
 
-auto find_lane(const lane_layout_t& layout, lane_id_t lane) -> const lane_definition_t* {
-    const auto found = std::ranges::find(layout.lanes, lane, &lane_definition_t::id);
-    return found == layout.lanes.end() ? nullptr : &*found;
-}
+auto has_lane(const lane_layout_t* layout, lane_id_t lane) -> bool { return layout != nullptr && layout->contains(lane); }
+
+
 
 auto mirror_lane(const lane_layout_t& layout, lane_id_t lane) -> std::optional<lane_id_t> {
-    const auto* definition = find_lane(layout, lane);
+    const auto* definition = layout.find(lane);
     if (definition == nullptr || definition->role != lane_role_t::playable)
         return std::nullopt;
     std::vector<const lane_definition_t*> stage;
@@ -159,8 +137,8 @@ auto apply_lane_assignment(document_history_t& history, std::uint64_t expected_r
         return result;
     }
     auto& proposed = transaction.copy_document();
-    const auto chart = std::ranges::find(proposed.charts, chart_id, &chart_document_t::id);
-    if (!chart_id || chart == proposed.charts.end()) {
+    const auto chart = proposed.find_chart(chart_id);
+    if (!chart_id || chart == nullptr) {
         reject(result, diagnostic_code_t::invalid_id, "lane transform refers to an unknown chart");
         return result;
     }

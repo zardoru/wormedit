@@ -113,8 +113,8 @@ auto lane_visible(const chart_document_t& chart, const note_t& note,
     const auto* layout = active_lane_layout_segment(chart, note.position);
     if (!layout)
         return false;
-    const auto lane = std::ranges::find(layout->layout.lanes, note.lane, &lane_definition_t::id);
-    return lane != layout->layout.lanes.end() && lane->role != lane_role_t::invisible &&
+    const auto lane = layout->layout.find(note.lane);
+    return lane != nullptr && lane->role != lane_role_t::invisible &&
            lane->role != lane_role_t::autoplay && lane->role != lane_role_t::mine;
 }
 template <typename Object>

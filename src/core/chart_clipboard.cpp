@@ -20,28 +20,15 @@ constexpr std::size_t maximum_objects = 32768;
 
 using wormedit::rows_to_fraction;
 
-auto layout_at(const chart_document_t& chart, const measure_index_t& index,
-               local_position_t position) -> const lane_layout_t* {
-    const auto row = absolute_row(index, position);
-    const lane_layout_t* layout{};
-    std::uint64_t latest{};
-    for (const auto& segment : chart.lane_layouts) {
-        const auto start = absolute_row(index, segment.position);
-        if (row && start && *start <= *row && (!layout || *start >= latest)) {
-            layout = &segment.layout;
-            latest = *start;
-        }
-    }
-    return layout;
-}
+
 
 auto note_lane(const chart_document_t& chart, const measure_index_t& index,
                const note_t& note) -> std::optional<std::size_t> {
     const auto* layout = layout_at(chart, index, note.position);
     if (!layout) return std::nullopt;
-    const auto found = std::ranges::find(layout->lanes, note.lane, &lane_definition_t::id);
-    if (found == layout->lanes.end()) return std::nullopt;
-    return static_cast<std::size_t>(found - layout->lanes.begin());
+    const auto found = layout->find(note.lane);
+    if (found == nullptr) return std::nullopt;
+    return static_cast<std::size_t>(found - layout->lanes.data());
 }
 
 auto selected_objects(const editor_interaction_state_t& state)
@@ -57,8 +44,8 @@ auto selected_kiai_boundaries(const song_document_t& document,
                               const editor_interaction_state_t& state, object_id_t head)
     -> std::optional<std::vector<editor_selection_object_t>> {
     if (!head) return std::vector<editor_selection_object_t>{};
-    const auto chart = std::ranges::find(document.charts, state.chart, &chart_document_t::id);
-    if (chart == document.charts.end()) return std::nullopt;
+    const auto chart = document.find_chart(state.chart);
+    if (chart == nullptr) return std::nullopt;
     const auto indexed = build_measure_index(*chart);
     const auto* index = std::get_if<measure_index_t>(&indexed);
     if (!index) return std::nullopt;
@@ -189,8 +176,8 @@ auto copy_chart_selection(const song_document_t& document,
                           const editor_interaction_state_t& state,
                           std::uint64_t expected_revision, object_id_t kiai_head) -> chart_clipboard_result_t {
     if (document.revision != expected_revision) return {{}, "The document has changed."};
-    const auto chart = std::ranges::find(document.charts, state.chart, &chart_document_t::id);
-    if (chart == document.charts.end()) return {{}, "The selected chart no longer exists."};
+    const auto chart = document.find_chart(state.chart);
+    if (chart == nullptr) return {{}, "The selected chart no longer exists."};
     auto selected = selected_objects(state);
     const auto boundaries = selected_kiai_boundaries(document, state, kiai_head);
     if (!boundaries) return {{}, "The selected Kiai area no longer exists."};
@@ -530,8 +517,7 @@ void append_paste_object(chart_document_t& chart, chart_clipboard_payload_t obje
     std::visit([&chart](auto payload) {
         using payload_t = decltype(payload);
         if constexpr (std::is_same_v<payload_t, note_t> || std::is_same_v<payload_t, bgm_event_t>) {
-            const auto measure = std::ranges::find(chart.measures, payload.position.measure,
-                                                   &measure_chunk_t::id);
+            const auto measure = chart.find_measure(payload.position.measure);
             if constexpr (std::is_same_v<payload_t, note_t>)
                 measure->notes.push_back(std::move(payload));
             else measure->bgm_events.push_back(std::move(payload));
@@ -607,8 +593,8 @@ namespace {
 auto stem_audio_playing(const song_document_t& document, const chart_document_t& chart,
                         const sound_channel_t& channel, const timing_index_t& timing, std::uint64_t row)
     -> std::optional<bool> {
-    const auto asset = std::ranges::find(document.audio_assets, channel.source_clip.source, &audio_asset_t::id);
-    if (asset == document.audio_assets.end() || asset->stream.sample_rate == 0) return std::nullopt;
+    const auto asset = document.find_audio_asset(channel.source_clip.source);
+    if (asset == nullptr || asset->stream.sample_rate == 0) return std::nullopt;
     auto source_end = channel.source_clip.end_frame;
     if (asset->stream.frame_count && (!source_end || *asset->stream.frame_count < *source_end))
         source_end = asset->stream.frame_count;
@@ -701,8 +687,8 @@ auto propose_chart_paste(const song_document_t& document, chart_id_t chart_id,
     if (clipboard.objects.empty() || clipboard.objects.size() > maximum_objects)
         return reject("The clipboard is empty or exceeds its object limit.");
     auto proposed = document;
-    const auto chart = std::ranges::find(proposed.charts, chart_id, &chart_document_t::id);
-    if (chart == proposed.charts.end()) return reject("The selected chart no longer exists.");
+    const auto chart = proposed.find_chart(chart_id);
+    if (chart == nullptr) return reject("The selected chart no longer exists.");
     const auto indexed = build_measure_index(*chart);
     const auto* index = std::get_if<measure_index_t>(&indexed);
     const auto row = index ? absolute_row(*index, anchor) : std::nullopt;
@@ -745,7 +731,7 @@ auto paste_chart_clipboard(document_history_t& history, chart_id_t chart_id,
         history.document.revision, diagnostic_code_t::collision, std::move(proposal.error));
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
-    const auto chart = std::ranges::find(proposed.charts, chart_id, &chart_document_t::id);
+    const auto chart = proposed.find_chart(chart_id);
     for (auto& object : proposal.objects) append_paste_object(*chart, std::move(object));
     append_stem_events(*chart, proposal.stem_events);
     return transaction.commit("Paste chart objects");

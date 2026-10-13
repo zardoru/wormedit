@@ -598,8 +598,8 @@ auto note_pointer_distance(const lane_layout_t* layout, lane_id_t lane, double y
                             const editor_hit_test_request_t& request) -> double {
     auto glyph = lane_glyph_t::bar;
     if (layout) {
-        const auto found = std::ranges::find(layout->lanes, lane, &lane_definition_t::id);
-        if (found != layout->lanes.end()) glyph = found->glyph;
+        const auto found = layout->find(lane);
+        if (found != nullptr) glyph = found->glyph;
     }
     const auto [top, bottom] = editor_note_head_bounds(y, request.note_head_height_pixels, glyph);
     return std::max({top - request.y_pixels, request.y_pixels - bottom, 0.0});

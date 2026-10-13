@@ -77,8 +77,8 @@ struct located_asset_t {
 };
 
 auto source_asset(const song_document_t& song, asset_id_t id) -> std::optional<located_asset_t> {
-    const auto audio = std::ranges::find(song.audio_assets, id, &audio_asset_t::id);
-    if (audio != song.audio_assets.end()) return located_asset_t{false, id, audio->source_path};
+    const auto audio = song.find_audio_asset(id);
+    if (audio != nullptr) return located_asset_t{false, id, audio->source_path};
     const auto visual = std::ranges::find(song.visual_assets, id, &visual_asset_t::id);
     if (visual != song.visual_assets.end()) return located_asset_t{true, id, visual->source_path};
     return std::nullopt;
@@ -168,8 +168,8 @@ auto first_bpm(const chart_document_t& chart) -> std::optional<signed_rational_t
     std::optional<signed_rational_t> found;
     std::optional<std::pair<std::size_t, std::uint64_t>> best;
     for (const auto& event : chart.bpms) {
-        const auto measure = std::ranges::find(chart.measures, event.position.measure, &measure_chunk_t::id);
-        const auto key = std::pair{static_cast<std::size_t>(measure - chart.measures.begin()), event.position.row};
+        const auto measure = chart.find_measure(event.position.measure);
+        const auto key = std::pair{static_cast<std::size_t>(measure - chart.measures.data()), event.position.row};
         if (!best || key < *best) { best = key; found = event.beats_per_minute; }
     }
     return found;
@@ -235,8 +235,8 @@ auto make_plan(const song_document_t& target, const song_document_t& source,
     import_plan_t plan;
     plan.proposal.difficulties = list_chart_import_difficulties(source);
     for (const auto id : selected) {
-        const auto chart = std::ranges::find(source.charts, id, &chart_document_t::id);
-        if (chart == source.charts.end()) {
+        const auto chart = source.find_chart(id);
+        if (chart == nullptr) {
             plan.proposal.diagnostics.push_back(import_error("the chart to import is not in the source file"));
             return plan;
         }
@@ -283,7 +283,7 @@ auto add_asset(song_document_t& target, const located_asset_t& asset, const song
         copy.source_path = absolute;
         target.visual_assets.push_back(std::move(copy));
     } else {
-        auto copy = *std::ranges::find(source.audio_assets, asset.id, &audio_asset_t::id);
+        auto copy = *source.find_audio_asset(asset.id);
         copy.id = *id;
         copy.source_path = absolute;
         copy.waveform_cache_path.reset();
@@ -363,7 +363,7 @@ auto import_one_chart(document_history_t& scratch, const chart_document_t& sourc
     scratch.document.charts.push_back(std::move(staged));
     const auto duplicated = apply_duplicate_chart_command(scratch, scratch.document.revision, staged_id);
     if (!duplicated || !duplicated.payload.chart) return std::nullopt;
-    auto chart = *std::ranges::find(scratch.document.charts, *duplicated.payload.chart, &chart_document_t::id);
+    auto chart = *scratch.document.find_chart(*duplicated.payload.chart);
     chart.metadata.name = name;
     return chart;
 }

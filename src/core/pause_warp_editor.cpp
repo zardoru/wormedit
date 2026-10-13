@@ -124,8 +124,8 @@ struct pause_warp_edit_context_t {
 };
 
 auto target_chart(pause_warp_edit_context_t& context, chart_id_t id) -> chart_document_t* {
-    const auto found = std::ranges::find(context.proposed.charts, id, &chart_document_t::id);
-    if (!id || found == context.proposed.charts.end()) {
+    const auto found = context.proposed.find_chart(id);
+    if (!id || found == nullptr) {
         reject(context.result, diagnostic_code_t::invalid_id,
                "pause/warp edit refers to an unknown chart");
         return nullptr;

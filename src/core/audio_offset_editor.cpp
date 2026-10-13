@@ -66,7 +66,7 @@ auto begin_audio_offset_drag(const song_document_t& document, chart_id_t chart,
         return reject_drag(diagnostic_code_t::unsupported_feature,
                            "audio offset dragging is disabled while timing is locked");
     }
-    const auto* selected = find_chart(document, chart);
+    const auto* selected = document.find_chart(chart);
     if (!chart || selected == nullptr) {
         return reject_drag(diagnostic_code_t::invalid_id,
                            "audio offset drag refers to an unknown chart");
@@ -91,7 +91,7 @@ auto update_audio_offset_drag(const song_document_t& document, const audio_offse
         return reject_drag(diagnostic_code_t::unsupported_feature,
                            "audio offset dragging is disabled while timing is locked");
     }
-    const auto* selected = find_chart(document, drag.chart);
+    const auto* selected = document.find_chart(drag.chart);
     if (document.revision != drag.document_revision || selected == nullptr ||
         selected->beat_zero_audio_offset_seconds != drag.original_offset_seconds) {
         return reject_drag(diagnostic_code_t::invalid_id,
@@ -131,8 +131,8 @@ auto apply_audio_offset_edit(document_history_t& history, std::uint64_t expected
     }
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
-    const auto selected = std::ranges::find(proposed.charts, chart, &chart_document_t::id);
-    if (!chart || selected == proposed.charts.end()) {
+    const auto selected = proposed.find_chart(chart);
+    if (!chart || selected == nullptr) {
         result.diagnostics.push_back(
             error(diagnostic_code_t::invalid_id, "audio offset edit refers to an unknown chart"));
         return result;
@@ -157,7 +157,7 @@ auto commit_audio_offset_drag(document_history_t& history, const audio_offset_dr
                   "audio offset drag expired before it could be committed"));
         return result;
     }
-    const auto* selected = find_chart(history.document, drag.chart);
+    const auto* selected = history.document.find_chart(drag.chart);
     if (selected == nullptr ||
         selected->beat_zero_audio_offset_seconds != drag.original_offset_seconds) {
         document_command_result_t result{.revision = history.document.revision};

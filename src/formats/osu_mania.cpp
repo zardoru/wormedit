@@ -1894,8 +1894,8 @@ auto osu_resource_path(const song_document_t& song, resource_id_t id, bool expec
     std::filesystem::path asset_path;
     if (expect_audio) {
         const auto asset =
-            std::ranges::find(song.audio_assets, resource->asset, &audio_asset_t::id);
-        if (asset == song.audio_assets.end())
+            song.find_audio_asset(resource->asset);
+        if (asset == nullptr)
             return std::nullopt;
         asset_path = asset->source_path;
     } else {
@@ -2163,8 +2163,8 @@ template <typename fail_t>
 auto select_osu_chart(const song_document_t& song, const osu_mania_write_options_t& options,
                       fail_t&& fail) -> const chart_document_t* {
     if (options.chart) {
-        const auto found = std::ranges::find(song.charts, *options.chart, &chart_document_t::id);
-        if (found == song.charts.end())
+        const auto found = song.find_chart(*options.chart);
+        if (found == nullptr)
             fail(osu_mania_write_diagnostic_code_t::missing_chart,
                  "requested chart ID does not exist in this song", "charts");
         return &*found;
@@ -3185,9 +3185,8 @@ void append_osu_sound_channels(
     bool lazer_profile, timestamp_t&& timestamp_at_row, account_t&& account_event,
     fail_t&& fail) {
     for (const auto& channel : chart.sound_channels) {
-        const auto asset = std::ranges::find(song.audio_assets, channel.source_clip.source,
-                                             &audio_asset_t::id);
-        if (asset == song.audio_assets.end())
+        const auto asset = song.find_audio_asset(channel.source_clip.source);
+        if (asset == nullptr)
             fail(osu_mania_write_diagnostic_code_t::invalid_resource,
                  "sound channel refers to an unknown audio asset", "sound_channels");
         const auto resource = std::ranges::find_if(song.resources, [&](const auto& item) {

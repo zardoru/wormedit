@@ -4,7 +4,7 @@ auto resolve_resize_parameters(const chart_document_t& chart, const measure_inde
                                std::vector<object_id_t>& targets, object_id_t reference_id,
                                local_position_t reference_end, std::uint64_t snap_denominator,
                                bool exact) -> std::variant<resize_parameters_t, diagnostic_list_t> {
-    const auto* reference = find_note(chart, reference_id);
+    const auto* reference = chart.find_note(reference_id);
     if (!reference || (reference->kind != note_kind_t::tap && reference->kind != note_kind_t::hold))
         return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
                                        "duration resize requires a tap or hold reference note",
@@ -172,7 +172,7 @@ auto move_linked_sound_events(chart_document_t& chart, const note_move_plan_t& p
     -> moved_stem_events_t {
     moved_stem_events_t moved;
     for (const auto& candidate : plan.moved) {
-        const auto* note = find_note(chart, candidate.id);
+        const auto* note = chart.find_note(candidate.id);
         if (!note || !note->sound_channel_event)
             continue;
         for (std::size_t index = 0; index < chart.sound_channels.size(); ++index) {
@@ -222,9 +222,8 @@ auto sync_linked_sound_events(chart_document_t& chart, const note_move_plan_t& p
         if (const auto* taken = landed_on_taken_row(channel, moved))
             return error(diagnostic_code_t::collision,
                          "another point of this stem is already on that row", taken->id);
-        const auto asset = std::ranges::find(document.audio_assets, channel.source_clip.source,
-                                             &audio_asset_t::id);
-        if (asset == document.audio_assets.end() || asset->stream.sample_rate == 0)
+        const auto asset = document.find_audio_asset(channel.source_clip.source);
+        if (asset == nullptr || asset->stream.sample_rate == 0)
             continue;
         if (!derive_sound_channel_slices(chart, channel, asset->stream.sample_rate,
                                          asset->stream.frame_count))
@@ -239,7 +238,7 @@ namespace wormedit::interaction_detail {
 auto known_move_lane(const chart_document_t& chart, lane_id_t id) -> const lane_definition_t* {
     for (const auto& layout : chart.lane_layouts) {
         for (const auto& lane : layout.layout.lanes) {
-            if (lane.id == id && editable_lane(lane))
+            if (lane.id == id && lane.is_editable())
                 return &lane;
         }
     }
@@ -271,7 +270,7 @@ auto resolve_note_move_parameters(const chart_document_t& chart, const measure_i
                                   std::uint64_t snap_denominator, bool exact, bool keep_rows,
                                   const editor_scratch_presentation_t& sides)
     -> std::variant<note_move_parameters_t, diagnostic_list_t> {
-    const auto* reference = find_note(chart, reference_id);
+    const auto* reference = chart.find_note(reference_id);
     if (!reference || (reference->kind != note_kind_t::tap && reference->kind != note_kind_t::hold))
         return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
                                        "note move requires a tap or hold reference note",
@@ -560,7 +559,7 @@ auto append_selected_bgm_moves(const chart_document_t& chart, const measure_inde
         return {error(diagnostic_code_t::row_out_of_range,
                       "Mixed move reference is outside chart geometry")};
     for (const auto id : ids) {
-        const auto* event = find_bgm_event(chart, id);
+        const auto* event = chart.find_bgm_event(id);
         if (!event)
             return {error(diagnostic_code_t::invalid_id, "Selected BGM event is unavailable", id)};
         const auto position = translated_object_position(index, event->position, *from, *to);
@@ -582,8 +581,8 @@ auto plan_selected_object_move(const chart_document_t& chart, const measure_inde
                                local_position_t position, lane_id_t lane, std::uint64_t snap,
                                bool exact) -> std::variant<note_move_plan_t, diagnostic_list_t> {
     const auto bgm_ids = selected_move_bgm_ids(state, reference, notes);
-    const auto* reference_note = find_note(chart, reference);
-    const auto* reference_bgm = find_bgm_event(chart, reference);
+    const auto* reference_note = chart.find_note(reference);
+    const auto* reference_bgm = chart.find_bgm_event(reference);
     if (reference_note) {
         auto planned = plan_note_move(chart, index, std::move(notes), reference, position, lane,
                                       snap, exact, state.y_lock, state.scratch_on_right);
@@ -612,7 +611,7 @@ auto plan_selected_object_move(const chart_document_t& chart, const measure_inde
                           .occupants = {},
                           .bgm_moves = {}};
     if (!notes.empty()) {
-        const auto* first = find_note(chart, notes.front());
+        const auto* first = chart.find_note(notes.front());
         const auto origin = absolute_row(index, reference_bgm->position);
         const auto destination = absolute_row(index, *target);
         const auto shifted =
@@ -670,7 +669,7 @@ auto plan_single_bgm_move(const document_history_t& history,
                           local_position_t requested, std::optional<object_id_t> lane,
                           std::optional<std::uint64_t> canvas_row, bool exact)
     -> std::variant<note_move_plan_t, diagnostic_list_t> {
-    const auto& chart = *find_chart(history.document, state.chart);
+    const auto& chart = *history.document.find_chart(state.chart);
     const auto target =
         state.y_lock ? std::optional{source.position}
         : canvas_row ? std::optional{source.position}
@@ -685,8 +684,8 @@ auto plan_single_bgm_move(const document_history_t& history,
         state.y_lock ? std::nullopt : canvas_row, exact ? 0 : edit_snap_denominator(chart, state));
     if (!moved.diagnostics.empty())
         return moved.diagnostics;
-    const auto& destination = *find_chart(scratch.document, state.chart);
-    const auto* event = find_bgm_event(destination, source.id);
+    const auto& destination = *scratch.document.find_chart(state.chart);
+    const auto* event = destination.find_bgm_event(source.id);
     const auto built = build_measure_index(destination);
     if (const auto* errors = std::get_if<diagnostic_list_t>(&built))
         return *errors;
@@ -717,7 +716,7 @@ auto plan_move_gesture(const document_history_t& history, const editor_interacti
                        std::optional<object_id_t> bgm_lane,
                        std::optional<std::uint64_t> virtual_row)
     -> std::variant<note_move_plan_t, diagnostic_list_t> {
-    const auto* bgm = find_bgm_event(chart, reference);
+    const auto* bgm = chart.find_bgm_event(reference);
     if (bgm && state.selected_notes.empty() && state.selected_objects.size() == 1 &&
         state.selected_objects.front() ==
             editor_selection_object_t{editor_selection_object_kind_t::bgm_event, reference})
@@ -739,8 +738,8 @@ auto relocate_selected_bgm(song_document_t& proposed, chart_id_t chart_id,
     auto scratch = make_document_history(proposed);
     std::vector<bgm_event_t> ordinary;
     for (const auto& preview : plan.bgm_moves) {
-        auto* chart = find_chart(scratch.document, chart_id);
-        const auto* source = find_bgm_event(*chart, preview.note);
+        auto* chart = scratch.document.find_chart(chart_id);
+        const auto* source = (*chart).find_bgm_event(preview.note);
         if (!source)
             return {error(diagnostic_code_t::invalid_id, "Selected BGM event is unavailable",
                           preview.note)};
@@ -760,7 +759,7 @@ auto relocate_selected_bgm(song_document_t& proposed, chart_id_t chart_id,
             ordinary.push_back(std::move(moved));
         }
     }
-    auto* chart = find_chart(scratch.document, chart_id);
+    auto* chart = scratch.document.find_chart(chart_id);
     for (auto& measure : chart->measures)
         std::erase_if(measure.bgm_events, [&](const auto& event) {
             return std::ranges::any_of(ordinary,
@@ -768,8 +767,8 @@ auto relocate_selected_bgm(song_document_t& proposed, chart_id_t chart_id,
         });
     for (auto& moved : ordinary) {
         const auto destination =
-            std::ranges::find(chart->measures, moved.position.measure, &measure_chunk_t::id);
-        if (destination == chart->measures.end())
+            chart->find_measure(moved.position.measure);
+        if (destination == nullptr)
             return {error(diagnostic_code_t::invalid_measure,
                           "Mixed move BGM destination is unavailable", moved.id)};
         destination->bgm_events.push_back(std::move(moved));
@@ -778,7 +777,7 @@ auto relocate_selected_bgm(song_document_t& proposed, chart_id_t chart_id,
     // rows together. The ordinary single-object validator allocates lanes on
     // collision; a group move keeps lanes.
     for (const auto& preview : plan.bgm_moves) {
-        const auto* source = find_bgm_event(*find_chart(scratch.document, chart_id), preview.note);
+        const auto* source = (*scratch.document.find_chart(chart_id)).find_bgm_event(preview.note);
         if (source->sound_channel_event)
             continue;
         const auto validated = apply_bgm_event_move(scratch, scratch.document.revision,
@@ -823,10 +822,10 @@ auto apply_duration_resize_plan(document_history_t& history, editor_interaction_
                                 const duration_resize_plan_t& plan) -> editor_interaction_result_t {
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
-    auto* chart = find_chart(proposed, state.chart);
+    auto* chart = proposed.find_chart(state.chart);
     auto changed = false;
     for (const auto& candidate : plan.resized) {
-        auto* note = find_note(*chart, candidate.id);
+        auto* note = (*chart).find_note(candidate.id);
         const auto kind = candidate.end_position ? note_kind_t::hold : note_kind_t::tap;
         changed = changed || note->kind != kind || note->end != candidate.end_position;
         note->kind = kind;
@@ -851,7 +850,7 @@ namespace wormedit {
 using namespace interaction_detail;
 auto note_move_changes(const chart_document_t& chart, const note_move_plan_t& plan) -> bool {
     for (const auto& candidate : plan.moved) {
-        const auto* note = find_note(chart, candidate.id);
+        const auto* note = chart.find_note(candidate.id);
         if (!note || note->position != candidate.position || note->lane != candidate.lane ||
             note->end != candidate.end_position)
             return true;
@@ -866,19 +865,19 @@ auto relocate_moved_notes(chart_document_t& chart, const note_move_plan_t& plan,
                           document_history_t& history, editor_interaction_state_t& state)
     -> std::optional<diagnostic_t> {
     for (const auto& candidate : plan.moved) {
-        auto source = chart.measures.end();
+        measure_chunk_t* source{};
         auto found = std::vector<note_t>::iterator{};
         for (auto measure = chart.measures.begin(); measure != chart.measures.end(); ++measure) {
             const auto item = std::ranges::find(measure->notes, candidate.id, &note_t::id);
             if (item == measure->notes.end())
                 continue;
-            source = measure;
+            source = &*measure;
             found = item;
             break;
         }
         auto destination =
-            std::ranges::find(chart.measures, candidate.position.measure, &measure_chunk_t::id);
-        if (source == chart.measures.end() || destination == chart.measures.end())
+            chart.find_measure(candidate.position.measure);
+        if (source == nullptr || destination == nullptr)
             return error(diagnostic_code_t::invalid_id,
                          "note move could not relocate a planned note", candidate.id);
         auto moved = std::move(*found);
@@ -911,7 +910,7 @@ auto stage_bgm_note_move(const document_history_t& history, editor_interaction_s
                 error(diagnostic_code_t::collision, "Selected notes would overlap")};
     }
     auto scratch = make_document_history(history.document);
-    const auto* source = find_chart(history.document, state.chart);
+    const auto* source = history.document.find_chart(state.chart);
     const note_to_bgm_policy_t policy{.allow_new_lanes =
                                           source->source_family == format_family_t::bms ||
                                           source->source_family == format_family_t::bmson ||
@@ -922,7 +921,7 @@ auto stage_bgm_note_move(const document_history_t& history, editor_interaction_s
         if (!converted)
             return converted.diagnostics;
     }
-    auto* chart = find_chart(scratch.document, state.chart);
+    auto* chart = scratch.document.find_chart(state.chart);
     if (auto failure = relocate_moved_notes(*chart, plan, scratch, state))
         return diagnostic_list_t{*failure};
     if (pending.to_bgm) {
@@ -948,10 +947,10 @@ auto apply_note_move_plan(document_history_t& history, editor_interaction_state_
     auto transaction = document_command_transaction_t::from(history);
     transaction.adopt_document(plan.staged_bgm_document.value_or(history.document));
     auto& proposed = transaction.copy_document();
-    auto* chart = find_chart(proposed, state.chart);
+    auto* chart = proposed.find_chart(state.chart);
     const auto changed = plan.staged_bgm_document.has_value() || note_move_changes(*chart, plan) ||
                          std::ranges::any_of(plan.bgm_moves, [&](const auto& move) {
-                             const auto* source = find_bgm_event(*chart, move.note);
+                             const auto* source = (*chart).find_bgm_event(move.note);
                              return !source || source->position != move.position ||
                                     source->end != move.end || source->source_lane != move.lane;
                          });

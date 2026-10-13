@@ -171,9 +171,8 @@ auto count_affected_notes(const chart_document_t& chart, const lane_layout_segme
             const auto replacement = replacements.find(note.lane.value);
             const auto slot = note_channel_slot(note.kind);
             if (replacement == replacements.end() || !slot) continue;
-            const auto lane = std::ranges::find(segment.layout.lanes, note.lane,
-                                                &lane_definition_t::id);
-            if (lane == segment.layout.lanes.end()) continue;
+            const auto lane = segment.layout.find(note.lane);
+            if (lane == nullptr) continue;
             const auto old_channel = map_slots(lane->bms_channels)[*slot];
             const auto new_channel = map_slots(*replacement->second)[*slot];
             if (same_export_channel(*old_channel, *new_channel)) continue;
@@ -208,16 +207,11 @@ auto append_conflicts(const lane_layout_t& layout, channel_map_proposal_t& propo
     return true;
 }
 
-auto branch_scope_node(bms_control_kind_t kind) -> bool {
-    return kind == bms_control_kind_t::if_group || kind == bms_control_kind_t::if_branch ||
-           kind == bms_control_kind_t::else_if_branch || kind == bms_control_kind_t::else_branch ||
-           kind == bms_control_kind_t::switch_block || kind == bms_control_kind_t::case_branch ||
-           kind == bms_control_kind_t::default_branch;
-}
+
 
 void collect_branch_orders(const bms_control_node_t& node, bool nested,
                            std::unordered_set<std::size_t>& orders) {
-    const bool in_branch = nested || branch_scope_node(node.kind);
+    const bool in_branch = nested || is_branch_scope(node.kind);
     if (in_branch && node.kind == bms_control_kind_t::raw_statement)
         orders.insert(node.source_order);
     for (const auto& child : node.children) collect_branch_orders(child, in_branch, orders);
@@ -242,9 +236,8 @@ auto branch_channel_changed(const chart_document_t& chart,
                 !branch_note(note.kind) || active_lane_layout_segment(chart, note.position) != &segment)
                 continue;
             const auto found = replacements.find(note.lane.value);
-            const auto lane = std::ranges::find(segment.layout.lanes, note.lane,
-                                                &lane_definition_t::id);
-            if (found == replacements.end() || lane == segment.layout.lanes.end()) continue;
+            const auto lane = segment.layout.find(note.lane);
+            if (found == replacements.end() || lane == nullptr) continue;
             const auto has_source_identity = source_channel(note.provenance.source_field).has_value();
             const auto slot = source_note_channel_slot(note, *lane);
             if (has_source_identity && !slot &&
@@ -269,9 +262,8 @@ auto same_proposal(const channel_map_proposal_t& proposal,
 auto overlay_replacements(lane_layout_t& layout,
                           std::span<const channel_map_replacement_t> replacements) -> bool {
     for (const auto& replacement : replacements) {
-        const auto lane = std::ranges::find(layout.lanes, replacement.lane,
-                                            &lane_definition_t::id);
-        if (lane == layout.lanes.end()) return false;
+        const auto lane = layout.find(replacement.lane);
+        if (lane == nullptr) return false;
         lane->bms_channels = replacement.channels;
     }
     return true;
@@ -300,7 +292,7 @@ auto propose_bms_channel_map_edit(const song_document_t& song,
              "The document changed before channel-map preview.");
         return proposal;
     }
-    const auto chart = find_chart(song, chart_id);
+    const auto chart = song.find_chart(chart_id);
     if (chart == nullptr) {
         fail(proposal, channel_map_issue_t::chart_not_found, "The selected chart no longer exists.");
         return proposal;
@@ -331,8 +323,7 @@ auto propose_bms_channel_map_edit(const song_document_t& song,
         return proposal;
     }
     for (auto& replacement : proposal.replacements) {
-        if (std::ranges::find(segment->layout.lanes, replacement.lane,
-                              &lane_definition_t::id) == segment->layout.lanes.end()) {
+        if (segment->layout.find(replacement.lane) == nullptr) {
             fail(proposal, channel_map_issue_t::invalid_replacement,
                  "A replacement names a lane outside the selected layout segment.");
             return proposal;
@@ -402,7 +393,7 @@ auto apply_bms_channel_map_edit(document_history_t& history,
                           history.document.revision);
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
-    auto chart = std::ranges::find(proposed.charts, canonical->chart, &chart_document_t::id);
+    auto chart = proposed.find_chart(canonical->chart);
     auto segment = std::ranges::find(chart->lane_layouts, canonical->segment,
                                      &lane_layout_segment_t::id);
     if (!overlay_replacements(segment->layout, canonical->replacements))

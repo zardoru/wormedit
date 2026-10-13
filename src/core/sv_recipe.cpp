@@ -909,7 +909,7 @@ void reject_draft(sv_recipe_draft_t& draft, diagnostic_code_t code, std::string 
 
 auto draft_chart_for(const document_history_t& history, const sv_recipe_draft_t& draft)
     -> const chart_document_t* {
-    return find_chart(history.document, draft.chart);
+    return history.document.find_chart(draft.chart);
 }
 
 auto draft_is_current(const document_history_t& history, sv_recipe_draft_t& draft,
@@ -960,7 +960,7 @@ auto begin_sv_recipe_draft(const document_history_t& history, chart_id_t chart_i
                      "SV recipe editing is unavailable while timing is locked", true);
         return draft;
     }
-    const auto* chart = find_chart(history.document, chart_id);
+    const auto* chart = history.document.find_chart(chart_id);
     if (chart == nullptr || !chart_id) {
         reject_draft(draft, diagnostic_code_t::invalid_id,
                      "SV recipe draft refers to an unknown chart", true);
@@ -990,7 +990,7 @@ auto begin_existing_sv_recipe_draft(const document_history_t& history, chart_id_
                      "SV recipe editing is unavailable while timing is locked", true);
         return draft;
     }
-    const auto* chart = find_chart(history.document, chart_id);
+    const auto* chart = history.document.find_chart(chart_id);
     if (chart == nullptr || !chart_id || !recipe_id) {
         reject_draft(draft, diagnostic_code_t::invalid_id,
                      "SV recipe draft refers to an unknown chart or recipe", true);
@@ -1308,7 +1308,7 @@ auto begin_sv_recipe_range_drag(const document_history_t& history, chart_id_t ch
                     "SV recipe range dragging is unavailable while timing is locked", true);
         return drag;
     }
-    const auto* chart = find_chart(history.document, chart_id);
+    const auto* chart = history.document.find_chart(chart_id);
     if (!chart || !recipe_id) {
         reject_drag(drag, diagnostic_code_t::invalid_id,
                     "SV recipe range drag refers to an unknown chart or recipe", true);
@@ -1352,7 +1352,7 @@ auto update_sv_recipe_range_drag(const document_history_t& history, sv_recipe_ra
                     true);
         return false;
     }
-    const auto* chart = find_chart(history.document, drag.chart);
+    const auto* chart = history.document.find_chart(drag.chart);
     const auto* recipe = chart ? recipe_by_id(*chart, drag.recipe) : nullptr;
     if (!chart || !recipe) {
         reject_drag(drag, diagnostic_code_t::invalid_id,
@@ -1456,8 +1456,8 @@ struct sv_recipe_edit_context_t {
 
 auto editable_recipe_chart(sv_recipe_edit_context_t& context, chart_id_t id)
     -> chart_document_t* {
-    const auto chart = std::ranges::find(context.proposed.charts, id, &chart_document_t::id);
-    if (!id || chart == context.proposed.charts.end()) {
+    const auto chart = context.proposed.find_chart(id);
+    if (!id || chart == nullptr) {
         reject(context.result.diagnostics, diagnostic_code_t::invalid_id,
                "SV recipe edit refers to an unknown chart");
         return nullptr;

@@ -29,7 +29,7 @@ auto layout_at_row(const editor_field_scene_index_t& index, std::uint64_t row)
 
 auto has_lane(const editor_field_scene_layout_source_t* layout, lane_id_t lane) -> bool {
     return layout != nullptr && std::ranges::any_of(layout->layout.lanes, [&](const auto& entry) {
-               return entry.id == lane && editable_lane(entry);
+               return entry.id == lane && entry.is_editable();
            });
 }
 
@@ -1110,8 +1110,8 @@ auto proposal_source_stage(const proposal_render_context_t& render,
         return stage_group_t::none;
     const auto& index = render.geometry.index;
     const auto lane = index.notes[index.note_indices_by_id.at(proposal.note.value)].lane;
-    const auto found = std::ranges::find(source->layout.lanes, lane, &lane_definition_t::id);
-    return found == source->layout.lanes.end() ? stage_group_t::none : found->stage;
+    const auto found = source->layout.find(lane);
+    return found == nullptr ? stage_group_t::none : found->stage;
 }
 
 auto proposal_target_stage(const lane_layout_t& layout, const proposal_geometry_t& proposal,
@@ -1121,7 +1121,7 @@ auto proposal_target_stage(const lane_layout_t& layout, const proposal_geometry_
     const lane_definition_t* after = nullptr;
     const lane_definition_t* before = nullptr;
     for (const auto& lane : layout.lanes) {
-        if (!editable_lane(lane))
+        if (!lane.is_editable())
             continue;
         if (static_cast<std::int64_t>(lane.display_order) >= *proposal.display_column) {
             if (!after || lane.display_order < after->display_order)
@@ -1138,7 +1138,7 @@ auto proposal_physical_column(const lane_layout_t& layout, std::int64_t column, 
     double rank = 0;
     std::int64_t last = -1;
     for (const auto& lane : layout.lanes) {
-        if (!editable_lane(lane))
+        if (!lane.is_editable())
             continue;
         if (layout.split_stage && lane.stage != stage) {
             rank += lane.stage < stage ? 1 : 0;

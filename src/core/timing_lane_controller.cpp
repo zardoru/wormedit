@@ -422,7 +422,7 @@ auto initial_status(timing_lane_pseudonote_preview_t& preview, const document_hi
         preview.status = timing_lane_pseudonote_status_t::rejected;
         return false;
     }
-    const auto* chart = find_chart(history.document, preview.chart);
+    const auto* chart = history.document.find_chart(preview.chart);
     if (chart == nullptr) {
         reject(preview, diagnostic_code_t::invalid_id,
                "timing pseudo-note refers to an unknown chart");
@@ -659,7 +659,7 @@ auto begin_existing_timing_lane_pseudonote(const document_history_t& history, ch
         preview.status = timing_lane_pseudonote_status_t::rejected;
         return preview;
     }
-    const auto* target_chart = find_chart(history.document, chart);
+    const auto* target_chart = history.document.find_chart(chart);
     if (target_chart == nullptr) {
         reject(preview, diagnostic_code_t::invalid_id,
                "existing timing event refers to an unknown chart");
@@ -698,7 +698,7 @@ auto update_timing_lane_pseudonote(const document_history_t& history,
     if (cancel_for_revision_or_lock(history, preview, timing_locked)) {
         return false;
     }
-    const auto* chart = find_chart(history.document, preview.chart);
+    const auto* chart = history.document.find_chart(preview.chart);
     if (chart == nullptr) {
         reject(preview, diagnostic_code_t::invalid_id,
                "timing pseudo-note refers to an unknown chart");
@@ -734,7 +734,7 @@ auto move_existing_timing_lane_pseudonote(const document_history_t& history,
     if (cancel_for_revision_or_lock(history, preview, timing_locked)) {
         return false;
     }
-    const auto* chart = find_chart(history.document, preview.chart);
+    const auto* chart = history.document.find_chart(preview.chart);
     if (chart == nullptr || !existing_target_matches(*chart, preview)) {
         reject(preview, diagnostic_code_t::invalid_id,
                "existing timing event no longer matches the staged target");
@@ -777,7 +777,7 @@ auto move_timing_lane_event_group(document_history_t& history, chart_id_t chart_
                                     "timing group must contain 1 to 4096 events")};
         return result;
     }
-    const auto* chart = find_chart(history.document, chart_id);
+    const auto* chart = history.document.find_chart(chart_id);
     if (chart == nullptr) {
         result.diagnostics = {error(diagnostic_code_t::invalid_id,
                                     "timing group move refers to an unknown chart")};
@@ -836,7 +836,7 @@ auto confirm_timing_lane_pseudonote(document_history_t& history,
         result.diagnostics = preview.diagnostics;
         return result;
     }
-    const auto* chart = find_chart(history.document, preview.chart);
+    const auto* chart = history.document.find_chart(preview.chart);
     if (chart == nullptr) {
         reject(preview, diagnostic_code_t::invalid_id,
                "timing pseudo-note refers to an unknown chart");
@@ -914,7 +914,7 @@ auto delete_existing_timing_lane_event(document_history_t& history, chart_id_t c
         return result;
     }
     if (kind == timing_lane_kind_t::bpm &&
-        is_fixed_initial_bpm(*find_chart(history.document, chart), event)) {
+        is_fixed_initial_bpm(*history.document.find_chart(chart), event)) {
         result.diagnostics = {error(diagnostic_code_t::unsupported_feature,
                                     "the initial BPM cannot be deleted")};
         return result;
@@ -994,7 +994,7 @@ auto delete_timing_lane_event_group(document_history_t& history, chart_id_t char
                                     "timing group must contain 1 to 4096 events")};
         return result;
     }
-    const auto* chart = find_chart(history.document, chart_id);
+    const auto* chart = history.document.find_chart(chart_id);
     if (chart == nullptr) {
         result.diagnostics = {error(diagnostic_code_t::invalid_id,
                                     "timing group deletion refers to an unknown chart")};

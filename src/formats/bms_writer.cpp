@@ -673,12 +673,7 @@ auto replace_retained_header_value(std::string_view line, std::string_view expec
     return result;
 }
 
-auto is_branch_boundary(bms_control_kind_t kind) -> bool {
-    return kind == bms_control_kind_t::random || kind == bms_control_kind_t::switch_block ||
-           kind == bms_control_kind_t::if_group || kind == bms_control_kind_t::if_branch ||
-           kind == bms_control_kind_t::else_if_branch || kind == bms_control_kind_t::else_branch ||
-           kind == bms_control_kind_t::case_branch || kind == bms_control_kind_t::default_branch;
-}
+
 
 auto is_measure_length_command(std::string_view token) -> std::optional<std::size_t> {
     if (token.size() != 5 || token.substr(3) != "02" ||
@@ -1299,9 +1294,9 @@ struct resource_export_state_t {
 
 auto resource_namespace(const song_document_t& song, const resource_entry_t& resource)
     -> std::pair<std::string, bool> {
-    const auto audio = std::ranges::find(song.audio_assets, resource.asset, &audio_asset_t::id);
+    const auto audio = song.find_audio_asset(resource.asset);
     const auto visual = std::ranges::find(song.visual_assets, resource.asset, &visual_asset_t::id);
-    const bool is_audio = audio != song.audio_assets.end();
+    const bool is_audio = audio != nullptr;
     const bool is_visual = visual != song.visual_assets.end();
     if (is_audio == is_visual || resource.missing)
         fail(bms_write_diagnostic_code_t::unresolved_resource,
@@ -1836,11 +1831,11 @@ void add_timing_channel_event(const chart_document_t& chart, const measure_index
                               std::map<std::pair<std::size_t, std::string>, channel_line_t>& lines,
                               local_position_t position, std::string_view channel,
                               std::string_view object_id, std::string path) {
-    const auto measure = std::ranges::find(chart.measures, position.measure, &measure_chunk_t::id);
-    if (measure == chart.measures.end())
+    const auto measure = chart.find_measure(position.measure);
+    if (measure == nullptr)
         fail(bms_write_diagnostic_code_t::invalid_geometry,
              "timing event references a measure outside the chart", path);
-    const auto measure_index = static_cast<std::size_t>(std::distance(chart.measures.begin(), measure));
+    const auto measure_index = static_cast<std::size_t>(measure - chart.measures.data());
     const auto [numerator, denominator] = fraction_at(index, position, path);
     const auto key = std::pair{measure_index, std::string(channel)};
     auto [line, inserted] = lines.try_emplace(
@@ -1986,13 +1981,12 @@ void append_root_hold_tail(const note_t& note, note_export_context_t& context,
              "hold note has no tail position", std::string(path) + ".end");
     const auto [numerator, denominator] = fraction_at(context.index, *note.end,
                                                        std::string(path) + ".end");
-    const auto end_measure = std::ranges::find(context.chart.measures, note.end->measure,
-                                                &measure_chunk_t::id);
-    if (end_measure == context.chart.measures.end())
+    const auto end_measure = context.chart.find_measure(note.end->measure);
+    if (end_measure == nullptr)
         fail(bms_write_diagnostic_code_t::invalid_geometry,
              "hold tail is outside the chart's measure geometry", std::string(path) + ".end");
     const auto end_measure_index = static_cast<std::size_t>(
-        std::distance(context.chart.measures.begin(), end_measure));
+        end_measure - context.chart.measures.data());
     append_note_slot(context, end_measure_index, channel, numerator, denominator,
                      std::string(object_id), std::string(path) + ".end");
     const auto absolute_end = absolute_row(context.index, *note.end);
@@ -2062,8 +2056,8 @@ void export_branch_hold_note(const note_t& note, note_export_context_t& context,
     if (!start_position || !end_position)
         fail(bms_write_diagnostic_code_t::branch_provenance,
              "branch hold endpoints do not map to valid retained source slots", std::string(path));
-    const auto lane = std::ranges::find(context.layout.lanes, note.lane, &lane_definition_t::id);
-    if (lane == context.layout.lanes.end() || !lane->bms_channels.long_note ||
+    const auto lane = context.layout.find(note.lane);
+    if (lane == nullptr || !lane->bms_channels.long_note ||
         ascii_upper(*lane->bms_channels.long_note) != source_field.start_channel ||
         source_field.end_channel != source_field.start_channel)
         fail(bms_write_diagnostic_code_t::branch_provenance,
@@ -2105,9 +2099,9 @@ void export_branch_plain_note(const note_t& note, note_export_context_t& context
         fail(bms_write_diagnostic_code_t::branch_provenance,
              "branch note slot does not map to a valid retained source position",
              std::string(path));
-    const auto lane = std::ranges::find(context.layout.lanes, note.lane, &lane_definition_t::id);
+    const auto lane = context.layout.find(note.lane);
     std::optional<std::string> expected_channel;
-    if (lane != context.layout.lanes.end()) {
+    if (lane != nullptr) {
         if (note.kind == note_kind_t::tap) expected_channel = lane->bms_channels.visible;
         if (note.kind == note_kind_t::invisible) expected_channel = lane->bms_channels.invisible;
         if (note.kind == note_kind_t::mine) expected_channel = lane->bms_channels.mine;
@@ -2468,13 +2462,12 @@ void export_root_bga_event(const bga_event_t& event, bga_export_context_t& conte
              "BGA event refers to a resource that is not exported as BMP", path + ".resource");
     const auto [numerator, denominator] = fraction_at(context.index, event.position,
                                                        path + ".position");
-    const auto measure = std::ranges::find(context.chart.measures, event.position.measure,
-                                            &measure_chunk_t::id);
-    if (measure == context.chart.measures.end())
+    const auto measure = context.chart.find_measure(event.position.measure);
+    if (measure == nullptr)
         fail(bms_write_diagnostic_code_t::invalid_geometry,
              "BGA event is outside the chart's measure geometry", path + ".position");
     const auto measure_index = static_cast<std::size_t>(
-        std::distance(context.chart.measures.begin(), measure));
+        measure - context.chart.measures.data());
     const auto key = std::pair{measure_index, channel};
     auto [line, inserted] = context.lines.try_emplace(
         key, channel_line_t{.measure = measure_index, .channel = channel});
@@ -3336,8 +3329,8 @@ auto write_bms(const song_document_t& song, bms_write_options_t options) -> bms_
         const chart_document_t* chart{};
         if (options.chart.has_value()) {
             const auto found =
-                std::ranges::find(song.charts, *options.chart, &chart_document_t::id);
-            if (found == song.charts.end()) {
+                song.find_chart(*options.chart);
+            if (found == nullptr) {
                 fail(bms_write_diagnostic_code_t::missing_chart,
                      "requested chart ID does not exist", "$.charts");
             }

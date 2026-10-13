@@ -37,8 +37,8 @@ auto validate_chart_query(const song_document_t& song, std::uint64_t expected_re
                "marker navigation document revision is stale");
         return query;
     }
-    const auto found = std::ranges::find(song.charts, chart_id, &chart_document_t::id);
-    if (!chart_id || found == song.charts.end()) {
+    const auto found = song.find_chart(chart_id);
+    if (!chart_id || found == nullptr) {
         reject(query.diagnostics, diagnostic_code_t::invalid_id,
                "marker navigation refers to an unknown chart");
         return query;

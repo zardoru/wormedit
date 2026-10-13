@@ -123,8 +123,8 @@ auto semantic_resource_channels(const chart_document_t& chart)
 auto channel_resources(const song_document_t& document, chart_id_t chart, object_id_t channel)
     -> std::vector<resource_id_t> {
     std::vector<resource_id_t> resources;
-    const auto owner = std::ranges::find(document.charts, chart, &chart_document_t::id);
-    if (owner == document.charts.end()) return {};
+    const auto owner = document.find_chart(chart);
+    if (owner == nullptr) return {};
     const auto memberships = semantic_resource_channels(*owner);
     for (const auto& binding : bmson_lane_mode_resource_bindings(document, chart)) {
         const auto member = memberships.find(binding.resource.value);
@@ -181,8 +181,8 @@ auto already_matches(const song_document_t& document, const chart_document_t& ch
 
 auto bmson_lane_mode_resource_bindings(const song_document_t& document, chart_id_t id)
     -> std::vector<bmson_channel_resource_binding_t> {
-    const auto chart = std::ranges::find(document.charts, id, &chart_document_t::id);
-    if (chart == document.charts.end() || chart->source_family != format_family_t::bmson) return {};
+    const auto chart = document.find_chart(id);
+    if (chart == nullptr || chart->source_family != format_family_t::bmson) return {};
     const auto channels = semantic_resource_channels(*chart);
     const auto empty = index_empty_channels(document, *chart);
     std::vector<bmson_channel_resource_binding_t> result;
@@ -206,8 +206,8 @@ auto set_bmson_channel_lane_mode(document_history_t& history, std::uint64_t expe
     if (revision != expected_revision) return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "BMSON lane mode has a stale document revision");
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
-    const auto chart = std::ranges::find(proposed.charts, chart_id, &chart_document_t::id);
-    if (chart == proposed.charts.end() || chart->source_family != format_family_t::bmson)
+    const auto chart = proposed.find_chart(chart_id);
+    if (chart == nullptr || chart->source_family != format_family_t::bmson)
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "Lane mode requires a known BMSON chart");
     const auto channel = std::ranges::find(chart->sound_channels, channel_id, &sound_channel_t::id);
     if (channel == chart->sound_channels.end()) return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "Unknown BMSON sound channel");

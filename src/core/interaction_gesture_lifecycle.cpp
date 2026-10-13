@@ -9,7 +9,7 @@ auto begin_note_duration_gesture(editor_edit_context_t& context, object_id_t ref
         return diagnostic_result(
             context.history, state,
             {error(diagnostic_code_t::invalid_hold, "another editor gesture is already active")});
-    const auto* reference = find_note(context.scope.chart, reference_id);
+    const auto* reference = context.scope.chart.find_note(reference_id);
     if (!reference || (reference->kind != note_kind_t::tap && reference->kind != note_kind_t::hold))
         return diagnostic_result(
             context.history, state,
@@ -57,7 +57,7 @@ auto update_note_duration_gesture(editor_edit_context_t& context, local_position
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "duration gesture is stale after a document edit")});
-    const auto* reference = find_note(context.scope.chart, pending.reference_note);
+    const auto* reference = context.scope.chart.find_note(pending.reference_note);
     if (!reference)
         return diagnostic_result(
             context.history, state,
@@ -123,14 +123,14 @@ void prepare_rejected_bgm_preview(const chart_document_t& chart, const note_move
         pending.new_bgm_lanes.push_back({lane, 0});
     if (pending.to_bgm) {
         for (const auto& moved : plan.moved) {
-            const auto* note = find_note(chart, moved.id);
+            const auto* note = chart.find_note(moved.id);
             pending.bgm_preview.push_back(
                 {moved.id, lane, moved.position, moved.end_position, note->sound});
         }
         return;
     }
     for (const auto id : plan.occupants) {
-        const auto* note = find_note(chart, id);
+        const auto* note = chart.find_note(id);
         if (note)
             pending.bgm_preview.push_back({id, lane, note->position, note->end, note->sound});
     }
@@ -142,7 +142,7 @@ using namespace interaction_detail;
 void prepare_selected_bgm_preview(editor_edit_context_t& context, const note_move_plan_t& plan,
                                   pending_note_move_gesture_t& pending) {
     if (plan.staged_bgm_document) {
-        const auto* destination = find_chart(*plan.staged_bgm_document, context.state.chart);
+        const auto* destination = (*plan.staged_bgm_document).find_chart(context.state.chart);
         for (const auto& lane : destination->bgm_source_lanes)
             if (std::ranges::find(context.scope.chart.bgm_source_lanes, lane.id,
                                   &bgm_source_lane_t::id) ==
@@ -153,7 +153,7 @@ void prepare_selected_bgm_preview(editor_edit_context_t& context, const note_mov
     if (plan.bgm_moves.empty() || (plan.notes.empty() && plan.bgm_moves.size() == 1))
         return;
     auto proposed = context.history.document;
-    auto* chart = find_chart(proposed, context.state.chart);
+    auto* chart = proposed.find_chart(context.state.chart);
     const auto note_failure = relocate_moved_notes(*chart, plan, context.history, context.state);
     const auto failures = note_failure ? diagnostic_list_t{*note_failure}
                                        : relocate_selected_bgm(proposed, context.state.chart, plan);
@@ -183,7 +183,7 @@ auto prepare_bgm_move_preview(editor_edit_context_t& context, const note_move_pl
         prepare_rejected_bgm_preview(context.scope.chart, plan, pending);
         return;
     }
-    const auto& chart = *find_chart(std::get<song_document_t>(staged), context.state.chart);
+    const auto& chart = *(std::get<song_document_t>(staged)).find_chart(context.state.chart);
     const auto& ids = pending.to_bgm ? pending.notes : plan.occupants;
     for (const auto& lane : chart.bgm_source_lanes)
         if (std::ranges::find(context.scope.chart.bgm_source_lanes, lane.id,
@@ -220,8 +220,8 @@ auto begin_note_move_gesture(editor_edit_context_t& context, object_id_t referen
         return diagnostic_result(
             context.history, state,
             {error(diagnostic_code_t::invalid_hold, "another editor gesture is already active")});
-    const auto* reference = find_note(context.scope.chart, reference_id);
-    const auto* bgm_reference = find_bgm_event(context.scope.chart, reference_id);
+    const auto* reference = context.scope.chart.find_note(reference_id);
+    const auto* bgm_reference = context.scope.chart.find_bgm_event(reference_id);
     if ((!reference && !bgm_reference) ||
         (reference && reference->kind != note_kind_t::tap && reference->kind != note_kind_t::hold))
         return diagnostic_result(
@@ -638,12 +638,12 @@ auto prepare_stem_note_paint(const document_history_t& history, chart_id_t chart
                                              target.position, target.lane, geometry);
         if (!placed && !placed.diagnostics.empty())
             return placed.diagnostics;
-        auto* chart = find_chart(scratch.document, chart_id);
+        auto* chart = scratch.document.find_chart(chart_id);
         for (auto& measure : chart->measures)
             for (auto& note : measure.notes) {
                 if (note.position != target.position || note.lane != target.lane)
                     continue;
-                if (!find_note(*find_chart(history.document, chart_id), note.id))
+                if (!(*history.document.find_chart(chart_id)).find_note(note.id))
                     note.semantic_layers =
                         resolve_placement_layers(*chart, armed_layers, note.sound);
                 notes.push_back(note.id);
@@ -651,8 +651,8 @@ auto prepare_stem_note_paint(const document_history_t& history, chart_id_t chart
     }
     // A stroke may visit two lanes at one pulse; retain only its final
     // assignment.
-    const auto* chart = find_chart(scratch.document, chart_id);
-    std::erase_if(notes, [&](const auto id) { return !find_note(*chart, id); });
+    const auto* chart = scratch.document.find_chart(chart_id);
+    std::erase_if(notes, [&](const auto id) { return !(*chart).find_note(id); });
     std::ranges::sort(notes);
     notes.erase(std::unique(notes.begin(), notes.end()), notes.end());
     return prepared_note_paint_t{std::move(scratch.document), std::move(notes)};
@@ -668,21 +668,21 @@ auto prepare_note_paint_document(const document_history_t& history, chart_id_t c
                                  std::optional<bmson_source_geometry_t> geometry)
     -> std::variant<prepared_note_paint_t, diagnostic_list_t> {
     const auto stem =
-        entry_stem_channel(history.document, *find_chart(history.document, chart_id), sound);
+        entry_stem_channel(history.document, *history.document.find_chart(chart_id), sound);
     if (const auto* failure = std::get_if<diagnostic_list_t>(&stem))
         return *failure;
     if (const auto channel = std::get<std::optional<object_id_t>>(stem))
         return prepare_stem_note_paint(history, chart_id, plan, *channel, armed_layers, geometry);
     const auto first_id = plan.additions.empty()
                               ? std::optional<object_id_t>{}
-                              : next_object_id(*find_chart(history.document, chart_id));
+                              : next_object_id(*history.document.find_chart(chart_id));
     if (!plan.additions.empty() &&
         (!first_id ||
          plan.additions.size() - 1 > std::numeric_limits<std::uint64_t>::max() - first_id->value))
         return diagnostic_list_t{
             error(diagnostic_code_t::invalid_id, "chart object ID sequence is exhausted")};
     auto proposed = history.document;
-    auto* chart = find_chart(proposed, chart_id);
+    auto* chart = proposed.find_chart(chart_id);
     std::unordered_set<std::uint64_t> removed_ids;
     removed_ids.reserve(plan.removals.size());
     for (const auto id : plan.removals)
@@ -691,7 +691,7 @@ auto prepare_note_paint_document(const document_history_t& history, chart_id_t c
         std::erase_if(measure.notes,
                       [&](const auto& note) { return removed_ids.contains(note.id.value); });
     prepared_note_paint_t prepared{.document = std::move(proposed), .painted_notes = {}};
-    auto* prepared_chart = find_chart(prepared.document, chart_id);
+    auto* prepared_chart = prepared.document.find_chart(chart_id);
     std::unordered_map<std::uint64_t, measure_chunk_t*> prepared_measures;
     prepared_measures.reserve(prepared_chart->measures.size());
     for (auto& measure : prepared_chart->measures)
@@ -1024,9 +1024,9 @@ auto prepare_stem_hold_document(const editor_edit_context_t& context, const pend
     if (std::holds_alternative<diagnostic_list_t>(prepared))
         return prepared;
     auto& result = std::get<prepared_note_paint_t>(prepared);
-    auto* chart = find_chart(result.document, context.state.chart);
+    auto* chart = result.document.find_chart(context.state.chart);
     for (const auto id : result.painted_notes) {
-        auto* note = find_note(*chart, id);
+        auto* note = (*chart).find_note(id);
         note->kind = placement.tail ? held_note_kind(pending.kind) : pending.kind;
         note->end = placement.tail;
         auto& events =
@@ -1111,7 +1111,7 @@ auto commit_hold(editor_edit_context_t& context, local_position_t position,
         return *stem;
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
-    auto* chart = find_chart(proposed, state.chart);
+    auto* chart = proposed.find_chart(state.chart);
     std::optional<object_id_t> id;
     if (placement.adds_note) {
         id = next_object_id(*chart);
@@ -1123,8 +1123,8 @@ auto commit_hold(editor_edit_context_t& context, local_position_t position,
     erase_notes(*chart, placement.removals);
     if (placement.adds_note) {
         const auto measure =
-            std::ranges::find(chart->measures, placement.head.measure, &measure_chunk_t::id);
-        if (measure == chart->measures.end())
+            chart->find_measure(placement.head.measure);
+        if (measure == nullptr)
             return diagnostic_result(history, state,
                                      {error(diagnostic_code_t::unknown_measure,
                                             "normalized hold head refers to an unknown measure")});

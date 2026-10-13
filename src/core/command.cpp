@@ -46,9 +46,8 @@ auto quantized_stem_audio_valid(const song_document_t& song, const chart_documen
             return a.position == b.position && a.end == b.end;
         });
         if (unchanged) continue;
-        const auto asset = std::ranges::find(song.audio_assets, channel.source_clip.source,
-                                             &audio_asset_t::id);
-        if (asset == song.audio_assets.end() || asset->stream.sample_rate == 0) continue;
+        const auto asset = song.find_audio_asset(channel.source_clip.source);
+        if (asset == nullptr || asset->stream.sample_rate == 0) continue;
         if (!derive_sound_channel_slices(chart, channel, asset->stream.sample_rate,
                                          asset->stream.frame_count)) {
             diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
@@ -142,8 +141,8 @@ auto document_command_transaction_t::has_copy() const noexcept -> bool {
 }
 
 auto document_command_transaction_t::source_chart(chart_id_t id) const -> const chart_document_t* {
-    const auto found = std::ranges::find(history.document.charts, id, &chart_document_t::id);
-    return found == history.document.charts.end() ? nullptr : &*found;
+    const auto found = history.document.find_chart(id);
+    return found == nullptr ? nullptr : &*found;
 }
 
 auto document_command_transaction_t::copy_document() -> song_document_t& {
@@ -158,8 +157,8 @@ void document_command_transaction_t::adopt_document(song_document_t&& document) 
 auto document_command_transaction_t::chart(chart_id_t id) -> chart_document_t* {
     if (!source_chart(id)) return nullptr;
     auto& document = copy_document();
-    const auto found = std::ranges::find(document.charts, id, &chart_document_t::id);
-    return found == document.charts.end() ? nullptr : &*found;
+    const auto found = document.find_chart(id);
+    return found == nullptr ? nullptr : &*found;
 }
 
 auto document_command_transaction_t::rejection(std::uint64_t revision, diagnostic_code_t code,
@@ -201,9 +200,8 @@ auto apply_quantize_command(document_history_t& history, chart_id_t chart_id,
                             const quantize_request_t& request) -> quantize_command_result_t {
     quantize_command_result_t result;
     result.command.revision = history.document.revision;
-    const auto chart = std::ranges::find_if(
-        history.document.charts, [chart_id](const auto& item) { return item.id == chart_id; });
-    if (chart == history.document.charts.end()) {
+    const auto chart = history.document.find_chart(chart_id);
+    if (chart == nullptr) {
         result.command.diagnostics.push_back(error(
             diagnostic_code_t::invalid_id, "quantization command refers to an unknown chart"));
         return result;
@@ -223,8 +221,7 @@ auto apply_quantize_command(document_history_t& history, chart_id_t chart_id,
                                                         result.command.diagnostics)) return result;
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed_document = transaction.copy_document();
-    const auto proposed_chart = std::ranges::find_if(
-        proposed_document.charts, [chart_id](const auto& item) { return item.id == chart_id; });
+    const auto proposed_chart = proposed_document.find_chart(chart_id);
     *proposed_chart = std::move(*proposal.chart);
     result.command =
         transaction.commit("Quantize chart");
@@ -241,9 +238,8 @@ auto apply_redivision_command(document_history_t& history, std::uint64_t expecte
             error(diagnostic_code_t::invalid_id, "redivision command targets a stale revision"));
         return result;
     }
-    const auto chart = std::ranges::find_if(
-        history.document.charts, [chart_id](const auto& item) { return item.id == chart_id; });
-    if (chart == history.document.charts.end()) {
+    const auto chart = history.document.find_chart(chart_id);
+    if (chart == nullptr) {
         result.command.diagnostics.push_back(
             error(diagnostic_code_t::invalid_id, "redivision command refers to an unknown chart"));
         return result;
@@ -261,8 +257,7 @@ auto apply_redivision_command(document_history_t& history, std::uint64_t expecte
 
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed_document = transaction.copy_document();
-    const auto proposed_chart = std::ranges::find_if(
-        proposed_document.charts, [chart_id](const auto& item) { return item.id == chart_id; });
+    const auto proposed_chart = proposed_document.find_chart(chart_id);
     *proposed_chart = std::move(*proposal.chart);
     result.command =
         transaction.commit("Change chart resolution");

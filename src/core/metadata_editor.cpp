@@ -63,8 +63,8 @@ auto format_groups(song_document_t& song, const format_metadata_target_t& target
                    diagnostic_list_t& diagnostics) -> std::vector<format_metadata_t>* {
     if (!target.chart)
         return &song.metadata.format_groups;
-    const auto chart = std::ranges::find(song.charts, *target.chart, &chart_document_t::id);
-    if (chart == song.charts.end()) {
+    const auto chart = song.find_chart(*target.chart);
+    if (chart == nullptr) {
         diagnostics.push_back(
             error(diagnostic_code_t::invalid_id, "metadata edit refers to an unknown difficulty"));
         return nullptr;
@@ -169,9 +169,8 @@ auto apply_metadata_action(metadata_edit_context_t& context,
 
 auto apply_metadata_action(metadata_edit_context_t& context,
                            const set_chart_metadata_action_t& edit) -> void {
-    const auto chart = std::ranges::find(context.proposed.charts, edit.chart,
-                                         &chart_document_t::id);
-    if (chart == context.proposed.charts.end()) {
+    const auto chart = context.proposed.find_chart(edit.chart);
+    if (chart == nullptr) {
         context.result.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
             "chart metadata edit refers to an unknown difficulty"));
         return;
@@ -414,8 +413,8 @@ auto apply_batch_chart_metadata_edit(document_history_t& history, std::uint64_t 
     for (const auto id : action.charts) {
         if (std::ranges::find(seen, id) != seen.end()) return transaction.reject(diagnostic_code_t::invalid_id, "batch metadata repeats a chart");
         seen.push_back(id);
-        const auto chart = std::ranges::find(proposed.charts, id, &chart_document_t::id);
-        if (chart == proposed.charts.end()) return transaction.reject(diagnostic_code_t::invalid_id, "batch metadata refers to an unknown chart");
+        const auto chart = proposed.find_chart(id);
+        if (chart == nullptr) return transaction.reject(diagnostic_code_t::invalid_id, "batch metadata refers to an unknown chart");
         auto& metadata = chart->metadata;
         if (action.author) {
             changed = changed || metadata.author != *action.author;

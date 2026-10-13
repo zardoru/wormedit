@@ -58,9 +58,8 @@ void sync_virtual_tails(song_document_t& document) {
                                     resource.roles.end() ||
                                 std::ranges::find(resource.roles, resource_role_t::bgm) !=
                                     resource.roles.end();
-        const auto asset = std::ranges::find(document.audio_assets, resource.asset,
-                                             &audio_asset_t::id);
-        return timed_role && asset != document.audio_assets.end() && asset->stream.frame_count &&
+        const auto asset = document.find_audio_asset(resource.asset);
+        return timed_role && asset != nullptr && asset->stream.frame_count &&
                asset->stream.sample_rate != 0;
     });
     for (auto& chart : document.charts) {

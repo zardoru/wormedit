@@ -18,7 +18,9 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-601 Group command state by lifetime
 
-- **Status:** Ready
+- **Status:** Done
+- **Completion (2026-10-13):** Commit `65faeed`. `application_command_state_t = {services; preferences; project}`; services is a member; preferences holds exactly the 11 former allowlist fields; the reset is `project = {}`. D1: `scratch_on_right` survives the project reset (regression failed before). D3: the transient settings still reset. D4: comments mark the two audition-on-click settings as distinct.
+- **Gate evidence (Claude, on main with FFmpeg on):** build exit 0 (GCC; clang build of the rebased branch also clean); `100% tests passed out of 3582`; event harness `504/504`; documentation `1/1`; isolated Xvfb Compose screenshot normal (startup, frame loop and shutdown under `application_t`).
 - **Findings closed:** LT1, LT2, LT3, LT5, OW3a (targets; not yet closed).
 - **Stale-plan audit:** Search by behavior: fresh-object resets, base slicing, survivor assignments and qualified accesses to all ten groups. Confirm every A lead and current caller/body equivalence; record stale claims, stricter validation, diagnostics, rounding and policy differences before editing.
 - **Outcome:** Lifetime-group `application_command_state_t`: `services` member (no inheritance), `preferences` (exactly the 11 LT1 fields), `project` (everything that resets today). The reset becomes `project = {}`. Plus D1.
@@ -42,7 +44,9 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-602 Unify the project session boundary
 
-- **Status:** Ready
+- **Status:** Done
+- **Completion (2026-10-13):** Commit `86bfa60`. Project identity and `pending_import_t` owners; one generation-first project boundary for replacement and recovery. D2: recovery clears the external player source path (regression failed before). The queued dropped-chart path is preserved.
+- **Gate evidence (Claude, on main with FFmpeg on):** build exit 0 (GCC; clang build of the rebased branch also clean); `100% tests passed out of 3582`; event harness `504/504`; documentation `1/1`; isolated Xvfb Compose screenshot normal (startup, frame loop and shutdown under `application_t`).
 - **Findings closed:** PB1–PB3 (targets; not yet closed).
 - **Stale-plan audit:** Search by behavior: assignments of the eight PB1 fields, source_path clearing, pending import strings and generation/reset call sequences. Confirm every A lead and current caller/body equivalence; record stale claims, stricter validation, diagnostics, rounding and policy differences before editing.
 - **Outcome:** One project boundary (the pending import paths go into one `pending_import_t` owner): a `project_identity_t` with the eight PB1 fields plus the external player source path, and one `begin_project_session(...)` used by replacement and recovery. Generation bump first. Plus D2.
@@ -63,7 +67,9 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-603 Give the application an owner and ordered shutdown
 
-- **Status:** Ready
+- **Status:** Done
+- **Completion (2026-10-13):** Commits `f511135` and `1b9a705`. `application_t` with dependency-ordered subsystems, startup separated from construction, RAII platform teardown and crash-marker guard, an idempotent `shutdown()` also called from the destructor. D5: every worker is joined before SDL teardown (shutdown regression failed before). `main.cpp` is 16 lines. Rebase note: two unused audio millisecond helpers that T-622 had removed from `main.cpp` came back with the move and were dropped again (`1ae2f94`).
+- **Gate evidence (Claude, on main with FFmpeg on):** build exit 0 (GCC; clang build of the rebased branch also clean); `100% tests passed out of 3582`; event harness `504/504`; documentation `1/1`; isolated Xvfb Compose screenshot normal (startup, frame loop and shutdown under `application_t`).
 - **Findings closed:** OW1, OW2, OW4, SD1–SD4, CB1 (targets; not yet closed).
 - **Stale-plan audit:** Search by behavior: local lifetimes, stored capture lists, duplicate aggregate initializers and cancel/join/cleanup/close calls. Confirm every A lead and current caller/body equivalence; record stale claims, stricter validation, diagnostics, rounding and policy differences before editing.
 - **Outcome:** `application_t` owner in `src/sys/application.h/.cpp`: subsystems in dependency order, `start()`, an idempotent `shutdown()` also called from the destructor, RAII platform and crash-marker guard. Callbacks capture `this` or a subsystem. One context factory replaces the two literals. `main()` shrinks to about 30 lines. Plus D5.
@@ -85,7 +91,9 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-604 Name frame phases and close confirmation
 
-- **Status:** Ready
+- **Status:** Done
+- **Completion (2026-10-13):** Commit `9330b4d`. The frame loop is a sequence of named phases with the original dispatch order, mutable actions and frame-local projections.
+- **Gate evidence (Claude, on main with FFmpeg on):** build exit 0 (GCC; clang build of the rebased branch also clean); `100% tests passed out of 3582`; event harness `504/504`; documentation `1/1`; isolated Xvfb Compose screenshot normal (startup, frame loop and shutdown under `application_t`).
 - **Findings closed:** OW5 (targets; not yet closed).
 - **Stale-plan audit:** Search by behavior: frame timing markers, phase ordering and close-confirmation callback branches. Confirm every A lead and current caller/body equivalence; record stale claims, stricter validation, diagnostics, rounding and policy differences before editing.
 - **Outcome:** Frame loop as named `run_frame` phases, and the close-confirmation callback as a member function.
@@ -104,7 +112,9 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-605 Narrow handlers to subsystem inputs
 
-- **Status:** Ready
+- **Status:** Done
+- **Completion (2026-10-13):** Commits `e055a29` and `752478c`. `application_dispatch_context_t` and the frame-context inheritance are gone; leaf and audio handlers take narrowed inputs; owner-local handlers are members; no `template <typename Context>` or `auto&` parameters remain in `main.cpp` or the moved application code. Sys functions with 7+ parameters: 71 → 51 (the lane's scanner finds 74 at `bf16d82` vs the audit's 76; recorded). Existing complexity violations unchanged (`refresh_application_command_states` 27, `build_speed_graph` 29). `application.cpp` is ~4,900 lines: candidate for the T-621 folder split.
+- **Gate evidence (Claude, on main with FFmpeg on):** build exit 0 (GCC; clang build of the rebased branch also clean); `100% tests passed out of 3582`; event harness `504/504`; documentation `1/1`; isolated Xvfb Compose screenshot normal (startup, frame loop and shutdown under `application_t`).
 - **Findings closed:** CB2, CB3, OW3b, OW6 (targets; not yet closed).
 - **Stale-plan audit:** Search by behavior: parameter lists with seven or more arguments, audio-chain bundles, auto& parameters, Context templates and context field usage. Confirm every A lead and current caller/body equivalence; record stale claims, stricter validation, diagnostics, rounding and policy differences before editing.
 - **Outcome:** Narrow handler inputs: remove `application_dispatch_context_t` and the frame-context inheritance; use subsystem references, subsystem member functions or small bundles; drop `_ref`; move `external_player_runtime_t` to its own header. Remove every `auto&` parameter and `template <typename Context>` in `main.cpp`. Record the before and after count of sys functions with seven or more parameters (76 today).
@@ -226,7 +236,8 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-611 Drive frontend choices from core catalogs
 
-- **Status:** Ready
+- **Status:** Partly done (core catalogs; sys/UI wiring in wave 2)
+- **Core part (2026-10-13):** Commit `e870a1c`. Shared catalogs: 63 New Project layouts (D7), playback rates, BMS encodings, format families (D9: MIDI/Quaver not offered for output), timing lanes, note kinds, sound kinds (D16 "Keysound"), the workspace tab table (D15 "Project"/"Audio Slices"; regression failed before), the BMS extension table with `.bml` (D17), an exhaustive selection↔timing-lane mapping and enum-count static_asserts; core/formats consumers migrated. Passing ids/labels through the view and actions carrying ids is the wave-2 sys/UI follow-up. Gate on main: build exit 0 (GCC; clang build of the rebased branch also clean); `100% tests passed out of 3582`; event harness `504/504`; documentation `1/1`; isolated Xvfb Compose screenshot normal (startup, frame loop and shutdown under `application_t`).
 - **Findings closed:** FT1–FT5 (targets; not yet closed).
 - **Stale-plan audit:** Search by behavior: literal label/extension arrays, enum casts, index arithmetic, note-kind integers and selection-kind switches. Confirm every A lead and current caller/body equivalence; record stale claims, stricter validation, diagnostics, rounding and policy differences before editing.
 - **Outcome:** Core catalogs (also the catalog's P3/P7 items: tab names with D15, sound kind labels with D16, the note-kind table keyed by enum, step types and key ranges, extension tables with D17, `bms_line_ending_t`, and an exhaustive `editor_selection_object_kind_t`↔`timing_lane_kind_t` mapping with no `default`) (layouts, playback rates, encodings, format families, timing lanes) with ids sent through the view; actions carry ids, not list positions; static_asserts against enum counts. Plus D7 and D9.
@@ -341,7 +352,8 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-616 Name yes/no queries consistently
 
-- **Status:** Ready
+- **Status:** Partly done (core; sys/UI renames and forwarder removal in wave 2)
+- **Core part (2026-10-13):** Commit `f34243e`. Core, audio, formats and visual yes/no checks renamed to `is_`/`has_`/`can_` with AST tools; forwarders kept for sys/UI callers (listed in the lane's follow-up file, copied to `/tmp/wormedit-lanes/drake-pred-cat-agent/`). Gate on main: build exit 0 (GCC; clang build of the rebased branch also clean); `100% tests passed out of 3582`; event harness `504/504`; documentation `1/1`; isolated Xvfb Compose screenshot normal (startup, frame loop and shutdown under `application_t`).
 - **Findings closed:** NV4 (targets; not yet closed).
 - **Stale-plan audit:** Search by behavior: bool-return bodies that query state rather than mutate, stale-match field comparisons and comparator use sites. Confirm every A lead and current caller/body equivalence; record stale claims, stricter validation, diagnostics, rounding and policy differences before editing.
 - **Outcome:** Yes/no checks: rename about 286 to `is_`/`has_`/`can_` (members too; comparators excluded); `*_matches` stale checks become `is_<x>_current`. Mechanical, one module per step. Runs after T-612.

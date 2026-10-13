@@ -26,6 +26,20 @@ auto visual(std::uint64_t frame, std::uint64_t object, std::uint64_t resource,
 
 void check_layer2_state(bool value) { CHECK(value); }
 
+void check_rejected_window(const bga_preview_advance_result_t& rejected,
+                           const bga_layer_state_t& previous) {
+    CHECK(rejected.status == bga_preview_status_t::non_monotonic_window);
+    CHECK(rejected.events.empty());
+    CHECK(rejected.layers == previous);
+}
+
+void check_resumed_window(const bga_preview_advance_result_t& resumed) {
+    REQUIRE(resumed.events.size() == 1);
+    REQUIRE(resumed.layers.background);
+    CHECK(resumed.events.front().object == object_id_t{2});
+    CHECK(resumed.layers.background->resource == resource_id_t{12});
+}
+
 auto schedule() -> preview_schedule_t {
     return {.sample_rate = 44'100};
 }
@@ -220,4 +234,36 @@ TEST_CASE("BGA seek rejects stale generations without moving the active cursor",
     const auto pending = queue.advance(*sought.token, 4);
     REQUIRE(pending.events.size() == 1);
     CHECK(pending.events.front().resource == resource_id_t{2});
+}
+
+TEST_CASE("BGA preview rejected windows retain layers without consuming events",
+          "[unit][preview][bga][window]") {
+    auto chart = schedule();
+    chart.bga = {
+        visual(0, 1, 11, visual_event_kind_t::background, 0, 0),
+        visual(2, 2, 12, visual_event_kind_t::background, 0, 1),
+    };
+    bga_preview_queue_t queue;
+    const auto started = queue.start(chart);
+    REQUIRE(started);
+    const auto first = queue.advance(*started.token, 1);
+    REQUIRE(first.layers.background);
+    const auto rejected = queue.advance(*started.token, 0);
+    check_rejected_window(rejected, first.layers);
+    const auto resumed = queue.advance(*started.token, 3);
+    check_resumed_window(resumed);
+}
+
+TEST_CASE("BGA preview stale windows return an empty layer snapshot",
+          "[unit][preview][bga][window]") {
+    auto chart = schedule();
+    chart.bga = {visual(0, 1, 11, visual_event_kind_t::background, 0, 0)};
+    bga_preview_queue_t queue;
+    const auto started = queue.start(chart);
+    REQUIRE(started);
+    (void)queue.advance(*started.token, 1);
+    const auto stale = queue.advance({started.token->generation + 1}, 2);
+    CHECK(stale.status == bga_preview_status_t::stale_generation);
+    CHECK(stale.events.empty());
+    CHECK(stale.layers == bga_layer_state_t{});
 }

@@ -28,6 +28,33 @@ auto bin_at_seconds(const wormedit::audio::waveform_t& waveform, double seconds)
 
 } // namespace
 
+TEST_CASE("waveform expected errors retain generated data when cache publication fails",
+          "[unit][audio][waveform][result]") {
+    using namespace wormedit::audio;
+    decoder_t decoder;
+    const std::array<float, 16> samples{};
+    REQUIRE(decoder.open_pcm(samples));
+    decoded_block_cache_t blocks;
+    waveform_cache_t cache{waveform_cache_limits_t{.maximum_entries = 0}};
+    auto outcome = waveform_analysis_t::from(decoder, blocks, cache,
+        {"generated:uncached-outcome", "pcm:v1"}, 4);
+    REQUIRE_FALSE(outcome.has_value());
+    CHECK(outcome.error().code == waveform_analysis_status_t::analysis_cache_capacity_exceeded);
+    REQUIRE(outcome.error().waveform.has_value());
+    const auto expected_waveform = outcome.error().waveform;
+    const auto legacy = waveform_analysis_result_t::from(std::move(outcome));
+    CHECK(legacy.status == waveform_analysis_status_t::analysis_cache_capacity_exceeded);
+    CHECK(legacy.waveform == expected_waveform);
+}
+
+TEST_CASE("canonical waveform projection reports invalid geometry",
+          "[unit][audio][waveform][result]") {
+    using namespace wormedit::audio;
+    const auto outcome = waveform_projection_t::from({}, {});
+    REQUIRE_FALSE(outcome.has_value());
+    CHECK(outcome.error() == waveform_projection_status_t::invalid_waveform);
+}
+
 TEST_CASE("MP3 project audio produces a complete coarse waveform", "[audio][waveform][fixture]") {
     wormedit::audio::decoder_t decoder;
     std::string error;

@@ -14,7 +14,16 @@ enum class shortcut_profile_startup_status_t {
 inline constexpr std::size_t maximum_shortcut_profile_startup_diagnostics = 8;
 inline constexpr std::size_t maximum_shortcut_profile_startup_diagnostic_bytes = 192;
 
+using shortcut_profile_startup_outcome_t = diagnosed_t<shortcut_profile_startup_status_t>;
+
+[[nodiscard]] auto apply_startup_shortcut_profile(const std::filesystem::path& path,
+                                                  command_registry_t& registry)
+    -> shortcut_profile_startup_outcome_t;
+
 struct shortcut_profile_startup_result_t {
+    [[nodiscard]] static auto from(shortcut_profile_startup_outcome_t&& outcome)
+        -> shortcut_profile_startup_result_t;
+
     shortcut_profile_startup_status_t status{shortcut_profile_startup_status_t::unavailable};
     diagnostic_list_t diagnostics;
 

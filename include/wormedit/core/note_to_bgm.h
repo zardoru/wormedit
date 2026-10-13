@@ -60,11 +60,12 @@ struct note_to_bgm_plan_t {
                                      note_to_bgm_policy_t policy = {})
     -> document_command_result_t;
 
-struct selected_note_to_bgm_result_t {
+struct selected_note_to_bgm_payload_t {
     bool handled{};
-    document_command_result_t command;
     bool selection_exhausted{};
 };
+
+using selected_note_to_bgm_result_t = command_result_with_t<selected_note_to_bgm_payload_t>;
 
 // Approved note-only verb: existing selected BGM events remain selected and unchanged.
 // Ordinary moves retain converted points in the selection. Successive moves take the first

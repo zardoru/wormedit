@@ -412,7 +412,7 @@ auto note_to_bgm_command(command_context_t& context) -> std::optional<command_re
     const auto moved = move_editor_selection_to_bgm(
         context.environment.history_ref, context.environment.history_ref.document.revision, *state,
         std::nullopt, kind == command_kind_t::edit_move_next_to_bgm);
-    if (!moved.handled)
+    if (!moved.payload.handled)
         return reject_application_command(context.environment.notification_sink_ref,
                                           "Select playable notes before moving them to BGM.",
                                           notification_severity_t::hint,

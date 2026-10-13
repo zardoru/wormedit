@@ -637,7 +637,7 @@ auto move_editor_selection_to_bgm(document_history_t& history, std::uint64_t exp
     -> selected_note_to_bgm_result_t {
     auto moving = selected_conversion_notes(state);
     if (moving.empty()) return {};
-    selected_note_to_bgm_result_t result{.handled = true};
+    selected_note_to_bgm_result_t result{.payload = {.handled = true}};
     if (expected_revision != history.document.revision || note_conversion_pending(state)) {
         result.command = document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id,
                                    "note move to BGM has stale input or an active gesture");
@@ -658,7 +658,7 @@ auto move_editor_selection_to_bgm(document_history_t& history, std::uint64_t exp
     result.command = move_notes_to_bgm(history, expected_revision, state.chart, moving, lane);
     if (!result.command.applied) return result;
     finish_note_conversion_selection(state, moving, successive);
-    result.selection_exhausted = state.selected_notes.empty() && state.selected_objects.empty();
+    result.payload.selection_exhausted = state.selected_notes.empty() && state.selected_objects.empty();
     return result;
 }
 

@@ -625,7 +625,7 @@ TEST_CASE("inactive BMS statement replacement is one revision-checked undoable c
     const auto applied =
         apply_bms_branch_statement_edit_command(history, history.document.revision, request);
     REQUIRE(applied);
-    CHECK(applied.format_diagnostics.empty());
+    CHECK(applied.payload.format_diagnostics.empty());
     CHECK(applied.command.diagnostics.empty());
     CHECK(history.document.revision == 2);
     CHECK(history.undo.size() == 1);
@@ -679,7 +679,7 @@ TEST_CASE("stale BMS branch actions reject without changing history or losing ty
     const auto stale_revision =
         apply_bms_branch_statement_edit_command(history, original_revision + 1, request);
     CHECK_FALSE(stale_revision);
-    CHECK(stale_revision.format_diagnostics.empty());
+    CHECK(stale_revision.payload.format_diagnostics.empty());
     REQUIRE(stale_revision.command.diagnostics.size() == 1);
     CHECK(stale_revision.command.diagnostics.front().severity == diagnostic_severity_t::error);
     CHECK(history.document.revision == original_revision);
@@ -693,8 +693,8 @@ TEST_CASE("stale BMS branch actions reject without changing history or losing ty
         apply_bms_branch_statement_edit_command(history, original_revision, request);
     CHECK_FALSE(stale_source);
     CHECK(stale_source.command.diagnostics.empty());
-    REQUIRE(stale_source.format_diagnostics.size() == 1);
-    CHECK(stale_source.format_diagnostics.front().code ==
+    REQUIRE(stale_source.payload.format_diagnostics.size() == 1);
+    CHECK(stale_source.payload.format_diagnostics.front().code ==
           bms_branch_statement_edit_diagnostic_code_t::provenance_mismatch);
     CHECK(history.document.revision == original_revision);
     CHECK(history.undo.empty());
@@ -717,8 +717,8 @@ TEST_CASE("active BMS statements reject edits with a typed diagnostic",
          .expected_original_text = statement->original_text,
          .replacement_text = "#00011:0300"});
     CHECK_FALSE(applied);
-    REQUIRE(applied.format_diagnostics.size() == 1);
-    CHECK(applied.format_diagnostics.front().code ==
+    REQUIRE(applied.payload.format_diagnostics.size() == 1);
+    CHECK(applied.payload.format_diagnostics.front().code ==
           bms_branch_statement_edit_diagnostic_code_t::active_statement);
     CHECK(history.document.revision == revision);
 }
@@ -733,8 +733,8 @@ TEST_CASE("inactive BMS statement edits reject ambiguous multi-chart source iden
     const auto applied = apply_bms_branch_statement_insert_command(
         history, revision, insert_request(history));
     CHECK_FALSE(applied);
-    REQUIRE(applied.format_diagnostics.size() == 1);
-    CHECK(applied.format_diagnostics.front().code ==
+    REQUIRE(applied.payload.format_diagnostics.size() == 1);
+    CHECK(applied.payload.format_diagnostics.front().code ==
           bms_branch_statement_edit_diagnostic_code_t::unsupported_song_shape);
     CHECK(history.document.revision == revision);
 }
@@ -746,7 +746,7 @@ TEST_CASE("inactive BMS statement insertion enters history and replays retained 
     const auto inserted =
         apply_bms_branch_statement_insert_command(history, history.document.revision, request);
     REQUIRE(inserted);
-    CHECK(inserted.format_diagnostics.empty());
+    CHECK(inserted.payload.format_diagnostics.empty());
     CHECK(inserted.command.diagnostics.empty());
     CHECK(find_node(chart_tree(history), bms_control_kind_t::raw_statement, "#00012:01") !=
           nullptr);
@@ -777,7 +777,7 @@ TEST_CASE("inactive BMS statement deletion enters history and replays retained s
     const auto deleted =
         apply_bms_branch_statement_delete_command(history, history.document.revision, request);
     REQUIRE(deleted);
-    CHECK(deleted.format_diagnostics.empty());
+    CHECK(deleted.payload.format_diagnostics.empty());
     CHECK(deleted.command.diagnostics.empty());
     CHECK(find_node(chart_tree(history), bms_control_kind_t::raw_statement, "#00011:0200") ==
           nullptr);
@@ -883,10 +883,10 @@ TEST_CASE("BMS branch selection rematerializes semantics as one undoable command
                                                             selected_branch(history, 2));
     REQUIRE(changed);
     CHECK(changed.command.diagnostics.empty());
-    CHECK(changed.format_diagnostics.empty());
-    REQUIRE(changed.preview);
-    CHECK(changed.preview.entering_statement_ids.size() == 1);
-    CHECK(changed.preview.leaving_statement_ids.size() == 1);
+    CHECK(changed.payload.format_diagnostics.empty());
+    REQUIRE(changed.payload.preview);
+    CHECK(changed.payload.preview.entering_statement_ids.size() == 1);
+    CHECK(changed.payload.preview.leaving_statement_ids.size() == 1);
     CHECK(history.document.id == song_id);
     CHECK(history.document.charts.front().id == chart_id);
     REQUIRE(history.document.output_groups.size() == 1);
@@ -1136,8 +1136,8 @@ TEST_CASE("BMS branch selection rejects stale invalid and lossy proposals atomic
     const auto invalid =
         apply_bms_branch_selection_command(history, revision, std::move(invalid_request));
     CHECK_FALSE(invalid);
-    REQUIRE(invalid.format_diagnostics.size() == 1);
-    CHECK(invalid.format_diagnostics.front().code ==
+    REQUIRE(invalid.payload.format_diagnostics.size() == 1);
+    CHECK(invalid.payload.format_diagnostics.front().code ==
           bms_branch_selection_diagnostic_code_t::invalid_selection);
     CHECK(history.document.revision == revision);
     CHECK(history.undo.empty());
@@ -1147,10 +1147,10 @@ TEST_CASE("BMS branch selection rejects stale invalid and lossy proposals atomic
     const auto parse_limited =
         apply_bms_branch_selection_command(history, revision, std::move(parse_limited_request));
     CHECK_FALSE(parse_limited);
-    REQUIRE(parse_limited.format_diagnostics.size() == 1);
-    CHECK(parse_limited.format_diagnostics.front().code ==
+    REQUIRE(parse_limited.payload.format_diagnostics.size() == 1);
+    CHECK(parse_limited.payload.format_diagnostics.front().code ==
           bms_branch_selection_diagnostic_code_t::parse_failed);
-    CHECK_FALSE(parse_limited.parse_diagnostics.empty());
+    CHECK_FALSE(parse_limited.payload.parse_diagnostics.empty());
     CHECK(history.document.revision == revision);
     CHECK(history.undo.empty());
 
@@ -1162,8 +1162,8 @@ TEST_CASE("BMS branch selection rejects stale invalid and lossy proposals atomic
     const auto lossy =
         apply_bms_branch_selection_command(history, revision, selected_branch(history, 2));
     CHECK_FALSE(lossy);
-    REQUIRE(lossy.format_diagnostics.size() == 1);
-    CHECK(lossy.format_diagnostics.front().code ==
+    REQUIRE(lossy.payload.format_diagnostics.size() == 1);
+    CHECK(lossy.payload.format_diagnostics.front().code ==
           bms_branch_selection_diagnostic_code_t::unsupported_editor_state);
     CHECK(history.document.charts.front().bookmarks.size() == 1);
     CHECK(history.document.charts.front().active_branch_selection.front().selected_value == 1);
@@ -1174,10 +1174,10 @@ TEST_CASE("BMS branch selection rejects stale invalid and lossy proposals atomic
     const auto write_failed = apply_bms_branch_selection_command(
         unrepresentable, unrepresentable.document.revision, selected_branch(unrepresentable, 2));
     CHECK_FALSE(write_failed);
-    REQUIRE(write_failed.format_diagnostics.size() == 1);
-    CHECK(write_failed.format_diagnostics.front().code ==
+    REQUIRE(write_failed.payload.format_diagnostics.size() == 1);
+    CHECK(write_failed.payload.format_diagnostics.front().code ==
           bms_branch_selection_diagnostic_code_t::write_failed);
-    CHECK_FALSE(write_failed.write_diagnostics.empty());
+    CHECK_FALSE(write_failed.payload.write_diagnostics.empty());
     CHECK(unrepresentable.document.charts.front().active_branch_selection.front().selected_value ==
           1);
     CHECK(unrepresentable.undo.empty());

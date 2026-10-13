@@ -1201,7 +1201,7 @@ bool dispatch_chart_import_action(wormedit::sys::chart_import_session_t& session
         if (imported.command.applied) {
             remember_project_file(preferences, source_path, notifications);
             notifications.post(notification_severity_t::success, notification_source_t::document,
-                               imported.charts.size() == 1 ? "Chart imported." : "Charts imported.");
+                               imported.payload.charts.size() == 1 ? "Chart imported." : "Charts imported.");
             const auto rebound = rebind_workspace(workspace, history);
             if (!rebound)
                 notifications.post(notification_severity_t::error, notification_source_t::document,
@@ -3647,10 +3647,10 @@ auto create_chart_from_registered_command(wormedit::document_history_t& history,
     if (!rebound) return wormedit::sys::reject_application_command(notifications,
         "New chart created, but workspace rebinding failed.", severity_t::error, source_t::document);
     if (application_command_state.transport_stop) application_command_state.transport_stop();
-    const auto error = open_project_chart(history, workspace, compose_interaction_state, *created.chart);
+    const auto error = open_project_chart(history, workspace, compose_interaction_state, *created.payload.chart);
     if (!error.empty()) return wormedit::sys::reject_application_command(notifications, error,
                                                                        severity_t::error, source_t::document);
-    remember_snap_denominator(application_command_state, *created.chart,
+    remember_snap_denominator(application_command_state, *created.payload.chart,
         application_command_state.compose_view.editor_preferences.default_snap);
     notifications.post(severity_t::success, source_t::document, "New chart created.");
     return wormedit::command_invocation_result_t{.accepted = true};

@@ -5,11 +5,11 @@
 
 namespace wormedit {
 
-struct duplicate_chart_result_t {
-    document_command_result_t command;
+struct duplicate_chart_payload_t {
     std::optional<chart_id_t> chart;
-    [[nodiscard]] explicit operator bool() const noexcept { return static_cast<bool>(command); }
 };
+
+using duplicate_chart_result_t = command_result_with_t<duplicate_chart_payload_t>;
 
 // Creates one empty standard measure with a 120 BPM origin and fresh identities.
 // No chart content or output-group membership is copied from an existing chart.

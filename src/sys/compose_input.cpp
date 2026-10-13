@@ -1547,7 +1547,7 @@ auto dispatch_note_to_bgm_input(const WormUiComposeInputAction& input, compose_i
         const auto outcome = wormedit::sys::move_selected_bgm_to_lane(
             context.environment.history_ref, context.state, wormedit::lane_id_t{input.lane_id},
             dragged, input.successive);
-        if (!outcome.handled) return std::nullopt;
+        if (!outcome.payload.handled) return std::nullopt;
         result.accepted = outcome.command.applied;
         result.document_changed = outcome.command.applied;
         result.diagnostics = outcome.command.diagnostics;

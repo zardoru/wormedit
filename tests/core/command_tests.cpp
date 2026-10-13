@@ -1,3 +1,5 @@
+#include <wormedit/core/proposal_apply_result.h>
+#include <type_traits>
 #include <wormedit/core/command.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -60,7 +62,7 @@ TEST_CASE("quantization commits atomically through bounded document history",
     CHECK(note_row(history) == 240);
     CHECK(history.document.revision == 2);
     CHECK(is_document_dirty(history));
-    REQUIRE(applied.quantized_moves.size() == 1);
+    REQUIRE(applied.payload.quantized_moves.size() == 1);
 
     REQUIRE(undo_document_command(history));
     CHECK(note_row(history) == 130);
@@ -185,7 +187,7 @@ TEST_CASE("redivision commits exactly, undoes, and rejects inexact positions unt
     REQUIRE(applied);
     CHECK(history.document.charts.front().divisions_per_standard_measure == 192);
     CHECK(note_row(history) == 26);
-    CHECK(applied.moves.size() == 1);
+    CHECK(applied.payload.moves.size() == 1);
     CHECK(history.undo.size() == 1);
 
     REQUIRE(undo_document_command(history));
@@ -196,7 +198,7 @@ TEST_CASE("redivision commits exactly, undoes, and rejects inexact positions unt
     const auto rejected =
         apply_redivision_command(inexact, inexact.document.revision, chart_id_t{1}, 192);
     CHECK_FALSE(rejected);
-    CHECK(rejected.moves.empty());
+    CHECK(rejected.payload.moves.empty());
     CHECK_FALSE(rejected.command.diagnostics.empty());
     CHECK(inexact.undo.empty());
     CHECK(note_row(inexact) == 131);
@@ -280,4 +282,32 @@ TEST_CASE("document transactions adopt staged snapshots and publish once", "[uni
     CHECK_FALSE(transaction.commit("Repeat edit"));
     CHECK(history.undo.size() == 1);
     CHECK(history.document.charts.front().metadata.name == "Staged");
+}
+
+namespace {
+enum class command_payload_issue_t { none, rejected };
+}
+
+TEST_CASE("shared command payload results preserve proposal acceptance", "[unit][core][command]") {
+    using result_t = proposal_apply_result_t<command_payload_issue_t>;
+    static_assert(std::is_aggregate_v<result_t>);
+    static_assert(std::is_aggregate_v<document_command_transaction_t>);
+    static_assert(std::is_aggregate_v<command_result_with_t<std::size_t>>);
+    result_t result{.command = {.applied = true},
+                    .payload = {.issue = command_payload_issue_t::rejected}};
+    CHECK_FALSE(result);
+    result.payload.issue = command_payload_issue_t::none;
+    CHECK(result);
+    result.command.applied = false;
+    CHECK_FALSE(result);
+}
+
+TEST_CASE("shared transaction rejections preserve diagnostic lists", "[unit][core][command]") {
+    auto rejected = document_command_transaction_t::rejection(88, {
+        error(diagnostic_code_t::invalid_id, "First"),
+        error(diagnostic_code_t::collision, "Second")});
+    CHECK_FALSE(rejected);
+    CHECK(rejected.revision == 88);
+    REQUIRE(rejected.diagnostics.size() == 2);
+    CHECK(rejected.diagnostics[1].message == "Second");
 }

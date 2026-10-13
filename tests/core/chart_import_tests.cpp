@@ -103,7 +103,7 @@ TEST_CASE("Chart import adds an SM difficulty to a BMS song as one undoable comm
     const auto result = apply_chart_import(history, history.document.revision, source, paths, selected);
     INFO((result.command.diagnostics.empty() ? "" : result.command.diagnostics.front().message));
     REQUIRE(result.command.applied);
-    REQUIRE(result.charts.size() == 1);
+    REQUIRE(result.payload.charts.size() == 1);
     CHECK(history.undo.size() == 1);
     const auto& document = history.document;
     CHECK(document.charts.size() == before.charts.size() + 1);
@@ -117,7 +117,7 @@ TEST_CASE("Chart import adds an SM difficulty to a BMS song as one undoable comm
         CHECK(kept->asset == resource.asset);
     }
     const auto& added = document.charts.back();
-    CHECK(added.id == result.charts.front());
+    CHECK(added.id == result.payload.charts.front());
     CHECK(added.source_family == format_family_t::stepmania);
     // The imported chart's sounds point at catalog entries of the project: kick reused.
     for (const auto& measure : added.measures)
@@ -183,8 +183,8 @@ TEST_CASE("Importing two difficulties gives each fresh unique identities",
     const std::vector<chart_id_t> selected{source.charts.front().id, second.id};
     const auto result = apply_chart_import(history, history.document.revision, source, paths, selected);
     REQUIRE(result.command.applied);
-    REQUIRE(result.charts.size() == 2);
-    CHECK(result.charts[0] != result.charts[1]);
+    REQUIRE(result.payload.charts.size() == 2);
+    CHECK(result.payload.charts[0] != result.payload.charts[1]);
     CHECK(history.undo.size() == 1);
     CHECK(validate_document(history.document).empty());
     CHECK(history.document.charts.back().metadata.name == "Second");

@@ -205,7 +205,7 @@ auto dispatch_redivision_edit(const WormUiWorkspaceAction& action, document_hist
     if (!redivision.command.applied && !redivision.command.diagnostics.empty())
         return {notification_severity_t::error,
                 redivision_rejection_message(redivision.command.diagnostics.front())};
-    const auto moved = redivision.moves.size();
+    const auto moved = redivision.payload.moves.size();
     auto feedback = publish_metadata_edit(std::move(redivision.command), workspace, history);
     if (feedback.severity == notification_severity_t::success)
         feedback.message = "Redivided " + std::to_string(moved) + " positions to " +
@@ -269,7 +269,7 @@ auto dispatch_channel_map_apply(document_history_t& history, workspace_controlle
         return {notification_severity_t::warning, "The channel-map preview is not applicable."};
     auto result = apply_bms_channel_map_edit(history, preview);
     metadata_drop.clear_channel_map_preview();
-    if (!result) return {notification_severity_t::error, result.message};
+    if (!result) return {notification_severity_t::error, result.payload.message};
     auto feedback = publish_metadata_edit(std::move(result.command), workspace, history);
     if (feedback.severity == notification_severity_t::success)
         feedback.message = "Channel maps updated.";
@@ -314,7 +314,7 @@ auto dispatch_lane_profile_apply(document_history_t& history, workspace_controll
     const auto proposal = std::move(*metadata_drop.lane_profile_preview);
     metadata_drop.clear_lane_profile_preview();
     auto result = apply_lane_migration(history, proposal, true);
-    if (!result) return {notification_severity_t::error, result.message};
+    if (!result) return {notification_severity_t::error, result.payload.message};
     auto feedback = publish_metadata_edit(std::move(result.command), workspace, history);
     if (feedback.severity == notification_severity_t::success)
         feedback.message = "Key-count profile changed.";

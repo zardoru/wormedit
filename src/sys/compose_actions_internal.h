@@ -499,8 +499,8 @@ auto publish_bms_statement_diagnostic(notification_sink_t notifications, const r
     -> std::string {
     if (!result.command.diagnostics.empty())
         return publish_bms_diagnostic(notifications, result.command.diagnostics.front());
-    if (!result.format_diagnostics.empty())
-        return publish_bms_diagnostic(notifications, result.format_diagnostics.front());
+    if (!result.payload.format_diagnostics.empty())
+        return publish_bms_diagnostic(notifications, result.payload.format_diagnostics.front());
     const std::string message{
         "BMS branch statement edit was rejected without changing the document."};
     notifications.post(notification_severity_t::warning, notification_source_t::format, message);

@@ -362,8 +362,8 @@ auto import_one_chart(document_history_t& scratch, const chart_document_t& sourc
     const auto staged_id = staged.id;
     scratch.document.charts.push_back(std::move(staged));
     const auto duplicated = apply_duplicate_chart_command(scratch, scratch.document.revision, staged_id);
-    if (!duplicated || !duplicated.chart) return std::nullopt;
-    auto chart = *std::ranges::find(scratch.document.charts, *duplicated.chart, &chart_document_t::id);
+    if (!duplicated || !duplicated.payload.chart) return std::nullopt;
+    auto chart = *std::ranges::find(scratch.document.charts, *duplicated.payload.chart, &chart_document_t::id);
     chart.metadata.name = name;
     return chart;
 }
@@ -389,35 +389,44 @@ auto plan_chart_import(const song_document_t& target, const song_document_t& sou
 auto apply_chart_import(document_history_t& history, std::uint64_t expected_revision,
                         const song_document_t& source, const chart_import_paths_t& paths,
                         std::span<const chart_id_t> selected) -> chart_import_result_t {
-    chart_import_result_t result{.command = {.revision = history.document.revision, .diagnostics = {}}, .charts = {}};
-    const auto reject = [&](std::string message) {
-        result.command.diagnostics.push_back(import_error(std::move(message)));
+    auto transaction = document_command_transaction_t::from(history);
+    chart_import_result_t result{.command = transaction.outcome, .payload = {}};
+    if (expected_revision != history.document.revision) {
+        result.command = transaction.reject(diagnostic_code_t::invalid_id, "chart import document revision is stale");
         return result;
-    };
-    if (expected_revision != history.document.revision) return reject("chart import document revision is stale");
-    if (selected.empty()) return reject("choose at least one difficulty to import");
+    }
+    if (selected.empty()) {
+        result.command = transaction.reject(diagnostic_code_t::invalid_id, "choose at least one difficulty to import");
+        return result;
+    }
     const auto plan = make_plan(history.document, source, paths, selected);
     if (!plan.proposal.diagnostics.empty()) {
         result.command.diagnostics = plan.proposal.diagnostics;
         return result;
     }
-    auto proposed = history.document;
+    auto& proposed = transaction.copy_document();
     merge_maps_t maps;
-    if (!merge_resources(proposed, source, plan, paths, maps)) return reject("the resource catalog is full");
+    if (!merge_resources(proposed, source, plan, paths, maps)) {
+        result.command = transaction.reject(diagnostic_code_t::invalid_id, "the resource catalog is full");
+        return result;
+    }
     auto scratch = make_document_history(proposed, 1, false);
     std::vector<chart_document_t> imported;
     for (const auto* chart : plan.charts) {
         auto added = import_one_chart(scratch, *chart, maps);
-        if (!added) return reject("a chart could not be given fresh identities");
+        if (!added) {
+            result.command = transaction.reject(diagnostic_code_t::invalid_id,
+                "a chart could not be given fresh identities");
+            return result;
+        }
         imported.push_back(std::move(*added));
     }
     for (auto& chart : imported) {
-        result.charts.push_back(chart.id);
+        result.payload.charts.push_back(chart.id);
         proposed.charts.push_back(std::move(chart));
     }
-    result.command = commit_document_command(history, std::move(proposed),
-                                             selected.size() == 1 ? "Import chart" : "Import charts");
-    if (!result.command.applied) result.charts.clear();
+    result.command = transaction.commit(selected.size() == 1 ? "Import chart" : "Import charts");
+    if (!result.command.applied) result.payload.charts.clear();
     return result;
 }
 

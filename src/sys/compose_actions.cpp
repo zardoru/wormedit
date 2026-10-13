@@ -1547,14 +1547,14 @@ std::string dispatch_bms_branch_choice_action(
         if (!applied.command.diagnostics.empty()) {
             return diagnostic(applied.command.diagnostics.front());
         }
-        if (!applied.format_diagnostics.empty()) {
-            return diagnostic(applied.format_diagnostics.front());
+        if (!applied.payload.format_diagnostics.empty()) {
+            return diagnostic(applied.payload.format_diagnostics.front());
         }
-        if (!applied.write_diagnostics.empty()) {
-            return diagnostic(applied.write_diagnostics.front());
+        if (!applied.payload.write_diagnostics.empty()) {
+            return diagnostic(applied.payload.write_diagnostics.front());
         }
-        if (!applied.parse_diagnostics.empty()) {
-            return diagnostic(applied.parse_diagnostics.front());
+        if (!applied.payload.parse_diagnostics.empty()) {
+            return diagnostic(applied.payload.parse_diagnostics.front());
         }
         return warning("BMS branch choice was rejected without changing the document.");
     }

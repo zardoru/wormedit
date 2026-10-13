@@ -11,13 +11,6 @@
 namespace wormedit {
 namespace {
 
-void reject(time_shift_result_t& result, diagnostic_code_t code, std::string message,
-            std::optional<object_id_t> object = std::nullopt) {
-    result.command.diagnostics.push_back({.severity = diagnostic_severity_t::error,
-                                          .code = code,
-                                          .message = std::move(message),
-                                          .object = object});
-}
 
 // Converts positions to absolute rows and back, applying one signed delta.
 class row_shifter_t {
@@ -78,7 +71,7 @@ auto shift_position(shift_context_t& context, local_position_t& position, object
     -> bool {
     const auto target = context.shifter.shifted(position);
     if (!target) {
-        reject(context.result, diagnostic_code_t::row_out_of_range,
+        reject(context.result.command, diagnostic_code_t::row_out_of_range,
                "time shift moves an object outside the materialized chart", owner);
         return false;
     }
@@ -88,7 +81,7 @@ auto shift_position(shift_context_t& context, local_position_t& position, object
 
 auto shift_note(shift_context_t& context, note_t& note) -> bool {
     if (note.sound_channel_event) {
-        reject(context.result, diagnostic_code_t::unsupported_feature,
+        reject(context.result.command, diagnostic_code_t::unsupported_feature,
                "time shift cannot move a note linked to a retained sound-channel event", note.id);
         return false;
     }
@@ -99,7 +92,7 @@ auto shift_note(shift_context_t& context, note_t& note) -> bool {
 
 auto shift_bgm(shift_context_t& context, bgm_event_t& event) -> bool {
     if (event.sound_channel_event) {
-        reject(context.result, diagnostic_code_t::unsupported_feature,
+        reject(context.result.command, diagnostic_code_t::unsupported_feature,
                "time shift cannot move a BGM event linked to a retained sound-channel event",
                event.id);
         return false;
@@ -156,7 +149,7 @@ auto lanes_free_of_overlap(const chart_document_t& chart, const row_shifter_t& r
         std::ranges::sort(intervals, {}, &note_interval_t::head);
         for (std::size_t i = 1; i < intervals.size(); ++i) {
             if (intervals[i].head <= intervals[i - 1].tail) {
-                reject(result, diagnostic_code_t::collision,
+                reject(result.command, diagnostic_code_t::collision,
                        "time shift would overlap two notes on one lane", intervals[i].note);
                 return false;
             }
@@ -182,7 +175,7 @@ auto prepare_shift(const document_history_t& history, std::uint64_t expected_rev
     -> std::optional<prepared_shift_t> {
     result.command.revision = history.document.revision;
     if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id, "time shift document revision is stale");
+        reject(result.command, diagnostic_code_t::invalid_id, "time shift document revision is stale");
         return std::nullopt;
     }
     if (rows == 0)
@@ -191,11 +184,11 @@ auto prepare_shift(const document_history_t& history, std::uint64_t expected_rev
     const auto chart =
         std::ranges::find(prepared.proposed.charts, chart_id, &chart_document_t::id);
     if (!chart_id || chart == prepared.proposed.charts.end()) {
-        reject(result, diagnostic_code_t::invalid_id, "time shift refers to an unknown chart");
+        reject(result.command, diagnostic_code_t::invalid_id, "time shift refers to an unknown chart");
         return std::nullopt;
     }
     if (retains_bms_control_flow(*chart)) {
-        reject(result, diagnostic_code_t::unsupported_feature,
+        reject(result.command, diagnostic_code_t::unsupported_feature,
                "time shift is not supported on a chart with retained BMS control flow");
         return std::nullopt;
     }
@@ -212,13 +205,15 @@ auto prepare_shift(const document_history_t& history, std::uint64_t expected_rev
 auto finish_shift(document_history_t& history, prepared_shift_t& prepared,
                   const row_shifter_t& shifter, time_shift_result_t& result, const char* label)
     -> time_shift_result_t {
-    if (result.moved_objects == 0)
+    if (result.payload.moved_objects == 0)
         return std::move(result);
     rehome(*prepared.chart, &measure_chunk_t::notes);
     rehome(*prepared.chart, &measure_chunk_t::bgm_events);
     if (!lanes_free_of_overlap(*prepared.chart, shifter, result))
         return std::move(result);
-    result.command = commit_document_command(history, std::move(prepared.proposed), label);
+    auto transaction = document_command_transaction_t::from(history);
+    transaction.adopt_document(std::move(prepared.proposed));
+    result.command = transaction.commit(label);
     return std::move(result);
 }
 
@@ -243,7 +238,7 @@ auto collect_selection(chart_document_t& chart, const shift_selection_action_t& 
         for (const auto id : ids) {
             const auto found = table.find(id.value);
             if (!id || found == table.end() || !seen.insert(id.value).second) {
-                reject(result, diagnostic_code_t::invalid_id,
+                reject(result.command, diagnostic_code_t::invalid_id,
                        "time shift names an unknown or repeated object", id);
                 return false;
             }
@@ -279,7 +274,7 @@ auto apply_shift_selection(document_history_t& history, std::uint64_t expected_r
     -> time_shift_result_t {
     time_shift_result_t result;
     if (action.notes.size() + action.bgm_events.size() > limits.maximum_selected_objects) {
-        reject(result, diagnostic_code_t::invalid_resolution,
+        reject(result.command, diagnostic_code_t::invalid_resolution,
                "time shift selection exceeds its configured cap");
         return result;
     }
@@ -294,12 +289,12 @@ auto apply_shift_selection(document_history_t& history, std::uint64_t expected_r
     for (auto* note : selected->notes) {
         if (!shift_note(context, *note))
             return result;
-        ++result.moved_objects;
+        ++result.payload.moved_objects;
     }
     for (auto* event : selected->bgm) {
         if (!shift_bgm(context, *event))
             return result;
-        ++result.moved_objects;
+        ++result.payload.moved_objects;
     }
     return finish_shift(history, *prepared, shifter, result, "Shift selection");
 }
@@ -308,7 +303,7 @@ namespace {
 
 auto shift_content_after_cursor(shift_context_t& context, std::uint64_t cursor_row) -> bool {
     auto& chart = context.chart;
-    auto& moved = context.result.moved_objects;
+    auto& moved = context.result.payload.moved_objects;
     for (auto& measure : chart.measures) {
         for (auto& note : measure.notes) {
             const auto row = context.shifter.row_of(note.position);
@@ -344,14 +339,14 @@ auto shift_warps_after_cursor(shift_context_t& context, std::uint64_t cursor_row
         if (!shift_position(context, warp.span.begin, warp.id) ||
             !shift_position(context, warp.span.end, warp.id))
             return false;
-        ++context.result.moved_objects;
+        ++context.result.payload.moved_objects;
     }
     return true;
 }
 
 auto shift_timing_after_cursor(shift_context_t& context, std::uint64_t cursor_row) -> bool {
     auto& chart = context.chart;
-    auto& moved = context.result.moved_objects;
+    auto& moved = context.result.payload.moved_objects;
     const auto position = [](auto& e) -> local_position_t& { return e.position; };
     return shift_timing_family(context, chart.bpms, position, cursor_row, moved) &&
            shift_timing_family(context, chart.pauses, position, cursor_row, moved) &&
@@ -367,19 +362,19 @@ auto shift_markers_after_cursor(shift_context_t& context, std::uint64_t cursor_r
     -> bool {
     for (auto& bookmark : context.chart.bookmarks) {
         if (bookmark.anchor == marker_anchor_t::audio_time || !bookmark.position) {
-            ++result.audio_anchored_skipped;
+            ++result.payload.audio_anchored_skipped;
             continue;
         }
         const auto row = shifter.row_of(*bookmark.position);
         if (row && *row >= cursor_row) {
             if (!shift_position(context, *bookmark.position, bookmark.id))
                 return false;
-            ++result.moved_objects;
+            ++result.payload.moved_objects;
         }
     }
     for (auto& section : context.chart.sections) {
         if (section.anchor == marker_anchor_t::audio_time || !section.beat_span) {
-            ++result.audio_anchored_skipped;
+            ++result.payload.audio_anchored_skipped;
             continue;
         }
         const auto row = shifter.row_of(section.beat_span->begin);
@@ -387,7 +382,7 @@ auto shift_markers_after_cursor(shift_context_t& context, std::uint64_t cursor_r
             if (!shift_position(context, section.beat_span->begin, section.id) ||
                 !shift_position(context, section.beat_span->end, section.id))
                 return false;
-            ++result.moved_objects;
+            ++result.payload.moved_objects;
         }
     }
     return true;
@@ -404,14 +399,14 @@ auto apply_shift_from_cursor(document_history_t& history, std::uint64_t expected
         return result;
     if (!prepared->chart->sound_channels.empty() ||
         (action.include_timing && !prepared->chart->sv_recipes.empty())) {
-        reject(result, diagnostic_code_t::unsupported_feature,
+        reject(result.command, diagnostic_code_t::unsupported_feature,
                "time shift is not supported with retained sound channels or SV recipes");
         return result;
     }
     const row_shifter_t shifter(prepared->index, action.rows);
     const auto cursor_row = shifter.row_of(action.cursor);
     if (!cursor_row) {
-        reject(result, diagnostic_code_t::row_out_of_range, "time shift cursor is not on the chart");
+        reject(result.command, diagnostic_code_t::row_out_of_range, "time shift cursor is not on the chart");
         return result;
     }
     shift_context_t context{*prepared->chart, shifter, result};

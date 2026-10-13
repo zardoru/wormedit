@@ -30,10 +30,10 @@ auto move_selected_bgm_to_lane(document_history_t& history, editor_interaction_s
     const auto result = dispatch_editor_action(
         history, proposed_state, assign_selected_objects_to_lane_action_t{lane, successive});
     if (result.accepted) state = std::move(proposed_state);
-    return {.handled = true,
-            .command = {.applied = result.accepted, .revision = history.document.revision,
+    return {.command = {.applied = result.accepted, .revision = history.document.revision,
                         .diagnostics = result.diagnostics},
-            .selection_exhausted = state.selected_objects.empty() && state.selected_notes.empty()};
+            .payload = {.handled = true,
+                        .selection_exhausted = state.selected_objects.empty() && state.selected_notes.empty()}};
 }
 
 } // namespace wormedit::sys

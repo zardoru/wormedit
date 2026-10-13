@@ -106,7 +106,7 @@ auto apply_project_chart_command(document_history_t& history,
         auto created = history.document.charts.empty()
             ? apply_new_chart_command(history, action.expected_revision)
             : apply_add_chart_command(history, action.expected_revision, action.chart);
-        return {.command = std::move(created.command), .open_chart = created.chart};
+        return {.command = std::move(created.command), .open_chart = created.payload.chart};
     }
     if (action.kind == project_chart_command_kind_t::duplicate) {
         auto copy = apply_duplicate_chart_command(history, action.expected_revision, action.chart);

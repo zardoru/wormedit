@@ -27,12 +27,14 @@ auto publish_branch_edit(document_history_t& history, bms_branch_statement_edit_
                          std::string label) -> bms_branch_statement_command_result_t {
     bms_branch_statement_command_result_t result;
     result.command.revision = history.document.revision;
-    result.format_diagnostics = std::move(edit.diagnostics);
+    result.payload.format_diagnostics = std::move(edit.diagnostics);
     if (!edit.song || edit.has_errors()) {
         return result;
     }
 
-    result.command = commit_document_command(history, std::move(*edit.song), std::move(label));
+    auto transaction = document_command_transaction_t::from(history);
+    transaction.adopt_document(std::move(*edit.song));
+    result.command = transaction.commit(std::move(label));
     return result;
 }
 
@@ -474,7 +476,9 @@ auto publish_reparsed(document_history_t& history, const chart_document_t& old_c
                         "BMS branch edit could not preserve the current lane, resource, and asset graph");
         return result;
     }
-    result = commit_document_command(history, std::move(*parsed), std::move(label));
+    auto transaction = document_command_transaction_t::from(history);
+    transaction.adopt_document(std::move(*parsed));
+    result = transaction.commit(std::move(label));
     return result;
 }
 
@@ -1098,15 +1102,16 @@ auto apply_bms_branch_selection_command(document_history_t& history,
 
     auto rematerialized = rematerialize_bms_branch_selection(history.document, request);
     const auto can_publish = rematerialized.song.has_value() && !rematerialized.has_errors();
-    result.preview = std::move(rematerialized.preview);
-    result.format_diagnostics = std::move(rematerialized.diagnostics);
-    result.write_diagnostics = std::move(rematerialized.write_diagnostics);
-    result.parse_diagnostics = std::move(rematerialized.parse_diagnostics);
+    result.payload.preview = std::move(rematerialized.preview);
+    result.payload.format_diagnostics = std::move(rematerialized.diagnostics);
+    result.payload.write_diagnostics = std::move(rematerialized.write_diagnostics);
+    result.payload.parse_diagnostics = std::move(rematerialized.parse_diagnostics);
     if (!can_publish) {
         return result;
     }
-    result.command = commit_document_command(history, std::move(*rematerialized.song),
-                                             "Change active BMS branch");
+    auto transaction = document_command_transaction_t::from(history);
+    transaction.adopt_document(std::move(*rematerialized.song));
+    result.command = transaction.commit("Change active BMS branch");
     return result;
 }
 

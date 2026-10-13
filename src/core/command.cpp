@@ -210,10 +210,10 @@ auto apply_quantize_command(document_history_t& history, chart_id_t chart_id,
     }
 
     auto proposal = quantize_chart_exact(*chart, request);
-    result.resolution_moves = std::move(proposal.resolution_moves);
-    result.quantized_moves = std::move(proposal.quantized_moves);
-    result.promoted_from = proposal.promoted_from;
-    result.promoted_to = proposal.promoted_to;
+    result.payload.resolution_moves = std::move(proposal.resolution_moves);
+    result.payload.quantized_moves = std::move(proposal.quantized_moves);
+    result.payload.promoted_from = proposal.promoted_from;
+    result.payload.promoted_to = proposal.promoted_to;
     if (!proposal) {
         result.command.diagnostics = std::move(proposal.diagnostics);
         return result;
@@ -257,7 +257,7 @@ auto apply_redivision_command(document_history_t& history, std::uint64_t expecte
         result.command.diagnostics = std::move(proposal.diagnostics);
         return result;
     }
-    result.moves = std::move(proposal.moves);
+    result.payload.moves = std::move(proposal.moves);
 
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed_document = transaction.copy_document();

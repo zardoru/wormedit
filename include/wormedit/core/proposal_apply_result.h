@@ -1,12 +1,11 @@
 #pragma once
 #include <wormedit/core/command.h>
 namespace wormedit {
-template <class Issue> struct proposal_apply_result_t {
+template <class Issue> struct proposal_apply_payload_t {
     Issue issue{Issue::none};
     std::string message;
-    document_command_result_t command;
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return issue == Issue::none && static_cast<bool>(command);
-    }
+    [[nodiscard]] auto is_success() const noexcept -> bool { return issue == Issue::none; }
 };
+template <class Issue>
+using proposal_apply_result_t = command_result_with_t<proposal_apply_payload_t<Issue>>;
 } // namespace wormedit

@@ -272,13 +272,13 @@ TEST_CASE("BMS channel-map proposals reject stale or altered state",
     auto other = song;
     other.id = song_id_t{9};
     auto history = make_document_history(other);
-    CHECK(apply_bms_channel_map_edit(history, proposal).issue ==
+    CHECK(apply_bms_channel_map_edit(history, proposal).payload.issue ==
           channel_map_issue_t::stale_revision);
     CHECK(history.document.revision == other.revision);
     history = make_document_history(song);
     auto altered = proposal;
     altered.affected_note_count = 42;
-    CHECK(apply_bms_channel_map_edit(history, altered).issue ==
+    CHECK(apply_bms_channel_map_edit(history, altered).payload.issue ==
           channel_map_issue_t::invalid_replacement);
     CHECK(history.document.charts.front().lane_layouts.front().layout.lanes.front().bms_channels.visible ==
           song.charts.front().lane_layouts.front().layout.lanes.front().bms_channels.visible);

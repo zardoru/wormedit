@@ -140,7 +140,7 @@ void check_default_drop_preview(const lane_migration_proposal_t& preview) {
 
 void check_drop_requires_confirmation(document_history_t& history,
                                       const lane_migration_proposal_t& preview) {
-    CHECK(apply_lane_migration(history, preview, false).issue ==
+    CHECK(apply_lane_migration(history, preview, false).payload.issue ==
           lane_migration_issue_t::drop_confirmation_required);
     CHECK(history.document.charts.front().measures[0].notes.size() == 2);
 }
@@ -268,7 +268,7 @@ void check_retained_collision_rejected(document_history_t& history,
                                        const retained_collision_fixture_t& fixture) {
     CHECK(preview.collision_count > 0);
     CHECK(has_retained_collision_witness(preview, fixture));
-    CHECK(apply_lane_migration(history, preview, false).issue ==
+    CHECK(apply_lane_migration(history, preview, false).payload.issue ==
           lane_migration_issue_t::lane_collision);
 }
 
@@ -343,7 +343,7 @@ TEST_CASE("lane migration rejects inclusive hold-tail collisions created by a la
     REQUIRE(preview);
     check_hold_tail_witness(preview);
     auto history = make_document_history(song);
-    CHECK(apply_lane_migration(history, preview, false).issue == lane_migration_issue_t::lane_collision);
+    CHECK(apply_lane_migration(history, preview, false).payload.issue == lane_migration_issue_t::lane_collision);
     CHECK(history.document.charts.front().measures.front().notes.size() == 2);
 }
 
@@ -358,12 +358,12 @@ TEST_CASE("lane migration rejects modified previews and another song at matching
     auto other = song;
     other.id = song_id_t{9};
     auto other_history = make_document_history(other);
-    CHECK(apply_lane_migration(other_history, preview, false).issue ==
+    CHECK(apply_lane_migration(other_history, preview, false).payload.issue ==
           lane_migration_issue_t::stale_revision);
 
     auto history = make_document_history(song);
     preview.target.layout.display_name = "tampered";
-    CHECK(apply_lane_migration(history, preview, false).issue ==
+    CHECK(apply_lane_migration(history, preview, false).payload.issue ==
           lane_migration_issue_t::invalid_mapping);
     CHECK(history.document.charts.front().lane_layouts.front().layout.display_name ==
           song.charts.front().lane_layouts.front().layout.display_name);
@@ -380,7 +380,7 @@ TEST_CASE("lane migration rejects source drift even when document revision is re
     const auto source_lane = ordered(history.document.charts.front().lane_layouts.front().layout).front().id;
     add_note(history.document.charts.front(), object_id_t{61}, source_lane,
              {measure_id_t{3}, 0});
-    CHECK(apply_lane_migration(history, preview, false).issue ==
+    CHECK(apply_lane_migration(history, preview, false).payload.issue ==
           lane_migration_issue_t::stale_revision);
     CHECK(history.document.charts.front().measures.front().notes.size() == 1);
 }
@@ -502,7 +502,7 @@ TEST_CASE("lane migration confirms dropping a linked BMSON pair together",
                                                 source.id, target, mapping);
     REQUIRE(preview);
     check_linked_drop_preview(preview, note_id, event_id);
-    CHECK(apply_lane_migration(history, preview, false).issue ==
+    CHECK(apply_lane_migration(history, preview, false).payload.issue ==
           lane_migration_issue_t::drop_confirmation_required);
     REQUIRE(apply_lane_migration(history, preview, true));
     const auto& migrated = history.document.charts.front();

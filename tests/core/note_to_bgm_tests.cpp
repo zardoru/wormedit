@@ -1035,7 +1035,7 @@ TEST_CASE("Core Move to BGM owns mixed selection and successive document order",
         {editor_selection_object_kind_t::note, object_id_t{1}}};
     const auto result = move_editor_selection_to_bgm(history, history.document.revision,
                                                      state, std::nullopt, successive);
-    require_move(result.handled && result.command.applied);
+    require_move(result.payload.handled && result.command.applied);
     check_move(history.undo.size() == 1);
     check_move(state.selected_objects.front() == editor_selection_object_t{editor_selection_object_kind_t::bgm_event, object_id_t{50}});
     check_move(history.document.charts.front().measures.front().bgm_events.front().id == object_id_t{50});
@@ -1066,7 +1066,7 @@ TEST_CASE("Core Move to BGM rejects missing notes stale input and active gesture
     const auto selection = state.selected_notes;
     const auto revision = history.document.revision - (rejected_kind == 1 ? 1 : 0);
     const auto result = move_editor_selection_to_bgm(history, revision, state, std::nullopt, true);
-    require_move(result.handled && !result.command.applied && !result.command.diagnostics.empty());
+    require_move(result.payload.handled && !result.command.applied && !result.command.diagnostics.empty());
     check_move(history.undo.empty() && state.selected_notes == selection);
     check_move(write_native_project(history.document).bytes == before);
 }

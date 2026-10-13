@@ -42,26 +42,31 @@ void reject(document_command_result_t& result, diagnostic_code_t code, std::stri
 // step. Does nothing for fewer than two records or when older ones were already trimmed away.
 void merge_recent_undo_records(document_history_t& history, std::size_t count, std::string label);
 
-struct quantize_command_result_t {
+template <class Payload> struct command_result_with_t {
     document_command_result_t command;
+    Payload payload{};
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        if constexpr (requires { payload.is_success(); })
+            return static_cast<bool>(command) && payload.is_success();
+        return static_cast<bool>(command);
+    }
+};
+
+struct quantize_command_payload_t {
     std::vector<redivision_move_t> resolution_moves;
     std::vector<redivision_move_t> quantized_moves;
     std::optional<std::uint64_t> promoted_from;
     std::optional<std::uint64_t> promoted_to;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return static_cast<bool>(command);
-    }
 };
 
-struct redivision_command_result_t {
-    document_command_result_t command;
+using quantize_command_result_t = command_result_with_t<quantize_command_payload_t>;
+
+struct redivision_command_payload_t {
     std::vector<redivision_move_t> moves;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return static_cast<bool>(command);
-    }
 };
+
+using redivision_command_result_t = command_result_with_t<redivision_command_payload_t>;
 
 // Starts a bounded history at a caller-owned document snapshot. A zero source
 // revision is promoted to the first usable revision.
@@ -106,11 +111,7 @@ struct document_command_transaction_t {
         -> document_command_result_t;
 };
 
-template <class Payload> struct command_result_with_t {
-    document_command_result_t command;
-    Payload payload{};
-    [[nodiscard]] explicit operator bool() const noexcept { return static_cast<bool>(command); }
-};
+
 
 // Publishes a complete proposed document only when its graph validates. This
 // is the common atomic boundary for future editor commands.

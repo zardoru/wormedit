@@ -33,16 +33,13 @@ struct shift_from_cursor_action_t {
     bool include_timing{false};
 };
 
-struct time_shift_result_t {
-    document_command_result_t command;
+struct time_shift_payload_t {
     std::size_t moved_objects{};
     // Audio-time-anchored bookmarks and sections that were left in place.
     std::size_t audio_anchored_skipped{};
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return static_cast<bool>(command);
-    }
 };
+
+using time_shift_result_t = command_result_with_t<time_shift_payload_t>;
 
 // Both commands are all-or-nothing. A target before the first row or after the
 // last materialized measure, a same-lane overlap, an invalid lane layout at the

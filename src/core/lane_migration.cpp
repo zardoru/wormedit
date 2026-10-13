@@ -567,8 +567,8 @@ auto apply_mapping(const chart_document_t& source,
 
 auto apply_failure(lane_migration_issue_t issue, std::string message,
                    std::uint64_t revision) -> lane_migration_apply_result_t {
-    return {.issue = issue, .message = std::move(message),
-            .command = {.revision = revision, .diagnostics = {}}};
+    return {.command = {.revision = revision, .diagnostics = {}},
+            .payload = {.issue = issue, .message = std::move(message)}};
 }
 
 } // namespace
@@ -680,10 +680,11 @@ auto apply_lane_migration(document_history_t& history,
     const auto updated = apply_mapping(*chart, mapping, canonical->target);
     *std::ranges::find(proposed.charts, canonical->chart, &chart_document_t::id) = updated;
     auto command = transaction.commit("Migrate chart lane profile");
-    return {.issue = command ? lane_migration_issue_t::none
+    const auto applied = static_cast<bool>(command);
+    return {.command = std::move(command),
+            .payload = {.issue = applied ? lane_migration_issue_t::none
                              : lane_migration_issue_t::invalid_mapping,
-            .message = command ? std::string{} : "The migrated chart failed document validation.",
-            .command = std::move(command)};
+                        .message = applied ? std::string{} : "The migrated chart failed document validation."}};
 }
 
 } // namespace wormedit

@@ -189,7 +189,7 @@ auto commit_empty_chart(document_history_t& history, lane_input_profile_t profil
     proposed.charts.push_back(std::move(chart));
     auto result = transaction.commit("New chart");
     const auto applied = result.applied;
-    return {.command = std::move(result), .chart = applied ? std::optional{id} : std::nullopt};
+    return {.command = std::move(result), .payload = {.chart = applied ? std::optional{id} : std::nullopt}};
 }
 
 } // namespace
@@ -235,7 +235,7 @@ auto apply_duplicate_chart_command(document_history_t& history, std::uint64_t re
     proposed.charts.push_back(std::move(duplicate));
     auto result = transaction.commit("Duplicate chart");
     const auto applied = result.applied;
-    return {.command = std::move(result), .chart = applied ? std::optional{new_id} : std::nullopt};
+    return {.command = std::move(result), .payload = {.chart = applied ? std::optional{new_id} : std::nullopt}};
 }
 
 auto apply_delete_chart_command(document_history_t& history, std::uint64_t revision,

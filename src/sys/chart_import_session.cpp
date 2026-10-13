@@ -110,7 +110,7 @@ auto chart_import_confirm(chart_import_session_t& session, document_history_t& h
     -> chart_import_result_t {
     if (!session.source) return {.command = {.revision = history.document.revision, .diagnostics = {{
         .severity = diagnostic_severity_t::error, .code = diagnostic_code_t::invalid_id,
-        .message = "Read a chart file before importing."}}}, .charts = {}};
+        .message = "Read a chart file before importing."}}}, .payload = {}};
     auto result = apply_chart_import(history, expected_revision, *session.source,
                                      {session.source_base, target_base}, session.selected);
     if (result.command.applied) chart_import_cancel(session);

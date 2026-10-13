@@ -72,11 +72,11 @@ struct chart_import_proposal_t {
                                      const chart_import_paths_t& paths,
                                      std::span<const chart_id_t> selected) -> chart_import_proposal_t;
 
-struct chart_import_result_t {
-    document_command_result_t command;
+struct chart_import_payload_t {
     std::vector<chart_id_t> charts;  // The IDs the imported charts received.
-    [[nodiscard]] explicit operator bool() const noexcept { return static_cast<bool>(command); }
 };
+
+using chart_import_result_t = command_result_with_t<chart_import_payload_t>;
 
 // Adds the selected source charts with fresh identities, reuses or adds the resources they
 // reference, and commits one undoable command. The current charts and resources are unchanged

@@ -88,7 +88,7 @@ TEST_CASE("Chart duplicate remaps internal graphs and shares resources", "[unit]
     require_chart(static_cast<bool>(validate_document(history.document).empty()));
     const auto result = apply_duplicate_chart_command(history, 4, chart_id_t{2});
     require_chart(static_cast<bool>(result));
-    expect_chart(static_cast<bool>(result.chart == history.document.charts.back().id));
+    expect_chart(static_cast<bool>(result.payload.chart == history.document.charts.back().id));
     expect_chart(static_cast<bool>(validate_document(history.document).empty()));
     expect_chart(static_cast<bool>(duplicate_links_match(history.document.charts.front(), history.document.charts.back())));
     expect_chart(static_cast<bool>(history.document.charts.back().metadata.name == "Normal (copy)"));
@@ -212,7 +212,7 @@ TEST_CASE("New chart creates an empty valid profile with fresh history-safe iden
     const auto result = apply_new_chart_command(history, 4);
     require_chart(static_cast<bool>(result));
     const auto& chart = history.document.charts.back();
-    expect_chart(result.chart == chart.id && chart.id.value > 51);
+    expect_chart(result.payload.chart == chart.id && chart.id.value > 51);
     expect_chart(validate_document(history.document).empty());
     expect_chart(chart.measures.size() == 1 && chart.measures[0].notes.empty() && chart.measures[0].bgm_events.empty());
     expect_chart(chart.lane_layouts[0].layout.profile_id == make_bms_7k_profile().layout.profile_id);
@@ -226,7 +226,7 @@ TEST_CASE("New chart creates an empty valid profile with fresh history-safe iden
     require_chart(static_cast<bool>(undo_document_command(history)));
     const auto second = apply_new_chart_command(history, history.document.revision);
     require_chart(static_cast<bool>(second));
-    expect_chart(second.chart->value > first_id.value);
+    expect_chart(second.payload.chart->value > first_id.value);
 }
 
 TEST_CASE("New chart rejects stale invalid and exhausted requests without changing history", "[unit][core][chart-editor]") {
@@ -257,7 +257,7 @@ TEST_CASE("New chart accepts explicit profiles beyond the bounded project table"
     const auto added = apply_new_chart_command(history, 4, make_bms_14k_profile(), format_family_t::bms);
     require_chart(static_cast<bool>(added));
     expect_chart(history.document.charts.size() == 258);
-    expect_chart(added.chart == history.document.charts.back().id);
+    expect_chart(added.payload.chart == history.document.charts.back().id);
     expect_chart(history.document.charts.back().source_family == format_family_t::bms);
     expect_chart(history.document.charts.back().lane_layouts[0].layout.split_stage);
     expect_chart(validate_document(history.document).empty());
@@ -306,7 +306,7 @@ TEST_CASE("New chart templates active four-key profile resolution and exact offs
     require_chart(undo_document_command(history));
     const auto replacement = apply_add_chart_command(history, history.document.revision, source.id);
     require_chart(static_cast<bool>(replacement));
-    expect_chart(replacement.chart->value > created.id.value);
+    expect_chart(replacement.payload.chart->value > created.id.value);
 }
 
 TEST_CASE("New chart template rejects stale missing and exhausted requests atomically", "[unit][core][chart-editor]") {
@@ -402,7 +402,7 @@ TEST_CASE("Output groups permit drafts and multiple memberships with format-awar
         .relative_output_path = "exports/charts"};
     require_chart(apply_set_output_group_command(history, history.document.revision, std::nullopt, group).applied);
     group.name = "Both charts";
-    group.charts = {chart_id_t{2}, *duplicate.chart};
+    group.charts = {chart_id_t{2}, *duplicate.payload.chart};
     group.relative_output_path = "exports/song.bmson";
     expect_chart(!apply_set_output_group_command(history, history.document.revision, std::nullopt, group));
     group.relative_output_path = "exports/charts";

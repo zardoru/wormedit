@@ -56,8 +56,8 @@ auto fail(channel_map_proposal_t& proposal, channel_map_issue_t issue, std::stri
 
 auto fail_apply(channel_map_issue_t issue, std::string message, std::uint64_t revision)
     -> channel_map_apply_result_t {
-    return {.issue = issue, .message = std::move(message),
-            .command = {.revision = revision, .diagnostics = {}}};
+    return {.command = {.revision = revision, .diagnostics = {}},
+            .payload = {.issue = issue, .message = std::move(message)}};
 }
 
 auto base36_digit(char byte) -> bool {
@@ -400,7 +400,8 @@ auto apply_bms_channel_map_edit(document_history_t& history,
                           verified.message.empty() ? "The chart changed after preview."
                                                    : verified.message,
                           history.document.revision);
-    auto proposed = history.document;
+    auto transaction = document_command_transaction_t::from(history);
+    auto& proposed = transaction.copy_document();
     auto chart = std::ranges::find(proposed.charts, canonical->chart, &chart_document_t::id);
     auto segment = std::ranges::find(chart->lane_layouts, canonical->segment,
                                      &lane_layout_segment_t::id);
@@ -408,11 +409,11 @@ auto apply_bms_channel_map_edit(document_history_t& history,
         return fail_apply(channel_map_issue_t::layout_segment_not_found,
                           "The selected lane disappeared during apply.",
                           history.document.revision);
-    auto command = commit_document_command(history, std::move(proposed),
-                                           "Edit BMS channel map");
-    return {.issue = command ? channel_map_issue_t::none : channel_map_issue_t::invalid_replacement,
-            .message = command ? std::string{} : "The channel-map edit failed validation.",
-            .command = std::move(command)};
+    auto command = transaction.commit("Edit BMS channel map");
+    const auto applied = static_cast<bool>(command);
+    return {.command = std::move(command),
+            .payload = {.issue = applied ? channel_map_issue_t::none : channel_map_issue_t::invalid_replacement,
+                        .message = applied ? std::string{} : "The channel-map edit failed validation."}};
 }
 
 } // namespace wormedit

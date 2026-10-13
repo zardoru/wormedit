@@ -135,10 +135,10 @@ TEST_CASE("Project New templates the selected four-key chart instead of the firs
     project_chart_runtime_t runtime;
     const auto added = apply_project_chart_ui_action(runtime, history,
         {.kind = WORM_UI_PROJECT_CHART_NEW, .document_revision = history.document.revision,
-         .session_generation = runtime.session_generation}, *active.chart);
+         .session_generation = runtime.session_generation}, *active.payload.chart);
     require_project(added.applied && added.open_chart.has_value());
     const auto& chart = history.document.charts.back();
-    expect_project(chart.id == *added.open_chart && chart.id != *active.chart);
+    expect_project(chart.id == *added.open_chart && chart.id != *active.payload.chart);
     expect_project(chart.source_family == format_family_t::stepmania && chart.divisions_per_standard_measure == 3840);
     expect_project(chart.beat_zero_audio_offset_seconds == signed_rational_t{-7, 20});
     expect_project(chart.lane_layouts[0].layout.lanes.size() == 4 && chart.measures[0].notes.empty());

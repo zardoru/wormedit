@@ -85,7 +85,7 @@ TEST_CASE("shifting a selection moves notes and holds exactly and undoes",
         history, 4,
         {.chart = chart_id_t{2}, .notes = {object_id_t{10}, object_id_t{12}}, .rows = 100});
     REQUIRE(result);
-    CHECK(result.moved_objects == 2);
+    CHECK(result.payload.moved_objects == 2);
     CHECK(find_note(history, 10)->second.position.row == 220);
     const auto hold = find_note(history, 12)->second;
     CHECK(hold.position.row == 700);
@@ -157,7 +157,7 @@ TEST_CASE("shifting from the cursor moves later content and optionally timing",
     CHECK(chart_of(content_only).bpms[1].position.row == 480);
     CHECK(chart_of(content_only).bookmarks[0].position->row == 640);
     CHECK(chart_of(content_only).bookmarks[1].audio_milliseconds == 1500);
-    CHECK(result.audio_anchored_skipped == 1);
+    CHECK(result.payload.audio_anchored_skipped == 1);
 
     auto with_timing = make_document_history(shift_song());
     const auto timed = apply_shift_from_cursor(
@@ -166,7 +166,7 @@ TEST_CASE("shifting from the cursor moves later content and optionally timing",
     REQUIRE(timed);
     CHECK(chart_of(with_timing).bpms[0].position.row == 0);
     CHECK(chart_of(with_timing).bpms[1].position.row == 520);
-    CHECK(timed.moved_objects == result.moved_objects + 1);
+    CHECK(timed.payload.moved_objects == result.payload.moved_objects + 1);
 }
 
 TEST_CASE("time shift refuses charts that retain BMS control flow",

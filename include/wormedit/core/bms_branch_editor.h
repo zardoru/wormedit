@@ -6,14 +6,11 @@
 
 namespace wormedit {
 
-struct bms_branch_statement_command_result_t {
-    document_command_result_t command;
+struct bms_branch_statement_command_payload_t {
     std::vector<bms_branch_statement_edit_diagnostic_t> format_diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return command.applied;
-    }
 };
+
+using bms_branch_statement_command_result_t = command_result_with_t<bms_branch_statement_command_payload_t>;
 
 // Applies a source-verified inactive branch statement edit through the shared
 // document history. The expected revision rejects stale editor actions before
@@ -32,17 +29,14 @@ struct bms_branch_statement_command_result_t {
                                                              bms_branch_statement_delete_t deletion)
     -> bms_branch_statement_command_result_t;
 
-struct bms_branch_selection_command_result_t {
-    document_command_result_t command;
+struct bms_branch_selection_command_payload_t {
     bms_branch_projection_preview_t preview;
     std::vector<bms_branch_selection_diagnostic_t> format_diagnostics;
     std::vector<bms_write_diagnostic_t> write_diagnostics;
     std::vector<bms_parse_diagnostic_t> parse_diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return command.applied;
-    }
 };
+
+using bms_branch_selection_command_result_t = command_result_with_t<bms_branch_selection_command_payload_t>;
 
 // Revision-checks, rematerializes, validates, and publishes one complete BMS
 // branch choice as a single undoable document command.

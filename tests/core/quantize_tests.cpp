@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <utility>
 
 using namespace wormedit;
 
@@ -332,4 +333,31 @@ TEST_CASE("Mixed quantize rejects branch-owned BGM identified by its retained so
     CHECK(has_code(result.diagnostics, diagnostic_code_t::unsupported_feature));
     CHECK(chart.measures.front().notes.front().position.row == 250);
     CHECK(chart.measures.front().bgm_events.front().position.row == 130);
+}
+
+namespace {
+
+auto quantization_publication_rule_stays_independent_of_diagnostics() -> bool {
+    quantization_outcome_t populated{
+        .value = {},
+        .diagnostics = {{.severity = diagnostic_severity_t::error,
+                         .code = diagnostic_code_t::invalid_id,
+                         .message = "retained diagnostic", .object = std::nullopt}}};
+    populated.value.chart = make_chart();
+    const auto shared_rejects_error = !populated.ok();
+    const auto legacy_populated = quantization_result_t::from(std::move(populated));
+    quantization_outcome_t empty{.value = {}, .diagnostics = {}};
+    const auto shared_accepts_empty = empty.ok();
+    const auto legacy_empty = quantization_result_t::from(std::move(empty));
+    return shared_rejects_error && legacy_populated &&
+           legacy_populated.diagnostics.size() == 1 &&
+           legacy_populated.diagnostics.front().message == "retained diagnostic" &&
+           shared_accepts_empty && !legacy_empty;
+}
+
+} // namespace
+
+TEST_CASE("quantization compatibility preserves its chart-presence publication rule",
+          "[unit][core][quantize][result]") {
+    CHECK(quantization_publication_rule_stays_independent_of_diagnostics());
 }

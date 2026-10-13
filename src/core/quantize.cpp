@@ -15,6 +15,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 
 namespace wormedit {
 namespace {
@@ -386,7 +387,7 @@ auto transform_chart_positions(chart_document_t& chart, const quantize_request_t
 }
 
 auto prepare_quantization_chart(const chart_document_t& chart, const quantize_request_t& request,
-                                std::uint64_t target_resolution, quantization_result_t& result)
+                                std::uint64_t target_resolution, quantization_outcome_t& result)
     -> std::optional<chart_document_t> {
     if (target_resolution == chart.divisions_per_standard_measure) {
         return chart;
@@ -401,9 +402,9 @@ auto prepare_quantization_chart(const chart_document_t& chart, const quantize_re
         result.diagnostics = std::move(promotion.diagnostics);
         return std::nullopt;
     }
-    result.promoted_from = chart.divisions_per_standard_measure;
-    result.promoted_to = target_resolution;
-    result.resolution_moves = std::move(promotion.moves);
+    result.value.promoted_from = chart.divisions_per_standard_measure;
+    result.value.promoted_to = target_resolution;
+    result.value.resolution_moves = std::move(promotion.moves);
     return std::move(*promotion.chart);
 }
 
@@ -537,9 +538,9 @@ auto synchronize_quantized_selection(chart_document_t& chart,
 
 } // namespace
 
-auto quantize_chart_exact(const chart_document_t& chart, const quantize_request_t& request)
-    -> quantization_result_t {
-    quantization_result_t result;
+auto quantization_plan_t::from(const chart_document_t& chart, const quantize_request_t& request)
+    -> quantization_outcome_t {
+    quantization_outcome_t result;
     if (request.divisions == 0 || chart.divisions_per_standard_measure == 0) {
         error(result.diagnostics, diagnostic_code_t::invalid_resolution,
               "quantization divisions and chart resolution must be positive");
@@ -587,7 +588,7 @@ auto quantize_chart_exact(const chart_document_t& chart, const quantize_request_
         }
         position = *after;
         if (position != before) {
-            result.quantized_moves.push_back({
+            result.value.quantized_moves.push_back({
                 .object = object,
                 .role = role,
                 .before = before,
@@ -619,8 +620,22 @@ auto quantize_chart_exact(const chart_document_t& chart, const quantize_request_
     if (failed || !result.diagnostics.empty()) {
         return result;
     }
-    result.chart = std::move(working);
+    result.value.chart = std::move(working);
     return result;
+}
+
+auto quantization_result_t::from(quantization_outcome_t&& outcome) -> quantization_result_t {
+    return {.chart = std::move(outcome.value.chart),
+            .resolution_moves = std::move(outcome.value.resolution_moves),
+            .quantized_moves = std::move(outcome.value.quantized_moves),
+            .diagnostics = std::move(outcome.diagnostics),
+            .promoted_from = outcome.value.promoted_from,
+            .promoted_to = outcome.value.promoted_to};
+}
+
+auto quantize_chart_exact(const chart_document_t& chart, const quantize_request_t& request)
+    -> quantization_result_t {
+    return quantization_result_t::from(quantization_plan_t::from(chart, request));
 }
 
 } // namespace wormedit

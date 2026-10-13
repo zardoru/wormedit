@@ -226,7 +226,7 @@ struct waveform_sample_t {
 };
 
 // Cache-only: missing PCM returns no partial polyline and never invokes a decoder.
-[[nodiscard]] auto project_cached_waveform_samples(decoded_block_cache_t& cache,
+[[nodiscard]] auto build_cached_waveform_samples_view(decoded_block_cache_t& cache,
     const audio_source_identity_t& source, std::uint64_t begin_frame, std::uint64_t end_frame,
     std::size_t maximum_samples = 4'096) -> std::optional<std::vector<waveform_sample_t>>;
 
@@ -240,7 +240,7 @@ struct waveform_sample_t {
 // Projects one visible source-frame interval into bounded implicit pixel
 // columns. Each column retains its exact frame interval while peak/RMS values
 // come from the closest cached pyramid level.
-[[nodiscard]] auto project_waveform(const waveform_t& waveform,
+[[nodiscard]] auto build_waveform_view(const waveform_t& waveform,
                                     waveform_projection_request_t request)
     -> waveform_projection_result_t;
 

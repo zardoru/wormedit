@@ -138,11 +138,11 @@ struct aligned_waveform_result_t {
 
 // Each pixel span uses PCM, then available detail bins, then overview bins.
 // Drawing style is supplied independently of availability.
-[[nodiscard]] auto project_composed_aligned_waveform(const waveform_t& overview,
+[[nodiscard]] auto build_composed_aligned_waveform_view(const waveform_t& overview,
     const waveform_t* detail, const timing_index_t& timing, aligned_waveform_request_t request,
     decoded_block_cache_t* blocks, aligned_waveform_style_t style) -> aligned_waveform_result_t;
 
-[[nodiscard]] auto project_composed_aligned_waveform(const waveform_t& overview,
+[[nodiscard]] auto build_composed_aligned_waveform_view(const waveform_t& overview,
     const waveform_t* detail, const display_row_table_t& table, aligned_waveform_request_t request,
     decoded_block_cache_t* blocks, aligned_waveform_style_t style) -> aligned_waveform_result_t;
 
@@ -163,25 +163,25 @@ struct waveform_overview_result_t {
     }
 };
 
-[[nodiscard]] auto project_waveform_overview(
+[[nodiscard]] auto build_waveform_overview_view(
     const waveform_t& waveform, const timing_index_t& timing, aligned_waveform_request_t viewport,
     std::size_t maximum_rows = maximum_waveform_overview_rows) -> waveform_overview_result_t;
 
 // Projects the audio span [begin_fraction, end_fraction] of the whole source into at most
 // `maximum_rows` rows, each placed by its absolute audio fraction. The visible fractions of the
 // result echo the requested span; beat zero is not reported.
-[[nodiscard]] auto project_waveform_range(const waveform_t& waveform, double begin_fraction,
+[[nodiscard]] auto build_waveform_range_view(const waveform_t& waveform, double begin_fraction,
                                           double end_fraction,
                                           std::size_t maximum_rows = maximum_waveform_range_rows)
     -> waveform_overview_result_t;
 
-[[nodiscard]] auto project_aligned_waveform_samples(const waveform_t& waveform,
+[[nodiscard]] auto build_aligned_waveform_samples_view(const waveform_t& waveform,
     const timing_index_t& timing, aligned_waveform_request_t request, decoded_block_cache_t& cache)
     -> aligned_waveform_result_t;
 
 // Projects normalized source peaks through the exact chart timing inverse onto
 // the shared vertical musical viewport. It reads only derived waveform data.
-[[nodiscard]] auto project_aligned_waveform(const waveform_t& waveform,
+[[nodiscard]] auto build_aligned_waveform_view(const waveform_t& waveform,
                                             const timing_index_t& timing,
                                             aligned_waveform_request_t request)
     -> aligned_waveform_result_t;

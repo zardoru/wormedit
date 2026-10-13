@@ -751,7 +751,7 @@ auto is_branch_cache_choices_current(const workspace_bms_branch_outline_cache_t&
             return retained.first == active.branch && retained.second == active.selected_value;
         });
 }
-auto project_branch_outline(const song_document_t& document, const chart_document_t& chart,
+auto build_branch_outline_view(const song_document_t& document, const chart_document_t& chart,
     const workspace_limits_t& limits, workspace_bms_branch_outline_cache_t* cache)
     -> workspace_bms_branch_outline_t {
     // Retained ordinary statements are visible too; only an absent tree is empty.
@@ -1358,7 +1358,7 @@ auto build_compose_tab(workspace_view_build_context_t& context,
         .layout_segment_count = chart->lane_layouts.size(),
         .lane_count = lane_count,
         .layer_count = chart->semantic_layers.size(),
-        .bms_branch_outline = project_branch_outline(document, *chart, workspace.limits,
+        .bms_branch_outline = build_branch_outline_view(document, *chart, workspace.limits,
                                                      branch_cache),
     };
     return true;

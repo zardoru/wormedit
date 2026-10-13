@@ -1842,7 +1842,7 @@ auto build_reused_scalar_scene_view(const compose_projection_context_t<wormedit:
     cache.scene.static_projection_scanned = cache.scene.static_projection_extracted = 0;
     if (!reusable_scalar_source(cache, view))
         return false;
-    const auto metadata = wormedit::project_editor_field_scene_window_metadata(
+    const auto metadata = wormedit::build_editor_field_scene_window_metadata_view(
         input.scope.chart_scope.chart, *cache.scene.index, input.scope.interaction_view,
         cache.frame.preview_scene_request, cache.scene.scene_window);
     if (!metadata.projection)

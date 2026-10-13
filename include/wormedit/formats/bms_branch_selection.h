@@ -1,6 +1,6 @@
 #pragma once
 
-#include <wormedit/core/bms_branch_projection.h>
+#include <wormedit/core/bms_branch_view.h>
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/bms_writer.h>
 

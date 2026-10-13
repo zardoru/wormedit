@@ -2577,7 +2577,7 @@ auto translated_window_rect(editor_field_rect_t rect, double shift) -> editor_fi
     return rect;
 }
 template <typename Geometry>
-void project_window_rects(const std::vector<Geometry>& source, std::vector<Geometry>& target,
+void build_window_rects_view(const std::vector<Geometry>& source, std::vector<Geometry>& target,
                           double shift, double height) {
     target.reserve(source.size());
     for (const auto& value : source) {
@@ -2589,7 +2589,7 @@ void project_window_rects(const std::vector<Geometry>& source, std::vector<Geome
             target.push_back(std::move(translated));
     }
 }
-void project_window_holds(const editor_field_scene_t& source, editor_field_scene_t& target,
+void build_window_holds_view(const editor_field_scene_t& source, editor_field_scene_t& target,
                           double shift, double clip_top, double clip_bottom) {
     target.hold_bodies.reserve(source.hold_bodies.size());
     for (const auto& value : source.hold_bodies) {
@@ -2601,7 +2601,7 @@ void project_window_holds(const editor_field_scene_t& source, editor_field_scene
             target.hold_bodies.push_back(std::move(translated));
     }
 }
-void project_window_grid(const editor_field_scene_t& source, editor_field_scene_t& target,
+void build_window_grid_view(const editor_field_scene_t& source, editor_field_scene_t& target,
                          double shift) {
     for (const auto& value : source.grid_lines) {
         if (value.chart_row.whole_rows < target.visible_begin_row ||
@@ -2639,7 +2639,7 @@ auto is_window_scroll_valid(const chart_document_t& chart, const editor_interact
                                        view.viewport_end_margin_fraction),
         view.viewport_minimum_margin_fraction);
 }
-auto project_scene_window_metadata_unchecked(const chart_document_t& chart,
+auto build_scene_window_metadata_unchecked_view(const chart_document_t& chart,
                                              const editor_field_scene_index_t& index,
                                              const editor_interaction_view_model_t& view,
                                              const editor_field_scene_request_t& request,
@@ -2682,12 +2682,12 @@ auto project_scene_window_metadata_unchecked(const chart_document_t& chart,
     result.scene = std::move(scene);
     return metadata;
 }
-auto project_scene_window(const chart_document_t& chart, const editor_field_scene_index_t& index,
+auto build_scene_window_view(const chart_document_t& chart, const editor_field_scene_index_t& index,
                           const editor_interaction_view_model_t& view,
                           const editor_field_scene_request_t& request,
                           const editor_field_scene_window_t& window)
     -> editor_field_scene_result_t {
-    auto metadata = project_scene_window_metadata_unchecked(chart, index, view, request, window);
+    auto metadata = build_scene_window_metadata_unchecked_view(chart, index, view, request, window);
     auto result = std::move(metadata.projection);
     if (!result)
         return result;
@@ -2700,14 +2700,14 @@ auto project_scene_window(const chart_document_t& chart, const editor_field_scen
                            ? view.viewport_height_pixels - window.view.viewport_height_pixels +
                                  view.viewport_scroll_pixels - window.view.viewport_scroll_pixels
                            : window.view.viewport_scroll_pixels - view.viewport_scroll_pixels;
-    project_window_grid(*window.scene, scene, shift);
-    project_window_rects(window.scene->note_endpoints, scene.note_endpoints, shift,
+    build_window_grid_view(*window.scene, scene, shift);
+    build_window_rects_view(window.scene->note_endpoints, scene.note_endpoints, shift,
                          view.viewport_height_pixels);
-    project_window_holds(*window.scene, scene, shift, metadata.hold_clip_top,
+    build_window_holds_view(*window.scene, scene, shift, metadata.hold_clip_top,
                          metadata.hold_clip_bottom);
-    project_window_rects(window.scene->bgm_events, scene.bgm_events, shift,
+    build_window_rects_view(window.scene->bgm_events, scene.bgm_events, shift,
                          view.viewport_height_pixels);
-    project_window_rects(window.scene->bga_events, scene.bga_events, shift,
+    build_window_rects_view(window.scene->bga_events, scene.bga_events, shift,
                          view.viewport_height_pixels);
     return result;
 }
@@ -2770,7 +2770,7 @@ auto can_reuse_editor_field_scene_window(const chart_document_t& chart,
            is_reusable_window_current(window, view, request) &&
            is_window_scroll_valid(chart, view, window);
 }
-auto project_editor_field_scene_window_metadata(const chart_document_t& chart,
+auto build_editor_field_scene_window_metadata_view(const chart_document_t& chart,
                                                 const editor_field_scene_index_t& index,
                                                 const editor_interaction_view_model_t& view,
                                                 const editor_field_scene_request_t& request,
@@ -2778,7 +2778,7 @@ auto project_editor_field_scene_window_metadata(const chart_document_t& chart,
     -> editor_field_scene_window_metadata_t {
     if (!can_reuse_editor_field_scene_window(chart, index, view, request, window))
         return {};
-    auto metadata = project_scene_window_metadata_unchecked(chart, index, view, request, window);
+    auto metadata = build_scene_window_metadata_unchecked_view(chart, index, view, request, window);
     if (!is_projected_window_within_limit(metadata.projection, request))
         return {};
     return metadata;
@@ -2803,7 +2803,7 @@ auto make_editor_field_scene_reusing_window(const chart_document_t& chart,
     }
     if (!is_window_scroll_valid(chart, view, window))
         return make_editor_field_scene(chart, index, view, request);
-    auto result = project_scene_window(chart, index, view, request, window);
+    auto result = build_scene_window_view(chart, index, view, request, window);
     if (!is_projected_window_within_limit(result, request)) {
         window.scene.reset();
         return make_editor_field_scene(chart, index, view, request);

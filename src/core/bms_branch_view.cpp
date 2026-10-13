@@ -1,4 +1,4 @@
-#include <wormedit/core/bms_branch_projection.h>
+#include <wormedit/core/bms_branch_view.h>
 
 #include <algorithm>
 #include <functional>
@@ -253,7 +253,7 @@ auto make_projection_result(branch_projection_context_t& context)
 
 } // namespace
 
-auto project_bms_branch_tree(const bms_control_node_t& root,
+auto build_bms_branch_tree_view(const bms_control_node_t& root,
                              const std::vector<branch_selection_t>& selections,
                              bms_branch_projection_limits_t limits)
     -> bms_branch_projection_result_t {
@@ -301,8 +301,8 @@ auto preview_bms_branch_projection(const bms_control_node_t& root,
                                    bms_branch_projection_limits_t limits)
     -> bms_branch_projection_preview_t {
     bms_branch_projection_preview_t result;
-    result.current = project_bms_branch_tree(root, current, limits);
-    result.proposed = project_bms_branch_tree(root, proposed, limits);
+    result.current = build_bms_branch_tree_view(root, current, limits);
+    result.proposed = build_bms_branch_tree_view(root, proposed, limits);
     if (!result) {
         return result;
     }

@@ -563,7 +563,7 @@ auto waveform_analysis_t::from(decoder_t& decoder, decoded_block_cache_t& block_
     return waveform_analysis_t{.waveform = std::move(work.waveform)};
 }
 
-auto project_cached_waveform_samples(decoded_block_cache_t& cache,
+auto build_cached_waveform_samples_view(decoded_block_cache_t& cache,
     const audio_source_identity_t& source, std::uint64_t begin_frame, std::uint64_t end_frame,
     std::size_t maximum_samples) -> std::optional<std::vector<waveform_sample_t>> {
     if (begin_frame >= end_frame || end_frame - begin_frame > maximum_samples ||
@@ -691,7 +691,7 @@ auto waveform_projection_result_t::from(waveform_projection_outcome_t&& outcome)
             .level_frames_per_bin = outcome->level_frames_per_bin, .columns = std::move(outcome->columns)};
 }
 
-auto project_waveform(const waveform_t& waveform, waveform_projection_request_t request)
+auto build_waveform_view(const waveform_t& waveform, waveform_projection_request_t request)
     -> waveform_projection_result_t {
     return waveform_projection_result_t::from(waveform_projection_t::from(waveform, request));
 }

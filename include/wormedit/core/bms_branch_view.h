@@ -45,7 +45,7 @@ struct bms_branch_projection_result_t {
 // Evaluates only retained control-flow structure. Root statements are common
 // to every projection and are intentionally absent from active_statement_*.
 // A control with no explicit choice contributes no branch-local statements.
-[[nodiscard]] auto project_bms_branch_tree(const bms_control_node_t& root,
+[[nodiscard]] auto build_bms_branch_tree_view(const bms_control_node_t& root,
                                            const std::vector<branch_selection_t>& selections,
                                            bms_branch_projection_limits_t limits = {})
     -> bms_branch_projection_result_t;

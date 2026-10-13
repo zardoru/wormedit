@@ -307,7 +307,7 @@ void waveform_analysis_t::service_idle_detail(
         detail_analysis_ = completed->analysis;
     }
     const bool pcm_missing = window->frames_per_pixel < 1.0 &&
-        !audio::project_cached_waveform_samples(decoded_blocks_, key.source,
+        !audio::build_cached_waveform_samples_view(decoded_blocks_, key.source,
             key.begin_frame, key.end_frame, audio::maximum_aligned_waveform_rows);
     if (detail_job_.is_busy() || (detail_analysis_ && !pcm_missing)) return;
     const auto started = detail_job_.request(*asset, 32,

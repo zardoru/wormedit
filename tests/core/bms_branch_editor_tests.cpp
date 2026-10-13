@@ -1,5 +1,5 @@
 #include <wormedit/core/bms_branch_editor.h>
-#include <wormedit/core/bms_branch_projection.h>
+#include <wormedit/core/bms_branch_view.h>
 #include <wormedit/formats/native_project.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -825,24 +825,24 @@ TEST_CASE("BMS branch projection rejects invalid stale and unbounded proposals w
 
     auto out_of_range = chart.active_branch_selection;
     out_of_range.front().selected_value = 3;
-    const auto invalid = project_bms_branch_tree(*chart.bms_control_tree, out_of_range);
+    const auto invalid = build_bms_branch_tree_view(*chart.bms_control_tree, out_of_range);
     CHECK_FALSE(invalid);
     CHECK(invalid.status == bms_branch_projection_status_t::invalid_selection);
     CHECK(invalid.active_statement_ids.empty());
 
     auto duplicate = chart.active_branch_selection;
     duplicate.push_back(duplicate.front());
-    const auto duplicated = project_bms_branch_tree(*chart.bms_control_tree, duplicate);
+    const auto duplicated = build_bms_branch_tree_view(*chart.bms_control_tree, duplicate);
     CHECK_FALSE(duplicated);
     CHECK(duplicated.status == bms_branch_projection_status_t::duplicate_selection);
 
     auto unknown = chart.active_branch_selection;
     unknown.front().branch = branch_id_t{999'999};
-    const auto stale = project_bms_branch_tree(*chart.bms_control_tree, unknown);
+    const auto stale = build_bms_branch_tree_view(*chart.bms_control_tree, unknown);
     CHECK_FALSE(stale);
     CHECK(stale.status == bms_branch_projection_status_t::invalid_selection);
 
-    const auto capped = project_bms_branch_tree(
+    const auto capped = build_bms_branch_tree_view(
         *chart.bms_control_tree, chart.active_branch_selection,
         {.maximum_nodes = 1, .maximum_depth = 256, .maximum_active_statements = 1});
     CHECK_FALSE(capped);

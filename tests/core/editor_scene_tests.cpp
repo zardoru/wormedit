@@ -1352,7 +1352,7 @@ void check_bga_window_projection(const wormedit::chart_document_t& chart,
     const auto initial = wormedit::make_editor_field_scene_reusing_window(
         chart, index, current, request, window);
     REQUIRE(initial);
-    const auto metadata = wormedit::project_editor_field_scene_window_metadata(
+    const auto metadata = wormedit::build_editor_field_scene_window_metadata_view(
         chart, index, current, request, window);
     require_metadata_bga_events(metadata);
     const auto cached = wormedit::make_editor_field_scene_reusing_window(
@@ -1583,7 +1583,7 @@ TEST_CASE("Read-only window metadata matches fresh current layout and cursor",
                                                               window),
                 "wormedit::can_reuse_editor_field_scene_window(chart, index, current, request,     "
                 "                                                              window)");
-            const auto metadata = wormedit::project_editor_field_scene_window_metadata(
+            const auto metadata = wormedit::build_editor_field_scene_window_metadata_view(
                 chart, index, current, request, window);
             const auto fresh = wormedit::make_editor_field_scene(chart, index, current, request);
             require_metadata(metadata.projection, "metadata.projection");
@@ -1630,9 +1630,9 @@ TEST_CASE("Read-only metadata rejects stale window keys and transient compositio
         "         wormedit::can_reuse_editor_field_scene_window(chart, index, current, request, "
         "window)");
     check_metadata_false(
-        wormedit::project_editor_field_scene_window_metadata(chart, index, current, request, window)
+        wormedit::build_editor_field_scene_window_metadata_view(chart, index, current, request, window)
             .projection,
-        "         wormedit::project_editor_field_scene_window_metadata(chart, index, current, "
+        "         wormedit::build_editor_field_scene_window_metadata_view(chart, index, current, "
         "request, window)             .projection");
     current = view();
     request.comparison_difference_rows = {{wormedit::measure_id_t{1}, 240}};
@@ -1641,9 +1641,9 @@ TEST_CASE("Read-only metadata rejects stale window keys and transient compositio
         "         wormedit::can_reuse_editor_field_scene_window(chart, index, current, request, "
         "window)");
     check_metadata_false(
-        wormedit::project_editor_field_scene_window_metadata(chart, index, current, request, window)
+        wormedit::build_editor_field_scene_window_metadata_view(chart, index, current, request, window)
             .projection,
-        "         wormedit::project_editor_field_scene_window_metadata(chart, index, current, "
+        "         wormedit::build_editor_field_scene_window_metadata_view(chart, index, current, "
         "request, window)             .projection");
     check_metadata(wormedit::make_editor_field_scene(chart, index, current, request),
                    "wormedit::make_editor_field_scene(chart, index, current, request)");
@@ -1667,16 +1667,16 @@ TEST_CASE("Window metadata preserves invalid geometry and primitive limit fallba
         "         wormedit::can_reuse_editor_field_scene_window(chart, index, current, request, "
         "window)");
     check_metadata_false(
-        wormedit::project_editor_field_scene_window_metadata(chart, index, current, request, window)
+        wormedit::build_editor_field_scene_window_metadata_view(chart, index, current, request, window)
             .projection,
-        "         wormedit::project_editor_field_scene_window_metadata(chart, index, current, "
+        "         wormedit::build_editor_field_scene_window_metadata_view(chart, index, current, "
         "request, window)             .projection");
     current = view();
     request.maximum_scene_primitives = 1;
     check_metadata_false(
-        wormedit::project_editor_field_scene_window_metadata(chart, index, current, request, window)
+        wormedit::build_editor_field_scene_window_metadata_view(chart, index, current, request, window)
             .projection,
-        "         wormedit::project_editor_field_scene_window_metadata(chart, index, current, "
+        "         wormedit::build_editor_field_scene_window_metadata_view(chart, index, current, "
         "request, window)             .projection");
     check_metadata_false(
         wormedit::make_editor_field_scene_reusing_window(chart, index, current, request, window),

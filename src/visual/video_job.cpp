@@ -190,16 +190,20 @@ auto video_frame_job_t::run_decode(const decode_request_t& request, std::stop_to
 auto video_frame_job_t::request(song_id_t project, std::uint64_t document_revision,
                                 resolved_visual_asset_t source, video_preview_clock_t clock,
                                 video_frame_decode_limits_t limits) -> video_job_start_result_t {
+    return video_job_start_result_t::from(begin(project, document_revision, std::move(source), clock, limits));
+}
+
+auto video_frame_job_t::begin(song_id_t project, std::uint64_t document_revision,
+                                resolved_visual_asset_t source, video_preview_clock_t clock,
+                                video_frame_decode_limits_t limits) -> async_job_start_outcome_t {
     if (!project || document_revision == 0 || !source.resource || !source.asset ||
         source.kind != asset_kind_t::video || source.resource != clock.resource ||
         clock.media_time_denominator == 0 || maximum_in_flight_jobs_ == 0) {
-        return {.status = video_job_start_status_t::invalid_request,
-                .message = "video frame request has invalid identity or timing"};
+        return std::unexpected(error_t<async_job_start_status_t>{video_job_start_status_t::invalid_request, "video frame request has invalid identity or timing"});
     }
     discard_terminal_jobs();
     if (workers_.size() >= maximum_in_flight_jobs_) {
-        return {.status = video_job_start_status_t::capacity_exceeded,
-                .message = "video frame jobs have not reached cancellation checkpoints"};
+        return std::unexpected(error_t<async_job_start_status_t>{video_job_start_status_t::capacity_exceeded, "video frame jobs have not reached cancellation checkpoints"});
     }
 
     auto generation = next_generation_ + 1U;
@@ -214,9 +218,7 @@ auto video_frame_job_t::request(song_id_t project, std::uint64_t document_revisi
             return run_decode(decode_request, stop);
         });
     if (!task) {
-        return {.status = video_job_start_status_t::scheduler_rejected,
-                .message =
-                    task.error ? task.error->message : "video frame task could not be created"};
+        return std::unexpected(error_t<async_job_start_status_t>{video_job_start_status_t::scheduler_rejected, task.error ? task.error->message : "video frame task could not be created"});
     }
     auto submitted = scheduler_.submit(std::move(graph));
     if (!submitted) {
@@ -224,9 +226,8 @@ auto video_frame_job_t::request(song_id_t project, std::uint64_t document_revisi
                                     submitted.error->code == task_error_code_t::capacity_exceeded
                                 ? async_job_start_status_t::capacity_exceeded
                                 : async_job_start_status_t::scheduler_rejected;
-        return {.status = status,
-                .message = submitted.error ? submitted.error->message
-                                           : "video frame task could not be submitted"};
+        return std::unexpected(error_t<async_job_start_status_t>{status, submitted.error ? submitted.error->message
+                                           : "video frame task could not be submitted"});
     }
     for (const auto& worker : workers_) {
         worker.graph.cancel();
@@ -238,7 +239,7 @@ auto video_frame_job_t::request(song_id_t project, std::uint64_t document_revisi
                         .document_revision = document_revision,
                         .graph = std::move(submitted.graph),
                         .task = *task.id});
-    return {.status = video_job_start_status_t::started, .generation = generation, .message = {}};
+    return generation;
 }
 
 auto video_frame_job_t::poll() -> std::optional<video_job_completion_t> {

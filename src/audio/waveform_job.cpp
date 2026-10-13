@@ -35,14 +35,17 @@ void waveform_job_t::discard_terminal_jobs() {
 
 auto waveform_job_t::request(asset_id_t asset, std::uint32_t frames_per_bin,
                              waveform_analysis_options_t options) -> waveform_job_start_result_t {
+    return waveform_job_start_result_t::from(begin(asset, frames_per_bin, options));
+}
+
+auto waveform_job_t::begin(asset_id_t asset, std::uint32_t frames_per_bin,
+                             waveform_analysis_options_t options) -> async_job_start_outcome_t {
     if (!asset || frames_per_bin == 0 || maximum_in_flight_jobs_ == 0) {
-        return {.status = waveform_job_start_status_t::invalid_request,
-                .message = "waveform analysis request is incomplete"};
+        return std::unexpected(error_t<async_job_start_status_t>{waveform_job_start_status_t::invalid_request, "waveform analysis request is incomplete"});
     }
     discard_terminal_jobs();
     if (workers_.size() >= maximum_in_flight_jobs_) {
-        return {.status = waveform_job_start_status_t::capacity_exceeded,
-                .message = "waveform analysis jobs have not reached cancellation checkpoints"};
+        return std::unexpected(error_t<async_job_start_status_t>{waveform_job_start_status_t::capacity_exceeded, "waveform analysis jobs have not reached cancellation checkpoints"});
     }
 
     auto generation = next_generation_ + 1U;
@@ -57,9 +60,8 @@ auto waveform_job_t::request(asset_id_t asset, std::uint32_t frames_per_bin,
         return task_result_t::success(task_value_t::from(std::move(payload)));
     });
     if (!task) {
-        return {.status = waveform_job_start_status_t::scheduler_rejected,
-                .message = task.error ? task.error->message
-                                      : "waveform analysis task could not be created"};
+        return std::unexpected(error_t<async_job_start_status_t>{waveform_job_start_status_t::scheduler_rejected, task.error ? task.error->message
+                                      : "waveform analysis task could not be created"});
     }
     auto submitted = scheduler_.submit(std::move(graph));
     if (!submitted) {
@@ -67,9 +69,8 @@ auto waveform_job_t::request(asset_id_t asset, std::uint32_t frames_per_bin,
                                     submitted.error->code == task_error_code_t::capacity_exceeded
                                 ? async_job_start_status_t::capacity_exceeded
                                 : async_job_start_status_t::scheduler_rejected;
-        return {.status = status,
-                .message = submitted.error ? submitted.error->message
-                                           : "waveform analysis task could not be submitted"};
+        return std::unexpected(error_t<async_job_start_status_t>{status, submitted.error ? submitted.error->message
+                                           : "waveform analysis task could not be submitted"});
     }
 
     for (const auto& worker : workers_)
@@ -80,9 +81,7 @@ auto waveform_job_t::request(asset_id_t asset, std::uint32_t frames_per_bin,
                         .asset = asset,
                         .graph = std::move(submitted.graph),
                         .task = *task.id});
-    return {.status = waveform_job_start_status_t::started,
-            .generation = generation,
-            .message = {}};
+    return generation;
 }
 
 auto waveform_job_t::poll() -> std::optional<waveform_job_completion_t> {

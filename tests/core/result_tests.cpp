@@ -1,4 +1,5 @@
 #include <wormedit/core/result.h>
+#include <wormedit/core/async_job.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -33,4 +34,18 @@ TEST_CASE("diagnosed results accept warnings and reject errors", "[unit][core][r
                                  .code = diagnostic_code_t::invalid_id, .message = "bad id"});
     CHECK_FALSE(value.ok());
     CHECK(value.diagnostics.size() == 3);
+}
+
+TEST_CASE("async compatibility preserves generation and failure feedback",
+          "[unit][core][result][async]") {
+    const auto ready = async_job_start_result_t::from(async_job_start_outcome_t{17});
+    REQUIRE(ready);
+    CHECK(ready.generation == 17);
+    const auto failed = async_job_start_result_t::from(async_job_start_outcome_t{
+        std::unexpected(wormedit::error_t<async_job_start_status_t>{
+            async_job_start_status_t::capacity_exceeded, "full"})});
+    REQUIRE_FALSE(failed);
+    CHECK(failed.status == async_job_start_status_t::capacity_exceeded);
+    CHECK(failed.generation == 0);
+    CHECK(failed.message == "full");
 }

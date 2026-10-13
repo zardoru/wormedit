@@ -41,6 +41,9 @@ class waveform_job_t {
     waveform_job_t(const waveform_job_t&) = delete;
     auto operator=(const waveform_job_t&) -> waveform_job_t& = delete;
 
+    [[nodiscard]] auto begin(asset_id_t asset, std::uint32_t frames_per_bin,
+                               waveform_analysis_options_t options = {})
+        -> async_job_start_outcome_t;
     [[nodiscard]] auto request(asset_id_t asset, std::uint32_t frames_per_bin,
                                waveform_analysis_options_t options = {})
         -> waveform_job_start_result_t;

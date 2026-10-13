@@ -1,3 +1,4 @@
+#include "text_util.h"
 #include <wormedit/core/format_field_schema.h>
 
 #include <algorithm>
@@ -50,10 +51,7 @@ const std::array bmson_schema{
 };
 
 auto ascii_equal_ignore_case(std::string_view left, std::string_view right) -> bool {
-    return std::ranges::equal(left, right, [](char a, char b) {
-        return std::tolower(static_cast<unsigned char>(a)) ==
-               std::tolower(static_cast<unsigned char>(b));
-    });
+    return std::ranges::equal(left, right, text_util::ascii_iequal);
 }
 
 auto is_digit(char value) -> bool {

@@ -1,10 +1,27 @@
 #pragma once
+#include "wide_math.h"
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <numeric>
 #include <optional>
 namespace wormedit::checked_math {
+inline constexpr auto gcd(wide_math::u128_t left, wide_math::u128_t right) noexcept
+    -> wide_math::u128_t {
+    while (right != wide_math::u128_t{}) {
+        const auto remainder = wide_math::divide(left, right).remainder;
+        left = right; right = remainder;
+    }
+    return left;
+}
+inline constexpr auto checked_multiply(wide_math::u128_t value, std::uint64_t factor) noexcept
+    -> std::optional<wide_math::u128_t> {
+    const auto low = wide_math::multiply(value.low, factor);
+    const auto high = wide_math::multiply(value.high, factor);
+    const auto sum = low.high + high.low;
+    if (high.high != 0 || sum < low.high) return std::nullopt;
+    return wide_math::u128_t{sum, low.low};
+}
 inline constexpr auto magnitude(std::int64_t value) noexcept -> std::uint64_t {
     return value >= 0 ? static_cast<std::uint64_t>(value)
                       : static_cast<std::uint64_t>(-(value + 1)) + 1;

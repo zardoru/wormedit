@@ -1,3 +1,7 @@
+#include "../core/text_util.h"
+#include "../core/timing_arithmetic.h"
+#include <wormedit/core/bms36.h>
+#include <wormedit/core/numeric_text.h>
 #include <wormedit/formats/bms_clipboard.h>
 
 #include <wormedit/core/rational.h>
@@ -146,102 +150,9 @@ struct decode_context_t {
     return value;
 }
 
-[[nodiscard]] auto pow10(std::uint32_t exponent) -> std::optional<std::uint64_t> {
-    std::uint64_t value = 1;
-    for (std::uint32_t index = 0; index < exponent; ++index) {
-        if (value > std::numeric_limits<std::uint64_t>::max() / 10) return std::nullopt;
-        value *= 10;
-    }
-    return value;
-}
-
 [[nodiscard]] auto normalized_signed(std::int64_t numerator, std::uint64_t denominator)
     -> std::optional<signed_rational_t> {
-    if (denominator == 0) return std::nullopt;
-    if (numerator == 0) return signed_rational_t{0, 1};
-    const auto magnitude = numerator < 0 ? std::uint64_t{0} - static_cast<std::uint64_t>(numerator)
-                                        : static_cast<std::uint64_t>(numerator);
-    const auto divisor = std::gcd(magnitude, denominator);
-    const auto reduced = magnitude / divisor;
-    const auto signed_value = reduced > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())
-        ? std::numeric_limits<std::int64_t>::min()
-        : static_cast<std::int64_t>(reduced) * (numerator < 0 ? -1 : 1);
-    return signed_rational_t{signed_value, denominator / divisor};
-}
-
-struct decimal_mantissa_t {
-    std::uint64_t significand{};
-    std::uint32_t fractional_digits{};
-};
-
-[[nodiscard]] auto parse_mantissa(std::string_view text) -> std::optional<decimal_mantissa_t> {
-    decimal_mantissa_t result;
-    bool decimal_seen = false;
-    bool digit_seen = false;
-    for (const auto character : text) {
-        if (character == '.' && !decimal_seen) {
-            decimal_seen = true;
-            continue;
-        }
-        if (character < '0' || character > '9') return std::nullopt;
-        digit_seen = true;
-        const auto digit = static_cast<std::uint64_t>(character - '0');
-        if (result.significand > (std::numeric_limits<std::uint64_t>::max() - digit) / 10)
-            return std::nullopt;
-        result.significand = result.significand * 10 + digit;
-        if (decimal_seen) ++result.fractional_digits;
-    }
-    return digit_seen ? std::optional{result} : std::nullopt;
-}
-
-[[nodiscard]] auto parse_exponent(std::string_view text) -> std::optional<std::int32_t> {
-    if (!text.empty() && text.front() == '+') {
-        text.remove_prefix(1);
-        if (!text.empty() && text.front() == '-') return std::nullopt;
-    }
-    const auto parsed = parse_signed(text);
-    if (!parsed || *parsed < -18 || *parsed > 18) return std::nullopt;
-    return static_cast<std::int32_t>(*parsed);
-}
-
-[[nodiscard]] auto scale_decimal(decimal_mantissa_t mantissa, std::int32_t exponent,
-                                  bool negative) -> std::optional<signed_rational_t> {
-    const auto scale = static_cast<std::int32_t>(mantissa.fractional_digits) - exponent;
-    auto denominator = std::uint64_t{1};
-    if (scale > 0) {
-        if (scale > 18) return std::nullopt;
-        const auto power = pow10(static_cast<std::uint32_t>(scale));
-        if (!power) return std::nullopt;
-        denominator = *power;
-    } else if (scale < 0) {
-        const auto power = pow10(static_cast<std::uint32_t>(-scale));
-        if (!power || mantissa.significand > std::numeric_limits<std::uint64_t>::max() / *power)
-            return std::nullopt;
-        mantissa.significand *= *power;
-    }
-    const auto divisor = std::gcd(mantissa.significand, denominator);
-    mantissa.significand /= divisor;
-    denominator /= divisor;
-    if (mantissa.significand > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
-        return std::nullopt;
-    const auto signed_value = static_cast<std::int64_t>(mantissa.significand) * (negative ? -1 : 1);
-    return signed_rational_t{signed_value, denominator};
-}
-
-[[nodiscard]] auto parse_decimal_rational(std::string_view text)
-    -> std::optional<signed_rational_t> {
-    if (text.empty()) return std::nullopt;
-    bool negative = false;
-    if (text.front() == '+' || text.front() == '-') {
-        negative = text.front() == '-';
-        text.remove_prefix(1);
-    }
-    const auto separator = text.find_first_of("eE");
-    const auto mantissa = parse_mantissa(text.substr(0, separator));
-    if (!mantissa) return std::nullopt;
-    const auto exponent = separator == std::string_view::npos
-        ? std::optional<std::int32_t>{0} : parse_exponent(text.substr(separator + 1));
-    return exponent ? scale_decimal(*mantissa, *exponent, negative) : std::nullopt;
+    return timing_arithmetic::try_normalize({numerator, denominator});
 }
 
 [[nodiscard]] auto position_from_rows(double rows) -> std::optional<rational_t> {
@@ -255,10 +166,9 @@ struct decimal_mantissa_t {
     return result ? result.value : std::nullopt;
 }
 
-[[nodiscard]] auto base36_digit(char character) -> std::optional<std::uint32_t> {
-    if (character >= '0' && character <= '9') return static_cast<std::uint32_t>(character - '0');
-    if (character >= 'A' && character <= 'Z') return static_cast<std::uint32_t>(character - 'A' + 10);
-    return std::nullopt;
+auto base36_digit(char byte) -> std::optional<std::uint32_t> {
+    const auto value = bms36_value(static_cast<unsigned char>(byte), bms36_case_policy_t::uppercase_only);
+    return value < 0 ? std::nullopt : std::optional{static_cast<std::uint32_t>(value)};
 }
 
 [[nodiscard]] auto parse_base36(std::string_view text) -> std::optional<std::uint32_t> {
@@ -278,7 +188,7 @@ struct decimal_mantissa_t {
     std::string alphabet;
     switch (numbering) {
     case bms_clipboard_numbering_t::base16: alphabet = "0123456789ABCDEF"; break;
-    case bms_clipboard_numbering_t::base36: alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"; break;
+    case bms_clipboard_numbering_t::base36: alphabet = bms36_digits; break;
     case bms_clipboard_numbering_t::base62: alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"; break;
     }
     const auto radix = alphabet.size();
@@ -294,9 +204,7 @@ struct decimal_mantissa_t {
     for (const auto& resource : song.resources) {
         for (const auto& identity : resource.target_identities) {
             auto name_space = identity.namespace_name;
-            std::ranges::transform(name_space, name_space.begin(), [](unsigned char value) {
-                return static_cast<char>(value >= 'a' && value <= 'z' ? value - 'a' + 'A' : value);
-            });
+            name_space = text_util::ascii_upper(std::move(name_space));
             if (identity.family != format_family_t::bms || name_space != "WAV")
                 continue;
             const auto add = [&](auto& index, std::string key) {
@@ -306,9 +214,7 @@ struct decimal_mantissa_t {
             };
             add(result.exact, identity.identifier);
             auto folded = identity.identifier;
-            std::ranges::transform(folded, folded.begin(), [](unsigned char value) {
-                return static_cast<char>(value >= 'a' && value <= 'z' ? value - 'a' + 'A' : value);
-            });
+            folded = text_util::ascii_upper(std::move(folded));
             add(result.folded, std::move(folded));
         }
     }
@@ -323,9 +229,7 @@ struct decimal_mantissa_t {
         ? resources.exact : resources.folded;
     auto key = *token;
     if (numbering != bms_clipboard_numbering_t::base62)
-        std::ranges::transform(key, key.begin(), [](unsigned char value) {
-            return static_cast<char>(value >= 'a' && value <= 'z' ? value - 'a' + 'A' : value);
-        });
+        key = text_util::ascii_upper(std::move(key));
     const auto found = index.find(key);
     if (found == index.end())
         return {{}, false, "BMS clipboard references a WAV identity absent from the target song."};
@@ -484,7 +388,7 @@ struct decimal_mantissa_t {
     const auto offset = bmse_position(line, grammar);
     if (!offset) return {{}, "BMSE position bits, digits, or recovered fraction are invalid."};
     const auto value_text = line.substr(header_bytes);
-    const auto value = parse_decimal_rational(value_text);
+    const auto value = parse_exact_decimal(value_text, 18);
     if (!value) return {{}, "BMSE clipboard value is not a finite decimal number."};
 
     record_t record;
@@ -576,7 +480,7 @@ struct decimal_mantissa_t {
     if (!column || !row || !offset || !scaled_value)
         return {{}, "iBMSC record contains an invalid column, position, or value."};
     const auto ln = grammar == grammar_t::ibmsc_xnt
-        ? parse_decimal_rational((*fields)[3])
+        ? parse_exact_decimal((*fields)[3], 18)
         : normalized_signed(parse_signed((*fields)[3]).value_or(std::numeric_limits<std::int64_t>::min()), 1);
     if (grammar == grammar_t::ibmsc && !parse_signed((*fields)[3]))
         return {{}, "iBMSC long-note flag is not an integer."};

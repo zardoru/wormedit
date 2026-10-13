@@ -1441,3 +1441,11 @@ TEST_CASE("BML import materializes the standard nine-button channel pattern",
     CHECK(chart.measures.front().notes.size() == 9);
     CHECK(chart.measures.back().notes.size() == 1);
 }
+
+TEST_CASE("BMS decimal declarations keep the explicit exponent limit", "[unit][format][bms][helpers]") {
+    const auto text = "#BPM 0." + std::string(38, '0') + "1e39\n#00011:01\n#WAV01 a.wav\n";
+    const auto parsed = parse(text);
+    CHECK(std::ranges::any_of(parsed.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::bms_parse_diagnostic_code_t::invalid_number;
+    }));
+}

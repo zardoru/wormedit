@@ -1,3 +1,4 @@
+#include <wormedit/core/numeric_text.h>
 #include "../core/text_util.h"
 #include "id_source.h"
 #include <wormedit/core/bgm_packing.h>
@@ -167,78 +168,6 @@ auto unsigned_integer(const json_value_t& value) -> std::optional<std::uint64_t>
     return result;
 }
 
-auto parse_bmson_exponent(std::string_view text) -> std::optional<int> {
-    if (!text.empty() && text.front() == '+') {
-        text.remove_prefix(1);
-    }
-    int exponent{};
-    const auto parsed = std::from_chars(text.data(), text.data() + text.size(), exponent);
-    if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() || exponent < -18 ||
-        exponent > 18) {
-        return std::nullopt;
-    }
-    return exponent;
-}
-
-auto exact_decimal(std::string_view text) -> std::optional<signed_rational_t> {
-    bool negative{};
-    if (!text.empty() && (text.front() == '-' || text.front() == '+')) {
-        negative = text.front() == '-';
-        text.remove_prefix(1);
-    }
-    const auto exponent_at = text.find_first_of("eE");
-    auto mantissa = text.substr(0, exponent_at);
-    int exponent{};
-    if (exponent_at != std::string_view::npos) {
-        const auto parsed = parse_bmson_exponent(text.substr(exponent_at + 1));
-        if (!parsed) {
-            return std::nullopt;
-        }
-        exponent = *parsed;
-    }
-    const auto point = mantissa.find('.');
-    const auto fractional_count = point == std::string_view::npos ? 0 : mantissa.size() - point - 1;
-    std::string digits;
-    digits.reserve(mantissa.size());
-    for (const auto character : mantissa) {
-        if (character != '.') {
-            digits.push_back(character);
-        }
-    }
-    std::uint64_t numerator{};
-    const auto parsed = std::from_chars(digits.data(), digits.data() + digits.size(), numerator);
-    if (digits.empty() || parsed.ec != std::errc{} || parsed.ptr != digits.data() + digits.size()) {
-        return std::nullopt;
-    }
-    int scale = static_cast<int>(fractional_count) - exponent;
-    std::uint64_t denominator = 1;
-    const auto multiply_ten = [](std::uint64_t& value, int count) {
-        for (int index = 0; index < count; ++index) {
-            if (value > std::numeric_limits<std::uint64_t>::max() / 10U) {
-                return false;
-            }
-            value *= 10U;
-        }
-        return true;
-    };
-    if (scale < 0) {
-        if (!multiply_ten(numerator, -scale)) {
-            return std::nullopt;
-        }
-        scale = 0;
-    } else if (scale > 18 || !multiply_ten(denominator, scale)) {
-        return std::nullopt;
-    }
-    const auto divisor = std::gcd(numerator, denominator);
-    numerator /= divisor;
-    denominator /= divisor;
-    if (numerator > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
-        return std::nullopt;
-    }
-    const auto signed_numerator = static_cast<std::int64_t>(numerator);
-    return signed_rational_t{negative ? -signed_numerator : signed_numerator, denominator};
-}
-
 struct diagnostic_failure_t {
     bmson_parse_diagnostic_code_t code;
     std::string message;
@@ -320,7 +249,7 @@ auto required_bpm(const json_value_t& value, std::string path) -> signed_rationa
         fail(bmson_parse_diagnostic_code_t::invalid_type,
              "BPM must be a JSON number", std::move(path), value.begin);
     }
-    const auto exact = exact_decimal(value.text);
+    const auto exact = parse_exact_decimal(value.text, 18);
     if (!exact.has_value() || exact->numerator <= 0) {
         fail(bmson_parse_diagnostic_code_t::invalid_value,
              "BPM must be a positive exactly representable decimal", std::move(path), value.begin);

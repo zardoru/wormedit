@@ -1,3 +1,5 @@
+#include "text_util.h"
+#include <wormedit/core/bms36.h>
 #include <wormedit/core/channel_map_editor.h>
 
 #include <wormedit/core/command.h>
@@ -58,16 +60,11 @@ auto fail_apply(channel_map_issue_t issue, std::string message, std::uint64_t re
             .command = {.revision = revision, .diagnostics = {}}};
 }
 
-auto base36_digit(char character) -> bool {
-    return (character >= '0' && character <= '9') ||
-           (character >= 'A' && character <= 'Z') ||
-           (character >= 'a' && character <= 'z');
+auto base36_digit(char byte) -> bool {
+    return bms36_value(static_cast<unsigned char>(byte)) >= 0;
 }
 
-auto uppercase_ascii(char character) -> char {
-    return character >= 'a' && character <= 'z'
-        ? static_cast<char>(character - 'a' + 'A') : character;
-}
+
 
 auto channel_matches_family(std::string_view channel, std::size_t slot) -> bool {
     if (channel.size() != 2) return false;
@@ -85,7 +82,7 @@ auto normalize_channel(std::optional<std::string>& channel, std::size_t slot) ->
     if (!channel) return true;
     if (channel->size() != 2 || !base36_digit((*channel)[0]) || !base36_digit((*channel)[1]))
         return false;
-    for (auto& character : *channel) character = uppercase_ascii(character);
+    for (auto& character : *channel) character = text_util::ascii_upper(character);
     return channel_matches_family(*channel, slot);
 }
 
@@ -102,15 +99,12 @@ auto map_slots(const bms_channel_map_t& channels)
     return {&channels.visible, &channels.invisible, &channels.long_note, &channels.mine};
 }
 
-auto casefold_ascii(std::string value) -> std::string {
-    for (auto& character : value) character = uppercase_ascii(character);
-    return value;
-}
+
 
 auto same_export_channel(const std::optional<std::string>& left,
                          const std::optional<std::string>& right) -> bool {
     if (!left || !right) return left.has_value() == right.has_value();
-    return casefold_ascii(*left) == casefold_ascii(*right);
+    return text_util::ascii_upper(*left) == text_util::ascii_upper(*right);
 }
 
 auto replacement_map(const channel_map_proposal_t& proposal)
@@ -151,7 +145,7 @@ auto source_note_channel_slot(const note_t& note, const lane_definition_t& lane)
         const std::array channels{&lane.bms_channels.visible, &lane.bms_channels.invisible,
                                   &lane.bms_channels.long_note, &lane.bms_channels.mine};
         for (std::size_t index = 0; index < channels.size(); ++index)
-            if (*channels[index] && casefold_ascii(**channels[index]) == casefold_ascii(std::string{*channel}))
+            if (*channels[index] && text_util::ascii_upper(**channels[index]) == text_util::ascii_upper(std::string{*channel}))
                 return index;
         return std::nullopt;
     }
@@ -203,7 +197,7 @@ auto append_conflicts(const lane_layout_t& layout, channel_map_proposal_t& propo
         const auto slots = map_slots(lane.bms_channels);
         for (const auto* slot : slots) {
             if (!*slot) continue;
-            const auto normalized = casefold_ascii(**slot);
+            const auto normalized = text_util::ascii_upper(**slot);
             const auto [owner, inserted] = first_owner.emplace(normalized, lane.name);
             if (inserted) continue;
             ++proposal.conflict_count;

@@ -1,3 +1,4 @@
+#include <wormedit/core/rational.h>
 #include <wormedit/core/player_preview.h>
 
 #include <algorithm>
@@ -409,8 +410,7 @@ auto make_player_preview_scene(const player_preview_index_t& index,
                                   "player-preview scroll state could not be evaluated"));
         return result;
     }
-    const auto current_row = static_cast<long double>(position.absolute_row->numerator) /
-                             static_cast<long double>(position.absolute_row->denominator);
+    const auto current_row = to_long_double(*position.absolute_row);
     const auto pre_zero = position.absolute_row->numerator < 0;
     const auto* active_layout = active_preview_layout(index, current_row, pre_zero);
     if (active_layout == nullptr) {

@@ -137,3 +137,72 @@ TEST_CASE("snap filtering rejects zero resolution", "[unit][core][snap][negative
     CHECK_FALSE(state);
     CHECK(state.error == snap_state_error_t::zero_resolution);
 }
+
+#include "../../src/core/text_util.h"
+#include "../../src/core/timing_arithmetic.h"
+#include <wormedit/core/bms36.h>
+
+namespace {
+void check_rational_conversions() {
+    CHECK(to_long_double(rational_t{1, 0}) == 0);
+    CHECK(to_double(signed_rational_t{0, 0}) == 0);
+    CHECK(to_double(signed_rational_t{-3, 2}) == -1.5);
+}
+void check_row_clamp_policies() {
+    CHECK(nearest_row(-2, 10, row_clamp_policy_t::both_ends) == 0);
+    CHECK_FALSE(nearest_row(-2, 10, row_clamp_policy_t::upper_only));
+    CHECK(nearest_row(12, 10, row_clamp_policy_t::upper_only) == 9);
+    CHECK(nearest_row(4.5L, 10, row_clamp_policy_t::upper_only) == 5);
+}
+void check_explicit_trim_policy() {
+    CHECK(text_util::trim("\v\f value\r\n", text_util::ascii_whitespace) == "value");
+    CHECK(text_util::trim("\v value\t", " \t") == "\v value");
+}
+void check_bounded_utf8_validation() {
+    CHECK(text_util::valid_bounded_text("é", 2));
+    CHECK_FALSE(text_util::valid_bounded_text("é", 1));
+    CHECK_FALSE(text_util::valid_bounded_text(std::string_view{"a\0b", 3}, 4));
+    CHECK_FALSE(text_util::valid_bounded_text("\xc0\x80", 4));
+}
+void check_utf8_truncation_and_base36_policy() {
+    CHECK(text_util::truncate_utf8("aéz", 2) == "a");
+    CHECK(text_util::truncate_utf8("aéz", 3) == "aé");
+    CHECK(bms36_value('a') == 10);
+    CHECK(bms36_value('a', bms36_case_policy_t::uppercase_only) == -1);
+}
+} // namespace
+
+TEST_CASE("shared helpers guard invalid rationals and preserve row clamp policies", "[unit][core][helpers]") {
+    check_rational_conversions();
+    check_row_clamp_policies();
+}
+
+TEST_CASE("exact subtraction reduces wide intermediates before rejecting overflow", "[unit][core][helpers]") {
+    const auto value = timing_arithmetic::subtract_exact({INT64_MAX, 2}, {INT64_MAX, 3});
+    REQUIRE(value);
+    CHECK((*value == signed_rational_t{INT64_MAX, 6}));
+    CHECK_FALSE(timing_arithmetic::subtract_exact({INT64_MIN, 1}, {1, 1}));
+    CHECK_FALSE(timing_arithmetic::subtract_exact({1, 0}, {1, 1}));
+}
+
+TEST_CASE("text helpers use explicit whitespace and validate bounded UTF-8", "[unit][core][helpers]") {
+    check_explicit_trim_policy();
+    check_bounded_utf8_validation();
+    check_utf8_truncation_and_base36_policy();
+}
+
+TEST_CASE("decimal exponent policy accepts careful reduction within the caller limit", "[unit][core][helpers]") {
+    CHECK_FALSE(parse_exact_decimal("0e19", 18));
+    CHECK(parse_exact_decimal("0e18", 18));
+    CHECK((parse_exact_decimal("92233720368547758070e-1", 18) == signed_rational_t{INT64_MAX, 1}));
+    CHECK((parse_exact_decimal("-9223372036854775808", 18) == signed_rational_t{INT64_MIN, 1}));
+}
+
+TEST_CASE("wide arithmetic and row fractions reduce without intermediate overflow", "[unit][core][helpers]") {
+    const auto maximum = UINT64_MAX;
+    CHECK((timing_arithmetic::rows_to_beat_fraction(maximum, maximum) == signed_rational_t{4, 1}));
+    CHECK_FALSE(timing_arithmetic::rows_to_beat_fraction(1, 0));
+    CHECK_FALSE(timing_arithmetic::rows_to_beat_fraction(1, 1, 0));
+    CHECK((checked_math::gcd(wide_math::u128_t{2, 0}, wide_math::u128_t{3, 0}) == wide_math::u128_t{1, 0}));
+    CHECK_FALSE(checked_math::checked_multiply(wide_math::u128_t{maximum, maximum}, 2));
+}

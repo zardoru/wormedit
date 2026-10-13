@@ -15,7 +15,7 @@ struct note_label_edit_limits_t {
     std::size_t maximum_selected_notes{50'000};
     std::size_t maximum_label_bytes{4U * 1024U};
     std::size_t maximum_total_label_bytes{32U * 1024U * 1024U};
-    std::size_t maximum_chart_objects{1'000'000};
+    std::size_t maximum_chart_objects{default_maximum_chart_objects};
 };
 
 struct set_note_label_action_t {

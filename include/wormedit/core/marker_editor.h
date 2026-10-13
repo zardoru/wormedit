@@ -18,7 +18,7 @@ struct marker_edit_limits_t {
     std::size_t maximum_kiai_events{100'000};
     std::size_t maximum_label_bytes{4U * 1024U};
     std::size_t maximum_total_label_bytes{1U * 1024U * 1024U};
-    std::size_t maximum_chart_objects{1'000'000};
+    std::size_t maximum_chart_objects{default_maximum_chart_objects};
 };
 
 struct insert_bookmark_action_t {

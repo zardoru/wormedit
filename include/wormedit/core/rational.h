@@ -2,12 +2,51 @@
 
 #include <wormedit/core/measure.h>
 
+#include <array>
+#include <cmath>
+#include <limits>
+#include <numeric>
 #include <cstdint>
 #include <optional>
 #include <span>
 #include <vector>
 
 namespace wormedit {
+
+// Invalid exact values convert to zero rather than propagating infinities/NaNs.
+enum class zero_denominator_policy_t { return_zero };
+inline constexpr auto rational_zero_denominator_policy = zero_denominator_policy_t::return_zero;
+
+template<class Rational>
+[[nodiscard]] constexpr auto to_long_double(Rational value,
+    zero_denominator_policy_t = rational_zero_denominator_policy) noexcept -> long double {
+    return value.denominator == 0 ? 0.0L
+        : static_cast<long double>(value.numerator) / static_cast<long double>(value.denominator);
+}
+template<class Rational>
+[[nodiscard]] constexpr auto to_double(Rational value,
+    zero_denominator_policy_t policy = rational_zero_denominator_policy) noexcept -> double {
+    return static_cast<double>(to_long_double(value, policy));
+}
+enum class row_clamp_policy_t { both_ends, upper_only };
+[[nodiscard]] inline auto nearest_row(long double row, std::uint64_t total_rows,
+    row_clamp_policy_t policy) -> std::optional<std::uint64_t> {
+    if (!std::isfinite(row) || total_rows == 0 ||
+        (policy == row_clamp_policy_t::upper_only && row < 0)) return std::nullopt;
+    const auto nearest = std::floor(row + 0.5L);
+    if (nearest <= 0) return 0;
+    if (nearest >= static_cast<long double>(total_rows)) return total_rows - 1;
+    return static_cast<std::uint64_t>(nearest);
+}
+[[nodiscard]] inline auto rows_to_fraction(std::uint64_t rows, std::uint64_t resolution)
+    -> rational_t {
+    const auto divisor = std::gcd(rows, resolution);
+    return {rows / divisor, resolution / divisor};
+}
+[[nodiscard]] inline auto reduce_fraction(rational_t value) -> rational_t {
+    return rows_to_fraction(value.numerator, value.denominator);
+}
+inline constexpr std::array<std::uint64_t, 6> default_snap_denominators{4, 8, 16, 32, 48, 64};
 
 inline constexpr std::uint32_t maximum_rationalization_iterations = 128;
 

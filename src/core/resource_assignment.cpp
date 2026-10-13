@@ -1,3 +1,4 @@
+#include <wormedit/core/bms36.h>
 #include "chart_object_ids.h"
 #include "text_util.h"
 #include <wormedit/core/measure_editor.h>
@@ -172,7 +173,7 @@ auto commit_bga_stroke_targets(document_history_t& history, std::size_t chart_of
     for (const auto& target : targets)
         if (occupied.emplace(target.row, target.lane).second) additions.push_back(target);
     if (additions.empty()) return unchanged;
-    const auto first_id = next_chart_object_id(history.document.charts[chart_offset], 1'000'000).id;
+    const auto first_id = next_chart_object_id(history.document.charts[chart_offset], default_maximum_chart_objects).id;
     if (!first_id || additions.size() - 1 >
             std::numeric_limits<std::uint64_t>::max() - first_id->value) {
         reject(unchanged, diagnostic_code_t::invalid_id,
@@ -186,15 +187,6 @@ auto commit_bga_stroke_targets(document_history_t& history, std::size_t chart_of
     return commit_document_command(history, std::move(proposed), "Draw BGA events");
 }
 
-constexpr std::string_view bms36_digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-auto bms_digit_value(unsigned char character) -> int {
-    if (character >= 'a' && character <= 'z')
-        character = static_cast<unsigned char>(character - ('a' - 'A'));
-    const auto found = bms36_digits.find(static_cast<char>(character));
-    return found == std::string_view::npos ? -1 : static_cast<int>(found);
-}
-
 auto bms_occupied(const song_document_t& document, std::string_view name_space,
                   std::size_t base, std::span<const resource_id_t> ignored = {})
     -> std::vector<bool> {
@@ -204,8 +196,8 @@ auto bms_occupied(const song_document_t& document, std::string_view name_space,
         for (const auto& identity : resource.target_identities) {
             if (identity.family != format_family_t::bms || identity.namespace_name != name_space ||
                 identity.identifier.size() != 2) continue;
-            const auto high = bms_digit_value(static_cast<unsigned char>(identity.identifier[0]));
-            const auto low = bms_digit_value(static_cast<unsigned char>(identity.identifier[1]));
+            const auto high = bms36_value(static_cast<unsigned char>(identity.identifier[0]));
+            const auto low = bms36_value(static_cast<unsigned char>(identity.identifier[1]));
             if (high >= 0 && low >= 0 && static_cast<std::size_t>(high) < base &&
                 static_cast<std::size_t>(low) < base)
                 occupied[static_cast<std::size_t>(high) * base + static_cast<std::size_t>(low)] = true;
@@ -530,7 +522,7 @@ auto resolve_placement_target(const song_document_t& document,
                "resource placement row is outside the chart");
         return std::nullopt;
     }
-    const auto first_id = next_chart_object_id(*chart, 1'000'000).id;
+    const auto first_id = next_chart_object_id(*chart, default_maximum_chart_objects).id;
     if (!first_id) {
         reject(result, diagnostic_code_t::invalid_id,
                "resource placement chart object limit or ID space is exhausted");
@@ -868,7 +860,7 @@ auto commit_bgm_stroke_draw(document_history_t& history, std::size_t chart_offse
         }
     }
     if (additions.empty()) return unchanged;
-    const auto first_id = next_chart_object_id(source, 1'000'000).id;
+    const auto first_id = next_chart_object_id(source, default_maximum_chart_objects).id;
     if (!first_id || additions.size() - 1 >
                         std::numeric_limits<std::uint64_t>::max() - first_id->value) {
         reject(unchanged, diagnostic_code_t::invalid_id,
@@ -965,8 +957,8 @@ auto occupied_bgm_lanes_at(const chart_document_t& chart, local_position_t posit
 
 auto create_bgm_source_lane(chart_document_t& chart, document_command_result_t& result)
     -> object_id_t {
-    const auto new_id = next_chart_object_id(chart, 1'000'000).id;
-    if (!new_id || chart.bgm_source_lanes.size() >= 1'000'000) {
+    const auto new_id = next_chart_object_id(chart, default_maximum_chart_objects).id;
+    if (!new_id || chart.bgm_source_lanes.size() >= default_maximum_chart_objects) {
         reject(result, diagnostic_code_t::invalid_id, "BGM source lane ID space is exhausted");
         return {};
     }
@@ -1412,8 +1404,7 @@ auto apply_resource_creation(document_history_t& history, std::uint64_t expected
         reject(result, diagnostic_code_t::invalid_id, "resource creation document revision is stale");
         return result;
     }
-    if (history.document.resources.size() >= 100'000 || action.name.size() > 255 ||
-        action.name.find('\0') != std::string::npos) {
+    if (history.document.resources.size() >= 100'000 || !text_util::valid_bounded_text(action.name, 255)) {
         reject(result, diagnostic_code_t::invalid_resolution,
                "resource catalog is full or the resource name is invalid");
         return result;
@@ -1449,7 +1440,7 @@ auto apply_resource_creation(document_history_t& history, std::uint64_t expected
         const auto& source_path = audio_role ? audio->source_path : visual->source_path;
         name = source_path.filename().generic_string();
     }
-    if (name.size() > 255 || name.find('\0') != std::string::npos) {
+    if (!text_util::valid_bounded_text(name, 255)) {
         reject(result, diagnostic_code_t::invalid_resolution,
                "resource source filename exceeds the bounded name limit");
         return result;
@@ -1497,8 +1488,7 @@ auto validate_import_source_paths(const import_resource_asset_action_t& action,
     -> std::optional<std::pair<std::filesystem::path, std::optional<std::filesystem::path>>> {
     const auto path = action.source_path.lexically_normal();
     const auto text = path.generic_string();
-    if (!path.is_absolute() || path.filename().empty() || text.size() > 4096 ||
-        text.find('\0') != std::string::npos) {
+    if (!path.is_absolute() || path.filename().empty() || !text_util::valid_bounded_text(text, 4096)) {
         reject(result, diagnostic_code_t::invalid_id,
                "resource import requires a bounded absolute source file path");
         return std::nullopt;
@@ -1515,8 +1505,7 @@ auto validate_import_source_paths(const import_resource_asset_action_t& action,
         const auto copied_text = candidate.generic_string();
         if (candidate.empty() || candidate.is_absolute() || candidate.has_root_name() ||
             candidate.has_root_directory() ||
-            candidate.filename().empty() || copied_text.size() > 4096 ||
-            copied_text.find('\0') != std::string::npos ||
+            candidate.filename().empty() || !text_util::valid_bounded_text(copied_text, 4096) ||
             std::ranges::any_of(candidate, [](const auto& part) { return part == ".."; }) ||
             candidate.parent_path() != "assets" ||
             !candidate.filename().string().starts_with(
@@ -1712,8 +1701,8 @@ namespace {
 
 auto decode_supported_wav_identifier(std::string_view identifier) -> std::optional<std::size_t> {
     if (identifier.size() != 2) return std::nullopt;
-    const auto high = bms_digit_value(static_cast<unsigned char>(identifier[0]));
-    const auto low = bms_digit_value(static_cast<unsigned char>(identifier[1]));
+    const auto high = bms36_value(static_cast<unsigned char>(identifier[0]));
+    const auto low = bms36_value(static_cast<unsigned char>(identifier[1]));
     if (high < 0 || low < 0) return std::nullopt;
     const auto value = static_cast<std::size_t>(high) * 36 + static_cast<std::size_t>(low);
     return value == 0 ? std::nullopt : std::optional{value};
@@ -1966,8 +1955,7 @@ auto apply_resource_asset_relink(document_history_t& history, std::uint64_t expe
     }
     const auto path = action.source_path.lexically_normal();
     const auto path_text = path.generic_string();
-    if (path.empty() || path.filename().empty() || path_text.size() > 4096 ||
-        path_text.find('\0') != std::string::npos ||
+    if (path.empty() || path.filename().empty() || !text_util::valid_bounded_text(path_text, 4096) ||
         (path.has_root_name() && !path.is_absolute())) {
         reject(result, diagnostic_code_t::invalid_id,
                "resource asset relink path is empty, malformed, or too long");
@@ -2021,21 +2009,17 @@ namespace {
 using text_util::ascii_fold;
 
 auto normalized_resource_name(std::string_view name) -> std::optional<std::string> {
-    const auto first = name.find_first_not_of(" \t\r\n");
-    const auto last = name.find_last_not_of(" \t\r\n");
-    if (first == std::string_view::npos) return std::nullopt;
-    name = name.substr(first, last - first + 1);
-    if (name.size() > 256 || std::ranges::any_of(name, [](unsigned char c) {
+    name = text_util::trim(name, " \t\r\n");
+    if (name.empty()) return std::nullopt;
+    if (!text_util::valid_bounded_text(name, 256) || std::ranges::any_of(name, [](unsigned char c) {
             return c < 32 || c == 127;
         })) return std::nullopt;
     return std::string{name};
 }
 
 auto normalized_sound_tag(std::string_view tag) -> std::optional<std::string> {
-    const auto is_space = [](char c) { return c == ' ' || c == '\t'; };
-    while (!tag.empty() && is_space(tag.front())) tag.remove_prefix(1);
-    while (!tag.empty() && is_space(tag.back())) tag.remove_suffix(1);
-    if (tag.empty() || tag.size() > maximum_sound_tag_bytes ||
+    tag = text_util::trim(tag, " \t");
+    if (tag.empty() || !text_util::valid_bounded_text(tag, maximum_sound_tag_bytes) ||
         std::ranges::any_of(tag, [](char c) {
             return static_cast<unsigned char>(c) < 0x20 || c == 0x7f;
         })) {

@@ -1,3 +1,4 @@
+#include "text_util.h"
 #include <wormedit/core/recovery_controller.h>
 
 #include <algorithm>
@@ -32,10 +33,7 @@ auto encode_path(const std::filesystem::path& path, std::size_t maximum_bytes) -
     constexpr std::string_view suffix{"..."};
     auto keep = maximum_bytes > suffix.size() ? maximum_bytes - suffix.size() : std::size_t{};
     // Do not leave a partial UTF-8 code point at the end of a clipped label.
-    while (keep > 0 && keep < text.size() &&
-           (static_cast<unsigned char>(text[keep]) & 0xc0U) == 0x80U) {
-        --keep;
-    }
+    keep = text_util::truncate_utf8(text, keep).size();
     text.resize(keep);
     text.append(suffix.substr(0, maximum_bytes - keep));
     return {.text = std::move(text), .truncated = true};

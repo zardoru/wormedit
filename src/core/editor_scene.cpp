@@ -1,3 +1,4 @@
+#include <wormedit/core/rational.h>
 #include "interaction_geometry.h"
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/virtual_canvas.h>
@@ -1859,8 +1860,7 @@ auto compose_scene_grid(scene_geometry_context_t& context, std::uint64_t visible
     context.scene.grid_lines.reserve(grid.lines.size());
     for (const auto& line : grid.lines) {
         const auto row = static_cast<long double>(line.chart_row.whole_rows) +
-                         static_cast<long double>(line.chart_row.fractional_rows.numerator) /
-                             line.chart_row.fractional_rows.denominator;
+                         to_long_double(line.chart_row.fractional_rows);
         context.scene.grid_lines.push_back({.y_pixels = y_for_row(row),
                                             .kind = line.kind,
                                             .emphasis = line.emphasis,

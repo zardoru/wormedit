@@ -1,3 +1,5 @@
+#include <wormedit/core/rational.h>
+#include "../core/text_util.h"
 #include "../core/checked_math.h"
 #include <wormedit/core/measure.h>
 
@@ -13,15 +15,8 @@ namespace {
 
 constexpr auto maximum = std::numeric_limits<std::uint64_t>::max();
 
-auto trim(std::string_view text) -> std::string_view
-{
-    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front())) != 0) {
-        text.remove_prefix(1);
-    }
-    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back())) != 0) {
-        text.remove_suffix(1);
-    }
-    return text;
+auto trim(std::string_view text) -> std::string_view {
+    return text_util::trim(text, text_util::ascii_whitespace);
 }
 
 enum class unsigned_parse_error_t {
@@ -49,10 +44,9 @@ auto parse_unsigned(std::string_view text, std::uint64_t& value) -> unsigned_par
 
 using checked_math::checked_multiply;
 
-auto normalize(std::uint64_t numerator, std::uint64_t denominator) -> rational_t
+auto reduce_fraction_parts(std::uint64_t numerator, std::uint64_t denominator) -> rational_t
 {
-    const auto divisor = std::gcd(numerator, denominator);
-    return {numerator / divisor, denominator / divisor};
+    return reduce_fraction({numerator, denominator});
 }
 
 auto failure(measure_error_t error) -> measure_parse_result_t
@@ -83,7 +77,7 @@ auto parse_fractional_measure(std::string_view text, std::size_t slash)
     if (numerator == 0) {
         return failure(measure_error_t::non_positive);
     }
-    return {.value = normalize(numerator, denominator)};
+    return {.value = reduce_fraction_parts(numerator, denominator)};
 }
 
 auto parse_decimal_measure(std::string_view text) -> measure_parse_result_t {
@@ -136,7 +130,7 @@ auto parse_decimal_measure(std::string_view text) -> measure_parse_result_t {
     if (numerator == 0) {
         return failure(measure_error_t::non_positive);
     }
-    return {.value = normalize(numerator, denominator)};
+    return {.value = reduce_fraction_parts(numerator, denominator)};
 }
 
 } // namespace
@@ -178,7 +172,7 @@ auto validate_measure(
         return {.error = measure_error_t::zero_denominator};
     }
 
-    const auto length = normalize(measure.length.numerator, measure.length.denominator);
+    const auto length = reduce_fraction_parts(measure.length.numerator, measure.length.denominator);
     if (measure.meter.has_value()) {
         if (measure.meter->denominator == 0) {
             return {.error = measure_error_t::zero_denominator};
@@ -186,7 +180,7 @@ auto validate_measure(
         if (measure.meter->numerator == 0) {
             return {.error = measure_error_t::non_positive};
         }
-        const auto meter = normalize(measure.meter->numerator, measure.meter->denominator);
+        const auto meter = reduce_fraction_parts(measure.meter->numerator, measure.meter->denominator);
         if (meter != length) {
             return {.error = measure_error_t::meter_mismatch};
         }
@@ -240,7 +234,7 @@ auto suggest_meters(const rational_t& length) -> std::vector<meter_t>
     if (length.numerator == 0 || length.denominator == 0) {
         return meters;
     }
-    const auto reduced = normalize(length.numerator, length.denominator);
+    const auto reduced = reduce_fraction_parts(length.numerator, length.denominator);
     for (const std::uint32_t denominator : {4U, 8U, 16U}) {
         std::uint64_t scaled{};
         if (!checked_multiply(reduced.numerator, denominator, scaled)

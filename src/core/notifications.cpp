@@ -1,3 +1,4 @@
+#include "text_util.h"
 #include <wormedit/core/notifications.h>
 
 #include <algorithm>
@@ -16,9 +17,7 @@ namespace {
 
 constexpr std::string_view ellipsis = "\xE2\x80\xA6"; // U+2026
 
-auto is_utf8_continuation(char byte) noexcept -> bool {
-    return (static_cast<unsigned char>(byte) & 0xC0U) == 0x80U;
-}
+using text_util::is_utf8_continuation;
 
 auto steady_clock_now() -> notification_time_t {
     return std::chrono::duration_cast<notification_time_t>(
@@ -194,8 +193,7 @@ void truncate_notification_text(std::string& text, std::size_t max_bytes) {
         return;
     }
     auto cut = max_bytes - ellipsis.size();
-    while (cut > 0 && is_utf8_continuation(text[cut]))
-        --cut;
+    cut = text_util::truncate_utf8(text, cut).size();
     text.resize(cut);
     text.append(ellipsis);
 }

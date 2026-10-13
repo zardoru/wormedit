@@ -13,7 +13,7 @@ namespace wormedit {
 
 struct bpm_edit_limits_t {
     std::size_t maximum_bpm_events{100'000};
-    std::size_t maximum_chart_objects{1'000'000};
+    std::size_t maximum_chart_objects{default_maximum_chart_objects};
 };
 
 struct bpm_text_format_t {

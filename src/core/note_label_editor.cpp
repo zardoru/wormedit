@@ -139,8 +139,7 @@ auto validate_note_label_request(const set_note_label_action_t& action,
         return false;
     }
     if (action.label.has_value() &&
-        (action.label->size() > limits.maximum_label_bytes ||
-         action.label->find('\0') != std::string::npos || !valid_utf8(*action.label))) {
+        (!text_util::valid_bounded_text(*action.label, limits.maximum_label_bytes))) {
         reject(result, diagnostic_code_t::unsupported_feature,
                "note label must be bounded UTF-8 without embedded NUL bytes");
         return false;
@@ -238,15 +237,11 @@ auto find_notes_by_label(const chart_document_t& chart, std::string_view text)
     if (text.empty()) {
         return found;
     }
-    const auto lower = [](char value) {
-        return value >= 'A' && value <= 'Z' ? static_cast<char>(value - 'A' + 'a') : value;
-    };
-    const auto same = [&](char left, char right) { return lower(left) == lower(right); };
     for (const auto& measure : chart.measures) {
         std::vector<const note_t*> matches;
         for (const auto& note : measure.notes) {
             if (note.label.has_value() &&
-                !std::ranges::search(*note.label, text, same).empty()) {
+                !std::ranges::search(*note.label, text, text_util::ascii_iequal).empty()) {
                 matches.push_back(&note);
             }
         }

@@ -1,3 +1,4 @@
+#include "text_util.h"
 #include <wormedit/core/preferences.h>
 #include <wormedit/audio/playback_rate.h>
 
@@ -16,7 +17,7 @@ namespace {
 using json_t = nlohmann::json;
 
 auto valid_string(std::string_view value) -> bool {
-    return value.size() <= maximum_preference_string_bytes && value.find('\0') == std::string_view::npos;
+    return text_util::valid_bounded_text(value, maximum_preference_string_bytes);
 }
 auto supported_rate(rational_t rate) -> bool {
     return std::ranges::find(audio::playback_rates, rate) != audio::playback_rates.end();

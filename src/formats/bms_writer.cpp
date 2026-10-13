@@ -1,3 +1,4 @@
+#include <wormedit/core/bms36.h>
 #include "../core/checked_math.h"
 #include "../core/text_util.h"
 #include <wormedit/formats/bms_writer.h>
@@ -181,12 +182,12 @@ auto encode_normalized_bms(std::string_view utf8_with_bom, text_encoding_t encod
 #endif
 }
 
-auto base36_digit(char value) -> bool {
-    return (value >= '0' && value <= '9') || (value >= 'A' && value <= 'Z');
+auto base36_digit(char byte) -> bool {
+    return bms36_value(static_cast<unsigned char>(byte), bms36_case_policy_t::uppercase_only) >= 0;
 }
 
 auto base36_id(std::size_t value) -> std::string {
-    constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    constexpr auto digits = bms36_digits;
     std::string result(2, '0');
     result[0] = digits[(value / 36U) % 36U];
     result[1] = digits[value % 36U];
@@ -203,12 +204,7 @@ auto bms_identity(const resource_entry_t& resource, std::string_view name_space)
     if (identity == resource.target_identities.end() || identity->identifier.size() != 2) {
         return std::nullopt;
     }
-    std::string result = identity->identifier;
-    for (auto& character : result) {
-        if (character >= 'a' && character <= 'z') {
-            character = static_cast<char>(character - 'a' + 'A');
-        }
-    }
+    auto result = text_util::ascii_upper(identity->identifier);
     if (!base36_digit(result[0]) || !base36_digit(result[1]) || result == "00") {
         return std::nullopt;
     }
@@ -237,23 +233,10 @@ auto safe_metadata_token(std::string_view token) -> bool {
     });
 }
 
-auto ascii_upper(std::string value) -> std::string {
-    for (auto& character : value) {
-        if (character >= 'a' && character <= 'z') {
-            character = static_cast<char>(character - 'a' + 'A');
-        }
-    }
-    return value;
-}
+using text_util::ascii_upper;
 
-auto trim_ascii_whitespace(std::string_view value) -> std::string_view {
-    while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())) != 0) {
-        value.remove_prefix(1);
-    }
-    while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back())) != 0) {
-        value.remove_suffix(1);
-    }
-    return value;
+auto trim_ascii_whitespace(std::string_view text) -> std::string_view {
+    return text_util::trim(text, text_util::ascii_whitespace);
 }
 
 auto generated_or_channel_token(std::string_view token) -> bool {
@@ -1276,9 +1259,7 @@ struct export_lane_channels_t {
 
 auto normalize_lane_channel(std::string channel, bool long_note,
                             std::set<std::string>& used) -> std::string {
-    for (auto& character : channel)
-        if (character >= 'a' && character <= 'z')
-            character = static_cast<char>(character - 'a' + 'A');
+    channel = text_util::ascii_upper(std::move(channel));
     if (channel.size() != 2 || !base36_digit(channel[0]) || !base36_digit(channel[1]) ||
         (long_note && channel[0] != '5' && channel[0] != '6') || !used.insert(channel).second)
         fail(bms_write_diagnostic_code_t::invalid_document,

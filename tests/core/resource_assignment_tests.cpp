@@ -1425,6 +1425,8 @@ TEST_CASE("sound metadata rejects invalid input without changing the document",
     rejected({.resource = resource_id_t{1}, .tags = {"   "}});
     rejected({.resource = resource_id_t{1}, .tags = {std::string(65, 'a')}});
     rejected({.resource = resource_id_t{1}, .tags = {"bad\ntag"}});
+    rejected({.resource = resource_id_t{1}, .tags = {"\xc0\x80"}});
+    rejected({.resource = resource_id_t{1}, .name = "\xc0\x80"});
     rejected({.resource = resource_id_t{99}, .tags = {"x"}});
     rejected({.resource = resource_id_t{1}, .kind = static_cast<sound_kind_t>(9)});
     rejected({.resource = resource_id_t{1}, .tags = {"x"}}, 3);
@@ -2236,4 +2238,13 @@ TEST_CASE("Resource role validation agrees for placement and assignment",
     require_resource_role(rejected.document.revision == revision);
     require_resource_role(rejected.undo.empty());
     require_resource_role(rejected.document.charts.front().measures.front().bgm_events.front().sound == resource_id_t{1});
+}
+
+TEST_CASE("resource creation rejects malformed UTF-8 names atomically", "[unit][core][resources]") {
+    auto history = make_document_history(assignment_song());
+    const auto result = apply_resource_creation(history, 4,
+        {.asset = asset_id_t{1}, .role = resource_role_t::sample, .name = "\xc0\x80"});
+    CHECK_FALSE(result);
+    CHECK(history.document.revision == 4);
+    CHECK(history.undo.empty());
 }

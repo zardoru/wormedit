@@ -1,3 +1,5 @@
+#include <wormedit/core/rational.h>
+#include "../core/timing_arithmetic.h"
 #include "../core/checked_math.h"
 #include "../core/text_util.h"
 #include "id_source.h"
@@ -11,7 +13,6 @@
 #include <algorithm>
 #include <cctype>
 #include <array>
-#include <cctype>
 #include <charconv>
 #include <cmath>
 #include <cstdint>
@@ -56,15 +57,6 @@ using format_detail::id_source_t;
 
 auto trim(std::string_view text) -> std::string_view {
     return text_util::trim(text, " \t\r\n");
-}
-
-auto upper_ascii(std::string_view text) -> std::string {
-    std::string result(text);
-    for (auto& character : result) {
-        if (character >= 'a' && character <= 'z')
-            character = static_cast<char>(character - 'a' + 'A');
-    }
-    return result;
 }
 
 auto valid_utf8(std::string_view text) -> std::optional<std::size_t> {
@@ -126,7 +118,7 @@ auto fields_for_key(const std::vector<field_t>& fields, std::string_view key)
     -> std::vector<const field_t*> {
     std::vector<const field_t*> found;
     for (const auto& field : fields)
-        if (upper_ascii(field.key) == key)
+        if (text_util::ascii_upper(std::string(field.key)) == key)
             found.push_back(&field);
     return found;
 }
@@ -199,7 +191,7 @@ auto parse_source(std::string_view source, std::size_t max_fields) -> std::vecto
 }
 
 auto note_column_count(std::string_view step_type) -> std::optional<std::uint32_t> {
-    const auto type = upper_ascii(trim(step_type));
+    const auto type = text_util::ascii_upper(trim(step_type));
     if (type == "DANCE-SINGLE" || type == "TECHNO-SINGLE")
         return 4;
     if (type == "DANCE-THREEPANEL")
@@ -355,7 +347,7 @@ auto normalize_note_row(std::string_view source, std::uint32_t lanes, std::size_
     normalized_row_t result;
     result.symbols.reserve(lanes);
     for (const auto& cell : cells) {
-        const auto symbol = static_cast<char>(std::toupper(static_cast<unsigned char>(cell.symbol)));
+        const auto symbol = text_util::ascii_upper(cell.symbol);
         if (symbol != '0' && symbol != '1' && symbol != '2' && symbol != '3' && symbol != '4' &&
             symbol != 'M' && symbol != 'L' && symbol != 'F' && symbol != 'K')
             fail(stepmania_parse_diagnostic_code_t::invalid_notes,
@@ -420,10 +412,7 @@ auto make_layout(std::string step_type, std::uint32_t count, id_source_t& ids) -
     layout.display_name = step_type;
     static constexpr std::array<std::string_view, 10> dance_names{
         "Left", "Down", "Up", "Right", "Left 2", "Down 2", "Up 2", "Right 2", "Center", "Diagonal"};
-    auto folded_step_type = step_type;
-    std::ranges::transform(folded_step_type, folded_step_type.begin(), [](unsigned char value) {
-        return static_cast<char>(std::tolower(value));
-    });
+    const auto folded_step_type = text_util::ascii_fold(step_type);
     const bool cardinal_dance = folded_step_type == "dance-single" ||
                                 folded_step_type == "dance-double" ||
                                 folded_step_type == "dance-couple";
@@ -676,7 +665,7 @@ struct timing_parser_t {
         for (const auto key : {"OFFSET", "BPMS", "STOPS", "DELAYS", "WARPS", "SCROLLS", "SPEEDS"}) {
             const auto overrides = fields_for_key(chart_fields, key);
             if (overrides.empty()) continue;
-            std::erase_if(effective, [&](const auto& field) { return upper_ascii(field.key) == key; });
+            std::erase_if(effective, [&](const auto& field) { return text_util::ascii_upper(std::string(field.key)) == key; });
             for (const auto* field : overrides) effective.push_back(*field);
         }
         for (const auto& field : chart_fields) chart_source_orders.insert(field.order);
@@ -745,8 +734,8 @@ struct timing_parser_t {
         std::stable_sort(entries.begin(), entries.end(), [](const auto& left, const auto& right) {
             const auto left_beat = std::get<0>(left);
             const auto right_beat = std::get<0>(right);
-            return static_cast<long double>(left_beat.numerator) / left_beat.denominator <
-                   static_cast<long double>(right_beat.numerator) / right_beat.denominator;
+            return to_long_double(left_beat) <
+                   to_long_double(right_beat);
         });
         return entries;
     }
@@ -1270,7 +1259,7 @@ auto partition_sm_fields(const std::vector<field_t>& fields, std::size_t max_cha
     std::vector<field_t> song_fields;
     std::vector<chart_source_t> charts;
     for (const auto& field : fields) {
-        if (upper_ascii(field.key) == "NOTES")
+        if (text_util::ascii_upper(std::string(field.key)) == "NOTES")
             append_chart_source(charts, field, max_charts,
                                 "StepMania file exceeds the configured chart limit");
         else
@@ -1285,7 +1274,7 @@ auto partition_ssc_fields(const std::vector<field_t>& fields, std::size_t max_ch
     std::vector<chart_source_t> charts;
     chart_source_t* active{};
     for (const auto& field : fields) {
-        const auto key = upper_ascii(field.key);
+        const auto key = text_util::ascii_upper(std::string(field.key));
         if (key == "NOTEDATA") {
             if (charts.size() >= max_charts)
                 fail(stepmania_parse_diagnostic_code_t::chart_limit,
@@ -1494,16 +1483,7 @@ auto rational_decimal(signed_rational_t value) -> std::optional<std::string> {
 }
 
 auto beat_at_row(std::uint64_t row, std::uint64_t divisions) -> std::optional<signed_rational_t> {
-    const auto common = std::gcd(divisions, std::uint64_t{4});
-    const auto denominator = divisions / common;
-    const auto multiplier = std::uint64_t{4} / common;
-    if (multiplier != 0 &&
-        row > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) / multiplier)
-        return std::nullopt;
-    auto numerator = row * multiplier;
-    const auto reduce = std::gcd(numerator, denominator);
-    numerator /= reduce;
-    return signed_rational_t{static_cast<std::int64_t>(numerator), denominator / reduce};
+    return timing_arithmetic::rows_to_beat_fraction(row, divisions);
 }
 
 auto absolute_row_for(const chart_document_t& chart, local_position_t position)
@@ -1570,14 +1550,14 @@ auto group_value(const format_metadata_t* group, std::string_view key) -> std::s
         return {};
     std::string result;
     for (const auto& [name, value] : group->ordered_fields)
-        if (upper_ascii(name) == key)
+        if (text_util::ascii_upper(std::string(name)) == key)
             result = value;
     return std::string(trim(result));
 }
 
 auto group_has_field(const format_metadata_t* group, std::string_view key) -> bool {
     return group && std::ranges::any_of(group->ordered_fields, [&](const auto& field) {
-               return upper_ascii(field.first) == key;
+               return text_util::ascii_upper(std::string(field.first)) == key;
            });
 }
 
@@ -1599,7 +1579,7 @@ auto append_unknown_fields(std::string& output, const format_metadata_t* group,
     });
     for (const auto index : order) {
         const auto& [key, value] = group->ordered_fields[index];
-        if (modeled.contains(upper_ascii(key)))
+        if (modeled.contains(text_util::ascii_upper(std::string(key))))
             continue;
         emit_field(output, key, value, diagnostics, max_output_bytes);
     }
@@ -1925,7 +1905,6 @@ auto make_timing_fields(const chart_document_t& chart, const stepmania_write_opt
     -> std::vector<std::pair<std::string, std::string>> {
     return timing_fields_builder_t{chart, options, diagnostics}.build();
 }
-
 
 // The song-level #KEYSOUNDS list as written: `names` keeps list positions (an
 // empty name is a placeholder), `bound` marks entries some resource maps to.
@@ -2445,7 +2424,7 @@ struct stepmania_writer_t {
         std::optional<std::string> value;
         if (song_group)
             for (const auto& [key, text] : song_group->ordered_fields)
-                if (upper_ascii(key) == "KEYSOUNDS") value = text;
+                if (text_util::ascii_upper(std::string(key)) == "KEYSOUNDS") value = text;
         if (!value || trim(*value).empty()) return {};
         std::string_view text = *value;
         if (text.starts_with("\\#")) text.remove_prefix(1);

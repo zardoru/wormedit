@@ -770,3 +770,11 @@ TEST_CASE("unknown BMSON modes retain generic piano colors", "[unit][format][bms
     check_bmson_condition(layout.lanes[1].key_color == wormedit::lane_key_color_t::black);
     check_bmson_condition(layout.lanes[2].key_color == wormedit::lane_key_color_t::white);
 }
+
+TEST_CASE("BMSON exact decimals reduce before intermediate overflow", "[formats][helpers]") {
+    const auto parsed = parse_text(
+        R"({"version":"1.0.0","info":{"init_bpm":92233720368547758070e-1}})");
+    REQUIRE(parsed.song);
+    CHECK((parsed.song->charts.front().bpms.front().beats_per_minute ==
+           wormedit::signed_rational_t{INT64_MAX, 1}));
+}

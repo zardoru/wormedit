@@ -1,3 +1,4 @@
+#include <wormedit/core/rational.h>
 #include <wormedit/core/chart_compare.h>
 
 #include <algorithm>
@@ -12,10 +13,7 @@
 namespace wormedit {
 namespace {
 
-auto normalize(rational_t value) -> rational_t {
-    const auto divisor = std::gcd(value.numerator, value.denominator);
-    return {value.numerator / divisor, value.denominator / divisor};
-}
+
 
 // Exact comparison through continued-fraction quotients avoids cross-product
 // overflow and remains portable to compilers without a 128-bit integer type.
@@ -50,7 +48,7 @@ struct rational_less_t {
 };
 
 auto musical_position(std::uint64_t absolute_row, std::uint64_t divisions) -> rational_t {
-    return normalize({absolute_row, divisions});
+    return reduce_fraction({absolute_row, divisions});
 }
 
 auto signature_less(const chart_compare_lane_signature_t& left,

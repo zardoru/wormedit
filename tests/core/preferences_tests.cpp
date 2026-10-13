@@ -455,3 +455,9 @@ TEST_CASE("Typed layout skins reject oversized strings and overflowing maps", "[
     overrides = {{std::string(maximum_preference_string_bytes, 'k'), std::string(maximum_preference_string_bytes, 's')}};
     expect_preference(serialize_program_preferences(preferences).has_value());
 }
+
+TEST_CASE("preference serialization rejects malformed UTF-8", "[unit][core][helpers][preferences]") {
+    auto preferences = default_program_preferences();
+    preferences.display.theme = "bad\xc0\x80";
+    CHECK_FALSE(serialize_program_preferences(preferences));
+}

@@ -230,11 +230,7 @@ auto absolute_row_at_y_pixels(const chart_document_t& chart, const measure_index
     }
     // Pointer positions are continuous; map to the nearest stored row and make
     // exact half-row ties stable by resolving them toward the earlier row.
-    const auto nearest = std::floor(row + 0.5L);
-    if (nearest >= static_cast<long double>(total_rows)) {
-        return total_rows - 1;
-    }
-    return static_cast<std::uint64_t>(nearest);
+    return nearest_row(row, total_rows, row_clamp_policy_t::upper_only);
 }
 
 auto resolve_canvas_cursor(const chart_document_t& chart, const measure_index_t& index,

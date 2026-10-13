@@ -1,3 +1,4 @@
+#include "../core/text_util.h"
 #include <wormedit/formats/slice_spans.h>
 #include <wormedit/core/sound_slice.h>
 
@@ -23,10 +24,7 @@ auto normalized_frame(std::uint64_t frame, std::uint32_t rate) -> std::optional<
     return base + rounded;
 }
 
-auto ascii_lower(std::string value) -> std::string {
-    for (auto& byte : value) if (byte >= 'A' && byte <= 'Z') byte = static_cast<char>(byte + ('a' - 'A'));
-    return value;
-}
+using text_util::ascii_fold;
 
 auto filename_stem(const std::filesystem::path& path, asset_id_t asset) -> std::string {
     std::string stem;
@@ -227,7 +225,7 @@ auto append_semantics(plan_context_t& context, const chart_document_t& chart) ->
 
 void name_spans(plan_context_t& context) {
     std::set<std::string> occupied;
-    for (const auto& name : context.options.occupied_filenames) occupied.insert(ascii_lower(name));
+    for (const auto& name : context.options.occupied_filenames) occupied.insert(ascii_fold(name));
     std::size_t number{};
     for (auto& span : context.result.spans) {
         const auto stem = filename_stem(context.assets.at(span.asset.value)->source_path, span.asset);
@@ -235,7 +233,7 @@ void name_spans(plan_context_t& context) {
             auto suffix = std::to_string(++number);
             suffix.insert(0, suffix.size() < 3 ? 3 - suffix.size() : 0, '0');
             span.filename = stem + "_" + suffix + ".wav";
-        } while (!occupied.insert(ascii_lower(span.filename)).second);
+        } while (!occupied.insert(ascii_fold(span.filename)).second);
     }
 }
 

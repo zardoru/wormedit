@@ -14,7 +14,7 @@ namespace wormedit {
 struct semantic_layer_edit_limits_t {
     std::size_t maximum_layers{100'000};
     std::size_t maximum_note_selection{100'000};
-    std::size_t maximum_chart_objects{1'000'000};
+    std::size_t maximum_chart_objects{default_maximum_chart_objects};
     std::size_t maximum_name_bytes{4U * 1024U};
     std::size_t maximum_total_name_bytes{1U * 1024U * 1024U};
 };

@@ -18,8 +18,7 @@ using text_util::valid_utf8;
 
 auto valid_label(std::string_view label, const marker_edit_limits_t& limits, bool allow_empty)
     -> bool {
-    return (allow_empty || !label.empty()) && label.size() <= limits.maximum_label_bytes &&
-           label.find('\0') == std::string_view::npos && valid_utf8(label);
+    return (allow_empty || !label.empty()) && text_util::valid_bounded_text(label, limits.maximum_label_bytes);
 }
 
 auto checked_add(std::size_t& total, std::size_t value, std::size_t maximum) -> bool {

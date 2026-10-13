@@ -1,3 +1,5 @@
+#include <wormedit/core/rational.h>
+#include "../core/timing_arithmetic.h"
 #include "../core/checked_math.h"
 #include <wormedit/audio/channel_waveform.h>
 
@@ -13,69 +15,13 @@ namespace {
 
 using checked_math::magnitude;
 
-auto normalized(signed_rational_t value) -> std::optional<signed_rational_t> {
-    if (value.denominator == 0)
-        return std::nullopt;
-    const auto divisor = std::gcd(magnitude(value.numerator), value.denominator);
-    const auto reduced = magnitude(value.numerator) / divisor;
-    if (value.numerator < 0 &&
-        reduced == static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) + 1U) {
-        value.numerator = std::numeric_limits<std::int64_t>::min();
-    } else {
-        value.numerator = value.numerator < 0 ? -static_cast<std::int64_t>(reduced)
-                                              : static_cast<std::int64_t>(reduced);
-    }
-    value.denominator /= divisor;
-    return value;
-}
+using timing_arithmetic::try_normalize;
 
 using checked_math::checked_signed_multiply;
 
-auto add_exact(signed_rational_t left, signed_rational_t right)
-    -> std::optional<signed_rational_t> {
-    const auto lhs = normalized(left);
-    const auto rhs = normalized(right);
-    if (!lhs || !rhs)
-        return std::nullopt;
-    const auto common = std::gcd(lhs->denominator, rhs->denominator);
-    const auto left_scale = rhs->denominator / common;
-    const auto right_scale = lhs->denominator / common;
-    if (lhs->denominator > std::numeric_limits<std::uint64_t>::max() / left_scale)
-        return std::nullopt;
-    const auto numerator_left = checked_signed_multiply(lhs->numerator, left_scale);
-    const auto numerator_right = checked_signed_multiply(rhs->numerator, right_scale);
-    if (!numerator_left || !numerator_right)
-        return std::nullopt;
-    if ((*numerator_right > 0 &&
-         *numerator_left > std::numeric_limits<std::int64_t>::max() - *numerator_right) ||
-        (*numerator_right < 0 &&
-         *numerator_left < std::numeric_limits<std::int64_t>::min() - *numerator_right))
-        return std::nullopt;
-    return normalized({*numerator_left + *numerator_right, lhs->denominator * left_scale});
-}
+using timing_arithmetic::add_exact;
 
-auto subtract_exact(signed_rational_t left, signed_rational_t right)
-    -> std::optional<signed_rational_t> {
-    const auto lhs = normalized(left);
-    const auto rhs = normalized(right);
-    if (!lhs || !rhs)
-        return std::nullopt;
-    const auto common = std::gcd(lhs->denominator, rhs->denominator);
-    const auto left_scale = rhs->denominator / common;
-    const auto right_scale = lhs->denominator / common;
-    if (lhs->denominator > std::numeric_limits<std::uint64_t>::max() / left_scale)
-        return std::nullopt;
-    const auto numerator_left = checked_signed_multiply(lhs->numerator, left_scale);
-    const auto numerator_right = checked_signed_multiply(rhs->numerator, right_scale);
-    if (!numerator_left || !numerator_right)
-        return std::nullopt;
-    if ((*numerator_right > 0 &&
-         *numerator_left < std::numeric_limits<std::int64_t>::min() + *numerator_right) ||
-        (*numerator_right < 0 &&
-         *numerator_left > std::numeric_limits<std::int64_t>::max() + *numerator_right))
-        return std::nullopt;
-    return normalized({*numerator_left - *numerator_right, lhs->denominator * left_scale});
-}
+using timing_arithmetic::subtract_exact;
 
 auto source_frame_at(signed_rational_t time, signed_rational_t origin, const waveform_t& waveform,
                      std::uint64_t source_begin, sample_rounding_t rounding)
@@ -131,8 +77,7 @@ auto channel_pixel_for_column(const channel_row_context_t& context,
     if (!musical || !musical.absolute_row || musical.absolute_row->denominator == 0) {
         return std::nullopt;
     }
-    const auto row = static_cast<long double>(musical.absolute_row->numerator) /
-                     musical.absolute_row->denominator;
+    const auto row = to_long_double(*musical.absolute_row);
     const auto y = row / context.rows_per_pixel - context.request.viewport_scroll_pixels;
     if (!std::isfinite(y) || y < 0.0L || y >= context.request.viewport_height_pixels) {
         return std::nullopt;

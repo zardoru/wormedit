@@ -811,8 +811,7 @@ auto valid_metadata(const format_metadata_t& metadata) -> bool {
 
 auto valid_quantization_preset(const quantization_preset_t& preset) -> bool {
     return !preset.name.empty() &&
-           preset.name.size() <= quantization_preset_t::maximum_name_bytes &&
-           preset.name.find('\0') == std::string::npos &&
+           text_util::valid_bounded_text(preset.name, quantization_preset_t::maximum_name_bytes) &&
            preset.divisions > 0 &&
            enum_at_most(preset.space, quantization_space_t::authored_measure) &&
            enum_at_most(preset.tie, quantization_tie_t::reject) &&

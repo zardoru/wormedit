@@ -1,3 +1,5 @@
+#include <wormedit/core/rational.h>
+#include "timing_arithmetic.h"
 #include "../core/checked_math.h"
 #include <wormedit/core/tap_timing_apply.h>
 
@@ -60,8 +62,7 @@ auto nearest_even_frame(long double frame) -> std::optional<std::int64_t> {
 auto offset_frame(const chart_document_t& chart, std::uint32_t sample_rate)
     -> std::optional<long double> {
     if (chart.beat_zero_audio_offset_seconds.denominator == 0) return std::nullopt;
-    const auto frame = static_cast<long double>(chart.beat_zero_audio_offset_seconds.numerator) *
-        sample_rate / chart.beat_zero_audio_offset_seconds.denominator;
+    const auto frame = to_long_double(chart.beat_zero_audio_offset_seconds) * sample_rate;
     return std::isfinite(frame) ? std::optional<long double>{frame} : std::nullopt;
 }
 
@@ -91,10 +92,8 @@ auto nearest_measure_downbeat(const chart_document_t& chart, std::uint32_t sampl
     return nearest_even_frame(selected);
 }
 
-auto exact_offset(std::int64_t frame, std::uint32_t sample_rate)
-    -> signed_rational_t {
-    const auto divisor = std::gcd(magnitude(frame), static_cast<std::uint64_t>(sample_rate));
-    return {frame / static_cast<std::int64_t>(divisor), sample_rate / divisor};
+auto exact_offset(std::int64_t frame, std::uint32_t sample_rate) -> signed_rational_t {
+    return *timing_arithmetic::frames_to_seconds(frame, sample_rate);
 }
 
 auto next_source_order(const chart_document_t& chart) -> std::optional<std::size_t> {

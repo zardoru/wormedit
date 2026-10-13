@@ -1,3 +1,4 @@
+#include "text_util.h"
 #include <wormedit/core/sound_groups.h>
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/natural_order.h>
@@ -17,22 +18,11 @@ auto reject(document_command_result_t& result, std::string message) -> void {
                                   .message = std::move(message)});
 }
 
-auto trim(std::string value) -> std::string {
-    constexpr std::string_view whitespace = " \t\n\r\f\v";
-    const auto begin = value.find_first_not_of(whitespace);
-    if (begin == std::string::npos) return {};
-    const auto end = value.find_last_not_of(whitespace);
-    return value.substr(begin, end - begin + 1);
+auto trim(std::string text) -> std::string {
+    return std::string(text_util::trim(text, text_util::ascii_whitespace));
 }
 
-auto fold_ascii(std::string_view value) -> std::string {
-    std::string result(value);
-    for (auto& character : result) {
-        const auto byte = static_cast<unsigned char>(character);
-        if (byte >= 'A' && byte <= 'Z') character = static_cast<char>(byte + ('a' - 'A'));
-    }
-    return result;
-}
+
 
 auto find_group(song_document_t& song, sound_group_id_t id) {
     return std::ranges::find(song.sound_groups, id, &sound_group_t::id);
@@ -48,14 +38,13 @@ auto is_sound(const resource_entry_t& resource) -> bool {
 auto normalize_name(song_document_t& song, sound_group_id_t except, std::string& name,
                     document_command_result_t& result) -> bool {
     name = trim(std::move(name));
-    if (name.empty() || name.size() > maximum_sound_group_name_bytes ||
-        name.find('\0') != std::string::npos) {
+    if (name.empty() || !text_util::valid_bounded_text(name, maximum_sound_group_name_bytes)) {
         reject(result, "sound group name must contain 1 to 64 bytes");
         return false;
     }
-    const auto folded = fold_ascii(name);
+    const auto folded = text_util::ascii_fold(std::string(name));
     for (const auto& group : song.sound_groups) {
-        if (group.id != except && fold_ascii(group.name) == folded) {
+        if (group.id != except && text_util::ascii_fold(std::string(group.name)) == folded) {
             reject(result, "sound group name is already in use");
             return false;
         }

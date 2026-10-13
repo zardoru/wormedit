@@ -52,7 +52,7 @@ auto make_stem(chart_document_t& chart, const sound_channel_t& channel,
             order = std::max(order, item.source_order + 1);
         }
         if (largest == std::numeric_limits<std::uint64_t>::max() ||
-            chart.bgm_source_lanes.size() >= 1'000'000)
+            chart.bgm_source_lanes.size() >= default_maximum_chart_objects)
             return "BGM lane ID or capacity is exhausted";
         chart.bgm_source_lanes.push_back({.id = object_id_t{largest + 1},
             .name = channel.name, .source_order = order, .stem_channel = channel.id});

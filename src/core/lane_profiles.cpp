@@ -1,3 +1,4 @@
+#include "text_util.h"
 #include <wormedit/core/lane_profiles.h>
 
 #include <algorithm>
@@ -783,10 +784,7 @@ auto make_stepmania_profile(std::string_view step_type,
 
 auto stepmania_lane_specs(std::string_view step_type) -> std::span<const stepmania_lane_spec_t> {
     const auto same = [&](std::string_view name) {
-        return std::ranges::equal(step_type, name, [](char left, char right) {
-            return std::tolower(static_cast<unsigned char>(left)) ==
-                   std::tolower(static_cast<unsigned char>(right));
-        });
+        return std::ranges::equal(step_type, name, text_util::ascii_iequal);
     };
     if (same("pump-single"))
         return pump_single_specs;

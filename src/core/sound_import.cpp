@@ -1,3 +1,6 @@
+#include <wormedit/core/sound_groups.h>
+#include <wormedit/core/bms36.h>
+#include "text_util.h"
 #include <wormedit/core/sound_import.h>
 #include <wormedit/core/resource_assignment.h>
 
@@ -9,8 +12,6 @@
 
 namespace wormedit {
 namespace {
-
-constexpr std::size_t maximum_chart_objects = 1'000'000;
 
 void reject(document_command_result_t& result, std::string message) {
     result.applied = false;
@@ -63,14 +64,6 @@ auto validate_batch(const bulk_sound_import_action_t& action, document_command_r
 
 struct bms_id_gap_t { std::size_t begin; std::size_t length; };
 
-auto bms36_digit(unsigned char character) -> int {
-    if (character >= 'a' && character <= 'z')
-        character = static_cast<unsigned char>(character - ('a' - 'A'));
-    if (character >= '0' && character <= '9') return character - '0';
-    if (character >= 'A' && character <= 'Z') return character - 'A' + 10;
-    return -1;
-}
-
 auto used_bms_wav_ids(const song_document_t& document) -> std::vector<bool> {
     constexpr auto base = std::size_t{36};
     auto used = std::vector<bool>(base * base, false);
@@ -78,8 +71,8 @@ auto used_bms_wav_ids(const song_document_t& document) -> std::vector<bool> {
         for (const auto& identity : resource.target_identities) {
             if (identity.family != format_family_t::bms || identity.namespace_name != "WAV" ||
                 identity.identifier.size() != 2) continue;
-            const auto high = bms36_digit(static_cast<unsigned char>(identity.identifier[0]));
-            const auto low = bms36_digit(static_cast<unsigned char>(identity.identifier[1]));
+            const auto high = bms36_value(static_cast<unsigned char>(identity.identifier[0]));
+            const auto low = bms36_value(static_cast<unsigned char>(identity.identifier[1]));
             if (high >= 0 && low >= 0)
                 used[static_cast<std::size_t>(high) * base + static_cast<std::size_t>(low)] = true;
         }
@@ -125,7 +118,7 @@ auto free_bms_gaps(const std::vector<bool>& used) -> std::vector<bms_id_gap_t> {
 auto split_bms_ids(const std::vector<bms_id_gap_t>& gaps, std::size_t count)
     -> std::vector<std::string> {
     constexpr auto base = std::size_t{36};
-    constexpr std::string_view alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    constexpr auto alphabet = bms36_digits;
     auto ids = std::vector<std::string>{};
     auto remaining = count;
     for (const auto& gap : gaps) {
@@ -145,7 +138,7 @@ auto assign_contiguous_group_ids(std::vector<bool>& used, const bulk_sound_impor
                                  std::vector<std::optional<std::string>>& ids,
                                  document_command_result_t& result) -> bool {
     constexpr auto base = std::size_t{36};
-    constexpr std::string_view alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    constexpr auto alphabet = bms36_digits;
     const auto count = static_cast<std::size_t>(std::ranges::count_if(
         group.entry_indexes, [&](const auto index) {
             return action.entries[index].asset.allocate_bms_identifier;
@@ -280,7 +273,7 @@ auto next_channel_source_index(const song_document_t& document, const chart_docu
 // Adds an empty BMSON channel and its explicitly linked presentation lane.
 auto append_stem(chart_document_t& chart, resource_entry_t& resource, std::size_t source_index,
                  object_id_scan_t& ids, document_command_result_t& result) -> bool {
-    if (ids.count > maximum_chart_objects - 2 ||
+    if (ids.count > default_maximum_chart_objects - 2 ||
         ids.largest > std::numeric_limits<std::uint64_t>::max() - 2) {
         reject(result, "chart cannot hold another stem (object IDs exhausted)");
         return false;
@@ -343,21 +336,8 @@ auto import_entry(document_history_t& draft, const bulk_sound_import_entry_t& en
                        result);
 }
 
-auto trim_group_name(std::string value) -> std::string {
-    constexpr std::string_view whitespace = " \t\n\r\f\v";
-    const auto begin = value.find_first_not_of(whitespace);
-    if (begin == std::string::npos) return {};
-    const auto end = value.find_last_not_of(whitespace);
-    return value.substr(begin, end - begin + 1);
-}
-
-auto fold_group_name(std::string_view value) -> std::string {
-    auto folded = std::string(value);
-    for (auto& character : folded) {
-        if (character >= 'A' && character <= 'Z')
-            character = static_cast<char>(character + ('a' - 'A'));
-    }
-    return folded;
+auto trim_group_name(std::string text) -> std::string {
+    return std::string(text_util::trim(text, text_util::ascii_whitespace));
 }
 
 auto validate_import_group_name(const song_document_t& song,
@@ -366,7 +346,7 @@ auto validate_import_group_name(const song_document_t& song,
                                 std::unordered_set<std::uint64_t>& existing_ids,
                                 std::string& name, document_command_result_t& result) -> bool {
     name = trim_group_name(group.name);
-    if (name.empty() || name.size() > 64 || name.find('\0') != std::string::npos) {
+    if (name.empty() || !text_util::valid_bounded_text(name, maximum_sound_group_name_bytes)) {
         reject(result, "sound group name must contain 1 to 64 bytes");
         return false;
     }
@@ -379,16 +359,16 @@ auto validate_import_group_name(const song_document_t& song,
         reject(result, "sound import refers to an unknown existing group");
         return false;
     }
-    const auto folded = fold_group_name(name);
+    const auto folded = text_util::ascii_fold(std::string(name));
     for (const auto& prior : prior_names) {
-        if (fold_group_name(prior) == folded) {
+        if (text_util::ascii_fold(std::string(prior)) == folded) {
             reject(result, "sound group name is already in use");
             return false;
         }
     }
     for (const auto& current : song.sound_groups) {
         if (group.existing_group == current.id) continue;
-        if (fold_group_name(current.name) == folded) {
+        if (text_util::ascii_fold(std::string(current.name)) == folded) {
             reject(result, "sound group name is already in use");
             return false;
         }

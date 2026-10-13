@@ -1,3 +1,4 @@
+#include <wormedit/core/rational.h>
 #include <wormedit/core/chart_clipboard.h>
 
 #include <wormedit/core/sound_slice.h>
@@ -17,10 +18,7 @@ namespace wormedit {
 namespace {
 constexpr std::size_t maximum_objects = 32768;
 
-auto fraction(std::uint64_t rows, std::uint64_t resolution) -> rational_t {
-    const auto divisor = std::gcd(rows, resolution);
-    return {rows / divisor, resolution / divisor};
-}
+using wormedit::rows_to_fraction;
 
 auto layout_at(const chart_document_t& chart, const measure_index_t& index,
                local_position_t position) -> const lane_layout_t* {
@@ -91,8 +89,8 @@ auto append_note(chart_clipboard_t& clipboard, const chart_document_t& chart,
     const auto lane = note_lane(chart, index, note);
     const auto end = note.end ? absolute_row(index, *note.end) : row;
     if (!row || !lane || !end || *end < *row) return false;
-    clipboard.objects.push_back({fraction(*row, chart.divisions_per_standard_measure),
-        fraction(*end - *row, chart.divisions_per_standard_measure), *lane, note,
+    clipboard.objects.push_back({rows_to_fraction(*row, chart.divisions_per_standard_measure),
+        rows_to_fraction(*end - *row, chart.divisions_per_standard_measure), *lane, note,
         stem_of(chart, note.sound_channel_event)});
     return true;
 }
@@ -104,8 +102,8 @@ auto append_bgm(chart_clipboard_t& clipboard, const chart_document_t& chart,
                                        &bgm_source_lane_t::id);
     const auto end = event.end ? absolute_row(index, *event.end) : row;
     if (!row || !end || *end < *row || lane == chart.bgm_source_lanes.end()) return false;
-    clipboard.objects.push_back({fraction(*row, chart.divisions_per_standard_measure),
-        fraction(*end - *row, chart.divisions_per_standard_measure),
+    clipboard.objects.push_back({rows_to_fraction(*row, chart.divisions_per_standard_measure),
+        rows_to_fraction(*end - *row, chart.divisions_per_standard_measure),
         static_cast<std::size_t>(lane - chart.bgm_source_lanes.begin()), event,
         stem_of(chart, event.sound_channel_event)});
     return true;
@@ -124,8 +122,8 @@ auto append_timing(chart_clipboard_t& clipboard, const chart_document_t& chart,
         end = row;
     }
     if (!row || !end || *end < *row) return false;
-    clipboard.objects.push_back({fraction(*row, chart.divisions_per_standard_measure),
-        fraction(*end - *row, chart.divisions_per_standard_measure), 0, event});
+    clipboard.objects.push_back({rows_to_fraction(*row, chart.divisions_per_standard_measure),
+        rows_to_fraction(*end - *row, chart.divisions_per_standard_measure), 0, event});
     return true;
 }
 
@@ -214,7 +212,7 @@ auto copy_chart_selection(const song_document_t& document,
     std::stable_sort(clipboard.objects.begin(), clipboard.objects.end(),
         [&row_of](const auto& left, const auto& right) { return row_of(left) < row_of(right); });
     const auto anchor = row_of(clipboard.objects.front());
-    for (auto& object : clipboard.objects) object.offset = fraction(row_of(object) - anchor, resolution);
+    for (auto& object : clipboard.objects) object.offset = rows_to_fraction(row_of(object) - anchor, resolution);
     return {std::move(clipboard), {}};
 }
 
@@ -323,7 +321,7 @@ auto cut_chart_selection(document_history_t& history, editor_interaction_state_t
 namespace {
 auto exact_rows(rational_t value, std::uint64_t resolution) -> std::optional<std::uint64_t> {
     if (!value.denominator) return std::nullopt;
-    const auto reduced = fraction(value.numerator, value.denominator);
+    const auto reduced = rows_to_fraction(value.numerator, value.denominator);
     if (resolution % reduced.denominator) return std::nullopt;
     const auto scale = resolution / reduced.denominator;
     if (reduced.numerator > std::numeric_limits<std::uint64_t>::max() / scale)
@@ -622,8 +620,8 @@ auto stem_audio_playing(const song_document_t& document, const chart_document_t&
     const auto now = timing_at(timing, row).seconds;
     const auto then = timing_at(timing, slice.absolute_row).seconds;
     if (!now || !then) return std::nullopt;
-    const auto elapsed = (static_cast<long double>(now->numerator) / static_cast<long double>(now->denominator) -
-                          static_cast<long double>(then->numerator) / static_cast<long double>(then->denominator));
+    const auto elapsed = (to_long_double(*now) -
+                          to_long_double(*then));
     const auto position = static_cast<long double>(slice.source_begin_frame) +
                           elapsed * static_cast<long double>(asset->stream.sample_rate);
     return position < static_cast<long double>(*source_end);

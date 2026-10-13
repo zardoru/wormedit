@@ -1,3 +1,4 @@
+#include "checked_math.h"
 #include <wormedit/core/audio_slicer.h>
 
 #include "wide_math.h"
@@ -24,19 +25,12 @@ struct grid_t {
     u128_t denominator;
 };
 
-auto times(const u128_t& value, std::uint64_t factor) -> std::optional<u128_t> {
-    const auto low = wide_math::multiply(value.low, factor);
-    const auto high = wide_math::multiply(value.high, factor);
-    if (high.high != 0) return std::nullopt;
-    const auto sum = low.high + high.low;
-    if (sum < low.high) return std::nullopt;
-    return u128_t{sum, low.low};
-}
+using checked_math::checked_multiply;
 
 auto product(std::initializer_list<std::uint64_t> factors) -> std::optional<u128_t> {
     u128_t result{0, 1};
     for (const auto factor : factors) {
-        const auto next = times(result, factor);
+        const auto next = checked_multiply(result, factor);
         if (!next) return std::nullopt;
         result = *next;
     }
@@ -109,7 +103,7 @@ auto round_quotient(const wide_math::divmod_t& division, const u128_t& denominat
 // the boundary, negative ones subtract. Boundaries at or below zero clamp to 0.
 auto boundary_frame(const grid_t& grid, const audio_slicer_request_t& request,
                     std::uint64_t index, const u128_t& positive_offset) -> std::uint64_t {
-    const auto steps = times(grid.step, index);
+    const auto steps = checked_multiply(grid.step, index);
     if (!steps) return request.source_frames;
     u128_t total = *steps;
     if (grid.lead != u128_t{}) {

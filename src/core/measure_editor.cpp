@@ -1,3 +1,5 @@
+#include "timing_arithmetic.h"
+#include <wormedit/core/rational.h>
 #include <wormedit/core/measure_editor.h>
 #include <wormedit/core/snap.h>
 #include <wormedit/core/timing.h>
@@ -496,8 +498,7 @@ auto resize_keeping_rows(chart_document_t& chart, std::span<const measure_assign
 }
 
 auto definition_for_rows(std::uint64_t rows, std::uint64_t resolution) -> measure_definition_t {
-    const auto divisor = std::gcd(rows, resolution);
-    const rational_t length{rows / divisor, resolution / divisor};
+    const auto length = rows_to_fraction(rows, resolution);
     const auto meters = suggest_meters(length);
     return {length, meters.empty() ? std::nullopt : std::optional{meters.front()}};
 }
@@ -622,18 +623,7 @@ auto conversion_points_clear(const chart_document_t& chart, const measure_index_
     return clear;
 }
 
-auto conversion_beats(std::uint64_t rows, std::uint64_t resolution, std::uint64_t units = 4) -> std::optional<signed_rational_t> {
-    if (resolution == 0) return std::nullopt;
-    const auto divisor = std::gcd(rows, resolution);
-    auto numerator = rows / divisor;
-    auto denominator = resolution / divisor;
-    const auto four = units / std::gcd(denominator, units);
-    denominator /= units / four;
-    if (numerator > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) / four)
-        return std::nullopt;
-    numerator *= four;
-    return signed_rational_t{static_cast<std::int64_t>(numerator), denominator};
-}
+using timing_arithmetic::rows_to_beat_fraction;
 
 auto conversion_object_id(const chart_document_t& chart) -> std::optional<object_id_t> {
     std::uint64_t maximum{};
@@ -720,7 +710,7 @@ auto adjust_conversion_transitions(chart_document_t& chart, const measure_index_
         const auto end = *start + *length;
         if (range.contains(end)) return false;
         if (*start >= range.end || end < range.begin) continue;
-        const auto beats = conversion_beats(range.shifted(end) - range.shifted(*start),
+        const auto beats = rows_to_beat_fraction(range.shifted(end) - range.shifted(*start),
                                              chart.divisions_per_standard_measure);
         if (!beats) return false;
         speed.transition_beats = {static_cast<std::uint64_t>(beats->numerator), beats->denominator};
@@ -791,7 +781,7 @@ void apply_measure_action(measure_edit_context_t& context, const convert_range_t
         return;
     }
     const bool bms_ticks = chart->source_family == format_family_t::bms && edit.kind == pause_kind_t::stop;
-    const auto duration = conversion_beats(*last - *first, chart->divisions_per_standard_measure, bms_ticks ? 192 : 4);
+    const auto duration = rows_to_beat_fraction(*last - *first, chart->divisions_per_standard_measure, bms_ticks ? 192 : 4);
     const auto id = conversion_object_id(*chart);
     if (!duration || !id || !convert_pause_geometry(*chart, *before, range, edit.resize_measures,
             {.id = id.value_or(object_id_t{}), .kind = edit.kind,
@@ -1016,12 +1006,10 @@ auto extend_chart_to_audio_end(chart_document_t& chart, const audio_stream_info_
     const auto timing = build_timing_index(chart);
     if (!timing || timing.index->rows.empty()) return false;
     const auto& end = timing.index->rows.back();
-    const auto end_seconds = static_cast<long double>(end.after_stops_seconds.numerator) /
-                             end.after_stops_seconds.denominator;
+    const auto end_seconds = to_long_double(end.after_stops_seconds);
     const auto audio_seconds = static_cast<long double>(*stream.frame_count) / stream.sample_rate;
     if (audio_seconds <= end_seconds) return true;
-    const auto bpm = static_cast<long double>(end.effective_bpm.numerator) /
-                     end.effective_bpm.denominator;
+    const auto bpm = to_long_double(end.effective_bpm);
     const auto extra = std::ceil((audio_seconds - end_seconds) * bpm / 240.0L);
     if (!std::isfinite(extra) || extra < 1 || chart.measures.size() > limits.maximum_measures ||
         extra > limits.maximum_measures - chart.measures.size() ||

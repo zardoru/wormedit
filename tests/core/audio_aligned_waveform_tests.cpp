@@ -1063,3 +1063,24 @@ TEST_CASE("song overview clamps a viewport that extends past the audio end",
         CHECK(overview.visible_begin_fraction <= overview.visible_end_fraction);
     }
 }
+
+TEST_CASE("aligned waveform window includes the outward-rounded visible rows", "[unit][audio][helpers]") {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    const auto chart = chart_fixture();
+    const auto timing = build_timing_index(chart);
+    REQUIRE(timing);
+    const auto waveform = pulse_waveform();
+    const aligned_waveform_request_t fractional{.viewport_scroll_pixels = 10.25,
+        .viewport_height_pixels = 10.5,
+        .pixels_per_standard_measure = static_cast<double>(timing.index->divisions_per_standard_measure)};
+    const auto actual = aligned_waveform_window(waveform, *timing.index, fractional);
+    auto rounded = fractional;
+    rounded.viewport_scroll_pixels = 10;
+    rounded.viewport_height_pixels = 11;
+    const auto expected = aligned_waveform_window(waveform, *timing.index, rounded);
+    REQUIRE(actual);
+    REQUIRE(expected);
+    CHECK(actual->begin_frame == expected->begin_frame);
+    CHECK(actual->end_frame == expected->end_frame);
+}

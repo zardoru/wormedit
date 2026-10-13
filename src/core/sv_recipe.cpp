@@ -1,4 +1,6 @@
+#include <wormedit/core/rational.h>
 #include "chart_object_ids.h"
+#include "text_util.h"
 #include <wormedit/core/snap.h>
 #include <wormedit/core/sv_recipe.h>
 #include <wormedit/core/span_manipulation.h>
@@ -27,18 +29,13 @@ void reject(diagnostic_list_t& diagnostics, diagnostic_code_t code, std::string 
     diagnostics.push_back(error(code, std::move(message)));
 }
 
-auto rational_number(signed_rational_t value) -> long double {
-    if (value.denominator == 0) {
-        return std::numeric_limits<long double>::quiet_NaN();
-    }
-    return static_cast<long double>(value.numerator) / static_cast<long double>(value.denominator);
-}
+using wormedit::to_long_double;
 
 auto valid_bounded_rational(signed_rational_t value, long double maximum) -> bool {
     if (value.denominator == 0 || value.denominator > maximum_parameter_denominator) {
         return false;
     }
-    const auto number = rational_number(value);
+    const auto number = to_long_double(value);
     return std::isfinite(number) && std::abs(number) <= maximum;
 }
 
@@ -174,25 +171,25 @@ auto curve_value(const sv_recipe_t& recipe, long double p) -> long double {
     const auto& values = recipe.parameters;
     switch (recipe.curve) {
     case sv_recipe_curve_t::constant:
-        return rational_number(values.value_from);
+        return to_long_double(values.value_from);
     case sv_recipe_curve_t::linear: {
-        const auto from = rational_number(values.value_from);
-        return from + (rational_number(values.value_to) - from) * p;
+        const auto from = to_long_double(values.value_from);
+        return from + (to_long_double(values.value_to) - from) * p;
     }
     case sv_recipe_curve_t::exponential: {
-        const auto from = rational_number(values.value_from);
-        const auto delta = rational_number(values.value_to) - from;
-        const auto shape = rational_number(values.shape);
+        const auto from = to_long_double(values.value_from);
+        const auto delta = to_long_double(values.value_to) - from;
+        const auto shape = to_long_double(values.shape);
         if (std::abs(shape) < 1.0e-8L) {
             return from + delta * p;
         }
         return from + delta * std::expm1(shape * p) / std::expm1(shape);
     }
     case sv_recipe_curve_t::bump: {
-        const auto begin = rational_number(values.bump_start);
-        const auto end = begin + rational_number(values.bump_length);
-        return p >= begin && p < end ? rational_number(values.bump_x)
-                                     : rational_number(values.bump_y);
+        const auto begin = to_long_double(values.bump_start);
+        const auto end = begin + to_long_double(values.bump_length);
+        return p >= begin && p < end ? to_long_double(values.bump_x)
+                                     : to_long_double(values.bump_y);
     }
     case sv_recipe_curve_t::lua_expression:
         break;  // not evaluable yet; sample_sv_recipe rejects the recipe before this is reached
@@ -235,7 +232,7 @@ auto base_events_for(const chart_document_t& chart, sv_recipe_output_t output,
             const auto& event = chart.speeds[i];
             if (const auto row = absolute_row(index, event.position)) {
                 ordered.emplace_back(*row, event.provenance.source_order, i,
-                                     rational_number(event.multiplier));
+                                     to_long_double(event.multiplier));
             }
         }
     } else {
@@ -244,7 +241,7 @@ auto base_events_for(const chart_document_t& chart, sv_recipe_output_t output,
             const auto& event = chart.scrolls[i];
             if (const auto row = absolute_row(index, event.position)) {
                 ordered.emplace_back(*row, event.provenance.source_order, i,
-                                     rational_number(event.multiplier));
+                                     to_long_double(event.multiplier));
             }
         }
     }
@@ -358,8 +355,8 @@ void validate_bump_region(const sv_recipe_t& recipe, std::uint64_t span,
     if (recipe.curve != sv_recipe_curve_t::bump) {
         return;
     }
-    const auto begin = rational_number(recipe.parameters.bump_start);
-    const auto length = rational_number(recipe.parameters.bump_length);
+    const auto begin = to_long_double(recipe.parameters.bump_start);
+    const auto length = to_long_double(recipe.parameters.bump_length);
     if (begin < 0.0L || length <= 0.0L || begin + length > 1.0L) {
         reject(diagnostics, diagnostic_code_t::invalid_rational,
                "bump region must be a positive subrange of normalized [0, 1]");
@@ -386,8 +383,7 @@ void validate_transition(const sv_recipe_t& recipe, diagnostic_list_t& diagnosti
             duration->denominator == 0 ||
             duration->numerator > maximum_parameter_denominator ||
             duration->denominator > maximum_parameter_denominator ||
-            static_cast<long double>(duration->numerator) /
-                    static_cast<long double>(duration->denominator) >
+            to_long_double(*duration) >
                 maximum_parameter_magnitude) {
             reject(diagnostics, diagnostic_code_t::invalid_rational,
                    "SPEEDS recipe requires a bounded transition duration and beat/time mode");
@@ -426,7 +422,7 @@ void validate_sampling(const sv_recipe_t& recipe, std::uint64_t span,
                sampling.max_points < 2 ||
                sampling.max_points > maximum_sv_recipe_sample_points ||
                !valid_bounded_rational(sampling.tolerance, 1'000.0L) ||
-               rational_number(sampling.tolerance) <= 0.0L) {
+               to_long_double(sampling.tolerance) <= 0.0L) {
         reject(diagnostics, diagnostic_code_t::invalid_resolution,
                "adaptive SV sampling requires tolerance > 0 and a point cap in 2..4096");
     }
@@ -446,8 +442,7 @@ void validate_expression_source(const sv_recipe_t& recipe, diagnostic_list_t& di
                "only a Lua expression SV recipe may carry expression source");
     }
     if (is_expression && (recipe.expression_source.empty() ||
-                          recipe.expression_source.size() > maximum_expression_source_bytes ||
-                          recipe.expression_source.find('\0') != std::string::npos)) {
+                          !text_util::valid_bounded_text(recipe.expression_source, maximum_expression_source_bytes))) {
         reject(diagnostics, diagnostic_code_t::invalid_id,
                "a Lua expression SV recipe needs 1 to 16384 non-NUL bytes of source");
     }
@@ -456,20 +451,20 @@ void validate_expression_source(const sv_recipe_t& recipe, diagnostic_list_t& di
 void validate_curve_outputs(const sv_recipe_t& recipe, diagnostic_list_t& diagnostics) {
     const auto& params = recipe.parameters;
     if (recipe.curve == sv_recipe_curve_t::constant &&
-        !valid_curve_result(rational_number(params.value_from), recipe.output)) {
+        !valid_curve_result(to_long_double(params.value_from), recipe.output)) {
         reject(diagnostics, diagnostic_code_t::invalid_rational,
                "constant SV recipe value is invalid for its output family");
     }
     if ((recipe.curve == sv_recipe_curve_t::linear ||
          recipe.curve == sv_recipe_curve_t::exponential) &&
-        (!valid_curve_result(rational_number(params.value_from), recipe.output) ||
-         !valid_curve_result(rational_number(params.value_to), recipe.output))) {
+        (!valid_curve_result(to_long_double(params.value_from), recipe.output) ||
+         !valid_curve_result(to_long_double(params.value_to), recipe.output))) {
         reject(diagnostics, diagnostic_code_t::invalid_rational,
                "SV recipe endpoints are invalid for its output family");
     }
     if (recipe.curve == sv_recipe_curve_t::bump &&
-        (!valid_curve_result(rational_number(params.bump_x), recipe.output) ||
-         !valid_curve_result(rational_number(params.bump_y), recipe.output))) {
+        (!valid_curve_result(to_long_double(params.bump_x), recipe.output) ||
+         !valid_curve_result(to_long_double(params.bump_y), recipe.output))) {
         reject(diagnostics, diagnostic_code_t::invalid_rational,
                "bump values are invalid for its output family");
     }
@@ -484,8 +479,7 @@ auto validate_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe
         reject(diagnostics, diagnostic_code_t::invalid_id,
                "SV recipe must have a non-zero stable ID");
     }
-    if (recipe.name.empty() || recipe.name.size() > 256 ||
-        recipe.name.find('\\0') != std::string::npos) {
+    if (recipe.name.empty() || !text_util::valid_bounded_text(recipe.name, 256)) {
         reject(diagnostics, diagnostic_code_t::invalid_id,
                "SV recipe name must contain 1 to 256 non-NUL bytes");
     }
@@ -511,7 +505,7 @@ auto validate_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe
         return diagnostics;
     }
     if (recipe.curve == sv_recipe_curve_t::exponential &&
-        std::abs(rational_number(recipe.parameters.shape)) > 32.0L) {
+        std::abs(to_long_double(recipe.parameters.shape)) > 32.0L) {
         reject(diagnostics, diagnostic_code_t::invalid_rational,
                "exponential SV recipe shape must be between -32 and 32");
     }
@@ -626,7 +620,7 @@ auto add_adaptive_sample_points(std::map<std::uint64_t, long double>& sampled,
     adaptive_sampling_context_t context{.recipe = recipe,
                                         .range = range,
                                         .maximum_points = maximum,
-                                        .tolerance = rational_number(recipe.sampling.tolerance),
+                                        .tolerance = to_long_double(recipe.sampling.tolerance),
                                         .sampled = sampled,
                                         .diagnostics = result.diagnostics,
                                         .tolerance_met = result.tolerance_met};

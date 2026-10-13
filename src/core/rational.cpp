@@ -85,7 +85,7 @@ auto scaled_decimal(exact_decimal_mantissa_t mantissa, bool negative)
     return signed_rational_t{numerator, denominator};
 }
 
-auto normalize(std::uint64_t numerator, std::uint64_t denominator) -> rational_t {
+auto reduce_fraction_parts(std::uint64_t numerator, std::uint64_t denominator) -> rational_t {
     const auto divisor = std::gcd(numerator, denominator);
     return {numerator / divisor, denominator / divisor};
 }
@@ -139,15 +139,13 @@ auto exact_binary_value(double value) -> std::optional<rational_t> {
 
 auto error_center(double input, rational_t candidate) -> long double {
     const auto input_value = static_cast<long double>(input);
-    const auto candidate_value = static_cast<long double>(candidate.numerator) /
-                                 static_cast<long double>(candidate.denominator);
+    const auto candidate_value = to_long_double(candidate);
     return std::fabs(input_value - candidate_value);
 }
 
 auto error_bound(double input, rational_t candidate) -> long double {
     const auto input_value = static_cast<long double>(input);
-    const auto candidate_value = static_cast<long double>(candidate.numerator) /
-                                 static_cast<long double>(candidate.denominator);
+    const auto candidate_value = to_long_double(candidate);
     const auto scale = std::fabs(input_value) + std::fabs(candidate_value) + 1.0L;
     const auto rounding_allowance = 4.0L * std::numeric_limits<long double>::epsilon() * scale;
     return error_center(input, candidate) + rounding_allowance;
@@ -229,7 +227,7 @@ auto consider_semiconvergent(convergent_search_t& search) -> void {
                              search.denominator_before_previous, search.maximum_denominator,
                              denominator) &&
         numerator != 0 && denominator != 0) {
-        consider_candidate(search, normalize(numerator, denominator));
+        consider_candidate(search, reduce_fraction_parts(numerator, denominator));
     }
 }
 
@@ -248,7 +246,7 @@ auto advance_convergent(convergent_search_t& search, long double integral) -> bo
         return false;
     }
     if (numerator_next != 0) {
-        consider_candidate(search, normalize(numerator_next, denominator_next));
+        consider_candidate(search, reduce_fraction_parts(numerator_next, denominator_next));
     }
     const auto fractional = search.remainder - integral;
     search.numerator_before_previous = search.numerator_previous;
@@ -287,7 +285,7 @@ auto best_bounded_approximation(double input, std::uint64_t maximum_denominator,
 
 } // namespace
 
-auto parse_exact_decimal(std::string_view text) -> std::optional<signed_rational_t> {
+auto parse_exact_decimal(std::string_view text, std::optional<std::uint32_t> maximum_exponent) -> std::optional<signed_rational_t> {
     bool negative{};
     if (!text.empty() && (text.front() == '+' || text.front() == '-')) {
         negative = text.front() == '-';
@@ -298,7 +296,9 @@ auto parse_exact_decimal(std::string_view text) -> std::optional<signed_rational
     if (!mantissa) return std::nullopt;
     if (marker != std::string_view::npos) {
         const auto exponent = decimal_exponent(text.substr(marker + 1));
-        if (!exponent) return std::nullopt;
+        if (!exponent || (maximum_exponent &&
+            (*exponent < -static_cast<std::int64_t>(*maximum_exponent) ||
+             *exponent > static_cast<std::int64_t>(*maximum_exponent)))) return std::nullopt;
         mantissa->scale -= *exponent;
     }
     return scaled_decimal(*mantissa, negative);

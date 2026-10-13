@@ -1,3 +1,5 @@
+#include "text_util.h"
+#include <wormedit/core/rational.h>
 #include "position_validation.h"
 #include "chart_object_ids.h"
 #include <wormedit/core/bpm_editor.h>
@@ -184,9 +186,8 @@ auto apply_chart_edit(song_document_t& document, const Edit& edit, bpm_edit_limi
 } // namespace
 
 auto parse_bpm_text(std::string_view text) -> std::optional<signed_rational_t> {
-    const auto begin = text.find_first_not_of(" \t\r\n");
-    if (begin == std::string_view::npos) return std::nullopt;
-    text = text.substr(begin, text.find_last_not_of(" \t\r\n") - begin + 1);
+    text = text_util::trim(text, " \t\r\n");
+    if (text.empty()) return std::nullopt;
     if (text.find('/') == std::string_view::npos) {
         const auto parsed = parse_exact_decimal(text);
         return parsed && parsed->numerator > 0 ? parsed : std::nullopt;
@@ -226,7 +227,7 @@ auto format_bpm_text(signed_rational_t bpm, std::size_t maximum_fraction_digits)
         return result;
     }
     char approximate[64]{};
-    const auto value = static_cast<double>(bpm.numerator) / static_cast<double>(bpm.denominator);
+    const auto value = to_double(bpm);
     const auto converted = std::to_chars(approximate, approximate + sizeof(approximate), value,
                                          std::chars_format::general, 12);
     if (converted.ec != std::errc{})

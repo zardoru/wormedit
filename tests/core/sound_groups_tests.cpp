@@ -409,3 +409,12 @@ TEST_CASE("song validation rejects duplicate IDs and names for groups", "[unit][
     song.sound_groups[1].id = sound_group_id_t{11};
     CHECK_FALSE(validate_document(song).empty());
 }
+
+TEST_CASE("sound group names reject malformed UTF-8", "[unit][core][helpers][sound-groups]") {
+    auto history = make_document_history(group_song());
+    const auto result = apply_sound_group_edit(history, history.document.revision,
+        create_sound_group_action_t{.group = sound_group_id_t{11}, .name = "bad\xc0\x80",
+                                    .sounds = {resource_id_t{1}}});
+    CHECK_FALSE(result);
+    CHECK(history.document.sound_groups.empty());
+}

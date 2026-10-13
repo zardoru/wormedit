@@ -1,3 +1,4 @@
+#include <wormedit/core/rational.h>
 #include <wormedit/audio/aligned_waveform.h>
 
 #include <algorithm>
@@ -32,11 +33,11 @@ auto frame_at_fractional_row(const waveform_t& waveform, const timing_index_t& t
         fraction == 0.0L && !end ? timing_boundary_side_t::before_delays
                                 : timing_boundary_side_t::after_stops);
     if (!before || !before.seconds) return std::nullopt;
-    auto seconds = static_cast<long double>(before.seconds->numerator) / before.seconds->denominator;
+    auto seconds = to_long_double(*before.seconds);
     if (fraction != 0.0L) {
         const auto after = timing_at(timing, floor_row + 1U, timing_boundary_side_t::before_delays);
         if (!after || !after.seconds) return std::nullopt;
-        const auto next = static_cast<long double>(after.seconds->numerator) / after.seconds->denominator;
+        const auto next = to_long_double(*after.seconds);
         seconds += (next - seconds) * fraction;
     }
     const auto frame = seconds * waveform.sample_rate;
@@ -63,8 +64,7 @@ auto pixel_for_column(const aligned_row_context_t& context, const waveform_colum
     if (!musical || !musical.absolute_row || musical.absolute_row->denominator == 0) {
         return std::nullopt;
     }
-    const auto row = static_cast<long double>(musical.absolute_row->numerator) /
-                     musical.absolute_row->denominator;
+    const auto row = to_long_double(*musical.absolute_row);
     const auto y = row / context.rows_per_pixel - context.request.viewport_scroll_pixels;
     if (!std::isfinite(y) || y < 0.0L || y >= context.request.viewport_height_pixels) {
         return std::nullopt;
@@ -159,10 +159,8 @@ struct row_frame_cursor_t {
             segment = nullptr;
             return;
         }
-        begin_seconds = static_cast<long double>(segment->begin_seconds.numerator) /
-                        segment->begin_seconds.denominator;
-        const auto finish = static_cast<long double>(segment->end_seconds.numerator) /
-                            segment->end_seconds.denominator;
+        begin_seconds = to_long_double(segment->begin_seconds);
+        const auto finish = to_long_double(segment->end_seconds);
         seconds_per_row = (finish - begin_seconds) / (segment->end_row - segment->begin_row);
     }
 
@@ -241,10 +239,7 @@ void append_composed_rows(aligned_waveform_result_t& result, const waveform_colu
 } // namespace
 
 namespace {
-auto display_seconds(signed_rational_t value) -> double {
-    return value.denominator == 0 ? std::numeric_limits<double>::quiet_NaN()
-        : static_cast<double>(value.numerator) / static_cast<double>(value.denominator);
-}
+using wormedit::to_double;
 auto display_clock_matches(const display_row_table_t& table, const timing_index_t& timing,
                            display_row_table_identity_t identity) -> bool {
     return table.valid && table.identity == identity && table.timing_identity == &timing &&
@@ -276,14 +271,14 @@ void rebuild_display_clock(display_row_table_t& table, const timing_index_t& tim
     ++table.clock_generation;
     for (const auto& row : timing.rows)
         table.boundaries.push_back({static_cast<double>(row.absolute_row),
-            display_seconds(row.before_delays_seconds), display_seconds(row.event_seconds),
-            display_seconds(row.after_stops_seconds)});
+            to_double(row.before_delays_seconds), to_double(row.event_seconds),
+            to_double(row.after_stops_seconds)});
     for (const auto& segment : timing.segments) {
-        const auto begin = display_seconds(segment.begin_seconds);
+        const auto begin = to_double(segment.begin_seconds);
         const auto distance = static_cast<double>(segment.end_row) - static_cast<double>(segment.begin_row);
         table.segments.push_back({static_cast<double>(segment.begin_row),
             static_cast<double>(segment.end_row), begin,
-            distance > 0 ? (display_seconds(segment.end_seconds) - begin) / distance : 0.0});
+            distance > 0 ? (to_double(segment.end_seconds) - begin) / distance : 0.0});
     }
 }
 auto valid_display_request(aligned_waveform_request_t request, bool padding = true) -> bool {
@@ -488,10 +483,10 @@ auto aligned_waveform_window(const waveform_t& waveform, const timing_index_t& t
         waveform.sample_rate == 0 || waveform.total_frames == 0) return std::nullopt;
     const auto rows_per_pixel = static_cast<long double>(timing.divisions_per_standard_measure) /
                                 request.pixels_per_standard_measure;
-    const auto first = std::clamp(request.viewport_scroll_pixels * rows_per_pixel,
+    const auto first = std::clamp(std::floor(request.viewport_scroll_pixels * rows_per_pixel),
                                  0.0L, static_cast<long double>(timing.total_rows));
-    const auto last = std::clamp((request.viewport_scroll_pixels + request.viewport_height_pixels) *
-                                rows_per_pixel, 0.0L, static_cast<long double>(timing.total_rows));
+    const auto last = std::clamp(std::ceil((request.viewport_scroll_pixels + request.viewport_height_pixels) *
+                                rows_per_pixel), 0.0L, static_cast<long double>(timing.total_rows));
     if (first >= last) return std::nullopt;
     const auto begin = frame_at_fractional_row(waveform, timing, first, false);
     const auto end = frame_at_fractional_row(waveform, timing, last, true);
@@ -523,8 +518,7 @@ auto project_aligned_waveform_samples(const waveform_t& waveform, const timing_i
         const auto musical = musical_position_at(timing,
             {static_cast<std::int64_t>(sample.frame), waveform.sample_rate});
         if (!musical || !musical.absolute_row) return result;
-        const auto y = static_cast<long double>(musical.absolute_row->numerator) /
-                       musical.absolute_row->denominator / rows_per_pixel - request.viewport_scroll_pixels;
+        const auto y = to_long_double(*musical.absolute_row) / rows_per_pixel - request.viewport_scroll_pixels;
         if (y >= 0 && y < request.viewport_height_pixels)
             result.rows.push_back({.y_pixels = static_cast<double>(y), .sample_point = true,
                                    .samples = sample.samples});
@@ -742,9 +736,8 @@ auto project_waveform_overview(const waveform_t& waveform, const timing_index_t&
         result.status = aligned_waveform_status_t::invalid_timing;
         return result;
     }
-    const auto beat_zero_fraction = static_cast<long double>(beat_zero.seconds->numerator) *
-                                    waveform.sample_rate / beat_zero.seconds->denominator /
-                                    waveform.total_frames;
+    const auto beat_zero_fraction = to_long_double(*beat_zero.seconds) *
+                                    waveform.sample_rate / waveform.total_frames;
     if (std::isfinite(beat_zero_fraction) && beat_zero_fraction >= 0.0L &&
         beat_zero_fraction <= 1.0L) {
         result.beat_zero_fraction = static_cast<double>(beat_zero_fraction);

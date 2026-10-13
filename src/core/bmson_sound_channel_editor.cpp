@@ -1,3 +1,4 @@
+#include "timing_arithmetic.h"
 #include <wormedit/core/bmson_sound_channel_editor.h>
 #include <wormedit/core/measure.h>
 #include <wormedit/core/resource_assignment.h>
@@ -575,7 +576,7 @@ auto insert_bmson_sound_markers(document_history_t& history, std::uint64_t expec
                                                 markers, occupied, revision)) return *failure;
     auto stats = chart_object_stats(*found_chart);
     const auto needed = markers.size() * 2;
-    if (stats.count > 1'000'000 - needed ||
+    if (stats.count > default_maximum_chart_objects - needed ||
         stats.largest > std::numeric_limits<std::uint64_t>::max() - needed)
         return rejected(revision, diagnostic_code_t::invalid_id,
                         "BMSON chart object ID space is exhausted");
@@ -974,46 +975,7 @@ auto find_chart_at_revision(document_history_t& history, std::uint64_t expected_
     return std::pair{static_cast<std::size_t>(chart - history.document.charts.begin()), &*chart};
 }
 
-auto rational_magnitude(std::int64_t value) noexcept -> std::uint64_t {
-    return value >= 0 ? static_cast<std::uint64_t>(value)
-                      : static_cast<std::uint64_t>(-(value + 1)) + 1;
-}
-
-auto rational_product(std::uint64_t left, std::uint64_t right)
-    -> std::optional<std::uint64_t> {
-    if (left != 0 && right > std::numeric_limits<std::uint64_t>::max() / left)
-        return std::nullopt;
-    return left * right;
-}
-
-auto signed_rational_product(std::int64_t value, std::uint64_t factor)
-    -> std::optional<std::int64_t> {
-    constexpr auto maximum = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
-    constexpr auto minimum = maximum + 1;
-    const auto absolute = rational_magnitude(value);
-    const auto limit = value < 0 ? minimum : maximum;
-    if (absolute != 0 && factor > limit / absolute) return std::nullopt;
-    const auto product = absolute * factor;
-    if (value < 0 && product == minimum) return std::numeric_limits<std::int64_t>::min();
-    return value < 0 ? -static_cast<std::int64_t>(product)
-                     : static_cast<std::int64_t>(product);
-}
-
-auto subtract_time(signed_rational_t left, signed_rational_t right)
-    -> std::optional<signed_rational_t> {
-    if (left.denominator == 0 || right.denominator == 0) return std::nullopt;
-    const auto divisor = std::gcd(left.denominator, right.denominator);
-    const auto left_scale = right.denominator / divisor;
-    const auto right_scale = left.denominator / divisor;
-    const auto scaled_left = signed_rational_product(left.numerator, left_scale);
-    const auto scaled_right = signed_rational_product(right.numerator, right_scale);
-    const auto denominator = rational_product(left.denominator, left_scale);
-    if (!scaled_left || !scaled_right || !denominator ||
-        (*scaled_right > 0 && *scaled_left < std::numeric_limits<std::int64_t>::min() + *scaled_right) ||
-        (*scaled_right < 0 && *scaled_left > std::numeric_limits<std::int64_t>::max() + *scaled_right))
-        return std::nullopt;
-    return signed_rational_t{*scaled_left - *scaled_right, *denominator};
-}
+using timing_arithmetic::subtract_exact;
 
 auto geometry_fits_clip(const sound_channel_t& channel,
                         const bmson_source_geometry_t& geometry) -> bool {
@@ -1035,7 +997,7 @@ auto target_inside_active_slice(const sound_slice_result_t& slices, const timing
     const auto start = timing_at(timing, active->absolute_row);
     const auto target = timing_at(timing, target_row);
     if (!start || !target) return std::nullopt;
-    const auto elapsed = subtract_time(*target.seconds, *start.seconds);
+    const auto elapsed = subtract_exact(*target.seconds, *start.seconds);
     if (!elapsed || elapsed->numerator < 0) return std::nullopt;
     const auto offset = sample_frame_at(*elapsed, sample_rate);
     if (!offset) return std::nullopt;
@@ -1217,7 +1179,7 @@ auto make_empty_stem_fallbacks(const song_document_t& document,
 auto allocate_two_ids(chart_document_t& chart, std::uint64_t& largest,
                       std::uint64_t count) -> bool {
     const auto stats = chart_object_stats(chart);
-    if (stats.count > 1'000'000 - count ||
+    if (stats.count > default_maximum_chart_objects - count ||
         stats.largest > std::numeric_limits<std::uint64_t>::max() - count) return false;
     largest = stats.largest;
     return true;

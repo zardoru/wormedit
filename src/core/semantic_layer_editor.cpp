@@ -21,8 +21,7 @@ namespace {
 using text_util::valid_utf8;
 
 auto valid_name(std::string_view name, const semantic_layer_edit_limits_t& limits) -> bool {
-    return !name.empty() && name.size() <= limits.maximum_name_bytes &&
-           name.find('\0') == std::string_view::npos && valid_utf8(name);
+    return !name.empty() && text_util::valid_bounded_text(name, limits.maximum_name_bytes);
 }
 
 auto add_size(std::size_t& total, std::size_t value, std::size_t maximum) -> bool {

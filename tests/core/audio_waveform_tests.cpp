@@ -381,7 +381,9 @@ void check_detail_window(const waveform_t& waveform, const wormedit::timing_inde
                          aligned_waveform_request_t request) {
     const auto window = aligned_waveform_window(waveform, timing, request);
     REQUIRE(window);
-    CHECK(window->end_frame - window->begin_frame <= 5);
+    // Prefetch covers the outward-rounded row interval, clipped to this short source.
+    CHECK(window->begin_frame == 0);
+    CHECK(window->end_frame == waveform.total_frames);
     CHECK(window->frames_per_pixel < 1.0);
 }
 

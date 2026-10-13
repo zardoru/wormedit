@@ -666,3 +666,16 @@ TEST_CASE("Lua expression recipes are stored and validated but never sampled",
     recipe.expression_source.assign(16 * 1024 + 1, 'x');
     CHECK_FALSE(validate_sv_recipe(chart, recipe).empty());
 }
+
+TEST_CASE("SV recipes reject malformed UTF-8 and NUL-bearing bounded text", "[unit][sv-recipe]") {
+    const auto chart = make_recipe_chart();
+    auto recipe = make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {2, 1});
+    recipe.name = "\xc0\x80";
+    CHECK_FALSE(validate_sv_recipe(chart, recipe).empty());
+    recipe.name = std::string{"a\0b", 3};
+    CHECK_FALSE(validate_sv_recipe(chart, recipe).empty());
+    recipe.name = "expression";
+    recipe.curve = sv_recipe_curve_t::lua_expression;
+    recipe.expression_source = "return 1 -- \xc0\x80";
+    CHECK_FALSE(validate_sv_recipe(chart, recipe).empty());
+}

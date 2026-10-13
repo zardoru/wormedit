@@ -2,6 +2,7 @@
 
 #include <wormedit/core/timing.h>
 #include "wide_math.h"
+#include "checked_math.h"
 
 #include <array>
 #include <limits>
@@ -15,10 +16,7 @@ inline constexpr auto positive_limit = static_cast<std::uint64_t>(
     std::numeric_limits<std::int64_t>::max());
 inline constexpr auto negative_limit = positive_limit + 1;
 
-inline auto magnitude(std::int64_t value) -> std::uint64_t {
-    return value >= 0 ? static_cast<std::uint64_t>(value)
-                      : static_cast<std::uint64_t>(-(value + 1)) + 1;
-}
+using checked_math::magnitude;
 
 inline auto signed_value(std::uint64_t value, bool negative) -> std::optional<std::int64_t> {
     if (value > (negative ? negative_limit : positive_limit)) return std::nullopt;
@@ -26,7 +24,7 @@ inline auto signed_value(std::uint64_t value, bool negative) -> std::optional<st
     return negative ? -static_cast<std::int64_t>(value) : static_cast<std::int64_t>(value);
 }
 
-inline auto normalize(signed_rational_t value) -> std::optional<signed_rational_t> {
+inline auto try_normalize(signed_rational_t value) -> std::optional<signed_rational_t> {
     if (value.denominator == 0) return std::nullopt;
     const auto divisor = std::gcd(magnitude(value.numerator), value.denominator);
     const auto numerator = signed_value(magnitude(value.numerator) / divisor, value.numerator < 0);
@@ -72,8 +70,8 @@ inline auto reduce_sum(signed_wide_t sum, std::uint64_t common,
 // rejected merely because its common-denominator intermediate exceeded 64 bits.
 inline auto sum(signed_rational_t left, signed_rational_t right, bool subtract = false)
     -> std::optional<signed_rational_t> {
-    const auto a = normalize(left);
-    const auto b = normalize(right);
+    const auto a = try_normalize(left);
+    const auto b = try_normalize(right);
     if (!a || !b) return std::nullopt;
     const auto common = std::gcd(a->denominator, b->denominator);
     const auto lhs = signed_wide_t{wide_math::multiply(magnitude(a->numerator),
@@ -84,6 +82,11 @@ inline auto sum(signed_rational_t left, signed_rational_t right, bool subtract =
                                    (b->numerator < 0) != subtract};
     return reduce_sum(combine(lhs, rhs), common, a->denominator, b->denominator);
 }
+
+inline auto add_exact(signed_rational_t left, signed_rational_t right)
+    -> std::optional<signed_rational_t> { return sum(left, right); }
+inline auto subtract_exact(signed_rational_t left, signed_rational_t right)
+    -> std::optional<signed_rational_t> { return sum(left, right, true); }
 
 inline constexpr std::uint64_t clock_quantum = 1'000'000'000'000;
 inline constexpr std::uint64_t row_quantum = 1'000'000'000;
@@ -100,20 +103,13 @@ inline auto rounded_quotient(wide_math::u128_t numerator, wide_math::u128_t deno
     return result.quotient.low;
 }
 
-inline auto multiply_checked(wide_math::u128_t left, std::uint64_t right)
-    -> std::optional<wide_math::u128_t> {
-    const auto upper = wide_math::multiply(left.high, right);
-    const auto lower = wide_math::multiply(left.low, right);
-    const auto high = upper.low + lower.high;
-    if (upper.high != 0 || high < upper.low) return std::nullopt;
-    return wide_math::u128_t{high, lower.low};
-}
+using checked_math::checked_multiply;
 
 inline auto factor_product(std::span<const std::uint64_t> factors)
     -> std::optional<wide_math::u128_t> {
     auto product = wide_math::u128_t{0, 1};
     for (const auto factor : factors) {
-        const auto next = multiply_checked(product, factor);
+        const auto next = checked_multiply(product, factor);
         if (!next) return std::nullopt;
         product = *next;
     }
@@ -139,6 +135,24 @@ inline auto rounded_factor_ratio(std::array<std::uint64_t, 4> numerators,
     return rounded_quotient(*numerator, *denominator);
 }
 
+inline auto rows_to_beat_fraction(std::uint64_t rows, std::uint64_t resolution,
+    std::uint64_t units = 4) -> std::optional<signed_rational_t> {
+    if (resolution == 0 || units == 0) return std::nullopt;
+    const auto divisor = std::gcd(rows, resolution);
+    auto numerator = rows / divisor;
+    auto denominator = resolution / divisor;
+    const auto factor = units / std::gcd(denominator, units);
+    denominator /= units / factor;
+    if (numerator > positive_limit / factor) return std::nullopt;
+    return signed_rational_t{static_cast<std::int64_t>(numerator * factor), denominator};
+}
+inline auto frames_to_seconds(std::int64_t frame, std::uint32_t sample_rate)
+    -> std::optional<signed_rational_t> { return try_normalize({frame, sample_rate}); }
+inline auto seconds_to_frames(signed_rational_t seconds, std::uint32_t sample_rate,
+    sample_rounding_t rounding) -> sample_frame_result_t {
+    return sample_frame_at(seconds, sample_rate, rounding);
+}
+
 inline auto clock_ticks(signed_rational_t seconds) -> std::optional<std::int64_t> {
     if (seconds.denominator == 0) return std::nullopt;
     if (clock_quantum % seconds.denominator == 0) {
@@ -154,7 +168,7 @@ inline auto clock_ticks(signed_rational_t seconds) -> std::optional<std::int64_t
 }
 
 inline auto clock_value(std::int64_t ticks) -> signed_rational_t {
-    return *normalize({ticks, clock_quantum});
+    return *try_normalize({ticks, clock_quantum});
 }
 
 inline auto advance_ticks(std::int64_t begin, std::uint64_t delta)
@@ -195,7 +209,7 @@ inline auto interpolate_row(std::uint64_t begin_row, std::uint64_t end_row,
         wide_math::multiply(elapsed, (end_row - begin_row) * row_quantum), {0, duration});
     if (!offset || *offset > (end_row - begin_row) * row_quantum) return std::nullopt;
     const auto row = begin_row * row_quantum + *offset;
-    return normalize({static_cast<std::int64_t>(row), row_quantum});
+    return try_normalize({static_cast<std::int64_t>(row), row_quantum});
 }
 
 } // namespace wormedit::timing_arithmetic

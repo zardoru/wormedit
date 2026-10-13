@@ -1,3 +1,5 @@
+#include "../core/text_util.h"
+#include <wormedit/core/rational.h>
 #include <wormedit/formats/conversion.h>
 #include <wormedit/formats/slice_spans.h>
 
@@ -111,7 +113,7 @@ auto slug(std::string_view source, std::string_view fallback, std::size_t capaci
                 result.push_back('-');
             separator = false;
             if (result.size() < capacity)
-                result.push_back(static_cast<char>(std::tolower(value)));
+                result.push_back(static_cast<char>(text_util::ascii_fold(static_cast<char>(value))));
         } else {
             separator = true;
         }
@@ -437,8 +439,7 @@ auto sliced_bgm_timestamp_error(const chart_document_t& chart) -> long double {
             if (!event.sound) continue;
             const auto time = timing_at(*timing.index, std::get<measure_index_t>(measures), event.position);
             if (!time) continue;
-            const auto milliseconds = static_cast<long double>(time.seconds->numerator) * 1000 /
-                time.seconds->denominator;
+            const auto milliseconds = to_long_double(*time.seconds) * 1000;
             maximum = std::max(maximum, std::abs(std::round(milliseconds) - milliseconds));
         }
     }

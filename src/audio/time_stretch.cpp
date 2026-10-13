@@ -1,3 +1,4 @@
+#include <wormedit/core/rational.h>
 #include <wormedit/audio/time_stretch.h>
 
 // WSOLA algorithm: Werner Verhelst and Marc Roelands, ICASSP 1993, vol. 2,
@@ -30,7 +31,7 @@ auto time_stretch_t::reset(rational_t rate) noexcept -> bool {
 auto time_stretch_t::next_source_position() const noexcept -> long double {
     // Keep the nominal clock independent of correlation offsets: feeding an
     // offset into the next search would accumulate tempo drift on periodic audio.
-    return static_cast<long double>(hop_count_) * hop_ * rate_.numerator / rate_.denominator;
+    return static_cast<long double>(hop_count_) * hop_ * to_long_double(rate_);
 }
 
 auto time_stretch_t::input_frames_needed(std::size_t output_frames) const noexcept -> std::size_t {

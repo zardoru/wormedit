@@ -1,5 +1,5 @@
-#include "interaction_geometry.h"
 #include "text_util.h"
+#include "interaction_geometry.h"
 #include <wormedit/core/document.h>
 #include <wormedit/core/sv_recipe.h>
 
@@ -124,10 +124,7 @@ auto valid_format_family(format_family_t family) -> bool {
 auto canonical_target_identifier(const target_resource_identity_t& identity) -> std::string {
     auto result = identity.identifier;
     if (identity.family == format_family_t::bms) {
-        std::ranges::transform(result, result.begin(), [](unsigned char character) {
-            return character >= 'a' && character <= 'z' ? static_cast<char>(character - ('a' - 'A'))
-                                                        : static_cast<char>(character);
-        });
+        result = text_util::ascii_upper(std::move(result));
     }
     return result;
 }
@@ -135,10 +132,7 @@ auto canonical_target_identifier(const target_resource_identity_t& identity) -> 
 auto canonical_target_namespace(const target_resource_identity_t& identity) -> std::string {
     auto result = identity.namespace_name;
     if (identity.family == format_family_t::bms) {
-        std::ranges::transform(result, result.begin(), [](unsigned char character) {
-            return character >= 'a' && character <= 'z' ? static_cast<char>(character - ('a' - 'A'))
-                                                        : static_cast<char>(character);
-        });
+        result = text_util::ascii_upper(std::move(result));
     }
     return result;
 }

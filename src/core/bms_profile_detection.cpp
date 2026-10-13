@@ -1,3 +1,5 @@
+#include "../core/text_util.h"
+#include <wormedit/core/bms36.h>
 #include <wormedit/core/bms_profile_detection.h>
 
 #include <algorithm>
@@ -9,21 +11,14 @@
 namespace wormedit {
 namespace {
 
-auto is_base36(char value) -> bool {
-    return (value >= '0' && value <= '9') || (value >= 'A' && value <= 'Z');
+auto is_base36(char byte) -> bool {
+    return bms36_value(static_cast<unsigned char>(byte), bms36_case_policy_t::uppercase_only) >= 0;
 }
 
-auto uppercase_ascii(std::string value) -> std::string {
-    for (auto& character : value) {
-        if (character >= 'a' && character <= 'z') {
-            character = static_cast<char>(character - 'a' + 'A');
-        }
-    }
-    return value;
-}
+
 
 auto normalize_extension(std::string extension) -> std::string {
-    extension = uppercase_ascii(std::move(extension));
+    extension = text_util::ascii_upper(std::move(extension));
     if (!extension.empty() && extension.front() != '.') {
         extension.insert(extension.begin(), '.');
     }
@@ -39,7 +34,7 @@ auto observe_channel(std::size_t order, const std::string& raw) -> bms_raw_chann
         return result;
     }
 
-    const auto canonical = uppercase_ascii(raw);
+    const auto canonical = text_util::ascii_upper(raw);
     if (!is_base36(canonical[0]) || !is_base36(canonical[1])) {
         return result;
     }

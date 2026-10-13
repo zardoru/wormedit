@@ -10,7 +10,7 @@ namespace wormedit {
 
 struct timing_anchor_edit_limits_t {
     std::size_t maximum_timing_anchors{100'000};
-    std::size_t maximum_chart_objects{1'000'000};
+    std::size_t maximum_chart_objects{default_maximum_chart_objects};
 };
 
 struct insert_timing_anchor_action_t {

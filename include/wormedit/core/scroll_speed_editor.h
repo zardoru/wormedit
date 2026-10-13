@@ -11,7 +11,7 @@ namespace wormedit {
 struct scroll_speed_edit_limits_t {
     std::size_t maximum_scroll_events{100'000};
     std::size_t maximum_speed_events{100'000};
-    std::size_t maximum_chart_objects{1'000'000};
+    std::size_t maximum_chart_objects{default_maximum_chart_objects};
 };
 
 struct insert_scroll_event_action_t {

@@ -1,3 +1,4 @@
+#include "text_util.h"
 #include "checked_math.h"
 #include <wormedit/core/workspace.h>
 
@@ -337,14 +338,7 @@ auto branch_kind_name(bms_control_kind_t kind) -> std::string_view {
 }
 
 auto bounded_utf8_prefix(std::string_view text, std::size_t maximum_bytes) -> std::string {
-    auto length = std::min(text.size(), maximum_bytes);
-    if (length < text.size()) {
-        while (length > 0 && length < text.size() &&
-               (static_cast<unsigned char>(text[length]) & 0xc0U) == 0x80U) {
-            --length;
-        }
-    }
-    return std::string(text.substr(0, length));
+    return std::string(text_util::truncate_utf8(text, maximum_bytes));
 }
 
 struct branch_outline_context_t {

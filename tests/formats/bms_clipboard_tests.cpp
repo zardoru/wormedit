@@ -417,3 +417,13 @@ TEST_CASE("bms_clipboard duplicate aliases resolve to the same sound before reje
     CHECK_FALSE(result.clipboard);
     CHECK_FALSE(result.error.empty());
 }
+
+TEST_CASE("bms_clipboard decimal reduction precedes magnitude overflow", "[formats][helpers]") {
+    const auto result = decode("BMSE3.0 ClipBoard Object Data Format\r\n"
+        "0080" "0000000000000000" "92233720368547758070e-1\r\n");
+    REQUIRE(result);
+    const auto* bpm = first_object<wormedit::bpm_event_t>(*result.clipboard);
+    REQUIRE(bpm);
+    CHECK((std::get<wormedit::bpm_event_t>(bpm->payload).beats_per_minute ==
+           wormedit::signed_rational_t{INT64_MAX, 1}));
+}

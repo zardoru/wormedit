@@ -52,7 +52,7 @@ struct renumber_bms_identifiers_action_t {
 
 struct resource_assignment_limits_t {
     std::size_t maximum_selected_objects{50'000};
-    std::size_t maximum_chart_objects{1'000'000};
+    std::size_t maximum_chart_objects{default_maximum_chart_objects};
 };
 
 struct assign_resource_action_t {

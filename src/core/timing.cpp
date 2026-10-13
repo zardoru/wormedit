@@ -1,3 +1,4 @@
+#include <wormedit/core/rational.h>
 #include "../core/checked_math.h"
 #include <wormedit/core/timing.h>
 
@@ -33,31 +34,11 @@ using checked_math::magnitude;
 
 using checked_math::checked_multiply;
 
-auto normalized(signed_rational_t value) -> std::optional<signed_rational_t> {
-    if (value.denominator == 0) {
-        return std::nullopt;
-    }
-    const auto divisor = std::gcd(magnitude(value.numerator), value.denominator);
-    const auto reduced_magnitude = magnitude(value.numerator) / divisor;
-    if (value.numerator < 0 && reduced_magnitude == minimum_i64_magnitude) {
-        value.numerator = std::numeric_limits<std::int64_t>::min();
-    } else {
-        value.numerator = value.numerator < 0 ? -static_cast<std::int64_t>(reduced_magnitude)
-                                              : static_cast<std::int64_t>(reduced_magnitude);
-    }
-    value.denominator /= divisor;
-    return value;
-}
+using timing_arithmetic::try_normalize;
 
-auto add_exact(signed_rational_t left, signed_rational_t right)
-    -> std::optional<signed_rational_t> {
-    return timing_arithmetic::sum(left, right);
-}
+using timing_arithmetic::add_exact;
 
-auto subtract_exact(signed_rational_t left, signed_rational_t right)
-    -> std::optional<signed_rational_t> {
-    return timing_arithmetic::sum(left, right, true);
-}
+using timing_arithmetic::subtract_exact;
 
 auto compare_positive_fractions(std::uint64_t left_numerator, std::uint64_t left_denominator,
                                 std::uint64_t right_numerator, std::uint64_t right_denominator)
@@ -88,8 +69,8 @@ auto compare_positive_fractions(std::uint64_t left_numerator, std::uint64_t left
 }
 
 auto compare_exact(signed_rational_t left, signed_rational_t right) -> std::optional<int> {
-    const auto left_normal = normalized(left);
-    const auto right_normal = normalized(right);
+    const auto left_normal = try_normalize(left);
+    const auto right_normal = try_normalize(right);
     if (!left_normal || !right_normal) {
         return std::nullopt;
     }
@@ -139,7 +120,7 @@ auto positive_fraction(std::vector<std::uint64_t> numerators,
         }
         denominator = *product;
     }
-    return normalized({static_cast<std::int64_t>(numerator), denominator});
+    return try_normalize({static_cast<std::int64_t>(numerator), denominator});
 }
 
 auto signed_from_magnitude(std::uint64_t value, bool negative) -> std::optional<signed_rational_t> {
@@ -156,8 +137,8 @@ auto signed_from_magnitude(std::uint64_t value, bool negative) -> std::optional<
 
 auto multiply_exact(signed_rational_t left, signed_rational_t right)
     -> std::optional<signed_rational_t> {
-    const auto left_normal = normalized(left);
-    const auto right_normal = normalized(right);
+    const auto left_normal = try_normalize(left);
+    const auto right_normal = try_normalize(right);
     if (!left_normal || !right_normal) {
         return std::nullopt;
     }
@@ -188,12 +169,12 @@ auto multiply_exact(signed_rational_t left, signed_rational_t right)
         return std::nullopt;
     }
     result->denominator = *denominator;
-    return normalized(*result);
+    return try_normalize(*result);
 }
 
 auto rational_progress(signed_rational_t elapsed, rational_t duration)
     -> std::optional<signed_rational_t> {
-    const auto value = normalized(elapsed);
+    const auto value = try_normalize(elapsed);
     if (!value || value->numerator < 0 || duration.denominator == 0) {
         return std::nullopt;
     }
@@ -217,7 +198,7 @@ auto interpolate_exact(signed_rational_t begin, signed_rational_t end, signed_ra
 }
 
 auto compare_row_to_integer(signed_rational_t row, std::uint64_t integer) -> std::optional<int> {
-    const auto value = normalized(row);
+    const auto value = try_normalize(row);
     if (!value) {
         return std::nullopt;
     }
@@ -279,7 +260,7 @@ auto seconds_inside_segment(const timing_index_t& timing, const timing_segment_t
 
 auto timing_seconds_at_row(const timing_index_t& timing, signed_rational_t absolute_row,
                            timing_boundary_side_t side) -> timing_query_result_t {
-    const auto row = normalized(absolute_row);
+    const auto row = try_normalize(absolute_row);
     if (!row) {
         return {.error = error(timing_error_code_t::invalid_document,
                                "scroll/speed query requires a valid rational row")};
@@ -341,7 +322,7 @@ auto speed_segment_value(const speed_curve_segment_t& segment, signed_rational_t
         return std::nullopt;
     }
     if (segment.transition_duration.numerator == 0) {
-        return normalized(segment.target_multiplier);
+        return try_normalize(segment.target_multiplier);
     }
     signed_rational_t elapsed;
     if (segment.transition_is_seconds) {
@@ -413,7 +394,7 @@ auto pause_duration(const pause_event_t& pause, signed_rational_t bpm)
     const auto duration = static_cast<std::uint64_t>(pause.duration.numerator);
     switch (pause.source_unit) {
     case pause_unit_t::seconds:
-        return normalized(pause.duration);
+        return try_normalize(pause.duration);
     case pause_unit_t::milliseconds:
         return positive_fraction({duration}, {pause.duration.denominator, 1'000});
     case pause_unit_t::beats:
@@ -794,7 +775,7 @@ auto advance_timing_boundary(timing_compile_context_t& context, std::uint64_t ro
     while (context.bpm_cursor < context.source.bpms.size() &&
            context.source.bpms[context.bpm_cursor].row == row) {
         context.current_bpm =
-            *normalized(context.source.bpms[context.bpm_cursor].event->beats_per_minute);
+            *try_normalize(context.source.bpms[context.bpm_cursor].event->beats_per_minute);
         ++context.bpm_cursor;
     }
     if (context.current_bpm.numerator <= 0) {
@@ -993,7 +974,7 @@ auto build_timing_index(const chart_document_t& chart, timing_build_options_t op
                                            "timing event count exceeds the configured cap"));
         return result;
     }
-    const auto offset = normalized(chart.beat_zero_audio_offset_seconds);
+    const auto offset = try_normalize(chart.beat_zero_audio_offset_seconds);
     if (!offset) {
         result.diagnostics.push_back(error(timing_error_code_t::invalid_document,
                                            "beat-zero audio offset is not a valid rational"));
@@ -1159,15 +1140,13 @@ auto proposed_timing_y_on_fixed_waveform(const timing_index_t& original,
     long double displayed_row{};
     if (original_time && original_time.seconds == proposed_time.seconds) {
         displayed_row =
-            chart_row.whole_rows + static_cast<long double>(chart_row.fractional_rows.numerator) /
-                                       chart_row.fractional_rows.denominator;
+            chart_row.whole_rows + to_long_double(chart_row.fractional_rows);
     } else {
         const auto position = musical_position_at(original, *proposed_time.seconds,
                                                   {.extrapolate_before_chart = true});
         if (!position || position.absolute_row->denominator == 0)
             return std::nullopt;
-        displayed_row = static_cast<long double>(position.absolute_row->numerator) /
-                        position.absolute_row->denominator;
+        displayed_row = to_long_double(*position.absolute_row);
     }
     const auto y =
         displayed_row * pixels_per_standard_measure / original.divisions_per_standard_measure -
@@ -1347,7 +1326,7 @@ namespace {
 auto extrapolated_row_before_chart(const timing_index_t& index, signed_rational_t query)
     -> timing_position_query_result_t {
     const auto elapsed = subtract_exact(query, index.rows.front().before_delays_seconds);
-    const auto bpm = normalized(index.rows.front().effective_bpm);
+    const auto bpm = try_normalize(index.rows.front().effective_bpm);
     const auto row_magnitude =
         elapsed && elapsed->numerator < 0 && bpm && bpm->numerator > 0
             ? positive_fraction({magnitude(elapsed->numerator), magnitude(bpm->numerator),
@@ -1368,7 +1347,7 @@ auto extrapolated_row_before_bounded_clock(const timing_index_t& index,
     const auto query_ticks = timing_arithmetic::clock_ticks(query);
     const auto reference_ticks = timing_arithmetic::clock_ticks(
         index.rows.front().before_delays_seconds);
-    const auto bpm = normalized(index.rows.front().effective_bpm);
+    const auto bpm = try_normalize(index.rows.front().effective_bpm);
     if (!query_ticks || !reference_ticks || !bpm || bpm->numerator <= 0 ||
         index.divisions_per_standard_measure == 0) {
         return {.error = error(timing_error_code_t::arithmetic_overflow,
@@ -1385,7 +1364,7 @@ auto extrapolated_row_before_bounded_clock(const timing_index_t& index,
         return {.error = error(timing_error_code_t::arithmetic_overflow,
                                "pre-zero bounded inverse row exceeds the nanorow range")};
     }
-    return {.absolute_row = normalized(
+    return {.absolute_row = try_normalize(
                 {-static_cast<std::int64_t>(*row_ticks), timing_arithmetic::row_quantum})};
 }
 
@@ -1547,7 +1526,7 @@ auto prepare_inverse_query(const timing_index_t& index, signed_rational_t query,
 
 auto musical_position_at(const timing_index_t& index, signed_rational_t seconds,
                          timing_inverse_options_t options) -> timing_position_query_result_t {
-    auto query = normalized(seconds);
+    auto query = try_normalize(seconds);
     if (!query) {
         return {.error = error(timing_error_code_t::invalid_document,
                                "inverse timing query requires valid rational seconds")};
@@ -1599,7 +1578,7 @@ auto musical_position_at(const timing_index_t& index, signed_rational_t seconds,
 
 auto sample_frame_at(signed_rational_t seconds, std::uint32_t sample_rate,
                      sample_rounding_t rounding) -> sample_frame_result_t {
-    const auto value = normalized(seconds);
+    const auto value = try_normalize(seconds);
     if (!value || sample_rate == 0) {
         return {.error = error(timing_error_code_t::invalid_document,
                                "sample-frame conversion requires valid seconds and sample rate")};
@@ -1699,7 +1678,7 @@ auto collect_scroll_events(scroll_speed_event_context_t& context) -> void {
                                                 event.id));
             continue;
         }
-        if (!normalized(event.multiplier)) {
+        if (!try_normalize(event.multiplier)) {
             context.diagnostics.push_back(error(timing_error_code_t::invalid_scroll,
                                                 "scroll multiplier must be a valid signed rational",
                                                 event.id));
@@ -1798,7 +1777,7 @@ auto append_speed_segment(scroll_speed_event_context_t& context, scroll_speed_in
         initial_multiplier = *current;
     }
     const auto& source = *positioned.speed;
-    const auto target = normalized(
+    const auto target = try_normalize(
         {static_cast<std::int64_t>(source.multiplier.numerator), source.multiplier.denominator});
     if (!target) {
         context.diagnostics.push_back(error(timing_error_code_t::invalid_speed,
@@ -1825,7 +1804,7 @@ auto compile_scroll_speed_segments(scroll_speed_event_context_t& context,
             index.scroll_segments.push_back(
                 {.begin_row = positioned.row,
                  .end_row = context.measures.total_rows,
-                 .multiplier = *normalized(positioned.scroll->multiplier),
+                 .multiplier = *try_normalize(positioned.scroll->multiplier),
                  .source_event = positioned.id,
                  .source_order = positioned.source_order});
             continue;
@@ -2212,8 +2191,7 @@ auto extrapolated_scroll_speed_before_chart(const scroll_speed_index_t& index,
         return {.error = error(timing_error_code_t::arithmetic_overflow,
                                "pre-zero scroll extrapolation exceeds exact bounds")};
     }
-    const auto render_displacement = static_cast<double>(displacement->numerator) /
-                                     static_cast<double>(displacement->denominator);
+    const auto render_displacement = to_double(*displacement);
     if (!std::isfinite(render_displacement)) {
         return {.error = error(timing_error_code_t::arithmetic_overflow,
                                "pre-zero scroll displacement is not finite for rendering")};
@@ -2235,7 +2213,7 @@ auto scroll_speed_at(const scroll_speed_index_t& index, const timing_index_t& ti
         return {.error = error(timing_error_code_t::invalid_document,
                                "scroll/speed index does not match the timing index")};
     }
-    const auto row = normalized(absolute_row);
+    const auto row = try_normalize(absolute_row);
     if (!row) {
         return {.error = error(timing_error_code_t::invalid_document,
                                "scroll/speed query requires a valid rational row")};
@@ -2286,9 +2264,9 @@ auto scroll_speed_at(const scroll_speed_index_t& index, const timing_index_t& ti
     }
     const auto displacement = std::get<signed_rational_t>(displacement_result);
     const auto render_multiplier =
-        static_cast<double>(effective->numerator) / static_cast<double>(effective->denominator);
+        to_double(*effective);
     const auto render_displacement =
-        static_cast<double>(displacement.numerator) / static_cast<double>(displacement.denominator);
+        to_double(displacement);
     if (!std::isfinite(render_multiplier) || !std::isfinite(render_displacement)) {
         return {.error = error(timing_error_code_t::arithmetic_overflow,
                                "scroll multiplier or displacement is not finite for rendering")};
@@ -2883,7 +2861,7 @@ auto append_count_in_pulses(preview_metronome_context_t& context,
     const auto row_zero = timing_at(context.timing, 0, timing_boundary_side_t::event);
     const auto initial_bpm = context.timing.rows.empty()
                                  ? std::optional<signed_rational_t>{}
-                                 : normalized(context.timing.rows.front().effective_bpm);
+                                 : try_normalize(context.timing.rows.front().effective_bpm);
     if (!row_zero || !initial_bpm || initial_bpm->numerator <= 0) {
         context.diagnostics.push_back(
             row_zero.error.value_or(error(timing_error_code_t::invalid_document,

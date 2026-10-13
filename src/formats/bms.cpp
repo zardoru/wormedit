@@ -1,3 +1,4 @@
+#include <wormedit/core/bms36.h>
 #include "../core/checked_math.h"
 #include "../core/text_util.h"
 #include <wormedit/core/bms_profile_detection.h>
@@ -73,7 +74,7 @@ auto equal_ascii_case_insensitive(std::string_view left, std::string_view right)
     for (std::size_t index = 0; index < left.size(); ++index) {
         const auto a = static_cast<unsigned char>(left[index]);
         const auto b = static_cast<unsigned char>(right[index]);
-        if (std::toupper(a) != std::toupper(b)) {
+        if (text_util::ascii_upper(static_cast<char>(a)) != text_util::ascii_upper(static_cast<char>(b))) {
             return false;
         }
     }
@@ -81,58 +82,12 @@ auto equal_ascii_case_insensitive(std::string_view left, std::string_view right)
 }
 
 auto trim_ascii(std::string_view value) -> std::string_view {
-    while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
-        value.remove_prefix(1);
-    }
-    while (!value.empty() && (value.back() == ' ' || value.back() == '\t')) {
-        value.remove_suffix(1);
-    }
-    return value;
+    return text_util::trim(value, " \t");
 }
 
 using text_util::path_from_utf8;
 
-auto utf8_error_offset(std::string_view text) -> std::optional<std::size_t> {
-    std::size_t index{};
-    while (index < text.size()) {
-        const auto first = static_cast<unsigned char>(text[index]);
-        if (first <= 0x7fU) {
-            ++index;
-            continue;
-        }
-        std::size_t width{};
-        std::uint32_t codepoint{};
-        if (first >= 0xc2U && first <= 0xdfU) {
-            width = 2;
-            codepoint = first & 0x1fU;
-        } else if (first >= 0xe0U && first <= 0xefU) {
-            width = 3;
-            codepoint = first & 0x0fU;
-        } else if (first >= 0xf0U && first <= 0xf4U) {
-            width = 4;
-            codepoint = first & 0x07U;
-        } else {
-            return index;
-        }
-        if (width > text.size() - index) {
-            return index;
-        }
-        for (std::size_t offset = 1; offset < width; ++offset) {
-            const auto next = static_cast<unsigned char>(text[index + offset]);
-            if ((next & 0xc0U) != 0x80U) {
-                return index + offset;
-            }
-            codepoint = (codepoint << 6U) | (next & 0x3fU);
-        }
-        if ((width == 3 && codepoint < 0x800U) || (width == 4 && codepoint < 0x10000U) ||
-            (codepoint >= 0xd800U && codepoint <= 0xdfffU) || codepoint > 0x10ffffU) {
-            return index;
-        }
-        ++index;
-        index += width - 1;
-    }
-    return std::nullopt;
-}
+using text_util::invalid_utf8_offset;
 
 auto iconv_name(text_encoding_t encoding) -> std::optional<std::string_view> {
     switch (encoding) {
@@ -162,7 +117,7 @@ auto decode_line(std::string_view input, text_encoding_t encoding) -> decode_res
         return {.text = std::string(input)};
     }
     if (encoding == text_encoding_t::utf8) {
-        if (const auto error = utf8_error_offset(input); error.has_value()) {
+        if (const auto error = invalid_utf8_offset(input); error.has_value()) {
             return {.text = std::nullopt, .error_offset = *error};
         }
         return {.text = std::string(input)};
@@ -273,7 +228,7 @@ auto encode_with_iconv(std::string_view input, std::string_view destination_name
 #endif
 
 auto encode_line(std::string_view input, text_encoding_t encoding) -> decode_result_t {
-    if (utf8_error_offset(input).has_value()) {
+    if (invalid_utf8_offset(input).has_value()) {
         return {.text = std::nullopt};
     }
     if (encoding == text_encoding_t::utf8) {
@@ -521,18 +476,8 @@ auto parse_integer(std::string_view text) -> std::optional<std::int64_t> {
     return value;
 }
 
-auto base36_digit(char character) -> bool {
-    const auto value = static_cast<unsigned char>(character);
-    return (value >= '0' && value <= '9') || (value >= 'A' && value <= 'Z') ||
-           (value >= 'a' && value <= 'z');
-}
-
-auto upper_ascii(std::string_view value) -> std::string {
-    auto result = std::string(value);
-    std::ranges::transform(result, result.begin(), [](unsigned char character) {
-        return static_cast<char>(std::toupper(character));
-    });
-    return result;
+auto base36_digit(char byte) -> bool {
+    return bms36_value(static_cast<unsigned char>(byte)) >= 0;
 }
 
 auto is_bms_metadata_command(std::string_view token) -> bool {
@@ -573,7 +518,7 @@ auto parse_measure_command(std::string_view token)
     if (converted.ec != std::errc{}) {
         return std::nullopt;
     }
-    return std::pair{measure, upper_ascii(token.substr(3, 2))};
+    return std::pair{measure, text_util::ascii_upper(token.substr(3, 2))};
 }
 
 struct root_channel_line_t {
@@ -760,7 +705,7 @@ auto scale_by_power_of_ten(std::uint64_t value, int count) -> std::optional<std:
 // decimal exponent; players read them as doubles, so charts use "1.00001E+07".
 auto parse_positive_rational(std::string_view text) -> std::optional<signed_rational_t> {
     if (text.find('/') == std::string_view::npos) {
-        const auto parsed = parse_exact_decimal(text);
+        const auto parsed = parse_exact_decimal(text, 38);
         return parsed && parsed->numerator > 0 ? parsed : std::nullopt;
     }
     std::optional<int> exponent{0};
@@ -784,7 +729,6 @@ auto parse_positive_rational(std::string_view text) -> std::optional<signed_rati
     return signed_rational_t{static_cast<std::int64_t>(*numerator / divisor),
                              *denominator / divisor};
 }
-
 
 auto source_provenance(std::string_view field, std::string_view spelling, std::size_t order,
                        std::string_view profile = "bms-byte-parser") -> source_provenance_t {
@@ -902,7 +846,7 @@ struct bms_channel_materializer_t {
         }
         const auto asset_id = new_id<asset_id_t>(ids);
         const auto resource_id = new_id<resource_id_t>(ids);
-        const auto normalized_id = upper_ascii(object_id);
+        const auto normalized_id = text_util::ascii_upper(std::string(object_id));
         const auto missing_name = "Missing BMS BMP " + normalized_id;
         song.visual_assets.push_back({.id = asset_id, .kind = asset_kind_t::image, .source_path = {}});
         song.resources.push_back({
@@ -1104,7 +1048,7 @@ struct bms_channel_materializer_t {
         }
         for (std::size_t slot = 0; slot < channel_line.pair_count; ++slot) {
             const auto object_id =
-                upper_ascii(std::string_view(channel_line.payload).substr(slot * 2, 2));
+                text_util::ascii_upper(std::string_view(channel_line.payload).substr(slot * 2, 2));
             const auto position = position_for_slot(channel_line, slot);
             if (!position.has_value()) {
                 diagnose(node, diagnostic_severity_t::warning,
@@ -2103,7 +2047,7 @@ struct bms_resource_parse_context_t {
 
     void add(const source_line_t& line, std::string_view command, std::string_view identifier,
              const std::string& name) {
-        const auto normalized_id = upper_ascii(identifier);
+        const auto normalized_id = text_util::ascii_upper(std::string(identifier));
         if (name.empty()) {
             add_line_diagnostic(result, diagnostic_severity_t::warning,
                                 bms_parse_diagnostic_code_t::malformed_line,
@@ -2390,7 +2334,7 @@ void collect_channel_statement(active_statement_scan_context_t& context,
 void collect_active_statement_data(active_statement_scan_context_t& context,
                                    const std::vector<const bms_control_node_t*>& statements) {
     for (const auto* node : statements) {
-        const auto token = upper_ascii(node->command_token);
+        const auto token = text_util::ascii_upper(std::string(node->command_token));
         const auto value = trim_ascii(node->raw_value);
         if (collect_metadata_statement(context, *node, token, value) ||
             collect_resource_statement(context, *node, token, value)) {
@@ -2686,7 +2630,7 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
 
     for (const auto& line : *lines) {
         const auto parsed = parse_line(line.text);
-        const auto token = upper_ascii(parsed.token);
+        const auto token = text_util::ascii_upper(std::string(parsed.token));
         if (retain_non_control_header(line, parsed, token, root, current_path, ids)) {
             continue;
         }
@@ -2938,7 +2882,7 @@ auto validate_edit_source(const song_document_t& song, const chart_document_t& c
     }
     if (edit.replacement_text.empty() || edit.replacement_text.front() != '#' ||
         edit.replacement_text.find_first_of("\r\n\0", 0, 3) != std::string::npos ||
-        utf8_error_offset(edit.replacement_text).has_value() || replacement.token.empty() ||
+        invalid_utf8_offset(edit.replacement_text).has_value() || replacement.token.empty() ||
         !equal_ascii_case_insensitive(replacement.token, target.command_token) ||
         is_control_token(replacement.token)) {
         reject_branch_edit(
@@ -3108,7 +3052,7 @@ auto validate_inserted_statement(const bms_branch_statement_insert_t& insertion,
     const auto parsed = parse_line(insertion.statement_text);
     if (insertion.statement_text.empty() || insertion.statement_text.front() != '#' ||
         insertion.statement_text.find_first_of("\r\n\0", 0, 3) != std::string::npos ||
-        utf8_error_offset(insertion.statement_text).has_value() || parsed.token.empty() ||
+        invalid_utf8_offset(insertion.statement_text).has_value() || parsed.token.empty() ||
         is_control_token(parsed.token) ||
         !std::ranges::all_of(insertion.statement_text,
                              [](unsigned char character) { return character < 0x80; })) {

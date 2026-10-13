@@ -68,10 +68,7 @@ auto absolute_row_at_y_pixels(const chart_document_t& chart, const measure_index
                      static_cast<long double>(view.pixels_per_standard_measure);
     if (!std::isfinite(row) || row < 0.0L || row >= static_cast<long double>(total_rows))
         return std::nullopt;
-    const auto nearest = std::floor(row + 0.5L);
-    if (nearest >= static_cast<long double>(total_rows))
-        return total_rows - 1;
-    return static_cast<std::uint64_t>(nearest);
+    return nearest_row(row, total_rows, row_clamp_policy_t::upper_only);
 }
 
 auto position_at_row_y_pixels(const chart_document_t& chart, const measure_index_t& index,

@@ -1828,7 +1828,7 @@ auto rational_value(signed_rational_t value) -> std::optional<long double> {
     if (value.denominator == 0)
         return std::nullopt;
     const auto result =
-        static_cast<long double>(value.numerator) / static_cast<long double>(value.denominator);
+        to_long_double(value);
     if (!std::isfinite(result))
         return std::nullopt;
     return result;

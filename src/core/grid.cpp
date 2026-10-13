@@ -1,3 +1,4 @@
+#include <wormedit/core/rational.h>
 #include <wormedit/core/grid.h>
 #include <wormedit/core/virtual_canvas.h>
 
@@ -270,10 +271,8 @@ auto add_candidate(std::vector<editor_grid_line_t>& lines, const measure_index_e
 auto spacing_pixels(const exact_chart_row_t& earlier, const exact_chart_row_t& later,
                     double pixels_per_standard_measure, std::uint64_t divisions) -> long double {
     const auto rows = static_cast<long double>(later.whole_rows - earlier.whole_rows) +
-                      static_cast<long double>(later.fractional_rows.numerator) /
-                          later.fractional_rows.denominator -
-                      static_cast<long double>(earlier.fractional_rows.numerator) /
-                          earlier.fractional_rows.denominator;
+                      to_long_double(later.fractional_rows) -
+                      to_long_double(earlier.fractional_rows);
     return rows * static_cast<long double>(pixels_per_standard_measure) /
            static_cast<long double>(divisions);
 }

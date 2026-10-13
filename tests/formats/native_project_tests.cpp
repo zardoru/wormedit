@@ -1504,3 +1504,9 @@ TEST_CASE("native BMSON color repair preserves authored lane order", "[unit][for
     require_bmson_condition(reopened.song);
     check_bmson_condition(reopened.song->charts.front().lane_layouts.front().layout.lanes[0].display_order == 77);
 }
+
+TEST_CASE("native project rejects malformed UTF-8 preset names", "[unit][format][native-project][negative]") {
+    auto song = rich_bmson_song();
+    song.quantization_presets.front().name = "\xc0\x80";
+    CHECK_FALSE(wormedit::write_native_project(song).bytes.has_value());
+}

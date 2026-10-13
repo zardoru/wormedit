@@ -522,3 +522,14 @@ TEST_CASE("group import takes the first fitting BMS ID gap",
     CHECK(history.document.resources[start].target_identities.back().identifier == "01");
     CHECK(history.document.resources[start + 1].target_identities.back().identifier == "02");
 }
+
+TEST_CASE("bulk import group names reject malformed UTF-8", "[unit][core][helpers][import]") {
+    auto history = make_document_history(bmson_song());
+    auto action = bulk_sound_import_action_t{
+        .entries = {entry("kick_01", sound_kind_t::keysound)},
+        .groups = {{.name = "bad\xc0\x80", .entry_indexes = {0}}}};
+    const auto result = apply_bulk_sound_import(history, history.document.revision,
+        reserved(std::move(action), history.document));
+    CHECK_FALSE(result);
+    CHECK(history.document.sound_groups.empty());
+}

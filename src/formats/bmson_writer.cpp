@@ -1,3 +1,4 @@
+#include <wormedit/core/rational.h>
 #include "../core/checked_math.h"
 #include "../core/text_util.h"
 #include <wormedit/formats/bmson.h>
@@ -158,8 +159,8 @@ auto visual_asset_path(const song_document_t& song, asset_id_t id, std::string p
 auto reduced(std::uint64_t numerator, std::uint64_t denominator)
     -> std::pair<std::uint64_t, std::uint64_t> {
     if (denominator == 0) return {numerator, denominator};
-    const auto divisor = std::gcd(numerator, denominator);
-    return {numerator / divisor, denominator / divisor};
+    const auto value = reduce_fraction({numerator, denominator});
+    return {value.numerator, value.denominator};
 }
 
 auto decimal_number(signed_rational_t value, std::string path) -> std::string {

@@ -1,3 +1,4 @@
+#include "timing_arithmetic.h"
 #include "../core/checked_math.h"
 #include <wormedit/core/sound_slice.h>
 
@@ -19,24 +20,7 @@ using checked_math::checked_multiply;
 
 using checked_math::checked_signed_multiply;
 
-auto subtract_exact(signed_rational_t left, signed_rational_t right)
-    -> std::optional<signed_rational_t> {
-    if (left.denominator == 0 || right.denominator == 0) return std::nullopt;
-    const auto common = std::gcd(left.denominator, right.denominator);
-    const auto left_scale = right.denominator / common;
-    const auto right_scale = left.denominator / common;
-    const auto scaled_left = checked_signed_multiply(left.numerator, left_scale);
-    const auto scaled_right = checked_signed_multiply(right.numerator, right_scale);
-    const auto denominator = checked_multiply(left.denominator, left_scale);
-    if (!scaled_left || !scaled_right || !denominator ||
-        (*scaled_right > 0 &&
-         *scaled_left < std::numeric_limits<std::int64_t>::min() + *scaled_right) ||
-        (*scaled_right < 0 &&
-         *scaled_left > std::numeric_limits<std::int64_t>::max() + *scaled_right)) {
-        return std::nullopt;
-    }
-    return signed_rational_t{*scaled_left - *scaled_right, *denominator};
-}
+using timing_arithmetic::subtract_exact;
 
 auto diagnostic(sound_slice_error_code_t code, std::string message,
                 std::optional<object_id_t> object = std::nullopt)

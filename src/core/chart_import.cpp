@@ -1,3 +1,4 @@
+#include <wormedit/core/rational.h>
 #include <wormedit/core/chart_import.h>
 
 #include <wormedit/core/chart_editor.h>
@@ -176,7 +177,7 @@ auto first_bpm(const chart_document_t& chart) -> std::optional<signed_rational_t
 
 auto rational_text(const signed_rational_t& value) -> std::string {
     if (value.denominator == 1) return std::to_string(value.numerator);
-    const auto approximate = static_cast<double>(value.numerator) / static_cast<double>(value.denominator);
+    const auto approximate = to_double(value);
     auto text = std::to_string(approximate);
     text.erase(text.find_last_not_of('0') + 1);
     if (!text.empty() && text.back() == '.') text.pop_back();

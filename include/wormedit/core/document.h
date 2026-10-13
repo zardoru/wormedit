@@ -17,6 +17,8 @@
 
 namespace wormedit {
 
+inline constexpr std::size_t default_maximum_chart_objects = 1'000'000;
+
 template <typename tag_t> struct stable_id_t {
     std::uint64_t value{};
 

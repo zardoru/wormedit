@@ -1,10 +1,11 @@
 #include <wormedit/core/natural_order.h>
+#include "text_util.h"
 
 namespace wormedit {
 namespace {
 
 auto folded(unsigned char value) noexcept -> unsigned char {
-    return value >= 'A' && value <= 'Z' ? static_cast<unsigned char>(value + ('a' - 'A')) : value;
+    return static_cast<unsigned char>(text_util::ascii_fold(static_cast<char>(value)));
 }
 
 auto compare_digits(std::string_view left, std::size_t& li, std::string_view right,

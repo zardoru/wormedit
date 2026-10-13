@@ -16,9 +16,11 @@ template <class Code> struct error_t {
     auto operator==(const error_t&) const -> bool = default;
 };
 
-template <class T> struct diagnosed_t {
+// Typed diagnostic vectors retain their codes and metadata without a second list.
+// The default remains the shared diagnostic_list_t.
+template <class T, class Diagnostics = diagnostic_list_t> struct diagnosed_t {
     T value;
-    diagnostic_list_t diagnostics;
+    Diagnostics diagnostics;
 
     [[nodiscard]] auto ok() const -> bool {
         return !diagnostic_queries::has_errors(diagnostics);

@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -31,6 +32,8 @@ struct derived_sound_slice_t {
     std::optional<std::uint64_t> source_end_frame;
     bool restart{};
     std::vector<object_id_t> events;
+
+    auto operator==(const derived_sound_slice_t&) const -> bool = default;
 };
 
 struct sound_slice_options_t {
@@ -38,7 +41,29 @@ struct sound_slice_options_t {
     sample_rounding_t rounding{sample_rounding_t::nearest_ties_to_even};
 };
 
+struct sound_slice_index_t {
+    [[nodiscard]] static auto from(
+        const chart_document_t& chart, const sound_channel_t& channel,
+        std::uint32_t sample_rate,
+        std::optional<std::uint64_t> source_frame_count = std::nullopt,
+        sound_slice_options_t options = {})
+        -> diagnosed_t<sound_slice_index_t, std::vector<sound_slice_diagnostic_t>>;
+
+    [[nodiscard]] static auto find(std::span<const derived_sound_slice_t> slices,
+                                   object_id_t event) -> const derived_sound_slice_t*;
+    [[nodiscard]] auto find(object_id_t event) const -> const derived_sound_slice_t* {
+        return find(slices, event);
+    }
+
+    std::vector<derived_sound_slice_t> slices;
+    auto operator==(const sound_slice_index_t&) const -> bool = default;
+};
+using sound_slice_outcome_t =
+    diagnosed_t<sound_slice_index_t, std::vector<sound_slice_diagnostic_t>>;
+
 struct sound_slice_result_t {
+    [[nodiscard]] static auto from(sound_slice_outcome_t&& outcome) -> sound_slice_result_t;
+
     std::vector<derived_sound_slice_t> slices;
     std::vector<sound_slice_diagnostic_t> diagnostics;
 

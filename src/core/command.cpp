@@ -253,17 +253,17 @@ auto apply_redivision_command(document_history_t& history, std::uint64_t expecte
         return result;
     }
 
-    auto proposal = redivide_chart_exact(*chart, new_resolution);
-    if (!proposal) {
+    auto proposal = redivision_plan_t::from(*chart, new_resolution);
+    if (!proposal.value.chart) {
         result.command.diagnostics = std::move(proposal.diagnostics);
         return result;
     }
-    result.payload.moves = std::move(proposal.moves);
+    result.payload.moves = std::move(proposal.value.moves);
 
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed_document = transaction.copy_document();
     const auto proposed_chart = proposed_document.find_chart(chart_id);
-    *proposed_chart = std::move(*proposal.chart);
+    *proposed_chart = std::move(*proposal.value.chart);
     result.command =
         transaction.commit("Change chart resolution");
     return result;

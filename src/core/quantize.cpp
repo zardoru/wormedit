@@ -397,15 +397,15 @@ auto prepare_quantization_chart(const chart_document_t& chart, const quantize_re
               "requested grid requires explicit chart-resolution promotion");
         return std::nullopt;
     }
-    auto promotion = redivide_chart_exact(chart, target_resolution);
-    if (!promotion) {
+    auto promotion = redivision_plan_t::from(chart, target_resolution);
+    if (!promotion.value.chart) {
         result.diagnostics = std::move(promotion.diagnostics);
         return std::nullopt;
     }
     result.value.promoted_from = chart.divisions_per_standard_measure;
     result.value.promoted_to = target_resolution;
-    result.value.resolution_moves = std::move(promotion.moves);
-    return std::move(*promotion.chart);
+    result.value.resolution_moves = std::move(promotion.value.moves);
+    return std::move(*promotion.value.chart);
 }
 
 struct quantization_selection_t {

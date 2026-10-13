@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/diagnostic.h>
+#include <wormedit/core/result.h>
 #include <wormedit/core/measure.h>
 #include <wormedit/core/storyboard.h>
 
@@ -1034,7 +1035,19 @@ struct redivision_move_t {
     quantize_object_family_t family{quantize_object_family_t::other};
 };
 
+struct redivision_plan_t {
+    [[nodiscard]] static auto from(const chart_document_t& chart,
+                                  std::uint64_t target_divisions_per_standard_measure)
+        -> diagnosed_t<redivision_plan_t>;
+
+    std::optional<chart_document_t> chart;
+    std::vector<redivision_move_t> moves;
+};
+using redivision_outcome_t = diagnosed_t<redivision_plan_t>;
+
 struct redivision_result_t {
+    [[nodiscard]] static auto from(redivision_outcome_t&& outcome) -> redivision_result_t;
+
     std::optional<chart_document_t> chart;
     std::vector<redivision_move_t> moves;
     diagnostic_list_t diagnostics;

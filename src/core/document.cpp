@@ -1900,10 +1900,10 @@ auto redivide_chart_positions(chart_document_t& chart, redivision_context_t& con
 
 } // namespace
 
-auto redivide_chart_exact(const chart_document_t& chart,
+auto redivision_plan_t::from(const chart_document_t& chart,
                           std::uint64_t target_divisions_per_standard_measure)
-    -> redivision_result_t {
-    redivision_result_t result;
+    -> redivision_outcome_t {
+    redivision_outcome_t result;
     if (chart.divisions_per_standard_measure == 0 || target_divisions_per_standard_measure == 0) {
         add_diagnostic(result.diagnostics, diagnostic_code_t::invalid_resolution,
                        "source and target chart resolutions must be positive");
@@ -1937,16 +1937,28 @@ auto redivide_chart_exact(const chart_document_t& chart,
     const auto denominator = chart.divisions_per_standard_measure / common;
     const auto numerator = target_divisions_per_standard_measure / common;
     auto context = redivision_context_t{source_index, numerator, denominator, result.diagnostics,
-                                        result.moves};
+                                        result.value.moves};
     redivide_chart_positions(transformed, context);
     if (context.failed) {
-        result.moves.clear();
+        result.value.moves.clear();
         return result;
     }
 
     transformed.divisions_per_standard_measure = target_divisions_per_standard_measure;
-    result.chart = std::move(transformed);
+    result.value.chart = std::move(transformed);
     return result;
+}
+
+auto redivision_result_t::from(redivision_outcome_t&& outcome) -> redivision_result_t {
+    return {.chart = std::move(outcome.value.chart), .moves = std::move(outcome.value.moves),
+            .diagnostics = std::move(outcome.diagnostics)};
+}
+
+auto redivide_chart_exact(const chart_document_t& chart,
+                          std::uint64_t target_divisions_per_standard_measure)
+    -> redivision_result_t {
+    return redivision_result_t::from(
+        redivision_plan_t::from(chart, target_divisions_per_standard_measure));
 }
 
 } // namespace wormedit

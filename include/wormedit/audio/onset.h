@@ -1,6 +1,8 @@
 #pragma once
 
 #include <wormedit/audio/waveform.h>
+#include <wormedit/core/result.h>
+#include <utility>
 
 namespace wormedit::audio {
 
@@ -18,7 +20,22 @@ struct onset_request_t {
 
 enum class onset_status_t { detected, not_ready, invalid_request, invalid_waveform, capacity_exceeded };
 
+struct waveform_onset_index_t {
+    [[nodiscard]] static auto from(const waveform_t& waveform, onset_request_t request)
+        -> result_t<waveform_onset_index_t, onset_status_t>;
+
+    std::vector<std::uint64_t> frames;
+    auto operator==(const waveform_onset_index_t&) const -> bool = default;
+};
+using waveform_onset_outcome_t = result_t<waveform_onset_index_t, onset_status_t>;
+
 struct onset_result_t {
+    [[nodiscard]] static auto from(waveform_onset_outcome_t&& outcome) -> onset_result_t {
+        if (!outcome)
+            return {.status = outcome.error(), .frames = {}};
+        return {.status = onset_status_t::detected, .frames = std::move(outcome->frames)};
+    }
+
     onset_status_t status{onset_status_t::invalid_request};
     std::vector<std::uint64_t> frames;
     [[nodiscard]] explicit operator bool() const noexcept { return status == onset_status_t::detected; }

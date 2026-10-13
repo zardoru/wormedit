@@ -463,7 +463,9 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-622 Add Linux clang verification presets
 
-- **Status:** Ready
+- **Status:** Done (linux-clang-libcxx configured but not run: libc++ is not installed)
+- **Completion (2026-10-13):** Commit `cef8c4c`. Presets `linux-clang` (clang++ + libstdc++) and `linux-clang-libcxx` with separate build trees (ignored), 4 build jobs and 2 test jobs. Clang-only diagnostics fixed at the source with no suppression: braced stable-ID initializers, matching forward declarations, `nk_flags` conversion before OR, unused constants/locals/internal functions removed (including write-only tap-space state), unnamed unused parameters, an explicit preview-status fallback, and a distinct fixture directory for a parallel-test path collision. Lane gate: GCC and clang full CTest 3,542 each. Owner follow-up: install libc++ (`pacman -S libc++`) to run the libc++ preset.
+- **Gate evidence (Claude, on main with FFmpeg on):** `100% tests passed out of 3555` (GCC, after T-628); event harness `503/503`; documentation `1/1`.
 - **Findings closed:** CL1–CL3 (targets; not yet closed).
 - **Stale-plan audit:** Search by behavior: compiler selections, warning flags, libc++ availability and clang-only diagnostics. Confirm every A lead and current caller/body equivalence; record stale claims, stricter validation, diagnostics, rounding and policy differences before editing.
 - **Outcome:** Linux clang presets: `linux-clang` (libstdc++), added to the per-card gate from then on, and `linux-clang-libcxx` (gated once the owner installs libc++). Fix clang-only diagnostics rather than suppressing them. **Runs before T-620.**
@@ -592,7 +594,9 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-628 Share Nuklear text popup geometry and color helpers
 
-- **Status:** Ready
+- **Status:** Done
+- **Completion (2026-10-13):** Commit `d0cfa55`. New UI helpers (`text_fit.h`, `text_layout.h` and four more headers): ellipsis fitting, word wrap with UTF-8-boundary splitting of overlong words (D18, regression test with a long path failed before), shared popup lifecycle/`owns_input`, `PopupContextStamp::from(view)`, shared key forwarding, rect helpers, `color.h` with one float→byte rounding rule (D19, regression test failed before); the stored `keysound_filter_popup_open` flag replaced by a query; `bookmark_rename_editor_t` → `inline_label_editor_t`. Preserved: marker-list byte clipping (`text_fit.h:44`). Existing `draw_row` complexity 28 (`compose_sounds_panel.cpp:1256`) unchanged. Lane gate: GCC and clang 3,547 each; event harness 503.
+- **Gate evidence (Claude, on main with FFmpeg on):** build exit 0; `100% tests passed out of 3555`; event harness `100% tests passed out of 503`; documentation `1/1`; isolated Xvfb Compose screenshot inspected (normal).
 - **Findings closed:** Catalog P1, P3, P6, P9, P10 (targets; not yet closed).
 - **Stale-plan audit:** Search by behavior: ellipsis/wrap loops, long-word handling, popup stamp field sets, modal-key forwarding, rect comparisons, alpha/byte conversions and derived-popup flag writes. Confirm every A lead and current caller/body equivalence; record stale claims, stricter validation, diagnostics, rounding and policy differences before editing.
 - **Outcome:** Nuklear UI helpers (P1/P3/P6/P9/P10): `text_fit.h` (`fit_text_with_ellipsis`), `text_layout.h` (`wrap_text`, plus D18), a `retained_popup_t` with `owns_input()`, `PopupContextStamp::from(view)`, a shared `forward_modal_key`, rect helpers on SDL3 functions, `color.h` (`with_alpha`, `percent_to_alpha`, one float→byte rounding rule), one UI color type, `keysound_filter_popup_open` removed in favour of a method, `bookmark_rename_editor_t` → `inline_label_editor_t`. Runs before T-621.

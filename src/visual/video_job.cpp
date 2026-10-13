@@ -135,10 +135,9 @@ auto video_frame_job_t::decode_uncached_frame(const decode_request_t& request,
         session_document_revision_ = 0;
         auto opened = open_video_decoder_session(request.source, stop);
         if (!opened) {
-            return {.status = opened.status, .frame = std::nullopt,
-                    .message = std::move(opened.message)};
+            return std::unexpected(std::move(opened.error()));
         }
-        session_ = std::move(opened.session);
+        session_ = std::move(*opened);
         session_project_ = request.project;
         session_document_revision_ = request.document_revision;
     }
@@ -171,12 +170,14 @@ auto video_frame_job_t::run_decode(const decode_request_t& request, std::stop_to
         result.frame = std::move(cached);
     } else {
         auto decoded = decode_uncached_frame(request, stop);
-        result.status = decoded.status;
-        result.message = std::move(decoded.message);
         if (decoded) {
-            auto frame = std::make_shared<const rgba_video_frame_t>(std::move(*decoded.frame));
+            result.status = video_frame_status_t::ready;
+            auto frame = std::make_shared<const rgba_video_frame_t>(std::move(*decoded));
             result.frame = cache_.insert(request.project, request.document_revision,
                                          request.source, request.clock, std::move(frame));
+        } else {
+            result.status = decoded.error().code;
+            result.message = std::move(decoded.error().message);
         }
     }
     if (stop.stop_requested()) {

@@ -113,7 +113,7 @@ TEST_CASE("video jobs and decoder reject invalid bounded or cancelled requests",
 
     std::stop_source cancelled;
     cancelled.request_stop();
-    CHECK(
-        decode_video_frame_rgba(item, clock(item.resource, 0), {}, cancelled.get_token()).status ==
-        video_frame_status_t::cancelled);
+    const auto decoded = decode_video_frame_rgba(item, clock(item.resource, 0), {}, cancelled.get_token());
+    REQUIRE_FALSE(decoded.has_value());
+    CHECK(decoded.error().code == video_frame_status_t::cancelled);
 }

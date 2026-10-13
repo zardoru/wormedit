@@ -80,11 +80,16 @@ auto seek_stopped_compose_transport(document_history_t& history,
         if (notifications) notifications->post(severity, notification_source_t::input, message);
         return std::string{message};
     };
-    if (cache.scene.chart != state.chart || cache.scene.revision != history.document.revision ||
+    const auto chart = std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+    if (chart == history.document.charts.end()) {
+        if (cache.scene.chart != state.chart || cache.scene.revision != history.document.revision ||
+            !cache.timing.marker_timing_index || !cache.scene.cached_measure_index)
+            return feedback(notification_severity_t::warning, "Compose seek is unavailable until the chart is ready.");
+        return feedback(notification_severity_t::warning, "The selected chart is unavailable.");
+    }
+    if (!cache.is_scene_key_current(history.document, *chart, compose_scene_key_policy_t::transport) ||
         !cache.timing.marker_timing_index || !cache.scene.cached_measure_index)
         return feedback(notification_severity_t::warning, "Compose seek is unavailable until the chart is ready.");
-    const auto chart = std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
-    if (chart == history.document.charts.end()) return feedback(notification_severity_t::warning, "The selected chart is unavailable.");
     const auto target = target_at_frame(frame, audio::output_sample_rate,
         *cache.timing.marker_timing_index, *cache.scene.cached_measure_index, edit_snap_denominator(*chart, state));
     if (!target) return feedback(notification_severity_t::warning, "The requested chart position is unavailable.");

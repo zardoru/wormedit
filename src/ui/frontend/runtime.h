@@ -16,6 +16,8 @@ bool worm_ui_frontend_compose_viewport_for_testing(WormUiTestingRect* output);
 bool worm_ui_frontend_window_bounds_for_testing(const char* name, WormUiTestingRect* output);
 // Hide the real Notifications window in headless tests, without changing its model view.
 bool worm_ui_frontend_hide_notification_history_for_testing(void);
+// Invalidates project-owned import payloads and outstanding picker callbacks.
+void worm_ui_frontend_begin_project_session(void);
 void worm_ui_frontend_shutdown(void);
 void worm_ui_frontend_begin_input(void);
 bool worm_ui_frontend_handle_event(const SDL_Event* event);

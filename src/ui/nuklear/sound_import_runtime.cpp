@@ -9,9 +9,12 @@
 
 namespace {
 worm_ui_sound_import_state_t pending;
-std::optional<worm_ui_sound_import_commit_t> submitted;
-std::vector<WormUiSoundImportItem> submitted_items;
-std::vector<WormUiSoundImportGroup> submitted_groups;
+// Submitted C ABI payloads belong to the project; pending is one request.
+struct import_batches_t {
+    std::optional<worm_ui_sound_import_commit_t> submitted;
+    std::vector<WormUiSoundImportItem> submitted_items;
+    std::vector<WormUiSoundImportGroup> submitted_groups;
+} batches;
 struct picker_target_t { std::uint64_t project{}, chart{}, revision{}, generation{}; std::uint8_t kind{}; };
 struct picker_state_t {
     std::mutex mutex;
@@ -20,6 +23,14 @@ struct picker_state_t {
     picker_target_t target;
     std::vector<std::string> paths;
     std::vector<const char*> path_pointers;
+    void invalidate() {
+        std::lock_guard lock{mutex};
+        ++generation;
+        open = false;
+        ready = false;
+        paths.clear();
+        path_pointers.clear();
+    }
 } picker;
 
 void SDLCALL picker_callback(void* userdata, const char* const* paths, int) {
@@ -35,24 +46,24 @@ void SDLCALL picker_callback(void* userdata, const char* const* paths, int) {
 }
 
 void submit_import(WormUiWorkspaceAction& action) {
-    submitted = worm_ui_nuklear_sound_import_confirm(pending);
-    if (!submitted) return;
-    submitted_items.clear();
-    submitted_groups.clear();
-    for (const auto& item : submitted->items)
-        submitted_items.push_back({item.path.c_str(), item.name.c_str(), item.kind, pending.fixed_kind != 0});
-    for (const auto& group : submitted->groups)
-        submitted_groups.push_back({group.name.c_str(), group.existing_group
+    batches.submitted = worm_ui_nuklear_sound_import_confirm(pending);
+    if (!batches.submitted) return;
+    batches.submitted_items.clear();
+    batches.submitted_groups.clear();
+    for (const auto& item : batches.submitted->items)
+        batches.submitted_items.push_back({item.path.c_str(), item.name.c_str(), item.kind, pending.fixed_kind != 0});
+    for (const auto& group : batches.submitted->groups)
+        batches.submitted_groups.push_back({group.name.c_str(), group.existing_group
             ? group.existing_group->value : 0, group.member_indexes.data(), group.member_indexes.size()});
     action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
     action.sound_import_project_id = pending.project_id;
     action.sound_import_kind = pending.fixed_kind;
     action.compose_input_chart_id = pending.chart_id;
     action.compose_input_document_revision = pending.document_revision;
-    action.sound_import_items = submitted_items.data();
-    action.sound_import_item_count = submitted_items.size();
-    action.sound_import_groups = submitted_groups.data();
-    action.sound_import_group_count = submitted_groups.size();
+    action.sound_import_items = batches.submitted_items.data();
+    action.sound_import_item_count = batches.submitted_items.size();
+    action.sound_import_groups = batches.submitted_groups.data();
+    action.sound_import_group_count = batches.submitted_groups.size();
 }
 } // namespace
 
@@ -64,15 +75,8 @@ bool worm_ui_nuklear_sound_import_active() {
 
 void worm_ui_nuklear_reset_sound_import() {
     pending = {};
-    submitted.reset();
-    submitted_items.clear();
-    submitted_groups.clear();
-    std::lock_guard lock{picker.mutex};
-    ++picker.generation;
-    picker.open = false;
-    picker.ready = false;
-    picker.paths.clear();
-    picker.path_pointers.clear();
+    batches = {};
+    picker.invalidate();
 }
 
 bool worm_ui_frontend_stage_sound_import(std::uint64_t project, std::uint64_t chart,

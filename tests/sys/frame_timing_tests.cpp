@@ -6914,3 +6914,33 @@ TEST_CASE("Registered note selection respects active editable lanes",
     expect_compose_test(f.interaction->selected_notes.empty());
     expect_compose_test(f.history.undo.empty());
 }
+
+TEST_CASE("Compose scene keys invalidate only on document or chart changes", "[unit][sys][commands]") {
+    wormedit::song_document_t document;
+    document.id = wormedit::song_id_t{51};
+    document.charts.push_back({.id = wormedit::chart_id_t{7}});
+    auto& chart = document.charts.front();
+    compose_scene_cache_t cache;
+    expect_compose_test(!cache.is_scene_key_current(document, chart));
+    expect_compose_test(cache.ensure_scene_key(document, chart));
+    cache.frame.projection_error = "retained";
+    expect_compose_test(!cache.ensure_scene_key(document, chart));
+    expect_compose_test(cache.frame.projection_error == "retained");
+    ++document.revision;
+    expect_compose_test(!cache.is_scene_key_current(document, chart));
+    expect_compose_test(cache.ensure_scene_key(document, chart));
+    expect_compose_test(cache.frame.projection_error.empty());
+    auto replacement = document;
+    expect_compose_test(!cache.is_scene_key_current(replacement, replacement.charts.front()));
+    cache.invalidate_scene_cache();
+    expect_compose_test(!cache.is_scene_key_current(document, chart));
+    expect_compose_test(cache.is_scene_key_current(document, chart, compose_scene_key_policy_t::transport));
+    expect_compose_test(cache.is_scene_key_current(document, chart, compose_scene_key_policy_t::measure_geometry));
+    cache.scene.stem_index.built = true;
+    cache.scene.stem_index.document = document.id;
+    cache.scene.stem_index.chart = chart.id;
+    cache.scene.stem_index.revision = document.revision;
+    expect_compose_test(cache.is_scene_key_current(document, chart, compose_scene_key_policy_t::stem_geometry));
+    ++cache.scene.stem_index.revision;
+    expect_compose_test(!cache.is_scene_key_current(document, chart, compose_scene_key_policy_t::stem_geometry));
+}

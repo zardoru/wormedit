@@ -398,9 +398,7 @@ auto retained_bmson_source_geometry(const wormedit::document_history_t& history,
     const compose_scene_cache_t& cache, const wormedit::chart_document_t& chart,
     wormedit::asset_id_t asset) -> std::optional<wormedit::bmson_source_geometry_t> {
     const auto& index = cache.scene.stem_index;
-    if (cache.scene.scene_document_identity != &history.document || cache.scene.scene_chart_identity != &chart ||
-        !index.built || index.document != history.document.id || index.chart != chart.id ||
-        index.revision != history.document.revision) return std::nullopt;
+    if (!cache.is_scene_key_current(history.document, chart, compose_scene_key_policy_t::stem_geometry)) return std::nullopt;
     const auto binding = std::ranges::find(index.bindings, asset,
         &wormedit::audio::decoded_source_binding_t::asset);
     if (binding == index.bindings.end() || !binding->source_sample_rate || !binding->source_frame_count)
@@ -1744,10 +1742,8 @@ auto append_bga_draw_targets(application_command_state_t::bga_draw_stroke_t& str
 auto bga_draw_geometry(const compose_input_context_t& context, const wormedit::chart_document_t& chart)
     -> std::variant<wormedit::measure_index_t, wormedit::diagnostic_list_t> {
     const auto& cache = context.environment.controls.cache;
-    if (cache.scene.index && cache.scene.chart == chart.id &&
-        cache.scene.revision == context.environment.document.history.document.revision &&
-        cache.scene.scene_document_identity == &context.environment.document.history.document &&
-        cache.scene.scene_chart_identity == &chart)
+    if (cache.scene.index && cache.is_scene_key_current(context.environment.document.history.document, chart,
+            compose_scene_key_policy_t::measure_geometry))
         return cache.scene.index->measures;
     return wormedit::build_measure_index(chart);
 }

@@ -8265,3 +8265,27 @@ TEST_CASE("Draw right capture has one reset on interruption and late release",
     expect_t422(!find_compose_input(std::vector<workspace_action_snapshot_t>{late}, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE));
     expect_t422(late.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
 }
+
+TEST_CASE("Project session transitions discard sound import requests without repeated unloaded resets",
+          "[frontend-state][event-harness][sound-import]") {
+    nuklear_event_harness_t harness;
+    auto& view = harness.view();
+    view.project_loaded = true;
+    view.project_id = 51;
+    view.selected_chart_id = 7;
+    view.document_revision = 1;
+    stage_grouped_import(harness);
+    REQUIRE(worm_ui_nuklear_sound_import_active());
+    worm_ui_frontend_begin_project_session();
+    CHECK_FALSE(worm_ui_nuklear_sound_import_active());
+    CHECK(worm_ui_nuklear_pending_sound_import().items.empty());
+    view.project_loaded = false;
+    (void)harness.frame();
+    (void)harness.frame();
+    CHECK_FALSE(worm_ui_nuklear_sound_import_active());
+    view.project_loaded = true;
+    stage_grouped_import(harness);
+    CHECK(worm_ui_nuklear_sound_import_active());
+    worm_ui_frontend_begin_project_session();
+    CHECK_FALSE(worm_ui_nuklear_sound_import_active());
+}

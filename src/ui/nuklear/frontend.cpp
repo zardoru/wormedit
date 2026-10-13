@@ -611,14 +611,22 @@ static float headless_font_width(nk_handle, float height, const char*, int lengt
     return static_cast<float>(length) * height * 0.5f;
 }
 
-static auto initialize_frontend(SDL_Window* window, SDL_Renderer* renderer,
-                                int width, int height, bool headless) -> bool {
-    if (g_context || (headless ? width <= 0 || height <= 0 : !window || !renderer))
-        return false;
+static void reset_frontend_session() {
     worm_ui_nuklear_reset_metadata_state();
     worm_ui_nuklear_reset_timing_state();
     worm_ui_nuklear_reset_audio_state();
     worm_ui_nuklear_reset_compose_panel();
+}
+
+void worm_ui_frontend_begin_project_session() {
+    worm_ui_nuklear_reset_sound_import();
+}
+
+static auto initialize_frontend(SDL_Window* window, SDL_Renderer* renderer,
+                                int width, int height, bool headless) -> bool {
+    if (g_context || (headless ? width <= 0 || height <= 0 : !window || !renderer))
+        return false;
+    reset_frontend_session();
     reset_compose_area_menu();
     g_menu_popup_open = false;
     g_menu_popup_release_pending = false;
@@ -729,10 +737,7 @@ void worm_ui_frontend_shutdown(void) {
         g_headless = false;
         g_headless_width = 0;
         g_headless_height = 0;
-        worm_ui_nuklear_reset_metadata_state();
-        worm_ui_nuklear_reset_timing_state();
-        worm_ui_nuklear_reset_audio_state();
-        worm_ui_nuklear_reset_compose_panel();
+        reset_frontend_session();
         return;
     }
     if (g_window && !g_headless) {
@@ -756,10 +761,7 @@ void worm_ui_frontend_shutdown(void) {
     g_double_click_count = 0;
     g_last_window_width = 0;
     g_last_window_height = 0;
-    worm_ui_nuklear_reset_metadata_state();
-    worm_ui_nuklear_reset_timing_state();
-    worm_ui_nuklear_reset_audio_state();
-    worm_ui_nuklear_reset_compose_panel();
+    reset_frontend_session();
 }
 
 void worm_ui_frontend_begin_input(void) {
@@ -3200,7 +3202,6 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     wormedit::ui::nuklear::tooltip::set_viewport(nk_rect(0.0F, 0.0F, 0.0F, 0.0F));
     reset_compose_canvas_viewport_for_testing();
     worm_ui_nuklear_sync_setup_popups(g_context, view ? &view->setup : nullptr);
-    if (view && !view->project_loaded) worm_ui_nuklear_reset_sound_import();
     remember_notification_frame(view);
     remember_context_menu_scope(view);
     worm_ui_nuklear_begin_image_quad_frame();

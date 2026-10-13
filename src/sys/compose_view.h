@@ -124,7 +124,37 @@ struct compose_timing_payload_cache_t {
     std::size_t build_count{};
 };
 
+// Consumers retain different geometry contracts. Keep those policies explicit:
+// transport uses a logical stamp; stem/paint indices own their own stamps.
+enum class compose_scene_key_policy_t { projection, stem_geometry, measure_geometry,
+                                        paint_occupancy, transport };
+
 struct compose_scene_cache_t {
+    bool is_scene_key_current(const wormedit::song_document_t& document,
+        const wormedit::chart_document_t& chart, compose_scene_key_policy_t policy = compose_scene_key_policy_t::projection) const {
+        const bool logical_stamp = scene.chart == chart.id && scene.revision == document.revision;
+        if (policy == compose_scene_key_policy_t::transport) return logical_stamp;
+        if (scene.scene_document_identity != &document || scene.scene_chart_identity != &chart)
+            return false;
+        switch (policy) {
+        case compose_scene_key_policy_t::projection:
+            return scene.attempted && logical_stamp && scene.scene_song == document.id;
+        case compose_scene_key_policy_t::stem_geometry:
+            return scene.stem_index.built && scene.stem_index.document == document.id &&
+                scene.stem_index.chart == chart.id && scene.stem_index.revision == document.revision;
+        case compose_scene_key_policy_t::measure_geometry:
+            return logical_stamp;
+        case compose_scene_key_policy_t::paint_occupancy:
+            return scene.index && scene.index->chart == chart.id &&
+                scene.index->document_revision == document.revision;
+        case compose_scene_key_policy_t::transport:
+            return logical_stamp;
+        }
+        return false;
+    }
+    bool ensure_scene_key(const wormedit::song_document_t& document,
+                          const wormedit::chart_document_t& chart);
+    void invalidate_scene_cache();
     compose_navigation_travel_t navigation_travel;
     keysound_list_cache_t keysound_list_cache;
     mutable compose_timing_payload_cache_t timing_payload_cache;

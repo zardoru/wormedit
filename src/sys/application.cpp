@@ -2814,6 +2814,7 @@ struct application_t::implementation_t {
     void begin_project_session(wormedit::sys::project_identity_t replacement) {
         wormedit::sys::begin_project_session(session.project_identity, views.project_chart_runtime,
                                              std::move(replacement));
+        worm_ui_frontend_begin_project_session();
         views.audio_offset_drag.reset();
         views.audio_offset_drag_tab.reset();
         views.compose_interaction_state.reset();

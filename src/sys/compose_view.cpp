@@ -49,6 +49,57 @@
 namespace wormedit::sys {
 using namespace compose_projection_detail;
 
+
+void compose_scene_cache_t::invalidate_scene_cache() {
+    scene.index.reset();
+    scene.scene_window.scene.reset();
+    discard_compose_static_source(*this);
+    scene.cached_measure_index.reset();
+    scene.selected_note_source = {};
+    scene.selected_bgm_source = {};
+    scene.bgm_rows_by_id.clear();
+    scene.hit_test_index.reset();
+    timing.marker_timing_index.reset();
+    timing.dead_spans.reset();
+    timing.kiai_spans.reset();
+    timing.sv_steps.reset();
+    timing.recipe_areas.reset();
+    timing.speed_spans.reset();
+    timing.proposed_offset_timing_index.reset();
+    timing.proposed_offset_seconds.reset();
+    timing.beat_fit_drag.reset();
+    timing.beat_fit_asset.reset();
+    timing.proposed_beat_timing_index.reset();
+    timing.proposed_beat_bpm.reset();
+    timing.proposed_beat_event = {};
+    waveform.channel_waveform_channel = {};
+    waveform.channel_waveform_source = nullptr;
+    waveform.channel_waveform_source_generation = 0;
+    waveform.channel_waveform_slices.reset();
+    waveform.channel_waveform_projection_valid = false;
+    waveform.channel_waveform_rows.clear();
+    frame.interaction_view.reset();
+    frame.hover.reset();
+    frame.focus_note_label_editor = false;
+    frame.viewport_autoscroll_active = false;
+    frame.projection_error.clear();
+    frame.paint_pointer.reset();
+    scene.attempted = false;
+}
+
+bool compose_scene_cache_t::ensure_scene_key(const wormedit::song_document_t& document,
+    const wormedit::chart_document_t& chart) {
+    if (is_scene_key_current(document, chart)) return false;
+    invalidate_scene_cache();
+    scene.scene_document_identity = &document;
+    scene.scene_chart_identity = &chart;
+    scene.scene_song = document.id;
+    scene.chart = chart.id;
+    scene.revision = document.revision;
+    scene.attempted = true;
+    return true;
+}
+
 namespace compose_projection_detail {
 void report_compose_projection(flattened_workspace_t& flattened,
                                projection_feedback_kind_t producer,
@@ -901,10 +952,7 @@ bool populate_semantic_layer_palette(
     compose_scene_cache_t& cache, const wormedit::document_history_t& history,
     application_command_state_t& application_state) {
     auto& view = flattened.view.compose;
-    if (!cache.scene.attempted || cache.scene.chart != chart.id ||
-        cache.scene.revision != history.document.revision ||
-        cache.scene.scene_document_identity != &history.document ||
-        cache.scene.scene_chart_identity != &chart || cache.scene.scene_song != history.document.id) {
+    if (!cache.is_scene_key_current(history.document, chart)) {
         populate_semantic_membership_counts(cache, chart);
     }
     if (application_state.project.semantic_layer.semantic_layer_palette_chart != chart.id) {
@@ -1125,50 +1173,9 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
     if (!populate_semantic_layer_palette(flattened, chart, cache, history, application_state)) {
         return nullptr;
     }
-    if (!cache.scene.attempted || cache.scene.chart != chart.id ||
-        cache.scene.revision != history.document.revision ||
-        cache.scene.scene_document_identity != &history.document ||
-        cache.scene.scene_chart_identity != &chart || cache.scene.scene_song != history.document.id) {
+    if (!cache.is_scene_key_current(history.document, chart)) {
         frame_phase_scope_t frame_scene_index(frame_phase_t::scene);
-        cache.scene.index.reset();
-        cache.scene.scene_window.scene.reset();
-        discard_compose_static_source(cache);
-        cache.scene.cached_measure_index.reset();
-        cache.scene.selected_note_source = {};
-        cache.scene.selected_bgm_source = {};
-        cache.scene.bgm_rows_by_id.clear();
-        cache.scene.hit_test_index.reset();
-        cache.timing.marker_timing_index.reset();
-        cache.timing.dead_spans.reset();
-        cache.timing.kiai_spans.reset();
-        cache.timing.sv_steps.reset();
-        cache.timing.recipe_areas.reset();
-        cache.timing.speed_spans.reset();
-        cache.timing.proposed_offset_timing_index.reset();
-        cache.timing.proposed_offset_seconds.reset();
-        cache.timing.beat_fit_drag.reset();
-        cache.timing.beat_fit_asset.reset();
-        cache.timing.proposed_beat_timing_index.reset();
-        cache.timing.proposed_beat_bpm.reset();
-        cache.timing.proposed_beat_event = {};
-        cache.waveform.channel_waveform_channel = {};
-        cache.waveform.channel_waveform_source = nullptr;
-        cache.waveform.channel_waveform_source_generation = 0;
-        cache.waveform.channel_waveform_slices.reset();
-        cache.waveform.channel_waveform_projection_valid = false;
-        cache.waveform.channel_waveform_rows.clear();
-        cache.frame.interaction_view.reset();
-        cache.frame.hover.reset();
-        cache.frame.focus_note_label_editor = false;
-        cache.frame.viewport_autoscroll_active = false;
-        cache.frame.projection_error.clear();
-        cache.frame.paint_pointer.reset();
-        cache.scene.scene_document_identity = &history.document;
-        cache.scene.scene_chart_identity = &chart;
-        cache.scene.scene_song = history.document.id;
-        cache.scene.chart = chart.id;
-        cache.scene.revision = history.document.revision;
-        cache.scene.attempted = true;
+        cache.ensure_scene_key(history.document, chart);
         const auto built =
             wormedit::build_editor_field_scene_index(chart, history.document.revision);
         if (std::holds_alternative<wormedit::editor_field_scene_index_t>(built)) {
@@ -2285,10 +2292,8 @@ auto compose_paint_head_occupied(const compose_final_projection_context_t& input
     auto& cache = input.frame.cache;
     // Successful scene indices contain every head; cap/geometry failures return
     // diagnostics rather than a truncated index. Never use the visible window.
-    if (cache.scene.index && cache.scene.index->chart == input.scope.chart_scope.chart.id &&
-        cache.scene.index->document_revision == input.frame.history.document.revision &&
-        cache.scene.scene_document_identity == &input.frame.history.document &&
-        cache.scene.scene_chart_identity == &input.scope.chart_scope.chart &&
+    if (cache.scene.index && cache.is_scene_key_current(input.frame.history.document, input.scope.chart_scope.chart,
+            compose_scene_key_policy_t::paint_occupancy) &&
         cache.scene.index->note_indices_by_id.size() == cache.scene.index->notes.size()) {
         const auto& notes = cache.scene.index->notes;
         auto note = std::ranges::lower_bound(notes, row, {},

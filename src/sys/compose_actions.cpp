@@ -1,6 +1,5 @@
 #include "sys/compose_actions.h"
 #include "sys/application_dispatch_context.h"
-#include "sys/application_edit_helpers.h"
 #include "sys/bookmark_rename_commands.h"
 #include "sys/compose_actions_internal.h"
 #include "sys/compose_area_actions.h"
@@ -12,73 +11,41 @@
 #include "sys/compose_quantize_request.h"
 #include "sys/compose_resource_presenter.h"
 #include "sys/compose_scroll_geometry.h"
-#include "sys/compose_selection_transform.h"
 #include "sys/compose_semantic_layer_commands.h"
-#include "sys/compose_sound_actions.h"
-#include "sys/recipe_form.h"
 #include "sys/transport_player_actions.h"
 #include "ui/frontend.h"
-#include "wormedit/audio.h"
 #include <wormedit/core/bmson_lane_mode.h>
-#include <wormedit/core/sv_recipe.h>
 
-#include <wormedit/core/audio_offset_editor.h>
-#include <wormedit/core/snap.h>
 #include <unordered_set>
+#include <wormedit/core/audio_offset_editor.h>
 #include <wormedit/core/bgm_columns.h>
-#include <wormedit/core/bmson_sound_channel_editor.h>
-#include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/bms_branch_editor.h>
+#include <wormedit/core/bmson_sound_channel_editor.h>
 #include <wormedit/core/command.h>
-#include <wormedit/core/editor_scene.h>
-#include <wormedit/core/grid.h>
 #include <wormedit/core/interaction.h>
-#include <wormedit/core/lane_profile_switch.h>
 #include <wormedit/core/lane_layout_editor.h>
+#include <wormedit/core/lane_profile_switch.h>
 #include <wormedit/core/lane_profiles.h>
-#include <wormedit/core/marker_editor.h>
-#include <wormedit/core/marker_navigation.h>
-#include <wormedit/core/note_label_editor.h>
-#include <wormedit/core/resource_assignment.h>
-#include <wormedit/core/resource_file_copy.h>
 #include <wormedit/core/semantic_layer_editor.h>
-#include <wormedit/core/timing.h>
-#include <wormedit/core/virtual_canvas.h>
-#include <wormedit/formats/conversion.h>
-#include <wormedit/formats/conversion_publication.h>
+#include <wormedit/core/snap.h>
 
-#if defined(WORMEDIT_HAS_IMAGE_DECODER)
-#include <wormedit/visual/image_decoder.h>
-#endif
-#if defined(WORMEDIT_HAS_VIDEO_DECODER)
-#include <wormedit/visual/video_job.h>
-#endif
-#if defined(WORMEDIT_HAS_AUDIO_DECODER)
-#include <wormedit/audio/decoder.h>
-#endif
 
 #include <algorithm>
 #include <array>
-#include <bit>
 #include <cmath>
-#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <iterator>
 #include <limits>
 #include <memory>
 #include <optional>
-#include <cstdlib>
 #include <span>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <tuple>
 #include <utility>
 #include <variant>
 #include <vector>
-
-#include "sys/audio_fallback.h"
 
 namespace wormedit::sys {
 using namespace compose_action_detail;

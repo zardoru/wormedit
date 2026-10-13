@@ -225,7 +225,7 @@ auto metronome_command(command_context_t& context) -> std::optional<command_resu
     post_command_message(
         context.environment.document.notifications, notification_severity_t::success,
         notification_source_t::audio,
-        context.environment.editor.commands.preferences.transport_metronome_enabled
+        context.environment.editor.commands.metronome_settings().enabled
             ? "Metronome enabled."
             : "Metronome disabled.");
     return command_result_t{.accepted = true};

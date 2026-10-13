@@ -959,7 +959,7 @@ bool populate_semantic_layer_palette(
         application_state.project.semantic_layer.semantic_layer_palette_chart = chart.id;
         application_state.project.semantic_layer.semantic_layer_first_row = 0;
     }
-    view.semantic_layer_assist_available = application_state.preferences.transport_metronome_available &&
+    view.semantic_layer_assist_available = application_state.metronome_settings().available &&
                                            static_cast<bool>(application_state.services.transport_set_layer_assist);
     view.semantic_layer_target_none = application_state.project.semantic_layer.semantic_layer_target_none;
     view.semantic_layer_unassigned_note_count = cache.frame.semantic_layer_membership_counts[0];

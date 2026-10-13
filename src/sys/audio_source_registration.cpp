@@ -3,12 +3,9 @@
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 
-#include <wormedit/audio/preview_bridge.h>
 #include <wormedit/audio/decoder.h>
 
 #include <algorithm>
-#include <array>
-#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <system_error>
@@ -73,46 +70,6 @@ auto register_assets(const song_document_t& document, const std::filesystem::pat
     return unavailable;
 }
 
-auto register_metronome_sources(
-    std::uint64_t generation, audio::decoded_source_registry_t& sources,
-    std::vector<audio::preview_metronome_source_binding_t>& metronome_bindings) -> void {
-    constexpr std::array click_frequencies{1'100.0, 1'500.0, 1'900.0};
-    constexpr std::array click_gains{0.16F, 0.23F, 0.31F};
-    constexpr auto click_frames = audio::output_sample_rate * 45U / 1'000U;
-    constexpr auto pi = 3.14159265358979323846;
-    for (std::size_t accent = 0; accent < click_frequencies.size(); ++accent) {
-        std::vector<float> pcm(click_frames * audio::output_channel_count);
-        for (std::size_t frame = 0; frame < click_frames; ++frame) {
-            const auto seconds = static_cast<double>(frame) /
-                                 static_cast<double>(audio::output_sample_rate);
-            const auto envelope = std::exp(-90.0 * seconds);
-            const auto sample = click_gains[accent] *
-                                static_cast<float>(envelope * std::sin(
-                                                       2.0 * pi * click_frequencies[accent] *
-                                                       seconds));
-            const auto first_sample = frame * audio::output_channel_count;
-            pcm[first_sample] = sample;
-            pcm[first_sample + 1] = sample;
-        }
-        const auto generated = sources.register_generated_source({
-            .source = {"internal:metronome:" + std::to_string(accent),
-                       "binding:" + std::to_string(generation)},
-            .interleaved_stereo = std::move(pcm),
-        });
-        if (!generated) {
-            metronome_bindings.clear();
-            break;
-        }
-        metronome_bindings.push_back({
-            .accent = static_cast<metronome_accent_t>(accent),
-            .voice = {.source = generated.binding->source,
-                      .source_start_frame = 0,
-                      .frame_count = generated.binding->output_frame_count,
-                      .gain = 1.0F},
-        });
-    }
-}
-
 } // namespace
 
 // Resolves an asset's path, or nullopt when it has none usable.
@@ -140,21 +97,17 @@ auto register_one_asset(const song_document_t& document, const audio_asset_t& as
 
 auto register_audition_sources(
     const song_document_t& document, const std::filesystem::path& asset_base,
-    std::uint64_t generation, audio::decoded_source_registry_t& sources,
-    std::vector<audio::preview_metronome_source_binding_t>& metronome_bindings)
+    std::uint64_t generation, audio::decoded_source_registry_t& sources)
     -> std::size_t {
     const auto unavailable = register_assets(document, asset_base, generation, sources, false);
-    register_metronome_sources(generation, sources, metronome_bindings);
     return unavailable;
 }
 
 auto register_audition_sources_deferred(
     const song_document_t& document, const std::filesystem::path& asset_base,
-    std::uint64_t generation, audio::decoded_source_registry_t& sources,
-    std::vector<audio::preview_metronome_source_binding_t>& metronome_bindings)
+    std::uint64_t generation, audio::decoded_source_registry_t& sources)
     -> std::size_t {
     const auto unavailable = register_assets(document, asset_base, generation, sources, true);
-    register_metronome_sources(generation, sources, metronome_bindings);
     return unavailable;
 }
 

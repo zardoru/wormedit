@@ -205,6 +205,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         src/audio/time_stretch.cpp
         src/audio/onset.cpp
         src/audio/offline_mix.cpp
+        src/audio/metronome.cpp
     )
     target_link_libraries(wormedit-convert PRIVATE wormedit::audio_decoder)
     target_compile_definitions(wormedit-convert PRIVATE WORMEDIT_HAS_AUDIO_DECODER=1)
@@ -512,6 +513,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/crash_backtrace.cpp
         src/sys/audio_source_registration.cpp
         src/sys/project_audio_sources.cpp
+        src/sys/metronome.cpp
         src/sys/application_edit_helpers.cpp
         src/sys/application_frame_projection.cpp
         src/sys/application_frame_services.cpp

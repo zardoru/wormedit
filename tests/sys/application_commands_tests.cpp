@@ -2690,23 +2690,26 @@ TEST_CASE("Project reset retains exactly the session preference allowlist", "[sy
     state.preferences.transport_keep_pitch = true;
     state.preferences.transport_keep_pitch_available = true;
     state.preferences.transport_seek_posts_feedback = true;
-    state.preferences.transport_metronome_enabled = true;
-    state.preferences.transport_metronome_available = true;
+    wormedit::sys::metronome_t metronome;
+    state.metronome = &metronome;
+    metronome.settings.enabled = true;
+    metronome.settings.available = true;
     state.preferences.timing_settings_visible = true;
-    state.preferences.metronome_volume = 42;
-    state.preferences.metronome_count_in = 4;
+    metronome.settings.volume = 42;
+    metronome.settings.count_in = 4;
     reset_application_project_edit_state(state);
+    check_transient_transport(state.metronome == &metronome);
     check_transient_transport(state.preferences.editor_preferences.audition_on_click);
     check_transient_transport(state.preferences.minimap_click_moves_paused_playhead);
     check_transient_transport(state.preferences.transport_rate_index == 3);
     check_transient_transport(state.preferences.transport_keep_pitch);
     check_transient_transport(state.preferences.transport_keep_pitch_available);
     check_transient_transport(state.preferences.transport_seek_posts_feedback);
-    check_transient_transport(state.preferences.transport_metronome_enabled);
-    check_transient_transport(state.preferences.transport_metronome_available);
+    check_transient_transport(state.metronome_settings().enabled);
+    check_transient_transport(state.metronome_settings().available);
     check_transient_transport(state.preferences.timing_settings_visible);
-    check_transient_transport(state.preferences.metronome_volume == 42);
-    check_transient_transport(state.preferences.metronome_count_in == 4);
+    check_transient_transport(state.metronome_settings().volume == 42);
+    check_transient_transport(state.metronome_settings().count_in == 4);
 }
 
 TEST_CASE("Project reset keeps formerly reset view settings project scoped", "[sys][ownership]") {

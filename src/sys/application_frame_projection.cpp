@@ -133,9 +133,9 @@ auto project_application_frame(const application_frame_projection_context_t& con
             &context.compose_scene_cache.keysound_list_cache);
         flattened.rebind_view_pointers();
         flattened.view.transport_metronome_enabled =
-            context.application_command_state.preferences.transport_metronome_enabled;
+            context.application_command_state.metronome_settings().enabled;
         flattened.view.transport_metronome_available =
-            context.application_command_state.preferences.transport_metronome_available;
+            context.application_command_state.metronome_settings().available;
     }
 
     {

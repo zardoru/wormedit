@@ -1,4 +1,5 @@
 #include "sys/audio_source_registration.h"
+#include "sys/metronome.h"
 #include "sys/project_open.h"
 
 #include <wormedit/audio/preview_session.h>
@@ -181,14 +182,14 @@ auto run_mode(const char* label, bool charge_pump_time, const std::filesystem::p
               std::span<const preview_object_source_binding_t> bindings,
               std::uint64_t end_frame) -> run_result_t {
     decoded_source_registry_t sources;
-    std::vector<preview_metronome_source_binding_t> runtime_metronome;
-    static_cast<void>(sys::register_audition_sources(document, asset_base, 1, sources,
-                                                     runtime_metronome));
+    sys::metronome_t runtime_metronome;
+    static_cast<void>(sys::register_audition_sources(document, asset_base, 1, sources));
+    runtime_metronome.register_into(sources, 1);
     decoded_block_cache_t cache{preview_block_cache_limits()};
     transport_t transport{cache};
     preview_transport_bridge_t bridge{transport};
     preview_session_t session{sources, transport, bridge};
-    const auto started = session.start(schedule, bindings, runtime_metronome, 0, {}, end_frame);
+    const auto started = session.start(schedule, bindings, runtime_metronome.bindings(), 0, {}, end_frame);
     REQUIRE(started);
     constexpr double cadence_seconds = 0.0167;
     constexpr std::size_t callback_frames = 4'096;
@@ -237,7 +238,7 @@ struct repro_chart_t {
     timing_index_t timing;
     measure_index_t measures;
     std::vector<preview_object_source_binding_t> bindings;
-    std::vector<preview_metronome_source_binding_t> metronome;
+    sys::metronome_t metronome;
     std::uint64_t end_frame{};
 };
 
@@ -259,7 +260,8 @@ auto preview_end_frame(const preview_schedule_t& schedule, const timing_index_t&
 void resolve_repro_bindings(repro_chart_t& chart) {
     decoded_source_registry_t registry;
     static_cast<void>(sys::register_audition_sources(
-        chart.document, chart.asset_base, 1, registry, chart.metronome));
+        chart.document, chart.asset_base, 1, registry));
+    chart.metronome.register_into(registry, 1);
     const auto resolved = resolve_preview_bindings(
         chart.document, chart.document.charts.front().id, chart.schedule, registry.bindings(),
         {.skip_unavailable_preview_sources = true});

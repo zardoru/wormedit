@@ -81,7 +81,7 @@ auto registered_music_asset(const song_document_t& document,
 auto preview_end_frame(
     const preview_schedule_t& schedule,
     const std::vector<audio::preview_object_source_binding_t>& bindings,
-    const std::vector<audio::preview_metronome_source_binding_t>& metronome_bindings)
+    std::span<const audio::preview_metronome_source_binding_t> metronome_bindings)
     -> std::uint64_t {
     std::uint64_t end_frame{};
     const auto include_event_ends = [&](const auto& events) {
@@ -143,7 +143,7 @@ auto chart_visual_end_frame(const timing_index_t& timing,
 bool chart_preview_t::reusable(chart_id_t chart_id, std::uint64_t document_revision,
                                std::optional<asset_id_t> selected_music_asset) const {
     return schedule && chart == chart_id && revision == document_revision &&
-           music_asset == selected_music_asset && count_in_measures == compiled_count_in_measures;
+           music_asset == selected_music_asset && count_in_measures() == compiled_count_in_measures;
 }
 
 bool chart_preview_t::preserve_bookmark_revision(chart_id_t chart_id,
@@ -192,10 +192,11 @@ auto chart_preview_t::set_layer_assist(chart_id_t selected, std::span<const laye
 
 auto chart_preview_t::compile_if_needed(
     const chart_document_t& selected_chart, const song_document_t& document,
-    project_audio_sources_t& sources,
-    const std::vector<audio::preview_metronome_source_binding_t>& metronome_bindings)
+    project_audio_sources_t& sources)
     -> std::optional<std::string> {
     sources.ensure_current(document);
+    metronome = sources.metronome;
+    const auto metronome_bindings = sources.metronome_bindings();
     sources.registry().await_pending();
     const auto selected_music = registered_music_asset(document, sources);
     const auto selected_music_asset = selected_music
@@ -210,7 +211,7 @@ auto chart_preview_t::compile_if_needed(
     auto built_timing = build_timing_index(selected_chart, {.allow_bounded_clock = true});
     if (!built_timing)
         return preview_diagnostic_feedback(*this, built_timing.diagnostics, "Chart timing could not be compiled.");
-    const auto count_in = timing_count_in_pulses(selected_chart, count_in_measures);
+    const auto count_in = timing_count_in_pulses(selected_chart, count_in_measures());
     if (!count_in)
         return report(notification_severity_t::warning, false,
                       "Count-in exceeds the first meter's pulse limits.");
@@ -254,10 +255,10 @@ auto chart_preview_t::compile_if_needed(
     timing = std::move(*built_timing.index);
     bindings = std::move(resolved.bindings);
     assign_preview_bgm_mix_groups(selected_chart, bindings);
-    retained_metronome_bindings = metronome_bindings;
+    retained_metronome_bindings.assign(metronome_bindings.begin(), metronome_bindings.end());
     chart = selected_chart.id;
     revision = document.revision;
-    compiled_count_in_measures = count_in_measures;
+    compiled_count_in_measures = count_in_measures();
     music_asset = selected_music_asset;
     resume_frame = std::min(retained_resume, compiled_end_frame);
     end_frame = compiled_end_frame;
@@ -314,7 +315,6 @@ auto milliseconds_to_frame(std::int64_t milliseconds, std::uint32_t sample_rate)
 auto chart_preview_t::play_pause(
     const chart_document_t* selected_chart, const song_document_t& document,
     project_audio_sources_t& sources,
-    const std::vector<audio::preview_metronome_source_binding_t>& metronome_bindings,
     sdl_audition_output_t& audition_output, audio::preview_session_t& preview_session,
     sdl_preview_output_t& preview_output, std::optional<local_position_t> start_cursor,
     bool from_beginning, std::optional<std::uint64_t> exact_start_frame,
@@ -329,7 +329,7 @@ auto chart_preview_t::play_pause(
     if (selected_chart == nullptr)
         return report(notification_severity_t::warning, false, "Select a chart before starting preview.");
 
-    if (auto error = compile_if_needed(*selected_chart, document, sources, metronome_bindings))
+    if (auto error = compile_if_needed(*selected_chart, document, sources))
         return *error;
 
     const auto was_paused = paused;
@@ -349,7 +349,7 @@ auto chart_preview_t::play_pause(
 
     static_cast<void>(audition_output.stop());
     (void)preview_session.set_layer_tick_frames(layer_assist_frames());
-    const auto started = preview_output.start(*schedule, bindings, metronome_bindings,
+    const auto started = preview_output.start(*schedule, bindings, sources.metronome_bindings(),
                                               resume_frame, end_frame);
     if (!started)
         return report(notification_severity_t::error, false,

@@ -361,8 +361,8 @@ auto loop_region_for_selection(const wormedit::chart_document_t& chart,
 void refresh_transport_rate_commands(wormedit::command_registry_t& registry,
                                      const application_command_state_t& state) {
     (void)wormedit::update_command_state(registry, {"transport.toggle_metronome"},
-                                       state.preferences.transport_metronome_available,
-                                       state.preferences.transport_metronome_enabled);
+                                       state.metronome_settings().available,
+                                       state.metronome_settings().enabled);
     const bool available = static_cast<bool>(state.services.transport_set_playback_rate);
     (void)wormedit::update_command_state(registry, {"transport.rate_slower"},
                                        available && state.preferences.transport_rate_index > 0, std::nullopt);
@@ -2136,7 +2136,8 @@ struct application_t::implementation_t {
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     struct audio_runtime_t {
         notification_sink_t& notifications;
-        project_audio_sources_t project_sources{};
+        metronome_t metronome{};
+        project_audio_sources_t project_sources{.metronome = &metronome};
         audio::decoded_block_cache_t audition_cache{};
         audio::transport_t audition_transport{audition_cache};
         audio::audition_transport_bridge_t audition_bridge{audition_transport};
@@ -3283,7 +3284,7 @@ struct application_t::implementation_t {
             audio_runtime.preview_state.paused = false;
             static_cast<void>(audio_runtime.preview_state.play_pause(
                 chart, session.history.document, audio_runtime.project_sources,
-                audio_runtime.project_sources.metronome_bindings, audio_runtime.audition_output,
+                audio_runtime.audition_output,
                 audio_runtime.preview_session, audio_runtime.preview_output, std::nullopt, false,
                 region->begin_frame));
             if (!audio_runtime.preview_output.playing()) {
@@ -4164,8 +4165,7 @@ struct application_t::implementation_t {
                                           : std::nullopt;
         const auto result = audio_runtime.preview_state.play_pause(
             selected_chart(session.history, session.workspace), session.history.document,
-            audio_runtime.project_sources, audio_runtime.project_sources.metronome_bindings,
-            audio_runtime.audition_output, audio_runtime.preview_session,
+            audio_runtime.project_sources,             audio_runtime.audition_output, audio_runtime.preview_session,
             audio_runtime.preview_output,
             compose_cursor ? std::optional{compose_cursor->cursor} : std::nullopt, false,
             exact_start, compose_cursor ? compose_cursor->cursor_subrow : 0.0);
@@ -4235,19 +4235,6 @@ struct application_t::implementation_t {
                                                             audio_runtime.preview_session);
     }
 
-    auto on_transport_set_metronome(bool enabled) -> void {
-        audio_runtime.preview_session.set_metronome_enabled(enabled);
-    }
-
-    auto on_transport_set_metronome_volume(std::uint8_t volume) -> void {
-        (void)audio_runtime.preview_session.set_metronome_volume(volume);
-    }
-
-    auto on_transport_set_metronome_count_in(std::uint8_t measures) -> void {
-        if (audio_runtime.preview_session.set_metronome_count_in(measures))
-            audio_runtime.preview_state.count_in_measures = measures;
-    }
-
     auto on_transport_set_keep_pitch(bool enabled) -> bool {
         return audio_runtime.preview_output.set_keep_pitch(enabled);
     }
@@ -4305,8 +4292,7 @@ struct application_t::implementation_t {
                 : nullptr;
         const auto result = audio_runtime.preview_state.play_pause(
             selected_chart(session.history, session.workspace), session.history.document,
-            audio_runtime.project_sources, audio_runtime.project_sources.metronome_bindings,
-            audio_runtime.audition_output, audio_runtime.preview_session,
+            audio_runtime.project_sources,             audio_runtime.audition_output, audio_runtime.preview_session,
             audio_runtime.preview_output, std::nullopt, true);
         if (starting && audio_runtime.preview_output.playing())
             views.inline_preview_cursor.capture(compose_cursor);
@@ -4377,30 +4363,14 @@ struct application_t::implementation_t {
     }
 
     void configure_transport_commands() {
-        commands.preferences.transport_metronome_available =
-            audio_runtime.preview_output.available() &&
-            !audio_runtime.project_sources.metronome_bindings.empty();
+        commands.metronome = &audio_runtime.metronome;
+        audio_runtime.metronome.attach_session(audio_runtime.preview_session,
+                                               audio_runtime.preview_output.available());
         commands.services.transport_set_layer_assist =
             [this](wormedit::chart_id_t chart, std::span<const wormedit::layer_id_t> layers) {
                 return on_transport_set_layer_assist(chart, layers);
             };
         configure_bgm_mix_command();
-        commands.services.transport_set_metronome = [this](bool enabled) {
-            return on_transport_set_metronome(enabled);
-        };
-        audio_runtime.preview_session.set_metronome_enabled(
-            commands.preferences.transport_metronome_enabled);
-        commands.services.transport_set_metronome_volume = [this](std::uint8_t volume) {
-            return on_transport_set_metronome_volume(volume);
-        };
-        commands.services.transport_set_metronome_count_in = [this](std::uint8_t measures) {
-            return on_transport_set_metronome_count_in(measures);
-        };
-        (void)audio_runtime.preview_session.set_metronome_volume(
-            commands.preferences.metronome_volume);
-        (void)audio_runtime.preview_session.set_metronome_count_in(
-            commands.preferences.metronome_count_in);
-        audio_runtime.preview_state.count_in_measures = commands.preferences.metronome_count_in;
         commands.preferences.transport_keep_pitch_available =
             audio_runtime.preview_output.available();
         commands.services.transport_set_keep_pitch = [this](bool enabled) {
@@ -4664,8 +4634,8 @@ struct application_t::implementation_t {
                              preferences.shortcut_editor, command_registry);
         attach_bgm_shortcut(flattened.view.compose, command_registry);
         flattened.view.timing_settings_visible = commands.preferences.timing_settings_visible;
-        flattened.view.metronome_volume = commands.preferences.metronome_volume;
-        flattened.view.metronome_count_in = commands.preferences.metronome_count_in;
+        flattened.view.metronome_volume = commands.metronome_settings().volume;
+        flattened.view.metronome_count_in = commands.metronome_settings().count_in;
         flattened.view.chart_import =
             wormedit::sys::chart_import_view(views.chart_import, session.history.document.revision);
         flattened.view.close_confirmation = close_confirmation_view(

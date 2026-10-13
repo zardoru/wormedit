@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sys/audio_source_registration.h"
+#include "sys/metronome.h"
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 namespace wormedit::sys {
@@ -11,12 +12,15 @@ namespace runtime { class waveform_analysis_t; struct chart_preview_t; }
 // Control-thread owner. Documents are passed at query boundaries, never retained.
 struct project_audio_sources_t {
     audio::decoded_source_registry_t sources{};
-    std::optional<song_id_t> source_project;
-    std::vector<audition_asset_entry_t> asset_inventory;
+    std::optional<song_id_t> source_project{};
+    std::vector<audition_asset_entry_t> asset_inventory{};
     std::uint64_t generation{};
-    std::optional<std::uint64_t> reconciled_revision;
-    std::filesystem::path asset_base;
-    std::vector<audio::preview_metronome_source_binding_t> metronome_bindings;
+    std::optional<std::uint64_t> reconciled_revision{};
+    std::filesystem::path asset_base{};
+    metronome_t* metronome{};
+    [[nodiscard]] auto metronome_bindings() const -> std::span<const audio::preview_metronome_source_binding_t> {
+        return metronome ? metronome->bindings() : std::span<const audio::preview_metronome_source_binding_t>{};
+    }
     task_scheduler_t* probe_scheduler{};
     resident_sample_loader_t* resident_loader{};
     const notification_sink_t* notifications{};

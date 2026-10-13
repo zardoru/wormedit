@@ -33,12 +33,13 @@ void check_large_keysound_inventory(bool deferred, std::uint64_t sound_count) {
                                          .source_path = "keysound-c4.ogg"});
     const auto directory = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio";
     wormedit::audio::decoded_source_registry_t sources;
-    std::vector<wormedit::audio::preview_metronome_source_binding_t> metronome;
     const auto register_sources = deferred ? wormedit::sys::register_audition_sources_deferred
                                           : wormedit::sys::register_audition_sources;
-    CHECK(register_sources(document, directory, 1, sources, metronome) == 0);
+    CHECK(register_sources(document, directory, 1, sources) == 0);
+    wormedit::sys::metronome_t metronome;
+    metronome.register_into(sources, 1);
     CHECK(sources.size() == sound_count + 3);
-    CHECK(metronome.size() == 3);
+    CHECK(metronome.bindings().size() == 3);
     if (deferred) check_large_inventory_pending(sources, sound_count);
     check_large_inventory_binding(sources, sound_count);
 }
@@ -128,14 +129,12 @@ TEST_CASE("relative audio assets resolve from the opened chart directory",
     const auto chart_directory = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio";
 
     wormedit::audio::decoded_source_registry_t sources;
-    std::vector<wormedit::audio::preview_metronome_source_binding_t> metronome;
-    CHECK(wormedit::sys::register_audition_sources(document, {}, 1, sources, metronome) == 1);
+    CHECK(wormedit::sys::register_audition_sources(document, {}, 1, sources) == 1);
     CHECK_FALSE(sources.binding(wormedit::asset_id_t{5}));
 
     sources.clear();
-    metronome.clear();
     CHECK(wormedit::sys::register_audition_sources(document, chart_directory, 2,
-                                                    sources, metronome) == 0);
+                                                    sources) == 0);
     CHECK(sources.binding(wormedit::asset_id_t{5}));
 }
 
@@ -192,13 +191,13 @@ TEST_CASE("deferred audio registration returns before probing and probes in the 
     const auto chart_directory = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio";
 
     wormedit::audio::decoded_source_registry_t sources;
-    std::vector<wormedit::audio::preview_metronome_source_binding_t> metronome;
-    CHECK(wormedit::sys::register_audition_sources_deferred(document, chart_directory, 1, sources,
-                                                            metronome) == 1);
+    CHECK(wormedit::sys::register_audition_sources_deferred(document, chart_directory, 1, sources) == 1);
     CHECK(sources.pending_count() == 2);
     CHECK(sources.open_decoder_count() == 0);
     CHECK_FALSE(sources.binding(wormedit::asset_id_t{5}));
-    CHECK(metronome.size() == 3);
+    wormedit::sys::metronome_t metronome;
+    metronome.register_into(sources, 1);
+    CHECK(metronome.bindings().size() == 3);
 
     wormedit::task_scheduler_t scheduler(2, 4);
     wormedit::sys::start_audition_source_probes(sources, scheduler);
@@ -215,7 +214,6 @@ TEST_CASE("reconciling an unchanged audio inventory does not register or probe a
     const auto chart_directory = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio";
     wormedit::sys::project_audio_sources_t project_sources;
     wormedit::audio::decoded_source_registry_t& sources = project_sources.registry();
-    std::vector<wormedit::audio::preview_metronome_source_binding_t> metronome;
     std::uint64_t& generation = project_sources.generation;
     wormedit::task_scheduler_t scheduler(1, 4);
     const auto reconcile = [&] {
@@ -238,7 +236,6 @@ struct save_as_fixture_t {
     std::filesystem::path alias_base;
     wormedit::sys::project_audio_sources_t project_sources;
     wormedit::audio::decoded_source_registry_t& sources = project_sources.registry();
-    std::vector<wormedit::audio::preview_metronome_source_binding_t> metronome;
     std::uint64_t& generation = project_sources.generation;
 
     save_as_fixture_t() {
@@ -305,9 +302,8 @@ TEST_CASE("audio sources are registered song first, then keysounds by first use"
     chart.measures.push_back(std::move(measure));
     document.charts.push_back(std::move(chart));
     audio::decoded_source_registry_t sources;
-    std::vector<audio::preview_metronome_source_binding_t> metronome;
     const auto base = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio";
-    REQUIRE(sys::register_audition_sources_deferred(document, base, 1, sources, metronome) == 0);
+    REQUIRE(sys::register_audition_sources_deferred(document, base, 1, sources) == 0);
     // Probing claims the oldest pending source first, so completing one probe at a time
     // settles the song, then the first-used keysound, then the rest.
     for (const auto expected : {asset_id_t{4}, asset_id_t{3}, asset_id_t{1}, asset_id_t{2}}) {
@@ -323,7 +319,6 @@ TEST_CASE("reconciling after linking an absolute asset into an unsaved project r
     const std::filesystem::path unsaved_asset_base;
     wormedit::sys::project_audio_sources_t project_sources;
     wormedit::audio::decoded_source_registry_t& sources = project_sources.registry();
-    std::vector<wormedit::audio::preview_metronome_source_binding_t> metronome;
     std::uint64_t& generation = project_sources.generation;
     wormedit::task_scheduler_t scheduler(1, 4);
     const auto reconcile = [&] {
@@ -375,7 +370,6 @@ TEST_CASE("the resident loader decodes keysounds once and rebinds them on reconc
     wormedit::audio::resident_sample_store_t store;
     wormedit::task_scheduler_t scheduler(2, 4);
     wormedit::sys::resident_sample_loader_t loader{store, scheduler};
-    std::vector<wormedit::audio::preview_metronome_source_binding_t> metronome;
     std::uint64_t& generation = project_sources.generation;
     const auto reconcile = [&] {
         project_sources.probe_scheduler = &scheduler;
@@ -434,9 +428,8 @@ TEST_CASE("long sources get their head decoded into the block cache instead of g
     wormedit::task_scheduler_t scheduler(2, 4);
     wormedit::sys::resident_sample_loader_t loader{store, scheduler};
     loader.set_head_cache(&head_cache, 441'000);
-    std::vector<wormedit::audio::preview_metronome_source_binding_t> metronome;
     REQUIRE(wormedit::sys::register_audition_sources_deferred(document, chart_directory, 1,
-                                                              sources, metronome) == 0);
+                                                              sources) == 0);
     loader.start(document, chart_directory, 1, sources);
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
     while (loader.progress().running && std::chrono::steady_clock::now() < deadline) {
@@ -477,9 +470,8 @@ TEST_CASE("prioritized assets load before the remaining first-use order",
     });
     wormedit::task_scheduler_t scheduler(2, 4);
     wormedit::sys::resident_sample_loader_t loader{store, scheduler};
-    std::vector<wormedit::audio::preview_metronome_source_binding_t> metronome;
     REQUIRE(wormedit::sys::register_audition_sources_deferred(document, chart_directory, 1,
-                                                              sources, metronome) == 0);
+                                                              sources) == 0);
     sources.await_pending();
     loader.prioritize({wormedit::asset_id_t{3}});
     loader.start(document, chart_directory, 1, sources);
@@ -508,8 +500,7 @@ struct budget_loader_fixture_t {
         document.id = wormedit::song_id_t{780};
         document.audio_assets.push_back({.id = wormedit::asset_id_t{1}, .source_path = std::move(first)});
         document.audio_assets.push_back({.id = wormedit::asset_id_t{2}, .source_path = std::move(second)});
-        std::vector<wormedit::audio::preview_metronome_source_binding_t> metronome;
-        expect_registration(wormedit::sys::register_audition_sources(document, directory, 1, sources, metronome) == 0);
+        expect_registration(wormedit::sys::register_audition_sources(document, directory, 1, sources) == 0);
     }
     void start() { loader.start(document, directory, 1, sources); }
     void wait() {
@@ -577,9 +568,8 @@ TEST_CASE("budget retries use only the latest project after a canceled run", "[r
     fixture.sources.clear();
     fixture.document.id = wormedit::song_id_t{781};
     fixture.document.audio_assets.erase(fixture.document.audio_assets.begin());
-    std::vector<wormedit::audio::preview_metronome_source_binding_t> metronome;
     expect_registration(wormedit::sys::register_audition_sources(fixture.document, fixture.directory, 2,
-        fixture.sources, metronome) == 0);
+        fixture.sources) == 0);
     fixture.start();
     fixture.wait();
     fixture.loader.set_budget_bytes(16U * 1024U * 1024U);
@@ -629,7 +619,6 @@ TEST_CASE("same-frame asset edit is visible to object audition", "[sys][audio-so
     document.revision = 1;
     sys::project_audio_sources_t project_sources;
     auto& sources = project_sources.registry();
-    std::vector<audio::preview_metronome_source_binding_t> metronome;
     const auto base = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio";
     REQUIRE(project_sources.reconcile(document, base) == std::optional<std::size_t>{0});
     // Audio phase has completed. A later action links an asset and auditions it.

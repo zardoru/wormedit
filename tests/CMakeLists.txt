@@ -212,6 +212,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         ../src/sys/audio_project_import.cpp
         ../src/sys/audio_source_registration.cpp
         ../src/sys/project_audio_sources.cpp
+        ../src/sys/metronome.cpp
         core/audio_audition_bridge_tests.cpp
         core/audio_audition_pump_tests.cpp
         core/audio_audition_resolver_tests.cpp
@@ -282,6 +283,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
             ../src/sys/compose_audition_requests.cpp
             ../src/sys/audio_source_registration.cpp
             ../src/sys/project_audio_sources.cpp
+        ../src/sys/metronome.cpp
             ../src/sys/audio_transport_frame.cpp
             sys/sdl_audition_output_tests.cpp
             sys/sdl_preview_output_tests.cpp
@@ -785,6 +787,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/waveform_analysis_runtime.cpp
             ../src/sys/audio_source_registration.cpp
         ../src/sys/project_audio_sources.cpp
+        ../src/sys/metronome.cpp
             sys/audio_notification_tests.cpp
             ../src/sys/bmson_waveform_projection.cpp
             ../src/sys/compose_input.cpp

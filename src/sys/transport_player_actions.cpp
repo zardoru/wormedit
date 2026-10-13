@@ -65,7 +65,7 @@ auto toggle_metronome_status(application_command_state_t& state,
     if (!toggle_transport_metronome(state))
         return publish_transport_feedback(notifications, notification_severity_t::warning, "Metronome is unavailable.");
     return publish_transport_feedback(notifications, notification_severity_t::success,
-        state.preferences.transport_metronome_enabled ? "Metronome enabled." : "Metronome disabled.");
+        state.metronome_settings().enabled ? "Metronome enabled." : "Metronome disabled.");
 }
 
 

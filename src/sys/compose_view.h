@@ -1,4 +1,5 @@
 #pragma once
+#include "sys/metronome.h"
 
 #include "core/interaction_context.h"
 
@@ -419,9 +420,6 @@ struct application_command_services_t {
     std::function<bool(wormedit::chart_id_t, std::uint64_t, std::uint64_t, std::uint64_t, bool)>
         transport_set_loop_selection;
     std::function<bool()> transport_loop_selection_active;
-    std::function<void(std::uint8_t)> transport_set_metronome_volume;
-    std::function<void(std::uint8_t)> transport_set_metronome_count_in;
-    std::function<void(bool)> transport_set_metronome;
     std::function<bool(wormedit::chart_id_t, std::span<const std::uint64_t>)> transport_set_bgm_mix;
     std::function<std::string(external_player_action_t)> external_player;
     std::function<std::string()> transport_cancel_restore;
@@ -512,6 +510,11 @@ struct application_command_state_t {
     };
 
     application_command_services_t services;
+    metronome_t* metronome{};
+    [[nodiscard]] auto metronome_settings() const -> const metronome_settings_t& {
+        static const metronome_settings_t defaults;
+        return metronome ? metronome->settings : defaults;
+    }
     struct preferences_t {
         // Editor placement audition is distinct from Sounds-panel preview-on-click.
         wormedit::editor_preferences_t editor_preferences;
@@ -521,11 +524,7 @@ struct application_command_state_t {
         bool transport_keep_pitch_available{};
         // Production seek services publish feedback; legacy/test callbacks leave this false.
         bool transport_seek_posts_feedback{};
-        bool transport_metronome_enabled{};
-        bool transport_metronome_available{};
         bool timing_settings_visible{};
-        std::uint8_t metronome_volume{100};
-        std::uint8_t metronome_count_in{};
     } preferences;
     // Resolved from display preferences and the field skin, outside the project lifetime.
     wormedit::editor_scratch_presentation_t scratch_on_right;
@@ -648,28 +647,16 @@ struct application_command_state_t {
 }
 
 inline auto toggle_transport_metronome(application_command_state_t& state) -> bool {
-    if (!state.preferences.transport_metronome_available || !state.services.transport_set_metronome) return false;
-    state.preferences.transport_metronome_enabled = !state.preferences.transport_metronome_enabled;
-    state.services.transport_set_metronome(state.preferences.transport_metronome_enabled);
-    return true;
+    return state.metronome && state.metronome->set_enabled(!state.metronome->settings.enabled);
 }
-
 inline void apply_timing_settings_action(application_command_state_t& state,
                                          const WormUiTimingSettingsAction& action) {
     if (action.toggle) state.preferences.timing_settings_visible = !state.preferences.timing_settings_visible;
     if (action.close) state.preferences.timing_settings_visible = false;
-    if (action.change_enable && state.preferences.transport_metronome_available && state.services.transport_set_metronome) {
-        state.preferences.transport_metronome_enabled = action.enabled;
-        state.services.transport_set_metronome(action.enabled);
-    }
-    if (action.change_volume && action.volume <= 100 && state.services.transport_set_metronome_volume) {
-        state.preferences.metronome_volume = action.volume;
-        state.services.transport_set_metronome_volume(action.volume);
-    }
-    if (action.change_count_in && action.count_in <= 4 && state.services.transport_set_metronome_count_in) {
-        state.preferences.metronome_count_in = action.count_in;
-        state.services.transport_set_metronome_count_in(action.count_in);
-    }
+    if (!state.metronome) return;
+    if (action.change_enable) static_cast<void>(state.metronome->set_enabled(action.enabled));
+    if (action.change_volume) static_cast<void>(state.metronome->set_volume(action.volume));
+    if (action.change_count_in) static_cast<void>(state.metronome->set_count_in(action.count_in));
 }
 
 struct compose_horizontal_layout_t {

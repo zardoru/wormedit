@@ -1464,7 +1464,7 @@ auto toggle_layer_assist_tick(compose_action_context_t& context) -> std::string 
     const auto id = layer_id_t{context.action.compose_semantic_layer_id};
     if (!chart || !catalog_semantic_layer_by_id(*chart, id))
         return compose_action_warning(context, "The selected semantic layer is no longer available.");
-    if (!app.preferences.transport_metronome_available || !app.services.transport_set_layer_assist)
+    if (!app.metronome_settings().available || !app.services.transport_set_layer_assist)
         return compose_action_warning(context, "Layer assist ticks need an available audio preview.");
     auto layers = app.project.semantic_layer.layer_assist_chart == chart->id ? app.project.semantic_layer.layer_assist_layers : std::vector<layer_id_t>{};
     const auto existing = std::ranges::find(layers, id);

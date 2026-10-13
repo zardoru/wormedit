@@ -124,14 +124,13 @@ auto project_audio_sources_t::reconcile(
     context.owner.reset_dependents(stop_playback);
     if (context.owner.resident_loader != nullptr) context.owner.resident_loader->cancel();
     context.owner.sources.clear();
-    context.owner.metronome_bindings.clear();
     ++context.owner.generation;
     const auto register_sources = context.owner.probe_scheduler != nullptr
                                       ? register_audition_sources_deferred
                                       : register_audition_sources;
     const auto unavailable = register_sources(
-        context.document, context.owner.asset_base, context.owner.generation, context.owner.sources,
-        context.owner.metronome_bindings);
+        context.document, context.owner.asset_base, context.owner.generation, context.owner.sources);
+    if (metronome) metronome->register_into(sources, generation);
     if (context.owner.probe_scheduler != nullptr) {
         start_audition_source_probes(context.owner.sources, *context.owner.probe_scheduler);
     }

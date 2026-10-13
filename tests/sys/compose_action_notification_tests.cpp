@@ -2062,7 +2062,9 @@ TEST_CASE("Layer assist toggles are chart stamped session changes without docume
           "[unit][compose-actions][layer-assist]") {
     action_notification_fixture_t f;
     f.history.document.charts.front().semantic_layers = {{.id=layer_id_t{7},.name="Ticks",.locked=true}};
-    f.application.preferences.transport_metronome_available = true;
+    wormedit::sys::metronome_t metronome;
+    metronome.settings.available = true;
+    f.application.metronome = &metronome;
     std::vector<layer_id_t> configured;
     f.application.services.transport_set_layer_assist = [&](chart_id_t chart, std::span<const layer_id_t> layers) {
         check_action(chart == chart_id_t{1});
@@ -2101,7 +2103,9 @@ TEST_CASE("Unavailable and rejected layer assist callbacks leave the current sel
     action.compose_semantic_layer_id=7;
     (void)f.dispatch(action);
     check_action(f.application.project.semantic_layer.layer_assist_layers.empty());
-    f.application.preferences.transport_metronome_available=true;
+    wormedit::sys::metronome_t metronome;
+    metronome.settings.available = true;
+    f.application.metronome = &metronome;
     f.application.services.transport_set_layer_assist=[](chart_id_t,std::span<const layer_id_t>){return false;};
     (void)f.dispatch(action);
     check_action(f.application.project.semantic_layer.layer_assist_layers.empty());

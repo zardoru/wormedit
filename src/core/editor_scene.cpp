@@ -1837,7 +1837,7 @@ auto compose_comparison_rows(scene_geometry_context_t& context, Operate&& operat
 template <typename Consume, typename YForRow>
 auto compose_scene_grid(scene_geometry_context_t& context, std::uint64_t visible_begin,
                         std::uint64_t visible_end, Consume&& consume, YForRow&& y_for_row) -> bool {
-    const auto grid = make_editor_grid_lines(
+    const auto grid = editor_grid_t::from(
         context.chart, {.visible_begin_row = visible_begin,
                         .visible_end_row = visible_end,
                         .active_snap_denominator = context.view.active_snap_denominator,
@@ -1847,16 +1847,16 @@ auto compose_scene_grid(scene_geometry_context_t& context, std::uint64_t visible
                         .authored_groupings = context.request.authored_groupings,
                         .maximum_line_count = context.request.maximum_grid_lines});
     context.diagnostics = grid.diagnostics;
-    if (!grid) {
+    if (!grid.ok()) {
         return false;
     }
-    if (!consume(grid.lines.size())) {
+    if (!consume(grid.value.lines.size())) {
         context.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                                             "field-scene grid exceeds its primitive cap"));
         return false;
     }
-    context.scene.grid_lines.reserve(grid.lines.size());
-    for (const auto& line : grid.lines) {
+    context.scene.grid_lines.reserve(grid.value.lines.size());
+    for (const auto& line : grid.value.lines) {
         const auto row = static_cast<long double>(line.chart_row.whole_rows) +
                          to_long_double(line.chart_row.fractional_rows);
         context.scene.grid_lines.push_back({.y_pixels = y_for_row(row),

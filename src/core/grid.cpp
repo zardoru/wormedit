@@ -649,17 +649,13 @@ auto thin_grid_candidates(editor_grid_build_context_t& context) -> void {
         const auto& line = unique_lines[index];
         if (visible[index] && line.chart_row.whole_rows >= context.request.visible_begin_row &&
             line.chart_row.whole_rows < context.request.visible_end_row)
-            context.result.lines.push_back(line);
+            context.result.value.lines.push_back(line);
     }
 }
 
 } // namespace
 
-auto editor_grid_result_t::has_errors() const -> bool {
-    return diagnostic_queries::has_errors(diagnostics);
-}
-
-auto make_editor_grid_lines(const chart_document_t& chart, const editor_grid_request_t& request)
+auto editor_grid_t::from(const chart_document_t& chart, const editor_grid_request_t& request)
     -> editor_grid_result_t {
     editor_grid_result_t result;
     const auto built_index = build_measure_index(chart);
@@ -697,6 +693,11 @@ auto make_editor_grid_lines(const chart_document_t& chart, const editor_grid_req
         return result;
     thin_grid_candidates(context);
     return result;
+}
+
+auto make_editor_grid_lines(const chart_document_t& chart, const editor_grid_request_t& request)
+    -> editor_grid_result_t {
+    return editor_grid_t::from(chart, request);
 }
 
 } // namespace wormedit

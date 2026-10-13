@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/result.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -47,6 +48,7 @@ struct editor_grid_line_t {
     exact_chart_row_t chart_row;
     editor_grid_line_kind_t kind{editor_grid_line_kind_t::active_snap};
     editor_grid_emphasis_t emphasis{editor_grid_emphasis_t::subtle};
+    auto operator==(const editor_grid_line_t&) const -> bool = default;
 };
 
 // Optional authored grouping for one measure. Each entry is a count of
@@ -77,15 +79,14 @@ struct editor_grid_request_t {
     std::size_t maximum_line_count{100'000};
 };
 
-struct editor_grid_result_t {
-    std::vector<editor_grid_line_t> lines;
-    diagnostic_list_t diagnostics;
+struct editor_grid_t {
+    [[nodiscard]] static auto from(const chart_document_t& chart, const editor_grid_request_t& request)
+        -> diagnosed_t<editor_grid_t>;
 
-    [[nodiscard]] auto has_errors() const -> bool;
-    [[nodiscard]] explicit operator bool() const {
-        return !has_errors();
-    }
+    std::vector<editor_grid_line_t> lines;
+    auto operator==(const editor_grid_t&) const -> bool = default;
 };
+using editor_grid_result_t = diagnosed_t<editor_grid_t>;
 
 // Builds exact, renderer-neutral measure, beat, group, and active-snap lines
 // for a visible chart-row range. Zoom affects subdivision visibility only;

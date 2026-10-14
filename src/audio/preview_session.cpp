@@ -196,35 +196,36 @@ auto preview_session_t::pump(preview_pump_options_t options) -> preview_session_
     return preview_session_pump_result_t::from(pump_session(options));
 }
 
-auto preview_session_t::render(std::span<float> interleaved_stereo,
-                               std::optional<std::uint64_t> expected_generation)
-    -> preview_session_render_result_t {
+auto preview_session_t::render_frames(std::span<float> interleaved_stereo,
+                                      std::optional<std::uint64_t> expected_generation)
+    -> preview_session_render_outcome_t {
     std::ranges::fill(interleaved_stereo, 0.0F);
     const auto samples_per_frame = static_cast<std::size_t>(output_channel_count);
     if (interleaved_stereo.empty() || interleaved_stereo.size() % samples_per_frame != 0 ||
         interleaved_stereo.size() / samples_per_frame > maximum_read_frames) {
-        return {.status = preview_session_render_status_t::invalid_buffer,
-                .first_timeline_frame = 0,
-                .mix = {.status = transport_mix_status_t::invalid_buffer}};
+        return preview_session_render_result_t::from(
+            preview_session_render_status_t::invalid_buffer, 0,
+            {.status = transport_mix_status_t::invalid_buffer});
     }
 
     const std::scoped_lock lock(mutex_);
     if (expected_generation && *expected_generation != generation_)
-        return {.status = preview_session_render_status_t::stale_generation};
+        return preview_session_render_result_t::from(
+            preview_session_render_status_t::stale_generation);
     if (!token_.has_value()) {
-        return {.status = preview_session_render_status_t::stopped,
-                .first_timeline_frame = timeline_frame_,
-                .mix = {.status = transport_mix_status_t::stale_generation}};
+        return preview_session_render_result_t::from(
+            preview_session_render_status_t::stopped, timeline_frame_,
+            {.status = transport_mix_status_t::stale_generation});
     }
     const auto first_frame = timeline_frame_;
     if (!transport_.is_current(*token_)) {
         clear_state();
-        return {.status = preview_session_render_status_t::stale_generation,
-                .first_timeline_frame = first_frame};
+        return preview_session_render_result_t::from(
+            preview_session_render_status_t::stale_generation, first_frame);
     }
     if (prime_pending_) {
-        return {.status = preview_session_render_status_t::priming,
-                .first_timeline_frame = first_frame};
+        return preview_session_render_result_t::from(preview_session_render_status_t::priming,
+                                                     first_frame);
     }
     transport_mix_result_t mixed;
     if (loop_region_ && first_frame >= loop_region_->end_frame) {
@@ -242,41 +243,44 @@ auto preview_session_t::render(std::span<float> interleaved_stereo,
     }
     if (mixed.status == transport_mix_status_t::stale_generation) {
         clear_state();
-        return {.status = preview_session_render_status_t::stale_generation,
-                .first_timeline_frame = first_frame,
-                .mix = mixed};
+        return preview_session_render_result_t::from(
+            preview_session_render_status_t::stale_generation, first_frame, mixed);
     }
     if (mixed.status != transport_mix_status_t::mixed) {
-        return {.status = preview_session_render_status_t::transport_failed,
-                .first_timeline_frame = first_frame,
-                .mix = mixed};
+        return preview_session_render_result_t::from(
+            preview_session_render_status_t::transport_failed, first_frame, mixed);
     }
     if (mixed.frames > std::numeric_limits<std::uint64_t>::max() - timeline_frame_) {
         static_cast<void>(bridge_.stop());
         clear_state();
         std::ranges::fill(interleaved_stereo, 0.0F);
-        return {.status = preview_session_render_status_t::transport_failed,
-                .first_timeline_frame = first_frame,
-                .mix = mixed};
+        return preview_session_render_result_t::from(
+            preview_session_render_status_t::transport_failed, first_frame, mixed);
     }
     timeline_frame_ += mixed.frames;
     publish_playhead();
     if (mixed.missing_blocks == 0 && !loop_region_ && bridge_.is_exhausted() &&
-        transport_.scheduled_voice_count() == 0 &&
-        timeline_frame_ >= minimum_end_frame_) {
+        transport_.scheduled_voice_count() == 0 && timeline_frame_ >= minimum_end_frame_) {
         static_cast<void>(bridge_.stop());
         clear_state();
-        return {.status = preview_session_render_status_t::complete,
-                .first_timeline_frame = first_frame,
-                .mix = mixed};
+        return preview_session_render_result_t::from(preview_session_render_status_t::complete,
+                                                     first_frame, mixed);
     }
-    return {.status = mixed.missing_blocks == 0 ? preview_session_render_status_t::mixed
-                                                : preview_session_render_status_t::underrun,
-            .first_timeline_frame = first_frame,
-            .mix = mixed};
+    return preview_session_render_result_t::from(mixed.missing_blocks == 0
+                                                     ? preview_session_render_status_t::mixed
+                                                     : preview_session_render_status_t::underrun,
+                                                 first_frame, mixed);
 }
 
-auto preview_session_t::stop(std::optional<std::uint64_t> expected_generation) noexcept -> transport_stop_result_t {
+auto preview_session_t::render(std::span<float> interleaved_stereo,
+                               std::optional<std::uint64_t> expected_generation)
+    -> preview_session_render_result_t {
+    return preview_session_render_result_t::from(
+        render_frames(interleaved_stereo, expected_generation));
+}
+
+auto preview_session_t::stop(std::optional<std::uint64_t> expected_generation) noexcept
+    -> transport_stop_result_t {
     const std::scoped_lock lock(mutex_);
     if (expected_generation && *expected_generation != generation_) return {};
     auto stopped = bridge_.stop();

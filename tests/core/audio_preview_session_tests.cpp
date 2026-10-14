@@ -97,7 +97,9 @@ auto preview_session_survives_underrun_and_completes() -> bool {
     cache.clear_source(source.source);
 
     std::vector<float> output(32U * output_channel_count);
-    const auto underrun = session.render(output);
+    const auto rendered = session.render_frames(output);
+    if (rendered.has_value()) return false;
+    const auto& underrun = rendered.error();
     const bool underrun_kept_session =
         underrun.status == preview_session_render_status_t::underrun &&
         underrun.mix.dropped_voices == 1 && session.is_active() && session.timeline_frame() == 32;

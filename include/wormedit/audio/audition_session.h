@@ -58,6 +58,7 @@ enum class audition_session_render_status_t {
 };
 
 using audition_session_render_result_t = session_render_result_t<audition_session_render_status_t>;
+using audition_session_render_outcome_t = session_render_outcome_t<audition_session_render_status_t>;
 
 // Owns one active click-preview timeline above the transport bridge. start()
 // checks resident PCM before publishing; streamed priming remains pending until
@@ -76,6 +77,8 @@ class audition_session_t {
     [[nodiscard]] auto pump(audition_pump_options_t options = {}) -> audition_pump_result_t;
     [[nodiscard]] auto render(std::span<float> interleaved_stereo)
         -> audition_session_render_result_t;
+    [[nodiscard]] auto render_frames(std::span<float> interleaved_stereo)
+        -> audition_session_render_outcome_t;
     [[nodiscard]] auto stop() noexcept -> transport_stop_result_t;
 
     // Lock-free reads of a snapshot published by start/render/stop.

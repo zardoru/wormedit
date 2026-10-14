@@ -97,6 +97,7 @@ enum class preview_session_render_status_t {
 };
 
 using preview_session_render_result_t = session_render_result_t<preview_session_render_status_t>;
+using preview_session_render_outcome_t = session_render_outcome_t<preview_session_render_status_t>;
 
 struct preview_loop_region_t {
     std::uint64_t begin_frame{};
@@ -140,6 +141,8 @@ class preview_session_t {
     [[nodiscard]] auto render(std::span<float> interleaved_stereo,
                               std::optional<std::uint64_t> expected_generation = {})
         -> preview_session_render_result_t;
+    [[nodiscard]] auto render_frames(std::span<float> interleaved_stereo,
+        std::optional<std::uint64_t> expected_generation = {}) -> preview_session_render_outcome_t;
     [[nodiscard]] auto stop(std::optional<std::uint64_t> expected_generation = {}) noexcept
         -> transport_stop_result_t;
 

@@ -77,6 +77,7 @@ struct transport_mix_result_t {
     std::size_t dropped_voices{};
     std::size_t dropped_music_voices{};
     std::size_t clipped_samples{};
+    auto operator==(const transport_mix_result_t&) const -> bool = default;
 };
 
 struct transport_stop_result_t {

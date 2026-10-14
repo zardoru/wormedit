@@ -204,7 +204,9 @@ enum class storyboard_cursor_status_t : std::uint8_t {
     non_monotonic_window,
 };
 
+using storyboard_cursor_outcome_t = result_t<std::span<const storyboard_event_t>, storyboard_cursor_status_t>;
 struct storyboard_cursor_result_t {
+    [[nodiscard]] static auto from(storyboard_cursor_outcome_t&& outcome) noexcept -> storyboard_cursor_result_t;
     storyboard_cursor_status_t status{storyboard_cursor_status_t::not_started};
     std::span<const storyboard_event_t> events;
 };
@@ -216,6 +218,7 @@ class storyboard_event_cursor_t {
     [[nodiscard]] auto start(const storyboard_schedule_t& schedule, std::int64_t time_ms)
         -> storyboard_cursor_status_t;
     [[nodiscard]] auto seek(std::int64_t time_ms) -> storyboard_cursor_status_t;
+    [[nodiscard]] auto advance_events(std::int64_t exclusive_end_time_ms) noexcept -> storyboard_cursor_outcome_t;
     [[nodiscard]] auto advance(std::int64_t exclusive_end_time_ms) noexcept
         -> storyboard_cursor_result_t;
     void stop() noexcept;
@@ -239,7 +242,19 @@ struct storyboard_value_t {
     auto operator==(const storyboard_value_t&) const -> bool = default;
 };
 
+struct storyboard_evaluation_effect_t {
+    storyboard_value_t value;
+    storyboard_diagnostic_t diagnostic;
+    std::int64_t start_time_ms{};
+    std::uint64_t source_order{};
+    std::uint64_t visit_order{};
+    auto operator==(const storyboard_evaluation_effect_t&) const -> bool = default;
+};
+using storyboard_evaluation_outcome_t = result_t<storyboard_evaluation_effect_t, storyboard_evaluation_effect_t>;
 struct storyboard_evaluation_result_t {
+    [[nodiscard]] static auto from(const storyboard_sprite_t& sprite, storyboard_opcode_t opcode,
+        std::int64_t time_ms, std::size_t maximum_nesting = 128) -> storyboard_evaluation_outcome_t;
+    [[nodiscard]] static auto from(storyboard_evaluation_outcome_t&& outcome) -> storyboard_evaluation_result_t;
     storyboard_value_t value;
     storyboard_diagnostic_t diagnostic;
     std::int64_t start_time_ms{};

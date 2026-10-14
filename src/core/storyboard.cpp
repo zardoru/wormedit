@@ -1434,12 +1434,16 @@ auto storyboard_event_cursor_t::seek(std::int64_t time_ms) -> storyboard_cursor_
     return storyboard_cursor_status_t::ready;
 }
 
-auto storyboard_event_cursor_t::advance(std::int64_t exclusive_end_time_ms) noexcept
-    -> storyboard_cursor_result_t {
+auto storyboard_cursor_result_t::from(storyboard_cursor_outcome_t&& outcome) noexcept -> storyboard_cursor_result_t {
+    if (!outcome) return {.status = outcome.error()};
+    return {.status = storyboard_cursor_status_t::ready, .events = *outcome};
+}
+auto storyboard_event_cursor_t::advance_events(std::int64_t exclusive_end_time_ms) noexcept
+    -> storyboard_cursor_outcome_t {
     if (!active_ || schedule_ == nullptr)
-        return {};
+        return std::unexpected(storyboard_cursor_status_t::not_started);
     if (exclusive_end_time_ms < last_end_time_ms_) {
-        return {.status = storyboard_cursor_status_t::non_monotonic_window};
+        return std::unexpected(storyboard_cursor_status_t::non_monotonic_window);
     }
     const auto begin = head_;
     while (head_ < schedule_->events.size() &&
@@ -1447,11 +1451,11 @@ auto storyboard_event_cursor_t::advance(std::int64_t exclusive_end_time_ms) noex
         ++head_;
     }
     last_end_time_ms_ = exclusive_end_time_ms;
-    return {
-        .status = storyboard_cursor_status_t::ready,
-        .events =
-            std::span<const storyboard_event_t>{schedule_->events}.subspan(begin, head_ - begin),
-    };
+    return std::span<const storyboard_event_t>{schedule_->events}.subspan(begin, head_ - begin);
+}
+
+auto storyboard_event_cursor_t::advance(std::int64_t exclusive_end_time_ms) noexcept -> storyboard_cursor_result_t {
+    return storyboard_cursor_result_t::from(advance_events(exclusive_end_time_ms));
 }
 
 void storyboard_event_cursor_t::stop() noexcept {
@@ -1461,22 +1465,35 @@ void storyboard_event_cursor_t::stop() noexcept {
     active_ = false;
 }
 
-auto evaluate_storyboard_property(const storyboard_sprite_t& sprite, storyboard_opcode_t opcode,
+auto storyboard_evaluation_result_t::from(storyboard_evaluation_outcome_t&& outcome) -> storyboard_evaluation_result_t {
+    const auto failed = !outcome.has_value();
+    auto effect = failed ? std::move(outcome.error()) : std::move(*outcome);
+    return {.value = effect.value, .diagnostic = std::move(effect.diagnostic),
+        .start_time_ms = effect.start_time_ms, .source_order = effect.source_order,
+        .visit_order = effect.visit_order, .failed = failed};
+}
+auto storyboard_evaluation_result_t::from(const storyboard_sprite_t& sprite, storyboard_opcode_t opcode,
                                   std::int64_t time_ms, std::size_t maximum_nesting)
-    -> storyboard_evaluation_result_t {
+    -> storyboard_evaluation_outcome_t {
     evaluation_context_t context;
     context.opcode = opcode;
     context.query_time_ms = time_ms;
     context.maximum_nesting = maximum_nesting;
     evaluate_nodes(sprite.nodes, 0, time_ms, 0, context);
-    return {
+    storyboard_evaluation_effect_t effect{
         .value = context.candidate.value,
         .diagnostic = std::move(context.diagnostic),
         .start_time_ms = context.candidate.start_time_ms,
         .source_order = context.candidate.source_order,
         .visit_order = context.candidate.visit_order,
-        .failed = context.failed,
     };
+    if (context.failed) return std::unexpected(std::move(effect));
+    return effect;
+}
+
+auto evaluate_storyboard_property(const storyboard_sprite_t& sprite, storyboard_opcode_t opcode,
+    std::int64_t time_ms, std::size_t maximum_nesting) -> storyboard_evaluation_result_t {
+    return storyboard_evaluation_result_t::from(storyboard_evaluation_result_t::from(sprite, opcode, time_ms, maximum_nesting));
 }
 
 auto storyboard_semantically_equal(const storyboard_document_model_t& left,

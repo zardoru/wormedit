@@ -150,7 +150,7 @@ TEST_CASE("OSB easing 15 through 34 evaluates and invalid model easing is reject
         storyboard_sprite_t sprite;
         sprite.nodes.push_back(fade(0, 100, 0.0, 1.0));
         sprite.nodes.front().command.easing = easing;
-        return evaluate_storyboard_property(sprite, storyboard_opcode_t::fade, time);
+        return storyboard_evaluation_result_t::from(storyboard_evaluation_result_t::from(sprite, storyboard_opcode_t::fade, time));
     };
 
     for (std::int32_t easing = 15; easing <= 34; ++easing) {
@@ -225,7 +225,7 @@ TEST_CASE("storyboard schedule seeks by time and advances one contiguous head",
 
     storyboard_event_cursor_t cursor;
     CHECK(cursor.start(*built.schedule, 10) == storyboard_cursor_status_t::ready);
-    const auto first_window = cursor.advance(21);
+    const auto first_window = storyboard_cursor_result_t::from(cursor.advance_events(21));
     REQUIRE(first_window.status == storyboard_cursor_status_t::ready);
     CHECK(first_window.events.size() == 3);
     CHECK(first_window.events[0].time_ms == 10);
@@ -330,4 +330,17 @@ auto has_error_annotated_storyboard_values() -> bool {
 } // namespace
 TEST_CASE("storyboard adapters preserve value-presence acceptance independently of diagnostics", "[core][storyboard][results]") {
     CHECK(has_error_annotated_storyboard_values());
+}
+
+TEST_CASE("storyboard cursor errors and missing properties remain distinct outcomes", "[core][storyboard][results]") {
+    storyboard_event_cursor_t cursor;
+    const auto advance = cursor.advance_events(1);
+    REQUIRE_FALSE(advance);
+    CHECK(advance.error() == storyboard_cursor_status_t::not_started);
+    const storyboard_sprite_t sprite;
+    auto evaluated = storyboard_evaluation_result_t::from(sprite, storyboard_opcode_t::fade, 0);
+    REQUIRE(evaluated);
+    CHECK_FALSE(evaluated->value.present);
+    const auto legacy = storyboard_evaluation_result_t::from(std::move(evaluated));
+    CHECK_FALSE(legacy.failed);
 }

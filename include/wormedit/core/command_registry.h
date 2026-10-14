@@ -373,9 +373,5 @@ struct shortcut_event_t {
 [[nodiscard]] auto invoke_command(const command_registry_t& registry, const command_id_t& id,
                                   const command_focus_t& focus = {}) -> command_dispatch_result_t;
 
-// Creates discoverable built-ins from the editor plan. The supplied invoker
-// is called by keyboard, menu, and toolbar paths through the same signature.
-[[nodiscard]] auto make_default_editor_command_registry(command_invoker_t invoker)
-    -> command_registry_t;
 
 } // namespace wormedit

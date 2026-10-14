@@ -80,6 +80,9 @@ struct editor_grid_request_t {
 };
 
 struct editor_grid_t {
+    // Builds exact, renderer-neutral measure, beat, group, and active-snap lines
+    // for a visible chart-row range. Zoom affects subdivision visibility only;
+    // returned positions always remain on their exact authored coordinates.
     [[nodiscard]] static auto from(const chart_document_t& chart, const editor_grid_request_t& request)
         -> diagnosed_t<editor_grid_t>;
 
@@ -88,11 +91,5 @@ struct editor_grid_t {
 };
 using editor_grid_result_t = diagnosed_t<editor_grid_t>;
 
-// Builds exact, renderer-neutral measure, beat, group, and active-snap lines
-// for a visible chart-row range. Zoom affects subdivision visibility only;
-// returned positions always remain on their exact authored coordinates.
-[[nodiscard]] auto make_editor_grid_lines(const chart_document_t& chart,
-                                          const editor_grid_request_t& request)
-    -> editor_grid_result_t;
 
 } // namespace wormedit

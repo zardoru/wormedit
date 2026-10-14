@@ -695,9 +695,6 @@ auto editor_grid_t::from(const chart_document_t& chart, const editor_grid_reques
     return result;
 }
 
-auto make_editor_grid_lines(const chart_document_t& chart, const editor_grid_request_t& request)
-    -> editor_grid_result_t {
-    return editor_grid_t::from(chart, request);
-}
+
 
 } // namespace wormedit

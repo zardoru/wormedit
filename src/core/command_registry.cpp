@@ -1052,9 +1052,6 @@ auto command_registry_t::from(command_invoker_t invoker) -> command_registry_t {
 }
 
 
-// Compatibility for the sys/ui migration wave.
-auto make_default_editor_command_registry(command_invoker_t invoker) -> command_registry_t {
-    return command_registry_t::from(std::move(invoker));
-}
+
 
 } // namespace wormedit

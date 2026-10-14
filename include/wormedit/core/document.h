@@ -973,14 +973,13 @@ struct quantize_request_t {
 [[nodiscard]] auto find_chart(const song_document_t& document, chart_id_t id) -> const chart_document_t*;
 [[nodiscard]] auto find_chart(song_document_t& document, chart_id_t id) -> chart_document_t*;
 
-struct conversion_report_t {
-    diagnostic_list_t diagnostics;
+struct conversion_statistics_t {
     std::size_t preserved_fields{};
     std::size_t approximated_fields{};
     std::size_t dropped_fields{};
-
-    [[nodiscard]] auto has_errors() const -> bool;
+    auto operator==(const conversion_statistics_t&) const -> bool = default;
 };
+using conversion_report_t = diagnosed_t<conversion_statistics_t>;
 
 struct measure_index_entry_t {
     measure_id_t id;
@@ -994,6 +993,8 @@ struct measure_index_entry_t {
 enum class measure_chart_end_policy_t { reject, allow };
 
 struct measure_index_t {
+    [[nodiscard]] static auto from(const chart_document_t& chart)
+        -> result_t<measure_index_t, diagnostic_list_t>;
     std::vector<measure_index_entry_t> entries;
     std::uint64_t total_rows{};
 

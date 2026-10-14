@@ -437,15 +437,15 @@ auto editor_field_scene_index_t::from(const chart_document_t& chart, std::uint64
                                     "field-scene index limits and chart identity must be valid"));
         return std::unexpected(std::move(diagnostics));
     }
-    const auto built_measures = build_measure_index(chart);
-    if (const auto* failures = std::get_if<diagnostic_list_t>(&built_measures)) {
-        return std::unexpected(*failures);
+    const auto built_measures = measure_index_t::from(chart);
+    if (!built_measures) {
+        return std::unexpected(built_measures.error());
     }
 
     editor_field_scene_index_t index{
         .chart = chart.id,
         .document_revision = document_revision,
-        .measures = std::get<measure_index_t>(built_measures),
+        .measures = *built_measures,
     };
     if (!append_scene_layouts(chart, index, options, diagnostics)) {
         return std::unexpected(std::move(diagnostics));

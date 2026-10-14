@@ -680,3 +680,26 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 - **Reject/failure behavior:** Stop must stay bounded and never leave a running worker; a failed open/start still reports failure. A failed gate stops completion.
 - **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `ctest --test-dir build -R audition --repeat until-fail:200 -j2`; `clang-tidy -p build <source-file>` for every touched .cpp, with no new/increased violations. Add the Linux clang gate as specified in Execution. Skip Xvfb in the sandbox.
 - **Out of scope:** Raising timeouts or skipping the test; audio engine redesign; unrelated work.
+
+## T-630 Give proposals and actions one shared type
+
+- **Status:** Ready (after T-618 and T-624; owner request 2026-10-14)
+- **Findings closed:** SP and AP follow-up (owner request after T-610): the lifecycle is shared, the shape is not.
+- **Stale-plan audit:** Search by behavior: every type with a captured `chart_stamp_t`/`document_stamp_t` plus an apply path; where its diagnostics live (inside the struct vs `diagnosed_t`); bespoke `is_valid`/`message`/`reject`/`operator bool`/issue enums; `begin_`/`propose_`/`revise_`/`apply_`/`cancel_` callers; compose handlers and their outcome after T-618; chart-event edit actions after T-624. On 2026-10-14 the four sampled proposals (`chart_paste_proposal_t`, `tap_timing_apply_proposal_t`, `audio_offset_drag_t`, `channel_map_proposal_t`) used three different shapes.
+- **Outcome:** `include/wormedit/core/proposal.h`: an aggregate `proposal_t<Payload, Stamp = chart_stamp_t> { Stamp stamp; Payload payload; }` with `is_current(history, policy)` and `transaction(history, label)` (the only way to apply; wraps the stamped `document_command_transaction_t::from`), built by `Payload::propose(...) -> diagnosed_t<proposal_t<Payload>>` and revised by `revise(...)` returning the same, so diagnostics live only in the outcome. A `staged_proposal` concept checked with `static_assert` beside each payload. Every staged proposal, drag and draft migrates; the bespoke validity/message/reject/bool members and duplicate diagnostics lists go. Then a matching `compose_action` concept (`validate(context)` → `perform(context)` → `compose_action_outcome_t`) over the T-618 handlers and the T-624 edit actions, checked the same way. `grep 'proposal_t<'` and the concept names list every staged edit and action.
+- **Read first:** `docs/audits/state-ownership-2026-10-12.md`, `include/wormedit/core/command.h`, `include/wormedit/core/result.h`, the T-609/T-610/T-618/T-624 completion notes on this page, `docs/chart-editor-plan/decisions/code-style.md`.
+- **Files owned:** `include/wormedit/core/proposal.h`, `include/wormedit/core/command.h`, `src/core/command.cpp`, `tests/core/proposal_tests.cpp`. Each proposal/action owner and its callers are supporting files recorded per part (one owner per checkpoint).
+- **Runs after/before:** After T-618 and T-624 (drake lane). Runs before T-621.
+- **Decisions applied:**
+  - D8 — stale messages stay from `stale_action_message(label)`.
+  - Genuine state machines (timing stage, SV recipe status) keep their status enums inside the payload; real error classifications (migration/channel issues) become typed diagnostics, not lifecycle state.
+- **Steps:**
+  1. Inventory every proposal/drag/draft and its current shape; confirm which differences are genuine (identity policy, canonical payload tamper checks, pointer gestures that only adopt the stamp).
+  2. Add `proposal_t`, the `staged_proposal` concept and tests (stale stamp rejects before copy; revision-only policy; apply only through `transaction`).
+  3. Migrate one owner per checkpoint with failing-before tests for any behavior difference; delete the bespoke members.
+  4. Add the `compose_action` concept over the T-618 handlers and T-624 edit actions; migrate in parts.
+  5. Run every Verify command; record search evidence, preserved/approved differences, actual output tails and supporting ownership in each commit body. Claude transfers evidence on merge.
+- **Invariants:** Preserve diagnostics text and order, Undo labels, identity policies, rejection order (invalid target → lock → expired document), atomic publication and no-op rules. No virtual dispatch, `std::function` or heap allocation added on hot paths; concepts and aggregates only. Follow Execution performance/type/ABI/complexity rules.
+- **Reject/failure behavior:** Stale or invalid proposals reject before any document copy; a failed build carries no applicable payload. A failed gate stops completion.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build <source-file>` for every touched .cpp, with no new/increased violations; the linux-clang preset. Skip Xvfb in the sandbox.
+- **Out of scope:** Core pointer gesture redesign; UI state split (D6); new behavior.

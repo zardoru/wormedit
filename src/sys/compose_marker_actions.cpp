@@ -357,7 +357,7 @@ std::optional<std::string> edit_selected_note_labels(compose_action_context_t& c
                            ? std::optional<std::string>{context.action.compose_note_label}
                            : std::nullopt;
     const auto applied = apply_note_label_edit(
-        context.environment.document.history, context.action.compose_input_document_revision,
+        context.environment.document.history,
         {.chart = context.state.chart, .notes = context.state.selected_notes, .label = label});
     if (!applied.diagnostics.empty())
         return publish_compose_diagnostic(context, applied.diagnostics.front());

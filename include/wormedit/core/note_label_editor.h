@@ -30,7 +30,7 @@ struct set_note_label_action_t {
 // unique both in the request and chart-wide. Gameplay properties and source
 // provenance are left untouched. A semantic no-op creates no history entry.
 [[nodiscard]] auto
-apply_note_label_edit(document_history_t& history, std::uint64_t expected_revision,
+apply_note_label_edit(document_history_t& history,
                       const set_note_label_action_t& action, note_label_edit_limits_t limits = {})
     -> document_command_result_t;
 

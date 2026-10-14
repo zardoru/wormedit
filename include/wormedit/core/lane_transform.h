@@ -39,12 +39,12 @@ struct remap_lanes_action_t {
 // missing from the layout at its head or tail, or any resulting overlap on a
 // lane, rejects the whole command. A transform that moves no note creates no
 // history entry.
-[[nodiscard]] auto apply_lane_mirror(document_history_t& history, std::uint64_t expected_revision,
+[[nodiscard]] auto apply_lane_mirror(document_history_t& history,
                                      const mirror_lanes_action_t& action,
                                      lane_transform_limits_t limits = {})
     -> document_command_result_t;
 
-[[nodiscard]] auto apply_lane_remap(document_history_t& history, std::uint64_t expected_revision,
+[[nodiscard]] auto apply_lane_remap(document_history_t& history,
                                     const remap_lanes_action_t& action,
                                     lane_transform_limits_t limits = {})
     -> document_command_result_t;

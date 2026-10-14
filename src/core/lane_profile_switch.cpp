@@ -111,8 +111,7 @@ auto insert_initial_lane_profile(document_history_t& history, chart_id_t chart,
     const auto bindings = found->input_profile.bindings.empty()
         ? std::optional{prepared->second} : std::nullopt;
     const auto inserted = apply_lane_layout_edit(
-        scratch, scratch.document.revision,
-        insert_lane_layout_action_t{chart, *target_position, prepared->first, bindings});
+        scratch, insert_lane_layout_action_t{chart, *target_position, prepared->first, bindings});
     if (!inserted.applied) return inserted;
     auto transaction = document_command_transaction_t::from(history);
     transaction.adopt_document(std::move(scratch.document));
@@ -227,14 +226,10 @@ auto retarget_lane_layout(const lane_layout_t& current, const lane_layout_t& tar
     return result;
 }
 
-auto apply_lane_profile_switch(document_history_t& history, std::uint64_t expected_revision,
+auto apply_lane_profile_switch(document_history_t& history,
                                chart_id_t chart, local_position_t position,
                                const lane_layout_t& target) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id, "Lane profile switch has a stale document revision.");
-        return result;
-    }
     const auto found = history.document.find_chart(chart);
     if (found == nullptr) {
         reject(result, diagnostic_code_t::invalid_id, "The selected difficulty is no longer available.");
@@ -247,8 +242,8 @@ auto apply_lane_profile_switch(document_history_t& history, std::uint64_t expect
         reject(result, diagnostic_code_t::invalid_id, "That profile has a different number of lanes or incompatible lane roles.");
         return result;
     }
-    return apply_lane_layout_edit(history, expected_revision,
-                                  update_lane_layout_action_t{chart, segment->id, std::move(*layout)});
+    return apply_lane_layout_edit(
+        history, update_lane_layout_action_t{chart, segment->id, std::move(*layout)});
 }
 
 } // namespace wormedit

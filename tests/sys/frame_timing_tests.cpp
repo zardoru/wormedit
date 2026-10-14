@@ -5350,8 +5350,8 @@ TEST_CASE("Dense inspector locations invalidate after label edit delete and undo
     compose_test_fixture_t fixture{t475_inspector_song()};
     t475_project(fixture);
     t475_select_note(fixture, object_id_t{600});
-    t475_require(apply_note_label_edit(fixture.history, fixture.history.document.revision,
-        {.chart = chart_id_t{1}, .notes = {object_id_t{600}}, .label = "edited"}));
+    t475_require(apply_note_label_edit(
+        fixture.history, {.chart = chart_id_t{1}, .notes = {object_id_t{600}}, .label = "edited"}));
     t475_project(fixture);
     t475_check(std::string_view(fixture.flattened.view.compose.selected_note_label) == "edited");
     t475_compare_fresh(fixture);
@@ -6649,9 +6649,9 @@ TEST_CASE("Existing 16K charts offer distinctly named SpecialStyle layouts and p
     expect_compose_test(view.lane_profile_choice_count == 2);
     expect_compose_test(std::string_view(view.lane_profile_names[1]) == "osu!mania 16K (SpecialStyle)");
     const auto& active = fixture.history.document.charts.front().lane_layouts.front();
-    expect_compose_test(static_cast<bool>(apply_lane_profile_switch(fixture.history,
-        fixture.history.document.revision, chart_id_t{1}, active.position,
-        make_osu_mania_profile(16, true)->layout)));
+    expect_compose_test(
+        static_cast<bool>(apply_lane_profile_switch(fixture.history, chart_id_t{1}, active.position,
+                                                    make_osu_mania_profile(16, true)->layout)));
     fixture.application.project.compose_view.compose_editor_right_pixels = 820;
     fixture.application.scratch_on_right = {false, false};
     fixture.project();

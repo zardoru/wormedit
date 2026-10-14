@@ -2124,8 +2124,8 @@ TEST_CASE("Selected SpecialStyle layout replaces retained osu style on export",
         auto history = document_history_t::from(*parsed.song);
         const auto id = history.document.charts.front().id;
         const auto position = history.document.charts.front().lane_layouts.front().position;
-        require_specialstyle(static_cast<bool>(apply_lane_profile_switch(history, history.document.revision,
-            id, position, make_osu_mania_profile(keys, true)->layout)));
+        require_specialstyle(static_cast<bool>(apply_lane_profile_switch(
+            history, id, position, make_osu_mania_profile(keys, true)->layout)));
         auto exported = write_inline(native_reopen(history.document));
         require_specialstyle(exported.text.has_value());
         check_specialstyle(exported.text->find("SpecialStyle:1") != std::string::npos);
@@ -2133,8 +2133,8 @@ TEST_CASE("Selected SpecialStyle layout replaces retained osu style on export",
         auto reopened = parse_inline(*exported.text);
         require_specialstyle(reopened.song.has_value());
         check_specialstyle(reopened.song->charts.front().lane_layouts.front().layout.split_stage);
-        require_specialstyle(static_cast<bool>(apply_lane_profile_switch(history, history.document.revision,
-            id, position, make_osu_mania_profile(keys)->layout)));
+        require_specialstyle(static_cast<bool>(apply_lane_profile_switch(
+            history, id, position, make_osu_mania_profile(keys)->layout)));
         exported = write_inline(history.document, {.preserve_unknown_fields = false});
         require_specialstyle(exported.text.has_value());
         check_specialstyle(exported.text->find("SpecialStyle:0") != std::string::npos);

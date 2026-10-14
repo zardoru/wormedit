@@ -45,9 +45,8 @@ TEST_CASE("a narrower layout may start where no later note needs the dropped lan
           "[core][lane-layout-editor]") {
     auto history = document_history_t::from(layout_song(false));
     const auto applied = apply_lane_layout_edit(
-        history, history.document.revision,
-        insert_lane_layout_action_t{chart_id_t{2}, {measure_id_t{11}, 0},
-                                    layout_with({20, 21}, "two")});
+        history, insert_lane_layout_action_t{
+                     chart_id_t{2}, {measure_id_t{11}, 0}, layout_with({20, 21}, "two")});
     REQUIRE(applied);
     REQUIRE(segment_count(history) == 2);
     CHECK(history.document.charts.front().lane_layouts.back().layout.profile_id == "two");
@@ -60,9 +59,8 @@ TEST_CASE("a layout that leaves a later note unmapped rejects with the count",
           "[core][lane-layout-editor][negative]") {
     auto history = document_history_t::from(layout_song(true));
     const auto result = apply_lane_layout_edit(
-        history, history.document.revision,
-        insert_lane_layout_action_t{chart_id_t{2}, {measure_id_t{11}, 0},
-                                    layout_with({20, 21}, "two")});
+        history, insert_lane_layout_action_t{
+                     chart_id_t{2}, {measure_id_t{11}, 0}, layout_with({20, 21}, "two")});
     CHECK_FALSE(result);
     REQUIRE_FALSE(result.diagnostics.empty());
     CHECK(result.diagnostics.front().message.find("1 note") != std::string::npos);
@@ -71,66 +69,53 @@ TEST_CASE("a layout that leaves a later note unmapped rejects with the count",
 
     // Starting the narrow layout after the note leaves it on the wide one.
     CHECK(apply_lane_layout_edit(
-        history, history.document.revision,
-        insert_lane_layout_action_t{chart_id_t{2}, {measure_id_t{12}, 0},
-                                    layout_with({20, 21}, "two")}));
+        history, insert_lane_layout_action_t{
+                     chart_id_t{2}, {measure_id_t{12}, 0}, layout_with({20, 21}, "two")}));
 }
 
 TEST_CASE("update and delete keep notes mapped and protect the chart start",
           "[core][lane-layout-editor]") {
     auto history = document_history_t::from(layout_song(true));
-    CHECK_FALSE(apply_lane_layout_edit(
-        history, history.document.revision,
-        update_lane_layout_action_t{chart_id_t{2}, object_id_t{21}, layout_with({20}, "one")}));
+    CHECK_FALSE(
+        apply_lane_layout_edit(history, update_lane_layout_action_t{chart_id_t{2}, object_id_t{21},
+                                                                    layout_with({20}, "one")}));
     REQUIRE(apply_lane_layout_edit(
-        history, history.document.revision,
-        update_lane_layout_action_t{chart_id_t{2}, object_id_t{21},
-                                    layout_with({22, 20}, "reordered")}));
+        history, update_lane_layout_action_t{chart_id_t{2}, object_id_t{21},
+                                             layout_with({22, 20}, "reordered")}));
     CHECK(history.document.charts.front().lane_layouts.front().layout.profile_id == "reordered");
 
     CHECK_FALSE(apply_lane_layout_edit(
-        history, history.document.revision,
-        delete_lane_layout_action_t{chart_id_t{2}, object_id_t{21}}));
+        history, delete_lane_layout_action_t{chart_id_t{2}, object_id_t{21}}));
 
     REQUIRE(apply_lane_layout_edit(
-        history, history.document.revision,
-        insert_lane_layout_action_t{chart_id_t{2}, {measure_id_t{12}, 0},
-                                    layout_with({20, 22}, "late")}));
+        history, insert_lane_layout_action_t{
+                     chart_id_t{2}, {measure_id_t{12}, 0}, layout_with({20, 22}, "late")}));
     const auto inserted = history.document.charts.front().lane_layouts.back().id;
-    REQUIRE(apply_lane_layout_edit(history, history.document.revision,
-                                   delete_lane_layout_action_t{chart_id_t{2}, inserted}));
+    REQUIRE(apply_lane_layout_edit(history, delete_lane_layout_action_t{chart_id_t{2}, inserted}));
     CHECK(segment_count(history) == 1);
 }
 
-TEST_CASE("layout edits reject mid-measure starts, duplicates, stale revisions and unknown ids",
+TEST_CASE("layout edits reject mid-measure starts, duplicates and unknown ids",
           "[core][lane-layout-editor][negative]") {
     auto history = document_history_t::from(layout_song(false));
     const auto revision = history.document.revision;
     const auto narrow = layout_with({20, 21}, "two");
 
     CHECK_FALSE(apply_lane_layout_edit(
-        history, revision, insert_lane_layout_action_t{chart_id_t{2}, {measure_id_t{11}, 480}, narrow}));
+        history, insert_lane_layout_action_t{chart_id_t{2}, {measure_id_t{11}, 480}, narrow}));
     CHECK(apply_lane_layout_edit(
-        history, revision,
-        insert_lane_layout_action_t{chart_id_t{2}, {measure_id_t{11}, 480}, narrow},
+        history, insert_lane_layout_action_t{chart_id_t{2}, {measure_id_t{11}, 480}, narrow},
         lane_layout_change_policy_t::any_row));
 
     auto fresh = document_history_t::from(layout_song(false));
     CHECK_FALSE(apply_lane_layout_edit(
-        fresh, fresh.document.revision,
-        insert_lane_layout_action_t{chart_id_t{2}, {measure_id_t{10}, 0}, narrow}));
+        fresh, insert_lane_layout_action_t{chart_id_t{2}, {measure_id_t{10}, 0}, narrow}));
     CHECK_FALSE(apply_lane_layout_edit(
-        fresh, fresh.document.revision + 1,
-        insert_lane_layout_action_t{chart_id_t{2}, {measure_id_t{11}, 0}, narrow}));
+        fresh, insert_lane_layout_action_t{chart_id_t{2}, {measure_id_t{99}, 0}, narrow}));
     CHECK_FALSE(apply_lane_layout_edit(
-        fresh, fresh.document.revision,
-        insert_lane_layout_action_t{chart_id_t{2}, {measure_id_t{99}, 0}, narrow}));
-    CHECK_FALSE(apply_lane_layout_edit(
-        fresh, fresh.document.revision,
-        update_lane_layout_action_t{chart_id_t{2}, object_id_t{999}, narrow}));
-    CHECK_FALSE(apply_lane_layout_edit(
-        fresh, fresh.document.revision,
-        delete_lane_layout_action_t{chart_id_t{9}, object_id_t{21}}));
+        fresh, update_lane_layout_action_t{chart_id_t{2}, object_id_t{999}, narrow}));
+    CHECK_FALSE(
+        apply_lane_layout_edit(fresh, delete_lane_layout_action_t{chart_id_t{9}, object_id_t{21}}));
 }
 
 TEST_CASE("the first layout of an empty chart brings its key bindings", "[core][lane-layout-editor]") {
@@ -141,9 +126,8 @@ TEST_CASE("the first layout of an empty chart brings its key bindings", "[core][
     input.bindings.push_back({.key = physical_key_t::digit_1, .lane = lane_id_t{20}});
 
     const auto applied = apply_lane_layout_edit(
-        history, history.document.revision,
-        insert_lane_layout_action_t{chart_id_t{2}, {measure_id_t{10}, 0},
-                                    layout_with({20, 21}, "two"), input});
+        history, insert_lane_layout_action_t{
+                     chart_id_t{2}, {measure_id_t{10}, 0}, layout_with({20, 21}, "two"), input});
     REQUIRE(applied);
     CHECK(history.document.charts.front().input_profile.bindings.size() == 1);
 
@@ -154,8 +138,7 @@ TEST_CASE("the first layout of an empty chart brings its key bindings", "[core][
         .bindings = {{.key = physical_key_t::digit_2, .lane = lane_id_t{21}}}};
     auto kept = document_history_t::from(other);
     REQUIRE(apply_lane_layout_edit(
-        kept, kept.document.revision,
-        insert_lane_layout_action_t{chart_id_t{2}, {measure_id_t{10}, 0},
-                                    layout_with({20, 21}, "two"), input}));
+        kept, insert_lane_layout_action_t{
+                  chart_id_t{2}, {measure_id_t{10}, 0}, layout_with({20, 21}, "two"), input}));
     CHECK(kept.document.charts.front().input_profile.profile_id == "kept");
 }

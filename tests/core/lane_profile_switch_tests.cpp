@@ -114,8 +114,8 @@ TEST_CASE("first profile choices include and create both osu SpecialStyle varian
         require_profile(choice != choices.end());
         auto history = document_history_t::from(song_document_t{.id = song_id_t{1}, .revision = 4,
             .charts = {{.id = chart_id_t{2}, .measures = {{.id = measure_id_t{3}}}}}});
-        const auto applied = apply_lane_profile_switch(history, 4, chart_id_t{2},
-                                                       {measure_id_t{3}, 0}, choice->layout);
+        const auto applied =
+            apply_lane_profile_switch(history, chart_id_t{2}, {measure_id_t{3}, 0}, choice->layout);
         require_profile(applied.applied);
         const auto& chart = history.document.charts.front();
         check_profile(chart.lane_layouts.front().layout.profile_id == target->layout.profile_id);
@@ -140,8 +140,8 @@ TEST_CASE("a chart with no layout can insert its first built-in profile",
         .charts = {{.id = chart_id_t{2},
                     .measures = {{.id = measure_id_t{3}}, {.id = measure_id_t{4}}}}}};
     auto history = document_history_t::from(std::move(song));
-    const auto applied = apply_lane_profile_switch(history, 4, chart_id_t{2},
-                                                   {measure_id_t{4}, 120}, target.layout);
+    const auto applied =
+        apply_lane_profile_switch(history, chart_id_t{2}, {measure_id_t{4}, 120}, target.layout);
     REQUIRE(applied);
     REQUIRE(history.document.charts.front().lane_layouts.size() == 1);
     CHECK(history.document.charts.front().lane_layouts.front().layout.profile_id ==
@@ -158,24 +158,12 @@ TEST_CASE("inserting a first lane profile records one undo edit",
                     .measures = {{.id = measure_id_t{3}}}}}};
     auto history = document_history_t::from(std::move(song));
     const auto target = make_bms_7k_profile();
-    REQUIRE(apply_lane_profile_switch(history, 4, chart_id_t{2},
-                                      {measure_id_t{3}, 120}, target.layout));
+    REQUIRE(
+        apply_lane_profile_switch(history, chart_id_t{2}, {measure_id_t{3}, 120}, target.layout));
     REQUIRE(history.undo.size() == 1);
     REQUIRE(undo_document_command(history));
     CHECK(history.document.charts.front().lane_layouts.empty());
     CHECK(history.document.charts.front().input_profile.bindings.empty());
-}
-
-TEST_CASE("first profile insertion rejects a stale document revision",
-          "[unit][core][lane-profile-switch][bms]") {
-    auto history = document_history_t::from(song_document_t{.id = song_id_t{1}, .revision = 4,
-        .charts = {{.id = chart_id_t{2}, .measures = {{.id = measure_id_t{3}}}}}});
-    const auto target = make_bms_7k_profile();
-    const auto stale = apply_lane_profile_switch(history, 3, chart_id_t{2},
-                                                 {measure_id_t{3}, 0}, target.layout);
-    CHECK_FALSE(stale);
-    CHECK(history.document.charts.front().lane_layouts.empty());
-    CHECK(history.undo.empty());
 }
 
 TEST_CASE("first profile remaps every number-row binding without lane ID aliasing",
@@ -189,8 +177,8 @@ TEST_CASE("first profile remaps every number-row binding without lane ID aliasin
                             {.id = lane_id_t{101}, .name = "Future"}}}}}}}};
     auto history = document_history_t::from(std::move(song));
     const auto target = make_bms_7k_profile();
-    const auto applied = apply_lane_profile_switch(history, 4, chart_id_t{2},
-                                                   {measure_id_t{3}, 240}, target.layout);
+    const auto applied =
+        apply_lane_profile_switch(history, chart_id_t{2}, {measure_id_t{3}, 240}, target.layout);
     require_profile(applied.applied);
     const auto& chart = history.document.charts.front();
     require_profile(chart.lane_layouts.size() == 2);
@@ -210,7 +198,7 @@ TEST_CASE("first BMS profile materializes measure one and remains one undo comma
         .charts = {{.id = chart_id_t{2}, .source_family = format_family_t::bms}}};
     auto history = document_history_t::from(std::move(song));
     const auto target = make_bms_7k_profile();
-    const auto applied = apply_lane_profile_switch(history, 4, chart_id_t{2}, {}, target.layout);
+    const auto applied = apply_lane_profile_switch(history, chart_id_t{2}, {}, target.layout);
     require_profile(applied.applied);
     require_profile(history.document.charts.front().measures.size() == 1);
     check_profile(history.document.charts.front().lane_layouts.front().position ==
@@ -226,8 +214,8 @@ TEST_CASE("switching profile keeps lane ids and notes and changes glyphs",
     auto history = document_history_t::from(switch_song(10, "osu"));
     const auto target = make_stepmania_profile_for("pump-double");
     REQUIRE(target);
-    const auto applied = apply_lane_profile_switch(history, 4, chart_id_t{2},
-                                                   {measure_id_t{3}, 0}, target->layout);
+    const auto applied =
+        apply_lane_profile_switch(history, chart_id_t{2}, {measure_id_t{3}, 0}, target->layout);
     REQUIRE(applied);
     const auto& layout = history.document.charts.front().lane_layouts.front().layout;
     CHECK(layout.profile_id == "stepmania:pump-double");
@@ -245,8 +233,8 @@ TEST_CASE("switching to a profile with another lane count is rejected",
     auto history = document_history_t::from(switch_song(10, "osu"));
     const auto target = make_stepmania_profile_for("pump-single");
     REQUIRE(target);
-    const auto rejected = apply_lane_profile_switch(history, 4, chart_id_t{2},
-                                                    {measure_id_t{3}, 0}, target->layout);
+    const auto rejected =
+        apply_lane_profile_switch(history, chart_id_t{2}, {measure_id_t{3}, 0}, target->layout);
     CHECK_FALSE(rejected);
     CHECK(history.document.charts.front().lane_layouts.front().layout.profile_id ==
           "osu-mania-10k");
@@ -257,8 +245,8 @@ TEST_CASE("switching away from an auxiliary BMS lane rejects without changing ch
     auto history = auxiliary_bms_history();
     const auto target = make_bms_5k_standard_profile();
 
-    const auto rejected = apply_lane_profile_switch(history, 4, chart_id_t{2},
-                                                    {measure_id_t{3}, 0}, target.layout);
+    const auto rejected =
+        apply_lane_profile_switch(history, chart_id_t{2}, {measure_id_t{3}, 0}, target.layout);
     CHECK_FALSE(rejected);
     REQUIRE_FALSE(rejected.diagnostics.empty());
     CHECK(rejected.diagnostics.front().message.find("different number of lanes") !=
@@ -270,8 +258,8 @@ TEST_CASE("rejected BMS switch leaves auxiliary lane events and profile unchange
     auto history = auxiliary_bms_history();
     const auto before = history.document;
     const auto target = make_bms_5k_standard_profile();
-    const auto rejected = apply_lane_profile_switch(history, 4, chart_id_t{2},
-                                                    {measure_id_t{3}, 0}, target.layout);
+    const auto rejected =
+        apply_lane_profile_switch(history, chart_id_t{2}, {measure_id_t{3}, 0}, target.layout);
     REQUIRE_FALSE(rejected);
     CHECK(auxiliary_bms_data_unchanged(history, before));
 }
@@ -344,13 +332,13 @@ TEST_CASE("switching between BMS scratchless and osu 10K follows visible split-s
         lane_key_color_t::pms_yellow, lane_key_color_t::black, lane_key_color_t::white,
         lane_key_color_t::black, lane_key_color_t::white};
 
-    require_profile(static_cast<bool>(apply_lane_profile_switch(
-        history, history.document.revision, chart_id_t{2}, {measure_id_t{3}, 0}, bms.layout)));
+    require_profile(static_cast<bool>(
+        apply_lane_profile_switch(history, chart_id_t{2}, {measure_id_t{3}, 0}, bms.layout)));
     const auto after_reapply = history.document.charts.front().lane_layouts.front().layout;
     check_profile(visible_10k_colors(after_reapply) == expected);
     check_profile(lane_identity_matches(after_reapply, bms.layout));
-    require_profile(static_cast<bool>(apply_lane_profile_switch(
-        history, history.document.revision, chart_id_t{2}, {measure_id_t{3}, 0}, osu->layout)));
+    require_profile(static_cast<bool>(
+        apply_lane_profile_switch(history, chart_id_t{2}, {measure_id_t{3}, 0}, osu->layout)));
     const auto& chart = history.document.charts.front();
     const auto& after_switch = chart.lane_layouts.front().layout;
     check_profile(visible_10k_colors(after_switch) == expected);
@@ -366,8 +354,8 @@ TEST_CASE("StepMania chart switching to osu layout receives selected profile ski
     const auto note_lane = chart.measures.front().notes.front().lane;
     const auto target = make_osu_mania_profile(5);
     require_profile(target.has_value());
-    require_profile(static_cast<bool>(apply_lane_profile_switch(history, 4, chart_id_t{2},
-        {measure_id_t{3}, 0}, target->layout)));
+    require_profile(static_cast<bool>(
+        apply_lane_profile_switch(history, chart_id_t{2}, {measure_id_t{3}, 0}, target->layout)));
     const auto& switched = history.document.charts.front();
     const auto& layout = switched.lane_layouts.front().layout;
     check_profile(field_skin_layout_key(layout) == "osu-mania-5k");
@@ -421,8 +409,8 @@ TEST_CASE("Unknown seven-key profiles switch by compatible lanes with one undo a
     const auto target = make_osu_mania_profile(7);
     require_profile(target.has_value());
     check_profile(can_use_lane_key_profiles(original));
-    require_profile(static_cast<bool>(apply_lane_profile_switch(history, 4, chart_id_t{2},
-        {measure_id_t{3}, 0}, target->layout)));
+    require_profile(static_cast<bool>(
+        apply_lane_profile_switch(history, chart_id_t{2}, {measure_id_t{3}, 0}, target->layout)));
     const auto& chart = history.document.charts.front();
     check_profile(chart.lane_layouts.front().layout.profile_id == "osu-mania-7k");
     check_profile(lane_identity_matches(chart.lane_layouts.front().layout, original));
@@ -454,8 +442,8 @@ TEST_CASE("Equal counts cannot relabel scratch or auxiliary lanes as ordinary ke
     chart.measures.front().notes.front().lane = current.lanes.front().id;
     require_profile(validate_document(song).empty());
     auto history = document_history_t::from(std::move(song));
-    const auto rejected = apply_lane_profile_switch(history, 4, chart_id_t{2},
-        {measure_id_t{3}, 0}, target->layout);
+    const auto rejected =
+        apply_lane_profile_switch(history, chart_id_t{2}, {measure_id_t{3}, 0}, target->layout);
     check_profile(!rejected.applied);
     check_profile(history.document.revision == 4);
     check_profile(history.undo.empty());
@@ -472,8 +460,8 @@ TEST_CASE("SpecialStyle switches expose both stages and preserve playable column
         check_profile(std::ranges::any_of(choices, [&](const auto& value) {
             return value.layout.profile_id == special->layout.profile_id;
         }));
-        require_profile(static_cast<bool>(apply_lane_profile_switch(history, 4, before.id,
-            {measure_id_t{3}, 0}, special->layout)));
+        require_profile(static_cast<bool>(
+            apply_lane_profile_switch(history, before.id, {measure_id_t{3}, 0}, special->layout)));
         const auto& chart = history.document.charts.front();
         const auto& layout = chart.lane_layouts.front().layout;
         check_profile(layout.split_stage && layout.split_after_column == keys / 2);
@@ -500,8 +488,8 @@ TEST_CASE("Leaving SpecialStyle restores an ordinary field without replacing inp
     song.charts.front().lane_layouts.front().layout = make_osu_mania_profile(16, true)->layout;
     song.charts.front().input_profile = make_osu_mania_profile(16, true)->input;
     auto history = document_history_t::from(song);
-    require_profile(static_cast<bool>(apply_lane_profile_switch(history, 4, chart_id_t{2},
-        {measure_id_t{3}, 0}, make_osu_mania_profile(16)->layout)));
+    require_profile(static_cast<bool>(apply_lane_profile_switch(
+        history, chart_id_t{2}, {measure_id_t{3}, 0}, make_osu_mania_profile(16)->layout)));
     const auto& chart = history.document.charts.front();
     check_profile(!chart.lane_layouts.front().layout.split_stage);
     check_profile(!chart.lane_layouts.front().layout.split_after_column);

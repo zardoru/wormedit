@@ -120,16 +120,12 @@ auto move_note(note_t& note, lane_id_t target, const chart_document_t& chart,
     return true;
 }
 
-auto apply_lane_assignment(document_history_t& history, std::uint64_t expected_revision,
+auto apply_lane_assignment(document_history_t& history,
                            chart_id_t chart_id, const std::vector<object_id_t>& ids,
                            const lane_chooser_t& choose, const char* label,
                            lane_transform_limits_t limits) -> document_command_result_t {
     auto transaction = document_command_transaction_t::from(history);
     auto& result = transaction.outcome;
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id, "lane transform document revision is stale");
-        return result;
-    }
     if (ids.empty() || ids.size() > limits.maximum_selected_notes) {
         reject(result, diagnostic_code_t::invalid_resolution,
                ids.empty() ? "lane transform requires at least one note"
@@ -169,14 +165,14 @@ auto apply_lane_assignment(document_history_t& history, std::uint64_t expected_r
 
 } // namespace
 
-auto apply_lane_mirror(document_history_t& history, std::uint64_t expected_revision,
+auto apply_lane_mirror(document_history_t& history,
                        const mirror_lanes_action_t& action, lane_transform_limits_t limits)
     -> document_command_result_t {
-    return apply_lane_assignment(history, expected_revision, action.chart, action.notes,
-                                 mirror_lane, "Mirror lanes", limits);
+    return apply_lane_assignment(history, action.chart, action.notes, mirror_lane, "Mirror lanes",
+                                 limits);
 }
 
-auto apply_lane_remap(document_history_t& history, std::uint64_t expected_revision,
+auto apply_lane_remap(document_history_t& history,
                       const remap_lanes_action_t& action, lane_transform_limits_t limits)
     -> document_command_result_t {
     if (!is_valid_permutation(action.permutation)) {
@@ -192,8 +188,8 @@ auto apply_lane_remap(document_history_t& history, std::uint64_t expected_revisi
         const auto found = mapping.find(lane.value);
         return found == mapping.end() ? std::nullopt : std::optional<lane_id_t>{found->second};
     };
-    return apply_lane_assignment(history, expected_revision, action.chart, action.notes, choose,
-                                 "Remap lanes", limits);
+    return apply_lane_assignment(history, action.chart, action.notes, choose, "Remap lanes",
+                                 limits);
 }
 
 } // namespace wormedit

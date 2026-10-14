@@ -43,7 +43,7 @@ using lane_layout_action_t = std::variant<insert_lane_layout_action_t, update_la
 // lane the active layout does not define, the whole command is rejected with
 // the unmapped-note count. The segment at the chart start cannot be removed.
 [[nodiscard]] auto apply_lane_layout_edit(
-    document_history_t& history, std::uint64_t expected_revision,
+    document_history_t& history,
     const lane_layout_action_t& action,
     lane_layout_change_policy_t policy = lane_layout_change_policy_t::measure_boundaries_only)
     -> document_command_result_t;

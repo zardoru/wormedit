@@ -34,8 +34,7 @@ inline auto lane_layout_supports_key_profiles(const lane_layout_t& layout) -> bo
 
 // Switches the layout segment active at `position` to `target` as one undoable command. Notes
 // never move; lane IDs are unchanged.
-[[nodiscard]] auto apply_lane_profile_switch(document_history_t& history,
-                                             std::uint64_t expected_revision, chart_id_t chart,
+[[nodiscard]] auto apply_lane_profile_switch(document_history_t& history, chart_id_t chart,
                                              local_position_t position,
                                              const lane_layout_t& target)
     -> document_command_result_t;

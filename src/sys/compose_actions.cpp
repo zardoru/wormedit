@@ -235,9 +235,8 @@ std::optional<std::string> dispatch_compose_lane_profile(compose_action_context_
     const auto position = segment ? context.state.cursor
         : wormedit::local_position_t{chart->measures.empty()
               ? context.state.cursor.measure : chart->measures.front().id, 0};
-    const auto applied = wormedit::apply_lane_profile_switch(
-        context.environment.document.history, context.action.compose_input_document_revision,
-        context.state.chart, position, target);
+    const auto applied = wormedit::apply_lane_profile_switch(context.environment.document.history,
+                                                             context.state.chart, position, target);
     if (!applied.applied)
         return applied.diagnostics.empty()
             ? std::optional<std::string>{compose_action_info(context, "Lane profile unchanged.", notification_source_t::edit)}
@@ -381,8 +380,8 @@ std::optional<std::string> dispatch_compose_lane_layout_profile(compose_action_c
         chart->id, target_position, *layout, initial_input_profile(*chart, *layout)};
     if (is_update)
         edit = wormedit::update_lane_layout_action_t{chart->id, exact_segment->id, *layout};
-    const auto applied = wormedit::apply_lane_layout_edit(
-        context.environment.document.history, context.environment.document.history.document.revision, edit);
+    const auto applied =
+        wormedit::apply_lane_layout_edit(context.environment.document.history, edit);
     if (!applied.applied && materialized)
         static_cast<void>(wormedit::undo_document_command(context.environment.document.history));
     if (!applied.applied)

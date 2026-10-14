@@ -14,6 +14,8 @@ Behavior is preserved except explicit owner decisions. Every approved behavior c
 
 Keep the audit's necessary complexity: ordered explicit cancellation/join/cleanup/output close, notifications last and probe scheduler after resident loader; generation bump first; stack frame projections and local tap timestamp/viewport delta; project-owned chart-keyed maps; decoder feature blocks; captured-state, cache/workspace and per-batch-item stamps; staged scratch histories/Undo merging and distinct plan/parse/query/storage/dispatch semantics. Do not pursue rejected claims or merge boundary calls with different triggers.
 
+Order after the current waves (owner, 2026-10-14): T-618 → T-624 → hot-file leftovers → T-630 (drake); T-620 core, then its sys/UI inventory (hydra); then a pattern-recognition audit of `src/ui/nuklear` in the style of this audit (ownership, repeated widget/panel/popup shapes, state lifetimes, helpers copied under other names), producing its own cards; T-621 (folders) stays last.
+
 Each implementation card runs the full Verify gate. After T-622 lands, add `cmake --preset linux-clang`, `cmake --build --preset linux-clang` and `ctest --preset linux-clang --output-on-failure` to each gate. libc++ is gated only after the owner installs it; record configured/not run until then. No Xvfb in implementer sandboxes. A failing gate is fixed within authorized scope or stops the card and is reported.
 
 ## T-601 Group command state by lifetime

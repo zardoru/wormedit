@@ -190,9 +190,9 @@ auto go_to_notification(const notification_center_t& center, notification_id_t i
     if (!candidate) return "Target cannot be opened";
     auto next_workspace = workspace;
     const auto revision = history.document.revision;
-    if (!apply_workspace_action(next_workspace, history.document, revision,
+    if (!apply_workspace_action(next_workspace, history.document,
                                 workspace_select_chart_action_t{target.chart}) ||
-        !apply_workspace_action(next_workspace, history.document, revision,
+        !apply_workspace_action(next_workspace, history.document,
                                 workspace_switch_tab_action_t{workspace_tab_t::compose}))
         return "Target cannot be opened";
     if (!dispatch_editor_action(history, *candidate,

@@ -285,7 +285,6 @@ std::optional<std::string> commit_primary_music(compose_action_context_t& contex
     if (music != context.environment.document.history.document.resources.end())
         (void)apply_workspace_action(
             context.environment.document.workspace, context.environment.document.history.document,
-            context.environment.document.history.document.revision,
             workspace_select_asset_action_t{.asset = music->asset,
                                             .slot = wormedit::workspace_asset_slot_t::audio});
     return compose_action_success(context, "Song audio set to " + path.filename().string() + ".",
@@ -330,13 +329,11 @@ std::optional<std::string> commit_resource_import(compose_action_context_t& cont
     if (role == resource_role_t::bga)
         (void)apply_workspace_action(
             context.environment.document.workspace, context.environment.document.history.document,
-            context.environment.document.history.document.revision,
             workspace_select_asset_action_t{.asset = imported,
                                             .slot = wormedit::workspace_asset_slot_t::visual});
     else
         (void)apply_workspace_action(
             context.environment.document.workspace, context.environment.document.history.document,
-            context.environment.document.history.document.revision,
             workspace_select_asset_action_t{.asset = imported,
                                             .slot = wormedit::workspace_asset_slot_t::audio});
     return compose_action_success(context, "External file linked as a resource.",

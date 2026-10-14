@@ -181,12 +181,12 @@ using workspace_action_t =
                  workspace_select_clip_action_t, workspace_seek_action_t,
                  workspace_set_playing_action_t, workspace_set_loop_action_t>;
 
-// Actions are rejected atomically unless both the bound document and the
-// caller's expected revision still match. Rebind after publishing/undoing an
+// Actions are rejected atomically unless the bound document identity and
+// revision still match. Rebind after publishing/undoing an
 // edit; matching stable selections and transport context are retained.
 [[nodiscard]] auto
 apply_workspace_action(workspace_controller_t& workspace, const song_document_t& document,
-                       std::uint64_t expected_revision, const workspace_action_t& action)
+                       const workspace_action_t& action)
     -> workspace_action_result_t;
 [[nodiscard]] auto rebind_workspace(workspace_controller_t& workspace,
                                     const song_document_t& document) -> workspace_action_result_t;

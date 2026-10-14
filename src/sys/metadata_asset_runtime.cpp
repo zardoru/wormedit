@@ -133,7 +133,7 @@ auto link_imported_metadata_audio(
                    resource.roles.end();
         });
         (void)wormedit::apply_workspace_action(
-            workspace, history.document, history.document.revision,
+            workspace, history.document,
             wormedit::workspace_select_asset_action_t{
                 .asset = music != resources.end() ? music->asset : request.asset,
                 .slot = wormedit::workspace_asset_slot_t::audio});

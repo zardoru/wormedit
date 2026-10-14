@@ -657,11 +657,12 @@ auto open_project_chart(wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace,
     std::optional<wormedit::editor_interaction_state_t>& interaction, wormedit::chart_id_t chart)
     -> std::string {
-    const auto selected = wormedit::apply_workspace_action(workspace, history.document,
-        history.document.revision, wormedit::workspace_select_chart_action_t{chart});
+    const auto selected = wormedit::apply_workspace_action(
+        workspace, history.document, wormedit::workspace_select_chart_action_t{chart});
     if (!selected) return selected.diagnostics.empty() ? "Chart selection failed." : selected.diagnostics.front().message;
-    const auto opened = wormedit::apply_workspace_action(workspace, history.document,
-        history.document.revision, wormedit::workspace_switch_tab_action_t{wormedit::workspace_tab_t::compose});
+    const auto opened = wormedit::apply_workspace_action(
+        workspace, history.document,
+        wormedit::workspace_switch_tab_action_t{wormedit::workspace_tab_t::compose});
     if (!opened) return opened.diagnostics.empty() ? "Compose could not be opened." : opened.diagnostics.front().message;
     interaction.reset();
     return {};
@@ -1100,7 +1101,7 @@ auto dispatch_comparison_selection(const WormUiWorkspaceAction& action,
         second = other->id;
     }
     const auto applied = wormedit::apply_workspace_action(
-        workspace, history.document, history.document.revision,
+        workspace, history.document,
         wormedit::workspace_set_comparison_charts_action_t{{first, second}});
     return post_workspace_selection_feedback(notifications, applied,
         "Comparison difficulty selected.", "Comparison selection rejected.");
@@ -1126,7 +1127,7 @@ auto dispatch_sound_resource_selection(const WormUiWorkspaceAction& action,
     if (!asset) return post_callback_feedback(notifications, wormedit::notification_severity_t::warning,
             wormedit::notification_source_t::input, "Sound resource selected; no audio asset is available.");
     const auto applied = wormedit::apply_workspace_action(
-        workspace, history.document, history.document.revision,
+        workspace, history.document,
         wormedit::workspace_select_asset_action_t{.asset = asset,
                                                   .slot = wormedit::workspace_asset_slot_t::audio});
     return post_workspace_selection_feedback(notifications, applied,
@@ -1144,7 +1145,7 @@ auto dispatch_workspace_selection_action(const WormUiWorkspaceAction& action,
         return dispatch_sound_resource_selection(action, history, workspace, notifications);
     case WORM_UI_WORKSPACE_ACTION_SELECT_VISUAL_ASSET: {
         const auto applied = wormedit::apply_workspace_action(
-            workspace, history.document, history.document.revision,
+            workspace, history.document,
             wormedit::workspace_select_asset_action_t{
                 .asset = wormedit::asset_id_t{action.visual_asset_id},
                 .slot = wormedit::workspace_asset_slot_t::visual});
@@ -1153,7 +1154,7 @@ auto dispatch_workspace_selection_action(const WormUiWorkspaceAction& action,
     }
     case WORM_UI_WORKSPACE_ACTION_SWITCH_TAB: {
         const auto applied = wormedit::apply_workspace_action(
-            workspace, history.document, history.document.revision,
+            workspace, history.document,
             wormedit::workspace_switch_tab_action_t{
                 static_cast<wormedit::workspace_tab_t>(action.tab)});
         return post_workspace_selection_feedback(notifications, applied,
@@ -1646,10 +1647,10 @@ auto dispatch_compare_diagnostic_jump(
             : notification_severity_for(jumped.diagnostics.front().severity), wormedit::notification_source_t::input,
             jumped.diagnostics.empty() ? "Could not move to validation diagnostic." : jumped.diagnostics.front().message);
     auto next_workspace = workspace;
-    const auto revision = history.document.revision;
-    if (!wormedit::apply_workspace_action(next_workspace, history.document, revision,
-            wormedit::workspace_select_chart_action_t{chart_id}) ||
-        !wormedit::apply_workspace_action(next_workspace, history.document, revision,
+    if (!wormedit::apply_workspace_action(next_workspace, history.document,
+                                          wormedit::workspace_select_chart_action_t{chart_id}) ||
+        !wormedit::apply_workspace_action(
+            next_workspace, history.document,
             wormedit::workspace_switch_tab_action_t{wormedit::workspace_tab_t::compose}))
         return post_callback_feedback(notifications, wormedit::notification_severity_t::warning,
         wormedit::notification_source_t::input, "The validation target cannot be opened in Compose.");
@@ -2520,7 +2521,7 @@ struct application_t::implementation_t {
             remember_snap_denominator(commands, chart.id,
                                       commands.preferences.editor_preferences.default_snap);
         const auto selected = wormedit::apply_workspace_action(
-            session.workspace, session.history.document, session.history.document.revision,
+            session.workspace, session.history.document,
             wormedit::workspace_select_asset_action_t{
                 .asset = session.history.document.audio_assets.front().id,
                 .slot = wormedit::workspace_asset_slot_t::audio});
@@ -3894,7 +3895,7 @@ struct application_t::implementation_t {
             return true;
         if (action.kind == WORM_UI_WORKSPACE_ACTION_SWITCH_TAB) {
             const auto changed = wormedit::apply_workspace_action(
-                session.workspace, session.history.document, session.history.document.revision,
+                session.workspace, session.history.document,
                 wormedit::workspace_switch_tab_action_t{wormedit::workspace_tab_t::setup});
             if (!changed && !changed.diagnostics.empty())
                 platform.notification_sink.post(

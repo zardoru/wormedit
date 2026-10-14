@@ -900,9 +900,9 @@ auto workspace_tab_command(command_context_t& context) -> std::optional<command_
     case command_kind_t::workspace_open_compare_validate: tab = workspace_tab_t::compare_validate; break;
     default: return std::nullopt;
     }
-    const auto applied = apply_workspace_action(
-        context.environment.document.workspace, context.environment.document.history.document,
-        context.environment.document.history.document.revision, workspace_switch_tab_action_t{*tab});
+    const auto applied = apply_workspace_action(context.environment.document.workspace,
+                                                context.environment.document.history.document,
+                                                workspace_switch_tab_action_t{*tab});
     post_command_message(context.environment.document.notifications,
                          applied.applied ? notification_severity_t::info
                          : applied.diagnostics.empty()

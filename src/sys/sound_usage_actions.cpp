@@ -88,13 +88,13 @@ auto dispatch_sound_usage_action(const WormUiWorkspaceAction& action,
     auto next_workspace = workspace;
     auto next_interaction = interaction;
     const auto revision = history.document.revision;
-    if (!apply_workspace_action(next_workspace, history.document, revision,
+    if (!apply_workspace_action(next_workspace, history.document,
                                 workspace_select_chart_action_t{found->chart}))
         return rejection("The sound usage chart cannot be opened.");
 
     if (!found->position) {
         if (!apply_workspace_action(
-                next_workspace, history.document, revision,
+                next_workspace, history.document,
                 workspace_select_asset_action_t{.asset = usage.asset,
                                                 .slot = wormedit::workspace_asset_slot_t::audio}))
             return rejection("The sound source is no longer available.");
@@ -115,7 +115,7 @@ auto dispatch_sound_usage_action(const WormUiWorkspaceAction& action,
         !dispatch_editor_action(history, *candidate,
                                 jump_edit_cursor_action_t{*found->position, revision})
              .accepted ||
-        !apply_workspace_action(next_workspace, history.document, revision,
+        !apply_workspace_action(next_workspace, history.document,
                                 workspace_switch_tab_action_t{workspace_tab_t::compose}))
         return rejection("The sound usage cannot be opened in Compose.");
 

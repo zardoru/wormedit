@@ -1,5 +1,6 @@
 #include "text_util.h"
 #include "checked_math.h"
+#include <wormedit/core/command.h>
 #include <wormedit/core/workspace.h>
 
 #include <algorithm>
@@ -1127,13 +1128,13 @@ auto apply_action(workspace_action_context_t& context, const workspace_set_loop_
 }
 
 auto apply_workspace_action(workspace_controller_t& workspace, const song_document_t& document,
-                            std::uint64_t expected_revision, const workspace_action_t& action)
+                            const workspace_action_t& action)
     -> workspace_action_result_t {
     workspace_action_result_t result;
-    if (document.id != workspace.song || document.revision != workspace.document_revision ||
-        expected_revision != workspace.document_revision) {
+    const document_stamp_t binding{workspace.song, workspace.document_revision};
+    if (!binding.is_current(document)) {
         add_error(result.diagnostics, diagnostic_code_t::invalid_id,
-                  "workspace action refers to a stale or different document revision");
+                  stale_action_message("Workspace action"));
         return result;
     }
 

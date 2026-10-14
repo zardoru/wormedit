@@ -345,3 +345,25 @@ TEST_CASE("BMS silent gameplay materializes one zero float sample",
     require_span(decoder.read_at(0, sample, 1).frames_read == 1);
     check_span(sample[0] == 0 && sample[1] == 0);
 }
+
+TEST_CASE("slice render expected failures retain metadata with an empty message", "[unit][slice-spans][results]") {
+    slice_span_render_outcome_t outcome = std::unexpected(slice_span_render_payload_t::from({}, asset_id_t{7}));
+    require_span(!outcome.has_value());
+    const auto legacy = slice_span_render_result_t::from(std::move(outcome));
+    check_span(!legacy.completed);
+    check_span(legacy.error.empty());
+    check_span(legacy.asset == asset_id_t{7});
+}
+
+TEST_CASE("slice primary render publishes canonical planned audio", "[unit][slice-spans][results]") {
+    render_fixture_t fixture;
+    const auto plan = slice_span_plan_t::from(fixture.song, chart_id_t{3}, fixture.sources);
+    require_span(plan.ok());
+    auto rendered = create_slice_span_files(fixture.song, slice_span_render_input_t::from(plan),
+        {.source_directory = fixture.directory, .output_directory = fixture.directory / "canonical"});
+    require_span(rendered.has_value());
+    require_span(!rendered->files.empty());
+    check_span(std::filesystem::exists(rendered->files.front()));
+    const auto legacy = slice_span_render_result_t::from(std::move(rendered));
+    check_span(legacy.completed);
+}

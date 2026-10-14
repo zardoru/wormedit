@@ -46,7 +46,7 @@ struct channel_binding_t {
 struct plan_context_t {
     const song_document_t& song;
     const slice_span_options_t& options;
-    slice_span_plan_t& result;
+    slice_span_plan_outcome_t& result;
     std::map<std::uint64_t, const slice_span_source_t*> sources;
     std::map<std::uint64_t, const audio_asset_t*> assets;
     std::map<std::uint64_t, asset_id_t> resources;
@@ -98,21 +98,21 @@ auto add_span(plan_context_t& context, asset_id_t asset, std::uint64_t begin, st
     }
     const auto key = std::tuple{asset.value, begin, end};
     if (const auto found = context.spans.find(key); found != context.spans.end()) return found->second;
-    if (context.result.spans.size() >= context.options.maximum_spans) {
+    if (context.result.value.spans.size() >= context.options.maximum_spans) {
         fail(context, "Distinct audio span count exceeds the configured limit", asset);
         return std::nullopt;
     }
-    const auto index = context.result.spans.size();
+    const auto index = context.result.value.spans.size();
     context.spans.emplace(key, index);
-    context.result.spans.push_back({asset, begin, end, {}});
+    context.result.value.spans.push_back({asset, begin, end, {}});
     return index;
 }
 
 auto add_mapping(plan_context_t& context, slice_span_event_kind_t kind, object_id_t event, std::optional<std::size_t> span) -> bool {
-    if (!event || context.result.mappings.size() >= context.options.maximum_events ||
+    if (!event || context.result.value.mappings.size() >= context.options.maximum_events ||
         !context.events.emplace(kind, event.value).second)
         return fail(context, "Invalid, duplicate or over-limit audio event mapping", {}, event);
-    context.result.mappings.push_back({kind, event, span});
+    context.result.value.mappings.push_back({kind, event, span});
     return true;
 }
 
@@ -227,7 +227,7 @@ void name_spans(plan_context_t& context) {
     std::set<std::string> occupied;
     for (const auto& name : context.options.occupied_filenames) occupied.insert(ascii_lowercase(name));
     std::size_t number{};
-    for (auto& span : context.result.spans) {
+    for (auto& span : context.result.value.spans) {
         const auto stem = filename_stem(context.assets.at(span.asset.value)->source_path, span.asset);
         do {
             auto suffix = std::to_string(++number);
@@ -239,9 +239,14 @@ void name_spans(plan_context_t& context) {
 
 } // namespace
 
-auto plan_slice_spans(const song_document_t& song, chart_id_t chart_id,
-    std::span<const slice_span_source_t> sources, const slice_span_options_t& options) -> slice_span_plan_t {
-    slice_span_plan_t result;
+auto slice_span_plan_t::from(slice_span_plan_outcome_t&& outcome) -> slice_span_plan_t {
+    return {.spans = std::move(outcome.value.spans), .mappings = std::move(outcome.value.mappings),
+        .sources = std::move(outcome.value.sources), .diagnostics = std::move(outcome.diagnostics)};
+}
+
+auto slice_span_plan_t::from(const song_document_t& song, chart_id_t chart_id,
+    std::span<const slice_span_source_t> sources, const slice_span_options_t& options) -> slice_span_plan_outcome_t {
+    slice_span_plan_outcome_t result{};
     plan_context_t context{song, options, result, {}, {}, {}, {}, {}, {}};
     const auto chart = song.find_chart(chart_id);
     if (!chart_id || chart == nullptr || std::ranges::count(song.charts, chart_id, &chart_document_t::id) != 1) {
@@ -249,13 +254,18 @@ auto plan_slice_spans(const song_document_t& song, chart_id_t chart_id,
         return result;
     }
     if (!index_sources(context, sources) || !append_channels(context, *chart) || !append_semantics(context, *chart)) {
-        result.spans.clear();
-        result.mappings.clear();
+        result.value.spans.clear();
+        result.value.mappings.clear();
         return result;
     }
-    result.sources.assign(sources.begin(), sources.end());
+    result.value.sources.assign(sources.begin(), sources.end());
     name_spans(context);
     return result;
+}
+
+auto plan_slice_spans(const song_document_t& song, chart_id_t chart,
+    std::span<const slice_span_source_t> sources, const slice_span_options_t& options) -> slice_span_plan_t {
+    return slice_span_plan_t::from(slice_span_plan_t::from(song, chart, sources, options));
 }
 
 } // namespace wormedit

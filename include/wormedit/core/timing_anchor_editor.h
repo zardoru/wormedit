@@ -42,7 +42,6 @@ using timing_anchor_edit_action_t =
 // Inserts allocate a fresh chart-wide object ID. Coincident positions and
 // sample frames are legal; anchors have no timing-order semantics.
 [[nodiscard]] auto apply_timing_anchor_edit(document_history_t& history,
-                                            std::uint64_t expected_revision,
                                             const timing_anchor_edit_action_t& action,
                                             timing_anchor_edit_limits_t limits = {})
     -> document_command_result_t;

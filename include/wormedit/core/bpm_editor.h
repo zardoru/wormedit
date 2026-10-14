@@ -59,7 +59,7 @@ using bpm_edit_action_t =
 // and exact positive rationals are preserved verbatim; same-row events remain
 // legal and timing order uses source order before insertion order and stable ID.
 // Insert assigns a fresh chart-wide object ID and an order after existing BPMs.
-[[nodiscard]] auto apply_bpm_edit(document_history_t& history, std::uint64_t expected_revision,
+[[nodiscard]] auto apply_bpm_edit(document_history_t& history,
                                   const bpm_edit_action_t& action, bpm_edit_limits_t limits = {})
     -> document_command_result_t;
 

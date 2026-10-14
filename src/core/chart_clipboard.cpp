@@ -220,8 +220,9 @@ auto stage_selection_spans(document_history_t& staged, editor_interaction_state_
     if (options.timing_locked && (options.kiai_head || options.recipe))
         return selection_error("Timing is locked.").diagnostics;
     if (options.kiai_head) {
-        const auto edited = apply_marker_edit(staged, staged.document.revision,
-            edit_kiai_span_action_t{.chart = state.chart, .edit = {.head = options.kiai_head}});
+        const auto edited =
+            apply_marker_edit(staged, edit_kiai_span_action_t{.chart = state.chart,
+                                                              .edit = {.head = options.kiai_head}});
         if (!edited) return edited.diagnostics;
         std::erase_if(state.selected_objects, [&](const auto& object) {
             return std::ranges::find(boundaries, object) != boundaries.end();

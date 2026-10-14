@@ -103,7 +103,7 @@ using marker_edit_action_t =
 // are appended to their authored suffix. Updates retain stable identity and
 // source provenance (including kiai effect bits). A semantic no-op does not
 // create a revision or history entry.
-[[nodiscard]] auto apply_marker_edit(document_history_t& history, std::uint64_t expected_revision,
+[[nodiscard]] auto apply_marker_edit(document_history_t& history,
                                      const marker_edit_action_t& action,
                                      marker_edit_limits_t limits = {}) -> document_command_result_t;
 

@@ -482,14 +482,13 @@ auto apply_timing_lane_preview(document_history_t& history,
     case timing_lane_kind_t::bpm: {
         const auto& value = std::get<timing_bpm_value_t>(preview.value);
         if (preview.existing_event) {
-            result =
-                apply_bpm_edit(history, preview.document_revision,
-                               update_bpm_event_action_t{preview.chart, *preview.existing_event,
-                                                         preview.position, value.beats_per_minute});
-        } else {
             result = apply_bpm_edit(
-                history, preview.document_revision,
-                insert_bpm_event_action_t{preview.chart, preview.position, value.beats_per_minute});
+                history, update_bpm_event_action_t{preview.chart, *preview.existing_event,
+                                                   preview.position, value.beats_per_minute});
+        } else {
+            result =
+                apply_bpm_edit(history, insert_bpm_event_action_t{preview.chart, preview.position,
+                                                                  value.beats_per_minute});
         }
         break;
     }
@@ -497,12 +496,11 @@ auto apply_timing_lane_preview(document_history_t& history,
         const auto& value = std::get<timing_scroll_value_t>(preview.value);
         if (preview.existing_event) {
             result = apply_scroll_speed_edit(
-                history, preview.document_revision,
-                update_scroll_event_action_t{preview.chart, *preview.existing_event,
-                                             preview.position, value.multiplier});
+                history, update_scroll_event_action_t{preview.chart, *preview.existing_event,
+                                                      preview.position, value.multiplier});
         } else {
             result = apply_scroll_speed_edit(
-                history, preview.document_revision,
+                history,
                 insert_scroll_event_action_t{preview.chart, preview.position, value.multiplier});
         }
         break;
@@ -511,13 +509,13 @@ auto apply_timing_lane_preview(document_history_t& history,
         const auto& value = std::get<timing_speed_value_t>(preview.value);
         if (preview.existing_event) {
             result = apply_scroll_speed_edit(
-                history, preview.document_revision,
+                history,
                 update_speed_event_action_t{preview.chart, *preview.existing_event,
                                             preview.position, value.multiplier,
                                             value.transition_beats, value.transition_is_seconds});
         } else {
             result = apply_scroll_speed_edit(
-                history, preview.document_revision,
+                history,
                 insert_speed_event_action_t{preview.chart, preview.position, value.multiplier,
                                             value.transition_beats, value.transition_is_seconds});
         }
@@ -529,16 +527,14 @@ auto apply_timing_lane_preview(document_history_t& history,
         const auto pause_kind =
             preview.kind == timing_lane_kind_t::stop ? pause_kind_t::stop : pause_kind_t::delay;
         if (preview.existing_event) {
-            result =
-                apply_pause_warp_edit(history, preview.document_revision,
-                                      update_pause_event_action_t{
-                                          preview.chart, *preview.existing_event, preview.position,
-                                          pause_kind, value.duration, value.source_unit});
+            result = apply_pause_warp_edit(
+                history, update_pause_event_action_t{preview.chart, *preview.existing_event,
+                                                     preview.position, pause_kind, value.duration,
+                                                     value.source_unit});
         } else {
             result = apply_pause_warp_edit(
-                history, preview.document_revision,
-                insert_pause_event_action_t{preview.chart, preview.position, pause_kind,
-                                            value.duration, value.source_unit});
+                history, insert_pause_event_action_t{preview.chart, preview.position, pause_kind,
+                                                     value.duration, value.source_unit});
         }
         break;
     }
@@ -546,32 +542,28 @@ auto apply_timing_lane_preview(document_history_t& history,
         const auto& value = std::get<timing_warp_value_t>(preview.value);
         if (preview.existing_event) {
             result = apply_pause_warp_edit(
-                history, preview.document_revision,
-                update_warp_event_action_t{preview.chart,
-                                           *preview.existing_event,
-                                           {.begin = preview.position, .end = value.end},
-                                           std::nullopt});
+                history, update_warp_event_action_t{preview.chart,
+                                                    *preview.existing_event,
+                                                    {.begin = preview.position, .end = value.end},
+                                                    std::nullopt});
         } else {
             result = apply_pause_warp_edit(
-                history, preview.document_revision,
-                insert_warp_event_action_t{preview.chart,
-                                           {.begin = preview.position, .end = value.end},
-                                           value.source_encoding});
+                history, insert_warp_event_action_t{preview.chart,
+                                                    {.begin = preview.position, .end = value.end},
+                                                    value.source_encoding});
         }
         break;
     }
     case timing_lane_kind_t::kiai: {
         const auto& value = std::get<timing_kiai_value_t>(preview.value);
         if (preview.existing_event) {
-            result =
-                apply_marker_edit(history, preview.document_revision,
-                                  update_kiai_event_action_t{preview.chart, *preview.existing_event,
-                                                             preview.position, value.enabled});
+            result = apply_marker_edit(
+                history, update_kiai_event_action_t{preview.chart, *preview.existing_event,
+                                                    preview.position, value.enabled});
         } else {
-            result = apply_marker_edit(history, preview.document_revision,
-                                       insert_kiai_event_action_t{preview.chart, preview.position,
-                                                                  value.enabled,
-                                                                  value.retained_effect_bits});
+            result = apply_marker_edit(
+                history, insert_kiai_event_action_t{preview.chart, preview.position, value.enabled,
+                                                    value.retained_effect_bits});
         }
         break;
     }
@@ -579,15 +571,13 @@ auto apply_timing_lane_preview(document_history_t& history,
         const auto& value = std::get<timing_anchor_value_t>(preview.value);
         if (preview.existing_event) {
             result = apply_timing_anchor_edit(
-                history, preview.document_revision,
-                update_timing_anchor_action_t{preview.chart, *preview.existing_event,
-                                              preview.position, value.source_sample_frame,
-                                              value.locked});
+                history, update_timing_anchor_action_t{preview.chart, *preview.existing_event,
+                                                       preview.position, value.source_sample_frame,
+                                                       value.locked});
         } else {
             result = apply_timing_anchor_edit(
-                history, preview.document_revision,
-                insert_timing_anchor_action_t{preview.chart, preview.position,
-                                              value.source_sample_frame, value.locked});
+                history, insert_timing_anchor_action_t{preview.chart, preview.position,
+                                                       value.source_sample_frame, value.locked});
         }
         break;
     }
@@ -921,26 +911,20 @@ auto delete_existing_timing_lane_event(document_history_t& history, chart_id_t c
     }
     switch (kind) {
     case timing_lane_kind_t::bpm:
-        return apply_bpm_edit(history, expected_revision, delete_bpm_event_action_t{chart, event});
+        return apply_bpm_edit(history, delete_bpm_event_action_t{chart, event});
     case timing_lane_kind_t::scroll:
-        return apply_scroll_speed_edit(history, expected_revision,
-                                       delete_scroll_event_action_t{chart, event});
+        return apply_scroll_speed_edit(history, delete_scroll_event_action_t{chart, event});
     case timing_lane_kind_t::speed:
-        return apply_scroll_speed_edit(history, expected_revision,
-                                       delete_speed_event_action_t{chart, event});
+        return apply_scroll_speed_edit(history, delete_speed_event_action_t{chart, event});
     case timing_lane_kind_t::stop:
     case timing_lane_kind_t::delay:
-        return apply_pause_warp_edit(history, expected_revision,
-                                     delete_pause_event_action_t{chart, event});
+        return apply_pause_warp_edit(history, delete_pause_event_action_t{chart, event});
     case timing_lane_kind_t::warp:
-        return apply_pause_warp_edit(history, expected_revision,
-                                     delete_warp_event_action_t{chart, event});
+        return apply_pause_warp_edit(history, delete_warp_event_action_t{chart, event});
     case timing_lane_kind_t::kiai:
-        return apply_marker_edit(history, expected_revision,
-                                 delete_kiai_event_action_t{chart, event});
+        return apply_marker_edit(history, delete_kiai_event_action_t{chart, event});
     case timing_lane_kind_t::anchor:
-        return apply_timing_anchor_edit(history, expected_revision,
-                                        delete_timing_anchor_action_t{chart, event});
+        return apply_timing_anchor_edit(history, delete_timing_anchor_action_t{chart, event});
     }
     return result;
 }

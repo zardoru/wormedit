@@ -207,9 +207,9 @@ auto sm_source_orders_allow_history_and_native_roundtrip(std::string_view source
     auto bpm_history = wormedit::document_history_t::from(*parsed.song);
     const auto bpm_revision = bpm_history.document.revision;
     const auto& bpm = bpm_history.document.charts.front().bpms.front();
-    const auto bpm_edit = wormedit::apply_bpm_edit(bpm_history, bpm_revision,
-        wormedit::update_bpm_event_action_t{bpm_history.document.charts.front().id,
-                                            bpm.id, bpm.position, {110, 1}});
+    const auto bpm_edit = wormedit::apply_bpm_edit(
+        bpm_history, wormedit::update_bpm_event_action_t{
+                         bpm_history.document.charts.front().id, bpm.id, bpm.position, {110, 1}});
     if (!bpm_edit || bpm_history.document.revision != bpm_revision + 1 ||
         !wormedit::undo_document_command(bpm_history)) return false;
 

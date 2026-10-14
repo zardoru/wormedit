@@ -46,9 +46,8 @@ TEST_CASE("timing anchor insert update and delete preserve exact data through hi
     auto history = document_history_t::from(timing_anchor_song());
     const auto coincident_position = local_position_t{measure_id_t{3}, 240};
     const auto inserted = apply_timing_anchor_edit(
-        history, 7,
-        insert_timing_anchor_action_t{chart_id_t{2}, coincident_position,
-                                      std::numeric_limits<std::uint64_t>::max(), true});
+        history, insert_timing_anchor_action_t{chart_id_t{2}, coincident_position,
+                                               std::numeric_limits<std::uint64_t>::max(), true});
     REQUIRE(inserted);
     REQUIRE(history.document.charts.front().timing_anchors.size() == 2);
     const auto added = history.document.charts.front().timing_anchors.back();
@@ -68,7 +67,7 @@ TEST_CASE("timing anchor insert update and delete preserve exact data through hi
 
     const auto updated_position = local_position_t{measure_id_t{3}, 17};
     const auto update = apply_timing_anchor_edit(
-        history, history.document.revision,
+        history,
         update_timing_anchor_action_t{chart_id_t{2}, added.id, updated_position, 0, false});
     REQUIRE(update);
     const auto updated = history.document.charts.front().timing_anchors.back();
@@ -79,9 +78,8 @@ TEST_CASE("timing anchor insert update and delete preserve exact data through hi
 
     const auto revision_after_update = history.document.revision;
     const auto no_op = apply_timing_anchor_edit(
-        history, revision_after_update,
-        update_timing_anchor_action_t{chart_id_t{2}, added.id, updated.position,
-                                      updated.source_sample_frame, updated.locked});
+        history, update_timing_anchor_action_t{chart_id_t{2}, added.id, updated.position,
+                                               updated.source_sample_frame, updated.locked});
     CHECK_FALSE(no_op.applied);
     CHECK(no_op.diagnostics.empty());
     CHECK(history.document.revision == revision_after_update);
@@ -92,8 +90,8 @@ TEST_CASE("timing anchor insert update and delete preserve exact data through hi
     REQUIRE(redo_document_command(history));
     CHECK(same_anchor(history.document.charts.front().timing_anchors.back(), updated));
 
-    const auto deletion = apply_timing_anchor_edit(
-        history, history.document.revision, delete_timing_anchor_action_t{chart_id_t{2}, added.id});
+    const auto deletion =
+        apply_timing_anchor_edit(history, delete_timing_anchor_action_t{chart_id_t{2}, added.id});
     REQUIRE(deletion);
     REQUIRE(history.document.charts.front().timing_anchors.size() == 1);
     REQUIRE(undo_document_command(history));
@@ -103,39 +101,31 @@ TEST_CASE("timing anchor insert update and delete preserve exact data through hi
     CHECK(is_document_dirty(history));
 }
 
-TEST_CASE("timing anchor edits reject stale IDs and invalid positions atomically",
+TEST_CASE("timing anchor edits reject invalid IDs and invalid positions atomically",
           "[unit][core][timing-anchor-editor][negative]") {
     auto history = document_history_t::from(timing_anchor_song());
     const auto original = history.document.charts.front().timing_anchors.front();
     const auto revision = history.document.revision;
 
-    const auto stale = apply_timing_anchor_edit(
-        history, revision - 1,
-        insert_timing_anchor_action_t{chart_id_t{2}, {measure_id_t{3}, 120}, 1, false});
-    CHECK_FALSE(stale);
-    CHECK(has_code(stale, diagnostic_code_t::invalid_id));
-
     const auto unknown_chart = apply_timing_anchor_edit(
-        history, revision,
-        insert_timing_anchor_action_t{chart_id_t{99}, {measure_id_t{3}, 120}, 1, false});
+        history, insert_timing_anchor_action_t{chart_id_t{99}, {measure_id_t{3}, 120}, 1, false});
     CHECK_FALSE(unknown_chart);
     CHECK(has_code(unknown_chart, diagnostic_code_t::invalid_id));
 
     const auto unknown_anchor = apply_timing_anchor_edit(
-        history, revision,
-        update_timing_anchor_action_t{
-            chart_id_t{2}, object_id_t{99}, {measure_id_t{3}, 120}, 2, true});
+        history, update_timing_anchor_action_t{
+                     chart_id_t{2}, object_id_t{99}, {measure_id_t{3}, 120}, 2, true});
     CHECK_FALSE(unknown_anchor);
     CHECK(has_code(unknown_anchor, diagnostic_code_t::invalid_id));
     const auto zero_anchor = apply_timing_anchor_edit(
-        history, revision, delete_timing_anchor_action_t{chart_id_t{2}, object_id_t{0}});
+        history, delete_timing_anchor_action_t{chart_id_t{2}, object_id_t{0}});
     CHECK_FALSE(zero_anchor);
     CHECK(has_code(zero_anchor, diagnostic_code_t::invalid_id));
 
     for (const auto position :
          {local_position_t{measure_id_t{99}, 0}, local_position_t{measure_id_t{3}, 960}}) {
         const auto invalid_position = apply_timing_anchor_edit(
-            history, revision, insert_timing_anchor_action_t{chart_id_t{2}, position, 3, false});
+            history, insert_timing_anchor_action_t{chart_id_t{2}, position, 3, false});
         CHECK_FALSE(invalid_position);
         CHECK(has_code(invalid_position, diagnostic_code_t::row_out_of_range));
     }
@@ -154,9 +144,8 @@ TEST_CASE("timing anchor IDs are unambiguous across the chart and insertion resp
         {.id = object_id_t{11}, .position = {measure_id_t{3}, 360}});
     auto duplicate_history = document_history_t::from(std::move(duplicate_song));
     const auto ambiguous = apply_timing_anchor_edit(
-        duplicate_history, duplicate_history.document.revision,
-        update_timing_anchor_action_t{
-            chart_id_t{2}, object_id_t{11}, {measure_id_t{3}, 480}, 4, false});
+        duplicate_history, update_timing_anchor_action_t{
+                               chart_id_t{2}, object_id_t{11}, {measure_id_t{3}, 480}, 4, false});
     CHECK_FALSE(ambiguous);
     CHECK(has_code(ambiguous, diagnostic_code_t::duplicate_id));
     CHECK(duplicate_history.document.charts.front().timing_anchors.size() == 2);
@@ -165,33 +154,29 @@ TEST_CASE("timing anchor IDs are unambiguous across the chart and insertion resp
     auto cross_type_duplicate = timing_anchor_song();
     cross_type_duplicate.charts.front().timing_anchors.front().id = object_id_t{10};
     auto cross_type_history = document_history_t::from(std::move(cross_type_duplicate));
-    const auto cross_type_ambiguous =
-        apply_timing_anchor_edit(cross_type_history, cross_type_history.document.revision,
-                                 delete_timing_anchor_action_t{chart_id_t{2}, object_id_t{10}});
+    const auto cross_type_ambiguous = apply_timing_anchor_edit(
+        cross_type_history, delete_timing_anchor_action_t{chart_id_t{2}, object_id_t{10}});
     CHECK_FALSE(cross_type_ambiguous);
     CHECK(has_code(cross_type_ambiguous, diagnostic_code_t::duplicate_id));
     CHECK(cross_type_history.document.charts.front().timing_anchors.size() == 1);
 
     auto history = document_history_t::from(timing_anchor_song());
     const auto position = local_position_t{measure_id_t{3}, 120};
-    const auto anchor_capped =
-        apply_timing_anchor_edit(history, history.document.revision,
-                                 insert_timing_anchor_action_t{chart_id_t{2}, position, 0, false},
-                                 {.maximum_timing_anchors = 1});
+    const auto anchor_capped = apply_timing_anchor_edit(
+        history, insert_timing_anchor_action_t{chart_id_t{2}, position, 0, false},
+        {.maximum_timing_anchors = 1});
     CHECK_FALSE(anchor_capped);
     CHECK(has_code(anchor_capped, diagnostic_code_t::invalid_resolution));
 
-    const auto objects_capped =
-        apply_timing_anchor_edit(history, history.document.revision,
-                                 insert_timing_anchor_action_t{chart_id_t{2}, position, 0, false},
-                                 {.maximum_chart_objects = 2});
+    const auto objects_capped = apply_timing_anchor_edit(
+        history, insert_timing_anchor_action_t{chart_id_t{2}, position, 0, false},
+        {.maximum_chart_objects = 2});
     CHECK_FALSE(objects_capped);
     CHECK(has_code(objects_capped, diagnostic_code_t::invalid_resolution));
 
-    const auto zero_cap =
-        apply_timing_anchor_edit(history, history.document.revision,
-                                 delete_timing_anchor_action_t{chart_id_t{2}, object_id_t{11}},
-                                 {.maximum_timing_anchors = 0});
+    const auto zero_cap = apply_timing_anchor_edit(
+        history, delete_timing_anchor_action_t{chart_id_t{2}, object_id_t{11}},
+        {.maximum_timing_anchors = 0});
     CHECK_FALSE(zero_cap);
     CHECK(has_code(zero_cap, diagnostic_code_t::invalid_resolution));
 
@@ -199,9 +184,8 @@ TEST_CASE("timing anchor IDs are unambiguous across the chart and insertion resp
     exhausted_song.charts.front().timing_anchors.front().id =
         object_id_t{std::numeric_limits<std::uint64_t>::max()};
     auto exhausted_history = document_history_t::from(std::move(exhausted_song));
-    const auto exhausted =
-        apply_timing_anchor_edit(exhausted_history, exhausted_history.document.revision,
-                                 insert_timing_anchor_action_t{chart_id_t{2}, position, 0, false});
+    const auto exhausted = apply_timing_anchor_edit(
+        exhausted_history, insert_timing_anchor_action_t{chart_id_t{2}, position, 0, false});
     CHECK_FALSE(exhausted);
     CHECK(has_code(exhausted, diagnostic_code_t::invalid_resolution));
     CHECK(exhausted_history.document.charts.front().timing_anchors.size() == 1);

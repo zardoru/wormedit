@@ -66,7 +66,7 @@ using pause_warp_edit_action_t =
 // event family. BMS pause import baselines are preserved on update and removed
 // with their event on delete.
 [[nodiscard]] auto
-apply_pause_warp_edit(document_history_t& history, std::uint64_t expected_revision,
+apply_pause_warp_edit(document_history_t& history,
                       const pause_warp_edit_action_t& action, pause_warp_edit_limits_t limits = {})
     -> document_command_result_t;
 

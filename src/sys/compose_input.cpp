@@ -1183,7 +1183,7 @@ auto move_compose_bookmark(const WormUiComposeInputAction& input,
         return std::nullopt;
     }
     const auto moved = apply_marker_edit(
-        context.environment.document.history, context.ui_action.compose_input_document_revision,
+        context.environment.document.history,
         marker_edit_action_t{update_bookmark_action_t{
             chart->id, found->id, found->label, marker_anchor_t::beat, *position, std::nullopt}});
     result.accepted = moved.applied;

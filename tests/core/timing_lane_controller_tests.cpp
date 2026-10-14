@@ -432,9 +432,8 @@ TEST_CASE("existing timing edit targets reject unknown, wrong-kind, locked, and 
     auto stale = begin_existing_timing_lane_pseudonote(
         history, chart_id_t{2}, timing_lane_kind_t::bpm, object_id_t{10}, false);
     REQUIRE(stale.status == timing_lane_pseudonote_status_t::editing);
-    const auto intervening =
-        apply_bpm_edit(history, history.document.revision,
-                       update_bpm_event_action_t{chart_id_t{2}, object_id_t{11}, pos(0), {150, 1}});
+    const auto intervening = apply_bpm_edit(
+        history, update_bpm_event_action_t{chart_id_t{2}, object_id_t{11}, pos(0), {150, 1}});
     REQUIRE(intervening);
     const auto revision_after_intervening = history.document.revision;
     CHECK_FALSE(update_timing_lane_pseudonote(history, stale, timing_bpm_value_t{{90, 1}}, false));
@@ -447,9 +446,8 @@ TEST_CASE("existing timing edit targets reject unknown, wrong-kind, locked, and 
     auto stale_confirm = begin_existing_timing_lane_pseudonote(
         history, chart_id_t{2}, timing_lane_kind_t::scroll, object_id_t{20}, false);
     REQUIRE(stale_confirm.status == timing_lane_pseudonote_status_t::editing);
-    const auto another_change =
-        apply_bpm_edit(history, history.document.revision,
-                       update_bpm_event_action_t{chart_id_t{2}, object_id_t{11}, pos(0), {151, 1}});
+    const auto another_change = apply_bpm_edit(
+        history, update_bpm_event_action_t{chart_id_t{2}, object_id_t{11}, pos(0), {151, 1}});
     REQUIRE(another_change);
     const auto result = confirm_timing_lane_pseudonote(history, stale_confirm, false);
     CHECK_FALSE(result);
@@ -483,8 +481,7 @@ TEST_CASE("pseudo-note insertion rejects locked, occupied, and stale timing edit
     auto stale = begin(history, timing_lane_kind_t::scroll, 120, timing_scroll_value_t{{2, 1}});
     REQUIRE(stale.status == timing_lane_pseudonote_status_t::editing);
     const auto intervening =
-        apply_bpm_edit(history, history.document.revision,
-                       insert_bpm_event_action_t{chart_id_t{2}, pos(60), {150, 1}});
+        apply_bpm_edit(history, insert_bpm_event_action_t{chart_id_t{2}, pos(60), {150, 1}});
     REQUIRE(intervening);
     const auto revision_after_intervening = history.document.revision;
     const auto result = confirm_timing_lane_pseudonote(history, stale, false);
@@ -658,9 +655,8 @@ TEST_CASE("existing timing pseudo-note targets are exact, revision-bound, and no
           "[unit][core][timing-lane-controller][edit][negative]") {
     auto history = document_history_t::from(timing_song());
 
-    const auto coincident =
-        apply_bpm_edit(history, history.document.revision,
-                       insert_bpm_event_action_t{chart_id_t{2}, pos(0), signed_rational_t{130, 1}});
+    const auto coincident = apply_bpm_edit(
+        history, insert_bpm_event_action_t{chart_id_t{2}, pos(0), signed_rational_t{130, 1}});
     REQUIRE(coincident);
     auto own_row = begin_existing_timing_lane_pseudonote(
         history, chart_id_t{2}, timing_lane_kind_t::bpm, object_id_t{10}, false);
@@ -696,9 +692,8 @@ TEST_CASE("existing timing pseudo-note targets are exact, revision-bound, and no
     auto stale = begin_existing_timing_lane_pseudonote(
         history, chart_id_t{2}, timing_lane_kind_t::bpm, object_id_t{10}, false);
     REQUIRE(stale.status == timing_lane_pseudonote_status_t::editing);
-    const auto intervening =
-        apply_bpm_edit(history, history.document.revision,
-                       update_bpm_event_action_t{chart_id_t{2}, object_id_t{10}, pos(0), {140, 1}});
+    const auto intervening = apply_bpm_edit(
+        history, update_bpm_event_action_t{chart_id_t{2}, object_id_t{10}, pos(0), {140, 1}});
     REQUIRE(intervening);
     CHECK_FALSE(update_timing_lane_pseudonote(history, stale, timing_bpm_value_t{{150, 1}}, false));
     CHECK(stale.status == timing_lane_pseudonote_status_t::cancelled);

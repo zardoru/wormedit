@@ -351,15 +351,10 @@ auto apply_pause_warp_operation(pause_warp_edit_context_t& context, const Edit& 
 
 } // namespace
 
-auto apply_pause_warp_edit(document_history_t& history, std::uint64_t expected_revision,
+auto apply_pause_warp_edit(document_history_t& history,
                            const pause_warp_edit_action_t& action, pause_warp_edit_limits_t limits)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "pause/warp editor document revision is stale");
-        return result;
-    }
     if (limits.maximum_pause_events == 0 || limits.maximum_warp_events == 0) {
         reject(result, diagnostic_code_t::invalid_resolution,
                "pause and warp event caps must be positive");

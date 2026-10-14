@@ -259,15 +259,10 @@ auto apply_scroll_speed_operation(scroll_speed_edit_context_t& context, const Ed
 
 } // namespace
 
-auto apply_scroll_speed_edit(document_history_t& history, std::uint64_t expected_revision,
+auto apply_scroll_speed_edit(document_history_t& history,
                              const scroll_speed_edit_action_t& action,
                              scroll_speed_edit_limits_t limits) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "scroll/speed editor document revision is stale");
-        return result;
-    }
     if (limits.maximum_scroll_events == 0 || limits.maximum_speed_events == 0) {
         reject(result, diagnostic_code_t::invalid_resolution,
                "scroll and speed event caps must be positive");

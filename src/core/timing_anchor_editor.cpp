@@ -108,15 +108,10 @@ auto apply_anchor_edit(chart_document_t& chart, const delete_timing_anchor_actio
 
 } // namespace
 
-auto apply_timing_anchor_edit(document_history_t& history, std::uint64_t expected_revision,
+auto apply_timing_anchor_edit(document_history_t& history,
                               const timing_anchor_edit_action_t& action,
                               timing_anchor_edit_limits_t limits) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "timing anchor editor document revision is stale");
-        return result;
-    }
     if (limits.maximum_timing_anchors == 0) {
         reject(result, diagnostic_code_t::invalid_resolution, "timing anchor cap must be positive");
         return result;

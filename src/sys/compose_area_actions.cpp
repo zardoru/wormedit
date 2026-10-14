@@ -117,9 +117,10 @@ std::string add_speed_span_over_area(area_action_context_t& context,
     const auto divisor = std::gcd(numerator, chart.divisions_per_standard_measure);
     const rational_t beats{numerator / divisor, chart.divisions_per_standard_measure / divisor};
     const auto inserted = apply_scroll_speed_edit(
-        context.history, context.history.document.revision,
-        insert_speed_event_action_t{.chart = chart.id, .position = span.begin,
-                                    .multiplier = {1, 1}, .transition_beats = beats});
+        context.history, insert_speed_event_action_t{.chart = chart.id,
+                                                     .position = span.begin,
+                                                     .multiplier = {1, 1},
+                                                     .transition_beats = beats});
     if (inserted.applied)
         return area_feedback(context, "SPEEDS span added over the selected area.",
                              notification_severity_t::success, notification_source_t::edit);

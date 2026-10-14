@@ -123,9 +123,7 @@ std::optional<std::string> edit_beat_section(compose_action_context_t& context) 
             return compose_action_warning(context, *error);
         edit = std::get<marker_edit_action_t>(std::move(made));
     }
-    const auto applied =
-        apply_marker_edit(context.environment.document.history,
-                          context.action.compose_input_document_revision, std::move(edit));
+    const auto applied = apply_marker_edit(context.environment.document.history, std::move(edit));
     return finish_marker_edit_feedback(
         context, applied, beat_section_success(context.action, from_selection),
         "Section edit made no changes.", "Section changed, but workspace rebinding failed.");
@@ -189,7 +187,6 @@ std::optional<std::string> edit_audio_bookmark(compose_action_context_t& context
     if (const auto* error = std::get_if<std::string>(&built))
         return compose_action_warning(context, *error, notification_source_t::edit);
     const auto applied = apply_marker_edit(context.environment.document.history,
-                                           context.action.compose_input_document_revision,
                                            std::get<marker_edit_action_t>(std::move(built)));
     const auto success =
         context.action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_AUDIO_BOOKMARK
@@ -259,7 +256,6 @@ std::optional<std::string> edit_audio_section(compose_action_context_t& context)
     if (const auto* error = std::get_if<std::string>(&built))
         return compose_action_warning(context, *error, notification_source_t::edit);
     const auto applied = apply_marker_edit(context.environment.document.history,
-                                           context.action.compose_input_document_revision,
                                            std::get<marker_edit_action_t>(std::move(built)));
     const auto success =
         context.action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_AUDIO_SECTION
@@ -324,7 +320,6 @@ std::optional<std::string> edit_beat_bookmark(compose_action_context_t& context)
     if (const auto* error = std::get_if<std::string>(&built))
         return compose_action_warning(context, *error);
     const auto applied = apply_marker_edit(context.environment.document.history,
-                                           context.action.compose_input_document_revision,
                                            std::get<marker_edit_action_t>(std::move(built)));
     const auto success = operation == WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK
                              ? "Bookmark renamed."

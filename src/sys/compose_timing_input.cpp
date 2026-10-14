@@ -179,9 +179,9 @@ auto edit_compose_kiai_span(const WormUiComposeInputAction& input, compose_input
         accepted = "Kiai area unchanged.";
         return std::nullopt;
     }
-    const auto edited = apply_marker_edit(
-        context.environment.document.history, context.environment.document.history.document.revision,
-        edit_kiai_span_action_t{.chart = chart->id, .edit = edit});
+    const auto edited =
+        apply_marker_edit(context.environment.document.history,
+                          edit_kiai_span_action_t{.chart = chart->id, .edit = edit});
     result.accepted = edited.applied;
     result.document_changed = edited.applied;
     result.diagnostics = edited.diagnostics;

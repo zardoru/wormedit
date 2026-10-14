@@ -243,15 +243,11 @@ auto step_bpm_by_one(signed_rational_t bpm, bpm_step_direction_t direction)
     return signed_rational_t{bpm.numerator - denominator, bpm.denominator};
 }
 
-auto apply_bpm_edit(document_history_t& history, std::uint64_t expected_revision,
+auto apply_bpm_edit(document_history_t& history,
                     const bpm_edit_action_t& action, bpm_edit_limits_t limits)
     -> document_command_result_t {
     auto transaction = document_command_transaction_t::from(history);
     auto& result = transaction.outcome;
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id, "BPM editor document revision is stale");
-        return result;
-    }
     if (limits.maximum_bpm_events == 0) {
         reject(result, diagnostic_code_t::invalid_resolution, "BPM event cap must be positive");
         return result;
@@ -566,9 +562,8 @@ auto commit_inserted_beat_fit(document_history_t& history, const beat_interval_d
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
     if (drag.proposed_bpm == drag.original_bpm) return result;
-    return apply_bpm_edit(history, drag.document_revision,
-                          insert_bpm_event_action_t{drag.chart, drag.original_bpm_position,
-                                                    drag.proposed_bpm});
+    return apply_bpm_edit(history, insert_bpm_event_action_t{drag.chart, drag.original_bpm_position,
+                                                             drag.proposed_bpm});
 }
 
 } // namespace
@@ -592,7 +587,7 @@ auto commit_beat_interval_drag(document_history_t& history, const beat_interval_
         return result;
     }
     if (drag.insert_bpm) return commit_inserted_beat_fit(history, drag);
-    return apply_bpm_edit(history, drag.document_revision,
+    return apply_bpm_edit(history,
                           update_bpm_event_action_t{drag.chart, drag.bpm_event,
                                                     drag.original_bpm_position, drag.proposed_bpm});
 }

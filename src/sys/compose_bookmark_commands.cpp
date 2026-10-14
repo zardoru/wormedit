@@ -218,9 +218,9 @@ auto add_beat_bookmark_here(document_history_t& history, editor_interaction_stat
         return bookmark.anchor == marker_anchor_t::beat && bookmark.position == position;
     });
     if (exists) return fail("A bookmark already exists on this row.");
-    const auto applied = apply_marker_edit(history, history.document.revision,
-        marker_edit_action_t{insert_bookmark_action_t{state.chart, {}, marker_anchor_t::beat,
-                                                      position, std::nullopt}});
+    const auto applied = apply_marker_edit(
+        history, marker_edit_action_t{insert_bookmark_action_t{
+                     state.chart, {}, marker_anchor_t::beat, position, std::nullopt}});
     if (!applied.applied)
         return {.status = applied.diagnostics.empty() ? "Bookmark edit made no changes."
                                                       : applied.diagnostics.front().message,

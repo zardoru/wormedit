@@ -431,15 +431,11 @@ auto apply_marker_operation(marker_edit_context_t& context, const Edit& edit) ->
 
 } // namespace
 
-auto apply_marker_edit(document_history_t& history, std::uint64_t expected_revision,
+auto apply_marker_edit(document_history_t& history,
                        const marker_edit_action_t& action, marker_edit_limits_t limits)
     -> document_command_result_t {
     auto transaction = document_command_transaction_t::from(history);
     auto& result = transaction.outcome;
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id, "marker editor document revision is stale");
-        return result;
-    }
     if (limits.maximum_bookmarks == 0 || limits.maximum_sections == 0 ||
         limits.maximum_kiai_events == 0 || limits.maximum_chart_objects == 0) {
         reject(result, diagnostic_code_t::invalid_resolution,

@@ -51,7 +51,7 @@ TEST_CASE("scroll and speed editing is revision checked and undoable",
     const auto position = local_position_t{measure_id_t{3}, 240};
 
     const auto inserted_scroll = apply_scroll_speed_edit(
-        history, 4, insert_scroll_event_action_t{chart_id_t{2}, position, {-2, 1}});
+        history, insert_scroll_event_action_t{chart_id_t{2}, position, {-2, 1}});
     REQUIRE(inserted_scroll);
     REQUIRE(history.document.charts.front().scrolls.size() == 2);
     const auto scroll = history.document.charts.front().scrolls.back();
@@ -62,7 +62,7 @@ TEST_CASE("scroll and speed editing is revision checked and undoable",
     CHECK(scroll.provenance.family == format_family_t::native_project);
 
     const auto inserted_speed = apply_scroll_speed_edit(
-        history, 5, insert_speed_event_action_t{chart_id_t{2}, position, {1, 2}, {0, 1}, false});
+        history, insert_speed_event_action_t{chart_id_t{2}, position, {1, 2}, {0, 1}, false});
     REQUIRE(inserted_speed);
     REQUIRE(history.document.charts.front().speeds.size() == 2);
     const auto speed = history.document.charts.front().speeds.back();
@@ -89,7 +89,7 @@ TEST_CASE("scroll and speed editing is revision checked and undoable",
     CHECK(effective.state->effective_multiplier == signed_rational_t{-1, 1});
 
     const auto update = apply_scroll_speed_edit(
-        history, 6,
+        history,
         update_speed_event_action_t{chart_id_t{2}, speed.id, position, {5, 1}, {2, 1}, true});
     REQUIRE(update);
     const auto& updated = history.document.charts.front().speeds.back();
@@ -101,7 +101,7 @@ TEST_CASE("scroll and speed editing is revision checked and undoable",
     CHECK(updated.transition_is_seconds);
 
     const auto no_op = apply_scroll_speed_edit(
-        history, 7,
+        history,
         update_speed_event_action_t{chart_id_t{2}, speed.id, updated.position, updated.multiplier,
                                     updated.transition_beats, updated.transition_is_seconds});
     CHECK_FALSE(no_op.applied);
@@ -110,8 +110,8 @@ TEST_CASE("scroll and speed editing is revision checked and undoable",
 
     REQUIRE(undo_document_command(history));
     CHECK(history.document.charts.front().speeds.back().multiplier == signed_rational_t{1, 2});
-    REQUIRE(apply_scroll_speed_edit(history, history.document.revision,
-                                    delete_scroll_event_action_t{chart_id_t{2}, scroll.id}));
+    REQUIRE(
+        apply_scroll_speed_edit(history, delete_scroll_event_action_t{chart_id_t{2}, scroll.id}));
     CHECK(history.document.charts.front().scrolls.size() == 1);
     REQUIRE(undo_document_command(history));
     REQUIRE(history.document.charts.front().scrolls.size() == 2);
@@ -145,7 +145,7 @@ TEST_CASE("same-row scroll and speed events keep source ordering and compose the
     auto history = document_history_t::from(std::move(song));
 
     const auto inserted = apply_scroll_speed_edit(
-        history, 4, insert_scroll_event_action_t{chart_id_t{2}, {measure_id_t{3}, 240}, {2, 1}});
+        history, insert_scroll_event_action_t{chart_id_t{2}, {measure_id_t{3}, 240}, {2, 1}});
     REQUIRE(inserted);
     const auto& result_chart = history.document.charts.front();
     REQUIRE(result_chart.scrolls.size() == 3);
@@ -162,40 +162,35 @@ TEST_CASE("same-row scroll and speed events keep source ordering and compose the
     CHECK(effective.state->effective_multiplier == signed_rational_t{10, 1});
 }
 
-TEST_CASE("scroll and speed edits reject stale IDs, invalid domains, and out-of-bounds positions",
+TEST_CASE("scroll and speed edits reject invalid IDs, invalid domains, and out-of-bounds positions",
           "[unit][core][scroll-speed-editor][negative]") {
     auto history = document_history_t::from(scroll_speed_song());
     const auto revision = history.document.revision;
 
-    const auto stale = apply_scroll_speed_edit(
-        history, 3, insert_scroll_event_action_t{chart_id_t{2}, {measure_id_t{3}, 120}, {1, 1}});
-    CHECK_FALSE(stale);
-    CHECK(has_code(stale, diagnostic_code_t::invalid_id));
     const auto unknown_chart = apply_scroll_speed_edit(
-        history, revision,
+        history,
         insert_speed_event_action_t{chart_id_t{99}, {measure_id_t{3}, 120}, {1, 1}, {0, 1}, false});
     CHECK_FALSE(unknown_chart);
     CHECK(has_code(unknown_chart, diagnostic_code_t::invalid_id));
     const auto unknown_event = apply_scroll_speed_edit(
-        history, revision,
+        history,
         update_scroll_event_action_t{chart_id_t{2}, object_id_t{99}, {measure_id_t{3}, 0}, {1, 1}});
     CHECK_FALSE(unknown_event);
     CHECK(has_code(unknown_event, diagnostic_code_t::invalid_id));
     const auto zero_event = apply_scroll_speed_edit(
-        history, revision, delete_speed_event_action_t{chart_id_t{2}, object_id_t{0}});
+        history, delete_speed_event_action_t{chart_id_t{2}, object_id_t{0}});
     CHECK_FALSE(zero_event);
     CHECK(has_code(zero_event, diagnostic_code_t::invalid_id));
 
     for (const auto position :
          {local_position_t{measure_id_t{99}, 0}, local_position_t{measure_id_t{3}, 960}}) {
         const auto invalid = apply_scroll_speed_edit(
-            history, revision, insert_scroll_event_action_t{chart_id_t{2}, position, {1, 1}});
+            history, insert_scroll_event_action_t{chart_id_t{2}, position, {1, 1}});
         CHECK_FALSE(invalid);
         CHECK(has_code(invalid, diagnostic_code_t::row_out_of_range));
     }
     const auto invalid_scroll = apply_scroll_speed_edit(
-        history, revision,
-        insert_scroll_event_action_t{chart_id_t{2}, {measure_id_t{3}, 120}, {1, 0}});
+        history, insert_scroll_event_action_t{chart_id_t{2}, {measure_id_t{3}, 120}, {1, 0}});
     CHECK_FALSE(invalid_scroll);
     CHECK(has_code(invalid_scroll, diagnostic_code_t::invalid_rational));
 
@@ -204,9 +199,8 @@ TEST_CASE("scroll and speed edits reject stale IDs, invalid domains, and out-of-
           std::pair{signed_rational_t{1, 0}, rational_t{1, 1}},
           std::pair{signed_rational_t{1, 1}, rational_t{1, 0}}}) {
         const auto invalid = apply_scroll_speed_edit(
-            history, revision,
-            insert_speed_event_action_t{
-                chart_id_t{2}, {measure_id_t{3}, 120}, multiplier, duration, false});
+            history, insert_speed_event_action_t{
+                         chart_id_t{2}, {measure_id_t{3}, 120}, multiplier, duration, false});
         CHECK_FALSE(invalid);
         CHECK(has_code(invalid, diagnostic_code_t::invalid_rational));
     }
@@ -223,17 +217,17 @@ TEST_CASE("scroll and speed editor enforces event and chart-wide object caps and
     auto history = document_history_t::from(scroll_speed_song());
     const auto position = local_position_t{measure_id_t{3}, 120};
     const auto scroll_capped = apply_scroll_speed_edit(
-        history, 4, insert_scroll_event_action_t{chart_id_t{2}, position, {1, 1}},
+        history, insert_scroll_event_action_t{chart_id_t{2}, position, {1, 1}},
         {.maximum_scroll_events = 1});
     CHECK_FALSE(scroll_capped);
     CHECK(has_code(scroll_capped, diagnostic_code_t::invalid_resolution));
     const auto speed_capped = apply_scroll_speed_edit(
-        history, 4, insert_speed_event_action_t{chart_id_t{2}, position, {1, 1}, {0, 1}, false},
+        history, insert_speed_event_action_t{chart_id_t{2}, position, {1, 1}, {0, 1}, false},
         {.maximum_speed_events = 1});
     CHECK_FALSE(speed_capped);
     CHECK(has_code(speed_capped, diagnostic_code_t::invalid_resolution));
     const auto objects_capped = apply_scroll_speed_edit(
-        history, 4, insert_scroll_event_action_t{chart_id_t{2}, position, {1, 1}},
+        history, insert_scroll_event_action_t{chart_id_t{2}, position, {1, 1}},
         {.maximum_chart_objects = 3});
     CHECK_FALSE(objects_capped);
     CHECK(has_code(objects_capped, diagnostic_code_t::invalid_resolution));
@@ -243,7 +237,7 @@ TEST_CASE("scroll and speed editor enforces event and chart-wide object caps and
         {.id = object_id_t{11}, .position = {measure_id_t{3}, 120}, .multiplier = {1, 1}});
     auto duplicate_history = document_history_t::from(std::move(duplicate_song));
     const auto ambiguous = apply_scroll_speed_edit(
-        duplicate_history, 4,
+        duplicate_history,
         update_scroll_event_action_t{chart_id_t{2}, object_id_t{11}, position, {3, 1}});
     CHECK_FALSE(ambiguous);
     CHECK(has_code(ambiguous, diagnostic_code_t::duplicate_id));
@@ -254,7 +248,7 @@ TEST_CASE("scroll and speed editor enforces event and chart-wide object caps and
     cross_type_song.charts.front().bpms.front().id = object_id_t{11};
     auto cross_type_history = document_history_t::from(std::move(cross_type_song));
     const auto cross_type_ambiguous = apply_scroll_speed_edit(
-        cross_type_history, 4, delete_scroll_event_action_t{chart_id_t{2}, object_id_t{11}});
+        cross_type_history, delete_scroll_event_action_t{chart_id_t{2}, object_id_t{11}});
     CHECK_FALSE(cross_type_ambiguous);
     CHECK(has_code(cross_type_ambiguous, diagnostic_code_t::duplicate_id));
     CHECK(cross_type_history.document.charts.front().scrolls.size() == 1);

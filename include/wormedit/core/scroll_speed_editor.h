@@ -66,7 +66,6 @@ using scroll_speed_edit_action_t =
 // order and stable insertion/ID ordering. Inserts allocate chart-wide object
 // IDs and source orders independently for each event family.
 [[nodiscard]] auto apply_scroll_speed_edit(document_history_t& history,
-                                           std::uint64_t expected_revision,
                                            const scroll_speed_edit_action_t& action,
                                            scroll_speed_edit_limits_t limits = {})
     -> document_command_result_t;

@@ -43,7 +43,7 @@ auto rename_bookmark(document_history_t& history, std::uint64_t expected_revisio
     const marker_edit_action_t action{update_bookmark_action_t{
         chart_id, bookmark_id, std::string(label), bookmark->anchor, bookmark->position,
         bookmark->audio_milliseconds}};
-    const auto applied = apply_marker_edit(history, expected_revision, action);
+    const auto applied = apply_marker_edit(history, action);
     if (!applied.applied) {
         return {.status = applied.diagnostics.empty()
                               ? "Bookmark label was unchanged."

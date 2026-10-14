@@ -259,7 +259,7 @@ std::optional<std::string> commit_primary_music(compose_action_context_t& contex
     if (name.size() > 255)
         name.clear();
     const auto applied = apply_primary_music_set(
-        context.environment.document.history, context.action.compose_input_document_revision,
+        context.environment.document.history,
         {.source_path = path,
          .name = std::move(name),
          .allocate_bms_identifier =
@@ -304,7 +304,7 @@ std::optional<std::string> commit_resource_import(compose_action_context_t& cont
     if (name.size() > 255)
         name.clear();
     const auto applied = apply_resource_asset_import(
-        context.environment.document.history, context.action.compose_input_document_revision,
+        context.environment.document.history,
         {.source_path = path,
          .role = role,
          .name = std::move(name),
@@ -589,7 +589,7 @@ auto apply_compose_resource_placement(compose_action_context_t& context,
     const auto resource = resource_id_t{context.action.compose_resource_id};
     if (context.state.virtual_bms_cursor_row)
         return apply_virtual_bms_resource_placement(
-            context.environment.document.history, context.action.compose_input_document_revision,
+            context.environment.document.history,
             {.chart = context.state.chart,
              .resource = resource,
              .canvas_row = *context.state.virtual_bms_cursor_row,
@@ -597,7 +597,6 @@ auto apply_compose_resource_placement(compose_action_context_t& context,
              .kind = kind,
              .semantic_layers = context.state.armed_note_layers});
     return apply_resource_placement(context.environment.document.history,
-                                    context.action.compose_input_document_revision,
                                     {.chart = context.state.chart,
                                      .resource = resource,
                                      .position = context.state.cursor,
@@ -689,7 +688,7 @@ std::optional<std::string> assign_resource_to_selection(compose_action_context_t
         return compose_action_warning(
             context, "Finish or cancel the active Compose gesture before assigning a resource.");
     const auto applied = apply_resource_assignment(
-        context.environment.document.history, context.action.compose_input_document_revision,
+        context.environment.document.history,
         {.chart = context.state.chart,
          .resource = resource_id_t{context.action.compose_resource_id},
          .objects = context.state.selected_objects});
@@ -717,7 +716,7 @@ std::optional<std::string> create_resource_from_asset(compose_action_context_t& 
     const auto chart = std::ranges::find(context.environment.document.history.document.charts,
                                          context.state.chart, &chart_document_t::id);
     const auto applied = apply_resource_creation(
-        context.environment.document.history, context.action.compose_input_document_revision,
+        context.environment.document.history,
         {.asset = asset_id_t{context.action.compose_resource_asset_id},
          .role = role,
          .allocate_bms_identifier =
@@ -761,7 +760,7 @@ std::string relink_sound_fallback(compose_action_context_t& context) {
         return compose_action_warning(context, "That file is no longer available.");
     const auto& chosen = fallback.candidates[action.compose_fallback_candidate];
     const auto relinked =
-        apply_resource_asset_relink(context.environment.document.history, document.revision,
+        apply_resource_asset_relink(context.environment.document.history,
                                     {.asset = asset->id, .source_path = chosen});
     if (relinked.applied)
         return compose_action_success(context, "Sound relinked to " + chosen.generic_string() + ".",

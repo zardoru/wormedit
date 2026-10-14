@@ -90,7 +90,7 @@ auto place_virtual_source_resource(const WormUiComposeInputAction& input,
     if (!row)
         return false;
     const auto applied = apply_virtual_bms_resource_placement(
-        context.environment.document.history, context.ui_action.compose_input_document_revision,
+        context.environment.document.history,
         {.chart = context.state.chart,
          .resource = spec.resource,
          .canvas_row = *row,
@@ -215,13 +215,13 @@ auto dispatch_resource_pointer(const WormUiComposeInputAction& input,
         if (const auto* error = std::get_if<std::string>(&replacement))
             return *error;
         applied = apply_resource_assignment(
-            context.environment.document.history, context.ui_action.compose_input_document_revision,
+            context.environment.document.history,
             {.chart = context.state.chart,
              .resource = spec.resource,
              .objects = {std::get<editor_selection_object_t>(replacement)}});
     } else {
         applied = apply_resource_placement(
-            context.environment.document.history, context.ui_action.compose_input_document_revision,
+            context.environment.document.history,
             {.chart = context.state.chart,
              .resource = spec.resource,
              .position = *position,

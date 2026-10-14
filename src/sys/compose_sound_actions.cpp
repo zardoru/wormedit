@@ -321,7 +321,7 @@ auto assign_picked_slot(const WormUiWorkspaceAction& action, document_history_t&
     const auto identifier = std::string{digits[number / 36], digits[number % 36]};
     auto name = path.filename().generic_string();
     if (name.size() > 255) name.clear();
-    const auto applied = apply_bms_wav_slot_assignment(history, history.document.revision,
+    const auto applied = apply_bms_wav_slot_assignment(history,
         {.identifier = identifier,
          .imported_file = {.source_path = path, .role = resource_role_t::sample,
                            .name = std::move(name), .audio_stream = stream},
@@ -369,7 +369,6 @@ auto assign_picked_slot_batch(const WormUiWorkspaceAction& action, document_hist
     const auto number = action.compose_sound_slot;
     const auto identifier = std::string{digits[number / 36], digits[number % 36]};
     const auto applied = apply_bms_wav_slot_batch_assignment(history,
-        action.compose_input_document_revision,
         {.first_identifier = identifier, .imported_files = std::move(files),
          .confirm_replacements = action.compose_sound_slot_confirmed});
     return finish_sound_edit(workspace, history, applied,
@@ -381,7 +380,10 @@ auto assign_picked_slot_batch(const WormUiWorkspaceAction& action, document_hist
 auto delete_sounds(const WormUiWorkspaceAction& action, document_history_t& history,
                    workspace_controller_t& workspace) -> sound_feedback_t {
     const auto ids = sound_ids(action);
-    const auto applied = apply_resource_deletions(history, action.compose_input_document_revision,
+    if (auto rejected = metadata_command_detail::stale_rejection(
+            history, action.compose_input_document_revision, "Resource deletion"))
+        return sound_diagnostic_feedback(rejected->diagnostics.front());
+    const auto applied = apply_resource_deletions(history,
                                                   ids);
     return finish_sound_edit(workspace, history, applied,
                              "Removed " + sound_count_text(ids.size()) + " from the list.",
@@ -445,8 +447,11 @@ auto group_sounds(const WormUiWorkspaceAction& action, document_history_t& histo
                 .sounds = std::move(ids)});
         }
     }
+    if (auto rejected = metadata_command_detail::stale_rejection(
+            history, action.compose_input_document_revision, "Sound group edit"))
+        return sound_diagnostic_feedback(rejected->diagnostics.front());
     const auto applied = apply_sound_group_edits(
-        history, action.compose_input_document_revision, edits,
+        history, edits,
         action.compose_sound_group_keep_ids_together);
     return finish_sound_edit(workspace, history, applied,
                              "Grouped selected sounds.", "The selected sounds were already grouped.");
@@ -455,8 +460,11 @@ auto group_sounds(const WormUiWorkspaceAction& action, document_history_t& histo
 auto ungroup_sounds(const WormUiWorkspaceAction& action, document_history_t& history,
                     workspace_controller_t& workspace) -> sound_feedback_t {
     const auto ids = sound_ids(action);
+    if (auto rejected = metadata_command_detail::stale_rejection(
+            history, action.compose_input_document_revision, "Sound group edit"))
+        return sound_diagnostic_feedback(rejected->diagnostics.front());
     const auto applied = apply_sound_group_edit(
-        history, action.compose_input_document_revision,
+        history,
         ungroup_sounds_action_t{.sounds = ids});
     return finish_sound_edit(workspace, history, applied,
                              "Ungrouped selected sounds.", "The selected sounds were already ungrouped.");
@@ -472,8 +480,11 @@ auto renumber_dock_ids(const WormUiWorkspaceAction& action, document_history_t& 
     std::vector<resource_id_t> ids;
     if (!action.compose_renumber_all) ids = sound_ids(action);
     const auto name_space = action.compose_renumber_bga ? "BMP" : "WAV";
+    if (auto rejected = metadata_command_detail::stale_rejection(
+            history, action.compose_input_document_revision, "BMS identifier renumber"))
+        return sound_diagnostic_feedback(rejected->diagnostics.front());
     const auto applied = apply_bms_identifier_renumber(
-        history, action.compose_input_document_revision,
+        history,
         {.name_space = name_space, .resources = std::move(ids)});
     return finish_sound_edit(workspace, history, applied,
         std::string{"Renumbered "} + name_space + " IDs by name.",
@@ -693,7 +704,6 @@ auto dispatch_sound_properties_action(const WormUiWorkspaceAction& action,
         return true;
     }
     const auto applied = apply_resource_sound_metadata(history,
-        action.sound_properties_document_revision,
         {.resource = resource->id,
          .kind = static_cast<sound_kind_t>(action.sound_properties_kind),
          .tags = resource->tags,

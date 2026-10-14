@@ -7296,7 +7296,6 @@ TEST_CASE("Context replacement shares pointer resource-role rejection",
         emitted = true;
         const auto& emitted_action = frame.get();
         const auto applied = apply_resource_assignment(f.history,
-            emitted_action.compose_input_document_revision,
             {.chart = chart_id_t{emitted_action.compose_input_chart_id},
              .resource = resource_id_t{emitted_action.compose_resource_id},
              .objects = f.interaction->selected_objects});
@@ -7998,7 +7997,7 @@ TEST_CASE("WAV single and reviewed batch replacements share naming and case-inse
     });
     expect_t422(emitted != frames.end());
     if (stale) {
-        expect_t422(static_cast<bool>(apply_resource_sound_metadata(f.history, f.history.document.revision,
+        expect_t422(static_cast<bool>(apply_resource_sound_metadata(f.history,
             {.resource = resource_id_t{1}, .kind = sound_kind_t::keysound, .name = "Concurrent change"})));
         const auto revision = f.history.document.revision;
         expect_t422(dispatch_compose_sound_action(emitted->get(), f.history, *f.binding.workspace,

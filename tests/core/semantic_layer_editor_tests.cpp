@@ -406,7 +406,7 @@ TEST_CASE("BGM placement receives the sound's semantic layer defaults",
           "[unit][core][semantic-layer-editor][bgm]") {
     auto history = document_history_t::from(bgm_placement_song());
     const auto placed = apply_resource_placement(
-        history, 4, {.chart = chart_id_t{2}, .resource = resource_id_t{51},
+        history, {.chart = chart_id_t{2}, .resource = resource_id_t{51},
                      .position = {measure_id_t{3}, 600},
                      .kind = resource_placement_kind_t::bgm_event});
     REQUIRE(placed);

@@ -144,7 +144,7 @@ auto grouped_command_commits_contiguous_run_and_undoes() -> bool {
                                     .sounds = {resource_id_t{1}, resource_id_t{2},
                                                resource_id_t{3}, resource_id_t{4},
                                                resource_id_t{5}}}};
-    if (!apply_sound_group_edits(history, history.document.revision, actions, true) ||
+    if (!apply_sound_group_edits(history, actions, true) ||
         history.undo.size() != 1 || !five_member_group_is_contiguous(history)) return false;
     return undo_document_command(history) && snapshot(history.document) == before;
 }
@@ -159,7 +159,7 @@ auto grouped_command_off_preserves_ids() -> bool {
                                     .sounds = {resource_id_t{1}, resource_id_t{2},
                                                resource_id_t{3}, resource_id_t{4},
                                                resource_id_t{5}}}};
-    if (!apply_sound_group_edits(history, history.document.revision, actions, false)) return false;
+    if (!apply_sound_group_edits(history, actions, false)) return false;
     for (std::size_t index = 0; index < history.document.resources.size(); ++index)
         if (history.document.resources[index].target_identities.front().identifier != before[index])
             return false;
@@ -176,7 +176,7 @@ auto group_command_without_run_rejects_cleanly() -> bool {
                                     .sounds = {resource_id_t{1}, resource_id_t{2},
                                                resource_id_t{3}, resource_id_t{4},
                                                resource_id_t{5}}}};
-    const auto result = apply_sound_group_edits(history, revision, actions, true);
+    const auto result = apply_sound_group_edits(history, actions, true);
     return !result && history.document.revision == revision &&
            history.document.sound_groups == before_groups && snapshot(history.document) == before &&
            history.undo.empty();
@@ -189,7 +189,7 @@ auto group_batch_frees_both_interleaved_sets() -> bool {
             .sounds = {resource_id_t{1}, resource_id_t{3}, resource_id_t{5}}},
         add_sounds_to_group_action_t{.group = sound_group_id_t{80},
             .sounds = {resource_id_t{2}, resource_id_t{4}, resource_id_t{6}}}};
-    if (!apply_sound_group_edits(history, history.document.revision, actions, true) ||
+    if (!apply_sound_group_edits(history, actions, true) ||
         history.undo.size() != 1) return false;
     std::array<std::vector<std::size_t>, 2> runs;
     for (std::uint64_t id = 1; id <= 6; ++id)
@@ -203,10 +203,10 @@ auto group_batch_frees_both_interleaved_sets() -> bool {
 
 auto ungroup_command_is_undoable() -> bool {
     auto history = grouped_history(true);
-    if (!apply_sound_group_edit(history, history.document.revision,
+    if (!apply_sound_group_edit(history,
         create_sound_group_action_t{.group = sound_group_id_t{55}, .name = "Kicks",
                                     .sounds = {resource_id_t{1}, resource_id_t{2}}}) ||
-        !apply_sound_group_edit(history, history.document.revision,
+        !apply_sound_group_edit(history,
         ungroup_sounds_action_t{.sounds = {resource_id_t{1}, resource_id_t{2}}}) ||
         !history.document.sound_groups.empty() || history.document.resources[0].sound_group ||
         !undo_document_command(history)) return false;

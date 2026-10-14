@@ -294,7 +294,7 @@ auto import_entry(document_history_t& draft, const bulk_sound_import_entry_t& en
                   document_command_result_t& result) -> bool {
     auto asset = entry.asset;
     asset.role = resource_role_t::sample;
-    const auto imported = apply_resource_asset_import(draft, draft.document.revision, asset);
+    const auto imported = apply_resource_asset_import(draft, asset);
     if (!imported.applied) {
         result.diagnostics.insert(result.diagnostics.end(), imported.diagnostics.begin(),
                                   imported.diagnostics.end());
@@ -310,7 +310,7 @@ auto import_entry(document_history_t& draft, const bulk_sound_import_entry_t& en
             {format_family_t::bms, *bms_identifier, "WAV"});
     }
     const auto metadata = apply_resource_sound_metadata(
-        draft, draft.document.revision,
+        draft,
         {.resource = resource_id, .kind = entry.kind, .tags = entry.tags});
     if (!metadata.diagnostics.empty()) {
         result.diagnostics.insert(result.diagnostics.end(), metadata.diagnostics.begin(),

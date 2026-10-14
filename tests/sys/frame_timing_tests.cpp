@@ -691,7 +691,7 @@ auto commit_authored_bga_move(compose_test_fixture_t& fixture,
     const auto position = authored_release_position(history, *fixture.interaction,
                                                     raw_row, denominator);
     REQUIRE(position);
-    const auto moved = apply_bga_event_move(history, history.document.revision,
+    const auto moved = apply_bga_event_move(history,
         {.chart = chart_id_t{1}, .event = object_id_t{500}, .position = *position,
          .snap_denominator = denominator});
     REQUIRE(moved);
@@ -702,7 +702,7 @@ auto commit_virtual_bga_move(compose_test_fixture_t& fixture,
                              std::uint64_t raw_row) -> std::uint64_t {
     auto history = fixture.history;
     const auto& chart = history.document.charts.front();
-    const auto moved = apply_virtual_bms_bga_event_move(history, history.document.revision,
+    const auto moved = apply_virtual_bms_bga_event_move(history,
         {.chart = chart_id_t{1}, .event = object_id_t{500}, .canvas_row = raw_row,
          .snap_denominator = edit_snap_denominator(chart, *fixture.interaction)});
     REQUIRE(moved);
@@ -5435,7 +5435,7 @@ TEST_CASE("Dense inspector missing locations recover on insertion and read curre
     t475_require(commit_document_command(fixture.history, std::move(inserted), "Insert memo target"));
     t475_project(fixture);
     t475_check(std::string_view(fixture.flattened.view.compose.selected_note_label) == "inserted");
-    t475_require(apply_resource_assignment(fixture.history, fixture.history.document.revision,
+    t475_require(apply_resource_assignment(fixture.history,
         {.chart = chart_id_t{1}, .resource = resource_id_t{901},
          .objects = {{editor_selection_object_kind_t::note, object_id_t{999}}}}));
     t475_project(fixture);

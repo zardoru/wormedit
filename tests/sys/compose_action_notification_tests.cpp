@@ -2246,3 +2246,35 @@ TEST_CASE("Standalone sound-layer entry rejects stale revisions with shared feed
     check_action(fixture.history.document.revision == revision);
     check_action(fixture.history.undo.empty());
 }
+
+TEST_CASE("Standalone sound edits use shared stale feedback without mutation",
+          "[compose-action-notifications][sound-command-stamp]") {
+    action_notification_fixture_t fixture;
+    fixture.history.document.charts.front().source_family = format_family_t::bms;
+    const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS,
+                               WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS,
+                               WORM_UI_COMPOSE_ACTION_UNGROUP_SOUNDS,
+                               WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS);
+    auto action = fixture.action(kind);
+    --action.compose_input_document_revision;
+    const std::uint64_t resource = 21;
+    action.compose_sound_resource_ids = &resource;
+    action.compose_sound_resource_count = 1;
+    const WormUiSoundGroupAssignment assignment{.name = "Group", .sound_ids = &resource,
+                                               .sound_count = 1};
+    action.compose_sound_group_assignments = &assignment;
+    action.compose_sound_group_assignment_count = 1;
+    const auto revision = fixture.history.document.revision;
+    const auto response = dispatch_compose_sound_action(action, fixture.history, fixture.workspace,
+        fixture.state.chart, fixture.application, fixture.sink);
+    require_action(response.has_value());
+    const auto* label = kind == WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS ? "Resource deletion"
+        : kind == WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS ? "BMS identifier renumber"
+        : "Sound group edit";
+    check_action(*response == stale_action_message(label));
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::error);
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
+}

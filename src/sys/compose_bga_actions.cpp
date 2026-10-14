@@ -76,7 +76,7 @@ auto import_bga_feedback(document_history_t& history, workspace_controller_t& wo
             ++skipped;
             continue;
         }
-        const auto result = apply_resource_asset_import(candidate, candidate.document.revision,
+        const auto result = apply_resource_asset_import(candidate,
             {.source_path = path, .role = resource_role_t::bga, .name = path.filename().string(),
              .allocate_bms_identifier = chart->source_family == format_family_t::bms,
              .image_geometry = geometry});
@@ -110,7 +110,7 @@ auto dispatch_bga_feedback(const WormUiWorkspaceAction& action, document_history
         if (std::ranges::find(resource.roles, resource_role_t::bga) != resource.roles.end() &&
             !referenced.contains(resource.id.value)) unused.push_back(resource.id);
     if (unused.empty()) return bga_feedback_t{notification_severity_t::info, "No unused BGA resources."};
-    const auto result = apply_resource_deletions(history, action.compose_input_document_revision, unused);
+    const auto result = apply_resource_deletions(history, unused);
     return finish_bga_edit(history, workspace, result, "Removed " + std::to_string(unused.size()) + " unused BGA resources.");
 }
 auto import_bga_files(document_history_t& history, workspace_controller_t& workspace,

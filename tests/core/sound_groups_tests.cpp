@@ -36,10 +36,10 @@ auto group_song() -> song_document_t {
 
 auto grouped_history() -> document_history_t {
     auto history = document_history_t::from(group_song());
-    REQUIRE(apply_sound_group_edit(history, history.document.revision,
+    REQUIRE(apply_sound_group_edit(history,
         create_sound_group_action_t{.group = sound_group_id_t{11}, .name = "Drums",
                                     .sounds = {resource_id_t{1}, resource_id_t{2}}}));
-    REQUIRE(apply_sound_group_edit(history, history.document.revision,
+    REQUIRE(apply_sound_group_edit(history,
         create_sound_group_action_t{.group = sound_group_id_t{12}, .name = "Loops",
                                     .sounds = {resource_id_t{3}}}));
     return history;
@@ -47,10 +47,10 @@ auto grouped_history() -> document_history_t {
 
 auto single_member_groups_history() -> document_history_t {
     auto history = document_history_t::from(group_song());
-    REQUIRE(apply_sound_group_edit(history, history.document.revision,
+    REQUIRE(apply_sound_group_edit(history,
         create_sound_group_action_t{.group = sound_group_id_t{11}, .name = "Solo",
                                     .sounds = {resource_id_t{1}}}));
-    REQUIRE(apply_sound_group_edit(history, history.document.revision,
+    REQUIRE(apply_sound_group_edit(history,
         create_sound_group_action_t{.group = sound_group_id_t{12}, .name = "Moved",
                                     .sounds = {resource_id_t{2}}}));
     return history;
@@ -107,7 +107,7 @@ auto sound_group_invariants(const song_document_t& song) -> sound_group_invarian
 auto add_group_to_one_sample(document_history_t& history) -> void {
     const auto sound = first_sample(history.document);
     REQUIRE(sound);
-    REQUIRE(apply_sound_group_edit(history, history.document.revision,
+    REQUIRE(apply_sound_group_edit(history,
         create_sound_group_action_t{.group = sound_group_id_t{1}, .name = "Group",
                                     .sounds = {sound}}));
 }
@@ -226,10 +226,10 @@ auto default_bms_group_undo_redo() -> bool {
 auto normal_bms_edit_does_not_reenable_passthrough() -> bool {
     auto history = default_bms_history();
     add_group_to_one_sample(history);
-    REQUIRE(apply_resource_sound_metadata(history, history.document.revision,
+    REQUIRE(apply_resource_sound_metadata(history,
         {.resource = first_sample(history.document), .kind = sound_kind_t::stem, .tags = {"kick"}}));
     CHECK_FALSE(bms_source_still_unchanged(history.document));
-    REQUIRE(apply_sound_group_edit(history, history.document.revision,
+    REQUIRE(apply_sound_group_edit(history,
         rename_sound_group_action_t{.group = sound_group_id_t{1}, .name = "Renamed"}));
     CHECK_FALSE(bms_source_still_unchanged(history.document));
     return true;
@@ -242,21 +242,18 @@ auto invalid_group_inputs_are_rejected() -> bool {
                               .roles = {resource_role_t::bga}});
     auto history = document_history_t::from(song);
     const auto revision = history.document.revision;
-    CHECK_FALSE(apply_sound_group_edit(history, revision,
+    CHECK_FALSE(apply_sound_group_edit(history,
         create_sound_group_action_t{.group = sound_group_id_t{1}, .name = "Empty", .sounds = {}}));
-    CHECK_FALSE(apply_sound_group_edit(history, revision,
+    CHECK_FALSE(apply_sound_group_edit(history,
         create_sound_group_action_t{.group = sound_group_id_t{1}, .name = "Unknown",
                                     .sounds = {resource_id_t{999}}}));
-    CHECK_FALSE(apply_sound_group_edit(history, revision,
+    CHECK_FALSE(apply_sound_group_edit(history,
         create_sound_group_action_t{.group = sound_group_id_t{1}, .name = "Repeated",
                                     .sounds = {resource_id_t{1}, resource_id_t{1}}}));
-    CHECK_FALSE(apply_sound_group_edit(history, revision,
+    CHECK_FALSE(apply_sound_group_edit(history,
         create_sound_group_action_t{.group = sound_group_id_t{1}, .name = "Visual",
                                     .sounds = {resource_id_t{4}}}));
-    CHECK_FALSE(apply_sound_group_edit(history, revision + 1,
-        create_sound_group_action_t{.group = sound_group_id_t{1}, .name = "Stale",
-                                    .sounds = {resource_id_t{1}}}));
-    CHECK_FALSE(apply_sound_group_edit(history, revision,
+    CHECK_FALSE(apply_sound_group_edit(history,
         add_sounds_to_group_action_t{.group = sound_group_id_t{900},
                                     .sounds = {resource_id_t{1}}}));
     return history.document.sound_groups.empty();
@@ -265,7 +262,7 @@ auto invalid_group_inputs_are_rejected() -> bool {
 
 TEST_CASE("moving a sound retains a populated source group", "[unit][core][sound-groups]") {
     auto history = grouped_history();
-    REQUIRE(apply_sound_group_edit(history, history.document.revision,
+    REQUIRE(apply_sound_group_edit(history,
         add_sounds_to_group_action_t{.group = sound_group_id_t{12},
                                     .sounds = {resource_id_t{1}}}));
     CHECK(history.document.resources[0].sound_group == sound_group_id_t{12});
@@ -276,7 +273,7 @@ TEST_CASE("moving a sound retains a populated source group", "[unit][core][sound
 TEST_CASE("moving and ungrouping the final member cleans up and undo restores it",
           "[unit][core][sound-groups]") {
     auto history = single_member_groups_history();
-    REQUIRE(apply_sound_group_edit(history, history.document.revision,
+    REQUIRE(apply_sound_group_edit(history,
         add_sounds_to_group_action_t{.group = sound_group_id_t{12},
                                     .sounds = {resource_id_t{1}}}));
     CHECK(history.document.sound_groups.size() == 1);
@@ -288,7 +285,7 @@ TEST_CASE("moving and ungrouping the final member cleans up and undo restores it
 
 TEST_CASE("ungrouping the final member removes its group", "[unit][core][sound-groups]") {
     auto history = single_member_groups_history();
-    REQUIRE(apply_sound_group_edit(history, history.document.revision,
+    REQUIRE(apply_sound_group_edit(history,
         ungroup_sounds_action_t{.sounds = {resource_id_t{1}}}));
     CHECK(history.document.sound_groups.size() == 1);
     CHECK(history.document.resources[0].sound_group == std::nullopt);
@@ -296,18 +293,18 @@ TEST_CASE("ungrouping the final member removes its group", "[unit][core][sound-g
 
 TEST_CASE("group rename, collision, delete and undo are atomic", "[unit][core][sound-groups]") {
     auto history = grouped_history();
-    REQUIRE(apply_sound_group_edit(history, history.document.revision,
+    REQUIRE(apply_sound_group_edit(history,
         rename_sound_group_action_t{.group = sound_group_id_t{12}, .name = "  Loop Pack  "}));
     CHECK(history.document.sound_groups[1].name == "Loop Pack");
     const auto before_reject = history.document.sound_groups;
-    CHECK_FALSE(apply_sound_group_edit(history, history.document.revision,
+    CHECK_FALSE(apply_sound_group_edit(history,
         rename_sound_group_action_t{.group = sound_group_id_t{12}, .name = " drums "}));
     CHECK(history.document.sound_groups == before_reject);
 }
 
 TEST_CASE("group delete and undo restore membership", "[unit][core][sound-groups]") {
     auto history = grouped_history();
-    REQUIRE(apply_sound_group_edit(history, history.document.revision,
+    REQUIRE(apply_sound_group_edit(history,
         delete_sound_group_action_t{.group = sound_group_id_t{12}}));
     CHECK(history.document.sound_groups.size() == 1);
     CHECK(history.document.resources[2].sound_group == std::nullopt);
@@ -318,15 +315,15 @@ TEST_CASE("group delete and undo restore membership", "[unit][core][sound-groups
 
 TEST_CASE("deleting the last grouped sound removes its group", "[unit][core][sound-groups]") {
     auto history = document_history_t::from(group_song());
-    REQUIRE(apply_sound_group_edit(history, history.document.revision,
+    REQUIRE(apply_sound_group_edit(history,
         create_sound_group_action_t{.group = sound_group_id_t{11}, .name = "Solo",
                                     .sounds = {resource_id_t{1}}}));
-    REQUIRE(apply_resource_deletion(history, history.document.revision, resource_id_t{1}));
+    REQUIRE(apply_resource_deletion(history, resource_id_t{1}));
     CHECK(history.document.sound_groups.empty());
     CHECK(validate_document(history.document).empty());
 }
 
-TEST_CASE("group commands reject stale, unknown, duplicate, visual and empty inputs atomically",
+TEST_CASE("group commands reject unknown, duplicate, visual and empty inputs atomically",
           "[unit][core][sound-groups]") {
     CHECK(invalid_group_inputs_are_rejected());
 }
@@ -334,12 +331,12 @@ TEST_CASE("group commands reject stale, unknown, duplicate, visual and empty inp
 TEST_CASE("group names trim whitespace and reject case-insensitive collisions",
           "[unit][core][sound-groups]") {
     auto history = grouped_history();
-    REQUIRE(apply_sound_group_edit(history, history.document.revision,
+    REQUIRE(apply_sound_group_edit(history,
         rename_sound_group_action_t{.group = sound_group_id_t{12}, .name = "  Loop Pack  "}));
     const auto before = history.document.sound_groups;
-    CHECK_FALSE(apply_sound_group_edit(history, history.document.revision,
+    CHECK_FALSE(apply_sound_group_edit(history,
         rename_sound_group_action_t{.group = sound_group_id_t{12}, .name = " drums "}));
-    CHECK_FALSE(apply_sound_group_edit(history, history.document.revision,
+    CHECK_FALSE(apply_sound_group_edit(history,
         rename_sound_group_action_t{.group = sound_group_id_t{12}, .name = "   "}));
     CHECK(history.document.sound_groups == before);
 }
@@ -347,16 +344,16 @@ TEST_CASE("group names trim whitespace and reject case-insensitive collisions",
 TEST_CASE("group name byte limits accept one and sixty-four bytes and reject sixty-five",
           "[unit][core][sound-groups]") {
     auto history = document_history_t::from(group_song());
-    REQUIRE(apply_sound_group_edit(history, history.document.revision,
+    REQUIRE(apply_sound_group_edit(history,
         create_sound_group_action_t{.group = sound_group_id_t{11}, .name = "x",
                                     .sounds = {resource_id_t{1}}}));
     std::string maximum(64, 'a');
-    REQUIRE(apply_sound_group_edit(history, history.document.revision,
+    REQUIRE(apply_sound_group_edit(history,
         create_sound_group_action_t{.group = sound_group_id_t{12}, .name = maximum,
                                     .sounds = {resource_id_t{2}}}));
     const auto before = history.document.sound_groups;
     maximum.push_back('a');
-    CHECK_FALSE(apply_sound_group_edit(history, history.document.revision,
+    CHECK_FALSE(apply_sound_group_edit(history,
         rename_sound_group_action_t{.group = sound_group_id_t{12}, .name = maximum}));
     CHECK(history.document.sound_groups == before);
 }
@@ -412,7 +409,7 @@ TEST_CASE("song validation rejects duplicate IDs and names for groups", "[unit][
 
 TEST_CASE("sound group names reject malformed UTF-8", "[unit][core][helpers][sound-groups]") {
     auto history = document_history_t::from(group_song());
-    const auto result = apply_sound_group_edit(history, history.document.revision,
+    const auto result = apply_sound_group_edit(history,
         create_sound_group_action_t{.group = sound_group_id_t{11}, .name = "bad\xc0\x80",
                                     .sounds = {resource_id_t{1}}});
     CHECK_FALSE(result);

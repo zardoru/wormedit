@@ -78,7 +78,7 @@ auto complete_project_resource_copy(const pending_project_resource_copy_t& reque
         return {"Resource copy finished, but its source changed; it was not relinked.",
                 notification_severity_t::warning};
     const auto relinked = apply_resource_asset_relink(
-        history, request.revision,
+        history,
         {.asset = request.asset, .source_path = copied.relative_path});
     if (!relinked.diagnostics.empty())
         return {relinked.diagnostics.front().message,

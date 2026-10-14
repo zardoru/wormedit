@@ -209,7 +209,7 @@ TEST_CASE("virtual BMS BGM and BGA resources export at #999",
         REQUIRE(resource != imported.song->resources.end());
         auto history = wormedit::document_history_t::from(*imported.song);
         const auto placed = wormedit::apply_virtual_bms_resource_placement(
-            history, history.document.revision,
+            history,
             {.chart = history.document.charts.front().id,
              .resource = resource->id,
              .canvas_row = 959'040,
@@ -247,7 +247,7 @@ TEST_CASE("moved BGM event exports in virtual BMS measure #999",
     const auto event = source_chart.measures.front().bgm_events.front().id;
     auto history = wormedit::document_history_t::from(*imported.song);
     REQUIRE(wormedit::apply_virtual_bms_bgm_event_move(
-        history, history.document.revision,
+        history,
         {.chart = source_chart.id, .event = event, .canvas_row = 959'040}));
     const auto written = wormedit::write_bms(history.document);
     REQUIRE(written.bytes);

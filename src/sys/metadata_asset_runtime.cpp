@@ -95,7 +95,7 @@ auto link_imported_metadata_audio(
     if (name.size() > 255)
         name.clear();
     const auto applied = wormedit::apply_primary_music_set(
-        history, request.revision,
+        history,
         {.source_path = request.source_path,
          .copied_project_relative_path =
              request.export_copy ? std::optional<std::filesystem::path>{}

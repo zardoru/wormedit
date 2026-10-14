@@ -1134,14 +1134,14 @@ auto move_compose_bga_event(const WormUiComposeInputAction& input,
         return "Unsupported BGA destination lane.";
     document_command_result_t moved;
     if (position) {
-        moved = apply_bga_event_move(context.environment.document.history, revision,
+        moved = apply_bga_event_move(context.environment.document.history,
                                      {.chart = chart->id,
                                       .event = object.id,
                                       .position = *position,
                                       .snap_denominator = snap,
                                       .bga_kind = target_kind});
     } else if (const auto row = context.virtual_bms_row_at(*chart, *view, y)) {
-        moved = apply_virtual_bms_bga_event_move(context.environment.document.history, revision,
+        moved = apply_virtual_bms_bga_event_move(context.environment.document.history,
                                                  {.chart = chart->id,
                                                   .event = object.id,
                                                   .canvas_row = *row,
@@ -1795,7 +1795,7 @@ auto apply_bgm_draw_stroke(compose_input_context_t& context,
     std::vector<wormedit::local_position_t> positions;
     positions.reserve(stroke.targets.size());
     for (const auto& target : stroke.targets) positions.push_back(target.position);
-    return wormedit::apply_bgm_stroke(context.environment.document.history, stroke.revision,
+    return wormedit::apply_bgm_stroke(context.environment.document.history,
                                       stroke.chart, wormedit::object_id_t{lane}, stroke.resource,
                                       positions, stroke.erase);
 }
@@ -1808,7 +1808,7 @@ auto finish_bga_draw(const WormUiComposeInputAction& input, compose_input_contex
     const auto bgm = input.resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM;
     const auto applied = bgm ? apply_bgm_draw_stroke(context, stroke, input.lane_id)
                              : wormedit::apply_bga_stroke(
-                                   context.environment.document.history, stroke.revision, stroke.chart,
+                                   context.environment.document.history, stroke.chart,
                                    stroke.resource, stroke.targets, stroke.erase);
     result.accepted = applied.applied || applied.diagnostics.empty();
     result.document_changed = applied.applied;

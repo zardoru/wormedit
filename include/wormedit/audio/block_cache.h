@@ -189,6 +189,7 @@ struct block_decode_result_t {
     block_decode_status_t status{block_decode_status_t::decoder_unavailable};
     std::size_t frames{};
     read_status_t decoder_status{read_status_t::not_open};
+    auto operator==(const block_decode_result_t&) const -> bool = default;
 };
 
 // Decodes at most one maximum_read_frames block. A completed block is retained

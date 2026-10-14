@@ -318,7 +318,7 @@ auto make_space_range_preview(const document_history_t& history,
     if (!pending.hit_index)
         return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
                                        "Space range selection is stale after a document edit")};
-    if (pending.document_revision != history.document.revision ||
+    if (!pending.stamp.is_revision_current(history.document.revision) ||
         pending.hit_index->document_revision != history.document.revision ||
         pending.hit_index->chart != geometry.chart->id)
         return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
@@ -336,7 +336,7 @@ auto make_space_range_preview(const document_history_t& history,
     auto objects = std::get<std::vector<editor_selection_object_t>>(std::move(combined));
     auto notes = notes_from_objects(objects);
     return std::optional{space_range_selection_preview_t{
-        .document_revision = pending.document_revision, .anchor = pending.anchor,
+        .stamp = pending.stamp, .anchor = pending.anchor,
         .cursor = state.cursor, .anchor_canvas_row = pending.anchor_canvas_row,
         .cursor_canvas_row = geometry.absolute_row, .first_row = first, .last_row = last,
         .mode = pending.mode,
@@ -421,13 +421,13 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         .pending_note_paint_gesture =
             state.pending_note_paint_gesture
                 ? std::optional{note_paint_gesture_preview_t{
-                      .document_revision = state.pending_note_paint_gesture->document_revision,
+                      .stamp = state.pending_note_paint_gesture->stamp,
                       .targets = state.pending_note_paint_gesture->targets}}
                 : std::nullopt,
         .pending_editor_area_selection =
             state.pending_editor_area_selection
                 ? std::optional{editor_area_selection_preview_t{
-                      .document_revision = state.pending_editor_area_selection->document_revision,
+                      .stamp = state.pending_editor_area_selection->stamp,
                       .left_pixels =
                           std::min(state.pending_editor_area_selection->anchor_x_pixels,
                                    state.pending_editor_area_selection->current_x_pixels),
@@ -1592,7 +1592,7 @@ auto begin_semantic_paint(editor_edit_context_t& context, layer_id_t layer_id,
     if (bgm_event) bgm_events->push_back(*bgm_event);
     pending_semantic_layer_paint_gesture_t pending{
         .layer = layer_id,
-        .document_revision = history.document.revision,
+        .stamp = document_stamp_t::from(history.document.revision),
         .notes = std::move(notes),
         .bgm_events = std::move(bgm_events),
         .replace_memberships = replace_memberships,
@@ -1647,7 +1647,7 @@ auto end_semantic_paint(editor_edit_context_t& context, object_id_t note_id,
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "semantic-layer paint gesture is malformed or stale")});
-    if (pending.document_revision != history.document.revision)
+    if (!pending.stamp.is_revision_current(history.document.revision))
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         stale_action_message("Editor gesture"))});

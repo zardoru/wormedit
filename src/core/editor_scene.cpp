@@ -693,7 +693,7 @@ auto collect_duration_proposals(scene_geometry_context_t& context, duration_prop
                                             "field-scene duration preview is malformed or stale"));
         return false;
     }
-    if (pending.document_revision != context.index.document_revision) {
+    if (!pending.stamp.is_revision_current(context.index.document_revision)) {
         context.diagnostics.push_back(error(diagnostic_code_t::invalid_hold,
                                             stale_action_message("Field scene preview")));
         return false;
@@ -846,7 +846,7 @@ auto append_regular_hold(scene_geometry_context_t& context, hold_proposals_t& ho
             error(diagnostic_code_t::invalid_hold, "field-scene hold preview is stale or invalid"));
         return false;
     }
-    if (pending.document_revision != context.index.document_revision) {
+    if (!pending.stamp.is_revision_current(context.index.document_revision)) {
         context.diagnostics.push_back(error(diagnostic_code_t::invalid_hold,
                                             stale_action_message("Field scene preview")));
         return false;
@@ -1086,7 +1086,7 @@ auto collect_move_proposals(scene_geometry_context_t& context, move_proposals_t&
                                             "field-scene note move preview is malformed or stale"));
         return false;
     }
-    if (pending.document_revision != context.index.document_revision) {
+    if (!pending.stamp.is_revision_current(context.index.document_revision)) {
         context.diagnostics.push_back(error(diagnostic_code_t::invalid_hold,
                                             stale_action_message("Field scene preview")));
         return false;
@@ -2235,7 +2235,7 @@ auto is_valid_scene_paint_preview(const editor_interaction_view_model_t& view,
         return true;
     }
     const auto& pending = *view.pending_note_paint_gesture;
-    if (pending.document_revision != index.document_revision) {
+    if (!pending.stamp.is_revision_current(index.document_revision)) {
         diagnostics.push_back(
             error(diagnostic_code_t::invalid_hold, stale_action_message("Field scene preview")));
         return false;

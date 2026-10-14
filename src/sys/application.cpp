@@ -1166,24 +1166,19 @@ void cancel_stale_compose_interaction(
             !workspace.selected_chart || *workspace.selected_chart != state.chart;
         const bool pending_is_stale =
             (state.pending_hold &&
-             state.pending_hold->document_revision != history.document.revision) ||
+             !state.pending_hold->stamp.is_revision_current(history.document.revision)) ||
             (state.pending_note_duration_gesture &&
-             state.pending_note_duration_gesture->document_revision !=
-                 history.document.revision) ||
+             !state.pending_note_duration_gesture->stamp.is_revision_current(history.document.revision)) ||
             (state.pending_note_move_gesture &&
-             state.pending_note_move_gesture->document_revision != history.document.revision) ||
+             !state.pending_note_move_gesture->stamp.is_revision_current(history.document.revision)) ||
             (state.pending_note_paint_gesture &&
-             state.pending_note_paint_gesture->document_revision !=
-                 history.document.revision) ||
+             !state.pending_note_paint_gesture->stamp.is_revision_current(history.document.revision)) ||
             (state.pending_semantic_layer_paint_gesture &&
-             state.pending_semantic_layer_paint_gesture->document_revision !=
-                 history.document.revision) ||
+             !state.pending_semantic_layer_paint_gesture->stamp.is_revision_current(history.document.revision)) ||
             (state.pending_editor_area_selection &&
-             state.pending_editor_area_selection->document_revision !=
-                 history.document.revision) ||
+             !state.pending_editor_area_selection->stamp.is_revision_current(history.document.revision)) ||
             (state.pending_space_range_selection &&
-             state.pending_space_range_selection->document_revision !=
-                 history.document.revision);
+             !state.pending_space_range_selection->stamp.is_revision_current(history.document.revision));
         const bool compose_inactive =
             workspace.active_tab != wormedit::workspace_tab_t::compose;
         if (editor_interaction_has_pending_gesture(state) &&

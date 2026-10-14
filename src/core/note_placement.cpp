@@ -72,7 +72,7 @@ auto canvas_keyboard_hold_previews(const chart_document_t& chart, const measure_
             return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
                                            "canvas lane hold is stale or outside BMS geometry")};
         }
-        if (hold.document_revision != revision)
+        if (!hold.stamp.is_revision_current(revision))
             return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
                                            stale_action_message("Editor gesture"))};
         auto planned = plan_hold_rows(chart, index, hold.lane, *anchor, *end);
@@ -407,7 +407,7 @@ auto publish_row_placement(editor_edit_context_t& context, document_history_t& s
         return diagnostic_result(context.history, context.state, command.diagnostics);
     context.state.pending_hold.reset();
     for (auto& pending : context.state.additional_keyboard_holds)
-        pending.document_revision = context.history.document.revision;
+        pending.stamp = document_stamp_t::from(context.history.document.revision);
     restore_cursor_pose(context.state, capture_cursor_pose(staged));
     context.state.active_lane = staged.active_lane;
     auto published = interaction_view_result(context.history, context.state, true);
@@ -441,7 +441,7 @@ auto commit_virtual_hold(editor_edit_context_t& context,
     if (!staged.pending_hold)
         staged.pending_hold = pending_hold_t{.position = *anchor,
                                              .lane = action.lane,
-                                             .document_revision = scratch.document.revision,
+                                             .stamp = document_stamp_t::from(scratch.document.revision),
                                              .sound = action.sound,
                                              .kind = staged.armed_note_kind,
                                              .layers = staged.armed_note_layers};
@@ -721,7 +721,7 @@ auto append_semantic_paint_note(editor_edit_context_t& context, object_id_t note
                                  {error(diagnostic_code_t::invalid_hold,
                                         "semantic-layer paint update requires an active gesture")});
     auto& pending = *state.pending_semantic_layer_paint_gesture;
-    if (pending.document_revision != history.document.revision)
+    if (!pending.stamp.is_revision_current(history.document.revision))
         return diagnostic_result(
             history, state,
             {error(diagnostic_code_t::invalid_hold,
@@ -760,7 +760,7 @@ auto append_semantic_paint_bgm_event(editor_edit_context_t& context, object_id_t
                                  {error(diagnostic_code_t::invalid_hold,
                                         "semantic-layer paint update requires an active gesture")});
     auto& pending = *state.pending_semantic_layer_paint_gesture;
-    if (pending.document_revision != history.document.revision)
+    if (!pending.stamp.is_revision_current(history.document.revision))
         return diagnostic_result(
             history, state,
             {error(diagnostic_code_t::invalid_hold,

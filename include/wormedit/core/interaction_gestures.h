@@ -45,10 +45,10 @@ inline void clear_editor_gestures(editor_interaction_state_t& state) {
 template<class Field>
 auto is_editor_gesture_stale(const Field& field, std::uint64_t revision) -> bool {
     if constexpr (requires { field.has_value(); })
-        return field && field->document_revision != revision;
+        return field && !field->stamp.is_revision_current(revision);
     else {
         for (const auto& hold : field)
-            if (hold.document_revision != revision) return true;
+            if (!hold.stamp.is_revision_current(revision)) return true;
         return false;
     }
 }

@@ -2376,3 +2376,27 @@ TEST_CASE("Captured BGA stroke keeps revision-only project identity",
     check_action(fixture.dispatch_input(release) == "BGA Draw stroke committed.");
     check_action(fixture.history.undo.size() == 1);
 }
+
+TEST_CASE("Captured BMSON razor expiry is distinct from starting a new stroke",
+          "[compose-input][bmson-razor-stamp]") {
+    bga_input_fixture_t fixture;
+    fixture.history.document.charts.front().source_family = format_family_t::bmson;
+    const auto kind = GENERATE(0, 1, 2, 3);
+    auto& stroke = fixture.application.project.compose_gesture.bmson_razor_stroke;
+    if (kind != 0) {
+        stroke.emplace();
+        stroke->stamp = chart_stamp_t::from(fixture.history.document, fixture.state.chart);
+        stroke->reference = object_id_t{kind == 2 ? 99u : 41u};
+        if (kind == 1) --stroke->stamp.document.revision;
+        if (kind == 3) stroke->stamp.chart = chart_id_t{99};
+    }
+    auto action = fixture.input(WORM_UI_COMPOSE_INPUT_BMSON_RAZOR_RESTART, 0);
+    const auto message = fixture.dispatch_input(action);
+    check_action(message == (kind == 1 ? stale_action_message("BMSON razor stroke")
+        : "Begin a new BMSON razor stroke on the selected sound channel."));
+    check_action(!stroke);
+    check_action(fixture.history.undo.empty());
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::warning);
+}

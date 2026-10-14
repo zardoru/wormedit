@@ -103,13 +103,13 @@ auto make_stale_scene_preview(int kind) -> wormedit::editor_interaction_view_mod
     switch (kind) {
     case 0:
         result.pending_note_duration_gesture = pending_note_duration_gesture_t{
-            .reference_note = object_id_t{11}, .document_revision = 8, .notes = {object_id_t{11}},
+            .reference_note = object_id_t{11}, .stamp = wormedit::document_stamp_t::from(8), .notes = {object_id_t{11}},
             .preview_end = {measure_id_t{2}, 0},
             .preview = {{object_id_t{11}, note_kind_t::hold, local_position_t{measure_id_t{2}, 0}}}};
         break;
     case 1:
         result.pending_hold = pending_hold_t{.position = {measure_id_t{2}, 0}, .lane = lane_id_t{1},
-            .document_revision = 8, .preview_end = local_position_t{measure_id_t{2}, 240}};
+            .stamp = wormedit::document_stamp_t::from(8), .preview_end = local_position_t{measure_id_t{2}, 240}};
         break;
     case 2:
         result.pending_virtual_hold = editor_interaction_view_model_t::virtual_hold_preview_t{
@@ -118,14 +118,14 @@ auto make_stale_scene_preview(int kind) -> wormedit::editor_interaction_view_mod
         break;
     case 3:
         result.pending_note_move_gesture = pending_note_move_gesture_t{
-            .reference_note = object_id_t{11}, .document_revision = 8, .notes = {object_id_t{11}},
+            .reference_note = object_id_t{11}, .stamp = wormedit::document_stamp_t::from(8), .notes = {object_id_t{11}},
             .preview_position = {measure_id_t{2}, 240},
             .preview = {{object_id_t{11}, lane_id_t{2}, local_position_t{measure_id_t{2}, 240},
                          local_position_t{measure_id_t{2}, 720}}}};
         break;
     case 4:
         result.pending_note_paint_gesture = note_paint_gesture_preview_t{
-            .document_revision = 8, .targets = std::make_shared<const std::vector<note_paint_target_t>>(
+            .stamp = wormedit::document_stamp_t::from(8), .targets = std::make_shared<const std::vector<note_paint_target_t>>(
                 std::vector<note_paint_target_t>{{lane_id_t{1}, {measure_id_t{1}, 720}}})};
         break;
     }
@@ -465,7 +465,7 @@ TEST_CASE("keyboard hold previews cross from authored rows into virtual BMS meas
     visible.pending_hold = wormedit::pending_hold_t{
         .position = {wormedit::measure_id_t{2}, 720},
         .lane = wormedit::lane_id_t{1},
-        .document_revision = 7,
+        .stamp = wormedit::document_stamp_t::from(7),
         .preview_canvas_row = 2'160,
         .gesture_source = wormedit::hold_gesture_source_t::keyboard_lane};
     for (const auto lane_id : {wormedit::lane_id_t{1}, wormedit::lane_id_t{2}}) {
@@ -591,7 +591,7 @@ TEST_CASE("field scene resolves semantic layer colors by visible palette order",
     auto move_view = view();
     move_view.pending_note_move_gesture = wormedit::pending_note_move_gesture_t{
         .reference_note = wormedit::object_id_t{11},
-        .document_revision = 7,
+        .stamp = wormedit::document_stamp_t::from(7),
         .notes = {wormedit::object_id_t{11}},
         .preview_position = {wormedit::measure_id_t{2}, 240},
         .preview = {{wormedit::object_id_t{11}, wormedit::lane_id_t{2},
@@ -942,7 +942,7 @@ TEST_CASE("field scene composes visible paint previews across measure and layout
     REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
     auto scene_view = view();
     scene_view.pending_note_paint_gesture = wormedit::note_paint_gesture_preview_t{
-        .document_revision = 7,
+        .stamp = wormedit::document_stamp_t::from(7),
         .targets = std::make_shared<const std::vector<wormedit::note_paint_target_t>>(
             std::vector<wormedit::note_paint_target_t>{
                 {wormedit::lane_id_t{1}, {wormedit::measure_id_t{1}, 720}},
@@ -974,7 +974,7 @@ TEST_CASE("field scene composes visible paint previews across measure and layout
     CHECK(second->bounds.left == Catch::Approx(116.0));
 
     auto stale_view = scene_view;
-    stale_view.pending_note_paint_gesture->document_revision = 8;
+    stale_view.pending_note_paint_gesture->stamp = wormedit::document_stamp_t::from(8);
     const auto stale = wormedit::make_editor_field_scene(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), stale_view,
         {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
@@ -993,7 +993,7 @@ TEST_CASE("field scene renders exact hold and duration proposal ghosts",
     auto duration_view = view();
     duration_view.pending_note_duration_gesture = wormedit::pending_note_duration_gesture_t{
         .reference_note = wormedit::object_id_t{11},
-        .document_revision = 7,
+        .stamp = wormedit::document_stamp_t::from(7),
         .notes = {wormedit::object_id_t{11}},
         .preview_end = {wormedit::measure_id_t{2}, 0},
         .preview = {{wormedit::object_id_t{11}, wormedit::note_kind_t::hold,
@@ -1025,7 +1025,7 @@ TEST_CASE("field scene renders exact hold and duration proposal ghosts",
     auto move_view = view();
     move_view.pending_note_move_gesture = wormedit::pending_note_move_gesture_t{
         .reference_note = wormedit::object_id_t{11},
-        .document_revision = 7,
+        .stamp = wormedit::document_stamp_t::from(7),
         .notes = {wormedit::object_id_t{11}},
         .preview_position = {wormedit::measure_id_t{2}, 240},
         .preview = {{wormedit::object_id_t{11}, wormedit::lane_id_t{2},
@@ -1053,7 +1053,7 @@ TEST_CASE("field scene renders exact hold and duration proposal ghosts",
     hold_view.pending_hold = wormedit::pending_hold_t{
         .position = {wormedit::measure_id_t{2}, 0},
         .lane = wormedit::lane_id_t{1},
-        .document_revision = 7,
+        .stamp = wormedit::document_stamp_t::from(7),
         .preview_end = wormedit::local_position_t{wormedit::measure_id_t{2}, 240},
     };
     const auto hold = wormedit::make_editor_field_scene(
@@ -1083,7 +1083,7 @@ TEST_CASE("field scene renders exact hold and duration proposal ghosts",
     merged_hold_view.pending_hold = wormedit::pending_hold_t{
         .position = {wormedit::measure_id_t{1}, 480},
         .lane = wormedit::lane_id_t{2},
-        .document_revision = 7,
+        .stamp = wormedit::document_stamp_t::from(7),
         .preview_end = wormedit::local_position_t{wormedit::measure_id_t{1}, 720},
         .placement_preview =
             wormedit::pending_hold_placement_preview_t{
@@ -1111,7 +1111,7 @@ TEST_CASE("field scene renders exact hold and duration proposal ghosts",
           }) == 2);
 
     auto stale_view = duration_view;
-    stale_view.pending_note_duration_gesture->document_revision = 8;
+    stale_view.pending_note_duration_gesture->stamp = wormedit::document_stamp_t::from(8);
     const auto stale = wormedit::make_editor_field_scene(
         chart, index, stale_view, {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
     CHECK_FALSE(stale);
@@ -1130,7 +1130,7 @@ TEST_CASE("field scene renders exact hold and duration proposal ghosts",
     capped_view.pending_hold = wormedit::pending_hold_t{
         .position = {wormedit::measure_id_t{2}, 0},
         .lane = wormedit::lane_id_t{1},
-        .document_revision = 7,
+        .stamp = wormedit::document_stamp_t::from(7),
     };
     const auto capped =
         wormedit::make_editor_field_scene(chart, index, capped_view,
@@ -1151,13 +1151,13 @@ TEST_CASE("field scene shows simultaneous keyboard hold previews",
     preview.pending_hold = wormedit::pending_hold_t{
         .position = {wormedit::measure_id_t{2}, 0},
         .lane = wormedit::lane_id_t{1},
-        .document_revision = 7,
+        .stamp = wormedit::document_stamp_t::from(7),
         .preview_end = wormedit::local_position_t{wormedit::measure_id_t{2}, 240},
     };
     preview.additional_keyboard_holds.push_back(wormedit::pending_hold_t{
         .position = {wormedit::measure_id_t{2}, 0},
         .lane = wormedit::lane_id_t{2},
-        .document_revision = 7,
+        .stamp = wormedit::document_stamp_t::from(7),
         .preview_end = wormedit::local_position_t{wormedit::measure_id_t{2}, 240},
     });
     const auto scene = wormedit::make_editor_field_scene(
@@ -1181,7 +1181,7 @@ TEST_CASE("field scene marks painted taps for erasure and enforces paint scene c
     auto occupied_view = view();
     occupied_view.viewport_scroll_pixels = 0.0;
     occupied_view.pending_note_paint_gesture = wormedit::note_paint_gesture_preview_t{
-        .document_revision = 7,
+        .stamp = wormedit::document_stamp_t::from(7),
         .targets = std::make_shared<const std::vector<wormedit::note_paint_target_t>>(
             std::vector<wormedit::note_paint_target_t>{
                 {wormedit::lane_id_t{1}, {wormedit::measure_id_t{1}, 240}},
@@ -1205,7 +1205,7 @@ TEST_CASE("field scene marks painted taps for erasure and enforces paint scene c
     auto collision_view = view();
     collision_view.viewport_scroll_pixels = 0.0;
     collision_view.pending_note_paint_gesture = wormedit::note_paint_gesture_preview_t{
-        .document_revision = 7,
+        .stamp = wormedit::document_stamp_t::from(7),
         .targets = std::make_shared<const std::vector<wormedit::note_paint_target_t>>(
             std::vector<wormedit::note_paint_target_t>{
                 {wormedit::lane_id_t{2}, {wormedit::measure_id_t{1}, 840}},
@@ -1234,7 +1234,7 @@ TEST_CASE("field scene marks painted taps for erasure and enforces paint scene c
         (baseline.scene->cursor.has_value() ? 1U : 0U);
     auto empty_cell_view = base_view;
     empty_cell_view.pending_note_paint_gesture = wormedit::note_paint_gesture_preview_t{
-        .document_revision = 7,
+        .stamp = wormedit::document_stamp_t::from(7),
         .targets = std::make_shared<const std::vector<wormedit::note_paint_target_t>>(
             std::vector<wormedit::note_paint_target_t>{
                 {wormedit::lane_id_t{1}, {wormedit::measure_id_t{1}, 720}},
@@ -1251,7 +1251,7 @@ TEST_CASE("field scene marks painted taps for erasure and enforces paint scene c
 
     auto operation_view = base_view;
     operation_view.pending_note_paint_gesture = wormedit::note_paint_gesture_preview_t{
-        .document_revision = 7,
+        .stamp = wormedit::document_stamp_t::from(7),
         .targets = std::make_shared<const std::vector<wormedit::note_paint_target_t>>(
             std::vector<wormedit::note_paint_target_t>{
                 {wormedit::lane_id_t{1}, {wormedit::measure_id_t{1}, 720}},
@@ -2056,7 +2056,7 @@ auto move_feedback_scene(const wormedit::chart_document_t& chart,
     }
     projected.pending_note_move_gesture = wormedit::pending_note_move_gesture_t{
         .reference_note = proposals.front().note,
-        .document_revision = 7,
+        .stamp = wormedit::document_stamp_t::from(7),
         .notes = projected.selected_notes,
         .preview_position = proposals.front().position,
         .preview = std::move(proposals),

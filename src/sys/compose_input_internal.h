@@ -117,10 +117,13 @@ auto dispatch_bmson_razor_input(const WormUiComposeInputAction& input,
     const object_id_t reference{input.object_id};
     if (input.razor_stroke_start) {
         stroke.reset();
-    } else if (!stroke || !stroke->stamp.is_current(history.document, state.chart,
-                document_identity_policy_t::revision_only) || stroke->reference != reference) {
+    } else if (!stroke || stroke->stamp.chart != state.chart || stroke->reference != reference) {
         stroke.reset();
         return "Begin a new BMSON razor stroke on the selected sound channel.";
+    } else if (!stroke->stamp.document.is_current(history.document,
+                                                 document_identity_policy_t::revision_only)) {
+        stroke.reset();
+        return stale_action_message("BMSON razor stroke");
     }
     const auto denominator =
         input.razor_stroke_start ? edit_snap_denominator(*chart, state) : stroke->snap_denominator;

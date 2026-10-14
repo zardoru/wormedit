@@ -22,8 +22,8 @@ void populate_compose_selection_preview(
     interaction_view.pending_note_paint_gesture =
         retained_state->pending_note_paint_gesture
             ? std::optional{wormedit::note_paint_gesture_preview_t{
-                  .document_revision =
-                      retained_state->pending_note_paint_gesture->document_revision,
+                  .stamp =
+                      retained_state->pending_note_paint_gesture->stamp,
                   .targets = retained_state->pending_note_paint_gesture->targets,
               }}
             : std::nullopt;
@@ -31,8 +31,8 @@ void populate_compose_selection_preview(
     interaction_view.pending_editor_area_selection =
         retained_state->pending_editor_area_selection
             ? std::optional{wormedit::editor_area_selection_preview_t{
-                  .document_revision =
-                      retained_state->pending_editor_area_selection->document_revision,
+                  .stamp =
+                      retained_state->pending_editor_area_selection->stamp,
                   .left_pixels =
                       std::min(retained_state->pending_editor_area_selection->anchor_x_pixels,
                                retained_state->pending_editor_area_selection->current_x_pixels),

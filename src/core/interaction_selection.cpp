@@ -603,7 +603,7 @@ auto begin_space_range_selection(space_range_selection_context_t& context,
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built))
         return diagnostic_result(history, state, *diagnostics);
     state.pending_space_range_selection = pending_space_range_selection_t{
-        .document_revision = history.document.revision,
+        .stamp = document_stamp_t::from(history.document.revision),
         .hit_index = std::make_shared<editor_hit_test_index_t>(
             std::move(std::get<editor_hit_test_index_t>(built))),
         .anchor = state.cursor,
@@ -630,7 +630,7 @@ auto commit_space_range_selection(space_range_selection_context_t& context)
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "Space range selection is stale after a document edit")});
-    if (pending.document_revision != history.document.revision ||
+    if (!pending.stamp.is_revision_current(history.document.revision) ||
         pending.hit_index->document_revision != history.document.revision)
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_hold,
@@ -738,7 +738,7 @@ auto begin_area_selection_gesture(area_selection_context_t& context,
         return diagnostic_result(history, state, *diagnostics);
     auto objects = std::get<std::vector<editor_selection_object_t>>(std::move(combined));
     state.pending_editor_area_selection = pending_editor_area_selection_t{
-        .document_revision = history.document.revision,
+        .stamp = document_stamp_t::from(history.document.revision),
         .hit_index = std::move(hit_index),
         .anchor_x_pixels = request.x_pixels,
         .anchor_y_pixels = request.y_pixels,
@@ -775,7 +775,7 @@ auto update_area_selection_gesture(area_selection_context_t& context, double x_p
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "area selection gesture is stale after a document edit")});
-    if (pending.document_revision != history.document.revision ||
+    if (!pending.stamp.is_revision_current(history.document.revision) ||
         pending.hit_index->document_revision != history.document.revision)
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_hold,
@@ -874,7 +874,7 @@ auto commit_area_selection_gesture(area_selection_context_t& context, double x_p
         return diagnostic_result(context.edit.history, context.edit.state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "area selection gesture is stale after a document edit")});
-    if (pending.document_revision != context.edit.history.document.revision)
+    if (!pending.stamp.is_revision_current(context.edit.history.document.revision))
         return diagnostic_result(context.edit.history, context.edit.state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         stale_action_message("Editor gesture"))});

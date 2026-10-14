@@ -18,6 +18,8 @@ struct document_stamp_t {
     song_id_t project;
     std::uint64_t revision{};
 
+    // Revision-only captures have no project identity; callers use the clock query.
+    [[nodiscard]] static auto from(std::uint64_t revision) noexcept -> document_stamp_t;
     [[nodiscard]] static auto from(const song_document_t& document) noexcept -> document_stamp_t;
     [[nodiscard]] auto is_revision_current(std::uint64_t current_revision) const noexcept -> bool;
     [[nodiscard]] auto is_current(const song_document_t& document,

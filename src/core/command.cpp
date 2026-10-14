@@ -9,6 +9,10 @@
 #include <utility>
 
 namespace wormedit {
+auto document_stamp_t::from(std::uint64_t revision) noexcept -> document_stamp_t {
+    return {.project = {}, .revision = revision};
+}
+
 auto document_stamp_t::from(const song_document_t& document) noexcept -> document_stamp_t {
     return {.project = document.id, .revision = document.revision};
 }

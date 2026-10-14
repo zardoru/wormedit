@@ -7313,3 +7313,35 @@ TEST_CASE("Timing lane catalog maps every selection kind explicitly", "[core][ca
     check_timing_catalog(!timing_lane_for_selection(static_cast<editor_selection_object_kind_t>(100)));
     check_timing_catalog(!selection_kind_for_timing_lane(static_cast<timing_lane_kind_t>(100)));
 }
+
+namespace {
+void check_replaced_project_duration(const editor_interaction_result_t& result,
+                                     const document_history_t& history) {
+    CHECK(result.accepted);
+    CHECK(history.undo.size() == 1);
+    CHECK(history.document.charts.front().measures.front().notes.front().end ==
+          local_position_t{measure_id_t{1}, 480});
+}
+} // namespace
+
+TEST_CASE("pointer gesture clocks preserve equal-revision project replacement and equality",
+          "[core][interaction][gesture-stamp]") {
+    auto song = make_song();
+    song.charts.front().measures.front().notes = {{.id = object_id_t{101},
+        .position = {measure_id_t{1}, 0}, .lane = lane_id_t{1}, .kind = note_kind_t::hold,
+        .end = local_position_t{measure_id_t{1}, 240}}};
+    auto history = document_history_t::from(std::move(song));
+    auto original = make_state(history);
+    REQUIRE(dispatch_editor_action(history, original,
+                                   begin_note_duration_gesture_action_t{object_id_t{101}}));
+    REQUIRE(original.pending_note_duration_gesture);
+    history.document.id = song_id_t{99};
+    auto replacement = make_state(history);
+    REQUIRE(dispatch_editor_action(history, replacement,
+                                   begin_note_duration_gesture_action_t{object_id_t{101}}));
+    CHECK(original.pending_note_duration_gesture == replacement.pending_note_duration_gesture);
+    const auto applied = dispatch_editor_action(history, original,
+        update_note_duration_gesture_action_t{.reference_end = {measure_id_t{1}, 480},
+                                              .phase = editor_gesture_phase_t::commit});
+    check_replaced_project_duration(applied, history);
+}

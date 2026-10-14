@@ -59,6 +59,7 @@ struct conversion_request_t {
         // Path relative to the output chart's directory, after a successful
         // copy_resource_file_into_export publication.
         std::filesystem::path relative_path;
+        auto operator==(const staged_asset_t&) const -> bool = default;
     };
     std::vector<staged_asset_t> staged_assets;
     // Explicit decoder geometry: pure conversion never opens source files.
@@ -94,6 +95,7 @@ struct conversion_diagnostic_t {
     bool loss{};
     std::string message;
     std::string path;
+    auto operator==(const conversion_diagnostic_t&) const -> bool = default;
 };
 
 struct conversion_output_t {
@@ -102,6 +104,7 @@ struct conversion_output_t {
     std::string suggested_filename;
     std::string bytes;
     bool reimport_validated{};
+    auto operator==(const conversion_output_t&) const -> bool = default;
 };
 
 struct conversion_limits_t {
@@ -113,9 +116,22 @@ struct conversion_limits_t {
 struct conversion_asset_copy_t {
     asset_id_t asset;
     std::filesystem::path relative_path;
+    auto operator==(const conversion_asset_copy_t&) const -> bool = default;
 };
 
+struct conversion_payload_t {
+    std::vector<conversion_output_t> outputs;
+    // Render these detached plans only inside atomic publication staging.
+    std::vector<slice_span_plan_t> slice_plans;
+    std::vector<conversion_asset_copy_t> asset_copies;
+    // Synthetic zero samples for soundless BMS gameplay, not source spans.
+    std::vector<std::filesystem::path> silent_files;
+};
+using conversion_outcome_t = diagnosed_t<conversion_payload_t, std::vector<conversion_diagnostic_t>>;
 struct conversion_result_t {
+    [[nodiscard]] static auto from(const song_document_t& song, const conversion_request_t& request,
+        conversion_limits_t limits = {}) -> conversion_outcome_t;
+    [[nodiscard]] static auto from(conversion_outcome_t&& outcome) -> conversion_result_t;
     std::vector<conversion_output_t> outputs;
     // Render these detached plans only inside atomic publication staging.
     std::vector<slice_span_plan_t> slice_plans;

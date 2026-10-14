@@ -166,7 +166,11 @@ struct command_invocation_context_t {
     bool auto_repeat{};
 };
 
+using command_invocation_outcome_t = diagnosed_t<bool>;
+
 struct command_invocation_result_t {
+    [[nodiscard]] static auto from(command_invocation_outcome_t&& outcome) -> command_invocation_result_t;
+    [[nodiscard]] auto into_outcome() && -> command_invocation_outcome_t;
     bool accepted{};
     diagnostic_list_t diagnostics;
 
@@ -220,7 +224,16 @@ inline constexpr std::size_t maximum_shortcuts_per_command = 8;
 inline constexpr std::size_t maximum_shortcut_profile_bindings = maximum_registered_commands;
 inline constexpr std::size_t maximum_shortcut_profile_bytes = 1024U * 1024U;
 
+using command_registry_outcome_t = diagnosed_t<bool>;
+
 struct command_registry_result_t {
+    [[nodiscard]] static auto from(command_registry_t& registry, command_registration_t registration)
+        -> command_registry_outcome_t;
+    [[nodiscard]] static auto from(command_registry_outcome_t&& outcome) -> command_registry_result_t;
+    [[nodiscard]] static auto update_state(command_registry_t& registry, const command_id_t& id,
+        bool enabled, std::optional<bool> checked) -> command_registry_outcome_t;
+    [[nodiscard]] static auto remap(command_registry_t& registry, const command_id_t& id,
+        std::vector<shortcut_chord_t> shortcuts) -> command_registry_outcome_t;
     bool applied{};
     diagnostic_list_t diagnostics;
 

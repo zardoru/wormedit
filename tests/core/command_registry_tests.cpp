@@ -62,6 +62,30 @@ auto has_command(const command_registry_t& registry, std::string_view id) -> boo
     return find_command(registry, command_id_t{std::string(id)}) != nullptr;
 }
 
+auto warning_invoker(const command_invocation_context_t&) -> command_invocation_result_t {
+    return {.accepted = true, .diagnostics = {{.severity = diagnostic_severity_t::warning,
+        .code = diagnostic_code_t::unsupported_feature, .message = "callback warning"}}};
+}
+
+auto has_warning_only_dispatch() -> bool {
+    command_registry_t registry;
+    const shortcut_chord_t chord{.key = shortcut_key_t::a, .modifiers = static_cast<shortcut_modifiers_t>(shortcut_modifier_t::control)};
+    const auto registered = command_registry_result_t::from(registry,
+        registration("edit.warning", command_focus_scope_t::global, chord, warning_invoker));
+    if (!registered.value || !registered.ok()) return false;
+    auto raw = warning_invoker({});
+    if (raw) return false;
+    auto invocation = std::move(raw).into_outcome();
+    if (!invocation.value || !invocation.ok()) return false;
+    const auto adapted = command_invocation_result_t::from(std::move(invocation));
+    const auto shortcut = dispatch_shortcut(registry, {.chord = chord}, focus_for_compose(),
+                                            shortcut_primary_modifier_t::control);
+    const auto menu = invoke_command(registry, command_id_t{"edit.warning"}, focus_for_compose());
+    return adapted.accepted && !adapted && shortcut.status == command_dispatch_status_t::invoked &&
+           menu.status == command_dispatch_status_t::invoked && shortcut.diagnostics.size() == 1 &&
+           menu.diagnostics.size() == 1 && shortcut.diagnostics.front().message == "callback warning";
+}
+
 } // namespace
 
 namespace {
@@ -960,4 +984,9 @@ TEST_CASE("Workspace project command uses the shared Project vocabulary", "[core
     const auto* project = find_command(registry, {"workspace.open_setup"});
     REQUIRE(project != nullptr);
     CHECK(project->definition.display_name == "Open Project");
+}
+
+TEST_CASE("warning-only invocation remains accepted by menu and shortcut dispatch",
+          "[unit][core][command_registry]") {
+    CHECK(has_warning_only_dispatch());
 }

@@ -385,9 +385,22 @@ auto add_builtin(command_registry_t& registry, command_invoker_t invoker, std::s
 
 } // namespace
 
-auto register_command(command_registry_t& registry, command_registration_t registration)
-    -> command_registry_result_t {
-    command_registry_result_t result;
+auto command_invocation_result_t::from(command_invocation_outcome_t&& outcome)
+    -> command_invocation_result_t {
+    return {.accepted = outcome.value, .diagnostics = std::move(outcome.diagnostics)};
+}
+
+auto command_invocation_result_t::into_outcome() && -> command_invocation_outcome_t {
+    return {.value = accepted, .diagnostics = std::move(diagnostics)};
+}
+
+auto command_registry_result_t::from(command_registry_outcome_t&& outcome) -> command_registry_result_t {
+    return {.applied = outcome.value, .diagnostics = std::move(outcome.diagnostics)};
+}
+
+auto command_registry_result_t::from(command_registry_t& registry, command_registration_t registration)
+    -> command_registry_outcome_t {
+    command_registry_outcome_t result{};
     result.diagnostics = valid_registration(registration);
     if (has_errors(result.diagnostics)) {
         return result;
@@ -407,8 +420,12 @@ auto register_command(command_registry_t& registry, command_registration_t regis
         registration.current_shortcuts.value_or(registration.definition.default_shortcuts);
     registry.commands.push_back({.definition = std::move(registration.definition),
                                  .current_shortcuts = std::move(current)});
-    result.applied = true;
+    result.value = true;
     return result;
+}
+
+auto register_command(command_registry_t& registry, command_registration_t registration) -> command_registry_result_t {
+    return command_registry_result_t::from(command_registry_result_t::from(registry, std::move(registration)));
 }
 
 auto find_command(const command_registry_t& registry, const command_id_t& id) noexcept
@@ -417,9 +434,9 @@ auto find_command(const command_registry_t& registry, const command_id_t& id) no
     return found == registry.commands.end() ? nullptr : &*found;
 }
 
-auto update_command_state(command_registry_t& registry, const command_id_t& id, bool enabled,
-                          std::optional<bool> checked) -> command_registry_result_t {
-    command_registry_result_t result;
+auto command_registry_result_t::update_state(command_registry_t& registry, const command_id_t& id, bool enabled,
+                          std::optional<bool> checked) -> command_registry_outcome_t {
+    command_registry_outcome_t result{};
     const auto found = std::ranges::find(registry.commands, id, command_id_of);
     if (found == registry.commands.end()) {
         result.diagnostics.push_back(
@@ -428,7 +445,7 @@ auto update_command_state(command_registry_t& registry, const command_id_t& id, 
     }
     found->definition.enabled = enabled;
     found->definition.checked = checked;
-    result.applied = true;
+    result.value = true;
     return result;
 }
 
@@ -444,9 +461,14 @@ auto find_shortcut_conflicts(const command_registry_t& registry,
     return overlapping_chord_pairs(registry, primary_modifier);
 }
 
-auto remap_command(command_registry_t& registry, const command_id_t& id,
-                   std::vector<shortcut_chord_t> shortcuts) -> command_registry_result_t {
-    command_registry_result_t result;
+auto update_command_state(command_registry_t& registry, const command_id_t& id, bool enabled,
+                          std::optional<bool> checked) -> command_registry_result_t {
+    return command_registry_result_t::from(command_registry_result_t::update_state(registry, id, enabled, checked));
+}
+
+auto command_registry_result_t::remap(command_registry_t& registry, const command_id_t& id,
+                   std::vector<shortcut_chord_t> shortcuts) -> command_registry_outcome_t {
+    command_registry_outcome_t result{};
     if (!is_valid_chord_list(shortcuts)) {
         result.diagnostics.push_back(error(diagnostic_code_t::invalid_binding,
                                            "replacement shortcuts are invalid or exceed the cap"));
@@ -459,7 +481,7 @@ auto remap_command(command_registry_t& registry, const command_id_t& id,
         return result;
     }
     found->current_shortcuts = std::move(shortcuts);
-    result.applied = true;
+    result.value = true;
     result.diagnostics = diagnose_shortcut_conflicts(registry);
     return result;
 }
@@ -474,6 +496,11 @@ auto shortcut_profile_t::from(const command_registry_t& registry, std::string pr
         }
     }
     return profile;
+}
+
+auto remap_command(command_registry_t& registry, const command_id_t& id,
+                   std::vector<shortcut_chord_t> shortcuts) -> command_registry_result_t {
+    return command_registry_result_t::from(command_registry_result_t::remap(registry, id, std::move(shortcuts)));
 }
 
 auto apply_shortcut_profile(command_registry_t& registry, const shortcut_profile_t& profile)
@@ -704,9 +731,10 @@ auto dispatch_shortcut(const command_registry_t& registry, const shortcut_event_
         .shortcut = event.chord,
         .auto_repeat = event.auto_repeat,
     };
-    const auto invocation = command.definition.invoke(context);
-    result.diagnostics = invocation.diagnostics;
-    result.status = invocation.accepted && !has_errors(invocation.diagnostics)
+    auto invocation = command.definition.invoke(context).into_outcome();
+    const auto accepted = invocation.value && invocation.ok();
+    result.diagnostics = std::move(invocation.diagnostics);
+    result.status = accepted
                         ? command_dispatch_status_t::invoked
                         : command_dispatch_status_t::rejected;
     return result;
@@ -752,9 +780,10 @@ auto invoke_command(const command_registry_t& registry, const command_id_t& id,
         return result;
     }
     const command_invocation_context_t context{.command = command->definition.id, .focus = focus};
-    const auto invocation = command->definition.invoke(context);
-    result.diagnostics = invocation.diagnostics;
-    result.status = invocation.accepted && !has_errors(invocation.diagnostics)
+    auto invocation = command->definition.invoke(context).into_outcome();
+    const auto accepted = invocation.value && invocation.ok();
+    result.diagnostics = std::move(invocation.diagnostics);
+    result.status = accepted
                         ? command_dispatch_status_t::invoked
                         : command_dispatch_status_t::rejected;
     return result;

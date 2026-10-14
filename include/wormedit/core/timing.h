@@ -253,7 +253,12 @@ proposed_timing_y_on_fixed_waveform(const timing_index_t& original, const timing
                              timing_boundary_side_t side = timing_boundary_side_t::event)
     -> timing_query_result_t;
 
+using beat_interval_fit_outcome_t = result_t<signed_rational_t, timing_diagnostic_t>;
 struct beat_interval_fit_result_t {
+    [[nodiscard]] static auto from(const chart_document_t& chart, object_id_t bpm_event,
+        local_position_t beat, std::uint64_t target_sample_frame, std::uint32_t sample_rate)
+        -> beat_interval_fit_outcome_t;
+    [[nodiscard]] static auto from(beat_interval_fit_outcome_t&& outcome) -> beat_interval_fit_result_t;
     std::optional<signed_rational_t> beats_per_minute;
     std::optional<timing_diagnostic_t> error;
 

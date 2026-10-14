@@ -1284,32 +1284,35 @@ auto candidate_beat_time(chart_document_t& candidate, const beat_fit_selection_t
 
 } // namespace
 
-auto fit_beat_interval(const chart_document_t& chart, object_id_t bpm_event, local_position_t beat,
+auto beat_interval_fit_result_t::from(beat_interval_fit_outcome_t&& outcome) -> beat_interval_fit_result_t {
+    if (!outcome) return {.error = std::move(outcome.error())};
+    return {.beats_per_minute = *outcome};
+}
+
+namespace {
+
+auto build_beat_interval_fit(const chart_document_t& chart, object_id_t bpm_event, local_position_t beat,
                        std::uint64_t target_sample_frame, std::uint32_t sample_rate)
-    -> beat_interval_fit_result_t {
-    const auto reject = [](timing_error_code_t code,
-                           std::string message) -> beat_interval_fit_result_t {
-        return {.error = error(code, std::move(message))};
-    };
+    -> beat_interval_fit_outcome_t {
     if (sample_rate == 0 || target_sample_frame > maximum_i64_magnitude) {
-        return reject(timing_error_code_t::invalid_fit,
-                      "beat fit requires a representable target source frame and sample rate");
+        return std::unexpected(error(timing_error_code_t::invalid_fit,
+                      "beat fit requires a representable target source frame and sample rate"));
     }
     const auto measure_build = build_measure_index(chart);
     if (!std::holds_alternative<measure_index_t>(measure_build)) {
-        return reject(timing_error_code_t::invalid_document,
-                      "beat fit requires valid chart measure geometry");
+        return std::unexpected(error(timing_error_code_t::invalid_document,
+                      "beat fit requires valid chart measure geometry"));
     }
     const auto& measures = std::get<measure_index_t>(measure_build);
     const auto selection = beat_fit_selection(chart, measures, bpm_event, beat);
     if (const auto* failure = std::get_if<timing_diagnostic_t>(&selection)) {
-        return {.error = *failure};
+        return std::unexpected(*failure);
     }
     const auto& selected = std::get<beat_fit_selection_t>(selection);
     const auto original_build = build_timing_index(chart);
     if (!original_build) {
-        return reject(timing_error_code_t::invalid_document,
-                      "beat fit requires a valid timing index");
+        return std::unexpected(error(timing_error_code_t::invalid_document,
+                      "beat fit requires a valid timing index"));
     }
     auto candidate = chart;
     const auto at_sixty = candidate_beat_time(candidate, selected, 60);
@@ -1324,39 +1327,52 @@ auto fit_beat_interval(const chart_document_t& chart, object_id_t bpm_event, loc
         signed_rational_t{static_cast<std::int64_t>(target_sample_frame), sample_rate};
     const auto available = fixed ? subtract_exact(target_time, *fixed) : std::nullopt;
     if (!scaled || !available) {
-        return reject(timing_error_code_t::arithmetic_overflow,
-                      "beat fit exceeds exact rational arithmetic bounds");
+        return std::unexpected(error(timing_error_code_t::arithmetic_overflow,
+                      "beat fit exceeds exact rational arithmetic bounds"));
     }
     if (scaled->numerator <= 0 || available->numerator <= 0) {
-        return reject(timing_error_code_t::invalid_fit,
-                      "target frame leaves no positive BPM interval");
+        return std::unexpected(error(timing_error_code_t::invalid_fit,
+                      "target frame leaves no positive BPM interval"));
     }
     const auto fitted_bpm =
         positive_fraction({static_cast<std::uint64_t>(scaled->numerator), available->denominator},
                           {scaled->denominator, static_cast<std::uint64_t>(available->numerator)});
     if (!fitted_bpm || fitted_bpm->numerator <= 0) {
-        return reject(timing_error_code_t::arithmetic_overflow,
-                      "fitted BPM exceeds exact rational arithmetic bounds");
+        return std::unexpected(error(timing_error_code_t::arithmetic_overflow,
+                      "fitted BPM exceeds exact rational arithmetic bounds"));
     }
     candidate.bpms[selected.selected_index].beats_per_minute = *fitted_bpm;
     const auto fitted_build = build_timing_index(candidate);
     if (!fitted_build) {
-        return reject(timing_error_code_t::invalid_fit,
-                      "fitted BPM does not produce a valid timing index");
+        return std::unexpected(error(timing_error_code_t::invalid_fit,
+                      "fitted BPM does not produce a valid timing index"));
     }
     const auto fitted_beat = (*fitted_build.index).seconds_at(selected.beat_row);
     const auto matched =
         fitted_beat ? compare_exact(*fitted_beat.seconds, target_time) : std::nullopt;
     if (!matched || *matched != 0) {
-        return reject(timing_error_code_t::invalid_fit,
-                      "fitted BPM does not reach the exact target frame");
+        return std::unexpected(error(timing_error_code_t::invalid_fit,
+                      "fitted BPM does not reach the exact target frame"));
     }
     if (!is_locked_anchors_preserved(chart, measures, *fitted_build.index, selected.anchor_row,
                                   sample_rate)) {
-        return reject(timing_error_code_t::locked_anchor_conflict,
-                      "beat fit would move a locked timing anchor");
+        return std::unexpected(error(timing_error_code_t::locked_anchor_conflict,
+                      "beat fit would move a locked timing anchor"));
     }
-    return {.beats_per_minute = *fitted_bpm};
+    return *fitted_bpm;
+}
+} // namespace
+
+auto beat_interval_fit_result_t::from(const chart_document_t& chart, object_id_t bpm_event,
+    local_position_t beat, std::uint64_t target_sample_frame, std::uint32_t sample_rate)
+    -> beat_interval_fit_outcome_t {
+    return build_beat_interval_fit(chart, bpm_event, beat, target_sample_frame, sample_rate);
+}
+
+auto fit_beat_interval(const chart_document_t& chart, object_id_t bpm_event, local_position_t beat,
+    std::uint64_t target_sample_frame, std::uint32_t sample_rate) -> beat_interval_fit_result_t {
+    return beat_interval_fit_result_t::from(beat_interval_fit_result_t::from(chart, bpm_event, beat,
+        target_sample_frame, sample_rate));
 }
 
 namespace {

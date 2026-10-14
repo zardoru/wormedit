@@ -1924,3 +1924,24 @@ TEST_CASE("coordinate errors retain warp metadata even without a diagnostic",
     CHECK(legacy.inside_warp);
     CHECK_FALSE(legacy.error);
 }
+
+TEST_CASE("beat fit primary outcome retains the exact fitted rational", "[unit][core][timing][beat-fit][results]") {
+    auto fitted = beat_interval_fit_result_t::from(base_chart(), object_id_t{10},
+        {measure_id_t{1}, 480}, 3 * 48'000, 48'000);
+    REQUIRE(fitted);
+    CHECK(*fitted == signed_rational_t{60, 1});
+    const auto legacy = beat_interval_fit_result_t::from(std::move(fitted));
+    CHECK(legacy.beats_per_minute == signed_rational_t{60, 1});
+    CHECK_FALSE(legacy.error);
+}
+
+TEST_CASE("beat fit primary outcome retains invalid-fit diagnostics", "[unit][core][timing][beat-fit][results]") {
+    auto fitted = beat_interval_fit_result_t::from(base_chart(), object_id_t{10},
+        {measure_id_t{1}, 480}, 0, 0);
+    REQUIRE_FALSE(fitted);
+    CHECK(fitted.error().code == timing_error_code_t::invalid_fit);
+    const auto legacy = beat_interval_fit_result_t::from(std::move(fitted));
+    REQUIRE(legacy.error);
+    CHECK(legacy.error->code == timing_error_code_t::invalid_fit);
+    CHECK_FALSE(legacy.beats_per_minute);
+}

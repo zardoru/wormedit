@@ -245,8 +245,7 @@ auto stage_selection_timing(document_history_t& staged, editor_interaction_state
         else other.push_back(object);
     }
     if (timing.empty()) return {};
-    const auto deleted = delete_timing_lane_event_group(staged, state.chart, timing,
-                                                       staged.document.revision, timing_locked);
+    const auto deleted = delete_timing_lane_event_group(staged, state.chart, timing, timing_locked);
     if (!deleted) return deleted.diagnostics;
     state.selected_objects = std::move(other);
     return {};

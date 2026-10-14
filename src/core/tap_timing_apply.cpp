@@ -258,7 +258,7 @@ auto build_tap_timing_preview(const song_document_t& document,
                                            : std::optional<chart_document_t>{*chart};
 }
 
-auto apply_tap_timing_proposal(document_history_t& history, std::uint64_t expected_revision,
+auto apply_tap_timing_proposal(document_history_t& history,
                                const tap_timing_apply_proposal_t& proposal, bool timing_locked)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
@@ -267,9 +267,10 @@ auto apply_tap_timing_proposal(document_history_t& history, std::uint64_t expect
                "tap timing apply is disabled while timing is locked");
         return result;
     }
-    if (expected_revision != history.document.revision ||
-        proposal.document_revision != expected_revision) {
-        reject(result, diagnostic_code_t::invalid_id, "tap timing proposal targets a stale revision");
+    const document_stamp_t stamp{.project = history.document.id,
+                                  .revision = proposal.document_revision};
+    if (!stamp.is_current(history.document)) {
+        reject(result, diagnostic_code_t::invalid_id, stale_action_message("Tap timing proposal"));
         return result;
     }
     auto proposed = proposed_document(history.document, proposal);

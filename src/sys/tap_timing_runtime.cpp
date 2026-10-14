@@ -197,7 +197,7 @@ auto tap_timing_runtime_t::apply(document_history_t& history, const tap_timing_c
         status_ = "Tap result expired; play and tap again before Apply.";
         return {.revision = history.document.revision};
     }
-    auto result = apply_tap_timing_proposal(history, expected_revision, *captured, timing_locked);
+    auto result = apply_tap_timing_proposal(history, *captured, timing_locked);
     if (result) reset();
     else status_ = "Apply rejected; check timing lock and tap again.";
     return result;

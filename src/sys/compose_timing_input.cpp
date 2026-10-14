@@ -113,8 +113,7 @@ auto move_compose_timing_selection(const WormUiComposeInputAction& input,
         return std::nullopt;
     }
     const auto moved = move_timing_lane_event_group(
-        context.environment.document.history, chart->id, selected, delta, input.timing_document_revision,
-        context.environment.commands.project.timing_recipe.timing_locked);
+        context.environment.document.history, chart->id, selected, delta, context.environment.commands.project.timing_recipe.timing_locked);
     result.accepted = moved.applied;
     result.document_changed = moved.applied;
     result.diagnostics = moved.diagnostics;

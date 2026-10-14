@@ -748,18 +748,13 @@ auto move_existing_timing_lane_pseudonote(const document_history_t& history,
 
 auto move_timing_lane_event_group(document_history_t& history, chart_id_t chart_id,
                                   std::span<const timing_lane_event_ref_t> events,
-                                  std::int64_t row_delta, std::uint64_t expected_revision,
+                                  std::int64_t row_delta,
                                   bool timing_locked) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
     constexpr std::size_t maximum_group_events = 4096;
     if (timing_locked) {
         result.diagnostics = {error(diagnostic_code_t::unsupported_feature,
                                     "timing is locked; timing group moves are unavailable")};
-        return result;
-    }
-    if (expected_revision != history.document.revision) {
-        result.diagnostics = {error(diagnostic_code_t::invalid_id,
-                                    "timing group move uses a stale document revision")};
         return result;
     }
     if (events.empty() || events.size() > maximum_group_events) {
@@ -884,18 +879,12 @@ void cancel_timing_lane_pseudonote(timing_lane_pseudonote_preview_t& preview) no
 }
 
 auto delete_existing_timing_lane_event(document_history_t& history, chart_id_t chart,
-                                       timing_lane_kind_t kind, object_id_t event,
-                                       std::uint64_t expected_revision, bool timing_locked)
+                                       timing_lane_kind_t kind, object_id_t event, bool timing_locked)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
     if (timing_locked) {
         result.diagnostics = {error(diagnostic_code_t::unsupported_feature,
                                     "timing is locked; timing lane edits are unavailable")};
-        return result;
-    }
-    if (expected_revision != history.document.revision) {
-        result.diagnostics = {error(diagnostic_code_t::invalid_id,
-                                    "timing marker deletion uses a stale document revision")};
         return result;
     }
     const auto preview = begin_existing_timing_lane_pseudonote(history, chart, kind, event, false);
@@ -958,19 +947,13 @@ auto edit_speed_event_span(document_history_t& history, chart_id_t chart, object
 }
 
 auto delete_timing_lane_event_group(document_history_t& history, chart_id_t chart_id,
-                                    std::span<const timing_lane_event_ref_t> events,
-                                    std::uint64_t expected_revision, bool timing_locked)
+                                    std::span<const timing_lane_event_ref_t> events, bool timing_locked)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
     constexpr std::size_t maximum_group_events = 4096;
     if (timing_locked) {
         result.diagnostics = {error(diagnostic_code_t::unsupported_feature,
                                     "timing is locked; timing group deletion is unavailable")};
-        return result;
-    }
-    if (expected_revision != history.document.revision) {
-        result.diagnostics = {error(diagnostic_code_t::invalid_id,
-                                    "timing group deletion uses a stale document revision")};
         return result;
     }
     if (events.empty() || events.size() > maximum_group_events) {
@@ -999,8 +982,7 @@ auto delete_timing_lane_event_group(document_history_t& history, chart_id_t char
     }
     auto staged = document_history_t::from(history.document);
     for (const auto& event : doomed) {
-        auto deleted = delete_existing_timing_lane_event(staged, chart_id, event.kind, event.event,
-                                                         staged.document.revision, false);
+        auto deleted = delete_existing_timing_lane_event(staged, chart_id, event.kind, event.event, false);
         if (!deleted) {
             result.diagnostics = std::move(deleted.diagnostics);
             return result;

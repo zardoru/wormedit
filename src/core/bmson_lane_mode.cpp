@@ -198,12 +198,11 @@ auto bmson_lane_mode_resource_bindings(const song_document_t& document, chart_id
     return result;
 }
 
-auto set_bmson_channel_lane_mode(document_history_t& history, std::uint64_t expected_revision,
+auto set_bmson_channel_lane_mode(document_history_t& history,
     chart_id_t chart_id, object_id_t channel_id, bmson_channel_lane_mode_t mode,
     bool convert_continuations_to_restarts, note_to_bgm_policy_t policy)
     -> document_command_result_t {
     const auto revision = history.document.revision;
-    if (revision != expected_revision) return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "BMSON lane mode has a stale document revision");
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
     const auto chart = proposed.find_chart(chart_id);

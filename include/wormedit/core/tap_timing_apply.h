@@ -44,7 +44,6 @@ struct tap_timing_apply_proposal_result_t {
     -> std::optional<chart_document_t>;
 
 [[nodiscard]] auto apply_tap_timing_proposal(document_history_t& history,
-                                             std::uint64_t expected_revision,
                                              const tap_timing_apply_proposal_t& proposal,
                                              bool timing_locked = false)
     -> document_command_result_t;

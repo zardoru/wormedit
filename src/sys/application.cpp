@@ -1038,8 +1038,7 @@ void delete_staged_timing_event(const WormUiWorkspaceAction& action,
         post_edit_rejection(notifications, {}, "The selected timing event cannot be deleted.");
     } else {
         const auto result = wormedit::delete_existing_timing_lane_event(
-            history, stage.chart, *kind, *stage.existing_event,
-            action.timing_document_revision, timing_locked);
+            history, stage.chart, *kind, *stage.existing_event, timing_locked);
         if (result)
             notifications.post(wormedit::notification_severity_t::success,
                                wormedit::notification_source_t::edit, "Timing event deleted.");

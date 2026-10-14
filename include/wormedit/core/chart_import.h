@@ -80,8 +80,8 @@ using chart_import_result_t = command_result_with_t<chart_import_payload_t>;
 
 // Adds the selected source charts with fresh identities, reuses or adds the resources they
 // reference, and commits one undoable command. The current charts and resources are unchanged
-// except for the additions. Parse, validation and revision failures add nothing.
-[[nodiscard]] auto apply_chart_import(document_history_t& history, std::uint64_t expected_revision,
+// except for the additions. Parse and validation failures add nothing; delayed callers validate their stamp.
+[[nodiscard]] auto apply_chart_import(document_history_t& history,
                                       const song_document_t& source,
                                       const chart_import_paths_t& paths,
                                       std::span<const chart_id_t> selected) -> chart_import_result_t;

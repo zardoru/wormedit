@@ -6223,7 +6223,7 @@ TEST_CASE("BMSON lane_mode projects current channel ownership in Compose and Sou
     const auto builds = fixture.cache.draw_stem_sources.build_count;
     t475_project(fixture);
     t475_check(fixture.cache.draw_stem_sources.build_count == builds);
-    t475_require(set_bmson_channel_lane_mode(fixture.history, fixture.history.document.revision,
+    t475_require(set_bmson_channel_lane_mode(fixture.history,
         chart_id_t{1}, object_id_t{302}, bmson_channel_lane_mode_t::stem));
     fixture.binding.workspace->active_tab = workspace_tab_t::audio_slices;
     t475_require(rebind_workspace(*fixture.binding.workspace, fixture.history));
@@ -6547,7 +6547,7 @@ TEST_CASE("Lane-key dispatcher uses revision-bound decoded geometry for linked B
         .source_lane = object_id_t{74000}, .sound = resource_id_t{7}, .sound_channel_event = object_id_t{73000}}};
     compose_test_fixture_t f{std::move(song)};
     if (converted) {
-        const auto result = set_bmson_channel_lane_mode(f.history, f.history.document.revision,
+        const auto result = set_bmson_channel_lane_mode(f.history,
             chart_id_t{1}, object_id_t{71000}, bmson_channel_lane_mode_t::stem);
         expect_compose_test(result.applied);
         expect_compose_test(f.history.document.resources.front().sound_kind == sound_kind_t::stem);

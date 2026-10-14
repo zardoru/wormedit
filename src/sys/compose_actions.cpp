@@ -783,7 +783,7 @@ std::optional<std::string> change_bmson_lane_mode(compose_action_context_t& cont
         return compose_action_warning(context, "Finish or cancel the active Compose gesture before changing channel lanes.");
     const auto kind = context.action.compose_action;
     const auto result = set_bmson_channel_lane_mode(
-        context.environment.document.history, context.action.compose_input_document_revision,
+        context.environment.document.history,
         context.state.chart, lane_mode_channel(context),
         kind == WORM_UI_COMPOSE_ACTION_MAKE_BMSON_STEM ? bmson_channel_lane_mode_t::stem
                                                        : bmson_channel_lane_mode_t::packed,

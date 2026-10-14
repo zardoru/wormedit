@@ -145,10 +145,10 @@ begin_timing_lane_pseudonote(const document_history_t& history, chart_id_t chart
 // The fixed effective initial BPM cannot be part of the selection.
 [[nodiscard]] auto move_timing_lane_event_group(
     document_history_t& history, chart_id_t chart, std::span<const timing_lane_event_ref_t> events,
-    std::int64_t row_delta, std::uint64_t expected_revision, bool timing_locked)
+    std::int64_t row_delta, bool timing_locked)
     -> document_command_result_t;
 
-// Confirmation makes exactly one call to the existing revision-checked timing
+// Confirmation validates the captured preview and calls the typed timing
 // command API, using an update command for an existing event. No playable note
 // is ever created by this controller.
 [[nodiscard]] auto confirm_timing_lane_pseudonote(document_history_t& history,
@@ -156,19 +156,18 @@ begin_timing_lane_pseudonote(const document_history_t& history, chart_id_t chart
                                                   bool timing_locked) -> document_command_result_t;
 
 // Deletes an existing marker through its typed editor command. The event kind,
-// identity, lock, and expected revision are all checked before history changes.
+// identity and lock are checked before history changes. Delayed callers validate their stamp.
 [[nodiscard]] auto delete_existing_timing_lane_event(document_history_t& history,
                                                       chart_id_t chart, timing_lane_kind_t kind,
                                                       object_id_t event,
-                                                      std::uint64_t expected_revision,
                                                       bool timing_locked)
     -> document_command_result_t;
 
 // Deletes a bounded selection of timing markers as one atomic undoable command. The fixed
-// initial BPM is skipped when other markers are selected; a lock or stale revision rejects all.
+// initial BPM is skipped when other markers are selected; a lock rejects all.
+// Delayed callers validate their captured stamp before this synchronous command.
 [[nodiscard]] auto delete_timing_lane_event_group(
-    document_history_t& history, chart_id_t chart, std::span<const timing_lane_event_ref_t> events,
-    std::uint64_t expected_revision, bool timing_locked) -> document_command_result_t;
+    document_history_t& history, chart_id_t chart, std::span<const timing_lane_event_ref_t> events, bool timing_locked) -> document_command_result_t;
 
 // One speed event as a span: its begin row and the length of its transition. Either part may be
 // left unchanged. Applies as one undoable update that keeps the event's identity and multiplier.

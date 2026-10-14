@@ -965,3 +965,65 @@ TEST_CASE("native primary byte publication writes and adapts the publication fla
     CHECK(legacy.published);
     CHECK_FALSE(legacy.has_errors());
 }
+
+TEST_CASE("native shared recovery scan retains candidate selection beside warnings", "[unit][native-storage][results]") {
+    using namespace wormedit;
+    native_project_recovery_scan_outcome_t outcome{.value = {.candidates = {{.path = "candidate"}}, .preferred_recovery_candidate = 0},
+        .diagnostics = {{.severity = diagnostic_severity_t::warning, .message = "warning"}}};
+    CHECK(outcome.ok());
+    const auto legacy = native_project_recovery_scan_result_t::from(std::move(outcome));
+    REQUIRE(legacy.candidates.size() == 1);
+    CHECK(legacy.candidates.front().path == "candidate");
+    CHECK(legacy.preferred_recovery_candidate == 0);
+    CHECK(legacy.diagnostics.front().message == "warning");
+}
+
+TEST_CASE("native shared recovery action retains failure metadata", "[unit][native-storage][results]") {
+    using namespace wormedit;
+    const native_project_document_version_t version{song_id_t{17}, 23};
+    const std::filesystem::path path{"quarantine"};
+    native_project_recovery_action_outcome_t outcome{.value = {.version = version, .quarantined_path = path},
+        .diagnostics = {{.severity = diagnostic_severity_t::error, .message = "error"}}};
+    CHECK_FALSE(outcome.ok());
+    const auto legacy = native_project_recovery_action_result_t::from(std::move(outcome));
+    CHECK_FALSE(legacy.applied);
+    CHECK(legacy.version == version);
+    CHECK(legacy.quarantined_path == path);
+    CHECK(legacy.has_errors());
+}
+
+TEST_CASE("native shared autosave retains quiet status and counters beside warnings", "[unit][native-storage][results]") {
+    using namespace wormedit;
+    native_project_autosave_outcome_t outcome{.value = {.revision = 31, .session_sequence = 7},
+        .diagnostics = {{.severity = diagnostic_severity_t::warning, .message = "warning"}}};
+    CHECK(outcome.ok());
+    const auto legacy = native_project_autosave_result_t::from(std::move(outcome));
+    CHECK(legacy.status == native_project_autosave_status_t::not_due);
+    CHECK(legacy.revision == 31);
+    CHECK(legacy.session_sequence == 7);
+    CHECK(legacy.diagnostics.front().message == "warning");
+}
+
+TEST_CASE("native primary recovery scan handles an empty request", "[unit][native-storage][results]") {
+    using namespace wormedit;
+    auto outcome = native_project_recovery_scan_result_t::from(native_project_recovery_scan_request_t{});
+    REQUIRE(outcome.ok());
+    CHECK(outcome.value.candidates.empty());
+    CHECK_FALSE(outcome.value.preferred_recovery_candidate);
+    const auto legacy = native_project_recovery_scan_result_t::from(std::move(outcome));
+    CHECK(legacy.candidates.empty());
+}
+
+TEST_CASE("native primary autosave rejects invalid intervals before publication", "[unit][native-storage][results]") {
+    using namespace wormedit;
+    temporary_directory_t directory;
+    const auto now = std::chrono::steady_clock::now();
+    native_project_autosave_coordinator_t coordinator{now, {}, std::chrono::steady_clock::duration::zero(), 7};
+    const auto path = directory.path / "backup";
+    const auto outcome = coordinator.create_autosave(valid_song(21), now, path);
+    REQUIRE_FALSE(outcome.ok());
+    CHECK(outcome.value == native_project_autosave_payload_t{.status = native_project_autosave_status_t::failed, .revision = 21, .session_sequence = 7});
+    CHECK_FALSE(std::filesystem::exists(path));
+    CHECK(coordinator.session_sequence() == 7);
+    CHECK(outcome.diagnostics.front().code == native_project_storage_diagnostic_code_t::invalid_interval);
+}

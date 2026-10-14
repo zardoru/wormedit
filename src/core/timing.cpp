@@ -1580,16 +1580,16 @@ auto musical_position_at(const timing_index_t& index, signed_rational_t seconds,
                            "audio time has no musical position in the timing index")};
 }
 
-auto sample_frame_at(signed_rational_t seconds, std::uint32_t sample_rate,
-                     sample_rounding_t rounding) -> sample_frame_result_t {
+auto sample_frame_t::from(signed_rational_t seconds, std::uint32_t sample_rate,
+                     sample_rounding_t rounding) -> sample_frame_outcome_t {
     const auto value = try_normalize(seconds);
     if (!value || sample_rate == 0) {
-        return {.error = error(timing_error_code_t::invalid_document,
-                               "sample-frame conversion requires valid seconds and sample rate")};
+        return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::invalid_document,
+                               "sample-frame conversion requires valid seconds and sample rate")});
     }
     if (value->numerator < 0) {
-        return {.error = error(timing_error_code_t::negative_sample_frame,
-                               "event occurs before audio frame zero")};
+        return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::negative_sample_frame,
+                               "event occurs before audio frame zero")});
     }
     auto numerator = magnitude(value->numerator);
     auto denominator = value->denominator;
@@ -1606,8 +1606,8 @@ auto sample_frame_at(signed_rational_t seconds, std::uint32_t sample_rate,
         const auto quotient = wide_math::divide(
             wide_math::multiply(numerator, reduced_rate), {0, denominator});
         if (!wide_math::can_fit_u64(quotient.quotient)) {
-            return {.error = error(timing_error_code_t::arithmetic_overflow,
-                                   "sample-frame conversion overflows")};
+            return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::arithmetic_overflow,
+                                   "sample-frame conversion overflows")});
         }
         whole = quotient.quotient.low;
         remainder = quotient.remainder.low;
@@ -1615,8 +1615,8 @@ auto sample_frame_at(signed_rational_t seconds, std::uint32_t sample_rate,
     auto frame = whole;
     if (rounding == sample_rounding_t::ceil && remainder != 0) {
         if (frame == std::numeric_limits<std::uint64_t>::max()) {
-            return {.error = error(timing_error_code_t::arithmetic_overflow,
-                                   "rounded sample frame overflows")};
+            return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::arithmetic_overflow,
+                                   "rounded sample frame overflows")});
         }
         ++frame;
     } else if (rounding == sample_rounding_t::nearest_ties_to_even && remainder != 0) {
@@ -1624,13 +1624,23 @@ auto sample_frame_at(signed_rational_t seconds, std::uint32_t sample_rate,
         const bool round_up = remainder > complement || (remainder == complement && frame % 2 != 0);
         if (round_up) {
             if (frame == std::numeric_limits<std::uint64_t>::max()) {
-                return {.error = error(timing_error_code_t::arithmetic_overflow,
-                                       "rounded sample frame overflows")};
+                return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::arithmetic_overflow,
+                                       "rounded sample frame overflows")});
             }
             ++frame;
         }
     }
-    return {.frame = frame};
+    return timing_query_value_t<sample_frame_t>::from(sample_frame_t{.frame = frame});
+}
+
+auto sample_frame_result_t::from(sample_frame_outcome_t&& outcome) -> sample_frame_result_t {
+    if (outcome) return {.frame = outcome->value.frame, .error = std::move(outcome->metadata)};
+    return {.frame = std::nullopt, .error = std::move(outcome.error())};
+}
+
+auto sample_frame_at(signed_rational_t seconds, std::uint32_t sample_rate,
+                     sample_rounding_t rounding) -> sample_frame_result_t {
+    return sample_frame_result_t::from(sample_frame_t::from(seconds, sample_rate, rounding));
 }
 
 auto preview_schedule_t::music_event_t::from(resource_id_t resource,
@@ -2398,31 +2408,27 @@ auto rows_transition_end(const transition_span_context_t& context)
 auto scroll_speed_transition_span_at(const scroll_speed_index_t& index,
                                      const timing_index_t& timing,
                                      std::vector<speed_curve_segment_t>::const_iterator segment)
-    -> scroll_speed_transition_span_result_t {
+    -> scroll_speed_transition_span_outcome_t {
     const auto source_event = segment->source_event;
-    const auto span_error = [&](timing_error_code_t code, std::string message) {
-        return scroll_speed_transition_span_result_t{
-            .error = error(code, std::move(message), source_event)};
-    };
     if (segment->begin_row > segment->end_row || segment->end_row > index.total_rows ||
         segment->begin_row > maximum_i64_magnitude ||
         segment->transition_duration.denominator == 0) {
-        return span_error(timing_error_code_t::invalid_document,
-                          "compiled SPEEDS transition span is invalid");
+        return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::invalid_document,
+                          "compiled SPEEDS transition span is invalid", source_event)});
     }
 
     const auto begin_row = signed_rational_t{static_cast<std::int64_t>(segment->begin_row), 1};
     const auto begin_seconds = segment->begin_seconds;
     const auto duration = segment->transition_duration;
     if (duration.numerator == 0) {
-        return {.span = scroll_speed_transition_span_t{.source_event = source_event,
+        return timing_query_value_t<scroll_speed_transition_span_t>::from(scroll_speed_transition_span_t{.source_event = source_event,
                                                        .begin_row = begin_row,
                                                        .end_row = begin_row,
                                                        .begin_seconds = begin_seconds,
                                                        .end_seconds = begin_seconds,
                                                        .transition_is_seconds =
                                                            segment->transition_is_seconds,
-                                                       .clipped = false}};
+                                                       .clipped = false});
     }
 
     const auto next_segment = std::next(segment);
@@ -2434,7 +2440,7 @@ auto scroll_speed_transition_span_at(const scroll_speed_index_t& index,
                                                    : timing_boundary_side_t::before_delays);
     const auto cap_time = timing_seconds_at_row(timing, cap_row, cap_side);
     if (!cap_time) {
-        return span_error(cap_time.error->code, cap_time.error->message);
+        return std::unexpected(std::optional<timing_diagnostic_t>{error(cap_time.error->code, cap_time.error->message, source_event)});
     }
 
     const auto context = transition_span_context_t{
@@ -2442,18 +2448,18 @@ auto scroll_speed_transition_span_at(const scroll_speed_index_t& index,
     const auto end = segment->transition_is_seconds ? seconds_transition_end(context)
                                                     : rows_transition_end(context);
     if (const auto* failure = std::get_if<timing_diagnostic_t>(&end)) {
-        return {.error = *failure};
+        return std::unexpected(std::optional<timing_diagnostic_t>{*failure});
     }
     const auto& resolved = std::get<transition_span_end_t>(end);
 
-    return {.span = scroll_speed_transition_span_t{.source_event = source_event,
+    return timing_query_value_t<scroll_speed_transition_span_t>::from(scroll_speed_transition_span_t{.source_event = source_event,
                                                    .begin_row = begin_row,
                                                    .end_row = resolved.row,
                                                    .begin_seconds = begin_seconds,
                                                    .end_seconds = resolved.seconds,
                                                    .transition_is_seconds =
                                                        segment->transition_is_seconds,
-                                                   .clipped = resolved.clipped}};
+                                                   .clipped = resolved.clipped});
 }
 
 auto is_scroll_speed_span_index_current(const scroll_speed_index_t& index,
@@ -2465,24 +2471,32 @@ auto is_scroll_speed_span_index_current(const scroll_speed_index_t& index,
 
 } // namespace
 
-auto scroll_speed_transition_span(const scroll_speed_index_t& index, const timing_index_t& timing,
+auto scroll_speed_transition_span_t::from(const scroll_speed_index_t& index, const timing_index_t& timing,
                                   object_id_t source_event)
-    -> scroll_speed_transition_span_result_t {
-    const auto span_error = [&](timing_error_code_t code, std::string message) {
-        return scroll_speed_transition_span_result_t{
-            .error = error(code, std::move(message), source_event)};
-    };
+    -> scroll_speed_transition_span_outcome_t {
     if (!is_scroll_speed_span_index_current(index, timing)) {
-        return span_error(timing_error_code_t::invalid_document,
-                          "scroll/speed index does not match the timing index");
+        return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::invalid_document,
+                          "scroll/speed index does not match the timing index", source_event)});
     }
     const auto segment =
         std::ranges::find(index.speed_segments, source_event, &speed_curve_segment_t::source_event);
     if (segment == index.speed_segments.end()) {
-        return span_error(timing_error_code_t::position_out_of_range,
-                          "SPEEDS object is not present in the compiled index");
+        return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::position_out_of_range,
+                          "SPEEDS object is not present in the compiled index", source_event)});
     }
     return scroll_speed_transition_span_at(index, timing, segment);
+}
+
+auto scroll_speed_transition_span_result_t::from(scroll_speed_transition_span_outcome_t&& outcome)
+    -> scroll_speed_transition_span_result_t {
+    if (outcome) return {.span = std::move(outcome->value), .error = std::move(outcome->metadata)};
+    return {.span = std::nullopt, .error = std::move(outcome.error())};
+}
+
+auto scroll_speed_transition_span(const scroll_speed_index_t& index, const timing_index_t& timing,
+                                  object_id_t source_event) -> scroll_speed_transition_span_result_t {
+    return scroll_speed_transition_span_result_t::from(
+        scroll_speed_transition_span_t::from(index, timing, source_event));
 }
 
 auto scroll_speed_transition_spans_t::from(const scroll_speed_index_t& index, const timing_index_t& timing,
@@ -2500,8 +2514,8 @@ auto scroll_speed_transition_spans_t::from(const scroll_speed_index_t& index, co
     result.value.spans.reserve(count);
     const auto first = index.speed_segments.cbegin();
     for (std::size_t position = 0; position < count; ++position) {
-        const auto span = scroll_speed_transition_span_at(
-            index, timing, first + static_cast<std::ptrdiff_t>(position));
+        const auto span = scroll_speed_transition_span_result_t::from(scroll_speed_transition_span_at(
+            index, timing, first + static_cast<std::ptrdiff_t>(position)));
         if (!span.span) {
             result.diagnostics.push_back(
                 span.error.value_or(error(timing_error_code_t::invalid_document,

@@ -431,9 +431,10 @@ TEST_CASE("sample-frame conversion is exact with explicit rounding",
 
 TEST_CASE("sample-frame conversion rejects negative times",
           "[unit][core][timing][sample-frame]") {
-    const auto negative = sample_frame_at({-1, 2}, 44'100);
+    const auto negative = sample_frame_t::from({-1, 2}, 44'100);
     REQUIRE_FALSE(negative);
-    CHECK(negative.error->code == timing_error_code_t::negative_sample_frame);
+    REQUIRE(negative.error().has_value());
+    CHECK(negative.error()->code == timing_error_code_t::negative_sample_frame);
 }
 
 TEST_CASE("sample-frame conversion divides a wide coprime rational",
@@ -1345,12 +1346,12 @@ TEST_CASE("speed transition spans preserve their clock and clip at replacements 
     REQUIRE(chart_end_timing);
     const auto chart_end_speed = build_scroll_speed_index(chart_end_chart, *chart_end_timing.index);
     REQUIRE(chart_end_speed);
-    const auto chart_end_span = scroll_speed_transition_span(
+    const auto chart_end_span = scroll_speed_transition_span_t::from(
         *chart_end_speed.index, *chart_end_timing.index, object_id_t{88});
     REQUIRE(chart_end_span);
-    CHECK(chart_end_span.span->begin_row == signed_rational_t{1'440, 1});
-    CHECK(chart_end_span.span->end_row == signed_rational_t{1'680, 1});
-    CHECK(chart_end_span.span->clipped);
+    CHECK(chart_end_span->value.begin_row == signed_rational_t{1'440, 1});
+    CHECK(chart_end_span->value.end_row == signed_rational_t{1'680, 1});
+    CHECK(chart_end_span->value.clipped);
 }
 
 TEST_CASE("bulk SPEEDS transition spans preserve compiled order and report caps",
@@ -1868,4 +1869,26 @@ TEST_CASE("Timing frame last-row policy preserves playback clock rejection", "[u
     const auto before_zero = build_timing_index(chart);
     require_timing_query(static_cast<bool>(before_zero));
     check_timing_query(!before_zero.index->row_at_frame(0, 48000, chart_end_policy_t::clamp_to_last_row));
+}
+
+TEST_CASE("timing query adapters preserve an empty error without fabricating a diagnostic",
+          "[unit][core][timing][sample-frame]") {
+    auto outcome = timing_query_value_t<sample_frame_t>::from(std::nullopt);
+    REQUIRE_FALSE(outcome);
+    const auto legacy = sample_frame_result_t::from(std::move(outcome));
+    CHECK_FALSE(legacy);
+    CHECK_FALSE(legacy.error);
+}
+
+TEST_CASE("timing query value presence retains its diagnostic annotation",
+          "[unit][core][timing][sample-frame]") {
+    auto outcome = timing_query_value_t<sample_frame_t>::from(sample_frame_t{.frame = 7},
+        std::optional<timing_diagnostic_t>{timing_diagnostic_t{
+            .severity = diagnostic_severity_t::error, .code = timing_error_code_t::arithmetic_overflow,
+            .message = "retained annotation"}});
+    REQUIRE(outcome);
+    const auto legacy = sample_frame_result_t::from(std::move(outcome));
+    CHECK(legacy.frame == 7);
+    REQUIRE(legacy.error);
+    CHECK(legacy.error->message == "retained annotation");
 }

@@ -12,6 +12,7 @@
 #include <span>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 namespace wormedit {
@@ -34,6 +35,19 @@ enum class timing_error_code_t {
 
 using timing_diagnostic_t =
     object_diagnostic_t<timing_error_code_t, timing_error_code_t::invalid_document>;
+
+template <class Value, class Metadata = std::optional<timing_diagnostic_t>>
+struct timing_query_value_t {
+    [[nodiscard]] static auto from(std::optional<Value>&& value, Metadata&& metadata = {})
+        -> result_t<timing_query_value_t, Metadata> {
+        if (value) return timing_query_value_t{.value = std::move(*value), .metadata = std::move(metadata)};
+        return std::unexpected(std::move(metadata));
+    }
+    Value value;
+    Metadata metadata;
+};
+template <class Value, class Metadata = std::optional<timing_diagnostic_t>>
+using timing_query_outcome_t = result_t<timing_query_value_t<Value, Metadata>, Metadata>;
 
 enum class timing_boundary_side_t {
     // Arrival at the musical row, before a delay at that row.
@@ -167,7 +181,16 @@ enum class sample_rounding_t {
     nearest_ties_to_even,
 };
 
+struct sample_frame_t {
+    [[nodiscard]] static auto from(signed_rational_t seconds, std::uint32_t sample_rate,
+                                   sample_rounding_t rounding = sample_rounding_t::nearest_ties_to_even)
+        -> timing_query_outcome_t<sample_frame_t>;
+    std::uint64_t frame{};
+};
+using sample_frame_outcome_t = timing_query_outcome_t<sample_frame_t>;
+
 struct sample_frame_result_t {
+    [[nodiscard]] static auto from(sample_frame_outcome_t&& outcome) -> sample_frame_result_t;
     std::optional<std::uint64_t> frame;
     std::optional<timing_diagnostic_t> error;
 
@@ -335,6 +358,9 @@ struct scroll_speed_query_result_t {
 // where a seconds-clock transition can advance without moving in row space.
 // The end is clipped at a replacement speed event or chart end.
 struct scroll_speed_transition_span_t {
+    [[nodiscard]] static auto from(const scroll_speed_index_t& index, const timing_index_t& timing,
+                                   object_id_t source_event)
+        -> timing_query_outcome_t<scroll_speed_transition_span_t>;
     object_id_t source_event;
     signed_rational_t begin_row;
     signed_rational_t end_row;
@@ -343,8 +369,11 @@ struct scroll_speed_transition_span_t {
     bool transition_is_seconds{};
     bool clipped{};
 };
+using scroll_speed_transition_span_outcome_t = timing_query_outcome_t<scroll_speed_transition_span_t>;
 
 struct scroll_speed_transition_span_result_t {
+    [[nodiscard]] static auto from(scroll_speed_transition_span_outcome_t&& outcome)
+        -> scroll_speed_transition_span_result_t;
     std::optional<scroll_speed_transition_span_t> span;
     std::optional<timing_diagnostic_t> error;
 

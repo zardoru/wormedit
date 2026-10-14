@@ -135,10 +135,10 @@ void mark_document_saved(document_history_t& history) noexcept {
     history.saved_revision = history.document.revision;
 }
 
-auto commit_document_command(document_history_t& history, song_document_t proposed,
+static auto commit_validated_document(document_history_t& history, song_document_t&& proposed,
                              std::string label, document_command_options_t options)
-    -> document_command_result_t {
-    document_command_result_t result{.revision = history.document.revision};
+    -> document_command_outcome_t {
+    document_command_outcome_t result{.value = {.revision = history.document.revision}};
     if (history.next_revision == std::numeric_limits<std::uint64_t>::max()) {
         result.diagnostics.push_back(
             error(diagnostic_code_t::invalid_id, "document revision sequence is exhausted"));
@@ -149,9 +149,7 @@ auto commit_document_command(document_history_t& history, song_document_t propos
     if (!options.preserve_retained_source_flags) mark_retained_sources_changed(proposed);
     sync_virtual_tails(proposed);
     result.diagnostics = validate_document(proposed);
-    if (std::ranges::any_of(result.diagnostics, [](const auto& diagnostic) {
-            return diagnostic.severity == diagnostic_severity_t::error;
-        })) {
+    if (!result.ok()) {
         return result;
     }
 
@@ -165,9 +163,23 @@ auto commit_document_command(document_history_t& history, song_document_t propos
     trim_undo_history(history);
     history.redo.clear();
     ++history.next_revision;
-    result.applied = true;
-    result.revision = history.document.revision;
+    result.value.applied = true;
+    result.value.revision = history.document.revision;
     return result;
+}
+
+auto document_command_result_t::from(document_command_outcome_t&& outcome) -> document_command_result_t {
+    return {.applied = outcome.value.applied, .revision = outcome.value.revision,
+        .diagnostics = std::move(outcome.diagnostics)};
+}
+
+auto document_command_result_t::from(document_command_result_t&& result) -> document_command_outcome_t {
+    return {.value = {.applied = result.applied, .revision = result.revision}, .diagnostics = std::move(result.diagnostics)};
+}
+
+auto commit_document_command(document_history_t& history, song_document_t proposed,
+    std::string label, document_command_options_t options) -> document_command_result_t {
+    return document_command_result_t::from(commit_validated_document(history, std::move(proposed), std::move(label), options));
 }
 
 auto document_command_transaction_t::from(document_history_t& history)
@@ -192,11 +204,7 @@ auto document_command_transaction_t::from(document_history_t& history, const cha
 }
 
 auto document_command_transaction_t::is_ready() const noexcept -> bool {
-    if (finished) return false;
-    for (const auto& diagnostic : outcome.diagnostics) {
-        if (diagnostic.severity == diagnostic_severity_t::error) return false;
-    }
-    return true;
+    return !finished && !diagnostic_queries::has_errors(outcome.diagnostics);
 }
 
 auto document_command_transaction_t::has_copy() const noexcept -> bool {
@@ -256,11 +264,17 @@ auto document_command_transaction_t::reject(diagnostic_code_t code, std::string 
     return std::move(outcome);
 }
 
+auto document_command_transaction_t::commit_outcome(std::string label, document_command_options_t options)
+    -> document_command_outcome_t {
+    if (!is_ready() || !proposed) return document_command_result_t::from(std::move(outcome));
+    finished = true;
+    auto working_document = std::move(*proposed);
+    return commit_validated_document(history, std::move(working_document), std::move(label), options);
+}
+
 auto document_command_transaction_t::commit(std::string label, document_command_options_t options)
     -> document_command_result_t {
-    if (!is_ready() || !proposed) return std::move(outcome);
-    finished = true;
-    return commit_document_command(history, std::move(*proposed), std::move(label), options);
+    return document_command_result_t::from(commit_outcome(std::move(label), options));
 }
 
 void merge_recent_undo_records(document_history_t& history, std::size_t count, std::string label) {

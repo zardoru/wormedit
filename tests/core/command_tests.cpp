@@ -393,3 +393,16 @@ TEST_CASE("Stamped transactions preserve a proposal's stale diagnostic code",
     CHECK(transaction.outcome.diagnostics.front().code == diagnostic_code_t::invalid_binding);
     test::check_stale_action_message(transaction.outcome.diagnostics, "Binding proposal");
 }
+
+TEST_CASE("Finishing an unpublished transaction closes and discards its snapshot",
+          "[core][command][stamped-transaction]") {
+    auto history = document_history_t::from(make_song());
+    auto transaction = document_command_transaction_t::from(history);
+    transaction.copy_document().metadata.title = "Unpublished";
+    const auto result = transaction.finish_without_commit();
+    CHECK_FALSE(result.applied);
+    CHECK_FALSE(transaction.is_ready());
+    CHECK_FALSE(transaction.has_copy());
+    CHECK(history.document.metadata.title.empty());
+    CHECK(history.undo.empty());
+}

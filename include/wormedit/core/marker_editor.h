@@ -107,4 +107,9 @@ using marker_edit_action_t =
                                      const marker_edit_action_t& action,
                                      marker_edit_limits_t limits = {}) -> document_command_result_t;
 
+// Uses a ready command transaction supplied by a captured edit proposal.
+[[nodiscard]] auto apply_marker_edit(document_command_transaction_t& transaction,
+    const marker_edit_action_t& action, marker_edit_limits_t limits = {})
+    -> document_command_result_t;
+
 } // namespace wormedit

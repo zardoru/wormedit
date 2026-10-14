@@ -835,10 +835,8 @@ TEST_CASE("Compose timing projection skips whole-chart geometry and preserves in
     grid.active_denominator = 4;
     timing_lane_pseudonote_preview_t stage;
     stage.status = timing_lane_pseudonote_status_t::editing;
-    stage.chart = chart_id_t{1};
-    stage.document_revision = history.document.revision;
+    stage.stamp = chart_stamp_t::from(history.document, chart_id_t{1});
     stage.position = {measure_id_t{1}, 0};
-    stage.valid = true;
     populate_timing_view_for_compose(flattened, history, workspace, cache, 1280, 980,
                                     grid, &stage);
     const auto& view = flattened.view.timing;

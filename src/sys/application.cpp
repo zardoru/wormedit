@@ -1027,7 +1027,7 @@ void delete_staged_timing_event(const WormUiWorkspaceAction& action,
         post_edit_rejection(notifications, {}, "The selected timing event cannot be deleted.");
     } else {
         const auto result = wormedit::delete_existing_timing_lane_event(
-            history, stage.chart, *kind, *stage.existing_event, timing_locked);
+            history, stage.stamp.chart, *kind, *stage.existing_event, timing_locked);
         if (result)
             notifications.post(wormedit::notification_severity_t::success,
                                wormedit::notification_source_t::edit, "Timing event deleted.");
@@ -1053,7 +1053,7 @@ void quick_insert_timing_event(const WormUiWorkspaceAction& action,
         post_edit_rejection(notifications, candidate.diagnostics, "Timing event could not be inserted at that row.");
         return;
     }
-    const auto result = wormedit::confirm_timing_lane_pseudonote(history, candidate, timing_locked);
+    const auto result = wormedit::apply_timing_lane_pseudonote(history, candidate, timing_locked);
     if (result)
         notifications.post(wormedit::notification_severity_t::success,
                            wormedit::notification_source_t::edit, "Timing event inserted.");
@@ -2355,7 +2355,7 @@ struct application_t::implementation_t {
                 : timing_position_from_fraction(
                       *chart, wormedit::sys::timing_target_fraction(action.timing_target),
                       active_snap_denominator);
-        if (!target || !wormedit::move_existing_timing_lane_pseudonote(session.history, stage,
+        if (!target || !wormedit::revise_existing_timing_lane_pseudonote_position(session.history, stage,
                                                                        *target, timing_locked)) {
             post_edit_rejection(platform.notification_sink, stage.diagnostics,
                                 "The timing marker cannot move to that row.");
@@ -3758,7 +3758,6 @@ struct application_t::implementation_t {
                                             : timing_stage_value(*timing_stage, *chart, action,
                                                                  active_snap_denominator);
         if (!value) {
-            timing_stage->valid = false;
             timing_stage->diagnostics = {{
                 .severity = wormedit::diagnostic_severity_t::error,
                 .code = wormedit::diagnostic_code_t::invalid_rational,
@@ -3770,10 +3769,10 @@ struct application_t::implementation_t {
             return;
         }
 
-        const bool valid = wormedit::update_timing_lane_pseudonote(session.history, *timing_stage,
+        const bool valid = wormedit::revise_timing_lane_pseudonote(session.history, *timing_stage,
                                                                    *value, timing_locked);
         if (action.timing_stage_action == WORM_UI_TIMING_STAGE_CONFIRM && valid) {
-            const auto result = wormedit::confirm_timing_lane_pseudonote(
+            const auto result = wormedit::apply_timing_lane_pseudonote(
                 session.history, *timing_stage, timing_locked);
             const auto edited_existing = timing_stage->existing_event.has_value();
             if (result)
@@ -3940,7 +3939,7 @@ struct application_t::implementation_t {
                 *failure);
             return;
         }
-        const auto chart = std::ranges::find(session.history.document.charts, stage->chart,
+        const auto chart = std::ranges::find(session.history.document.charts, stage->stamp.chart,
                                              &wormedit::chart_document_t::id);
         auto* chart_ptr = chart == session.history.document.charts.end() ? nullptr : &*chart;
         if (action.timing_stage_action == WORM_UI_TIMING_STAGE_DELETE) {

@@ -893,7 +893,7 @@ Part 2 adds four more causes:
 
 - **SP1 V — A second command shape.** Begin (validate, then build a stamped proposal) → revise →
   apply (stale check, then commit) or cancel. Example: `quick_insert_timing_event`
-  (`main.cpp:1802`) is `begin_timing_stage` followed at once by `confirm_timing_lane_pseudonote`.
+  (`main.cpp:1802`) is `begin_timing_stage` followed at once by `apply_timing_lane_pseudonote`.
   The staged path keeps the proposal in `timing_edit.stage` across frames and re-checks it in
   `validate_timing_stage_binding` (`main.cpp:1716`).
 - **SP2 V — The same concept, spelled differently each time.**

@@ -540,8 +540,7 @@ void populate_compose_timing_markers(
     view.timing_marker_count = flattened.compose.timing_marker.size();
     if (timing_stage &&
         timing_stage->status == wormedit::timing_lane_pseudonote_status_t::editing &&
-        timing_stage->chart == chart.id &&
-        timing_stage->document_revision == view.document_revision) {
+        timing_stage->stamp.is_current(chart.id, view.document_revision)) {
         const auto stage_row =
             wormedit::absolute_row(cache.scene.index->measures, timing_stage->position);
         if (stage_row) {
@@ -550,7 +549,7 @@ void populate_compose_timing_markers(
                                              view.viewport_height_pixels, downscroll);
             if (std::isfinite(y) && y >= 0.0 && y <= view.viewport_height_pixels) {
                 view.timing_stage_active = true;
-                view.timing_stage_valid = timing_stage->valid;
+                view.timing_stage_valid = timing_stage->is_valid();
                 view.timing_stage_lane = timing_lane_kind_to_ui(timing_stage->kind);
                 view.timing_stage_y_pixels = y;
             }

@@ -164,6 +164,9 @@ struct marker_edit_context_t {
     std::string command_label;
     chart_id_t edited_chart;
     bool changed{};
+
+    template <typename Edit> void operator()(const Edit& edit);
+
 };
 
 struct marker_edit_target_t {
@@ -429,18 +432,30 @@ auto apply_marker_operation(marker_edit_context_t& context, const Edit& edit) ->
         apply_marker_action(context, *target->chart, target->index, edit);
 }
 
+template <typename Edit>
+void marker_edit_context_t::operator()(const Edit& edit) {
+    apply_marker_operation(*this, edit);
+}
+
+
 } // namespace
 
 auto apply_marker_edit(document_history_t& history,
+    const marker_edit_action_t& action, marker_edit_limits_t limits) -> document_command_result_t {
+    auto transaction = document_command_transaction_t::from(history);
+    return apply_marker_edit(transaction, action, limits);
+}
+
+auto apply_marker_edit(document_command_transaction_t& transaction,
                        const marker_edit_action_t& action, marker_edit_limits_t limits)
     -> document_command_result_t {
-    auto transaction = document_command_transaction_t::from(history);
+    if (!transaction.is_ready()) return transaction.commit({});
     auto& result = transaction.outcome;
     if (limits.maximum_bookmarks == 0 || limits.maximum_sections == 0 ||
         limits.maximum_kiai_events == 0 || limits.maximum_chart_objects == 0) {
         reject(result, diagnostic_code_t::invalid_resolution,
                "marker and event caps must be positive");
-        return result;
+        return transaction.finish_without_commit();
     }
 
     auto& proposed = transaction.copy_document();
@@ -450,16 +465,16 @@ auto apply_marker_edit(document_history_t& history,
                                   .command_label = {},
                                   .edited_chart = {},
                                   .changed = false};
-    std::visit([&](const auto& edit) { apply_marker_operation(context, edit); }, action);
+    std::visit(context, action);
 
     if (!result.diagnostics.empty() || !context.changed) {
-        return result;
+        return transaction.finish_without_commit();
     }
     const auto chart = proposed.find_chart(context.edited_chart);
     if (chart == nullptr || !is_marker_text_within_limit(*chart, limits)) {
         reject(result, diagnostic_code_t::unsupported_feature,
                "marker labels exceed the configured UTF-8 text limits");
-        return result;
+        return transaction.finish_without_commit();
     }
     return transaction.commit(std::move(context.command_label));
 }

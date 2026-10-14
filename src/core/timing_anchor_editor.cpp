@@ -106,41 +106,50 @@ auto apply_anchor_edit(chart_document_t& chart, const delete_timing_anchor_actio
     return {.changed = true, .command_label = "Delete timing anchor"};
 }
 
+struct anchor_operation_visitor_t {
+    document_command_transaction_t& transaction;
+    const timing_anchor_edit_limits_t& limits;
+
+    template <typename Edit> auto operator()(const Edit& edit) const -> anchor_edit_result_t {
+        auto& result = transaction.outcome;
+        const auto chart = transaction.copy_document().find_chart(edit.chart);
+        if (!edit.chart || chart == nullptr) {
+            reject(result, diagnostic_code_t::invalid_id,
+                   "timing anchor edit refers to an unknown chart");
+            return {};
+        }
+        if (chart->timing_anchors.size() > limits.maximum_timing_anchors) {
+            reject(result, diagnostic_code_t::invalid_resolution,
+                   "selected chart exceeds the timing anchor cap");
+            return {};
+        }
+        return apply_anchor_edit(*chart, edit, limits, result);
+    }
+};
+
 } // namespace
 
 auto apply_timing_anchor_edit(document_history_t& history,
+    const timing_anchor_edit_action_t& action, timing_anchor_edit_limits_t limits) -> document_command_result_t {
+    auto transaction = document_command_transaction_t::from(history);
+    return apply_timing_anchor_edit(transaction, action, limits);
+}
+
+auto apply_timing_anchor_edit(document_command_transaction_t& transaction,
                               const timing_anchor_edit_action_t& action,
                               timing_anchor_edit_limits_t limits) -> document_command_result_t {
-    document_command_result_t result{.revision = history.document.revision};
+    if (!transaction.is_ready()) return transaction.commit({});
+    auto& result = transaction.outcome;
     if (limits.maximum_timing_anchors == 0) {
         reject(result, diagnostic_code_t::invalid_resolution, "timing anchor cap must be positive");
-        return result;
+        return transaction.finish_without_commit();
     }
 
-    auto transaction = document_command_transaction_t::from(history);
-    auto& proposed = transaction.copy_document();
-    anchor_edit_result_t edit_result;
-    std::visit(
-        [&](const auto& edit) {
-            const auto chart =
-                proposed.find_chart(edit.chart);
-            if (!edit.chart || chart == nullptr) {
-                reject(result, diagnostic_code_t::invalid_id,
-                       "timing anchor edit refers to an unknown chart");
-                return;
-            }
-            if (chart->timing_anchors.size() > limits.maximum_timing_anchors) {
-                reject(result, diagnostic_code_t::invalid_resolution,
-                       "selected chart exceeds the timing anchor cap");
-                return;
-            }
-
-            edit_result = apply_anchor_edit(*chart, edit, limits, result);
-        },
-        action);
+    const auto edit_result =
+        std::visit(anchor_operation_visitor_t{transaction, limits}, action);
 
     if (!result.diagnostics.empty() || !edit_result.changed) {
-        return result;
+        return transaction.finish_without_commit();
     }
     return transaction.commit(edit_result.command_label);
 }

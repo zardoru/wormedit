@@ -84,16 +84,19 @@ enum class timing_lane_pseudonote_status_t {
 
 struct timing_lane_pseudonote_preview_t {
     timing_lane_pseudonote_status_t status{timing_lane_pseudonote_status_t::inactive};
-    chart_id_t chart;
+    chart_stamp_t stamp;
     timing_lane_kind_t kind{timing_lane_kind_t::bpm};
     local_position_t position;
     timing_lane_value_t value{timing_bpm_value_t{}};
     std::optional<object_id_t> existing_event;
     timing_lane_initial_value_source_t initial_value_source{
         timing_lane_initial_value_source_t::explicit_default};
-    std::uint64_t document_revision{};
-    bool valid{};
     diagnostic_list_t diagnostics;
+
+    [[nodiscard]] auto is_valid() const noexcept -> bool {
+        return status == timing_lane_pseudonote_status_t::committed ||
+               (status == timing_lane_pseudonote_status_t::editing && diagnostics.empty());
+    }
 };
 
 // BPM, scroll/SV, speed, stop, delay, warp, kiai, and timing-anchor lanes are
@@ -127,7 +130,7 @@ begin_timing_lane_pseudonote(const document_history_t& history, chart_id_t chart
 // Updates only the transient preview. Invalid typed values remain visible in
 // the preview with diagnostics and cannot be confirmed. A lock or revision
 // change cancels the preview immediately.
-[[nodiscard]] auto update_timing_lane_pseudonote(const document_history_t& history,
+[[nodiscard]] auto revise_timing_lane_pseudonote(const document_history_t& history,
                                                  timing_lane_pseudonote_preview_t& preview,
                                                  timing_lane_value_t value, bool timing_locked)
     -> bool;
@@ -136,7 +139,7 @@ begin_timing_lane_pseudonote(const document_history_t& history, chart_id_t chart
 // preview. The caller supplies an already-snapped exact position; confirmation
 // remains one typed update command and preserves the marker's stable ID and
 // source provenance. New pseudo-notes keep their insertion row fixed.
-[[nodiscard]] auto move_existing_timing_lane_pseudonote(
+[[nodiscard]] auto revise_existing_timing_lane_pseudonote_position(
     const document_history_t& history, timing_lane_pseudonote_preview_t& preview,
     local_position_t exact_snapped_position, bool timing_locked) -> bool;
 
@@ -151,7 +154,7 @@ begin_timing_lane_pseudonote(const document_history_t& history, chart_id_t chart
 // Confirmation validates the captured preview and calls the typed timing
 // command API, using an update command for an existing event. No playable note
 // is ever created by this controller.
-[[nodiscard]] auto confirm_timing_lane_pseudonote(document_history_t& history,
+[[nodiscard]] auto apply_timing_lane_pseudonote(document_history_t& history,
                                                   timing_lane_pseudonote_preview_t& preview,
                                                   bool timing_locked) -> document_command_result_t;
 

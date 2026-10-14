@@ -33,7 +33,7 @@ TEST_CASE("Application binding validation accepts current inputs and preserves m
     const wormedit::document_history_t history{.document = {.id = wormedit::song_id_t{1}, .revision = 7}};
     wormedit::workspace_controller_t workspace{.active_tab = wormedit::workspace_tab_t::compose,
         .selected_chart = wormedit::chart_id_t{2}};
-    const wormedit::timing_lane_pseudonote_preview_t stage{.chart = wormedit::chart_id_t{2}, .document_revision = 7};
+    const wormedit::timing_lane_pseudonote_preview_t stage{.stamp = wormedit::chart_stamp_t::from(history.document, wormedit::chart_id_t{2})};
     WormUiWorkspaceAction action{};
     action.timing_chart_id = 2;
     action.timing_document_revision = 7;
@@ -57,15 +57,15 @@ TEST_CASE("Application timing stage validation keeps captured identity and reque
     wormedit::document_history_t history{.document = {.id = wormedit::song_id_t{1}, .revision = 7}};
     wormedit::workspace_controller_t workspace{.active_tab = wormedit::workspace_tab_t::compose,
         .selected_chart = wormedit::chart_id_t{2}};
-    wormedit::timing_lane_pseudonote_preview_t stage{.chart = wormedit::chart_id_t{2},
-        .existing_event = wormedit::object_id_t{3}, .document_revision = 7};
+    wormedit::timing_lane_pseudonote_preview_t stage{.stamp = wormedit::chart_stamp_t::from(history.document, wormedit::chart_id_t{2}),
+        .existing_event = wormedit::object_id_t{3}};
     WormUiWorkspaceAction action{};
     action.timing_chart_id = 2;
     action.timing_object_id = 3;
     action.timing_document_revision = 7;
     if (source == 0) --action.timing_document_revision;
-    else if (source == 1) --stage.document_revision;
-    else stage.chart = wormedit::chart_id_t{4};
+    else if (source == 1) --stage.stamp.document.revision;
+    else stage.stamp.chart = wormedit::chart_id_t{4};
     const auto failure = wormedit::sys::validate_timing_stage_binding(action, history, workspace, stage);
     REQUIRE(failure.has_value());
     wormedit::test::check_stale_action_message(*failure, "Timing event staging");
@@ -825,7 +825,7 @@ auto bpm_stage_ready(const TimingInsertFixture& fixture,
 
 auto confirm_bpm_once(TimingInsertFixture& fixture, std::uint64_t revision) -> bool {
     if (!fixture.preview) return false;
-    const auto committed = wormedit::confirm_timing_lane_pseudonote(
+    const auto committed = wormedit::apply_timing_lane_pseudonote(
         fixture.fixture.history, *fixture.preview, false);
     return committed.applied && fixture.fixture.history.document.revision == revision + 1 &&
            fixture.fixture.history.undo.size() == 1;

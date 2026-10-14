@@ -31,6 +31,8 @@ struct chart_stamp_t {
 
     [[nodiscard]] static auto from(const song_document_t& document, chart_id_t chart) noexcept
         -> chart_stamp_t;
+    [[nodiscard]] auto is_current(chart_id_t current_chart,
+                                  std::uint64_t current_revision) const noexcept -> bool;
     [[nodiscard]] auto is_current(const song_document_t& current, chart_id_t selected,
         document_identity_policy_t policy = document_identity_policy_t::project_and_revision) const noexcept -> bool;
     auto operator==(const chart_stamp_t&) const -> bool = default;
@@ -142,6 +144,8 @@ struct document_command_transaction_t {
     // Staged editors hand over their existing snapshot without copying the live document.
     void adopt_document(song_document_t&& document);
     auto chart(chart_id_t id) -> chart_document_t*;
+    // Returns the current outcome and discards the working snapshot without publication.
+    [[nodiscard]] auto finish_without_commit() -> document_command_result_t;
     [[nodiscard]] auto reject(diagnostic_code_t code, std::string message,
                 std::optional<object_id_t> object = std::nullopt) -> document_command_result_t;
     [[nodiscard]] static auto rejection(std::uint64_t revision, diagnostic_code_t code,

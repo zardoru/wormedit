@@ -46,4 +46,9 @@ using timing_anchor_edit_action_t =
                                             timing_anchor_edit_limits_t limits = {})
     -> document_command_result_t;
 
+// Uses a ready command transaction supplied by a captured edit proposal.
+[[nodiscard]] auto apply_timing_anchor_edit(document_command_transaction_t& transaction,
+    const timing_anchor_edit_action_t& action, timing_anchor_edit_limits_t limits = {})
+    -> document_command_result_t;
+
 } // namespace wormedit

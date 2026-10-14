@@ -1468,6 +1468,9 @@ struct sv_recipe_edit_context_t {
     document_command_result_t& result;
     std::string label;
     bool changed{};
+
+    template <typename Edit> void operator()(const Edit& edit);
+
 };
 
 auto editable_recipe_chart(sv_recipe_edit_context_t& context, chart_id_t id)
@@ -1678,13 +1681,11 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context, const Edit& edit)
         apply_recipe_operation(context, *chart, edit);
 }
 
-struct sv_recipe_operation_visitor_t {
-    sv_recipe_edit_context_t& context;
+template <typename Edit>
+void sv_recipe_edit_context_t::operator()(const Edit& edit) {
+    apply_recipe_operation(*this, edit);
+}
 
-    template <typename Edit> void operator()(const Edit& edit) const {
-        apply_recipe_operation(context, edit);
-    }
-};
 
 auto apply_sv_recipe_transaction(document_command_transaction_t& transaction,
                                  const sv_recipe_edit_action_t& action)
@@ -1695,9 +1696,9 @@ auto apply_sv_recipe_transaction(document_command_transaction_t& transaction,
                                      .result = result,
                                      .label = {},
                                      .changed = false};
-    std::visit(sv_recipe_operation_visitor_t{context}, action);
+    std::visit(context, action);
     if (!result.diagnostics.empty() || !context.changed) {
-        return std::move(result);
+        return transaction.finish_without_commit();
     }
     return transaction.commit(std::move(context.label));
 }

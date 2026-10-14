@@ -24,7 +24,6 @@ using wormedit::reject;
 
 auto reject(timing_lane_pseudonote_preview_t& preview, diagnostic_code_t code, std::string message)
     -> void {
-    preview.valid = false;
     preview.diagnostics = {error(code, std::move(message))};
 }
 
@@ -410,19 +409,18 @@ auto validate_value(const chart_document_t& chart, timing_lane_pseudonote_previe
 
 auto initial_status(timing_lane_pseudonote_preview_t& preview, const document_history_t& history,
                     bool timing_locked) -> bool {
-    preview.document_revision = history.document.revision;
     if (timing_locked) {
         reject(preview, diagnostic_code_t::unsupported_feature,
                "timing is locked; timing lane edits are unavailable");
         preview.status = timing_lane_pseudonote_status_t::rejected;
         return false;
     }
-    if (!preview.chart) {
+    if (!preview.stamp.chart) {
         reject(preview, diagnostic_code_t::invalid_id, "timing pseudo-note uses an empty chart ID");
         preview.status = timing_lane_pseudonote_status_t::rejected;
         return false;
     }
-    const auto* chart = history.document.find_chart(preview.chart);
+    const auto* chart = history.document.find_chart(preview.stamp.chart);
     if (chart == nullptr) {
         reject(preview, diagnostic_code_t::invalid_id,
                "timing pseudo-note refers to an unknown chart");
@@ -430,7 +428,6 @@ auto initial_status(timing_lane_pseudonote_preview_t& preview, const document_hi
         return false;
     }
     if (!validate_position(*chart, preview.position, preview.diagnostics, "timing event")) {
-        preview.valid = false;
         preview.status = timing_lane_pseudonote_status_t::rejected;
         return false;
     }
@@ -447,11 +444,9 @@ auto initial_status(timing_lane_pseudonote_preview_t& preview, const document_hi
         return false;
     }
     if (!validate_value(*chart, preview)) {
-        preview.valid = false;
         preview.status = timing_lane_pseudonote_status_t::rejected;
         return false;
     }
-    preview.valid = true;
     preview.status = timing_lane_pseudonote_status_t::editing;
     return true;
 }
@@ -459,7 +454,7 @@ auto initial_status(timing_lane_pseudonote_preview_t& preview, const document_hi
 auto cancel_for_revision_or_lock(const document_history_t& history,
                                  timing_lane_pseudonote_preview_t& preview, bool timing_locked)
     -> bool {
-    if (preview.document_revision != history.document.revision) {
+    if (!preview.stamp.document.is_current(history.document, document_identity_policy_t::revision_only)) {
         reject(preview, diagnostic_code_t::invalid_id,
                stale_action_message("Timing pseudo-note"));
         preview.status = timing_lane_pseudonote_status_t::cancelled;
@@ -474,20 +469,20 @@ auto cancel_for_revision_or_lock(const document_history_t& history,
     return false;
 }
 
-auto apply_timing_lane_preview(document_history_t& history,
+auto apply_timing_lane_preview(document_command_transaction_t& transaction,
                                const timing_lane_pseudonote_preview_t& preview)
     -> document_command_result_t {
-    document_command_result_t result{.revision = history.document.revision};
+    document_command_result_t result{.revision = transaction.history.document.revision};
     switch (preview.kind) {
     case timing_lane_kind_t::bpm: {
         const auto& value = std::get<timing_bpm_value_t>(preview.value);
         if (preview.existing_event) {
             result = apply_bpm_edit(
-                history, update_bpm_event_action_t{preview.chart, *preview.existing_event,
+                transaction, update_bpm_event_action_t{preview.stamp.chart, *preview.existing_event,
                                                    preview.position, value.beats_per_minute});
         } else {
             result =
-                apply_bpm_edit(history, insert_bpm_event_action_t{preview.chart, preview.position,
+                apply_bpm_edit(transaction, insert_bpm_event_action_t{preview.stamp.chart, preview.position,
                                                                   value.beats_per_minute});
         }
         break;
@@ -496,12 +491,12 @@ auto apply_timing_lane_preview(document_history_t& history,
         const auto& value = std::get<timing_scroll_value_t>(preview.value);
         if (preview.existing_event) {
             result = apply_scroll_speed_edit(
-                history, update_scroll_event_action_t{preview.chart, *preview.existing_event,
+                transaction, update_scroll_event_action_t{preview.stamp.chart, *preview.existing_event,
                                                       preview.position, value.multiplier});
         } else {
             result = apply_scroll_speed_edit(
-                history,
-                insert_scroll_event_action_t{preview.chart, preview.position, value.multiplier});
+                transaction,
+                insert_scroll_event_action_t{preview.stamp.chart, preview.position, value.multiplier});
         }
         break;
     }
@@ -509,14 +504,14 @@ auto apply_timing_lane_preview(document_history_t& history,
         const auto& value = std::get<timing_speed_value_t>(preview.value);
         if (preview.existing_event) {
             result = apply_scroll_speed_edit(
-                history,
-                update_speed_event_action_t{preview.chart, *preview.existing_event,
+                transaction,
+                update_speed_event_action_t{preview.stamp.chart, *preview.existing_event,
                                             preview.position, value.multiplier,
                                             value.transition_beats, value.transition_is_seconds});
         } else {
             result = apply_scroll_speed_edit(
-                history,
-                insert_speed_event_action_t{preview.chart, preview.position, value.multiplier,
+                transaction,
+                insert_speed_event_action_t{preview.stamp.chart, preview.position, value.multiplier,
                                             value.transition_beats, value.transition_is_seconds});
         }
         break;
@@ -528,12 +523,12 @@ auto apply_timing_lane_preview(document_history_t& history,
             preview.kind == timing_lane_kind_t::stop ? pause_kind_t::stop : pause_kind_t::delay;
         if (preview.existing_event) {
             result = apply_pause_warp_edit(
-                history, update_pause_event_action_t{preview.chart, *preview.existing_event,
+                transaction, update_pause_event_action_t{preview.stamp.chart, *preview.existing_event,
                                                      preview.position, pause_kind, value.duration,
                                                      value.source_unit});
         } else {
             result = apply_pause_warp_edit(
-                history, insert_pause_event_action_t{preview.chart, preview.position, pause_kind,
+                transaction, insert_pause_event_action_t{preview.stamp.chart, preview.position, pause_kind,
                                                      value.duration, value.source_unit});
         }
         break;
@@ -542,13 +537,13 @@ auto apply_timing_lane_preview(document_history_t& history,
         const auto& value = std::get<timing_warp_value_t>(preview.value);
         if (preview.existing_event) {
             result = apply_pause_warp_edit(
-                history, update_warp_event_action_t{preview.chart,
+                transaction, update_warp_event_action_t{preview.stamp.chart,
                                                     *preview.existing_event,
                                                     {.begin = preview.position, .end = value.end},
                                                     std::nullopt});
         } else {
             result = apply_pause_warp_edit(
-                history, insert_warp_event_action_t{preview.chart,
+                transaction, insert_warp_event_action_t{preview.stamp.chart,
                                                     {.begin = preview.position, .end = value.end},
                                                     value.source_encoding});
         }
@@ -558,11 +553,11 @@ auto apply_timing_lane_preview(document_history_t& history,
         const auto& value = std::get<timing_kiai_value_t>(preview.value);
         if (preview.existing_event) {
             result = apply_marker_edit(
-                history, update_kiai_event_action_t{preview.chart, *preview.existing_event,
+                transaction, update_kiai_event_action_t{preview.stamp.chart, *preview.existing_event,
                                                     preview.position, value.enabled});
         } else {
             result = apply_marker_edit(
-                history, insert_kiai_event_action_t{preview.chart, preview.position, value.enabled,
+                transaction, insert_kiai_event_action_t{preview.stamp.chart, preview.position, value.enabled,
                                                     value.retained_effect_bits});
         }
         break;
@@ -571,12 +566,12 @@ auto apply_timing_lane_preview(document_history_t& history,
         const auto& value = std::get<timing_anchor_value_t>(preview.value);
         if (preview.existing_event) {
             result = apply_timing_anchor_edit(
-                history, update_timing_anchor_action_t{preview.chart, *preview.existing_event,
+                transaction, update_timing_anchor_action_t{preview.stamp.chart, *preview.existing_event,
                                                        preview.position, value.source_sample_frame,
                                                        value.locked});
         } else {
             result = apply_timing_anchor_edit(
-                history, insert_timing_anchor_action_t{preview.chart, preview.position,
+                transaction, insert_timing_anchor_action_t{preview.stamp.chart, preview.position,
                                                        value.source_sample_frame, value.locked});
         }
         break;
@@ -620,7 +615,7 @@ auto begin_timing_lane_pseudonote(const document_history_t& history, chart_id_t 
                                   timing_lane_initial_value_source_t initial_value_source,
                                   bool timing_locked) -> timing_lane_pseudonote_preview_t {
     timing_lane_pseudonote_preview_t preview{.status = timing_lane_pseudonote_status_t::inactive,
-                                             .chart = chart,
+                                             .stamp = chart_stamp_t::from(history.document, chart),
                                              .kind = kind,
                                              .position = exact_snapped_position,
                                              .value = std::move(initial_value),
@@ -633,10 +628,9 @@ auto begin_existing_timing_lane_pseudonote(const document_history_t& history, ch
                                            timing_lane_kind_t kind, object_id_t event,
                                            bool timing_locked) -> timing_lane_pseudonote_preview_t {
     timing_lane_pseudonote_preview_t preview{.status = timing_lane_pseudonote_status_t::inactive,
-                                             .chart = chart,
+                                             .stamp = chart_stamp_t::from(history.document, chart),
                                              .kind = kind,
                                              .existing_event = event};
-    preview.document_revision = history.document.revision;
     if (timing_locked) {
         reject(preview, diagnostic_code_t::unsupported_feature,
                "timing is locked; timing lane edits are unavailable");
@@ -679,7 +673,7 @@ auto begin_existing_timing_lane_pseudonote(const document_history_t& history, ch
     return preview;
 }
 
-auto update_timing_lane_pseudonote(const document_history_t& history,
+auto revise_timing_lane_pseudonote(const document_history_t& history,
                                    timing_lane_pseudonote_preview_t& preview,
                                    timing_lane_value_t value, bool timing_locked) -> bool {
     if (preview.status != timing_lane_pseudonote_status_t::editing) {
@@ -688,7 +682,7 @@ auto update_timing_lane_pseudonote(const document_history_t& history,
     if (cancel_for_revision_or_lock(history, preview, timing_locked)) {
         return false;
     }
-    const auto* chart = history.document.find_chart(preview.chart);
+    const auto* chart = history.document.find_chart(preview.stamp.chart);
     if (chart == nullptr) {
         reject(preview, diagnostic_code_t::invalid_id,
                "timing pseudo-note refers to an unknown chart");
@@ -708,13 +702,11 @@ auto update_timing_lane_pseudonote(const document_history_t& history,
                "timing lane row already contains an event of this type");
         return false;
     }
-    preview.valid =
-        validate_position(*chart, preview.position, preview.diagnostics, "timing event") &&
-        validate_value(*chart, preview);
-    return preview.valid;
+    return validate_position(*chart, preview.position, preview.diagnostics, "timing event") &&
+           validate_value(*chart, preview);
 }
 
-auto move_existing_timing_lane_pseudonote(const document_history_t& history,
+auto revise_existing_timing_lane_pseudonote_position(const document_history_t& history,
                                           timing_lane_pseudonote_preview_t& preview,
                                           local_position_t exact_snapped_position,
                                           bool timing_locked) -> bool {
@@ -724,7 +716,7 @@ auto move_existing_timing_lane_pseudonote(const document_history_t& history,
     if (cancel_for_revision_or_lock(history, preview, timing_locked)) {
         return false;
     }
-    const auto* chart = history.document.find_chart(preview.chart);
+    const auto* chart = history.document.find_chart(preview.stamp.chart);
     if (chart == nullptr || !is_existing_target_current(*chart, preview)) {
         reject(preview, diagnostic_code_t::invalid_id,
                "existing timing event no longer matches the staged target");
@@ -740,10 +732,8 @@ auto move_existing_timing_lane_pseudonote(const document_history_t& history,
     }
     preview.position = exact_snapped_position;
     preview.diagnostics.clear();
-    preview.valid =
-        validate_position(*chart, preview.position, preview.diagnostics, "timing event") &&
-        validate_value(*chart, preview);
-    return preview.valid;
+    return validate_position(*chart, preview.position, preview.diagnostics, "timing event") &&
+           validate_value(*chart, preview);
 }
 
 auto move_timing_lane_event_group(document_history_t& history, chart_id_t chart_id,
@@ -794,11 +784,11 @@ auto move_timing_lane_event_group(document_history_t& history, chart_id_t chart_
             std::get<timing_warp_value_t>(preview.value).end = *move.warp_end;
         }
         if (preview.status != timing_lane_pseudonote_status_t::editing ||
-            !move_existing_timing_lane_pseudonote(staged, preview, move.target, false)) {
+            !revise_existing_timing_lane_pseudonote_position(staged, preview, move.target, false)) {
             result.diagnostics = std::move(preview.diagnostics);
             return result;
         }
-        auto applied = confirm_timing_lane_pseudonote(staged, preview, false);
+        auto applied = apply_timing_lane_pseudonote(staged, preview, false);
         if (!applied) {
             result.diagnostics = std::move(applied.diagnostics);
             return result;
@@ -809,7 +799,7 @@ auto move_timing_lane_event_group(document_history_t& history, chart_id_t chart_
     return transaction.commit("Move timing markers");
 }
 
-auto confirm_timing_lane_pseudonote(document_history_t& history,
+auto apply_timing_lane_pseudonote(document_history_t& history,
                                     timing_lane_pseudonote_preview_t& preview, bool timing_locked)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
@@ -817,11 +807,22 @@ auto confirm_timing_lane_pseudonote(document_history_t& history,
         result.diagnostics = preview.diagnostics;
         return result;
     }
-    if (cancel_for_revision_or_lock(history, preview, timing_locked)) {
+    auto transaction = document_command_transaction_t::from(history, preview.stamp,
+        "Timing pseudo-note", document_identity_policy_t::revision_only);
+    if (!transaction.is_ready()) {
+        result = transaction.commit({});
+        preview.diagnostics = result.diagnostics;
+        preview.status = timing_lane_pseudonote_status_t::cancelled;
+        return result;
+    }
+    if (timing_locked) {
+        reject(preview, diagnostic_code_t::unsupported_feature,
+               "timing lock changed while a pseudo-note was being edited");
+        preview.status = timing_lane_pseudonote_status_t::cancelled;
         result.diagnostics = preview.diagnostics;
         return result;
     }
-    const auto* chart = history.document.find_chart(preview.chart);
+    const auto* chart = history.document.find_chart(preview.stamp.chart);
     if (chart == nullptr) {
         reject(preview, diagnostic_code_t::invalid_id,
                "timing pseudo-note refers to an unknown chart");
@@ -853,27 +854,24 @@ auto confirm_timing_lane_pseudonote(document_history_t& history,
         return result;
     }
     preview.diagnostics.clear();
-    preview.valid =
-        validate_position(*chart, preview.position, preview.diagnostics, "timing event") &&
-        validate_value(*chart, preview);
-    if (!preview.valid) {
+    if (!validate_position(*chart, preview.position, preview.diagnostics, "timing event") ||
+        !validate_value(*chart, preview)) {
         preview.status = timing_lane_pseudonote_status_t::rejected;
         result.diagnostics = preview.diagnostics;
         return result;
     }
 
-    result = apply_timing_lane_preview(history, preview);
+    result = apply_timing_lane_preview(transaction, preview);
     preview.diagnostics = result.diagnostics;
-    preview.valid = result.applied || result.diagnostics.empty();
-    preview.status = preview.valid ? timing_lane_pseudonote_status_t::committed
-                                   : timing_lane_pseudonote_status_t::rejected;
+    preview.status = result.applied || result.diagnostics.empty()
+        ? timing_lane_pseudonote_status_t::committed
+        : timing_lane_pseudonote_status_t::rejected;
     return result;
 }
 
 void cancel_timing_lane_pseudonote(timing_lane_pseudonote_preview_t& preview) noexcept {
     if (preview.status == timing_lane_pseudonote_status_t::editing) {
         preview.status = timing_lane_pseudonote_status_t::cancelled;
-        preview.valid = false;
         preview.diagnostics.clear();
     }
 }
@@ -931,19 +929,19 @@ auto edit_speed_event_span(document_history_t& history, chart_id_t chart, object
         return result;
     }
     if (edit.position &&
-        !move_existing_timing_lane_pseudonote(history, preview, *edit.position, timing_locked)) {
+        !revise_existing_timing_lane_pseudonote_position(history, preview, *edit.position, timing_locked)) {
         result.diagnostics = preview.diagnostics;
         return result;
     }
     if (edit.transition) {
         auto value = std::get<timing_speed_value_t>(preview.value);
         value.transition_beats = *edit.transition;
-        if (!update_timing_lane_pseudonote(history, preview, value, timing_locked)) {
+        if (!revise_timing_lane_pseudonote(history, preview, value, timing_locked)) {
             result.diagnostics = preview.diagnostics;
             return result;
         }
     }
-    return confirm_timing_lane_pseudonote(history, preview, timing_locked);
+    return apply_timing_lane_pseudonote(history, preview, timing_locked);
 }
 
 auto delete_timing_lane_event_group(document_history_t& history, chart_id_t chart_id,

@@ -172,6 +172,15 @@ auto apply_chart_edit(song_document_t& document, const Edit& edit, bpm_edit_limi
     }
 }
 
+struct bpm_operation_visitor_t {
+    document_command_transaction_t& transaction;
+    const bpm_edit_limits_t& limits;
+
+    template <typename Edit> auto operator()(const Edit& edit) const {
+        return apply_chart_edit(transaction.copy_document(), edit, limits, transaction.outcome);
+    }
+};
+
 } // namespace
 
 auto parse_bpm_text(std::string_view text) -> std::optional<signed_rational_t> {
@@ -244,25 +253,30 @@ auto step_bpm_by_one(signed_rational_t bpm, bpm_step_direction_t direction)
 }
 
 auto apply_bpm_edit(document_history_t& history,
+    const bpm_edit_action_t& action, bpm_edit_limits_t limits) -> document_command_result_t {
+    auto transaction = document_command_transaction_t::from(history);
+    return apply_bpm_edit(transaction, action, limits);
+}
+
+auto apply_bpm_edit(document_command_transaction_t& transaction,
                     const bpm_edit_action_t& action, bpm_edit_limits_t limits)
     -> document_command_result_t {
-    auto transaction = document_command_transaction_t::from(history);
+    if (!transaction.is_ready()) return transaction.commit({});
     auto& result = transaction.outcome;
     if (limits.maximum_bpm_events == 0) {
         reject(result, diagnostic_code_t::invalid_resolution, "BPM event cap must be positive");
-        return result;
+        return transaction.finish_without_commit();
     }
 
     auto& proposed = transaction.copy_document();
-    auto outcome = std::visit(
-        [&](const auto& edit) { return apply_chart_edit(proposed, edit, limits, result); }, action);
+    auto outcome = std::visit(bpm_operation_visitor_t{transaction, limits}, action);
     if (!outcome.valid || !result.diagnostics.empty() || !outcome.changed) {
-        return result;
+        return transaction.finish_without_commit();
     }
     if (!extend_native_charts_to_audio_end(proposed)) {
         reject(result, diagnostic_code_t::invalid_measure,
                "BPM edit would exceed the audio chart measure limits");
-        return result;
+        return transaction.finish_without_commit();
     }
     return transaction.commit(std::move(outcome.label));
 }

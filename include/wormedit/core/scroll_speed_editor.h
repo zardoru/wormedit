@@ -70,4 +70,9 @@ using scroll_speed_edit_action_t =
                                            scroll_speed_edit_limits_t limits = {})
     -> document_command_result_t;
 
+// Uses a ready command transaction supplied by a captured edit proposal.
+[[nodiscard]] auto apply_scroll_speed_edit(document_command_transaction_t& transaction,
+    const scroll_speed_edit_action_t& action, scroll_speed_edit_limits_t limits = {})
+    -> document_command_result_t;
+
 } // namespace wormedit

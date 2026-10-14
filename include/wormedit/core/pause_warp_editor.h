@@ -70,4 +70,9 @@ apply_pause_warp_edit(document_history_t& history,
                       const pause_warp_edit_action_t& action, pause_warp_edit_limits_t limits = {})
     -> document_command_result_t;
 
+// Uses a ready command transaction supplied by a captured edit proposal.
+[[nodiscard]] auto apply_pause_warp_edit(document_command_transaction_t& transaction,
+    const pause_warp_edit_action_t& action, pause_warp_edit_limits_t limits = {})
+    -> document_command_result_t;
+
 } // namespace wormedit

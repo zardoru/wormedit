@@ -12,10 +12,8 @@ inline auto validate_timing_stage_binding(const WormUiWorkspaceAction& action,
     const chart_stamp_t action_stamp{
         .document = {.project = history.document.id, .revision = action.timing_document_revision},
         .chart = chart_id_t{action.timing_chart_id}};
-    const chart_stamp_t stage_stamp{
-        .document = {.project = history.document.id, .revision = stage.document_revision},
-        .chart = stage.chart};
-    if (stage_stamp != action_stamp || !action_stamp.is_current(history.document, *workspace.selected_chart))
+    if (!stage.stamp.is_current(action_stamp.chart, action_stamp.document.revision) ||
+        !action_stamp.is_current(history.document, *workspace.selected_chart))
         return stale_action_message("Timing event staging");
     return std::nullopt;
 }

@@ -116,4 +116,9 @@ update_beat_interval_drag(const song_document_t& document, const beat_interval_d
                                              bool timing_locked = false)
     -> document_command_result_t;
 
+// Uses a ready command transaction supplied by a captured edit proposal.
+[[nodiscard]] auto apply_bpm_edit(document_command_transaction_t& transaction,
+    const bpm_edit_action_t& action, bpm_edit_limits_t limits = {})
+    -> document_command_result_t;
+
 } // namespace wormedit

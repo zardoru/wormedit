@@ -1,7 +1,9 @@
 #pragma once
 
 #include <wormedit/core/command.h>
+#include <wormedit/core/interaction.h>
 #include <wormedit/core/notifications.h>
+#include <wormedit/core/workspace.h>
 
 #include <string>
 #include <string_view>
@@ -11,7 +13,7 @@ struct document_edit_inputs_t;
 
 enum class compose_diagnostic_feedback_policy_t { first, rejected_only };
 
-enum class compose_feedback_delivery_t { message, first_diagnostic };
+enum class compose_feedback_delivery_t { none, message, first_diagnostic };
 
 enum class compose_rebind_failure_policy_t { diagnostic_or_message, message_only };
 
@@ -29,6 +31,7 @@ struct compose_action_description_t {
     notification_severity_t unknown_severity{notification_severity_t::error};
     compose_rebind_failure_policy_t rebind_failure_policy{
         compose_rebind_failure_policy_t::diagnostic_or_message};
+
     compose_rebind_feedback_policy_t rebind_feedback_policy{
         compose_rebind_feedback_policy_t::edit_then_document};
     auto operator==(const compose_action_description_t&) const -> bool = default;
@@ -49,6 +52,9 @@ struct compose_action_outcome_t {
     std::string_view rebind_failure;
     compose_rebind_failure_policy_t rebind_failure_policy{
         compose_rebind_failure_policy_t::diagnostic_or_message};
+    std::string_view rebind_success_message;
+    bool clear_semantic_layer_paint_after_rebind{};
+    std::optional<workspace_select_asset_action_t> asset_selection;
 
     [[nodiscard]] static auto blocked(std::string message,
                                       notification_source_t source = notification_source_t::edit)
@@ -63,6 +69,10 @@ struct compose_action_outcome_t {
         -> compose_action_outcome_t;
     [[nodiscard]] static auto from(diagnostic_list_t&& diagnostics, notification_source_t source,
                                    compose_feedback_delivery_t delivery)
+        -> compose_action_outcome_t;
+    [[nodiscard]] static auto from(editor_interaction_result_t&& interaction,
+                                   std::string_view accepted,
+                                   notification_source_t source = notification_source_t::input)
         -> compose_action_outcome_t;
     [[nodiscard]] static auto from(document_command_result_t&& command,
                                    const compose_action_description_t& description)

@@ -181,60 +181,78 @@ std::optional<std::string> dispatch_compose_measure_navigation(compose_action_co
     return compose_bookmark_navigation_feedback(context, outcome);
 }
 
-std::optional<std::string> dispatch_compose_bgm_column_count(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+dispatch_compose_bgm_column_count(compose_action_context_t& context) {
     if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT)
         return std::nullopt;
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(context,
-            "Finish or cancel the active Compose gesture before changing BGM columns.");
-    const auto applied = wormedit::apply_bgm_column_count(
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before changing BGM columns.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
+    auto applied = wormedit::apply_bgm_column_count(
         context.environment.document.history,
         context.state.chart, context.action.compose_bgm_column_count);
     if (!applied.applied)
         return applied.diagnostics.empty()
-            ? std::optional<std::string>{compose_action_info(context, "BGM column count unchanged.", notification_source_t::edit)}
-            : std::optional<std::string>{publish_compose_diagnostic(context, applied.diagnostics.front())};
-    const auto rebound = wormedit::rebind_workspace(context.environment.document.workspace,
-                                                    context.environment.document.history);
-    if (!rebound) return compose_mutation_rebind_failure(context, rebound,
-        "BGM column count set to " + std::to_string(context.action.compose_bgm_column_count) + ".", "BGM columns changed, but workspace rebinding failed.", notification_source_t::edit);
-    return compose_action_success(context, "BGM column count set to " +
-        std::to_string(context.action.compose_bgm_column_count) + ".");
+                   ? std::optional<compose_action_outcome_t>{compose_action_outcome_t::from(
+                         "BGM column count unchanged.", notification_severity_t::info,
+                         notification_source_t::edit)}
+                   : std::optional<compose_action_outcome_t>{
+                         compose_action_outcome_t::from(std::move(applied.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message)};
+    auto outcome = compose_action_outcome_t::from(
+        std::string{"BGM column count set to " +
+                    std::to_string(context.action.compose_bgm_column_count) + "."},
+        notification_severity_t::success, notification_source_t::edit, applied.applied);
+    outcome.rebind_failure = "BGM columns changed, but workspace rebinding failed.";
+    outcome.diagnostics = std::move(applied.diagnostics);
+    return outcome;
 }
 
-std::optional<std::string> dispatch_compose_lane_profile(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+dispatch_compose_lane_profile(compose_action_context_t& context) {
     if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE)
         return std::nullopt;
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(context,
-            "Finish or cancel the active Compose gesture before changing the lane profile.");
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before changing the lane profile.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
     const auto* chart =
         selected_chart(context.environment.document.history, context.environment.document.workspace);
-    if (!chart) return compose_action_warning(context,
-        "The selected difficulty is no longer available.");
+    if (!chart)
+        return compose_action_outcome_t::blocked("The selected difficulty is no longer available.",
+                                                 notification_source_t::edit);
     const auto* segment = wormedit::active_lane_layout_segment(*chart, context.state.cursor);
     if (segment && !wormedit::lane_layout_supports_key_profiles(segment->layout))
-        return compose_action_warning(context, "Key profiles require matching playable lanes without scratch or auxiliary roles.");
+        return compose_action_outcome_t::blocked(
+            "Key profiles require matching playable lanes without scratch or auxiliary roles.",
+            notification_source_t::edit);
     const auto choices = segment
         ? wormedit::lane_profile_choices(segment->layout.lanes.size())
         : wormedit::lane_profile_choices();
     if (context.action.compose_lane_profile_index >= choices.size())
-        return compose_action_warning(context, "Choose a lane profile first.");
+        return compose_action_outcome_t::blocked("Choose a lane profile first.",
+                                                 notification_source_t::edit);
     const auto& target = choices[context.action.compose_lane_profile_index].layout;
     const auto position = segment ? context.state.cursor
         : wormedit::local_position_t{chart->measures.empty()
               ? context.state.cursor.measure : chart->measures.front().id, 0};
-    const auto applied = wormedit::apply_lane_profile_switch(context.environment.document.history,
+    auto applied = wormedit::apply_lane_profile_switch(context.environment.document.history,
                                                              context.state.chart, position, target);
     if (!applied.applied)
         return applied.diagnostics.empty()
-            ? std::optional<std::string>{compose_action_info(context, "Lane profile unchanged.", notification_source_t::edit)}
-            : std::optional<std::string>{publish_compose_diagnostic(context, applied.diagnostics.front())};
-    const auto rebound = wormedit::rebind_workspace(context.environment.document.workspace,
-                                                    context.environment.document.history);
-    if (!rebound) return compose_mutation_rebind_failure(context, rebound,
-        "Lane profile set to " + target.display_name + ".", "Lane profile changed, but workspace rebinding failed.", notification_source_t::edit);
-    return compose_action_success(context, "Lane profile set to " + target.display_name + ".");
+                   ? std::optional<compose_action_outcome_t>{compose_action_outcome_t::from(
+                         "Lane profile unchanged.", notification_severity_t::info,
+                         notification_source_t::edit)}
+                   : std::optional<compose_action_outcome_t>{
+                         compose_action_outcome_t::from(std::move(applied.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message)};
+    auto outcome = compose_action_outcome_t::from(
+        std::string{"Lane profile set to " + target.display_name + "."},
+        notification_severity_t::success, notification_source_t::edit, applied.applied);
+    outcome.rebind_failure = "Lane profile changed, but workspace rebinding failed.";
+    outcome.diagnostics = std::move(applied.diagnostics);
+    return outcome;
 }
 
 auto layout_profile_from_id(const wormedit::chart_document_t& chart,
@@ -317,43 +335,53 @@ auto initial_input_profile(const wormedit::chart_document_t& chart, const wormed
 
 // A measure that so far exists only on the virtual canvas (an empty BMS, say) is created first.
 // Returns the notification when that fails; `chart` is refreshed after the history changed.
-std::optional<std::string> materialize_layout_measure(compose_action_context_t& context,
-                                                      const wormedit::chart_document_t*& chart,
-                                                      bool& materialized) {
+std::optional<compose_action_outcome_t>
+materialize_layout_measure(compose_action_context_t& context,
+                           const wormedit::chart_document_t*& chart, bool& materialized) {
     if (context.action.compose_measure_number <= chart->measures.size()) return std::nullopt;
-    const auto created = wormedit::apply_measure_edit(
+    auto created = wormedit::apply_measure_edit(
         context.environment.document.history,
         wormedit::materialize_measures_action_t{
             chart->id, static_cast<std::size_t>(context.action.compose_measure_number)});
     if (!created.applied)
         return created.diagnostics.empty()
-            ? std::optional<std::string>{compose_action_warning(context, "That measure is outside the chart.")}
-            : std::optional<std::string>{publish_compose_diagnostic(context, created.diagnostics.front())};
+                   ? std::optional<compose_action_outcome_t>{compose_action_outcome_t::blocked(
+                         "That measure is outside the chart.", notification_source_t::edit)}
+                   : std::optional<compose_action_outcome_t>{
+                         compose_action_outcome_t::from(std::move(created.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message)};
     materialized = true;
     chart = selected_chart(context.environment.document.history, context.environment.document.workspace);
-    if (!chart) return compose_action_warning(context, "The selected difficulty is no longer available.");
+    if (!chart)
+        return compose_action_outcome_t::blocked("The selected difficulty is no longer available.",
+                                                 notification_source_t::edit);
     return std::nullopt;
 }
 
-std::optional<std::string> dispatch_compose_lane_layout_profile(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+dispatch_compose_lane_layout_profile(compose_action_context_t& context) {
     if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE)
         return std::nullopt;
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(context,
-            "Finish or cancel the active Compose gesture before editing a lane layout.");
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before editing a lane layout.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
     const auto* chart =
         selected_chart(context.environment.document.history, context.environment.document.workspace);
     if (!chart || chart->id.value != context.action.compose_input_chart_id ||
         context.action.compose_measure_number == 0)
-        return compose_action_warning(context,
-            "Lane layout change ignored because the selected difficulty changed.");
+        return compose_action_outcome_t::blocked(
+            "Lane layout change ignored because the selected difficulty changed.",
+            notification_source_t::edit);
     auto materialized = false;
     if (auto refusal = materialize_layout_measure(context, chart, materialized)) return refusal;
     const auto measure_index = static_cast<std::size_t>(context.action.compose_measure_number - 1);
     const auto target_position = wormedit::local_position_t{chart->measures[measure_index].id, 0};
     const auto target = layout_profile_from_id(
         *chart, target_position, context.action.compose_lane_layout_profile_id);
-    if (!target) return compose_action_warning(context, "Choose a lane layout profile first.");
+    if (!target)
+        return compose_action_outcome_t::blocked("Choose a lane layout profile first.",
+                                                 notification_source_t::edit);
     const auto exact_segment = std::ranges::find_if(chart->lane_layouts, [&](const auto& segment) {
         return segment.position.measure == target_position.measure && segment.position.row == 0;
     });
@@ -363,78 +391,95 @@ std::optional<std::string> dispatch_compose_lane_layout_profile(compose_action_c
                              : wormedit::active_lane_layout_segment(*chart, target_position);
     if (!active && !chart->lane_layouts.empty()) active = &chart->lane_layouts.front();
     const auto layout = layout_with_preserved_lane_ids(*chart, active, *target);
-    if (!layout) return compose_action_warning(context,
-        "Lane layout change could not preserve lane identities.");
+    if (!layout)
+        return compose_action_outcome_t::blocked(
+            "Lane layout change could not preserve lane identities.", notification_source_t::edit);
     wormedit::lane_layout_action_t edit = wormedit::insert_lane_layout_action_t{
         chart->id, target_position, *layout, initial_input_profile(*chart, *layout)};
     if (is_update)
         edit = wormedit::update_lane_layout_action_t{chart->id, exact_segment->id, *layout};
-    const auto applied =
+    auto applied =
         wormedit::apply_lane_layout_edit(context.environment.document.history, edit);
     if (!applied.applied && materialized)
         static_cast<void>(wormedit::undo_document_command(context.environment.document.history));
     if (!applied.applied)
         return applied.diagnostics.empty()
-            ? std::optional<std::string>{compose_action_warning(context, "Lane layout change was rejected.")}
-            : std::optional<std::string>{publish_compose_diagnostic(context, applied.diagnostics.front())};
-    const auto rebound = wormedit::rebind_workspace(context.environment.document.workspace,
-                                                    context.environment.document.history);
-    if (!rebound) return compose_mutation_rebind_failure(context, rebound,
-        is_update ? "Lane layout updated." : "Lane layout inserted.", "Lane layout changed, but workspace rebinding failed.", notification_source_t::edit);
-    return compose_action_success(context, is_update ? "Lane layout updated." : "Lane layout inserted.");
+                   ? std::optional<compose_action_outcome_t>{compose_action_outcome_t::blocked(
+                         "Lane layout change was rejected.", notification_source_t::edit)}
+                   : std::optional<compose_action_outcome_t>{
+                         compose_action_outcome_t::from(std::move(applied.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message)};
+    auto outcome = compose_action_outcome_t::from(
+        std::string{is_update ? "Lane layout updated." : "Lane layout inserted."},
+        notification_severity_t::success, notification_source_t::edit, applied.applied);
+    outcome.rebind_failure = "Lane layout changed, but workspace rebinding failed.";
+    outcome.diagnostics = std::move(applied.diagnostics);
+    return outcome;
 }
 
-std::optional<std::string> dispatch_compose_audio_offset(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+dispatch_compose_audio_offset(compose_action_context_t& context) {
     if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_APPLY_AUDIO_OFFSET)
         return std::nullopt;
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(context,
-            "Finish or cancel the active Compose gesture before editing audio offset.");
-    const auto applied = wormedit::apply_audio_offset_edit(
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before editing audio offset.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
+    auto applied = wormedit::apply_audio_offset_edit(
         context.environment.document.history, context.state.chart,
         {context.action.compose_audio_offset_numerator,
          context.action.compose_audio_offset_denominator},
         context.environment.editor.commands.audio_offset_edits_locked());
     if (!applied.applied)
         return applied.diagnostics.empty()
-            ? std::optional<std::string>{compose_action_info(context, "Audio offset unchanged.", notification_source_t::edit)}
-            : std::optional<std::string>{publish_compose_diagnostic(context, applied.diagnostics.front(), notification_source_t::edit)};
-    const auto rebound = wormedit::rebind_workspace(context.environment.document.workspace,
-                                                    context.environment.document.history);
-    if (!rebound) return compose_mutation_rebind_failure(context, rebound,
-        "Audio offset changed.", "Audio offset changed, but workspace rebinding failed.", notification_source_t::edit);
-    return compose_action_success(context, "Audio offset changed.", notification_source_t::edit);
+                   ? std::optional<compose_action_outcome_t>{compose_action_outcome_t::from(
+                         "Audio offset unchanged.", notification_severity_t::info,
+                         notification_source_t::edit)}
+                   : std::optional<compose_action_outcome_t>{compose_action_outcome_t::from(std::move(applied.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message)};
+    auto outcome = compose_action_outcome_t::from(std::string{"Audio offset changed."},
+                                                  notification_severity_t::success,
+                                                  notification_source_t::edit, applied.applied);
+    outcome.rebind_failure = "Audio offset changed, but workspace rebinding failed.";
+    outcome.diagnostics = std::move(applied.diagnostics);
+    return outcome;
 }
 
-std::string select_compose_tool(compose_action_context_t& context) {
+compose_action_outcome_t select_compose_tool(compose_action_context_t& context) {
     using namespace wormedit;
     const auto& action = context.action;
     auto& application_state = context.environment.editor.commands;
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_SELECT_TOOL &&
         !wormedit::ui::compose_notes_editable(compose_mode_of(application_state)))
-        return compose_action_warning(context, "Draw and Layer are unavailable in Timing focus.");
+        return compose_action_outcome_t::blocked("Draw and Layer are unavailable in Timing focus.",
+                                                 notification_source_t::edit);
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_LAYER_TOOL &&
         !compose_layer_brush_target_editable(context.environment.document.history.document,
                                              context.state.chart,
                                              application_state.project.semantic_layer.semantic_layer_target))
-        return compose_action_warning(context, "Pick an unlocked visible layer in the Layers dock.");
+        return compose_action_outcome_t::blocked(
+            "Pick an unlocked visible layer in the Layers dock.", notification_source_t::edit);
     (void)dispatch_editor_action(context.environment.document.history, context.state,
                                  cancel_editor_gesture_action_t{});
     application_state.project.compose_gesture.bga_draw_stroke.reset();
     application_state.project.compose_gesture.note_paint_mode_active = action.compose_action == WORM_UI_COMPOSE_ACTION_DRAW_TOOL;
     application_state.project.compose_gesture.semantic_layer_paint_mode_active = action.compose_action == WORM_UI_COMPOSE_ACTION_LAYER_TOOL;
-    return compose_action_info(context, "Compose tool selected.");
+    return compose_action_outcome_t::from("Compose tool selected.", notification_severity_t::info,
+                                          notification_source_t::input);
 }
 
-auto toggle_compose_scroll_direction(compose_action_context_t& context) -> std::string {
+auto toggle_compose_scroll_direction(compose_action_context_t& context)
+    -> compose_action_outcome_t {
     using namespace wormedit;
     if (editor_interaction_has_pending_gesture(context.state) ||
         context.environment.editor.commands.project.compose_gesture.bga_draw_stroke)
-        return compose_action_warning(context, "Finish or cancel the active gesture before changing scroll direction.");
+        return compose_action_outcome_t::blocked(
+            "Finish or cancel the active gesture before changing scroll direction.",
+            notification_source_t::edit);
     const auto chart = std::ranges::find(context.environment.document.history.document.charts,
                                          context.state.chart, &chart_document_t::id);
     if (chart == context.environment.document.history.document.charts.end())
-        return compose_action_warning(context, "The selected difficulty is no longer available.");
+        return compose_action_outcome_t::blocked("The selected difficulty is no longer available.",
+                                                 notification_source_t::edit);
     const auto family = chart->lane_layouts.empty() ? editor_mode_family_t::other
         : compose_mode_family(chart->lane_layouts.front().layout);
     const bool down = !compose_field_downscroll(
@@ -443,16 +488,20 @@ auto toggle_compose_scroll_direction(compose_action_context_t& context) -> std::
         .scroll_directions[static_cast<std::size_t>(family)] = down ? 2 : 1;
     configure_cursor_viewport(context.state, context.viewport_height, down
         ? editor_field_scroll_direction_t::down : editor_field_scroll_direction_t::up);
-    return compose_action_info(context, down ? "Downscroll enabled for this mode family." : "Upscroll enabled for this mode family.");
+    return compose_action_outcome_t::from(down ? "Downscroll enabled for this mode family."
+                                               : "Upscroll enabled for this mode family.",
+                                          notification_severity_t::info,
+                                          notification_source_t::input);
 }
 
-auto reset_compose_view(compose_action_context_t& context) -> std::string {
-    const auto result =
+auto reset_compose_view(compose_action_context_t& context) -> compose_action_outcome_t {
+    auto result =
         reset_compose_navigation_view(context.environment.document.history, context.state);
-    return compose_interaction_feedback(context, result, "Compose field view reset.");
+    return compose_action_outcome_t::from(std::move(result), "Compose field view reset.");
 }
 
-std::optional<std::string> dispatch_compose_view_action_group(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+dispatch_compose_view_action_group(compose_action_context_t& context) {
     using namespace wormedit;
     auto& action = context.action;
     auto& history = context.environment.document.history;
@@ -500,11 +549,12 @@ std::optional<std::string> dispatch_compose_view_action_group(compose_action_con
         return select_compose_tool(context);
     case WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE:
         if (!wormedit::ui::compose_notes_editable(compose_mode_of(application_state)))
-            return compose_action_warning(context, "Note painting is unavailable in Timing focus.");
+            return compose_action_outcome_t::blocked(
+                "Note painting is unavailable in Timing focus.", notification_source_t::edit);
         if (editor_interaction_has_pending_gesture(state)) {
             result = dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
             if (!result.accepted) {
-                return compose_interaction_feedback(context, result, "Compose gesture canceled.");
+                return compose_action_outcome_t::from(std::move(result), "Compose gesture canceled.");
             }
         }
         application_state.project.compose_gesture.note_paint_mode_active = !application_state.project.compose_gesture.note_paint_mode_active;
@@ -513,95 +563,115 @@ std::optional<std::string> dispatch_compose_view_action_group(compose_action_con
         }
         status = application_state.project.compose_gesture.note_paint_mode_active ? "Note-paint mode enabled."
                                                           : "Note-paint mode disabled.";
-        return compose_action_info(context, status);
+        return compose_action_outcome_t::from(status, notification_severity_t::info,
+                                              notification_source_t::input);
     case WORM_UI_COMPOSE_ACTION_RATE_SLOWER:
     case WORM_UI_COMPOSE_ACTION_RATE_FASTER: {
         const auto stepped = step_transport_rate_status(
             application_state, action.compose_action == WORM_UI_COMPOSE_ACTION_RATE_FASTER);
-        return stepped ? compose_action_info(context, *stepped, notification_source_t::audio)
-                       : compose_action_warning(context, "Playback output rejected the rate change.",
-                                                notification_source_t::audio);
+        return stepped
+                   ? compose_action_outcome_t::from(*stepped, notification_severity_t::info,
+                                                    notification_source_t::audio)
+                   : compose_action_outcome_t::blocked("Playback output rejected the rate change.",
+                                                       notification_source_t::audio);
     }
     case WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_FOCUS: {
-        if (editor_interaction_has_pending_gesture(state)) {
-            return compose_action_warning(context,
-                "Finish or cancel the active Compose gesture before changing the Compose mode.");
-        }
+        if (auto blocked = context.require_no_gesture(
+                "Finish or cancel the active Compose gesture before changing the Compose mode."))
+            return std::move(*blocked);
         application_state.project.compose_view.compose_timing_focus = !application_state.project.compose_view.compose_timing_focus;
         if (application_state.project.compose_view.compose_timing_focus) {
             // Timing focus never edits notes, so leave any note tool.
             application_state.project.compose_gesture.note_paint_mode_active = false;
             application_state.project.compose_gesture.semantic_layer_paint_mode_active = false;
         }
-        return compose_action_info(context, application_state.project.compose_view.compose_timing_focus
-            ? "Timing focus on." : "Timing focus off.");
+        return compose_action_outcome_t::from(
+            application_state.project.compose_view.compose_timing_focus ? "Timing focus on."
+                                                                        : "Timing focus off.",
+            notification_severity_t::info, notification_source_t::input);
     }
     case WORM_UI_COMPOSE_ACTION_TOGGLE_EDIT_SNAP: {
-        if (editor_interaction_has_pending_gesture(state)) {
-            return compose_action_warning(context,
-                "Finish or cancel the active Compose gesture before changing snapping.");
-        }
+        if (auto blocked = context.require_no_gesture(
+                "Finish or cancel the active Compose gesture before changing snapping."))
+            return std::move(*blocked);
         application_state.project.compose_view.edit_snap_enabled = !application_state.project.compose_view.edit_snap_enabled;
-        return compose_action_info(context, application_state.project.compose_view.edit_snap_enabled
-            ? "Snap on." : "Snap off: edits use the finest row.");
+        return compose_action_outcome_t::from(
+            application_state.project.compose_view.edit_snap_enabled
+                ? "Snap on."
+                : "Snap off: edits use the finest row.",
+            notification_severity_t::info, notification_source_t::input);
     }
     case WORM_UI_COMPOSE_ACTION_TOGGLE_Y_LOCK: {
         application_state.project.compose_view.y_lock = !application_state.project.compose_view.y_lock;
         state.y_lock = application_state.project.compose_view.y_lock;
-        return compose_action_info(context, application_state.project.compose_view.y_lock
-            ? "Y-lock on: dragged notes keep their rows." : "Y-lock off.");
+        return compose_action_outcome_t::from(application_state.project.compose_view.y_lock
+                                                  ? "Y-lock on: dragged notes keep their rows."
+                                                  : "Y-lock off.",
+                                              notification_severity_t::info,
+                                              notification_source_t::input);
     }
     case WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY: {
         if (action.compose_timing_lane >= compose_timing_lane_count) {
-            return compose_action_warning(context, "The requested timing lane does not exist.");
+            return compose_action_outcome_t::blocked("The requested timing lane does not exist.",
+                                                     notification_source_t::edit);
         }
-        if (editor_interaction_has_pending_gesture(state)) {
-            return compose_action_warning(context,
-                "Finish or cancel the active Compose gesture before changing timing lanes.");
-        }
+        if (auto blocked = context.require_no_gesture(
+                "Finish or cancel the active Compose gesture before changing timing lanes."))
+            return std::move(*blocked);
         const auto bit = static_cast<std::uint8_t>(1U << action.compose_timing_lane);
         application_state.project.compose_view.compose_timing_lane_visibility_mask ^= bit;
-        return compose_action_info(context,
+        return compose_action_outcome_t::from(
             (application_state.project.compose_view.compose_timing_lane_visibility_mask & bit) != 0
-                ? "Compose timing lane shown." : "Compose timing lane hidden.");
+                ? "Compose timing lane shown."
+                : "Compose timing lane hidden.",
+            notification_severity_t::info, notification_source_t::input);
     }
     default:
         return std::nullopt;
     }
-    return compose_interaction_feedback(context, result, status);
+    return compose_action_outcome_t::from(std::move(result), status);
 }
-
 
 // Points a missing sound at one of its fallback candidates through the shared relink command; the
 // authored token and every reference stay as they are.
 
-std::optional<std::string> assign_bmson_selection(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t> assign_bmson_selection(compose_action_context_t& context) {
     using namespace wormedit;
     auto& state = context.state;
     const bool to_lane = context.action.compose_action ==
                          WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_BGM_TO_ACTIVE_LANE;
-    if (editor_interaction_has_pending_gesture(state))
-        return compose_action_warning(context, "Finish or cancel the active Compose gesture before assigning BMSON sound.");
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before assigning BMSON sound.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
     const object_id_t event{context.action.compose_bmson_bgm_event_id};
     const auto kind = to_lane ? editor_selection_object_kind_t::bgm_event
                               : editor_selection_object_kind_t::note;
     if (state.selected_objects.size() != 1 || state.selected_objects.front().kind != kind ||
         state.selected_objects.front().id != event)
-        return compose_action_warning(context, "Select one linked BMSON tap or BGM marker before assigning sound.");
-    const auto assigned = assign_bmson_sound_event(
+        return compose_action_outcome_t::blocked(
+            "Select one linked BMSON tap or BGM marker before assigning sound.",
+            notification_source_t::edit);
+    auto assigned = assign_bmson_sound_event(
         context.environment.document.history,
         state.chart, event, to_lane ? std::optional<lane_id_t>{state.active_lane} : std::nullopt);
-    if (!assigned.diagnostics.empty()) return publish_compose_diagnostic(context, assigned.diagnostics.front());
-    if (!assigned.applied) return compose_action_info(context, "BMSON sound is already assigned to that destination.", notification_source_t::edit);
+    if (!assigned.diagnostics.empty())
+        return compose_action_outcome_t::from(std::move(assigned.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
+    if (!assigned.applied)
+        return compose_action_outcome_t::from(
+            "BMSON sound is already assigned to that destination.", notification_severity_t::info,
+            notification_source_t::edit);
     state.selected_objects = {{to_lane ? editor_selection_object_kind_t::note
                                        : editor_selection_object_kind_t::bgm_event, event}};
     state.selected_notes = to_lane ? std::vector<object_id_t>{event} : std::vector<object_id_t>{};
-    const auto rebound =
-        rebind_workspace(context.environment.document.workspace, context.environment.document.history);
-    if (!rebound) return compose_mutation_rebind_failure(context, rebound,
-        to_lane ? "BMSON BGM assigned to the active playable lane." : "BMSON tap assigned to BGM.", "BMSON sound assigned, but workspace rebinding failed.", notification_source_t::edit);
-    return compose_action_success(context, to_lane ? "BMSON BGM assigned to the active playable lane."
-                   : "BMSON tap assigned to BGM.");
+    auto outcome = compose_action_outcome_t::from(
+        std::string{to_lane ? "BMSON BGM assigned to the active playable lane."
+                            : "BMSON tap assigned to BGM."},
+        notification_severity_t::success, notification_source_t::edit, assigned.applied);
+    outcome.rebind_failure = "BMSON sound assigned, but workspace rebinding failed.";
+    outcome.diagnostics = std::move(assigned.diagnostics);
+    return outcome;
 }
 
 auto selected_bmson_source_event(const compose_action_context_t& context,
@@ -620,76 +690,110 @@ auto selected_bmson_source_event(const compose_action_context_t& context,
     return std::nullopt;
 }
 
-std::optional<std::string> set_bmson_selection_restart(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+set_bmson_selection_restart(compose_action_context_t& context) {
     using namespace wormedit;
     const object_id_t event{context.action.compose_bmson_bgm_event_id};
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(context, "Finish or cancel the active Compose gesture before changing a BMSON slice.");
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before changing a BMSON slice.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
     if (!event || context.state.selected_objects.size() != 1 ||
         context.state.selected_objects.front().kind != editor_selection_object_kind_t::bgm_event ||
         context.state.selected_objects.front().id != event)
-        return compose_action_warning(context, "Select one BMSON BGM marker before changing its restart state.");
+        return compose_action_outcome_t::blocked(
+            "Select one BMSON BGM marker before changing its restart state.",
+            notification_source_t::edit);
     const auto source_event = selected_bmson_source_event(context, event);
     if (!source_event)
-        return compose_action_warning(context, "The selected BGM marker has no BMSON sound-channel slice.");
+        return compose_action_outcome_t::blocked(
+            "The selected BGM marker has no BMSON sound-channel slice.",
+            notification_source_t::edit);
     const bool restart = context.action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_RESTART;
-    const auto applied = set_bmson_sound_channel_restart(
+    auto applied = set_bmson_sound_channel_restart(
         context.environment.document.history,
         context.state.chart, *source_event, restart);
-    if (!applied.diagnostics.empty()) return publish_compose_diagnostic(context, applied.diagnostics.front());
+    if (!applied.diagnostics.empty())
+        return compose_action_outcome_t::from(std::move(applied.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
     if (!applied.applied)
-        return compose_action_info(context, restart ? "BMSON slice already restarts." : "BMSON slice already continues.", notification_source_t::edit);
-    const auto rebound =
-        rebind_workspace(context.environment.document.workspace, context.environment.document.history);
-    if (!rebound) return compose_mutation_rebind_failure(context, rebound,
-        restart ? "BMSON slice set to restart." : "BMSON slice set to continue.", "BMSON slice changed, but workspace rebinding failed.", notification_source_t::edit);
-    return compose_action_success(context, restart ? "BMSON slice set to restart." : "BMSON slice set to continue.");
+        return compose_action_outcome_t::from(
+            restart ? "BMSON slice already restarts." : "BMSON slice already continues.",
+            notification_severity_t::info, notification_source_t::edit);
+    auto outcome = compose_action_outcome_t::from(
+        std::string{restart ? "BMSON slice set to restart." : "BMSON slice set to continue."},
+        notification_severity_t::success, notification_source_t::edit, applied.applied);
+    outcome.rebind_failure = "BMSON slice changed, but workspace rebinding failed.";
+    outcome.diagnostics = std::move(applied.diagnostics);
+    return outcome;
 }
 
-std::optional<std::string> move_bmson_selection_to_cursor(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+move_bmson_selection_to_cursor(compose_action_context_t& context) {
     using namespace wormedit;
     const object_id_t event{context.action.compose_bmson_bgm_event_id};
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(context, "Finish or cancel the active Compose gesture before moving a BMSON marker.");
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before moving a BMSON marker.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
     if (context.state.selected_objects.size() != 1 ||
         context.state.selected_objects.front().kind != editor_selection_object_kind_t::bgm_event ||
         context.state.selected_objects.front().id != event)
-        return compose_action_warning(context, "Select one BMSON BGM marker before moving it.");
-    const auto moved = move_bmson_bgm_marker(context.environment.document.history,
+        return compose_action_outcome_t::blocked("Select one BMSON BGM marker before moving it.",
+                                                 notification_source_t::edit);
+    auto moved = move_bmson_bgm_marker(context.environment.document.history,
                                              context.state.chart, event, context.state.cursor);
-    if (!moved.diagnostics.empty()) return publish_compose_diagnostic(context, moved.diagnostics.front());
-    if (!moved.applied) return compose_action_info(context, "BMSON BGM marker is already at the cursor.", notification_source_t::edit);
-    const auto rebound =
-        rebind_workspace(context.environment.document.workspace, context.environment.document.history);
-    if (!rebound) return compose_mutation_rebind_failure(context, rebound,
-        "BMSON BGM marker moved to the edit cursor.", "BMSON marker moved, but workspace rebinding failed.", notification_source_t::edit);
-    return compose_action_success(context, "BMSON BGM marker moved to the edit cursor.");
+    if (!moved.diagnostics.empty())
+        return compose_action_outcome_t::from(std::move(moved.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
+    if (!moved.applied)
+        return compose_action_outcome_t::from("BMSON BGM marker is already at the cursor.",
+                                              notification_severity_t::info,
+                                              notification_source_t::edit);
+    auto outcome = compose_action_outcome_t::from(
+        std::string{"BMSON BGM marker moved to the edit cursor."}, notification_severity_t::success,
+        notification_source_t::edit, moved.applied);
+    outcome.rebind_failure = "BMSON marker moved, but workspace rebinding failed.";
+    outcome.diagnostics = std::move(moved.diagnostics);
+    return outcome;
 }
 
-std::optional<std::string> insert_bmson_marker_at_cursor(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+insert_bmson_marker_at_cursor(compose_action_context_t& context) {
     using namespace wormedit;
     const auto event = object_id_t{context.action.compose_bmson_bgm_event_id};
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(context, "Finish or cancel the active Compose gesture before inserting a BMSON marker.");
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before inserting a BMSON marker.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
     if (context.state.selected_objects.size() != 1 ||
         context.state.selected_objects.front().kind != editor_selection_object_kind_t::bgm_event ||
         context.state.selected_objects.front().id != event)
-        return compose_action_warning(context, "Select one BMSON BGM marker to choose its sound channel.");
-    const auto inserted = insert_bmson_bgm_marker(
+        return compose_action_outcome_t::blocked(
+            "Select one BMSON BGM marker to choose its sound channel.",
+            notification_source_t::edit);
+    auto inserted = insert_bmson_bgm_marker(
         context.environment.document.history,
         context.state.chart, event, context.state.cursor,
         context.action.compose_action == WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_RESTART_AT_CURSOR);
-    if (!inserted.diagnostics.empty()) return publish_compose_diagnostic(context, inserted.diagnostics.front());
-    const auto rebound =
-        rebind_workspace(context.environment.document.workspace, context.environment.document.history);
-    if (!rebound) return compose_mutation_rebind_failure(context, rebound,
-        "BMSON BGM marker inserted at the edit cursor.", "BMSON marker inserted, but workspace rebinding failed.", notification_source_t::edit);
-    return compose_action_success(context, "BMSON BGM marker inserted at the edit cursor.");
+    if (!inserted.diagnostics.empty())
+        return compose_action_outcome_t::from(std::move(inserted.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
+    auto outcome = compose_action_outcome_t::from(
+        std::string{"BMSON BGM marker inserted at the edit cursor."},
+        notification_severity_t::success, notification_source_t::edit, inserted.applied);
+    outcome.rebind_failure = "BMSON marker inserted, but workspace rebinding failed.";
+    outcome.diagnostics = std::move(inserted.diagnostics);
+    return outcome;
 }
 
-std::optional<std::string> stage_bmson_marker_at_cursor(compose_action_context_t& context) {
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(context, "Finish or cancel the active Compose gesture before staging a BMSON marker.");
+std::optional<compose_action_outcome_t>
+stage_bmson_marker_at_cursor(compose_action_context_t& context) {
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before staging a BMSON marker.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
     auto severity = notification_severity_t::warning;
     auto message = propose_bmson_bgm_marker(
         context.environment.document.history, context.state,
@@ -697,60 +801,81 @@ std::optional<std::string> stage_bmson_marker_at_cursor(compose_action_context_t
         wormedit::object_id_t{context.action.compose_bmson_bgm_event_id}, context.state.cursor,
         context.action.compose_action == WORM_UI_COMPOSE_ACTION_STAGE_BMSON_BGM_RESTART_AT_CURSOR,
         &severity);
-    return publish_compose_feedback(context, std::move(message), severity, notification_source_t::input);
+    return compose_action_outcome_t::from(std::move(message), severity,
+                                          notification_source_t::input);
 }
 
-std::optional<std::string> apply_bmson_marker_batch(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+apply_bmson_marker_batch(compose_action_context_t& context) {
     using namespace wormedit;
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(context, "Finish or cancel the active Compose gesture before committing BMSON markers.");
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before committing BMSON markers.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
     auto& draft = context.environment.editor.commands.project.compose_gesture.bmson_marker_draft;
     if (!draft || draft->markers.empty()) {
         draft.reset();
-        return compose_action_warning(context, "The BMSON marker batch is no longer available for this chart revision.");
+        return compose_action_outcome_t::blocked(
+            "The BMSON marker batch is no longer available for this chart revision.",
+            notification_source_t::edit);
     }
     if (draft->stamp.chart != context.state.chart) {
         draft.reset();
-        return compose_action_warning(context, stale_action_message("BMSON marker batch"));
+        return compose_action_outcome_t::blocked(stale_action_message("BMSON marker batch"),
+                                                 notification_source_t::edit);
     }
     auto transaction = document_command_transaction_t::from(
         context.environment.document.history, draft->stamp, "BMSON marker batch",
         document_identity_policy_t::revision_only);
     if (!transaction.is_ready()) {
         draft.reset();
-        return compose_action_warning(context, transaction.outcome.diagnostics.front().message);
+        return compose_action_outcome_t::blocked(transaction.outcome.diagnostics.front().message,
+                                                 notification_source_t::edit);
     }
-    const auto inserted = insert_bmson_sound_markers(transaction, draft->stamp.chart,
+    auto inserted = insert_bmson_sound_markers(transaction, draft->stamp.chart,
                                                     draft->reference, draft->markers);
-    if (!inserted.diagnostics.empty()) return publish_compose_diagnostic(context, inserted.diagnostics.front());
+    if (!inserted.diagnostics.empty())
+        return compose_action_outcome_t::from(std::move(inserted.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
     draft.reset();
-    const auto rebound =
-        rebind_workspace(context.environment.document.workspace, context.environment.document.history);
-    if (!rebound) return compose_mutation_rebind_failure(context, rebound,
-        "BMSON markers inserted in one undoable edit.", "BMSON markers inserted, but workspace rebinding failed.", notification_source_t::edit);
-    return compose_action_success(context, "BMSON markers inserted in one undoable edit.");
+    auto outcome = compose_action_outcome_t::from(
+        std::string{"BMSON markers inserted in one undoable edit."},
+        notification_severity_t::success, notification_source_t::edit, inserted.applied);
+    outcome.rebind_failure = "BMSON markers inserted, but workspace rebinding failed.";
+    outcome.diagnostics = std::move(inserted.diagnostics);
+    return outcome;
 }
 
-std::optional<std::string> delete_bmson_selected_marker(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+delete_bmson_selected_marker(compose_action_context_t& context) {
     using namespace wormedit;
     const object_id_t event{context.action.compose_bmson_bgm_event_id};
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(context, "Finish or cancel the active Compose gesture before deleting a BMSON marker.");
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before deleting a BMSON marker.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
     if (context.state.selected_objects.size() != 1 ||
         context.state.selected_objects.front().kind != editor_selection_object_kind_t::bgm_event ||
         context.state.selected_objects.front().id != event)
-        return compose_action_warning(context, "Select one BMSON BGM marker before deleting it.");
-    const auto deleted = delete_bmson_bgm_marker(context.environment.document.history,
+        return compose_action_outcome_t::blocked("Select one BMSON BGM marker before deleting it.",
+                                                 notification_source_t::edit);
+    auto deleted = delete_bmson_bgm_marker(context.environment.document.history,
                                                  context.state.chart, event);
-    if (!deleted.diagnostics.empty()) return publish_compose_diagnostic(context, deleted.diagnostics.front());
-    if (!deleted.applied) return compose_action_info(context, "BMSON marker deletion made no document change.", notification_source_t::edit);
+    if (!deleted.diagnostics.empty())
+        return compose_action_outcome_t::from(std::move(deleted.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
+    if (!deleted.applied)
+        return compose_action_outcome_t::from("BMSON marker deletion made no document change.",
+                                              notification_severity_t::info,
+                                              notification_source_t::edit);
     context.state.selected_objects.clear();
     context.state.selected_notes.clear();
-    const auto rebound =
-        rebind_workspace(context.environment.document.workspace, context.environment.document.history);
-    if (!rebound) return compose_mutation_rebind_failure(context, rebound,
-        "BMSON BGM marker deleted.", "BMSON marker deleted, but workspace rebinding failed.", notification_source_t::edit);
-    return compose_action_success(context, "BMSON BGM marker deleted.");
+    auto outcome = compose_action_outcome_t::from(std::string{"BMSON BGM marker deleted."},
+                                                  notification_severity_t::success,
+                                                  notification_source_t::edit, deleted.applied);
+    outcome.rebind_failure = "BMSON marker deleted, but workspace rebinding failed.";
+    outcome.diagnostics = std::move(deleted.diagnostics);
+    return outcome;
 }
 
 auto lane_mode_channel(const compose_action_context_t& context) -> wormedit::object_id_t {
@@ -765,30 +890,40 @@ auto lane_mode_channel(const compose_action_context_t& context) -> wormedit::obj
     return wormedit::object_id_t{context.action.compose_bmson_channel_id};
 }
 
-std::optional<std::string> change_bmson_lane_mode(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t> change_bmson_lane_mode(compose_action_context_t& context) {
     using namespace wormedit;
     if (context.action.compose_input_project_id !=
         context.environment.document.history.document.id.value)
-        return compose_action_warning(context, wormedit::stale_action_message("Channel lane action"));
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(context, "Finish or cancel the active Compose gesture before changing channel lanes.");
+        return compose_action_outcome_t::blocked(
+            wormedit::stale_action_message("Channel lane action"), notification_source_t::edit);
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before changing channel lanes.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
     const auto kind = context.action.compose_action;
-    const auto result = set_bmson_channel_lane_mode(
+    auto result = set_bmson_channel_lane_mode(
         context.environment.document.history,
         context.state.chart, lane_mode_channel(context),
         kind == WORM_UI_COMPOSE_ACTION_MAKE_BMSON_STEM ? bmson_channel_lane_mode_t::stem
                                                        : bmson_channel_lane_mode_t::packed,
         kind == WORM_UI_COMPOSE_ACTION_RESTART_AND_PACK_BMSON_CHANNEL);
-    if (!result.diagnostics.empty()) return publish_compose_diagnostic(context, result.diagnostics.front());
-    if (!result.applied) return compose_action_info(context, "Channel already uses that lane mode.");
-    const auto rebound =
-        rebind_workspace(context.environment.document.workspace, context.environment.document.history);
-    if (!rebound) return compose_mutation_rebind_failure(context, rebound,
-        "BMSON channel lane mode changed.", "Channel changed, but workspace rebinding failed.", notification_source_t::edit);
-    return compose_action_success(context, "BMSON channel lane mode changed.");
+    if (!result.diagnostics.empty())
+        return compose_action_outcome_t::from(std::move(result.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
+    if (!result.applied)
+        return compose_action_outcome_t::from("Channel already uses that lane mode.",
+                                              notification_severity_t::info,
+                                              notification_source_t::input);
+    auto outcome = compose_action_outcome_t::from(std::string{"BMSON channel lane mode changed."},
+                                                  notification_severity_t::success,
+                                                  notification_source_t::edit, result.applied);
+    outcome.rebind_failure = "Channel changed, but workspace rebinding failed.";
+    outcome.diagnostics = std::move(result.diagnostics);
+    return outcome;
 }
 
-std::optional<std::string> dispatch_compose_bmson_action(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+dispatch_compose_bmson_action(compose_action_context_t& context) {
     switch (context.action.compose_action) {
     case WORM_UI_COMPOSE_ACTION_MAKE_BMSON_STEM:
     case WORM_UI_COMPOSE_ACTION_PACK_BMSON_CHANNEL:
@@ -812,14 +947,15 @@ std::optional<std::string> dispatch_compose_bmson_action(compose_action_context_
         return apply_bmson_marker_batch(context);
     case WORM_UI_COMPOSE_ACTION_CANCEL_STAGED_BMSON_BGM:
         context.environment.editor.commands.project.compose_gesture.bmson_marker_draft.reset();
-        return compose_action_hint(context, "BMSON marker batch canceled.");
+        return compose_action_outcome_t::from("BMSON marker batch canceled.",
+                                              notification_severity_t::hint,
+                                              notification_source_t::input);
     case WORM_UI_COMPOSE_ACTION_DELETE_BMSON_BGM_MARKER:
         return delete_bmson_selected_marker(context);
     default:
         return std::nullopt;
     }
 }
-
 
 // The form's recipe and the stored recipe it edits, when the action still matches the document.
 
@@ -835,103 +971,127 @@ auto catalog_semantic_layer_by_id(const wormedit::chart_document_t& chart,
     return found == chart.semantic_layers.end() ? nullptr : &*found;
 }
 
-std::optional<std::string> assign_compose_layer_target(compose_action_context_t& context,
-                                                       bool none, wormedit::layer_id_t target) {
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(context, "Finish or cancel the active Compose gesture before editing semantic layers.");
+std::optional<compose_action_outcome_t>
+assign_compose_layer_target(compose_action_context_t& context, bool none,
+                            wormedit::layer_id_t target) {
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before editing semantic layers.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
     auto& app = context.environment.editor.commands;
-    const auto applied = wormedit::sys::apply_compose_layer_assignment(
+    auto applied = wormedit::sys::apply_compose_layer_assignment(
         context.environment.document.history, context.state,
         context.action.compose_input_document_revision, none, target,
         app.project.semantic_layer.semantic_layer_target_none, app.project.semantic_layer.semantic_layer_target);
-    if (!applied.applied && !applied.diagnostics.empty()) return publish_compose_diagnostic(context, applied.diagnostics.front());
+    if (!applied.applied && !applied.diagnostics.empty())
+        return compose_action_outcome_t::from(std::move(applied.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
     if (none) app.project.semantic_layer.semantic_layer_solo_active = false;
-    if (!applied.applied) return compose_action_info(context, "Semantic-layer membership was unchanged.", notification_source_t::edit);
-    const auto rebound = wormedit::rebind_workspace(context.environment.document.workspace,
-                                                    context.environment.document.history);
-    if (!rebound) {
-        static_cast<void>(compose_action_success(context, none ? "Selected objects assigned to No layer."
-                                                               : "Semantic-layer membership updated."));
-        return compose_action_error(context, "Semantic-layer membership changed, but workspace rebinding failed.", notification_source_t::document);
-    }
-    return compose_action_success(context, none ? "Selected objects assigned to No layer."
-                                                : "Semantic-layer membership updated.");
+    if (!applied.applied)
+        return compose_action_outcome_t::from("Semantic-layer membership was unchanged.",
+                                              notification_severity_t::info,
+                                              notification_source_t::edit);
+    auto outcome = compose_action_outcome_t::from(
+        std::string{none ? "Selected objects assigned to No layer."
+                         : "Semantic-layer membership updated."},
+        notification_severity_t::success, notification_source_t::edit, applied.applied);
+    outcome.rebind_failure = "Semantic-layer membership changed, but workspace rebinding failed.";
+    outcome.rebind_failure_policy = compose_rebind_failure_policy_t::message_only;
+    outcome.diagnostics = std::move(applied.diagnostics);
+    return outcome;
 }
 
-std::optional<std::string> add_selected_compose_sounds_to_layer(compose_action_context_t& context) {
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(context, "Finish or cancel the active gesture before assigning sound layers.");
+std::optional<compose_action_outcome_t>
+add_selected_compose_sounds_to_layer(compose_action_context_t& context) {
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active gesture before assigning sound layers.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
     auto& app = context.environment.editor.commands;
     if (context.action.compose_input_project_id !=
             context.environment.document.history.document.id.value ||
         app.project.semantic_layer.note_layer_menu_chart != context.state.chart ||
         app.project.semantic_layer.note_layer_menu_revision != context.action.compose_input_document_revision)
-        return compose_action_warning(context, wormedit::stale_action_message("Sound layer menu"));
+        return compose_action_outcome_t::blocked(wormedit::stale_action_message("Sound layer menu"),
+                                                 notification_source_t::edit);
     app.project.semantic_layer.note_layer_menu_row_count = 0;
-    const auto applied = apply_compose_selected_sound_layer_assignment(
+    auto applied = apply_compose_selected_sound_layer_assignment(
         context.environment.document.history, context.state,
         context.action.compose_input_document_revision,
         layer_id_t{context.action.compose_semantic_layer_id});
     if (!applied.applied) {
-        if (!applied.diagnostics.empty()) return publish_compose_diagnostic(context, applied.diagnostics.front());
-        return compose_action_info(context, "Selected sound layers were unchanged; silent objects are ignored.",
-                                   notification_source_t::edit);
+        if (!applied.diagnostics.empty())
+            return compose_action_outcome_t::from(std::move(applied.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
+        return compose_action_outcome_t::from(
+            "Selected sound layers were unchanged; silent objects are ignored.",
+            notification_severity_t::info, notification_source_t::edit);
     }
-    const auto rebound =
-        rebind_workspace(context.environment.document.workspace, context.environment.document.history);
-    if (!rebound) return compose_mutation_rebind_failure(context, rebound,
-        "Selected sounds added to the layer.", "Sound layers changed, but workspace rebinding failed.");
-    return compose_action_success(context, "Selected sounds added to the layer; unassigned matching objects inherited it.");
+    auto outcome = compose_action_outcome_t::from(
+        std::string{
+            "Selected sounds added to the layer; unassigned matching objects inherited it."},
+        notification_severity_t::success, notification_source_t::edit, applied.applied);
+    outcome.rebind_failure = "Sound layers changed, but workspace rebinding failed.";
+    outcome.rebind_success_message = "Selected sounds added to the layer.";
+    outcome.diagnostics = std::move(applied.diagnostics);
+    return outcome;
 }
 
-std::optional<std::string> dispatch_compose_note_menu_action(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+dispatch_compose_note_menu_action(compose_action_context_t& context) {
     using namespace wormedit;
     const auto& action = context.action;
     auto& app = context.environment.editor.commands;
     switch (action.compose_action) {
     case WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU: {
-        if (editor_interaction_has_pending_gesture(context.state))
-            return compose_action_warning(context, "Finish or cancel the active Compose gesture before opening the note menu.");
-        const auto result = select_compose_note_context(
+        if (auto blocked = context.require_no_gesture(
+                "Finish or cancel the active Compose gesture before opening the note menu.")) {
+            blocked->source = notification_source_t::edit;
+            return std::move(*blocked);
+        }
+        auto result = select_compose_note_context(
             context.environment.document.history, context.state, action.compose_input_document_revision,
             object_id_t{action.compose_note_context_id});
-        if (!result.accepted) return compose_interaction_feedback(context, result, "Note could not be selected.");
+        if (!result.accepted)
+            return compose_action_outcome_t::from(std::move(result), "Note could not be selected.");
         app.project.semantic_layer.note_layer_menu_chart = context.state.chart;
         app.project.semantic_layer.note_layer_menu_revision = context.environment.document.history.document.revision;
         app.project.semantic_layer.note_layer_menu_first_row = 0;
         app.project.semantic_layer.note_layer_menu_row_count = WORM_UI_COMPOSE_NOTE_LAYER_WINDOW_CAPACITY;
-        return "";
+        return compose_action_outcome_t::from({}, notification_severity_t::hint);
     }
     case WORM_UI_COMPOSE_ACTION_OPEN_SELECTED_SOUND_LAYER_MENU:
         if (action.compose_input_project_id != context.environment.document.history.document.id.value ||
             editor_interaction_has_pending_gesture(context.state) ||
             action.compose_input_document_revision !=
                 context.environment.document.history.document.revision)
-            return compose_action_warning(context, "The selection changed or a Compose gesture is active.");
+            return compose_action_outcome_t::blocked(
+                "The selection changed or a Compose gesture is active.",
+                notification_source_t::edit);
         app.project.semantic_layer.note_layer_menu_chart = context.state.chart;
         app.project.semantic_layer.note_layer_menu_revision = context.environment.document.history.document.revision;
         app.project.semantic_layer.note_layer_menu_first_row = 0;
         app.project.semantic_layer.note_layer_menu_row_count = WORM_UI_COMPOSE_NOTE_LAYER_WINDOW_CAPACITY;
-        return "";
+        return compose_action_outcome_t::from({}, notification_severity_t::hint);
     case WORM_UI_COMPOSE_ACTION_ADD_SELECTED_SOUNDS_TO_LAYER:
         return add_selected_compose_sounds_to_layer(context);
     case WORM_UI_COMPOSE_ACTION_SET_NOTE_LAYER_MENU_WINDOW:
         if (app.project.semantic_layer.note_layer_menu_chart != context.state.chart ||
             app.project.semantic_layer.note_layer_menu_revision != context.environment.document.history.document.revision)
-            return "";
+            return compose_action_outcome_t::from({}, notification_severity_t::hint);
         app.project.semantic_layer.note_layer_menu_first_row = action.compose_semantic_layer_first_row;
         app.project.semantic_layer.note_layer_menu_row_count = std::clamp<std::size_t>(
             action.compose_semantic_layer_row_count, 1, WORM_UI_COMPOSE_NOTE_LAYER_WINDOW_CAPACITY);
-        return "";
+        return compose_action_outcome_t::from({}, notification_severity_t::hint);
     case WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU:
         if ((action.compose_input_project_id &&
              action.compose_input_project_id !=
                  context.environment.document.history.document.id.value) ||
             app.project.semantic_layer.note_layer_menu_chart.value != action.compose_input_chart_id ||
             app.project.semantic_layer.note_layer_menu_revision != action.compose_input_document_revision)
-            return "";
+            return compose_action_outcome_t::from({}, notification_severity_t::hint);
         app.project.semantic_layer.note_layer_menu_row_count = 0;
-        return "";
+        return compose_action_outcome_t::from({}, notification_severity_t::hint);
     case WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER:
         app.project.semantic_layer.note_layer_menu_row_count = 0;
         return assign_compose_layer_target(context, action.compose_semantic_layer_id == 0,
@@ -940,9 +1100,11 @@ std::optional<std::string> dispatch_compose_note_menu_action(compose_action_cont
     }
 }
 
-std::optional<std::string> choose_no_semantic_layer(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+choose_no_semantic_layer(compose_action_context_t& context) {
     if (!selected_chart(context.environment.document.history, context.environment.document.workspace))
-        return compose_action_warning(context, "Choose a Compose chart first.");
+        return compose_action_outcome_t::blocked("Choose a Compose chart first.",
+                                                 notification_source_t::edit);
     if (!context.state.selected_notes.empty() ||
         !selected_compose_bgm_events(context.state).empty())
         return assign_compose_layer_target(context, true, {});
@@ -950,11 +1112,13 @@ std::optional<std::string> choose_no_semantic_layer(compose_action_context_t& co
     app.project.semantic_layer.semantic_layer_target.reset();
     app.project.semantic_layer.semantic_layer_target_none = true;
     app.project.semantic_layer.semantic_layer_solo_active = false;
-    return compose_action_info(context, "Semantic-layer target: No layer");
+    return compose_action_outcome_t::from("Semantic-layer target: No layer",
+                                          notification_severity_t::info,
+                                          notification_source_t::input);
 }
 
-std::optional<std::string> dispatch_semantic_layer_palette_action(
-    compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+dispatch_semantic_layer_palette_action(compose_action_context_t& context) {
     using namespace wormedit;
     auto& action = context.action;
     auto& history = context.environment.document.history;
@@ -966,24 +1130,34 @@ std::optional<std::string> dispatch_semantic_layer_palette_action(
         application_state.project.semantic_layer.semantic_layer_row_count =
             std::clamp<std::size_t>(action.compose_semantic_layer_row_count, 1,
                                     WORM_UI_COMPOSE_SEMANTIC_LAYER_WINDOW_CAPACITY);
-        return "";
+        return compose_action_outcome_t::from({}, notification_severity_t::hint);
     case WORM_UI_COMPOSE_ACTION_SELECT_NO_SEMANTIC_LAYER:
         return choose_no_semantic_layer(context);
     case WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER: {
         const auto* chart = selected_chart(history, workspace);
         if (!chart || action.compose_semantic_layer_id == 0)
-            return compose_action_warning(context, "Choose a visible semantic layer from the current Compose palette.");
+            return compose_action_outcome_t::blocked(
+                "Choose a visible semantic layer from the current Compose palette.",
+                notification_source_t::edit);
         const auto* layer = catalog_semantic_layer_by_id(
             *chart, layer_id_t{action.compose_semantic_layer_id});
-        if (!layer) return compose_action_warning(context, "That semantic-layer palette entry is no longer visible.");
+        if (!layer)
+            return compose_action_outcome_t::blocked(
+                "That semantic-layer palette entry is no longer visible.",
+                notification_source_t::edit);
         application_state.project.semantic_layer.semantic_layer_target = layer->id;
         application_state.project.semantic_layer.semantic_layer_target_none = false;
-        return compose_action_info(context, "Semantic-layer target: " + layer->name);
+        return compose_action_outcome_t::from("Semantic-layer target: " + layer->name,
+                                              notification_severity_t::info,
+                                              notification_source_t::input);
     }
     case WORM_UI_COMPOSE_ACTION_PREVIOUS_SEMANTIC_LAYER_PAGE:
     case WORM_UI_COMPOSE_ACTION_NEXT_SEMANTIC_LAYER_PAGE: {
         const auto* chart = selected_chart(history, workspace);
-        if (!chart) return compose_action_warning(context, "Choose a chart before navigating semantic-layer pages.");
+        if (!chart)
+            return compose_action_outcome_t::blocked(
+                "Choose a chart before navigating semantic-layer pages.",
+                notification_source_t::edit);
         if (application_state.project.semantic_layer.semantic_layer_palette_chart != chart->id) {
             application_state.project.semantic_layer.semantic_layer_palette_chart = chart->id;
             application_state.project.semantic_layer.semantic_layer_palette_page = 0;
@@ -992,38 +1166,51 @@ std::optional<std::string> dispatch_semantic_layer_palette_action(
             *chart, application_state.project.semantic_layer.semantic_layer_target,
             application_state.project.semantic_layer.semantic_layer_palette_page, false,
             WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY);
-        if (!palette) return compose_action_warning(context, "Semantic-layer palette navigation exceeded its bounded limit.");
+        if (!palette)
+            return compose_action_outcome_t::blocked(
+                "Semantic-layer palette navigation exceeded its bounded limit.",
+                notification_source_t::edit);
         application_state.project.semantic_layer.semantic_layer_palette_page = palette->page;
         if (action.compose_action == WORM_UI_COMPOSE_ACTION_PREVIOUS_SEMANTIC_LAYER_PAGE) {
             if (application_state.project.semantic_layer.semantic_layer_palette_page == 0)
-                return compose_action_hint(context, "Semantic-layer palette is already on its first page.");
+                return compose_action_outcome_t::from(
+                    "Semantic-layer palette is already on its first page.",
+                    notification_severity_t::hint, notification_source_t::input);
             --application_state.project.semantic_layer.semantic_layer_palette_page;
         } else {
             if (palette->page_count == 0 ||
                 application_state.project.semantic_layer.semantic_layer_palette_page + 1 >= palette->page_count)
-                return compose_action_hint(context, "Semantic-layer palette is already on its last page.");
+                return compose_action_outcome_t::from(
+                    "Semantic-layer palette is already on its last page.",
+                    notification_severity_t::hint, notification_source_t::input);
             ++application_state.project.semantic_layer.semantic_layer_palette_page;
         }
-        return compose_action_hint(context, "Semantic-layer palette page " +
-               std::to_string(application_state.project.semantic_layer.semantic_layer_palette_page + 1) + " of " +
-               std::to_string(palette->page_count) + ".");
+        return compose_action_outcome_t::from(
+            "Semantic-layer palette page " +
+                std::to_string(
+                    application_state.project.semantic_layer.semantic_layer_palette_page + 1) +
+                " of " + std::to_string(palette->page_count) + ".",
+            notification_severity_t::hint, notification_source_t::input);
     }
     default:
         return std::nullopt;
     }
 }
 
-std::optional<std::string> semantic_layer_edit_status(
-    compose_action_context_t& context, wormedit::semantic_layer_edit_action_t edit,
-    std::string_view success, std::string_view unchanged, std::string_view rebind_failure) {
+std::optional<compose_action_outcome_t>
+semantic_layer_edit_status(compose_action_context_t& context,
+                           wormedit::semantic_layer_edit_action_t edit, std::string_view success,
+                           std::string_view unchanged, std::string_view rebind_failure) {
     const bool inserting = std::holds_alternative<wormedit::insert_semantic_layer_action_t>(edit);
-    const auto applied =
+    auto applied =
         wormedit::apply_semantic_layer_edit(context.environment.document.history, std::move(edit));
     if (!applied.applied)
         return applied.diagnostics.empty()
-            ? std::optional<std::string>{compose_action_info(context, std::string{unchanged}, notification_source_t::edit)}
-            : std::optional<std::string>{publish_compose_diagnostic(
-                  context, applied.diagnostics.front())};
+                   ? std::optional<compose_action_outcome_t>{compose_action_outcome_t::from(
+                         std::string{unchanged}, notification_severity_t::info,
+                         notification_source_t::edit)}
+                   : std::optional<compose_action_outcome_t>{
+                         compose_action_outcome_t::from(std::move(applied.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message)};
     if (inserting) {
         const auto* chart =
             selected_chart(context.environment.document.history, context.environment.document.workspace);
@@ -1033,21 +1220,25 @@ std::optional<std::string> semantic_layer_edit_status(
             context.environment.editor.commands.project.semantic_layer.semantic_layer_target_none = false;
         }
     }
-    const auto rebound = wormedit::rebind_workspace(context.environment.document.workspace,
-                                                    context.environment.document.history);
-    if (rebound) return compose_action_success(context, std::string{success});
-    return compose_mutation_rebind_failure(context, rebound, std::string{success},
-                                           std::string{rebind_failure});
+    auto outcome =
+        compose_action_outcome_t::from(std::string{success}, notification_severity_t::success,
+                                       notification_source_t::edit, applied.applied);
+    outcome.rebind_failure = rebind_failure;
+    return outcome;
 }
 
-std::optional<std::string> add_semantic_layer(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t> add_semantic_layer(compose_action_context_t& context) {
     using namespace wormedit;
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(context,
-            "Finish or cancel the active Compose gesture before adding a semantic layer.");
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before adding a semantic layer.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
     const auto* chart =
         selected_chart(context.environment.document.history, context.environment.document.workspace);
-    if (!chart) return compose_action_warning(context, "Choose a chart before adding a semantic layer.");
+    if (!chart)
+        return compose_action_outcome_t::blocked("Choose a chart before adding a semantic layer.",
+                                                 notification_source_t::edit);
     std::string name = context.action.compose_semantic_layer_name;
     if (name.empty()) name = "Layer";
     for (std::size_t suffix = 2; !context.action.compose_semantic_layer_name[0] && std::ranges::any_of(
@@ -1077,22 +1268,29 @@ auto selected_catalog_layer(compose_action_context_t& context)
                 *chart, *context.environment.editor.commands.project.semantic_layer.semantic_layer_target)};
 }
 
-std::optional<std::string> update_semantic_layer_catalog_entry(
-    compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+update_semantic_layer_catalog_entry(compose_action_context_t& context) {
     using namespace wormedit;
     const bool recolor = context.action.compose_action == WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_COLOR;
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(context, recolor
-            ? "Finish or cancel the active Compose gesture before recoloring a semantic layer."
-            : "Finish or cancel the active Compose gesture before renaming a semantic layer.");
+    if (auto blocked = context.require_no_gesture(
+            recolor
+                ? "Finish or cancel the active Compose gesture before recoloring a semantic layer."
+                : "Finish or cancel the active Compose gesture before renaming a semantic "
+                  "layer.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
     const auto [chart, layer] = selected_catalog_layer(context);
     if (!chart || !layer)
-        return !chart || !context.environment.editor.commands.project.semantic_layer.semantic_layer_target
-                   ? compose_action_warning(
-                         context, recolor ? "Choose a visible semantic layer before recoloring it."
-                                          : "Choose a visible semantic layer before renaming it.")
-                   : compose_action_warning(context,
-                                            "The selected semantic layer is no longer visible.");
+        return !chart || !context.environment.editor.commands.project.semantic_layer
+                              .semantic_layer_target
+                   ? compose_action_outcome_t::blocked(
+                         recolor ? "Choose a visible semantic layer before recoloring it."
+                                 : "Choose a visible semantic layer before renaming it.",
+                         notification_source_t::edit)
+                   : compose_action_outcome_t::blocked(
+                         "The selected semantic layer is no longer visible.",
+                         notification_source_t::edit);
     const auto color = recolor
         ? semantic_layer_rgba_t{static_cast<double>(context.action.compose_semantic_layer_red) / 255.0,
                                 static_cast<double>(context.action.compose_semantic_layer_green) / 255.0,
@@ -1112,25 +1310,34 @@ std::optional<std::string> update_semantic_layer_catalog_entry(
                 : "Semantic layer renamed, but workspace rebinding failed.");
 }
 
-std::optional<std::string> delete_semantic_layer_catalog_entry(
-    compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+delete_semantic_layer_catalog_entry(compose_action_context_t& context) {
     using namespace wormedit;
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(context, "Finish or cancel the active Compose gesture before deleting a semantic layer.");
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before deleting a semantic layer.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
     const auto [chart, layer] = selected_catalog_layer(context);
     if (!chart || !context.environment.editor.commands.project.semantic_layer.semantic_layer_target)
-        return compose_action_warning(context, "Choose a visible semantic layer before deleting it.");
-    if (!layer) return compose_action_warning(context, "The selected semantic layer is no longer visible.");
+        return compose_action_outcome_t::blocked(
+            "Choose a visible semantic layer before deleting it.", notification_source_t::edit);
+    if (!layer)
+        return compose_action_outcome_t::blocked(
+            "The selected semantic layer is no longer visible.", notification_source_t::edit);
     const auto id = layer->id;
-    const auto applied = apply_semantic_layer_edit(
+    auto applied = apply_semantic_layer_edit(
         context.environment.document.history,
         delete_semantic_layer_action_t{
             context.state.chart, id,
             context.action.compose_action ==
                 WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER_WITH_MEMBERSHIPS});
-    if (!applied.applied) return applied.diagnostics.empty()
-        ? compose_action_info(context, "Semantic layer was not deleted.", notification_source_t::edit)
-        : publish_compose_diagnostic(context, applied.diagnostics.front());
+    if (!applied.applied)
+        return applied.diagnostics.empty()
+                   ? compose_action_outcome_t::from("Semantic layer was not deleted.",
+                                                    notification_severity_t::info,
+                                                    notification_source_t::edit)
+                   : compose_action_outcome_t::from(std::move(applied.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
     auto& state = context.environment.editor.commands;
     std::erase(state.project.semantic_layer.required_semantic_layer_filters, id);
     std::erase(state.project.semantic_layer.excluded_semantic_layer_filters, id);
@@ -1138,30 +1345,39 @@ std::optional<std::string> delete_semantic_layer_catalog_entry(
     state.project.semantic_layer.semantic_layer_target_none = false;
     state.project.compose_gesture.semantic_layer_paint_mode_active = false;
     state.project.semantic_layer.semantic_layer_solo_active = false;
-    const auto rebound =
-        rebind_workspace(context.environment.document.workspace, context.environment.document.history);
-    if (rebound) return compose_action_success(context, "Semantic layer deleted.");
-    return compose_mutation_rebind_failure(context, rebound, "Semantic layer deleted.",
-        "Semantic layer deleted, but workspace rebinding failed.");
+    auto outcome = compose_action_outcome_t::from(std::string{"Semantic layer deleted."},
+                                                  notification_severity_t::success,
+                                                  notification_source_t::edit, applied.applied);
+    outcome.rebind_failure = "Semantic layer deleted, but workspace rebinding failed.";
+    outcome.diagnostics = std::move(applied.diagnostics);
+    return outcome;
 }
 
-std::optional<std::string> move_semantic_layer_catalog_entry(
-    compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+move_semantic_layer_catalog_entry(compose_action_context_t& context) {
     using namespace wormedit;
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(context, "Finish or cancel the active Compose gesture before reordering semantic layers.");
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before reordering semantic layers.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
     const auto [chart, layer] = selected_catalog_layer(context);
     if (!chart || !layer)
-        return !chart || !context.environment.editor.commands.project.semantic_layer.semantic_layer_target
-                   ? compose_action_warning(context,
-                                            "Choose a visible semantic layer before reordering it.")
-                   : compose_action_warning(context,
-                                            "The selected semantic layer is no longer available.");
+        return !chart || !context.environment.editor.commands.project.semantic_layer
+                              .semantic_layer_target
+                   ? compose_action_outcome_t::blocked(
+                         "Choose a visible semantic layer before reordering it.",
+                         notification_source_t::edit)
+                   : compose_action_outcome_t::blocked(
+                         "The selected semantic layer is no longer available.",
+                         notification_source_t::edit);
     const auto found = std::ranges::find(chart->semantic_layers, layer->id, &semantic_layer_t::id);
     const auto index = static_cast<std::size_t>(std::distance(chart->semantic_layers.begin(), found));
     const bool up = context.action.compose_action == WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_UP;
     if ((up && index == 0) || (!up && index + 1 == chart->semantic_layers.size()))
-        return compose_action_info(context, "Semantic layer is already at that palette boundary.", notification_source_t::edit);
+        return compose_action_outcome_t::from("Semantic layer is already at that palette boundary.",
+                                              notification_severity_t::info,
+                                              notification_source_t::edit);
     std::vector<layer_id_t> order;
     order.reserve(chart->semantic_layers.size());
     for (const auto& item : chart->semantic_layers) order.push_back(item.id);
@@ -1172,7 +1388,8 @@ std::optional<std::string> move_semantic_layer_catalog_entry(
         "Semantic-layer order updated, but workspace rebinding failed.");
 }
 
-std::optional<std::string> dispatch_compose_semantic_layer_catalog_action(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+dispatch_compose_semantic_layer_catalog_action(compose_action_context_t& context) {
     switch (context.action.compose_action) {
     case WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_WINDOW:
     case WORM_UI_COMPOSE_ACTION_SELECT_NO_SEMANTIC_LAYER:
@@ -1253,7 +1470,7 @@ auto locked_semantic_layer_menu_action(WormUiComposeActionKind kind) -> bool {
 }
 
 auto target_captured_semantic_layer_action(compose_action_context_t& context)
-    -> std::optional<std::string> {
+    -> std::optional<compose_action_outcome_t> {
     const auto kind = context.action.compose_action;
     if (!semantic_layer_menu_action(kind) || context.action.compose_semantic_layer_id == 0)
         return std::nullopt;
@@ -1261,22 +1478,30 @@ auto target_captured_semantic_layer_action(compose_action_context_t& context)
         selected_chart(context.environment.document.history, context.environment.document.workspace);
     const auto* layer = chart ? catalog_semantic_layer_by_id(
         *chart, wormedit::layer_id_t{context.action.compose_semantic_layer_id}) : nullptr;
-    if (!layer) return compose_action_warning(context, "The selected semantic layer is no longer available.");
-    if (layer->locked && locked_semantic_layer_menu_action(kind)) return compose_action_warning(context, "Layer is locked");
+    if (!layer)
+        return compose_action_outcome_t::blocked(
+            "The selected semantic layer is no longer available.", notification_source_t::edit);
+    if (layer->locked && locked_semantic_layer_menu_action(kind))
+        return compose_action_outcome_t::blocked("Layer is locked", notification_source_t::edit);
     (void)target_semantic_layer_action_row(context);
     return std::nullopt;
 }
 
 auto missing_semantic_layer_toggle_target(compose_action_context_t& context, bool toggle_lock)
-    -> std::optional<std::string> {
+    -> std::optional<compose_action_outcome_t> {
     const auto [chart, layer] = selected_catalog_layer(context);
     if (!chart || !context.environment.editor.commands.project.semantic_layer.semantic_layer_target)
-        return toggle_lock ? compose_action_warning(context, "Choose a semantic layer before changing its lock state.")
-                           : compose_action_warning(context, "Choose a semantic layer before changing its visibility.");
+        return toggle_lock ? compose_action_outcome_t::blocked(
+                                 "Choose a semantic layer before changing its lock state.",
+                                 notification_source_t::edit)
+                           : compose_action_outcome_t::blocked(
+                                 "Choose a semantic layer before changing its visibility.",
+                                 notification_source_t::edit);
     if (!layer) {
         clear_semantic_layer_selection(context.environment.editor.commands,
                                        toggle_lock);
-        return compose_action_warning(context, "The selected semantic layer is no longer available.");
+        return compose_action_outcome_t::blocked(
+            "The selected semantic layer is no longer available.", notification_source_t::edit);
     }
     return std::nullopt;
 }
@@ -1286,16 +1511,21 @@ auto semantic_layer_toggle_status(bool toggle_lock, bool previous) -> std::strin
     return previous ? "Semantic layer hidden." : "Semantic layer shown.";
 }
 
-std::optional<std::string> toggle_semantic_layer_visibility_or_lock(
-    compose_action_context_t& context, bool toggle_lock) {
+std::optional<compose_action_outcome_t>
+toggle_semantic_layer_visibility_or_lock(compose_action_context_t& context, bool toggle_lock) {
     using namespace wormedit;
     auto& app = context.environment.editor.commands;
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(context, toggle_lock
-            ? "Finish or cancel the active Compose gesture before changing layer lock state."
-            : "Finish or cancel the active Compose gesture before changing layer visibility.");
+    if (auto blocked = context.require_no_gesture(
+            toggle_lock
+                ? "Finish or cancel the active Compose gesture before changing layer lock state."
+                : "Finish or cancel the active Compose gesture before changing layer "
+                  "visibility.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
     if (!target_semantic_layer_action_row(context))
-        return compose_action_warning(context, "The selected semantic layer is no longer available.");
+        return compose_action_outcome_t::blocked(
+            "The selected semantic layer is no longer available.", notification_source_t::edit);
     if (const auto missing = missing_semantic_layer_toggle_target(context, toggle_lock))
         return missing;
     const auto [chart, layer] = selected_catalog_layer(context);
@@ -1305,33 +1535,37 @@ std::optional<std::string> toggle_semantic_layer_visibility_or_lock(
         static_cast<double>(layer->color.green) / 255.0,
         static_cast<double>(layer->color.blue) / 255.0,
         static_cast<double>(layer->color.alpha) / 255.0};
-    const auto applied = apply_semantic_layer_edit(
+    auto applied = apply_semantic_layer_edit(
         context.environment.document.history,
         update_semantic_layer_action_t{context.state.chart, layer->id, layer->name, color,
                                        toggle_lock ? layer->visible : !previous,
                                        toggle_lock ? !previous : layer->locked});
-    if (!applied.applied) return applied.diagnostics.empty()
-        ? compose_action_info(context, "Semantic-layer state was unchanged.", notification_source_t::edit)
-        : publish_compose_diagnostic(context, applied.diagnostics.front());
+    if (!applied.applied)
+        return applied.diagnostics.empty()
+                   ? compose_action_outcome_t::from("Semantic-layer state was unchanged.",
+                                                    notification_severity_t::info,
+                                                    notification_source_t::edit)
+                   : compose_action_outcome_t::from(std::move(applied.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
     if (!toggle_lock && previous) {
         app.project.compose_gesture.semantic_layer_paint_mode_active = false;
         app.project.semantic_layer.semantic_layer_solo_active = false;
     }
-    const auto rebound =
-        rebind_workspace(context.environment.document.workspace, context.environment.document.history);
-    if (!rebound) return compose_mutation_rebind_failure(context, rebound,
-        semantic_layer_toggle_status(toggle_lock, previous),
-        "Semantic-layer state changed, but workspace rebinding failed.",
-        notification_source_t::edit, notification_severity_t::info);
-    if (toggle_lock && !previous) app.project.compose_gesture.semantic_layer_paint_mode_active = false;
-    return compose_action_info(context, semantic_layer_toggle_status(toggle_lock, previous),
-                               notification_source_t::edit);
+    auto outcome = compose_action_outcome_t::from(
+        std::string{semantic_layer_toggle_status(toggle_lock, previous)},
+        notification_severity_t::info, notification_source_t::edit, applied.applied);
+    outcome.rebind_failure = "Semantic-layer state changed, but workspace rebinding failed.";
+    outcome.clear_semantic_layer_paint_after_rebind = toggle_lock && !previous;
+    outcome.diagnostics = std::move(applied.diagnostics);
+    return outcome;
 }
 
-std::optional<std::string> toggle_semantic_layer_filter(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+toggle_semantic_layer_filter(compose_action_context_t& context) {
     using namespace wormedit;
     const auto [chart, layer] = selected_catalog_layer(context);
-    if (!chart || !layer) return compose_action_warning(context, "Choose a visible semantic layer before filtering by it.");
+    if (!chart || !layer)
+        return compose_action_outcome_t::blocked(
+            "Choose a visible semantic layer before filtering by it.", notification_source_t::edit);
     auto& app = context.environment.editor.commands;
     if (app.project.semantic_layer.semantic_layer_filter_chart != chart->id) {
         app.project.semantic_layer.semantic_layer_filter_chart = chart->id;
@@ -1344,84 +1578,114 @@ std::optional<std::string> toggle_semantic_layer_filter(compose_action_context_t
     auto& opposite = require ? app.project.semantic_layer.excluded_semantic_layer_filters : app.project.semantic_layer.required_semantic_layer_filters;
     if (const auto found = std::ranges::find(enabled, layer->id); found != enabled.end()) {
         enabled.erase(found);
-        return compose_action_info(context, require ? "Required semantic-layer filter removed."
-                       : "Excluded semantic-layer filter removed.");
+        return compose_action_outcome_t::from(require ? "Required semantic-layer filter removed."
+                                                      : "Excluded semantic-layer filter removed.",
+                                              notification_severity_t::info,
+                                              notification_source_t::input);
     }
     std::erase(opposite, layer->id);
     enabled.push_back(layer->id);
-    return compose_action_info(context, require ? "Semantic layer required in the view filter."
-                   : "Semantic layer excluded from the view filter.");
+    return compose_action_outcome_t::from(require ? "Semantic layer required in the view filter."
+                                                  : "Semantic layer excluded from the view filter.",
+                                          notification_severity_t::info,
+                                          notification_source_t::input);
 }
 
-std::optional<std::string> toggle_semantic_layer_paint_mode(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+toggle_semantic_layer_paint_mode(compose_action_context_t& context) {
     using namespace wormedit;
     auto& state = context.state;
     auto& app = context.environment.editor.commands;
     if (editor_interaction_has_pending_gesture(state)) {
-        const auto result = dispatch_editor_action(context.environment.document.history, state,
+        auto result = dispatch_editor_action(context.environment.document.history, state,
                                                    cancel_editor_gesture_action_t{});
-        if (!result.accepted) return compose_interaction_feedback(context, result, "Compose gesture canceled.");
+        if (!result.accepted)
+            return compose_action_outcome_t::from(std::move(result), "Compose gesture canceled.");
     }
     const auto [chart, layer] = selected_catalog_layer(context);
     if (!chart || (!app.project.semantic_layer.semantic_layer_target_none && (!layer || layer->locked))) {
         app.project.compose_gesture.semantic_layer_paint_mode_active = false;
-        return compose_action_warning(context, "Choose an unlocked visible semantic layer before painting note membership.");
+        return compose_action_outcome_t::blocked(
+            "Choose an unlocked visible semantic layer before painting note membership.",
+            notification_source_t::edit);
     }
     app.project.compose_gesture.semantic_layer_paint_mode_active = !app.project.compose_gesture.semantic_layer_paint_mode_active;
     if (app.project.compose_gesture.semantic_layer_paint_mode_active) app.project.compose_gesture.note_paint_mode_active = false;
-    return compose_action_info(context, app.project.compose_gesture.semantic_layer_paint_mode_active ? "Semantic-layer paint mode enabled."
-                                                 : "Semantic-layer paint mode disabled.");
+    return compose_action_outcome_t::from(
+        app.project.compose_gesture.semantic_layer_paint_mode_active
+            ? "Semantic-layer paint mode enabled."
+            : "Semantic-layer paint mode disabled.",
+        notification_severity_t::info, notification_source_t::input);
 }
 
-std::optional<std::string> toggle_semantic_layer_solo(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+toggle_semantic_layer_solo(compose_action_context_t& context) {
     using namespace wormedit;
     const auto [chart, layer] = selected_catalog_layer(context);
     if (!chart || !context.environment.editor.commands.project.semantic_layer.semantic_layer_target)
-        return compose_action_warning(context, "Choose a visible semantic layer before soloing it.");
+        return compose_action_outcome_t::blocked(
+            "Choose a visible semantic layer before soloing it.", notification_source_t::edit);
     if (!layer) {
         context.environment.editor.commands.project.semantic_layer.semantic_layer_solo_active = false;
-        return compose_action_warning(context, "The selected semantic layer is no longer visible.");
+        return compose_action_outcome_t::blocked(
+            "The selected semantic layer is no longer visible.", notification_source_t::edit);
     }
     auto& solo = context.environment.editor.commands.project.semantic_layer.semantic_layer_solo_active;
     solo = !solo;
-    return compose_action_info(context, solo ? "Semantic-layer solo enabled." : "Semantic-layer solo disabled.");
+    return compose_action_outcome_t::from(
+        solo ? "Semantic-layer solo enabled." : "Semantic-layer solo disabled.",
+        notification_severity_t::info, notification_source_t::input);
 }
 
-std::optional<std::string> select_semantic_layer_notes(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+select_semantic_layer_notes(compose_action_context_t& context) {
     using namespace wormedit;
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(context, "Finish or cancel the active Compose gesture before selecting by layer.");
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before selecting by layer.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
     const auto [chart, layer] = selected_catalog_layer(context);
     if (!chart || !context.environment.editor.commands.project.semantic_layer.semantic_layer_target)
-        return compose_action_warning(context, "Choose a visible semantic layer before selecting its notes.");
+        return compose_action_outcome_t::blocked(
+            "Choose a visible semantic layer before selecting its notes.",
+            notification_source_t::edit);
     if (!layer) {
         context.environment.editor.commands.project.semantic_layer.semantic_layer_target.reset();
         context.environment.editor.commands.project.semantic_layer.semantic_layer_target_none = false;
         context.environment.editor.commands.project.compose_gesture.semantic_layer_paint_mode_active = false;
         context.environment.editor.commands.project.semantic_layer.semantic_layer_solo_active = false;
-        return compose_action_warning(context, "The selected semantic layer is no longer visible.");
+        return compose_action_outcome_t::blocked(
+            "The selected semantic layer is no longer visible.", notification_source_t::edit);
     }
     std::vector<object_id_t> notes;
     for (const auto& measure : chart->measures)
         for (const auto& note : measure.notes)
             if (std::ranges::find(note.semantic_layers, layer->id) != note.semantic_layers.end())
                 notes.push_back(note.id);
-    const auto result = dispatch_editor_action(context.environment.document.history, context.state,
+    auto result = dispatch_editor_action(context.environment.document.history, context.state,
                                                select_editor_notes_action_t{std::move(notes)});
-    return compose_interaction_feedback(context, result, "Semantic-layer notes selected.");
+    return compose_action_outcome_t::from(std::move(result), "Semantic-layer notes selected.");
 }
 
-std::optional<std::string> edit_semantic_layer_membership(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+edit_semantic_layer_membership(compose_action_context_t& context) {
     using namespace wormedit;
     auto& state = context.state;
     auto& app = context.environment.editor.commands;
-    if (editor_interaction_has_pending_gesture(state))
-        return compose_action_warning(context, "Finish or cancel the active Compose gesture before editing semantic layers.");
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before editing semantic layers.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
     const auto apply = context.action.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER;
     const auto explicit_id = context.action.compose_semantic_layer_id;
     const auto candidate_none = explicit_id == 0 && app.project.semantic_layer.semantic_layer_target_none;
     if (candidate_none) {
-        if (!apply) return compose_action_info(context, "No layer only assigns");
+        if (!apply)
+            return compose_action_outcome_t::from("No layer only assigns",
+                                                  notification_severity_t::info,
+                                                  notification_source_t::input);
         return assign_compose_layer_target(context, true, {});
     }
     const auto* chart =
@@ -1430,7 +1694,9 @@ std::optional<std::string> edit_semantic_layer_membership(compose_action_context
     const auto* layer = chart ? catalog_semantic_layer_by_id(*chart, candidate) : nullptr;
     if (!chart || !layer ||
         (state.selected_notes.empty() && selected_compose_bgm_events(state).empty()))
-        return compose_action_warning(context, "Choose a semantic layer and select notes or BGM events first.");
+        return compose_action_outcome_t::blocked(
+            "Choose a semantic layer and select notes or BGM events first.",
+            notification_source_t::edit);
     if (apply) return assign_compose_layer_target(context, false, candidate);
     return semantic_layer_edit_status(context,
         replace_notes_semantic_layer_action_t{
@@ -1440,34 +1706,44 @@ std::optional<std::string> edit_semantic_layer_membership(compose_action_context
         "Semantic-layer membership changed, but workspace rebinding failed.");
 }
 
-auto toggle_layer_assist_tick(compose_action_context_t& context) -> std::string {
+auto toggle_layer_assist_tick(compose_action_context_t& context) -> compose_action_outcome_t {
     if (context.action.compose_input_project_id !=
         context.environment.document.history.document.id.value)
-        return compose_action_warning(context, "Layer assist tick request belongs to a different project.");
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(context, "Finish or cancel the active Compose gesture before changing assist ticks.");
+        return compose_action_outcome_t::blocked(
+            "Layer assist tick request belongs to a different project.",
+            notification_source_t::edit);
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before changing assist ticks.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
     auto& app = context.environment.editor.commands;
     const auto* chart =
         selected_chart(context.environment.document.history, context.environment.document.workspace);
     const auto id = layer_id_t{context.action.compose_semantic_layer_id};
     if (!chart || !catalog_semantic_layer_by_id(*chart, id))
-        return compose_action_warning(context, "The selected semantic layer is no longer available.");
+        return compose_action_outcome_t::blocked(
+            "The selected semantic layer is no longer available.", notification_source_t::edit);
     if (!app.metronome_settings().available || !app.services.transport_set_layer_assist)
-        return compose_action_warning(context, "Layer assist ticks need an available audio preview.");
+        return compose_action_outcome_t::blocked(
+            "Layer assist ticks need an available audio preview.", notification_source_t::edit);
     auto layers = app.project.semantic_layer.layer_assist_chart == chart->id ? app.project.semantic_layer.layer_assist_layers : std::vector<layer_id_t>{};
     const auto existing = std::ranges::find(layers, id);
     const bool enabled = existing == layers.end();
     if (enabled) layers.push_back(id);
     else layers.erase(existing);
     if (!app.services.transport_set_layer_assist(chart->id, layers))
-        return compose_action_warning(context, "Layer assist ticks could not be updated.");
+        return compose_action_outcome_t::blocked("Layer assist ticks could not be updated.",
+                                                 notification_source_t::edit);
     app.project.semantic_layer.layer_assist_chart = chart->id;
     app.project.semantic_layer.layer_assist_layers = std::move(layers);
-    return compose_action_info(context, enabled ? "Layer assist ticks enabled." : "Layer assist ticks disabled.");
+    return compose_action_outcome_t::from(
+        enabled ? "Layer assist ticks enabled." : "Layer assist ticks disabled.",
+        notification_severity_t::info, notification_source_t::input);
 }
 
-std::optional<std::string> dispatch_compose_semantic_layer_state_action(
-    compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+dispatch_compose_semantic_layer_state_action(compose_action_context_t& context) {
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_LAYER_ASSIST_TICK)
         return toggle_layer_assist_tick(context);
     switch (context.action.compose_action) {
@@ -1483,7 +1759,9 @@ std::optional<std::string> dispatch_compose_semantic_layer_state_action(
         context.environment.editor.commands.project.semantic_layer.semantic_layer_target_none = false;
         context.environment.editor.commands.project.compose_gesture.semantic_layer_paint_mode_active = false;
         context.environment.editor.commands.project.semantic_layer.semantic_layer_solo_active = false;
-        return compose_action_info(context, "Semantic-layer target cleared.");
+        return compose_action_outcome_t::from("Semantic-layer target cleared.",
+                                              notification_severity_t::info,
+                                              notification_source_t::input);
     case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_PAINT_MODE:
         return toggle_semantic_layer_paint_mode(context);
     case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_SOLO:
@@ -1878,29 +2156,37 @@ void share_quantize_grid_with_snap(compose_action_context_t& context, std::uint6
 }
 
 auto apply_quantize_settings_from_action(compose_action_context_t& context)
-    -> std::optional<std::string> {
+    -> std::optional<compose_action_outcome_t> {
     auto& editor = quantize_editor_for(context);
     const auto request = quantize_request_from_action(context.action, {});
-    if (!request) return compose_action_warning(context,
-        "Quantization settings must use a positive grid and supported policies.");
+    if (!request)
+        return compose_action_outcome_t::blocked(
+            "Quantization settings must use a positive grid and supported policies.",
+            notification_source_t::edit);
     editor.request = *request;
     editor.preset_index.reset();
     share_quantize_grid_with_snap(context, request->divisions);
-    return compose_action_info(context, "Quantization settings updated.");
+    return compose_action_outcome_t::from("Quantization settings updated.",
+                                          notification_severity_t::info,
+                                          notification_source_t::input);
 }
 
-auto select_quantize_preset(compose_action_context_t& context) -> std::string {
+auto select_quantize_preset(compose_action_context_t& context) -> compose_action_outcome_t {
     using namespace wormedit;
     const auto index = context.action.compose_quantize_preset_index;
     if (index >= context.environment.document.history.document.quantization_presets.size())
-        return compose_action_warning(context, "The selected quantization preset is no longer available.");
+        return compose_action_outcome_t::blocked(
+            "The selected quantization preset is no longer available.",
+            notification_source_t::edit);
     const auto& preset = context.environment.document.history.document.quantization_presets[index];
     auto& editor = quantize_editor_for(context);
     editor.request = {.divisions = preset.divisions, .space = preset.space, .tie = preset.tie,
                       .collisions = quantization_collision_t::reject, .holds = preset.holds};
     editor.preset_index = index;
     share_quantize_grid_with_snap(context, preset.divisions);
-    return compose_action_info(context, "Quantization preset selected.");
+    return compose_action_outcome_t::from("Quantization preset selected.",
+                                          notification_severity_t::info,
+                                          notification_source_t::input);
 }
 
 auto validate_quantize_preset_save(const compose_action_context_t& context,
@@ -1924,95 +2210,131 @@ auto validate_quantize_preset_save(const compose_action_context_t& context,
     return std::nullopt;
 }
 
-auto save_quantize_preset(compose_action_context_t& context) -> std::string {
+auto save_quantize_preset(compose_action_context_t& context) -> compose_action_outcome_t {
     using namespace wormedit;
     const auto length = strnlen(context.action.compose_quantize_preset_name,
                                 sizeof(context.action.compose_quantize_preset_name));
     const auto request = quantize_request_from_action(context.action, {});
     if (const auto error = validate_quantize_preset_save(context, length, request))
-        return compose_action_warning(context, *error);
+        return compose_action_outcome_t::blocked(*error, notification_source_t::edit);
     auto proposed = context.environment.document.history.document;
     proposed.quantization_presets.push_back({
         .name = context.action.compose_quantize_preset_name,
         .divisions = request->divisions, .space = request->space,
         .tie = request->tie, .holds = request->holds});
     const auto index = proposed.quantization_presets.size() - 1;
-    const auto committed = commit_document_command(context.environment.document.history,
+    auto committed = commit_document_command(context.environment.document.history,
                                                    std::move(proposed), "Save quantization preset");
-    if (!committed) return committed.diagnostics.empty()
-        ? compose_action_warning(context, "Quantization preset could not be saved.")
-        : publish_compose_diagnostic(context, committed.diagnostics.front());
+    if (!committed)
+        return committed.diagnostics.empty()
+                   ? compose_action_outcome_t::blocked("Quantization preset could not be saved.",
+                                                       notification_source_t::edit)
+                   : compose_action_outcome_t::from(std::move(committed.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
     auto& editor = quantize_editor_for(context);
     editor.request = *request;
     editor.preset_index = index;
-    return compose_action_success(context, "Quantization preset saved.");
+    auto outcome = compose_action_outcome_t::from("Quantization preset saved.",
+                                                  notification_severity_t::success,
+                                                  notification_source_t::edit, committed.applied);
+    outcome.rebind_failure = "Quantization preset saved, but workspace rebinding failed.";
+    outcome.diagnostics = std::move(committed.diagnostics);
+    return outcome;
 }
 
-auto delete_quantize_preset(compose_action_context_t& context) -> std::string {
+auto delete_quantize_preset(compose_action_context_t& context) -> compose_action_outcome_t {
     using namespace wormedit;
     const auto index = context.action.compose_quantize_preset_index;
     if (index >= context.environment.document.history.document.quantization_presets.size())
-        return compose_action_warning(context, "The selected quantization preset is no longer available.");
+        return compose_action_outcome_t::blocked(
+            "The selected quantization preset is no longer available.",
+            notification_source_t::edit);
     auto proposed = context.environment.document.history.document;
     proposed.quantization_presets.erase(proposed.quantization_presets.begin() +
                                         static_cast<std::ptrdiff_t>(index));
-    const auto committed = commit_document_command(
+    auto committed = commit_document_command(
         context.environment.document.history, std::move(proposed), "Delete quantization preset");
-    if (!committed) return committed.diagnostics.empty()
-        ? compose_action_warning(context, "Quantization preset could not be deleted.")
-        : publish_compose_diagnostic(context, committed.diagnostics.front());
+    if (!committed)
+        return committed.diagnostics.empty()
+                   ? compose_action_outcome_t::blocked("Quantization preset could not be deleted.",
+                                                       notification_source_t::edit)
+                   : compose_action_outcome_t::from(std::move(committed.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
     auto& editor = quantize_editor_for(context);
     if (editor.preset_index) {
         if (*editor.preset_index == index) editor.preset_index.reset();
         else if (*editor.preset_index > index) --*editor.preset_index;
     }
-    return compose_action_success(context, "Quantization preset deleted.");
+    auto outcome = compose_action_outcome_t::from("Quantization preset deleted.",
+                                                  notification_severity_t::success,
+                                                  notification_source_t::edit, committed.applied);
+    outcome.rebind_failure = "Quantization preset deleted, but workspace rebinding failed.";
+    outcome.diagnostics = std::move(committed.diagnostics);
+    return outcome;
 }
 
-auto rename_quantize_preset(compose_action_context_t& context) -> std::string {
+auto rename_quantize_preset(compose_action_context_t& context) -> compose_action_outcome_t {
     using namespace wormedit;
     const auto index = context.action.compose_quantize_preset_index;
     const auto& presets = context.environment.document.history.document.quantization_presets;
     if (index >= presets.size())
-        return compose_action_warning(context, "The selected quantization preset is no longer available.");
+        return compose_action_outcome_t::blocked(
+            "The selected quantization preset is no longer available.",
+            notification_source_t::edit);
     const auto length = strnlen(context.action.compose_quantize_preset_name,
                                 sizeof(context.action.compose_quantize_preset_name));
     if (length == 0 || length > quantization_preset_t::maximum_name_bytes)
-        return compose_action_warning(context, "Enter a name for the quantization preset (maximum 64 bytes).");
+        return compose_action_outcome_t::blocked(
+            "Enter a name for the quantization preset (maximum 64 bytes).",
+            notification_source_t::edit);
     const std::string_view name(context.action.compose_quantize_preset_name, length);
     for (std::size_t other = 0; other < presets.size(); ++other)
         if (other != index && presets[other].name == name)
-            return compose_action_warning(context, "A quantization preset already has that name.");
+            return compose_action_outcome_t::blocked("A quantization preset already has that name.",
+                                                     notification_source_t::edit);
     if (presets[index].name == name)
-        return compose_action_info(context, "Quantization preset name was unchanged.", notification_source_t::edit);
+        return compose_action_outcome_t::from("Quantization preset name was unchanged.",
+                                              notification_severity_t::info,
+                                              notification_source_t::edit);
     auto proposed = context.environment.document.history.document;
     proposed.quantization_presets[index].name = name;
-    const auto committed = commit_document_command(
+    auto committed = commit_document_command(
         context.environment.document.history, std::move(proposed), "Rename quantization preset");
     if (!committed)
         return committed.diagnostics.empty()
-            ? compose_action_warning(context, "Quantization preset could not be renamed.")
-            : publish_compose_diagnostic(context, committed.diagnostics.front());
-    return compose_action_success(context, "Quantization preset renamed.");
+                   ? compose_action_outcome_t::blocked("Quantization preset could not be renamed.",
+                                                       notification_source_t::edit)
+                   : compose_action_outcome_t::from(std::move(committed.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
+    auto outcome = compose_action_outcome_t::from("Quantization preset renamed.",
+                                                  notification_severity_t::success,
+                                                  notification_source_t::edit, committed.applied);
+    outcome.rebind_failure = "Quantization preset renamed, but workspace rebinding failed.";
+    outcome.diagnostics = std::move(committed.diagnostics);
+    return outcome;
 }
 
-auto set_edit_snap_from_badge(compose_action_context_t& context, std::uint64_t divisions) -> std::string {
+auto set_edit_snap_from_badge(compose_action_context_t& context, std::uint64_t divisions)
+    -> compose_action_outcome_t {
     if (editor_interaction_has_pending_gesture(context.state) ||
         context.environment.editor.commands.project.clipboard.paste_session)
-        return compose_action_warning(context, "Finish or cancel the active Compose gesture before changing snapping.");
+        return compose_action_outcome_t::blocked(
+            "Finish or cancel the active Compose gesture before changing snapping.",
+            notification_source_t::edit);
     if (std::ranges::find(context.state.supported_snap_denominators, divisions) ==
         context.state.supported_snap_denominators.end())
-        return compose_action_warning(context, "This chart cannot snap to that grid.");
-    const auto result =
+        return compose_action_outcome_t::blocked("This chart cannot snap to that grid.",
+                                                 notification_source_t::edit);
+    auto result =
         wormedit::dispatch_editor_action(context.environment.document.history, context.state,
                                          wormedit::set_edit_snap_action_t{divisions});
-    if (!result.accepted) return compose_interaction_feedback(context, result, "Editing grid was unchanged.");
+    if (!result.accepted)
+        return compose_action_outcome_t::from(std::move(result), "Editing grid was unchanged.");
     context.environment.editor.commands.project.compose_view.requested_snap_denominators.insert_or_assign(
         context.state.chart.value, divisions);
     auto& editor = quantize_editor_for(context);
     editor.request.divisions = divisions;
     editor.preset_index.reset();
-    return compose_action_info(context, "Editing grid: 1/" + std::to_string(divisions) + ".");
+    return compose_action_outcome_t::from("Editing grid: 1/" + std::to_string(divisions) + ".",
+                                          notification_severity_t::info,
+                                          notification_source_t::input);
 }
 
 auto selected_snap_positions(const chart_document_t& chart, const editor_interaction_state_t& state)
@@ -2037,22 +2359,30 @@ auto selected_snap_positions(const chart_document_t& chart, const editor_interac
     return positions;
 }
 
-auto find_selection_snap(compose_action_context_t& context) -> std::string {
+auto find_selection_snap(compose_action_context_t& context) -> compose_action_outcome_t {
     if (context.action.compose_input_project_id !=
         context.environment.document.history.document.id.value)
-        return compose_action_warning(context, "Fitting snap request belongs to a different project.");
+        return compose_action_outcome_t::blocked(
+            "Fitting snap request belongs to a different project.", notification_source_t::edit);
     if (editor_interaction_has_pending_gesture(context.state) ||
         context.environment.editor.commands.project.clipboard.paste_session)
-        return compose_action_warning(context, "Finish or cancel the active Compose gesture before changing snapping.");
+        return compose_action_outcome_t::blocked(
+            "Finish or cancel the active Compose gesture before changing snapping.",
+            notification_source_t::edit);
     const auto* chart =
         selected_chart(context.environment.document.history, context.environment.document.workspace);
-    if (!chart) return compose_action_warning(context, "Select a chart first.");
+    if (!chart)
+        return compose_action_outcome_t::blocked("Select a chart first.",
+                                                 notification_source_t::edit);
     const auto positions = selected_snap_positions(*chart, context.state);
     const auto geometry = build_measure_index(*chart);
     if (!std::holds_alternative<measure_index_t>(geometry))
-        return compose_action_warning(context, "This chart has invalid measure geometry.");
+        return compose_action_outcome_t::blocked("This chart has invalid measure geometry.",
+                                                 notification_source_t::edit);
     const auto fitting = fitting_snap_denominator(*chart, std::get<measure_index_t>(geometry), positions);
-    if (!fitting) return compose_action_warning(context, "Select notes or BGM events to find a fitting snap.");
+    if (!fitting)
+        return compose_action_outcome_t::blocked(
+            "Select notes or BGM events to find a fitting snap.", notification_source_t::edit);
     auto divisions = *fitting;
     // Downbeats/thirds use familiar quarter/triplet grids when those contain every point.
     if (divisions < 4 && chart->divisions_per_standard_measure % (divisions * 4) == 0)
@@ -2060,24 +2390,24 @@ auto find_selection_snap(compose_action_context_t& context) -> std::string {
     auto previous = context.state.supported_snap_denominators;
     if (std::ranges::find(previous, divisions) == previous.end())
         context.state.supported_snap_denominators.push_back(divisions);
-    const auto result = set_edit_snap_from_badge(context, divisions);
+    auto result = set_edit_snap_from_badge(context, divisions);
     if (context.state.active_snap_denominator != divisions)
         context.state.supported_snap_denominators = std::move(previous);
     return result;
 }
 
 auto dispatch_quantize_preset_action(compose_action_context_t& context)
-    -> std::optional<std::string> {
+    -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
     const auto kind = context.action.compose_action;
     if (kind == WORM_UI_COMPOSE_ACTION_TOGGLE_QUANTIZE_PREVIEW) {
         invoke_compose_quantize_command(true, context.environment.document.history, context.state,
                                         context.environment.editor.commands);
-        return compose_action_info(
-            context,
+        return compose_action_outcome_t::from(
             context.environment.editor.commands.project.quantize.quantize_editor->preview_enabled
                 ? "Quantize preview enabled."
-                : "Quantize preview disabled.");
+                : "Quantize preview disabled.",
+            notification_severity_t::info, notification_source_t::input);
     }
     if (kind == WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP)
         return set_edit_snap_from_badge(context, context.action.compose_snap_denominator);
@@ -2157,30 +2487,42 @@ auto invoke_compose_quantize_command(bool toggle_preview, document_history_t& hi
     return apply_compose_quantize_selection(history, state, application, action);
 }
 
-auto toggle_compose_bga_visibility(compose_action_context_t& context) -> std::string {
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(context, "Finish or cancel the active Compose gesture before changing the BGA lane.");
+auto toggle_compose_bga_visibility(compose_action_context_t& context) -> compose_action_outcome_t {
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before changing the BGA lane.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
     const auto* chart =
         selected_chart(context.environment.document.history, context.environment.document.workspace);
-    if (!chart) return compose_action_warning(context, "Choose a chart before changing the BGA lane.");
+    if (!chart)
+        return compose_action_outcome_t::blocked("Choose a chart before changing the BGA lane.",
+                                                 notification_source_t::edit);
     const auto mask = wormedit::editor_bga_visible_lane_mask(*chart, context.state.bga_revealed_lane_mask);
     const auto visible = context.state.bga_lane_visible && mask != 0;
     context.state.bga_lane_visible = !visible;
     if (!visible && mask == 0) context.state.bga_revealed_lane_mask |= 1U;
-    return compose_action_info(context, visible ? "BGA lane hidden." : "BGA lane shown.");
+    return compose_action_outcome_t::from(visible ? "BGA lane hidden." : "BGA lane shown.",
+                                          notification_severity_t::info,
+                                          notification_source_t::input);
 }
 
 auto dispatch_compose_remaining_action(compose_action_context_t& context)
     -> std::optional<std::string> {
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_BGA_LANE_VISIBILITY)
-        return toggle_compose_bga_visibility(context);
-    if (auto response = dispatch_compose_view_action_group(context)) return *response;
-    if (auto response = dispatch_compose_resource_action(context)) return *response;
-    if (auto response = dispatch_compose_bmson_action(context)) return *response;
+        return finish_compose_action(context, toggle_compose_bga_visibility(context));
+    if (auto response = dispatch_compose_view_action_group(context))
+        return finish_compose_action(context, std::move(*response));
+    if (auto response = dispatch_compose_resource_action(context)) return finish_compose_action(context, std::move(*response));
+    if (auto response = dispatch_compose_bmson_action(context))
+        return finish_compose_action(context, std::move(*response));
     if (auto response = dispatch_compose_marker_action(context)) return *response;
-    if (auto response = target_captured_semantic_layer_action(context)) return *response;
-    if (auto response = dispatch_compose_semantic_layer_catalog_action(context)) return *response;
-    if (auto response = dispatch_compose_semantic_layer_state_action(context)) return *response;
+    if (auto response = target_captured_semantic_layer_action(context))
+        return finish_compose_action(context, std::move(*response));
+    if (auto response = dispatch_compose_semantic_layer_catalog_action(context))
+        return finish_compose_action(context, std::move(*response));
+    if (auto response = dispatch_compose_semantic_layer_state_action(context))
+        return finish_compose_action(context, std::move(*response));
     return std::nullopt;
 }
 
@@ -2268,7 +2610,8 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
     compose_action_context_t context{
         environment,          action,           state,        viewport_height,
         metadata_import_busy, scroll_direction, notifications};
-    if (auto response = dispatch_quantize_preset_action(context)) return *response;
+    if (auto response = dispatch_quantize_preset_action(context))
+        return finish_compose_action(context, std::move(*response));
     if (auto response = dispatch_compose_area_with_quantize_report(context))
         return *response;
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_NONE) return {};
@@ -2284,13 +2627,18 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                            "BMS branch actions must use the workspace action boundary.");
         return "BMS branch actions must use the workspace action boundary.";
     }
-    if (auto response = dispatch_compose_note_menu_action(context)) return *response;
-    if (auto response = dispatch_compose_audio_offset(context)) return *response;
+    if (auto response = dispatch_compose_note_menu_action(context))
+        return finish_compose_action(context, std::move(*response));
+    if (auto response = dispatch_compose_audio_offset(context))
+        return finish_compose_action(context, std::move(*response));
     if (auto response = dispatch_compose_bookmark_action(context)) return *response;
     if (auto response = dispatch_compose_measure_navigation(context)) return *response;
-    if (auto response = dispatch_compose_bgm_column_count(context)) return *response;
-    if (auto response = dispatch_compose_lane_profile(context)) return *response;
-    if (auto response = dispatch_compose_lane_layout_profile(context)) return *response;
+    if (auto response = dispatch_compose_bgm_column_count(context))
+        return finish_compose_action(context, std::move(*response));
+    if (auto response = dispatch_compose_lane_profile(context))
+        return finish_compose_action(context, std::move(*response));
+    if (auto response = dispatch_compose_lane_layout_profile(context))
+        return finish_compose_action(context, std::move(*response));
     if (auto response = dispatch_compose_remaining_action(context)) return *response;
     return compose_action_warning(context, compose_result_status(result, status), notification_source_t::input);
 }
@@ -2330,7 +2678,8 @@ auto dispatch_project_export_action(const WormUiWorkspaceAction& action,
                                      metadata_import_busy,
                                      wormedit::editor_field_scroll_direction_t::up,
                                      notifications};
-    static_cast<void>(dispatch_compose_export_output_group_action(context));
+    if (auto outcome = dispatch_compose_export_output_group_action(context))
+        static_cast<void>(finish_compose_action(context, std::move(*outcome)));
     return true;
 }
 

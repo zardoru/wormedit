@@ -69,47 +69,87 @@ auto compose_action_outcome_t::from(diagnostic_list_t&& diagnostics, notificatio
     return outcome;
 }
 
+auto compose_action_outcome_t::from(editor_interaction_result_t&& interaction,
+                                    std::string_view accepted, notification_source_t source)
+    -> compose_action_outcome_t {
+    auto outcome = interaction.accepted
+                       ? from(std::string{accepted},
+                              interaction.document_changed ? notification_severity_t::success
+                                                           : notification_severity_t::hint,
+                              interaction.document_changed ? notification_source_t::edit : source,
+                              interaction.document_changed)
+                   : interaction.diagnostics.empty()
+                       ? blocked("Compose action was rejected.", source)
+                       : from(interaction.diagnostics.front(), source);
+    outcome.diagnostics = std::move(interaction.diagnostics);
+    return outcome;
+}
+
 namespace {
 void post_compose_outcome(const notification_sink_t& feedback,
                           const compose_action_outcome_t& outcome) {
+    if (outcome.delivery == compose_feedback_delivery_t::none)
+        return;
     if (outcome.delivery == compose_feedback_delivery_t::first_diagnostic &&
         !outcome.diagnostics.empty())
         feedback.post_diagnostic(outcome.source, outcome.diagnostics.front());
     else
         feedback.post_feedback(outcome.severity, outcome.source, outcome.message);
 }
+void post_compose_mutation_before_failure(const notification_sink_t& feedback,
+                                          const compose_action_outcome_t& outcome) {
+    if (outcome.rebind_feedback_policy != compose_rebind_feedback_policy_t::edit_then_document)
+        return;
+    if (outcome.rebind_success_message.empty())
+        post_compose_outcome(feedback, outcome);
+    else
+        feedback.post_feedback(outcome.severity, outcome.source, outcome.rebind_success_message);
+}
+
+void retain_compose_rebind_failure(compose_action_outcome_t& outcome,
+                                   workspace_action_result_t&& rebound) {
+    outcome.accepted = false;
+    if (outcome.rebind_feedback_policy != compose_rebind_feedback_policy_t::action_only)
+        outcome.source = notification_source_t::document;
+    outcome.delivery = compose_feedback_delivery_t::message;
+    if (outcome.rebind_failure_policy == compose_rebind_failure_policy_t::diagnostic_or_message &&
+        !rebound.diagnostics.empty()) {
+        outcome.message = rebound.diagnostics.front().message;
+        outcome.severity = to_notification_severity(rebound.diagnostics.front().severity,
+                                                    outcome.unknown_severity);
+    } else {
+        outcome.message = outcome.rebind_failure;
+        outcome.severity = notification_severity_t::error;
+    }
+    outcome.diagnostics = std::move(rebound.diagnostics);
+}
+
+auto finish_compose_outcome(const document_edit_inputs_t& document,
+                            const notification_sink_t& feedback, compose_action_outcome_t outcome,
+                            application_command_state_t* application) -> compose_action_outcome_t {
+    if (outcome.mutated) {
+        auto rebound = rebind_workspace(document.workspace, document.history);
+        if (!rebound) {
+            post_compose_mutation_before_failure(feedback, outcome);
+            retain_compose_rebind_failure(outcome, std::move(rebound));
+            post_compose_outcome(feedback, outcome);
+            return outcome;
+        }
+    }
+    if (application && outcome.clear_semantic_layer_paint_after_rebind)
+        application->project.compose_gesture.semantic_layer_paint_mode_active = false;
+    if (outcome.asset_selection)
+        static_cast<void>(apply_workspace_action(document.workspace, document.history.document,
+                                                 *outcome.asset_selection));
+    post_compose_outcome(feedback, outcome);
+    return outcome;
+}
 } // namespace
 
 auto finish_compose_action(const document_edit_inputs_t& document,
                            const notification_sink_t& feedback, compose_action_outcome_t outcome)
     -> compose_action_outcome_t {
-    if (outcome.mutated) {
-        auto rebound = rebind_workspace(document.workspace, document.history);
-        if (!rebound) {
-            if (outcome.rebind_feedback_policy ==
-                compose_rebind_feedback_policy_t::edit_then_document)
-                post_compose_outcome(feedback, outcome);
-            outcome.accepted = false;
-            if (outcome.rebind_feedback_policy != compose_rebind_feedback_policy_t::action_only)
-                outcome.source = notification_source_t::document;
-            outcome.delivery = compose_feedback_delivery_t::message;
-            if (outcome.rebind_failure_policy ==
-                    compose_rebind_failure_policy_t::diagnostic_or_message &&
-                !rebound.diagnostics.empty()) {
-                outcome.message = rebound.diagnostics.front().message;
-                outcome.severity = to_notification_severity(rebound.diagnostics.front().severity,
-                                                            outcome.unknown_severity);
-            } else {
-                outcome.message = outcome.rebind_failure;
-                outcome.severity = notification_severity_t::error;
-            }
-            outcome.diagnostics = std::move(rebound.diagnostics);
-            post_compose_outcome(feedback, outcome);
-            return outcome;
-        }
-    }
-    post_compose_outcome(feedback, outcome);
-    return outcome;
+    return finish_compose_outcome(document, feedback, std::move(outcome), nullptr);
 }
 
 namespace compose_action_detail {
@@ -129,8 +169,9 @@ auto compose_action_context_t::require_no_gesture(std::string_view message) cons
 
 auto finish_compose_action(compose_action_context_t& context, compose_action_outcome_t outcome)
     -> std::string {
-    auto finished = wormedit::sys::finish_compose_action(context.environment.document,
-                                                         context.notifications, std::move(outcome));
+    auto finished =
+        finish_compose_outcome(context.environment.document, context.notifications,
+                               std::move(outcome), &context.environment.editor.commands);
     return std::move(finished.message);
 }
 } // namespace compose_action_detail

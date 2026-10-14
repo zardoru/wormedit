@@ -430,7 +430,9 @@ auto delete_sounds(const WormUiWorkspaceAction& action, document_history_t& hist
     const auto ids = sound_ids(action);
     if (auto rejected = metadata_command_detail::stale_rejection(
             history, action.compose_input_document_revision, "Resource deletion"))
-        return compose_action_outcome_t::from(rejected->diagnostics.front(), notification_source_t::edit, notification_severity_t::info);
+        return compose_action_outcome_t::from(rejected->diagnostics.front(),
+                                              notification_source_t::edit,
+                                              notification_severity_t::info);
     auto applied = apply_resource_deletions(history, ids);
     return compose_action_outcome_t::from(
         std::move(applied),
@@ -509,7 +511,9 @@ auto group_sounds(const WormUiWorkspaceAction& action, document_history_t& histo
     }
     if (auto rejected = metadata_command_detail::stale_rejection(
             history, action.compose_input_document_revision, "Sound group edit"))
-        return compose_action_outcome_t::from(rejected->diagnostics.front(), notification_source_t::edit, notification_severity_t::info);
+        return compose_action_outcome_t::from(rejected->diagnostics.front(),
+                                              notification_source_t::edit,
+                                              notification_severity_t::info);
     auto applied =
         apply_sound_group_edits(history, edits, action.compose_sound_group_keep_ids_together);
     return compose_action_outcome_t::from(
@@ -527,7 +531,9 @@ auto ungroup_sounds(const WormUiWorkspaceAction& action, document_history_t& his
     const auto ids = sound_ids(action);
     if (auto rejected = metadata_command_detail::stale_rejection(
             history, action.compose_input_document_revision, "Sound group edit"))
-        return compose_action_outcome_t::from(rejected->diagnostics.front(), notification_source_t::edit, notification_severity_t::info);
+        return compose_action_outcome_t::from(rejected->diagnostics.front(),
+                                              notification_source_t::edit,
+                                              notification_severity_t::info);
     auto applied = apply_sound_group_edit(history, ungroup_sounds_action_t{.sounds = ids});
     return compose_action_outcome_t::from(
         std::move(applied),
@@ -554,7 +560,9 @@ auto renumber_dock_ids(const WormUiWorkspaceAction& action, document_history_t& 
     const auto name_space = action.compose_renumber_bga ? "BMP" : "WAV";
     if (auto rejected = metadata_command_detail::stale_rejection(
             history, action.compose_input_document_revision, "BMS identifier renumber"))
-        return compose_action_outcome_t::from(rejected->diagnostics.front(), notification_source_t::edit, notification_severity_t::info);
+        return compose_action_outcome_t::from(rejected->diagnostics.front(),
+                                              notification_source_t::edit,
+                                              notification_severity_t::info);
     auto applied = apply_bms_identifier_renumber(
         history, {.name_space = name_space, .resources = std::move(ids)});
     return compose_action_outcome_t::from(
@@ -827,49 +835,11 @@ auto dispatch_sound_properties_action(const WormUiWorkspaceAction& action,
     return true;
 }
 
-namespace {
 auto dispatch_sound_edit_outcome(const WormUiWorkspaceAction& action, document_history_t& history,
                                  workspace_controller_t& workspace, chart_id_t chart,
                                  application_command_state_t& application_state)
     -> std::optional<compose_action_outcome_t> {
 
-    switch (action.compose_action) {
-    case WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES:
-        return import_picked_files(action, history, workspace, chart);
-    case WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT:
-        return confirm_import(action, history, workspace, chart);
-    case WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT:
-        return assign_picked_slot(action, history, workspace, chart);
-    case WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH:
-        return assign_picked_slot_batch(action, history, workspace, chart);
-    case WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS:
-        return delete_sounds(action, history, workspace);
-    case WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS:
-        return group_sounds(action, history, workspace);
-    case WORM_UI_COMPOSE_ACTION_UNGROUP_SOUNDS:
-        return ungroup_sounds(action, history, workspace);
-    case WORM_UI_COMPOSE_ACTION_AUDITION_SOUND:
-        return request_audition(action, history, application_state);
-    case WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER:
-    case WORM_UI_COMPOSE_ACTION_REMOVE_SOUND_LAYER:
-    case WORM_UI_COMPOSE_ACTION_CLEAR_SOUND_LAYERS:
-        if (auto rejected = metadata_command_detail::stale_rejection(
-                history, action.compose_input_document_revision, "Sound layer edit"))
-            return compose_action_outcome_t::from(rejected->diagnostics.front(), notification_source_t::edit, notification_severity_t::info);
-        return change_sound_layers(action, history, workspace, chart);
-    case WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS:
-        return renumber_dock_ids(action, history, workspace, chart);
-    default:
-        return std::nullopt;
-    }
-}
-} // namespace
-
-auto dispatch_compose_sound_action(const WormUiWorkspaceAction& action, document_history_t& history,
-                                   workspace_controller_t& workspace, chart_id_t chart,
-                                   application_command_state_t& application_state,
-                                   notification_sink_t notifications)
-    -> std::optional<std::string> {
     const auto source =
         action.compose_action == WORM_UI_COMPOSE_ACTION_AUDITION_SOUND
             ? notification_source_t::audio
@@ -879,11 +849,61 @@ auto dispatch_compose_sound_action(const WormUiWorkspaceAction& action, document
                 action.compose_action == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH
             ? notification_source_t::import_
             : notification_source_t::edit;
+    std::optional<compose_action_outcome_t> outcome;
+    switch (action.compose_action) {
+    case WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES:
+        outcome = import_picked_files(action, history, workspace, chart);
+        break;
+    case WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT:
+        outcome = confirm_import(action, history, workspace, chart);
+        break;
+    case WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT:
+        outcome = assign_picked_slot(action, history, workspace, chart);
+        break;
+    case WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH:
+        outcome = assign_picked_slot_batch(action, history, workspace, chart);
+        break;
+    case WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS:
+        outcome = delete_sounds(action, history, workspace);
+        break;
+    case WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS:
+        outcome = group_sounds(action, history, workspace);
+        break;
+    case WORM_UI_COMPOSE_ACTION_UNGROUP_SOUNDS:
+        outcome = ungroup_sounds(action, history, workspace);
+        break;
+    case WORM_UI_COMPOSE_ACTION_AUDITION_SOUND:
+        outcome = request_audition(action, history, application_state);
+        break;
+    case WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER:
+    case WORM_UI_COMPOSE_ACTION_REMOVE_SOUND_LAYER:
+    case WORM_UI_COMPOSE_ACTION_CLEAR_SOUND_LAYERS:
+        if (auto rejected = metadata_command_detail::stale_rejection(
+                history, action.compose_input_document_revision, "Sound layer edit"))
+            return compose_action_outcome_t::from(rejected->diagnostics.front(),
+                                                  notification_source_t::edit,
+                                                  notification_severity_t::info);
+        outcome = change_sound_layers(action, history, workspace, chart);
+        break;
+    case WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS:
+        outcome = renumber_dock_ids(action, history, workspace, chart);
+        break;
+    default:
+        return std::nullopt;
+    }
+    outcome->source = source;
+    return outcome;
+}
+
+auto dispatch_compose_sound_action(const WormUiWorkspaceAction& action, document_history_t& history,
+                                   workspace_controller_t& workspace, chart_id_t chart,
+                                   application_command_state_t& application_state,
+                                   notification_sink_t notifications)
+    -> std::optional<std::string> {
     auto outcome =
         dispatch_sound_edit_outcome(action, history, workspace, chart, application_state);
     if (!outcome)
         return std::nullopt;
-    outcome->source = source;
     const document_edit_inputs_t document{history, workspace, notifications};
     auto finished = finish_compose_action(document, notifications, std::move(*outcome));
     return std::move(finished.message);

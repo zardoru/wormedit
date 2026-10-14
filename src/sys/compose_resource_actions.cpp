@@ -249,16 +249,16 @@ auto inspect_imported_resource(const std::filesystem::path& path, wormedit::reso
     return metadata;
 }
 
-std::optional<std::string> commit_primary_music(compose_action_context_t& context,
-                                                const std::filesystem::path& path,
-                                                const imported_resource_metadata_t& metadata) {
+std::optional<compose_action_outcome_t>
+commit_primary_music(compose_action_context_t& context, const std::filesystem::path& path,
+                     const imported_resource_metadata_t& metadata) {
     using namespace wormedit;
     const auto chart = std::ranges::find(context.environment.document.history.document.charts,
                                          context.state.chart, &chart_document_t::id);
     auto name = path.filename().generic_string();
     if (name.size() > 255)
         name.clear();
-    const auto applied = apply_primary_music_set(
+    auto applied = apply_primary_music_set(
         context.environment.document.history,
         {.source_path = path,
          .name = std::move(name),
@@ -267,34 +267,33 @@ std::optional<std::string> commit_primary_music(compose_action_context_t& contex
              chart->source_family == format_family_t::bms,
          .audio_stream = metadata.audio});
     if (!applied.diagnostics.empty())
-        return publish_compose_diagnostic(context, applied.diagnostics.front(),
-                                          notification_source_t::import_);
+        return compose_action_outcome_t::from(std::move(applied.diagnostics),
+                                              notification_source_t::import_,
+                                              compose_feedback_delivery_t::message);
     if (!applied.applied)
-        return compose_action_info(context, "That file is already the song audio.",
-                                   notification_source_t::import_);
-    const auto rebound =
-        rebind_workspace(context.environment.document.workspace, context.environment.document.history);
-    if (!rebound)
-        return compose_mutation_rebind_failure(
-            context, rebound, "Song audio set to " + path.filename().string() + ".",
-            "Song audio set, but workspace rebinding failed.", notification_source_t::import_);
-    const auto music =
-        std::ranges::find_if(context.environment.document.history.document.resources, [](const auto& r) {
+        return compose_action_outcome_t::from("That file is already the song audio.",
+                                              notification_severity_t::info,
+                                              notification_source_t::import_);
+
+    const auto music = std::ranges::find_if(
+        context.environment.document.history.document.resources, [](const auto& r) {
             return std::ranges::find(r.roles, resource_role_t::music) != r.roles.end();
         });
+
+    auto outcome = compose_action_outcome_t::from(
+        "Song audio set to " + path.filename().string() + ".", notification_severity_t::success,
+        notification_source_t::import_, applied.applied);
+    outcome.rebind_failure = "Song audio set, but workspace rebinding failed.";
     if (music != context.environment.document.history.document.resources.end())
-        (void)apply_workspace_action(
-            context.environment.document.workspace, context.environment.document.history.document,
-            workspace_select_asset_action_t{.asset = music->asset,
-                                            .slot = wormedit::workspace_asset_slot_t::audio});
-    return compose_action_success(context, "Song audio set to " + path.filename().string() + ".",
-                                  notification_source_t::import_);
+        outcome.asset_selection = workspace_select_asset_action_t{
+            .asset = music->asset, .slot = workspace_asset_slot_t::audio};
+    outcome.diagnostics = std::move(applied.diagnostics);
+    return outcome;
 }
 
-std::optional<std::string> commit_resource_import(compose_action_context_t& context,
-                                                  wormedit::resource_role_t role,
-                                                  const std::filesystem::path& path,
-                                                  imported_resource_metadata_t metadata) {
+std::optional<compose_action_outcome_t>
+commit_resource_import(compose_action_context_t& context, wormedit::resource_role_t role,
+                       const std::filesystem::path& path, imported_resource_metadata_t metadata) {
     using namespace wormedit;
     if (role == resource_role_t::music)
         return commit_primary_music(context, path, metadata);
@@ -303,7 +302,7 @@ std::optional<std::string> commit_resource_import(compose_action_context_t& cont
     auto name = path.filename().generic_string();
     if (name.size() > 255)
         name.clear();
-    const auto applied = apply_resource_asset_import(
+    auto applied = apply_resource_asset_import(
         context.environment.document.history,
         {.source_path = path,
          .role = role,
@@ -314,57 +313,53 @@ std::optional<std::string> commit_resource_import(compose_action_context_t& cont
          .audio_stream = metadata.audio,
          .image_geometry = metadata.image});
     if (!applied.diagnostics.empty())
-        return publish_compose_diagnostic(context, applied.diagnostics.front(),
-                                          notification_source_t::import_);
+        return compose_action_outcome_t::from(std::move(applied.diagnostics),
+                                              notification_source_t::import_,
+                                              compose_feedback_delivery_t::message);
     if (!applied.applied)
-        return compose_action_info(context, "Resource import made no document change.",
-                                   notification_source_t::import_);
+        return compose_action_outcome_t::from("Resource import made no document change.",
+                                              notification_severity_t::info,
+                                              notification_source_t::import_);
     const auto imported = context.environment.document.history.document.resources.back().asset;
-    const auto rebound =
-        rebind_workspace(context.environment.document.workspace, context.environment.document.history);
-    if (!rebound)
-        return compose_mutation_rebind_failure(
-            context, rebound, "External file linked as a resource.",
-            "Resource imported, but workspace rebinding failed.", notification_source_t::import_);
-    if (role == resource_role_t::bga)
-        (void)apply_workspace_action(
-            context.environment.document.workspace, context.environment.document.history.document,
-            workspace_select_asset_action_t{.asset = imported,
-                                            .slot = wormedit::workspace_asset_slot_t::visual});
-    else
-        (void)apply_workspace_action(
-            context.environment.document.workspace, context.environment.document.history.document,
-            workspace_select_asset_action_t{.asset = imported,
-                                            .slot = wormedit::workspace_asset_slot_t::audio});
-    return compose_action_success(context, "External file linked as a resource.",
-                                  notification_source_t::import_);
+
+    auto outcome = compose_action_outcome_t::from("External file linked as a resource.",
+                                                  notification_severity_t::success,
+                                                  notification_source_t::import_, applied.applied);
+    outcome.rebind_failure = "Resource imported, but workspace rebinding failed.";
+    outcome.asset_selection = workspace_select_asset_action_t{
+        .asset = imported,
+        .slot = role == resource_role_t::bga ? workspace_asset_slot_t::visual
+                                             : workspace_asset_slot_t::audio};
+    outcome.diagnostics = std::move(applied.diagnostics);
+    return outcome;
 }
 
-std::optional<std::string> import_resource_asset(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t> import_resource_asset(compose_action_context_t& context) {
     using namespace wormedit;
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(
-            context, "Finish or cancel the active Compose gesture before importing a resource.",
-            notification_source_t::import_);
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before importing a resource.")) {
+        blocked->source = notification_source_t::import_;
+        return std::move(*blocked);
+    }
     const auto role = import_resource_role(context.action);
     if (!role)
-        return compose_action_warning(context, "Resource import used an unknown catalog role.",
-                                      notification_source_t::import_);
+        return compose_action_outcome_t::blocked("Resource import used an unknown catalog role.",
+                                                 notification_source_t::import_);
     const std::filesystem::path path =
         std::filesystem::path{context.action.compose_import_path}.lexically_normal();
     std::error_code error;
     if (!path.is_absolute() || !std::filesystem::is_regular_file(path, error) || error)
-        return compose_action_warning(context,
-                                      "Resource import requires an existing absolute file path.",
-                                      notification_source_t::import_);
+        return compose_action_outcome_t::blocked(
+            "Resource import requires an existing absolute file path.",
+            notification_source_t::import_);
     auto metadata = inspect_imported_resource(path, *role);
     if (const auto* failure = std::get_if<std::string>(&metadata))
-        return compose_action_warning(context, *failure, notification_source_t::import_);
+        return compose_action_outcome_t::blocked(*failure, notification_source_t::import_);
     return commit_resource_import(context, *role, path,
                                   std::get<imported_resource_metadata_t>(std::move(metadata)));
 }
 
-std::optional<std::string>
+std::optional<compose_action_outcome_t>
 dispatch_compose_import_resource_action(compose_action_context_t& context) {
     if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET)
         return std::nullopt;
@@ -372,55 +367,57 @@ dispatch_compose_import_resource_action(compose_action_context_t& context) {
 }
 
 auto prepare_resource_copy(compose_action_context_t& context)
-    -> std::variant<resource_copy_plan_t, compose_feedback_t> {
+    -> std::variant<resource_copy_plan_t, compose_action_outcome_t> {
     using namespace wormedit;
     auto& action = context.action;
     auto& history = context.environment.document.history;
     if (context.environment.resources->jobs.copy.busy() ||
         context.environment.resources->jobs.exporter.busy() || context.metadata_import_busy)
-        return compose_feedback_t{
+        return compose_action_outcome_t::blocked(
             "Wait for the current resource copy, import, or export to finish.",
-            notification_severity_t::warning, notification_source_t::import_};
+            notification_source_t::import_);
     if (context.environment.resources->asset_base.empty())
-        return compose_feedback_t{
+        return compose_action_outcome_t::blocked(
             "Open a saved native project before copying resource files into it.",
-            notification_severity_t::warning, notification_source_t::import_};
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_feedback_t{
-            "Finish or cancel the active Compose gesture before copying a resource.",
-            notification_severity_t::warning, notification_source_t::import_};
+            notification_source_t::import_);
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before copying a resource.")) {
+        blocked->source = notification_source_t::import_;
+        return std::move(*blocked);
+    }
     const asset_id_t id{action.compose_resource_asset_id};
     const auto audio = std::ranges::find(history.document.audio_assets, id, &audio_asset_t::id);
     const auto visual = std::ranges::find(history.document.visual_assets, id, &visual_asset_t::id);
     if (!id || (audio == history.document.audio_assets.end() &&
                 visual == history.document.visual_assets.end()))
-        return compose_feedback_t{"The selected resource asset is no longer available.",
-                                  notification_severity_t::warning, notification_source_t::import_};
+        return compose_action_outcome_t::blocked(
+            "The selected resource asset is no longer available.", notification_source_t::import_);
     const auto& source =
         audio != history.document.audio_assets.end() ? audio->source_path : visual->source_path;
     const bool exporting = action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT;
     if (!exporting && !source.is_absolute() && source.parent_path() == "assets" &&
         source.filename().string().starts_with(std::to_string(id.value) + "-"))
-        return compose_feedback_t{"Resource source is already in the project assets directory.",
-                                  notification_severity_t::info, notification_source_t::import_};
+        return compose_action_outcome_t::from(
+            "Resource source is already in the project assets directory.",
+            notification_severity_t::info, notification_source_t::import_);
     std::filesystem::path output;
     if (exporting) {
         if (action.compose_output_group_index >= history.document.output_groups.size())
-            return compose_feedback_t{"The selected output group is no longer available.",
-                                      notification_severity_t::warning,
-                                      notification_source_t::export_};
+            return compose_action_outcome_t::blocked(
+                "The selected output group is no longer available.",
+                notification_source_t::export_);
         const auto& group = history.document.output_groups[action.compose_output_group_index];
         if (std::ranges::find(group.charts, context.state.chart) == group.charts.end())
-            return compose_feedback_t{"The selected output group does not include this chart.",
-                                      notification_severity_t::warning,
-                                      notification_source_t::export_};
+            return compose_action_outcome_t::blocked(
+                "The selected output group does not include this chart.",
+                notification_source_t::export_);
         output = group.relative_output_path;
     }
     return resource_copy_plan_t{id, source, output, exporting};
 }
 
-std::optional<std::string> start_resource_copy(compose_action_context_t& context,
-                                               resource_copy_plan_t plan) {
+std::optional<compose_action_outcome_t> start_resource_copy(compose_action_context_t& context,
+                                                            resource_copy_plan_t plan) {
     using namespace wormedit;
     task_graph_t graph{1};
     const project_asset_copy_request_t request{.project_directory =
@@ -441,14 +438,18 @@ std::optional<std::string> start_resource_copy(compose_action_context_t& context
         return task_result_t::success(make_task_value(std::move(copied)));
     });
     if (!added)
-        return compose_action_error(
-            context, added.error ? added.error->message : "Resource copy could not start.",
-            plan.export_copy ? notification_source_t::export_ : notification_source_t::import_);
+        return compose_action_outcome_t::from(
+            added.error ? added.error->message : "Resource copy could not start.",
+            notification_severity_t::error,
+            plan.export_copy ? notification_source_t::export_ : notification_source_t::import_,
+            false, false);
     auto submitted = context.environment.resources->jobs.scheduler.submit(std::move(graph));
     if (!submitted)
-        return compose_action_error(
-            context, submitted.error ? submitted.error->message : "Resource copy could not start.",
-            plan.export_copy ? notification_source_t::export_ : notification_source_t::import_);
+        return compose_action_outcome_t::from(
+            submitted.error ? submitted.error->message : "Resource copy could not start.",
+            notification_severity_t::error,
+            plan.export_copy ? notification_source_t::export_ : notification_source_t::import_,
+            false, false);
     auto pending = pending_project_resource_copy_t{
         .graph = std::move(submitted.graph),
         .task = *added.id,
@@ -460,50 +461,58 @@ std::optional<std::string> start_resource_copy(compose_action_context_t& context
         .export_copy = plan.export_copy};
     if (!context.environment.resources->jobs.copy.start(std::move(pending))) {
         pending.graph.cancel();
-        return compose_action_warning(
-            context, "Wait for the current resource copy, import, or export to finish.",
+        return compose_action_outcome_t::blocked(
+            "Wait for the current resource copy, import, or export to finish.",
             plan.export_copy ? notification_source_t::export_ : notification_source_t::import_);
     }
-    return plan.export_copy ? "Export copy started in the background."
-                            : "Resource copy started in the background.";
+    auto outcome = compose_action_outcome_t::from(
+        plan.export_copy ? "Export copy started in the background."
+                         : "Resource copy started in the background.",
+        notification_severity_t::info,
+        plan.export_copy ? notification_source_t::export_ : notification_source_t::import_);
+    outcome.delivery = compose_feedback_delivery_t::none;
+    return outcome;
 }
 
-std::optional<std::string>
+std::optional<compose_action_outcome_t>
 dispatch_compose_copy_resource_action(compose_action_context_t& context) {
     if (auto blocked = context.require_resources())
-        return finish_compose_action(context, std::move(*blocked));
+        return std::move(*blocked);
     if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT &&
         context.action.compose_action != WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT)
         return std::nullopt;
     auto plan = prepare_resource_copy(context);
-    if (const auto* error = std::get_if<compose_feedback_t>(&plan))
-        return publish_compose_feedback(context, error->message, error->severity, error->source);
+    if (auto* error = std::get_if<compose_action_outcome_t>(&plan))
+        return std::move(*error);
     return start_resource_copy(context, std::get<resource_copy_plan_t>(std::move(plan)));
 }
 
 auto prepare_output_export(compose_action_context_t& context)
-    -> std::variant<output_export_plan_t, compose_feedback_t> {
+    -> std::variant<output_export_plan_t, compose_action_outcome_t> {
     using namespace wormedit;
     const auto& doc = context.environment.document.history.document;
     if (context.environment.resources->asset_base.empty())
-        return compose_feedback_t{"Open a saved native project before exporting an output group.",
-                                  notification_severity_t::warning, notification_source_t::export_};
+        return compose_action_outcome_t::blocked(
+            "Open a saved native project before exporting an output group.",
+            notification_source_t::export_);
     if (context.environment.resources->jobs.copy.busy() ||
         context.environment.resources->jobs.exporter.busy() || context.metadata_import_busy)
-        return compose_feedback_t{
+        return compose_action_outcome_t::blocked(
             "Wait for the current resource copy, import, or export to finish.",
-            notification_severity_t::warning, notification_source_t::export_};
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_feedback_t{"Finish or cancel the active Compose gesture before exporting.",
-                                  notification_severity_t::warning, notification_source_t::export_};
+            notification_source_t::export_);
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before exporting.")) {
+        blocked->source = notification_source_t::export_;
+        return std::move(*blocked);
+    }
     if (context.action.compose_output_group_index >= doc.output_groups.size())
-        return compose_feedback_t{"The selected output group is no longer available.",
-                                  notification_severity_t::warning, notification_source_t::export_};
+        return compose_action_outcome_t::blocked(
+            "The selected output group is no longer available.", notification_source_t::export_);
     auto group = doc.output_groups[context.action.compose_output_group_index];
     if (group.charts.empty() ||
         std::ranges::find(group.charts, context.state.chart) == group.charts.end())
-        return compose_feedback_t{"The selected output group has no matching charts.",
-                                  notification_severity_t::warning, notification_source_t::export_};
+        return compose_action_outcome_t::blocked(
+            "The selected output group has no matching charts.", notification_source_t::export_);
     conversion_request_t request;
     request.target = group.family;
     if (group.family != format_family_t::native_project)
@@ -525,8 +534,8 @@ auto prepare_output_export(compose_action_context_t& context)
     return output_export_plan_t{std::move(group), std::move(request)};
 }
 
-std::optional<std::string> start_output_export(compose_action_context_t& context,
-                                               output_export_plan_t plan) {
+std::optional<compose_action_outcome_t> start_output_export(compose_action_context_t& context,
+                                                            output_export_plan_t plan) {
     using namespace wormedit;
     auto snapshot = context.environment.document.history.document;
     task_graph_t graph{1};
@@ -537,15 +546,15 @@ std::optional<std::string> start_output_export(compose_action_context_t& context
             return run_output_group_export_task(snapshot, group, request, base, stop);
         });
     if (!added)
-        return compose_action_error(context,
-                                    added.error ? added.error->message : "Export could not start.",
-                                    notification_source_t::export_);
+        return compose_action_outcome_t::from(
+            added.error ? added.error->message : "Export could not start.",
+            notification_severity_t::error, notification_source_t::export_, false, false);
     auto submitted =
         context.environment.resources->jobs.exporter.scheduler.submit(std::move(graph));
     if (!submitted)
-        return compose_action_error(
-            context, submitted.error ? submitted.error->message : "Export could not start.",
-            notification_source_t::export_);
+        return compose_action_outcome_t::from(
+            submitted.error ? submitted.error->message : "Export could not start.",
+            notification_severity_t::error, notification_source_t::export_, false, false);
     auto pending = pending_output_group_export_t{
         .graph = std::move(submitted.graph),
         .task = *added.id,
@@ -553,22 +562,26 @@ std::optional<std::string> start_output_export(compose_action_context_t& context
         .revision = context.environment.document.history.document.revision};
     if (!context.environment.resources->jobs.exporter.start(std::move(pending))) {
         pending.graph.cancel();
-        return compose_action_warning(
-            context, "Wait for the current resource copy, import, or export to finish.",
+        return compose_action_outcome_t::blocked(
+            "Wait for the current resource copy, import, or export to finish.",
             notification_source_t::export_);
     }
-    return "Output group conversion started in the background.";
+    auto outcome = compose_action_outcome_t::from(
+        "Output group conversion started in the background.", notification_severity_t::info,
+        notification_source_t::export_);
+    outcome.delivery = compose_feedback_delivery_t::none;
+    return outcome;
 }
 
-std::optional<std::string>
+std::optional<compose_action_outcome_t>
 dispatch_compose_export_output_group_action(compose_action_context_t& context) {
     if (auto blocked = context.require_resources())
-        return finish_compose_action(context, std::move(*blocked));
+        return std::move(*blocked);
     if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP)
         return std::nullopt;
     auto plan = prepare_output_export(context);
-    if (const auto* error = std::get_if<compose_feedback_t>(&plan))
-        return publish_compose_feedback(context, error->message, error->severity, error->source);
+    if (auto* error = std::get_if<compose_action_outcome_t>(&plan))
+        return std::move(*error);
     return start_output_export(context, std::get<output_export_plan_t>(std::move(plan)));
 }
 
@@ -610,14 +623,14 @@ auto apply_compose_resource_placement(compose_action_context_t& context,
                                      .semantic_layers = context.state.armed_note_layers});
 }
 
-std::optional<std::string>
+std::optional<compose_action_outcome_t>
 finish_compose_resource_placement(compose_action_context_t& context,
                                   wormedit::resource_placement_kind_t kind) {
     using namespace wormedit;
     auto& state = context.state;
     if (state.virtual_bms_cursor_row) {
-        const auto* chart =
-            selected_chart(context.environment.document.history, context.environment.document.workspace);
+        const auto* chart = selected_chart(context.environment.document.history,
+                                           context.environment.document.workspace);
         std::optional<local_position_t> position;
         if (chart) {
             const auto built = build_measure_index(*chart);
@@ -634,93 +647,108 @@ finish_compose_resource_placement(compose_action_context_t& context,
                                          resource_id_t{context.action.compose_resource_id}, role);
     worm_ui_frontend_resource_placed(context.action.compose_resource_id,
                                      next.value_or(resource_id_t{}).value);
-    const auto rebound =
-        rebind_workspace(context.environment.document.workspace, context.environment.document.history);
-    if (!rebound)
-        return compose_mutation_rebind_failure(
-            context, rebound, "Resource placed at the edit cursor.",
-            "Resource placed, but workspace rebinding failed.", notification_source_t::edit);
-    return compose_action_success(context, "Resource placed at the edit cursor.");
+
+    auto outcome = compose_action_outcome_t::from("Resource placed at the edit cursor.",
+                                                  notification_severity_t::success,
+                                                  notification_source_t::edit, true);
+    outcome.rebind_failure = "Resource placed, but workspace rebinding failed.";
+    return outcome;
 }
 
-std::optional<std::string>
+std::optional<compose_action_outcome_t>
 dispatch_compose_place_resource_action(compose_action_context_t& context) {
     if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE)
         return std::nullopt;
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(
-            context, "Finish or cancel the active Compose gesture before placing a resource.");
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before placing a resource.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
     const auto kind = compose_placement_kind(context.action);
     if (!kind)
-        return compose_action_warning(context,
-                                      "The selected resource role cannot be placed in the chart.");
-    const auto applied = apply_compose_resource_placement(context, *kind);
+        return compose_action_outcome_t::blocked(
+            "The selected resource role cannot be placed in the chart.",
+            notification_source_t::edit);
+    auto applied = apply_compose_resource_placement(context, *kind);
     if (!applied.diagnostics.empty())
-        return publish_compose_diagnostic(context, applied.diagnostics.front());
+        return compose_action_outcome_t::from(std::move(applied.diagnostics),
+                                              notification_source_t::edit,
+                                              compose_feedback_delivery_t::message);
     if (!applied.applied)
-        return compose_action_info(context, "Resource placement made no document change.",
-                                   notification_source_t::edit);
+        return compose_action_outcome_t::from("Resource placement made no document change.",
+                                              notification_severity_t::info,
+                                              notification_source_t::edit);
     return finish_compose_resource_placement(context, *kind);
 }
 
-std::optional<std::string> select_resource_uses(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t> select_resource_uses(compose_action_context_t& context) {
     using namespace wormedit;
     const resource_id_t resource{context.action.compose_resource_id};
-    if (!resource || std::ranges::find(context.environment.document.history.document.resources, resource,
-                                       &resource_entry_t::id) ==
+    if (!resource || std::ranges::find(context.environment.document.history.document.resources,
+                                       resource, &resource_entry_t::id) ==
                          context.environment.document.history.document.resources.end())
-        return compose_action_warning(context, "The selected resource is no longer available.");
+        return compose_action_outcome_t::blocked("The selected resource is no longer available.",
+                                                 notification_source_t::edit);
     const auto chart = std::ranges::find(context.environment.document.history.document.charts,
                                          context.state.chart, &chart_document_t::id);
     if (chart == context.environment.document.history.document.charts.end())
-        return compose_action_warning(context, "The selected chart is no longer available.");
+        return compose_action_outcome_t::blocked("The selected chart is no longer available.",
+                                                 notification_source_t::edit);
     auto uses = find_compose_resource_uses(*chart, resource);
     const auto count = uses.size();
-    const auto result = dispatch_editor_action(
+    auto result = dispatch_editor_action(
         context.environment.document.history, context.state,
         select_editor_objects_action_t{.objects = std::move(uses),
                                        .mode = editor_area_selection_mode_t::replace});
-    return compose_interaction_feedback(
-        context, result,
-        count == 0 ? "No uses of this resource exist in the active chart."
-                   : std::to_string(count) +
-                         (count == 1 ? " resource use selected." : " resource uses selected."));
+    return compose_action_outcome_t::from(
+        std::move(result), count == 0
+                               ? "No uses of this resource exist in the active chart."
+                               : std::to_string(count) + (count == 1 ? " resource use selected."
+                                                                     : " resource uses selected."));
 }
 
-std::optional<std::string> assign_resource_to_selection(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+assign_resource_to_selection(compose_action_context_t& context) {
     using namespace wormedit;
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(
-            context, "Finish or cancel the active Compose gesture before assigning a resource.");
-    const auto applied = apply_resource_assignment(
-        context.environment.document.history,
-        {.chart = context.state.chart,
-         .resource = resource_id_t{context.action.compose_resource_id},
-         .objects = context.state.selected_objects});
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before assigning a resource.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
+    auto applied =
+        apply_resource_assignment(context.environment.document.history,
+                                  {.chart = context.state.chart,
+                                   .resource = resource_id_t{context.action.compose_resource_id},
+                                   .objects = context.state.selected_objects});
     if (!applied.diagnostics.empty())
-        return publish_compose_diagnostic(context, applied.diagnostics.front());
+        return compose_action_outcome_t::from(std::move(applied.diagnostics),
+                                              notification_source_t::edit,
+                                              compose_feedback_delivery_t::message);
     if (!applied.applied)
-        return compose_action_info(context, "Selected objects already use that resource.",
-                                   notification_source_t::edit);
-    const auto rebound =
-        rebind_workspace(context.environment.document.workspace, context.environment.document.history);
-    if (!rebound)
-        return compose_mutation_rebind_failure(
-            context, rebound, "Resource assigned to selected objects.",
-            "Resource assigned, but workspace rebinding failed.", notification_source_t::edit);
-    return compose_action_success(context, "Resource assigned to selected objects.");
+        return compose_action_outcome_t::from("Selected objects already use that resource.",
+                                              notification_severity_t::info,
+                                              notification_source_t::edit);
+
+    auto outcome = compose_action_outcome_t::from("Resource assigned to selected objects.",
+                                                  notification_severity_t::success,
+                                                  notification_source_t::edit, applied.applied);
+    outcome.rebind_failure = "Resource assigned, but workspace rebinding failed.";
+    outcome.diagnostics = std::move(applied.diagnostics);
+    return outcome;
 }
 
-std::optional<std::string> create_resource_from_asset(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+create_resource_from_asset(compose_action_context_t& context) {
     using namespace wormedit;
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(
-            context, "Finish or cancel the active Compose gesture before creating a resource.",
-            notification_source_t::import_);
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before creating a resource.")) {
+        blocked->source = notification_source_t::import_;
+        return std::move(*blocked);
+    }
     const auto role = import_resource_role(context.action).value_or(resource_role_t::music);
     const auto chart = std::ranges::find(context.environment.document.history.document.charts,
                                          context.state.chart, &chart_document_t::id);
-    const auto applied = apply_resource_creation(
+    auto applied = apply_resource_creation(
         context.environment.document.history,
         {.asset = asset_id_t{context.action.compose_resource_asset_id},
          .role = role,
@@ -728,30 +756,28 @@ std::optional<std::string> create_resource_from_asset(compose_action_context_t& 
              chart != context.environment.document.history.document.charts.end() &&
              chart->source_family == format_family_t::bms});
     if (!applied.diagnostics.empty())
-        return publish_compose_diagnostic(context, applied.diagnostics.front(),
-                                          notification_source_t::import_);
-    const auto rebound =
-        rebind_workspace(context.environment.document.workspace, context.environment.document.history);
-    if (!rebound)
-        return compose_mutation_rebind_failure(
-            context, rebound,
-            role == resource_role_t::bga ? "BGA resource created from the selected image."
-                                         : "Resource created from the selected audio asset.",
-            "Resource created, but workspace rebinding failed.", notification_source_t::import_);
-    return compose_action_success(context,
-                                  role == resource_role_t::bga
-                                      ? "BGA resource created from the selected image."
-                                      : "Resource created from the selected audio asset.",
-                                  notification_source_t::import_);
+        return compose_action_outcome_t::from(std::move(applied.diagnostics),
+                                              notification_source_t::import_,
+                                              compose_feedback_delivery_t::message);
+
+    auto outcome = compose_action_outcome_t::from(
+        role == resource_role_t::bga ? "BGA resource created from the selected image."
+                                     : "Resource created from the selected audio asset.",
+        notification_severity_t::success, notification_source_t::import_, applied.applied);
+    outcome.rebind_failure = "Resource created, but workspace rebinding failed.";
+    outcome.diagnostics = std::move(applied.diagnostics);
+    return outcome;
 }
 
-std::string relink_sound_fallback(compose_action_context_t& context) {
+compose_action_outcome_t relink_sound_fallback(compose_action_context_t& context) {
     if (auto blocked = context.require_resources())
-        return finish_compose_action(context, std::move(*blocked));
+        return std::move(*blocked);
     using namespace wormedit;
     const auto& action = context.action;
-    if (action.compose_input_document_revision != context.environment.document.history.document.revision)
-        return compose_action_warning(context, "The sound list changed; choose the file again.");
+    if (action.compose_input_document_revision !=
+        context.environment.document.history.document.revision)
+        return compose_action_outcome_t::blocked("The sound list changed; choose the file again.",
+                                                 notification_source_t::edit);
     const auto& document = context.environment.document.history.document;
     const auto resource = std::ranges::find(
         document.resources, resource_id_t{action.compose_resource_id}, &resource_entry_t::id);
@@ -760,24 +786,31 @@ std::string relink_sound_fallback(compose_action_context_t& context) {
             ? document.audio_assets.end()
             : std::ranges::find(document.audio_assets, resource->asset, &audio_asset_t::id);
     if (asset == document.audio_assets.end())
-        return compose_action_warning(context, "That sound is no longer in the project.");
+        return compose_action_outcome_t::blocked("That sound is no longer in the project.",
+                                                 notification_source_t::edit);
     const auto fallback =
         resolve_audio_fallback(asset->source_path, context.environment.resources->asset_base);
     if (action.compose_fallback_candidate >= fallback.candidates.size())
-        return compose_action_warning(context, "That file is no longer available.");
+        return compose_action_outcome_t::blocked("That file is no longer available.",
+                                                 notification_source_t::edit);
     const auto& chosen = fallback.candidates[action.compose_fallback_candidate];
-    const auto relinked =
-        apply_resource_asset_relink(context.environment.document.history,
-                                    {.asset = asset->id, .source_path = chosen});
-    if (relinked.applied)
-        return compose_action_success(context, "Sound relinked to " + chosen.generic_string() + ".",
-                                      notification_source_t::edit);
-    return compose_action_warning(context, relinked.diagnostics.empty()
-                                               ? "The sound could not be relinked."
-                                               : relinked.diagnostics.front().message);
+    auto relinked = apply_resource_asset_relink(context.environment.document.history,
+                                                {.asset = asset->id, .source_path = chosen});
+    if (relinked.applied) {
+        auto outcome = compose_action_outcome_t::from(
+            "Sound relinked to " + chosen.generic_string() + ".", notification_severity_t::success,
+            notification_source_t::edit, true);
+        outcome.rebind_failure = "Sound relinked, but workspace rebinding failed.";
+        return outcome;
+    }
+    return compose_action_outcome_t::blocked(relinked.diagnostics.empty()
+                                                 ? "The sound could not be relinked."
+                                                 : relinked.diagnostics.front().message,
+                                             notification_source_t::edit);
 }
 
-std::optional<std::string> dispatch_compose_resource_action(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+dispatch_compose_resource_action(compose_action_context_t& context) {
     switch (context.action.compose_action) {
     case WORM_UI_COMPOSE_ACTION_SELECT_RESOURCE_USES:
         return select_resource_uses(context);
@@ -796,12 +829,14 @@ std::optional<std::string> dispatch_compose_resource_action(compose_action_conte
         return dispatch_compose_place_resource_action(context);
     case WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES:
     case WORM_UI_COMPOSE_ACTION_REMOVE_UNUSED_BGA:
-        if (editor_interaction_has_pending_gesture(context.state))
-            return compose_action_warning(
-                context, "Finish or cancel the active Compose gesture before editing BGA.");
-        return dispatch_compose_bga_action(context.action, context.environment.document.history,
-                                           context.environment.document.workspace, context.state.chart,
-                                           context.notifications);
+        if (auto blocked = context.require_no_gesture(
+                "Finish or cancel the active Compose gesture before editing BGA.")) {
+            blocked->source = notification_source_t::edit;
+            return std::move(*blocked);
+        }
+        return dispatch_bga_action_outcome(context.action, context.environment.document.history,
+                                           context.environment.document.workspace,
+                                           context.state.chart);
     case WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK:
         return relink_sound_fallback(context);
     case WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES:
@@ -814,13 +849,15 @@ std::optional<std::string> dispatch_compose_resource_action(compose_action_conte
     case WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER:
     case WORM_UI_COMPOSE_ACTION_REMOVE_SOUND_LAYER:
     case WORM_UI_COMPOSE_ACTION_CLEAR_SOUND_LAYERS:
-        if (editor_interaction_has_pending_gesture(context.state))
-            return compose_action_warning(
-                context, "Finish or cancel the active Compose gesture before editing sounds.");
-        return dispatch_compose_sound_action(context.action, context.environment.document.history,
-                                             context.environment.document.workspace, context.state.chart,
-                                             context.environment.editor.commands,
-                                             context.notifications);
+        if (auto blocked = context.require_no_gesture(
+                "Finish or cancel the active Compose gesture before editing sounds.")) {
+            blocked->source = notification_source_t::edit;
+            return std::move(*blocked);
+        }
+        return dispatch_sound_edit_outcome(context.action, context.environment.document.history,
+                                           context.environment.document.workspace,
+                                           context.state.chart,
+                                           context.environment.editor.commands);
     default:
         return std::nullopt;
     }

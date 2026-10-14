@@ -1880,6 +1880,8 @@ TEST_CASE("Relinking a missing sound to a fallback candidate is one undo step",
 
     action.compose_fallback_candidate = 1;
     check_action(fixture.dispatch(action) == "Sound relinked to snare.flac.");
+    check_action(fixture.workspace.document_revision == fixture.history.document.revision);
+    check_action(fixture.workspace.history.undo_depth == 1);
     check_action(fixture.history.document.audio_assets.front().source_path == std::filesystem::path{"snare.flac"});
     check_action_false(fixture.history.document.resources.front().missing);
     check_action(fixture.history.undo.size() == 1);
@@ -2532,4 +2534,26 @@ TEST_CASE("Sound import rebind failure retains one import-sourced diagnostic", "
     check_action(entries.front().severity == notification_severity_t::error);
     check_action(entries.front().source == notification_source_t::import_);
     check_action(entries.front().count == 1);
+}
+
+TEST_CASE("Quantization preset mutations bind the workspace to the edited history",
+          "[compose-action-notifications][compose-outcome]") {
+    action_notification_fixture_t fixture;
+    const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_SAVE_QUANTIZE_PRESET,
+                               WORM_UI_COMPOSE_ACTION_DELETE_QUANTIZE_PRESET,
+                               WORM_UI_COMPOSE_ACTION_RENAME_QUANTIZE_PRESET);
+    if (kind != WORM_UI_COMPOSE_ACTION_SAVE_QUANTIZE_PRESET)
+        fixture.history.document.quantization_presets = {{.name = "Original", .divisions = 4}};
+    auto action = fixture.action(kind);
+    std::snprintf(action.compose_quantize_preset_name, sizeof(action.compose_quantize_preset_name),
+                  "Updated");
+    action.compose_quantize_divisions = 4;
+    action.compose_quantize_preset_index = 0;
+    fixture.dispatch(action);
+    check_action(fixture.history.undo.size() == 1);
+    check_action(fixture.workspace.document_revision == fixture.history.document.revision);
+    check_action(fixture.workspace.history.undo_depth == 1);
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::success);
 }

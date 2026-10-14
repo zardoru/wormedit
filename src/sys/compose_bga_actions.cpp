@@ -102,22 +102,28 @@ auto import_bga_feedback(document_history_t& history, workspace_controller_t& wo
         outcome.severity = notification_severity_t::warning;
     return outcome;
 }
-auto dispatch_bga_feedback(const WormUiWorkspaceAction& action, document_history_t& history,
-                           workspace_controller_t& workspace, chart_id_t chart)
+auto dispatch_bga_action_outcome(const WormUiWorkspaceAction& action, document_history_t& history,
+                                 workspace_controller_t& workspace, chart_id_t chart)
     -> std::optional<compose_action_outcome_t> {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES &&
         action.compose_action != WORM_UI_COMPOSE_ACTION_REMOVE_UNUSED_BGA)
         return std::nullopt;
+    const auto source = action.compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES
+                            ? notification_source_t::import_
+                            : notification_source_t::edit;
     if (history.document.revision != action.compose_input_document_revision)
-        return compose_action_outcome_t::blocked(wormedit::stale_action_message("BGA action"));
+        return compose_action_outcome_t::blocked(wormedit::stale_action_message("BGA action"),
+                                                 source);
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES) {
         if (action.compose_import_path_count > WORM_UI_SOUND_DROP_CAPACITY)
-            return compose_action_outcome_t::blocked("Image import batch is too large.");
+            return compose_action_outcome_t::blocked("Image import batch is too large.", source);
         std::vector<std::string> paths;
         for (std::size_t index = 0; index < action.compose_import_path_count; ++index)
             if (action.compose_import_paths && action.compose_import_paths[index])
                 paths.emplace_back(action.compose_import_paths[index]);
-        return import_bga_feedback(history, workspace, chart, paths);
+        auto outcome = import_bga_feedback(history, workspace, chart, paths);
+        outcome.source = notification_source_t::import_;
+        return outcome;
     }
     const auto referenced = referenced_bga_resources(history.document);
     std::vector<resource_id_t> unused;
@@ -151,13 +157,10 @@ auto import_bga_files(document_history_t& history, workspace_controller_t& works
 auto dispatch_compose_bga_action(const WormUiWorkspaceAction& action, document_history_t& history,
                                  workspace_controller_t& workspace, chart_id_t chart,
                                  notification_sink_t notifications) -> std::optional<std::string> {
-    auto feedback = dispatch_bga_feedback(action, history, workspace, chart);
+    auto feedback = dispatch_bga_action_outcome(action, history, workspace, chart);
     if (!feedback)
         return std::nullopt;
     const document_edit_inputs_t document{history, workspace, notifications};
-    feedback->source = action.compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES
-                           ? notification_source_t::import_
-                           : notification_source_t::edit;
     auto finished = finish_compose_action(document, notifications, std::move(*feedback));
     return std::move(finished.message);
 }

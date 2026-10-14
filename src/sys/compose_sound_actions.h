@@ -1,3 +1,4 @@
+#include "sys/compose_action_outcome.h"
 #pragma once
 
 #include "sys/compose_view.h"
@@ -8,13 +9,18 @@
 #include <wormedit/core/sound_import.h>
 #include <wormedit/core/workspace.h>
 
+#include <cstdint>
 #include <optional>
 #include <span>
-#include <cstdint>
 #include <string>
 #include <vector>
 
 namespace wormedit::sys {
+[[nodiscard]] auto dispatch_sound_edit_outcome(const WormUiWorkspaceAction& action,
+                                               document_history_t& history,
+                                               workspace_controller_t& workspace, chart_id_t chart,
+                                               application_command_state_t& application_state)
+    -> std::optional<compose_action_outcome_t>;
 
 struct prepared_keysound_import_t {
     std::vector<bulk_sound_import_entry_t> entries;
@@ -39,7 +45,8 @@ struct prepared_sound_slot_batch_t {
 // Stages decodable audio without mutation; a section kind fixes each candidate.
 // Zero keeps the generic keysound default and enables review kind choices.
 [[nodiscard]] auto prepare_keysound_import(const song_document_t& document, chart_id_t chart,
-                                           std::span<const std::string> paths, std::uint8_t fixed_kind = 0)
+                                           std::span<const std::string> paths,
+                                           std::uint8_t fixed_kind = 0)
     -> prepared_keysound_import_t;
 
 // Prepares a complete direct-slot preview in natural filename order. Every

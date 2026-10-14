@@ -154,18 +154,27 @@ void retain_compose_rebind_failure(compose_action_outcome_t& outcome,
         outcome.message = outcome.rebind_failure;
         outcome.severity = notification_severity_t::error;
     }
+    if (outcome.rebind_failure_severity)
+        outcome.severity = *outcome.rebind_failure_severity;
+    if (outcome.rebind_failure_source)
+        outcome.source = *outcome.rebind_failure_source;
     outcome.diagnostics = std::move(rebound.diagnostics);
 }
 
 auto finish_compose_outcome(const document_edit_inputs_t& document,
                             const notification_sink_t& feedback, compose_action_outcome_t outcome,
                             application_command_state_t* application) -> compose_action_outcome_t {
-    if (outcome.mutated) {
+    if (outcome.mutated || outcome.is_workspace_refresh_required) {
         auto rebound = rebind_workspace(document.workspace, document.history);
         if (!rebound) {
             post_compose_mutation_before_failure(feedback, outcome);
+            auto retained_message = outcome.is_message_retained_on_rebind_failure
+                                        ? std::move(outcome.message)
+                                        : std::string{};
             retain_compose_rebind_failure(outcome, std::move(rebound));
             post_compose_outcome(feedback, outcome);
+            if (outcome.is_message_retained_on_rebind_failure)
+                outcome.message = std::move(retained_message);
             return outcome;
         }
     }
@@ -187,7 +196,7 @@ auto finish_compose_action(const document_edit_inputs_t& document,
 
 auto finish_compose_action(const notification_sink_t& feedback, compose_action_outcome_t outcome)
     -> compose_action_outcome_t {
-    assert(!outcome.mutated);
+    assert(!outcome.mutated && !outcome.is_workspace_refresh_required);
     post_compose_outcome(feedback, outcome);
     return outcome;
 }

@@ -67,6 +67,10 @@ struct compose_action_outcome_t {
     std::optional<workspace_select_asset_action_t> asset_selection;
     bool is_rebind_severity_diagnostic{true};
     bool has_bms_statement_feedback{};
+    std::optional<notification_severity_t> rebind_failure_severity;
+    std::optional<notification_source_t> rebind_failure_source;
+    bool is_message_retained_on_rebind_failure{};
+    bool is_workspace_refresh_required{};
 
     [[nodiscard]] static auto
     blocked(std::string message, notification_source_t source = notification_source_t::edit,

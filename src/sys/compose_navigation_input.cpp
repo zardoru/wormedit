@@ -42,14 +42,6 @@ auto compose_navigation_action(WormUiComposeNavigationAction action)
 
 namespace compose_navigation_input_detail {
 
-auto post_input_feedback(const wormedit::notification_sink_t* notifications,
-                         wormedit::notification_severity_t severity,
-                         wormedit::notification_source_t source, std::string_view message) -> void {
-    if (notifications && !message.empty()) {
-        notifications->post_feedback(severity, source, message);
-    }
-}
-
 auto staged_input_severity(bool staged, wormedit::notification_severity_t fallback)
     -> wormedit::notification_severity_t {
     return staged ? wormedit::notification_severity_t::hint : fallback;
@@ -175,7 +167,8 @@ auto dispatch_compose_navigation_actions(const wormedit::editor_navigation_actio
                               : !result.diagnostics.empty()
                                   ? to_notification_severity(result.diagnostics.front().severity)
                                   : notification_severity_t::warning;
-        post_input_feedback(notifications, severity, notification_source_t::input, status);
+        notification_sink_t::from(notifications)
+            .post_feedback(severity, notification_source_t::input, status);
         if (!result.accepted)
             break;
     }

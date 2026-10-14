@@ -224,11 +224,9 @@ struct compose_input_family_result_t {
                    notification_severity_t severity = notification_severity_t::hint,
                    notification_source_t source = notification_source_t::input)
         -> compose_input_family_result_t {
-        return from(compose_action_outcome_t::from(std::move(message), severity,
-                                                   severity == notification_severity_t::hint
-                                                       ? notification_source_t::input
-                                                       : source),
-                    compose_input_route_t::continue_batch);
+        auto feedback = stop_with_feedback(std::move(message), severity, source);
+        feedback.route = compose_input_route_t::continue_batch;
+        return feedback;
     }
     [[nodiscard]] static auto stop_with_feedback(std::string message,
                                                  notification_severity_t severity,
@@ -388,7 +386,6 @@ auto update_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_
     using namespace wormedit;
     auto& [environment, action, state, gesture_active] = context;
     auto& history = environment.document.history;
-    auto& workspace = environment.document.workspace;
     if (!state.pending_note_move_gesture ||
         state.pending_note_move_gesture->reference_note != object_id_t{input.object_id})
         return compose_input_family_result_t::from("BGM event drag expired before release.");
@@ -426,17 +423,22 @@ auto update_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_
         return compose_input_family_result_t::from(
             result.diagnostics.empty() ? "Selected-object move could not be applied."
                                        : result.diagnostics.front().message);
-    if (result.document_changed && !rebind_workspace(workspace, history))
-        return compose_input_family_result_t::from(
-            "Objects moved, but workspace rebinding failed.");
-    if (releasing)
-        return compose_input_family_result_t::stop_with_feedback(
-            result.document_changed ? "Selected objects moved to the snapped row."
-                                    : "BGM event remained at its original position.",
-            result.document_changed ? notification_severity_t::success
-                                    : notification_severity_t::info,
-            notification_source_t::edit);
-    return compose_input_family_result_t::continue_batch("Selected-object move preview updated.");
+    auto feedback =
+        releasing ? compose_input_family_result_t::stop_with_feedback(
+                        result.document_changed ? "Selected objects moved to the snapped row."
+                                                : "BGM event remained at its original position.",
+                        result.document_changed ? notification_severity_t::success
+                                                : notification_severity_t::info,
+                        notification_source_t::edit)
+                  : compose_input_family_result_t::continue_batch(
+                        "Selected-object move preview updated.");
+    feedback.outcome.mutated = result.document_changed;
+    feedback.outcome.rebind_failure = "Objects moved, but workspace rebinding failed.";
+    feedback.outcome.rebind_failure_policy = compose_rebind_failure_policy_t::message_only;
+    feedback.outcome.rebind_feedback_policy = compose_rebind_feedback_policy_t::document_only;
+    feedback.outcome.rebind_failure_severity = notification_severity_t::warning;
+    feedback.outcome.rebind_failure_source = notification_source_t::input;
+    return feedback;
 }
 
 auto revise_bmson_draft_marker(const WormUiComposeInputAction& input,
@@ -467,7 +469,6 @@ auto insert_bmson_stem_point(const WormUiComposeInputAction& input,
     using namespace wormedit;
     auto& [environment, action, state, gesture_active] = context;
     auto& history = environment.document.history;
-    auto& workspace = environment.document.workspace;
     auto& application_state = environment.commands;
     if (gesture_active || !application_state.project.compose_gesture.note_paint_mode_active ||
         !wormedit::ui::compose_notes_editable(compose_mode_of(application_state)))
@@ -493,13 +494,12 @@ auto insert_bmson_stem_point(const WormUiComposeInputAction& input,
             notification_source_t::edit);
     if (!applied.applied)
         return compose_input_family_result_t::from("No BMSON point was added.");
-    const auto rebound = rebind_workspace(workspace, history);
-    if (!rebound)
-        return compose_input_family_result_t::stop_with_feedback(
-            "BMSON point added, but workspace rebinding failed.", notification_severity_t::error,
-            notification_source_t::document);
-    return compose_input_family_result_t::stop_with_feedback(
-        "BMSON point added.", notification_severity_t::success, notification_source_t::edit);
+    auto outcome = compose_action_outcome_t::from(
+        "BMSON point added.", notification_severity_t::success, notification_source_t::edit, true);
+    outcome.rebind_failure = "BMSON point added, but workspace rebinding failed.";
+    outcome.rebind_failure_policy = compose_rebind_failure_policy_t::message_only;
+    outcome.rebind_feedback_policy = compose_rebind_feedback_policy_t::document_only;
+    return compose_input_family_result_t::from(std::move(outcome));
 }
 
 template <typename PositionAtComposeY, typename VirtualBmsRowAt>
@@ -1521,11 +1521,6 @@ auto dispatch_unhandled_compose_input(const WormUiComposeInputAction& input,
 auto compose_input_edits_notes(WormUiComposeInputKind kind) -> bool;
 
 auto compose_input_notification_source(WormUiComposeInputKind kind)
-    -> wormedit::notification_source_t;
-
-auto input_feedback_source(WormUiComposeInputKind kind,
-                           wormedit::notification_source_t explicit_source,
-                           wormedit::notification_severity_t severity)
     -> wormedit::notification_source_t;
 
 auto input_result_severity(const WormUiComposeInputAction& input,

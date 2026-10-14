@@ -397,8 +397,10 @@ compose_action_outcome_t select_compose_tool(compose_action_context_t& context) 
 auto toggle_compose_scroll_direction(compose_action_context_t& context)
     -> compose_action_outcome_t {
     using namespace wormedit;
-    if (editor_interaction_has_pending_gesture(context.state) ||
-        context.environment.editor.commands.project.compose_gesture.bga_draw_stroke)
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active gesture before changing scroll direction."))
+        return *blocked;
+    if (context.environment.editor.commands.project.compose_gesture.bga_draw_stroke)
         return compose_action_outcome_t::blocked(
             "Finish or cancel the active gesture before changing scroll direction.",
             notification_source_t::edit);
@@ -1030,8 +1032,10 @@ dispatch_compose_note_menu_action(compose_action_context_t& context) {
         return compose_action_outcome_t::from({}, notification_severity_t::hint);
     }
     case WORM_UI_COMPOSE_ACTION_OPEN_SELECTED_SOUND_LAYER_MENU:
+        if (auto blocked =
+                context.require_no_gesture("The selection changed or a Compose gesture is active."))
+            return *blocked;
         if (action.compose_input_project_id != context.environment.document.history.document.id.value ||
-            editor_interaction_has_pending_gesture(context.state) ||
             action.compose_input_document_revision !=
                 context.environment.document.history.document.revision)
             return compose_action_outcome_t::blocked(
@@ -2299,8 +2303,10 @@ auto rename_quantize_preset(compose_action_context_t& context) -> compose_action
 
 auto set_edit_snap_from_badge(compose_action_context_t& context, std::uint64_t divisions)
     -> compose_action_outcome_t {
-    if (editor_interaction_has_pending_gesture(context.state) ||
-        context.environment.editor.commands.project.clipboard.paste_session)
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before changing snapping."))
+        return *blocked;
+    if (context.environment.editor.commands.project.clipboard.paste_session)
         return compose_action_outcome_t::blocked(
             "Finish or cancel the active Compose gesture before changing snapping.",
             notification_source_t::edit);
@@ -2350,8 +2356,10 @@ auto find_selection_snap(compose_action_context_t& context) -> compose_action_ou
         context.environment.document.history.document.id.value)
         return compose_action_outcome_t::blocked(
             "Fitting snap request belongs to a different project.", notification_source_t::edit);
-    if (editor_interaction_has_pending_gesture(context.state) ||
-        context.environment.editor.commands.project.clipboard.paste_session)
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before changing snapping."))
+        return *blocked;
+    if (context.environment.editor.commands.project.clipboard.paste_session)
         return compose_action_outcome_t::blocked(
             "Finish or cancel the active Compose gesture before changing snapping.",
             notification_source_t::edit);

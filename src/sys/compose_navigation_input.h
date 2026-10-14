@@ -51,9 +51,6 @@
 
 namespace wormedit::sys::compose_navigation_input_detail {
 
-auto post_input_feedback(const wormedit::notification_sink_t* notifications,
-                         wormedit::notification_severity_t severity,
-                         wormedit::notification_source_t source, std::string_view message) -> void;
 auto staged_input_severity(bool staged, wormedit::notification_severity_t fallback)
     -> wormedit::notification_severity_t;
 auto navigation_measure_count(wormedit::editor_navigation_action_t action) -> std::uint64_t;

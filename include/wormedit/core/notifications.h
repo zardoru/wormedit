@@ -206,6 +206,10 @@ class notification_sink_t {
     [[nodiscard]] static auto muted() noexcept -> notification_sink_t {
         return notification_sink_t{};
     }
+    [[nodiscard]] static auto from(const notification_sink_t* sink) noexcept
+        -> notification_sink_t {
+        return sink ? *sink : muted();
+    }
     [[nodiscard]] auto is_muted() const noexcept -> bool {
         return center_ == nullptr;
     }

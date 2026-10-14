@@ -154,9 +154,9 @@ void tick_application_autosave(native_project_autosave_loop_t& autosave_loop,
     }
 }
 
-void rebind_workspace_after_edit(workspace_controller_t& workspace,
-                                 const document_history_t& history,
-                                 notification_sink_t notifications, workspace_edit_feedback_t& feedback) {
+void rebind_workspace_after_edit(workspace_controller_t& workspace, document_history_t& history,
+                                 notification_sink_t notifications,
+                                 workspace_edit_feedback_t& feedback) {
     // Every document mutation must leave the next frame bound to its new
     // revision. Keep this boundary authoritative even when a command path
     // forgets its local rebind after committing.

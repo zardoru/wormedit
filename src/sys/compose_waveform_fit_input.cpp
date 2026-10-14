@@ -358,12 +358,13 @@ auto revise_compose_beat_fit(const WormUiComposeInputAction& input,
                                          notification_severity_t::info,
                                          notification_source_t::edit);
     }
-    const auto rebound = rebind_workspace(workspace, history);
-    return compose_input_family_result_t::stop_with_feedback(
-        rebound ? "Beat interval fitted to the selected audio frame."
-                : "Beat fit applied, but workspace rebinding failed.",
-        rebound ? notification_severity_t::success : notification_severity_t::error,
-        rebound ? notification_source_t::edit : notification_source_t::document);
+    auto outcome = compose_action_outcome_t::from(
+        "Beat interval fitted to the selected audio frame.", notification_severity_t::success,
+        notification_source_t::edit, true);
+    outcome.rebind_failure = "Beat fit applied, but workspace rebinding failed.";
+    outcome.rebind_failure_policy = compose_rebind_failure_policy_t::message_only;
+    outcome.rebind_feedback_policy = compose_rebind_feedback_policy_t::document_only;
+    return compose_input_family_result_t::from(std::move(outcome));
 }
 
 auto seek_compose_waveform(const WormUiComposeInputAction& input, compose_input_context_t& context,
@@ -446,12 +447,7 @@ auto click_compose_waveform(const WormUiComposeInputAction& input, compose_input
                                      context.environment.document.history, context.state, *target,
                                      *cache.timing.marker_timing_index);
     accepted = "Compose waveform position moved.";
-    auto finished = finish_compose_action(context.notifications ? *context.notifications
-                                                                : notification_sink_t::muted(),
-                                          std::move(outcome));
-    auto feedback = compose_input_family_result_t::stop_with_feedback(
-        std::move(finished.message), finished.severity, finished.source);
-    feedback.outcome.delivery = compose_feedback_delivery_t::none;
+    auto feedback = compose_input_family_result_t::from(std::move(outcome));
     return feedback;
 }
 } // namespace wormedit::sys::compose_input_detail

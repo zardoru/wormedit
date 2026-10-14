@@ -146,16 +146,19 @@ struct application_command_context_t {
                    : nullptr;
     }
     auto rebind() -> wormedit::command_invocation_result_t {
-        const auto rebound =
-            wormedit::rebind_workspace(environment.document.workspace, environment.document.history);
-        if (!rebound)
-            return reject_application_command(
-                environment.document.notifications,
-                rebound.diagnostics.empty()
-                    ? "Command applied, but environment.document.workspace rebinding failed."
-                    : rebound.diagnostics.front().message,
-                notification_severity_t::error, notification_source_t::document,
-                wormedit::diagnostic_code_t::invalid_id);
+        auto outcome = compose_action_outcome_t::from({}, notification_severity_t::success,
+                                                      notification_source_t::document, true);
+        outcome.delivery = compose_feedback_delivery_t::none;
+        outcome.rebind_failure =
+            "Command applied, but environment.document.workspace rebinding failed.";
+        outcome.rebind_feedback_policy = compose_rebind_feedback_policy_t::document_only;
+        outcome.is_rebind_severity_diagnostic = false;
+        auto finished = finish_compose_action(
+            environment.document, environment.document.notifications, std::move(outcome));
+        if (!finished.accepted)
+            return {.diagnostics = {{.severity = diagnostic_severity_t::error,
+                                     .code = diagnostic_code_t::invalid_id,
+                                     .message = std::move(finished.message)}}};
         return {.accepted = true};
     }
 };

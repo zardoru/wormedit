@@ -1982,9 +1982,18 @@ auto create_chart_from_registered_command(wormedit::document_history_t& history,
                 ? severity_t::warning
                 : to_notification_severity(created.command.diagnostics.front().severity),
             source_t::document);
-    const auto rebound = wormedit::rebind_workspace(workspace, history);
-    if (!rebound) return wormedit::sys::reject_application_command(notifications,
-        "New chart created, but workspace rebinding failed.", severity_t::error, source_t::document);
+    auto outcome = wormedit::sys::compose_action_outcome_t::from({}, severity_t::success,
+                                                                 source_t::document, true);
+    outcome.delivery = wormedit::sys::compose_feedback_delivery_t::none;
+    outcome.rebind_failure = "New chart created, but workspace rebinding failed.";
+    outcome.rebind_failure_policy = wormedit::sys::compose_rebind_failure_policy_t::message_only;
+    outcome.rebind_feedback_policy = wormedit::sys::compose_rebind_feedback_policy_t::document_only;
+    auto finished = wormedit::sys::finish_compose_action({history, workspace, notifications},
+                                                         notifications, std::move(outcome));
+    if (!finished.accepted)
+        return {.diagnostics = {{.severity = wormedit::diagnostic_severity_t::error,
+                                 .code = wormedit::diagnostic_code_t::unsupported_feature,
+                                 .message = std::move(finished.message)}}};
     if (application_command_state.services.transport_stop) application_command_state.services.transport_stop();
     const auto error = open_project_chart(history, workspace, compose_interaction_state, *created.payload.chart);
     if (!error.empty()) return wormedit::sys::reject_application_command(notifications, error,
@@ -2644,13 +2653,14 @@ struct application_t::implementation_t {
                                                 "Audio offset was unchanged.",
                                                 notification_severity_t::info);
         }
-        const auto rebound = rebind_workspace(workspace, history);
-        if (rebound)
-            return post_audio_offset_feedback(context, notification_severity_t::success,
-                                              "Audio offset updated from waveform drag.");
-        return post_audio_offset_diagnostic(context, rebound.diagnostics,
-                                            "Audio offset changed, but workspace rebinding failed.",
-                                            notification_severity_t::error);
+        auto outcome = compose_action_outcome_t::from("Audio offset updated from waveform drag.",
+                                                      notification_severity_t::success,
+                                                      notification_source_t::edit, true);
+        outcome.rebind_failure = "Audio offset changed, but workspace rebinding failed.";
+        outcome.rebind_feedback_policy = compose_rebind_feedback_policy_t::action_only;
+        auto finished = finish_compose_action(document_inputs(), platform.notification_sink,
+                                              std::move(outcome));
+        return std::move(finished.message);
     }
 
     auto launch_external_player(wormedit::sys::external_player_action_t action) -> std::string {
@@ -3191,16 +3201,13 @@ struct application_t::implementation_t {
             if (imported.command.applied) {
                 remember_project_file(preferences.program_preferences, source_path,
                                       platform.notification_sink);
-                platform.notification_sink.post(
-                    notification_severity_t::success, notification_source_t::document,
-                    imported.payload.charts.size() == 1 ? "Chart imported." : "Charts imported.");
-                const auto rebound = rebind_workspace(session.workspace, session.history);
-                if (!rebound)
-                    platform.notification_sink.post(
-                        notification_severity_t::error, notification_source_t::document,
-                        rebound.diagnostics.empty()
-                            ? "Charts imported, but workspace rebinding failed."
-                            : rebound.diagnostics.front().message);
+                auto outcome = compose_action_outcome_t::from(
+                    imported.payload.charts.size() == 1 ? "Chart imported." : "Charts imported.",
+                    notification_severity_t::success, notification_source_t::document, true);
+                outcome.rebind_failure = "Charts imported, but workspace rebinding failed.";
+                outcome.is_rebind_severity_diagnostic = false;
+                static_cast<void>(finish_compose_action(
+                    document_inputs(), platform.notification_sink, std::move(outcome)));
             } else {
                 platform.notification_sink.post(notification_severity_t::warning,
                                                 notification_source_t::document,
@@ -3411,11 +3418,15 @@ struct application_t::implementation_t {
                                                 "Audio offset was unchanged.",
                                                 notification_severity_t::info);
         }
-        const auto rebound = rebind_workspace(session.workspace, session.history);
-        return post_audio_offset_feedback(
-            context, rebound ? notification_severity_t::success : notification_severity_t::error,
-            rebound ? "Audio offset nudged by an exact frame count."
-                    : "Audio offset changed, but workspace rebinding failed.");
+        auto outcome = compose_action_outcome_t::from(
+            "Audio offset nudged by an exact frame count.", notification_severity_t::success,
+            notification_source_t::edit, true);
+        outcome.rebind_failure = "Audio offset changed, but workspace rebinding failed.";
+        outcome.rebind_failure_policy = compose_rebind_failure_policy_t::message_only;
+        outcome.rebind_feedback_policy = compose_rebind_feedback_policy_t::action_only;
+        auto finished = finish_compose_action(document_inputs(), platform.notification_sink,
+                                              std::move(outcome));
+        return std::move(finished.message);
     }
 
     auto post_audio_offset_diagnostic(AudioOffsetDragContext& context,
@@ -3554,23 +3565,14 @@ struct application_t::implementation_t {
                                                                                 group, scheduler)
                           : wormedit::sys::apply_project_chart_ui_action(runtime, history, action,
                                                                          workspace.selected_chart);
-        notifications.post(result.severity, wormedit::notification_source_t::document,
-                           result.status);
-        if (result.applied) {
-            const auto rebound = wormedit::rebind_workspace(workspace, history);
-            if (!rebound) {
-                if (rebound.diagnostics.empty())
-                    notifications.post(wormedit::notification_severity_t::error,
-                                       wormedit::notification_source_t::document,
-                                       "Project changed, but workspace rebinding failed.");
-                else
-                    notifications.post(
-                        to_notification_severity(rebound.diagnostics.front().severity),
-                        wormedit::notification_source_t::document,
-                        rebound.diagnostics.front().message);
-                return true;
-            }
-        }
+        auto outcome =
+            compose_action_outcome_t::from(std::move(result.status), result.severity,
+                                           notification_source_t::document, result.applied);
+        outcome.rebind_failure = "Project changed, but workspace rebinding failed.";
+        const auto finished = finish_compose_action({history, workspace, notifications},
+                                                    notifications, std::move(outcome));
+        if (result.applied && !finished.accepted)
+            return true;
         if (result.open_chart) {
             if (application.services.transport_stop)
                 application.services.transport_stop();

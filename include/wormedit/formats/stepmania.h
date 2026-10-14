@@ -49,7 +49,10 @@ struct stepmania_parse_options_t {
     std::optional<std::filesystem::path> asset_base_directory;
 };
 
+using stepmania_parse_outcome_t = diagnosed_t<std::optional<song_document_t>, std::vector<stepmania_parse_diagnostic_t>>;
 struct stepmania_parse_result_t {
+    [[nodiscard]] static auto from(std::span<const std::byte> bytes, stepmania_parse_options_t options = {}) -> stepmania_parse_outcome_t;
+    [[nodiscard]] static auto from(stepmania_parse_outcome_t&& outcome) -> stepmania_parse_result_t;
     std::optional<song_document_t> song;
     std::vector<stepmania_parse_diagnostic_t> diagnostics;
 
@@ -95,7 +98,10 @@ struct stepmania_write_options_t {
     std::size_t max_rows_per_measure{65'536};
 };
 
+using stepmania_write_outcome_t = diagnosed_t<std::optional<std::string>, std::vector<stepmania_write_diagnostic_t>>;
 struct stepmania_write_result_t {
+    [[nodiscard]] static auto from(const song_document_t& song, stepmania_write_options_t options = {}) -> stepmania_write_outcome_t;
+    [[nodiscard]] static auto from(stepmania_write_outcome_t&& outcome) -> stepmania_write_result_t;
     std::optional<std::string> text;
     std::vector<stepmania_write_diagnostic_t> diagnostics;
 
@@ -109,7 +115,10 @@ enum class stepmania_export_policy_error_t {
     named_implementation_requires_native_warps,
 };
 
+using stepmania_export_policy_outcome_t = result_t<stepmania_write_options_t, error_t<stepmania_export_policy_error_t>>;
 struct stepmania_export_policy_result_t {
+    [[nodiscard]] static auto from(stepmania_export_policy_t policy) -> stepmania_export_policy_outcome_t;
+    [[nodiscard]] static auto from(stepmania_export_policy_outcome_t&& outcome) -> stepmania_export_policy_result_t;
     std::optional<stepmania_write_options_t> options;
     stepmania_export_policy_error_t error{stepmania_export_policy_error_t::none};
     std::string message;

@@ -1382,3 +1382,35 @@ TEST_CASE("StepMania export moves an autokeysound to a free column and reports a
         CHECK(warning_count_of(written) == 1);
     }
 }
+
+TEST_CASE("StepMania shared parse warnings remain independent of song presence", "[unit][stepmania][results]") {
+    using namespace wormedit;
+    stepmania_parse_outcome_t parsed{.diagnostics = {{.severity = diagnostic_severity_t::warning, .message = "warning"}}};
+    CHECK(parsed.ok());
+    const auto legacy = stepmania_parse_result_t::from(std::move(parsed));
+    CHECK_FALSE(legacy.has_errors());
+    CHECK_FALSE(legacy.song);
+    CHECK(legacy.diagnostics.front().message == "warning");
+}
+
+TEST_CASE("StepMania shared write warnings retain text", "[unit][stepmania][results]") {
+    using namespace wormedit;
+    stepmania_write_outcome_t written{.value = std::string{"text"},
+        .diagnostics = {{.severity = diagnostic_severity_t::warning, .message = "warning"}}};
+    CHECK(written.ok());
+    const auto legacy = stepmania_write_result_t::from(std::move(written));
+    CHECK_FALSE(legacy.has_errors());
+    CHECK(legacy.text == "text");
+    CHECK(legacy.diagnostics.front().message == "warning");
+}
+
+TEST_CASE("StepMania primary export policy retains required syntax rejection", "[unit][stepmania][results]") {
+    using namespace wormedit;
+    auto resolved = stepmania_export_policy_result_t::from(
+        stepmania_export_policy_t{.timing_syntax = stepmania_timing_syntax_t::unspecified});
+    REQUIRE_FALSE(resolved);
+    CHECK(resolved.error().code == stepmania_export_policy_error_t::timing_syntax_required);
+    const auto legacy = stepmania_export_policy_result_t::from(std::move(resolved));
+    CHECK_FALSE(legacy);
+    CHECK(legacy.error == stepmania_export_policy_error_t::timing_syntax_required);
+}

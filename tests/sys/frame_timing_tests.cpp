@@ -2210,7 +2210,7 @@ TEST_CASE("Paste preview owns geometry across frames and publishes one undoable 
     fixture.flattened = {};
     fixture.project();
     expect_compose_test(static_cast<bool>(fixture.flattened.view.compose.paste_ghosts[0].bounds.top == first.top));
-    expect_compose_test(static_cast<bool>(commit_compose_paste(fixture.application, fixture.history,
+    expect_compose_test(static_cast<bool>(apply_compose_paste(fixture.application, fixture.history,
                                  *fixture.interaction, status)));
     expect_compose_test(!static_cast<bool>(fixture.application.project.clipboard.paste_session));
     expect_compose_test(static_cast<bool>(fixture.application.project.clipboard.chart_clipboard.has_value()));
@@ -2233,16 +2233,16 @@ TEST_CASE("Paste collision remains visible and stale previews cannot publish",
     fixture.project();
     expect_compose_test(!static_cast<bool>(fixture.flattened.view.compose.paste_valid));
     expect_compose_test(static_cast<bool>(fixture.flattened.view.compose.paste_ghost_count == 1));
-    expect_compose_test(!static_cast<bool>(commit_compose_paste(fixture.application, fixture.history,
+    expect_compose_test(!static_cast<bool>(apply_compose_paste(fixture.application, fixture.history,
                                      *fixture.interaction, status)));
     expect_compose_test(!static_cast<bool>(status.empty()));
     expect_compose_test(static_cast<bool>(fixture.history.undo.empty()));
     fixture.interaction->cursor.row = 240;
-    expect_compose_test(static_cast<bool>(update_compose_paste(fixture.application, fixture.history.document,
+    expect_compose_test(static_cast<bool>(revise_compose_paste(fixture.application, fixture.history.document,
                                 fixture.interaction->chart, fixture.interaction->cursor)));
-    expect_compose_test(static_cast<bool>(fixture.application.project.clipboard.paste_session->proposal.valid));
+    expect_compose_test(static_cast<bool>(fixture.application.project.clipboard.paste_session->proposal.is_valid()));
     ++fixture.history.document.revision;
-    expect_compose_test(!static_cast<bool>(commit_compose_paste(fixture.application, fixture.history,
+    expect_compose_test(!static_cast<bool>(apply_compose_paste(fixture.application, fixture.history,
                                      *fixture.interaction, status)));
     wormedit::test::check_stale_action_message(status, "Paste preview");
     expect_compose_test(!static_cast<bool>(fixture.application.project.clipboard.paste_session));
@@ -2694,7 +2694,7 @@ TEST_CASE("Paste cached anchor keeps collision diagnostics across an outside poi
     std::string status;
     expect_compose_test(begin_compose_paste(fixture.application, fixture.history.document,
                                    *fixture.interaction, status));
-    const auto collision = fixture.application.project.clipboard.paste_session->proposal.error;
+    const std::string collision{fixture.application.project.clipboard.paste_session->proposal.message()};
     expect_compose_test(!collision.empty());
     auto outside = paste_pointer_action(fixture, false);
     outside.compose_inputs[0].y_pixels = 10000;

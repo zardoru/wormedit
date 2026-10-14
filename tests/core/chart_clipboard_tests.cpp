@@ -173,7 +173,7 @@ TEST_CASE("Chart clipboard paste collision retains ghosts and rejects commit ato
     auto history = document_history_t::from(std::move(song));
     const auto proposal = propose_chart_paste(history.document, chart_id_t{1}, clipboard,
         {measure_id_t{1}, 840}, history.document.revision);
-    expect(!proposal.valid);
+    expect(!proposal.is_valid());
     expect(proposal.objects.size() == clipboard.objects.size());
     expect(!paste_chart_clipboard(history, chart_id_t{1}, clipboard,
         {measure_id_t{1}, 840}));
@@ -185,13 +185,13 @@ TEST_CASE("Chart clipboard paste rejects fractional rows stale revisions and for
     auto [song, clipboard] = paste_fixture();
     song.charts.back().divisions_per_standard_measure = 4;
     expect(!propose_chart_paste(song, chart_id_t{2}, clipboard,
-        {measure_id_t{1}, 0}, 7).valid);
+        {measure_id_t{1}, 0}, 7).is_valid());
     expect(!propose_chart_paste(song, chart_id_t{2}, clipboard,
-        {measure_id_t{1}, 0}, 6).valid);
+        {measure_id_t{1}, 0}, 6).is_valid());
     clipboard.source_song = song_id_t{999};
-    test::check_stale_action_message(propose_chart_paste(song, chart_id_t{2}, clipboard, {measure_id_t{1}, 0}, 6).error, "Chart paste proposal");
+    test::check_stale_action_message(propose_chart_paste(song, chart_id_t{2}, clipboard, {measure_id_t{1}, 0}, 6).message(), "Chart paste proposal");
     expect(!propose_chart_paste(song, chart_id_t{2}, clipboard,
-        {measure_id_t{1}, 0}, 7).valid);
+        {measure_id_t{1}, 0}, 7).is_valid());
 }
 
 TEST_CASE("Chart clipboard paste reports every unavailable target lane") {
@@ -200,7 +200,7 @@ TEST_CASE("Chart clipboard paste reports every unavailable target lane") {
     song.charts.back().bgm_source_lanes.clear();
     const auto proposal = propose_chart_paste(song, chart_id_t{2}, clipboard,
         {measure_id_t{1}, 0}, 7);
-    expect(!proposal.valid);
+    expect(!proposal.is_valid());
     expect(proposal.missing_lane_count == 3);
 }
 
@@ -406,7 +406,7 @@ TEST_CASE("stem points pasted over part of an existing run are rejected",
     expect(history.document.revision == revision);
     const auto proposal = propose_chart_paste(history.document, chart_id_t{1}, *copied.clipboard,
                                               {measure_id_t{4}, 0}, revision);
-    expect(proposal.error.find("overlap") != std::string::npos);
+    expect(proposal.message().find("overlap") != std::string::npos);
 }
 
 namespace {
@@ -435,7 +435,7 @@ TEST_CASE("Chart clipboard pastes a BGM hold with its tail moved by the same off
     expect(copied.clipboard->objects.front().duration == rational_t{1, 2});
     const auto proposal = propose_chart_paste(song, chart_id_t{1}, *copied.clipboard,
         {measure_id_t{3}, 0}, 7);
-    expect(proposal.valid);
+    expect(proposal.is_valid());
     const auto& pasted = std::get<bgm_event_t>(proposal.objects.front());
     expect(pasted.position == local_position_t{measure_id_t{3}, 0});
     expect(pasted.end == local_position_t{measure_id_t{3}, 480});
@@ -450,7 +450,7 @@ TEST_CASE("Chart clipboard moves a BGM hold tail into a shortened target measure
     expect(copied.clipboard->objects.front().duration == rational_t{1, 8});
     const auto proposal = propose_chart_paste(song, chart_id_t{1}, *copied.clipboard,
         {measure_id_t{3}, 0}, 7);
-    expect(proposal.valid);
+    expect(proposal.is_valid());
     const auto& pasted = std::get<bgm_event_t>(proposal.objects.front());
     expect(pasted.end == local_position_t{measure_id_t{3}, 120});
 }
@@ -485,4 +485,72 @@ TEST_CASE("Chart clipboard pastes plain BGM events without a tail and undoes exa
     expect(undo_document_command(history));
     expect(history.document.charts.front().measures[2].bgm_events.empty());
     expect(!history.document.charts.front().measures[1].bgm_events.front().end);
+}
+
+TEST_CASE("Captured paste batches apply exact proposal IDs with one Undo record",
+          "[core][paste-proposal-stamp]") {
+    auto [song, clipboard] = paste_fixture();
+    auto history = document_history_t::from(std::move(song));
+    auto proposal = propose_chart_paste(history.document, chart_id_t{2}, clipboard,
+        {measure_id_t{1}, 120}, history.document.revision);
+    expect(proposal.is_valid());
+    expect(proposal.stamp == chart_stamp_t::from(history.document, chart_id_t{2}));
+    const auto expected_id = std::get<note_t>(proposal.objects.front()).id;
+    const auto result = apply_chart_paste(history, std::move(proposal));
+    expect(result.applied);
+    expect(history.document.charts.back().measures.front().notes.front().id == expected_id);
+    expect(history.undo.size() == 1);
+    expect(undo_document_command(history));
+    expect(history.document.charts.back().measures.front().notes.empty());
+}
+
+TEST_CASE("Captured paste expires by revision before publishing any object",
+          "[core][paste-proposal-stamp]") {
+    auto [song, clipboard] = paste_fixture();
+    auto history = document_history_t::from(std::move(song));
+    auto proposal = propose_chart_paste(history.document, chart_id_t{2}, clipboard,
+        {measure_id_t{1}, 120}, history.document.revision);
+    expect(proposal.is_valid());
+    ++history.document.revision;
+    const auto result = apply_chart_paste(history, std::move(proposal));
+    expect(!result.applied);
+    expect(result.diagnostics.size() == 1);
+    test::check_stale_action_message(result.diagnostics, "Chart paste proposal");
+    expect(history.undo.empty());
+    expect(history.document.charts.back().measures.front().notes.empty());
+}
+
+TEST_CASE("Captured paste retains its separate clipboard-project provenance rejection",
+          "[core][paste-proposal-stamp]") {
+    auto [song, clipboard] = paste_fixture();
+    auto history = document_history_t::from(std::move(song));
+    auto proposal = propose_chart_paste(history.document, chart_id_t{2}, clipboard,
+        {measure_id_t{1}, 120}, history.document.revision);
+    expect(proposal.is_valid());
+    history.document.id = song_id_t{99};
+    const auto result = apply_chart_paste(history, std::move(proposal));
+    expect(!result.applied);
+    expect(result.diagnostics.size() == 1);
+    expect(result.diagnostics.front().code == diagnostic_code_t::collision);
+    expect(result.diagnostics.front().message == "Clipboard resources belong to another project.");
+    expect(history.undo.empty());
+}
+
+TEST_CASE("Failed paste proposals own their diagnostics and preserve collision feedback",
+          "[core][paste-proposal-stamp]") {
+    auto [song, clipboard] = paste_fixture();
+    auto history = document_history_t::from(std::move(song));
+    const chart_paste_proposal_t empty;
+    expect(!empty.is_valid());
+    clipboard.source_song = song_id_t{99};
+    auto proposal = propose_chart_paste(history.document, chart_id_t{2}, clipboard,
+        {measure_id_t{1}, 120}, history.document.revision);
+    expect(!proposal.is_valid());
+    expect(proposal.diagnostics.size() == 1);
+    const std::string expected{proposal.message()};
+    const auto result = apply_chart_paste(history, std::move(proposal));
+    expect(result.diagnostics.size() == 1);
+    expect(result.diagnostics.front().code == diagnostic_code_t::collision);
+    expect(result.diagnostics.front().message == expected);
+    expect(history.undo.empty());
 }

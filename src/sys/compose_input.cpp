@@ -1674,7 +1674,7 @@ auto dispatch_compose_paste_input(const WormUiComposeInputAction& input,
     if (input.kind == WORM_UI_COMPOSE_INPUT_PASTE_COMMIT) {
         std::string status;
         auto severity = wormedit::notification_severity_t::warning;
-        const auto committed = commit_compose_paste(application, context.environment.document.history,
+        const auto committed = apply_compose_paste(application, context.environment.document.history,
                                                     context.state, status, &severity);
         post_input_feedback(context.notifications, severity, wormedit::notification_source_t::edit, status);
         if (committed) {
@@ -1713,7 +1713,7 @@ auto dispatch_compose_paste_input(const WormUiComposeInputAction& input,
     }
     application.project.clipboard.paste_session->anchor_available = true;
     application.project.clipboard.paste_session->pointer_cursor = context.state.cursor;
-    (void)update_compose_paste(application, context.environment.document.history.document,
+    (void)revise_compose_paste(application, context.environment.document.history.document,
                                context.state.chart, *position);
     return compose_input_family_result_t::continue_batch({});
 }

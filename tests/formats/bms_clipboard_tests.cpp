@@ -355,8 +355,8 @@ TEST_CASE("bms_clipboard decoded holds enter the native exact paste proposal", "
     REQUIRE(decoded);
     const auto proposal = wormedit::propose_chart_paste(song, chart.id, *decoded.clipboard,
         {wormedit::measure_id_t{10}, 0}, song.revision);
-    INFO(proposal.error);
-    REQUIRE(proposal.valid);
+    INFO(std::string{proposal.message()});
+    REQUIRE(proposal.is_valid());
     REQUIRE(proposal.objects.size() == 1);
     const auto& hold = std::get<wormedit::note_t>(proposal.objects.front());
     CHECK((hold.end == wormedit::local_position_t{wormedit::measure_id_t{10}, 672}));

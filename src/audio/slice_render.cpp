@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstring>
 #include <system_error>
+#include <utility>
 
 namespace wormedit::audio {
 namespace {
@@ -101,15 +102,6 @@ void remove_all(const std::vector<std::filesystem::path>& files) {
     }
 }
 
-auto fail(slice_render_result_t& result, slice_render_status_t status, std::string error,
-          const std::vector<std::filesystem::path>& published) -> slice_render_result_t {
-    remove_all(published);
-    result.status = status;
-    result.files.clear();
-    result.error = std::move(error);
-    return result;
-}
-
 } // namespace
 
 auto encode_wav_pcm16(std::span<const float> interleaved_stereo, std::uint32_t sample_rate)
@@ -167,41 +159,61 @@ auto encode_wav_float32(std::span<const float> interleaved_stereo, std::uint32_t
     return out;
 }
 
-auto render_audio_slices(decoder_t& decoder, std::span<const audio_slice_range_t> ranges,
-                         const slice_render_options_t& options) -> slice_render_result_t {
-    slice_render_result_t result;
-    if (!validate(decoder, ranges, options, result.error)) return result;
+auto rendered_audio_slices_t::from(decoder_t& decoder, std::span<const audio_slice_range_t> ranges,
+                                    const slice_render_options_t& options) -> slice_render_outcome_t {
+    std::string message;
+    if (!validate(decoder, ranges, options, message))
+        return std::unexpected(error_t<slice_render_status_t>{slice_render_status_t::invalid_request,
+                                                             std::move(message)});
     std::error_code error;
     std::filesystem::create_directories(options.directory, error);
     if (error) {
-        result.status = slice_render_status_t::write_error;
-        result.error = "cannot create the output directory: " + error.message();
-        return result;
+        return std::unexpected(error_t<slice_render_status_t>{slice_render_status_t::write_error,
+            "cannot create the output directory: " + error.message()});
     }
     std::vector<std::filesystem::path> published;
     std::vector<float> samples;
     for (std::size_t index = 0; index < ranges.size(); ++index) {
-        if (options.stop.stop_requested())
-            return fail(result, slice_render_status_t::cancelled, "cancelled", published);
+        if (options.stop.stop_requested()) {
+            remove_all(published);
+            return std::unexpected(error_t<slice_render_status_t>{slice_render_status_t::cancelled, "cancelled"});
+        }
         if ((options.encoding == slice_wav_encoding_t::float32 &&
              !prime_float_range(decoder, ranges[index].begin_frame)) ||
-            !read_range(decoder, ranges[index], samples))
-            return fail(result, slice_render_status_t::decode_error,
-                        "decoding failed inside slice " + std::to_string(index + 1), published);
+            !read_range(decoder, ranges[index], samples)) {
+            remove_all(published);
+            return std::unexpected(error_t<slice_render_status_t>{slice_render_status_t::decode_error,
+                "decoding failed inside slice " + std::to_string(index + 1)});
+        }
         const auto bytes = options.encoding == slice_wav_encoding_t::float32
             ? encode_wav_float32(samples, output_sample_rate) : encode_wav_pcm16(samples, output_sample_rate);
-        if (bytes.empty()) return fail(result, slice_render_status_t::write_error,
-            "samples cannot be encoded in the requested WAV format", published);
+        if (bytes.empty()) {
+            remove_all(published);
+            return std::unexpected(error_t<slice_render_status_t>{slice_render_status_t::write_error,
+                "samples cannot be encoded in the requested WAV format"});
+        }
         const auto path = options.directory / slice_file_name(options.base_name, index, ranges.size());
-        const auto saved = save_file_atomic(path, bytes, bytes.size());
-        if (!saved)
-            return fail(result, slice_render_status_t::write_error, saved.error, published);
+        auto saved = create_file_atomic(path, bytes, bytes.size());
+        if (!saved) {
+            remove_all(published);
+            return std::unexpected(error_t<slice_render_status_t>{slice_render_status_t::write_error,
+                                                                 std::move(saved.error())});
+        }
         published.push_back(path);
         if (options.progress) options.progress(index + 1, ranges.size());
     }
-    result.status = slice_render_status_t::completed;
-    result.files = std::move(published);
-    return result;
+    return rendered_audio_slices_t{.files = std::move(published)};
+}
+
+auto slice_render_result_t::from(slice_render_outcome_t&& outcome) -> slice_render_result_t {
+    if (outcome) return {.status = slice_render_status_t::completed,
+                          .files = std::move(outcome->files), .error = {}};
+    return {.status = outcome.error().code, .files = {}, .error = std::move(outcome.error().message)};
+}
+
+auto render_audio_slices(decoder_t& decoder, std::span<const audio_slice_range_t> ranges,
+                         const slice_render_options_t& options) -> slice_render_result_t {
+    return slice_render_result_t::from(rendered_audio_slices_t::from(decoder, ranges, options));
 }
 
 } // namespace wormedit::audio

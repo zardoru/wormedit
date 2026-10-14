@@ -260,55 +260,63 @@ auto native_project_recovery_controller_t::view() const noexcept
     return view_;
 }
 
-auto native_project_recovery_controller_t::dispatch(
+void native_project_recovery_controller_t::append_dispatch_error(
+    native_project_recovery_controller_dispatch_outcome_t& result,
+    native_project_storage_diagnostic_code_t code, std::string message) {
+    const auto diagnostic = controller_diagnostic(code, std::move(message));
+    append_bounded_diagnostic(result.diagnostics, result.value.diagnostics_truncated,
+                              options_.maximum_diagnostics, diagnostic,
+                              options_.maximum_path_label_bytes);
+    append_bounded_diagnostic(view_.diagnostics, view_.diagnostics_truncated,
+                              options_.maximum_diagnostics, diagnostic,
+                              options_.maximum_path_label_bytes);
+}
+
+auto native_project_recovery_controller_t::dispatch_action(
     const native_project_recovery_controller_action_t& action)
-    -> native_project_recovery_controller_dispatch_result_t {
-    native_project_recovery_controller_dispatch_result_t result;
-    const auto add_error = [&](native_project_storage_diagnostic_code_t code, std::string message) {
-        const auto diagnostic = controller_diagnostic(code, std::move(message));
-        append_bounded_diagnostic(result.diagnostics, result.diagnostics_truncated,
-                                  options_.maximum_diagnostics, diagnostic,
-                                  options_.maximum_path_label_bytes);
-        append_bounded_diagnostic(view_.diagnostics, view_.diagnostics_truncated,
-                                  options_.maximum_diagnostics, diagnostic,
-                                  options_.maximum_path_label_bytes);
-    };
+    -> native_project_recovery_controller_dispatch_outcome_t {
+    native_project_recovery_controller_dispatch_outcome_t result{};
 
     if (!scan_.has_value() || generation_exhausted_) {
-        add_error(native_project_storage_diagnostic_code_t::recovery_action_unavailable,
-                  "there is no active recovery scan");
+        append_dispatch_error(result,
+                              native_project_storage_diagnostic_code_t::recovery_action_unavailable,
+                              "there is no active recovery scan");
         return result;
     }
     const auto target = action_target(action);
     if (target.scan_generation != view_.scan_generation) {
-        add_error(native_project_storage_diagnostic_code_t::recovery_action_unavailable,
-                  "recovery action belongs to a stale scan generation");
+        append_dispatch_error(result,
+                              native_project_storage_diagnostic_code_t::recovery_action_unavailable,
+                              "recovery action belongs to a stale scan generation");
         return result;
     }
     if (target.row_index >= view_.rows.size()) {
-        add_error(native_project_storage_diagnostic_code_t::recovery_action_unavailable,
-                  "recovery action row is outside the displayed view");
+        append_dispatch_error(result,
+                              native_project_storage_diagnostic_code_t::recovery_action_unavailable,
+                              "recovery action row is outside the displayed view");
         return result;
     }
     const auto& row = view_.rows[target.row_index];
     if (row.target != target || target.candidate_index >= scan_->candidates.size()) {
-        add_error(native_project_storage_diagnostic_code_t::recovery_identity_mismatch,
-                  "recovery action target does not match its displayed row");
+        append_dispatch_error(result,
+                              native_project_storage_diagnostic_code_t::recovery_identity_mismatch,
+                              "recovery action target does not match its displayed row");
         return result;
     }
 
     const auto requested_action = action_kind(action);
     if (std::ranges::find(row.available_actions, requested_action) == row.available_actions.end()) {
-        add_error(native_project_storage_diagnostic_code_t::recovery_action_unavailable,
-                  "requested action is not offered for this recovery row");
+        append_dispatch_error(result,
+                              native_project_storage_diagnostic_code_t::recovery_action_unavailable,
+                              "requested action is not offered for this recovery row");
         return result;
     }
 
     native_project_recovery_action_options_t options;
     if (const auto* recover = std::get_if<recover_native_project_recovery_action_t>(&action)) {
         if (!recover->expected_session.is_set) {
-            add_error(
-                native_project_storage_diagnostic_code_t::recovery_identity_mismatch,
+            append_dispatch_error(
+                result, native_project_storage_diagnostic_code_t::recovery_identity_mismatch,
                 "recover action must include an expected session identity or empty-session guard");
             return result;
         }
@@ -318,23 +326,24 @@ auto native_project_recovery_controller_t::dispatch(
         options.save_as_destination = save_as->destination;
     }
 
-    result.accepted = true;
-    result.action_result = apply_native_project_recovery_action(
+    result.value.accepted = true;
+    result.value.action_result = apply_native_project_recovery_action(
         *scan_, target.candidate_index, requested_action, std::move(options));
-    for (auto& diagnostic : result.action_result->diagnostics) {
+    for (auto& diagnostic : result.value.action_result->diagnostics) {
         auto diagnostic_truncated = false;
         diagnostic =
             bounded_diagnostic(diagnostic, options_.maximum_path_label_bytes, diagnostic_truncated);
-        result.diagnostics_truncated = result.diagnostics_truncated || diagnostic_truncated;
+        result.value.diagnostics_truncated =
+            result.value.diagnostics_truncated || diagnostic_truncated;
         view_.diagnostics_truncated = view_.diagnostics_truncated || diagnostic_truncated;
-        append_bounded_diagnostic(result.diagnostics, result.diagnostics_truncated,
+        append_bounded_diagnostic(result.diagnostics, result.value.diagnostics_truncated,
                                   options_.maximum_diagnostics, diagnostic,
                                   options_.maximum_path_label_bytes);
         append_bounded_diagnostic(view_.diagnostics, view_.diagnostics_truncated,
                                   options_.maximum_diagnostics, diagnostic,
                                   options_.maximum_path_label_bytes);
     }
-    if (result.action_result->applied &&
+    if (result.value.action_result->applied &&
         (requested_action == native_project_recovery_action_t::discard ||
          requested_action == native_project_recovery_action_t::quarantine)) {
         scan_.reset();
@@ -349,6 +358,21 @@ auto native_project_recovery_controller_t::dispatch(
         view_.scan_generation = generation_;
     }
     return result;
+}
+
+auto native_project_recovery_controller_dispatch_result_t::from(
+    native_project_recovery_controller_dispatch_outcome_t&& outcome)
+    -> native_project_recovery_controller_dispatch_result_t {
+    return {.accepted = outcome.value.accepted,
+            .diagnostics_truncated = outcome.value.diagnostics_truncated,
+            .action_result = std::move(outcome.value.action_result),
+            .diagnostics = std::move(outcome.diagnostics)};
+}
+
+auto native_project_recovery_controller_t::dispatch(
+    const native_project_recovery_controller_action_t& action)
+    -> native_project_recovery_controller_dispatch_result_t {
+    return native_project_recovery_controller_dispatch_result_t::from(dispatch_action(action));
 }
 
 } // namespace wormedit

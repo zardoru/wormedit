@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <new>
@@ -25,23 +26,16 @@ auto layer_order(std::string_view layer) noexcept -> std::uint8_t {
     return 4;
 }
 
-auto invalid_index(std::string message) -> storyboard_preview_index_result_t {
-    storyboard_preview_index_result_t result;
-    result.diagnostics.push_back(
-        {storyboard_diagnostic_code_t::invalid_model, 0, std::move(message)});
-    return result;
-}
-
-auto is_evaluation_failed(const storyboard_evaluation_result_t& result,
-                       storyboard_frame_result_t& frame) -> bool {
-    if (!result.failed)
+auto is_evaluation_failed(const storyboard_evaluation_outcome_t* result,
+                       storyboard_frame_effect_t& frame) -> bool {
+    if (result->has_value())
         return false;
-    frame.diagnostic = result.diagnostic;
+    frame.diagnostic = result->error().diagnostic;
     return true;
 }
 
-auto is_storyboard_instance_newer(const storyboard_evaluation_result_t& candidate,
-                const storyboard_evaluation_result_t& current) noexcept -> bool {
+auto is_storyboard_instance_newer(const storyboard_evaluation_effect_t& candidate,
+                const storyboard_evaluation_effect_t& current) noexcept -> bool {
     if (!candidate.value.present)
         return false;
     if (!current.value.present)
@@ -51,14 +45,14 @@ auto is_storyboard_instance_newer(const storyboard_evaluation_result_t& candidat
 }
 
 struct frame_evaluations_t {
-    const storyboard_evaluation_result_t& fade;
-    const storyboard_evaluation_result_t& move;
-    const storyboard_evaluation_result_t& move_x;
-    const storyboard_evaluation_result_t& move_y;
-    const storyboard_evaluation_result_t& scale;
-    const storyboard_evaluation_result_t& vector_scale;
-    const storyboard_evaluation_result_t& rotate;
-    const storyboard_evaluation_result_t& color;
+    const storyboard_evaluation_effect_t& fade;
+    const storyboard_evaluation_effect_t& move;
+    const storyboard_evaluation_effect_t& move_x;
+    const storyboard_evaluation_effect_t& move_y;
+    const storyboard_evaluation_effect_t& scale;
+    const storyboard_evaluation_effect_t& vector_scale;
+    const storyboard_evaluation_effect_t& rotate;
+    const storyboard_evaluation_effect_t& color;
 };
 
 auto apply_frame_evaluations(storyboard_draw_instance_t& instance,
@@ -97,12 +91,15 @@ auto apply_frame_evaluations(storyboard_draw_instance_t& instance,
 
 } // namespace
 
-auto build_storyboard_preview_index(const storyboard_document_model_t& document,
+auto storyboard_preview_index_result_t::from(storyboard_preview_index_outcome_t&& outcome) -> storyboard_preview_index_result_t {
+    return {.index = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
+}
+auto storyboard_preview_index_t::from(const storyboard_document_model_t& document,
                                     storyboard_schedule_options_t options)
-    -> storyboard_preview_index_result_t {
-    storyboard_preview_index_result_t result;
-    auto schedule = compile_storyboard_schedule(document, options);
-    if (!schedule) {
+    -> storyboard_preview_index_outcome_t {
+    storyboard_preview_index_outcome_t result{};
+    auto schedule = storyboard_schedule_result_t::from(document, options);
+    if (!schedule.value) {
         result.diagnostics = std::move(schedule.diagnostics);
         return result;
     }
@@ -115,8 +112,9 @@ auto build_storyboard_preview_index(const storyboard_document_model_t& document,
         for (std::size_t index = 0; index < document.sprites.size(); ++index) {
             const auto& sprite = document.sprites[index];
             if (sprite.stable_id == 0 || !sprite_by_id.emplace(sprite.stable_id, index).second) {
-                return invalid_index(
-                    "storyboard preview requires unique nonzero sprite identifiers");
+                result.diagnostics.push_back({storyboard_diagnostic_code_t::invalid_model, 0,
+                    "storyboard preview requires unique nonzero sprite identifiers"});
+                return result;
             }
             candidate.sources[index] = {
                 .sprite_index = index,
@@ -127,46 +125,50 @@ auto build_storyboard_preview_index(const storyboard_document_model_t& document,
                 .source_order = sprite.source_order,
             };
         }
-        for (const auto& event : schedule.schedule->events) {
+        for (const auto& event : schedule.value->events) {
             const auto found = sprite_by_id.find(event.stable_object_id);
             if (found == sprite_by_id.end()) {
-                return invalid_index("storyboard schedule refers to an unknown sprite");
+                result.diagnostics.push_back({storyboard_diagnostic_code_t::invalid_model, 0,
+                    "storyboard schedule refers to an unknown sprite"});
+                return result;
             }
             auto& source = candidate.sources[found->second];
             source.begin_time_ms = std::min(source.begin_time_ms, event.time_ms);
             source.end_time_ms = std::max(source.end_time_ms, event.time_ms);
         }
-        std::erase_if(candidate.sources, [](const auto& source) {
-            return source.begin_time_ms == std::numeric_limits<std::int64_t>::max();
-        });
-        std::ranges::sort(candidate.sources, [](const auto& left, const auto& right) {
-            return std::tie(left.layer_order, left.source_order, left.sprite_index) <
-                   std::tie(right.layer_order, right.source_order, right.sprite_index);
-        });
+        std::erase_if(candidate.sources, std::mem_fn(&storyboard_preview_source_t::has_sentinel_begin));
+        std::ranges::sort(candidate.sources, {}, &storyboard_preview_source_t::sort_key);
     } catch (const std::bad_alloc&) {
         result.diagnostics.push_back({storyboard_diagnostic_code_t::capacity_exceeded, 0,
                                       "storyboard preview index allocation failed"});
         return result;
     }
-    result.index = std::move(candidate);
+    result.value = std::move(candidate);
     return result;
 }
 
-auto evaluate_storyboard_frame(const storyboard_document_model_t& document,
+auto build_storyboard_preview_index(const storyboard_document_model_t& document,
+    storyboard_schedule_options_t options) -> storyboard_preview_index_result_t {
+    return storyboard_preview_index_result_t::from(storyboard_preview_index_t::from(document, options));
+}
+
+auto storyboard_frame_result_t::from(storyboard_frame_outcome_t&& outcome) -> storyboard_frame_result_t {
+    auto effect = outcome ? std::move(*outcome) : std::move(outcome.error());
+    return {.instances = effect.instances, .diagnostic = std::move(effect.diagnostic), .arena_error = effect.arena_error};
+}
+auto storyboard_frame_result_t::from(const storyboard_document_model_t& document,
                                const storyboard_preview_index_t& index, std::int64_t time_ms,
                                storyboard_frame_arena_t& arena, storyboard_frame_options_t options)
-    -> storyboard_frame_result_t {
+    -> storyboard_frame_outcome_t {
     arena.reset();
-    storyboard_frame_result_t result;
+    storyboard_frame_effect_t result{};
     const auto active_count = static_cast<std::size_t>(
-        std::ranges::count_if(index.sources, [time_ms](const auto& source) {
-            return source.begin_time_ms <= time_ms && time_ms <= source.end_time_ms;
-        }));
+        std::ranges::count_if(index.sources, std::bind_back(&storyboard_preview_source_t::is_active, time_ms)));
     if (active_count > options.maximum_instances) {
         result.diagnostic =
             storyboard_diagnostic_t{storyboard_diagnostic_code_t::capacity_exceeded, 0,
                                     "storyboard frame exceeds its configured instance limit"};
-        return result;
+        return std::unexpected(std::move(result));
     }
     if (active_count == 0)
         return result;
@@ -175,30 +177,31 @@ auto evaluate_storyboard_frame(const storyboard_document_model_t& document,
         result.diagnostic =
             storyboard_diagnostic_t{storyboard_diagnostic_code_t::capacity_exceeded, 0,
                                     "storyboard frame instance storage overflowed"};
-        return result;
+        return std::unexpected(std::move(result));
     }
     const auto allocation = arena.allocate(active_count * sizeof(storyboard_draw_instance_t),
                                                  alignof(storyboard_draw_instance_t));
     if (!allocation) {
         result.arena_error = allocation.error();
-        return result;
+        return std::unexpected(std::move(result));
     }
     auto* output = static_cast<storyboard_draw_instance_t*>(*allocation);
     std::size_t output_count = 0;
     for (const auto& source : index.sources) {
-        if (source.begin_time_ms > time_ms || time_ms > source.end_time_ms)
+        if (!source.is_active(time_ms))
             continue;
         if (source.sprite_index >= document.sprites.size() ||
             document.sprites[source.sprite_index].stable_id != source.stable_id) {
             result.diagnostic =
                 storyboard_diagnostic_t{storyboard_diagnostic_code_t::invalid_model, 0,
                                         "storyboard preview index is stale for its document"};
-            return result;
+            return std::unexpected(std::move(result));
         }
         const auto& sprite = document.sprites[source.sprite_index];
-        const auto evaluate = [&](storyboard_opcode_t opcode) {
-            return evaluate_storyboard_property(sprite, opcode, time_ms, options.maximum_nesting);
-        };
+        using evaluator_t = storyboard_evaluation_outcome_t (*)(const storyboard_sprite_t&,
+            storyboard_opcode_t, std::int64_t, std::size_t);
+        const auto evaluate = std::bind_front(std::bind_back(static_cast<evaluator_t>(&storyboard_evaluation_result_t::from),
+            time_ms, options.maximum_nesting), std::cref(sprite));
         const auto fade = evaluate(storyboard_opcode_t::fade);
         const auto move = evaluate(storyboard_opcode_t::move);
         const auto move_x = evaluate(storyboard_opcode_t::move_x);
@@ -209,10 +212,8 @@ auto evaluate_storyboard_frame(const storyboard_document_model_t& document,
         const auto color = evaluate(storyboard_opcode_t::color);
         const std::array evaluations{&fade,  &move,         &move_x, &move_y,
                                      &scale, &vector_scale, &rotate, &color};
-        if (std::ranges::any_of(evaluations, [&](const auto* evaluation) {
-                return is_evaluation_failed(*evaluation, result);
-            })) {
-            return result;
+        if (std::ranges::any_of(evaluations, std::bind_back(is_evaluation_failed, std::ref(result)))) {
+            return std::unexpected(std::move(result));
         }
 
         storyboard_draw_instance_t instance{
@@ -226,12 +227,18 @@ auto evaluate_storyboard_frame(const storyboard_document_model_t& document,
             .y = sprite.y,
         };
         apply_frame_evaluations(instance,
-                                {fade, move, move_x, move_y, scale, vector_scale, rotate, color});
+                                {*fade, *move, *move_x, *move_y, *scale, *vector_scale, *rotate, *color});
         std::construct_at(output + output_count, instance);
         ++output_count;
     }
     result.instances = {output, output_count};
     return result;
+}
+
+auto evaluate_storyboard_frame(const storyboard_document_model_t& document,
+    const storyboard_preview_index_t& index, std::int64_t time_ms, storyboard_frame_arena_t& arena,
+    storyboard_frame_options_t options) -> storyboard_frame_result_t {
+    return storyboard_frame_result_t::from(storyboard_frame_result_t::from(document, index, time_ms, arena, options));
 }
 
 } // namespace wormedit

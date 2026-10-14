@@ -560,21 +560,24 @@ void preview_transport_bridge_t::refill_assist_clicks(std::uint64_t end, std::ui
                                       static_cast<std::uint64_t>(bounded_end), assist_clicks_);
 }
 
-auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_frame,
-                                                        std::uint64_t current_frame)
-    -> preview_bridge_pump_result_t {
+auto preview_transport_bridge_t::materialize_preview(std::uint64_t exclusive_end_frame,
+                                                     std::uint64_t current_frame)
+    -> preview_bridge_pump_outcome_t {
     if (schedule_ == nullptr || !token_.has_value()) {
-        return {.status = preview_bridge_pump_status_t::not_started};
+        return std::unexpected(
+            preview_bridge_pump_effect_t{.status = preview_bridge_pump_status_t::not_started});
     }
     if (!transport_.is_current(*token_)) {
-        return {.status = preview_bridge_pump_status_t::stale_generation};
+        return std::unexpected(
+            preview_bridge_pump_effect_t{.status = preview_bridge_pump_status_t::stale_generation});
     }
     if (exclusive_end_frame < last_materialized_end_) {
-        return {.status = preview_bridge_pump_status_t::non_monotonic_window};
+        return std::unexpected(preview_bridge_pump_effect_t{
+            .status = preview_bridge_pump_status_t::non_monotonic_window});
     }
 
     refill_assist_clicks(exclusive_end_frame, current_frame);
-    auto result = preview_bridge_pump_result_t{
+    auto result = preview_bridge_pump_effect_t{
         .status = preview_bridge_pump_status_t::ready,
     };
     const auto playable = std::span<const preview_audio_event_t>{schedule_->playable};
@@ -585,7 +588,8 @@ auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_f
 
     while (true) {
         const auto candidate = next_candidate(
-            {playable, bgm, resumed_playable_, resumed_bgm_, clicks, playable_head_.index, bgm_head_.index, resumed_playable_head_.index, resumed_bgm_head_.index,
+            {playable, bgm, resumed_playable_, resumed_bgm_, clicks, playable_head_.index,
+             bgm_head_.index, resumed_playable_head_.index, resumed_bgm_head_.index,
              metronome_head_.index, music_pending_, music_timeline_frame_, music_source_frame_,
              music_frame_count_, std::span{assist_clicks_.data(), assist_count_}, assist_head_,
              layer_tick_frames_, layer_tick_head_});
@@ -593,13 +597,15 @@ auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_f
             break;
         }
 
-        const auto selected_sources = sources_for_candidate(*candidate, objects_, resumed_objects_, metronome_);
+        const auto selected_sources =
+            sources_for_candidate(*candidate, objects_, resumed_objects_, metronome_);
         const auto sources = selected_sources.sources;
         const auto voice_kind = selected_sources.kind;
         if (sources.empty()) {
             ++result.missing_sources;
             advance_candidate(*candidate, playable_head_, bgm_head_, resumed_playable_head_,
-                              resumed_bgm_head_, metronome_head_, music_pending_, assist_head_, layer_tick_head_);
+                              resumed_bgm_head_, metronome_head_, music_pending_, assist_head_,
+                              layer_tick_head_);
             continue;
         }
         if (next_voice_id_ == 0 ||
@@ -608,12 +614,12 @@ auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_f
             break;
         }
 
-        const auto music_segment = candidate->queue == queue_kind_t::music
-                                       ? std::min<std::uint64_t>(
-                                             candidate->frame_count,
-                                             maximum_read_frames -
-                                                 candidate->sample_frame % maximum_read_frames)
-                                       : candidate->frame_count;
+        const auto music_segment =
+            candidate->queue == queue_kind_t::music
+                ? std::min<std::uint64_t>(candidate->frame_count,
+                                          maximum_read_frames -
+                                              candidate->sample_frame % maximum_read_frames)
+                : candidate->frame_count;
         auto segment = *candidate;
         segment.frame_count = music_segment;
         auto voices = candidate_voices(segment, sources, voice_kind, next_voice_id_);
@@ -632,17 +638,36 @@ auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_f
             music_pending_ = music_frame_count_ != 0;
         } else {
             advance_candidate(*candidate, playable_head_, bgm_head_, resumed_playable_head_,
-                              resumed_bgm_head_, metronome_head_, music_pending_, assist_head_, layer_tick_head_);
+                              resumed_bgm_head_, metronome_head_, music_pending_, assist_head_,
+                              layer_tick_head_);
         }
-        const auto last_voice_id = next_voice_id_ + sources.size() - 1;
-        if (last_voice_id == std::numeric_limits<std::uint64_t>::max()) {
-            next_voice_id_ = 0;
-        } else {
-            next_voice_id_ = last_voice_id + 1;
-        }
+        advance_voice_ids(sources.size());
     }
     last_materialized_end_ = exclusive_end_frame;
+    if (result.status != preview_bridge_pump_status_t::ready)
+        return std::unexpected(std::move(result));
     return result;
+}
+
+void preview_transport_bridge_t::advance_voice_ids(std::size_t source_count) {
+    const auto last_voice_id = next_voice_id_ + source_count - 1;
+    next_voice_id_ =
+        last_voice_id == std::numeric_limits<std::uint64_t>::max() ? 0 : last_voice_id + 1;
+}
+
+auto preview_bridge_pump_result_t::from(preview_bridge_pump_outcome_t&& outcome)
+    -> preview_bridge_pump_result_t {
+    const auto& effect = outcome ? *outcome : outcome.error();
+    return {.status = effect.status,
+            .scheduled_events = effect.scheduled_events,
+            .missing_sources = effect.missing_sources};
+}
+
+auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_frame,
+                                                   std::uint64_t current_frame)
+    -> preview_bridge_pump_result_t {
+    return preview_bridge_pump_result_t::from(
+        materialize_preview(exclusive_end_frame, current_frame));
 }
 
 auto preview_transport_bridge_t::is_exhausted() const noexcept -> bool {

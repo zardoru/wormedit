@@ -81,7 +81,18 @@ enum class preview_bridge_pump_status_t : std::uint8_t {
     transport_rejected_voice,
 };
 
+struct preview_bridge_pump_effect_t {
+    preview_bridge_pump_status_t status{preview_bridge_pump_status_t::not_started};
+    std::size_t scheduled_events{};
+    std::size_t missing_sources{};
+    auto operator==(const preview_bridge_pump_effect_t&) const -> bool = default;
+};
+using preview_bridge_pump_outcome_t =
+    result_t<preview_bridge_pump_effect_t, preview_bridge_pump_effect_t>;
+
 struct preview_bridge_pump_result_t {
+    [[nodiscard]] static auto from(preview_bridge_pump_outcome_t&& outcome)
+        -> preview_bridge_pump_result_t;
     preview_bridge_pump_status_t status{preview_bridge_pump_status_t::not_started};
     std::size_t scheduled_events{};
     std::size_t missing_sources{};
@@ -141,6 +152,9 @@ class preview_transport_bridge_t {
     [[nodiscard]] auto materialize_until(std::uint64_t exclusive_end_frame,
                                          std::uint64_t current_frame = 0)
         -> preview_bridge_pump_result_t;
+    [[nodiscard]] auto materialize_preview(std::uint64_t exclusive_end_frame,
+                                         std::uint64_t current_frame = 0)
+        -> preview_bridge_pump_outcome_t;
 
     [[nodiscard]] auto session_token() const noexcept -> std::optional<session_token_t> {
         return token_;
@@ -151,6 +165,7 @@ class preview_transport_bridge_t {
     [[nodiscard]] auto begin_session(std::uint64_t seek_frame) -> preview_bridge_start_outcome_t;
 
     void record_assist_handoff(bool assist, std::uint64_t frame);
+    void advance_voice_ids(std::size_t source_count);
     void refill_assist_clicks(std::uint64_t exclusive_end_frame, std::uint64_t current_frame);
     transport_t& transport_;
     std::size_t maximum_object_bindings_{};

@@ -305,9 +305,10 @@ TEST_CASE("preview bridge leaves an over-capacity same-frame event at the queue 
     const auto started = bridge.start(chart, objects);
     REQUIRE(started);
 
-    const auto initial = bridge.materialize_until(11);
-    CHECK(initial.status == preview_bridge_pump_status_t::capacity_limited);
-    CHECK(initial.scheduled_events == 2);
+    const auto initial = bridge.materialize_preview(11);
+    require_audio_condition(!initial.has_value());
+    CHECK(initial.error().status == preview_bridge_pump_status_t::capacity_limited);
+    CHECK(initial.error().scheduled_events == 2);
     CHECK(transport.scheduled_voice_count() == 2);
     std::array<float, 8> output{};
     REQUIRE(transport.mix(*started.token, 0, output).status == transport_mix_status_t::mixed);

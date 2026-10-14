@@ -2140,3 +2140,24 @@ TEST_CASE("Selected SpecialStyle layout replaces retained osu style on export",
         check_specialstyle(exported.text->find("SpecialStyle:0") != std::string::npos);
     }
 }
+
+TEST_CASE("osu shared parse warnings remain independent of song presence", "[unit][osu-mania][results]") {
+    using namespace wormedit;
+    osu_mania_parse_outcome_t parsed{.diagnostics = {{.severity = diagnostic_severity_t::warning, .message = "warning"}}};
+    CHECK(parsed.ok());
+    const auto legacy = osu_mania_parse_result_t::from(std::move(parsed));
+    CHECK_FALSE(legacy.has_errors());
+    CHECK_FALSE(legacy.song);
+    CHECK(legacy.diagnostics.front().message == "warning");
+}
+
+TEST_CASE("osu shared write warnings retain text", "[unit][osu-mania][results]") {
+    using namespace wormedit;
+    osu_mania_write_outcome_t written{.value = std::string{"text"},
+        .diagnostics = {{.severity = diagnostic_severity_t::warning, .message = "warning"}}};
+    CHECK(written.ok());
+    const auto legacy = osu_mania_write_result_t::from(std::move(written));
+    CHECK_FALSE(legacy.has_errors());
+    CHECK(legacy.text == "text");
+    CHECK(legacy.diagnostics.front().message == "warning");
+}

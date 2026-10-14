@@ -53,7 +53,10 @@ struct osu_mania_parse_options_t {
     std::size_t max_metadata_bytes{1U * 1024U * 1024U};
 };
 
+using osu_mania_parse_outcome_t = diagnosed_t<std::optional<song_document_t>, std::vector<osu_mania_parse_diagnostic_t>>;
 struct osu_mania_parse_result_t {
+    [[nodiscard]] static auto from(std::span<const std::byte> bytes, osu_mania_parse_options_t options = {}) -> osu_mania_parse_outcome_t;
+    [[nodiscard]] static auto from(osu_mania_parse_outcome_t&& outcome) -> osu_mania_parse_result_t;
     std::optional<song_document_t> song;
     std::vector<osu_mania_parse_diagnostic_t> diagnostics;
 
@@ -94,7 +97,10 @@ struct osu_mania_write_options_t {
     std::size_t max_metadata_bytes{1U * 1024U * 1024U};
 };
 
+using osu_mania_write_outcome_t = diagnosed_t<std::optional<std::string>, std::vector<osu_mania_write_diagnostic_t>>;
 struct osu_mania_write_result_t {
+    [[nodiscard]] static auto from(const song_document_t& song, osu_mania_write_options_t options = {}) -> osu_mania_write_outcome_t;
+    [[nodiscard]] static auto from(osu_mania_write_outcome_t&& outcome) -> osu_mania_write_result_t;
     std::optional<std::string> text;
     std::vector<osu_mania_write_diagnostic_t> diagnostics;
 

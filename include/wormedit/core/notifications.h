@@ -26,6 +26,15 @@ enum class notification_severity_t : std::uint8_t {
     error,
 };
 
+[[nodiscard]] auto to_notification_severity(
+    diagnostic_severity_t severity,
+    notification_severity_t unknown_severity = notification_severity_t::error) noexcept
+    -> notification_severity_t;
+[[nodiscard]] auto to_notification_severity(
+    const diagnostic_list_t& diagnostics,
+    notification_severity_t empty_severity = notification_severity_t::error) noexcept
+    -> notification_severity_t;
+
 enum class notification_source_t : std::uint8_t {
     document,
     edit,
@@ -207,6 +216,8 @@ class notification_sink_t {
               std::string_view message) const noexcept;
     void post_transient_hint(notification_source_t source, std::string_view message) const noexcept;
     void post(const notification_post_t& request) const noexcept;
+    void post_diagnostic(notification_source_t source,
+                         const diagnostic_t& diagnostic) const noexcept;
     void post_diagnostics(notification_source_t source, const diagnostic_list_t& diagnostics,
                           const notification_target_resolver_t& resolve_target = {}) const noexcept;
 

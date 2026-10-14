@@ -13,7 +13,8 @@ namespace {
 auto command_status(const document_command_result_t& result, const char* applied,
                     const char* unchanged, notification_severity_t* severity) -> std::string {
     if (!result.diagnostics.empty() && !result.applied) {
-        set_feedback_severity(severity, projection_diagnostic_severity(result.diagnostics.front().severity));
+        set_feedback_severity(severity,
+                              to_notification_severity(result.diagnostics.front().severity));
         return result.diagnostics.front().message;
     }
     set_feedback_severity(severity, result.applied ? notification_severity_t::success

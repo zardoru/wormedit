@@ -1,45 +1,65 @@
-#include "sys/compose_quantize_request.h"
 #include "sys/compose_area_actions.h"
-#include <wormedit/core/chart_clipboard.h>
+#include "sys/compose_action_context.h"
+#include "sys/compose_quantize_request.h"
 #include <algorithm>
+#include <numeric>
 #include <ranges>
 #include <utility>
-#include <numeric>
-#include <wormedit/core/scroll_speed_editor.h>
-#include <wormedit/core/measure_editor.h>
-#include <wormedit/core/snap.h>
+#include <wormedit/core/chart_clipboard.h>
+#include <wormedit/core/command.h>
 #include <wormedit/core/grid.h>
+#include <wormedit/core/measure_editor.h>
+#include <wormedit/core/scroll_speed_editor.h>
+#include <wormedit/core/snap.h>
 #include <wormedit/core/sv_recipe.h>
 #include <wormedit/core/virtual_canvas.h>
 
 namespace wormedit::sys {
+using namespace compose_action_detail;
+auto can_apply_compose_quantize(const application_command_state_t& application,
+                                const editor_interaction_state_t& state) -> bool {
+    return !application.project.compose_view.compose_timing_focus &&
+           !application.project.clipboard.paste_session &&
+           !wormedit::has_pending_editor_gesture(state);
+}
+
+auto apply_compose_quantize_selection(document_history_t& history,
+                                      editor_interaction_state_t& state,
+                                      application_command_state_t& application,
+                                      const WormUiWorkspaceAction& action)
+    -> compose_action_outcome_t {
+    const auto* chart = history.document.find_chart(state.chart);
+    if (!chart)
+        return compose_action_outcome_t::blocked("The chart is no longer available.");
+    const auto geometry = build_measure_index(*chart);
+    if (!std::holds_alternative<measure_index_t>(geometry))
+        return compose_action_outcome_t::blocked("The selected area has invalid measure geometry.");
+    auto request = quantize_request_from_action(action, {});
+    if (!request)
+        return compose_action_outcome_t::blocked("Selection quantization has invalid settings.");
+    request->selection = editor_quantize_selection(state);
+    auto report = preview_quantize_selection(*chart, request->selection->notes, *request);
+    auto result = apply_quantize_command(history, state.chart, *request);
+    if (!result.command.applied)
+        return result.command.diagnostics.empty()
+                   ? compose_action_outcome_t::blocked("Selection quantization rejected.")
+                   : compose_action_outcome_t::from(std::move(result.command.diagnostics),
+                                                    notification_source_t::edit,
+                                                    compose_feedback_delivery_t::first_diagnostic);
+    application.project.quantize.quantize_applied_report =
+        application_command_state_t::quantize_applied_report_t{
+            .song = history.document.id,
+            .chart = state.chart,
+            .rows = std::move(report.report_rows),
+            .total_rows = report.report_total_rows,
+            .truncated = report.report_truncated};
+    return compose_action_outcome_t::from(
+        std::move(result.command), "Selected objects quantized.", {},
+        "Selected objects quantized, but workspace rebinding failed.", notification_source_t::edit,
+        compose_diagnostic_feedback_policy_t::rejected_only);
+}
+
 namespace {
-struct area_action_context_t {
-    const WormUiWorkspaceAction& action;
-    wormedit::document_history_t& history;
-    wormedit::editor_interaction_state_t& state;
-    wormedit::notification_sink_t notifications{wormedit::notification_sink_t::muted()};
-    bool timing_locked{};
-};
-auto area_feedback(area_action_context_t& context, std::string message,
-                   wormedit::notification_severity_t severity,
-                   wormedit::notification_source_t source) -> std::string {
-    if (!message.empty()) {
-        context.notifications.post_feedback(severity, source, message);
-    }
-    return message;
-}
-auto area_rejection(area_action_context_t& context, std::string message) -> std::string {
-    return area_feedback(context, std::move(message), wormedit::notification_severity_t::warning,
-                         wormedit::notification_source_t::edit);
-}
-auto area_diagnostic(area_action_context_t& context,
-                     const wormedit::diagnostic_t& diagnostic) -> std::string {
-    if (context.notifications.is_muted())
-        return diagnostic.message;
-    context.notifications.post_diagnostics(wormedit::notification_source_t::edit, {diagnostic});
-    return diagnostic.message;
-}
 auto area_position_at_row(const wormedit::measure_index_t& index, std::uint64_t row)
     -> std::optional<wormedit::local_position_t> {
     for (const auto& entry : index.entries)
@@ -47,85 +67,69 @@ auto area_position_at_row(const wormedit::measure_index_t& index, std::uint64_t 
             return wormedit::local_position_t{entry.id, row - entry.absolute_begin_row};
     return std::nullopt;
 }
-std::string area_result_status(area_action_context_t& context,
-                               const wormedit::editor_interaction_result_t& result,
-                               const char* success) {
-    if (result.accepted)
-        return area_feedback(context, success,
-            result.document_changed ? wormedit::notification_severity_t::success
-                                    : wormedit::notification_severity_t::info,
-            wormedit::notification_source_t::edit);
-    return result.diagnostics.empty() ? area_rejection(context, "Area action rejected.")
-                                      : area_diagnostic(context, result.diagnostics.front());
-}
+
 auto snap_area_row(const wormedit::chart_document_t& chart, std::uint64_t row,
                    std::uint64_t denominator) -> std::optional<std::uint64_t> {
     return wormedit::snap_absolute_row(chart, row, denominator);
 }
 
-std::string quantize_compose_area_selection(area_action_context_t& context,
-                                            const wormedit::chart_document_t&) {
-    using namespace wormedit;
-    const auto& action = context.action;
-    auto request = quantize_request_from_action(action, {});
-    if (!request) return area_rejection(context, "Selection quantization has invalid settings.");
-    request->selection = editor_quantize_selection(context.state);
-    const auto result = apply_quantize_command(context.history, context.state.chart, *request);
-    if (!result.command.diagnostics.empty() && !result.command.applied)
-        return area_diagnostic(context, result.command.diagnostics.front());
-    return result.command.applied
-        ? area_feedback(context, "Selected objects quantized.", notification_severity_t::success,
-                        notification_source_t::edit)
-        : area_rejection(context, "Selection quantization rejected.");
-}
-
 // A new SV recipe over the retained area: linear 1x to 2x on the generic SV output, so it is
 // visible and editable straight away. Its values and sampling are edited afterwards.
-std::string add_sv_recipe_over_area(area_action_context_t& context,
-                                    const wormedit::chart_document_t& chart) {
+compose_action_outcome_t add_sv_recipe_over_area(compose_action_context_t& context,
+                                                 const wormedit::chart_document_t& chart) {
     using namespace wormedit;
     if (!context.state.retained_selection_range)
-        return area_rejection(context, "Select an area first.");
+        return compose_action_outcome_t::blocked("Select an area first.");
     sv_recipe_t recipe{.name = "Recipe " + std::to_string(chart.sv_recipes.size() + 1),
                        .range = *context.state.retained_selection_range,
                        .output = sv_recipe_output_t::sv,
                        .curve = sv_recipe_curve_t::linear,
                        .parameters = {.value_from = {1, 1}, .value_to = {2, 1}}};
-    const auto inserted = apply_sv_recipe_edit(context.history,
-                                               insert_sv_recipe_action_t{chart.id, std::move(recipe)});
+    auto inserted = apply_sv_recipe_edit(context.environment.document.history,
+                                         insert_sv_recipe_action_t{chart.id, std::move(recipe)});
     if (inserted.applied)
-        return area_feedback(context, "SV recipe added over the selected area.",
-                             notification_severity_t::success, notification_source_t::edit);
-    return inserted.diagnostics.empty() ? area_rejection(context, "SV recipe rejected.")
-                                        : area_diagnostic(context, inserted.diagnostics.front());
+        return compose_action_outcome_t::from(
+            std::move(inserted), "SV recipe added over the selected area.", {},
+            "Area action applied, but workspace rebinding failed.", notification_source_t::edit,
+            compose_diagnostic_feedback_policy_t::rejected_only);
+    return inserted.diagnostics.empty()
+               ? compose_action_outcome_t::blocked("SV recipe rejected.")
+               : compose_action_outcome_t::from(std::move(inserted.diagnostics),
+                                                notification_source_t::edit,
+                                                compose_feedback_delivery_t::first_diagnostic);
 }
 
 // A new SPEEDS event at the area start. Its transition spans the area, measured in beats (four
 // per standard measure, exact), and its multiplier starts neutral so it can be edited afterwards.
-std::string add_speed_span_over_area(area_action_context_t& context,
-                                     const wormedit::chart_document_t& chart,
-                                     const wormedit::measure_index_t& measures) {
+compose_action_outcome_t add_speed_span_over_area(compose_action_context_t& context,
+                                                  const wormedit::chart_document_t& chart,
+                                                  const wormedit::measure_index_t& measures) {
     using namespace wormedit;
     if (!context.state.retained_selection_range)
-        return area_rejection(context, "Select an area first.");
+        return compose_action_outcome_t::blocked("Select an area first.");
     const auto span = *context.state.retained_selection_range;
     const auto begin = absolute_row(measures, span.begin);
     const auto end = absolute_row(measures, span.end);
     if (!begin || !end || *begin >= *end || chart.divisions_per_standard_measure == 0)
-        return area_rejection(context, "The area must cover at least one row.");
+        return compose_action_outcome_t::blocked("The area must cover at least one row.");
     const auto numerator = (*end - *begin) * 4;
     const auto divisor = std::gcd(numerator, chart.divisions_per_standard_measure);
     const rational_t beats{numerator / divisor, chart.divisions_per_standard_measure / divisor};
-    const auto inserted = apply_scroll_speed_edit(
-        context.history, insert_speed_event_action_t{.chart = chart.id,
-                                                     .position = span.begin,
-                                                     .multiplier = {1, 1},
-                                                     .transition_beats = beats});
+    auto inserted = apply_scroll_speed_edit(context.environment.document.history,
+                                            insert_speed_event_action_t{.chart = chart.id,
+                                                                        .position = span.begin,
+                                                                        .multiplier = {1, 1},
+                                                                        .transition_beats = beats});
     if (inserted.applied)
-        return area_feedback(context, "SPEEDS span added over the selected area.",
-                             notification_severity_t::success, notification_source_t::edit);
-    return inserted.diagnostics.empty() ? area_rejection(context, "SPEEDS span rejected.")
-                                        : area_diagnostic(context, inserted.diagnostics.front());
+        return compose_action_outcome_t::from(
+            std::move(inserted), "SPEEDS span added over the selected area.", {},
+            "Area action applied, but workspace rebinding failed.", notification_source_t::edit,
+            compose_diagnostic_feedback_policy_t::rejected_only);
+    return inserted.diagnostics.empty()
+               ? compose_action_outcome_t::blocked("SPEEDS span rejected.")
+               : compose_action_outcome_t::from(std::move(inserted.diagnostics),
+                                                notification_source_t::edit,
+                                                compose_feedback_delivery_t::first_diagnostic);
 }
 
 auto select_compose_area_contents(wormedit::document_history_t& history,
@@ -167,27 +171,40 @@ bool supported_area_contents(const wormedit::editor_interaction_state_t& selecte
     });
 }
 
-std::string delete_compose_area_contents(area_action_context_t& context,
-                                         const wormedit::measure_index_t& index) {
+compose_action_outcome_t delete_compose_area_contents(compose_action_context_t& context,
+                                                      const wormedit::measure_index_t& index) {
     using namespace wormedit;
-    auto selected = select_compose_area_contents(context.history, context.state, index);
+    auto selected =
+        select_compose_area_contents(context.environment.document.history, context.state, index);
     if (!selected)
-        return area_rejection(context, "Select an authored area first.");
+        return compose_action_outcome_t::blocked("Select an authored area first.");
     if (!supported_area_contents(*selected))
-        return area_rejection(context, "Area deletion supports notes and BGM only; the area contains other objects.");
-    const auto result =
-        delete_selection_all(context.history, *selected,
-                             {.timing_locked = context.timing_locked});
+        return compose_action_outcome_t::blocked(
+            "Area deletion supports notes and BGM only; the area contains other objects.");
+    auto result = delete_selection_all(
+        context.environment.document.history, *selected,
+        {.timing_locked = context.environment.editor.commands.project.timing_recipe.timing_locked});
     if (result.accepted) {
         context.state.selected_notes = std::move(selected->selected_notes);
         context.state.selected_objects = std::move(selected->selected_objects);
     }
-    return area_result_status(context, result, "Selected area contents deleted.");
+    if (!result.accepted)
+        return result.diagnostics.empty()
+                   ? compose_action_outcome_t::blocked("Area action rejected.")
+                   : compose_action_outcome_t::from(std::move(result.diagnostics),
+                                                    notification_source_t::edit,
+                                                    compose_feedback_delivery_t::first_diagnostic);
+    auto outcome = compose_action_outcome_t::from(
+        "Selected area contents deleted.",
+        result.document_changed ? notification_severity_t::success : notification_severity_t::info,
+        notification_source_t::edit, result.document_changed);
+    outcome.rebind_failure = "Selected area contents deleted, but workspace rebinding failed.";
+    return outcome;
 }
 
-std::string resize_compose_area(area_action_context_t& context,
-                                const wormedit::chart_document_t& chart,
-                                const wormedit::measure_index_t& measures) {
+compose_action_outcome_t resize_compose_area(compose_action_context_t& context,
+                                             const wormedit::chart_document_t& chart,
+                                             const wormedit::measure_index_t& measures) {
     using namespace wormedit;
     const auto kind = context.action.compose_action;
     auto begin = context.action.compose_area_begin_row;
@@ -200,100 +217,75 @@ std::string resize_compose_area(area_action_context_t& context,
                            ? virtual_geometry->total_rows
                            : measures.total_rows;
     if (begin >= total || end >= total)
-        return area_rejection(context, "The area is outside the chart geometry.");
+        return compose_action_outcome_t::blocked("The area is outside the chart geometry.");
     if (kind == WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET) {
         auto& moving = context.action.compose_area_begin_edge ? begin : end;
         const auto snapped = snap_area_row(chart, moving, wormedit::edit_snap_denominator(chart, context.state));
         if (!snapped)
-            return area_rejection(context, "The active grid cannot resize this area.");
+            return compose_action_outcome_t::blocked("The active grid cannot resize this area.");
         moving = *snapped;
         if (begin > end)
             std::swap(begin, end);
     }
     if (begin >= end)
-        return area_rejection(context, "Area edges must retain a non-empty interval.");
+        return compose_action_outcome_t::blocked("Area edges must retain a non-empty interval.");
     if (context.action.compose_area_virtual) {
         const auto canvas = build_virtual_canvas(chart);
         const auto* geometry = std::get_if<virtual_canvas_t>(&canvas);
         if (!geometry || end >= geometry->total_rows)
-            return area_rejection(context, "The area is outside the BMS canvas.");
+            return compose_action_outcome_t::blocked("The area is outside the BMS canvas.");
         context.state.retained_selection_range.reset();
         context.state.retained_canvas_selection_range = canvas_row_span_t{begin, end};
     } else {
         const auto first = area_position_at_row(measures, begin);
         const auto last = area_position_at_row(measures, end);
         if (!first || !last)
-            return area_rejection(context, "The area is outside the authored chart.");
+            return compose_action_outcome_t::blocked("The area is outside the authored chart.");
         context.state.retained_selection_range = position_span_t{*first, *last};
         context.state.retained_canvas_selection_range = canvas_row_span_t{begin, end};
     }
-    return area_feedback(context,
+    return compose_action_outcome_t::from(
         kind == WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE ? "Area resize canceled."
-                                                         : "Selected area resized.",
+                                                          : "Selected area resized.",
         notification_severity_t::hint, notification_source_t::input);
 }
 
-std::string convert_compose_area_to_pause(area_action_context_t& context) {
+compose_action_outcome_t convert_compose_area_to_pause(compose_action_context_t& context) {
     using namespace wormedit;
-    if (context.timing_locked) return area_rejection(context, "Timing is locked.");
-    if (has_pending_editor_gesture(context.state))
-        return area_rejection(context, "Finish the current edit before converting the area.");
+    if (context.environment.editor.commands.project.timing_recipe.timing_locked)
+        return compose_action_outcome_t::blocked("Timing is locked.");
+    if (auto blocked =
+            context.require_no_gesture("Finish the current edit before converting the area."))
+        return std::move(*blocked);
     if (!context.state.retained_selection_range)
-        return area_rejection(context, "Select a nonempty authored row range first.");
+        return compose_action_outcome_t::blocked("Select a nonempty authored row range first.");
     const auto kind = context.action.compose_action;
     const bool delay = kind == WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_DELAY ||
                        kind == WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_DELAY_RESIZE;
     const bool resize = kind == WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP_RESIZE ||
                         kind == WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_DELAY_RESIZE;
-    const auto result = apply_measure_edit(
-        context.history, convert_range_to_pause_action_t{
-                             context.state.chart, *context.state.retained_selection_range,
-                             delay ? pause_kind_t::delay : pause_kind_t::stop, resize});
+    auto result =
+        apply_measure_edit(context.environment.document.history,
+                           convert_range_to_pause_action_t{
+                               context.state.chart, *context.state.retained_selection_range,
+                               delay ? pause_kind_t::delay : pause_kind_t::stop, resize});
     if (!result.applied)
-        return result.diagnostics.empty() ? area_rejection(context, "Area conversion rejected.")
-            : area_diagnostic(context, result.diagnostics.front());
-    const auto chart = std::ranges::find(context.history.document.charts, context.state.chart, &chart_document_t::id);
+        return result.diagnostics.empty()
+                   ? compose_action_outcome_t::blocked("Area conversion rejected.")
+                   : compose_action_outcome_t::from(std::move(result.diagnostics),
+                                                    notification_source_t::edit,
+                                                    compose_feedback_delivery_t::first_diagnostic);
+    const auto chart = std::ranges::find(context.environment.document.history.document.charts,
+                                         context.state.chart, &chart_document_t::id);
     place_cursor_at(context.state, chart->pauses.back().position);
     context.state.retained_selection_range.reset();
     context.state.retained_canvas_selection_range.reset();
     context.state.selected_canvas_measure.reset();
-    return area_feedback(context, delay ? "Selected rows converted to Delay." : "Selected rows converted to Stop.",
-                         notification_severity_t::success, notification_source_t::edit);
-}
-
-std::optional<std::string> dispatch_compose_area_action(area_action_context_t& context) {
-    using namespace wormedit;
-    const auto kind = context.action.compose_action;
-    if (kind == WORM_UI_COMPOSE_ACTION_AREA_RANGE_CLEAR) {
-        context.state.retained_selection_range.reset();
-        context.state.retained_canvas_selection_range.reset();
-        return area_feedback(context, "Selected area cleared.", notification_severity_t::hint,
-                             notification_source_t::input);
-    }
-    if (kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET &&
-        kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE &&
-        kind != WORM_UI_COMPOSE_ACTION_AREA_DELETE && kind != WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE &&
-        kind != WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE &&
-        kind != WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN && !compose_area_pause_conversion(kind))
-        return std::nullopt;
-    const auto chart = std::ranges::find(context.history.document.charts, context.state.chart,
-                                         &chart_document_t::id);
-    if (chart == context.history.document.charts.end())
-        return area_rejection(context, "The chart is no longer available.");
-    const auto built = build_measure_index(*chart);
-    const auto* measures = std::get_if<measure_index_t>(&built);
-    if (!measures)
-        return area_rejection(context, "The selected area has invalid measure geometry.");
-    if (compose_area_pause_conversion(kind)) return convert_compose_area_to_pause(context);
-    if (kind == WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE)
-        return quantize_compose_area_selection(context, *chart);
-    if (kind == WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE)
-        return add_sv_recipe_over_area(context, *chart);
-    if (kind == WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN)
-        return add_speed_span_over_area(context, *chart, *measures);
-    if (kind == WORM_UI_COMPOSE_ACTION_AREA_DELETE)
-        return delete_compose_area_contents(context, *measures);
-    return resize_compose_area(context, *chart, *measures);
+    return compose_action_outcome_t::from(
+        std::move(result),
+        delay ? "Selected rows converted to Delay." : "Selected rows converted to Stop.", {},
+        "Area conversion applied, but workspace rebinding failed.", notification_source_t::edit,
+        compose_diagnostic_feedback_policy_t::rejected_only);
 }
 
 } // namespace
@@ -349,29 +341,53 @@ auto compose_area_delete_supported(wormedit::document_history_t& history,
     return selected && supported_area_contents(*selected);
 }
 
-auto dispatch_compose_area_action(const WormUiWorkspaceAction& action,
-                                  wormedit::document_history_t& history,
-                                  wormedit::editor_interaction_state_t& state,
-                                  wormedit::notification_sink_t notifications, bool timing_locked)
-    -> std::optional<std::string> {
-    area_action_context_t context{action, history, state, notifications, timing_locked};
-    const auto kind = action.compose_action;
-    if (!action.compose_area_clear_requested && kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_CLEAR &&
-        kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET &&
+namespace compose_action_detail {
+std::optional<compose_action_outcome_t>
+dispatch_compose_area_action(compose_action_context_t& context) {
+    using namespace wormedit;
+    const auto kind = context.action.compose_action;
+    if (compose_area_pause_conversion(kind) &&
+        context.environment.document.history.document.id.value !=
+            context.action.compose_input_project_id)
+        return compose_action_outcome_t::blocked(wormedit::stale_action_message("Area conversion"));
+    if (context.action.compose_area_clear_requested) {
+        context.state.retained_selection_range.reset();
+        context.state.retained_canvas_selection_range.reset();
+    }
+    if (kind == WORM_UI_COMPOSE_ACTION_AREA_RANGE_CLEAR) {
+        context.state.retained_selection_range.reset();
+        context.state.retained_canvas_selection_range.reset();
+        return compose_action_outcome_t::from(
+            "Selected area cleared.", notification_severity_t::hint, notification_source_t::input);
+    }
+    if (kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET &&
         kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE &&
-        kind != WORM_UI_COMPOSE_ACTION_AREA_DELETE && kind != WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE &&
+        kind != WORM_UI_COMPOSE_ACTION_AREA_DELETE &&
+        kind != WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE &&
         kind != WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE &&
         kind != WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN && !compose_area_pause_conversion(kind))
         return std::nullopt;
-    if (compose_area_pause_conversion(kind) && history.document.id.value != action.compose_input_project_id)
-        return area_rejection(context, wormedit::stale_action_message("Area conversion"));
-    if (state.chart.value != action.compose_input_chart_id ||
-        history.document.revision != action.compose_input_document_revision)
-        return area_rejection(context, wormedit::stale_action_message("Area action"));
-    if (action.compose_area_clear_requested) {
-        state.retained_selection_range.reset();
-        state.retained_canvas_selection_range.reset();
-    }
-    return dispatch_compose_area_action(context);
+    if (kind == WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE)
+        return apply_compose_quantize_selection(context.environment.document.history, context.state,
+                                                context.environment.editor.commands,
+                                                context.action);
+    const auto chart = std::ranges::find(context.environment.document.history.document.charts,
+                                         context.state.chart, &chart_document_t::id);
+    if (chart == context.environment.document.history.document.charts.end())
+        return compose_action_outcome_t::blocked("The chart is no longer available.");
+    const auto built = build_measure_index(*chart);
+    const auto* measures = std::get_if<measure_index_t>(&built);
+    if (!measures)
+        return compose_action_outcome_t::blocked("The selected area has invalid measure geometry.");
+    if (compose_area_pause_conversion(kind))
+        return convert_compose_area_to_pause(context);
+    if (kind == WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE)
+        return add_sv_recipe_over_area(context, *chart);
+    if (kind == WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN)
+        return add_speed_span_over_area(context, *chart, *measures);
+    if (kind == WORM_UI_COMPOSE_ACTION_AREA_DELETE)
+        return delete_compose_area_contents(context, *measures);
+    return resize_compose_area(context, *chart, *measures);
 }
+} // namespace compose_action_detail
 } // namespace wormedit::sys

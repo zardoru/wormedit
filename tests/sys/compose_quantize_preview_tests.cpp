@@ -1,5 +1,6 @@
-#include "sys/compose_quantize_preview.h"
+#include "compose_area_dispatch_fixture.h"
 #include "sys/compose_area_actions.h"
+#include "sys/compose_quantize_preview.h"
 #include <wormedit/core/command.h>
 #include <wormedit/core/quantize.h>
 

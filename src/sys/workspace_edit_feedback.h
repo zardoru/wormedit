@@ -36,8 +36,9 @@ public:
             notifications.post(notification_severity_t::error, notification_source_t::document,
                                "Workspace could not follow the latest document edit.");
         else
-            notifications.post(projection_diagnostic_severity(rebound.diagnostics.front().severity),
-                               notification_source_t::document, rebound.diagnostics.front().message);
+            notifications.post(to_notification_severity(rebound.diagnostics.front().severity),
+                               notification_source_t::document,
+                               rebound.diagnostics.front().message);
     }
 };
 

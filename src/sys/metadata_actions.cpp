@@ -32,10 +32,7 @@ struct metadata_edit_feedback_t {
 
 auto diagnostic_feedback(const diagnostic_t& diagnostic) -> metadata_edit_feedback_t {
     const auto severity = diagnostic.severity;
-    return {severity == diagnostic_severity_t::error ? notification_severity_t::error
-            : severity == diagnostic_severity_t::warning ? notification_severity_t::warning
-                                                         : notification_severity_t::info,
-            diagnostic.message};
+    return {to_notification_severity(severity, notification_severity_t::info), diagnostic.message};
 }
 
 auto parse_unsigned(const char* text) -> std::optional<std::uint64_t> {

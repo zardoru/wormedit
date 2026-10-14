@@ -15,12 +15,7 @@ auto recovery_diagnostic_severity(
     const auto* diagnostics = &result.diagnostics;
     if (diagnostics->empty() && result.action_result) diagnostics = &result.action_result->diagnostics;
     if (diagnostics->empty()) return fallback;
-    switch (diagnostics->front().severity) {
-    case wormedit::diagnostic_severity_t::info: return wormedit::notification_severity_t::info;
-    case wormedit::diagnostic_severity_t::warning: return wormedit::notification_severity_t::warning;
-    case wormedit::diagnostic_severity_t::error: return wormedit::notification_severity_t::error;
-    }
-    return fallback;
+    return wormedit::to_notification_severity(diagnostics->front().severity, fallback);
 }
 auto first_recovery_diagnostic(
     const wormedit::native_project_recovery_controller_dispatch_result_t& result) -> std::string {
@@ -203,12 +198,7 @@ void recovery_scan_notification_publisher_t::publish(
     if (generation_ == view.scan_generation) return;
     generation_ = view.scan_generation;
     for (const auto& diagnostic : view.diagnostics) {
-        notification_severity_t severity = notification_severity_t::error;
-        switch (diagnostic.severity) {
-        case diagnostic_severity_t::info: severity = notification_severity_t::info; break;
-        case diagnostic_severity_t::warning: severity = notification_severity_t::warning; break;
-        case diagnostic_severity_t::error: break;
-        }
+        const auto severity = to_notification_severity(diagnostic.severity);
         notifications.post(severity, notification_source_t::recovery,
             diagnostic.path.empty() ? diagnostic.message
                 : diagnostic.message + " (" + diagnostic.path.generic_string() + ")");

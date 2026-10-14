@@ -993,3 +993,44 @@ TEST_CASE("Muted sinks drop every posting form before resolving diagnostics", "[
         {{.severity = diagnostic_severity_t::error, .message = "Dropped diagnostic."}},
         unexpected_muted_target);
 }
+
+TEST_CASE("Shared notification severity conversion preserves explicit fallback policies",
+          "[notifications]") {
+    expect_transient(to_notification_severity(diagnostic_severity_t::info) ==
+                     notification_severity_t::info);
+    expect_transient(to_notification_severity(diagnostic_severity_t::warning) ==
+                     notification_severity_t::warning);
+    expect_transient(to_notification_severity(diagnostic_severity_t::error) ==
+                     notification_severity_t::error);
+    const auto unknown = static_cast<diagnostic_severity_t>(99);
+    expect_transient(to_notification_severity(unknown) == notification_severity_t::error);
+    expect_transient(to_notification_severity(unknown, notification_severity_t::info) ==
+                     notification_severity_t::info);
+    const diagnostic_list_t empty;
+    expect_transient(to_notification_severity(empty) == notification_severity_t::error);
+    expect_transient(to_notification_severity(empty, notification_severity_t::info) ==
+                     notification_severity_t::info);
+    const diagnostic_list_t diagnostics{{.severity = diagnostic_severity_t::warning},
+                                        {.severity = diagnostic_severity_t::error}};
+    expect_transient(to_notification_severity(diagnostics) == notification_severity_t::warning);
+    const diagnostic_list_t unrecognized{{.severity = unknown}};
+    expect_transient(to_notification_severity(unrecognized, notification_severity_t::info) ==
+                     notification_severity_t::error);
+}
+
+TEST_CASE("Single diagnostic sink posts preserve severity source and object targets",
+          "[notifications]") {
+    notification_center_t center;
+    const notification_sink_t sink{center};
+    const diagnostic_t diagnostic{.severity = diagnostic_severity_t::warning,
+                                  .message = "One targeted diagnostic.",
+                                  .object = object_id_t{42}};
+    sink.post_diagnostic(notification_source_t::edit, diagnostic);
+    center.drain_inbox(notification_time_t{});
+    const auto entries = center.snapshot(notification_capacity);
+    REQUIRE(entries.size() == 1);
+    expect_transient(entries.front().severity == notification_severity_t::warning);
+    expect_transient(entries.front().source == notification_source_t::edit);
+    expect_transient(entries.front().target == notification_target_t{object_id_t{42}});
+    notification_sink_t::muted().post_diagnostic(notification_source_t::document, diagnostic);
+}

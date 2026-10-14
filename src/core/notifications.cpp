@@ -100,18 +100,6 @@ auto find_entry(std::vector<notification_entry_t>& entries, notification_id_t id
                         [id](const notification_entry_t& entry) { return entry.id == id; });
 }
 
-auto diagnostic_severity(diagnostic_severity_t severity) noexcept -> notification_severity_t {
-    switch (severity) {
-    case diagnostic_severity_t::info:
-        return notification_severity_t::info;
-    case diagnostic_severity_t::warning:
-        return notification_severity_t::warning;
-    case diagnostic_severity_t::error:
-        return notification_severity_t::error;
-    }
-    return notification_severity_t::error;
-}
-
 auto diagnostic_target(const diagnostic_t& diagnostic,
                        const notification_target_resolver_t& resolve_target)
     -> notification_target_t {
@@ -147,7 +135,7 @@ auto collapsed_diagnostic_post(notification_source_t source, const diagnostic_li
     -> notification_post_t {
     auto highest = notification_severity_t::info;
     for (const auto& diagnostic : diagnostics)
-        highest = std::max(highest, diagnostic_severity(diagnostic.severity));
+        highest = std::max(highest, to_notification_severity(diagnostic.severity));
     return notification_post_t{
         .severity = highest,
         .source = source,
@@ -166,12 +154,12 @@ auto diagnostic_posts(notification_source_t source, const diagnostic_list_t& dia
     std::vector<notification_post_t> posts;
     posts.reserve(diagnostics.size());
     for (const auto& diagnostic : diagnostics) {
-        posts.push_back(notification_post_t{
-            .severity = diagnostic_severity(diagnostic.severity),
-            .source = source,
-            .message = diagnostic.message,
-            .detail = {},
-            .target = diagnostic_target(diagnostic, resolve_target)});
+        posts.push_back(
+            notification_post_t{.severity = to_notification_severity(diagnostic.severity),
+                                .source = source,
+                                .message = diagnostic.message,
+                                .detail = {},
+                                .target = diagnostic_target(diagnostic, resolve_target)});
     }
     return posts;
 }
@@ -184,6 +172,27 @@ void add_statistics(notification_statistics_t& total, const notification_statist
 }
 
 } // namespace
+
+auto to_notification_severity(diagnostic_severity_t severity,
+                              notification_severity_t unknown_severity) noexcept
+    -> notification_severity_t {
+    switch (severity) {
+    case diagnostic_severity_t::info:
+        return notification_severity_t::info;
+    case diagnostic_severity_t::warning:
+        return notification_severity_t::warning;
+    case diagnostic_severity_t::error:
+        return notification_severity_t::error;
+    }
+    return unknown_severity;
+}
+
+auto to_notification_severity(const diagnostic_list_t& diagnostics,
+                              notification_severity_t empty_severity) noexcept
+    -> notification_severity_t {
+    return diagnostics.empty() ? empty_severity
+                               : to_notification_severity(diagnostics.front().severity);
+}
 
 void truncate_notification_text(std::string& text, std::size_t max_bytes) {
     if (text.size() <= max_bytes)
@@ -304,6 +313,20 @@ void notification_sink_t::post(const notification_post_t& request) const noexcep
                                           .target = request.target});
     } catch (...) {
         // Copying and center posting can allocate or call an injected clock.
+    }
+}
+
+void notification_sink_t::post_diagnostic(notification_source_t source,
+                                          const diagnostic_t& diagnostic) const noexcept {
+    if (is_muted())
+        return;
+    try {
+        post(notification_post_t{.severity = to_notification_severity(diagnostic.severity),
+                                 .source = source,
+                                 .message = diagnostic.message,
+                                 .target = diagnostic_target(diagnostic, {})});
+    } catch (...) {
+        // Diagnostic construction shares the sink's noexcept posting contract.
     }
 }
 

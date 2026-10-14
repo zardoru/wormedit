@@ -1,14 +1,21 @@
 #pragma once
 
 #include "sys/compose_view.h"
-#include "sys/metadata_asset_runtime.h"
-#include "sys/metadata_drop_state.h"
-#include "sys/project_open.h"
-#include "sys/resource_job_state.h"
 #include <wormedit/core/editor_navigation_input.h>
 #include <wormedit/core/viewport_input.h>
 
+namespace wormedit {
+class task_scheduler_t;
+}
 namespace wormedit::sys {
+struct metadata_drop_state_t;
+struct project_identity_t;
+namespace runtime {
+struct resource_copy_t;
+struct output_group_export_t;
+class metadata_asset_t;
+} // namespace runtime
+
 // Each bundle borrows one coherent operation's inputs. None may escape a synchronous call.
 struct document_edit_inputs_t {
     document_history_t& history;
@@ -45,7 +52,8 @@ struct compose_resource_inputs_t {
 struct compose_action_inputs_t {
     document_edit_inputs_t document;
     compose_editor_inputs_t editor;
-    compose_resource_inputs_t resources;
+    // Resource jobs are absent in dispatches that only edit chart state.
+    std::optional<compose_resource_inputs_t> resources;
 };
 struct compose_input_controls_t {
     compose_scene_cache_t& cache;

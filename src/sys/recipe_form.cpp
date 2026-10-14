@@ -223,8 +223,10 @@ auto apply_recipe_form(document_history_t& history, chart_id_t chart_id, recipe_
         set_feedback_severity(severity, notification_severity_t::success);
         return "SV recipe updated.";
     }
-    set_feedback_severity(severity, result.diagnostics.empty() ? notification_severity_t::info
-        : projection_diagnostic_severity(result.diagnostics.front().severity));
+    set_feedback_severity(severity,
+                          result.diagnostics.empty()
+                              ? notification_severity_t::info
+                              : to_notification_severity(result.diagnostics.front().severity));
     return result.diagnostics.empty() ? "SV recipe is unchanged." : result.diagnostics.front().message;
 }
 

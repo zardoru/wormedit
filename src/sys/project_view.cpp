@@ -363,9 +363,7 @@ auto apply_project_chart_ui_action(project_chart_runtime_t& runtime,
     if (!error.empty()) {
         const auto severity = result.command.diagnostics.front().severity;
         return {.status = error,
-            .severity = severity == diagnostic_severity_t::error ? notification_severity_t::error
-                      : severity == diagnostic_severity_t::warning ? notification_severity_t::warning
-                                                                  : notification_severity_t::info};
+                .severity = to_notification_severity(severity, notification_severity_t::info)};
     }
     return {.status = result.command.applied ? "Project chart changes applied." : "Project chart action completed.",
         .open_chart = result.open_chart, .applied = result.command.applied,

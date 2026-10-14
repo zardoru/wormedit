@@ -68,16 +68,6 @@ auto post_runtime_message(const wormedit::notification_sink_t& notifications,
     notifications.post(severity, source, message);
 }
 
-auto notification_severity(wormedit::diagnostic_severity_t severity)
-    -> wormedit::notification_severity_t {
-    switch (severity) {
-    case wormedit::diagnostic_severity_t::info: return wormedit::notification_severity_t::info;
-    case wormedit::diagnostic_severity_t::warning: return wormedit::notification_severity_t::warning;
-    case wormedit::diagnostic_severity_t::error: return wormedit::notification_severity_t::error;
-    }
-    return wormedit::notification_severity_t::error;
-}
-
 auto post_start_result(const wormedit::notification_sink_t& notifications,
                        wormedit::notification_severity_t severity,
                        wormedit::notification_source_t source, std::string message) -> std::string {
@@ -108,7 +98,7 @@ auto link_imported_metadata_audio(
     if (!applied.diagnostics.empty()) {
         source = wormedit::notification_source_t::document;
         status = applied.diagnostics.front().message;
-        severity = notification_severity(applied.diagnostics.front().severity);
+        severity = to_notification_severity(applied.diagnostics.front().severity);
         return false;
     }
     if (!applied.applied) {
@@ -120,8 +110,9 @@ auto link_imported_metadata_audio(
     const auto rebound = wormedit::rebind_workspace(workspace, history);
     if (!rebound) {
         source = wormedit::notification_source_t::document;
-        severity = rebound.diagnostics.empty() ? wormedit::notification_severity_t::error
-            : notification_severity(rebound.diagnostics.front().severity);
+        severity = rebound.diagnostics.empty()
+                       ? wormedit::notification_severity_t::error
+                       : to_notification_severity(rebound.diagnostics.front().severity);
         status = rebound.diagnostics.empty()
                      ? "Audio imported, but workspace rebinding failed."
                      : rebound.diagnostics.front().message;

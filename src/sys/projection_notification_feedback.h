@@ -28,20 +28,6 @@ struct projection_feedback_t {
     auto operator==(const projection_feedback_t&) const -> bool = default;
 };
 
-inline auto projection_diagnostic_severity(diagnostic_severity_t severity) -> notification_severity_t {
-    switch (severity) {
-    case diagnostic_severity_t::info: return notification_severity_t::info;
-    case diagnostic_severity_t::warning: return notification_severity_t::warning;
-    case diagnostic_severity_t::error: return notification_severity_t::error;
-    }
-    return notification_severity_t::error;
-}
-
-inline auto projection_diagnostic_severity(const diagnostic_list_t& diagnostics) -> notification_severity_t {
-    return diagnostics.empty() ? notification_severity_t::error
-                              : projection_diagnostic_severity(diagnostics.front().severity);
-}
-
 struct projection_identity_t {
     song_id_t song;
     std::uint64_t revision{};

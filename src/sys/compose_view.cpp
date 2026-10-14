@@ -110,8 +110,9 @@ void report_compose_projection(flattened_workspace_t& flattened,
 
 void report_compose_diagnostic(flattened_workspace_t& flattened, projection_feedback_kind_t producer,
     const wormedit::diagnostic_list_t& diagnostics, const char* fallback) {
-    report_compose_projection(flattened, producer, projection_diagnostic_severity(diagnostics),
-        diagnostics.empty() ? std::string{fallback} : diagnostics.front().message);
+    report_compose_projection(flattened, producer, to_notification_severity(diagnostics),
+                              diagnostics.empty() ? std::string{fallback}
+                                                  : diagnostics.front().message);
 }
 } // namespace compose_projection_detail
 
@@ -256,11 +257,8 @@ auto apply_compose_paste(application_command_state_t& application_state,
     if (!applied.applied) {
         status = applied.diagnostics.empty() ? "Paste failed." : applied.diagnostics.front().message;
         if (severity && !applied.diagnostics.empty()) {
-            switch (applied.diagnostics.front().severity) {
-            case wormedit::diagnostic_severity_t::info: *severity = wormedit::notification_severity_t::info; break;
-            case wormedit::diagnostic_severity_t::warning: break;
-            case wormedit::diagnostic_severity_t::error: *severity = wormedit::notification_severity_t::error; break;
-            }
+            *severity = wormedit::to_notification_severity(
+                applied.diagnostics.front().severity, wormedit::notification_severity_t::warning);
         }
         return false;
     }
@@ -1184,7 +1182,7 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
             const auto& diagnostics = std::get<wormedit::diagnostic_list_t>(built);
             cache.frame.projection_error = diagnostics.empty() ? "The field layout could not be indexed."
                                                : diagnostics.front().message;
-            cache.frame.projection_error_severity = projection_diagnostic_severity(diagnostics);
+            cache.frame.projection_error_severity = to_notification_severity(diagnostics);
         }
         if (cache.scene.index) {
             cache.timing.kiai_spans = wormedit::sys::build_kiai_spans_view(

@@ -64,7 +64,7 @@ auto make_existing_beat_section_edit(compose_action_context_t& context,
                                                         span, std::nullopt}};
 }
 
-std::string beat_section_success(const WormUiWorkspaceAction& action, bool from_selection) {
+std::string_view beat_section_success(const WormUiWorkspaceAction& action, bool from_selection) {
     switch (action.compose_action) {
     case WORM_UI_COMPOSE_ACTION_ADD_BEAT_SECTION:
         return from_selection ? "Section added from the retained area/Space interval."

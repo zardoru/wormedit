@@ -540,9 +540,10 @@ auto revise_bmson_draft_marker(const WormUiComposeInputAction& input,
     if (!checked)
         return compose_input_family_result_t::stop_with_feedback(
             checked.diagnostics.empty() ? "Staged BMSON region edit could not be validated."
-                                       : checked.diagnostics.front().message,
-            checked.diagnostics.empty() ? notification_severity_t::warning
-                : input_notification_severity(checked.diagnostics.front().severity),
+                                        : checked.diagnostics.front().message,
+            checked.diagnostics.empty()
+                ? notification_severity_t::warning
+                : to_notification_severity(checked.diagnostics.front().severity),
             notification_source_t::edit);
     draft->markers = std::move(proposed);
     const auto message = input.kind == WORM_UI_COMPOSE_INPUT_BMSON_REMOVE_DRAFT
@@ -583,7 +584,7 @@ auto toggle_bmson_restart(const WormUiComposeInputAction& input, bmson_compose_c
     if (!applied.diagnostics.empty())
         return compose_input_family_result_t::stop_with_feedback(
             applied.diagnostics.front().message,
-            input_notification_severity(applied.diagnostics.front().severity),
+            to_notification_severity(applied.diagnostics.front().severity),
             notification_source_t::edit);
     if (!applied.applied)
         return compose_input_family_result_t::stop_with_feedback(
@@ -1294,9 +1295,10 @@ auto cancel_compose_gesture(compose_input_context_t& context,
 
 auto compose_input_rejection(std::string message,
     const wormedit::editor_interaction_result_t& result) -> compose_input_family_result_t {
-    return compose_input_family_result_t::stop_with_feedback(std::move(message),
+    return compose_input_family_result_t::stop_with_feedback(
+        std::move(message),
         result.diagnostics.empty() ? wormedit::notification_severity_t::warning
-            : input_notification_severity(result.diagnostics.front().severity),
+                                   : to_notification_severity(result.diagnostics.front().severity),
         wormedit::notification_source_t::input);
 }
 
@@ -1517,7 +1519,7 @@ auto input_result_severity(const WormUiComposeInputAction& input,
     if (!result.accepted)
         return result.diagnostics.empty()
                    ? notification_severity_t::warning
-                   : input_notification_severity(result.diagnostics.front().severity);
+                   : to_notification_severity(result.diagnostics.front().severity);
     if (input.kind == WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_BACKWARD ||
         input.kind == WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD ||
         input.kind == WORM_UI_COMPOSE_INPUT_ARM_NOTE_KIND)
@@ -2125,10 +2127,9 @@ void apply_compose_viewport_scroll(const wormedit::viewport_scroll_action_t& scr
         context.state.viewport_scroll_pixels + chart_delta,
         downscroll ? editor_field_scroll_direction_t::down : editor_field_scroll_direction_t::up);
     status = compose_result_status(result, "Compose field scrolled.");
-    const auto severity = result.accepted
-                              ? notification_severity_t::hint
+    const auto severity = result.accepted ? notification_severity_t::hint
                           : !result.diagnostics.empty()
-                              ? input_notification_severity(result.diagnostics.front().severity)
+                              ? to_notification_severity(result.diagnostics.front().severity)
                               : notification_severity_t::warning;
     post_input_feedback(context.notifications, severity, notification_source_t::input, status);
 }
@@ -2145,11 +2146,11 @@ void apply_compose_viewport_actions(const wormedit::viewport_action_batch_t& act
                 wormedit::adjust_editor_zoom_action_t{
                     .factor = zoom->factor, .anchor_screen_y_pixels = zoom->cursor_y_pixels});
             status = compose_result_status(result, "Compose field zoomed at the pointer.");
-            const auto severity = result.accepted
-                                      ? notification_severity_t::hint
-                                  : !result.diagnostics.empty()
-                                      ? input_notification_severity(result.diagnostics.front().severity)
-                                      : notification_severity_t::warning;
+            const auto severity =
+                result.accepted ? notification_severity_t::hint
+                : !result.diagnostics.empty()
+                    ? to_notification_severity(result.diagnostics.front().severity)
+                    : notification_severity_t::warning;
             post_input_feedback(context.notifications, severity, notification_source_t::input,
                                 status);
         }
@@ -2172,10 +2173,9 @@ void apply_compose_pinch_zoom(const WormUiComposeViewportInput& input,
         wormedit::adjust_editor_zoom_action_t{.factor = input.zoom_factor,
                                               .anchor_screen_y_pixels = input.cursor_y_pixels});
     status = compose_result_status(result, "Compose field zoomed at the pinch focus.");
-    const auto severity = result.accepted
-                              ? wormedit::notification_severity_t::hint
+    const auto severity = result.accepted ? wormedit::notification_severity_t::hint
                           : !result.diagnostics.empty()
-                              ? input_notification_severity(result.diagnostics.front().severity)
+                              ? to_notification_severity(result.diagnostics.front().severity)
                               : wormedit::notification_severity_t::warning;
     post_input_feedback(context.notifications, severity, wormedit::notification_source_t::input,
                         status);

@@ -163,7 +163,7 @@ auto dispatch_bmson_razor_input(const WormUiComposeInputAction& input,
     const auto path =
         interpolate_bmson_razor_path(*chart, stroke->last_position, *position, denominator);
     if (!path) {
-        severity = input_notification_severity(path.diagnostics.front().severity);
+        severity = to_notification_severity(path.diagnostics.front().severity);
         return path.diagnostics.front().message;
     }
     std::vector<bmson_sound_marker_insertion_t> pending;
@@ -245,7 +245,7 @@ auto input_diagnostic_feedback(const auto& diagnostics, std::string_view fallbac
         return compose_input_family_result_t::stop_with_feedback(std::string{fallback},
                                                                  fallback_severity, source);
     return compose_input_family_result_t::stop_with_feedback(
-        diagnostics.front().message, input_notification_severity(diagnostics.front().severity),
+        diagnostics.front().message, to_notification_severity(diagnostics.front().severity),
         source);
 }
 
@@ -477,7 +477,7 @@ auto insert_bmson_stem_point(const WormUiComposeInputAction& input,
     if (!applied.diagnostics.empty())
         return compose_input_family_result_t::stop_with_feedback(
             applied.diagnostics.front().message,
-            input_notification_severity(applied.diagnostics.front().severity),
+            to_notification_severity(applied.diagnostics.front().severity),
             notification_source_t::edit);
     if (!applied.applied)
         return "No BMSON point was added.";

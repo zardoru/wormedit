@@ -3,6 +3,7 @@
 #include "sys/application_edit_inputs.h"
 #include "sys/bookmark_commands.h"
 #include "sys/bookmark_rename_commands.h"
+#include "sys/compose_action_context.h"
 #include "sys/compose_action_outcome.h"
 #include "sys/compose_actions.h"
 #include "sys/compose_area_actions.h"
@@ -82,29 +83,12 @@
 #include "sys/audio_fallback.h"
 
 namespace wormedit::sys::compose_action_detail {
-struct compose_action_context_t {
-    const compose_action_inputs_t& environment;
-    const WormUiWorkspaceAction& action;
-    wormedit::editor_interaction_state_t& state;
-    double viewport_height;
-    bool metadata_import_busy;
-    wormedit::editor_field_scroll_direction_t scroll_direction;
-    notification_sink_t notifications{notification_sink_t::muted()};
-
-    [[nodiscard]] auto require_no_gesture(std::string_view message) const
-        -> std::optional<compose_action_outcome_t>;
-};
-
-auto finish_compose_action(compose_action_context_t& context, compose_action_outcome_t outcome)
-    -> std::string;
-
 struct compose_feedback_t {
     std::string message;
     notification_severity_t severity;
     notification_source_t source;
 };
 
-auto compose_notification_severity(diagnostic_severity_t severity) -> notification_severity_t;
 
 void post_typed_compose_feedback(const notification_sink_t& notifications,
                                  notification_severity_t severity, notification_source_t source,
@@ -339,7 +323,7 @@ auto make_existing_beat_section_edit(compose_action_context_t& context,
                                      const wormedit::chart_document_t& chart)
     -> std::variant<wormedit::marker_edit_action_t, std::string>;
 
-std::string beat_section_success(const WormUiWorkspaceAction& action, bool from_selection);
+std::string_view beat_section_success(const WormUiWorkspaceAction& action, bool from_selection);
 
 compose_action_outcome_t edit_beat_section(compose_action_context_t& context);
 
@@ -489,8 +473,7 @@ template <typename diagnostic_t_>
 auto publish_bms_diagnostic(notification_sink_t notifications, const diagnostic_t_& diagnostic,
                             notification_source_t source = notification_source_t::format)
     -> std::string {
-    notifications.post(compose_notification_severity(diagnostic.severity), source,
-                       diagnostic.message);
+    notifications.post(to_notification_severity(diagnostic.severity), source, diagnostic.message);
     return diagnostic.message;
 }
 
@@ -582,10 +565,6 @@ auto find_selection_snap(compose_action_context_t& context) -> std::string;
 auto dispatch_quantize_preset_action(compose_action_context_t& context)
     -> std::optional<std::string>;
 
-auto dispatch_compose_area_with_quantize_report(const WormUiWorkspaceAction& action,
-                                                wormedit::document_history_t& history,
-                                                wormedit::editor_interaction_state_t& state,
-                                                application_command_state_t& application_state,
-                                                notification_sink_t notifications)
+auto dispatch_compose_area_with_quantize_report(compose_action_context_t& context)
     -> std::optional<std::string>;
 } // namespace wormedit::sys::compose_action_detail

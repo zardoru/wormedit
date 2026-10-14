@@ -30,10 +30,7 @@ struct sound_feedback_t {
 
 auto sound_diagnostic_feedback(const diagnostic_t& diagnostic) -> sound_feedback_t {
     const auto severity = diagnostic.severity;
-    return {severity == diagnostic_severity_t::error ? notification_severity_t::error
-            : severity == diagnostic_severity_t::warning ? notification_severity_t::warning
-                                                         : notification_severity_t::info,
-            diagnostic.message};
+    return {to_notification_severity(severity, notification_severity_t::info), diagnostic.message};
 }
 
 auto publish_sound_feedback(const notification_sink_t& notifications, notification_source_t source,

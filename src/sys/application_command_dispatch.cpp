@@ -1,8 +1,10 @@
 #include "sys/application_command_dispatch.h"
 #include "sys/application_edit_inputs.h"
 #include "sys/compose_actions.h"
+#include "sys/compose_area_actions.h"
 #include "sys/compose_measure_commands.h"
 #include "sys/compose_note_to_bgm.h"
+#include "sys/compose_quantize_request.h"
 #include "sys/compose_semantic_layer_commands.h"
 
 #include "sys/bookmark_commands.h"
@@ -98,16 +100,6 @@ auto post_command_message(notification_sink_t& sink, notification_severity_t sev
     sink.post_feedback(severity, source, message);
 }
 
-auto notification_severity(wormedit::diagnostic_severity_t severity)
-    -> notification_severity_t {
-    switch (severity) {
-    case wormedit::diagnostic_severity_t::info: return notification_severity_t::info;
-    case wormedit::diagnostic_severity_t::warning: return notification_severity_t::warning;
-    case wormedit::diagnostic_severity_t::error: return notification_severity_t::error;
-    }
-    return notification_severity_t::error;
-}
-
 } // namespace
 
 auto reject_application_command(
@@ -131,7 +123,7 @@ auto accept_editor_command(const wormedit::editor_interaction_result_t& result,
         post_command_message(sink, accepted_severity, source, std::string{accepted});
     } else if (!result.diagnostics.empty()) {
         const auto& diagnostic = result.diagnostics.front();
-        post_command_message(sink, notification_severity(diagnostic.severity), source,
+        post_command_message(sink, to_notification_severity(diagnostic.severity), source,
                              diagnostic.message);
     } else {
         post_command_message(sink, notification_severity_t::warning, source,
@@ -596,7 +588,7 @@ auto navigate_active_markers(command_context_t& context,
 void post_marker_warnings(notification_sink_t& sink,
                           const wormedit::diagnostic_list_t& diagnostics) {
     for (const auto& diagnostic : diagnostics)
-        post_command_message(sink, notification_severity(diagnostic.severity),
+        post_command_message(sink, to_notification_severity(diagnostic.severity),
                              notification_source_t::input, diagnostic.message);
 }
 
@@ -651,8 +643,9 @@ auto navigation_commands(command_context_t& context) -> std::optional<command_re
             context.environment.document.notifications,
             marker.diagnostics.empty() ? "Bookmark navigation could not resolve an exact beat row."
                                        : marker.diagnostics.front().message,
-            marker.diagnostics.empty() ? notification_severity_t::error
-                                       : notification_severity(marker.diagnostics.front().severity),
+            marker.diagnostics.empty()
+                ? notification_severity_t::error
+                : to_notification_severity(marker.diagnostics.front().severity),
             notification_source_t::input, diagnostic_code_t::invalid_id);
     post_marker_warnings(context.environment.document.notifications, marker.diagnostics);
     return accept_editor_command(
@@ -677,7 +670,7 @@ void post_bookmark_outcome(notification_sink_t& sink, command_kind_t kind,
                                           : notification_severity_t::hint,
                              source, outcome.status);
     } else if (!outcome.diagnostics.empty()) {
-        post_command_message(sink, notification_severity(outcome.diagnostics.front().severity),
+        post_command_message(sink, to_notification_severity(outcome.diagnostics.front().severity),
                              source, outcome.diagnostics.front().message);
     } else {
         post_command_message(sink, notification_severity_t::warning, source, outcome.status);
@@ -738,26 +731,30 @@ auto compose_quantize_command(command_context_t& context) -> std::optional<comma
     if (kind != command_kind_t::edit_toggle_quantize_preview &&
         kind != command_kind_t::edit_apply_quantize) return std::nullopt;
     auto* state = context.compose();
-    if (!state || context.environment.editor.commands.project.compose_view.compose_timing_focus ||
-        context.environment.editor.commands.project.clipboard.paste_session ||
-        editor_interaction_has_pending_gesture(*state))
-        return reject_application_command(context.environment.document.notifications,
-                                          "Quantize requires an idle active Compose chart.",
-                                          notification_severity_t::warning,
-                                          notification_source_t::input);
+    if (!state || !can_apply_compose_quantize(context.environment.editor.commands, *state))
+        return reject_application_command(
+            context.environment.document.notifications, compose_quantize_idle_message,
+            notification_severity_t::warning, notification_source_t::input);
     const auto toggle = kind == command_kind_t::edit_toggle_quantize_preview;
-    const auto accepted =
-        invoke_compose_quantize_command(toggle, context.environment.document.history, *state,
-                                        context.environment.editor.commands,
-                                        context.environment.document.notifications);
+    auto outcome = invoke_compose_quantize_command(toggle, context.environment.document.history,
+                                                   *state, context.environment.editor.commands);
     if (toggle)
         context.environment.document.notifications.post_transient_hint(
             notification_source_t::edit,
             context.environment.editor.commands.project.quantize.quantize_editor->preview_enabled
                 ? "Quantize preview enabled."
                 : "Quantize preview disabled.");
-    if (accepted && !toggle) return context.rebind();
-    return command_result_t{.accepted = accepted};
+    if (toggle)
+        return command_result_t{.accepted = outcome.accepted};
+    auto finished =
+        finish_compose_action(context.environment.document,
+                              context.environment.document.notifications, std::move(outcome));
+    if (!finished.accepted && finished.mutated)
+        return command_result_t{.accepted = false,
+                                .diagnostics = {{.severity = diagnostic_severity_t::error,
+                                                 .code = diagnostic_code_t::invalid_id,
+                                                 .message = std::move(finished.message)}}};
+    return command_result_t{.accepted = finished.accepted};
 }
 
 auto project_export_command(command_context_t& context) -> std::optional<command_result_t> {
@@ -903,7 +900,7 @@ auto workspace_tab_command(command_context_t& context) -> std::optional<command_
                          applied.applied ? notification_severity_t::info
                          : applied.diagnostics.empty()
                              ? notification_severity_t::warning
-                             : notification_severity(applied.diagnostics.front().severity),
+                             : to_notification_severity(applied.diagnostics.front().severity),
                          notification_source_t::input,
                          applied.applied               ? "Workspace tab changed."
                          : applied.diagnostics.empty() ? "Workspace tab change was rejected."
@@ -1018,7 +1015,7 @@ auto timing_insert_command(command_context_t& context) -> std::optional<command_
             context.environment.document.notifications, message,
             preview.diagnostics.empty()
                 ? notification_severity_t::warning
-                : notification_severity(preview.diagnostics.front().severity),
+                : to_notification_severity(preview.diagnostics.front().severity),
             notification_source_t::edit);
     }
     context.environment.editor.timing_stage = std::move(preview);
@@ -1174,7 +1171,7 @@ auto semantic_layer_membership_command(command_context_t& context) -> command_re
                                              : "Semantic-layer membership was unchanged.");
     else
         post_command_message(context.environment.document.notifications,
-                             notification_severity(applied.diagnostics.front().severity),
+                             to_notification_severity(applied.diagnostics.front().severity),
                              notification_source_t::edit, applied.diagnostics.front().message);
     return {.accepted = applied.applied || applied.diagnostics.empty(),
             .diagnostics = applied.diagnostics};

@@ -1,21 +1,22 @@
 #include "../support/stale_action_assertions.h"
-#include "sys/compose_view_internal.h"
-#include "sys/compose_input_internal.h"
-#include "sys/options_runtime.h"
-#include "sys/chart_preview_state.h"
-#include "project_audio_sources_fixture.h"
 #include "../sys/application_dispatch_fixture.h"
+#include "compose_area_dispatch_fixture.h"
+#include "project_audio_sources_fixture.h"
 #include "sys/application_command_dispatch.h"
 #include "sys/application_defaults.h"
 #include "sys/bmson_waveform_view.h"
+#include "sys/chart_preview_state.h"
 #include "sys/compare_view.h"
 #include "sys/compose_actions.h"
 #include "sys/compose_area_actions.h"
 #include "sys/compose_input.h"
+#include "sys/compose_input_internal.h"
 #include "sys/compose_minimap_navigation.h"
 #include "sys/compose_playhead_cursor.h"
 #include "sys/compose_view.h"
+#include "sys/compose_view_internal.h"
 #include "sys/frame_timing.h"
+#include "sys/options_runtime.h"
 #include "sys/recipe_form.h"
 #include "sys/timing_view.h"
 #include "sys/waveform_analysis_runtime.h"
@@ -6422,11 +6423,15 @@ TEST_CASE("Quantize ghost preview defaults off and toggles without editing the c
     const auto revision = fixture.history.document.revision;
     expect_compose_test(!fixture.flattened.view.compose.quantize_preview_enabled);
     expect_compose_test(fixture.flattened.view.compose.quantize_ghost_count == 0);
-    expect_compose_test(invoke_compose_quantize_command(true, fixture.history, *fixture.interaction, fixture.application));
+    expect_compose_test(invoke_compose_quantize_command(true, fixture.history, *fixture.interaction,
+                                                        fixture.application)
+                            .accepted);
     fixture.project();
     expect_compose_test(fixture.flattened.view.compose.quantize_preview_enabled);
     expect_compose_test(fixture.flattened.view.compose.quantize_ghost_count == 1);
-    expect_compose_test(invoke_compose_quantize_command(true, fixture.history, *fixture.interaction, fixture.application));
+    expect_compose_test(invoke_compose_quantize_command(true, fixture.history, *fixture.interaction,
+                                                        fixture.application)
+                            .accepted);
     fixture.project();
     expect_compose_test(!fixture.flattened.view.compose.quantize_preview_enabled);
     expect_compose_test(fixture.flattened.view.compose.quantize_ghost_count == 0);

@@ -19,17 +19,6 @@ auto copy_failure_severity(wormedit::project_asset_copy_status_t status)
     return notification_severity_t::error;
 }
 
-auto diagnostic_notification_severity(wormedit::diagnostic_severity_t severity)
-    -> wormedit::notification_severity_t {
-    using namespace wormedit;
-    switch (severity) {
-    case diagnostic_severity_t::info: return notification_severity_t::info;
-    case diagnostic_severity_t::warning: return notification_severity_t::warning;
-    case diagnostic_severity_t::error: return notification_severity_t::error;
-    }
-    return notification_severity_t::error;
-}
-
 struct resource_copy_feedback_t {
     std::string message;
     wormedit::notification_severity_t severity{wormedit::notification_severity_t::error};
@@ -82,7 +71,7 @@ auto complete_project_resource_copy(const pending_project_resource_copy_t& reque
         {.asset = request.asset, .source_path = copied.relative_path});
     if (!relinked.diagnostics.empty())
         return {relinked.diagnostics.front().message,
-                diagnostic_notification_severity(relinked.diagnostics.front().severity)};
+                to_notification_severity(relinked.diagnostics.front().severity)};
     if (!rebind_workspace(workspace, history))
         return {"Resource copied, but workspace rebinding failed.", notification_severity_t::error,
                 true, notification_source_t::document};

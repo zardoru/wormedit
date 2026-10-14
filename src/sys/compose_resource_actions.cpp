@@ -376,12 +376,12 @@ auto prepare_resource_copy(compose_action_context_t& context)
     using namespace wormedit;
     auto& action = context.action;
     auto& history = context.environment.document.history;
-    if (context.environment.resources.jobs.copy.busy() ||
-        context.environment.resources.jobs.exporter.busy() || context.metadata_import_busy)
+    if (context.environment.resources->jobs.copy.busy() ||
+        context.environment.resources->jobs.exporter.busy() || context.metadata_import_busy)
         return compose_feedback_t{
             "Wait for the current resource copy, import, or export to finish.",
             notification_severity_t::warning, notification_source_t::import_};
-    if (context.environment.resources.asset_base.empty())
+    if (context.environment.resources->asset_base.empty())
         return compose_feedback_t{
             "Open a saved native project before copying resource files into it.",
             notification_severity_t::warning, notification_source_t::import_};
@@ -424,7 +424,7 @@ std::optional<std::string> start_resource_copy(compose_action_context_t& context
     using namespace wormedit;
     task_graph_t graph{1};
     const project_asset_copy_request_t request{.project_directory =
-                                                   context.environment.resources.asset_base,
+                                                   context.environment.resources->asset_base,
                                                .source_path = plan.source,
                                                .asset = plan.asset};
     const auto added = graph.add_task({}, [request, plan](std::span<const task_result_t>,
@@ -444,7 +444,7 @@ std::optional<std::string> start_resource_copy(compose_action_context_t& context
         return compose_action_error(
             context, added.error ? added.error->message : "Resource copy could not start.",
             plan.export_copy ? notification_source_t::export_ : notification_source_t::import_);
-    auto submitted = context.environment.resources.jobs.scheduler.submit(std::move(graph));
+    auto submitted = context.environment.resources->jobs.scheduler.submit(std::move(graph));
     if (!submitted)
         return compose_action_error(
             context, submitted.error ? submitted.error->message : "Resource copy could not start.",
@@ -458,7 +458,7 @@ std::optional<std::string> start_resource_copy(compose_action_context_t& context
         .source_path = plan.source,
         .output_path = plan.output,
         .export_copy = plan.export_copy};
-    if (!context.environment.resources.jobs.copy.start(std::move(pending))) {
+    if (!context.environment.resources->jobs.copy.start(std::move(pending))) {
         pending.graph.cancel();
         return compose_action_warning(
             context, "Wait for the current resource copy, import, or export to finish.",
@@ -470,6 +470,8 @@ std::optional<std::string> start_resource_copy(compose_action_context_t& context
 
 std::optional<std::string>
 dispatch_compose_copy_resource_action(compose_action_context_t& context) {
+    if (auto blocked = context.require_resources())
+        return finish_compose_action(context, std::move(*blocked));
     if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT &&
         context.action.compose_action != WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT)
         return std::nullopt;
@@ -483,11 +485,11 @@ auto prepare_output_export(compose_action_context_t& context)
     -> std::variant<output_export_plan_t, compose_feedback_t> {
     using namespace wormedit;
     const auto& doc = context.environment.document.history.document;
-    if (context.environment.resources.asset_base.empty())
+    if (context.environment.resources->asset_base.empty())
         return compose_feedback_t{"Open a saved native project before exporting an output group.",
                                   notification_severity_t::warning, notification_source_t::export_};
-    if (context.environment.resources.jobs.copy.busy() ||
-        context.environment.resources.jobs.exporter.busy() || context.metadata_import_busy)
+    if (context.environment.resources->jobs.copy.busy() ||
+        context.environment.resources->jobs.exporter.busy() || context.metadata_import_busy)
         return compose_feedback_t{
             "Wait for the current resource copy, import, or export to finish.",
             notification_severity_t::warning, notification_source_t::export_};
@@ -530,7 +532,7 @@ std::optional<std::string> start_output_export(compose_action_context_t& context
     task_graph_t graph{1};
     const auto added = graph.add_task(
         {}, [snapshot = std::move(snapshot), group = std::move(plan.group),
-             request = std::move(plan.request), base = context.environment.resources.asset_base](
+             request = std::move(plan.request), base = context.environment.resources->asset_base](
                 std::span<const task_result_t>, std::stop_token stop) mutable {
             return run_output_group_export_task(snapshot, group, request, base, stop);
         });
@@ -538,7 +540,8 @@ std::optional<std::string> start_output_export(compose_action_context_t& context
         return compose_action_error(context,
                                     added.error ? added.error->message : "Export could not start.",
                                     notification_source_t::export_);
-    auto submitted = context.environment.resources.jobs.exporter.scheduler.submit(std::move(graph));
+    auto submitted =
+        context.environment.resources->jobs.exporter.scheduler.submit(std::move(graph));
     if (!submitted)
         return compose_action_error(
             context, submitted.error ? submitted.error->message : "Export could not start.",
@@ -548,7 +551,7 @@ std::optional<std::string> start_output_export(compose_action_context_t& context
         .task = *added.id,
         .song = context.environment.document.history.document.id,
         .revision = context.environment.document.history.document.revision};
-    if (!context.environment.resources.jobs.exporter.start(std::move(pending))) {
+    if (!context.environment.resources->jobs.exporter.start(std::move(pending))) {
         pending.graph.cancel();
         return compose_action_warning(
             context, "Wait for the current resource copy, import, or export to finish.",
@@ -559,6 +562,8 @@ std::optional<std::string> start_output_export(compose_action_context_t& context
 
 std::optional<std::string>
 dispatch_compose_export_output_group_action(compose_action_context_t& context) {
+    if (auto blocked = context.require_resources())
+        return finish_compose_action(context, std::move(*blocked));
     if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP)
         return std::nullopt;
     auto plan = prepare_output_export(context);
@@ -741,6 +746,8 @@ std::optional<std::string> create_resource_from_asset(compose_action_context_t& 
 }
 
 std::string relink_sound_fallback(compose_action_context_t& context) {
+    if (auto blocked = context.require_resources())
+        return finish_compose_action(context, std::move(*blocked));
     using namespace wormedit;
     const auto& action = context.action;
     if (action.compose_input_document_revision != context.environment.document.history.document.revision)
@@ -755,7 +762,7 @@ std::string relink_sound_fallback(compose_action_context_t& context) {
     if (asset == document.audio_assets.end())
         return compose_action_warning(context, "That sound is no longer in the project.");
     const auto fallback =
-        resolve_audio_fallback(asset->source_path, context.environment.resources.asset_base);
+        resolve_audio_fallback(asset->source_path, context.environment.resources->asset_base);
     if (action.compose_fallback_candidate >= fallback.candidates.size())
         return compose_action_warning(context, "That file is no longer available.");
     const auto& chosen = fallback.candidates[action.compose_fallback_candidate];

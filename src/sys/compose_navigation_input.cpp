@@ -42,20 +42,6 @@ auto compose_navigation_action(WormUiComposeNavigationAction action)
 
 namespace compose_navigation_input_detail {
 
-auto input_notification_severity(wormedit::diagnostic_severity_t severity)
-    -> wormedit::notification_severity_t {
-    using namespace wormedit;
-    switch (severity) {
-    case diagnostic_severity_t::info:
-        return notification_severity_t::info;
-    case diagnostic_severity_t::warning:
-        return notification_severity_t::warning;
-    case diagnostic_severity_t::error:
-        return notification_severity_t::error;
-    }
-    return notification_severity_t::error;
-}
-
 auto post_input_feedback(const wormedit::notification_sink_t* notifications,
                          wormedit::notification_severity_t severity,
                          wormedit::notification_source_t source, std::string_view message) -> void {
@@ -191,7 +177,7 @@ auto dispatch_compose_navigation_actions(const wormedit::editor_navigation_actio
         status = compose_result_status(result, accepted);
         const auto severity = result.accepted ? notification_severity_t::hint
                               : !result.diagnostics.empty()
-                                  ? input_notification_severity(result.diagnostics.front().severity)
+                                  ? to_notification_severity(result.diagnostics.front().severity)
                                   : notification_severity_t::warning;
         post_input_feedback(notifications, severity, notification_source_t::input, status);
         if (!result.accepted)

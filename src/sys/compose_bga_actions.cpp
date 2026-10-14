@@ -14,10 +14,7 @@ struct bga_feedback_t {
 };
 auto bga_diagnostic_feedback(const diagnostic_t& diagnostic) -> bga_feedback_t {
     const auto severity = diagnostic.severity;
-    return {severity == diagnostic_severity_t::error ? notification_severity_t::error
-            : severity == diagnostic_severity_t::warning ? notification_severity_t::warning
-                                                         : notification_severity_t::info,
-            diagnostic.message};
+    return {to_notification_severity(severity, notification_severity_t::info), diagnostic.message};
 }
 auto publish_bga_feedback(const notification_sink_t& notifications, notification_source_t source,
                           bga_feedback_t feedback) -> std::string {

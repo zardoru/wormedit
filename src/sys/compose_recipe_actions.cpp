@@ -27,7 +27,7 @@ compose_action_outcome_t propose_recipe_form_action(compose_action_context_t& co
     const auto severity =
         preview.diagnostics.empty()
             ? notification_severity_t::hint
-            : projection_diagnostic_severity(preview.diagnostics.front().severity);
+            : to_notification_severity(preview.diagnostics.front().severity);
     const auto source =
         preview.diagnostics.empty() ? notification_source_t::input : notification_source_t::edit;
     context.environment.editor.commands.project.timing_recipe.recipe_preview = std::move(preview);

@@ -7,6 +7,7 @@
 #include "sys/compose_input.h"
 #include "sys/external_player_runtime.h"
 #include "sys/metadata_actions.h"
+#include "sys/project_open.h"
 #include "sys/project_view.h"
 #include "sys/timing_edit_runtime.h"
 #include "sys/timing_view.h"
@@ -65,9 +66,9 @@ inline auto dispatch_compose_view_action(
     const compose_action_inputs_t environment{
         {history, workspace, sink},
         {application_state, defaults.compose_interaction_state},
-        {defaults.project_identity.asset_base,
-         {resource_copy_scheduler, resource_copy_runtime, export_runtime},
-         {defaults.metadata_drop, defaults.metadata_asset_runtime}}};
+        compose_resource_inputs_t{defaults.project_identity.asset_base,
+                                  {resource_copy_scheduler, resource_copy_runtime, export_runtime},
+                                  {defaults.metadata_drop, defaults.metadata_asset_runtime}}};
     return dispatch_compose_view_action(action, environment, state, viewport_height,
                                         metadata_import_busy, true);
 }
@@ -87,9 +88,9 @@ inline auto dispatch_compose_workspace_action(
     const compose_action_inputs_t environment{
         {history, workspace, notifications},
         {application_state, interaction_state},
-        {defaults.project_identity.asset_base,
-         {resource_copy_scheduler, resource_copy_runtime, export_runtime},
-         {metadata_drop, metadata_asset_runtime}}};
+        compose_resource_inputs_t{defaults.project_identity.asset_base,
+                                  {resource_copy_scheduler, resource_copy_runtime, export_runtime},
+                                  {metadata_drop, metadata_asset_runtime}}};
     return dispatch_compose_workspace_action(action, environment, viewport_height,
                                              metadata_import_busy);
 }

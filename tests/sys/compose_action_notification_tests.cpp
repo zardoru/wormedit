@@ -2411,12 +2411,14 @@ TEST_CASE("Rejected Compose meter edits keep their validation feedback without r
     fixture.workspace.song = song_id_t{99};
     const auto selected = GENERATE(false, true);
     auto action = fixture.action(selected ? WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER
-                                         : WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER);
+                                          : WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER);
     const std::array<std::uint64_t, 1> ids{0};
     action.compose_measure_ids = ids.data();
     action.compose_measure_id_count = ids.size();
-    std::snprintf(action.timing_meter_numerator_text, sizeof(action.timing_meter_numerator_text), "0");
-    std::snprintf(action.timing_meter_denominator_text, sizeof(action.timing_meter_denominator_text), "4");
+    std::snprintf(action.timing_meter_numerator_text, sizeof(action.timing_meter_numerator_text),
+                  "0");
+    std::snprintf(action.timing_meter_denominator_text,
+                  sizeof(action.timing_meter_denominator_text), "4");
     check_action(fixture.dispatch(action) == "A meter needs a non-zero numerator and denominator.");
     const auto entries = fixture.entries();
     require_action(entries.size() == 1);
@@ -2429,20 +2431,56 @@ TEST_CASE("Rejected Compose transforms and measure edits retain validation feedb
     action_notification_fixture_t fixture;
     fixture.workspace.song = song_id_t{99};
     const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_TRANSFORM_MIRROR,
-                              WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS,
-                              WORM_UI_COMPOSE_ACTION_MOVE_BAR_LINE);
+                               WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS,
+                               WORM_UI_COMPOSE_ACTION_MOVE_BAR_LINE);
     auto action = fixture.action(kind);
     const std::array<std::uint64_t, 1> ids{0};
     action.compose_measure_ids = ids.data();
     action.compose_measure_id_count = ids.size();
     const auto expected = kind == WORM_UI_COMPOSE_ACTION_TRANSFORM_MIRROR
-        ? "Select notes before transforming them."
-        : kind == WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS
-        ? "A chart needs at least one measure."
-        : "A meter needs a non-zero numerator and denominator.";
+                              ? "Select notes before transforming them."
+                          : kind == WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS
+                              ? "A chart needs at least one measure."
+                              : "A meter needs a non-zero numerator and denominator.";
     check_action(fixture.dispatch(action) == expected);
     const auto entries = fixture.entries();
     require_action(entries.size() == 1);
     check_action(entries.front().severity == notification_severity_t::warning);
     check_action(fixture.history.undo.empty());
+}
+
+TEST_CASE("Compose area mutations rebind the workspace before publishing feedback",
+          "[compose-action-notifications][compose-outcome]") {
+    action_notification_fixture_t fixture;
+    fixture.state.retained_selection_range =
+        position_span_t{{measure_id_t{1}, 0}, {measure_id_t{1}, 240}};
+    const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE,
+                               WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN);
+    const auto status = fixture.dispatch(fixture.action(kind));
+    check_action(status == (kind == WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE
+                                ? "SV recipe added over the selected area."
+                                : "SPEEDS span added over the selected area."));
+    check_action(fixture.history.undo.size() == 1);
+    check_action(fixture.workspace.document_revision == fixture.history.document.revision);
+    check_action(fixture.workspace.history.undo_depth == 1);
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::success);
+}
+
+TEST_CASE("Registered quantize rebind failure posts the edit and one error while rejecting the command",
+          "[compose-action-notifications][compose-outcome]") {
+    action_notification_fixture_t fixture;
+    fixture.history.document.charts.front().measures.front().notes = {
+        {.id = object_id_t{4}, .position = {measure_id_t{1}, 130}, .lane = lane_id_t{1}}};
+    fixture.state.selected_notes = {object_id_t{4}};
+    fixture.workspace.song = song_id_t{99};
+    check_action_false(fixture.invoke_registered("edit.apply_quantize"));
+    check_action(fixture.history.undo.size() == 1);
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 2);
+    check_action(entries.front().severity == notification_severity_t::error);
+    check_action(entries.front().source == notification_source_t::document);
+    check_action(entries.back().severity == notification_severity_t::success);
+    check_action(entries.back().source == notification_source_t::edit);
 }

@@ -229,16 +229,6 @@ using wormedit::sys::selected_bmson_waveform_source;
 using wormedit::sys::selected_chart;
 using wormedit::sys::visible_semantic_layer_by_id;
 
-auto notification_severity_for(wormedit::diagnostic_severity_t severity)
-    -> wormedit::notification_severity_t {
-    switch (severity) {
-    case wormedit::diagnostic_severity_t::info: return wormedit::notification_severity_t::info;
-    case wormedit::diagnostic_severity_t::warning: return wormedit::notification_severity_t::warning;
-    case wormedit::diagnostic_severity_t::error: return wormedit::notification_severity_t::error;
-    }
-    return wormedit::notification_severity_t::error;
-}
-
 void post_edit_rejection(wormedit::notification_sink_t& notifications,
                          const wormedit::diagnostic_list_t& diagnostics,
                          std::string_view fallback) {
@@ -246,7 +236,7 @@ void post_edit_rejection(wormedit::notification_sink_t& notifications,
         notifications.post(wormedit::notification_severity_t::warning,
                            wormedit::notification_source_t::edit, fallback);
     else
-        notifications.post(notification_severity_for(diagnostics.front().severity),
+        notifications.post(to_notification_severity(diagnostics.front().severity),
                            wormedit::notification_source_t::edit, diagnostics.front().message);
 }
 
@@ -965,8 +955,9 @@ void post_shortcut_rejection(wormedit::notification_sink_t& notifications,
         notifications.post(wormedit::notification_severity_t::warning,
                            wormedit::notification_source_t::input, "Shortcut command was rejected.");
     else
-        notifications.post(notification_severity_for(result.diagnostics.front().severity),
-                           wormedit::notification_source_t::input, result.diagnostics.front().message);
+        notifications.post(to_notification_severity(result.diagnostics.front().severity),
+                           wormedit::notification_source_t::input,
+                           result.diagnostics.front().message);
 }
 
 void consume_menu_shortcut(WormUiWorkspaceAction& action,
@@ -1069,8 +1060,9 @@ auto post_workspace_selection_feedback(wormedit::notification_sink_t& notificati
     if (result) return post_callback_feedback(notifications, wormedit::notification_severity_t::hint,
                                              wormedit::notification_source_t::input, std::move(accepted));
     if (!result.diagnostics.empty())
-        return post_callback_feedback(notifications, notification_severity_for(result.diagnostics.front().severity),
-                                      wormedit::notification_source_t::input, result.diagnostics.front().message);
+        return post_callback_feedback(
+            notifications, to_notification_severity(result.diagnostics.front().severity),
+            wormedit::notification_source_t::input, result.diagnostics.front().message);
     return post_callback_feedback(notifications, wormedit::notification_severity_t::warning,
                                   wormedit::notification_source_t::input, std::move(rejected));
 }
@@ -1256,8 +1248,8 @@ void post_initial_application_feedback(wormedit::notification_sink_t& notificati
 void post_shortcut_startup_diagnostic(
     wormedit::notification_sink_t& sink, const wormedit::shortcut_profile_startup_result_t& result) {
     if (!result.diagnostics.empty())
-        sink.post(notification_severity_for(result.diagnostics.front().severity),
-            wormedit::notification_source_t::input, result.diagnostics.front().message);
+        sink.post(to_notification_severity(result.diagnostics.front().severity),
+                  wormedit::notification_source_t::input, result.diagnostics.front().message);
 }
 
 void validate_minimap_start_frame(application_command_state_t& application,
@@ -1608,9 +1600,14 @@ auto dispatch_compare_diagnostic_jump(
         wormedit::jump_edit_cursor_action_t{
             {measure->id, action.compare_diagnostic_row}, history.document.revision});
     if (!jumped.accepted)
-        return post_callback_feedback(notifications, jumped.diagnostics.empty() ? wormedit::notification_severity_t::warning
-            : notification_severity_for(jumped.diagnostics.front().severity), wormedit::notification_source_t::input,
-            jumped.diagnostics.empty() ? "Could not move to validation diagnostic." : jumped.diagnostics.front().message);
+        return post_callback_feedback(
+            notifications,
+            jumped.diagnostics.empty()
+                ? wormedit::notification_severity_t::warning
+                : to_notification_severity(jumped.diagnostics.front().severity),
+            wormedit::notification_source_t::input,
+            jumped.diagnostics.empty() ? "Could not move to validation diagnostic."
+                                       : jumped.diagnostics.front().message);
     auto next_workspace = workspace;
     if (!wormedit::apply_workspace_action(next_workspace, history.document,
                                           wormedit::workspace_select_chart_action_t{chart_id}) ||
@@ -1975,10 +1972,15 @@ auto create_chart_from_registered_command(wormedit::document_history_t& history,
     using source_t = wormedit::notification_source_t;
     const auto created = wormedit::apply_add_chart_command(
         history, workspace.selected_chart.value_or(wormedit::chart_id_t{}));
-    if (!created) return wormedit::sys::reject_application_command(notifications,
-        created.command.diagnostics.empty() ? "New chart could not be created." : created.command.diagnostics.front().message,
-        created.command.diagnostics.empty() ? severity_t::warning
-            : notification_severity_for(created.command.diagnostics.front().severity), source_t::document);
+    if (!created)
+        return wormedit::sys::reject_application_command(
+            notifications,
+            created.command.diagnostics.empty() ? "New chart could not be created."
+                                                : created.command.diagnostics.front().message,
+            created.command.diagnostics.empty()
+                ? severity_t::warning
+                : to_notification_severity(created.command.diagnostics.front().severity),
+            source_t::document);
     const auto rebound = wormedit::rebind_workspace(workspace, history);
     if (!rebound) return wormedit::sys::reject_application_command(notifications,
         "New chart created, but workspace rebinding failed.", severity_t::error, source_t::document);
@@ -2236,9 +2238,10 @@ struct application_t::implementation_t {
     auto compose_actions() -> compose_action_inputs_t {
         return {document_inputs(),
                 {commands, views.compose_interaction_state},
-                {session.project_identity.asset_base,
-                 {jobs.resource_copy_scheduler, jobs.resource_copy_runtime, jobs.export_runtime},
-                 {views.metadata_drop, jobs.metadata_asset_runtime}}};
+                compose_resource_inputs_t{
+                    session.project_identity.asset_base,
+                    {jobs.resource_copy_scheduler, jobs.resource_copy_runtime, jobs.export_runtime},
+                    {views.metadata_drop, jobs.metadata_asset_runtime}}};
     }
     auto compose_inputs() -> compose_input_inputs_t {
         return {document_inputs(),
@@ -2405,7 +2408,7 @@ struct application_t::implementation_t {
             post_project_feedback(
                 result.diagnostics.empty()
                     ? notification_severity_t::error
-                    : notification_severity_for(result.diagnostics.front().severity),
+                    : to_notification_severity(result.diagnostics.front().severity),
                 notification_source_t::document,
                 result.diagnostics.empty() ? "Could not save the project."
                                            : result.diagnostics.front().message);
@@ -2447,7 +2450,7 @@ struct application_t::implementation_t {
         if (!result.diagnostics.empty()) {
             message += " " + result.diagnostics.front().message;
             severity =
-                std::max(severity, notification_severity_for(result.diagnostics.front().severity));
+                std::max(severity, to_notification_severity(result.diagnostics.front().severity));
         }
         post_project_feedback(severity, notification_source_t::document, std::move(message));
         return true;
@@ -3420,7 +3423,7 @@ struct application_t::implementation_t {
         -> std::string {
         if (!diagnostics.empty())
             return post_audio_offset_feedback(
-                context, notification_severity_for(diagnostics.front().severity),
+                context, to_notification_severity(diagnostics.front().severity),
                 diagnostics.front().message);
         return post_audio_offset_feedback(context, fallback_severity, std::move(fallback));
     }
@@ -3561,7 +3564,7 @@ struct application_t::implementation_t {
                                        "Project changed, but workspace rebinding failed.");
                 else
                     notifications.post(
-                        notification_severity_for(rebound.diagnostics.front().severity),
+                        to_notification_severity(rebound.diagnostics.front().severity),
                         wormedit::notification_source_t::document,
                         rebound.diagnostics.front().message);
                 return true;
@@ -3829,7 +3832,7 @@ struct application_t::implementation_t {
         views.workspace_view_feedback.publish(
             identity,
             {{wormedit::sys::projection_feedback_kind_t::workspace_view, 0,
-              wormedit::sys::projection_diagnostic_severity(model.diagnostics),
+              wormedit::to_notification_severity(model.diagnostics),
               wormedit::notification_source_t::document, diagnostic}},
             platform.notification_sink);
         const auto close = close_confirmation_view(
@@ -3846,7 +3849,7 @@ struct application_t::implementation_t {
                 wormedit::workspace_switch_tab_action_t{wormedit::workspace_tab_t::setup});
             if (!changed && !changed.diagnostics.empty())
                 platform.notification_sink.post(
-                    wormedit::sys::projection_diagnostic_severity(changed.diagnostics),
+                    wormedit::to_notification_severity(changed.diagnostics),
                     wormedit::notification_source_t::document, changed.diagnostics.front().message);
         }
         return true;

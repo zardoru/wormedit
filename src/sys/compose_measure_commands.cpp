@@ -12,7 +12,8 @@ namespace {
 
 auto rejection(const document_command_result_t& result, const char* fallback, notification_severity_t* severity) -> std::string {
     if (!result.diagnostics.empty())
-        set_feedback_severity(severity, projection_diagnostic_severity(result.diagnostics.front().severity));
+        set_feedback_severity(severity,
+                              to_notification_severity(result.diagnostics.front().severity));
     return result.diagnostics.empty() ? fallback : result.diagnostics.front().message;
 }
 
@@ -135,8 +136,10 @@ auto apply_cursor_measure_meter(document_history_t& history, editor_interaction_
         set_feedback_severity(severity, notification_severity_t::success);
         return "Meter updated.";
     }
-    set_feedback_severity(severity, result.diagnostics.empty() ? notification_severity_t::info
-        : projection_diagnostic_severity(result.diagnostics.front().severity));
+    set_feedback_severity(severity,
+                          result.diagnostics.empty()
+                              ? notification_severity_t::info
+                              : to_notification_severity(result.diagnostics.front().severity));
     return result.diagnostics.empty() ? "Meter was unchanged." : result.diagnostics.front().message;
 }
 
@@ -160,8 +163,10 @@ auto apply_measures_meter(document_history_t& history, editor_interaction_state_
         return measure_ids.size() == 1 ? "Meter updated."
                                        : "Meter updated on " + std::to_string(measure_ids.size()) + " measures.";
     }
-    set_feedback_severity(severity, result.diagnostics.empty() ? notification_severity_t::info
-        : projection_diagnostic_severity(result.diagnostics.front().severity));
+    set_feedback_severity(severity,
+                          result.diagnostics.empty()
+                              ? notification_severity_t::info
+                              : to_notification_severity(result.diagnostics.front().severity));
     return result.diagnostics.empty() ? "Meter was unchanged." : result.diagnostics.front().message;
 }
 
@@ -181,8 +186,10 @@ auto apply_bar_line_move(document_history_t& history, editor_interaction_state_t
         set_feedback_severity(severity, notification_severity_t::success);
         return "Bar line moved.";
     }
-    set_feedback_severity(severity, result.diagnostics.empty() ? notification_severity_t::info
-        : projection_diagnostic_severity(result.diagnostics.front().severity));
+    set_feedback_severity(severity,
+                          result.diagnostics.empty()
+                              ? notification_severity_t::info
+                              : to_notification_severity(result.diagnostics.front().severity));
     return result.diagnostics.empty() ? "Bar line was unchanged." : result.diagnostics.front().message;
 }
 

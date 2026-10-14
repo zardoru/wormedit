@@ -59,10 +59,8 @@ auto preview_diagnostic_feedback(chart_preview_t& preview, const auto& diagnosti
     });
     const auto& diagnostic = fatal == diagnostics.end() ? diagnostics.front() : *fatal;
     const auto severity = diagnostic.severity;
-    return preview.report(severity == diagnostic_severity_t::error ? notification_severity_t::error
-                  : severity == diagnostic_severity_t::warning ? notification_severity_t::warning
-                                                               : notification_severity_t::info,
-                  false, diagnostic.message);
+    return preview.report(to_notification_severity(severity, notification_severity_t::info), false,
+                          diagnostic.message);
 }
 
 constexpr object_id_t preview_music_object{std::numeric_limits<std::uint64_t>::max()};

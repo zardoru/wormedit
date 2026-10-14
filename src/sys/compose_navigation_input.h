@@ -50,8 +50,7 @@
 #include <variant>
 
 namespace wormedit::sys::compose_navigation_input_detail {
-auto input_notification_severity(wormedit::diagnostic_severity_t severity)
-    -> wormedit::notification_severity_t;
+
 auto post_input_feedback(const wormedit::notification_sink_t* notifications,
                          wormedit::notification_severity_t severity,
                          wormedit::notification_source_t source, std::string_view message) -> void;

@@ -503,6 +503,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose_navigation_input.cpp
         src/sys/compose_note_to_bgm.cpp
         src/sys/compose_area_actions.cpp
+        src/sys/compose_action_outcome.cpp
         src/sys/compose_actions.cpp
         src/sys/compose_resource_actions.cpp
         src/sys/compose_marker_actions.cpp

@@ -151,6 +151,26 @@ auto video_frame_job_t::decode_uncached_frame(const decode_request_t& request,
     return decoded;
 }
 
+auto video_job_result_t::from(video_job_result_t&& report) -> video_job_outcome_t {
+    return video_job_frame_t::from(
+        {.identity = {report.project, report.document_revision},
+         .source = std::move(report.source), .clock = report.clock},
+        report.status, std::move(report.frame), std::move(report.message));
+}
+
+auto video_job_result_t::from(video_job_outcome_t&& outcome) -> video_job_result_t {
+    if (outcome) return {.project = outcome->context.identity.project,
+                          .document_revision = outcome->context.identity.document_revision,
+                          .source = std::move(outcome->context.source), .clock = outcome->context.clock,
+                          .status = video_frame_status_t::ready, .frame = std::move(outcome->payload),
+                          .message = std::move(outcome->message)};
+    return {.project = outcome.error().context.identity.project,
+            .document_revision = outcome.error().context.identity.document_revision,
+            .source = std::move(outcome.error().context.source), .clock = outcome.error().context.clock,
+            .status = outcome.error().cause.code, .frame = std::move(outcome.error().payload),
+            .message = std::move(outcome.error().cause.message)};
+}
+
 auto video_frame_job_t::run_decode(const decode_request_t& request, std::stop_token stop)
     -> task_result_t {
     video_job_result_t result{.project = request.project,
@@ -185,7 +205,8 @@ auto video_frame_job_t::run_decode(const decode_request_t& request, std::stop_to
                                       "video frame request was superseded");
     }
     return task_result_t::success(
-        task_value_t::from(std::make_shared<const video_job_result_t>(std::move(result))));
+        task_value_t::from(std::make_shared<const video_job_result_t>(
+            video_job_result_t::from(video_job_result_t::from(std::move(result))))));
 }
 
 auto video_frame_job_t::request(song_id_t project, std::uint64_t document_revision,

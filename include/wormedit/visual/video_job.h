@@ -3,6 +3,7 @@
 #include <wormedit/core/async_job.h>
 #include <wormedit/core/task_graph.h>
 #include <wormedit/visual/video_decoder.h>
+#include <wormedit/visual/job_result.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -53,7 +54,18 @@ class video_frame_cache_t {
 using video_job_start_status_t = ::wormedit::async_job_start_status_t;
 using video_job_start_result_t = ::wormedit::async_job_start_result_t;
 
+struct video_job_context_t {
+    async_job_project_identity_t identity;
+    resolved_visual_asset_t source;
+    video_preview_clock_t clock;
+};
+using video_job_frame_t = visual_job_value_t<video_job_context_t, rgba_video_frame_t, video_frame_status_t>;
+using video_job_outcome_t = result_t<video_job_frame_t,
+    visual_job_error_t<video_job_context_t, rgba_video_frame_t, video_frame_status_t>>;
+
 struct video_job_result_t {
+    [[nodiscard]] static auto from(video_job_result_t&& report) -> video_job_outcome_t;
+    [[nodiscard]] static auto from(video_job_outcome_t&& outcome) -> video_job_result_t;
     song_id_t project;
     std::uint64_t document_revision{};
     resolved_visual_asset_t source;
@@ -63,7 +75,7 @@ struct video_job_result_t {
     std::string message;
 
     [[nodiscard]] explicit operator bool() const noexcept {
-        return status == video_frame_status_t::ready && frame != nullptr;
+        return video_job_frame_t::can_publish(status, frame);
     }
 };
 

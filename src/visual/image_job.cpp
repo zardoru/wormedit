@@ -26,18 +26,14 @@ auto append_within_result_limit(image_job_result_t& result, const resolved_visua
     -> void {
     const auto bytes = image->pixels.size();
     if (bytes > maximum_result_bytes || result_bytes > maximum_result_bytes - bytes) {
-        result.items.push_back(
-            {.source = source,
-             .status = image_status_t::byte_limit_exceeded,
-             .image = {},
-             .message = "decoded image batch exceeds the configured byte limit"});
+        result.items.push_back(image_job_item_t::from(image_job_item_t::from(
+            source, image_status_t::byte_limit_exceeded, {},
+            "decoded image batch exceeds the configured byte limit")));
         return;
     }
     result_bytes += bytes;
-    result.items.push_back({.source = source,
-                            .status = image_status_t::ready,
-                            .image = std::move(image),
-                            .message = {}});
+    result.items.push_back(image_job_item_t::from(image_job_item_t::from(
+        source, image_status_t::ready, std::move(image))));
 }
 
 auto decode_images(image_cache_t& cache, song_id_t project, std::uint64_t document_revision,
@@ -59,10 +55,8 @@ auto decode_images(image_cache_t& cache, song_id_t project, std::uint64_t docume
         }
         auto decoded = open_image_rgba(source, options.decode_limits);
         if (!decoded) {
-            result.items.push_back({.source = source,
-                                    .status = decoded.error().code,
-                                    .image = {},
-                                    .message = std::move(decoded.error().message)});
+            result.items.push_back(image_job_item_t::from(image_job_item_t::from(
+                source, decoded.error().code, {}, std::move(decoded.error().message))));
             continue;
         }
         if (stop.stop_requested()) {
@@ -81,6 +75,19 @@ auto decode_images(image_cache_t& cache, song_id_t project, std::uint64_t docume
 }
 
 } // namespace
+
+auto image_job_item_t::from(resolved_visual_asset_t source, image_status_t status,
+                            std::shared_ptr<const rgba_image_t> image, std::string message)
+    -> image_job_item_outcome_t {
+    return image_job_item_value_t::from(std::move(source), status, std::move(image), std::move(message));
+}
+
+auto image_job_item_t::from(image_job_item_outcome_t&& outcome) -> image_job_item_t {
+    if (outcome) return {.source = std::move(outcome->context), .status = image_status_t::ready,
+                          .image = std::move(outcome->payload), .message = std::move(outcome->message)};
+    return {.source = std::move(outcome.error().context), .status = outcome.error().cause.code,
+            .image = std::move(outcome.error().payload), .message = std::move(outcome.error().cause.message)};
+}
 
 image_cache_t::image_cache_t(std::size_t maximum_rgba_bytes, std::size_t maximum_entries)
     : maximum_rgba_bytes_(maximum_rgba_bytes), maximum_entries_(maximum_entries) {

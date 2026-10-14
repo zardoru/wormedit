@@ -182,7 +182,7 @@ TEST_CASE("selected notes move to the BGM area and leave the selection", "[sys][
     fixture_t fixture({measure_id_t{3}, 0});
     fixture.state.selected_notes = {object_id_t{40}};
     fixture.state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{40}}};
-    const auto outcome = move_editor_selection_to_bgm(fixture.history, fixture.history.document.revision, fixture.state);
+    const auto outcome = move_editor_selection_to_bgm(fixture.history, fixture.state);
     REQUIRE(outcome.payload.handled);
     REQUIRE(outcome.command.applied);
     CHECK(fixture.measures()[0].notes.empty());

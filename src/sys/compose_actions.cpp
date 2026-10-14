@@ -199,7 +199,7 @@ std::optional<std::string> dispatch_compose_bgm_column_count(compose_action_cont
         return compose_action_warning(context,
             "Finish or cancel the active Compose gesture before changing BGM columns.");
     const auto applied = wormedit::apply_bgm_column_count(
-        context.environment.document.history, context.action.compose_input_document_revision,
+        context.environment.document.history,
         context.state.chart, context.action.compose_bgm_column_count);
     if (!applied.applied)
         return applied.diagnostics.empty()

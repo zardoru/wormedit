@@ -2744,7 +2744,7 @@ TEST_CASE("Converted BMS taps and holds export in their original conditional sco
     auto history = wormedit::document_history_t::from(*imported.song);
     const auto chart = history.document.charts.front().id;
     const std::array ids{history.document.charts.front().measures.front().notes.front().id};
-    require_bgm_export(wormedit::move_notes_to_bgm(history, history.document.revision,
+    require_bgm_export(wormedit::move_notes_to_bgm(history,
                                                  chart, ids, std::nullopt));
     const auto native = wormedit::write_native_project(history.document);
     require_bgm_export(native.bytes);
@@ -2777,7 +2777,7 @@ TEST_CASE("BGM hold export loss respects strict and warning conversion policies"
     auto history = wormedit::document_history_t::from(*imported.song);
     const auto chart = history.document.charts.front().id;
     const std::array ids{history.document.charts.front().measures.front().notes.front().id};
-    require_bgm_export(wormedit::move_notes_to_bgm(history, history.document.revision,
+    require_bgm_export(wormedit::move_notes_to_bgm(history,
                                                  chart, ids, std::nullopt));
     wormedit::conversion_request_t request;
     request.target = wormedit::format_family_t::bms;

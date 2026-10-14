@@ -53,9 +53,9 @@ struct note_to_bgm_plan_t {
 // point (the retained event just stops being playable). Ordinary notes become BGM events at the
 // same row. Explicit placement uses `preferred_lane`, then the next free lane to the right and
 // left, then creates a lane; automatic placement uses the group-aware plan. Hold ends and source
-// provenance are retained. Unknown notes, a stale revision, or a stem that cannot be reassigned
+// provenance are retained. Unknown notes or a stem that cannot be reassigned
 // reject the whole edit.
-[[nodiscard]] auto move_notes_to_bgm(document_history_t& history, std::uint64_t expected_revision,
+[[nodiscard]] auto move_notes_to_bgm(document_history_t& history,
                                      chart_id_t chart, std::span<const object_id_t> notes,
                                      std::optional<object_id_t> preferred_lane,
                                      note_to_bgm_policy_t policy = {})
@@ -70,9 +70,8 @@ using selected_note_to_bgm_result_t = command_result_with_t<selected_note_to_bgm
 
 // Approved note-only verb: existing selected BGM events remain selected and unchanged.
 // Ordinary moves retain converted points in the selection. Successive moves take the first
-// selected note in document order and deselect it. Missing notes or stale input reject atomically.
-[[nodiscard]] auto move_editor_selection_to_bgm(document_history_t& history,
-    std::uint64_t expected_revision, editor_interaction_state_t& state,
+// selected note in document order and deselect it. Missing notes or an active gesture reject atomically.
+[[nodiscard]] auto move_editor_selection_to_bgm(document_history_t& history, editor_interaction_state_t& state,
     std::optional<object_id_t> lane = std::nullopt, bool successive = false)
     -> selected_note_to_bgm_result_t;
 
@@ -81,7 +80,7 @@ using selected_note_to_bgm_result_t = command_result_with_t<selected_note_to_bgm
 // A BMSON marker that stands for a stem point becomes the stem's playable tap, keeping its slice
 // point; ordinary events preserve their sound, layers, branch and provenance. Interval collisions
 // or an inactive lane anywhere across a restored hold reject the whole edit.
-[[nodiscard]] auto move_bgm_events_to_lane(document_history_t& history, std::uint64_t expected_revision,
+[[nodiscard]] auto move_bgm_events_to_lane(document_history_t& history,
                                            chart_id_t chart, std::span<const object_id_t> events,
                                            lane_id_t lane) -> document_command_result_t;
 
@@ -92,7 +91,7 @@ using selected_note_to_bgm_result_t = command_result_with_t<selected_note_to_bgm
 
 // Assigns a mixed selected note/BGM set into a lane as one all-or-nothing undo command.
 [[nodiscard]] auto move_selected_objects_to_lane(
-    document_history_t& history, std::uint64_t expected_revision,
+    document_history_t& history,
     const editor_interaction_state_t& state, std::span<const object_id_t> notes,
     std::span<const object_id_t> events, lane_id_t lane) -> document_command_result_t;
 

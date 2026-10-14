@@ -626,7 +626,7 @@ TEST_CASE("BMSON converted playable hold roundtrips as BGM with the same source 
         [](const auto& value) { return !value.notes.empty(); });
     require_bgm_tail(at != original.measures.end());
     const std::array ids{at->notes.front().id};
-    require_bgm_tail(wormedit::move_notes_to_bgm(history, history.document.revision,
+    require_bgm_tail(wormedit::move_notes_to_bgm(history,
                                          original.id, ids, std::nullopt));
     const auto written = wormedit::write_bmson(history.document);
     INFO((written.diagnostics.empty() ? "no diagnostic" : written.diagnostics.front().message));

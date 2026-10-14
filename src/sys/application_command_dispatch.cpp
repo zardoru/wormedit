@@ -394,7 +394,7 @@ auto note_to_bgm_command(command_context_t& context) -> std::optional<command_re
             "Move to BGM requires selected notes on an editable BMS chart.",
             notification_severity_t::hint, notification_source_t::edit);
     const auto moved = move_editor_selection_to_bgm(
-        context.environment.document.history, context.environment.document.history.document.revision, *state,
+        context.environment.document.history, *state,
         std::nullopt, kind == command_kind_t::edit_move_next_to_bgm);
     if (!moved.payload.handled)
         return reject_application_command(context.environment.document.notifications,

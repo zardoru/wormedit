@@ -912,7 +912,7 @@ auto stage_bgm_note_move(const document_history_t& history, editor_interaction_s
                                           source->source_family == format_family_t::bmson ||
                                           source->source_family == format_family_t::native_project};
     if (!pending.to_bgm) {
-        auto converted = move_notes_to_bgm(scratch, scratch.document.revision, state.chart,
+        auto converted = move_notes_to_bgm(scratch, state.chart,
                                            plan.occupants, std::nullopt, policy);
         if (!converted)
             return converted.diagnostics;
@@ -921,7 +921,7 @@ auto stage_bgm_note_move(const document_history_t& history, editor_interaction_s
     if (auto failure = relocate_moved_notes(*chart, plan, scratch, state))
         return diagnostic_list_t{*failure};
     if (pending.to_bgm) {
-        auto converted = move_notes_to_bgm(scratch, scratch.document.revision, state.chart,
+        auto converted = move_notes_to_bgm(scratch, state.chart,
                                            plan.notes, pending.preferred_bgm_lane, policy);
         if (!converted)
             return converted.diagnostics;

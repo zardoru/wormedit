@@ -380,13 +380,11 @@ auto plan_notes_to_bgm(const chart_document_t& chart, std::span<const resource_e
     return plan_allocation(chart, resources, notes, preferred_lane, policy);
 }
 
-auto move_notes_to_bgm(document_history_t& history, std::uint64_t expected_revision, chart_id_t chart_id,
+auto move_notes_to_bgm(document_history_t& history, chart_id_t chart_id,
                        std::span<const object_id_t> notes, std::optional<object_id_t> preferred_lane,
                        note_to_bgm_policy_t policy)
     -> document_command_result_t {
     const auto revision = history.document.revision;
-    if (expected_revision != revision)
-        return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "note move to BGM has a stale document revision");
     if (notes.empty() || notes.size() > 4096)
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "note move to BGM needs 1 to 4096 notes");
     const auto found = history.document.find_chart(chart_id);
@@ -497,11 +495,9 @@ auto convert_bgm_event(chart_document_t& chart, object_id_t id, lane_id_t lane) 
 
 } // namespace
 
-auto move_bgm_events_to_lane(document_history_t& history, std::uint64_t expected_revision, chart_id_t chart_id,
+auto move_bgm_events_to_lane(document_history_t& history, chart_id_t chart_id,
                              std::span<const object_id_t> events, lane_id_t lane) -> document_command_result_t {
     const auto revision = history.document.revision;
-    if (expected_revision != revision)
-        return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "BGM move has a stale document revision");
     if (events.empty() || events.size() > 4096 || !lane)
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "BGM move needs 1 to 4096 events and a lane");
     if (history.document.find_chart(chart_id) == nullptr)
@@ -535,15 +531,12 @@ auto move_bgm_events_to_lane(document_history_t& history, std::uint64_t expected
     return transaction.commit(events.size() == 1 ? "Move BGM event to lane" : "Move BGM events to lane");
 }
 
-auto move_selected_objects_to_lane(document_history_t& history, std::uint64_t expected_revision,
+auto move_selected_objects_to_lane(document_history_t& history,
                                    const editor_interaction_state_t& state,
                                    std::span<const object_id_t> notes,
                                    std::span<const object_id_t> events, lane_id_t lane)
     -> document_command_result_t {
     const auto revision = history.document.revision;
-    if (expected_revision != revision)
-        return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id,
-                        "lane assignment has a stale document revision");
     if (notes.size() > 1'000'000 || events.size() > 4096 || !lane)
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id,
                         "lane assignment exceeds the selection limit or has no lane");
@@ -565,7 +558,7 @@ auto move_selected_objects_to_lane(document_history_t& history, std::uint64_t ex
     }
     if (!events.empty()) {
         auto moved = move_bgm_events_to_lane(
-            scratch, scratch.document.revision, state.chart, events, lane);
+            scratch, state.chart, events, lane);
         if (!moved.applied) {
             moved.revision = revision;
             return moved;
@@ -618,14 +611,14 @@ void finish_note_conversion_selection(editor_interaction_state_t& state,
 }
 } // namespace
 
-auto move_editor_selection_to_bgm(document_history_t& history, std::uint64_t expected_revision,
+auto move_editor_selection_to_bgm(document_history_t& history,
                                   editor_interaction_state_t& state,
                                   std::optional<object_id_t> lane, bool successive)
     -> selected_note_to_bgm_result_t {
     auto moving = selected_conversion_notes(state);
     if (moving.empty()) return {};
     selected_note_to_bgm_result_t result{.payload = {.handled = true}};
-    if (expected_revision != history.document.revision || is_note_conversion_pending(state)) {
+    if (is_note_conversion_pending(state)) {
         result.command = document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id,
                                    "note move to BGM has stale input or an active gesture");
         return result;
@@ -642,7 +635,7 @@ auto move_editor_selection_to_bgm(document_history_t& history, std::uint64_t exp
         return result;
     }
     if (successive) moving = {first_conversion_note(*chart, moving)};
-    result.command = move_notes_to_bgm(history, expected_revision, state.chart, moving, lane);
+    result.command = move_notes_to_bgm(history, state.chart, moving, lane);
     if (!result.command.applied) return result;
     finish_note_conversion_selection(state, moving, successive);
     result.payload.selection_exhausted = state.selected_notes.empty() && state.selected_objects.empty();

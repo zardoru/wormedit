@@ -886,7 +886,7 @@ auto stage_delete_stem_points(song_document_t& proposed, const editor_edit_conte
         }
     if (stems.empty()) return std::size_t{0};
     auto scratch = document_history_t::from(proposed);
-    const auto moved = move_notes_to_bgm(scratch, scratch.document.revision, context.state.chart, stems, std::nullopt);
+    const auto moved = move_notes_to_bgm(scratch, context.state.chart, stems, std::nullopt);
     if (!moved.applied) return moved.diagnostics;
     proposed = std::move(scratch.document);
     return stems.size();
@@ -1214,7 +1214,7 @@ auto assign_selected_objects_to_lane(editor_edit_context_t& context,
     }
     const auto revision = context.history.document.revision;
     const auto command = move_selected_objects_to_lane(
-        context.history, revision, context.state, notes, events, action.lane);
+        context.history, context.state, notes, events, action.lane);
     if (!command.applied)
         return diagnostic_result(context.history, context.state, command.diagnostics);
     std::unordered_set<std::uint64_t> assigned_ids;
@@ -1379,7 +1379,7 @@ auto stage_keyboard_occupant(document_history_t& scratch, editor_interaction_sta
     if (to_bgm) {
         const std::array ids{occupant.id};
         const auto moved =
-            move_notes_to_bgm(scratch, scratch.document.revision, state.chart, ids, std::nullopt);
+            move_notes_to_bgm(scratch, state.chart, ids, std::nullopt);
         return moved.diagnostics;
     }
     state.pending_hold.reset();

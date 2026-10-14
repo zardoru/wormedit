@@ -111,7 +111,10 @@ auto insert_initial_lane_profile(document_history_t& history, chart_id_t chart,
     const auto bindings = found->input_profile.bindings.empty()
         ? std::optional{prepared->second} : std::nullopt;
     const auto inserted = apply_lane_layout_edit(
-        scratch, insert_lane_layout_action_t{chart, *target_position, prepared->first, bindings});
+        scratch,
+        wormedit::insert_edit_t<wormedit::lane_layout_edit_value_t>{
+            .chart = chart,
+            .value = {.position = *target_position, .layout = prepared->first, .input = bindings}});
     if (!inserted.applied) return inserted;
     auto transaction = document_command_transaction_t::from(history);
     transaction.adopt_document(std::move(scratch.document));
@@ -243,7 +246,8 @@ auto apply_lane_profile_switch(document_history_t& history,
         return result;
     }
     return apply_lane_layout_edit(
-        history, update_lane_layout_action_t{chart, segment->id, std::move(*layout)});
+        history, wormedit::update_edit_t<wormedit::lane_layout_edit_value_t>{
+                     .chart = chart, .id = segment->id, .value = {.layout = std::move(*layout)}});
 }
 
 } // namespace wormedit

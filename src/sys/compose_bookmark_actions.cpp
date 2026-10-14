@@ -33,8 +33,12 @@ beat_section_edit_t make_beat_section_insertion(compose_action_context_t& contex
         span = {context.state.cursor, *end};
     }
     return {.edit =
-                insert_section_action_t{context.state.chart, context.action.compose_marker_label,
-                                        marker_anchor_t::beat, span, std::nullopt},
+                wormedit::insert_edit_t<wormedit::section_edit_value_t>{
+                    .chart = context.state.chart,
+                    .value = {.label = context.action.compose_marker_label,
+                              .anchor = marker_anchor_t::beat,
+                              .beat_span = span,
+                              .audio_millisecond_span = std::nullopt}},
             .from_selection = from_selection};
 }
 
@@ -50,7 +54,8 @@ auto make_existing_beat_section_edit(compose_action_context_t& context,
         !section->beat_span)
         return "That beat-anchored section is no longer available.";
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_DELETE_BEAT_SECTION)
-        return marker_edit_action_t{delete_section_action_t{context.state.chart, section->id}};
+        return marker_edit_action_t{wormedit::delete_edit_t<wormedit::section_edit_value_t>{
+            .chart = context.state.chart, .id = section->id}};
     auto span = *section->beat_span;
     auto label = section->label;
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_SECTION_LABEL)
@@ -59,9 +64,13 @@ auto make_existing_beat_section_edit(compose_action_context_t& context,
         span.begin = context.state.cursor;
     else
         span.end = context.state.cursor;
-    return marker_edit_action_t{update_section_action_t{context.state.chart, section->id,
-                                                        std::move(label), marker_anchor_t::beat,
-                                                        span, std::nullopt}};
+    return marker_edit_action_t{wormedit::update_edit_t<wormedit::section_edit_value_t>{
+        .chart = context.state.chart,
+        .id = section->id,
+        .value = {.label = std::move(label),
+                  .anchor = marker_anchor_t::beat,
+                  .beat_span = span,
+                  .audio_millisecond_span = std::nullopt}}};
 }
 
 std::string_view beat_section_success(const WormUiWorkspaceAction& action, bool from_selection) {
@@ -137,9 +146,12 @@ auto make_audio_bookmark_edit(compose_action_context_t& context,
     if (!deleting && !milliseconds)
         return "Enter the audio bookmark position as exact signed milliseconds.";
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_AUDIO_BOOKMARK)
-        return marker_edit_action_t{
-            insert_bookmark_action_t{context.state.chart, context.action.compose_marker_label,
-                                     marker_anchor_t::audio_time, std::nullopt, milliseconds}};
+        return marker_edit_action_t{wormedit::insert_edit_t<wormedit::bookmark_edit_value_t>{
+            .chart = context.state.chart,
+            .value = {.label = context.action.compose_marker_label,
+                      .anchor = marker_anchor_t::audio_time,
+                      .position = std::nullopt,
+                      .audio_milliseconds = milliseconds}}};
     if (!context.action.compose_bookmark_id)
         return "Choose an audio-time bookmark before editing it.";
     const auto found = std::ranges::find(
@@ -148,10 +160,15 @@ auto make_audio_bookmark_edit(compose_action_context_t& context,
         !found->audio_milliseconds || found->position)
         return "That audio-time bookmark is no longer available.";
     if (deleting)
-        return marker_edit_action_t{delete_bookmark_action_t{context.state.chart, found->id}};
-    return marker_edit_action_t{update_bookmark_action_t{
-        context.state.chart, found->id, context.action.compose_marker_label,
-        marker_anchor_t::audio_time, std::nullopt, milliseconds}};
+        return marker_edit_action_t{wormedit::delete_edit_t<wormedit::bookmark_edit_value_t>{
+            .chart = context.state.chart, .id = found->id}};
+    return marker_edit_action_t{wormedit::update_edit_t<wormedit::bookmark_edit_value_t>{
+        .chart = context.state.chart,
+        .id = found->id,
+        .value = {.label = context.action.compose_marker_label,
+                  .anchor = marker_anchor_t::audio_time,
+                  .position = std::nullopt,
+                  .audio_milliseconds = milliseconds}}};
 }
 
 compose_action_outcome_t edit_audio_bookmark(compose_action_context_t& context) {
@@ -203,9 +220,12 @@ auto make_audio_section_edit(compose_action_context_t& context,
     if (!deleting && (!begin || !end))
         return "Enter both audio section bounds as exact signed milliseconds.";
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_AUDIO_SECTION)
-        return marker_edit_action_t{insert_section_action_t{
-            context.state.chart, context.action.compose_marker_label, marker_anchor_t::audio_time,
-            std::nullopt, std::pair{*begin, *end}}};
+        return marker_edit_action_t{wormedit::insert_edit_t<wormedit::section_edit_value_t>{
+            .chart = context.state.chart,
+            .value = {.label = context.action.compose_marker_label,
+                      .anchor = marker_anchor_t::audio_time,
+                      .beat_span = std::nullopt,
+                      .audio_millisecond_span = std::pair{*begin, *end}}}};
     if (!context.action.compose_section_id)
         return "Choose an audio-time section before editing it.";
     const auto found = std::ranges::find(
@@ -214,10 +234,15 @@ auto make_audio_section_edit(compose_action_context_t& context,
         !found->audio_millisecond_span || found->beat_span)
         return "That audio-time section is no longer available.";
     if (deleting)
-        return marker_edit_action_t{delete_section_action_t{context.state.chart, found->id}};
-    return marker_edit_action_t{update_section_action_t{
-        context.state.chart, found->id, context.action.compose_marker_label,
-        marker_anchor_t::audio_time, std::nullopt, std::pair{*begin, *end}}};
+        return marker_edit_action_t{wormedit::delete_edit_t<wormedit::section_edit_value_t>{
+            .chart = context.state.chart, .id = found->id}};
+    return marker_edit_action_t{wormedit::update_edit_t<wormedit::section_edit_value_t>{
+        .chart = context.state.chart,
+        .id = found->id,
+        .value = {.label = context.action.compose_marker_label,
+                  .anchor = marker_anchor_t::audio_time,
+                  .beat_span = std::nullopt,
+                  .audio_millisecond_span = std::pair{*begin, *end}}}};
 }
 
 compose_action_outcome_t edit_audio_section(compose_action_context_t& context) {
@@ -269,12 +294,16 @@ auto make_beat_bookmark_edit(compose_action_context_t& context,
         !found->position)
         return "That beat-anchored bookmark is no longer available.";
     if (operation == WORM_UI_COMPOSE_ACTION_DELETE_BEAT_BOOKMARK)
-        return marker_edit_action_t{delete_bookmark_action_t{context.state.chart, found->id}};
+        return marker_edit_action_t{wormedit::delete_edit_t<wormedit::bookmark_edit_value_t>{
+            .chart = context.state.chart, .id = found->id}};
     const bool rename = operation == WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK;
-    return marker_edit_action_t{update_bookmark_action_t{
-        context.state.chart, found->id, rename ? context.action.compose_marker_label : found->label,
-        marker_anchor_t::beat, rename ? found->position : std::optional{context.state.cursor},
-        std::nullopt}};
+    return marker_edit_action_t{wormedit::update_edit_t<wormedit::bookmark_edit_value_t>{
+        .chart = context.state.chart,
+        .id = found->id,
+        .value = {.label = rename ? context.action.compose_marker_label : found->label,
+                  .anchor = marker_anchor_t::beat,
+                  .position = rename ? found->position : std::optional{context.state.cursor},
+                  .audio_milliseconds = std::nullopt}}};
 }
 
 compose_action_outcome_t edit_beat_bookmark(compose_action_context_t& context) {

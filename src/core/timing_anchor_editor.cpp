@@ -49,7 +49,8 @@ struct anchor_edit_result_t {
     const char* command_label{};
 };
 
-auto apply_anchor_edit(chart_document_t& chart, const insert_timing_anchor_action_t& edit,
+auto apply_anchor_edit(chart_document_t& chart,
+                       const wormedit::insert_edit_t<wormedit::timing_anchor_edit_value_t>& edit,
                        timing_anchor_edit_limits_t limits, document_command_result_t& result)
     -> anchor_edit_result_t {
     if (chart.timing_anchors.size() >= limits.maximum_timing_anchors) {
@@ -57,7 +58,7 @@ auto apply_anchor_edit(chart_document_t& chart, const insert_timing_anchor_actio
                "timing anchor insertion would exceed the configured anchor cap");
         return {};
     }
-    if (!validate_position(chart, edit.position, result)) {
+    if (!validate_position(chart, edit.value.position, result)) {
         return {};
     }
     const auto allocation = next_chart_object_id(chart, limits.maximum_chart_objects);
@@ -68,32 +69,34 @@ auto apply_anchor_edit(chart_document_t& chart, const insert_timing_anchor_actio
         return {};
     }
     chart.timing_anchors.push_back({.id = *allocation.id,
-                                    .position = edit.position,
-                                    .source_sample_frame = edit.source_sample_frame,
-                                    .locked = edit.locked});
+                                    .position = edit.value.position,
+                                    .source_sample_frame = edit.value.settings.source_sample_frame,
+                                    .locked = edit.value.settings.locked});
     return {.changed = true, .command_label = "Insert timing anchor"};
 }
 
-auto apply_anchor_edit(chart_document_t& chart, const update_timing_anchor_action_t& edit,
+auto apply_anchor_edit(chart_document_t& chart,
+                       const wormedit::update_edit_t<wormedit::timing_anchor_edit_value_t>& edit,
                        timing_anchor_edit_limits_t, document_command_result_t& result)
     -> anchor_edit_result_t {
     auto* anchor = unique_anchor(chart, edit.id, result);
-    if (anchor == nullptr || !validate_position(chart, edit.position, result)) {
+    if (anchor == nullptr || !validate_position(chart, edit.value.position, result)) {
         return {};
     }
-    const bool changed = anchor->position != edit.position ||
-                         anchor->source_sample_frame != edit.source_sample_frame ||
-                         anchor->locked != edit.locked;
+    const bool changed = anchor->position != edit.value.position ||
+                         anchor->source_sample_frame != edit.value.settings.source_sample_frame ||
+                         anchor->locked != edit.value.settings.locked;
     if (!changed) {
         return {};
     }
-    anchor->position = edit.position;
-    anchor->source_sample_frame = edit.source_sample_frame;
-    anchor->locked = edit.locked;
+    anchor->position = edit.value.position;
+    anchor->source_sample_frame = edit.value.settings.source_sample_frame;
+    anchor->locked = edit.value.settings.locked;
     return {.changed = true, .command_label = "Update timing anchor"};
 }
 
-auto apply_anchor_edit(chart_document_t& chart, const delete_timing_anchor_action_t& edit,
+auto apply_anchor_edit(chart_document_t& chart,
+                       const wormedit::delete_edit_t<wormedit::timing_anchor_edit_value_t>& edit,
                        timing_anchor_edit_limits_t, document_command_result_t& result)
     -> anchor_edit_result_t {
     auto* anchor = unique_anchor(chart, edit.id, result);

@@ -230,8 +230,8 @@ TEST_CASE("SV recipe commands are revision checked and share undo history",
     auto history = document_history_t::from(make_recipe_song());
     const auto initial_revision = history.document.revision;
     auto recipe = make_linear_recipe({}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {2, 1});
-    auto inserted = apply_sv_recipe_edit(history,
-                                         insert_sv_recipe_action_t{chart_id_t{10}, recipe});
+    auto inserted = apply_sv_recipe_edit(history, wormedit::insert_edit_t<wormedit::sv_recipe_t>{
+                                                      .chart = chart_id_t{10}, .value = recipe});
     REQUIRE(inserted);
     REQUIRE(history.document.charts.front().sv_recipes.size() == 1);
     const auto id = history.document.charts.front().sv_recipes.front().id;

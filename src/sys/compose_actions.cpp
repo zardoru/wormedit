@@ -291,10 +291,15 @@ auto apply_compose_lane_layout_profile(compose_action_context_t& context,
     if (!layout)
         return compose_action_outcome_t::blocked(
             "Lane layout change could not preserve lane identities.", notification_source_t::edit);
-    wormedit::lane_layout_action_t edit = wormedit::insert_lane_layout_action_t{
-        chart->id, target_position, *layout, initial_input_profile(*chart, *layout)};
+    wormedit::lane_layout_action_t edit =
+        wormedit::insert_edit_t<wormedit::lane_layout_edit_value_t>{
+            .chart = chart->id,
+            .value = {.position = target_position,
+                      .layout = *layout,
+                      .input = initial_input_profile(*chart, *layout)}};
     if (is_update)
-        edit = wormedit::update_lane_layout_action_t{chart->id, exact_segment->id, *layout};
+        edit = wormedit::update_edit_t<wormedit::lane_layout_edit_value_t>{
+            .chart = chart->id, .id = exact_segment->id, .value = {.layout = *layout}};
     auto applied =
         wormedit::apply_lane_layout_edit(context.environment.document.history, edit);
     if (!applied.applied && materialized)
@@ -1174,7 +1179,9 @@ std::optional<compose_action_outcome_t>
 semantic_layer_edit_status(compose_action_context_t& context,
                            wormedit::semantic_layer_edit_action_t edit, std::string_view success,
                            std::string_view unchanged, std::string_view rebind_failure) {
-    const bool inserting = std::holds_alternative<wormedit::insert_semantic_layer_action_t>(edit);
+    const bool inserting =
+        std::holds_alternative<wormedit::insert_edit_t<wormedit::semantic_layer_edit_value_t>>(
+            edit);
     auto applied =
         wormedit::apply_semantic_layer_edit(context.environment.document.history, std::move(edit));
     if (!applied.applied)
@@ -1223,9 +1230,11 @@ std::optional<compose_action_outcome_t> add_semantic_layer(compose_action_contex
         {0.58, 0.42, 0.84, 1.0}, {0.87, 0.38, 0.68, 1.0},
     }};
     return semantic_layer_edit_status(
-        context, insert_semantic_layer_action_t{
-                    context.state.chart, std::move(name),
-                    colors[chart->semantic_layers.size() % colors.size()]},
+        context,
+        wormedit::insert_edit_t<wormedit::semantic_layer_edit_value_t>{
+            .chart = context.state.chart,
+            .value = {.name = std::move(name),
+                      .color = colors[chart->semantic_layers.size() % colors.size()]}},
         "Semantic layer added.", "Semantic layer was not added.",
         "Semantic layer added, but workspace rebinding failed.");
 }
@@ -1275,8 +1284,12 @@ update_semantic_layer_catalog_entry(compose_action_context_t& context) {
                                 static_cast<double>(layer->color.alpha) / 255.0};
     const auto name = recolor ? layer->name : context.action.compose_semantic_layer_name;
     return semantic_layer_edit_status(
-        context, update_semantic_layer_action_t{context.state.chart, layer->id, name, color,
-                                                layer->visible, layer->locked},
+        context,
+        wormedit::update_edit_t<wormedit::semantic_layer_edit_value_t>{
+            .chart = context.state.chart,
+            .id = layer->id,
+            .value =
+                {.name = name, .color = color, .visible = layer->visible, .locked = layer->locked}},
         recolor ? "Semantic-layer color changed." : "Semantic layer renamed.",
         recolor ? "Semantic-layer color was unchanged." : "Semantic-layer name was unchanged.",
         recolor ? "Semantic-layer color changed, but workspace rebinding failed."
@@ -1303,10 +1316,12 @@ delete_semantic_layer_catalog_entry(compose_action_context_t& context) {
     const auto id = layer->id;
     auto applied = apply_semantic_layer_edit(
         context.environment.document.history,
-        delete_semantic_layer_action_t{
-            context.state.chart, id,
-            context.action.compose_action ==
-                WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER_WITH_MEMBERSHIPS});
+        wormedit::delete_edit_t<wormedit::semantic_layer_edit_value_t>{
+            .chart = context.state.chart,
+            .id = id,
+            .options = {.remove_from_notes =
+                            context.action.compose_action ==
+                            WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER_WITH_MEMBERSHIPS}});
     if (!applied.applied)
         return applied.diagnostics.empty()
                    ? compose_action_outcome_t::from("Semantic layer was not deleted.",
@@ -1517,9 +1532,13 @@ toggle_semantic_layer_visibility_or_lock(compose_action_context_t& context, bool
         static_cast<double>(layer->color.alpha) / 255.0};
     auto applied = apply_semantic_layer_edit(
         context.environment.document.history,
-        update_semantic_layer_action_t{context.state.chart, layer->id, layer->name, color,
-                                       toggle_lock ? layer->visible : !previous,
-                                       toggle_lock ? !previous : layer->locked});
+        wormedit::update_edit_t<wormedit::semantic_layer_edit_value_t>{
+            .chart = context.state.chart,
+            .id = layer->id,
+            .value = {.name = layer->name,
+                      .color = color,
+                      .visible = toggle_lock ? layer->visible : !previous,
+                      .locked = toggle_lock ? !previous : layer->locked}});
     if (!applied.applied)
         return applied.diagnostics.empty()
                    ? compose_action_outcome_t::from("Semantic-layer state was unchanged.",

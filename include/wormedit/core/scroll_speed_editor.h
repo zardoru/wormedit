@@ -14,50 +14,55 @@ struct scroll_speed_edit_limits_t {
     std::size_t maximum_chart_objects{default_maximum_chart_objects};
 };
 
-struct insert_scroll_event_action_t {
-    chart_id_t chart;
-    local_position_t position;
-    signed_rational_t multiplier;
+struct timing_scroll_value_t {
+    signed_rational_t multiplier{1, 1};
+
+    [[nodiscard]] static auto with_defaults(chart_edit_value_default_policy_t policy)
+        -> timing_scroll_value_t {
+        timing_scroll_value_t value;
+        if (policy == chart_edit_value_default_policy_t::command)
+            value.multiplier = {};
+        return value;
+    }
+
+    [[nodiscard]] static auto from(const scroll_event_t& event) -> timing_scroll_value_t {
+        return {.multiplier = event.multiplier};
+    }
+    auto operator==(const timing_scroll_value_t&) const -> bool = default;
 };
 
-struct update_scroll_event_action_t {
-    chart_id_t chart;
-    object_id_t id;
-    local_position_t position;
-    signed_rational_t multiplier;
-};
+using scroll_edit_value_t = positioned_edit_value_t<timing_scroll_value_t>;
 
-struct delete_scroll_event_action_t {
-    chart_id_t chart;
-    object_id_t id;
-};
-
-struct insert_speed_event_action_t {
-    chart_id_t chart;
-    local_position_t position;
-    signed_rational_t multiplier;
+struct timing_speed_value_t {
+    signed_rational_t multiplier{1, 1};
     rational_t transition_beats{};
     bool transition_is_seconds{};
+
+    [[nodiscard]] static auto with_defaults(chart_edit_value_default_policy_t policy)
+        -> timing_speed_value_t {
+        timing_speed_value_t value;
+        if (policy == chart_edit_value_default_policy_t::command)
+            value.multiplier = {};
+        return value;
+    }
+
+    [[nodiscard]] static auto from(const speed_event_t& event) -> timing_speed_value_t {
+        return {.multiplier = event.multiplier,
+                .transition_beats = event.transition_beats,
+                .transition_is_seconds = event.transition_is_seconds};
+    }
+    auto operator==(const timing_speed_value_t&) const -> bool = default;
 };
 
-struct update_speed_event_action_t {
-    chart_id_t chart;
-    object_id_t id;
-    local_position_t position;
-    signed_rational_t multiplier;
-    rational_t transition_beats{};
-    bool transition_is_seconds{};
-};
-
-struct delete_speed_event_action_t {
-    chart_id_t chart;
-    object_id_t id;
-};
+using speed_edit_value_t = positioned_edit_value_t<timing_speed_value_t>;
 
 using scroll_speed_edit_action_t =
-    std::variant<insert_scroll_event_action_t, update_scroll_event_action_t,
-                 delete_scroll_event_action_t, insert_speed_event_action_t,
-                 update_speed_event_action_t, delete_speed_event_action_t>;
+    std::variant<wormedit::insert_edit_t<wormedit::scroll_edit_value_t>,
+                 wormedit::update_edit_t<wormedit::scroll_edit_value_t>,
+                 wormedit::delete_edit_t<wormedit::scroll_edit_value_t>,
+                 wormedit::insert_edit_t<wormedit::speed_edit_value_t>,
+                 wormedit::update_edit_t<wormedit::speed_edit_value_t>,
+                 wormedit::delete_edit_t<wormedit::speed_edit_value_t>>;
 
 // Mutates one scroll or speed event through shared document history. Exact
 // positions and rationals are preserved; scroll multipliers may be signed,

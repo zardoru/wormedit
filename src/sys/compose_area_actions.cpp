@@ -83,7 +83,8 @@ compose_action_outcome_t add_sv_recipe_over_area(compose_action_context_t& conte
                        .curve = sv_recipe_curve_t::linear,
                        .parameters = {.value_from = {1, 1}, .value_to = {2, 1}}};
     auto inserted = apply_sv_recipe_edit(context.environment.document.history,
-                                         insert_sv_recipe_action_t{chart.id, std::move(recipe)});
+                                         wormedit::insert_edit_t<wormedit::sv_recipe_t>{
+                                             .chart = chart.id, .value = std::move(recipe)});
     if (inserted.applied)
         return compose_action_outcome_t::from(std::move(inserted), compose_action_description_t{.success = "SV recipe added over the selected area.", .unchanged = {}, .rebind_failure = "Area action applied, but workspace rebinding failed.", .source = notification_source_t::edit, .diagnostic_policy = compose_diagnostic_feedback_policy_t::rejected_only});
     return inserted.diagnostics.empty()
@@ -109,11 +110,14 @@ compose_action_outcome_t add_speed_span_over_area(compose_action_context_t& cont
     const auto numerator = (*end - *begin) * 4;
     const auto divisor = std::gcd(numerator, chart.divisions_per_standard_measure);
     const rational_t beats{numerator / divisor, chart.divisions_per_standard_measure / divisor};
-    auto inserted = apply_scroll_speed_edit(context.environment.document.history,
-                                            insert_speed_event_action_t{.chart = chart.id,
-                                                                        .position = span.begin,
-                                                                        .multiplier = {1, 1},
-                                                                        .transition_beats = beats});
+    auto inserted =
+        apply_scroll_speed_edit(context.environment.document.history,
+                                wormedit::insert_edit_t<wormedit::speed_edit_value_t>{
+                                    .chart = chart.id,
+                                    .value = {.position = span.begin,
+                                              .settings = {.multiplier = {1, 1},
+                                                           .transition_beats = beats,
+                                                           .transition_is_seconds = false}}});
     if (inserted.applied)
         return compose_action_outcome_t::from(std::move(inserted), compose_action_description_t{.success = "SPEEDS span added over the selected area.", .unchanged = {}, .rebind_failure = "Area action applied, but workspace rebinding failed.", .source = notification_source_t::edit, .diagnostic_policy = compose_diagnostic_feedback_policy_t::rejected_only});
     return inserted.diagnostics.empty()

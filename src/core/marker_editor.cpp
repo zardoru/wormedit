@@ -220,32 +220,34 @@ auto validate_marker_label(marker_edit_context_t& context, std::string_view labe
 
 void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart,
                          const measure_index_t& index,
-                         const insert_bookmark_action_t& edit) {
+                         const wormedit::insert_edit_t<wormedit::bookmark_edit_value_t>& edit) {
     if (chart.bookmarks.size() >= context.limits.maximum_bookmarks) {
         reject(context.result, diagnostic_code_t::invalid_resolution,
                "bookmark insertion would exceed the configured event cap");
         return;
     }
-    if (!validate_marker_label(context, edit.label, "bookmark") ||
-        !validate_bookmark_anchor(chart, edit.anchor, edit.position,
-                                  edit.audio_milliseconds, index, context.result))
+    if (!validate_marker_label(context, edit.value.label, "bookmark") ||
+        !validate_bookmark_anchor(chart, edit.value.anchor, edit.value.position,
+                                  edit.value.audio_milliseconds, index, context.result))
         return;
     const auto id = allocate_marker_id(context, chart);
     if (!id)
         return;
-    chart.bookmarks.push_back({.id = *id, .label = edit.label, .anchor = edit.anchor,
-                               .position = edit.position,
-                               .audio_milliseconds = edit.audio_milliseconds});
+    chart.bookmarks.push_back({.id = *id,
+                               .label = edit.value.label,
+                               .anchor = edit.value.anchor,
+                               .position = edit.value.position,
+                               .audio_milliseconds = edit.value.audio_milliseconds});
     context.command_label = "Insert bookmark";
     context.changed = true;
 }
 
 void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart,
                          const measure_index_t& index,
-                         const update_bookmark_action_t& edit) {
-    if (!validate_marker_label(context, edit.label, "bookmark") ||
-        !validate_bookmark_anchor(chart, edit.anchor, edit.position, edit.audio_milliseconds, index,
-                                  context.result) ||
+                         const wormedit::update_edit_t<wormedit::bookmark_edit_value_t>& edit) {
+    if (!validate_marker_label(context, edit.value.label, "bookmark") ||
+        !validate_bookmark_anchor(chart, edit.value.anchor, edit.value.position,
+                                  edit.value.audio_milliseconds, index, context.result) ||
         !validate_chart_object_id(chart, edit.id, context.result, "bookmark"))
         return;
     const auto found = std::ranges::find(chart.bookmarks, edit.id, &bookmark_t::id);
@@ -254,21 +256,21 @@ void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart
                "bookmark update refers to an object that is not a bookmark");
         return;
     }
-    context.changed = found->label != edit.label || found->anchor != edit.anchor ||
-                      found->position != edit.position ||
-                      found->audio_milliseconds != edit.audio_milliseconds;
+    context.changed = found->label != edit.value.label || found->anchor != edit.value.anchor ||
+                      found->position != edit.value.position ||
+                      found->audio_milliseconds != edit.value.audio_milliseconds;
     if (!context.changed)
         return;
-    found->label = edit.label;
-    found->anchor = edit.anchor;
-    found->position = edit.position;
-    found->audio_milliseconds = edit.audio_milliseconds;
+    found->label = edit.value.label;
+    found->anchor = edit.value.anchor;
+    found->position = edit.value.position;
+    found->audio_milliseconds = edit.value.audio_milliseconds;
     context.command_label = "Update bookmark";
 }
 
 void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart,
                          const measure_index_t&,
-                         const delete_bookmark_action_t& edit) {
+                         const wormedit::delete_edit_t<wormedit::bookmark_edit_value_t>& edit) {
     if (!validate_chart_object_id(chart, edit.id, context.result, "bookmark"))
         return;
     const auto found = std::ranges::find(chart.bookmarks, edit.id, &bookmark_t::id);
@@ -284,32 +286,34 @@ void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart
 
 void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart,
                          const measure_index_t& index,
-                         const insert_section_action_t& edit) {
+                         const wormedit::insert_edit_t<wormedit::section_edit_value_t>& edit) {
     if (chart.sections.size() >= context.limits.maximum_sections) {
         reject(context.result, diagnostic_code_t::invalid_resolution,
                "section insertion would exceed the configured event cap");
         return;
     }
-    if (!validate_marker_label(context, edit.label, "section") ||
-        !validate_section_anchor(chart, edit.anchor, edit.beat_span,
-                                 edit.audio_millisecond_span, index, context.result))
+    if (!validate_marker_label(context, edit.value.label, "section") ||
+        !validate_section_anchor(chart, edit.value.anchor, edit.value.beat_span,
+                                 edit.value.audio_millisecond_span, index, context.result))
         return;
     const auto id = allocate_marker_id(context, chart);
     if (!id)
         return;
-    chart.sections.push_back({.id = *id, .label = edit.label, .anchor = edit.anchor,
-                              .beat_span = edit.beat_span,
-                              .audio_millisecond_span = edit.audio_millisecond_span});
+    chart.sections.push_back({.id = *id,
+                              .label = edit.value.label,
+                              .anchor = edit.value.anchor,
+                              .beat_span = edit.value.beat_span,
+                              .audio_millisecond_span = edit.value.audio_millisecond_span});
     context.command_label = "Insert section";
     context.changed = true;
 }
 
 void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart,
                          const measure_index_t& index,
-                         const update_section_action_t& edit) {
-    if (!validate_marker_label(context, edit.label, "section") ||
-        !validate_section_anchor(chart, edit.anchor, edit.beat_span, edit.audio_millisecond_span,
-                                 index, context.result) ||
+                         const wormedit::update_edit_t<wormedit::section_edit_value_t>& edit) {
+    if (!validate_marker_label(context, edit.value.label, "section") ||
+        !validate_section_anchor(chart, edit.value.anchor, edit.value.beat_span,
+                                 edit.value.audio_millisecond_span, index, context.result) ||
         !validate_chart_object_id(chart, edit.id, context.result, "section"))
         return;
     const auto found = std::ranges::find(chart.sections, edit.id, &section_t::id);
@@ -318,21 +322,21 @@ void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart
                "section update refers to an object that is not a section");
         return;
     }
-    context.changed = found->label != edit.label || found->anchor != edit.anchor ||
-                      !span_equal(found->beat_span, edit.beat_span) ||
-                      found->audio_millisecond_span != edit.audio_millisecond_span;
+    context.changed = found->label != edit.value.label || found->anchor != edit.value.anchor ||
+                      !span_equal(found->beat_span, edit.value.beat_span) ||
+                      found->audio_millisecond_span != edit.value.audio_millisecond_span;
     if (!context.changed)
         return;
-    found->label = edit.label;
-    found->anchor = edit.anchor;
-    found->beat_span = edit.beat_span;
-    found->audio_millisecond_span = edit.audio_millisecond_span;
+    found->label = edit.value.label;
+    found->anchor = edit.value.anchor;
+    found->beat_span = edit.value.beat_span;
+    found->audio_millisecond_span = edit.value.audio_millisecond_span;
     context.command_label = "Update section";
 }
 
 void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart,
                          const measure_index_t&,
-                         const delete_section_action_t& edit) {
+                         const wormedit::delete_edit_t<wormedit::section_edit_value_t>& edit) {
     if (!validate_chart_object_id(chart, edit.id, context.result, "section"))
         return;
     const auto found = std::ranges::find(chart.sections, edit.id, &section_t::id);
@@ -348,13 +352,13 @@ void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart
 
 void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart,
                          const measure_index_t& index,
-                         const insert_kiai_event_action_t& edit) {
+                         const wormedit::insert_edit_t<wormedit::kiai_edit_value_t>& edit) {
     if (chart.kiai.size() >= context.limits.maximum_kiai_events) {
         reject(context.result, diagnostic_code_t::invalid_resolution,
                "kiai insertion would exceed the configured event cap");
         return;
     }
-    if (!validate_position(chart, edit.position, index, context.result, "kiai event"))
+    if (!validate_position(chart, edit.value.position, index, context.result, "kiai event"))
         return;
     const auto id = allocate_marker_id(context, chart);
     if (!id)
@@ -365,8 +369,10 @@ void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart
                "kiai source-order sequence is exhausted");
         return;
     }
-    chart.kiai.push_back({.id = *id, .position = edit.position, .enabled = edit.enabled,
-                          .retained_effect_bits = edit.retained_effect_bits,
+    chart.kiai.push_back({.id = *id,
+                          .position = edit.value.position,
+                          .enabled = edit.value.settings.enabled,
+                          .retained_effect_bits = edit.value.settings.retained_effect_bits,
                           .provenance = {.source_order = *source_order}});
     context.command_label = "Insert kiai event";
     context.changed = true;
@@ -374,8 +380,8 @@ void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart
 
 void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart,
                          const measure_index_t& index,
-                         const update_kiai_event_action_t& edit) {
-    if (!validate_position(chart, edit.position, index, context.result, "kiai event") ||
+                         const wormedit::update_edit_t<wormedit::kiai_edit_value_t>& edit) {
+    if (!validate_position(chart, edit.value.position, index, context.result, "kiai event") ||
         !validate_chart_object_id(chart, edit.id, context.result, "kiai event"))
         return;
     const auto found = std::ranges::find(chart.kiai, edit.id, &kiai_event_t::id);
@@ -384,17 +390,18 @@ void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart
                "kiai update refers to an object that is not a kiai event");
         return;
     }
-    context.changed = found->position != edit.position || found->enabled != edit.enabled;
+    context.changed =
+        found->position != edit.value.position || found->enabled != edit.value.settings.enabled;
     if (!context.changed)
         return;
-    found->position = edit.position;
-    found->enabled = edit.enabled;
+    found->position = edit.value.position;
+    found->enabled = edit.value.settings.enabled;
     context.command_label = "Update kiai event";
 }
 
 void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart,
                          const measure_index_t&,
-                         const delete_kiai_event_action_t& edit) {
+                         const wormedit::delete_edit_t<wormedit::kiai_edit_value_t>& edit) {
     if (!validate_chart_object_id(chart, edit.id, context.result, "kiai event"))
         return;
     const auto found = std::ranges::find(chart.kiai, edit.id, &kiai_event_t::id);

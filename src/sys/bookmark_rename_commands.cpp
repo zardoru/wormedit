@@ -30,9 +30,13 @@ auto bookmark_navigation_t::rename_bookmark(document_history_t& history,
     const auto* bookmark = find_bookmark(history, chart_id, bookmark_id);
     if (!bookmark)
         return compose_action_outcome_t::blocked("That bookmark is no longer available.");
-    const marker_edit_action_t action{update_bookmark_action_t{
-        chart_id, bookmark_id, std::string(label), bookmark->anchor, bookmark->position,
-        bookmark->audio_milliseconds}};
+    const marker_edit_action_t action{wormedit::update_edit_t<wormedit::bookmark_edit_value_t>{
+        .chart = chart_id,
+        .id = bookmark_id,
+        .value = {.label = std::string(label),
+                  .anchor = bookmark->anchor,
+                  .position = bookmark->position,
+                  .audio_milliseconds = bookmark->audio_milliseconds}}};
     auto applied = apply_marker_edit(history, action);
     return compose_action_outcome_t::from(
         std::move(applied),

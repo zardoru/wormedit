@@ -62,7 +62,7 @@ auto load_existing_event(const chart_document_t& chart, timing_lane_kind_t kind,
             return false;
         }
         position = found->position;
-        value = timing_scroll_value_t{found->multiplier};
+        value = timing_scroll_value_t::from(*found);
         return true;
     }
     case timing_lane_kind_t::speed: {
@@ -71,8 +71,7 @@ auto load_existing_event(const chart_document_t& chart, timing_lane_kind_t kind,
             return false;
         }
         position = found->position;
-        value = timing_speed_value_t{found->multiplier, found->transition_beats,
-                                     found->transition_is_seconds};
+        value = timing_speed_value_t::from(*found);
         return true;
     }
     case timing_lane_kind_t::stop:
@@ -84,7 +83,7 @@ auto load_existing_event(const chart_document_t& chart, timing_lane_kind_t kind,
             return false;
         }
         position = found->position;
-        value = timing_pause_value_t{found->duration, found->source_unit};
+        value = timing_pause_value_t::from(*found);
         return true;
     }
     case timing_lane_kind_t::warp: {
@@ -93,7 +92,7 @@ auto load_existing_event(const chart_document_t& chart, timing_lane_kind_t kind,
             return false;
         }
         position = found->span.begin;
-        value = timing_warp_value_t{found->span.end, found->source_encoding};
+        value = timing_warp_value_t::from(*found);
         return true;
     }
     case timing_lane_kind_t::kiai: {
@@ -102,7 +101,7 @@ auto load_existing_event(const chart_document_t& chart, timing_lane_kind_t kind,
             return false;
         }
         position = found->position;
-        value = timing_kiai_value_t{found->enabled, found->retained_effect_bits};
+        value = timing_kiai_value_t::from(*found);
         return true;
     }
     case timing_lane_kind_t::anchor: {
@@ -111,7 +110,7 @@ auto load_existing_event(const chart_document_t& chart, timing_lane_kind_t kind,
             return false;
         }
         position = found->position;
-        value = timing_anchor_value_t{found->source_sample_frame, found->locked};
+        value = timing_anchor_value_t::from(*found);
         return true;
     }
     }
@@ -496,12 +495,17 @@ auto apply_timing_lane_preview(document_command_transaction_t& transaction,
         const auto& value = std::get<timing_scroll_value_t>(preview.value);
         if (preview.existing_event) {
             result = apply_scroll_speed_edit(
-                transaction, update_scroll_event_action_t{preview.stamp.chart, *preview.existing_event,
-                                                      preview.position, value.multiplier});
+                transaction,
+                wormedit::update_edit_t<wormedit::scroll_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .id = *preview.existing_event,
+                    .value = wormedit::scroll_edit_value_t::from(preview.position, value)});
         } else {
             result = apply_scroll_speed_edit(
                 transaction,
-                insert_scroll_event_action_t{preview.stamp.chart, preview.position, value.multiplier});
+                wormedit::insert_edit_t<wormedit::scroll_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .value = wormedit::scroll_edit_value_t::from(preview.position, value)});
         }
         break;
     }
@@ -510,31 +514,35 @@ auto apply_timing_lane_preview(document_command_transaction_t& transaction,
         if (preview.existing_event) {
             result = apply_scroll_speed_edit(
                 transaction,
-                update_speed_event_action_t{preview.stamp.chart, *preview.existing_event,
-                                            preview.position, value.multiplier,
-                                            value.transition_beats, value.transition_is_seconds});
+                wormedit::update_edit_t<wormedit::speed_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .id = *preview.existing_event,
+                    .value = wormedit::speed_edit_value_t::from(preview.position, value)});
         } else {
             result = apply_scroll_speed_edit(
                 transaction,
-                insert_speed_event_action_t{preview.stamp.chart, preview.position, value.multiplier,
-                                            value.transition_beats, value.transition_is_seconds});
+                wormedit::insert_edit_t<wormedit::speed_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .value = wormedit::speed_edit_value_t::from(preview.position, value)});
         }
         break;
     }
     case timing_lane_kind_t::stop:
     case timing_lane_kind_t::delay: {
         const auto& value = std::get<timing_pause_value_t>(preview.value);
-        const auto pause_kind =
-            preview.kind == timing_lane_kind_t::stop ? pause_kind_t::stop : pause_kind_t::delay;
         if (preview.existing_event) {
             result = apply_pause_warp_edit(
-                transaction, update_pause_event_action_t{preview.stamp.chart, *preview.existing_event,
-                                                     preview.position, pause_kind, value.duration,
-                                                     value.source_unit});
+                transaction,
+                wormedit::update_edit_t<wormedit::pause_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .id = *preview.existing_event,
+                    .value = wormedit::pause_edit_value_t::from(preview.position, value)});
         } else {
             result = apply_pause_warp_edit(
-                transaction, insert_pause_event_action_t{preview.stamp.chart, preview.position, pause_kind,
-                                                     value.duration, value.source_unit});
+                transaction,
+                wormedit::insert_edit_t<wormedit::pause_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .value = wormedit::pause_edit_value_t::from(preview.position, value)});
         }
         break;
     }
@@ -542,15 +550,17 @@ auto apply_timing_lane_preview(document_command_transaction_t& transaction,
         const auto& value = std::get<timing_warp_value_t>(preview.value);
         if (preview.existing_event) {
             result = apply_pause_warp_edit(
-                transaction, update_warp_event_action_t{preview.stamp.chart,
-                                                    *preview.existing_event,
-                                                    {.begin = preview.position, .end = value.end},
-                                                    std::nullopt});
+                transaction,
+                wormedit::update_edit_t<wormedit::warp_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .id = *preview.existing_event,
+                    .value = wormedit::warp_edit_value_t::from(preview.position, value)});
         } else {
             result = apply_pause_warp_edit(
-                transaction, insert_warp_event_action_t{preview.stamp.chart,
-                                                    {.begin = preview.position, .end = value.end},
-                                                    value.source_encoding});
+                transaction,
+                wormedit::insert_edit_t<wormedit::warp_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .value = wormedit::warp_edit_value_t::from(preview.position, value)});
         }
         break;
     }
@@ -558,12 +568,17 @@ auto apply_timing_lane_preview(document_command_transaction_t& transaction,
         const auto& value = std::get<timing_kiai_value_t>(preview.value);
         if (preview.existing_event) {
             result = apply_marker_edit(
-                transaction, update_kiai_event_action_t{preview.stamp.chart, *preview.existing_event,
-                                                    preview.position, value.enabled});
+                transaction,
+                wormedit::update_edit_t<wormedit::kiai_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .id = *preview.existing_event,
+                    .value = wormedit::kiai_edit_value_t::from(preview.position, value)});
         } else {
             result = apply_marker_edit(
-                transaction, insert_kiai_event_action_t{preview.stamp.chart, preview.position, value.enabled,
-                                                    value.retained_effect_bits});
+                transaction,
+                wormedit::insert_edit_t<wormedit::kiai_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .value = wormedit::kiai_edit_value_t::from(preview.position, value)});
         }
         break;
     }
@@ -571,13 +586,17 @@ auto apply_timing_lane_preview(document_command_transaction_t& transaction,
         const auto& value = std::get<timing_anchor_value_t>(preview.value);
         if (preview.existing_event) {
             result = apply_timing_anchor_edit(
-                transaction, update_timing_anchor_action_t{preview.stamp.chart, *preview.existing_event,
-                                                       preview.position, value.source_sample_frame,
-                                                       value.locked});
+                transaction,
+                wormedit::update_edit_t<wormedit::timing_anchor_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .id = *preview.existing_event,
+                    .value = wormedit::timing_anchor_edit_value_t::from(preview.position, value)});
         } else {
             result = apply_timing_anchor_edit(
-                transaction, insert_timing_anchor_action_t{preview.stamp.chart, preview.position,
-                                                       value.source_sample_frame, value.locked});
+                transaction,
+                wormedit::insert_edit_t<wormedit::timing_anchor_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .value = wormedit::timing_anchor_edit_value_t::from(preview.position, value)});
         }
         break;
     }
@@ -586,6 +605,14 @@ auto apply_timing_lane_preview(document_command_transaction_t& transaction,
 }
 
 } // namespace
+
+void timing_lane_pseudonote_preview_t::set_value(timing_lane_value_t&& next) {
+    value = std::move(next);
+    if (auto* pause = std::get_if<timing_pause_value_t>(&value))
+        pause->kind = kind == timing_lane_kind_t::delay ? pause_kind_t::delay : pause_kind_t::stop;
+    if (auto* warp = std::get_if<timing_warp_value_t>(&value); warp && existing_event)
+        warp->is_source_encoding_replaced = false;
+}
 
 auto effective_bpm_at(const chart_document_t& chart, local_position_t position)
     -> std::optional<signed_rational_t> {
@@ -623,8 +650,8 @@ auto begin_timing_lane_pseudonote(const document_history_t& history, chart_id_t 
                                              .stamp = chart_stamp_t::from(history.document, chart),
                                              .kind = kind,
                                              .position = exact_snapped_position,
-                                             .value = std::move(initial_value),
                                              .initial_value_source = initial_value_source};
+    preview.set_value(std::move(initial_value));
     (void)initial_status(preview, history, timing_locked);
     return preview;
 }
@@ -700,7 +727,7 @@ auto revise_timing_lane_pseudonote(const document_history_t& history,
         preview.status = timing_lane_pseudonote_status_t::cancelled;
         return false;
     }
-    preview.value = std::move(value);
+    preview.set_value(std::move(value));
     preview.diagnostics.clear();
     if (!preview.existing_event && is_same_row_is_occupied(*chart, preview.kind, preview.position)) {
         reject(preview, diagnostic_code_t::collision,
@@ -906,18 +933,27 @@ auto delete_existing_timing_lane_event(document_history_t& history, chart_id_t c
         return apply_bpm_edit(history, wormedit::delete_edit_t<wormedit::bpm_edit_value_t>{
                                            .chart = chart, .id = event});
     case timing_lane_kind_t::scroll:
-        return apply_scroll_speed_edit(history, delete_scroll_event_action_t{chart, event});
+        return apply_scroll_speed_edit(
+            history,
+            wormedit::delete_edit_t<wormedit::scroll_edit_value_t>{.chart = chart, .id = event});
     case timing_lane_kind_t::speed:
-        return apply_scroll_speed_edit(history, delete_speed_event_action_t{chart, event});
+        return apply_scroll_speed_edit(
+            history,
+            wormedit::delete_edit_t<wormedit::speed_edit_value_t>{.chart = chart, .id = event});
     case timing_lane_kind_t::stop:
     case timing_lane_kind_t::delay:
-        return apply_pause_warp_edit(history, delete_pause_event_action_t{chart, event});
+        return apply_pause_warp_edit(history, wormedit::delete_edit_t<wormedit::pause_edit_value_t>{
+                                                  .chart = chart, .id = event});
     case timing_lane_kind_t::warp:
-        return apply_pause_warp_edit(history, delete_warp_event_action_t{chart, event});
+        return apply_pause_warp_edit(history, wormedit::delete_edit_t<wormedit::warp_edit_value_t>{
+                                                  .chart = chart, .id = event});
     case timing_lane_kind_t::kiai:
-        return apply_marker_edit(history, delete_kiai_event_action_t{chart, event});
+        return apply_marker_edit(history, wormedit::delete_edit_t<wormedit::kiai_edit_value_t>{
+                                              .chart = chart, .id = event});
     case timing_lane_kind_t::anchor:
-        return apply_timing_anchor_edit(history, delete_timing_anchor_action_t{chart, event});
+        return apply_timing_anchor_edit(
+            history, wormedit::delete_edit_t<wormedit::timing_anchor_edit_value_t>{.chart = chart,
+                                                                                   .id = event});
     }
     return result;
 }

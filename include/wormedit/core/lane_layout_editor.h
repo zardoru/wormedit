@@ -15,28 +15,18 @@ enum class lane_layout_change_policy_t {
     any_row,
 };
 
-struct insert_lane_layout_action_t {
-    chart_id_t chart;
+struct lane_layout_edit_value_t {
+    // Position and initial input bindings are insertion data; updates replace only the layout.
     local_position_t position;
     lane_layout_t layout;
-    // Key bindings for the new layout's lanes, taken only when the chart has none yet (an empty
-    // BMS has no playable channel to detect a profile from), so the lanes can be played at once.
     std::optional<input_profile_t> input;
+    auto operator==(const lane_layout_edit_value_t&) const -> bool = default;
 };
 
-struct update_lane_layout_action_t {
-    chart_id_t chart;
-    object_id_t id;
-    lane_layout_t layout;
-};
-
-struct delete_lane_layout_action_t {
-    chart_id_t chart;
-    object_id_t id;
-};
-
-using lane_layout_action_t = std::variant<insert_lane_layout_action_t, update_lane_layout_action_t,
-                                          delete_lane_layout_action_t>;
+using lane_layout_action_t =
+    std::variant<wormedit::insert_edit_t<wormedit::lane_layout_edit_value_t>,
+                 wormedit::update_edit_t<wormedit::lane_layout_edit_value_t>,
+                 wormedit::delete_edit_t<wormedit::lane_layout_edit_value_t>>;
 
 // Inserts, replaces or removes one layout segment through shared history.
 // Notes are never moved: when any note at or after the change would sit on a

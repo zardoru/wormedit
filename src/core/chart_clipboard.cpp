@@ -240,8 +240,9 @@ auto stage_selection_spans(document_history_t& staged, editor_interaction_state_
         });
     }
     if (options.recipe) {
-        const auto edited = apply_sv_recipe_edit(staged,
-            delete_sv_recipe_action_t{state.chart, options.recipe});
+        const auto edited =
+            apply_sv_recipe_edit(staged, wormedit::delete_edit_t<wormedit::sv_recipe_t>{
+                                             .chart = state.chart, .id = options.recipe});
         if (!edited) return edited.diagnostics;
     }
     return {};

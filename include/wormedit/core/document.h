@@ -234,6 +234,7 @@ struct lane_binding_t {
     physical_key_t key{physical_key_t::unknown};
     lane_id_t lane;
     std::optional<std::uint32_t> focused_stage;
+    auto operator==(const lane_binding_t&) const -> bool = default;
 };
 
 struct input_profile_t {
@@ -241,6 +242,7 @@ struct input_profile_t {
     std::vector<lane_binding_t> bindings;
     std::uint32_t stage_count{1};
     bool requires_focused_stage{false};
+    auto operator==(const input_profile_t&) const -> bool = default;
 };
 
 struct semantic_layer_t {

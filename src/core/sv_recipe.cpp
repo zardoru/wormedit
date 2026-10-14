@@ -1120,11 +1120,14 @@ auto apply_sv_recipe_draft(document_history_t& history, sv_recipe_draft_t& draft
     }
     auto candidate = draft.candidate;
     candidate.id = draft.existing_recipe.value_or(recipe_id_t{});
-    const sv_recipe_edit_action_t action = draft.existing_recipe
-        ? sv_recipe_edit_action_t{update_sv_recipe_action_t{
-              draft.stamp.chart, *draft.existing_recipe, std::move(candidate)}}
-        : sv_recipe_edit_action_t{insert_sv_recipe_action_t{
-              draft.stamp.chart, std::move(candidate)}};
+    const sv_recipe_edit_action_t action =
+        draft.existing_recipe
+            ? sv_recipe_edit_action_t{wormedit::update_edit_t<wormedit::sv_recipe_t>{
+                  .chart = draft.stamp.chart,
+                  .id = *draft.existing_recipe,
+                  .value = std::move(candidate)}}
+            : sv_recipe_edit_action_t{wormedit::insert_edit_t<wormedit::sv_recipe_t>{
+                  .chart = draft.stamp.chart, .value = std::move(candidate)}};
     result = apply_sv_recipe_transaction(transaction, action);
     draft.diagnostics = result.diagnostics;
     if (result.diagnostics.empty()) {
@@ -1517,15 +1520,14 @@ auto append_recipe_validation(sv_recipe_edit_context_t& context,
     return false;
 }
 
-void apply_recipe_operation(sv_recipe_edit_context_t& context,
-                            chart_document_t& chart,
-                            const insert_sv_recipe_action_t& edit) {
+void apply_recipe_operation(sv_recipe_edit_context_t& context, chart_document_t& chart,
+                            const wormedit::insert_edit_t<wormedit::sv_recipe_t>& edit) {
     if (chart.sv_recipes.size() >= maximum_sv_recipes_per_chart) {
         reject(context.result.diagnostics, diagnostic_code_t::invalid_resolution,
                "SV recipe insertion would exceed the per-chart cap");
         return;
     }
-    auto recipe = edit.recipe;
+    auto recipe = edit.value;
     if (!recipe.id) {
         const auto id = next_recipe_id(context.proposed);
         if (!id) {
@@ -1546,13 +1548,12 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
     context.changed = true;
 }
 
-void apply_recipe_operation(sv_recipe_edit_context_t& context,
-                            chart_document_t& chart,
-                            const update_sv_recipe_action_t& edit) {
+void apply_recipe_operation(sv_recipe_edit_context_t& context, chart_document_t& chart,
+                            const wormedit::update_edit_t<wormedit::sv_recipe_t>& edit) {
     auto* recipe = editable_recipe(context, chart, edit.id);
     if (!recipe)
         return;
-    auto replacement = edit.replacement;
+    auto replacement = edit.value;
     replacement.id = edit.id;
     if (!append_recipe_validation(context, chart, replacement))
         return;
@@ -1563,9 +1564,8 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
     }
 }
 
-void apply_recipe_operation(sv_recipe_edit_context_t& context,
-                            chart_document_t& chart,
-                            const delete_sv_recipe_action_t& edit) {
+void apply_recipe_operation(sv_recipe_edit_context_t& context, chart_document_t& chart,
+                            const wormedit::delete_edit_t<wormedit::sv_recipe_t>& edit) {
     if (!editable_recipe(context, chart, edit.id))
         return;
     std::erase_if(chart.sv_recipes, [&](const auto& item) { return item.id == edit.id; });

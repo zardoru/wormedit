@@ -227,8 +227,12 @@ auto bookmark_navigation_t::add_beat_bookmark_here(document_history_t& history,
         return compose_action_outcome_t::blocked("A bookmark already exists on this row.",
                                                  notification_source_t::edit);
     auto applied = apply_marker_edit(
-        history, marker_edit_action_t{insert_bookmark_action_t{
-                     state.chart, {}, marker_anchor_t::beat, position, std::nullopt}});
+        history, marker_edit_action_t{wormedit::insert_edit_t<wormedit::bookmark_edit_value_t>{
+                     .chart = state.chart,
+                     .value = {.label = {},
+                               .anchor = marker_anchor_t::beat,
+                               .position = position,
+                               .audio_milliseconds = std::nullopt}}});
     if (!applied.applied) {
         auto outcome = compose_action_outcome_t::from(
             applied.diagnostics.empty() ? "Bookmark edit made no changes."

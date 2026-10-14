@@ -26,6 +26,7 @@ struct semantic_layer_rgba_t {
     double green{};
     double blue{};
     double alpha{1.0};
+    auto operator==(const semantic_layer_rgba_t&) const -> bool = default;
 };
 
 struct semantic_layer_palette_window_t {
@@ -64,27 +65,22 @@ struct semantic_layer_palette_window_t {
                                                       std::size_t maximum_layers = 100'000)
     -> std::optional<semantic_layer_palette_window_t>;
 
-struct insert_semantic_layer_action_t {
-    chart_id_t chart;
+struct semantic_layer_edit_value_t {
     std::string name;
     semantic_layer_rgba_t color;
     bool visible{true};
-    bool locked{false};
+    bool locked{};
+    auto operator==(const semantic_layer_edit_value_t&) const -> bool = default;
 };
 
-struct update_semantic_layer_action_t {
-    chart_id_t chart;
-    layer_id_t id;
-    std::string name;
-    semantic_layer_rgba_t color;
-    bool visible{true};
-    bool locked{false};
+struct semantic_layer_delete_options_t {
+    bool remove_from_notes{};
+    auto operator==(const semantic_layer_delete_options_t&) const -> bool = default;
 };
 
-struct delete_semantic_layer_action_t {
-    chart_id_t chart;
-    layer_id_t id;
-    bool remove_from_notes{false};
+template <> struct chart_edit_value_traits_t<semantic_layer_edit_value_t> {
+    using id_type = layer_id_t;
+    using delete_options_type = semantic_layer_delete_options_t;
 };
 
 struct reorder_semantic_layers_action_t {
@@ -120,10 +116,11 @@ struct replace_notes_semantic_layer_action_t {
 };
 
 using semantic_layer_edit_action_t =
-    std::variant<insert_semantic_layer_action_t, update_semantic_layer_action_t,
-                 delete_semantic_layer_action_t, reorder_semantic_layers_action_t,
-                 semantic_layer_membership_edit_t, clear_semantic_layer_membership_action_t,
-                 replace_notes_semantic_layer_action_t>;
+    std::variant<wormedit::insert_edit_t<wormedit::semantic_layer_edit_value_t>,
+                 wormedit::update_edit_t<wormedit::semantic_layer_edit_value_t>,
+                 wormedit::delete_edit_t<wormedit::semantic_layer_edit_value_t>,
+                 reorder_semantic_layers_action_t, semantic_layer_membership_edit_t,
+                 clear_semantic_layer_membership_action_t, replace_notes_semantic_layer_action_t>;
 
 // Applies one layer edit through shared document history. Layer IDs are stable,
 // nonzero, chart-local values. Membership actions affect only the explicitly

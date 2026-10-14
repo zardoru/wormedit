@@ -52,6 +52,26 @@ template <typename Settings> struct positioned_edit_value_t {
         -> positioned_edit_value_t {
         return {.position = position, .settings = settings};
     }
+    [[nodiscard]] static auto from(position_span_t span, std::optional<warp_provenance_t> encoding)
+        -> positioned_edit_value_t
+        requires requires { Settings::from(span.end, encoding); }
+    {
+        return from(span.begin, Settings::from(span.end, encoding));
+    }
+    [[nodiscard]] auto span() const -> position_span_t
+        requires requires(const Settings& value) { value.end; }
+    {
+        return {.begin = position, .end = settings.end};
+    }
+    [[nodiscard]] auto source_encoding() const -> std::optional<warp_provenance_t>
+        requires requires(const Settings& value) {
+            value.source_encoding;
+            value.is_source_encoding_replaced;
+        }
+    {
+        return settings.is_source_encoding_replaced ? std::optional{settings.source_encoding}
+                                                    : std::nullopt;
+    }
     auto operator==(const positioned_edit_value_t&) const -> bool = default;
 
   private:

@@ -200,8 +200,10 @@ auto apply_recipe_form(document_history_t& history, const recipe_form_preview_t&
     auto transaction = document_command_transaction_t::from(history, proposal.stamp,
         "SV recipe form", document_identity_policy_t::revision_only);
     if (!transaction.is_ready()) return transaction.finish_without_commit();
-    return apply_sv_recipe_edit(transaction,
-        update_sv_recipe_action_t{proposal.stamp.chart, proposal.candidate.id, proposal.candidate});
+    return apply_sv_recipe_edit(
+        transaction, wormedit::update_edit_t<wormedit::sv_recipe_t>{.chart = proposal.stamp.chart,
+                                                                    .id = proposal.candidate.id,
+                                                                    .value = proposal.candidate});
 }
 
 auto apply_recipe_form(document_history_t& history, chart_id_t chart_id, recipe_id_t recipe_id,

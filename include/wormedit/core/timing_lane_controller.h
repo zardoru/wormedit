@@ -2,6 +2,10 @@
 
 #include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/command.h>
+#include <wormedit/core/marker_editor.h>
+#include <wormedit/core/pause_warp_editor.h>
+#include <wormedit/core/scroll_speed_editor.h>
+#include <wormedit/core/timing_anchor_editor.h>
 
 #include <cstdint>
 #include <optional>
@@ -35,36 +39,7 @@ enum class timing_lane_initial_value_source_t {
     effective_at_position,
 };
 
-struct timing_scroll_value_t {
-    signed_rational_t multiplier{1, 1};
-};
-
-struct timing_speed_value_t {
-    signed_rational_t multiplier{1, 1};
-    rational_t transition_beats{};
-    bool transition_is_seconds{};
-};
-
-struct timing_pause_value_t {
-    signed_rational_t duration{};
-    pause_unit_t source_unit{pause_unit_t::seconds};
-};
-
 // A warp's start is the pseudo-note row; its end is required user input.
-struct timing_warp_value_t {
-    local_position_t end;
-    warp_provenance_t source_encoding{warp_provenance_t::native};
-};
-
-struct timing_kiai_value_t {
-    bool enabled{true};
-    std::uint32_t retained_effect_bits{};
-};
-
-struct timing_anchor_value_t {
-    std::uint64_t source_sample_frame{};
-    bool locked{};
-};
 
 using timing_lane_value_t =
     std::variant<timing_bpm_value_t, timing_scroll_value_t, timing_speed_value_t,
@@ -89,6 +64,8 @@ struct timing_lane_pseudonote_preview_t {
     timing_lane_initial_value_source_t initial_value_source{
         timing_lane_initial_value_source_t::explicit_default};
     diagnostic_list_t diagnostics;
+
+    void set_value(timing_lane_value_t&& next);
 
     [[nodiscard]] auto is_valid() const noexcept -> bool {
         return status == timing_lane_pseudonote_status_t::committed ||

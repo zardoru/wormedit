@@ -163,15 +163,17 @@ auto allocate_event_id(pause_warp_edit_context_t& context, const chart_document_
 }
 
 auto insert_pause(pause_warp_edit_context_t& context, chart_document_t& chart,
-                  const insert_pause_event_action_t& edit) -> void {
+                  const wormedit::insert_edit_t<wormedit::pause_edit_value_t>& edit) -> void {
     if (!pause_event_cap(context, chart)) return;
     if (chart.pauses.size() >= context.limits.maximum_pause_events) {
         reject(context.result, diagnostic_code_t::invalid_resolution,
                "pause insertion would exceed the configured event cap");
         return;
     }
-    if (!validate_position(chart, edit.position, context.result, "pause event") ||
-        !validate_pause_values(edit.kind, edit.duration, edit.source_unit, context.result)) return;
+    if (!validate_position(chart, edit.value.position, context.result, "pause event") ||
+        !validate_pause_values(edit.value.settings.kind, edit.value.settings.duration,
+                               edit.value.settings.source_unit, context.result))
+        return;
     const auto id = allocate_event_id(context, chart);
     if (!id) return;
     const auto source_order = next_source_order(chart.pauses);
@@ -180,9 +182,12 @@ auto insert_pause(pause_warp_edit_context_t& context, chart_document_t& chart,
                "pause source-order sequence is exhausted");
         return;
     }
-    chart.pauses.push_back({.id = *id, .position = edit.position, .kind = edit.kind,
-        .duration = edit.duration, .source_unit = edit.source_unit,
-        .provenance = {.source_order = *source_order}});
+    chart.pauses.push_back({.id = *id,
+                            .position = edit.value.position,
+                            .kind = edit.value.settings.kind,
+                            .duration = edit.value.settings.duration,
+                            .source_unit = edit.value.settings.source_unit,
+                            .provenance = {.source_order = *source_order}});
     context.command_label = "Insert pause event";
     context.changed = true;
 }
@@ -193,7 +198,7 @@ struct pause_update_target_t {
 };
 
 auto validate_pause_update(pause_warp_edit_context_t& context, chart_document_t& chart,
-                           const update_pause_event_action_t& edit)
+                           const wormedit::update_edit_t<wormedit::pause_edit_value_t>& edit)
     -> std::optional<pause_update_target_t> {
     if (!edit.id) {
         reject(context.result, diagnostic_code_t::invalid_id,
@@ -201,8 +206,9 @@ auto validate_pause_update(pause_warp_edit_context_t& context, chart_document_t&
         return std::nullopt;
     }
     auto* event = unique_event(chart, chart.pauses, edit.id, "pause", context.result);
-    if (!event || !validate_position(chart, edit.position, context.result, "pause event") ||
-        !validate_pause_values(edit.kind, edit.duration, edit.source_unit, context.result))
+    if (!event || !validate_position(chart, edit.value.position, context.result, "pause event") ||
+        !validate_pause_values(edit.value.settings.kind, edit.value.settings.duration,
+                               edit.value.settings.source_unit, context.result))
         return std::nullopt;
     auto* projection = matching_pause_projection(chart, *event, context.result);
     if (!context.result.diagnostics.empty()) return std::nullopt;
@@ -211,8 +217,8 @@ auto validate_pause_update(pause_warp_edit_context_t& context, chart_document_t&
                "source-backed BMS pause has no matching import projection");
         return std::nullopt;
     }
-    if (projection && (projection->imported_kind != edit.kind ||
-                       projection->imported_source_unit != edit.source_unit)) {
+    if (projection && (projection->imported_kind != edit.value.settings.kind ||
+                       projection->imported_source_unit != edit.value.settings.source_unit)) {
         reject(context.result, diagnostic_code_t::invalid_resolution,
                "pause update would make its BMS source projection incoherent");
         return std::nullopt;
@@ -221,23 +227,25 @@ auto validate_pause_update(pause_warp_edit_context_t& context, chart_document_t&
 }
 
 auto update_pause(pause_warp_edit_context_t& context, chart_document_t& chart,
-                  const update_pause_event_action_t& edit) -> void {
+                  const wormedit::update_edit_t<wormedit::pause_edit_value_t>& edit) -> void {
     if (!pause_event_cap(context, chart)) return;
     const auto target = validate_pause_update(context, chart, edit);
     if (!target) return;
     auto& event = *target->event;
-    context.changed = event.position != edit.position || event.kind != edit.kind ||
-                      event.duration != edit.duration || event.source_unit != edit.source_unit;
+    context.changed = event.position != edit.value.position ||
+                      event.kind != edit.value.settings.kind ||
+                      event.duration != edit.value.settings.duration ||
+                      event.source_unit != edit.value.settings.source_unit;
     if (!context.changed) return;
-    event.position = edit.position;
-    event.kind = edit.kind;
-    event.duration = edit.duration;
-    event.source_unit = edit.source_unit;
+    event.position = edit.value.position;
+    event.kind = edit.value.settings.kind;
+    event.duration = edit.value.settings.duration;
+    event.source_unit = edit.value.settings.source_unit;
     context.command_label = "Update pause event";
 }
 
 auto delete_pause(pause_warp_edit_context_t& context, chart_document_t& chart,
-                  const delete_pause_event_action_t& edit) -> void {
+                  const wormedit::delete_edit_t<wormedit::pause_edit_value_t>& edit) -> void {
     if (!pause_event_cap(context, chart)) return;
     if (!edit.id) {
         reject(context.result, diagnostic_code_t::invalid_id,
@@ -255,15 +263,16 @@ auto delete_pause(pause_warp_edit_context_t& context, chart_document_t& chart,
 }
 
 auto insert_warp(pause_warp_edit_context_t& context, chart_document_t& chart,
-                 const insert_warp_event_action_t& edit) -> void {
+                 const wormedit::insert_edit_t<wormedit::warp_edit_value_t>& edit) -> void {
     if (!warp_event_cap(context, chart)) return;
     if (chart.warps.size() >= context.limits.maximum_warp_events) {
         reject(context.result, diagnostic_code_t::invalid_resolution,
                "warp insertion would exceed the configured event cap");
         return;
     }
-    if (!validate_span(chart, edit.span, context.result)) return;
-    if (!is_valid_warp_encoding(edit.source_encoding)) {
+    if (!validate_span(chart, edit.value.span(), context.result))
+        return;
+    if (!is_valid_warp_encoding(edit.value.settings.source_encoding)) {
         reject(context.result, diagnostic_code_t::invalid_resolution,
                "warp event has an unknown source encoding");
         return;
@@ -276,15 +285,16 @@ auto insert_warp(pause_warp_edit_context_t& context, chart_document_t& chart,
                "warp source-order sequence is exhausted");
         return;
     }
-    chart.warps.push_back({.id = *id, .span = edit.span,
-        .source_encoding = edit.source_encoding,
-        .provenance = {.source_order = *source_order}});
+    chart.warps.push_back({.id = *id,
+                           .span = edit.value.span(),
+                           .source_encoding = edit.value.settings.source_encoding,
+                           .provenance = {.source_order = *source_order}});
     context.command_label = "Insert warp event";
     context.changed = true;
 }
 
 auto update_warp(pause_warp_edit_context_t& context, chart_document_t& chart,
-                 const update_warp_event_action_t& edit) -> void {
+                 const wormedit::update_edit_t<wormedit::warp_edit_value_t>& edit) -> void {
     if (!warp_event_cap(context, chart)) return;
     if (!edit.id) {
         reject(context.result, diagnostic_code_t::invalid_id,
@@ -292,23 +302,25 @@ auto update_warp(pause_warp_edit_context_t& context, chart_document_t& chart,
         return;
     }
     auto* event = unique_event(chart, chart.warps, edit.id, "warp", context.result);
-    if (!event || !validate_span(chart, edit.span, context.result)) return;
-    if (edit.source_encoding && !is_valid_warp_encoding(*edit.source_encoding)) {
+    if (!event || !validate_span(chart, edit.value.span(), context.result))
+        return;
+    if (edit.value.source_encoding() && !is_valid_warp_encoding(*edit.value.source_encoding())) {
         reject(context.result, diagnostic_code_t::invalid_resolution,
                "warp event has an unknown source encoding");
         return;
     }
-    const auto encoding = edit.source_encoding.value_or(event->source_encoding);
-    context.changed = event->span.begin != edit.span.begin || event->span.end != edit.span.end ||
+    const auto encoding = edit.value.source_encoding().value_or(event->source_encoding);
+    context.changed = event->span.begin != edit.value.span().begin ||
+                      event->span.end != edit.value.span().end ||
                       event->source_encoding != encoding;
     if (!context.changed) return;
-    event->span = edit.span;
+    event->span = edit.value.span();
     event->source_encoding = encoding;
     context.command_label = "Update warp event";
 }
 
 auto delete_warp(pause_warp_edit_context_t& context, chart_document_t& chart,
-                 const delete_warp_event_action_t& edit) -> void {
+                 const wormedit::delete_edit_t<wormedit::warp_edit_value_t>& edit) -> void {
     if (!warp_event_cap(context, chart)) return;
     if (!edit.id) {
         reject(context.result, diagnostic_code_t::invalid_id,
@@ -323,27 +335,33 @@ auto delete_warp(pause_warp_edit_context_t& context, chart_document_t& chart,
 }
 
 auto apply_pause_warp_action(pause_warp_edit_context_t& context, chart_document_t& chart,
-                             const insert_pause_event_action_t& edit) -> void {
+                             const wormedit::insert_edit_t<wormedit::pause_edit_value_t>& edit)
+    -> void {
     insert_pause(context, chart, edit);
 }
 auto apply_pause_warp_action(pause_warp_edit_context_t& context, chart_document_t& chart,
-                             const update_pause_event_action_t& edit) -> void {
+                             const wormedit::update_edit_t<wormedit::pause_edit_value_t>& edit)
+    -> void {
     update_pause(context, chart, edit);
 }
 auto apply_pause_warp_action(pause_warp_edit_context_t& context, chart_document_t& chart,
-                             const delete_pause_event_action_t& edit) -> void {
+                             const wormedit::delete_edit_t<wormedit::pause_edit_value_t>& edit)
+    -> void {
     delete_pause(context, chart, edit);
 }
 auto apply_pause_warp_action(pause_warp_edit_context_t& context, chart_document_t& chart,
-                             const insert_warp_event_action_t& edit) -> void {
+                             const wormedit::insert_edit_t<wormedit::warp_edit_value_t>& edit)
+    -> void {
     insert_warp(context, chart, edit);
 }
 auto apply_pause_warp_action(pause_warp_edit_context_t& context, chart_document_t& chart,
-                             const update_warp_event_action_t& edit) -> void {
+                             const wormedit::update_edit_t<wormedit::warp_edit_value_t>& edit)
+    -> void {
     update_warp(context, chart, edit);
 }
 auto apply_pause_warp_action(pause_warp_edit_context_t& context, chart_document_t& chart,
-                             const delete_warp_event_action_t& edit) -> void {
+                             const wormedit::delete_edit_t<wormedit::warp_edit_value_t>& edit)
+    -> void {
     delete_warp(context, chart, edit);
 }
 

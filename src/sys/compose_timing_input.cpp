@@ -345,7 +345,8 @@ auto run_compose_recipe_command(std::uint64_t id, std::uint8_t command,
     const auto recipe_id = recipe->id;
     const auto chart_id = chart->id;
     const auto enabled = recipe->enabled;
-    sv_recipe_edit_action_t action = delete_sv_recipe_action_t{chart_id, recipe_id};
+    sv_recipe_edit_action_t action =
+        wormedit::delete_edit_t<wormedit::sv_recipe_t>{.chart = chart_id, .id = recipe_id};
     accepted = "SV recipe deleted.";
     if (command == 0) {
         action = set_sv_recipe_enabled_action_t{chart_id, recipe_id, !enabled};

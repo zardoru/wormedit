@@ -1614,13 +1614,13 @@ TEST_CASE("sound layer defaults can be cleared and skip layers locked after assi
     REQUIRE(apply_sound_layer_defaults(history, {.chart = chart_id_t{2},
                                                  .resources = {resource_id_t{1}},
                                                  .layers = {layer_id_t{7}, layer_id_t{8}}}));
-    REQUIRE(apply_semantic_layer_edit(history,
-                                      update_semantic_layer_action_t{.chart = chart_id_t{2},
-                                                                     .id = layer_id_t{7},
-                                                                     .name = "Vocal",
-                                                                     .color = {1.0, 0.5, 0.0, 1.0},
-                                                                     .visible = true,
-                                                                     .locked = true}));
+    REQUIRE(apply_semantic_layer_edit(
+        history,
+        wormedit::update_edit_t<wormedit::semantic_layer_edit_value_t>{
+            .chart = chart_id_t{2},
+            .id = layer_id_t{7},
+            .value = {
+                .name = "Vocal", .color = {1.0, 0.5, 0.0, 1.0}, .visible = true, .locked = true}}));
     CHECK(sound_default_layers_for_placement(history.document.charts.front(), resource_id_t{1}) ==
           std::vector<layer_id_t>{layer_id_t{8}});
 
@@ -1670,7 +1670,8 @@ TEST_CASE("deleting a layer or a sound removes its sound layer defaults",
                                                  .resources = {resource_id_t{2}, resource_id_t{5}},
                                                  .layers = {layer_id_t{7}, layer_id_t{8}}}));
     REQUIRE(apply_semantic_layer_edit(
-        history, delete_semantic_layer_action_t{.chart = chart_id_t{2}, .id = layer_id_t{7}}));
+        history, wormedit::delete_edit_t<wormedit::semantic_layer_edit_value_t>{
+                     .chart = chart_id_t{2}, .id = layer_id_t{7}}));
     for (const auto& entry : history.document.charts.front().sound_layer_defaults)
         CHECK(entry.layers == std::vector<layer_id_t>{layer_id_t{8}});
     REQUIRE(validate_document(history.document).empty());
@@ -1682,7 +1683,8 @@ TEST_CASE("deleting a layer or a sound removes its sound layer defaults",
     REQUIRE(validate_document(history.document).empty());
 
     REQUIRE(apply_semantic_layer_edit(
-        history, delete_semantic_layer_action_t{.chart = chart_id_t{2}, .id = layer_id_t{8}}));
+        history, wormedit::delete_edit_t<wormedit::semantic_layer_edit_value_t>{
+                     .chart = chart_id_t{2}, .id = layer_id_t{8}}));
     CHECK(history.document.charts.front().sound_layer_defaults.empty());
 }
 

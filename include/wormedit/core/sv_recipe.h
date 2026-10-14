@@ -128,20 +128,9 @@ void cancel_sv_recipe_draft(sv_recipe_draft_t& draft) noexcept;
 [[nodiscard]] auto bake_sv_recipes_for_export(const chart_document_t& chart)
     -> sv_recipe_export_bake_result_t;
 
-struct insert_sv_recipe_action_t {
-    chart_id_t chart;
-    sv_recipe_t recipe;
-};
-
-struct update_sv_recipe_action_t {
-    chart_id_t chart;
-    recipe_id_t id;
-    sv_recipe_t replacement;
-};
-
-struct delete_sv_recipe_action_t {
-    chart_id_t chart;
-    recipe_id_t id;
+template <> struct chart_edit_value_traits_t<sv_recipe_t> {
+    using id_type = recipe_id_t;
+    using delete_options_type = std::monostate;
 };
 
 struct reorder_sv_recipe_action_t {
@@ -223,10 +212,10 @@ struct materialize_sv_recipe_action_t {
     recipe_id_t id;
 };
 
-using sv_recipe_edit_action_t =
-    std::variant<insert_sv_recipe_action_t, update_sv_recipe_action_t, delete_sv_recipe_action_t,
-                 reorder_sv_recipe_action_t, set_sv_recipe_enabled_action_t,
-                 move_sv_recipe_range_action_t, materialize_sv_recipe_action_t>;
+using sv_recipe_edit_action_t = std::variant<
+    wormedit::insert_edit_t<wormedit::sv_recipe_t>, wormedit::update_edit_t<wormedit::sv_recipe_t>,
+    wormedit::delete_edit_t<wormedit::sv_recipe_t>, reorder_sv_recipe_action_t,
+    set_sv_recipe_enabled_action_t, move_sv_recipe_range_action_t, materialize_sv_recipe_action_t>;
 
 // Every recipe edit is revision checked and published through shared document
 // history. Range changes are exact chart-grid positions, so dragging previews

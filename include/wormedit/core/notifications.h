@@ -194,6 +194,15 @@ class notification_sink_t {
   public:
     explicit notification_sink_t(notification_center_t& center) noexcept : center_(&center) {}
 
+    [[nodiscard]] static auto muted() noexcept -> notification_sink_t {
+        return notification_sink_t{};
+    }
+    [[nodiscard]] auto is_muted() const noexcept -> bool {
+        return center_ == nullptr;
+    }
+    void post_feedback(notification_severity_t severity, notification_source_t source,
+                       std::string_view message) const noexcept;
+
     void post(notification_severity_t severity, notification_source_t source,
               std::string_view message) const noexcept;
     void post_transient_hint(notification_source_t source, std::string_view message) const noexcept;
@@ -202,7 +211,8 @@ class notification_sink_t {
                           const notification_target_resolver_t& resolve_target = {}) const noexcept;
 
   private:
-    notification_center_t* center_;
+    notification_sink_t() noexcept = default;
+    notification_center_t* center_{};
 };
 
 } // namespace wormedit

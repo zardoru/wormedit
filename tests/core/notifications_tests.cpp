@@ -2,6 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
@@ -941,4 +942,54 @@ TEST_CASE("Same-clock durable hint repeat keeps identity and latest delivery ord
     expect_transient(entries.size() == 1 && entries[0].id == original_id && entries[0].count == 2);
     expect_transient(current_message(center) == "Durable A");
     expect_transient(center.statistics().posted == 2 && center.statistics().merged == 1);
+}
+
+namespace {
+auto unexpected_muted_target(const diagnostic_t&) -> notification_target_t {
+    FAIL_CHECK("A muted sink must not evaluate diagnostic target resolvers.");
+    return {};
+}
+} // namespace
+
+TEST_CASE("Feedback sinks route hints transiently and keep other severities durable",
+          "[notifications][transient]") {
+    notification_center_t center;
+    const notification_sink_t sink{center};
+    expect_transient(!sink.is_muted());
+    sink.post_feedback(notification_severity_t::hint, notification_source_t::input,
+                       "Cursor moved.");
+    center.drain_inbox(notification_time_t{});
+    expect_transient(center.size() == 0);
+    expect_transient(center.current_line() != nullptr);
+    expect_transient(center.current_line()->message == "Cursor moved.");
+    expect_transient(center.statistics().posted == 0);
+    const std::array severities{notification_severity_t::info, notification_severity_t::success,
+                                notification_severity_t::warning, notification_severity_t::error};
+    for (const auto severity : severities)
+        sink.post_feedback(severity, notification_source_t::edit, "Durable feedback.");
+    center.drain_inbox(notification_time_t{});
+    const auto entries = center.snapshot(notification_capacity);
+    expect_transient(entries.size() == severities.size());
+    for (std::size_t index = 0; index < entries.size(); ++index) {
+        expect_transient(entries[index].severity == severities[severities.size() - 1 - index]);
+        expect_transient(entries[index].source == notification_source_t::edit);
+    }
+    expect_transient(center.statistics().posted == severities.size());
+}
+
+TEST_CASE("Muted sinks drop every posting form before resolving diagnostics", "[notifications]") {
+    static_assert(sizeof(notification_sink_t) == sizeof(void*));
+    const auto sink = notification_sink_t::muted();
+    expect_transient(sink.is_muted());
+    sink.post(notification_severity_t::error, notification_source_t::system, "Dropped.");
+    sink.post_feedback(notification_severity_t::hint, notification_source_t::input,
+                       "Dropped hint.");
+    sink.post_feedback(notification_severity_t::warning, notification_source_t::edit,
+                       "Dropped warning.");
+    sink.post_transient_hint(notification_source_t::input, "Dropped transient.");
+    sink.post({.severity = notification_severity_t::error, .message = "Dropped request."});
+    sink.post_diagnostics(
+        notification_source_t::document,
+        {{.severity = diagnostic_severity_t::error, .message = "Dropped diagnostic."}},
+        unexpected_muted_target);
 }

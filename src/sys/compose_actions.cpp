@@ -55,23 +55,29 @@ auto compose_action_outcome_t::blocked(std::string message, notification_source_
 }
 
 auto compose_action_outcome_t::from(std::string message, notification_severity_t severity,
-    notification_source_t source, bool mutated, bool accepted) -> compose_action_outcome_t {
-    return {.message = std::move(message), .severity = severity, .source = source,
-            .mutated = mutated, .accepted = accepted};
+                                    notification_source_t source, bool mutated, bool accepted)
+    -> compose_action_outcome_t {
+    return {.message = std::move(message),
+            .severity = severity,
+            .source = source,
+            .mutated = mutated,
+            .accepted = accepted};
 }
 
 auto compose_action_outcome_t::from(const diagnostic_t& diagnostic, notification_source_t source)
     -> compose_action_outcome_t {
     return from(diagnostic.message,
-        compose_action_detail::compose_notification_severity(diagnostic.severity), source, false, false);
+                compose_action_detail::compose_notification_severity(diagnostic.severity), source,
+                false, false);
 }
 
 auto compose_action_outcome_t::from(document_command_result_t&& command, std::string success,
-    std::string unchanged, std::string_view rebind_failure, notification_source_t source)
-    -> compose_action_outcome_t {
-    auto outcome = from(command.applied ? std::move(success) : std::move(unchanged),
-        command.applied ? notification_severity_t::success : notification_severity_t::info,
-        source, command.applied, command.applied || command.diagnostics.empty());
+                                    std::string unchanged, std::string_view rebind_failure,
+                                    notification_source_t source) -> compose_action_outcome_t {
+    auto outcome =
+        from(command.applied ? std::move(success) : std::move(unchanged),
+             command.applied ? notification_severity_t::success : notification_severity_t::info,
+             source, command.applied, command.applied || command.diagnostics.empty());
     if (!command.diagnostics.empty()) {
         outcome.message = command.diagnostics.front().message;
         outcome.severity = compose_action_detail::compose_notification_severity(
@@ -97,7 +103,7 @@ auto finish_compose_action(compose_action_context_t& context, compose_action_out
     -> std::string {
     if (outcome.mutated) {
         const auto rebound = rebind_workspace(context.environment.document.workspace,
-                                               context.environment.document.history);
+                                              context.environment.document.history);
         if (!rebound) {
             static_cast<void>(publish_compose_feedback(context, std::move(outcome.message),
                                                        outcome.severity, outcome.source));
@@ -105,13 +111,13 @@ auto finish_compose_action(compose_action_context_t& context, compose_action_out
                     compose_rebind_failure_policy_t::diagnostic_or_message &&
                 !rebound.diagnostics.empty())
                 return publish_compose_diagnostic(context, rebound.diagnostics.front(),
-                                                   notification_source_t::document);
+                                                  notification_source_t::document);
             return compose_action_error(context, std::string{outcome.rebind_failure},
-                                         notification_source_t::document);
+                                        notification_source_t::document);
         }
     }
     return publish_compose_feedback(context, std::move(outcome.message), outcome.severity,
-                                     outcome.source);
+                                    outcome.source);
 }
 
 auto compose_notification_severity(diagnostic_severity_t severity) -> notification_severity_t {
@@ -125,17 +131,13 @@ auto compose_notification_severity(diagnostic_severity_t severity) -> notificati
 
 void post_typed_compose_feedback(const notification_sink_t& notifications,
     notification_severity_t severity, notification_source_t source, std::string_view message) {
-    if (severity == notification_severity_t::hint) notifications.post_transient_hint(source, message);
-    else notifications.post(severity, source, message);
+    notifications.post_feedback(severity, source, message);
 }
 
 auto publish_compose_feedback(compose_action_context_t& context, std::string message,
                               notification_severity_t severity, notification_source_t source)
     -> std::string {
-    if (context.notifications && !message.empty()) {
-        if (severity == notification_severity_t::hint) context.notifications->post_transient_hint(source, message);
-        else context.notifications->post(severity, source, message);
-    }
+    context.notifications.post_feedback(severity, source, message);
     return message;
 }
 
@@ -2167,17 +2169,18 @@ auto dispatch_quantize_preset_action(compose_action_context_t& context)
     return std::nullopt;
 }
 
-auto dispatch_compose_area_with_quantize_report(
-    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
-    wormedit::editor_interaction_state_t& state,
-    application_command_state_t& application_state,
-    std::optional<notification_sink_t> notifications) -> std::optional<std::string> {
+auto dispatch_compose_area_with_quantize_report(const WormUiWorkspaceAction& action,
+                                                wormedit::document_history_t& history,
+                                                wormedit::editor_interaction_state_t& state,
+                                                application_command_state_t& application_state,
+                                                notification_sink_t notifications)
+    -> std::optional<std::string> {
     using namespace wormedit;
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE &&
         (application_state.project.compose_view.compose_timing_focus || application_state.project.clipboard.paste_session ||
          editor_interaction_has_pending_gesture(state))) {
         const std::string message = "Quantize requires an idle active Compose chart.";
-        if (notifications) notifications->post(notification_severity_t::warning, notification_source_t::input, message);
+        notifications.post(notification_severity_t::warning, notification_source_t::input, message);
         return message;
     }
     const auto revision = history.document.revision;
@@ -2196,7 +2199,7 @@ auto dispatch_compose_area_with_quantize_report(
         (application_state.project.clipboard.paste_session || application_state.project.compose_gesture.bga_draw_stroke || application_state.project.compose_gesture.bmson_razor_stroke)) {
         const auto message = application_state.project.clipboard.paste_session ? "Finish the paste before converting the area."
             : "Finish the current edit before converting the area.";
-        if (notifications) notifications->post_transient_hint(notification_source_t::edit, message);
+        notifications.post_transient_hint(notification_source_t::edit, message);
         return message;
     }
     const auto response = dispatch_compose_area_action(action, history, state, notifications,
@@ -2214,8 +2217,9 @@ auto dispatch_compose_area_with_quantize_report(
 } // namespace compose_action_detail
 
 auto invoke_compose_quantize_command(bool toggle_preview, wormedit::document_history_t& history,
-    wormedit::editor_interaction_state_t& state, application_command_state_t& application,
-    std::optional<wormedit::notification_sink_t> notifications) -> bool {
+                                     wormedit::editor_interaction_state_t& state,
+                                     application_command_state_t& application,
+                                     wormedit::notification_sink_t notifications) -> bool {
     auto& editor = application.project.quantize.quantize_editor;
     if (!editor || !editor->stamp.is_identity_current(history.document, state.chart))
         editor = application_command_state_t::quantize_editor_t{
@@ -2319,8 +2323,8 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
     auto& history = environment.document.history;
     auto& workspace = environment.document.workspace;
     auto& application_state = environment.editor.commands;
-    const std::optional<notification_sink_t> notifications =
-        post_notifications ? std::optional{environment.document.notifications} : std::nullopt;
+    const notification_sink_t notifications =
+        post_notifications ? environment.document.notifications : notification_sink_t::muted();
 
     using namespace wormedit;
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_NONE &&
@@ -2334,9 +2338,7 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         workspace.selected_chart->value != action.compose_input_chart_id ||
         !stamp.is_current(history.document, state.chart)) {
         const auto message = stale_action_message("Compose view action");
-        if (notifications)
-            notifications->post(notification_severity_t::warning, notification_source_t::edit,
-                                message);
+        notifications.post(notification_severity_t::warning, notification_source_t::edit, message);
         return message;
     }
     const auto selected_chart_it = std::ranges::find(history.document.charts, state.chart,
@@ -2364,11 +2366,9 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         action.compose_action == WORM_UI_COMPOSE_ACTION_CREATE_BMS_BRANCH_BLOCK ||
         action.compose_action == WORM_UI_COMPOSE_ACTION_REMOVE_BMS_BRANCH_BLOCK ||
         action.compose_action == WORM_UI_COMPOSE_ACTION_MOVE_BMS_BRANCH_LEAF) {
-        return notifications
-            ? (notifications->post(notification_severity_t::warning, notification_source_t::format,
-                                   "BMS branch actions must use the workspace action boundary."),
-               "BMS branch actions must use the workspace action boundary.")
-            : "BMS branch actions must use the workspace action boundary.";
+        notifications.post(notification_severity_t::warning, notification_source_t::format,
+                           "BMS branch actions must use the workspace action boundary.");
+        return "BMS branch actions must use the workspace action boundary.";
     }
     if (auto response = dispatch_compose_note_menu_action(context)) return *response;
     if (auto response = dispatch_compose_audio_offset(context)) return *response;

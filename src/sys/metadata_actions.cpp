@@ -400,12 +400,12 @@ auto dispatch_metadata_action(const WormUiWorkspaceAction& action,
     auto& metadata_asset_runtime = environment.import.runtime;
     auto& asset_base = environment.asset_base;
     auto& resource_copy_scheduler = environment.import.scheduler;
-    const std::optional<notification_sink_t> notifications =
-        post_notifications ? std::optional{environment.document.notifications} : std::nullopt;
+    const notification_sink_t notifications =
+        post_notifications ? environment.document.notifications : notification_sink_t::muted();
 
     if (action.metadata_edit != WORM_UI_METADATA_EDIT_NONE) {
         auto feedback = dispatch_metadata_edit(action, history, workspace, timing_locked, metadata_drop);
-        if (notifications) notifications->post(feedback.severity, notification_source_t::edit, feedback.message);
+        notifications.post(feedback.severity, notification_source_t::edit, feedback.message);
         if (action.metadata_edit == WORM_UI_METADATA_EDIT_OUTPUT_PATH)
             metadata_drop.clear_output();
         return std::move(feedback.message);

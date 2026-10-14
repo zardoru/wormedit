@@ -19,9 +19,9 @@ auto bga_diagnostic_feedback(const diagnostic_t& diagnostic) -> bga_feedback_t {
                                                          : notification_severity_t::info,
             diagnostic.message};
 }
-auto publish_bga_feedback(const std::optional<notification_sink_t>& notifications,
-    notification_source_t source, bga_feedback_t feedback) -> std::string {
-    if (notifications) notifications->post(feedback.severity, source, feedback.message);
+auto publish_bga_feedback(const notification_sink_t& notifications, notification_source_t source,
+                          bga_feedback_t feedback) -> std::string {
+    notifications.post(feedback.severity, source, feedback.message);
     return std::move(feedback.message);
 }
 auto probe_image(const std::filesystem::path& path)
@@ -114,14 +114,14 @@ auto dispatch_bga_feedback(const WormUiWorkspaceAction& action, document_history
     return finish_bga_edit(history, workspace, result, "Removed " + std::to_string(unused.size()) + " unused BGA resources.");
 }
 auto import_bga_files(document_history_t& history, workspace_controller_t& workspace,
-    chart_id_t chart, std::span<const std::string> paths,
-    std::optional<notification_sink_t> notifications) -> std::string {
+                      chart_id_t chart, std::span<const std::string> paths,
+                      notification_sink_t notifications) -> std::string {
     return publish_bga_feedback(notifications, notification_source_t::import_,
                                 import_bga_feedback(history, workspace, chart, paths));
 }
 auto dispatch_compose_bga_action(const WormUiWorkspaceAction& action, document_history_t& history,
-    workspace_controller_t& workspace, chart_id_t chart,
-    std::optional<notification_sink_t> notifications) -> std::optional<std::string> {
+                                 workspace_controller_t& workspace, chart_id_t chart,
+                                 notification_sink_t notifications) -> std::optional<std::string> {
     auto feedback = dispatch_bga_feedback(action, history, workspace, chart);
     if (!feedback) return std::nullopt;
     return publish_bga_feedback(notifications,
@@ -129,5 +129,4 @@ auto dispatch_compose_bga_action(const WormUiWorkspaceAction& action, document_h
             ? notification_source_t::import_ : notification_source_t::edit,
         std::move(*feedback));
 }
-
 }

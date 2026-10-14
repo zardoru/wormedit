@@ -95,8 +95,7 @@ auto clear_selection_or_cancel_preview(wormedit::document_history_t& history,
 auto post_command_message(notification_sink_t& sink, notification_severity_t severity,
                           notification_source_t source, std::string_view message)
     -> void {
-    if (severity == notification_severity_t::hint) sink.post_transient_hint(source, message);
-    else sink.post(severity, source, message);
+    sink.post_feedback(severity, source, message);
 }
 
 auto notification_severity(wormedit::diagnostic_severity_t severity)

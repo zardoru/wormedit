@@ -253,8 +253,7 @@ void post_edit_rejection(wormedit::notification_sink_t& notifications,
 auto post_callback_feedback(wormedit::notification_sink_t& notifications,
                             wormedit::notification_severity_t severity,
                             wormedit::notification_source_t source, std::string message) -> std::string {
-    if (severity == wormedit::notification_severity_t::hint) notifications.post_transient_hint(source, message);
-    else notifications.post(severity, source, message);
+    notifications.post_feedback(severity, source, message);
     return message;
 }
 

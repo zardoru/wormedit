@@ -5,13 +5,11 @@
 namespace wormedit::sys {
 namespace {
 
-auto publish_transport_feedback(const std::optional<notification_sink_t>& notifications,
-    notification_severity_t severity, std::string message,
-    notification_source_t source = notification_source_t::audio) -> std::string {
-    if (notifications) {
-        if (severity == notification_severity_t::hint) notifications->post_transient_hint(source, message);
-        else notifications->post(severity, source, message);
-    }
+auto publish_transport_feedback(const notification_sink_t& notifications,
+                                notification_severity_t severity, std::string message,
+                                notification_source_t source = notification_source_t::audio)
+    -> std::string {
+    notifications.post_feedback(severity, source, message);
     return message;
 }
 
@@ -61,21 +59,19 @@ auto stepmania_policy_from_ui(const WormUiWorkspaceAction& action)
 }
 
 auto toggle_metronome_status(application_command_state_t& state,
-    const std::optional<notification_sink_t>& notifications) -> std::string {
+                             const notification_sink_t& notifications) -> std::string {
     if (!toggle_transport_metronome(state))
         return publish_transport_feedback(notifications, notification_severity_t::warning, "Metronome is unavailable.");
     return publish_transport_feedback(notifications, notification_severity_t::success,
         state.metronome_settings().enabled ? "Metronome enabled." : "Metronome disabled.");
 }
 
-
-
 } // namespace
 
-auto dispatch_transport_player_action(
-    const WormUiWorkspaceAction& action, application_command_state_t& application_state,
-    wormedit::stepmania_export_policy_t& stepmania_export_policy,
-    std::optional<notification_sink_t> notifications)
+auto dispatch_transport_player_action(const WormUiWorkspaceAction& action,
+                                      application_command_state_t& application_state,
+                                      wormedit::stepmania_export_policy_t& stepmania_export_policy,
+                                      notification_sink_t notifications)
     -> std::optional<std::string> {
     switch (action.kind) {
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_TOGGLE_METRONOME:

@@ -18,15 +18,14 @@ struct area_action_context_t {
     const WormUiWorkspaceAction& action;
     wormedit::document_history_t& history;
     wormedit::editor_interaction_state_t& state;
-    std::optional<wormedit::notification_sink_t> notifications;
+    wormedit::notification_sink_t notifications{wormedit::notification_sink_t::muted()};
     bool timing_locked{};
 };
 auto area_feedback(area_action_context_t& context, std::string message,
                    wormedit::notification_severity_t severity,
                    wormedit::notification_source_t source) -> std::string {
-    if (context.notifications && !message.empty()) {
-        if (severity == notification_severity_t::hint) context.notifications->post_transient_hint(source, message);
-        else context.notifications->post(severity, source, message);
+    if (!message.empty()) {
+        context.notifications.post_feedback(severity, source, message);
     }
     return message;
 }
@@ -36,8 +35,9 @@ auto area_rejection(area_action_context_t& context, std::string message) -> std:
 }
 auto area_diagnostic(area_action_context_t& context,
                      const wormedit::diagnostic_t& diagnostic) -> std::string {
-    if (context.notifications)
-        context.notifications->post_diagnostics(wormedit::notification_source_t::edit, {diagnostic});
+    if (context.notifications.is_muted())
+        return diagnostic.message;
+    context.notifications.post_diagnostics(wormedit::notification_source_t::edit, {diagnostic});
     return diagnostic.message;
 }
 auto area_position_at_row(const wormedit::measure_index_t& index, std::uint64_t row)
@@ -352,7 +352,7 @@ auto compose_area_delete_supported(wormedit::document_history_t& history,
 auto dispatch_compose_area_action(const WormUiWorkspaceAction& action,
                                   wormedit::document_history_t& history,
                                   wormedit::editor_interaction_state_t& state,
-                                  std::optional<wormedit::notification_sink_t> notifications, bool timing_locked)
+                                  wormedit::notification_sink_t notifications, bool timing_locked)
     -> std::optional<std::string> {
     area_action_context_t context{action, history, state, notifications, timing_locked};
     const auto kind = action.compose_action;

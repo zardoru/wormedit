@@ -35,8 +35,8 @@ auto waveform_source_recovered(std::optional<asset_id_t> asset,
 } // namespace
 
 waveform_analysis_t::waveform_analysis_t(audio::decoded_source_registry_t& sources,
-    audio::decoded_block_cache_t* preview_blocks, std::optional<notification_sink_t> sink,
-    std::size_t stem_budget_bytes)
+                                         audio::decoded_block_cache_t* preview_blocks,
+                                         notification_sink_t sink, std::size_t stem_budget_bytes)
     : sources_(sources), preview_blocks_(preview_blocks), sink_(std::move(sink)),
       waveform_job_(sources_, coarse_blocks_, waveform_cache_, scheduler_),
       channel_waveform_job_(sources_, coarse_blocks_, waveform_cache_, scheduler_),
@@ -177,8 +177,8 @@ void waveform_analysis_t::request_selected_waveform(std::optional<asset_id_t> as
     }
     if (started.status == audio::waveform_job_start_status_t::capacity_exceeded) return;
     attempted = asset;
-    if (sink_) sink_->post(notification_severity_t::error, notification_source_t::audio,
-        started.message.empty() ? failure_message : started.message);
+    sink_.post(notification_severity_t::error, notification_source_t::audio,
+               started.message.empty() ? failure_message : started.message);
 }
 
 auto waveform_completion_notification(const audio::waveform_job_completion_t& completed,
@@ -196,9 +196,10 @@ auto waveform_completion_notification(const audio::waveform_job_completion_t& co
 
 void waveform_analysis_t::report_waveform_completion(
     const audio::waveform_job_completion_t& completed, const char* failure_message) {
-    if (!sink_) return;
+    if (sink_.is_muted())
+        return;
     if (const auto notification = waveform_completion_notification(completed, failure_message))
-        sink_->post(*notification);
+        sink_.post(*notification);
 }
 
 void waveform_analysis_t::service_workspace_waveform(const workspace_controller_t& workspace) {
@@ -517,8 +518,9 @@ void waveform_analysis_t::start_stem_waveforms(const std::vector<asset_id_t>& wa
             (*free_slot)->asset = asset;
         } else if (started.status != audio::waveform_job_start_status_t::capacity_exceeded) {
             stem_attempted_.insert(asset);
-            if (sink_) sink_->post(notification_severity_t::error, notification_source_t::audio,
-                started.message.empty() ? "A BMSON stem waveform could not start." : started.message);
+            sink_.post(notification_severity_t::error, notification_source_t::audio,
+                       started.message.empty() ? "A BMSON stem waveform could not start."
+                                               : started.message);
         }
     }
 }

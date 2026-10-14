@@ -587,7 +587,8 @@ TEST_CASE("BMSON stem cache evicts the least recently viewed offscreen result",
     stem_pool_fixture_t fixture;
     const auto entry_bytes = one_stem_charge(fixture);
     const auto budget = entry_bytes * 2;
-    sys::runtime::waveform_analysis_t analysis{fixture.sources, nullptr, std::nullopt, budget};
+    sys::runtime::waveform_analysis_t analysis{fixture.sources, nullptr,
+                                               notification_sink_t::muted(), budget};
     const auto first_two = fixture.select({0, 1});
     service_stems_until_entries(analysis, fixture, first_two, 2);
     const auto first = analysis.stem_waveform_analysis(asset_id_t{90});
@@ -608,7 +609,8 @@ TEST_CASE("BMSON stem cache protects visible analyses and bounds same-window rej
     stem_pool_fixture_t fixture;
     const auto entry_bytes = one_stem_charge(fixture);
     const auto budget = entry_bytes * 2;
-    sys::runtime::waveform_analysis_t analysis{fixture.sources, nullptr, std::nullopt, budget};
+    sys::runtime::waveform_analysis_t analysis{fixture.sources, nullptr,
+                                               notification_sink_t::muted(), budget};
     const auto first_two = fixture.select({0, 1});
     service_stems_until_entries(analysis, fixture, first_two, 2);
     const std::array retained{analysis.stem_waveform_analysis(asset_id_t{90}),
@@ -640,8 +642,8 @@ TEST_CASE("oversized BMSON stem results stay suppressed across viewport changes 
     const auto normal_bytes = one_stem_charge_for(fixture, 0);
     const auto unavailable_bytes = one_stem_charge_for(fixture, 3);
     REQUIRE(unavailable_bytes < normal_bytes);
-    sys::runtime::waveform_analysis_t analysis{fixture.sources, nullptr, std::nullopt,
-                                          unavailable_bytes};
+    sys::runtime::waveform_analysis_t analysis{fixture.sources, nullptr,
+                                               notification_sink_t::muted(), unavailable_bytes};
     const auto oversized_and_small = fixture.select({0, 3});
     service_stem_until_terminal(analysis, fixture, oversized_and_small, asset_id_t{90});
     service_stem_until_terminal(analysis, fixture, oversized_and_small, asset_id_t{93});

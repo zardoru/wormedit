@@ -42,7 +42,8 @@ struct pending_output_group_export_t {
 namespace runtime {
 
 struct resource_copy_t {
-    explicit resource_copy_t(std::optional<wormedit::notification_sink_t> notifications = {});
+    explicit resource_copy_t(
+        wormedit::notification_sink_t notifications = wormedit::notification_sink_t::muted());
 
     [[nodiscard]] auto is_busy() const noexcept -> bool { return pending_.has_value(); }
     // Compatibility for the deferred hot action callers.
@@ -54,19 +55,20 @@ struct resource_copy_t {
     void cancel();
 
 private:
-    std::optional<wormedit::notification_sink_t> notifications_;
-    std::optional<pending_project_resource_copy_t> pending_;
+  wormedit::notification_sink_t notifications_{wormedit::notification_sink_t::muted()};
+  std::optional<pending_project_resource_copy_t> pending_;
 };
 
 struct output_group_export_t {
-    explicit output_group_export_t(std::optional<wormedit::notification_sink_t> notifications = {});
+    explicit output_group_export_t(
+        wormedit::notification_sink_t notifications = wormedit::notification_sink_t::muted());
     ~output_group_export_t() noexcept;
 
     output_group_export_t(const output_group_export_t&) = delete;
     auto operator=(const output_group_export_t&) -> output_group_export_t& = delete;
 
 private:
-    std::optional<wormedit::notification_sink_t> notifications_;
+  wormedit::notification_sink_t notifications_{wormedit::notification_sink_t::muted()};
 
 public:
     wormedit::task_scheduler_t scheduler{1, 1, wormedit::background_scheduler_options()};

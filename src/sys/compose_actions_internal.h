@@ -1,12 +1,12 @@
 #pragma once
-#include "sys/application_edit_inputs.h"
 #include "sys/application_edit_helpers.h"
+#include "sys/application_edit_inputs.h"
+#include "sys/bookmark_commands.h"
 #include "sys/bookmark_rename_commands.h"
-#include "sys/compose_actions.h"
 #include "sys/compose_action_outcome.h"
+#include "sys/compose_actions.h"
 #include "sys/compose_area_actions.h"
 #include "sys/compose_bga_actions.h"
-#include "sys/bookmark_commands.h"
 #include "sys/compose_label_search.h"
 #include "sys/compose_measure_commands.h"
 #include "sys/compose_navigation.h"
@@ -89,7 +89,7 @@ struct compose_action_context_t {
     double viewport_height;
     bool metadata_import_busy;
     wormedit::editor_field_scroll_direction_t scroll_direction;
-    std::optional<notification_sink_t> notifications;
+    notification_sink_t notifications{notification_sink_t::muted()};
 
     [[nodiscard]] auto require_no_gesture(std::string_view message) const
         -> std::optional<compose_action_outcome_t>;
@@ -379,10 +379,10 @@ compose_action_outcome_t search_selected_note_labels(compose_action_context_t& c
 auto selection_transform_for(WormUiComposeActionKind kind) -> std::optional<selection_transform_t>;
 
 compose_action_outcome_t transform_selected_notes(compose_action_context_t& context,
-                                     selection_transform_t transform);
+                                                  selection_transform_t transform);
 
 compose_action_outcome_t edit_cursor_measure(compose_action_context_t& context,
-                                cursor_measure_command_t command);
+                                             cursor_measure_command_t command);
 
 struct recipe_form_target_t {
     const chart_document_t* chart{};
@@ -586,6 +586,6 @@ auto dispatch_compose_area_with_quantize_report(const WormUiWorkspaceAction& act
                                                 wormedit::document_history_t& history,
                                                 wormedit::editor_interaction_state_t& state,
                                                 application_command_state_t& application_state,
-                                                std::optional<notification_sink_t> notifications)
+                                                notification_sink_t notifications)
     -> std::optional<std::string>;
 } // namespace wormedit::sys::compose_action_detail

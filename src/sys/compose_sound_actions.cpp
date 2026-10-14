@@ -36,9 +36,9 @@ auto sound_diagnostic_feedback(const diagnostic_t& diagnostic) -> sound_feedback
             diagnostic.message};
 }
 
-auto publish_sound_feedback(const std::optional<notification_sink_t>& notifications,
-    notification_source_t source, sound_feedback_t feedback) -> std::string {
-    if (notifications) notifications->post(feedback.severity, source, feedback.message);
+auto publish_sound_feedback(const notification_sink_t& notifications, notification_source_t source,
+                            sound_feedback_t feedback) -> std::string {
+    notifications.post(feedback.severity, source, feedback.message);
     return std::move(feedback.message);
 }
 
@@ -268,8 +268,8 @@ auto import_keysound_feedback(document_history_t& history, workspace_controller_
 }
 
 auto import_keysound_files(document_history_t& history, workspace_controller_t& workspace,
-    chart_id_t chart, std::span<const std::string> paths,
-    std::optional<notification_sink_t> notifications) -> std::string {
+                           chart_id_t chart, std::span<const std::string> paths,
+                           notification_sink_t notifications) -> std::string {
     return publish_sound_feedback(notifications, notification_source_t::import_,
                                   import_keysound_feedback(history, workspace, chart, paths));
 }
@@ -686,8 +686,9 @@ auto prepare_sound_slot_batch(const song_document_t& document, chart_id_t chart,
 }
 
 auto dispatch_sound_properties_action(const WormUiWorkspaceAction& action,
-    document_history_t& history, workspace_controller_t& workspace,
-    std::optional<notification_sink_t> notifications) -> bool {
+                                      document_history_t& history,
+                                      workspace_controller_t& workspace,
+                                      notification_sink_t notifications) -> bool {
     if (!action.sound_properties_apply) return false;
     const auto publish = [&](sound_feedback_t feedback) {
         static_cast<void>(publish_sound_feedback(notifications, notification_source_t::edit,
@@ -719,10 +720,10 @@ auto dispatch_sound_properties_action(const WormUiWorkspaceAction& action,
     return true;
 }
 
-auto dispatch_compose_sound_action(const WormUiWorkspaceAction& action,
-                                   document_history_t& history, workspace_controller_t& workspace,
-                                   chart_id_t chart, application_command_state_t& application_state,
-                                   std::optional<notification_sink_t> notifications)
+auto dispatch_compose_sound_action(const WormUiWorkspaceAction& action, document_history_t& history,
+                                   workspace_controller_t& workspace, chart_id_t chart,
+                                   application_command_state_t& application_state,
+                                   notification_sink_t notifications)
     -> std::optional<std::string> {
     const auto source = action.compose_action == WORM_UI_COMPOSE_ACTION_AUDITION_SOUND
         ? notification_source_t::audio

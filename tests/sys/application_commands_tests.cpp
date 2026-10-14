@@ -2871,7 +2871,8 @@ void check_catalog_rate_dispatch(const wormedit::audio::playback_rate_descriptor
     action.transport_rate_index = 255; // A contradictory legacy position must not control dispatch.
     action.transport_rate_id = static_cast<std::uint32_t>(entry.id);
     wormedit::stepmania_export_policy_t policy;
-    const auto status = dispatch_transport_player_action(action, state, policy, std::nullopt);
+    const auto status = dispatch_transport_player_action(action, state, policy,
+                                                         wormedit::notification_sink_t::muted());
     CHECK((status && *status == "Playback rate changed."));
     CHECK(catalog_requested_rate == entry.rate);
     CHECK(state.preferences.transport_rate_index == static_cast<std::size_t>(entry.id));
@@ -2891,7 +2892,8 @@ TEST_CASE("Transport UI dispatch rejects unknown playback catalog ids", "[sys][c
     action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE;
     action.transport_rate_id = 255;
     wormedit::stepmania_export_policy_t policy;
-    const auto status = dispatch_transport_player_action(action, state, policy, std::nullopt);
+    const auto status = dispatch_transport_player_action(action, state, policy,
+                                                         wormedit::notification_sink_t::muted());
     CHECK((status && *status == "Playback rate unchanged."));
     CHECK(catalog_requested_rate == wormedit::rational_t{});
 }

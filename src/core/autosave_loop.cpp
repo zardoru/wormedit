@@ -26,9 +26,9 @@ void anchor_recovery_asset_paths(song_document_t& snapshot, const std::filesyste
         if (asset.waveform_cache_path) anchor(*asset.waveform_cache_path);
 }
 
-void post_autosave_failure(const std::optional<notification_sink_t>& notifications,
+void post_autosave_failure(const notification_sink_t& notifications,
                            const native_project_autosave_result_t& result) {
-    if (!notifications || result.status != native_project_autosave_status_t::failed)
+    if (notifications.is_muted() || result.status != native_project_autosave_status_t::failed)
         return;
     std::string message{"Autosave failed; the previous recovery backup was retained."};
     if (!result.diagnostics.empty()) {
@@ -37,7 +37,7 @@ void post_autosave_failure(const std::optional<notification_sink_t>& notificatio
         if (!diagnostic.path.empty())
             message += " (" + diagnostic.path.generic_string() + ")";
     }
-    notifications->post(notification_severity_t::error, notification_source_t::recovery, message);
+    notifications.post(notification_severity_t::error, notification_source_t::recovery, message);
 }
 
 } // namespace
@@ -76,10 +76,10 @@ native_project_autosave_loop_t::native_project_autosave_loop_t(
     clock_t::time_point session_started_at, task_scheduler_t& scheduler,
     std::optional<native_project_document_version_t> last_explicit_save,
     std::uint64_t initial_session_sequence, clock_t::duration interval,
-    clock_t::duration retry_delay, std::optional<notification_sink_t> notifications)
+    clock_t::duration retry_delay, notification_sink_t notifications)
     : scheduler_(scheduler), notifications_(std::move(notifications)),
-      coordinator_(session_started_at, std::move(last_explicit_save),
-                                          interval, initial_session_sequence),
+      coordinator_(session_started_at, std::move(last_explicit_save), interval,
+                   initial_session_sequence),
       interval_(interval),
       retry_delay_(retry_delay > clock_t::duration::zero() ? retry_delay
                                                            : clock_t::duration::zero()) {}

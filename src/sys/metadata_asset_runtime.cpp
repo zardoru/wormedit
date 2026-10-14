@@ -61,11 +61,11 @@ struct metadata_import_feedback_t {
     bool linked{};
 };
 
-auto post_runtime_message(const std::optional<wormedit::notification_sink_t>& notifications,
+auto post_runtime_message(const wormedit::notification_sink_t& notifications,
                           wormedit::notification_severity_t severity,
-                          wormedit::notification_source_t source, std::string_view message) -> void {
-    if (notifications)
-        notifications->post(severity, source, message);
+                          wormedit::notification_source_t source, std::string_view message)
+    -> void {
+    notifications.post(severity, source, message);
 }
 
 auto notification_severity(wormedit::diagnostic_severity_t severity)
@@ -78,7 +78,7 @@ auto notification_severity(wormedit::diagnostic_severity_t severity)
     return wormedit::notification_severity_t::error;
 }
 
-auto post_start_result(const std::optional<wormedit::notification_sink_t>& notifications,
+auto post_start_result(const wormedit::notification_sink_t& notifications,
                        wormedit::notification_severity_t severity,
                        wormedit::notification_source_t source, std::string message) -> std::string {
     post_runtime_message(notifications, severity, source, message);
@@ -238,8 +238,7 @@ auto copy_preview_feedback(const wormedit::task_result_t& completed,
 auto process_pending_metadata_asset_import(
     std::optional<pending_metadata_asset_import_t>& pending_import,
     wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace,
-    const std::filesystem::path& asset_base,
-    const std::optional<wormedit::notification_sink_t>& notifications)
+    const std::filesystem::path& asset_base, const wormedit::notification_sink_t& notifications)
     -> std::optional<std::string> {
     if (!pending_import)
         return std::nullopt;
@@ -274,9 +273,8 @@ auto process_pending_metadata_asset_import(
     return feedback.message;
 }
 
-void process_metadata_copy_preview(
-    metadata_copy_preview_t& runtime,
-    const std::optional<wormedit::notification_sink_t>& notifications) {
+void process_metadata_copy_preview(metadata_copy_preview_t& runtime,
+                                   const wormedit::notification_sink_t& notifications) {
     if (!runtime.pending)
         return;
     const auto source = runtime.pending->source;
@@ -394,10 +392,10 @@ auto copy_and_decode_metadata_audio(const wormedit::project_asset_copy_request_t
 struct metadata_asset_t::impl_t {
     std::optional<pending_metadata_asset_import_t> pending_import;
     metadata_copy_preview_t copy_preview;
-    std::optional<notification_sink_t> notifications;
+    notification_sink_t notifications{notification_sink_t::muted()};
 };
 
-metadata_asset_t::metadata_asset_t(std::optional<notification_sink_t> notifications)
+metadata_asset_t::metadata_asset_t(notification_sink_t notifications)
     : impl_(std::make_unique<impl_t>()) {
     impl_->notifications = std::move(notifications);
 }

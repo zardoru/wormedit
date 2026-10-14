@@ -60,10 +60,7 @@ auto post_input_feedback(const wormedit::notification_sink_t* notifications,
                          wormedit::notification_severity_t severity,
                          wormedit::notification_source_t source, std::string_view message) -> void {
     if (notifications && !message.empty()) {
-        if (severity == wormedit::notification_severity_t::hint)
-            notifications->post_transient_hint(source, message);
-        else
-            notifications->post(severity, source, message);
+        notifications->post_feedback(severity, source, message);
     }
 }
 

@@ -64,11 +64,11 @@ auto move_compose_minimap_cursor(document_history_t& history, editor_interaction
         {.position = {measure.id, target.snapped_row - measure.absolute_begin_row}},
         history.document.revision);
 }
-auto seek_stopped_compose_transport(document_history_t& history,
-    editor_interaction_state_t& state, const compose_scene_cache_t& cache,
-    std::uint64_t frame, std::optional<notification_sink_t> notifications) -> std::string {
+auto seek_stopped_compose_transport(document_history_t& history, editor_interaction_state_t& state,
+                                    const compose_scene_cache_t& cache, std::uint64_t frame,
+                                    notification_sink_t notifications) -> std::string {
     const auto feedback = [&](notification_severity_t severity, const char* message) {
-        if (notifications) notifications->post(severity, notification_source_t::input, message);
+        notifications.post(severity, notification_source_t::input, message);
         return std::string{message};
     };
     const auto chart = history.document.find_chart(state.chart);

@@ -21,7 +21,8 @@ struct platform_recovery_directory_result_t {
 // platform filesystem policy. This remains an application boundary; the
 // headless recovery scanner only receives caller-owned paths.
 [[nodiscard]] auto prepare_platform_recovery_directory(
-    std::optional<notification_sink_t> notifications = {}) -> platform_recovery_directory_result_t;
+    notification_sink_t notifications = notification_sink_t::muted())
+    -> platform_recovery_directory_result_t;
 
 // The crash marker lives in the recovery directory; the scanner ignores it as a candidate.
 [[nodiscard]] auto crash_marker_path(const std::filesystem::path& recovery_directory)

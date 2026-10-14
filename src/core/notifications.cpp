@@ -255,9 +255,18 @@ void notification_center_t::post_diagnostics(notification_source_t source,
         post(std::move(request));
 }
 
+void notification_sink_t::post_feedback(notification_severity_t severity,
+                                        notification_source_t source,
+                                        std::string_view message) const noexcept {
+    if (severity == notification_severity_t::hint)
+        post_transient_hint(source, message);
+    else
+        post(severity, source, message);
+}
+
 void notification_sink_t::post(notification_severity_t severity, notification_source_t source,
                                std::string_view message) const noexcept {
-    if (message.empty())
+    if (is_muted() || message.empty())
         return;
     try {
         center_->post(notification_post_t{.severity = severity,
@@ -273,7 +282,8 @@ void notification_sink_t::post(notification_severity_t severity, notification_so
 
 void notification_sink_t::post_transient_hint(notification_source_t source,
     std::string_view message) const noexcept {
-    if (message.empty()) return;
+    if (is_muted() || message.empty())
+        return;
     try {
         center_->post_transient_hint(source, std::string{message});
     } catch (...) {
@@ -282,7 +292,7 @@ void notification_sink_t::post_transient_hint(notification_source_t source,
 }
 
 void notification_sink_t::post(const notification_post_t& request) const noexcept {
-    if (request.message.empty())
+    if (is_muted() || request.message.empty())
         return;
     try {
         center_->post(notification_post_t{.severity = request.severity,
@@ -300,6 +310,8 @@ void notification_sink_t::post(const notification_post_t& request) const noexcep
 void notification_sink_t::post_diagnostics(notification_source_t source,
                                            const diagnostic_list_t& diagnostics,
                                            const notification_target_resolver_t& resolve_target) const noexcept {
+    if (is_muted())
+        return;
     std::vector<notification_post_t> posts;
     try {
         posts = diagnostic_posts(source, diagnostics, resolve_target);

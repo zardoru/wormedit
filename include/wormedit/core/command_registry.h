@@ -1,5 +1,6 @@
 #pragma once
 
+#include <wormedit/core/result.h>
 #include <wormedit/core/workspace.h>
 
 #include <compare>
@@ -336,7 +337,21 @@ enum class command_dispatch_status_t : std::uint8_t {
     invalid_event,
 };
 
+struct shortcut_event_t;
+struct command_dispatch_effect_t {
+    command_dispatch_status_t status{command_dispatch_status_t::no_match};
+    std::optional<command_id_t> command;
+    auto operator==(const command_dispatch_effect_t&) const -> bool = default;
+};
+using command_dispatch_outcome_t = diagnosed_t<command_dispatch_effect_t>;
+
 struct command_dispatch_result_t {
+    [[nodiscard]] static auto from(const command_registry_t& registry,
+        const shortcut_event_t& event, const command_focus_t& focus,
+        shortcut_primary_modifier_t primary_modifier) -> command_dispatch_outcome_t;
+    [[nodiscard]] static auto invoke(const command_registry_t& registry, const command_id_t& id,
+        const command_focus_t& focus = {}) -> command_dispatch_outcome_t;
+    [[nodiscard]] static auto from(command_dispatch_outcome_t&& outcome) -> command_dispatch_result_t;
     command_dispatch_status_t status{command_dispatch_status_t::no_match};
     std::optional<command_id_t> command;
     diagnostic_list_t diagnostics;

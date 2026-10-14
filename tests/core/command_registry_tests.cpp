@@ -80,7 +80,7 @@ auto has_warning_only_dispatch() -> bool {
     const auto adapted = command_invocation_result_t::from(std::move(invocation));
     const auto shortcut = dispatch_shortcut(registry, {.chord = chord}, focus_for_compose(),
                                             shortcut_primary_modifier_t::control);
-    const auto menu = invoke_command(registry, command_id_t{"edit.warning"}, focus_for_compose());
+    const auto menu = command_dispatch_result_t::from(command_dispatch_result_t::invoke(registry, command_id_t{"edit.warning"}, focus_for_compose()));
     return adapted.accepted && !adapted && shortcut.status == command_dispatch_status_t::invoked &&
            menu.status == command_dispatch_status_t::invoked && shortcut.diagnostics.size() == 1 &&
            menu.diagnostics.size() == 1 && shortcut.diagnostics.front().message == "callback warning";
@@ -1013,4 +1013,18 @@ auto has_warning_profile_adapters() -> bool {
 TEST_CASE("shortcut profile adapters retain warning-bearing successful effects",
           "[unit][core][command_registry][results]") {
     CHECK(has_warning_profile_adapters());
+}
+
+TEST_CASE("quiet shortcut dispatch is diagnostically successful without invoking a command",
+          "[unit][core][command_registry][results]") {
+    const command_registry_t registry;
+    auto quiet = command_dispatch_result_t::from(registry, {.chord = {.key = shortcut_key_t::a}},
+        {}, shortcut_primary_modifier_t::control);
+    CHECK(quiet.ok());
+    CHECK(quiet.value.status == command_dispatch_status_t::no_match);
+    CHECK_FALSE(quiet.value.command);
+    const auto legacy = command_dispatch_result_t::from(std::move(quiet));
+    CHECK_FALSE(legacy);
+    CHECK(legacy.status == command_dispatch_status_t::no_match);
+    CHECK(legacy.diagnostics.empty());
 }

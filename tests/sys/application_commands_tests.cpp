@@ -1613,9 +1613,14 @@ TEST_CASE("Layer row lock commands round trip through shared history and undo",
         {.id = layer_id_t{7}, .name = "Layer", .color = {32, 64, 128, 255}},
         {.id = layer_id_t{9}, .name = "Other", .color = {64, 128, 32, 255}}};
     const auto update = [&](bool locked) {
-        return apply_semantic_layer_edit(fixture.history, fixture.history.document.revision,
-            update_semantic_layer_action_t{chart_id_t{7}, layer_id_t{9}, "Other",
-                                           {64.0 / 255, 128.0 / 255, 32.0 / 255, 1}, true, locked});
+        return apply_semantic_layer_edit(
+            fixture.history,
+            update_semantic_layer_action_t{chart_id_t{7},
+                                           layer_id_t{9},
+                                           "Other",
+                                           {64.0 / 255, 128.0 / 255, 32.0 / 255, 1},
+                                           true,
+                                           locked});
     };
     require_layer_lock(update(true).applied);
     check_layer_lock(!fixture.history.document.charts.front().semantic_layers.front().locked);

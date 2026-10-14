@@ -1164,8 +1164,7 @@ auto semantic_layer_membership_command(command_context_t& context) -> command_re
     else
         edit = replace_notes_semantic_layer_action_t{
             state->chart, *app.project.semantic_layer.semantic_layer_target, state->selected_notes, true};
-    const auto applied = apply_semantic_layer_edit(
-        context.environment.document.history, context.environment.document.history.document.revision, edit);
+    const auto applied = apply_semantic_layer_edit(context.environment.document.history, edit);
     if (applied.applied) {
         const auto rebound = context.rebind();
         if (!rebound.accepted) return rebound;

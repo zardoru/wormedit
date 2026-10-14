@@ -1,3 +1,4 @@
+#include "sys/compose_sound_actions.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "sys/application_command_dispatch.h"
 #include "sys/compose_actions.h"
@@ -2221,6 +2222,27 @@ TEST_CASE("Workspace stale actions use the shared message without mutation",
     if (kind == WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK) label = "Sound relink";
     check_action(entries.front().message == stale_action_message(label));
     check_action(entries.front().severity == notification_severity_t::warning);
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
+}
+
+TEST_CASE("Standalone sound-layer entry rejects stale revisions with shared feedback",
+          "[compose-action-notifications][sound-layer-stamp]") {
+    action_notification_fixture_t fixture;
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER);
+    --action.compose_input_document_revision;
+    const std::uint64_t resource = 21;
+    action.compose_sound_resource_ids = &resource;
+    action.compose_sound_resource_count = 1;
+    action.compose_semantic_layer_id = 7;
+    const auto revision = fixture.history.document.revision;
+    const auto response = dispatch_compose_sound_action(action, fixture.history, fixture.workspace,
+        fixture.state.chart, fixture.application, fixture.sink);
+    require_action(response.has_value());
+    check_action(*response == stale_action_message("Sound layer edit"));
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::error);
     check_action(fixture.history.document.revision == revision);
     check_action(fixture.history.undo.empty());
 }

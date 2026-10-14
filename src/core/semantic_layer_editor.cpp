@@ -840,15 +840,10 @@ auto semantic_layer_palette_window_t::from(const chart_document_t& chart, std::s
     return result;
 }
 
-auto apply_semantic_layer_edit(document_history_t& history, std::uint64_t expected_revision,
+auto apply_semantic_layer_edit(document_history_t& history,
                                const semantic_layer_edit_action_t& action,
                                semantic_layer_edit_limits_t limits) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "semantic layer editor document revision is stale");
-        return result;
-    }
     if (limits.maximum_layers == 0 || limits.maximum_note_selection == 0 ||
         limits.maximum_chart_objects == 0 || limits.maximum_name_bytes == 0 ||
         limits.maximum_total_name_bytes == 0) {
@@ -952,15 +947,10 @@ auto write_sound_layer_defaults(chart_document_t& chart,
 
 } // namespace
 
-auto apply_sound_layer_defaults(document_history_t& history, std::uint64_t expected_revision,
+auto apply_sound_layer_defaults(document_history_t& history,
                                 const sound_layer_defaults_action_t& action)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "sound layer defaults document revision is stale");
-        return result;
-    }
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
     const auto chart = proposed.find_chart(action.chart);
@@ -1045,15 +1035,10 @@ auto paint_unassigned_sound_layer_bgm(chart_document_t& chart,
 }
 } // namespace
 
-auto apply_sound_layer_membership(document_history_t& history, std::uint64_t expected_revision,
+auto apply_sound_layer_membership(document_history_t& history,
                                   const sound_layer_membership_action_t& action)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "sound layer membership document revision is stale");
-        return result;
-    }
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
     const auto chart = proposed.find_chart(action.chart);
@@ -1127,14 +1112,9 @@ auto selected_sound_resources(chart_document_t& chart,
 }
 } // namespace
 
-auto add_selected_sounds_to_semantic_layer(document_history_t& history,
-    std::uint64_t expected_revision, const add_selected_sounds_to_semantic_layer_action_t& action,
+auto add_selected_sounds_to_semantic_layer(document_history_t& history, const add_selected_sounds_to_semantic_layer_action_t& action,
     semantic_layer_edit_limits_t limits) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id, "selected sound layers document revision is stale");
-        return result;
-    }
     const auto chart = history.document.find_chart(action.chart);
     if (!action.chart || chart == nullptr) {
         reject(result, diagnostic_code_t::invalid_id, "selected sound layers refer to an unknown chart");
@@ -1142,9 +1122,12 @@ auto add_selected_sounds_to_semantic_layer(document_history_t& history,
     }
     const auto resources = selected_sound_resources(*chart, action, limits, result);
     if (!resources || resources->empty()) return result;
-    return apply_sound_layer_membership(history, expected_revision,
-        {.chart = action.chart, .resources = *resources, .layer = action.layer,
-         .member = true, .overwrite_note_layers = false, .assign_unlayered_bgm = true});
+    return apply_sound_layer_membership(history, {.chart = action.chart,
+                                                  .resources = *resources,
+                                                  .layer = action.layer,
+                                                  .member = true,
+                                                  .overwrite_note_layers = false,
+                                                  .assign_unlayered_bgm = true});
 }
 
 // Compatibility for the sys/ui migration wave.

@@ -1021,9 +1021,8 @@ std::optional<std::string> semantic_layer_edit_status(
     compose_action_context_t& context, wormedit::semantic_layer_edit_action_t edit,
     std::string_view success, std::string_view unchanged, std::string_view rebind_failure) {
     const bool inserting = std::holds_alternative<wormedit::insert_semantic_layer_action_t>(edit);
-    const auto applied = wormedit::apply_semantic_layer_edit(
-        context.environment.document.history, context.action.compose_input_document_revision,
-        std::move(edit));
+    const auto applied =
+        wormedit::apply_semantic_layer_edit(context.environment.document.history, std::move(edit));
     if (!applied.applied)
         return applied.diagnostics.empty()
             ? std::optional<std::string>{compose_action_info(context, std::string{unchanged}, notification_source_t::edit)}
@@ -1128,7 +1127,7 @@ std::optional<std::string> delete_semantic_layer_catalog_entry(
     if (!layer) return compose_action_warning(context, "The selected semantic layer is no longer visible.");
     const auto id = layer->id;
     const auto applied = apply_semantic_layer_edit(
-        context.environment.document.history, context.action.compose_input_document_revision,
+        context.environment.document.history,
         delete_semantic_layer_action_t{
             context.state.chart, id,
             context.action.compose_action ==
@@ -1311,7 +1310,7 @@ std::optional<std::string> toggle_semantic_layer_visibility_or_lock(
         static_cast<double>(layer->color.blue) / 255.0,
         static_cast<double>(layer->color.alpha) / 255.0};
     const auto applied = apply_semantic_layer_edit(
-        context.environment.document.history, context.action.compose_input_document_revision,
+        context.environment.document.history,
         update_semantic_layer_action_t{context.state.chart, layer->id, layer->name, color,
                                        toggle_lock ? layer->visible : !previous,
                                        toggle_lock ? !previous : layer->locked});

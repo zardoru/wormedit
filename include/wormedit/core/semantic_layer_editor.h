@@ -132,7 +132,6 @@ using semantic_layer_edit_action_t =
 // so a layer can be renamed or unlocked. Deleting a populated layer requires
 // remove_from_notes=true and removes its memberships in the same transaction.
 [[nodiscard]] auto apply_semantic_layer_edit(document_history_t& history,
-                                             std::uint64_t expected_revision,
                                              const semantic_layer_edit_action_t& action,
                                              semantic_layer_edit_limits_t limits = {})
     -> document_command_result_t;
@@ -152,7 +151,6 @@ inline constexpr std::size_t maximum_sound_layer_default_resources = 100'000;
 // on the chart, be unlocked and unique; resources must be catalog sounds. Any
 // invalid entry rejects the whole batch. A no-op creates no history entry.
 [[nodiscard]] auto apply_sound_layer_defaults(document_history_t& history,
-                                              std::uint64_t expected_revision,
                                               const sound_layer_defaults_action_t& action)
     -> document_command_result_t;
 
@@ -174,7 +172,6 @@ struct sound_layer_membership_action_t {
 // Adding tags matching unlayered notes in the same history step. Overwrite also
 // replaces assigned memberships; locked memberships reject the whole request.
 [[nodiscard]] auto apply_sound_layer_membership(document_history_t& history,
-                                                std::uint64_t expected_revision,
                                                 const sound_layer_membership_action_t& action)
     -> document_command_result_t;
 
@@ -189,8 +186,7 @@ struct add_selected_sounds_to_semantic_layer_action_t {
 // and fills matching unassigned notes/BGM across this chart in one Undo step.
 // Explicit memberships are retained. Silent selected objects are ignored; an all-
 // silent selection is a no-op. Invalid or repeated selected IDs reject the batch.
-[[nodiscard]] auto add_selected_sounds_to_semantic_layer(document_history_t& history,
-    std::uint64_t expected_revision, const add_selected_sounds_to_semantic_layer_action_t& action,
+[[nodiscard]] auto add_selected_sounds_to_semantic_layer(document_history_t& history, const add_selected_sounds_to_semantic_layer_action_t& action,
     semantic_layer_edit_limits_t limits = {}) -> document_command_result_t;
 
 // Layers a sound brings to a freshly placed note: its defaults that still exist

@@ -1,3 +1,4 @@
+#include "sys/metadata_commands.h"
 #include "sys/compose_sound_actions.h"
 
 #include <wormedit/core/resource_assignment.h>
@@ -392,14 +393,15 @@ auto change_sound_layers(const WormUiWorkspaceAction& action, document_history_t
     const auto ids = sound_ids(action);
     const auto clear = action.compose_action == WORM_UI_COMPOSE_ACTION_CLEAR_SOUND_LAYERS;
     const auto add = action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER;
-    const auto revision = action.compose_input_document_revision;
-    const auto applied = clear
-        ? apply_sound_layer_defaults(history, revision, {.chart = chart, .resources = ids,
-                                                         .layers = {}})
-        : apply_sound_layer_membership(history, revision,
-              {.chart = chart, .resources = ids,
-               .layer = layer_id_t{action.compose_semantic_layer_id}, .member = add,
-               .overwrite_note_layers = action.compose_sound_overwrite_note_layers});
+    const auto applied =
+        clear
+            ? apply_sound_layer_defaults(history, {.chart = chart, .resources = ids, .layers = {}})
+            : apply_sound_layer_membership(
+                  history, {.chart = chart,
+                            .resources = ids,
+                            .layer = layer_id_t{action.compose_semantic_layer_id},
+                            .member = add,
+                            .overwrite_note_layers = action.compose_sound_overwrite_note_layers});
     const auto subject = sound_count_text(ids.size());
     return finish_sound_edit(workspace, history, applied,
                              clear ? "Cleared the layers of " + subject + "."
@@ -735,6 +737,9 @@ auto dispatch_compose_sound_action(const WormUiWorkspaceAction& action,
     case WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER:
     case WORM_UI_COMPOSE_ACTION_REMOVE_SOUND_LAYER:
     case WORM_UI_COMPOSE_ACTION_CLEAR_SOUND_LAYERS:
+        if (auto rejected = metadata_command_detail::stale_rejection(
+                history, action.compose_input_document_revision, "Sound layer edit"))
+            return publish(sound_diagnostic_feedback(rejected->diagnostics.front()));
         return publish(change_sound_layers(action, history, workspace, chart));
     case WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS:
         return publish(renumber_dock_ids(action, history, workspace, chart));

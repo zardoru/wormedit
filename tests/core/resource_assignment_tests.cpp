@@ -1586,10 +1586,10 @@ auto place_at(document_history_t& history, std::uint32_t division, resource_id_t
 TEST_CASE("sound layer defaults group sounds, undo as one step and tag painted notes",
           "[unit][core][resources][semantic-layer-editor]") {
     auto history = document_history_t::from(layered_sound_song());
-    const auto set = apply_sound_layer_defaults(
-        history, 4, {.chart = chart_id_t{2},
-                     .resources = {resource_id_t{1}, resource_id_t{2}},
-                     .layers = {layer_id_t{7}, layer_id_t{8}}});
+    const auto set =
+        apply_sound_layer_defaults(history, {.chart = chart_id_t{2},
+                                             .resources = {resource_id_t{1}, resource_id_t{2}},
+                                             .layers = {layer_id_t{7}, layer_id_t{8}}});
     REQUIRE(set);
     REQUIRE(history.document.charts.front().sound_layer_defaults.size() == 2);
     CHECK(history.undo.size() == 1);
@@ -1599,10 +1599,10 @@ TEST_CASE("sound layer defaults group sounds, undo as one step and tag painted n
     CHECK(painted.sound == resource_id_t{2});
     CHECK(painted.semantic_layers == std::vector<layer_id_t>{layer_id_t{7}, layer_id_t{8}});
 
-    const auto same = apply_sound_layer_defaults(
-        history, history.document.revision,
-        {.chart = chart_id_t{2}, .resources = {resource_id_t{1}},
-         .layers = {layer_id_t{7}, layer_id_t{8}}});
+    const auto same =
+        apply_sound_layer_defaults(history, {.chart = chart_id_t{2},
+                                             .resources = {resource_id_t{1}},
+                                             .layers = {layer_id_t{7}, layer_id_t{8}}});
     CHECK_FALSE(same);
     CHECK(same.diagnostics.empty());
 
@@ -1615,8 +1615,8 @@ TEST_CASE("placement layers resolve through one rule for every placement kind",
           "[unit][core][resources][semantic-layer-editor]") {
     auto history = document_history_t::from(layered_sound_song());
     REQUIRE(apply_sound_layer_defaults(
-        history, 4, {.chart = chart_id_t{2}, .resources = {resource_id_t{1}},
-                     .layers = {layer_id_t{7}}}));
+        history,
+        {.chart = chart_id_t{2}, .resources = {resource_id_t{1}}, .layers = {layer_id_t{7}}}));
     const auto& chart = history.document.charts.front();
     const std::optional<std::vector<layer_id_t>> none_armed;
     const std::optional<std::vector<layer_id_t>> no_layer{std::vector<layer_id_t>{}};
@@ -1634,8 +1634,8 @@ TEST_CASE("placement layers resolve through one rule for every placement kind",
                             resource_placement_kind_t::bgm_event}) {
         auto fresh = document_history_t::from(layered_sound_song());
         REQUIRE(apply_sound_layer_defaults(
-            fresh, 4, {.chart = chart_id_t{2}, .resources = {resource_id_t{1}},
-                       .layers = {layer_id_t{7}}}));
+            fresh,
+            {.chart = chart_id_t{2}, .resources = {resource_id_t{1}}, .layers = {layer_id_t{7}}}));
         const auto armed = apply_resource_placement(
             fresh, fresh.document.revision,
             {.chart = chart_id_t{2}, .resource = resource_id_t{1},
@@ -1659,20 +1659,21 @@ TEST_CASE("a sound without layer defaults paints an untagged note",
 TEST_CASE("sound layer defaults can be cleared and skip layers locked after assignment",
           "[unit][core][resources][semantic-layer-editor]") {
     auto history = document_history_t::from(layered_sound_song());
-    REQUIRE(apply_sound_layer_defaults(
-        history, 4, {.chart = chart_id_t{2}, .resources = {resource_id_t{1}},
-                     .layers = {layer_id_t{7}, layer_id_t{8}}}));
-    REQUIRE(apply_semantic_layer_edit(
-        history, history.document.revision,
-        update_semantic_layer_action_t{.chart = chart_id_t{2}, .layer = layer_id_t{7},
-                                       .name = "Vocal", .color = {1.0, 0.5, 0.0, 1.0},
-                                       .visible = true, .locked = true}));
+    REQUIRE(apply_sound_layer_defaults(history, {.chart = chart_id_t{2},
+                                                 .resources = {resource_id_t{1}},
+                                                 .layers = {layer_id_t{7}, layer_id_t{8}}}));
+    REQUIRE(apply_semantic_layer_edit(history,
+                                      update_semantic_layer_action_t{.chart = chart_id_t{2},
+                                                                     .layer = layer_id_t{7},
+                                                                     .name = "Vocal",
+                                                                     .color = {1.0, 0.5, 0.0, 1.0},
+                                                                     .visible = true,
+                                                                     .locked = true}));
     CHECK(sound_default_layers_for_placement(history.document.charts.front(), resource_id_t{1}) ==
           std::vector<layer_id_t>{layer_id_t{8}});
 
     REQUIRE(apply_sound_layer_defaults(
-        history, history.document.revision,
-        {.chart = chart_id_t{2}, .resources = {resource_id_t{1}}, .layers = {}}));
+        history, {.chart = chart_id_t{2}, .resources = {resource_id_t{1}}, .layers = {}}));
     CHECK(history.document.charts.front().sound_layer_defaults.empty());
 }
 
@@ -1680,34 +1681,30 @@ TEST_CASE("sound layer defaults reject bad batches atomically",
           "[unit][core][resources][semantic-layer-editor]") {
     auto history = document_history_t::from(layered_sound_song());
     const auto good_resources = std::vector<resource_id_t>{resource_id_t{1}, resource_id_t{2}};
-    CHECK(has_code(apply_sound_layer_defaults(
-                       history, 3, {.chart = chart_id_t{2}, .resources = good_resources,
-                                    .layers = {layer_id_t{7}}}),
+    CHECK(has_code(apply_sound_layer_defaults(history, {.chart = chart_id_t{2},
+                                                        .resources = {resource_id_t{1}},
+                                                        .layers = {layer_id_t{99}}}),
                    diagnostic_code_t::invalid_id));
-    CHECK(has_code(apply_sound_layer_defaults(
-                       history, 4, {.chart = chart_id_t{2}, .resources = {resource_id_t{1}},
-                                    .layers = {layer_id_t{99}}}),
+    CHECK(has_code(apply_sound_layer_defaults(history, {.chart = chart_id_t{2},
+                                                        .resources = {resource_id_t{1}},
+                                                        .layers = {layer_id_t{7}, layer_id_t{7}}}),
                    diagnostic_code_t::invalid_id));
-    CHECK(has_code(apply_sound_layer_defaults(
-                       history, 4, {.chart = chart_id_t{2}, .resources = {resource_id_t{1}},
-                                    .layers = {layer_id_t{7}, layer_id_t{7}}}),
-                   diagnostic_code_t::invalid_id));
-    CHECK(has_code(apply_sound_layer_defaults(
-                       history, 4, {.chart = chart_id_t{2}, .resources = {resource_id_t{1}},
-                                    .layers = {layer_id_t{9}}}),
+    CHECK(has_code(apply_sound_layer_defaults(history, {.chart = chart_id_t{2},
+                                                        .resources = {resource_id_t{1}},
+                                                        .layers = {layer_id_t{9}}}),
                    diagnostic_code_t::unsupported_feature));
-    CHECK(has_code(apply_sound_layer_defaults(
-                       history, 4, {.chart = chart_id_t{2},
-                                    .resources = {resource_id_t{1}, resource_id_t{404}},
-                                    .layers = {layer_id_t{7}}}),
-                   diagnostic_code_t::invalid_id));
-    CHECK(has_code(apply_sound_layer_defaults(
-                       history, 4, {.chart = chart_id_t{2}, .resources = {},
-                                    .layers = {layer_id_t{7}}}),
-                   diagnostic_code_t::invalid_resolution));
-    CHECK(has_code(apply_sound_layer_defaults(
-                       history, 4, {.chart = chart_id_t{77}, .resources = good_resources,
-                                    .layers = {layer_id_t{7}}}),
+    CHECK(has_code(
+        apply_sound_layer_defaults(history, {.chart = chart_id_t{2},
+                                             .resources = {resource_id_t{1}, resource_id_t{404}},
+                                             .layers = {layer_id_t{7}}}),
+        diagnostic_code_t::invalid_id));
+    CHECK(
+        has_code(apply_sound_layer_defaults(
+                     history, {.chart = chart_id_t{2}, .resources = {}, .layers = {layer_id_t{7}}}),
+                 diagnostic_code_t::invalid_resolution));
+    CHECK(has_code(apply_sound_layer_defaults(history, {.chart = chart_id_t{77},
+                                                        .resources = good_resources,
+                                                        .layers = {layer_id_t{7}}}),
                    diagnostic_code_t::invalid_id));
     CHECK(history.document.charts.front().sound_layer_defaults.empty());
     CHECK(history.undo.empty());
@@ -1717,13 +1714,11 @@ TEST_CASE("sound layer defaults reject bad batches atomically",
 TEST_CASE("deleting a layer or a sound removes its sound layer defaults",
           "[unit][core][resources][semantic-layer-editor]") {
     auto history = document_history_t::from(layered_sound_song());
-    REQUIRE(apply_sound_layer_defaults(
-        history, 4, {.chart = chart_id_t{2},
-                     .resources = {resource_id_t{2}, resource_id_t{5}},
-                     .layers = {layer_id_t{7}, layer_id_t{8}}}));
+    REQUIRE(apply_sound_layer_defaults(history, {.chart = chart_id_t{2},
+                                                 .resources = {resource_id_t{2}, resource_id_t{5}},
+                                                 .layers = {layer_id_t{7}, layer_id_t{8}}}));
     REQUIRE(apply_semantic_layer_edit(
-        history, history.document.revision,
-        delete_semantic_layer_action_t{.chart = chart_id_t{2}, .layer = layer_id_t{7}}));
+        history, delete_semantic_layer_action_t{.chart = chart_id_t{2}, .layer = layer_id_t{7}}));
     for (const auto& entry : history.document.charts.front().sound_layer_defaults)
         CHECK(entry.layers == std::vector<layer_id_t>{layer_id_t{8}});
     REQUIRE(validate_document(history.document).empty());
@@ -1735,8 +1730,7 @@ TEST_CASE("deleting a layer or a sound removes its sound layer defaults",
     REQUIRE(validate_document(history.document).empty());
 
     REQUIRE(apply_semantic_layer_edit(
-        history, history.document.revision,
-        delete_semantic_layer_action_t{.chart = chart_id_t{2}, .layer = layer_id_t{8}}));
+        history, delete_semantic_layer_action_t{.chart = chart_id_t{2}, .layer = layer_id_t{8}}));
     CHECK(history.document.charts.front().sound_layer_defaults.empty());
 }
 
@@ -1760,9 +1754,9 @@ TEST_CASE("validation reports dangling sound layer defaults",
 TEST_CASE("batch resource deletion removes unused sounds in one undo step",
           "[unit][core][resources][delete]") {
     auto history = document_history_t::from(layered_sound_song());
-    REQUIRE(apply_sound_layer_defaults(
-        history, 4, {.chart = chart_id_t{2}, .resources = {resource_id_t{2}, resource_id_t{5}},
-                     .layers = {layer_id_t{7}}}));
+    REQUIRE(apply_sound_layer_defaults(history, {.chart = chart_id_t{2},
+                                                 .resources = {resource_id_t{2}, resource_id_t{5}},
+                                                 .layers = {layer_id_t{7}}}));
     const auto doomed = std::vector<resource_id_t>{resource_id_t{2}, resource_id_t{5}};
     const auto deleted = apply_resource_deletions(history, history.document.revision, doomed);
     REQUIRE(deleted);
@@ -1799,11 +1793,11 @@ TEST_CASE("sound layer membership adds and removes one layer across a group",
           "[unit][core][resources][semantic-layer-editor]") {
     auto history = document_history_t::from(layered_sound_song());
     REQUIRE(apply_sound_layer_defaults(
-        history, 4, {.chart = chart_id_t{2}, .resources = {resource_id_t{1}},
-                     .layers = {layer_id_t{7}}}));
+        history,
+        {.chart = chart_id_t{2}, .resources = {resource_id_t{1}}, .layers = {layer_id_t{7}}}));
     const auto group = std::vector<resource_id_t>{resource_id_t{1}, resource_id_t{2}};
     REQUIRE(apply_sound_layer_membership(
-        history, history.document.revision,
+        history,
         {.chart = chart_id_t{2}, .resources = group, .layer = layer_id_t{8}, .member = true}));
     const auto& defaults = history.document.charts.front().sound_layer_defaults;
     REQUIRE(defaults.size() == 2);
@@ -1811,13 +1805,13 @@ TEST_CASE("sound layer membership adds and removes one layer across a group",
     CHECK(defaults[1].layers == std::vector<layer_id_t>{layer_id_t{8}});
 
     const auto same = apply_sound_layer_membership(
-        history, history.document.revision,
+        history,
         {.chart = chart_id_t{2}, .resources = group, .layer = layer_id_t{8}, .member = true});
     CHECK_FALSE(same);
     CHECK(same.diagnostics.empty());
 
     REQUIRE(apply_sound_layer_membership(
-        history, history.document.revision,
+        history,
         {.chart = chart_id_t{2}, .resources = group, .layer = layer_id_t{8}, .member = false}));
     REQUIRE(history.document.charts.front().sound_layer_defaults.size() == 1);
     CHECK(history.document.charts.front().sound_layer_defaults.front().layers ==
@@ -1829,22 +1823,21 @@ TEST_CASE("sound layer membership rejects locked additions and unknown targets",
           "[unit][core][resources][semantic-layer-editor]") {
     auto history = document_history_t::from(layered_sound_song());
     const auto group = std::vector<resource_id_t>{resource_id_t{1}};
-    CHECK(has_code(apply_sound_layer_membership(
-                       history, 4, {.chart = chart_id_t{2}, .resources = group,
-                                    .layer = layer_id_t{9}, .member = true}),
-                   diagnostic_code_t::unsupported_feature));
-    CHECK(has_code(apply_sound_layer_membership(
-                       history, 4, {.chart = chart_id_t{2}, .resources = group,
-                                    .layer = layer_id_t{99}, .member = true}),
-                   diagnostic_code_t::invalid_id));
-    CHECK(has_code(apply_sound_layer_membership(
-                       history, 4, {.chart = chart_id_t{2}, .resources = group,
-                                    .layer = layer_id_t{99}, .member = false}),
-                   diagnostic_code_t::invalid_id));
-    CHECK(has_code(apply_sound_layer_membership(
-                       history, 3, {.chart = chart_id_t{2}, .resources = group,
-                                    .layer = layer_id_t{7}, .member = true}),
-                   diagnostic_code_t::invalid_id));
+    CHECK(has_code(
+        apply_sound_layer_membership(
+            history,
+            {.chart = chart_id_t{2}, .resources = group, .layer = layer_id_t{9}, .member = true}),
+        diagnostic_code_t::unsupported_feature));
+    CHECK(has_code(
+        apply_sound_layer_membership(
+            history,
+            {.chart = chart_id_t{2}, .resources = group, .layer = layer_id_t{99}, .member = true}),
+        diagnostic_code_t::invalid_id));
+    CHECK(has_code(
+        apply_sound_layer_membership(
+            history,
+            {.chart = chart_id_t{2}, .resources = group, .layer = layer_id_t{99}, .member = false}),
+        diagnostic_code_t::invalid_id));
     CHECK(history.undo.empty());
     CHECK(history.document.charts.front().sound_layer_defaults.empty());
 }
@@ -1862,9 +1855,10 @@ auto sound_note_layers_history() -> document_history_t {
 
 void check_sound_note_assignment(bool overwrite) {
     auto history = sound_note_layers_history();
-    REQUIRE(apply_sound_layer_membership(history, 4,
-        {.chart = chart_id_t{2}, .resources = {resource_id_t{1}}, .layer = layer_id_t{7},
-         .overwrite_note_layers = overwrite}));
+    REQUIRE(apply_sound_layer_membership(history, {.chart = chart_id_t{2},
+                                                   .resources = {resource_id_t{1}},
+                                                   .layer = layer_id_t{7},
+                                                   .overwrite_note_layers = overwrite}));
     const auto& notes = history.document.charts.front().measures.front().notes;
     const auto expected = std::vector{layer_id_t{overwrite ? 7U : 8U}};
     CHECK(notes[0].semantic_layers == std::vector{layer_id_t{7}});
@@ -1876,7 +1870,8 @@ void check_sound_note_assignment(bool overwrite) {
 void check_sound_note_assignment_undo_and_paint() {
     auto history = sound_note_layers_history();
     const auto original = write_native_project(history.document).bytes;
-    REQUIRE(apply_sound_layer_membership(history, 4,
+    REQUIRE(apply_sound_layer_membership(
+        history,
         {.chart = chart_id_t{2}, .resources = {resource_id_t{1}}, .layer = layer_id_t{7}}));
     REQUIRE(place_at(history, 240, resource_id_t{1}));
     CHECK(history.document.charts.front().measures.front().notes.back().semantic_layers ==
@@ -1899,9 +1894,10 @@ TEST_CASE("sound layer overwrite rejects locked note memberships atomically",
     auto history = sound_note_layers_history();
     history.document.charts.front().measures.front().notes[1].semantic_layers = {layer_id_t{9}};
     const auto original = write_native_project(history.document).bytes;
-    CHECK_FALSE(apply_sound_layer_membership(history, 4,
-        {.chart = chart_id_t{2}, .resources = {resource_id_t{1}}, .layer = layer_id_t{7},
-         .overwrite_note_layers = true}));
+    CHECK_FALSE(apply_sound_layer_membership(history, {.chart = chart_id_t{2},
+                                                       .resources = {resource_id_t{1}},
+                                                       .layer = layer_id_t{7},
+                                                       .overwrite_note_layers = true}));
     CHECK(write_native_project(history.document).bytes == original);
     CHECK(history.undo.empty());
 }

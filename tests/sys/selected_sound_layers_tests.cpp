@@ -44,5 +44,8 @@ TEST_CASE("Compose selected sound assignment routes note and BGM IDs without cha
     check_selected_layer_command(history.undo.size() == 1);
     const auto stale = sys::apply_compose_selected_sound_layer_assignment(history, state, 4, layer_id_t{7});
     check_selected_layer_command(!stale && !stale.diagnostics.empty());
+    REQUIRE(!stale.diagnostics.empty());
+    check_selected_layer_command(stale.diagnostics.front().message ==
+        stale_action_message("Selected sound layer assignment"));
     check_selected_layer_command(history.undo.size() == 1);
 }

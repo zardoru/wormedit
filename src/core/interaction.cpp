@@ -1653,7 +1653,7 @@ auto end_semantic_paint(editor_edit_context_t& context, object_id_t note_id,
             {error(diagnostic_code_t::invalid_id,
                    "semantic-layer paint requires an unlocked visible layer")});
     const auto edit = semantic_paint_edit(state.chart, pending);
-    const auto applied = apply_semantic_layer_edit(history, pending.document_revision, edit);
+    const auto applied = apply_semantic_layer_edit(history, edit);
     if (!applied && !applied.diagnostics.empty())
         return diagnostic_result(history, state, applied.diagnostics);
     state.pending_semantic_layer_paint_gesture.reset();

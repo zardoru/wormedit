@@ -1,3 +1,4 @@
+#include "core/timing_arithmetic.h"
 #include "sys/compose_input_internal.h"
 namespace wormedit::sys::compose_input_detail {
 auto compose_timing_identity(WormUiTimingLaneKind lane)
@@ -64,7 +65,7 @@ auto timing_pointer_row(compose_input_context_t& context, const wormedit::chart_
         return std::nullopt;
     const auto y = std::clamp(y_pixels, 0.0, std::max(0.0, view.viewport_height_pixels - 0.001));
     const auto position = context.position_at_compose_y_unrestricted(chart, view, y);
-    const auto row = position ? wormedit::absolute_row(index, *position) : std::nullopt;
+    const auto row = position ? (index).row_of(*position) : std::nullopt;
     if (!row)
         return std::nullopt;
     const auto snapped = wormedit::snap_absolute_row(
@@ -197,28 +198,15 @@ auto speed_transition_between(const wormedit::chart_document_t& chart,
         return rational_t{0, 1};
     if (!speed.transition_is_seconds) {
         const auto numerator = (end_row - begin_row) * 4;
-        const auto divisor = std::gcd(numerator, chart.divisions_per_standard_measure);
-        if (divisor == 0)
-            return std::nullopt;
-        return rational_t{numerator / divisor, chart.divisions_per_standard_measure / divisor};
+        return rows_to_fraction(numerator, chart.divisions_per_standard_measure);
     }
     if (!timing)
         return std::nullopt;
-    const auto begin = timing_at(*timing, begin_row);
-    const auto end = timing_at(*timing, end_row);
+    const auto begin = timing->seconds_at(begin_row);
+    const auto end = timing->seconds_at(end_row);
     if (!begin.seconds || !end.seconds)
         return std::nullopt;
-    const auto left = static_cast<__int128>(end.seconds->numerator) * begin.seconds->denominator;
-    const auto right = static_cast<__int128>(begin.seconds->numerator) * end.seconds->denominator;
-    const auto denominator =
-        static_cast<__int128>(end.seconds->denominator) * begin.seconds->denominator;
-    const auto difference = left - right;
-    if (difference < 0 || difference > UINT64_MAX || denominator > UINT64_MAX)
-        return std::nullopt;
-    const auto divisor =
-        std::gcd(static_cast<std::uint64_t>(difference), static_cast<std::uint64_t>(denominator));
-    return rational_t{static_cast<std::uint64_t>(difference) / divisor,
-                      static_cast<std::uint64_t>(denominator) / divisor};
+    return timing_arithmetic::subtract_exact<rational_t>(*end.seconds, *begin.seconds);
 }
 
 auto edit_compose_speed_span(const WormUiComposeInputAction& input,
@@ -238,7 +226,7 @@ auto edit_compose_speed_span(const WormUiComposeInputAction& input,
     if (!index || speed == chart->speeds.end())
         return "The Speed event no longer exists.";
     const auto row = timing_pointer_row(context, *chart, *view, *index, input.y_pixels);
-    const auto begin_row = absolute_row(*index, speed->position);
+    const auto begin_row = (*index).row_of(speed->position);
     if (!row || !begin_row)
         return "Speed edit has no valid destination row.";
     // The span as drawn: from the event to the end of its transition.

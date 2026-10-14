@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/audio/preview_session.h>
+#include <wormedit/core/result.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -32,15 +33,12 @@ enum class offline_mix_status_t {
     decode_failed,
 };
 
-struct offline_mix_result_t {
-    offline_mix_status_t status{offline_mix_status_t::invalid_interval};
+struct offline_mix_t {
     std::vector<float> interleaved_stereo;
-    std::string message;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == offline_mix_status_t::mixed;
-    }
+    auto operator==(const offline_mix_t&) const -> bool = default;
 };
+
+using offline_mix_result_t = result_t<offline_mix_t, error_t<offline_mix_status_t>>;
 
 // Mixes [begin_frame, end_frame) through the same preview bridge and transport
 // used by playback, without metronome clicks. Renders from timeline zero and

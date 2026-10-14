@@ -183,7 +183,8 @@ TEST_CASE("Options oversized invalid text rejects the active page before prefere
     candidate.display.theme = std::string(1, static_cast<char>(0xff));
     expect_options(edit_options_draft(r, r.revision, candidate));
     const auto view = options_view(r);
-    expect_options(!view.can_apply && view.diagnostics[0].field == WORM_UI_OPTIONS_FIELD_PAGE);
+    expect_options(!view.can_apply && view.diagnostic_count == 1 &&
+                   view.diagnostics[0].field == WORM_UI_OPTIONS_FIELD_THEME);
 }
 
 TEST_CASE("Options registered page field actions update only the current draft", "[options]") {
@@ -520,11 +521,11 @@ TEST_CASE("Recent files persist normalized successful paths newest first", "[opt
     expect_options(reloaded.warnings.empty());
     reloaded.preferences.general.recent_files_count = 1;
     WormUiWorkspaceView view{};
-    project_recent_files(reloaded, view);
+    build_recent_files_view(reloaded, view);
     require_recent(view.recent_file_count == 1);
     expect_options(std::string_view{view.recent_files[0].path} == runtime.recent_files[0].path);
     reloaded.preferences.general.recent_files_count = 100;
-    project_recent_files(reloaded, view);
+    build_recent_files_view(reloaded, view);
     expect_options(view.recent_file_count == 2);
 }
 

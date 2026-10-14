@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <utility>
 
 using namespace wormedit;
 
@@ -81,27 +82,27 @@ TEST_CASE("standard-measure quantization uses deterministic nearest rows",
     add_note(chart, object_id_t{2}, measure_id_t{1}, 130);
 
     auto request = quantize_request_t{.divisions = 4};
-    const auto nearest = quantize_chart_exact(chart, request);
-    REQUIRE(nearest);
-    CHECK(find_note(*nearest.chart, object_id_t{2}).position.row == 240);
-    REQUIRE(nearest.quantized_moves.size() == 1);
-    CHECK(nearest.quantized_moves[0].before.row == 130);
-    CHECK(nearest.quantized_moves[0].after.row == 240);
+    const auto nearest = quantization_plan_t::from(chart, request);
+    REQUIRE(nearest.value.chart.has_value());
+    CHECK(find_note(*nearest.value.chart, object_id_t{2}).position.row == 240);
+    REQUIRE(nearest.value.quantized_moves.size() == 1);
+    CHECK(nearest.value.quantized_moves[0].before.row == 130);
+    CHECK(nearest.value.quantized_moves[0].after.row == 240);
 
     chart.measures[0].notes[0].position.row = 120;
     request.tie = quantization_tie_t::earlier;
-    const auto earlier = quantize_chart_exact(chart, request);
-    REQUIRE(earlier);
-    CHECK(find_note(*earlier.chart, object_id_t{2}).position.row == 0);
+    const auto earlier = quantization_plan_t::from(chart, request);
+    REQUIRE(earlier.value.chart.has_value());
+    CHECK(find_note(*earlier.value.chart, object_id_t{2}).position.row == 0);
 
     request.tie = quantization_tie_t::later;
-    const auto later = quantize_chart_exact(chart, request);
-    REQUIRE(later);
-    CHECK(find_note(*later.chart, object_id_t{2}).position.row == 240);
+    const auto later = quantization_plan_t::from(chart, request);
+    REQUIRE(later.value.chart.has_value());
+    CHECK(find_note(*later.value.chart, object_id_t{2}).position.row == 240);
 
     request.tie = quantization_tie_t::reject;
-    const auto rejected = quantize_chart_exact(chart, request);
-    CHECK_FALSE(rejected);
+    const auto rejected = quantization_plan_t::from(chart, request);
+    CHECK_FALSE(rejected.value.chart.has_value());
     CHECK(has_code(rejected.diagnostics, diagnostic_code_t::collision));
     CHECK(chart.measures[0].notes[0].position.row == 120);
 }
@@ -111,20 +112,20 @@ TEST_CASE("authored-measure quantization uses the local exact capacity", "[unit]
     add_note(chart, object_id_t{2}, measure_id_t{1}, 100);
 
     const auto result =
-        quantize_chart_exact(chart, {
+        quantization_plan_t::from(chart, {
                                         .divisions = 4,
                                         .space = quantization_space_t::authored_measure,
                                     });
-    REQUIRE(result);
-    CHECK(find_note(*result.chart, object_id_t{2}).position.row == 180);
+    REQUIRE(result.value.chart.has_value());
+    CHECK(find_note(*result.value.chart, object_id_t{2}).position.row == 180);
 
     auto large_exact_chart = make_chart({2, std::uint64_t{1} << 63U});
     large_exact_chart.divisions_per_standard_measure = std::uint64_t{1} << 63U;
-    const auto large_exact = quantize_chart_exact(
+    const auto large_exact = quantization_plan_t::from(
         large_exact_chart, {.divisions = 2, .space = quantization_space_t::authored_measure});
-    REQUIRE(large_exact);
-    CHECK_FALSE(large_exact.promoted_to.has_value());
-    CHECK(large_exact.chart->divisions_per_standard_measure == std::uint64_t{1} << 63U);
+    REQUIRE(large_exact.value.chart.has_value());
+    CHECK_FALSE(large_exact.value.promoted_to.has_value());
+    CHECK(large_exact.value.chart->divisions_per_standard_measure == std::uint64_t{1} << 63U);
 }
 
 TEST_CASE("quantization promotes resolution only with explicit permission",
@@ -132,21 +133,21 @@ TEST_CASE("quantization promotes resolution only with explicit permission",
     auto chart = make_chart();
     add_note(chart, object_id_t{2}, measure_id_t{1}, 100);
 
-    const auto refused = quantize_chart_exact(chart, {.divisions = 7});
-    CHECK_FALSE(refused);
+    const auto refused = quantization_plan_t::from(chart, {.divisions = 7});
+    CHECK_FALSE(refused.value.chart.has_value());
     CHECK(has_code(refused.diagnostics, diagnostic_code_t::invalid_resolution));
 
-    const auto promoted = quantize_chart_exact(chart, {
+    const auto promoted = quantization_plan_t::from(chart, {
                                                           .divisions = 7,
                                                           .allow_resolution_promotion = true,
                                                       });
-    REQUIRE(promoted);
-    CHECK(promoted.promoted_from == 960);
-    CHECK(promoted.promoted_to == 6720);
-    CHECK(promoted.chart->divisions_per_standard_measure == 6720);
-    CHECK(find_note(*promoted.chart, object_id_t{2}).position.row == 960);
-    REQUIRE(promoted.resolution_moves.size() == 1);
-    REQUIRE(promoted.quantized_moves.size() == 1);
+    REQUIRE(promoted.value.chart.has_value());
+    CHECK(promoted.value.promoted_from == 960);
+    CHECK(promoted.value.promoted_to == 6720);
+    CHECK(promoted.value.chart->divisions_per_standard_measure == 6720);
+    CHECK(find_note(*promoted.value.chart, object_id_t{2}).position.row == 960);
+    REQUIRE(promoted.value.resolution_moves.size() == 1);
+    REQUIRE(promoted.value.quantized_moves.size() == 1);
     CHECK(chart.divisions_per_standard_measure == 960);
     CHECK(chart.measures[0].notes[0].position.row == 100);
 }
@@ -155,12 +156,12 @@ TEST_CASE("cross-measure quantization rehomes sparse measure objects", "[unit][c
     auto chart = make_chart({1, 1}, true);
     add_note(chart, object_id_t{2}, measure_id_t{1}, 900);
 
-    const auto result = quantize_chart_exact(chart, {.divisions = 1});
-    REQUIRE(result);
-    CHECK(result.chart->measures[0].notes.empty());
-    REQUIRE(result.chart->measures[1].notes.size() == 1);
-    CHECK(result.chart->measures[1].notes[0].position.measure == measure_id_t{2});
-    CHECK(result.chart->measures[1].notes[0].position.row == 0);
+    const auto result = quantization_plan_t::from(chart, {.divisions = 1});
+    REQUIRE(result.value.chart.has_value());
+    CHECK(result.value.chart->measures[0].notes.empty());
+    REQUIRE(result.value.chart->measures[1].notes.size() == 1);
+    CHECK(result.value.chart->measures[1].notes[0].position.measure == measure_id_t{2});
+    CHECK(result.value.chart->measures[1].notes[0].position.row == 0);
 }
 
 TEST_CASE("quantization collision and hold policies reject atomically",
@@ -169,30 +170,30 @@ TEST_CASE("quantization collision and hold policies reject atomically",
     add_note(collision_chart, object_id_t{2}, measure_id_t{1}, 50);
     add_note(collision_chart, object_id_t{3}, measure_id_t{1}, 100);
 
-    const auto collision = quantize_chart_exact(collision_chart, {.divisions = 4});
-    CHECK_FALSE(collision);
+    const auto collision = quantization_plan_t::from(collision_chart, {.divisions = 4});
+    CHECK_FALSE(collision.value.chart.has_value());
     CHECK(has_code(collision.diagnostics, diagnostic_code_t::collision));
-    CHECK(collision.quantized_moves.size() == 2);
+    CHECK(collision.value.quantized_moves.size() == 2);
     CHECK(collision_chart.measures[0].notes[0].position.row == 50);
 
     const auto allowed =
-        quantize_chart_exact(collision_chart, {
+        quantization_plan_t::from(collision_chart, {
                                                   .divisions = 4,
                                                   .collisions = quantization_collision_t::allow,
                                               });
-    REQUIRE(allowed);
-    CHECK(allowed.chart->measures[0].notes[0].position.row == 0);
-    CHECK(allowed.chart->measures[0].notes[1].position.row == 0);
+    REQUIRE(allowed.value.chart.has_value());
+    CHECK(allowed.value.chart->measures[0].notes[0].position.row == 0);
+    CHECK(allowed.value.chart->measures[0].notes[1].position.row == 0);
 
     auto hold_chart = make_chart();
     add_note(hold_chart, object_id_t{2}, measure_id_t{1}, 130, note_kind_t::hold,
              local_position_t{measure_id_t{1}, 200});
     const auto reversed =
-        quantize_chart_exact(hold_chart, {
+        quantization_plan_t::from(hold_chart, {
                                              .divisions = 4,
                                              .holds = quantization_hold_t::start_only,
                                          });
-    CHECK_FALSE(reversed);
+    CHECK_FALSE(reversed.value.chart.has_value());
     CHECK(has_code(reversed.diagnostics, diagnostic_code_t::invalid_hold));
     CHECK(hold_chart.measures[0].notes[0].position.row == 130);
 }
@@ -202,19 +203,19 @@ TEST_CASE("quantization selection is explicit and validated", "[unit][core][quan
     add_note(chart, object_id_t{2}, measure_id_t{1}, 130);
     add_note(chart, object_id_t{3}, measure_id_t{1}, 131);
 
-    const auto selected = quantize_chart_exact(chart, {
+    const auto selected = quantization_plan_t::from(chart, {
                                                           .divisions = 4,
                                                           .objects = {object_id_t{2}},
                                                       });
-    REQUIRE(selected);
-    CHECK(find_note(*selected.chart, object_id_t{2}).position.row == 240);
-    CHECK(find_note(*selected.chart, object_id_t{3}).position.row == 131);
+    REQUIRE(selected.value.chart.has_value());
+    CHECK(find_note(*selected.value.chart, object_id_t{2}).position.row == 240);
+    CHECK(find_note(*selected.value.chart, object_id_t{3}).position.row == 131);
 
-    const auto missing = quantize_chart_exact(chart, {
+    const auto missing = quantization_plan_t::from(chart, {
                                                          .divisions = 4,
                                                          .objects = {object_id_t{99}},
                                                      });
-    CHECK_FALSE(missing);
+    CHECK_FALSE(missing.value.chart.has_value());
     CHECK(has_code(missing.diagnostics, diagnostic_code_t::invalid_id));
 }
 
@@ -231,17 +232,17 @@ TEST_CASE("quantization preserves unambiguous active lane layouts",
             },
     });
 
-    const auto collapsed_layouts = quantize_chart_exact(chart, {.divisions = 4});
-    CHECK_FALSE(collapsed_layouts);
+    const auto collapsed_layouts = quantization_plan_t::from(chart, {.divisions = 4});
+    CHECK_FALSE(collapsed_layouts.value.chart.has_value());
     CHECK(has_code(collapsed_layouts.diagnostics, diagnostic_code_t::collision));
 
     chart.lane_layouts[1].position.row = 170;
     add_note(chart, object_id_t{2}, measure_id_t{1}, 130);
-    const auto crossed_boundary = quantize_chart_exact(chart, {
+    const auto crossed_boundary = quantization_plan_t::from(chart, {
                                                                   .divisions = 4,
                                                                   .objects = {object_id_t{2}},
                                                               });
-    CHECK_FALSE(crossed_boundary);
+    CHECK_FALSE(crossed_boundary.value.chart.has_value());
     CHECK(has_code(crossed_boundary.diagnostics, diagnostic_code_t::unknown_lane));
     CHECK(chart.measures[0].notes[0].position.row == 130);
 }
@@ -253,12 +254,12 @@ TEST_CASE("quantize crosses exact fractional measure boundaries with unordered I
     chart.measures.push_back({.id = measure_id_t{3}, .definition = {{1, 2}, std::nullopt}});
     add_note(chart, object_id_t{20}, measure_id_t{1}, 710);
     add_note(chart, object_id_t{21}, measure_id_t{9}, 950);
-    const auto result = quantize_chart_exact(chart, {.divisions = 4});
-    REQUIRE(result);
+    const auto result = quantization_plan_t::from(chart, {.divisions = 4});
+    REQUIRE(result.value.chart.has_value());
     const local_position_t first_boundary{measure_id_t{9}, 0};
     const local_position_t second_boundary{measure_id_t{3}, 0};
-    CHECK(find_note(*result.chart, object_id_t{20}).position == first_boundary);
-    CHECK(find_note(*result.chart, object_id_t{21}).position == second_boundary);
+    CHECK(find_note(*result.value.chart, object_id_t{20}).position == first_boundary);
+    CHECK(find_note(*result.value.chart, object_id_t{21}).position == second_boundary);
     CHECK(chart.measures[0].notes[0].position.row == 710);
     CHECK(chart.measures[1].notes[0].position.row == 950);
 }
@@ -267,12 +268,12 @@ TEST_CASE("quantize rejects unknown and capacity positions without geometry repa
           "[unit][core][quantize][geometry][negative]") {
     auto chart = make_chart({3, 4}, true);
     add_note(chart, object_id_t{20}, measure_id_t{1}, 720);
-    const auto at_capacity = quantize_chart_exact(chart, {.divisions = 4});
-    CHECK_FALSE(at_capacity);
+    const auto at_capacity = quantization_plan_t::from(chart, {.divisions = 4});
+    CHECK_FALSE(at_capacity.value.chart.has_value());
     CHECK(has_code(at_capacity.diagnostics, diagnostic_code_t::row_out_of_range));
     chart.measures[0].notes[0].position = {measure_id_t{99}, 0};
-    const auto unknown = quantize_chart_exact(chart, {.divisions = 4});
-    CHECK_FALSE(unknown);
+    const auto unknown = quantization_plan_t::from(chart, {.divisions = 4});
+    CHECK_FALSE(unknown.value.chart.has_value());
     CHECK(has_code(unknown.diagnostics, diagnostic_code_t::row_out_of_range));
 }
 
@@ -285,14 +286,14 @@ TEST_CASE("Typed quantize isolates numeric aliases and quantizes BGM endpoints",
     chart.measures.front().bgm_events.push_back({.id = object_id_t{20},
         .position = {measure_id_t{1}, 130}, .source_lane = object_id_t{30},
         .end = local_position_t{measure_id_t{1}, 610}});
-    const auto result = quantize_chart_exact(chart, {.divisions = 4,
+    const auto result = quantization_plan_t::from(chart, {.divisions = 4,
         .selection = quantize_selection_t{{object_id_t{20}}, {object_id_t{20}}}});
-    REQUIRE(result);
-    CHECK(find_note(*result.chart, object_id_t{20}).position.row == 240);
-    CHECK(result.chart->measures.front().bgm_events.front().position.row == 240);
-    CHECK(result.chart->measures.front().bgm_events.front().end->row == 720);
-    CHECK(result.chart->bpms.front().position.row == 125);
-    CHECK(result.quantized_moves.size() == 3);
+    REQUIRE(result.value.chart.has_value());
+    CHECK(find_note(*result.value.chart, object_id_t{20}).position.row == 240);
+    CHECK(result.value.chart->measures.front().bgm_events.front().position.row == 240);
+    CHECK(result.value.chart->measures.front().bgm_events.front().end->row == 720);
+    CHECK(result.value.chart->bpms.front().position.row == 125);
+    CHECK(result.value.quantized_moves.size() == 3);
 }
 
 TEST_CASE("Typed quantize rejects a missing BGM or collapsed tail without partial notes",
@@ -303,13 +304,13 @@ TEST_CASE("Typed quantize rejects a missing BGM or collapsed tail without partia
     chart.measures.front().bgm_events.push_back({.id = object_id_t{21},
         .position = {measure_id_t{1}, 130}, .source_lane = object_id_t{30},
         .end = local_position_t{measure_id_t{1}, 140}});
-    const auto collapsed = quantize_chart_exact(chart, {.divisions = 4,
+    const auto collapsed = quantization_plan_t::from(chart, {.divisions = 4,
         .selection = quantize_selection_t{{object_id_t{20}}, {object_id_t{21}}}});
-    CHECK_FALSE(collapsed);
+    CHECK_FALSE(collapsed.value.chart.has_value());
     CHECK(has_code(collapsed.diagnostics, diagnostic_code_t::invalid_hold));
-    const auto missing = quantize_chart_exact(chart, {.divisions = 4,
+    const auto missing = quantization_plan_t::from(chart, {.divisions = 4,
         .selection = quantize_selection_t{{object_id_t{20}}, {object_id_t{99}}}});
-    CHECK_FALSE(missing);
+    CHECK_FALSE(missing.value.chart.has_value());
     CHECK(has_code(missing.diagnostics, diagnostic_code_t::invalid_id));
     CHECK(chart.measures.front().notes.front().position.row == 250);
 }
@@ -326,10 +327,35 @@ TEST_CASE("Mixed quantize rejects branch-owned BGM identified by its retained so
     chart.bms_control_tree = bms_control_node_t{.id = branch_id_t{1}, .kind = bms_control_kind_t::root,
         .children = {{.id = branch_id_t{2}, .kind = bms_control_kind_t::random,
             .children = {{.id = branch_id_t{3}, .kind = bms_control_kind_t::raw_statement, .source_order = 7}}}}};
-    const auto result = quantize_chart_exact(chart, {.divisions = 4,
+    const auto result = quantization_plan_t::from(chart, {.divisions = 4,
         .selection = quantize_selection_t{{object_id_t{20}}, {object_id_t{21}}}});
-    CHECK_FALSE(result);
+    CHECK_FALSE(result.value.chart.has_value());
     CHECK(has_code(result.diagnostics, diagnostic_code_t::unsupported_feature));
     CHECK(chart.measures.front().notes.front().position.row == 250);
     CHECK(chart.measures.front().bgm_events.front().position.row == 130);
+}
+
+namespace {
+
+auto quantization_publication_rule_stays_independent_of_diagnostics() -> bool {
+    quantization_outcome_t populated{
+        .value = {},
+        .diagnostics = {{.severity = diagnostic_severity_t::error,
+                         .code = diagnostic_code_t::invalid_id,
+                         .message = "retained diagnostic", .object = std::nullopt}}};
+    populated.value.chart = make_chart();
+    const auto shared_rejects_error = !populated.ok();
+    quantization_outcome_t empty{.value = {}, .diagnostics = {}};
+    const auto shared_accepts_empty = empty.ok();
+    return shared_rejects_error && populated.value.chart.has_value() &&
+           populated.diagnostics.size() == 1 &&
+           populated.diagnostics.front().message == "retained diagnostic" &&
+           shared_accepts_empty && !empty.value.chart.has_value();
+}
+
+} // namespace
+
+TEST_CASE("quantization outcome preserves its chart-presence publication rule",
+          "[unit][core][quantize][result]") {
+    CHECK(quantization_publication_rule_stays_independent_of_diagnostics());
 }

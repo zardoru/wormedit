@@ -1705,11 +1705,7 @@ auto decode_supported_wav_identifier(std::string_view identifier) -> std::option
 
 auto is_bms_wav_identity(const target_resource_identity_t& identity) -> bool {
     if (identity.family != format_family_t::bms || identity.namespace_name.size() != 3) return false;
-    return std::ranges::equal(identity.namespace_name, std::string_view{"WAV"},
-        [](unsigned char left, unsigned char right) {
-            if (left >= 'a' && left <= 'z') left = static_cast<unsigned char>(left - ('a' - 'A'));
-            return left == right;
-        });
+    return text_util::ascii_iequal(identity.namespace_name, "WAV");
 }
 
 auto find_wav_slot_owner(const song_document_t& song, std::size_t value) -> bms_wav_slot_owner_t {
@@ -1983,7 +1979,7 @@ auto apply_resource_asset_relink(document_history_t& history,
 
 namespace {
 
-using text_util::ascii_fold;
+using text_util::ascii_lowercase;
 
 auto normalized_resource_name(std::string_view name) -> std::optional<std::string> {
     name = text_util::trim(name, " \t\r\n");
@@ -2013,7 +2009,7 @@ auto normalized_sound_tags(const std::vector<std::string>& tags)
     for (const auto& tag : tags) {
         auto normalized = normalized_sound_tag(tag);
         if (!normalized) return std::nullopt;
-        auto key = ascii_fold(*normalized);
+        auto key = ascii_lowercase(*normalized);
         if (std::ranges::find(folded, key) != folded.end()) continue;
         folded.push_back(std::move(key));
         result.push_back(std::move(*normalized));

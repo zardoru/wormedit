@@ -12,6 +12,45 @@
 #include <algorithm>
 #include <string>
 
+namespace wormedit::sys {
+
+struct sdl_audition_output_test_access_t {
+    static void park_worker(sdl_audition_output_t& output) {
+        {
+            const std::scoped_lock lock(output.refill_mutex_);
+            output.refill_worker_.request_stop();
+        }
+        output.refill_ready_.notify_all();
+        output.refill_worker_.join();
+        // Keep a live worker that cannot compete for the refill mutex during
+        // the probe. Its local stop-aware wait exits when close requests stop.
+        output.refill_worker_ = std::jthread{[](std::stop_token stop) {
+            std::mutex mutex;
+            std::condition_variable_any ready;
+            std::unique_lock lock(mutex);
+            ready.wait(lock, stop, [] { return false; });
+        }};
+    }
+
+    static auto stop_token(sdl_audition_output_t& output) -> std::stop_token {
+        return output.refill_worker_.get_stop_token();
+    }
+
+    static auto can_enter_wait(sdl_audition_output_t& output) -> bool {
+        // Probe on a different thread: the stop callback runs synchronously
+        // inside request_stop(), possibly while the caller owns this mutex.
+        bool acquired = false;
+        std::jthread probe{[&output, &acquired] {
+            const std::unique_lock lock(output.refill_mutex_, std::try_to_lock);
+            acquired = lock.owns_lock();
+        }};
+        probe.join();
+        return acquired;
+    }
+};
+
+} // namespace wormedit::sys
+
 namespace {
 
 struct audio_subsystem_t {
@@ -65,7 +104,7 @@ TEST_CASE("SDL dummy output drives and hard-stops a primed audition session",
 
     const auto stopped = output.stop();
     CHECK(stopped.scheduled_voices <= 1);
-    CHECK_FALSE(session.active());
+    CHECK_FALSE(session.is_active());
     output.close();
 }
 
@@ -97,7 +136,7 @@ auto audition_lock_order_stress() -> bool {
     std::array<float, 64> samples;
     samples.fill(1.0F);
     static_cast<void>(session.render(samples));
-    return !session.active() && std::ranges::all_of(samples, [](float value) { return value == 0.0F; });
+    return !session.is_active() && std::ranges::all_of(samples, [](float value) { return value == 0.0F; });
 }
 } // namespace
 
@@ -129,9 +168,9 @@ auto rejected_audition_continues_previous_session() -> bool {
     const auto before = session.timeline_frame();
     const auto rejected = output.start({});
     if (rejected.status != wormedit::sys::sdl_audition_start_status_t::session_failed ||
-        !session.active() || bridge.session_token() != token) return false;
+        !session.is_active() || bridge.session_token() != token) return false;
     const auto deadline = SDL_GetTicks() + 2'000;
-    while (session.timeline_frame() <= before && session.active() && SDL_GetTicks() < deadline)
+    while (session.timeline_frame() <= before && session.is_active() && SDL_GetTicks() < deadline)
         SDL_Delay(2);
     return session.timeline_frame() > before;
 }
@@ -166,7 +205,7 @@ auto streamed_audition_without_service() -> bool {
     while (session.timeline_frame() == 0 && SDL_GetTicks() < deadline) SDL_Delay(2);
     const bool progressed = session.timeline_frame() > 0;
     static_cast<void>(output.stop());
-    return progressed && !output.service() && !session.active();
+    return progressed && !output.service() && !session.is_active();
 }
 }
 TEST_CASE("SDL streamed audition decodes and advances without caller service",
@@ -175,4 +214,33 @@ TEST_CASE("SDL streamed audition decodes and advances without caller service",
     audition_expect(SDL_InitSubSystem(SDL_INIT_AUDIO));
     const audio_subsystem_t lifetime;
     audition_expect(streamed_audition_without_service());
+}
+
+TEST_CASE("SDL audition shutdown excludes the refill predicate-to-wait gap",
+          "[integration][audio][sdl][audition][worker]") {
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const audio_subsystem_t lifetime;
+    using namespace wormedit::audio;
+    using access = wormedit::sys::sdl_audition_output_test_access_t;
+    decoded_source_registry_t sources;
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    audition_transport_bridge_t bridge{transport};
+    audition_session_t session{sources, transport, bridge};
+    wormedit::sys::sdl_audition_output_t output{session};
+    REQUIRE(output.open());
+    access::park_worker(output);
+    bool wait_gap_is_open = true;
+    // This callback observes the exact stop-predicate publication, without
+    // relying on scheduling luck to lose a notification and hang the test.
+    const std::stop_callback observe_stop{access::stop_token(output), [&] {
+        wait_gap_is_open = access::can_enter_wait(output);
+    }};
+    output.close();
+    CHECK_FALSE(wait_gap_is_open);
+    CHECK_FALSE(output.available());
+    // A new worker must still open and shut down after the synchronized stop.
+    REQUIRE(output.open());
+    output.close();
 }

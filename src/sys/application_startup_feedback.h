@@ -5,7 +5,7 @@
 
 namespace wormedit::sys {
 
-inline auto initial_application_feedback(bool loaded_primary,
+inline auto make_initial_application_feedback(bool loaded_primary,
     const std::filesystem::path& requested_primary_path,
     const platform_recovery_directory_result_t& recovery) -> notification_post_t {
     notification_post_t post{.severity = notification_severity_t::info,

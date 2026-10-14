@@ -318,7 +318,7 @@ struct editor_field_scene_window_metadata_t {
 // callers retain the existing full-composition fallback. This validates only
 // metadata primitives: consumers MUST enforce maximum_scene_primitives again
 // after extracting retained objects, using full composition on overflow.
-[[nodiscard]] auto project_editor_field_scene_window_metadata(
+[[nodiscard]] auto build_editor_field_scene_window_metadata_view(
     const chart_document_t& chart, const editor_field_scene_index_t& index,
     const editor_interaction_view_model_t& view, const editor_field_scene_request_t& request,
     const editor_field_scene_window_t& window) -> editor_field_scene_window_metadata_t;

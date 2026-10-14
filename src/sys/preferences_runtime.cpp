@@ -94,7 +94,7 @@ auto remember_recent_file(program_preferences_runtime_t& runtime,
     return saved ? std::string{} : "Could not save recent files: " + saved.error;
 }
 
-void project_recent_files(const program_preferences_runtime_t& runtime, WormUiWorkspaceView& view) {
+void build_recent_files_view(const program_preferences_runtime_t& runtime, WormUiWorkspaceView& view) {
     view.recent_file_count = std::min({runtime.recent_files.size(),
         static_cast<std::size_t>(runtime.preferences.general.recent_files_count), std::size(view.recent_files)});
     for (std::size_t index = 0; index < view.recent_file_count; ++index)

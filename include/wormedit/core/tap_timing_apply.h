@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/command.h>
+#include <wormedit/core/result.h>
 #include <wormedit/core/tap_tempo.h>
 
 #include <cstdint>
@@ -11,6 +12,12 @@ namespace wormedit {
 enum class tap_bpm_choice_t { raw, nearest_one, nearest_half };
 
 struct tap_timing_apply_proposal_t {
+    [[nodiscard]] static auto from(const song_document_t& document, chart_id_t chart,
+                                  const tap_tempo_estimate_t& estimate, std::uint32_t sample_rate,
+                                  std::uint16_t beats_per_measure, tap_bpm_choice_t choice,
+                                  bool timing_locked = false)
+        -> diagnosed_t<std::optional<tap_timing_apply_proposal_t>>;
+
     chart_stamp_t stamp;
     std::uint32_t sample_rate{};
     std::uint16_t beats_per_measure{};
@@ -18,23 +25,17 @@ struct tap_timing_apply_proposal_t {
     tap_bpm_choice_t choice{tap_bpm_choice_t::raw};
     signed_rational_t beats_per_minute;
     signed_rational_t beat_zero_audio_offset_seconds;
-    diagnostic_list_t diagnostics;
 
     [[nodiscard]] auto is_valid() const noexcept -> bool {
-        return static_cast<bool>(stamp.chart) && diagnostics.empty();
+        return static_cast<bool>(stamp.chart);
     }
 };
 
-[[nodiscard]] auto propose_tap_timing_apply(const song_document_t& document, chart_id_t chart,
-                                            const tap_tempo_estimate_t& estimate,
-                                            std::uint32_t sample_rate,
-                                            std::uint16_t beats_per_measure,
-                                            tap_bpm_choice_t choice,
-                                            bool timing_locked = false)
-    -> tap_timing_apply_proposal_t;
+using tap_timing_apply_proposal_outcome_t = diagnosed_t<std::optional<tap_timing_apply_proposal_t>>;
+
 
 // Builds the same BPM/offset edit used by the commit path for read-only grid preview.
-[[nodiscard]] auto build_tap_timing_preview(
+[[nodiscard]] auto make_tap_timing_preview(
     const song_document_t& document, const tap_timing_apply_proposal_t& proposal)
     -> std::optional<chart_document_t>;
 

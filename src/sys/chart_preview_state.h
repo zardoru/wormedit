@@ -2,7 +2,7 @@
 
 #include <wormedit/audio/preview_bridge.h>
 #include <wormedit/audio/preview_session.h>
-#include <wormedit/audio/source_registry.h>
+#include "sys/project_audio_sources.h"
 #include <wormedit/audio/audition_session.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/workspace.h>
@@ -48,7 +48,10 @@ struct chart_preview_t {
     [[nodiscard]] auto layer_assist_frames() const -> std::vector<std::uint64_t>;
     [[nodiscard]] auto set_layer_assist(chart_id_t selected, std::span<const layer_id_t> layers,
                                         audio::preview_session_t& session) -> bool;
-    std::uint8_t count_in_measures{};
+    metronome_t* metronome{};
+    [[nodiscard]] auto count_in_measures() const -> std::uint8_t {
+        return metronome ? metronome->settings.count_in : 0;
+    }
     std::uint8_t compiled_count_in_measures{};
     const sdl_preview_output_t* output_observer{};
     preview_feedback_t feedback;
@@ -64,15 +67,13 @@ struct chart_preview_t {
                                          const workspace_controller_t& workspace) const;
     [[nodiscard]] auto compile_if_needed(
         const chart_document_t& selected_chart, const song_document_t& document,
-        const audio::decoded_source_registry_t& sources,
-        const std::vector<audio::preview_metronome_source_binding_t>& metronome_bindings)
+        project_audio_sources_t& sources)
         -> std::optional<std::string>;
     [[nodiscard]] bool playing(const audio::preview_session_t& session) const;
     [[nodiscard]] std::uint64_t current_frame(const audio::preview_session_t& session) const;
     [[nodiscard]] auto play_pause(
         const chart_document_t* selected_chart, const song_document_t& document,
-        const audio::decoded_source_registry_t& sources,
-        const std::vector<audio::preview_metronome_source_binding_t>& metronome_bindings,
+        project_audio_sources_t& sources,
         sdl_audition_output_t& audition_output,
         audio::preview_session_t& preview_session, sdl_preview_output_t& preview_output,
         std::optional<local_position_t> start_cursor = std::nullopt,

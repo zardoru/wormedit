@@ -63,7 +63,7 @@ struct render_fixture_t {
         std::error_code ignored;
         std::filesystem::remove_all(directory, ignored);
     }
-    auto plan() const -> slice_span_plan_t { return build_slice_span_plan(song, chart_id_t{3}, sources); }
+    auto plan() const -> slice_span_plan_t { return plan_slice_spans(song, chart_id_t{3}, sources); }
     auto render(const slice_span_plan_t& plan) const -> slice_span_render_result_t {
         return render_slice_span_plan(song, plan, {.source_directory = directory, .output_directory = directory / "out"});
     }
@@ -144,7 +144,7 @@ TEST_CASE("slice_spans existing output refuses overwrite and reserved names perm
     const auto rejected = fixture.render(plan);
     check_span(!rejected && rejected.files.empty());
     check_span(bytes_at(rendered.files.front()) == bytes);
-    const auto second = build_slice_span_plan(fixture.song, chart_id_t{3}, fixture.sources,
+    const auto second = plan_slice_spans(fixture.song, chart_id_t{3}, fixture.sources,
         {.occupied_filenames = {plan.spans.front().filename}});
     const auto next = fixture.render(second);
     require_span(static_cast<bool>(next));
@@ -188,7 +188,7 @@ TEST_CASE("slice_spans soundless gameplay needs no source geometry or files", "[
     chart.sound_channels.clear();
     chart.bgm_source_lanes = {{.id = object_id_t{13}, .name = "Packed"}};
     chart.measures.front().bgm_events = {{.id = object_id_t{11}, .position = {measure_id_t{4}, 0}, .source_lane = object_id_t{13}}};
-    const auto plan = build_slice_span_plan(fixture.song, chart_id_t{3}, {});
+    const auto plan = plan_slice_spans(fixture.song, chart_id_t{3}, {});
     require_span(static_cast<bool>(plan));
     require_span(plan.spans.empty() && plan.mappings.size() == 1);
     check_span(!plan.mappings.front().span_index);
@@ -229,7 +229,7 @@ auto sliced_preview_pcm(const song_document_t& song, const std::filesystem::path
     const auto mixed = audio::render_offline_interval(sources, *schedule.schedule, bindings.bindings,
         0, 2 * slice_span_sample_rate);
     require_span(static_cast<bool>(mixed));
-    return mixed.interleaved_stereo;
+    return mixed->interleaved_stereo;
 }
 
 void check_pcm_tolerance(const std::vector<float>& before, const std::vector<float>& after) {

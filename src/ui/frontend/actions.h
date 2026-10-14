@@ -443,8 +443,12 @@ typedef struct WormUiWorkspaceAction {
     // OPEN_FILE: 0 automatic, 1 UTF-8, 2 CP932, 3 EUC-KR, 4 CP949,
     // 5 Windows-1252.
     uint8_t bms_encoding_index;
+    // Stable text_encoding_t id; zero requests automatic detection.
+    uint32_t bms_encoding_id;
     // Initial layout index: 4K, 5K, 6K, 7K, 8K, 9K, 10K, 14K.
     uint8_t new_project_layout_index;
+    // Stable core layout identity; the legacy index field is retained for ABI compatibility.
+    char new_project_layout_id[96];
     WormUiWorkspaceTab tab;
     uint64_t recovery_scan_generation;
     uint64_t transport_seek_frame;
@@ -459,6 +463,7 @@ typedef struct WormUiWorkspaceAction {
     uint64_t hover_source_total_frames;
     uint32_t hover_source_sample_rate;
     uint8_t transport_rate_index;
+    uint32_t transport_rate_id;
     bool transport_keep_pitch;
     uint64_t audio_asset_id;
     uint64_t audio_resource_id;

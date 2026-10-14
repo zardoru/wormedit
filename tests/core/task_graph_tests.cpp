@@ -265,3 +265,34 @@ TEST_CASE("task scheduler runs the worker start hook once per worker and survive
     REQUIRE(submitted.graph.wait());
     CHECK(*task_value_cast<int>(*submitted.graph.result(*added.id)) == 7);
 }
+
+TEST_CASE("canonical task outcomes retain failure payloads across legacy callbacks",
+          "[unit][core][task-graph][result]") {
+    const auto value = std::make_shared<const int>(91);
+    task_graph_t graph{1};
+    const auto task = graph.create_task({}, [value](std::span<const task_result_t>, std::stop_token) {
+        return task_result_t{.payload = task_value_t::from(value),
+            .error = task_error_t{.code = task_error_code_t::task_failed,
+                                   .message = "failed with payload"}};
+    });
+    REQUIRE(task.has_value());
+    task_scheduler_t scheduler{1, 1};
+    const auto submitted = scheduler.begin(std::move(graph));
+    REQUIRE(submitted.has_value());
+    REQUIRE(submitted->wait());
+    const auto result = submitted->outcome(*task);
+    REQUIRE(result.has_value());
+    REQUIRE_FALSE(result->has_value());
+    CHECK(result->error().payload.as<int>() == value);
+}
+
+TEST_CASE("legacy and canonical task casts share the payload type query",
+          "[unit][core][task-graph][result]") {
+    const auto value = std::make_shared<const int>(42);
+    task_outcome_t result = task_value_t::from(value);
+    CHECK(task_value_cast<int>(result) == value);
+    CHECK_FALSE(task_value_cast<double>(result));
+    const auto legacy = task_result_t::from(std::move(result));
+    CHECK(task_value_cast<int>(legacy) == value);
+    CHECK_FALSE(task_value_cast<double>(legacy));
+}

@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <utility>
 
 namespace wormedit {
 namespace {
@@ -85,9 +86,6 @@ auto grid_t::from(const audio_slicer_request_t& request) -> std::optional<grid_t
     return grid_t{*step, offset.numerator < 0 ? *offset_part : u128_t{}, *denominator};
 }
 
-[[maybe_unused]] auto make_grid(const audio_slicer_request_t& request) -> std::optional<grid_t> {
-    return grid_t::from(request);
-}
 
 auto round_quotient(const wide_math::divmod_t& division, const u128_t& denominator,
                     sample_rounding_t rounding) -> std::uint64_t {
@@ -128,8 +126,8 @@ auto boundary_frame(const grid_t& grid, const audio_slicer_request_t& request,
 
 } // namespace
 
-auto compute_audio_slices(const audio_slicer_request_t& request) -> audio_slicer_result_t {
-    audio_slicer_result_t result;
+auto audio_slice_plan_t::from(const audio_slicer_request_t& request) -> audio_slicer_outcome_t {
+    audio_slicer_outcome_t result;
     result.diagnostics = validate(request);
     if (!result.diagnostics.empty()) return result;
     if (!is_slice_covering_frame(request)) {
@@ -164,7 +162,7 @@ auto compute_audio_slices(const audio_slicer_request_t& request) -> audio_slicer
     if (positive_offset != u128_t{} && request.include_lead_in) {
         const auto first = boundary_frame(*grid, request, index, positive_offset);
         if (first > 0) {
-            result.ranges.push_back({0, first});
+            result.value.ranges.push_back({0, first});
             previous = first;
         }
     } else if (positive_offset != u128_t{}) {
@@ -173,18 +171,25 @@ auto compute_audio_slices(const audio_slicer_request_t& request) -> audio_slicer
     while (previous < request.source_frames) {
         const auto next = boundary_frame(*grid, request, ++index, positive_offset);
         if (next <= previous) continue;
-        if (result.ranges.size() >= request.maximum_slices) {
-            result.ranges.clear();
+        if (result.value.ranges.size() >= request.maximum_slices) {
+            result.value.ranges.clear();
             result.diagnostics.push_back({audio_slicer_error_code_t::capacity_exceeded,
                                           "the grid produces more slices than allowed"});
             return result;
         }
-        result.ranges.push_back({previous, next});
+        result.value.ranges.push_back({previous, next});
         previous = next;
     }
     return result;
 }
 
+auto audio_slicer_result_t::from(audio_slicer_outcome_t&& outcome) -> audio_slicer_result_t {
+    return {.ranges = std::move(outcome.value.ranges),
+            .diagnostics = std::move(outcome.diagnostics)};
+}
 
+auto compute_audio_slices(const audio_slicer_request_t& request) -> audio_slicer_result_t {
+    return audio_slicer_result_t::from(audio_slice_plan_t::from(request));
+}
 
 } // namespace wormedit

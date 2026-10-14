@@ -98,7 +98,7 @@ void chart_import_load(chart_import_session_t& session, const std::filesystem::p
 void chart_import_toggle(chart_import_session_t& session, chart_id_t chart,
                          const song_document_t& target, const std::filesystem::path& target_base) {
     if (!session.source ||
-        std::ranges::find(session.source->charts, chart, &chart_document_t::id) == session.source->charts.end())
+        session.source->find_chart(chart) == nullptr)
         return;
     const auto found = std::ranges::find(session.selected, chart);
     if (found == session.selected.end()) session.selected.push_back(chart);

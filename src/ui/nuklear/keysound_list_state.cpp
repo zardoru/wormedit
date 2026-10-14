@@ -3,18 +3,13 @@
 #include "core/text_util.h"
 
 #include <algorithm>
-#include <cctype>
 #include <unordered_set>
 
 namespace {
 
-auto fold(char value) -> char {
-    return static_cast<char>(std::tolower(static_cast<unsigned char>(value)));
-}
-
 auto contains_folded(std::string_view text, std::string_view query) -> bool {
     const auto found = std::ranges::search(text, query, [](char a, char b) {
-        return fold(a) == fold(b);
+        return wormedit::text_util::ascii_iequal(a, b);
     });
     return !found.empty();
 }
@@ -202,7 +197,7 @@ auto worm_ui_keysound_group_review_confirm(worm_ui_keysound_group_review_t& revi
         if (!group.accepted || group.member_ids.empty()) continue;
         auto name = std::string(wormedit::text_util::trim(
             group.name, wormedit::text_util::ascii_whitespace));
-        if (name.empty() || !wormedit::text_util::valid_bounded_text(name, 64)) {
+        if (name.empty() || !wormedit::text_util::is_valid_bounded_text(name, 64)) {
             review.message = "Group names must contain 1 to 64 bytes.";
             return {};
         }

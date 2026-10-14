@@ -177,13 +177,13 @@ auto evaluate_storyboard_frame(const storyboard_document_model_t& document,
                                     "storyboard frame instance storage overflowed"};
         return result;
     }
-    const auto allocation = arena.allocate_bytes(active_count * sizeof(storyboard_draw_instance_t),
+    const auto allocation = arena.allocate(active_count * sizeof(storyboard_draw_instance_t),
                                                  alignof(storyboard_draw_instance_t));
     if (!allocation) {
-        result.arena_error = allocation.error;
+        result.arena_error = allocation.error();
         return result;
     }
-    auto* output = static_cast<storyboard_draw_instance_t*>(allocation.data);
+    auto* output = static_cast<storyboard_draw_instance_t*>(*allocation);
     std::size_t output_count = 0;
     for (const auto& source : index.sources) {
         if (source.begin_time_ms > time_ms || time_ms > source.end_time_ms)

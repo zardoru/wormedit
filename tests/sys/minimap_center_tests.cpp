@@ -1,6 +1,6 @@
 #include "../sys/application_dispatch_fixture.h"
 #include "sys/compose_input.h"
-#include "sys/waveform_view_projection.h"
+#include "sys/waveform_view.h"
 
 #include <wormedit/core/timing.h>
 
@@ -221,8 +221,8 @@ TEST_CASE("song bar uses a BMS default and preserves explicit session choices ac
           "[frame-timing][minimap-center][song-bar]") {
     auto chart = minimap_chart();
     chart.source_family = format_family_t::bms;
-    auto history = make_document_history(song_document_t{.id = song_id_t{1}, .charts = {chart}});
-    auto binding = make_workspace_controller(history);
+    auto history = document_history_t::from(song_document_t{.id = song_id_t{1}, .charts = {chart}});
+    auto binding = workspace_controller_t::from(history);
     REQUIRE(binding.workspace);
     binding.workspace->selected_chart = chart.id;
     binding.workspace->active_tab = workspace_tab_t::compose;

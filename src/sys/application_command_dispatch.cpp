@@ -5,7 +5,7 @@
 #include "sys/compose_note_to_bgm.h"
 #include "sys/compose_semantic_layer_commands.h"
 
-#include "sys/compose_bookmark_commands.h"
+#include "sys/bookmark_commands.h"
 #include <wormedit/core/chart_clipboard.h>
 #include "sys/compose_input.h"
 #include "sys/compose_sound_selection.h"
@@ -33,6 +33,7 @@
 
 namespace wormedit::sys {
 void reset_application_project_edit_state(application_command_state_t& current) {
+    current.bookmarks.reset_project();
     current.project = {};
 }
 
@@ -225,7 +226,7 @@ auto metronome_command(command_context_t& context) -> std::optional<command_resu
     post_command_message(
         context.environment.document.notifications, notification_severity_t::success,
         notification_source_t::audio,
-        context.environment.editor.commands.preferences.transport_metronome_enabled
+        context.environment.editor.commands.metronome_settings().enabled
             ? "Metronome enabled."
             : "Metronome disabled.");
     return command_result_t{.accepted = true};
@@ -457,18 +458,18 @@ auto clipboard_commands(command_context_t& context) -> std::optional<command_res
                                           notification_source_t::edit);
     auto copied =
         kind == command_kind_t::edit_cut
-            ? wormedit::cut_chart_selection(context.environment.document.history, *state,
+            ? wormedit::create_cut_chart_clipboard(context.environment.document.history, *state,
                                             options)
-            : wormedit::copy_chart_selection(context.environment.document.history.document, *state,
+            : wormedit::chart_clipboard_t::from(context.environment.document.history.document, *state,
                                              context.environment.document.history.document.revision,
                                              options.kiai_head);
     if (!copied)
         return reject_application_command(context.environment.document.notifications,
-                                          std::move(copied.error), notification_severity_t::warning,
+                                          std::move(copied.error()), notification_severity_t::warning,
                                           notification_source_t::edit);
     if (kind == command_kind_t::edit_cut)
         context.environment.editor.commands.project.timing_recipe.kiai_selected_head = 0;
-    context.environment.editor.commands.project.clipboard.chart_clipboard = std::move(copied.clipboard);
+    context.environment.editor.commands.project.clipboard.chart_clipboard = std::move(*copied);
     post_command_message(context.environment.document.notifications,
                          notification_severity_t::success, notification_source_t::edit,
                          kind == command_kind_t::edit_cut ? "Selection cut." : "Selection copied.");
@@ -581,14 +582,14 @@ auto marker_timing_index(const wormedit::chart_document_t& chart,
 auto navigate_active_markers(command_context_t& context,
                              const wormedit::editor_interaction_state_t& state,
                              wormedit::marker_navigation_direction_t direction)
-    -> wormedit::marker_navigation_result_t {
+    -> wormedit::marker_navigation_outcome_t {
     using namespace wormedit;
     const auto* chart =
         selected_chart(context.environment.document.history, context.environment.document.workspace);
     const auto timing = chart
                             ? marker_timing_index(*chart, context.environment.document.notifications)
                             : std::nullopt;
-    return navigate_markers(context.environment.document.history.document,
+    return marker_navigation_match_t::from(context.environment.document.history.document,
                             context.environment.document.history.document.revision, state.chart,
                             state.cursor, direction, {}, {}, timing ? &*timing : nullptr);
 }
@@ -637,7 +638,7 @@ auto navigation_commands(command_context_t& context) -> std::optional<command_re
     const auto direction = kind == command_kind_t::navigation_previous_marker
         ? marker_navigation_direction_t::previous : marker_navigation_direction_t::next;
     const auto marker = navigate_active_markers(context, *state, direction);
-    if (marker.status == marker_navigation_status_t::no_result) {
+    if (marker.value.status == marker_navigation_status_t::no_result) {
         post_command_message(context.environment.document.notifications,
                              notification_severity_t::info, notification_source_t::input,
                              direction == marker_navigation_direction_t::previous
@@ -645,8 +646,8 @@ auto navigation_commands(command_context_t& context) -> std::optional<command_re
                                  : "No next beat-anchored bookmark or section boundary.");
         return command_result_t{.accepted = true};
     }
-    if (marker.status != marker_navigation_status_t::found || !marker.item ||
-        !marker.item->beat_position)
+    if (marker.value.status != marker_navigation_status_t::found || !marker.value.item ||
+        !marker.value.item->beat_position)
         return reject_application_command(
             context.environment.document.notifications,
             marker.diagnostics.empty() ? "Bookmark navigation could not resolve an exact beat row."
@@ -658,7 +659,7 @@ auto navigation_commands(command_context_t& context) -> std::optional<command_re
     return accept_editor_command(
         dispatch_editor_action(
             context.environment.document.history, *state,
-            jump_edit_cursor_action_t{*marker.item->beat_position, marker.document_revision}),
+            jump_edit_cursor_action_t{*marker.value.item->beat_position, marker.value.document_revision}),
         context.environment.document.notifications,
         direction == marker_navigation_direction_t::previous
             ? "Moved to the previous bookmark or section boundary."
@@ -687,7 +688,7 @@ void post_bookmark_outcome(notification_sink_t& sink, command_kind_t kind,
 auto open_bookmark_chooser_command(command_context_t& context) -> std::optional<command_result_t> {
     if (context.command.kind != command_kind_t::navigation_go_to_bookmark) return std::nullopt;
     auto* interaction = context.compose();
-    if (!interaction || !context.environment.editor.commands.services.open_bookmark_chooser)
+    if (!interaction || !context.environment.editor.commands.bookmarks.has_chooser_backend())
         return reject_application_command(context.environment.document.notifications,
                                           "Bookmark chooser requires the active Compose chart.",
                                           notification_severity_t::warning,
@@ -697,7 +698,7 @@ auto open_bookmark_chooser_command(command_context_t& context) -> std::optional<
                                           "Finish or cancel the active Compose gesture first.",
                                           notification_severity_t::warning,
                                           notification_source_t::input);
-    const bool opened = context.environment.editor.commands.services.open_bookmark_chooser(
+    const bool opened = context.environment.editor.commands.bookmarks.open_chooser(
         context.environment.document.history.document.id.value, interaction->chart.value,
         context.environment.document.history.document.revision);
     if (!opened)
@@ -850,13 +851,13 @@ auto bookmark_commands(command_context_t& context) -> std::optional<command_resu
     const auto bookmark_chart = state->chart;
     auto outcome = [&] {
         if (kind == command_kind_t::markers_add_bookmark)
-            return add_beat_bookmark_here(context.environment.document.history, *state,
+            return context.environment.editor.commands.bookmarks.add_beat_bookmark_here(context.environment.document.history, *state,
                                           context.environment.editor.commands);
         const auto downscroll = compose_field_downscroll(
             *chart, context.environment.editor.commands.preferences.editor_preferences);
         // The commands are bound to screen directions: Up is "previous" unless the field is flipped.
         const auto direction = compose_visual_navigation_direction(downscroll, previous);
-        return navigate_beat_bookmark(context.environment.document.history, *state,
+        return context.environment.editor.commands.bookmarks.navigate_beat_bookmark(context.environment.document.history, *state,
                                       context.environment.editor.commands,
                                       direction == interaction_direction_t::backward
                                           ? marker_navigation_direction_t::previous
@@ -866,11 +867,8 @@ auto bookmark_commands(command_context_t& context) -> std::optional<command_resu
     if (outcome.document_changed) {
         const auto rebound = context.rebind();
         if (!rebound.accepted) return rebound;
-        if (kind == command_kind_t::markers_add_bookmark && outcome.accepted &&
-            context.environment.editor.commands
-                .services.transport_preserve_bookmark_revision) {
-            static_cast<void>(context.environment.editor.commands
-                                  .services.transport_preserve_bookmark_revision(
+        if (kind == command_kind_t::markers_add_bookmark && outcome.accepted) {
+            static_cast<void>(context.environment.editor.commands.bookmarks.preserve_preview_revision(
                                       bookmark_chart, previous_revision,
                                       context.environment.document.history.document.revision));
         }

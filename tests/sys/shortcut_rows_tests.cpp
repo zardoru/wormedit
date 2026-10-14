@@ -8,7 +8,7 @@
 
 using namespace wormedit;
 using wormedit::sys::capture_shortcut_batch;
-using wormedit::sys::project_shortcut_rows;
+using wormedit::sys::build_shortcut_rows_view;
 using wormedit::sys::shortcut_chord_text;
 using wormedit::sys::shortcut_rows_projection_t;
 
@@ -83,7 +83,7 @@ TEST_CASE("projection shows unbound commands and labels from ids", "[sys][shortc
     command_registry_t registry;
     register_unbound_and_bound(registry);
     shortcut_rows_projection_t projection;
-    project_shortcut_rows(registry, shortcut_primary_modifier_t::control, projection);
+    build_shortcut_rows_view(registry, shortcut_primary_modifier_t::control, projection);
     check_unbound_and_bound_rows(projection);
 }
 
@@ -106,7 +106,7 @@ TEST_CASE("projection flags every command in a conflicting pair", "[sys][shortcu
     command_registry_t registry;
     register_conflicting_trio(registry);
     shortcut_rows_projection_t projection;
-    project_shortcut_rows(registry, shortcut_primary_modifier_t::control, projection);
+    build_shortcut_rows_view(registry, shortcut_primary_modifier_t::control, projection);
     check_conflicting_trio_rows(projection);
 }
 

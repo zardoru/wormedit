@@ -1,3 +1,4 @@
+#include "core/text_util.h"
 #include "ui/nuklear/command_menu.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/dialog.h"
@@ -7,7 +8,6 @@
 #include <SDL3/SDL_keycode.h>
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <limits>
@@ -34,7 +34,7 @@ struct menu_state_t {
 auto contains(std::string_view label, std::string_view query) -> bool {
     return std::search(label.begin(), label.end(), query.begin(), query.end(),
         [](unsigned char left, unsigned char right) {
-            return std::tolower(left) == std::tolower(right);
+            return wormedit::text_util::ascii_iequal(static_cast<char>(left), static_cast<char>(right));
         }) != label.end();
 }
 auto matching_rows(const WormUiWorkspaceView& view) -> std::vector<std::size_t> {

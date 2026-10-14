@@ -9,6 +9,7 @@
 #include <span>
 #include <numeric>
 #include <optional>
+#include <type_traits>
 
 namespace wormedit::timing_arithmetic {
 
@@ -51,9 +52,11 @@ inline auto divide_wide(wide_math::u128_t numerator, wide_math::u128_t denominat
     return wide_math::divide(numerator, denominator);
 }
 
+template <class Result = signed_rational_t>
 inline auto reduce_sum(signed_wide_t sum, std::uint64_t common,
                        std::uint64_t left_denominator, std::uint64_t right_denominator)
-    -> std::optional<signed_rational_t> {
+    -> std::optional<Result> {
+    static_assert(std::is_same_v<Result, signed_rational_t> || std::is_same_v<Result, rational_t>);
     const auto remainder = divide_wide(sum.value, {0, common}).remainder.low;
     const auto divisor = std::gcd(common, remainder);
     const auto numerator = divide_wide(sum.value, {0, divisor}).quotient;
@@ -61,15 +64,21 @@ inline auto reduce_sum(signed_wide_t sum, std::uint64_t common,
                                                  right_denominator / divisor);
     if (!wide_math::can_fit_u64(numerator) || !wide_math::can_fit_u64(denominator))
         return std::nullopt;
-    const auto signed_numerator = signed_value(numerator.low, sum.negative);
-    if (!signed_numerator) return std::nullopt;
-    return signed_rational_t{*signed_numerator, denominator.low};
+    if constexpr (std::is_same_v<Result, rational_t>) {
+        if (sum.negative && numerator.low != 0) return std::nullopt;
+        return rational_t{numerator.low, denominator.low};
+    } else {
+        const auto signed_numerator = signed_value(numerator.low, sum.negative);
+        if (!signed_numerator) return std::nullopt;
+        return signed_rational_t{*signed_numerator, denominator.low};
+    }
 }
 
 // Reduce after the signed 128-bit sum: a representable result must not be
 // rejected merely because its common-denominator intermediate exceeded 64 bits.
+template <class Result = signed_rational_t>
 inline auto sum(signed_rational_t left, signed_rational_t right, bool subtract = false)
-    -> std::optional<signed_rational_t> {
+    -> std::optional<Result> {
     const auto a = try_normalize(left);
     const auto b = try_normalize(right);
     if (!a || !b) return std::nullopt;
@@ -80,13 +89,16 @@ inline auto sum(signed_rational_t left, signed_rational_t right, bool subtract =
     const auto rhs = signed_wide_t{wide_math::multiply(magnitude(b->numerator),
                                                         a->denominator / common),
                                    (b->numerator < 0) != subtract};
-    return reduce_sum(combine(lhs, rhs), common, a->denominator, b->denominator);
+    return reduce_sum<Result>(combine(lhs, rhs), common, a->denominator, b->denominator);
 }
 
 inline auto add_exact(signed_rational_t left, signed_rational_t right)
     -> std::optional<signed_rational_t> { return sum(left, right); }
+// The default retains signed-clock bounds; duration callers request rational_t
+// explicitly to retain the full unsigned range while rejecting negative results.
+template <class Result = signed_rational_t>
 inline auto subtract_exact(signed_rational_t left, signed_rational_t right)
-    -> std::optional<signed_rational_t> { return sum(left, right, true); }
+    -> std::optional<Result> { return sum<Result>(left, right, true); }
 
 inline constexpr std::uint64_t clock_quantum = 1'000'000'000'000;
 inline constexpr std::uint64_t row_quantum = 1'000'000'000;

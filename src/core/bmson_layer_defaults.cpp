@@ -113,9 +113,9 @@ auto build_membership_updates(chart_document_t& chart, const event_layer_map_t& 
 
 } // namespace
 
-auto initialize_bmson_sound_channel_layers(chart_document_t& chart)
-    -> bmson_layer_defaults_result_t {
-    if (!chart.semantic_layers.empty() || chart.sound_channels.empty()) return {};
+auto create_bmson_sound_channel_layers(chart_document_t& chart)
+    -> bmson_layer_defaults_outcome_t {
+    if (!chart.semantic_layers.empty() || chart.sound_channels.empty()) return false;
 
     std::vector<semantic_layer_t> layers;
     event_layer_map_t event_layers;
@@ -124,12 +124,17 @@ auto initialize_bmson_sound_channel_layers(chart_document_t& chart)
     std::string error;
     if (!build_channel_layers(chart, layers, event_layers, error) ||
         !build_membership_updates(chart, event_layers, note_updates, bgm_updates, error))
-        return {.error = std::move(error)};
+        return std::unexpected(std::move(error));
 
     chart.semantic_layers.swap(layers);
     for (auto& update : note_updates) update.note->semantic_layers.swap(update.layers);
     for (auto& update : bgm_updates) update.event->semantic_layers.swap(update.layers);
-    return {.initialized = true, .error = {}};
+    return true;
+}
+
+auto initialize_bmson_sound_channel_layers(chart_document_t& chart)
+    -> bmson_layer_defaults_result_t {
+    return bmson_layer_defaults_result_t::from(create_bmson_sound_channel_layers(chart));
 }
 
 } // namespace wormedit

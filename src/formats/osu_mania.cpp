@@ -230,7 +230,7 @@ void append_osu_layout(chart_document_t& chart, std::int64_t keys, bool special_
         auto profile = make_osu_mania_profile(static_cast<std::uint32_t>(keys), true);
         layout = std::move(profile->layout);
         chart.input_profile = std::move(profile->input);
-    } else if (const auto input = default_input_profile_for(layout)) {
+    } else if (const auto input = make_default_input_profile_for(layout)) {
         chart.input_profile = *input;
     }
     chart.lane_layouts.push_back({.id = take_object_id(0),
@@ -797,7 +797,7 @@ auto rationalize(long double value, std::uint64_t maximum_denominator = 1'000'00
                                                     {.maximum_denominator = maximum_denominator,
                                                      .iteration_limit = 96,
                                                      .maximum_absolute_error = 1.0e-10L});
-    return result.value;
+    return result ? std::optional{result->value} : std::nullopt;
 }
 
 auto format_double(long double value) -> std::string {

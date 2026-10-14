@@ -1,5 +1,5 @@
 #define NK_IMPLEMENTATION
-#include "sys/workspace_projection.h"
+#include "sys/workspace_view.h"
 #include "ui/nuklear/notification_toasts.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -116,7 +116,7 @@ TEST_CASE("notification projection borrows text and bounds the newest three toas
                      "Warning " + std::to_string(index));
     center.post(notification_severity_t::hint, notification_source_t::input, "Hint");
     center.drain_inbox(now);
-    const auto view = sys::project_notification_view(center, now);
+    const auto view = sys::build_notification_view(center, now);
     const auto entries = center.borrowed_snapshot(notification_capacity);
     REQUIRE(view.toast_count == 3);
     CHECK(std::tuple{view.unread_warnings, view.unread_errors} ==
@@ -133,8 +133,8 @@ TEST_CASE("notification warnings expire at eight seconds while errors remain",
     center.post(notification_severity_t::warning, notification_source_t::system, "Warning");
     center.post(notification_severity_t::error, notification_source_t::system, "Error");
     center.drain_inbox(now);
-    REQUIRE(sys::project_notification_view(center, 7999ms).toast_count == 2);
-    const auto expired = sys::project_notification_view(center, 8s);
+    REQUIRE(sys::build_notification_view(center, 7999ms).toast_count == 2);
+    const auto expired = sys::build_notification_view(center, 8s);
     REQUIRE(expired.toast_count == 1);
     CHECK(expired.toasts[0].severity == WORM_UI_NOTIFICATION_ERROR);
     CHECK(expired.unread_warnings == 1);
@@ -149,11 +149,11 @@ TEST_CASE("notification repeats refresh warning lifetime and dismissal is persis
     now = 1500ms;
     center.post(notification_severity_t::warning, notification_source_t::system, "Warning");
     center.drain_inbox(now);
-    const auto refreshed = sys::project_notification_view(center, 8s);
+    const auto refreshed = sys::build_notification_view(center, 8s);
     REQUIRE(refreshed.toast_count == 1);
     CHECK(refreshed.toasts[0].repeat_count == 2);
     REQUIRE(center.dismiss(refreshed.toasts[0].id));
-    const auto dismissed = sys::project_notification_view(center, 8s);
+    const auto dismissed = sys::build_notification_view(center, 8s);
     CHECK((dismissed.toast_count == 0 && dismissed.unread_warnings == 0 &&
            dismissed.current_text == nullptr));
 }

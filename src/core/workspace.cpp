@@ -26,6 +26,8 @@ auto workspace_chart_option_t::from(const chart_document_t& chart) -> workspace_
 
 namespace {
 
+using diagnostic_queries::has_errors;
+
 auto index_of(workspace_tab_t tab) noexcept -> std::optional<std::size_t> {
     const auto index = static_cast<std::size_t>(tab);
     if (index >= workspace_tab_count) {
@@ -37,12 +39,6 @@ auto index_of(workspace_tab_t tab) noexcept -> std::optional<std::size_t> {
 auto add_error(diagnostic_list_t& diagnostics, diagnostic_code_t code, std::string message)
     -> void {
     diagnostics.push_back(error(code, std::move(message)));
-}
-
-auto has_errors(const diagnostic_list_t& diagnostics) -> bool {
-    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-        return diagnostic.severity == diagnostic_severity_t::error;
-    });
 }
 
 template <typename id_t, typename projection_t>
@@ -756,7 +752,7 @@ auto is_branch_cache_choices_current(const workspace_bms_branch_outline_cache_t&
             return retained.first == active.branch && retained.second == active.selected_value;
         });
 }
-auto project_branch_outline(const song_document_t& document, const chart_document_t& chart,
+auto build_branch_outline_view(const song_document_t& document, const chart_document_t& chart,
     const workspace_limits_t& limits, workspace_bms_branch_outline_cache_t* cache)
     -> workspace_bms_branch_outline_t {
     // Retained ordinary statements are visible too; only an absent tree is empty.
@@ -1363,7 +1359,7 @@ auto build_compose_tab(workspace_view_build_context_t& context,
         .layout_segment_count = chart->lane_layouts.size(),
         .lane_count = lane_count,
         .layer_count = chart->semantic_layers.size(),
-        .bms_branch_outline = project_branch_outline(document, *chart, workspace.limits,
+        .bms_branch_outline = build_branch_outline_view(document, *chart, workspace.limits,
                                                      branch_cache),
     };
     return true;
@@ -1531,32 +1527,6 @@ auto workspace_view_t::from(const workspace_controller_t& workspace,
     }
     result.view = std::move(view);
     return result;
-}
-
-// Compatibility for the sys/ui migration wave.
-auto make_workspace_controller(const song_document_t& document, workspace_limits_t limits)
-    -> workspace_bind_result_t {
-    return workspace_controller_t::from(document, limits);
-}
-
-auto make_workspace_controller(const document_history_t& history, workspace_limits_t limits)
-    -> workspace_bind_result_t {
-    return workspace_controller_t::from(history, limits);
-}
-
-// Compatibility for the sys/ui migration wave.
-auto make_workspace_view(const workspace_controller_t& workspace, const song_document_t& document)
-    -> workspace_view_result_t {
-    return workspace_view_t::from(workspace, document);
-}
-
-auto make_workspace_view(const workspace_controller_t& workspace, const song_document_t& document,
-                         workspace_tab_t requested_tab, const diagnostic_list_t* cached_diagnostics,
-                         workspace_bms_branch_outline_cache_t* branch_cache,
-                         workspace_binding_validation_cache_t* binding_cache)
-    -> workspace_view_result_t {
-    return workspace_view_t::from(workspace, document, requested_tab, cached_diagnostics,
-                                  branch_cache, binding_cache);
 }
 
 } // namespace wormedit

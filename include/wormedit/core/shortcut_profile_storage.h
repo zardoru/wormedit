@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/command_registry.h>
+#include <wormedit/core/result.h>
 
 #include <filesystem>
 #include <optional>
@@ -16,7 +17,17 @@ enum class shortcut_profile_load_status_t {
     io_error,
 };
 
+// A load failure may carry parser diagnostics as well as its storage status.
+using shortcut_profile_load_outcome_t =
+    result_t<shortcut_profile_t, diagnosed_t<error_t<shortcut_profile_load_status_t>>>;
+
+[[nodiscard]] auto open_shortcut_profile(const std::filesystem::path& path)
+    -> shortcut_profile_load_outcome_t;
+
 struct shortcut_profile_load_result_t {
+    [[nodiscard]] static auto from(shortcut_profile_load_outcome_t&& outcome)
+        -> shortcut_profile_load_result_t;
+
     shortcut_profile_load_status_t status{shortcut_profile_load_status_t::io_error};
     std::optional<shortcut_profile_t> profile;
     diagnostic_list_t diagnostics;
@@ -33,7 +44,16 @@ enum class shortcut_profile_save_status_t {
     io_error,
 };
 
+using shortcut_profile_save_outcome_t = result_t<void, error_t<shortcut_profile_save_status_t>>;
+
+[[nodiscard]] auto create_shortcut_profile_file(const std::filesystem::path& path,
+                                                const shortcut_profile_t& profile)
+    -> shortcut_profile_save_outcome_t;
+
 struct shortcut_profile_save_result_t {
+    [[nodiscard]] static auto from(shortcut_profile_save_outcome_t&& outcome)
+        -> shortcut_profile_save_result_t;
+
     shortcut_profile_save_status_t status{shortcut_profile_save_status_t::io_error};
     std::string error;
 

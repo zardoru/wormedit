@@ -113,10 +113,10 @@ TEST_CASE("same sound selection respects visible spans layers lanes and asset ke
 }
 TEST_CASE("same sound command adds uses hover selection then dock without history",
           "[sys][select-same-sound]") {
-    auto history = make_document_history(sound_song());
+    auto history = document_history_t::from(sound_song());
     std::optional<editor_interaction_state_t> state{editor_interaction_state_t{}};
     const std::array snaps{std::uint64_t{4}};
-    const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+    const auto setup = editor_interaction_state_t::from(history, chart_id_t{1}, lane_id_t{1},
                                                {measure_id_t{1}, 0}, snaps, 4, 192);
     REQUIRE(setup);
     state = *setup.state;
@@ -193,7 +193,7 @@ TEST_CASE("BMSON same sound selection follows three retained channels across not
 
 TEST_CASE("same sound select command has a remappable primary Shift A binding", "[sys][select-same-sound]") {
     std::string invoked;
-    auto registry = make_default_editor_command_registry([&](const auto& context) {
+    auto registry = command_registry_t::from([&](const auto& context) {
         invoked = context.command.value;
         return command_invocation_result_t{.accepted = true};
     });

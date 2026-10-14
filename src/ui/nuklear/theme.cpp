@@ -240,8 +240,8 @@ std::map<std::string, field_palette_t> palettes;
 std::vector<field_scheme_t> schemes;
 std::unordered_map<std::uint64_t, std::pair<std::uint8_t, key_color_t>> layout_colors;
 std::vector<field_lane_t> bound_layout;
-auto default_palette() -> field_palette_t;
-field_palette_t active = default_palette();
+auto create_default_palette() -> field_palette_t;
+field_palette_t active = create_default_palette();
 std::string active_id = "wormedit";
 std::set<std::string> warned_ids;
 std::uint64_t generation{};
@@ -522,7 +522,7 @@ auto parse_palette(const nlohmann::json& document, field_palette_t base) -> fiel
                        base.timing[i]);
     return base;
 }
-auto default_palette() -> field_palette_t {
+auto create_default_palette() -> field_palette_t {
     compose_colors = builtin_roles;
     key_colors = builtin_keys;
     note_accents = builtin_accents;
@@ -543,7 +543,7 @@ void load_field_schemes(const std::filesystem::path& directory) {
     palettes.clear();
     schemes.clear();
     warned_ids.clear();
-    auto fallback = default_palette();
+    auto fallback = create_default_palette();
     std::vector<std::filesystem::path> paths;
     std::error_code error;
     for (std::filesystem::directory_iterator it(directory, error), end; !error && it != end;
@@ -726,7 +726,7 @@ auto select_field_scheme(std::string_view id) -> bool {
         std::cerr << "wormedit: field scheme " << requested << " unavailable; using Wormedit\n";
     const auto selected = valid ? requested : std::string("wormedit");
     if (active_id == selected) return valid;
-    active = palettes.contains(selected) ? palettes.at(selected) : default_palette();
+    active = palettes.contains(selected) ? palettes.at(selected) : create_default_palette();
     active_id = selected;
     compose_colors = active.roles;
     key_colors = active.keys;

@@ -1,3 +1,4 @@
+#include "ui/nuklear/catalog_view.h"
 #include "ui/nuklear/metadata_format_fields.h"
 
 #include "ui/nuklear/chrome.h"
@@ -224,12 +225,6 @@ void initialize_bmson_field_buffers(const WormUiMetadataView* metadata) {
                 break;
         }
     }
-}
-
-static const char* metadata_format_family_name(uint8_t family) {
-    static const char* names[] = {"Native", "BMS",  "StepMania", "osu!mania",
-                                  "BMSON",  "MIDI", "Quaver"};
-    return family < sizeof(names) / sizeof(names[0]) ? names[family] : "Unknown";
 }
 
 static int initialize_format_buffers(const WormUiMetadataFormatFieldView* field, int insert_mode) {
@@ -709,7 +704,7 @@ void render_format_field_rows(const MetadataPanel& panel) {
         nk_layout_row_begin(context, NK_DYNAMIC, 26, 2);
         nk_layout_row_push(context, 0.78f);
         nk_labelf(context, NK_TEXT_LEFT, "%s · %s · %s (%zu fields)",
-                  field->chart_scoped ? "Chart" : "Song", metadata_format_family_name(field->family),
+                  field->chart_scoped ? "Chart" : "Song", wormedit::ui::kind_label(metadata->format_families, field->family, "Unknown"),
                   field->name ? field->name : "(empty)", field->group_field_count);
         nk_layout_row_push(context, 0.22f);
         const auto editable = field->family <= 6 && (!field->chart_scoped || metadata->has_chart);
@@ -752,14 +747,14 @@ void render_format_target_selector(const MetadataPanel& panel) {
         wormedit::ui::chrome::safe_combo_end(context);
     }
     nk_layout_row_push(context, 0.5f);
-    const auto family_label = metadata_format_family_name(state.format_add_family);
+    const auto family_label = wormedit::ui::kind_label(metadata.format_families, state.format_add_family, "Unknown");
     if (wormedit::ui::chrome::safe_combo_begin_label(context, family_label, nk_vec2(nk_widget_width(context), 180))) {
-        static constexpr const char* names[]{"Native", "BMS", "StepMania", "osu!mania",
-                                             "BMSON", "MIDI", "Quaver"};
         nk_layout_row_dynamic(context, 22, 1);
-        for (std::uint8_t family = 0; family < 7; ++family)
-            if (nk_combo_item_label(context, names[family], NK_TEXT_LEFT))
-                state.format_add_family = family;
+        for (std::size_t index = 0; index < metadata.format_families.count; ++index) {
+            const auto& family = metadata.format_families.entries[index];
+            if (nk_combo_item_label(context, family.label, NK_TEXT_LEFT))
+                state.format_add_family = static_cast<std::uint8_t>(family.id);
+        }
         wormedit::ui::chrome::safe_combo_end(context);
     }
     nk_layout_row_push(context, 0.3f);
@@ -777,17 +772,17 @@ void render_format_target_selector(const MetadataPanel& panel) {
     if (add && can_add) initialize_format_target_buffers(&metadata, target);
 }
 
-void render_format_editor_title(nk_context* context,
+void render_format_editor_title(nk_context* context, const WormUiMetadataView& metadata,
                                 const WormUiMetadataFormatFieldView* field) {
     nk_layout_row_dynamic(context, 22, 1);
     if (field && !state.format_insert_mode)
         nk_labelf(context, NK_TEXT_LEFT, "%s · %s field #%zu",
                   field->chart_scoped ? "Chart" : "Song",
-                  metadata_format_family_name(field->family), field->field_index + 1);
+                  wormedit::ui::kind_label(metadata.format_families, field->family, "Unknown"), field->field_index + 1);
     else
         nk_labelf(context, NK_TEXT_LEFT, "New %s · %s field",
                   state.format_target_chart_scoped ? "Chart" : "Song",
-                  metadata_format_family_name(state.format_target_family));
+                  wormedit::ui::kind_label(metadata.format_families, state.format_target_family, "Unknown"));
 }
 
 void render_format_editor_unavailable(const MetadataPanel& panel,
@@ -835,7 +830,7 @@ void render_format_editor_actions(const MetadataPanel& panel,
 void render_format_editor(const MetadataPanel& panel) {
     if (!state.format_target_valid) return;
     const auto* field = selected_format_field(*panel.metadata);
-    render_format_editor_title(panel.context, field);
+    render_format_editor_title(panel.context, *panel.metadata, field);
     if (!state.format_buffers_valid) {
         render_format_editor_unavailable(panel, field);
         return;

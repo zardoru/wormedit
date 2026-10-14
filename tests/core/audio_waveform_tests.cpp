@@ -28,6 +28,33 @@ auto bin_at_seconds(const wormedit::audio::waveform_t& waveform, double seconds)
 
 } // namespace
 
+TEST_CASE("waveform expected errors retain generated data when cache publication fails",
+          "[unit][audio][waveform][result]") {
+    using namespace wormedit::audio;
+    decoder_t decoder;
+    const std::array<float, 16> samples{};
+    REQUIRE(decoder.open_pcm(samples));
+    decoded_block_cache_t blocks;
+    waveform_cache_t cache{waveform_cache_limits_t{.maximum_entries = 0}};
+    auto outcome = waveform_analysis_t::from(decoder, blocks, cache,
+        {"generated:uncached-outcome", "pcm:v1"}, 4);
+    REQUIRE_FALSE(outcome.has_value());
+    CHECK(outcome.error().code == waveform_analysis_status_t::analysis_cache_capacity_exceeded);
+    REQUIRE(outcome.error().waveform.has_value());
+    const auto expected_waveform = outcome.error().waveform;
+    const auto legacy = waveform_analysis_result_t::from(std::move(outcome));
+    CHECK(legacy.status == waveform_analysis_status_t::analysis_cache_capacity_exceeded);
+    CHECK(legacy.waveform == expected_waveform);
+}
+
+TEST_CASE("canonical waveform projection reports invalid geometry",
+          "[unit][audio][waveform][result]") {
+    using namespace wormedit::audio;
+    const auto outcome = waveform_projection_t::from({}, {});
+    REQUIRE_FALSE(outcome.has_value());
+    CHECK(outcome.error() == waveform_projection_status_t::invalid_waveform);
+}
+
 TEST_CASE("MP3 project audio produces a complete coarse waveform", "[audio][waveform][fixture]") {
     wormedit::audio::decoder_t decoder;
     std::string error;
@@ -242,7 +269,7 @@ TEST_CASE("waveform projection emits capped exact-frame pixel columns",
         analyze_waveform(decoder, blocks, waveforms, {"generated:projection", "pcm:v1"}, 1);
     REQUIRE(analyzed.waveform.has_value());
 
-    const auto projected = project_waveform(
+    const auto projected = build_waveform_view(
         *analyzed.waveform,
         {.begin_frame = 0, .end_frame = 16, .pixel_width = 4, .maximum_columns = 4});
     REQUIRE(projected);
@@ -258,7 +285,7 @@ TEST_CASE("waveform projection emits capped exact-frame pixel columns",
         CHECK(column.maximum[1] == -static_cast<float>(index * 4));
     }
 
-    const auto sample_columns = project_waveform(
+    const auto sample_columns = build_waveform_view(
         *analyzed.waveform,
         {.begin_frame = 4, .end_frame = 7, .pixel_width = 12, .maximum_columns = 12});
     REQUIRE(sample_columns);
@@ -267,11 +294,11 @@ TEST_CASE("waveform projection emits capped exact-frame pixel columns",
     CHECK(sample_columns.columns.front().begin_frame == 4);
     CHECK(sample_columns.columns.back().end_frame == 7);
 
-    CHECK(project_waveform(
+    CHECK(build_waveform_view(
               *analyzed.waveform,
               {.begin_frame = 0, .end_frame = 16, .pixel_width = 5, .maximum_columns = 4})
               .status == waveform_projection_status_t::capacity_exceeded);
-    CHECK(project_waveform(
+    CHECK(build_waveform_view(
               *analyzed.waveform,
               {.begin_frame = 16, .end_frame = 16, .pixel_width = 1, .maximum_columns = 1})
               .status == waveform_projection_status_t::invalid_window);
@@ -325,7 +352,7 @@ void check_fine_values(const waveform_projection_result_t& projected) {
 void check_fine_bounds(const waveform_t& waveform, const waveform_projection_result_t& projected) {
     CHECK(projected.columns[8].maximum[0] == 0.0f);
     CHECK(projected.columns.front().begin_frame == 512);
-    CHECK(project_waveform(waveform,
+    CHECK(build_waveform_view(waveform,
         {.begin_frame = 0, .end_frame = 256, .pixel_width = 64}).status ==
         waveform_projection_status_t::invalid_window);
 }
@@ -357,11 +384,11 @@ void check_signed_points(const std::vector<waveform_sample_t>& samples) {
 }
 
 void check_missing_points(decoded_block_cache_t& blocks, const audio_source_identity_t& source) {
-    CHECK_FALSE(project_cached_waveform_samples(blocks, source, 1, 4));
-    CHECK_FALSE(project_cached_waveform_samples(blocks, {"generated:samples", "pcm:v2"}, 1, 3));
-    CHECK_FALSE(project_cached_waveform_samples(blocks, source, 0, 3, 2));
+    CHECK_FALSE(build_cached_waveform_samples_view(blocks, source, 1, 4));
+    CHECK_FALSE(build_cached_waveform_samples_view(blocks, {"generated:samples", "pcm:v2"}, 1, 3));
+    CHECK_FALSE(build_cached_waveform_samples_view(blocks, source, 0, 3, 2));
     blocks.clear();
-    CHECK_FALSE(project_cached_waveform_samples(blocks, source, 1, 3));
+    CHECK_FALSE(build_cached_waveform_samples_view(blocks, source, 1, 3));
 }
 
 auto detail_timing() -> wormedit::timing_index_t {
@@ -403,8 +430,8 @@ void check_aligned_sample_bounds(const aligned_waveform_result_t& projected) {
 void check_aligned_fallback(const waveform_t& waveform, const wormedit::timing_index_t& timing,
                             aligned_waveform_request_t request, decoded_block_cache_t& blocks) {
     blocks.clear();
-    CHECK_FALSE(project_aligned_waveform_samples(waveform, timing, request, blocks));
-    CHECK(project_aligned_waveform(waveform, timing, request));
+    CHECK_FALSE(build_aligned_waveform_samples_view(waveform, timing, request, blocks));
+    CHECK(build_aligned_waveform_view(waveform, timing, request));
 }
 } // namespace
 
@@ -420,7 +447,7 @@ TEST_CASE("visible fine waveform preserves frame coordinates and isolates range 
     const auto fine = analyze_waveform(decoder, blocks, cache, source, 32,
                                       {.begin_frame = 512, .end_frame = 768});
     check_fine_geometry(fine);
-    const auto projected = project_waveform(*fine.waveform,
+    const auto projected = build_waveform_view(*fine.waveform,
         {.begin_frame = 512, .end_frame = 768, .pixel_width = 64});
     check_fine_values(projected);
     check_fine_bounds(*fine.waveform, projected);
@@ -435,7 +462,7 @@ TEST_CASE("sample waveform projection reads signed visible PCM and falls back on
     const audio_source_identity_t source{"generated:samples", "pcm:v1"};
     const std::vector<float> pcm{0.25f, -0.5f, -0.75f, 0.125f, 0.5f, -0.25f};
     REQUIRE(blocks.store({source, 0}, 3, pcm) == block_store_status_t::stored);
-    const auto samples = project_cached_waveform_samples(blocks, source, 1, 3);
+    const auto samples = build_cached_waveform_samples_view(blocks, source, 1, 3);
     REQUIRE(samples);
     check_signed_points(*samples);
     check_missing_points(blocks, source);
@@ -458,7 +485,7 @@ TEST_CASE("aligned high zoom uses fractional musical rows and signed sample poin
     const aligned_waveform_request_t request{.viewport_scroll_pixels = 2,
         .viewport_height_pixels = 8, .pixels_per_standard_measure = 176400};
     check_detail_window(*analysis.waveform, timing, request);
-    const auto projected = project_aligned_waveform_samples(*analysis.waveform, timing, request, blocks);
+    const auto projected = build_aligned_waveform_samples_view(*analysis.waveform, timing, request, blocks);
     check_aligned_samples(projected);
     check_aligned_sample_bounds(projected);
     check_aligned_fallback(*analysis.waveform, timing, request, blocks);
@@ -478,5 +505,5 @@ TEST_CASE("short sources and clipped chart ends retain the actual waveform zoom 
     CHECK(window->end_frame == 64);
     CHECK(window->frames_per_pixel > 400.0);
     decoded_block_cache_t blocks;
-    CHECK_FALSE(project_aligned_waveform_samples(waveform, timing, coarse, blocks));
+    CHECK_FALSE(build_aligned_waveform_samples_view(waveform, timing, coarse, blocks));
 }

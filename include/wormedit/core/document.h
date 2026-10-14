@@ -1,5 +1,7 @@
 #pragma once
 
+#include <wormedit/core/diagnostic.h>
+#include <wormedit/core/result.h>
 #include <wormedit/core/measure.h>
 #include <wormedit/core/storyboard.h>
 
@@ -19,56 +21,6 @@
 namespace wormedit {
 
 inline constexpr std::size_t default_maximum_chart_objects = 1'000'000;
-
-template <typename tag_t> struct stable_id_t {
-    std::uint64_t value{};
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return value != 0;
-    }
-    auto operator<=>(const stable_id_t&) const = default;
-};
-
-struct song_id_tag_t;
-struct chart_id_tag_t;
-struct measure_id_tag_t;
-struct object_id_tag_t;
-struct lane_id_tag_t;
-struct layer_id_tag_t;
-struct sound_group_id_tag_t;
-struct resource_id_tag_t;
-struct asset_id_tag_t;
-struct clip_id_tag_t;
-struct branch_id_tag_t;
-struct recipe_id_tag_t;
-struct storyboard_id_tag_t;
-
-using song_id_t = stable_id_t<song_id_tag_t>;
-using chart_id_t = stable_id_t<chart_id_tag_t>;
-using measure_id_t = stable_id_t<measure_id_tag_t>;
-using object_id_t = stable_id_t<object_id_tag_t>;
-using lane_id_t = stable_id_t<lane_id_tag_t>;
-using layer_id_t = stable_id_t<layer_id_tag_t>;
-using sound_group_id_t = stable_id_t<sound_group_id_tag_t>;
-using resource_id_t = stable_id_t<resource_id_tag_t>;
-using asset_id_t = stable_id_t<asset_id_tag_t>;
-using clip_id_t = stable_id_t<clip_id_tag_t>;
-using branch_id_t = stable_id_t<branch_id_tag_t>;
-using recipe_id_t = stable_id_t<recipe_id_tag_t>;
-using storyboard_id_t = stable_id_t<storyboard_id_tag_t>;
-
-struct id_allocator_t {
-    std::uint64_t next_value{1};
-};
-
-template <typename id_t>
-[[nodiscard]] auto allocate_id(id_allocator_t& allocator) -> std::optional<id_t> {
-    if (allocator.next_value == 0) {
-        return std::nullopt;
-    }
-    const auto value = allocator.next_value++;
-    return id_t{value};
-}
 
 struct signed_rational_t {
     std::int64_t numerator{};
@@ -228,8 +180,6 @@ struct lane_layout_t {
     [[nodiscard]] auto find(lane_id_t id) const -> const lane_definition_t*;
     [[nodiscard]] auto find(lane_id_t id) -> lane_definition_t*;
     [[nodiscard]] auto has_lane(lane_id_t id) const -> bool;
-    // Compatibility for the coordinated sys/UI migration.
-    inline auto contains(lane_id_t id) const -> bool { return has_lane(id); }
     // Branch reprojection compares source lane shape, ignoring generated IDs/presentation.
     [[nodiscard]] auto has_same_shape(const lane_layout_t& other) const -> bool;
 };
@@ -1017,66 +967,6 @@ struct quantize_request_t {
     std::optional<quantize_selection_t> selection;
 };
 
-enum class diagnostic_severity_t {
-    info,
-    warning,
-    error,
-};
-
-enum class diagnostic_code_t {
-    duplicate_id,
-    invalid_id,
-    invalid_resolution,
-    invalid_measure,
-    unknown_measure,
-    row_out_of_range,
-    unknown_lane,
-    invalid_hold,
-    dangling_resource,
-    dangling_asset,
-    duplicate_binding,
-    invalid_binding,
-    invalid_stage,
-    invalid_rational,
-    collision,
-    unsupported_feature,
-    approximated_feature,
-    dropped_feature,
-};
-
-template <class Code, Code DefaultCode> struct object_diagnostic_t {
-    diagnostic_severity_t severity{diagnostic_severity_t::error};
-    Code code{DefaultCode};
-    std::string message;
-    std::optional<object_id_t> object;
-};
-
-template <class Code, Code DefaultCode> struct path_diagnostic_t {
-    diagnostic_severity_t severity{diagnostic_severity_t::error};
-    Code code{DefaultCode};
-    std::string message;
-    std::string path;
-};
-
-template <class Code, Code DefaultCode> struct text_parse_diagnostic_t {
-    diagnostic_severity_t severity{diagnostic_severity_t::error};
-    Code code{DefaultCode};
-    std::string message;
-    std::size_t source_order{};
-    std::optional<std::size_t> byte_offset;
-};
-
-template <class Code, Code DefaultCode> struct text_write_diagnostic_t {
-    diagnostic_severity_t severity{diagnostic_severity_t::error};
-    Code code{DefaultCode};
-    std::string message;
-    std::string field;
-};
-
-using diagnostic_t = object_diagnostic_t<diagnostic_code_t, diagnostic_code_t::invalid_id>;
-
-using diagnostic_list_t = std::vector<diagnostic_t>;
-
 [[nodiscard]] auto error(diagnostic_code_t code, std::string message,
                          std::optional<object_id_t> object = std::nullopt) -> diagnostic_t;
 [[nodiscard]] auto find_chart(const song_document_t& document, chart_id_t id) -> const chart_document_t*;
@@ -1145,15 +1035,15 @@ struct redivision_move_t {
     quantize_object_family_t family{quantize_object_family_t::other};
 };
 
-struct redivision_result_t {
+struct redivision_plan_t {
+    [[nodiscard]] static auto from(const chart_document_t& chart,
+                                  std::uint64_t target_divisions_per_standard_measure)
+        -> diagnosed_t<redivision_plan_t>;
+
     std::optional<chart_document_t> chart;
     std::vector<redivision_move_t> moves;
-    diagnostic_list_t diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return chart.has_value();
-    }
 };
+using redivision_outcome_t = diagnosed_t<redivision_plan_t>;
 
 [[nodiscard]] auto layout_at(const chart_document_t& chart, const measure_index_t& index,
     local_position_t position) -> const lane_layout_t*;
@@ -1167,8 +1057,5 @@ struct redivision_result_t {
 [[nodiscard]] auto validate_input_profile(const lane_layout_t& layout,
                                           const input_profile_t& profile) -> diagnostic_list_t;
 [[nodiscard]] auto validate_document(const song_document_t& song) -> diagnostic_list_t;
-[[nodiscard]] auto redivide_chart_exact(const chart_document_t& chart,
-                                        std::uint64_t target_divisions_per_standard_measure)
-    -> redivision_result_t;
 
 } // namespace wormedit

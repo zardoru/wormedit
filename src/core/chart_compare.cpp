@@ -187,7 +187,7 @@ auto pane_signature_equal(const pane_signature_t& left, const pane_signature_t& 
 struct chart_compare_work_t {
     const song_document_t& song;
     const chart_compare_request_t& request;
-    chart_compare_result_t& result;
+    chart_comparison_result_t& result;
     std::unordered_set<std::uint64_t> selected_ids;
     std::vector<chart_projection_t> projections;
     std::vector<rational_t> candidates;
@@ -498,14 +498,14 @@ auto append_difference_rows(chart_compare_work_t& work) -> bool {
             })) {
             continue;
         }
-        if (work.result.differing_rows.size() >= work.request.maximum_difference_rows) {
+        if (work.result.value.differing_rows.size() >= work.request.maximum_difference_rows) {
             work.result.diagnostics.push_back(
                 error(diagnostic_code_t::invalid_resolution,
                       "chart comparison differences exceed their configured cap"));
-            work.result.differing_rows.clear();
+            work.result.value.differing_rows.clear();
             return false;
         }
-        work.result.differing_rows.push_back(chart_compare_difference_row_t::from(position, build_difference_panes(work, position, signatures)));
+        work.result.value.differing_rows.push_back(chart_compare_difference_row_t::from(position, build_difference_panes(work, position, signatures)));
     }
     return true;
 }
@@ -513,17 +513,14 @@ auto append_difference_rows(chart_compare_work_t& work) -> bool {
 } // namespace
 
 auto chart_compare_result_t::has_errors() const -> bool {
-    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-        return diagnostic.severity == diagnostic_severity_t::error;
-    });
+    return diagnostic_queries::has_errors(diagnostics);
 }
 
-auto compare_chart_difficulties(const song_document_t& song, const chart_compare_request_t& request)
-    -> chart_compare_result_t {
-    chart_compare_result_t result{.document_revision = song.revision,
-                                  .charts = request.charts,
-                                  .differing_rows = {},
-                                  .diagnostics = {}};
+auto chart_comparison_t::from(const song_document_t& song, const chart_compare_request_t& request)
+    -> chart_comparison_result_t {
+    chart_comparison_result_t result{.value = {.document_revision = song.revision,
+                                              .charts = request.charts, .differing_rows = {}},
+                                     .diagnostics = {}};
     if (request.maximum_charts < 2 || request.maximum_input_note_endpoints == 0 ||
         request.maximum_semantic_layer_assignments == 0 ||
         request.maximum_signature_text_bytes == 0 || request.maximum_layout_segments == 0 ||
@@ -560,6 +557,18 @@ auto compare_chart_difficulties(const song_document_t& song, const chart_compare
     }
     (void)append_difference_rows(work);
     return result;
+}
+
+auto chart_compare_result_t::from(chart_comparison_result_t&& result) -> chart_compare_result_t {
+    return {.document_revision = result.value.document_revision,
+            .charts = std::move(result.value.charts),
+            .differing_rows = std::move(result.value.differing_rows),
+            .diagnostics = std::move(result.diagnostics)};
+}
+
+auto compare_chart_difficulties(const song_document_t& song, const chart_compare_request_t& request)
+    -> chart_compare_result_t {
+    return chart_compare_result_t::from(chart_comparison_t::from(song, request));
 }
 
 } // namespace wormedit

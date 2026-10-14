@@ -215,3 +215,15 @@ TEST_CASE("waveform onset detector checks complete coverage before the output ca
     CHECK(result.status == onset_status_t::not_ready);
     CHECK(result.frames.empty());
 }
+
+TEST_CASE("canonical onset construction reports the legacy invalid request code",
+          "[unit][audio][onset][result]") {
+    waveform_t waveform;
+    const auto detected = waveform_onset_index_t::from(waveform, {});
+    REQUIRE_FALSE(detected.has_value());
+    CHECK(detected.error() == onset_status_t::invalid_request);
+    const auto legacy = onset_result_t::from(waveform_onset_outcome_t{
+        std::unexpected(onset_status_t::not_ready)});
+    CHECK_FALSE(legacy);
+    CHECK(legacy.frames.empty());
+}

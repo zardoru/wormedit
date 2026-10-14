@@ -79,8 +79,8 @@ inline auto begin_compose_layer_paint(document_history_t& history,
 inline auto compose_layer_brush_target_editable(const song_document_t& document,
     chart_id_t chart_id, std::optional<layer_id_t> target) -> bool {
     if (!target) return false;
-    const auto chart = std::ranges::find(document.charts, chart_id, &chart_document_t::id);
-    if (chart == document.charts.end()) return false;
+    const auto chart = document.find_chart(chart_id);
+    if (chart == nullptr) return false;
     const auto layer = std::ranges::find(chart->semantic_layers, *target, &semantic_layer_t::id);
     return layer != chart->semantic_layers.end() && layer->visible && !layer->locked;
 }

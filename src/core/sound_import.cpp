@@ -352,16 +352,15 @@ auto validate_import_group_name(const song_document_t& song,
         reject(result, diagnostic_code_t::invalid_id, "sound import refers to an unknown existing group");
         return false;
     }
-    const auto folded = text_util::ascii_fold(std::string(name));
     for (const auto& prior : prior_names) {
-        if (text_util::ascii_fold(std::string(prior)) == folded) {
+        if (text_util::ascii_iequal(prior, name)) {
             reject(result, diagnostic_code_t::invalid_id, "sound group name is already in use");
             return false;
         }
     }
     for (const auto& current : song.sound_groups) {
         if (group.existing_group == current.id) continue;
-        if (text_util::ascii_fold(std::string(current.name)) == folded) {
+        if (text_util::ascii_iequal(current.name, name)) {
             reject(result, diagnostic_code_t::invalid_id, "sound group name is already in use");
             return false;
         }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <wormedit/core/result.h>
 #include <wormedit/core/timing.h>
 
 #include <array>
@@ -38,7 +39,15 @@ enum class bga_preview_status_t : std::uint8_t {
     generation_exhausted,
 };
 
+using bga_preview_position_outcome_t = result_t<bga_preview_token_t, bga_preview_status_t>;
+using bga_preview_advance_outcome_t =
+    result_t<std::span<const preview_visual_event_t>, bga_preview_status_t>;
+
 struct bga_preview_position_result_t {
+    [[nodiscard]] static auto from(const bga_preview_position_outcome_t& outcome,
+                                   const bga_layer_state_t& layers)
+        -> bga_preview_position_result_t;
+
     bga_preview_status_t status{bga_preview_status_t::not_started};
     std::optional<bga_preview_token_t> token;
     bga_layer_state_t layers;
@@ -49,6 +58,9 @@ struct bga_preview_position_result_t {
 };
 
 struct bga_preview_advance_result_t {
+    [[nodiscard]] static auto from(const bga_preview_advance_outcome_t& outcome,
+                                   const bga_layer_state_t& layers) -> bga_preview_advance_result_t;
+
     bga_preview_status_t status{bga_preview_status_t::not_started};
     std::span<const preview_visual_event_t> events;
     bga_layer_state_t layers;
@@ -62,6 +74,15 @@ class bga_preview_queue_t {
   public:
     explicit bga_preview_queue_t(std::size_t maximum_events = 100'000)
         : maximum_events_(maximum_events) {}
+
+    // Primary outcomes return the token/event span. Layer state belongs to this
+    // queue and can be queried through current_layers when a snapshot is needed.
+    [[nodiscard]] auto begin(const preview_schedule_t& schedule, std::uint64_t sample_frame = 0)
+        -> bga_preview_position_outcome_t;
+    [[nodiscard]] auto reposition(bga_preview_token_t token, std::uint64_t sample_frame)
+        -> bga_preview_position_outcome_t;
+    [[nodiscard]] auto advance_events(bga_preview_token_t token, std::uint64_t exclusive_end_frame)
+        -> bga_preview_advance_outcome_t;
 
     [[nodiscard]] auto start(const preview_schedule_t& schedule, std::uint64_t sample_frame = 0)
         -> bga_preview_position_result_t;

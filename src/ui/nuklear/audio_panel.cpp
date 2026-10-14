@@ -1,8 +1,11 @@
+#include "core/text_util.h"
 #include "ui/field/rect.h"
 #include "ui/nuklear/bmson_lane_mode_ui.h"
 #include "ui/nuklear/audio_panel.h"
+#include "ui/nuklear/catalog_view.h"
 
 #include <wormedit/core/rational.h>
+#include <wormedit/core/catalogs.h>
 #include "ui/nuklear/audio_state.h"
 #include "ui/nuklear/chrome.h"
 
@@ -20,6 +23,7 @@
 #include <vector>
 
 namespace {
+using wormedit::text_util::ascii_lowercase;
 
 auto& audio = worm_ui_nuklear_audio_state();
 
@@ -405,28 +409,6 @@ void render_waveform_column(struct nk_context* context, const WormUiAudioSlicesV
     }
 }
 
-auto folded(const char* text) -> std::string {
-    std::string result = text ? text : "";
-    for (auto& c : result) {
-        if (c >= 'A' && c <= 'Z')
-            c = static_cast<char>(c + 32);
-    }
-    return result;
-}
-
-auto sound_kind_name(int kind) -> const char* {
-    switch (kind) {
-    case 1:
-        return "Stem";
-    case 2:
-        return "Keysound";
-    case 3:
-        return "Sample";
-    default:
-        return "Sound";
-    }
-}
-
 auto sound_usage_kind_name(int kind) -> const char* {
     switch (kind) {
     case 0:
@@ -450,8 +432,8 @@ auto row_matches(const WormUiSoundRowView& row, const std::string& needle) -> bo
     if (needle.empty()) {
         return true;
     }
-    return folded(row.name).find(needle) != std::string::npos ||
-           folded(row.tags_text).find(needle) != std::string::npos;
+    return ascii_lowercase(row.name ? row.name : "").find(needle) != std::string::npos ||
+           ascii_lowercase(row.tags_text ? row.tags_text : "").find(needle) != std::string::npos;
 }
 
 void select_sound(const WormUiAudioSlicesView& view, const WormUiSoundRowView& row,
@@ -483,7 +465,7 @@ using sound_rows_t = std::vector<const WormUiSoundRowView*>;
 
 auto filtered_sound_rows(const WormUiAudioSlicesView& view) -> sound_rows_t {
     sound_rows_t rows;
-    const auto needle = folded(audio.search_text);
+    const auto needle = ascii_lowercase(audio.search_text);
     for (std::size_t index = 0; index < view.sound_row_count; ++index)
         if (row_matches(view.sound_rows[index], needle)) rows.push_back(&view.sound_rows[index]);
     return rows;
@@ -518,7 +500,7 @@ void render_sound_list_row(nk_context* context, const WormUiAudioSlicesView& vie
     const auto bounds = nk_widget_bounds(context);
     char label[320]{};
     std::snprintf(label, sizeof(label), "%s%s  ·  %s", row.missing ? "! " : "",
-                  row.name ? row.name : "(unnamed)", sound_kind_name(row.kind));
+                  row.name ? row.name : "(unnamed)", wormedit::ui::kind_label(view.sound_kinds, row.kind, "Sound"));
     if (nk_selectable_label(context, label, NK_TEXT_LEFT, &active)) select_sound(view, row, action);
     if (!(context->current->flags & NK_WINDOW_NO_INPUT) &&
         nk_input_is_mouse_click_down_in_rect(&context->input, NK_BUTTON_DOUBLE, bounds, nk_true)) {
@@ -675,6 +657,20 @@ void reset_sound_properties(const WormUiAudioSlicesView& view, const WormUiSound
     audio.properties_kind = std::clamp(sound.kind, 0, 3);
 }
 
+void render_sound_kind_properties(nk_context* context, const WormUiKindCatalogView& catalog) {
+    std::array<const char*, wormedit::sound_kind_count> labels{};
+    if (catalog.count == 0 || catalog.count > labels.size()) return;
+    int current = 0;
+    for (std::size_t index = 0; index < catalog.count; ++index) {
+        labels[index] = catalog.entries[index].label;
+        if (catalog.entries[index].id == static_cast<std::uint32_t>(audio.properties_kind))
+            current = static_cast<int>(index);
+    }
+    const auto selected = wormedit::ui::chrome::safe_combo(context, labels.data(),
+        static_cast<int>(catalog.count), current, 26, nk_vec2(220, 160));
+    audio.properties_kind = static_cast<int>(catalog.entries[static_cast<std::size_t>(selected)].id);
+}
+
 void render_editable_sound_properties(nk_context* context, const WormUiAudioSlicesView& view,
                                       const WormUiSoundRowView& sound, WormUiWorkspaceAction& action) {
     if (audio.properties_project_id != view.usage_song_id ||
@@ -689,9 +685,7 @@ void render_editable_sound_properties(nk_context* context, const WormUiAudioSlic
     nk_layout_row_dynamic(context, 20, 1);
     nk_label(context, "Kind", NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, 28, 1);
-    const char* kinds[] = {"Sound", "Stem", "Keysound", "Sample"};
-    audio.properties_kind = wormedit::ui::chrome::safe_combo(context, kinds, 4,
-        audio.properties_kind, 26, nk_vec2(220, 160));
+    render_sound_kind_properties(context, view.sound_kinds);
     const bool changed = std::string_view{audio.properties_name} != (sound.name ? sound.name : "") ||
                          audio.properties_kind != sound.kind;
     const bool can_apply = changed && audio.properties_name[0] && view.usage_song_id &&
@@ -873,7 +867,7 @@ void worm_ui_frontend_select_sound_usage_source(std::uint64_t project_id, std::u
 
 void worm_ui_nuklear_audio_waveform_viewport_request(WormUiAudioWaveformViewportRequest& request) noexcept {
     request = {};
-    if (!audio.waveform_asset_id || !wormedit::audio::waveform_viewport_valid(audio.waveform_viewport)) return;
+    if (!audio.waveform_asset_id || !wormedit::audio::is_waveform_viewport_valid(audio.waveform_viewport)) return;
     const auto& viewport = audio.waveform_viewport;
     request.asset_id = audio.waveform_asset_id;
     request.total_frames = viewport.total_frames;

@@ -33,7 +33,7 @@ void post_audition_started(const notification_sink_t& notifications, bool starte
 
 void pause_preview(audio::preview_session_t& preview_session, sdl_preview_output_t& preview_output,
                    runtime::chart_preview_t& preview_state) {
-    if (!preview_session.active()) {
+    if (!preview_session.is_active()) {
         return;
     }
     const auto frame = preview_session.timeline_frame();
@@ -43,8 +43,8 @@ void pause_preview(audio::preview_session_t& preview_session, sdl_preview_output
 
 auto object_sound(const song_document_t& song, chart_id_t chart_id, object_id_t id)
     -> std::optional<resource_id_t> {
-    const auto chart = std::ranges::find(song.charts, chart_id, &chart_document_t::id);
-    if (chart == song.charts.end())
+    const auto chart = song.find_chart(chart_id);
+    if (chart == nullptr)
         return std::nullopt;
     for (const auto& measure : chart->measures) {
         const auto note = std::ranges::find(measure.notes, id, &note_t::id);
@@ -66,14 +66,15 @@ void process_object_request(const editor_object_audition_request_t& request,
         return;
     }
 
-    inputs.audition.sources.await_pending();
+    inputs.audition.sources.ensure_current(history.document);
+    inputs.audition.sources.registry().await_pending();
     auto prepared = inputs.audition.controller.prepare(
         history.document, {request.document_revision, request.chart, request.object.id},
-        inputs.audition.sources.bindings());
+        inputs.audition.sources.bindings(history.document));
     if (prepared) {
-        if (!audio::bound_stem_audition(
+        if (!audio::is_bound_stem_audition(
                 history.document, object_sound(history.document, request.chart, request.object.id),
-                inputs.audition.sources.bindings(), prepared.prepared->clips)) {
+                inputs.audition.sources.bindings(history.document), prepared.prepared->clips)) {
             inputs.notifications.post(notification_severity_t::warning,
                                       notification_source_t::audio,
                                       "The stem preview has invalid decoded source geometry.");
@@ -102,7 +103,8 @@ void process_object_request(const editor_object_audition_request_t& request,
 
 void process_draft_request(const bmson_draft_audition_request_t& request,
                            document_history_t& history, const compose_audition_inputs_t& inputs) {
-    inputs.audition.sources.await_pending();
+    inputs.audition.sources.ensure_current(history.document);
+    inputs.audition.sources.registry().await_pending();
     const auto resolved =
         audio::resolve_bmson_draft_audition(history.document,
                                             {.expected_revision = request.revision,
@@ -110,7 +112,7 @@ void process_draft_request(const bmson_draft_audition_request_t& request,
                                              .reference_bgm_event = request.reference,
                                              .markers = request.markers,
                                              .marker_index = request.marker_index},
-                                            inputs.audition.sources.bindings());
+                                            inputs.audition.sources.bindings(history.document));
     if (resolved) {
         pause_preview(inputs.preview.session, inputs.preview.output, inputs.preview.state);
         const auto started = inputs.audition.output.start(resolved.clips);
@@ -142,8 +144,9 @@ void process_sound_audition_request(std::optional<resource_id_t>& request,
                                   "That sound is no longer in the list.");
         return;
     }
-    inputs.audition.sources.await_pending();
-    const auto bindings = inputs.audition.sources.bindings();
+    inputs.audition.sources.ensure_current(history.document);
+    inputs.audition.sources.registry().await_pending();
+    const auto bindings = inputs.audition.sources.bindings(history.document);
     const auto binding =
         std::ranges::find(bindings, resource->asset, &audio::audition_source_binding_t::asset);
     if (binding == bindings.end() || binding->output_frame_count == 0) {
@@ -153,7 +156,7 @@ void process_sound_audition_request(std::optional<resource_id_t>& request,
     }
     std::vector<audio::audition_clip_t> clips{
         {binding->source, 0, binding->output_frame_count, 1.0F}};
-    if (!audio::bound_stem_audition(history.document, resource_id, bindings, clips)) {
+    if (!audio::is_bound_stem_audition(history.document, resource_id, bindings, clips)) {
         inputs.notifications.post(notification_severity_t::warning, notification_source_t::audio,
                                   "The stem preview has invalid decoded source geometry.");
         return;

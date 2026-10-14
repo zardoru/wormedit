@@ -3,6 +3,7 @@
 #include <wormedit/audio/transport.h>
 #include <wormedit/audio/waveform.h>
 #include <wormedit/core/document.h>
+#include <wormedit/core/result.h>
 
 #include <atomic>
 #include <filesystem>
@@ -51,7 +52,16 @@ enum class source_registration_status_t {
     pending,
 };
 
+using source_registration_outcome_t =
+    result_t<decoded_source_binding_t, error_t<source_registration_status_t>>;
+using pending_source_registration_outcome_t = result_t<void, error_t<source_registration_status_t>>;
+
 struct source_registration_result_t {
+    [[nodiscard]] static auto from(source_registration_outcome_t&& outcome)
+        -> source_registration_result_t;
+    [[nodiscard]] static auto from(pending_source_registration_outcome_t&& outcome)
+        -> source_registration_result_t;
+
     source_registration_status_t status{source_registration_status_t::invalid_request};
     std::optional<decoded_source_binding_t> binding;
     std::string message;
@@ -87,6 +97,14 @@ class decoded_source_registry_t {
     // Allows a known document inventory to fit without changing decoder or PCM limits.
     // Raises the registration limit only; does not open or preload any sources.
     void ensure_source_capacity(std::size_t source_count);
+
+    [[nodiscard]] auto create_source(decoded_source_registration_t registration)
+        -> source_registration_outcome_t;
+    [[nodiscard]] auto create_pending_source(decoded_source_registration_t registration)
+        -> pending_source_registration_outcome_t;
+    [[nodiscard]] auto open_source_binding(asset_id_t asset) -> source_registration_outcome_t;
+    [[nodiscard]] auto create_generated_source(generated_source_registration_t registration)
+        -> source_registration_outcome_t;
 
     // Registers and probes synchronously; a source that cannot be opened is not kept.
     [[nodiscard]] auto register_source(decoded_source_registration_t registration)
@@ -127,13 +145,12 @@ class decoded_source_registry_t {
     // (for long sources that stay on the streaming path). Probes the source first
     // if needed. Returns the number of blocks that are cached afterwards.
     [[nodiscard]] auto preload_head(asset_id_t asset, decoded_block_cache_t& block_cache,
-                                    std::uint64_t frames, std::stop_token stop = {})
-        -> std::size_t;
+                                    std::uint64_t frames, std::stop_token stop = {}) -> std::size_t;
     // Decodes the whole source into `store` (see resident_sample_store_t::load).
     // Probes the source first if needed; an unknown asset reports decode_failed.
     [[nodiscard]] auto load_resident(asset_id_t asset, resident_sample_store_t& store,
-                                     const resident_request_t& request,
-                                     std::stop_token stop = {}) -> resident_load_status_t;
+                                     const resident_request_t& request, std::stop_token stop = {})
+        -> resident_load_status_t;
     [[nodiscard]] auto analyze_waveform(asset_id_t asset, decoded_block_cache_t& block_cache,
                                         waveform_cache_t& waveform_cache,
                                         std::uint32_t frames_per_bin,
@@ -148,11 +165,13 @@ class decoded_source_registry_t {
     [[nodiscard]] auto find_entry(asset_id_t asset) const -> std::shared_ptr<entry_t>;
     [[nodiscard]] auto probe_entry(const std::shared_ptr<entry_t>& entry,
                                    bool report_failure = true) const
-        -> source_registration_result_t;
+        -> source_registration_outcome_t;
+    [[nodiscard]] auto settled_registration(const std::shared_ptr<entry_t>& entry) const
+        -> std::optional<source_registration_outcome_t>;
     [[nodiscard]] auto acquire_lease(const std::shared_ptr<entry_t>& entry) -> decoder_lease_t;
     void detach(const std::shared_ptr<entry_t>& entry);
     [[nodiscard]] auto add_entry(std::shared_ptr<entry_t> candidate)
-        -> std::optional<source_registration_result_t>;
+        -> pending_source_registration_outcome_t;
     void trim_idle_decoders();
 
     std::size_t maximum_sources_{};

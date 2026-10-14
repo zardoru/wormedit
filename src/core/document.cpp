@@ -25,6 +25,7 @@ auto error(diagnostic_code_t code, std::string message, std::optional<object_id_
 
 
 namespace {
+using wormedit::text_util::ascii_lowercase;
 template<class Values, class Id>
 auto find_id(Values& values, Id id) -> decltype(&values.front()) {
     for (auto& value : values) if (value.id == id) return &value;
@@ -1230,9 +1231,7 @@ auto validate_chart(const chart_document_t& chart,
 } // namespace
 
 auto conversion_report_t::has_errors() const -> bool {
-    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-        return diagnostic.severity == diagnostic_severity_t::error;
-    });
+    return diagnostic_queries::has_errors(diagnostics);
 }
 
 namespace {
@@ -1602,10 +1601,6 @@ auto validate_song_resources(document_validation_work_t& work) -> void {
     }
 }
 
-auto ascii_fold(std::string_view text) -> std::string {
-    return text_util::ascii_fold(std::string{text});
-}
-
 auto validate_song_sound_groups(const song_document_t& song, diagnostic_list_t& diagnostics)
     -> void {
     check_unique_ids(diagnostics, song.sound_groups, [](const auto& group) { return group.id; },
@@ -1615,7 +1610,7 @@ auto validate_song_sound_groups(const song_document_t& song, diagnostic_list_t& 
     std::unordered_set<std::uint64_t> populated;
     for (const auto& group : song.sound_groups) {
         if (group.id) group_ids.insert(group.id.value);
-        const auto folded = ascii_fold(group.name);
+        const auto folded = ascii_lowercase(group.name);
         const auto first = group.name.find_first_not_of(" \t\n\r\f\v");
         const auto last = group.name.find_last_not_of(" \t\n\r\f\v");
         if (group.name.empty() || group.name.size() > 64 || group.name.find('\0') != std::string::npos ||
@@ -1905,10 +1900,10 @@ auto redivide_chart_positions(chart_document_t& chart, redivision_context_t& con
 
 } // namespace
 
-auto redivide_chart_exact(const chart_document_t& chart,
+auto redivision_plan_t::from(const chart_document_t& chart,
                           std::uint64_t target_divisions_per_standard_measure)
-    -> redivision_result_t {
-    redivision_result_t result;
+    -> redivision_outcome_t {
+    redivision_outcome_t result;
     if (chart.divisions_per_standard_measure == 0 || target_divisions_per_standard_measure == 0) {
         add_diagnostic(result.diagnostics, diagnostic_code_t::invalid_resolution,
                        "source and target chart resolutions must be positive");
@@ -1942,15 +1937,15 @@ auto redivide_chart_exact(const chart_document_t& chart,
     const auto denominator = chart.divisions_per_standard_measure / common;
     const auto numerator = target_divisions_per_standard_measure / common;
     auto context = redivision_context_t{source_index, numerator, denominator, result.diagnostics,
-                                        result.moves};
+                                        result.value.moves};
     redivide_chart_positions(transformed, context);
     if (context.failed) {
-        result.moves.clear();
+        result.value.moves.clear();
         return result;
     }
 
     transformed.divisions_per_standard_measure = target_divisions_per_standard_measure;
-    result.chart = std::move(transformed);
+    result.value.chart = std::move(transformed);
     return result;
 }
 

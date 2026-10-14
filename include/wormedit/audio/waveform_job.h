@@ -41,6 +41,9 @@ class waveform_job_t {
     waveform_job_t(const waveform_job_t&) = delete;
     auto operator=(const waveform_job_t&) -> waveform_job_t& = delete;
 
+    [[nodiscard]] auto begin(asset_id_t asset, std::uint32_t frames_per_bin,
+                               waveform_analysis_options_t options = {})
+        -> async_job_start_outcome_t;
     [[nodiscard]] auto request(asset_id_t asset, std::uint32_t frames_per_bin,
                                waveform_analysis_options_t options = {})
         -> waveform_job_start_result_t;
@@ -49,8 +52,6 @@ class waveform_job_t {
     [[nodiscard]] auto wait() -> std::optional<waveform_job_completion_t>;
     void cancel() noexcept;
     [[nodiscard]] auto is_busy() const noexcept -> bool;
-    // Compatibility for the coordinated sys/UI migration.
-    inline auto busy() const noexcept -> bool { return is_busy(); }
 
   private:
     struct worker_t {

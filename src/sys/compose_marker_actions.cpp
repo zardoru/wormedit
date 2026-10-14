@@ -392,16 +392,17 @@ std::string navigate_audio_marker(compose_action_context_t& context) {
         context.action.compose_action == WORM_UI_COMPOSE_ACTION_NAVIGATE_PREVIOUS_AUDIO_MARKER
             ? marker_navigation_direction_t::previous
             : marker_navigation_direction_t::next;
-    const auto marker = navigate_markers(context.environment.document.history.document,
+    const auto marker = marker_navigation_match_t::from(context.environment.document.history.document,
                                          context.environment.document.history.document.revision,
                                          context.state.chart, *cursor, direction);
-    if (marker.status == marker_navigation_status_t::no_result)
+    if (marker.value.status == marker_navigation_status_t::no_result)
         return compose_action_hint(context,
                                    direction == marker_navigation_direction_t::previous
                                        ? "No previous audio-time bookmark or section boundary."
                                        : "No next audio-time bookmark or section boundary.",
                                    notification_source_t::audio);
-    if (!marker || !marker.item->audio_milliseconds)
+    if (!marker.value.is_found() || !marker.diagnostics.empty() ||
+        !marker.value.item->audio_milliseconds)
         return marker.diagnostics.empty()
                    ? compose_action_warning(
                          context,
@@ -409,7 +410,7 @@ std::string navigate_audio_marker(compose_action_context_t& context) {
                          notification_source_t::audio)
                    : publish_compose_diagnostic(context, marker.diagnostics.front(),
                                                 notification_source_t::audio);
-    const auto status = app.services.transport_seek_audio_milliseconds(*marker.item->audio_milliseconds);
+    const auto status = app.services.transport_seek_audio_milliseconds(*marker.value.item->audio_milliseconds);
     return app.preferences.transport_seek_posts_feedback
                ? status
                : compose_action_hint(context, status, notification_source_t::audio);

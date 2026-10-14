@@ -1,36 +1,36 @@
 #pragma once
 
 #include <wormedit/core/command.h>
+#include <wormedit/core/result.h>
 
 #include <cstdint>
 #include <optional>
 
 namespace wormedit {
 
+// Positive frame deltas move beat zero later in the audio. Every update is
+// derived from the captured original offset, so pointer sampling frequency
+// cannot accumulate rounding error.
 struct audio_offset_drag_t {
+    [[nodiscard]] static auto from(const song_document_t& document, chart_id_t chart,
+                                  std::uint32_t sample_rate, bool timing_locked = false)
+        -> diagnosed_t<std::optional<audio_offset_drag_t>>;
+    [[nodiscard]] auto revise(const song_document_t& document, std::int64_t delta_frames,
+                              bool timing_locked = false) const
+        -> diagnosed_t<std::optional<audio_offset_drag_t>>;
+
     chart_stamp_t stamp;
     std::uint32_t sample_rate{};
     signed_rational_t original_offset_seconds;
     signed_rational_t proposed_offset_seconds;
     std::int64_t delta_frames{};
-    diagnostic_list_t diagnostics;
 
     [[nodiscard]] auto is_valid() const noexcept -> bool {
-        return static_cast<bool>(stamp.chart) && sample_rate != 0 && diagnostics.empty();
+        return static_cast<bool>(stamp.chart) && sample_rate != 0;
     }
 };
 
-// Positive frame deltas move beat zero later in the audio. Every update is
-// derived from the captured original offset, so pointer sampling frequency
-// cannot accumulate rounding error.
-[[nodiscard]] auto begin_audio_offset_drag(const song_document_t& document, chart_id_t chart,
-                                           std::uint32_t sample_rate, bool timing_locked = false)
-    -> audio_offset_drag_t;
-
-[[nodiscard]] auto revise_audio_offset_drag(const song_document_t& document,
-                                            const audio_offset_drag_t& drag,
-                                            std::int64_t delta_frames, bool timing_locked = false)
-    -> audio_offset_drag_t;
+using audio_offset_drag_outcome_t = diagnosed_t<std::optional<audio_offset_drag_t>>;
 
 [[nodiscard]] auto apply_audio_offset_drag(document_history_t& history,
                                             const audio_offset_drag_t& drag,

@@ -175,10 +175,10 @@ void tap_timing_runtime_t::prepare_apply(const song_document_t& document, bool t
         std::tie(estimate->bpm, estimate->phase_frame, estimate->stable)) return;
     proposal_.reset();
     proposal_clock_.reset();
-    auto proposed = propose_tap_timing_apply(document, {clock_->chart}, *estimate,
+    auto proposed = tap_timing_apply_proposal_t::from(document, {clock_->chart}, *estimate,
         clock_->sample_rate, clock_->beats_per_measure, choice_, timing_locked);
-    if (!proposed.is_valid() || !build_tap_timing_preview(document, proposed)) return;
-    proposal_ = std::move(proposed);
+    if (!proposed.ok() || !proposed.value || !make_tap_timing_preview(document, *proposed.value)) return;
+    proposal_ = std::move(proposed.value);
     proposal_clock_ = clock_;
     proposal_estimate_ = estimate;
 }

@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <limits>
 #include "sys/compose_dead_spans.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -33,7 +35,7 @@ auto project(const chart_document_t& chart, std::size_t limit = 64) -> dead_span
     REQUIRE(std::holds_alternative<measure_index_t>(measures));
     const auto timing = build_timing_index(chart);
     REQUIRE(timing);
-    return project_dead_spans(chart, std::get<measure_index_t>(measures), *timing.index, limit);
+    return build_dead_spans_view(chart, std::get<measure_index_t>(measures), *timing.index, limit);
 }
 
 } // namespace
@@ -123,7 +125,7 @@ TEST_CASE("pause bands sit on their time side of the row and warps cover their r
                          .begin_row = 200, .end_row = 200, .seconds = {1, 1}},
                         {.kind = dead_span_kind_t::warp, .object = object_id_t{3},
                          .begin_row = 300, .end_row = 400, .seconds = {0, 1}}};
-    const auto up = project_dead_span_bands(projection, 1.0, 0.0, 1000.0, false, 10.0);
+    const auto up = build_dead_span_bands_view(projection, 1.0, 0.0, 1000.0, false, 10.0);
     REQUIRE(up.size() == 3);
     CHECK(up[0].top == 90.0);
     CHECK(up[0].bottom == 100.0);
@@ -134,12 +136,48 @@ TEST_CASE("pause bands sit on their time side of the row and warps cover their r
     CHECK(pointer_in_dead_span(up, 95.0));
     CHECK_FALSE(pointer_in_dead_span(up, 100.0));
     CHECK(pointer_in_dead_span(up, 399.0));
-    const auto down = project_dead_span_bands(projection, 1.0, 0.0, 1000.0, true, 10.0);
+    const auto down = build_dead_span_bands_view(projection, 1.0, 0.0, 1000.0, true, 10.0);
     CHECK(down[1].top == 790.0);
     CHECK(down[1].bottom == 800.0);
     CHECK(down[0].top == 900.0);
     CHECK(down[0].bottom == 910.0);
-    const auto scrolled = project_dead_span_bands(projection, 1.0, 250.0, 100.0, false, 10.0);
+    const auto scrolled = build_dead_span_bands_view(projection, 1.0, 250.0, 100.0, false, 10.0);
     REQUIRE(scrolled.size() == 1);
     CHECK(scrolled[0].top == 50.0);
+}
+
+namespace {
+auto project_pause_with_boundaries(signed_rational_t earlier, signed_rational_t later)
+    -> dead_span_projection_t {
+    auto chart = base_chart();
+    chart.pauses = {pause(20, 240, pause_kind_t::stop, 1)};
+    const auto measures = build_measure_index(chart);
+    REQUIRE(std::holds_alternative<measure_index_t>(measures));
+    auto timing = build_timing_index(chart);
+    REQUIRE(timing.index);
+    auto row = std::ranges::find(timing.index->rows, std::uint64_t{240}, &timing_row_state_t::absolute_row);
+    REQUIRE(row != timing.index->rows.end());
+    row->before_delays_seconds = earlier;
+    row->event_seconds = earlier;
+    row->after_stops_seconds = later;
+    return build_dead_spans_view(chart, std::get<measure_index_t>(measures), *timing.index, 64);
+}
+void check_reduced_pause_span(signed_rational_t earlier, signed_rational_t later,
+                             signed_rational_t expected) {
+    const auto projection = project_pause_with_boundaries(earlier, later);
+    REQUIRE(projection.spans.size() == 1);
+    CHECK(projection.spans.front().seconds == expected);
+    CHECK_FALSE(projection.truncated);
+}
+}
+TEST_CASE("dead spans reduce denominators before checking representability", "[sys][dead-spans][shared-arithmetic]") {
+    check_reduced_pause_span({1, 10'000'000'000ULL}, {2, 10'000'000'000ULL}, {1, 10'000'000'000ULL});
+}
+TEST_CASE("dead spans reduce scaled numerators before checking representability", "[sys][dead-spans][shared-arithmetic]") {
+    check_reduced_pause_span({1, 1'000'000}, {20'000'000'000'000LL, 1'000'000}, {19'999'999'999'999LL, 1'000'000});
+}
+TEST_CASE("dead spans subtract opposite signed boundaries without signed wide overflow", "[sys][dead-spans][shared-arithmetic]") {
+    const auto denominator = std::numeric_limits<std::uint64_t>::max();
+    check_reduced_pause_span({std::numeric_limits<std::int64_t>::min(), denominator},
+                             {std::numeric_limits<std::int64_t>::max(), denominator}, {1, 1});
 }

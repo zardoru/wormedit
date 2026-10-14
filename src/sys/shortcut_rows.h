@@ -21,7 +21,7 @@ struct shortcut_rows_projection_t {
 
 // Projects every registry command, bounded by WORM_UI_SHORTCUT_ROW_CAPACITY. A row is marked
 // as conflicting when find_shortcut_conflicts pairs its command with another.
-void project_shortcut_rows(const command_registry_t& registry,
+void build_shortcut_rows_view(const command_registry_t& registry,
                            shortcut_primary_modifier_t primary, shortcut_rows_projection_t& out);
 
 // Human-readable chord, for example "Ctrl+Shift+Z"; empty for an unbindable key.

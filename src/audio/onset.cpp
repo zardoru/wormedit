@@ -7,10 +7,7 @@
 namespace wormedit::audio {
 namespace {
 
-struct window_rms_t {
-    onset_status_t status{onset_status_t::not_ready};
-    double value{};
-};
+using window_rms_t = result_t<double, onset_status_t>;
 
 auto is_valid_request(const onset_request_t& request, std::uint64_t total_frames) -> bool {
     return request.begin_frame < request.end_frame && request.end_frame <= total_frames &&
@@ -39,18 +36,21 @@ auto read_window(const waveform_t& waveform, std::uint64_t begin, std::uint64_t 
     -> window_rms_t {
     const auto extent = cache_end(waveform);
     const auto width = waveform.key.frames_per_bin;
-    if (begin < waveform.key.begin_frame || end > extent) return {};
+    if (begin < waveform.key.begin_frame || end > extent)
+        return std::unexpected(onset_status_t::not_ready);
     const auto first = (begin - waveform.key.begin_frame) / width;
     const auto last = (end - 1 - waveform.key.begin_frame) / width;
-    if (last >= waveform.bins.size()) return {};
+    if (last >= waveform.bins.size())
+        return std::unexpected(onset_status_t::not_ready);
     std::array<long double, output_channel_count> energy{};
     for (auto index = first; index <= last; ++index) {
         const auto& bin = waveform.bins[static_cast<std::size_t>(index)];
         const auto bin_begin = waveform.key.begin_frame + index * width;
         const auto expected = std::min<std::uint64_t>(width, extent - bin_begin);
-        if (bin.frame_count < expected) return {};
+        if (bin.frame_count < expected)
+            return std::unexpected(onset_status_t::not_ready);
         if (bin.frame_count > expected || !is_valid_rms(bin))
-            return {onset_status_t::invalid_waveform};
+            return std::unexpected(onset_status_t::invalid_waveform);
         const auto overlap = std::min(end, bin_begin + expected) - std::max(begin, bin_begin);
         for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
             const auto rms = static_cast<long double>(bin.rms[channel]);
@@ -58,13 +58,13 @@ auto read_window(const waveform_t& waveform, std::uint64_t begin, std::uint64_t 
         }
     }
     const auto maximum = *std::ranges::max_element(energy);
-    return {onset_status_t::detected,
-        static_cast<double>(std::sqrt(maximum / static_cast<long double>(end - begin)))};
+    return static_cast<double>(std::sqrt(maximum / static_cast<long double>(end - begin)));
 }
 
 auto initial_baseline(const waveform_t& waveform, std::uint64_t first,
                       std::uint64_t window) -> window_rms_t {
-    if (first == 0) return {onset_status_t::detected, 0.0};
+    if (first == 0)
+        return 0.0;
     return read_window(waveform, first - window, first);
 }
 
@@ -76,24 +76,26 @@ auto is_qualifying_onset(double current, double previous, const onset_request_t&
 }
 
 auto scan_windows(const waveform_t& waveform, const onset_request_t& request)
-    -> onset_result_t {
+    -> waveform_onset_outcome_t {
     auto begin = request.begin_frame - request.begin_frame % request.window_frames;
     const auto baseline = initial_baseline(waveform, begin, request.window_frames);
-    if (baseline.status != onset_status_t::detected) return {baseline.status, {}};
-    auto previous = baseline.value;
+    if (!baseline)
+        return std::unexpected(baseline.error());
+    auto previous = *baseline;
     std::optional<std::uint64_t> last;
-    onset_result_t result{onset_status_t::detected, {}};
+    waveform_onset_index_t result;
     while (begin < request.end_frame) {
         const auto end = window_end(begin, request.window_frames, waveform.total_frames);
         const auto rms = read_window(waveform, begin, end);
-        if (rms.status != onset_status_t::detected) return {rms.status, {}};
-        if (is_qualifying_onset(rms.value, previous, request, begin, last)) {
+        if (!rms)
+            return std::unexpected(rms.error());
+        if (is_qualifying_onset(*rms, previous, request, begin, last)) {
             if (result.frames.size() == request.maximum_onsets)
-                return {onset_status_t::capacity_exceeded, {}};
+                return std::unexpected(onset_status_t::capacity_exceeded);
             result.frames.push_back(begin);
             last = begin;
         }
-        previous = rms.value;
+        previous = *rms;
         begin = end;
     }
     return result;
@@ -101,21 +103,27 @@ auto scan_windows(const waveform_t& waveform, const onset_request_t& request)
 
 } // namespace
 
-auto detect_waveform_onsets(const waveform_t& waveform, onset_request_t request)
-    -> onset_result_t {
-    if (!is_valid_request(request, waveform.total_frames)) return {};
+auto waveform_onset_index_t::from(const waveform_t& waveform, onset_request_t request)
+    -> waveform_onset_outcome_t {
+    if (!is_valid_request(request, waveform.total_frames))
+        return std::unexpected(onset_status_t::invalid_request);
     if (waveform.sample_rate == 0 || waveform.key.frames_per_bin == 0 ||
         waveform.key.begin_frame >= cache_end(waveform) || cache_end(waveform) > waveform.total_frames)
-        return {onset_status_t::invalid_waveform, {}};
+        return std::unexpected(onset_status_t::invalid_waveform);
     if (request.window_frames % waveform.key.frames_per_bin != 0 ||
         waveform.key.begin_frame % waveform.key.frames_per_bin != 0)
-        return {onset_status_t::not_ready, {}};
+        return std::unexpected(onset_status_t::not_ready);
     const auto first = request.begin_frame - request.begin_frame % request.window_frames;
     const auto last = request.end_frame - 1 - (request.end_frame - 1) % request.window_frames;
     const auto coverage = read_window(waveform, first == 0 ? 0 : first - request.window_frames,
         window_end(last, request.window_frames, waveform.total_frames));
-    if (coverage.status != onset_status_t::detected) return {coverage.status, {}};
+    if (!coverage)
+        return std::unexpected(coverage.error());
     return scan_windows(waveform, request);
+}
+
+auto detect_waveform_onsets(const waveform_t& waveform, onset_request_t request) -> onset_result_t {
+    return onset_result_t::from(waveform_onset_index_t::from(waveform, request));
 }
 
 } // namespace wormedit::audio

@@ -76,8 +76,8 @@ auto action_notification_song() -> song_document_t {
 struct action_notification_fixture_t {
     notification_center_t center;
     notification_sink_t sink{center};
-    document_history_t history{make_document_history(action_notification_song())};
-    workspace_controller_t workspace{*make_workspace_controller(history).workspace};
+    document_history_t history{document_history_t::from(action_notification_song())};
+    workspace_controller_t workspace{*workspace_controller_t::from(history).workspace};
     editor_interaction_state_t state;
     application_command_state_t application;
     std::filesystem::path asset_base;
@@ -117,7 +117,7 @@ struct action_notification_fixture_t {
     auto invoke_registered(const char* id) -> bool {
         std::optional<editor_interaction_state_t> interaction = state;
         std::optional<timing_lane_pseudonote_preview_t> timing;
-        const auto registry = make_default_editor_command_registry([&](const auto& request) {
+        const auto registry = command_registry_t::from([&](const auto& request) {
             const auto command = parse_application_command(request.command.value);
             return command ? invoke_application_command(*command, history, workspace, interaction,
                 timing, application, sink) : command_invocation_result_t{};
@@ -1031,11 +1031,11 @@ void prepare_t463_stem(bga_input_fixture_t& fixture) {
     fixture.application.project.compose_gesture.note_paint_mode_active = true;
     fixture.cache.scene.scene_document_identity = &fixture.history.document;
     fixture.cache.scene.scene_chart_identity = &chart;
-    fixture.cache.scene.stem_index.built = true;
-    fixture.cache.scene.stem_index.document = fixture.history.document.id;
-    fixture.cache.scene.stem_index.chart = chart.id;
-    fixture.cache.scene.stem_index.revision = fixture.history.document.revision;
-    fixture.cache.scene.stem_index.bindings = {{.asset = asset_id_t{81}, .source_sample_rate = 44'100,
+    fixture.cache.stems.stem_index.built = true;
+    fixture.cache.stems.stem_index.document = fixture.history.document.id;
+    fixture.cache.stems.stem_index.chart = chart.id;
+    fixture.cache.stems.stem_index.revision = fixture.history.document.revision;
+    fixture.cache.stems.stem_index.bindings = {{.asset = asset_id_t{81}, .source_sample_rate = 44'100,
         .source_frame_count = 44'100, .output_sample_rate = 44'100, .output_frame_count = 44'100}};
 }
 void check_t463_point(uint64_t row, bool shift, bool expected_restart, bool empty = false) {
@@ -1071,7 +1071,7 @@ TEST_CASE("BMSON Draw rejects stale geometry and stem sources on packed columns 
     prepare_t463_stem(fixture);
     auto input = draw_bga_input(fixture, WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE, 240);
     input.compose_inputs[0].lane_id = 84;
-    fixture.cache.scene.stem_index.revision = 0;
+    fixture.cache.stems.stem_index.revision = 0;
     const auto revision = fixture.history.document.revision;
     (void)fixture.dispatch_input(input);
     check_action(fixture.history.document.revision == revision);
@@ -1171,7 +1171,7 @@ TEST_CASE("BMSON editor export publishes sliced audio and reports conversion los
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
     require_action(parsed.song.has_value());
     require_action_false(parsed.has_errors());
-    fixture.history = make_document_history(*parsed.song);
+    fixture.history = document_history_t::from(*parsed.song);
     if (other_selected_chart) {
         const auto added = apply_new_chart_command(fixture.history);
         INFO((added.command.diagnostics.empty() ? "" : added.command.diagnostics.front().message));
@@ -1187,7 +1187,7 @@ TEST_CASE("BMSON editor export publishes sliced audio and reports conversion los
         .relative_output_path = named_output
             ? (target == format_family_t::osu_mania ? "exports/chart.osu" : "exports/chart.bme")
             : "exports"}};
-    const auto workspace = make_workspace_controller(fixture.history);
+    const auto workspace = workspace_controller_t::from(fixture.history);
     require_action(static_cast<bool>(workspace));
     fixture.workspace = *workspace.workspace;
     fixture.workspace.active_tab = tab;
@@ -1243,7 +1243,7 @@ TEST_CASE("BMSON editor BMS export materializes silent gameplay in private stagi
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
     require_action(parsed.song.has_value());
     require_action_false(parsed.has_errors());
-    fixture.history = make_document_history(*parsed.song);
+    fixture.history = document_history_t::from(*parsed.song);
     auto& chart = fixture.history.document.charts.front();
     const auto& lanes = chart.lane_layouts.front().layout.lanes;
     const auto lane = std::ranges::find(lanes, lane_role_t::playable, &lane_definition_t::role);
@@ -1253,7 +1253,7 @@ TEST_CASE("BMSON editor BMS export materializes silent gameplay in private stagi
     fixture.history.document.output_groups = {{.family = format_family_t::bms,
         .charts = {chart.id},
         .relative_output_path = incompatible_name ? "exports/chart.pms" : "exports"}};
-    const auto workspace = make_workspace_controller(fixture.history);
+    const auto workspace = workspace_controller_t::from(fixture.history);
     require_action(static_cast<bool>(workspace));
     fixture.workspace = *workspace.workspace;
     fixture.workspace.active_tab = workspace_tab_t::compose;
@@ -1488,8 +1488,8 @@ TEST_CASE("BMSON lane_mode dispatcher shares channel and sound targets with atom
     const std::string text = R"({"version":"1.0.0","info":{"title":"Modes","artist":"test","mode_hint":"beat-7k","resolution":240,"init_bpm":120},"lines":[{"y":0},{"y":960}],"sound_channels":[{"name":"stem.wav","notes":[{"x":0,"y":0,"c":false},{"x":0,"y":240,"c":true}]}]})";
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
     require_action(parsed.song.has_value());
-    fixture.history = make_document_history(*parsed.song);
-    fixture.workspace = *make_workspace_controller(fixture.history).workspace;
+    fixture.history = document_history_t::from(*parsed.song);
+    fixture.workspace = *workspace_controller_t::from(fixture.history).workspace;
     fixture.workspace.active_tab = sounds_tab ? workspace_tab_t::audio_slices : workspace_tab_t::compose;
     fixture.state.chart = fixture.history.document.charts.front().id;
     fixture.state.cursor = {fixture.history.document.charts.front().measures.front().id, 0};
@@ -1521,8 +1521,8 @@ TEST_CASE("Compose workspace boundary creates and removes a BMS branch block and
     const auto parsed = parse_bms_bytes(std::as_bytes(std::span{text.data(), text.size()}), std::move(options));
     require_action(parsed.song.has_value() && !parsed.has_errors());
     action_notification_fixture_t fixture;
-    fixture.history = make_document_history(*parsed.song);
-    fixture.workspace = *make_workspace_controller(fixture.history).workspace;
+    fixture.history = document_history_t::from(*parsed.song);
+    fixture.workspace = *workspace_controller_t::from(fixture.history).workspace;
     fixture.workspace.active_tab = workspace_tab_t::compose;
     fixture.workspace.selected_chart = fixture.history.document.charts.front().id;
     fixture.state.chart = fixture.history.document.charts.front().id;
@@ -1869,7 +1869,7 @@ TEST_CASE("Relinking a missing sound to a fallback candidate is one undo step",
     fixture.history.document.audio_assets = {{.id = asset_id_t{5}, .source_path = "snare.wav"}};
     fixture.history.document.resources = {{.id = resource_id_t{6}, .name = "snare", .asset = asset_id_t{5},
                                            .missing = true}};
-    fixture.history = make_document_history(fixture.history.document);
+    fixture.history = document_history_t::from(fixture.history.document);
     auto action = fixture.action(WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK);
     action.compose_resource_id = 6;
     action.compose_fallback_candidate = 9;
@@ -1904,7 +1904,7 @@ TEST_CASE("Lane-less chart fallback relink preserves revision guards and undo",
                                            .missing = true}};
     fixture.history.document.charts.front().lane_layouts.clear();
     fixture.history.document.charts.front().input_profile.bindings.clear();
-    fixture.history = make_document_history(fixture.history.document);
+    fixture.history = document_history_t::from(fixture.history.document);
     std::optional<editor_interaction_state_t> interaction;
     require_action(static_cast<bool>(rebind_workspace(fixture.workspace, fixture.history)));
     auto action = fixture.action(WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK);
@@ -2098,7 +2098,9 @@ TEST_CASE("Layer assist toggles are chart stamped session changes without docume
           "[unit][compose-actions][layer-assist]") {
     action_notification_fixture_t f;
     f.history.document.charts.front().semantic_layers = {{.id=layer_id_t{7},.name="Ticks",.locked=true}};
-    f.application.preferences.transport_metronome_available = true;
+    wormedit::sys::metronome_t metronome;
+    metronome.settings.available = true;
+    f.application.metronome = &metronome;
     std::vector<layer_id_t> configured;
     f.application.services.transport_set_layer_assist = [&](chart_id_t chart, std::span<const layer_id_t> layers) {
         check_action(chart == chart_id_t{1});
@@ -2137,7 +2139,9 @@ TEST_CASE("Unavailable and rejected layer assist callbacks leave the current sel
     action.compose_semantic_layer_id=7;
     (void)f.dispatch(action);
     check_action(f.application.project.semantic_layer.layer_assist_layers.empty());
-    f.application.preferences.transport_metronome_available=true;
+    wormedit::sys::metronome_t metronome;
+    metronome.settings.available = true;
+    f.application.metronome = &metronome;
     f.application.services.transport_set_layer_assist=[](chart_id_t,std::span<const layer_id_t>){return false;};
     (void)f.dispatch(action);
     check_action(f.application.project.semantic_layer.layer_assist_layers.empty());
@@ -2203,7 +2207,7 @@ TEST_CASE("Project export rejects stale stamps and reports missing paths without
     }));
     check_action(!state);
     check_action(fixture.history.undo.empty());
-    check_action(!fixture.export_runtime.busy());
+    check_action(!fixture.export_runtime.is_busy());
 }
 
 TEST_CASE("Workspace stale actions use the shared message without mutation",

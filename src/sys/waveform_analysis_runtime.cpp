@@ -74,7 +74,7 @@ void waveform_analysis_t::borrow_preview_blocks(const audio::waveform_key_t& key
     const auto last = (key.end_frame - 1U) / audio::maximum_read_frames;
     for (auto index = first; index <= last && !stop.stop_requested(); ++index) {
         const audio::audio_block_key_t block_key{key.source, index};
-        if (decoded_blocks_.contains(block_key)) continue;
+        if (decoded_blocks_.has_block(block_key)) continue;
         if (const auto resident = preview_blocks_->find(block_key))
             static_cast<void>(decoded_blocks_.store(block_key, resident->frame_count,
                                                    resident->interleaved_stereo));
@@ -91,7 +91,7 @@ auto waveform_analysis_t::request_detail_worker(asset_id_t asset, audio::wavefor
         borrow_preview_blocks(key, stop);
         auto analysis = sources_.analyze_waveform(asset, decoded_blocks_, waveform_cache_, 32,
             {.begin_frame = key.begin_frame, .end_frame = key.end_frame, .require_cached_pcm = samples}, stop);
-        return task_result_t::success(make_task_value(
+        return task_result_t::success(task_value_t::from(
             std::make_shared<const audio::waveform_analysis_result_t>(std::move(analysis))));
     });
     if (!task) return false;
@@ -265,7 +265,7 @@ void waveform_analysis_t::service_compose_detail(std::optional<asset_id_t> asset
         completed->analysis && completed->analysis->waveform) {
         const auto& key = completed->analysis->waveform->key;
         if (key.source == binding->source &&
-            audio::aligned_waveform_detail_range_t{key.begin_frame, key.end_frame}.covers(*window))
+            audio::aligned_waveform_detail_range_t{key.begin_frame, key.end_frame}.is_covering_window(*window))
             detail_analysis_ = completed->analysis;
     }
     audio::update_aligned_waveform_style(detail_style_, window->frames_per_pixel);
@@ -274,11 +274,11 @@ void waveform_analysis_t::service_compose_detail(std::optional<asset_id_t> asset
     const auto retained = retained_detail_range();
     const bool pcm_ready = !detail_style_.sample_points ||
         cached_detail_window({binding->source, 32}, *window);
-    if (retained && pcm_ready && !retained->needs_refill(*window, direction)) return;
+    if (retained && pcm_ready && !retained->is_refill_needed(*window, direction)) return;
     auto range = audio::padded_aligned_waveform_range(*window, direction);
     if (!range) return;
     range->end_frame = std::min(range->end_frame, binding->output_frame_count);
-    if (retained == range && retained->covers(*window) && pcm_ready) return;
+    if (retained == range && retained->is_covering_window(*window) && pcm_ready) return;
     const audio::waveform_key_t requested{binding->source, 32, range->begin_frame, range->end_frame};
     if (request_detail_worker(*asset, requested, detail_style_.sample_points)) detail_key_ = requested;
 }
@@ -307,9 +307,9 @@ void waveform_analysis_t::service_idle_detail(
         detail_analysis_ = completed->analysis;
     }
     const bool pcm_missing = window->frames_per_pixel < 1.0 &&
-        !audio::project_cached_waveform_samples(decoded_blocks_, key.source,
+        !audio::build_cached_waveform_samples_view(decoded_blocks_, key.source,
             key.begin_frame, key.end_frame, audio::maximum_aligned_waveform_rows);
-    if (detail_job_.busy() || (detail_analysis_ && !pcm_missing)) return;
+    if (detail_job_.is_busy() || (detail_analysis_ && !pcm_missing)) return;
     const auto started = detail_job_.request(*asset, 32,
         {.begin_frame = key.begin_frame, .end_frame = key.end_frame,
          .require_cached_pcm = window->frames_per_pixel < 1.0});
@@ -328,9 +328,8 @@ auto waveform_analysis_t::selected_channel_asset(
         compose_interaction_state->selected_objects.size() == 1 &&
         compose_interaction_state->selected_objects.front().kind ==
             editor_selection_object_kind_t::bgm_event) {
-        const auto chart = std::ranges::find(document.charts, *workspace.selected_chart,
-                                             &chart_document_t::id);
-        if (chart != document.charts.end()) {
+        const auto chart = document.find_chart(*workspace.selected_chart);
+        if (chart != nullptr) {
             const auto selection = selected_bmson_waveform_source(
                 compose_scene_cache, *chart, document.revision,
                 compose_interaction_state->selected_objects.front().id);
@@ -450,8 +449,8 @@ auto waveform_analysis_t::wanted_stem_assets(const song_document_t& document,
     -> std::vector<asset_id_t> {
     std::vector<asset_id_t> wanted;
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart || !interaction) return wanted;
-    const auto chart = std::ranges::find(document.charts, *workspace.selected_chart, &chart_document_t::id);
-    if (chart == document.charts.end() || chart->source_family != format_family_t::bmson) return wanted;
+    const auto chart = document.find_chart(*workspace.selected_chart);
+    if (chart == nullptr || chart->source_family != format_family_t::bmson) return wanted;
     std::unordered_set<std::uint64_t> seen;
     for (const auto* channel : visible_stems) {
         if (!channel || !stem_lane_for_channel(*chart, channel->id)) continue;
@@ -531,16 +530,16 @@ void append_packed_waveform_assets(const song_document_t& document,
     std::vector<asset_id_t>& wanted) {
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart || !interaction ||
         interaction->chart != *workspace.selected_chart || !cache.timing.marker_timing_index) return;
-    const auto chart = std::ranges::find(document.charts, *workspace.selected_chart, &chart_document_t::id);
-    if (chart == document.charts.end() || chart->source_family != format_family_t::bmson ||
+    const auto chart = document.find_chart(*workspace.selected_chart);
+    if (chart == nullptr || chart->source_family != format_family_t::bmson ||
         cache.scene.chart != chart->id || cache.scene.revision != document.revision) return;
-    prepare_packed_waveform_index(cache.waveform.packed_waveform_index, document, *chart,
+    prepare_packed_waveform_index(cache.stems.packed_waveform_index, document, *chart,
                                  sources.bindings(), *cache.timing.marker_timing_index);
     const auto window = packed_window_seconds(*cache.timing.marker_timing_index,
         interaction->viewport_scroll_pixels, interaction->viewport_height_pixels,
         interaction->pixels_per_standard_measure);
     if (!window) return;
-    const auto pieces = visible_packed_waveform_pieces(cache.waveform.packed_waveform_index,
+    const auto pieces = visible_packed_waveform_pieces(cache.stems.packed_waveform_index,
                                                      window->first, window->second);
     std::unordered_set<std::uint64_t> seen;
     for (const auto asset : wanted) seen.insert(asset.value);

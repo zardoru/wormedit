@@ -39,16 +39,16 @@ struct compose_notification_fixture_t {
                       .beats_per_minute = {120, 1}}}};
         chart.measures.front().notes = {{.id = object_id_t{1}, .position = {measure_id_t{1}, 120}, .lane = lane_id_t{1}}};
         chart.semantic_layers = {{.id = layer_id_t{8}, .name = "Layer", .color = {1, 2, 3, 255}}};
-        history = make_document_history({.id = song_id_t{1}, .revision = 9, .charts = {chart}});
+        history = document_history_t::from({.id = song_id_t{1}, .revision = 9, .charts = {chart}});
         constexpr std::array snaps{std::uint64_t{4}, std::uint64_t{8}};
-        const auto setup = make_editor_interaction(history, chart_id_t{7}, lane_id_t{1},
+        const auto setup = editor_interaction_state_t::from(history, chart_id_t{7}, lane_id_t{1},
                                                    {measure_id_t{1}, 0}, snaps, 4);
         REQUIRE(setup);
         state = *setup.state;
         state.selected_notes = {object_id_t{1}};
         state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{1}}};
         optional_state = state;
-        const auto binding = make_workspace_controller(history);
+        const auto binding = workspace_controller_t::from(history);
         REQUIRE(binding);
         workspace = *binding.workspace;
         workspace.active_tab = workspace_tab_t::compose;
@@ -463,12 +463,12 @@ struct dead_span_fixture_t : compose_notification_fixture_t {
                          .source_unit = pause_unit_t::seconds}};
         chart.warps = {{.id = object_id_t{21}, .span = {{measure_id_t{1}, 720}, {measure_id_t{1}, 840}}}};
         REQUIRE(validate_document(history.document).empty());
-        history = make_document_history(history.document);
+        history = document_history_t::from(history.document);
         const auto measures = build_measure_index(history.document.charts.front());
         REQUIRE(std::holds_alternative<measure_index_t>(measures));
         const auto timing = build_timing_index(history.document.charts.front());
         REQUIRE(timing);
-        cache.timing.dead_spans = project_dead_spans(history.document.charts.front(),
+        cache.timing.dead_spans = build_dead_spans_view(history.document.charts.front(),
             std::get<measure_index_t>(measures), *timing.index, 64);
         state.viewport_height_pixels = 400;
         state.pixels_per_standard_measure = 480;
@@ -479,7 +479,7 @@ struct dead_span_fixture_t : compose_notification_fixture_t {
     // Screen y at the middle of the Stop band.
     auto stop_band_y() const -> double {
         const auto& chart = history.document.charts.front();
-        const auto bands = project_dead_span_bands(*cache.timing.dead_spans,
+        const auto bands = build_dead_span_bands_view(*cache.timing.dead_spans,
             state.pixels_per_standard_measure / 960.0, state.viewport_scroll_pixels,
             state.viewport_height_pixels,
             compose_field_downscroll(chart, application.preferences.editor_preferences),
@@ -516,10 +516,10 @@ TEST_CASE("pasting inside a visual Stop band uses its valid chart row",
           "[unit][sys][compose-notification][dead-span]") {
     dead_span_fixture_t fixture;
     fixture.state.selected_notes = {object_id_t{1}};
-    auto copied = copy_chart_selection(fixture.history.document, fixture.state,
+    auto copied = chart_clipboard_t::from(fixture.history.document, fixture.state,
                                        fixture.history.document.revision);
     REQUIRE(copied);
-    fixture.application.project.clipboard.chart_clipboard = std::move(copied.clipboard);
+    fixture.application.project.clipboard.chart_clipboard = std::move(*copied);
     std::string status;
     REQUIRE(begin_compose_paste(fixture.application, fixture.history.document, fixture.state, status));
     const auto y = fixture.stop_band_y();
@@ -572,10 +572,10 @@ TEST_CASE("the same paste and drag succeed away from the Stop band",
     SECTION("paste") {
         dead_span_fixture_t fixture;
         fixture.state.selected_notes = {object_id_t{1}};
-        auto copied = copy_chart_selection(fixture.history.document, fixture.state,
+        auto copied = chart_clipboard_t::from(fixture.history.document, fixture.state,
                                            fixture.history.document.revision);
         REQUIRE(copied);
-        fixture.application.project.clipboard.chart_clipboard = std::move(copied.clipboard);
+        fixture.application.project.clipboard.chart_clipboard = std::move(*copied);
         std::string status;
         REQUIRE(begin_compose_paste(fixture.application, fixture.history.document, fixture.state, status));
         (void)fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_PASTE_UPDATE, .x_pixels = fixture.lane_x(), .y_pixels = free_row_y(fixture)},
@@ -611,10 +611,10 @@ TEST_CASE("pasting a note at a cursor inside a Warp is rejected and changes noth
           "[unit][sys][compose-notification][dead-span]") {
     dead_span_fixture_t fixture;
     fixture.state.selected_notes = {object_id_t{1}};
-    auto copied = copy_chart_selection(fixture.history.document, fixture.state,
+    auto copied = chart_clipboard_t::from(fixture.history.document, fixture.state,
                                        fixture.history.document.revision);
     REQUIRE(copied);
-    fixture.application.project.clipboard.chart_clipboard = std::move(copied.clipboard);
+    fixture.application.project.clipboard.chart_clipboard = std::move(*copied);
     fixture.state.cursor = {measure_id_t{1}, 780};
     std::string status;
     REQUIRE(begin_compose_paste(fixture.application, fixture.history.document, fixture.state, status));

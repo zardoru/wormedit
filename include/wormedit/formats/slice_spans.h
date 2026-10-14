@@ -61,7 +61,7 @@ struct slice_span_plan_t {
 
 // Pure, deterministic, bounded and detached. No filesystem access or document mutation.
 // Sources supply decoded geometry, so final continuation spans are closed exactly.
-[[nodiscard]] auto build_slice_span_plan(const song_document_t& song, chart_id_t chart,
+[[nodiscard]] auto plan_slice_spans(const song_document_t& song, chart_id_t chart,
     std::span<const slice_span_source_t> sources, const slice_span_options_t& options = {}) -> slice_span_plan_t;
 // Conversion stage entry point; leaves all target writers unchanged.
 [[nodiscard]] auto plan_conversion_slice_spans(const song_document_t& song, chart_id_t chart,

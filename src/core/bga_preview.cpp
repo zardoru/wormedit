@@ -59,17 +59,15 @@ auto layer_value(bga_layer_state_t& state, std::size_t slot)
 
 } // namespace
 
-auto bga_preview_queue_t::start(const preview_schedule_t& schedule, std::uint64_t sample_frame)
-    -> bga_preview_position_result_t {
+auto bga_preview_queue_t::begin(const preview_schedule_t& schedule, std::uint64_t sample_frame)
+    -> bga_preview_position_outcome_t {
     if (schedule.sample_rate == 0 || schedule.bga.size() > maximum_events_ ||
         !std::ranges::is_sorted(schedule.bga, visual_draw_order_less) ||
         !std::ranges::all_of(schedule.bga,
                              [](const auto& event) { return is_valid_kind(event.kind); })) {
-        return {
-            .status = schedule.bga.size() > maximum_events_
-                          ? bga_preview_status_t::capacity_exceeded
-                          : bga_preview_status_t::invalid_schedule,
-        };
+        return std::unexpected(schedule.bga.size() > maximum_events_
+                                   ? bga_preview_status_t::capacity_exceeded
+                                   : bga_preview_status_t::invalid_schedule);
     }
 
     layer_indices_t candidate_indices;
@@ -81,25 +79,21 @@ auto bga_preview_queue_t::start(const preview_schedule_t& schedule, std::uint64_
 
     const auto token = begin_session(sample_frame);
     if (!token.has_value()) {
-        return {.status = bga_preview_status_t::generation_exhausted};
+        return std::unexpected(bga_preview_status_t::generation_exhausted);
     }
     schedule_ = &schedule;
     layer_indices_ = std::move(candidate_indices);
     set_position(sample_frame);
-    return {
-        .status = bga_preview_status_t::ready,
-        .token = token,
-        .layers = layers_,
-    };
+    return *token;
 }
 
-auto bga_preview_queue_t::seek(bga_preview_token_t token, std::uint64_t sample_frame)
-    -> bga_preview_position_result_t {
+auto bga_preview_queue_t::reposition(bga_preview_token_t token, std::uint64_t sample_frame)
+    -> bga_preview_position_outcome_t {
     if (schedule_ == nullptr || !active_) {
-        return {.status = bga_preview_status_t::not_started};
+        return std::unexpected(bga_preview_status_t::not_started);
     }
     if (!is_current(token)) {
-        return {.status = bga_preview_status_t::stale_generation};
+        return std::unexpected(bga_preview_status_t::stale_generation);
     }
     const auto new_token = begin_session(sample_frame);
     if (!new_token.has_value()) {
@@ -107,14 +101,10 @@ auto bga_preview_queue_t::seek(bga_preview_token_t token, std::uint64_t sample_f
         layer_indices_ = {};
         head_ = {};
         layers_ = {};
-        return {.status = bga_preview_status_t::generation_exhausted};
+        return std::unexpected(bga_preview_status_t::generation_exhausted);
     }
     set_position(sample_frame);
-    return {
-        .status = bga_preview_status_t::ready,
-        .token = new_token,
-        .layers = layers_,
-    };
+    return *new_token;
 }
 
 void bga_preview_queue_t::stop() noexcept {
@@ -129,30 +119,57 @@ void bga_preview_queue_t::stop() noexcept {
     last_advanced_end_ = 0;
 }
 
-auto bga_preview_queue_t::advance(bga_preview_token_t token, std::uint64_t exclusive_end_frame)
-    -> bga_preview_advance_result_t {
+auto bga_preview_queue_t::advance_events(bga_preview_token_t token,
+                                         std::uint64_t exclusive_end_frame)
+    -> bga_preview_advance_outcome_t {
     if (schedule_ == nullptr || !active_) {
-        return {.status = bga_preview_status_t::not_started};
+        return std::unexpected(bga_preview_status_t::not_started);
     }
     if (!is_current(token)) {
-        return {.status = bga_preview_status_t::stale_generation};
+        return std::unexpected(bga_preview_status_t::stale_generation);
     }
     if (exclusive_end_frame < last_advanced_end_) {
-        return {
-            .status = bga_preview_status_t::non_monotonic_window,
-            .layers = layers_,
-        };
+        return std::unexpected(bga_preview_status_t::non_monotonic_window);
     }
 
     const auto events = advance_preview_queue(
         std::span<const preview_visual_event_t>{schedule_->bga}, head_, exclusive_end_frame);
     apply(events);
     last_advanced_end_ = exclusive_end_frame;
-    return {
-        .status = bga_preview_status_t::ready,
-        .events = events,
-        .layers = layers_,
-    };
+    return events;
+}
+
+auto bga_preview_position_result_t::from(const bga_preview_position_outcome_t& outcome,
+                                         const bga_layer_state_t& layers)
+    -> bga_preview_position_result_t {
+    if (!outcome)
+        return {.status = outcome.error()};
+    return {.status = bga_preview_status_t::ready, .token = *outcome, .layers = layers};
+}
+
+auto bga_preview_advance_result_t::from(const bga_preview_advance_outcome_t& outcome,
+                                        const bga_layer_state_t& layers)
+    -> bga_preview_advance_result_t {
+    if (outcome)
+        return {.status = bga_preview_status_t::ready, .events = *outcome, .layers = layers};
+    if (outcome.error() == bga_preview_status_t::non_monotonic_window)
+        return {.status = outcome.error(), .layers = layers};
+    return {.status = outcome.error()};
+}
+
+auto bga_preview_queue_t::start(const preview_schedule_t& schedule, std::uint64_t sample_frame)
+    -> bga_preview_position_result_t {
+    return bga_preview_position_result_t::from(begin(schedule, sample_frame), layers_);
+}
+
+auto bga_preview_queue_t::seek(bga_preview_token_t token, std::uint64_t sample_frame)
+    -> bga_preview_position_result_t {
+    return bga_preview_position_result_t::from(reposition(token, sample_frame), layers_);
+}
+
+auto bga_preview_queue_t::advance(bga_preview_token_t token, std::uint64_t exclusive_end_frame)
+    -> bga_preview_advance_result_t {
+    return bga_preview_advance_result_t::from(advance_events(token, exclusive_end_frame), layers_);
 }
 
 auto bga_preview_queue_t::current_layers(bga_preview_token_t token) const noexcept

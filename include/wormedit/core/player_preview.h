@@ -137,6 +137,9 @@ struct player_preview_scene_request_t {
 };
 
 struct player_preview_scene_t {
+    // Composes one deterministic visual frame from the shared sample-frame clock.
+    // This contract deliberately contains no gameplay input, judgement, score,
+    // combo, life, replay, or failure state.
     [[nodiscard]] static auto from(const player_preview_index_t& index,
                                    const player_preview_scene_request_t& request = {})
         -> player_preview_scene_result_t;
@@ -176,12 +179,5 @@ struct player_preview_scene_result_t {
                                               std::uint64_t document_revision,
                                               player_preview_index_options_t options = {})
     -> player_preview_index_result_t;
-
-// Composes one deterministic visual frame from the shared sample-frame clock.
-// This contract deliberately contains no gameplay input, judgement, score,
-// combo, life, replay, or failure state.
-[[nodiscard]] auto make_player_preview_scene(const player_preview_index_t& index,
-                                             const player_preview_scene_request_t& request = {})
-    -> player_preview_scene_result_t;
 
 } // namespace wormedit

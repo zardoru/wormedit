@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/audio/block_cache.h>
+#include <wormedit/core/result.h>
 
 #include <array>
 #include <cstddef>
@@ -84,7 +85,20 @@ enum class waveform_projection_status_t {
     capacity_exceeded,
 };
 
+struct waveform_projection_t {
+    [[nodiscard]] static auto from(const waveform_t& waveform, waveform_projection_request_t request)
+        -> result_t<waveform_projection_t, waveform_projection_status_t>;
+
+    std::uint64_t level_frames_per_bin{};
+    std::vector<waveform_column_t> columns;
+    auto operator==(const waveform_projection_t&) const -> bool = default;
+};
+using waveform_projection_outcome_t = result_t<waveform_projection_t, waveform_projection_status_t>;
+
+// Compatibility boundary for existing waveform views.
 struct waveform_projection_result_t {
+    [[nodiscard]] static auto from(waveform_projection_outcome_t&& outcome)
+        -> waveform_projection_result_t;
     waveform_projection_status_t status{waveform_projection_status_t::invalid_waveform};
     std::uint64_t level_frames_per_bin{};
     std::vector<waveform_column_t> columns;
@@ -166,7 +180,31 @@ enum class waveform_analysis_status_t {
     analysis_cache_capacity_exceeded,
 };
 
+struct waveform_analysis_error_t {
+    waveform_analysis_status_t code{waveform_analysis_status_t::decoder_unavailable};
+    // Cache publication can fail after a complete usable waveform has been generated.
+    std::optional<waveform_t> waveform;
+    std::optional<std::uint64_t> failed_block_index;
+    block_decode_status_t block_status{block_decode_status_t::decoder_unavailable};
+    auto operator==(const waveform_analysis_error_t&) const -> bool = default;
+};
+
+struct waveform_analysis_t {
+    [[nodiscard]] static auto from(decoder_t& decoder, decoded_block_cache_t& block_cache,
+                                  waveform_cache_t& waveform_cache, audio_source_identity_t source,
+                                  std::uint32_t frames_per_bin, waveform_analysis_options_t options = {},
+                                  std::stop_token stop = {})
+        -> result_t<waveform_analysis_t, waveform_analysis_error_t>;
+
+    waveform_t waveform;
+    waveform_analysis_status_t status{waveform_analysis_status_t::generated};
+    auto operator==(const waveform_analysis_t&) const -> bool = default;
+};
+using waveform_analysis_outcome_t = result_t<waveform_analysis_t, waveform_analysis_error_t>;
+
+// Compatibility boundary for source registry, jobs and sys waveform analysis.
 struct waveform_analysis_result_t {
+    [[nodiscard]] static auto from(waveform_analysis_outcome_t&& outcome) -> waveform_analysis_result_t;
     waveform_analysis_status_t status{waveform_analysis_status_t::decoder_unavailable};
     std::optional<waveform_t> waveform;
     std::optional<std::uint64_t> failed_block_index;
@@ -188,7 +226,7 @@ struct waveform_sample_t {
 };
 
 // Cache-only: missing PCM returns no partial polyline and never invokes a decoder.
-[[nodiscard]] auto project_cached_waveform_samples(decoded_block_cache_t& cache,
+[[nodiscard]] auto build_cached_waveform_samples_view(decoded_block_cache_t& cache,
     const audio_source_identity_t& source, std::uint64_t begin_frame, std::uint64_t end_frame,
     std::size_t maximum_samples = 4'096) -> std::optional<std::vector<waveform_sample_t>>;
 
@@ -202,7 +240,7 @@ struct waveform_sample_t {
 // Projects one visible source-frame interval into bounded implicit pixel
 // columns. Each column retains its exact frame interval while peak/RMS values
 // come from the closest cached pyramid level.
-[[nodiscard]] auto project_waveform(const waveform_t& waveform,
+[[nodiscard]] auto build_waveform_view(const waveform_t& waveform,
                                     waveform_projection_request_t request)
     -> waveform_projection_result_t;
 

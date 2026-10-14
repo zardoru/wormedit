@@ -101,6 +101,9 @@ class image_job_t {
     image_job_t(const image_job_t&) = delete;
     auto operator=(const image_job_t&) -> image_job_t& = delete;
 
+    [[nodiscard]] auto begin(song_id_t project, std::uint64_t document_revision,
+                               std::span<const resolved_visual_asset_t> sources,
+                               image_job_options_t options = {}) -> async_job_start_outcome_t;
     [[nodiscard]] auto request(song_id_t project, std::uint64_t document_revision,
                                std::span<const resolved_visual_asset_t> sources,
                                image_job_options_t options = {}) -> image_job_start_result_t;
@@ -108,8 +111,6 @@ class image_job_t {
     [[nodiscard]] auto wait() -> std::optional<image_job_completion_t>;
     void cancel() noexcept;
     [[nodiscard]] auto is_busy() const noexcept -> bool;
-    // Compatibility for the coordinated sys/UI migration.
-    inline auto busy() const noexcept -> bool { return is_busy(); }
 
   private:
     struct worker_t {

@@ -507,13 +507,13 @@ auto aligned_waveform_window(const waveform_t& waveform, const timing_index_t& t
         static_cast<double>((*end - *begin) / visible_pixels)};
 }
 
-auto project_aligned_waveform_samples(const waveform_t& waveform, const timing_index_t& timing,
+auto build_aligned_waveform_samples_view(const waveform_t& waveform, const timing_index_t& timing,
     aligned_waveform_request_t request, decoded_block_cache_t& cache) -> aligned_waveform_result_t {
     aligned_waveform_result_t result;
     const auto window = aligned_waveform_window(waveform, timing, request);
     if (!window || window->frames_per_pixel >= 1.0 || request.maximum_rows == 0 ||
         request.maximum_rows > maximum_aligned_waveform_rows) return result;
-    const auto samples = project_cached_waveform_samples(cache, waveform.key.source,
+    const auto samples = build_cached_waveform_samples_view(cache, waveform.key.source,
         window->begin_frame, window->end_frame, request.maximum_rows);
     if (!samples) return result;
     const auto rows_per_pixel = static_cast<long double>(timing.divisions_per_standard_measure) /
@@ -532,7 +532,7 @@ auto project_aligned_waveform_samples(const waveform_t& waveform, const timing_i
     return result;
 }
 
-auto project_aligned_waveform(const waveform_t& waveform, const timing_index_t& timing,
+auto build_aligned_waveform_view(const waveform_t& waveform, const timing_index_t& timing,
                               aligned_waveform_request_t request) -> aligned_waveform_result_t {
     aligned_waveform_result_t result;
     if (!std::isfinite(request.viewport_scroll_pixels) ||
@@ -564,7 +564,7 @@ auto project_aligned_waveform(const waveform_t& waveform, const timing_index_t& 
     result.status = aligned_waveform_status_t::projected;
     const auto window = aligned_waveform_window(waveform, timing, request);
     if (!window) return result;
-    const auto projection = project_waveform(
+    const auto projection = build_waveform_view(
         waveform, {.begin_frame = window->begin_frame,
                    .end_frame = window->end_frame,
                    .pixel_width = std::min(height * 2U, maximum_aligned_waveform_rows),
@@ -595,7 +595,7 @@ auto project_aligned_waveform(const waveform_t& waveform, const timing_index_t& 
     return result;
 }
 
-auto project_composed_aligned_waveform(const waveform_t& overview, const waveform_t* detail,
+auto build_composed_aligned_waveform_view(const waveform_t& overview, const waveform_t* detail,
     const timing_index_t& timing, aligned_waveform_request_t request,
     decoded_block_cache_t* blocks, aligned_waveform_style_t style) -> aligned_waveform_result_t {
     aligned_waveform_result_t result;
@@ -609,7 +609,7 @@ auto project_composed_aligned_waveform(const waveform_t& overview, const wavefor
     }
     const auto height = static_cast<std::size_t>(std::ceil(request.viewport_height_pixels));
     if (style.sample_points && blocks) {
-        auto samples = project_aligned_waveform_samples(overview, timing, request, *blocks);
+        auto samples = build_aligned_waveform_samples_view(overview, timing, request, *blocks);
         if (samples && !samples.rows.empty()) {
             samples.chosen_frames_per_bin = result.chosen_frames_per_bin;
             samples.pcm_spans = 1; // One fully cache-resident span; keep exact source-frame vertices.
@@ -657,7 +657,7 @@ auto display_song_column(const waveform_t& overview, const waveform_t* detail,
 }
 } // namespace
 
-auto project_composed_aligned_waveform(const waveform_t& overview, const waveform_t* detail,
+auto build_composed_aligned_waveform_view(const waveform_t& overview, const waveform_t* detail,
     const display_row_table_t& table, aligned_waveform_request_t request,
     decoded_block_cache_t* blocks, aligned_waveform_style_t style) -> aligned_waveform_result_t {
     aligned_waveform_result_t result;
@@ -665,7 +665,7 @@ auto project_composed_aligned_waveform(const waveform_t& overview, const wavefor
         table.zoom != request.pixels_per_standard_measure) return result;
     // Exact cached PCM polylines retain their existing sample-position path.
     if (style.sample_points && table.timing_identity)
-        return project_composed_aligned_waveform(overview, detail, *table.timing_identity, request, blocks, style);
+        return build_composed_aligned_waveform_view(overview, detail, *table.timing_identity, request, blocks, style);
     result.chosen_frames_per_bin = style.detail_level ? 32 : 256;
     for (const auto& row : table.rows) {
         const auto y = static_cast<double>(row.world_pixel) - request.viewport_scroll_pixels + .5;
@@ -682,7 +682,7 @@ auto project_composed_aligned_waveform(const waveform_t& overview, const wavefor
     return result;
 }
 
-auto project_waveform_overview(const waveform_t& waveform, const timing_index_t& timing,
+auto build_waveform_overview_view(const waveform_t& waveform, const timing_index_t& timing,
                                aligned_waveform_request_t viewport, std::size_t maximum_rows)
     -> waveform_overview_result_t {
     waveform_overview_result_t result;
@@ -747,7 +747,7 @@ auto project_waveform_overview(const waveform_t& waveform, const timing_index_t&
         beat_zero_fraction <= 1.0L) {
         result.beat_zero_fraction = static_cast<double>(beat_zero_fraction);
     }
-    const auto projection = project_waveform(waveform, {.begin_frame = 0,
+    const auto projection = build_waveform_view(waveform, {.begin_frame = 0,
                                                         .end_frame = waveform.total_frames,
                                                         .pixel_width = maximum_rows,
                                                         .maximum_columns = maximum_rows});
@@ -767,7 +767,7 @@ auto project_waveform_overview(const waveform_t& waveform, const timing_index_t&
     return result;
 }
 
-auto project_waveform_range(const waveform_t& waveform, double begin_fraction,
+auto build_waveform_range_view(const waveform_t& waveform, double begin_fraction,
                             double end_fraction, std::size_t maximum_rows)
     -> waveform_overview_result_t {
     waveform_overview_result_t result;
@@ -790,7 +790,7 @@ auto project_waveform_range(const waveform_t& waveform, double begin_fraction,
         result.status = aligned_waveform_status_t::invalid_waveform;
         return result;
     }
-    const auto projection = project_waveform(waveform, {.begin_frame = begin_frame,
+    const auto projection = build_waveform_view(waveform, {.begin_frame = begin_frame,
                                                         .end_frame = end_frame,
                                                         .pixel_width = maximum_rows,
                                                         .maximum_columns = maximum_rows});

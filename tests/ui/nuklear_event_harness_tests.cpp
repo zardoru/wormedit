@@ -448,7 +448,7 @@ TEST_CASE("Headless frontend new-project wizard creates the default 7K layout",
     REQUIRE(create);
     const auto create_actions = click_at(harness, create->first, create->second);
     CHECK(create_actions[0].get().kind == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT);
-    CHECK(create_actions[0].get().new_project_layout_index == 3);
+    CHECK(std::string_view{create_actions[0].get().new_project_layout_id} == "osu-mania-7k");
 }
 
 namespace {
@@ -2567,7 +2567,7 @@ auto t422_note(document_history_t& history, std::uint64_t id) -> note_t* {
 struct t422_fixture_t {
     document_history_t history;
     using workspace_binding_t =
-        decltype(make_workspace_controller(std::declval<document_history_t&>()));
+        decltype(workspace_controller_t::from(std::declval<document_history_t&>()));
     workspace_binding_t binding;
     compose_scene_cache_t cache;
     application_command_state_t application;
@@ -2580,8 +2580,8 @@ struct t422_fixture_t {
     nuklear_event_harness_t harness{1800, 1400};
 
     explicit t422_fixture_t(song_document_t song)
-        : history(make_document_history(std::move(song))),
-          binding(make_workspace_controller(history)) {
+        : history(document_history_t::from(std::move(song))),
+          binding(workspace_controller_t::from(history)) {
         expect_t422(harness.ready());
         expect_t422(binding.workspace.has_value());
         binding.workspace->active_tab = workspace_tab_t::compose;
@@ -3630,7 +3630,7 @@ auto tool_route_matches(const WormUiWorkspaceAction& action, SDL_Scancode scanco
 
 TEST_CASE("Compose Alt tool shortcuts route through the ready command registry",
           "[frontend-state][event-harness][command-registry][tools]") {
-    auto registry = wormedit::make_default_editor_command_registry(
+    auto registry = wormedit::command_registry_t::from(
         [](const wormedit::command_invocation_context_t&) {
             return wormedit::command_invocation_result_t{.accepted = true};
         });
@@ -3652,7 +3652,7 @@ TEST_CASE("Compose Alt tool shortcuts route through the ready command registry",
 
 TEST_CASE("Unavailable Draw tool readiness rejects the routed shortcut",
           "[frontend-state][event-harness][command-registry][tools]") {
-    auto registry = wormedit::make_default_editor_command_registry(
+    auto registry = wormedit::command_registry_t::from(
         [](const wormedit::command_invocation_context_t&) {
             return wormedit::command_invocation_result_t{.accepted = true};
         });
@@ -4609,7 +4609,7 @@ TEST_CASE("Backquote shortcuts invoke the registered BGM verbs without legacy in
           "[frontend-state][event-harness][t424]") {
     nuklear_event_harness_t harness;
     std::string invoked;
-    const auto registry = wormedit::make_default_editor_command_registry([&](const auto& context) {
+    const auto registry = wormedit::command_registry_t::from([&](const auto& context) {
         invoked = context.command.value;
         return wormedit::command_invocation_result_t{.accepted = true};
     });
@@ -4905,7 +4905,7 @@ TEST_CASE("Real Shift Space events route to the selection loop command", "[front
     nuklear_event_harness_t harness;
     REQUIRE(harness.ready());
     unsigned calls{};
-    const auto registry = wormedit::make_default_editor_command_registry([&](const auto& context) {
+    const auto registry = wormedit::command_registry_t::from([&](const auto& context) {
         ++calls;
         check_layer_menu(context.command == wormedit::command_id_t{"transport.loop_selection"});
         return wormedit::command_invocation_result_t{.accepted = true};
@@ -5355,6 +5355,7 @@ TEST_CASE("Review sound import dialog has Cancel and Confirm with Enter and no h
         stage_grouped_import(harness);
         (void)harness.frame();
         CHECK(harness.drawn_text().find("Review sound import") != std::string::npos);
+        CHECK(harness.drawn_text_center("Keysound").has_value());
         CHECK(harness.drawn_text().find("Review names, kinds") == std::string::npos);
         const auto cancel = harness.drawn_text_center("Cancel");
         REQUIRE(cancel);
@@ -5411,7 +5412,7 @@ TEST_CASE("Create project dialog keeps its actions and drops the repeated prompt
         for (const auto& frame : frames)
             if (frame.get().kind == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT) {
                 CHECK(std::string(frame.get().project_path) == "/music/song.ogg");
-                CHECK(frame.get().new_project_layout_index == 0);
+                CHECK(std::string_view{frame.get().new_project_layout_id} == "osu-mania-4k");
             }
     }
     {
@@ -5457,7 +5458,7 @@ TEST_CASE("BMS text encoding dialog keeps its actions and drops the repeated pro
             if (frame.get().kind == WORM_UI_WORKSPACE_ACTION_OPEN_FILE) {
                 opened = true;
                 CHECK(std::string(frame.get().project_path) == "/charts/song.bms");
-                CHECK(frame.get().bms_encoding_index == 1);
+                CHECK(frame.get().bms_encoding_id == static_cast<std::uint32_t>(wormedit::text_encoding_t::utf8));
             }
         CHECK(opened);
     }
@@ -6758,9 +6759,9 @@ TEST_CASE("Production area Delete enablement agrees with its scoped dispatch",
     auto song = t422_song();
     if (timing) song.charts.front().bpms.push_back({.id = object_id_t{400},
         .position = {measure_id_t{1}, 240}, .beats_per_minute = {150, 1}});
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const std::array snaps{std::uint64_t{4}};
-    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 120}, snaps, 4);
+    auto setup = editor_interaction_state_t::from(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 120}, snaps, 4);
     section_import_require(setup.state.has_value());
     auto state = *setup.state;
     state.retained_selection_range = position_span_t{{measure_id_t{1}, 120}, {measure_id_t{2}, 0}};
@@ -6812,8 +6813,8 @@ TEST_CASE("Area Quantize activates the registered verb instead of a fallback gri
         if (std::string_view{frame.get().menu_command_id} == "edit.apply_quantize") {
             emitted = true;
             auto action = frame.get();
-            auto history = wormedit::make_document_history(t422_song());
-            const auto binding = wormedit::make_workspace_controller(history);
+            auto history = wormedit::document_history_t::from(t422_song());
+            const auto binding = wormedit::workspace_controller_t::from(history);
             auto workspace = *binding.workspace;
             workspace.active_tab = wormedit::workspace_tab_t::compose;
             check_layer_menu(action.compose_menu_command);
@@ -7056,11 +7057,11 @@ TEST_CASE("Production click-click stem holds retain decoded geometry through rel
     auto& ui = worm_ui_nuklear_compose_state();
     ui.resource_picker.armed_resource_id = 1;
     ui.keysound_catalog.armed_from_sounds_dock = true;
-    f.cache.scene.stem_index.built = true;
-    f.cache.scene.stem_index.document = f.history.document.id;
-    f.cache.scene.stem_index.chart = chart_id_t{1};
-    f.cache.scene.stem_index.revision = f.history.document.revision;
-    f.cache.scene.stem_index.bindings = {{.asset = asset_id_t{1}, .source_sample_rate = 48000,
+    f.cache.stems.stem_index.built = true;
+    f.cache.stems.stem_index.document = f.history.document.id;
+    f.cache.stems.stem_index.chart = chart_id_t{1};
+    f.cache.stems.stem_index.revision = f.history.document.revision;
+    f.cache.stems.stem_index.bindings = {{.asset = asset_id_t{1}, .source_sample_rate = 48000,
         .source_frame_count = short_source ? 1000U : 480000U}};
     const auto start = placement_point(f, 240, 2);
     for (const auto& frame : click_at(f.harness, start.first, start.second))
@@ -7068,7 +7069,7 @@ TEST_CASE("Production click-click stem holds retain decoded geometry through rel
     expect_t422(f.interaction->pending_hold.has_value());
     expect_t422(f.interaction->pending_hold->source_geometry != nullptr);
     f.project();
-    f.cache.scene.stem_index.bindings.clear();
+    f.cache.stems.stem_index.bindings.clear();
     const auto end = placement_point(f, 480, 2);
     for (const auto& frame : click_at(f.harness, end.first, end.second))
         (void)f.dispatch(frame);
@@ -7137,9 +7138,9 @@ TEST_CASE("Production pointer paste and note drag use the valid Stop event row",
     f.interaction->selected_notes = {object_id_t{101}};
     f.interaction->selected_objects = {{editor_selection_object_kind_t::note, object_id_t{101}}};
     if (paste) {
-        auto copied = copy_chart_selection(f.history.document, *f.interaction, f.history.document.revision);
+        auto copied = chart_clipboard_t::from(f.history.document, *f.interaction, f.history.document.revision);
         expect_t422(static_cast<bool>(copied));
-        f.application.project.clipboard.chart_clipboard = std::move(copied.clipboard);
+        f.application.project.clipboard.chart_clipboard = std::move(*copied);
         std::string status;
         expect_t422(begin_compose_paste(f.application, f.history.document, *f.interaction, status));
         f.project();
@@ -7852,7 +7853,7 @@ TEST_CASE("Production Ctrl Alt A resolves the separate Select All Objects comman
     const auto key = key_event(SDL_EVENT_KEY_DOWN, SDLK_A, SDL_SCANCODE_A);
     const auto frame = h.frame(std::span{&key, 1}, static_cast<SDL_Keymod>(SDL_KMOD_CTRL | SDL_KMOD_ALT));
     std::string invoked;
-    const auto registry = make_default_editor_command_registry([&](const command_invocation_context_t& context) {
+    const auto registry = command_registry_t::from([&](const command_invocation_context_t& context) {
         invoked = context.command.value;
         return command_invocation_result_t{.accepted = true};
     });
@@ -7930,7 +7931,7 @@ TEST_CASE("BGA file drops share retained POSITION and reject changed origins",
     expect_t422(result.completed->origin.project_id == 1);
     expect_t422(result.completed->origin.target == resource_drop_target_t::bga);
     expect_t422(result.completed->paths == std::vector<std::string>{"/tmp/drop-image.png", "/tmp/drop-image-two.png"});
-    expect_t422(!transaction.active());
+    expect_t422(!transaction.is_active());
 }
 
 TEST_CASE("WAV slot confirmation retains its first file and rejects another staged request",
@@ -8044,8 +8045,8 @@ TEST_CASE("Lane key assignment synchronizes the linked BMSON source through the 
 
 TEST_CASE("Metadata key-count preview retires when project identity changes with matching revision",
           "[frontend-state][event-harness][resource-import-consolidation]") {
-    auto history = make_document_history(t422_song());
-    auto binding = make_workspace_controller(history);
+    auto history = document_history_t::from(t422_song());
+    auto binding = workspace_controller_t::from(history);
     expect_t422(binding.workspace.has_value());
     task_scheduler_t scheduler{1, 1};
     runtime::metadata_asset_t assets;
@@ -8287,4 +8288,72 @@ TEST_CASE("Project session transitions discard sound import requests without rep
     CHECK(worm_ui_nuklear_sound_import_active());
     worm_ui_frontend_begin_project_session();
     CHECK_FALSE(worm_ui_nuklear_sound_import_active());
+}
+
+namespace {
+void click_new_project_text(nuklear_event_harness_t& harness, const char* text) {
+    const auto center = harness.drawn_text_center(text);
+    REQUIRE(center);
+    static_cast<void>(click_at(harness, center->first, center->second));
+}
+
+void check_new_project_choice(nuklear_event_harness_t& harness) {
+    const auto create = harness.drawn_text_center("Create project");
+    REQUIRE(create);
+    const auto actions = click_at(harness, create->first, create->second);
+    CHECK(actions[0].get().kind == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT);
+    CHECK(std::string_view{actions[0].get().new_project_layout_id} == "pms-bme-style-18button");
+}
+} // namespace
+
+TEST_CASE("New project wizard reads view labels and emits a PMS catalog identity", "[frontend-state][event-harness][catalog-wiring]") {
+    nuklear_event_harness_t harness;
+    REQUIRE(harness.ready());
+    static constexpr WormUiStringDescriptorView entries[]{
+        {"osu-mania-7k", "Catalog default seven"},
+        {"pms-bme-style-18button", "Catalog PMS eighteen"}};
+    static constexpr const char* labels[]{entries[0].label, entries[1].label};
+    harness.view().new_project_layouts = {.entries = entries, .count = std::size(entries), .labels = labels};
+    REQUIRE(worm_ui_frontend_request_new_project());
+    static_cast<void>(harness.frame());
+    static_cast<void>(harness.frame());
+    click_new_project_text(harness, "Catalog default seven");
+    click_new_project_text(harness, "Catalog PMS eighteen");
+    check_new_project_choice(harness);
+}
+
+TEST_CASE("Transport rate label comes from the view and is selected by stable id", "[frontend-state][event-harness][catalog-wiring]") {
+    nuklear_event_harness_t harness;
+    REQUIRE(harness.ready());
+    static constexpr WormUiKindDescriptorView entries[]{{8, "R@"}, {7, "S@"}};
+    harness.view().playback_rates = {.entries = entries, .count = std::size(entries)};
+    harness.view().transport_rate_id = 8;
+    harness.view().transport_rate_index = 255;
+    harness.view().transport_available = true;
+    static_cast<void>(harness.frame());
+    CHECK(harness.drawn_text().find("R@") != std::string::npos);
+}
+
+TEST_CASE("BMS encoding dialog sends the offered identity independently of position",
+          "[frontend-state][event-harness][catalog-wiring]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    static constexpr WormUiKindDescriptorView entries[]{
+        {static_cast<std::uint32_t>(wormedit::text_encoding_t::windows_1252), "Western choice"},
+        {static_cast<std::uint32_t>(wormedit::text_encoding_t::utf8), "Unicode choice"}};
+    harness.view().bms_encodings = {.entries = entries, .count = std::size(entries)};
+    harness.view().pending_bms_encoding_path = "/charts/catalog.bms";
+    (void)harness.frame();
+    (void)harness.frame();
+    (void)harness.frame();
+    CHECK(harness.drawn_text().find("Western choice") != std::string::npos);
+    const auto open = harness.drawn_text_center("Open chart");
+    REQUIRE(open);
+    bool opened = false;
+    for (const auto& frame : click_at(harness, open->first, open->second)) {
+        if (frame.get().kind != WORM_UI_WORKSPACE_ACTION_OPEN_FILE) continue;
+        opened = true;
+        CHECK(frame.get().bms_encoding_id == entries[0].id);
+    }
+    CHECK(opened);
 }

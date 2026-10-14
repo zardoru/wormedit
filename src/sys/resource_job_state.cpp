@@ -41,7 +41,7 @@ auto copy_task_failure(const wormedit::task_result_t& completed,
                        const std::shared_ptr<const wormedit::project_asset_copy_result_t>& copied)
     -> std::optional<resource_copy_feedback_t> {
     using namespace wormedit;
-    if (!completed.succeeded() || !copied) {
+    if (!completed.is_successful() || !copied) {
         const auto cancelled = completed.error &&
                                completed.error->code == task_error_code_t::cancelled;
         return resource_copy_feedback_t{
@@ -67,11 +67,10 @@ auto complete_project_resource_copy(const pending_project_resource_copy_t& reque
              .is_current(history.document))
         return {stale_action_message("Resource copy relink"),
                 notification_severity_t::warning};
-    const auto audio = std::ranges::find(history.document.audio_assets, request.asset,
-                                         &audio_asset_t::id);
+    const auto audio = history.document.find_audio_asset(request.asset);
     const auto visual = std::ranges::find(history.document.visual_assets, request.asset,
                                           &visual_asset_t::id);
-    const auto current_path = audio != history.document.audio_assets.end()
+    const auto current_path = audio != nullptr
         ? audio->source_path
         : visual != history.document.visual_assets.end() ? visual->source_path
                                                          : std::filesystem::path{};
@@ -117,7 +116,7 @@ runtime::resource_copy_t::resource_copy_t(
     : notifications_(std::move(notifications)) {}
 
 auto runtime::resource_copy_t::start(pending_project_resource_copy_t&& pending) -> bool {
-    if (busy())
+    if (is_busy())
         return false;
     const auto source = pending.export_copy ? wormedit::notification_source_t::export_
                                             : wormedit::notification_source_t::import_;
@@ -179,7 +178,7 @@ runtime::output_group_export_t::~output_group_export_t() noexcept {
 }
 
 auto runtime::output_group_export_t::start(pending_output_group_export_t&& pending) -> bool {
-    if (busy())
+    if (is_busy())
         return false;
     this->pending = std::move(pending);
     if (notifications_)
@@ -202,11 +201,11 @@ auto runtime::output_group_export_t::poll(const wormedit::document_history_t& hi
     pending.reset();
     const auto exported =
         wormedit::task_value_cast<output_group_export_task_result_t>(*completed);
-    auto status = !completed->succeeded() || !exported
+    auto status = !completed->is_successful() || !exported
                       ? completed->error ? completed->error->message
                                          : "Output group export returned no result."
                       : exported->message;
-    auto severity = !completed->succeeded() || !exported
+    auto severity = !completed->is_successful() || !exported
                         ? completed->error && completed->error->code ==
                                                   wormedit::task_error_code_t::cancelled
                               ? wormedit::notification_severity_t::info

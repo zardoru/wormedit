@@ -191,12 +191,12 @@ auto parse_bpm_text(std::string_view text) -> std::optional<signed_rational_t> {
         return parsed && parsed->numerator > 0 ? parsed : std::nullopt;
     }
     const auto parsed = parse_measure_length(text);
-    if (!parsed || parsed.value->numerator >
+    if (!parsed || parsed->numerator >
                        static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
         return std::nullopt;
     }
-    return signed_rational_t{static_cast<std::int64_t>(parsed.value->numerator),
-                             parsed.value->denominator};
+    return signed_rational_t{static_cast<std::int64_t>(parsed->numerator),
+                             parsed->denominator};
 }
 
 auto format_bpm_text(signed_rational_t bpm, std::size_t maximum_fraction_digits)
@@ -339,8 +339,8 @@ auto bpm_event_at_anchor(const chart_document_t& chart, local_position_t anchor)
 auto make_beat_interval_drag(const song_document_t& document, const chart_document_t& chart,
                              const bpm_event_t* existing, local_position_t anchor,
                              local_position_t beat, std::uint32_t sample_rate)
-    -> beat_interval_drag_t {
-    beat_interval_drag_t result;
+    -> beat_interval_drag_outcome_t {
+    beat_interval_drag_outcome_t result;
     const auto timing = build_timing_index(chart);
     const auto measures = build_measure_index(chart);
     if (!timing || !std::holds_alternative<measure_index_t>(measures)) {
@@ -389,16 +389,16 @@ auto make_beat_interval_drag(const song_document_t& document, const chart_docume
         drag.original_bpm = *fitted.beats_per_minute;
     }
     drag.proposed_bpm = drag.original_bpm;
-    return drag;
+    return {.value = std::move(drag), .diagnostics = {}};
 }
 
 } // namespace
 
-auto begin_beat_interval_drag(const song_document_t& document, chart_id_t chart,
+auto beat_interval_drag_t::from(const song_document_t& document, chart_id_t chart,
                               object_id_t bpm_event, local_position_t beat,
                               std::uint32_t sample_rate, bool timing_locked)
-    -> beat_interval_drag_t {
-    beat_interval_drag_t result;
+    -> beat_interval_drag_outcome_t {
+    beat_interval_drag_outcome_t result;
     if (const auto precondition = beat_fit_precondition_error(timing_locked, sample_rate)) {
         result.diagnostics.push_back(*precondition);
         return result;
@@ -419,11 +419,11 @@ auto begin_beat_interval_drag(const song_document_t& document, chart_id_t chart,
     return make_beat_interval_drag(document, *selected, &*bpm, bpm->position, beat, sample_rate);
 }
 
-auto begin_beat_interval_anchor_drag(const song_document_t& document, chart_id_t chart,
+auto beat_interval_drag_t::from(const song_document_t& document, chart_id_t chart,
                                      local_position_t anchor, local_position_t beat,
                                      std::uint32_t sample_rate, bool timing_locked)
-    -> beat_interval_drag_t {
-    beat_interval_drag_t result;
+    -> beat_interval_drag_outcome_t {
+    beat_interval_drag_outcome_t result;
     const auto selected = document.find_chart(chart);
     if (!chart || selected == nullptr) {
         result.diagnostics.push_back(
@@ -431,7 +431,7 @@ auto begin_beat_interval_anchor_drag(const song_document_t& document, chart_id_t
         return result;
     }
     if (const auto* existing = bpm_event_at_anchor(*selected, anchor)) {
-        return begin_beat_interval_drag(document, chart, existing->id, beat, sample_rate,
+        return beat_interval_drag_t::from(document, chart, existing->id, beat, sample_rate,
                                         timing_locked);
     }
     if (const auto precondition = beat_fit_precondition_error(timing_locked, sample_rate)) {
@@ -444,8 +444,8 @@ auto begin_beat_interval_anchor_drag(const song_document_t& document, chart_id_t
 namespace {
 auto revise_beat_interval_values(const song_document_t& document, const beat_interval_drag_t& drag,
                                std::uint64_t target_sample_frame)
-    -> beat_interval_drag_t {
-    beat_interval_drag_t result;
+    -> beat_interval_drag_outcome_t {
+    beat_interval_drag_outcome_t result;
     const auto chart = document.find_chart(drag.stamp.chart);
     if (chart == nullptr) {
         result.diagnostics.push_back(
@@ -477,15 +477,16 @@ auto revise_beat_interval_values(const song_document_t& document, const beat_int
         }
         updated.proposed_bpm = *fitted.beats_per_minute;
     }
-    return updated;
+    return {.value = std::move(updated), .diagnostics = {}};
 }
 
 } // namespace
 
-auto revise_beat_interval_drag(const song_document_t& document, const beat_interval_drag_t& drag,
-                               std::uint64_t target_sample_frame, bool timing_locked)
-    -> beat_interval_drag_t {
-    beat_interval_drag_t result;
+auto beat_interval_drag_t::revise(const song_document_t& document,
+                               std::uint64_t target_sample_frame, bool timing_locked) const
+    -> beat_interval_drag_outcome_t {
+    const auto& drag = *this;
+    beat_interval_drag_outcome_t result;
     if (timing_locked || !drag.stamp.document.is_current(document, document_identity_policy_t::revision_only)) {
         result.diagnostics.push_back(error(
             timing_locked ? diagnostic_code_t::unsupported_feature : diagnostic_code_t::invalid_id,
@@ -499,18 +500,18 @@ auto revise_beat_interval_drag(const song_document_t& document, const beat_inter
 namespace {
 auto revise_beat_interval_bpm_values(const song_document_t& document,
     const beat_interval_drag_t& drag, signed_rational_t target_bpm,
-    beat_interval_drag_t&& updated) -> beat_interval_drag_t {
+    beat_interval_drag_t&& updated) -> beat_interval_drag_outcome_t {
     auto chart = document.find_chart(drag.stamp.chart);
-    if (chart == nullptr) return std::move(updated);
+    if (chart == nullptr) return {.value = std::move(updated), .diagnostics = {}};
     const auto candidate = chart_with_anchor_bpm(*chart, drag, target_bpm);
-    if (!candidate) return std::move(updated);
+    if (!candidate) return {.value = std::move(updated), .diagnostics = {}};
     const auto measures = build_measure_index(*candidate);
     if (!std::holds_alternative<measure_index_t>(measures))
-        return {.diagnostics = std::get<diagnostic_list_t>(measures)};
+        return {.value = std::nullopt, .diagnostics = std::get<diagnostic_list_t>(measures)};
     const auto beat_row = absolute_row(std::get<measure_index_t>(measures), drag.beat);
     const auto timing = build_timing_index(*candidate);
     if (!beat_row || !timing) {
-        beat_interval_drag_t rejected;
+        beat_interval_drag_outcome_t rejected;
         rejected.diagnostics.push_back(error(
             diagnostic_code_t::invalid_rational,
             timing.diagnostics.empty() ? "Snapped beat timing is invalid"
@@ -520,7 +521,7 @@ auto revise_beat_interval_bpm_values(const song_document_t& document,
     const auto at = (*timing.index).seconds_at(*beat_row);
     const auto frame = at ? sample_frame_at(*at.seconds, drag.sample_rate,
         sample_rounding_t::nearest_ties_to_even) : sample_frame_result_t{};
-    if (!frame) return {.diagnostics = {error(diagnostic_code_t::invalid_rational,
+    if (!frame) return {.value = std::nullopt, .diagnostics = {error(diagnostic_code_t::invalid_rational,
         "Snapped beat target is outside the source frame range")}};
     const auto anchor_row =
         absolute_row(std::get<measure_index_t>(measures), drag.original_bpm_position);
@@ -534,29 +535,28 @@ auto revise_beat_interval_bpm_values(const song_document_t& document,
                               sample_rounding_t::nearest_ties_to_even)
             : sample_frame_result_t{};
         if (!anchor_frame || *anchor_frame.frame != anchor.source_sample_frame) {
-            return {.diagnostics = {error(diagnostic_code_t::invalid_rational,
+            return {.value = std::nullopt, .diagnostics = {error(diagnostic_code_t::invalid_rational,
                 "Snapped beat fit would move a locked timing anchor")}};
         }
     }
     updated.proposed_sample_frame = *frame.frame;
     updated.proposed_bpm = target_bpm;
-    return std::move(updated);
+    return {.value = std::move(updated), .diagnostics = {}};
 }
 
 } // namespace
 
-auto revise_beat_interval_drag_to_bpm(const song_document_t& document,
-                                      const beat_interval_drag_t& drag,
-                                      signed_rational_t target_bpm, bool timing_locked)
-    -> beat_interval_drag_t {
+auto beat_interval_drag_t::revise(const song_document_t& document,
+                                      signed_rational_t target_bpm, bool timing_locked) const
+    -> beat_interval_drag_outcome_t {
+    const auto& drag = *this;
     if (target_bpm.numerator <= 0 || target_bpm.denominator == 0) {
-        return {.diagnostics = {error(diagnostic_code_t::invalid_rational,
+        return {.value = std::nullopt, .diagnostics = {error(diagnostic_code_t::invalid_rational,
                                       "BPM snap must produce a positive exact value")}};
     }
-    auto validated = revise_beat_interval_drag(document, drag, drag.proposed_sample_frame,
-                                                     timing_locked);
-    if (!validated.is_valid()) return validated;
-    return revise_beat_interval_bpm_values(document, drag, target_bpm, std::move(validated));
+    auto validated = drag.revise(document, drag.proposed_sample_frame, timing_locked);
+    if (!validated.value || !validated.diagnostics.empty()) return validated;
+    return revise_beat_interval_bpm_values(document, drag, target_bpm, std::move(*validated.value));
 }
 
 auto quantize_bpm(signed_rational_t bpm, signed_rational_t step)
@@ -598,8 +598,6 @@ auto apply_inserted_beat_fit(document_command_transaction_t& transaction, const 
 
 auto apply_beat_interval_drag(document_history_t& history, const beat_interval_drag_t& drag,
                                bool timing_locked) -> document_command_result_t {
-    if (!drag.diagnostics.empty())
-        return document_command_transaction_t::rejection(history.document.revision, drag.diagnostics);
     if (drag.snap_active && (drag.proposed_bpm.numerator <= 0 || drag.proposed_bpm.denominator == 0))
         return document_command_transaction_t::rejection(history.document.revision,
             diagnostic_code_t::invalid_rational, "BPM snap must produce a positive exact value");
@@ -610,15 +608,15 @@ auto apply_beat_interval_drag(document_history_t& history, const beat_interval_d
         "Beat fit", document_identity_policy_t::revision_only);
     if (!transaction.is_ready()) return transaction.finish_without_commit();
     auto updated = revise_beat_interval_values(history.document, drag, drag.proposed_sample_frame);
-    if (updated.is_valid() && drag.snap_active)
+    if ((updated.value && updated.diagnostics.empty()) && drag.snap_active)
         updated = revise_beat_interval_bpm_values(history.document, drag, drag.proposed_bpm,
-                                                  std::move(updated));
-    if (!updated.is_valid()) {
+                                                  std::move(*updated.value));
+    if (!(updated.value && updated.diagnostics.empty())) {
         transaction.outcome.diagnostics = std::move(updated.diagnostics);
         return transaction.finish_without_commit();
     }
-    if (updated.proposed_bpm != drag.proposed_bpm ||
-        updated.proposed_sample_frame != drag.proposed_sample_frame)
+    if (updated.value->proposed_bpm != drag.proposed_bpm ||
+        updated.value->proposed_sample_frame != drag.proposed_sample_frame)
         return transaction.reject(diagnostic_code_t::invalid_id,
                                   "beat fit proposal changed before commit");
     if (drag.insert_bpm) return apply_inserted_beat_fit(transaction, drag);

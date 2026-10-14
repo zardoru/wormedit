@@ -29,13 +29,13 @@ add_executable(wormedit_core_tests
     ../src/sys/tap_timing_runtime.cpp
     ../src/sys/transport_player_actions.cpp
     ../src/sys/compose_minimap_navigation.cpp
-    ../src/sys/compose_bookmark_commands.cpp
+    ../src/sys/bookmark_commands.cpp
     ../src/sys/compose_navigation.cpp
     ../src/sys/bookmark_rename_commands.cpp
     ../src/sys/compose_playhead_skip.cpp
     ../src/sys/compose_bgm_bar.cpp
-    ../src/sys/sound_list_projection.cpp
-    ../src/sys/sound_picker_projection.cpp
+    ../src/sys/sound_list_view.cpp
+    ../src/sys/sound_picker_view.cpp
     ../src/sys/compose_measure_commands.cpp
     ../src/sys/compose_note_to_bgm.cpp
     ../src/sys/compose_selection_transform.cpp
@@ -77,7 +77,7 @@ add_executable(wormedit_core_tests
     sys/compose_bgm_bar_tests.cpp
     sys/sound_list_projection_tests.cpp
     sys/bga_list_projection_tests.cpp
-    ../src/sys/bga_list_projection.cpp
+    ../src/sys/bga_list_view.cpp
     sys/compose_measure_commands_tests.cpp
     sys/selected_sound_layers_tests.cpp
     sys/sound_selection_tests.cpp
@@ -121,6 +121,7 @@ add_executable(wormedit_core_tests
     core/lane_layout_editor_tests.cpp
     core/measure_editor_tests.cpp
     core/measure_tests.cpp
+    core/result_tests.cpp
     core/sound_slice_rules_tests.cpp
     core/audio_slicer_tests.cpp
     core/sound_import_tests.cpp
@@ -211,6 +212,8 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         ../src/sys/application_defaults.cpp
         ../src/sys/audio_project_import.cpp
         ../src/sys/audio_source_registration.cpp
+        ../src/sys/project_audio_sources.cpp
+        ../src/sys/metronome.cpp
         core/audio_audition_bridge_tests.cpp
         core/audio_audition_pump_tests.cpp
         core/audio_audition_resolver_tests.cpp
@@ -279,6 +282,9 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
             sys/audio_transport_notification_tests.cpp
             sys/audition_notification_tests.cpp
             ../src/sys/compose_audition_requests.cpp
+            ../src/sys/audio_source_registration.cpp
+            ../src/sys/project_audio_sources.cpp
+        ../src/sys/metronome.cpp
             ../src/sys/audio_transport_frame.cpp
             sys/sdl_audition_output_tests.cpp
             sys/sdl_preview_output_tests.cpp
@@ -288,7 +294,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
             ../src/sys/sdl_preview_output.cpp
         )
         target_compile_definitions(wormedit_sdl_audio_tests
-            PRIVATE WORMEDIT_HAS_AUDIO_DECODER=1 WORMEDIT_FIXTURE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+            PRIVATE WORMEDIT_HAS_AUDIO_DECODER=1 WORMEDIT_HAS_PROJECT_AUDIO_OUTPUTS=1 WORMEDIT_FIXTURE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
         )
         target_include_directories(wormedit_sdl_audio_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
         target_link_libraries(wormedit_sdl_audio_tests
@@ -610,7 +616,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/bookmark_rename_event_harness_tests.cpp
         ui/popup_menu_event_harness_tests.cpp
         ui/menu_bar_event_harness_tests.cpp
-        ../src/sys/menu_command_projection.cpp
+        ../src/sys/menu_command_view.cpp
         ../src/sys/shortcut_rows.cpp
         ../src/sys/bookmark_rename_commands.cpp
         ui/compose_bgm_layer_tests.cpp
@@ -623,10 +629,11 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/live_resource_table_event_harness_tests.cpp
         ui/audio_sounds_workflow_event_harness_tests.cpp
         ui/inspector_resource_workflow_tests.cpp
-        ../src/sys/bookmark_chooser_projection.cpp
+        ../src/sys/bookmark_chooser_view.cpp
+        ../src/sys/bookmark_navigation.cpp
         ../src/sys/compose_area_actions.cpp
         ../src/sys/compose_bgm_bar.cpp
-        ../src/sys/compose_bookmark_commands.cpp
+        ../src/sys/bookmark_commands.cpp
         ../src/sys/compose_navigation.cpp
         ../src/sys/compose_dead_spans.cpp
         ../src/sys/compose_input.cpp
@@ -644,15 +651,15 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/compose_speed_spans.cpp
         ../src/sys/compose_sv_graph.cpp
         ../src/sys/compose_view.cpp
-        ../src/sys/compose_scene_projection.cpp
-        ../src/sys/compose_marker_projection.cpp
-        ../src/sys/compose_selection_projection.cpp
-        ../src/sys/compose_draw_source_projection.cpp
+        ../src/sys/compose_scene_view.cpp
+        ../src/sys/compose_marker_view.cpp
+        ../src/sys/compose_selection_view.cpp
+        ../src/sys/compose_draw_source_view.cpp
         ../src/sys/recipe_form.cpp
-        ../src/sys/sound_list_projection.cpp
-        ../src/sys/sound_picker_projection.cpp
-        ../src/sys/sound_usage_projection.cpp
-        ../src/sys/workspace_projection.cpp
+        ../src/sys/sound_list_view.cpp
+        ../src/sys/sound_picker_view.cpp
+        ../src/sys/sound_usage_view.cpp
+        ../src/sys/workspace_view.cpp
         ${WORMEDIT_UI_FRONTEND_SOURCES}
         "${CMAKE_SOURCE_DIR}/src/common/static_interval_index.cpp"
         "${CMAKE_SOURCE_DIR}/src/sys/frame_timing.cpp")
@@ -691,7 +698,7 @@ endif()
 if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     if(TARGET wormedit_visual_decoder)
         add_executable(wormedit_bga_actions_tests sys/bga_actions_tests.cpp
-            ../src/sys/compose_bga_actions.cpp ../src/sys/bga_list_projection.cpp)
+            ../src/sys/compose_bga_actions.cpp ../src/sys/bga_list_view.cpp)
         target_include_directories(wormedit_bga_actions_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
         target_compile_definitions(wormedit_bga_actions_tests PRIVATE WORMEDIT_HAS_IMAGE_DECODER=1)
         target_link_libraries(wormedit_bga_actions_tests PRIVATE wormedit::core wormedit::visual_decoder Catch2::Catch2WithMain)
@@ -717,10 +724,10 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/frame_timing.cpp
         ../src/sys/compose_area_actions.cpp
         ../src/sys/compose_view.cpp
-        ../src/sys/compose_scene_projection.cpp
-        ../src/sys/compose_marker_projection.cpp
-        ../src/sys/compose_selection_projection.cpp
-        ../src/sys/compose_draw_source_projection.cpp
+        ../src/sys/compose_scene_view.cpp
+        ../src/sys/compose_marker_view.cpp
+        ../src/sys/compose_selection_view.cpp
+        ../src/sys/compose_draw_source_view.cpp
         ../src/sys/compose_dead_spans.cpp
         ../src/sys/compose_kiai_spans.cpp
         ../src/sys/compose_sv_graph.cpp
@@ -732,11 +739,12 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/compose_resource_presenter.cpp
         ../src/sys/timing_view.cpp
         ../src/sys/recipe_form.cpp
-        ../src/sys/workspace_projection.cpp
-        ../src/sys/bookmark_chooser_projection.cpp
-        ../src/sys/sound_list_projection.cpp
-        ../src/sys/sound_picker_projection.cpp
-        ../src/sys/sound_usage_projection.cpp
+        ../src/sys/workspace_view.cpp
+        ../src/sys/bookmark_chooser_view.cpp
+        ../src/sys/bookmark_navigation.cpp
+        ../src/sys/sound_list_view.cpp
+        ../src/sys/sound_picker_view.cpp
+        ../src/sys/sound_usage_view.cpp
         sys/sound_usage_projection_tests.cpp
         sys/bookmark_chooser_projection_tests.cpp
         sys/sound_usage_actions_tests.cpp
@@ -778,11 +786,13 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/application_commands.cpp
             ../src/sys/transport_player_actions.cpp
             ../src/sys/application_defaults.cpp
-            ../src/sys/waveform_view_projection.cpp
+            ../src/sys/waveform_view.cpp
             ../src/sys/waveform_analysis_runtime.cpp
             ../src/sys/audio_source_registration.cpp
+        ../src/sys/project_audio_sources.cpp
+        ../src/sys/metronome.cpp
             sys/audio_notification_tests.cpp
-            ../src/sys/bmson_waveform_projection.cpp
+            ../src/sys/bmson_waveform_view.cpp
             ../src/sys/compose_input.cpp
             ../src/sys/compose_waveform_fit_input.cpp
             ../src/sys/compose_timing_input.cpp
@@ -790,7 +800,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/compose_navigation_input.cpp
             ../src/sys/compose_note_to_bgm.cpp
             ../src/sys/compose_minimap_navigation.cpp
-            ../src/sys/compose_bookmark_commands.cpp
+            ../src/sys/bookmark_commands.cpp
             ../src/sys/compose_navigation.cpp
             ../src/sys/compose_playhead_skip.cpp
             ../src/sys/compose_bgm_bar.cpp)
@@ -811,16 +821,17 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         sys/resource_notification_tests.cpp
         ../src/sys/resource_job_state.cpp
         sys/metadata_notification_tests.cpp
-        ../src/sys/sound_usage_projection.cpp
+        ../src/sys/sound_usage_view.cpp
         ../src/sys/frame_timing.cpp
-        ../src/sys/workspace_projection.cpp
-        ../src/sys/bookmark_chooser_projection.cpp
-        ../src/sys/sound_list_projection.cpp
-        ../src/sys/sound_picker_projection.cpp
+        ../src/sys/workspace_view.cpp
+        ../src/sys/bookmark_chooser_view.cpp
+        ../src/sys/bookmark_navigation.cpp
+        ../src/sys/sound_list_view.cpp
+        ../src/sys/sound_picker_view.cpp
         ../src/sys/timing_view.cpp
         ../src/sys/recipe_form.cpp
         ../src/sys/compose_resource_presenter.cpp
-        ../src/sys/metadata_view_projection.cpp
+        ../src/sys/metadata_view.cpp
         ../src/sys/metadata_drop_state.cpp
         ../src/sys/metadata_asset_runtime.cpp
         ../src/sys/metadata_actions.cpp

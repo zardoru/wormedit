@@ -1,7 +1,13 @@
+#include "sys/catalog_view.h"
+#include <wormedit/core/timing_lane_catalog.h>
+#include <wormedit/core/catalogs.h>
+#include <wormedit/formats/bms.h>
 #include "sys/frame_timing.h"
-#include "sys/workspace_projection.h"
+#include "sys/workspace_view.h"
+#include <wormedit/core/lane_profiles.h>
+#include <wormedit/audio/playback_rate.h>
 #include "sys/timing_view.h"
-#include "sys/metadata_view_projection.h"
+#include "sys/metadata_view.h"
 #include <array>
 #include <cstring>
 #include <limits>
@@ -1418,4 +1424,111 @@ TEST_CASE("Project export catalog includes groups outside the selected Compose d
     check_frame_storage(frame.view.compose.output_groups[0].document_index == 0);
     check_frame_storage(frame.view.compose.output_groups[1].document_index == 1);
     check_frame_storage(!frame.view.compose.output_groups_truncated);
+}
+
+TEST_CASE("Workspace projection uses the canonical Audio Slices tab label", "[sys][catalog-wiring]") {
+    wormedit::workspace_view_t model;
+    model.active_tab = wormedit::workspace_tab_t::audio_slices;
+    auto frame = flatten_workspace(model, {}, "ready", {}, false, {}, nullptr);
+    CHECK(std::string_view{frame.view.tabs[WORM_UI_WORKSPACE_TAB_AUDIO_SLICES].label} == "Audio Slices");
+    CHECK(std::string_view{frame.view.tab_heading} == "Audio Slices");
+}
+
+namespace {
+void check_new_project_catalog_entry(const WormUiStringDescriptorView& actual,
+                                     const wormedit::new_project_layout_descriptor_t& expected) {
+    CHECK(std::string_view{actual.id} == expected.id);
+    CHECK(std::string_view{actual.label} == expected.label);
+}
+} // namespace
+
+TEST_CASE("Workspace projects every stable new-project catalog identity", "[sys][catalog-wiring]") {
+    wormedit::workspace_view_t model;
+    auto frame = flatten_workspace(model, {}, "ready", {}, false, {}, nullptr);
+    const auto& view = frame.view.new_project_layouts;
+    REQUIRE(view.count == wormedit::new_project_layouts().size());
+    for (std::size_t i = 0; i < view.count; ++i)
+        check_new_project_catalog_entry(view.entries[i], wormedit::new_project_layouts()[i]);
+}
+
+namespace {
+void check_playback_rate_catalog_entry(const WormUiKindDescriptorView& actual,
+                                       const wormedit::audio::playback_rate_descriptor_t& expected) {
+    CHECK(actual.id == static_cast<std::uint32_t>(expected.id));
+    CHECK(std::string_view{actual.label} == expected.label);
+}
+} // namespace
+
+TEST_CASE("Workspace projects playback rate ids and labels from the catalog", "[sys][catalog-wiring]") {
+    wormedit::workspace_view_t model;
+    auto frame = flatten_workspace(model, {}, "ready", {}, false, {}, nullptr);
+    REQUIRE(frame.view.playback_rates.count == wormedit::audio::playback_rate_catalog.size());
+    for (std::size_t i = 0; i < frame.view.playback_rates.count; ++i)
+        check_playback_rate_catalog_entry(frame.view.playback_rates.entries[i], wormedit::audio::playback_rate_catalog[i]);
+}
+
+TEST_CASE("Workspace offers supported BMS encodings with stable ids and language hints", "[sys][catalog-wiring]") {
+    wormedit::workspace_view_t model;
+    auto frame = flatten_workspace(model, {}, "ready", {}, false, {}, nullptr);
+    std::size_t index = 0;
+    for (const auto& encoding : wormedit::bms_text_encodings) {
+        if (!encoding.offered || !wormedit::is_bms_text_encoding_supported(encoding.kind)) continue;
+        REQUIRE(index < frame.view.bms_encodings.count);
+        check_frame_storage(frame.view.bms_encodings.entries[index].id == static_cast<std::uint32_t>(encoding.kind));
+        check_frame_storage(std::string_view{frame.view.bms_encodings.entries[index].label} == encoding.choice_label);
+        ++index;
+    }
+    check_frame_storage(index == frame.view.bms_encodings.count);
+}
+
+TEST_CASE("Workspace output families preserve SM SSC presentation and D9 exclusions", "[sys][catalog-wiring]") {
+    wormedit::workspace_view_t model;
+    const auto frame = flatten_workspace(model, {}, "ready", {}, false, {}, nullptr);
+    const auto& output = frame.view.setup.output_families;
+    std::size_t index = 0;
+    for (const auto& family : wormedit::format_families) {
+        if (!family.offered_as_output) continue;
+        REQUIRE(index < output.count);
+        check_frame_storage(output.entries[index].id == static_cast<std::uint32_t>(family.kind));
+        check_frame_storage(std::string_view{output.entries[index].label} == family.output_label);
+        ++index;
+    }
+    check_frame_storage(index == output.count);
+    check_frame_storage(output.count == 5);
+    check_frame_storage(output.entries[2].id == static_cast<std::uint32_t>(wormedit::format_family_t::stepmania));
+    check_frame_storage(std::string_view{output.entries[2].label} == "SM/SSC");
+    check_frame_storage(frame.view.metadata.format_families.count == wormedit::format_families.size());
+}
+
+namespace {
+void check_timing_catalog_entry(const WormUiComposeView& view, std::size_t index) {
+    const auto& expected = wormedit::timing_lanes[index];
+    check_frame_storage(view.timing_lanes.entries[index].id == static_cast<std::uint32_t>(expected.kind));
+    check_frame_storage(std::string_view{view.timing_lanes.entries[index].label} == expected.label);
+    check_frame_storage(view.timing_lane_captions.entries[index].id == static_cast<std::uint32_t>(expected.kind));
+    check_frame_storage(std::string_view{view.timing_lane_captions.entries[index].label} == expected.short_label);
+}
+}
+TEST_CASE("Workspace projects timing and note presentation with catalog identities", "[sys][catalog-wiring]") {
+    wormedit::workspace_view_t model;
+    const auto frame = flatten_workspace(model, {}, "ready", {}, false, {}, nullptr);
+    const auto& view = frame.view.compose;
+    REQUIRE(view.timing_lanes.count == wormedit::timing_lanes.size());
+    REQUIRE(view.timing_lane_captions.count == wormedit::timing_lanes.size());
+    for (std::size_t index = 0; index < view.timing_lanes.count; ++index)
+        check_timing_catalog_entry(view, index);
+    REQUIRE(view.note_palette.count == wormedit::note_palette_kinds.size());
+    for (std::size_t index = 0; index < view.note_palette.count; ++index) {
+        const auto kind = wormedit::note_palette_kinds[index];
+        check_frame_storage(view.note_palette.entries[index].id == static_cast<std::uint32_t>(kind));
+        check_frame_storage(std::string_view{view.note_palette.entries[index].label} ==
+              wormedit::find_catalog_entry(wormedit::note_kinds, kind)->palette_label);
+    }
+}
+
+TEST_CASE("BMS action identities reject unoffered and invalid encodings", "[sys][catalog-wiring]") {
+    check_frame_storage(is_bms_encoding_offered(static_cast<std::uint32_t>(wormedit::text_encoding_t::utf8)));
+    check_frame_storage(!is_bms_encoding_offered(static_cast<std::uint32_t>(wormedit::text_encoding_t::unknown)));
+    check_frame_storage(!is_bms_encoding_offered(static_cast<std::uint32_t>(wormedit::text_encoding_t::ascii)));
+    check_frame_storage(!is_bms_encoding_offered(std::numeric_limits<std::uint32_t>::max()));
 }

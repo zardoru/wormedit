@@ -12,13 +12,13 @@ struct recovery_fixture_t {
     native_project_autosave_loop_t autosave{native_project_autosave_loop_t::clock_t::now(), scheduler};
     std::filesystem::path directory = std::filesystem::temp_directory_path() /
         ("wormedit-recovery-notification-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-    document_history_t history = make_document_history({.schema_version = 2, .id = song_id_t{417}, .revision = 5});
+    document_history_t history = document_history_t::from({.schema_version = 2, .id = song_id_t{417}, .revision = 5});
     workspace_controller_t workspace;
     native_project_recovery_controller_t controller;
     bool recovered{};
     recovery_fixture_t() {
         std::filesystem::create_directories(directory);
-        const auto binding = make_workspace_controller(history);
+        const auto binding = workspace_controller_t::from(history);
         expect_recovery(static_cast<bool>(binding));
         workspace = *binding.workspace;
         const auto primary = directory / "chart.wormedit";

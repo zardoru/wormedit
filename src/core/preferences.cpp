@@ -437,14 +437,5 @@ auto load_program_preferences_for_startup(const std::filesystem::path& path,
     if (!saved) result.contents.warnings.push_back("Preferences could not be saved: " + saved.error);
     return result;
 }
-// Compatibility for the sys/ui migration wave.
-auto default_external_player_preferences() -> external_player_preferences_t {
-    return external_player_preferences_t::with_defaults();
-}
-
-// Compatibility for the sys/ui migration wave.
-auto default_program_preferences() -> program_preferences_t {
-    return program_preferences_t::with_defaults();
-}
 
 } // namespace wormedit

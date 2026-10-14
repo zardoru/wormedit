@@ -22,10 +22,10 @@ struct metadata_notification_fixture_t {
     runtime::metadata_asset_t assets;
 
     metadata_notification_fixture_t() {
-        history = make_document_history(song_document_t{.id = song_id_t{1}, .revision = 4});
+        history = document_history_t::from(song_document_t{.id = song_id_t{1}, .revision = 4});
         REQUIRE(apply_new_chart_command(history));
-        history = make_document_history(std::move(history.document));
-        const auto binding = make_workspace_controller(history);
+        history = document_history_t::from(std::move(history.document));
+        const auto binding = workspace_controller_t::from(history);
         REQUIRE(binding);
         workspace = *binding.workspace;
     }
@@ -147,8 +147,8 @@ void prepare_channel_map_request(channel_map_request_t& request,
 }
 
 void use_bms_song(metadata_notification_fixture_t& fixture) {
-    fixture.history = make_document_history(bms_channel_song());
-    const auto binding = make_workspace_controller(fixture.history);
+    fixture.history = document_history_t::from(bms_channel_song());
+    const auto binding = workspace_controller_t::from(fixture.history);
     REQUIRE(static_cast<bool>(binding));
     fixture.workspace = *binding.workspace;
 }
@@ -213,8 +213,8 @@ TEST_CASE("metadata malformed and stale edits post once without mutation", "[uni
 TEST_CASE("metadata redivision action redivides exactly or rejects inexact charts untouched",
           "[unit][sys][metadata-notification]") {
     metadata_notification_fixture_t fixture;
-    fixture.history = make_document_history(redivision_song(130));
-    const auto binding = make_workspace_controller(fixture.history);
+    fixture.history = document_history_t::from(redivision_song(130));
+    const auto binding = workspace_controller_t::from(fixture.history);
     require_metadata_notification(static_cast<bool>(binding));
     fixture.workspace = *binding.workspace;
 
@@ -227,8 +227,8 @@ TEST_CASE("metadata redivision action redivides exactly or rejects inexact chart
     require_metadata_notification(entries.size() == 1);
     expect_edit_entry(entries[0], notification_severity_t::success, *applied);
 
-    fixture.history = make_document_history(redivision_song(131));
-    const auto inexact_binding = make_workspace_controller(fixture.history);
+    fixture.history = document_history_t::from(redivision_song(131));
+    const auto inexact_binding = workspace_controller_t::from(fixture.history);
     require_metadata_notification(static_cast<bool>(inexact_binding));
     fixture.workspace = *inexact_binding.workspace;
     const auto revision = fixture.history.document.revision;

@@ -1,8 +1,12 @@
 #pragma once
+#include "sys/metronome.h"
+#include <wormedit/audio/playback_rate.h>
+#include "sys/bookmark_navigation.h"
+#include <algorithm>
 
 #include "core/interaction_context.h"
 
-#include "sys/workspace_projection.h"
+#include "sys/workspace_view.h"
 #include "sys/compose_navigation_travel.h"
 #include "common/static_interval_index.h"
 #include "sys/compose_bgm_bar.h"
@@ -140,8 +144,8 @@ struct compose_scene_cache_t {
         case compose_scene_key_policy_t::projection:
             return scene.attempted && logical_stamp && scene.scene_song == document.id;
         case compose_scene_key_policy_t::stem_geometry:
-            return scene.stem_index.built && scene.stem_index.document == document.id &&
-                scene.stem_index.chart == chart.id && scene.stem_index.revision == document.revision;
+            return stems.stem_index.built && stems.stem_index.document == document.id &&
+                stems.stem_index.chart == chart.id && stems.stem_index.revision == document.revision;
         case compose_scene_key_policy_t::measure_geometry:
             return logical_stamp;
         case compose_scene_key_policy_t::paint_occupancy:
@@ -172,7 +176,7 @@ struct compose_scene_cache_t {
         std::uint64_t source_id{};
         std::string source_label;
         bool source_label_valid{}, source_missing{};
-    } draw_stem_sources;
+    };
     struct channel_waveform_selection_t {
         wormedit::chart_id_t chart;
         std::uint64_t revision{};
@@ -270,7 +274,6 @@ struct compose_scene_cache_t {
         selected_source_location_t selected_note_source, selected_bgm_source;
         std::size_t selected_source_scanned{}, selected_source_reused{}, paint_occupancy_scanned{};
         std::optional<wormedit::measure_index_t> cached_measure_index;
-        wormedit::sys::stem_index_t stem_index;
         std::optional<wormedit::editor_hit_test_index_t> hit_test_index;
         std::shared_ptr<const wormedit::editor_area_geometry_snapshot_t> area_object_geometry;
     } scene;
@@ -315,6 +318,37 @@ struct compose_scene_cache_t {
         wormedit::object_id_t proposed_beat_event;
     } timing;
 
+    struct stem_display_state_t {
+        draw_stem_source_cache_t draw_stem_sources;
+        wormedit::sys::stem_index_t stem_index;
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        // One entry per BMSON stem drawn besides the selected channel (at most eight; the vector is
+        // reserved up front so the view's row pointers stay valid through the frame).
+        std::vector<stem_waveform_cache_t> stem_waveforms;
+        packed_waveform_index_t packed_waveform_index;
+        audio::display_row_table_t packed_waveform_row_table;
+        std::uint64_t packed_clock_generation{};
+        std::vector<stem_waveform_cache_t> packed_waveforms;
+        std::vector<WormUiComposeStemWaveformView> stem_waveform_views;
+        std::vector<WormUiComposeStemCutView> stem_cut_views;
+        auto stem_for(wormedit::object_id_t channel) -> stem_waveform_cache_t& {
+            const auto found = std::ranges::find(stem_waveforms, channel, &stem_waveform_cache_t::channel);
+            if (found != stem_waveforms.end()) return *found;
+            stem_waveforms.emplace_back();
+            stem_waveforms.back().channel = channel;
+            return stem_waveforms.back();
+        }
+        // Packed display keys are BGM event ids, rather than sound-channel ids.
+        auto packed_for(wormedit::object_id_t event) -> stem_waveform_cache_t& {
+            const auto found = std::ranges::find(packed_waveforms, event, &stem_waveform_cache_t::channel);
+            if (found != packed_waveforms.end()) return *found;
+            packed_waveforms.emplace_back();
+            packed_waveforms.back().channel = event;
+            return packed_waveforms.back();
+        }
+#endif
+    } stems;
+
     struct waveform_state_t {
         std::optional<channel_waveform_selection_t> channel_waveform_selection;
         wormedit::object_id_t channel_waveform_channel;
@@ -330,15 +364,6 @@ struct compose_scene_cache_t {
         audio::display_row_table_t waveform_row_table;
         envelope_projection_ring_t waveform_envelope_ring;
         envelope_projection_ring_t channel_envelope_ring;
-        // One entry per BMSON stem drawn besides the selected channel (at most eight; the vector is
-        // reserved up front so the view's row pointers stay valid through the frame).
-        std::vector<stem_waveform_cache_t> stem_waveforms;
-        packed_waveform_index_t packed_waveform_index;
-        audio::display_row_table_t packed_waveform_row_table;
-        std::uint64_t packed_clock_generation{};
-        std::vector<stem_waveform_cache_t> packed_waveforms;
-        std::vector<WormUiComposeStemWaveformView> stem_waveform_views;
-        std::vector<WormUiComposeStemCutView> stem_cut_views;
         std::optional<wormedit::audio::waveform_key_t> waveform_overview_key;
         const void* waveform_overview_identity{};
         std::uint64_t waveform_overview_revision{};
@@ -401,9 +426,6 @@ struct application_command_services_t {
     std::function<bool()> transport_preview_playing;
     std::function<bool()> transport_preview_paused;
     std::function<std::optional<std::uint64_t>()> transport_preview_end_frame;
-    std::function<bool(wormedit::chart_id_t, std::uint64_t, std::uint64_t)>
-        transport_preserve_bookmark_revision;
-    std::function<bool(std::uint64_t, std::uint64_t, std::uint64_t)> open_bookmark_chooser;
     std::function<bool(std::uint64_t, std::uint64_t, std::uint64_t)> open_sound_picker;
     std::function<bool(std::uint64_t, std::uint64_t, std::uint64_t)> open_project_export;
     std::function<bool(WormUiComposeDockCommand, std::uint64_t, std::uint64_t, std::uint64_t)>
@@ -419,13 +441,9 @@ struct application_command_services_t {
     std::function<bool(wormedit::chart_id_t, std::uint64_t, std::uint64_t, std::uint64_t, bool)>
         transport_set_loop_selection;
     std::function<bool()> transport_loop_selection_active;
-    std::function<void(std::uint8_t)> transport_set_metronome_volume;
-    std::function<void(std::uint8_t)> transport_set_metronome_count_in;
-    std::function<void(bool)> transport_set_metronome;
     std::function<bool(wormedit::chart_id_t, std::span<const std::uint64_t>)> transport_set_bgm_mix;
     std::function<std::string(external_player_action_t)> external_player;
     std::function<std::string()> transport_cancel_restore;
-    std::function<std::chrono::steady_clock::time_point()> bookmark_clock;
 };
 
 struct bgm_lane_mix_state_t {
@@ -495,13 +513,6 @@ struct application_command_state_t {
         std::uint64_t frame{};
         double cursor_subrow{};
     };
-    // The row a playing bookmark seek last targeted, so a quick repeat steps from it rather
-    // than from a playhead the audio clock has not advanced to yet.
-    struct bookmark_seek_record_t {
-        wormedit::chart_id_t chart{};
-        std::uint64_t row{};
-        std::chrono::steady_clock::time_point at;
-    };
     // The target of the last playing playhead skip (wheel notch or step), for the same reason.
     struct playhead_skip_record_t {
         wormedit::chart_id_t chart{};
@@ -511,20 +522,22 @@ struct application_command_state_t {
     };
 
     application_command_services_t services;
+    bookmark_navigation_t bookmarks;
+    metronome_t* metronome{};
+    [[nodiscard]] auto metronome_settings() const -> const metronome_settings_t& {
+        static const metronome_settings_t defaults;
+        return metronome ? metronome->settings : defaults;
+    }
     struct preferences_t {
         // Editor placement audition is distinct from Sounds-panel preview-on-click.
         wormedit::editor_preferences_t editor_preferences;
         bool minimap_click_moves_paused_playhead{};
-        std::size_t transport_rate_index{8};
+        std::size_t transport_rate_index{static_cast<std::size_t>(wormedit::audio::playback_rate_id_t::normal)};
         bool transport_keep_pitch{};
         bool transport_keep_pitch_available{};
         // Production seek services publish feedback; legacy/test callbacks leave this false.
         bool transport_seek_posts_feedback{};
-        bool transport_metronome_enabled{};
-        bool transport_metronome_available{};
         bool timing_settings_visible{};
-        std::uint8_t metronome_volume{100};
-        std::uint8_t metronome_count_in{};
     } preferences;
     // Resolved from display preferences and the field skin, outside the project lifetime.
     wormedit::editor_scratch_presentation_t scratch_on_right;
@@ -617,7 +630,6 @@ struct application_command_state_t {
         struct transport_state_t {
             std::optional<double> preview_playhead_absolute_row;
             std::optional<minimap_start_frame_t> minimap_start_frame;
-            std::optional<bookmark_seek_record_t> last_playing_bookmark_seek;
             std::optional<playhead_skip_record_t> last_playhead_skip;
         } transport;
     } project;
@@ -628,7 +640,7 @@ struct application_command_state_t {
     // Any other seek or a playback-session change breaks a repeat sequence: the next skip or
     // bookmark step must start from the live playhead.
     void invalidate_playing_seek_records() {
-        project.transport.last_playing_bookmark_seek.reset();
+        bookmarks.clear_seek_record();
         project.transport.last_playhead_skip.reset();
     }
 };
@@ -647,28 +659,16 @@ struct application_command_state_t {
 }
 
 inline auto toggle_transport_metronome(application_command_state_t& state) -> bool {
-    if (!state.preferences.transport_metronome_available || !state.services.transport_set_metronome) return false;
-    state.preferences.transport_metronome_enabled = !state.preferences.transport_metronome_enabled;
-    state.services.transport_set_metronome(state.preferences.transport_metronome_enabled);
-    return true;
+    return state.metronome && state.metronome->set_enabled(!state.metronome->settings.enabled);
 }
-
 inline void apply_timing_settings_action(application_command_state_t& state,
                                          const WormUiTimingSettingsAction& action) {
     if (action.toggle) state.preferences.timing_settings_visible = !state.preferences.timing_settings_visible;
     if (action.close) state.preferences.timing_settings_visible = false;
-    if (action.change_enable && state.preferences.transport_metronome_available && state.services.transport_set_metronome) {
-        state.preferences.transport_metronome_enabled = action.enabled;
-        state.services.transport_set_metronome(action.enabled);
-    }
-    if (action.change_volume && action.volume <= 100 && state.services.transport_set_metronome_volume) {
-        state.preferences.metronome_volume = action.volume;
-        state.services.transport_set_metronome_volume(action.volume);
-    }
-    if (action.change_count_in && action.count_in <= 4 && state.services.transport_set_metronome_count_in) {
-        state.preferences.metronome_count_in = action.count_in;
-        state.services.transport_set_metronome_count_in(action.count_in);
-    }
+    if (!state.metronome) return;
+    if (action.change_enable) static_cast<void>(state.metronome->set_enabled(action.enabled));
+    if (action.change_volume) static_cast<void>(state.metronome->set_volume(action.volume));
+    if (action.change_count_in) static_cast<void>(state.metronome->set_count_in(action.count_in));
 }
 
 struct compose_horizontal_layout_t {
@@ -694,7 +694,6 @@ auto compose_horizontal_layout(double viewport_width_pixels, std::size_t lane_co
                                std::uint8_t timing_lane_mask)
     -> compose_horizontal_layout_t;
 auto maximum_layout_lane_count(const wormedit::chart_document_t& chart) -> std::size_t;
-auto compose_lane_is_editable(const wormedit::lane_definition_t& lane) -> bool;
 auto compose_physical_scancode(wormedit::physical_key_t key) -> std::uint32_t;
 auto has_beat_marker_navigation(const wormedit::chart_document_t& chart) -> bool;
 auto has_audio_marker_navigation(const wormedit::chart_document_t& chart) -> bool;
@@ -741,6 +740,10 @@ struct compose_frame_inputs_t {
     auto view() const -> WormUiComposeView& {
         return flattened.view.compose;
     }
+    [[nodiscard]] auto for_output(flattened_workspace_t& output) const -> compose_frame_inputs_t {
+        return {output, history, cache, retained_state, application_state, timing_stage,
+                comparison_rows, bga_move_preview};
+    }
 };
 
 // Constness differs between inspection and final interaction publication, not geometry.
@@ -750,7 +753,38 @@ struct compose_chart_scope_t {
     View& interaction_view;
     bool downscroll;
     double pixels_per_row;
+
+    [[nodiscard]] static auto from(const wormedit::chart_scope_t& geometry, View& view,
+                                   bool direction, double row_pixels) -> compose_chart_scope_t {
+        return {geometry, view, direction, row_pixels};
+    }
+    template <class OtherView>
+    [[nodiscard]] auto for_view(OtherView& view) const -> compose_chart_scope_t<OtherView> {
+        return for_view(view, chart_scope.measures);
+    }
+    // Render indexes may include the virtual tail; do not fall back to the authored index.
+    template <class OtherView>
+    [[nodiscard]] auto for_view(OtherView& view, const wormedit::measure_index_t& measures) const
+        -> compose_chart_scope_t<OtherView> {
+        return {{chart_scope.chart, measures}, view, downscroll, pixels_per_row};
+    }
 };
+
+// One frame/scope bundle; only the interaction-view constness varies by phase.
+template <class View = const wormedit::editor_interaction_view_model_t>
+struct compose_projection_context_t {
+    const compose_frame_inputs_t& frame;
+    const compose_chart_scope_t<View>& scope;
+
+    [[nodiscard]] static auto from(const compose_frame_inputs_t& frame_inputs,
+                                   const compose_chart_scope_t<View>& chart_scope)
+        -> compose_projection_context_t {
+        return {frame_inputs, chart_scope};
+    }
+    [[nodiscard]] auto history() const -> const wormedit::document_history_t& { return frame.history; }
+    [[nodiscard]] auto cache() const -> const compose_scene_cache_t& { return frame.cache; }
+};
+
 inline auto compose_pixels_per_row(const wormedit::chart_document_t& chart,
                                    const wormedit::editor_interaction_view_model_t& view)
     -> double {

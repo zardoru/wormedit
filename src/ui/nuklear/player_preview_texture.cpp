@@ -283,7 +283,7 @@ worm_ui_nuklear_preview_visual_result_t worm_ui_nuklear_draw_player_preview_visu
         }
         const auto& layer = *ordered[index];
         const auto layout =
-            wormedit::make_visual_image_layout({.source_width = layer.image_width,
+            wormedit::visual_image_layout_t::from({.source_width = layer.image_width,
                                                 .source_height = layer.image_height,
                                                 .destination = {.left = viewport.x,
                                                                 .top = viewport.y,
@@ -347,7 +347,7 @@ worm_ui_nuklear_preview_visual_result_t worm_ui_nuklear_draw_player_preview_stor
             continue;
         }
         const auto quad =
-            wormedit::make_visual_image_quad({.source_width = sprite.image_width,
+            wormedit::visual_image_quad_t::from({.source_width = sprite.image_width,
                                               .source_height = sprite.image_height,
                                               .destination = {.left = viewport.x,
                                                               .top = viewport.y,

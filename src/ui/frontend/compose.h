@@ -802,6 +802,9 @@ typedef struct WormUiComposeQuantizeGhostView {
 // Coordinates are relative to the scene viewport; no chart/core types cross
 // the private frontend boundary.
 typedef struct WormUiComposeView {
+    WormUiKindCatalogView timing_lanes;
+    WormUiKindCatalogView timing_lane_captions;
+    WormUiKindCatalogView note_palette;
     // A modeless program window owns this frame's content input.
     bool input_occluded;
     uint32_t armed_note_kind;

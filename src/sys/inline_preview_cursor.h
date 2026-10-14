@@ -29,9 +29,8 @@ struct inline_preview_cursor_t {
                                const editor_interaction_state_t* state) {
         follow_anchor_fraction.reset();
         if (!state || state->virtual_bms_cursor_row || state->viewport_height_pixels <= 0.0) return;
-        const auto chart = std::ranges::find(history.document.charts, state->chart,
-                                             &chart_document_t::id);
-        if (chart == history.document.charts.end() || chart->divisions_per_standard_measure == 0) return;
+        const auto chart = history.document.find_chart(state->chart);
+        if (chart == nullptr || chart->divisions_per_standard_measure == 0) return;
         const auto view = inspect_editor_interaction(history, *state);
         const auto* model = std::get_if<editor_interaction_view_model_t>(&view);
         if (!model) return;

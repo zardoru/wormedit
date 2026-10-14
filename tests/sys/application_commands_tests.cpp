@@ -150,7 +150,7 @@ TEST_CASE("application command parser rejects unknown IDs and malformed slots",
 }
 
 TEST_CASE("every built-in command ID has a typed representation", "[unit][sys][commands]") {
-    const auto registry = wormedit::make_default_editor_command_registry(
+    const auto registry = wormedit::command_registry_t::from(
         [](const wormedit::command_invocation_context_t&) {
             return wormedit::command_invocation_result_t{};
         });
@@ -198,9 +198,9 @@ struct AreaFixture {
             {.id = object_id_t{1}, .position = {measure_id_t{1}, 121}, .lane = lane_id_t{1}},
             {.id = object_id_t{2}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{1}},
             {.id = object_id_t{3}, .position = {measure_id_t{1}, 720}, .lane = lane_id_t{1}}};
-        history = make_document_history({.id = song_id_t{1}, .revision = 9, .charts = {chart}});
+        history = document_history_t::from({.id = song_id_t{1}, .revision = 9, .charts = {chart}});
         constexpr std::array snaps{std::uint64_t{4}, std::uint64_t{8}};
-        auto setup = make_editor_interaction(history, chart_id_t{7}, lane_id_t{1},
+        auto setup = editor_interaction_state_t::from(history, chart_id_t{7}, lane_id_t{1},
                                              {measure_id_t{1}, 0}, snaps, 4);
         REQUIRE(setup);
         state = *setup.state;
@@ -243,13 +243,13 @@ auto sound_import_song() -> wormedit::song_document_t {
 struct SoundImportDispatchFixture {
     wormedit::notification_center_t center;
     wormedit::notification_sink_t sink{center};
-    wormedit::document_history_t history{wormedit::make_document_history(sound_import_song())};
+    wormedit::document_history_t history{wormedit::document_history_t::from(sound_import_song())};
     wormedit::workspace_controller_t workspace;
     wormedit::sys::application_command_state_t application_state;
     wormedit::chart_id_t chart{history.document.charts.front().id};
 
     SoundImportDispatchFixture() {
-        const auto created = wormedit::make_workspace_controller(history);
+        const auto created = wormedit::workspace_controller_t::from(history);
         REQUIRE(created);
         workspace = *created.workspace;
     }
@@ -276,7 +276,7 @@ void make_sound_import_chart_bms(wormedit::chart_document_t& chart) {
 }
 
 struct SoundSlotBatchDispatchFixture {
-    wormedit::document_history_t history{wormedit::make_document_history(sound_import_song())};
+    wormedit::document_history_t history{wormedit::document_history_t::from(sound_import_song())};
     wormedit::workspace_controller_t workspace;
     wormedit::sys::application_command_state_t application_state;
     wormedit::chart_id_t chart{history.document.charts.front().id};
@@ -286,7 +286,7 @@ struct SoundSlotBatchDispatchFixture {
         make_sound_import_chart_bms(history.document.charts.front());
         history.document.resources.front().target_identities.push_back(
             {format_family_t::bms, "05", "WAV"});
-        const auto created = make_workspace_controller(history);
+        const auto created = workspace_controller_t::from(history);
         REQUIRE(created);
         workspace = *created.workspace;
     }
@@ -687,7 +687,7 @@ struct TimingInsertFixture {
             fixture.history, fixture.state,
             jump_edit_cursor_action_t{cursor, fixture.history.document.revision});
         REQUIRE(moved.accepted);
-        const auto workspace_result = make_workspace_controller(fixture.history);
+        const auto workspace_result = workspace_controller_t::from(fixture.history);
         REQUIRE(workspace_result);
         workspace = *workspace_result.workspace;
         workspace.active_tab = workspace_tab_t::compose;
@@ -1364,7 +1364,7 @@ void check_note_kind_command_shortcut(const wormedit::command_registry_t& regist
 
 TEST_CASE("Note kind commands preserve lane and layer shortcut chords", "[unit][sys][commands]") {
     using namespace wormedit;
-    const auto registry = make_default_editor_command_registry(
+    const auto registry = command_registry_t::from(
         [](const command_invocation_context_t&) { return command_invocation_result_t{}; });
     const std::array names{"tap", "hold", "mine", "invisible", "lift", "fake", "roll"};
     const std::array kinds{0U, 1U, 4U, 3U, 5U, 6U, 2U};
@@ -1935,36 +1935,66 @@ TEST_CASE("Note context rejects stale and unknown hits without replacing selecti
 namespace {
 void check_bookmark_callback(bool value) { CHECK(value); }
 void require_bookmark_callback(bool value) { REQUIRE(value); }
+struct bookmark_chooser_recorder_t {
+    unsigned calls{};
+    std::uint64_t project{}, chart{}, revision{};
+    bool accepted{true};
+    auto operator==(const bookmark_chooser_recorder_t&) const -> bool = default;
+    static auto open(void* context, std::uint64_t project, std::uint64_t chart,
+                      std::uint64_t revision) -> bool {
+        auto& self = *static_cast<bookmark_chooser_recorder_t*>(context);
+        ++self.calls;
+        self.project = project;
+        self.chart = chart;
+        self.revision = revision;
+        return self.accepted;
+    }
+};
 }
 TEST_CASE("Go To Bookmark command opens the retained chooser with the active context",
           "[sys][application_commands][bookmark]") {
     TimingInsertFixture fixture;
     const auto revision = fixture.fixture.history.document.revision;
     const auto cursor = fixture.compose_state->cursor;
-    unsigned calls{};
-    fixture.application_state.services.open_bookmark_chooser = [&](std::uint64_t project,
-        std::uint64_t chart, std::uint64_t expected_revision) {
-        ++calls;
-        check_bookmark_callback(project == fixture.fixture.history.document.id.value);
-        check_bookmark_callback(chart == fixture.compose_state->chart.value);
-        check_bookmark_callback(expected_revision == revision);
-        return true;
-    };
+    bookmark_chooser_recorder_t chooser;
+    fixture.application_state.bookmarks.chooser_backend = {
+        .open = bookmark_chooser_recorder_t::open, .context = &chooser};
     require_bookmark_callback(fixture.invoke(application_command_kind_t::navigation_go_to_bookmark).accepted);
-    check_bookmark_callback(calls == 1);
+    check_bookmark_callback(chooser.calls == 1);
+    check_bookmark_callback(chooser.project == fixture.fixture.history.document.id.value);
+    check_bookmark_callback(chooser.chart == fixture.compose_state->chart.value);
+    check_bookmark_callback(chooser.revision == revision);
     check_bookmark_callback(fixture.fixture.history.document.revision == revision);
     check_bookmark_callback(fixture.compose_state->cursor == cursor);
     fixture.workspace.active_tab = wormedit::workspace_tab_t::metadata;
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_bookmark).accepted);
-    check_bookmark_callback(calls == 1);
+    check_bookmark_callback(chooser.calls == 1);
 }
 
 TEST_CASE("Go To Bookmark command rejects a missing or blocked chooser callback",
           "[sys][application_commands][bookmark]") {
     TimingInsertFixture fixture;
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_bookmark).accepted);
-    fixture.application_state.services.open_bookmark_chooser = [](auto, auto, auto) { return false; };
+    bookmark_chooser_recorder_t chooser{.accepted = false};
+    fixture.application_state.bookmarks.chooser_backend = {
+        .open = bookmark_chooser_recorder_t::open, .context = &chooser};
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_bookmark).accepted);
+}
+TEST_CASE("Bookmark navigation reset retains the chooser backend and clock and clears project seeks",
+          "[sys][application_commands][bookmark][ownership]") {
+    application_command_state_t state;
+    bookmark_chooser_recorder_t chooser;
+    auto now = std::chrono::steady_clock::time_point{} + std::chrono::seconds{10};
+    state.bookmarks.chooser_backend = {.open = bookmark_chooser_recorder_t::open, .context = &chooser};
+    state.bookmarks.fixed_clock = &now;
+    state.bookmarks.record_seek(wormedit::chart_id_t{7}, 192);
+    reset_application_project_edit_state(state);
+    check_bookmark_callback(!state.bookmarks.recent_seek_row(wormedit::chart_id_t{7}));
+    check_bookmark_callback(state.bookmarks.now() == now);
+    require_bookmark_callback(state.bookmarks.open_chooser(1, 7, 2));
+    check_bookmark_callback(chooser.calls == 1);
+    now += std::chrono::milliseconds{301};
+    check_bookmark_callback(state.bookmarks.now() == now);
 }
 TEST_CASE("Dock commands use the active Compose context without editing history",
           "[sys][application_commands][dock-shortcuts]") {
@@ -2171,8 +2201,8 @@ auto click_audition_song() -> wormedit::song_document_t {
 // Clicking empty playable space in note paint mode places one note; it auditions only when enabled.
 void check_placement_audition(bool enabled) {
     using namespace wormedit;
-    document_history_t history{make_document_history(click_audition_song())};
-    auto binding = make_workspace_controller(history);
+    document_history_t history{document_history_t::from(click_audition_song())};
+    auto binding = workspace_controller_t::from(history);
     REQUIRE(binding.workspace.has_value());
     binding.workspace->active_tab = workspace_tab_t::compose;
     binding.workspace->selected_chart = chart_id_t{1};
@@ -2478,7 +2508,7 @@ void selection_require(bool value) { REQUIRE(value); }
 void selection_check(bool value) { CHECK(value); }
 auto invoke_selection_command(TimingInsertFixture& f, std::string id, bool modal = false) -> wormedit::command_dispatch_result_t {
     using namespace wormedit;
-    const auto registry = make_default_editor_command_registry([&](const command_invocation_context_t& context) {
+    const auto registry = command_registry_t::from([&](const command_invocation_context_t& context) {
         const auto parsed = parse_application_command(context.command.value);
         if (!parsed) return command_invocation_result_t{};
         return f.invoke(parsed->kind);
@@ -2777,23 +2807,26 @@ TEST_CASE("Project reset retains exactly the session preference allowlist", "[sy
     state.preferences.transport_keep_pitch = true;
     state.preferences.transport_keep_pitch_available = true;
     state.preferences.transport_seek_posts_feedback = true;
-    state.preferences.transport_metronome_enabled = true;
-    state.preferences.transport_metronome_available = true;
+    wormedit::sys::metronome_t metronome;
+    state.metronome = &metronome;
+    metronome.settings.enabled = true;
+    metronome.settings.available = true;
     state.preferences.timing_settings_visible = true;
-    state.preferences.metronome_volume = 42;
-    state.preferences.metronome_count_in = 4;
+    metronome.settings.volume = 42;
+    metronome.settings.count_in = 4;
     reset_application_project_edit_state(state);
+    check_transient_transport(state.metronome == &metronome);
     check_transient_transport(state.preferences.editor_preferences.audition_on_click);
     check_transient_transport(state.preferences.minimap_click_moves_paused_playhead);
     check_transient_transport(state.preferences.transport_rate_index == 3);
     check_transient_transport(state.preferences.transport_keep_pitch);
     check_transient_transport(state.preferences.transport_keep_pitch_available);
     check_transient_transport(state.preferences.transport_seek_posts_feedback);
-    check_transient_transport(state.preferences.transport_metronome_enabled);
-    check_transient_transport(state.preferences.transport_metronome_available);
+    check_transient_transport(state.metronome_settings().enabled);
+    check_transient_transport(state.metronome_settings().available);
     check_transient_transport(state.preferences.timing_settings_visible);
-    check_transient_transport(state.preferences.metronome_volume == 42);
-    check_transient_transport(state.preferences.metronome_count_in == 4);
+    check_transient_transport(state.metronome_settings().volume == 42);
+    check_transient_transport(state.metronome_settings().count_in == 4);
 }
 
 TEST_CASE("Project reset keeps formerly reset view settings project scoped", "[sys][ownership]") {
@@ -2822,3 +2855,43 @@ TEST_CASE("Project reset keeps formerly reset view settings project scoped", "[s
     check_transient_transport(!state.project.transport.preview_playhead_absolute_row);
 }
 #endif
+
+namespace {
+wormedit::rational_t catalog_requested_rate;
+auto accept_catalog_rate(wormedit::rational_t rate) -> bool {
+    catalog_requested_rate = rate;
+    return true;
+}
+void check_catalog_rate_dispatch(const wormedit::audio::playback_rate_descriptor_t& entry) {
+    application_command_state_t state;
+    state.services.transport_set_playback_rate = accept_catalog_rate;
+    catalog_requested_rate = {};
+    WormUiWorkspaceAction action{};
+    action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE;
+    action.transport_rate_index = 255; // A contradictory legacy position must not control dispatch.
+    action.transport_rate_id = static_cast<std::uint32_t>(entry.id);
+    wormedit::stepmania_export_policy_t policy;
+    const auto status = dispatch_transport_player_action(action, state, policy, std::nullopt);
+    CHECK((status && *status == "Playback rate changed."));
+    CHECK(catalog_requested_rate == entry.rate);
+    CHECK(state.preferences.transport_rate_index == static_cast<std::size_t>(entry.id));
+}
+} // namespace
+
+TEST_CASE("Transport UI dispatch uses stable playback catalog ids", "[sys][catalog-wiring]") {
+    for (const auto& entry : wormedit::audio::playback_rate_catalog)
+        check_catalog_rate_dispatch(entry);
+}
+
+TEST_CASE("Transport UI dispatch rejects unknown playback catalog ids", "[sys][catalog-wiring]") {
+    application_command_state_t state;
+    state.services.transport_set_playback_rate = accept_catalog_rate;
+    catalog_requested_rate = {};
+    WormUiWorkspaceAction action{};
+    action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE;
+    action.transport_rate_id = 255;
+    wormedit::stepmania_export_policy_t policy;
+    const auto status = dispatch_transport_player_action(action, state, policy, std::nullopt);
+    CHECK((status && *status == "Playback rate unchanged."));
+    CHECK(catalog_requested_rate == wormedit::rational_t{});
+}

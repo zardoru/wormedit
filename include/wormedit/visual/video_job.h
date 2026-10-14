@@ -91,6 +91,9 @@ class video_frame_job_t {
     video_frame_job_t(const video_frame_job_t&) = delete;
     auto operator=(const video_frame_job_t&) -> video_frame_job_t& = delete;
 
+    [[nodiscard]] auto begin(song_id_t project, std::uint64_t document_revision,
+                               resolved_visual_asset_t source, video_preview_clock_t clock,
+                               video_frame_decode_limits_t limits = {}) -> async_job_start_outcome_t;
     [[nodiscard]] auto request(song_id_t project, std::uint64_t document_revision,
                                resolved_visual_asset_t source, video_preview_clock_t clock,
                                video_frame_decode_limits_t limits = {}) -> video_job_start_result_t;
@@ -98,8 +101,6 @@ class video_frame_job_t {
     [[nodiscard]] auto wait() -> std::optional<video_job_completion_t>;
     void cancel() noexcept;
     [[nodiscard]] auto is_busy() const noexcept -> bool;
-    // Compatibility for the coordinated sys/UI migration.
-    inline auto busy() const noexcept -> bool { return is_busy(); }
 
   private:
     struct decode_request_t {

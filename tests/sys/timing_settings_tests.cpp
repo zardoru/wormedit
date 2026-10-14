@@ -1,3 +1,4 @@
+#include "sys/compose_view.h"
 #include "sys/timing_settings.h"
 #include <wormedit/core/timing.h>
 #include <catch2/catch_test_macros.hpp>
@@ -52,4 +53,21 @@ TEST_CASE("Timing count-in accepts the final partial beat of an unmetered measur
     CHECK(wormedit::sys::timing_count_in_pulses(chart, 1) == 4);
     chart.measures.front().definition.length = {1, 960};
     CHECK(wormedit::sys::timing_count_in_pulses(chart, 2) == 2);
+}
+
+TEST_CASE("Timing settings commands use the metronome owner and unavailable defaults", "[sys][timing-settings][metronome]") {
+    wormedit::sys::application_command_state_t state;
+    CHECK_FALSE(wormedit::sys::toggle_transport_metronome(state));
+    wormedit::sys::metronome_t metronome;
+    metronome.settings.available = true;
+    state.metronome = &metronome;
+    WormUiTimingSettingsAction action{};
+    action.change_enable = action.change_volume = action.change_count_in = true;
+    action.enabled = true;
+    action.volume = 25;
+    action.count_in = 2;
+    wormedit::sys::apply_timing_settings_action(state, action);
+    CHECK(state.metronome_settings() == wormedit::sys::metronome_settings_t{true, true, 25, 2});
+    CHECK(wormedit::sys::toggle_transport_metronome(state));
+    CHECK_FALSE(state.metronome_settings().enabled);
 }

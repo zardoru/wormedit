@@ -1,3 +1,6 @@
+#include <wormedit/audio/metronome.h>
+#include "sys/metronome.h"
+#include <cmath>
 #include <wormedit/audio/preview_bridge.h>
 
 #include <catch2/catch_approx.hpp>
@@ -696,4 +699,80 @@ TEST_CASE("Preview seek preserves every layer's stable BGM mix group",
         check_audio_condition(voice.mix_group == 77);
         check_audio_condition(voice.source_start_frame == 5);
     }
+}
+
+namespace {
+auto has_stereo_click_geometry(const metronome_clicks_t& clicks) -> bool {
+    constexpr auto frames = output_sample_rate * 45U / 1'000U;
+    for (const auto& click : clicks) {
+        if (click.size() != frames * output_channel_count || click.front() != 0.0F) return false;
+        for (std::size_t sample = 0; sample < click.size(); sample += output_channel_count)
+            if (!std::isfinite(click[sample]) || click[sample] != click[sample + 1]) return false;
+    }
+    return true;
+}
+void check_metronome_bindings_replaced(sys::metronome_t& metronome,
+                                       decoded_source_registry_t& registry) {
+    const auto previous = metronome.bindings().front().voice.source;
+    const auto settings = metronome.settings;
+    registry.clear();
+    metronome.register_into(registry, 2);
+    REQUIRE(metronome.bindings().size() == 3);
+    CHECK(metronome.bindings().front().voice.source != previous);
+    CHECK(metronome.settings == settings);
+}
+}
+TEST_CASE("metronome click synthesis preserves the stereo waveform and accent samples", "[audio][metronome]") {
+    const auto clicks = make_metronome_clicks();
+    CHECK(has_stereo_click_geometry(clicks));
+    constexpr std::array reference{0.091736875178F, -0.061054988880F, -0.278512348225F};
+    for (std::size_t accent = 0; accent < clicks.size(); ++accent)
+        CHECK(clicks[accent][32] == Catch::Approx(reference[accent]).margin(0.000001F));
+}
+TEST_CASE("metronome registration replaces reset bindings and retains session settings", "[audio][metronome]") {
+    decoded_source_registry_t registry{};
+    sys::metronome_t metronome;
+    metronome.settings.enabled = true;
+    metronome.settings.volume = 42;
+    metronome.settings.count_in = 2;
+    metronome.register_into(registry, 1);
+    REQUIRE(metronome.bindings().size() == 3);
+    CHECK(registry.size() == 3);
+    check_metronome_bindings_replaced(metronome, registry);
+}
+
+namespace {
+struct metronome_session_fixture_t {
+    decoded_source_registry_t registry{};
+    sys::metronome_t metronome;
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    preview_transport_bridge_t bridge{transport};
+    preview_session_t session{registry, transport, bridge};
+    void connect() {
+        metronome.register_into(registry, 1);
+        metronome.attach_session(session, true);
+    }
+    auto has_matching_settings() const -> bool {
+        return session.is_metronome_enabled() == metronome.settings.enabled &&
+            session.metronome_volume() == metronome.settings.volume &&
+            session.metronome_count_in() == metronome.settings.count_in;
+    }
+};
+void check_invalid_metronome_settings(metronome_session_fixture_t& fixture) {
+    const auto previous = fixture.metronome.settings;
+    CHECK_FALSE(fixture.metronome.set_volume(101));
+    CHECK_FALSE(fixture.metronome.set_count_in(5));
+    CHECK(fixture.metronome.settings == previous);
+    CHECK(fixture.has_matching_settings());
+}
+}
+TEST_CASE("metronome settings update the session directly and reject invalid values", "[audio][metronome]") {
+    metronome_session_fixture_t fixture;
+    fixture.connect();
+    REQUIRE(fixture.metronome.set_enabled(true));
+    REQUIRE(fixture.metronome.set_volume(42));
+    REQUIRE(fixture.metronome.set_count_in(2));
+    CHECK(fixture.has_matching_settings());
+    check_invalid_metronome_settings(fixture);
 }

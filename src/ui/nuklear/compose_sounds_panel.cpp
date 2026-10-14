@@ -1,3 +1,4 @@
+#include "core/text_util.h"
 #include "ui/nuklear/compose_sounds_panel.h"
 #include "ui/nuklear/catalog_confirmation.h"
 #include "ui/nuklear/chrome.h"
@@ -19,7 +20,6 @@
 
 #include <algorithm>
 #include <bit>
-#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
@@ -474,8 +474,8 @@ void collect_shown_and_masks(const SoundsPanel& panel) {
 auto parse_slot_number(std::string_view identifier) -> std::uint16_t {
     if (identifier.size() != 2) return 0;
     constexpr std::string_view digits = "0123456789abcdefghijklmnopqrstuvwxyz";
-    const auto high = digits.find(static_cast<char>(std::tolower(static_cast<unsigned char>(identifier[0]))));
-    const auto low = digits.find(static_cast<char>(std::tolower(static_cast<unsigned char>(identifier[1]))));
+    const auto high = digits.find(wormedit::text_util::ascii_lowercase(identifier[0]));
+    const auto low = digits.find(wormedit::text_util::ascii_lowercase(identifier[1]));
     if (high == digits.npos || low == digits.npos) return 0;
     const auto number = high * 36 + low;
     return number > 1295 ? 0 : static_cast<std::uint16_t>(number);

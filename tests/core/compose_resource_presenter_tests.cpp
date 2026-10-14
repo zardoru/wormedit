@@ -32,7 +32,7 @@ TEST_CASE("Compose resource catalog retains indexed roles selection and missing 
          .roles = {resource_role_t::music}},
     };
 
-    const auto catalog = sys::make_compose_resource_catalog(document, asset_id_t{1}, 2,
+    const auto catalog = sys::compose_resource_catalog_t::from(document, asset_id_t{1}, 2,
                                                              asset_id_t{2});
 
     REQUIRE(catalog.entries.size() == 2);
@@ -59,7 +59,7 @@ TEST_CASE("Compose resource catalog falls back to stable IDs and diagnoses absen
     document.resources.push_back(
         {.id = resource_id_t{42}, .asset = asset_id_t{99}, .roles = {resource_role_t::sample}});
 
-    const auto catalog = sys::make_compose_resource_catalog(document, std::nullopt, 4);
+    const auto catalog = sys::compose_resource_catalog_t::from(document, std::nullopt, 4);
 
     REQUIRE(catalog.entries.size() == 1);
     CHECK_FALSE(catalog.truncated);
@@ -158,7 +158,7 @@ TEST_CASE("Catalog projects exact cross-chart uses retained aliases and full aut
     song.charts[1].measures = {{.bgm_events = {{.sound = resource_id_t{1}}}}};
     song.charts[1].sound_channels = {{.source_clip = {.source = asset_id_t{1}}, .events = {{}, {}}}};
     song.charts[1].bga_events = {{.resource = resource_id_t{3}}};
-    const auto catalog = sys::make_compose_resource_catalog(song, {}, 3);
+    const auto catalog = sys::compose_resource_catalog_t::from(song, {}, 3);
     check_resource_metadata(catalog.entries.size() == 3);
     check_resource_metadata(catalog.entries[0].use_count == 4);
     check_resource_metadata(catalog.entries[1].use_count == 2);

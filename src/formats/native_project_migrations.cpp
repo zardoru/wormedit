@@ -159,32 +159,33 @@ auto migrate_document(nlohmann::json& document, std::uint32_t target_version,
                       std::span<const migration_t> table) -> migration_outcome_t {
     if (!document.is_object() || !document.contains("schema_version") ||
         !document.at("schema_version").is_number_unsigned()) {
-        return {migration_status_t::malformed_version,
-                "document schema version must be an unsigned integer"};
+        return std::unexpected(error_t{migration_status_t::malformed_version,
+                                     std::string{"document schema version must be an unsigned integer"}});
     }
     const auto start = document.at("schema_version").get<std::uint64_t>();
     if (start > target_version) {
-        return {migration_status_t::unsupported_version,
-                "document schema version is newer than this build supports"};
+        return std::unexpected(error_t{migration_status_t::unsupported_version,
+                                     std::string{"document schema version is newer than this build supports"}});
     }
     if (start == target_version) {
-        return {};
+        return migration_status_t::unchanged;
     }
     // Work on a copy so a failing step never leaves a half-migrated document.
     auto working = document;
     for (auto version = static_cast<std::uint32_t>(start); version < target_version; ++version) {
         const auto* step = find_step(table, version);
         if (step == nullptr || step->migrate == nullptr) {
-            return {migration_status_t::missing_step,
-                    "no migration from document schema version " + std::to_string(version)};
+            return std::unexpected(error_t{migration_status_t::missing_step,
+                                         "no migration from document schema version " +
+                                             std::to_string(version)});
         }
         if (auto message = step->migrate(working); !message.empty()) {
-            return {migration_status_t::failed, std::move(message)};
+            return std::unexpected(error_t{migration_status_t::failed, std::move(message)});
         }
         working["schema_version"] = version + 1;
     }
     document = std::move(working);
-    return {migration_status_t::migrated, {}};
+    return migration_status_t::migrated;
 }
 
 namespace {

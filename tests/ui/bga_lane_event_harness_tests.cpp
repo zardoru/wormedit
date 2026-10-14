@@ -1357,7 +1357,7 @@ auto core_payload_undoes_once(const WormUiComposeInputAction& input, std::uint64
     auto song = input.kind == WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW
         ? make_packed_bmson_song(input.lane_id, input.resource_id)
         : remap_bmson_stem_song(input.lane_id, 81, empty_stem);
-    auto history = wormedit::make_document_history(std::move(song));
+    auto history = wormedit::document_history_t::from(std::move(song));
     const auto original_chart = history.document.charts.front();
     const auto revision = history.document.revision;
     wormedit::document_command_result_t result;
@@ -1391,7 +1391,7 @@ auto core_payload_undoes_once(const WormUiComposeInputAction& input, std::uint64
 }
 
 auto packed_stroke_undoes_once(const WormUiComposeInputAction& input, std::uint64_t row) -> bool {
-    auto history = wormedit::make_document_history(
+    auto history = wormedit::document_history_t::from(
         make_packed_bmson_song(input.lane_id, input.resource_id));
     const std::array cells{wormedit::local_position_t{
         history.document.charts.front().measures.front().id, row}};

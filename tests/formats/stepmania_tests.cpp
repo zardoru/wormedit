@@ -216,13 +216,12 @@ auto sm_source_orders_allow_history_and_native_roundtrip(std::string_view source
     auto drag_history = wormedit::document_history_t::from(*parsed.song);
     const auto drag_revision = drag_history.document.revision;
     const auto& chart = drag_history.document.charts.front();
-    const auto begun = wormedit::begin_beat_interval_drag(drag_history.document, chart.id,
+    const auto begun = wormedit::beat_interval_drag_t::from(drag_history.document, chart.id,
         chart.bpms.front().id, {chart.measures.front().id, 240}, 48'000);
-    if (!begun.is_valid()) return false;
-    const auto proposal = wormedit::revise_beat_interval_drag(
-        drag_history.document, begun, 48'000);
-    if (!proposal.is_valid()) return false;
-    const auto committed = wormedit::apply_beat_interval_drag(drag_history, proposal);
+    if (!begun.value.has_value()) return false;
+    const auto proposal = begun.value->revise(drag_history.document, 48'000);
+    if (!proposal.value.has_value()) return false;
+    const auto committed = wormedit::apply_beat_interval_drag(drag_history, *proposal.value);
     if (!committed || drag_history.document.revision != drag_revision + 1 ||
         !wormedit::undo_document_command(drag_history) ||
         drag_history.document.charts.front().bpms.front().beats_per_minute !=

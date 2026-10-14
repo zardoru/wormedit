@@ -132,27 +132,27 @@ auto code_page_for(text_encoding_t encoding) -> std::optional<unsigned> {
 auto to_utf8(unsigned code_page, std::string_view input) -> convert_result_t {
     const auto wide = multibyte_to_wide(code_page, input);
     if (!wide.has_value()) {
-        return {.error_offset = first_undecodable_offset(code_page, input)};
+        return std::unexpected(text_codec_error_t{.error_offset = first_undecodable_offset(code_page, input)});
     }
     bool used_default = false;
     auto utf8 = wide_to_multibyte(CP_UTF8, *wide, used_default);
     if (!utf8.has_value()) {
-        return {.error_offset = input.size()};
+        return std::unexpected(text_codec_error_t{.error_offset = input.size()});
     }
-    return {.text = std::move(utf8)};
+    return std::move(*utf8);
 }
 
 auto from_utf8(unsigned code_page, std::string_view utf8) -> convert_result_t {
     const auto wide = multibyte_to_wide(CP_UTF8, utf8);
     if (!wide.has_value()) {
-        return {.error_offset = first_unencodable_offset(code_page, utf8)};
+        return std::unexpected(text_codec_error_t{.error_offset = first_unencodable_offset(code_page, utf8)});
     }
     bool used_default = false;
     auto bytes = wide_to_multibyte(code_page, *wide, used_default);
     if (!bytes.has_value() || used_default) {
-        return {.error_offset = first_unencodable_offset(code_page, utf8)};
+        return std::unexpected(text_codec_error_t{.error_offset = first_unencodable_offset(code_page, utf8)});
     }
-    return {.text = std::move(bytes)};
+    return std::move(*bytes);
 }
 
 } // namespace wormedit::win32_codepage

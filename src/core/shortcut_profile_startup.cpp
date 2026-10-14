@@ -36,18 +36,19 @@ auto fallback_diagnostic(diagnostic_severity_t severity, std::string message) ->
 
 } // namespace
 
-auto load_shortcut_profile_for_startup(const std::filesystem::path& path,
-                                       command_registry_t& registry)
-    -> shortcut_profile_startup_result_t {
-    shortcut_profile_startup_result_t result;
-    const auto loaded = load_shortcut_profile(path);
-    switch (loaded.status) {
+auto apply_startup_shortcut_profile(const std::filesystem::path& path, command_registry_t& registry)
+    -> shortcut_profile_startup_outcome_t {
+    shortcut_profile_startup_outcome_t result{.value =
+                                                  shortcut_profile_startup_status_t::unavailable};
+    auto loaded = open_shortcut_profile(path);
+    const auto status = loaded ? shortcut_profile_load_status_t::loaded : loaded.error().value.code;
+    switch (status) {
     case shortcut_profile_load_status_t::missing:
-        result.status = shortcut_profile_startup_status_t::missing;
+        result.value = shortcut_profile_startup_status_t::missing;
         return result;
     case shortcut_profile_load_status_t::invalid:
-        result.status = shortcut_profile_startup_status_t::rejected;
-        result.diagnostics = loaded.diagnostics;
+        result.value = shortcut_profile_startup_status_t::rejected;
+        result.diagnostics = std::move(loaded.error().diagnostics);
         if (result.diagnostics.empty()) {
             result.diagnostics =
                 fallback_diagnostic(diagnostic_severity_t::warning,
@@ -55,40 +56,42 @@ auto load_shortcut_profile_for_startup(const std::filesystem::path& path,
         }
         break;
     case shortcut_profile_load_status_t::resource_limit:
-        result.status = shortcut_profile_startup_status_t::rejected;
+        result.value = shortcut_profile_startup_status_t::rejected;
         result.diagnostics =
             fallback_diagnostic(diagnostic_severity_t::warning,
                                 "Shortcut preferences exceed the supported size and were ignored.");
         break;
     case shortcut_profile_load_status_t::io_error:
-        result.status = shortcut_profile_startup_status_t::unavailable;
+        result.value = shortcut_profile_startup_status_t::unavailable;
         result.diagnostics =
             fallback_diagnostic(diagnostic_severity_t::warning,
                                 "Shortcut preferences could not be read and were ignored.");
         break;
-    case shortcut_profile_load_status_t::loaded:
-        if (!loaded.profile) {
-            result.status = shortcut_profile_startup_status_t::rejected;
+    case shortcut_profile_load_status_t::loaded: {
+        auto applied = apply_shortcut_profile(registry, *loaded);
+        result.diagnostics = std::move(applied.diagnostics);
+        result.value = applied.applied ? shortcut_profile_startup_status_t::applied
+                                       : shortcut_profile_startup_status_t::rejected;
+        if (!applied.applied && result.diagnostics.empty()) {
             result.diagnostics =
                 fallback_diagnostic(diagnostic_severity_t::warning,
                                     "Shortcut preferences could not be applied and were ignored.");
-            break;
         }
-        {
-            auto applied = apply_shortcut_profile(registry, *loaded.profile);
-            result.diagnostics = std::move(applied.diagnostics);
-            result.status = applied.applied ? shortcut_profile_startup_status_t::applied
-                                            : shortcut_profile_startup_status_t::rejected;
-            if (!applied.applied && result.diagnostics.empty()) {
-                result.diagnostics = fallback_diagnostic(
-                    diagnostic_severity_t::warning,
-                    "Shortcut preferences could not be applied and were ignored.");
-            }
-        }
-        break;
+    } break;
     }
     bound_diagnostics(result.diagnostics);
     return result;
+}
+
+auto shortcut_profile_startup_result_t::from(shortcut_profile_startup_outcome_t&& outcome)
+    -> shortcut_profile_startup_result_t {
+    return {.status = outcome.value, .diagnostics = std::move(outcome.diagnostics)};
+}
+
+auto load_shortcut_profile_for_startup(const std::filesystem::path& path,
+                                       command_registry_t& registry)
+    -> shortcut_profile_startup_result_t {
+    return shortcut_profile_startup_result_t::from(apply_startup_shortcut_profile(path, registry));
 }
 
 } // namespace wormedit

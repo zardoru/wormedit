@@ -1,3 +1,4 @@
+#include <wormedit/core/catalogs.h>
 #include "ui/nuklear/compose_menu_command.h"
 
 #include <wormedit/core/rational.h>
@@ -483,7 +484,18 @@ void render_compose_inspector_timing_controls(const ComposeToolbarContext& toolb
 
 namespace {
 
-constexpr uint32_t note_palette_kinds[]{0, 1, 4, 3, 5, 6, 2};
+auto note_palette_icon(std::uint32_t kind) -> Glyph {
+    switch (static_cast<wormedit::note_kind_t>(kind)) {
+    case wormedit::note_kind_t::tap: return Glyph::square;
+    case wormedit::note_kind_t::hold: return Glyph::minus;
+    case wormedit::note_kind_t::mine: return Glyph::x;
+    case wormedit::note_kind_t::invisible: return Glyph::eye;
+    case wormedit::note_kind_t::lift: return Glyph::chevron_left;
+    case wormedit::note_kind_t::fake: return Glyph::layers;
+    case wormedit::note_kind_t::roll: return Glyph::audio_lines;
+    }
+    return Glyph::square;
+}
 
 auto note_palette_kind_allowed(const WormUiComposeView& view, uint32_t kind) -> bool {
     return (view.allowed_note_kind_mask & (1U << kind)) != 0;
@@ -492,19 +504,13 @@ auto note_palette_kind_allowed(const WormUiComposeView& view, uint32_t kind) -> 
 } // namespace
 
 bool compose_note_palette_has_buttons(const WormUiComposeView& view) {
-    return view.note_kind_palette_visible &&
-           std::ranges::any_of(note_palette_kinds, [&](uint32_t kind) {
-               return note_palette_kind_allowed(view, kind);
-           });
+    if (!view.note_kind_palette_visible) return false;
+    for (std::size_t index = 0; index < view.note_palette.count; ++index)
+        if (note_palette_kind_allowed(view, view.note_palette.entries[index].id)) return true;
+    return false;
 }
 
 void render_compose_note_palette_column(const ComposeToolbarContext& toolbar) {
-    // Stable shortcut order differs from the document enum order.
-    static constexpr Glyph icons[]{Glyph::square, Glyph::minus, Glyph::x,
-        Glyph::eye, Glyph::chevron_left, Glyph::layers, Glyph::audio_lines};
-    static constexpr const char* labels[]{"Tap", "Hold (click to begin hold gesture)",
-        "Mine (Alt+4)", "Invisible (Alt+5)", "Lift (Alt+6)", "Fake (Alt+7)",
-        "Roll (Alt+8; click to begin hold gesture)"};
     // Select tool: the pointer selects instead of painting notes.
     nk_layout_row_static(toolbar.context, 30, 30, 1);
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::select_cursor,
@@ -513,11 +519,12 @@ void render_compose_note_palette_column(const ComposeToolbarContext& toolbar) {
             .render(toolbar.context) &&
         toolbar.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         toolbar.action->compose_action = WORM_UI_COMPOSE_ACTION_SELECT_TOOL;
-    for (std::size_t index = 0; index < std::size(note_palette_kinds); ++index) {
-        const auto kind = note_palette_kinds[index];
+    for (std::size_t index = 0; index < toolbar.view->note_palette.count; ++index) {
+        const auto& descriptor = toolbar.view->note_palette.entries[index];
+        const auto kind = descriptor.id;
         if (!note_palette_kind_allowed(*toolbar.view, kind)) continue;
         nk_layout_row_static(toolbar.context, 30, 30, 1);
-        if (wormedit::ui::chrome::IconButton{icons[index], labels[index],
+        if (wormedit::ui::chrome::IconButton{note_palette_icon(kind), descriptor.label,
                 toolbar.view->note_paint_mode_active &&
                     toolbar.view->armed_note_kind == kind}.render(toolbar.context) &&
             toolbar.action->compose_input_count < WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) {

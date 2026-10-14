@@ -1,11 +1,12 @@
 #include "sys/external_player.h"
+#include "core/text_util.h"
+#include <wormedit/core/catalogs.h>
 
 #include <wormedit/formats/bms_writer.h>
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_process.h>
 
 #include <algorithm>
-#include <cctype>
 #include <cerrno>
 #include <optional>
 #include <sstream>
@@ -93,11 +94,8 @@ auto file_identity(const std::filesystem::path& path) -> std::optional<file_iden
 }
 
 auto preview_path(const std::filesystem::path& source) -> std::filesystem::path {
-    auto extension = source.extension().string();
-    std::ranges::transform(extension, extension.begin(), [](unsigned char character) {
-        return static_cast<char>(std::tolower(character));
-    });
-    if (extension != ".bms" && extension != ".bme" && extension != ".pms") return {};
+    const auto extension = text_util::lowercase_extension(source);
+    if (!is_bms_extension(extension)) return {};
     return source.parent_path() / ("___wormedit_preview" + extension);
 }
 
@@ -107,7 +105,7 @@ struct exclusive_write_result_t {
     bool created{};
 };
 
-auto open_file_identity(std::FILE* file) -> std::optional<file_identity_t> {
+auto read_open_file_identity(std::FILE* file) -> std::optional<file_identity_t> {
 #ifdef _WIN32
     BY_HANDLE_FILE_INFORMATION information{};
     const auto handle = reinterpret_cast<HANDLE>(_get_osfhandle(_fileno(file)));
@@ -130,7 +128,7 @@ auto write_exclusive(const std::filesystem::path& path, std::string_view bytes)
     auto* file = std::fopen(path.c_str(), "wbx");
 #endif
     if (!file) return {.error = "Cannot exclusively create file: " + path.string()};
-    const auto identity = open_file_identity(file);
+    const auto identity = read_open_file_identity(file);
     const bool complete = identity && std::fwrite(bytes.data(), 1, bytes.size(), file) == bytes.size();
     const bool closed = std::fclose(file) == 0;
     return {.error = complete && closed ? std::string{} : "Writing file failed.",
@@ -178,9 +176,6 @@ auto expand_external_player_arguments(std::string_view text, std::string_view ap
     return result;
 }
 
-auto default_external_player_preferences() -> external_player_preferences_t {
-    return wormedit::default_external_player_preferences();
-}
 
 auto load_external_player_preferences(const std::filesystem::path& path,
     external_player_preferences_t& preferences) -> std::string {
@@ -239,7 +234,7 @@ auto external_player_t::prepare_preview(const song_document_t& song, chart_id_t 
     const auto absolute_source = std::filesystem::absolute(source, path_error);
     result.preview_path = path_error ? std::filesystem::path{} : preview_path(absolute_source);
     if (source.empty() || result.preview_path.empty() || absolute_source == result.preview_path)
-        return {.error = "External preview requires a BMS, BME, or PMS source chart."};
+        return {.error = "External preview requires a BMS, BME, BML, or PMS source chart."};
     for (auto iterator = temporary_files_.begin(); iterator != temporary_files_.end(); ++iterator) {
         if (iterator->path != result.preview_path) continue;
         if (iterator->process && !SDL_WaitProcess(iterator->process, false, nullptr))
@@ -252,8 +247,8 @@ auto external_player_t::prepare_preview(const song_document_t& song, chart_id_t 
     options.chart = chart;
     options.preserve_unchanged_source = false;
     options.branch_policy = bms_branch_policy_t::flatten_active;
-    const auto selected = std::ranges::find(song.charts, chart, &chart_document_t::id);
-    if (selected != song.charts.end() && selected->lane_layouts.empty() &&
+    const auto selected = song.find_chart(chart);
+    if (selected != nullptr && selected->lane_layouts.empty() &&
         !selected->input_profile.profile_id.empty())
         options.lane_profile_id = selected->input_profile.profile_id;
     const auto written = write_bms(song, options);

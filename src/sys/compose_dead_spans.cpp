@@ -1,3 +1,4 @@
+#include "core/timing_arithmetic.h"
 #include "sys/compose_dead_spans.h"
 
 #include <algorithm>
@@ -7,36 +8,14 @@
 namespace wormedit::sys {
 namespace {
 
-auto gcd128(__int128 left, __int128 right) -> __int128 {
-    while (right != 0) {
-        const auto remainder = left % right;
-        left = right;
-        right = remainder;
-    }
-    return left;
-}
-
-auto seconds_between(signed_rational_t later, signed_rational_t earlier)
-    -> std::optional<signed_rational_t> {
-    const auto left = static_cast<__int128>(later.numerator) * earlier.denominator;
-    const auto right = static_cast<__int128>(earlier.numerator) * later.denominator;
-    const auto denominator = static_cast<__int128>(later.denominator) * earlier.denominator;
-    const auto difference = left - right;
-    if (denominator > UINT64_MAX || difference > INT64_MAX || difference < INT64_MIN)
-        return std::nullopt;
-    const auto scale = std::max<__int128>(1, gcd128(difference < 0 ? -difference : difference, denominator));
-    return signed_rational_t{static_cast<std::int64_t>(difference / scale),
-                             static_cast<std::uint64_t>(denominator / scale)};
-}
-
 auto pause_seconds(const timing_index_t& timing, std::uint64_t row, pause_kind_t kind)
     -> std::optional<signed_rational_t> {
-    const auto before = timing_at(timing, row, timing_boundary_side_t::before_delays);
-    const auto event = timing_at(timing, row, timing_boundary_side_t::event);
-    const auto after = timing_at(timing, row, timing_boundary_side_t::after_stops);
+    const auto before = timing.seconds_at(row, timing_boundary_side_t::before_delays);
+    const auto event = timing.seconds_at(row, timing_boundary_side_t::event);
+    const auto after = timing.seconds_at(row, timing_boundary_side_t::after_stops);
     if (!before.seconds || !event.seconds || !after.seconds) return std::nullopt;
-    return kind == pause_kind_t::delay ? seconds_between(*event.seconds, *before.seconds)
-                                       : seconds_between(*after.seconds, *event.seconds);
+    return kind == pause_kind_t::delay ? timing_arithmetic::subtract_exact(*event.seconds, *before.seconds)
+                                       : timing_arithmetic::subtract_exact(*after.seconds, *event.seconds);
 }
 
 struct pause_group_t {
@@ -48,7 +27,7 @@ void add_pause_spans(const chart_document_t& chart, const measure_index_t& measu
                      const timing_index_t& timing, dead_span_projection_t& result) {
     std::map<std::tuple<std::uint64_t, int>, pause_group_t> groups;
     for (const auto& pause : chart.pauses) {
-        const auto row = absolute_row(measures, pause.position);
+        const auto row = (measures).row_of(pause.position);
         if (!row) {
             result.truncated = true;
             continue;
@@ -80,8 +59,8 @@ void add_pause_spans(const chart_document_t& chart, const measure_index_t& measu
 void add_warp_spans(const chart_document_t& chart, const measure_index_t& measures,
                     dead_span_projection_t& result) {
     for (const auto& warp : chart.warps) {
-        const auto begin = absolute_row(measures, warp.span.begin);
-        const auto end = absolute_row(measures, warp.span.end);
+        const auto begin = (measures).row_of(warp.span.begin);
+        const auto end = (measures).row_of(warp.span.end);
         if (!begin || !end || *end <= *begin) {
             result.truncated = true;
             continue;
@@ -96,7 +75,7 @@ void add_warp_spans(const chart_document_t& chart, const measure_index_t& measur
 
 } // namespace
 
-auto project_dead_spans(const chart_document_t& chart, const measure_index_t& measures,
+auto build_dead_spans_view(const chart_document_t& chart, const measure_index_t& measures,
                         const timing_index_t& timing, std::size_t limit)
     -> dead_span_projection_t {
     dead_span_projection_t result;
@@ -113,7 +92,7 @@ auto project_dead_spans(const chart_document_t& chart, const measure_index_t& me
     return result;
 }
 
-auto project_dead_span_bands(const dead_span_projection_t& projection, double pixels_per_row,
+auto build_dead_span_bands_view(const dead_span_projection_t& projection, double pixels_per_row,
                              double scroll_pixels, double viewport_height, bool downscroll,
                              double pause_band_pixels) -> std::vector<dead_span_band_t> {
     std::vector<dead_span_band_t> bands;

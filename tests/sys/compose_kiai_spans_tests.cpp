@@ -27,7 +27,7 @@ void add_kiai(chart_document_t& chart, std::uint64_t id, std::size_t measure, st
 auto project(const chart_document_t& chart, std::size_t limit = 64) -> kiai_projection_t {
     const auto measures = build_measure_index(chart);
     REQUIRE(std::holds_alternative<measure_index_t>(measures));
-    return project_kiai_spans(chart, std::get<measure_index_t>(measures), limit);
+    return build_kiai_spans_view(chart, std::get<measure_index_t>(measures), limit);
 }
 
 } // namespace

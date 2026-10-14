@@ -65,7 +65,7 @@ auto toggle_metronome_status(application_command_state_t& state,
     if (!toggle_transport_metronome(state))
         return publish_transport_feedback(notifications, notification_severity_t::warning, "Metronome is unavailable.");
     return publish_transport_feedback(notifications, notification_severity_t::success,
-        state.preferences.transport_metronome_enabled ? "Metronome enabled." : "Metronome disabled.");
+        state.metronome_settings().enabled ? "Metronome enabled." : "Metronome disabled.");
 }
 
 
@@ -81,7 +81,7 @@ auto dispatch_transport_player_action(
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_TOGGLE_METRONOME:
         return toggle_metronome_status(application_state, notifications);
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE:
-        if (set_transport_rate(application_state, action.transport_rate_index))
+        if (set_transport_rate(application_state, static_cast<audio::playback_rate_id_t>(action.transport_rate_id)))
             return publish_transport_feedback(notifications, notification_severity_t::success, "Playback rate changed.");
         return publish_transport_feedback(notifications, notification_severity_t::warning, "Playback rate unchanged.");
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH:

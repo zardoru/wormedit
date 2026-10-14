@@ -3,12 +3,12 @@
 
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <string>
 #include <utility>
 
 namespace wormedit {
 namespace {
+using wormedit::text_util::ascii_iequal;
 
 constexpr std::array<std::string_view, 6> stepmania_difficulties{
     "Beginner", "Easy", "Medium", "Hard", "Challenge", "Edit"};
@@ -50,9 +50,6 @@ const std::array bmson_schema{
                           std::nullopt, {}},
 };
 
-auto ascii_equal_ignore_case(std::string_view left, std::string_view right) -> bool {
-    return std::ranges::equal(left, right, text_util::ascii_iequal);
-}
 
 auto is_digit(char value) -> bool {
     return value >= '0' && value <= '9';
@@ -136,7 +133,7 @@ auto validate_format_field_value(const format_field_schema_t& field, std::string
         return validate_number(field, value);
     case type_t::choice: {
         const auto match = std::ranges::any_of(field.choices, [&](std::string_view choice) {
-            return ascii_equal_ignore_case(choice, value);
+            return ascii_iequal(choice, value);
         });
         return match ? std::nullopt
                      : std::optional<std::string>(std::string(field.label) +

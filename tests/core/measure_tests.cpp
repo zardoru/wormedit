@@ -10,23 +10,23 @@ using namespace wormedit;
 
 TEST_CASE("measure length text is parsed exactly", "[unit][core][measure]")
 {
-    CHECK((parse_measure_length("1").value == rational_t{1, 1}));
-    CHECK((parse_measure_length("0.75").value == rational_t{3, 4}));
-    CHECK((parse_measure_length(".7500").value == rational_t{3, 4}));
-    CHECK((parse_measure_length(" 6 / 8 ").value == rational_t{3, 4}));
-    CHECK((parse_measure_length("1.25").value == rational_t{5, 4}));
+    CHECK((parse_measure_length("1").value() == rational_t{1, 1}));
+    CHECK((parse_measure_length("0.75").value() == rational_t{3, 4}));
+    CHECK((parse_measure_length(".7500").value() == rational_t{3, 4}));
+    CHECK((parse_measure_length(" 6 / 8 ").value() == rational_t{3, 4}));
+    CHECK((parse_measure_length("1.25").value() == rational_t{5, 4}));
 }
 
 TEST_CASE("invalid measure length text has a typed failure", "[unit][core][measure][negative]")
 {
-    CHECK(parse_measure_length("").error == measure_error_t::empty);
-    CHECK(parse_measure_length("0").error == measure_error_t::non_positive);
-    CHECK(parse_measure_length("-0.75").error == measure_error_t::non_positive);
-    CHECK(parse_measure_length("3/0").error == measure_error_t::zero_denominator);
-    CHECK(parse_measure_length("3/4/5").error == measure_error_t::invalid_syntax);
-    CHECK(parse_measure_length("0.7x").error == measure_error_t::invalid_syntax);
-    CHECK(parse_measure_length("18446744073709551616").error == measure_error_t::overflow);
-    CHECK(parse_measure_length("0.00000000000000000001").error == measure_error_t::overflow);
+    CHECK(parse_measure_length("").error() == measure_error_t::empty);
+    CHECK(parse_measure_length("0").error() == measure_error_t::non_positive);
+    CHECK(parse_measure_length("-0.75").error() == measure_error_t::non_positive);
+    CHECK(parse_measure_length("3/0").error() == measure_error_t::zero_denominator);
+    CHECK(parse_measure_length("3/4/5").error() == measure_error_t::invalid_syntax);
+    CHECK(parse_measure_length("0.7x").error() == measure_error_t::invalid_syntax);
+    CHECK(parse_measure_length("18446744073709551616").error() == measure_error_t::overflow);
+    CHECK(parse_measure_length("0.00000000000000000001").error() == measure_error_t::overflow);
 }
 
 TEST_CASE("measure capacity is exact and authored meter spelling survives", "[unit][core][measure]")

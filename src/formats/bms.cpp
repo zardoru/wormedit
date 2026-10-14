@@ -1,4 +1,5 @@
 #include <wormedit/core/catalogs.h>
+#include "text_codec_result.h"
 #include <wormedit/core/bms36.h>
 #include "../core/checked_math.h"
 #include "../core/text_util.h"
@@ -40,11 +41,7 @@ struct source_line_t {
     std::size_t order{};
 };
 
-struct decode_result_t {
-    std::optional<std::string> text;
-    std::size_t error_offset{};
-    bool unsupported{};
-};
+using decode_result_t = text_codec_result_t;
 
 struct parsed_line_t {
     std::string token;
@@ -94,26 +91,26 @@ auto decode_line(std::string_view input, text_encoding_t encoding) -> decode_res
     if (encoding == text_encoding_t::ascii) {
         for (std::size_t index = 0; index < input.size(); ++index) {
             if (static_cast<unsigned char>(input[index]) > 0x7fU) {
-                return {.text = std::nullopt, .error_offset = index};
+                return std::unexpected(text_codec_error_t{.error_offset = index});
             }
         }
-        return {.text = std::string(input)};
+        return std::string(input);
     }
     if (encoding == text_encoding_t::utf8) {
         if (const auto error = invalid_utf8_offset(input); error.has_value()) {
-            return {.text = std::nullopt, .error_offset = *error};
+            return std::unexpected(text_codec_error_t{.error_offset = *error});
         }
-        return {.text = std::string(input)};
+        return std::string(input);
     }
 
     const auto source_name = text_encoding_iconv_name(encoding);
     if (!source_name.has_value()) {
-        return {.unsupported = true};
+        return std::unexpected(text_codec_error_t{.unsupported = true});
     }
 #if defined(WORMEDIT_HAS_ICONV)
     const auto converter = iconv_open("UTF-8", std::string(*source_name).c_str());
     if (converter == reinterpret_cast<iconv_t>(-1)) {
-        return {.unsupported = true};
+        return std::unexpected(text_codec_error_t{.unsupported = true});
     }
 
     std::string output(std::max<std::size_t>(input.size() * 4U + 16U, 32U), '\0');
@@ -133,11 +130,11 @@ auto decode_line(std::string_view input, text_encoding_t encoding) -> decode_res
         if (errno != E2BIG) {
             const auto error_offset = input.size() - source_remaining;
             iconv_close(converter);
-            return {.text = std::nullopt, .error_offset = error_offset};
+            return std::unexpected(text_codec_error_t{.error_offset = error_offset});
         }
         if (output.size() > std::numeric_limits<std::size_t>::max() / 2U) {
             iconv_close(converter);
-            return {.text = std::nullopt, .error_offset = input.size()};
+            return std::unexpected(text_codec_error_t{.error_offset = input.size()});
         }
         output.resize(output.size() * 2U);
     }
@@ -154,22 +151,22 @@ auto decode_line(std::string_view input, text_encoding_t encoding) -> decode_res
         }
         if (errno != E2BIG || output.size() > std::numeric_limits<std::size_t>::max() / 2U) {
             iconv_close(converter);
-            return {.text = std::nullopt, .error_offset = input.size()};
+            return std::unexpected(text_codec_error_t{.error_offset = input.size()});
         }
         output.resize(output.size() * 2U);
     }
     iconv_close(converter);
     output.resize(written);
-    return {.text = std::move(output)};
+    return output;
 #elif defined(_WIN32)
     const auto code_page = win32_codepage::code_page_for(encoding);
     if (!code_page.has_value()) {
-        return {.unsupported = true};
+        return std::unexpected(text_codec_error_t{.unsupported = true});
     }
     auto converted = win32_codepage::to_utf8(*code_page, input);
-    return {.text = std::move(converted.text), .error_offset = converted.error_offset};
+    return converted;
 #else
-    return {.unsupported = true};
+    return std::unexpected(text_codec_error_t{.unsupported = true});
 #endif
 }
 
@@ -178,11 +175,11 @@ auto encode_with_iconv(std::string_view input, std::string_view destination_name
     -> decode_result_t {
     const auto converter = iconv_open(std::string(destination_name).c_str(), "UTF-8");
     if (converter == reinterpret_cast<iconv_t>(-1)) {
-        return {.unsupported = true};
+        return std::unexpected(text_codec_error_t{.unsupported = true});
     }
     if (input.size() > (std::numeric_limits<std::size_t>::max() - 16U) / 4U) {
         iconv_close(converter);
-        return {.text = std::nullopt, .error_offset = input.size()};
+        return std::unexpected(text_codec_error_t{.error_offset = input.size()});
     }
     std::string output(std::max<std::size_t>(input.size() * 4U + 16U, 32U), '\0');
     auto* source = const_cast<char*>(input.data());
@@ -200,60 +197,60 @@ auto encode_with_iconv(std::string_view input, std::string_view destination_name
         }
         if (errno != E2BIG || output.size() > std::numeric_limits<std::size_t>::max() / 2U) {
             iconv_close(converter);
-            return {.text = std::nullopt, .error_offset = input.size() - source_remaining};
+            return std::unexpected(text_codec_error_t{.error_offset = input.size() - source_remaining});
         }
         output.resize(output.size() * 2U);
     }
     iconv_close(converter);
     output.resize(written);
-    return {.text = std::move(output)};
+    return output;
 }
 #endif
 
 auto encode_line(std::string_view input, text_encoding_t encoding) -> decode_result_t {
     if (invalid_utf8_offset(input).has_value()) {
-        return {.text = std::nullopt};
+        return std::unexpected(text_codec_error_t{});
     }
     if (encoding == text_encoding_t::utf8) {
-        return {.text = std::string(input)};
+        return std::string(input);
     }
     if (encoding == text_encoding_t::ascii) {
         if (std::ranges::any_of(input, [](char character) {
                 return static_cast<unsigned char>(character) > 0x7fU;
             })) {
-            return {.text = std::nullopt};
+            return std::unexpected(text_codec_error_t{});
         }
-        return {.text = std::string(input)};
+        return std::string(input);
     }
     const auto destination_name = text_encoding_iconv_name(encoding);
     if (!destination_name.has_value()) {
-        return {.unsupported = true};
+        return std::unexpected(text_codec_error_t{.unsupported = true});
     }
     std::string output;
 #if defined(WORMEDIT_HAS_ICONV)
     auto encoded = encode_with_iconv(input, *destination_name);
-    if (!encoded.text) {
+    if (!encoded) {
         return encoded;
     }
-    output = std::move(*encoded.text);
+    output = std::move(*encoded);
 #elif defined(_WIN32)
     const auto code_page = win32_codepage::code_page_for(encoding);
     if (!code_page.has_value()) {
-        return {.unsupported = true};
+        return std::unexpected(text_codec_error_t{.unsupported = true});
     }
     auto converted = win32_codepage::from_utf8(*code_page, input);
-    if (!converted.text.has_value()) {
-        return {.text = std::nullopt, .error_offset = converted.error_offset};
+    if (!converted.has_value()) {
+        return std::unexpected(text_codec_error_t{.error_offset = converted.error().error_offset});
     }
-    output = std::move(*converted.text);
+    output = std::move(*converted);
 #else
-    return {.unsupported = true};
+    return std::unexpected(text_codec_error_t{.unsupported = true});
 #endif
     const auto round_trip = decode_line(output, encoding);
-    if (!round_trip.text || *round_trip.text != input) {
-        return {.text = std::nullopt};
+    if (!round_trip || *round_trip != input) {
+        return std::unexpected(text_codec_error_t{});
     }
-    return {.text = std::move(output)};
+    return output;
 }
 
 auto decode_diagnostic(bms_parse_result_t& result, bms_parse_diagnostic_code_t code,
@@ -331,7 +328,7 @@ auto split_lines(std::span<const std::byte> bytes, std::size_t start, text_encod
 
         const std::string_view raw_line(data + begin, content_end - begin);
         auto decoded = decode_line(raw_line, encoding);
-        if (decoded.unsupported) {
+        if (has_unsupported_codec_error(decoded)) {
             add_line_diagnostic(result, diagnostic_severity_t::error,
                                 bms_parse_diagnostic_code_t::unsupported_encoding,
                                 "requested " + std::string(text_encoding_label(encoding)) +
@@ -339,18 +336,18 @@ auto split_lines(std::span<const std::byte> bytes, std::size_t start, text_encod
                                 source_line_t{.span = {begin, cursor}, .order = lines.size()});
             return std::nullopt;
         }
-        if (!decoded.text.has_value()) {
-            const auto error = begin + decoded.error_offset;
+        if (!decoded.has_value()) {
+            const auto error = begin + decoded.error().error_offset;
             decode_diagnostic(result, bms_parse_diagnostic_code_t::invalid_encoding,
                               "input contains a malformed " + std::string(text_encoding_label(encoding)) +
                                   " byte sequence",
                               error, std::min(error + 1, cursor));
             result.diagnostics.back().line = lines.size() + 1;
-            result.diagnostics.back().column = decoded.error_offset + 1;
+            result.diagnostics.back().column = decoded.error().error_offset + 1;
             return std::nullopt;
         }
         lines.push_back({
-            .text = std::move(*decoded.text),
+            .text = std::move(*decoded),
             .span = {begin, cursor},
             .ending = ending,
             .order = lines.size(),
@@ -677,9 +674,9 @@ auto parse_positive_rational(std::string_view text) -> std::optional<signed_rati
         text = text.substr(0, marker);
     }
     const auto parsed = parse_measure_length(text);
-    if (!exponent || !parsed.value.has_value()) return std::nullopt;
-    auto numerator = std::optional{parsed.value->numerator};
-    auto denominator = std::optional{parsed.value->denominator};
+    if (!exponent || !parsed.has_value()) return std::nullopt;
+    auto numerator = std::optional{parsed->numerator};
+    auto denominator = std::optional{parsed->denominator};
     if (*exponent >= 0)
         numerator = scale_by_power_of_ten(*numerator, *exponent);
     else
@@ -1560,10 +1557,10 @@ auto retained_line_text(const retained_source_t& source, const bms_control_node_
     }
     const auto decoded = decode_line(
         std::string_view(bytes + node.source_span.byte_begin, content_size), source.encoding);
-    if (!decoded.text.has_value() || decoded.unsupported) {
+    if (!decoded) {
         return std::nullopt;
     }
-    return decoded.text;
+    return *decoded;
 }
 
 auto prepare_bms_source_lines(std::span<const std::byte> bytes, const bms_parse_options_t& options,
@@ -2126,8 +2123,8 @@ auto recover_printed_fraction(std::string_view text, rational_t exact) -> ration
 auto parse_bms_measure_length(std::string_view value) -> std::optional<rational_t> {
     if (value.find_first_of("eE") == std::string_view::npos) {
         const auto parsed = parse_measure_length(value);
-        if (!parsed.value) return std::nullopt;
-        return recover_printed_fraction(value, *parsed.value);
+        if (!parsed) return std::nullopt;
+        return recover_printed_fraction(value, *parsed);
     }
     const auto parsed = parse_positive_rational(value);
     if (!parsed) return std::nullopt;
@@ -2836,18 +2833,18 @@ auto encode_replacement_line(const retained_source_t& source, const bms_control_
         return std::nullopt;
     }
     auto encoded = encode_line(replacement, source.encoding);
-    if (!encoded.text || encoded.unsupported || encoded.text->size() >
+    if (!encoded || encoded->size() >
                                                   std::numeric_limits<std::size_t>::max() -
                                                       ending.size()) {
         return std::nullopt;
     }
-    const auto replacement_size = encoded.text->size() + ending.size();
+    const auto replacement_size = encoded->size() + ending.size();
     const auto retained_without_target = source.bytes->size() - span_size;
     if (replacement_size > std::numeric_limits<std::size_t>::max() - retained_without_target) {
         return std::nullopt;
     }
-    encoded.text->append(ending);
-    return encoded.text;
+    encoded->append(ending);
+    return std::move(*encoded);
 }
 
 

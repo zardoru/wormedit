@@ -47,9 +47,9 @@ auto target_document() -> wormedit::song_document_t {
 }
 
 auto decode(std::string_view text, wormedit::bms_clipboard_decode_options_t options = {})
-    -> wormedit::chart_clipboard_result_t {
+    -> wormedit::chart_clipboard_outcome_t {
     const auto song = target_document();
-    return wormedit::decode_bms_clipboard(text, song, song.charts.front(),
+    return wormedit::parse_bms_chart_clipboard(text, song, song.charts.front(),
         song.charts.front().lane_layouts.front().layout, options);
 }
 
@@ -86,16 +86,16 @@ auto first_object(const wormedit::chart_clipboard_t& clipboard)
 TEST_CASE("bms_clipboard four pinned grammars normalize the ten endpoint scenario", "[formats]") {
     const auto result = decode(fixture(fixture_name()));
     REQUIRE(result);
-    CHECK(result.clipboard->source_song == wormedit::song_id_t{1});
-    CHECK(result.clipboard->source_chart == wormedit::chart_id_t{2});
-    CHECK(result.clipboard->objects.size() == 9);
+    CHECK(result->source_song == wormedit::song_id_t{1});
+    CHECK(result->source_chart == wormedit::chart_id_t{2});
+    CHECK(result->objects.size() == 9);
 }
 
 TEST_CASE("bms_clipboard free grid positions recover exact fractions", "[formats]") {
     const auto* name = fixture_name();
     const auto result = decode(fixture(name));
     REQUIRE(result);
-    const auto* note = note_object(*result.clipboard, 5, wormedit::note_kind_t::tap);
+    const auto* note = note_object(*result, 5, wormedit::note_kind_t::tap);
     REQUIRE(note);
     const auto expected = std::string_view{name}.starts_with("bmse-legacy")
         ? wormedit::rational_t{9, 64} : wormedit::rational_t{1, 7};
@@ -106,7 +106,7 @@ TEST_CASE("bms_clipboard free grid positions recover exact fractions", "[formats
 TEST_CASE("bms_clipboard paired and length long notes become exact native holds", "[formats]") {
     const auto result = decode(fixture(fixture_name()));
     REQUIRE(result);
-    const auto* hold = note_object(*result.clipboard, 2, wormedit::note_kind_t::hold);
+    const auto* hold = note_object(*result, 2, wormedit::note_kind_t::hold);
     REQUIRE(hold);
     CHECK((hold->offset == wormedit::rational_t{0, 1}));
     CHECK((hold->duration == wormedit::rational_t{1, 2}));
@@ -116,7 +116,7 @@ TEST_CASE("bms_clipboard paired and length long notes become exact native holds"
 TEST_CASE("bms_clipboard a valid single iBMSC record is not lost to the foreign reader bug", "[formats]") {
     const auto result = decode("iBMSC Clipboard Data\r\n6 0 10000 0 0 0");
     REQUIRE(result);
-    CHECK(result.clipboard->objects.size() == 1);
+    CHECK(result->objects.size() == 1);
 }
 
 TEST_CASE("bms_clipboard malformed single records reject as a whole", "[formats]") {
@@ -130,7 +130,7 @@ TEST_CASE("bms_clipboard malformed single records reject as a whole", "[formats]
         "iBMSC Clipboard Data\n6 0 10000 0 0 0");
     const auto result = decode(text);
     CHECK_FALSE(result);
-    CHECK_FALSE(result.error.empty());
+    CHECK_FALSE(result.error().empty());
 }
 
 TEST_CASE("bms_clipboard byte and record limits reject before partial publication", "[formats]") {
@@ -142,7 +142,7 @@ TEST_CASE("bms_clipboard byte and record limits reject before partial publicatio
 TEST_CASE("bms_clipboard fixtures preserve invisible semantics", "[formats]") {
     const auto result = decode(fixture(fixture_name()));
     REQUIRE(result);
-    const auto* note = note_object(*result.clipboard, 3, wormedit::note_kind_t::invisible);
+    const auto* note = note_object(*result, 3, wormedit::note_kind_t::invisible);
     REQUIRE(note);
     CHECK((note->offset == wormedit::rational_t{1, 8}));
     CHECK(std::get<wormedit::note_t>(note->payload).sound == wormedit::resource_id_t{205});
@@ -151,7 +151,7 @@ TEST_CASE("bms_clipboard fixtures preserve invisible semantics", "[formats]") {
 TEST_CASE("bms_clipboard fixtures preserve mine semantics", "[formats]") {
     const auto result = decode(fixture(fixture_name()));
     REQUIRE(result);
-    const auto* note = note_object(*result.clipboard, 4, wormedit::note_kind_t::mine);
+    const auto* note = note_object(*result, 4, wormedit::note_kind_t::mine);
     REQUIRE(note);
     CHECK((note->offset == wormedit::rational_t{3, 8}));
     CHECK_FALSE(std::get<wormedit::note_t>(note->payload).sound);
@@ -160,7 +160,7 @@ TEST_CASE("bms_clipboard fixtures preserve mine semantics", "[formats]") {
 TEST_CASE("bms_clipboard fixtures preserve visible key assignments", "[formats]") {
     const auto result = decode(fixture(fixture_name()));
     REQUIRE(result);
-    const auto* note = note_object(*result.clipboard, 1, wormedit::note_kind_t::tap);
+    const auto* note = note_object(*result, 1, wormedit::note_kind_t::tap);
     REQUIRE(note);
     CHECK((note->offset == wormedit::rational_t{0, 1}));
     CHECK(std::get<wormedit::note_t>(note->payload).sound == wormedit::resource_id_t{201});
@@ -169,7 +169,7 @@ TEST_CASE("bms_clipboard fixtures preserve visible key assignments", "[formats]"
 TEST_CASE("bms_clipboard fixtures preserve scratch assignments", "[formats]") {
     const auto result = decode(fixture(fixture_name()));
     REQUIRE(result);
-    const auto* note = note_object(*result.clipboard, 0, wormedit::note_kind_t::tap);
+    const auto* note = note_object(*result, 0, wormedit::note_kind_t::tap);
     REQUIRE(note);
     CHECK((note->offset == wormedit::rational_t{1, 4}));
     CHECK(std::get<wormedit::note_t>(note->payload).sound == wormedit::resource_id_t{202});
@@ -178,7 +178,7 @@ TEST_CASE("bms_clipboard fixtures preserve scratch assignments", "[formats]") {
 TEST_CASE("bms_clipboard fixtures preserve exact BPM", "[formats]") {
     const auto result = decode(fixture(fixture_name()));
     REQUIRE(result);
-    const auto* bpm = first_object<wormedit::bpm_event_t>(*result.clipboard);
+    const auto* bpm = first_object<wormedit::bpm_event_t>(*result);
     REQUIRE(bpm);
     CHECK((bpm->offset == wormedit::rational_t{0, 1}));
     CHECK((std::get<wormedit::bpm_event_t>(bpm->payload).beats_per_minute == wormedit::signed_rational_t{150, 1}));
@@ -187,7 +187,7 @@ TEST_CASE("bms_clipboard fixtures preserve exact BPM", "[formats]") {
 TEST_CASE("bms_clipboard fixtures preserve BMS STOP ticks", "[formats]") {
     const auto result = decode(fixture(fixture_name()));
     REQUIRE(result);
-    const auto* stop = first_object<wormedit::pause_event_t>(*result.clipboard);
+    const auto* stop = first_object<wormedit::pause_event_t>(*result);
     REQUIRE(stop);
     CHECK((stop->offset == wormedit::rational_t{3, 4}));
     CHECK((std::get<wormedit::pause_event_t>(stop->payload).duration == wormedit::signed_rational_t{48, 1}));
@@ -197,7 +197,7 @@ TEST_CASE("bms_clipboard fixtures preserve BMS STOP ticks", "[formats]") {
 TEST_CASE("bms_clipboard fixtures preserve BGM lane and sound", "[formats]") {
     const auto result = decode(fixture(fixture_name()));
     REQUIRE(result);
-    const auto* bgm = first_object<wormedit::bgm_event_t>(*result.clipboard);
+    const auto* bgm = first_object<wormedit::bgm_event_t>(*result);
     REQUIRE(bgm);
     CHECK((bgm->offset == wormedit::rational_t{1, 2}));
     CHECK(bgm->lane_index == 0);
@@ -229,12 +229,12 @@ TEST_CASE("bms_clipboard hexadecimal resource numbering is explicit", "[formats]
     const auto& chart = song.charts.front();
     const auto& layout = chart.lane_layouts.front().layout;
     const auto text = "BMSE3.0 ClipBoard Object Data Format\r\n0110000000000000000016\r\n";
-    const auto result = wormedit::decode_bms_clipboard(text, song, chart, layout,
+    const auto result = wormedit::parse_bms_chart_clipboard(text, song, chart, layout,
         {.object_numbering = wormedit::bms_clipboard_numbering_t::base16});
     REQUIRE(result);
-    REQUIRE(result.clipboard->objects.size() == 1);
-    CHECK(std::get<wormedit::note_t>(result.clipboard->objects.front().payload).sound == wormedit::resource_id_t{201});
-    CHECK_FALSE(wormedit::decode_bms_clipboard(text, song, chart, layout));
+    REQUIRE(result->objects.size() == 1);
+    CHECK(std::get<wormedit::note_t>(result->objects.front().payload).sound == wormedit::resource_id_t{201});
+    CHECK_FALSE(wormedit::parse_bms_chart_clipboard(text, song, chart, layout));
 }
 
 TEST_CASE("bms_clipboard base62 resource numbering is explicit", "[formats]") {
@@ -243,12 +243,12 @@ TEST_CASE("bms_clipboard base62 resource numbering is explicit", "[formats]") {
     const auto& chart = song.charts.front();
     const auto& layout = chart.lane_layouts.front().layout;
     const auto text = "BMSE3.0 ClipBoard Object Data Format\r\n0110000000000000000036\r\n";
-    const auto result = wormedit::decode_bms_clipboard(text, song, chart, layout,
+    const auto result = wormedit::parse_bms_chart_clipboard(text, song, chart, layout,
         {.object_numbering = wormedit::bms_clipboard_numbering_t::base62});
     REQUIRE(result);
-    REQUIRE(result.clipboard->objects.size() == 1);
-    CHECK(std::get<wormedit::note_t>(result.clipboard->objects.front().payload).sound == wormedit::resource_id_t{201});
-    CHECK_FALSE(wormedit::decode_bms_clipboard(text, song, chart, layout));
+    REQUIRE(result->objects.size() == 1);
+    CHECK(std::get<wormedit::note_t>(result->objects.front().payload).sound == wormedit::resource_id_t{201});
+    CHECK_FALSE(wormedit::parse_bms_chart_clipboard(text, song, chart, layout));
 }
 
 TEST_CASE("bms_clipboard ambiguous resource identities reject instead of choosing one", "[formats]") {
@@ -257,7 +257,7 @@ TEST_CASE("bms_clipboard ambiguous resource identities reject instead of choosin
     duplicate.id = wormedit::resource_id_t{299};
     song.resources.push_back(std::move(duplicate));
     const auto& chart = song.charts.front();
-    CHECK_FALSE(wormedit::decode_bms_clipboard("iBMSC Clipboard Data\r\n6 0 10000 0 0 0",
+    CHECK_FALSE(wormedit::parse_bms_chart_clipboard("iBMSC Clipboard Data\r\n6 0 10000 0 0 0",
         song, chart, chart.lane_layouts.front().layout));
 }
 
@@ -266,7 +266,7 @@ TEST_CASE("bms_clipboard ambiguous target lane channels reject instead of choosi
     auto& chart = song.charts.front();
     auto& layout = chart.lane_layouts.front().layout;
     layout.lanes[2].bms_channels.visible = "11";
-    CHECK_FALSE(wormedit::decode_bms_clipboard("iBMSC Clipboard Data\r\n6 0 10000 0 0 0",
+    CHECK_FALSE(wormedit::parse_bms_chart_clipboard("iBMSC Clipboard Data\r\n6 0 10000 0 0 0",
         song, chart, layout));
 }
 
@@ -274,15 +274,15 @@ TEST_CASE("bms_clipboard a missing target BGM lane rejects without fabricating g
     auto song = target_document();
     auto& chart = song.charts.front();
     chart.bgm_source_lanes.clear();
-    CHECK_FALSE(wormedit::decode_bms_clipboard("iBMSC Clipboard Data\r\n27 0 30000 0 0 0",
+    CHECK_FALSE(wormedit::parse_bms_chart_clipboard("iBMSC Clipboard Data\r\n27 0 30000 0 0 0",
         song, chart, chart.lane_layouts.front().layout));
 }
 
 TEST_CASE("bms_clipboard pairs reordered iBMSC long-note endpoints", "[formats]") {
     const auto result = decode("iBMSC Clipboard Data\r\n7 96 40000 -1 0 0\r\n7 0 40000 -1 0 0");
     REQUIRE(result);
-    REQUIRE(result.clipboard->objects.size() == 1);
-    const auto& object = result.clipboard->objects.front();
+    REQUIRE(result->objects.size() == 1);
+    const auto& object = result->objects.front();
     CHECK((object.offset == wormedit::rational_t{0, 1}));
     CHECK((object.duration == wormedit::rational_t{1, 2}));
     CHECK(std::get<wormedit::note_t>(object.payload).kind == wormedit::note_kind_t::hold);
@@ -292,7 +292,7 @@ TEST_CASE("bms_clipboard pairs reordered iBMSC long-note endpoints", "[formats]"
 TEST_CASE("bms_clipboard retains fractional iBMSC BPM exactly", "[formats]") {
     const auto result = decode("iBMSC Clipboard Data\r\n2 24 1234560 0 0 0");
     REQUIRE(result);
-    const auto* bpm = first_object<wormedit::bpm_event_t>(*result.clipboard);
+    const auto* bpm = first_object<wormedit::bpm_event_t>(*result);
     REQUIRE(bpm);
     CHECK((bpm->offset == wormedit::rational_t{1, 8}));
     CHECK((std::get<wormedit::bpm_event_t>(bpm->payload).beats_per_minute ==
@@ -305,8 +305,8 @@ TEST_CASE("bms_clipboard decodes BMSE scroll and speed controls", "[formats]") {
                       "0SP0" "4048000000000000" "2.5\r\n";
     const auto result = decode(text);
     REQUIRE(result);
-    const auto* scroll = first_object<wormedit::scroll_event_t>(*result.clipboard);
-    const auto* speed = first_object<wormedit::speed_event_t>(*result.clipboard);
+    const auto* scroll = first_object<wormedit::scroll_event_t>(*result);
+    const auto* speed = first_object<wormedit::speed_event_t>(*result);
     REQUIRE(scroll);
     REQUIRE(speed);
     CHECK((scroll->offset == wormedit::rational_t{1, 8}));
@@ -320,7 +320,7 @@ TEST_CASE("bms_clipboard diagnoses unsupported BGA clipboard objects", "[formats
     const auto text = "iBMSC Clipboard Data\r\n23 0 10000 0 0 0";
     const auto result = decode(text);
     CHECK_FALSE(result);
-    CHECK_FALSE(result.error.empty());
+    CHECK_FALSE(result.error().empty());
 }
 
 TEST_CASE("bms_clipboard mutated fields reject deterministically without a partial snippet", "[formats]") {
@@ -331,9 +331,10 @@ TEST_CASE("bms_clipboard mutated fields reject deterministically without a parti
     const auto text = std::string{"iBMSC Clipboard Data\r\n6 48 10000 0 0 0\r\n"} + record;
     const auto first = decode(text);
     const auto second = decode(text);
-    CHECK_FALSE(first.clipboard);
-    CHECK_FALSE(first.error.empty());
-    CHECK(first.error == second.error);
+    REQUIRE_FALSE(first);
+    REQUIRE_FALSE(second);
+    CHECK_FALSE(first.error().empty());
+    CHECK(first.error() == second.error());
 }
 
 TEST_CASE("bms_clipboard impossible endpoint pairs reject as a batch", "[formats]") {
@@ -342,18 +343,18 @@ TEST_CASE("bms_clipboard impossible endpoint pairs reject as a batch", "[formats
         "7 0 40000 -1 0 0\r\n7 96 40000 -1 0 0\r\n7 144 40000 -1 0 0",
         "7 0 40000 -1 0 0\r\n7 24 50000 -1 0 0\r\n7 48 40000 -1 0 0\r\n7 72 50000 -1 0 0");
     const auto result = decode(std::string{"iBMSC Clipboard Data\r\n"} + records);
-    CHECK_FALSE(result.clipboard);
-    CHECK_FALSE(result.error.empty());
+    CHECK_FALSE(result);
+    CHECK_FALSE(result.error().empty());
 }
 
 TEST_CASE("bms_clipboard decoded holds enter the native exact paste proposal", "[formats]") {
     const auto song = target_document();
     const auto& chart = song.charts.front();
-    const auto decoded = wormedit::decode_bms_clipboard(
+    const auto decoded = wormedit::parse_bms_chart_clipboard(
         "iBMSC Clipboard Data xNT\r\n7 0 40000 96 0 0", song, chart,
         chart.lane_layouts.front().layout);
     REQUIRE(decoded);
-    const auto proposal = wormedit::propose_chart_paste(song, chart.id, *decoded.clipboard,
+    const auto proposal = wormedit::propose_chart_paste(song, chart.id, *decoded,
         {wormedit::measure_id_t{10}, 0}, song.revision);
     INFO(std::string{proposal.message()});
     REQUIRE(proposal.is_valid());
@@ -368,8 +369,8 @@ TEST_CASE("bms_clipboard paired duration remains the exact difference of recover
     const auto result = decode("iBMSC Clipboard Data\r\n7 1.5 40000 -1 0 0\r\n"
                                "7 1.51181102362205 40000 -1 0 0");
     REQUIRE(result);
-    REQUIRE(result.clipboard->objects.size() == 1);
-    const auto& hold = result.clipboard->objects.front();
+    REQUIRE(result->objects.size() == 1);
+    const auto& hold = result->objects.front();
     CHECK((hold.offset == wormedit::rational_t{1, 128}));
     CHECK((hold.duration == wormedit::rational_t{1, 16256}));
 }
@@ -378,7 +379,7 @@ TEST_CASE("bms_clipboard BMSE scientific values retain exact decimal meaning", "
     const auto result = decode("BMSE3.0 ClipBoard Object Data Format\r\n"
                                "0080" "0000000000000000" "1.25E+2\r\n");
     REQUIRE(result);
-    const auto* bpm = first_object<wormedit::bpm_event_t>(*result.clipboard);
+    const auto* bpm = first_object<wormedit::bpm_event_t>(*result);
     REQUIRE(bpm);
     CHECK((std::get<wormedit::bpm_event_t>(bpm->payload).beats_per_minute ==
            wormedit::signed_rational_t{125, 1}));
@@ -390,20 +391,20 @@ TEST_CASE("bms_clipboard standard BMS identities retain their case insensitive m
     identity.identifier = "0a";
     identity.namespace_name = "wav";
     const auto& chart = song.charts.front();
-    const auto result = wormedit::decode_bms_clipboard(
+    const auto result = wormedit::parse_bms_chart_clipboard(
         "iBMSC Clipboard Data\r\n6 0 100000 0 0 0", song, chart,
         chart.lane_layouts.front().layout);
     REQUIRE(result);
-    REQUIRE(result.clipboard->objects.size() == 1);
-    CHECK(std::get<wormedit::note_t>(result.clipboard->objects.front().payload).sound ==
+    REQUIRE(result->objects.size() == 1);
+    CHECK(std::get<wormedit::note_t>(result->objects.front().payload).sound ==
           wormedit::resource_id_t{201});
 }
 
 TEST_CASE("bms_clipboard zero participates in bounded nearest position recovery", "[formats]") {
     const auto result = decode("iBMSC Clipboard Data\r\n6 0.000000001 10000 0 0 0");
     REQUIRE(result);
-    REQUIRE(result.clipboard->objects.size() == 1);
-    CHECK((result.clipboard->objects.front().offset == wormedit::rational_t{0, 1}));
+    REQUIRE(result->objects.size() == 1);
+    CHECK((result->objects.front().offset == wormedit::rational_t{0, 1}));
 }
 
 TEST_CASE("bms_clipboard duplicate aliases resolve to the same sound before rejection", "[formats]") {
@@ -411,18 +412,18 @@ TEST_CASE("bms_clipboard duplicate aliases resolve to the same sound before reje
     song.resources.front().target_identities.push_back({.family = wormedit::format_family_t::bms,
         .identifier = "0A", .namespace_name = "WAV"});
     const auto& chart = song.charts.front();
-    const auto result = wormedit::decode_bms_clipboard(
+    const auto result = wormedit::parse_bms_chart_clipboard(
         "iBMSC Clipboard Data\r\n6 0 10000 0 0 0\r\n6 0 100000 0 0 0", song, chart,
         chart.lane_layouts.front().layout);
-    CHECK_FALSE(result.clipboard);
-    CHECK_FALSE(result.error.empty());
+    CHECK_FALSE(result);
+    CHECK_FALSE(result.error().empty());
 }
 
 TEST_CASE("bms_clipboard decimal reduction precedes magnitude overflow", "[formats][helpers]") {
     const auto result = decode("BMSE3.0 ClipBoard Object Data Format\r\n"
         "0080" "0000000000000000" "92233720368547758070e-1\r\n");
     REQUIRE(result);
-    const auto* bpm = first_object<wormedit::bpm_event_t>(*result.clipboard);
+    const auto* bpm = first_object<wormedit::bpm_event_t>(*result);
     REQUIRE(bpm);
     CHECK((std::get<wormedit::bpm_event_t>(bpm->payload).beats_per_minute ==
            wormedit::signed_rational_t{INT64_MAX, 1}));

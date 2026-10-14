@@ -1,4 +1,4 @@
-#include "sys/menu_command_projection.h"
+#include "sys/menu_command_view.h"
 #include "nuklear_event_harness.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -163,7 +163,7 @@ TEST_CASE("Notification badge and View menu open history through their actual co
     REQUIRE(badge.has_value());
     check_history_opens_on_click(*badge);
 
-    wormedit::sys::project_menu_commands(wormedit::make_default_editor_command_registry({}), harness.view());
+    wormedit::sys::build_menu_commands_view(wormedit::command_registry_t::from({}), harness.view());
     const auto view_menu = click_text(harness, "View");
     REQUIRE(view_menu.has_value());
     static_cast<void>(harness.frame()); // Render the opened native menu before selecting an item.

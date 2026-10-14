@@ -12,88 +12,9 @@ namespace {
 using wide_unsigned_t = unsigned __int128;
 using wide_signed_t = __int128;
 
-auto gcd_wide(wide_unsigned_t left, wide_unsigned_t right) -> wide_unsigned_t {
-    while (right != 0) {
-        const auto remainder = left % right;
-        left = right;
-        right = remainder;
-    }
-    return left;
-}
-
 auto wide_magnitude(wide_signed_t value) -> wide_unsigned_t {
     return value < 0 ? static_cast<wide_unsigned_t>(-(value + 1)) + 1
                      : static_cast<wide_unsigned_t>(value);
-}
-
-auto multiply_wide(wide_unsigned_t left, wide_unsigned_t right)
-    -> std::optional<wide_unsigned_t> {
-    constexpr auto maximum = static_cast<wide_unsigned_t>(-1);
-    if (right != 0 && left > maximum / right) return std::nullopt;
-    return left * right;
-}
-
-auto tail_row_at_seconds(const timing_index_t& timing, signed_rational_t seconds,
-                         std::uint64_t divisions_per_standard_measure)
-    -> std::optional<signed_rational_t> {
-    if (timing.rows.empty() || seconds.denominator == 0 || divisions_per_standard_measure == 0)
-        return std::nullopt;
-    const auto& end = timing.rows.back().after_stops_seconds;
-    if (end.denominator == 0) return std::nullopt;
-    const auto common = std::gcd(seconds.denominator, end.denominator);
-    const auto seconds_scale = end.denominator / common;
-    const auto end_scale = seconds.denominator / common;
-    const auto seconds_scaled = static_cast<wide_signed_t>(seconds.numerator) * seconds_scale;
-    const auto end_scaled = static_cast<wide_signed_t>(end.numerator) * end_scale;
-    wide_signed_t difference{};
-    if (__builtin_sub_overflow(seconds_scaled, end_scaled, &difference) || difference <= 0)
-        return std::nullopt;
-    auto delta_denominator = multiply_wide(seconds.denominator, seconds_scale);
-    if (!delta_denominator) return std::nullopt;
-    auto delta_numerator = wide_magnitude(difference);
-    const auto delta_gcd = gcd_wide(delta_numerator, *delta_denominator);
-    delta_numerator /= delta_gcd;
-    *delta_denominator /= delta_gcd;
-
-    const auto& bpm = timing.rows.back().effective_bpm;
-    if (bpm.numerator <= 0 || bpm.denominator == 0) return std::nullopt;
-    wide_unsigned_t numerator_factors[]{delta_numerator,
-        static_cast<wide_unsigned_t>(bpm.numerator), divisions_per_standard_measure};
-    wide_unsigned_t denominator_factors[]{*delta_denominator, bpm.denominator, 240};
-    for (auto& numerator_factor : numerator_factors) {
-        for (auto& denominator_factor : denominator_factors) {
-            const auto factor_gcd = gcd_wide(numerator_factor, denominator_factor);
-            numerator_factor /= factor_gcd;
-            denominator_factor /= factor_gcd;
-        }
-    }
-    wide_unsigned_t row_numerator = 1;
-    wide_unsigned_t row_denominator = 1;
-    for (const auto factor : numerator_factors) {
-        const auto product = multiply_wide(row_numerator, factor);
-        if (!product) return std::nullopt;
-        row_numerator = *product;
-    }
-    for (const auto factor : denominator_factors) {
-        const auto product = multiply_wide(row_denominator, factor);
-        if (!product) return std::nullopt;
-        row_denominator = *product;
-    }
-    const auto row_gcd = gcd_wide(row_numerator, row_denominator);
-    row_numerator /= row_gcd;
-    row_denominator /= row_gcd;
-    const auto absolute_begin = multiply_wide(timing.total_rows, row_denominator);
-    if (!absolute_begin || row_numerator > static_cast<wide_unsigned_t>(-1) - *absolute_begin)
-        return std::nullopt;
-    auto absolute_numerator = *absolute_begin + row_numerator;
-    auto absolute_denominator = row_denominator;
-    const auto absolute_gcd = gcd_wide(absolute_numerator, absolute_denominator);
-    absolute_numerator /= absolute_gcd;
-    absolute_denominator /= absolute_gcd;
-    if (absolute_numerator > static_cast<wide_unsigned_t>(std::numeric_limits<std::int64_t>::max()) ||
-        absolute_denominator > std::numeric_limits<std::uint64_t>::max()) return std::nullopt;
-    return signed_rational_t{static_cast<std::int64_t>(absolute_numerator),
-                             static_cast<std::uint64_t>(absolute_denominator)};
 }
 
 auto frame_time_label(wide_signed_t time_numerator, wide_unsigned_t time_denominator,
@@ -184,11 +105,9 @@ auto format_compose_hover_timing(const chart_document_t& chart,
         chart.measures.size() != measures.entries.size()) return false;
     output[0] = '\0';
     const auto seconds = signed_rational_t{source_frame, sample_rate};
-    const auto position = musical_position_at(
-        timing, seconds, {.extrapolate_before_chart = true});
-    auto absolute_row = position.absolute_row;
-    if (!absolute_row)
-        absolute_row = tail_row_at_seconds(timing, seconds, chart.divisions_per_standard_measure);
+    const auto position = timing.row_at(seconds, chart_end_policy_t::extrapolate_tail,
+                                         {.extrapolate_before_chart = true});
+    const auto absolute_row = position.absolute_row;
     if (!absolute_row) return false;
     char time[32]{};
     const auto offset = chart.beat_zero_audio_offset_seconds;

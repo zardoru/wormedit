@@ -38,6 +38,9 @@ struct visual_layout_request_t {
 };
 
 struct visual_image_layout_t {
+    // Produces deterministic renderer-neutral geometry. Contain letterboxes in
+    // destination space; cover center-crops whole source pixels; stretch uses both
+    // rectangles in full. Invalid or non-finite geometry publishes no layout.
     [[nodiscard]] static auto from(const visual_layout_request_t& request)
         -> std::optional<visual_image_layout_t>;
 
@@ -70,6 +73,9 @@ struct visual_image_quad_request_t {
 };
 
 struct visual_image_quad_t {
+    // Maps a sprite on a logical canvas into a contained destination and rotates
+    // its four textured corners about the authored origin. This geometry is shared
+    // by interactive frontends and deterministic offline rendering.
     [[nodiscard]] static auto from(const visual_image_quad_request_t& request)
         -> std::optional<visual_image_quad_t>;
 
@@ -79,18 +85,5 @@ struct visual_image_quad_t {
 };
 
 [[nodiscard]] auto is_valid_visual_fit_policy(visual_fit_policy_t fit) noexcept -> bool;
-
-
-// Produces deterministic renderer-neutral geometry. Contain letterboxes in
-// destination space; cover center-crops whole source pixels; stretch uses both
-// rectangles in full. Invalid or non-finite geometry publishes no layout.
-[[nodiscard]] auto make_visual_image_layout(const visual_layout_request_t& request)
-    -> std::optional<visual_image_layout_t>;
-
-// Maps a sprite on a logical canvas into a contained destination and rotates
-// its four textured corners about the authored origin. This geometry is shared
-// by interactive frontends and deterministic offline rendering.
-[[nodiscard]] auto make_visual_image_quad(const visual_image_quad_request_t& request)
-    -> std::optional<visual_image_quad_t>;
 
 } // namespace wormedit

@@ -1,3 +1,4 @@
+#include <wormedit/core/rational.h>
 #include "sys/timing_view.h"
 #include "sys/recipe_form.h"
 
@@ -78,19 +79,7 @@ auto compose_surface_height(int window_height, const WormUiWorkspaceView& view) 
     return std::max(64.0, static_cast<double>(content_height - 38.0f - 18.0f - branch_height));
 }
 
-auto rational_as_long_double(wormedit::signed_rational_t value) -> long double {
-    if (value.denominator == 0) {
-        return 0.0L;
-    }
-    return static_cast<long double>(value.numerator) / static_cast<long double>(value.denominator);
-}
 
-auto rational_as_double(wormedit::rational_t value) -> double {
-    if (value.denominator == 0) {
-        return 0.0;
-    }
-    return static_cast<double>(value.numerator) / static_cast<double>(value.denominator);
-}
 
 auto timing_stage_grid_step(const wormedit::chart_document_t& chart,
                             std::uint64_t active_denominator) -> std::uint64_t {
@@ -149,7 +138,7 @@ struct timing_stage_value_context_t {
 };
 
 template <typename Value>
-void project_timing_stage_value(timing_stage_value_context_t& context, const Value& value) {
+void build_timing_stage_value_view(timing_stage_value_context_t& context, const Value& value) {
     auto& view = context.view;
     const auto set_primary = [&](std::int64_t numerator, std::uint64_t denominator) {
         (void)std::snprintf(view.stage_primary_numerator_text,
@@ -168,7 +157,7 @@ void project_timing_stage_value(timing_stage_value_context_t& context, const Val
                             static_cast<unsigned long long>(denominator));
     };
     if constexpr (std::is_same_v<Value, wormedit::timing_bpm_value_t>) {
-        view.stage_value = static_cast<double>(rational_as_long_double(value.beats_per_minute));
+        view.stage_value = static_cast<double>(wormedit::to_long_double(value.beats_per_minute));
         set_primary(value.beats_per_minute.numerator, value.beats_per_minute.denominator);
         if (const auto formatted = wormedit::format_bpm_text(value.beats_per_minute)) {
             (void)std::snprintf(view.stage_primary_decimal_text,
@@ -177,21 +166,21 @@ void project_timing_stage_value(timing_stage_value_context_t& context, const Val
             view.stage_primary_decimal_exact = formatted->decimal_exact;
         }
     } else if constexpr (std::is_same_v<Value, wormedit::timing_scroll_value_t>) {
-        view.stage_value = static_cast<double>(rational_as_long_double(value.multiplier));
+        view.stage_value = static_cast<double>(wormedit::to_long_double(value.multiplier));
         set_primary(value.multiplier.numerator, value.multiplier.denominator);
     } else if constexpr (std::is_same_v<Value, wormedit::timing_speed_value_t>) {
-        view.stage_value = static_cast<double>(rational_as_long_double(value.multiplier));
-        view.stage_secondary_value = rational_as_double(value.transition_beats);
+        view.stage_value = static_cast<double>(wormedit::to_long_double(value.multiplier));
+        view.stage_secondary_value = wormedit::to_double(value.transition_beats);
         view.stage_transition_is_seconds = value.transition_is_seconds;
         set_primary(value.multiplier.numerator, value.multiplier.denominator);
         set_secondary(value.transition_beats.numerator, value.transition_beats.denominator);
     } else if constexpr (std::is_same_v<Value, wormedit::timing_pause_value_t>) {
-        view.stage_value = static_cast<double>(rational_as_long_double(value.duration));
+        view.stage_value = static_cast<double>(wormedit::to_long_double(value.duration));
         view.stage_pause_unit = timing_pause_unit_to_ui(value.source_unit);
         set_primary(value.duration.numerator, value.duration.denominator);
     } else if constexpr (std::is_same_v<Value, wormedit::timing_warp_value_t>) {
         const auto end_row = context.measures
-                                 ? wormedit::absolute_row(*context.measures, value.end)
+                                 ? (*context.measures).row_of(value.end)
                                  : std::nullopt;
         const auto step = context.stage.existing_event.has_value()
                               ? std::uint64_t{1}
@@ -233,7 +222,7 @@ void populate_timing_stage_view(
             stage->existing_event.has_value() ? stage->existing_event->value : 0;
         view.stage_lane = timing_lane_kind_to_ui(stage->kind);
         const auto stage_row =
-            measures ? wormedit::absolute_row(*measures, stage->position) : std::nullopt;
+            measures ? (*measures).row_of(stage->position) : std::nullopt;
         view.stage_marker_y_pixels =
             stage_row ? row_to_pixels(static_cast<long double>(*stage_row)) : 0.0;
         view.stage_transition_is_seconds = false;
@@ -243,7 +232,7 @@ void populate_timing_stage_view(
                                                    stage_row};
         std::visit(
             [&](const auto& value) {
-                project_timing_stage_value(value_context, value);
+                build_timing_stage_value_view(value_context, value);
             },
             stage->value);
         if (!stage->diagnostics.empty()) {
@@ -291,7 +280,7 @@ void populate_initial_bpm(WormUiTimingView& view, const wormedit::chart_document
                 view.initial_bpm_present = true;
                 view.initial_bpm_event_id = bpm.id.value;
                 view.initial_bpm_value =
-                    static_cast<double>(rational_as_long_double(bpm.beats_per_minute));
+                    static_cast<double>(to_long_double(bpm.beats_per_minute));
             }
         }
     }
@@ -306,9 +295,8 @@ void populate_timing_view_for_compose(
     const timing_grid_state_t& timing_grid,
     const wormedit::timing_lane_pseudonote_preview_t* stage) {
     if (!workspace.selected_chart) return;
-    const auto selected = std::ranges::find(history.document.charts, *workspace.selected_chart,
-                                           &wormedit::chart_document_t::id);
-    if (selected == history.document.charts.end()) return;
+    const auto selected = history.document.find_chart(*workspace.selected_chart);
+    if (selected == nullptr) return;
     const auto& chart = *selected;
     auto& view = flattened.view.timing;
     view.chart_id = chart.id.value;

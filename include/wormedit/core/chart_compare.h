@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/result.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -54,6 +55,7 @@ struct chart_compare_pane_row_t {
     std::vector<chart_compare_lane_signature_t> active_layout;
     std::vector<chart_compare_note_signature_t> notes;
     bool differs{};
+    auto operator==(const chart_compare_pane_row_t&) const -> bool = default;
 };
 
 struct chart_compare_difference_row_t {
@@ -63,6 +65,7 @@ struct chart_compare_difference_row_t {
     // Exact position in standard-measure units, reduced to lowest terms.
     rational_t musical_position;
     std::vector<chart_compare_pane_row_t> panes;
+    auto operator==(const chart_compare_difference_row_t&) const -> bool = default;
 };
 
 struct chart_compare_request_t {
@@ -81,7 +84,22 @@ struct chart_compare_request_t {
     std::size_t maximum_difference_rows{100'000};
 };
 
+struct chart_comparison_t {
+    [[nodiscard]] static auto from(const song_document_t& song, const chart_compare_request_t& request)
+        -> diagnosed_t<chart_comparison_t>;
+
+    std::uint64_t document_revision{};
+    std::vector<chart_id_t> charts;
+    std::vector<chart_compare_difference_row_t> differing_rows;
+    auto operator==(const chart_comparison_t&) const -> bool = default;
+};
+
+using chart_comparison_result_t = diagnosed_t<chart_comparison_t>;
+
+// Compatibility boundary for sys comparison views, including metadata on failure.
 struct chart_compare_result_t {
+    [[nodiscard]] static auto from(chart_comparison_result_t&& result) -> chart_compare_result_t;
+
     std::uint64_t document_revision{};
     std::vector<chart_id_t> charts;
     std::vector<chart_compare_difference_row_t> differing_rows;

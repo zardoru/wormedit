@@ -148,7 +148,7 @@ auto failed_import_feedback(const wormedit::task_result_t& completed,
                             const std::shared_ptr<const metadata_asset_import_task_result_t>& imported)
     -> std::optional<metadata_import_feedback_t> {
     using namespace wormedit;
-    if (!completed.succeeded() || !imported) {
+    if (!completed.is_successful() || !imported) {
         const auto cancelled = completed.error &&
                                completed.error->code == task_error_code_t::cancelled;
         return metadata_import_feedback_t{
@@ -209,7 +209,7 @@ auto copy_preview_feedback(const wormedit::task_result_t& completed,
                            const std::shared_ptr<const wormedit::project_asset_copy_result_t>& inspected)
     -> std::pair<std::string, wormedit::notification_severity_t> {
     using namespace wormedit;
-    if (!completed.succeeded() || !inspected) {
+    if (!completed.is_successful() || !inspected) {
         const auto cancelled = completed.error &&
                                completed.error->code == task_error_code_t::cancelled;
         return {completed.error ? completed.error->message : "Copy inspection returned no result.",
@@ -323,9 +323,8 @@ auto resolve_copy_preview_source(const WormUiWorkspaceAction& action,
             return "This external audio is already linked; inspect its existing asset.";
         return std::nullopt;
     }
-    const auto audio = std::ranges::find(history.document.audio_assets, asset,
-                                         &audio_asset_t::id);
-    if (!asset || audio == history.document.audio_assets.end())
+    const auto audio = history.document.find_audio_asset(asset);
+    if (!asset || audio == nullptr)
         return "Selected music asset is no longer available.";
     source_path = audio->source_path;
     return std::nullopt;
@@ -385,7 +384,7 @@ auto copy_and_decode_metadata_audio(const wormedit::project_asset_copy_request_t
         else
             (void)discard_unlinked_project_asset_copy(copy_request, completed->copy);
     }
-    return task_result_t::success(make_task_value(
+    return task_result_t::success(task_value_t::from(
         std::shared_ptr<const metadata_asset_import_task_result_t>{std::move(completed)}));
 }
 #endif
@@ -456,7 +455,7 @@ auto metadata_asset_t::start_copy_preview(
                                                      .maximum_bytes = request.maximum_bytes},
                                                     stop)
                         : inspect_project_asset_copy(request, stop));
-        return task_result_t::success(make_task_value(std::move(inspected)));
+        return task_result_t::success(task_value_t::from(std::move(inspected)));
     });
     if (!added)
         return finish(added.error ? added.error->message : "Copy inspection could not start.",
@@ -536,9 +535,8 @@ auto metadata_asset_t::start_import_copy(
         }))
         return finish("This audio is already linked; select its asset and copy it instead.",
                       notification_severity_t::warning);
-    const auto chart = std::ranges::find(history.document.charts, *workspace.selected_chart,
-                                         &chart_document_t::id);
-    if (chart == history.document.charts.end())
+    const auto chart = history.document.find_chart(*workspace.selected_chart);
+    if (chart == nullptr)
         return finish("The selected difficulty is no longer available.",
                       notification_severity_t::warning);
     std::filesystem::path output_path;
@@ -598,7 +596,7 @@ void metadata_asset_t::cleanup(const std::filesystem::path& asset_base) {
     if (impl_->pending_import) {
         if (const auto completed = impl_->pending_import->graph.result(
                 impl_->pending_import->task);
-            completed && completed->succeeded()) {
+            completed && completed->is_successful()) {
             const auto imported =
                 wormedit::task_value_cast<metadata_asset_import_task_result_t>(*completed);
             if (imported && imported->copy.status ==

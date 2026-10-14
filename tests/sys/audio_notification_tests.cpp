@@ -23,7 +23,7 @@ void service_until_waveform_finishes(wormedit::sys::runtime::waveform_analysis_t
                                      wormedit::sys::compose_scene_cache_t& cache) {
     runtime.service(document, workspace, cache, nullptr);
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (runtime.waveform_job().busy() && std::chrono::steady_clock::now() < deadline) {
+    while (runtime.waveform_job().is_busy() && std::chrono::steady_clock::now() < deadline) {
         runtime.service(document, workspace, cache, nullptr);
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
@@ -71,9 +71,8 @@ struct stem_pool_fixture_t {
         workspace.active_tab = workspace_tab_t::compose;
         workspace.selected_chart = chart_id_t{81};
         interaction.chart = chart_id_t{81};
-        std::vector<audio::preview_metronome_source_binding_t> metronome;
-        const auto base = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio";
-        check_audio_worker(sys::register_audition_sources(document, base, 1, sources, metronome) == 1);
+            const auto base = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio";
+        check_audio_worker(sys::register_audition_sources(document, base, 1, sources) == 1);
     }
 
     auto select(std::initializer_list<std::size_t> indices)
@@ -289,9 +288,8 @@ void populate_mixed_stem_filter_fixture(mixed_stem_filter_fixture_t& fixture) {
     fixture.workspace.selected_chart = chart_id_t{701};
     fixture.interaction.chart = chart_id_t{701};
     fixture.interaction.selected_objects = {{editor_selection_object_kind_t::bgm_event, selected}};
-    std::vector<audio::preview_metronome_source_binding_t> metronome;
     const auto base = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio";
-    (void)sys::register_audition_sources(fixture.document, base, 1, fixture.sources, metronome);
+    (void)sys::register_audition_sources(fixture.document, base, 1, fixture.sources);
 }
 
 auto mixed_filter_subset(const mixed_stem_filter_fixture_t& fixture)
@@ -318,7 +316,7 @@ auto mixed_filter_runtime_passes() -> bool {
     sys::runtime::waveform_analysis_t runtime{fixture.sources, nullptr,
         notification_sink_t{notifications}};
     runtime.service(fixture.document, fixture.workspace, fixture.cache, &fixture.interaction);
-    if (runtime.channel_waveform_asset() || runtime.channel_waveform_job().busy() ||
+    if (runtime.channel_waveform_asset() || runtime.channel_waveform_job().is_busy() ||
         runtime.channel_waveform_analysis()) return false;
     runtime.service_compose_stem_waveforms(fixture.document, fixture.workspace, fixture.cache,
         &fixture.interaction, mixed_filter_subset(fixture));
@@ -353,8 +351,7 @@ TEST_CASE("resident fallback and progress carry audio notification metadata once
     task_scheduler_t scheduler{1, 4};
     sys::resident_sample_loader_t loader{store, scheduler};
     const auto base = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio";
-    std::vector<audio::preview_metronome_source_binding_t> metronome;
-    check_audio_worker(sys::register_audition_sources(document, base, 1, sources, metronome) == 0);
+    check_audio_worker(sys::register_audition_sources(document, base, 1, sources) == 0);
     loader.start(document, base, 1, sources);
     wait_for_loader(loader);
 
@@ -432,7 +429,7 @@ TEST_CASE("waveform runtime without a notification sink remains safe",
     sys::compose_scene_cache_t cache;
     workspace.transport.audio_asset = asset_id_t{44};
     service_until_waveform_finishes(runtime, document, workspace, cache);
-    check_audio_worker(!(runtime.waveform_job().busy()));
+    check_audio_worker(!(runtime.waveform_job().is_busy()));
     runtime.reset_sources();
     check_audio_worker(!(runtime.waveform_asset().has_value()));
 }
@@ -445,9 +442,8 @@ TEST_CASE("superseded waveform work is silent after the selected source clears",
     song_document_t document;
     document.audio_assets.push_back(
         {.id = asset_id_t{55}, .source_path = "keysound-c4.ogg"});
-    std::vector<audio::preview_metronome_source_binding_t> metronome;
     const auto base = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio";
-    check_audio_worker(sys::register_audition_sources(document, base, 1, sources, metronome) == 0);
+    check_audio_worker(sys::register_audition_sources(document, base, 1, sources) == 0);
 
     sys::runtime::waveform_analysis_t runtime{sources, nullptr, notification_sink_t{center}};
     workspace_controller_t workspace;
@@ -526,14 +522,13 @@ TEST_CASE("Waveform recovers the same asset after deferred probing and source re
     song_document_t document;
     document.id = song_id_t{71};
     document.audio_assets.push_back({.id = asset_id_t{55}, .source_path = "keysound-c4.ogg"});
-    std::vector<audio::preview_metronome_source_binding_t> metronome;
     const auto base = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio";
     workspace_controller_t workspace;
     workspace.transport.audio_asset = asset_id_t{55};
     sys::compose_scene_cache_t cache;
     service_until_waveform_finishes(runtime, document, workspace, cache);
     check_audio_worker(runtime.waveform_analysis() && !runtime.waveform_analysis()->waveform);
-    check_audio_worker(sys::register_audition_sources_deferred(document, base, 1, sources, metronome) == 0);
+    check_audio_worker(sys::register_audition_sources_deferred(document, base, 1, sources) == 0);
 
     while (sources.probe_next_pending()) {}
     check_audio_worker(sources.binding(asset_id_t{55}).has_value());
@@ -554,9 +549,8 @@ TEST_CASE("Pending source probing completes before waveform analysis without a f
     song_document_t document;
     document.id = song_id_t{71};
     document.audio_assets.push_back({.id = asset_id_t{55}, .source_path = "keysound-c4.ogg"});
-    std::vector<audio::preview_metronome_source_binding_t> metronome;
     const auto base = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio";
-    check_audio_worker(sys::register_audition_sources_deferred(document, base, 1, sources, metronome) == 0);
+    check_audio_worker(sys::register_audition_sources_deferred(document, base, 1, sources) == 0);
     sys::runtime::waveform_analysis_t runtime{sources, nullptr, notification_sink_t{center}};
     workspace_controller_t workspace;
     workspace.transport.audio_asset = asset_id_t{55};
@@ -740,9 +734,8 @@ void prepare_t459_packed_runtime_fixture(t459_packed_runtime_fixture_t& fixture)
         fixture.cache.scene.revision = fixture.document.revision;
         fixture.cache.timing.marker_timing_index = *timing.index;
     }
-    std::vector<audio::preview_metronome_source_binding_t> metronome;
     const auto base = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio";
-    (void)sys::register_audition_sources(fixture.document, base, 1, fixture.sources, metronome);
+    (void)sys::register_audition_sources(fixture.document, base, 1, fixture.sources);
 }
 
 auto t459_packed_runtime_filters_assets() -> bool {
@@ -771,7 +764,7 @@ auto t459_packed_runtime_filters_assets() -> bool {
         !runtime.stem_waveform_analysis(asset_id_t{91}) &&
         !runtime.stem_waveform_analysis(asset_id_t{92}) &&
         runtime.stem_waveform_cache_stats().entries == 1 &&
-        !runtime.channel_waveform_asset() && !runtime.channel_waveform_job().busy() &&
+        !runtime.channel_waveform_asset() && !runtime.channel_waveform_job().is_busy() &&
         !runtime.channel_waveform_analysis();
 }
 } // namespace

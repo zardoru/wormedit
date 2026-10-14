@@ -35,15 +35,16 @@ struct format_family_descriptor_t {
     std::string_view label;
     bool offered_as_output;
     bool offered_as_metadata;
+    std::string_view output_label;
 };
 inline constexpr std::array format_families{
-    format_family_descriptor_t{format_family_t::native_project, "Native", true, true},
-    format_family_descriptor_t{format_family_t::bms, "BMS", true, true},
-    format_family_descriptor_t{format_family_t::stepmania, "StepMania", true, true},
-    format_family_descriptor_t{format_family_t::osu_mania, "osu!mania", true, true},
-    format_family_descriptor_t{format_family_t::bmson, "BMSON", true, true},
-    format_family_descriptor_t{format_family_t::midi, "MIDI", false, true},
-    format_family_descriptor_t{format_family_t::quaver, "Quaver", false, true},
+    format_family_descriptor_t{format_family_t::native_project, "Native", true, true, "Native"},
+    format_family_descriptor_t{format_family_t::bms, "BMS", true, true, "BMS"},
+    format_family_descriptor_t{format_family_t::stepmania, "StepMania", true, true, "SM/SSC"},
+    format_family_descriptor_t{format_family_t::osu_mania, "osu!mania", true, true, "osu!mania"},
+    format_family_descriptor_t{format_family_t::bmson, "BMSON", true, true, "BMSON"},
+    format_family_descriptor_t{format_family_t::midi, "MIDI", false, true, "MIDI"},
+    format_family_descriptor_t{format_family_t::quaver, "Quaver", false, true, "Quaver"},
 };
 static_assert(is_catalog_exhaustive(format_families, format_family_count));
 constexpr auto format_family_label(format_family_t kind) -> std::string_view {
@@ -57,15 +58,16 @@ struct text_encoding_descriptor_t {
     // ASCII and UTF-8 have dedicated paths; no iconv conversion is requested.
     std::optional<std::string_view> iconv_name;
     bool offered;
+    std::string_view choice_label;
 };
 inline constexpr std::array bms_text_encodings{
-    text_encoding_descriptor_t{text_encoding_t::unknown, "unknown", std::nullopt, false},
-    text_encoding_descriptor_t{text_encoding_t::ascii, "ASCII", std::nullopt, false},
-    text_encoding_descriptor_t{text_encoding_t::utf8, "UTF-8", std::nullopt, true},
-    text_encoding_descriptor_t{text_encoding_t::cp932, "CP932", "CP932", true},
-    text_encoding_descriptor_t{text_encoding_t::euc_kr, "EUC-KR", "EUC-KR", true},
-    text_encoding_descriptor_t{text_encoding_t::cp949, "CP949", "CP949", true},
-    text_encoding_descriptor_t{text_encoding_t::windows_1252, "Windows-1252", "WINDOWS-1252", true},
+    text_encoding_descriptor_t{text_encoding_t::unknown, "unknown", std::nullopt, false, "unknown"},
+    text_encoding_descriptor_t{text_encoding_t::ascii, "ASCII", std::nullopt, false, "ASCII"},
+    text_encoding_descriptor_t{text_encoding_t::utf8, "UTF-8", std::nullopt, true, "UTF-8"},
+    text_encoding_descriptor_t{text_encoding_t::cp932, "CP932", "CP932", true, "CP932 (Japanese)"},
+    text_encoding_descriptor_t{text_encoding_t::euc_kr, "EUC-KR", "EUC-KR", true, "EUC-KR (Korean)"},
+    text_encoding_descriptor_t{text_encoding_t::cp949, "CP949", "CP949", true, "CP949 (Korean)"},
+    text_encoding_descriptor_t{text_encoding_t::windows_1252, "Windows-1252", "WINDOWS-1252", true, "Windows-1252 (Western)"},
 };
 static_assert(is_catalog_exhaustive(bms_text_encodings, text_encoding_count));
 constexpr auto text_encoding_label(text_encoding_t kind) -> std::string_view {
@@ -84,15 +86,16 @@ struct note_kind_descriptor_t {
     std::string_view command_id_suffix;
     // Alt + digit; zero means this kind has no palette shortcut.
     unsigned shortcut_digit;
+    std::string_view palette_label;
 };
 inline constexpr std::array note_kinds{
-    note_kind_descriptor_t{note_kind_t::tap, "Tap", "Tap", "tap", 0},
-    note_kind_descriptor_t{note_kind_t::hold, "Hold", "Hold", "hold", 0},
-    note_kind_descriptor_t{note_kind_t::roll, "Roll", "Roll", "roll", 8},
-    note_kind_descriptor_t{note_kind_t::invisible, "Invisible note", "Invisible", "invisible", 5},
-    note_kind_descriptor_t{note_kind_t::mine, "Mine", "Mine", "mine", 4},
-    note_kind_descriptor_t{note_kind_t::lift, "Lift", "Lift", "lift", 6},
-    note_kind_descriptor_t{note_kind_t::fake, "Fake note", "Fake", "fake", 7},
+    note_kind_descriptor_t{note_kind_t::tap, "Tap", "Tap", "tap", 0, "Tap"},
+    note_kind_descriptor_t{note_kind_t::hold, "Hold", "Hold", "hold", 0, "Hold (click to begin hold gesture)"},
+    note_kind_descriptor_t{note_kind_t::roll, "Roll", "Roll", "roll", 8, "Roll (Alt+8; click to begin hold gesture)"},
+    note_kind_descriptor_t{note_kind_t::invisible, "Invisible note", "Invisible", "invisible", 5, "Invisible (Alt+5)"},
+    note_kind_descriptor_t{note_kind_t::mine, "Mine", "Mine", "mine", 4, "Mine (Alt+4)"},
+    note_kind_descriptor_t{note_kind_t::lift, "Lift", "Lift", "lift", 6, "Lift (Alt+6)"},
+    note_kind_descriptor_t{note_kind_t::fake, "Fake note", "Fake", "fake", 7, "Fake (Alt+7)"},
 };
 static_assert(is_catalog_exhaustive(note_kinds, note_kind_count));
 // Presentation order is explicit; enum keys, never raw integers, cross layers.

@@ -27,8 +27,6 @@ public:
         -> time_stretch_result_t;
     void finish() noexcept;
     [[nodiscard]] auto is_complete() const noexcept -> bool;
-    // Compatibility for the coordinated sys/UI migration.
-    inline auto complete() const noexcept -> bool { return is_complete(); }
     [[nodiscard]] auto buffered_source_frames() const noexcept -> std::uint64_t;
     [[nodiscard]] auto lookahead_frames() const noexcept -> std::size_t { return window_ + search_; }
     [[nodiscard]] auto fade_frames() const noexcept -> std::size_t { return window_; }

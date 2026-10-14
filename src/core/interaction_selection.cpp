@@ -40,8 +40,6 @@ auto is_scope_accepted(editor_selection_scope_t scope, editor_selection_object_k
     return false;
 }
 
-
-
 } // namespace
 
 namespace {
@@ -221,13 +219,6 @@ auto area_selection_bounds_t::from(const chart_document_t& chart,
     return result;
 }
 
-[[maybe_unused]] auto make_area_bounds(const chart_document_t& chart,
-                                       const editor_hit_test_index_t& index,
-                                       const editor_interaction_view_model_t& view,
-                                       const editor_area_selection_request_t& request)
-    -> area_selection_bounds_t {
-    return area_selection_bounds_t::from(chart, index, view, request);
-}
 
 auto collect_area_note_spans(note_area_query_t& query, std::vector<object_id_t>& selected,
                              std::size_t node, std::size_t first, std::size_t last) -> void {
@@ -883,6 +874,5 @@ auto commit_area_selection_gesture(area_selection_context_t& context, double x_p
     context.edit.state.pending_editor_area_selection.reset();
     return space_selection_view_result(make_view(context.edit.history, context.edit.state));
 }
-
 
 } // namespace wormedit

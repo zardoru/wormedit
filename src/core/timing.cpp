@@ -21,6 +21,8 @@
 namespace wormedit {
 namespace {
 
+using diagnostic_queries::has_errors;
+
 constexpr auto maximum_i64_magnitude =
     static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
 constexpr auto minimum_i64_magnitude = maximum_i64_magnitude + 1;
@@ -425,12 +427,6 @@ auto warning(timing_error_code_t code, std::string message,
             .code = code,
             .message = std::move(message),
             .object = object};
-}
-
-auto has_errors(const std::vector<timing_diagnostic_t>& diagnostics) -> bool {
-    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-        return diagnostic.severity == diagnostic_severity_t::error;
-    });
 }
 
 struct positioned_bpm_t {
@@ -3312,11 +3308,6 @@ auto timing_index_t::row_at_frame(std::uint64_t frame, std::uint32_t sample_rate
     if (policy == chart_end_policy_t::clamp_to_last_row && !rows.empty() &&
         rows.back().after_stops_seconds.numerator < 0) return std::nullopt;
     return row_at_approx({static_cast<std::int64_t>(frame), sample_rate}, policy, options);
-}
-// Compatibility for the sys/ui migration wave.
-auto make_preview_music_event(resource_id_t resource, std::uint64_t music_frame_count)
-    -> std::optional<preview_schedule_t::music_event_t> {
-    return preview_schedule_t::music_event_t::from(resource, music_frame_count);
 }
 
 } // namespace wormedit

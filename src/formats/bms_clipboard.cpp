@@ -1,3 +1,4 @@
+#include <wormedit/core/result.h>
 #include "../core/text_util.h"
 #include "../core/timing_arithmetic.h"
 #include <wormedit/core/bms36.h>
@@ -45,20 +46,13 @@ struct record_t {
     bool long_endpoint{};
 };
 
-struct line_result_t {
-    std::vector<std::string_view> lines;
-    std::string error;
-};
+using line_result_t = result_t<std::vector<std::string_view>, std::string>;
 
-struct record_result_t {
-    std::optional<record_t> record;
-    std::string error;
-};
+using record_result_t = result_t<record_t, std::string>;
 
 struct resource_result_t {
     std::optional<resource_id_t> id;
     bool ambiguous{};
-    std::string error;
 };
 
 struct resource_index_t {
@@ -73,10 +67,6 @@ struct decode_context_t {
     const bms_clipboard_decode_options_t& options;
     const resource_index_t& resources;
 };
-
-[[nodiscard]] auto failure(std::string message) -> chart_clipboard_result_t {
-    return {.error = std::move(message)};
-}
 
 [[nodiscard]] auto detect_grammar(std::string_view header) -> std::optional<grammar_t> {
     if (header == "BMSE3.0 ClipBoard Object Data Format") return grammar_t::bmse3;
@@ -96,17 +86,17 @@ struct decode_context_t {
 }
 
 [[nodiscard]] auto split_payload(std::string_view text, grammar_t grammar) -> line_result_t {
-    if (!is_valid_newlines(text)) return {{}, "BMS clipboard must use consistent CRLF line endings."};
+    if (!is_valid_newlines(text)) return std::unexpected(std::string{"BMS clipboard must use consistent CRLF line endings."});
     const auto header_end = text.find("\r\n");
     if (header_end == std::string_view::npos)
-        return {{}, "BMS clipboard is missing its header or record separator."};
+        return std::unexpected(std::string{"BMS clipboard is missing its header or record separator."});
     if (!detect_grammar(text.substr(0, header_end)))
-        return {{}, "BMS clipboard header is not recognized."};
+        return std::unexpected(std::string{"BMS clipboard header is not recognized."});
     auto body = text.substr(header_end + 2);
-    if (body.empty()) return {{}, "BMS clipboard contains no records."};
+    if (body.empty()) return std::unexpected(std::string{"BMS clipboard contains no records."});
     if ((grammar == grammar_t::bmse3 || grammar == grammar_t::bmse_legacy) &&
         !body.ends_with("\r\n"))
-        return {{}, "BMSE clipboard requires its trailing CRLF."};
+        return std::unexpected(std::string{"BMSE clipboard requires its trailing CRLF."});
 
     std::vector<std::string_view> lines;
     std::size_t start = 0;
@@ -116,12 +106,12 @@ struct decode_context_t {
         const auto line = body.substr(start, line_end - start);
         if (!line.empty()) lines.push_back(line);
         else if (grammar == grammar_t::bmse3 || grammar == grammar_t::bmse_legacy)
-            return {{}, "BMS clipboard contains an empty record."};
+            return std::unexpected(std::string{"BMS clipboard contains an empty record."});
         if (end == std::string_view::npos) break;
         start = end + 2;
     }
-    if (lines.empty()) return {{}, "BMS clipboard contains no records."};
-    return {std::move(lines), {}};
+    if (lines.empty()) return std::unexpected(std::string{"BMS clipboard contains no records."});
+    return lines;
 }
 
 [[nodiscard]] auto parse_unsigned(std::string_view text) -> std::optional<std::uint64_t> {
@@ -163,7 +153,7 @@ struct decode_context_t {
         .maximum_absolute_error = 1e-9L,
     };
     const auto result = rationalize_positive_double(rows / 192.0, limits);
-    return result ? result.value : std::nullopt;
+    return result ? std::optional{result->value} : std::nullopt;
 }
 
 auto base36_digit(char byte) -> std::optional<std::uint32_t> {
@@ -222,9 +212,9 @@ auto base36_digit(char byte) -> std::optional<std::uint32_t> {
 }
 
 [[nodiscard]] auto resolve_resource(const resource_index_t& resources, std::uint64_t number,
-                                    bms_clipboard_numbering_t numbering) -> resource_result_t {
+                                    bms_clipboard_numbering_t numbering) -> result_t<resource_id_t, std::string> {
     const auto token = decimal_digits(number, numbering);
-    if (!token) return {{}, false, "BMS clipboard resource index exceeds its numbering base."};
+    if (!token) return std::unexpected(std::string{"BMS clipboard resource index exceeds its numbering base."});
     const auto& index = numbering == bms_clipboard_numbering_t::base62
         ? resources.exact : resources.folded;
     auto key = *token;
@@ -232,10 +222,10 @@ auto base36_digit(char byte) -> std::optional<std::uint32_t> {
         key = text_util::ascii_upper(std::move(key));
     const auto found = index.find(key);
     if (found == index.end())
-        return {{}, false, "BMS clipboard references a WAV identity absent from the target song."};
+        return std::unexpected(std::string{"BMS clipboard references a WAV identity absent from the target song."});
     if (found->second.ambiguous)
-        return {{}, true, "BMS WAV identity resolves to more than one target resource."};
-    return found->second;
+        return std::unexpected(std::string{"BMS WAV identity resolves to more than one target resource."});
+    return *found->second.id;
 }
 
 [[nodiscard]] auto lane_for_channel(const lane_layout_t& layout, std::string_view channel)
@@ -326,8 +316,8 @@ auto base36_digit(char byte) -> std::optional<std::uint32_t> {
         if (!number) return "BMS note resource index must be a positive integer.";
         const auto resource = resolve_resource(context.resources, *number,
                                                context.options.object_numbering);
-        if (!resource.id) return resource.error;
-        record.sound = resource.id;
+        if (!resource) return resource.error();
+        record.sound = *resource;
         return {};
     }
     if (record.kind == object_kind_t::bgm) {
@@ -337,8 +327,8 @@ auto base36_digit(char byte) -> std::optional<std::uint32_t> {
         if (!number) return "BMS BGM resource index must be a positive integer.";
         const auto resource = resolve_resource(context.resources, *number,
                                                context.options.object_numbering);
-        if (!resource.id) return resource.error;
-        record.sound = resource.id;
+        if (!resource) return resource.error();
+        record.sound = *resource;
         return {};
     }
     if (record.kind == object_kind_t::bpm && record.value.numerator <= 0)
@@ -379,17 +369,17 @@ auto base36_digit(char byte) -> std::optional<std::uint32_t> {
                                     std::size_t order, const decode_context_t& context)
     -> record_result_t {
     const auto header_bytes = grammar == grammar_t::bmse3 ? std::size_t{20} : std::size_t{11};
-    if (line.size() <= header_bytes) return {{}, "BMSE clipboard record is truncated."};
+    if (line.size() <= header_bytes) return std::unexpected(std::string{"BMSE clipboard record is truncated."});
     std::size_t bgm_lane{};
     const auto channel = bmse_channel(line.substr(0, 3), bgm_lane);
-    if (!channel) return {{}, "BMSE clipboard channel is unknown or unsupported."};
-    if (line[3] < '0' || line[3] > '3') return {{}, "BMSE clipboard attribute is invalid."};
+    if (!channel) return std::unexpected(std::string{"BMSE clipboard channel is unknown or unsupported."});
+    if (line[3] < '0' || line[3] > '3') return std::unexpected(std::string{"BMSE clipboard attribute is invalid."});
 
     const auto offset = bmse_position(line, grammar);
-    if (!offset) return {{}, "BMSE position bits, digits, or recovered fraction are invalid."};
+    if (!offset) return std::unexpected(std::string{"BMSE position bits, digits, or recovered fraction are invalid."});
     const auto value_text = line.substr(header_bytes);
     const auto value = parse_exact_decimal(value_text, 18);
-    if (!value) return {{}, "BMSE clipboard value is not a finite decimal number."};
+    if (!value) return std::unexpected(std::string{"BMSE clipboard value is not a finite decimal number."});
 
     record_t record;
     record.kind = channel->first;
@@ -406,11 +396,11 @@ auto base36_digit(char byte) -> std::optional<std::uint32_t> {
         record.long_endpoint = record.attribute == 2;
         record.mine = record.attribute == 3;
     } else if (record.attribute != 0) {
-        return {{}, "BMSE clipboard attributes apply only to playable note records."};
+        return std::unexpected(std::string{"BMSE clipboard attributes apply only to playable note records."});
     }
     const auto error = finish_record(record, context);
-    if (!error.empty()) return {{}, error};
-    return {std::move(record), {}};
+    if (!error.empty()) return std::unexpected(error);
+    return record;
 }
 
 [[nodiscard]] auto split_single_spaces(std::string_view line)
@@ -472,28 +462,28 @@ auto base36_digit(char byte) -> std::optional<std::uint32_t> {
     -> record_result_t {
     const auto fields = split_single_spaces(line);
     if (!fields || fields->size() != 6)
-        return {{}, "iBMSC record must have six single-space-separated fields."};
+        return std::unexpected(std::string{"iBMSC record must have six single-space-separated fields."});
     const auto column = parse_unsigned((*fields)[0]);
     const auto row = parse_finite_double((*fields)[1]);
     const auto scaled_value = parse_signed((*fields)[2]);
     const auto offset = row ? position_from_rows(*row) : std::nullopt;
     if (!column || !row || !offset || !scaled_value)
-        return {{}, "iBMSC record contains an invalid column, position, or value."};
+        return std::unexpected(std::string{"iBMSC record contains an invalid column, position, or value."});
     const auto ln = grammar == grammar_t::ibmsc_xnt
         ? parse_exact_decimal((*fields)[3], 18)
         : normalized_signed(parse_signed((*fields)[3]).value_or(std::numeric_limits<std::int64_t>::min()), 1);
     if (grammar == grammar_t::ibmsc && !parse_signed((*fields)[3]))
-        return {{}, "iBMSC long-note flag is not an integer."};
+        return std::unexpected(std::string{"iBMSC long-note flag is not an integer."});
     const auto hidden = parse_signed((*fields)[4]);
     const auto mine = parse_signed((*fields)[5]);
     if (!ln || !hidden || !mine || (*hidden != 0 && *hidden != -1) ||
         (*mine != 0 && *mine != -1))
-        return {{}, "iBMSC long-note, hidden, or mine field is invalid."};
+        return std::unexpected(std::string{"iBMSC long-note, hidden, or mine field is invalid."});
     std::size_t bgm_lane{};
     const auto channel = ibmsc_channel(*column, bgm_lane);
-    if (!channel) return {{}, "iBMSC column is unknown, a spacer, or unsupported."};
+    if (!channel) return std::unexpected(std::string{"iBMSC column is unknown, a spacer, or unsupported."});
     const auto scaled = normalized_signed(*scaled_value, 10'000);
-    if (!scaled) return {{}, "iBMSC numeric value overflows the native rational range."};
+    if (!scaled) return std::unexpected(std::string{"iBMSC numeric value overflows the native rational range."});
 
     record_t record;
     record.kind = channel->first;
@@ -505,10 +495,10 @@ auto base36_digit(char byte) -> std::optional<std::uint32_t> {
     record.line = std::string{line};
     record.order = order;
     const auto flag_error = apply_ibmsc_flags(record, grammar, *ln, *hidden, *mine, (*fields)[3]);
-    if (!flag_error.empty()) return {{}, flag_error};
+    if (!flag_error.empty()) return std::unexpected(flag_error);
     const auto error = finish_record(record, context);
-    if (!error.empty()) return {{}, error};
-    return {std::move(record), {}};
+    if (!error.empty()) return std::unexpected(error);
+    return record;
 }
 
 [[nodiscard]] auto checked_multiply(std::uint64_t left, std::uint64_t right)
@@ -708,57 +698,64 @@ using record_key_t = std::tuple<object_kind_t, std::size_t, std::size_t,
 }
 
 [[nodiscard]] auto build_clipboard(const std::vector<record_t>& records, grammar_t grammar,
-                                   const decode_context_t& context)
-    -> chart_clipboard_result_t {
-    chart_clipboard_t clipboard{.source_song = context.song.id,
-                                .source_chart = context.chart.id};
+                                   const decode_context_t& context) -> chart_clipboard_outcome_t {
+    chart_clipboard_t clipboard{.source_song = context.song.id, .source_chart = context.chart.id};
     std::vector<const record_t*> endpoints;
     std::size_t next_id = 1;
     for (const auto& record : records) {
-        if (record.long_endpoint) endpoints.push_back(&record);
-        else append_record_object(clipboard, record, grammar, context, next_id++);
+        if (record.long_endpoint)
+            endpoints.push_back(&record);
+        else
+            append_record_object(clipboard, record, grammar, context, next_id++);
     }
-    const auto error = append_long_note_groups(clipboard, std::move(endpoints), grammar,
-                                                context, next_id);
-    if (!error.empty()) return failure(error);
-    if (clipboard.objects.empty()) return failure("BMS clipboard contains no supported objects.");
-    return {.clipboard = std::move(clipboard)};
+    const auto error =
+        append_long_note_groups(clipboard, std::move(endpoints), grammar, context, next_id);
+    if (!error.empty())
+        return std::unexpected(error);
+    if (clipboard.objects.empty())
+        return std::unexpected(std::string{"BMS clipboard contains no supported objects."});
+    return clipboard;
 }
 
 } // namespace
 
-auto decode_bms_clipboard(std::string_view text, const song_document_t& target_document,
-                          const chart_document_t& target_chart,
-                          const lane_layout_t& target_layout,
-                          bms_clipboard_decode_options_t options) -> chart_clipboard_result_t {
+auto parse_bms_chart_clipboard(std::string_view text, const song_document_t& target_document,
+                               const chart_document_t& target_chart,
+                               const lane_layout_t& target_layout,
+                               bms_clipboard_decode_options_t options)
+    -> chart_clipboard_outcome_t {
     if (options.maximum_bytes == 0 || text.size() > options.maximum_bytes)
-        return failure("BMS clipboard exceeds the configured byte limit.");
+        return std::unexpected(std::string{"BMS clipboard exceeds the configured byte limit."});
     if (options.maximum_records == 0)
-        return failure("BMS clipboard record limit must be positive.");
+        return std::unexpected(std::string{"BMS clipboard record limit must be positive."});
     const auto separator = text.find("\r\n");
     if (separator == std::string_view::npos)
-        return failure("BMS clipboard is missing its header or record separator.");
+        return std::unexpected(
+            std::string{"BMS clipboard is missing its header or record separator."});
     const auto grammar = detect_grammar(text.substr(0, separator));
-    if (!grammar) return failure("BMS clipboard header is not recognized.");
+    if (!grammar)
+        return std::unexpected(std::string{"BMS clipboard header is not recognized."});
     const auto lines = split_payload(text, *grammar);
-    if (!lines.error.empty()) return failure(lines.error);
-    if (lines.lines.size() > options.maximum_records)
-        return failure("BMS clipboard exceeds the configured record limit.");
+    if (!lines)
+        return std::unexpected(lines.error());
+    if (lines->size() > options.maximum_records)
+        return std::unexpected(std::string{"BMS clipboard exceeds the configured record limit."});
 
     const auto resources = index_resources(target_document);
-    const decode_context_t context{target_document, target_chart, target_layout, options, resources};
+    const decode_context_t context{target_document, target_chart, target_layout, options,
+                                   resources};
     std::vector<record_t> records;
-    records.reserve(lines.lines.size());
+    records.reserve(lines->size());
     std::set<record_key_t> seen;
-    for (std::size_t order = 0; order < lines.lines.size(); ++order) {
+    for (std::size_t order = 0; order < lines->size(); ++order) {
         auto parsed = *grammar == grammar_t::bmse3 || *grammar == grammar_t::bmse_legacy
-            ? parse_bmse_record(lines.lines[order], *grammar, order, context)
-            : parse_ibmsc_record(lines.lines[order], *grammar, order, context);
-        if (!parsed.error.empty()) return failure(parsed.error);
-        if (!parsed.record) return failure("BMS clipboard record could not be decoded.");
-        if (!seen.insert(record_key(*parsed.record)).second)
-            return failure("BMS clipboard contains a duplicate record.");
-        records.push_back(std::move(*parsed.record));
+                          ? parse_bmse_record((*lines)[order], *grammar, order, context)
+                          : parse_ibmsc_record((*lines)[order], *grammar, order, context);
+        if (!parsed)
+            return std::unexpected(parsed.error());
+        if (!seen.insert(record_key(*parsed)).second)
+            return std::unexpected(std::string{"BMS clipboard contains a duplicate record."});
+        records.push_back(std::move(*parsed));
     }
     return build_clipboard(records, *grammar, context);
 }

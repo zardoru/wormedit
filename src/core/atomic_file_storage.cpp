@@ -187,11 +187,17 @@ auto atomic_replace(const std::filesystem::path& temporary,
 
 } // namespace
 
-auto save_file_atomic(const std::filesystem::path& path, std::string_view bytes,
-                       std::size_t maximum_bytes) -> atomic_file_save_result_t {
-    atomic_file_save_result_t result;
-    if (path.empty() || path.filename().empty()) { result.error = "destination must name a file"; return result; }
-    if (bytes.size() > maximum_bytes) { result.error = "file exceeds its byte limit"; return result; }
+auto create_file_atomic(const std::filesystem::path& path, std::string_view bytes,
+                        std::size_t maximum_bytes) -> atomic_file_save_outcome_t {
+    std::string message;
+    if (path.empty() || path.filename().empty()) {
+        message = "destination must name a file";
+        return std::unexpected(std::move(message));
+    }
+    if (bytes.size() > maximum_bytes) {
+        message = "file exceeds its byte limit";
+        return std::unexpected(std::move(message));
+    }
     static std::atomic<std::uint64_t> temporary_sequence{1};
     temporary_file_t temporary;
     bool created{};
@@ -210,37 +216,40 @@ auto save_file_atomic(const std::filesystem::path& path, std::string_view bytes,
         const auto collision = error == EEXIST;
 #endif
         if (!collision) {
-            result.error = "could not create same-directory temporary file: " +
-                           std::error_code(error, native_error_category()).message();
-            return result;
+            message = "could not create same-directory temporary file: " +
+                      std::error_code(error, native_error_category()).message();
+            return std::unexpected(std::move(message));
         }
     }
     if (!created) {
-        result.error = "could not allocate a unique temporary file path";
-        return result;
+        message = "could not allocate a unique temporary file path";
+        return std::unexpected(std::move(message));
     }
 
     int error{};
     if (!write_all(temporary.handle, bytes, error)) {
-        result.error = "could not write temporary file: " +
-                       std::error_code(error, native_error_category()).message();
-        return result;
+        message = "could not write temporary file: " +
+                  std::error_code(error, native_error_category()).message();
+        return std::unexpected(std::move(message));
     }
     if (!flush_file(temporary.handle, error)) {
-        result.error = "could not flush temporary file: " +
-                       std::error_code(error, native_error_category()).message();
-        return result;
+        message = "could not flush temporary file: " +
+                  std::error_code(error, native_error_category()).message();
+        return std::unexpected(std::move(message));
     }
     if (!close_file(temporary.handle, error)) {
-        result.error = "could not close temporary file: " +
-                       std::error_code(error, native_error_category()).message();
-        return result;
+        message = "could not close temporary file: " +
+                  std::error_code(error, native_error_category()).message();
+        return std::unexpected(std::move(message));
     }
-    if (!atomic_replace(temporary.path, path, result.error)) {
-        return result;
+    if (!atomic_replace(temporary.path, path, message)) {
+        return std::unexpected(std::move(message));
     }
     temporary.owned = false;
-    result.published = true;
-    return result;
+    return {};
+}
+auto save_file_atomic(const std::filesystem::path& path, std::string_view bytes,
+                      std::size_t maximum_bytes) -> atomic_file_save_result_t {
+    return atomic_file_save_result_t::from(create_file_atomic(path, bytes, maximum_bytes));
 }
 } // namespace wormedit

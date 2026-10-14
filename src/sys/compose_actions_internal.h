@@ -5,7 +5,7 @@
 #include "sys/compose_actions.h"
 #include "sys/compose_area_actions.h"
 #include "sys/compose_bga_actions.h"
-#include "sys/compose_bookmark_commands.h"
+#include "sys/bookmark_commands.h"
 #include "sys/compose_label_search.h"
 #include "sys/compose_measure_commands.h"
 #include "sys/compose_navigation.h"

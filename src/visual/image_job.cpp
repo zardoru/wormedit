@@ -57,19 +57,19 @@ auto decode_images(image_cache_t& cache, song_id_t project, std::uint64_t docume
                                        options.maximum_result_rgba_bytes);
             continue;
         }
-        auto decoded = load_image_rgba(source, options.decode_limits);
+        auto decoded = open_image_rgba(source, options.decode_limits);
         if (!decoded) {
             result.items.push_back({.source = source,
-                                    .status = decoded.status,
+                                    .status = decoded.error().code,
                                     .image = {},
-                                    .message = std::move(decoded.message)});
+                                    .message = std::move(decoded.error().message)});
             continue;
         }
         if (stop.stop_requested()) {
             return task_result_t::failure(task_error_code_t::cancelled,
                                           "image decode request was superseded");
         }
-        auto image = std::make_shared<const rgba_image_t>(std::move(*decoded.image));
+        auto image = std::make_shared<const rgba_image_t>(std::move(*decoded));
         append_within_result_limit(result, source, image, result_bytes,
                                    options.maximum_result_rgba_bytes);
         if (result.items.back()) {
@@ -178,16 +178,20 @@ void image_job_t::discard_terminal_jobs() {
 auto image_job_t::request(song_id_t project, std::uint64_t document_revision,
                           std::span<const resolved_visual_asset_t> sources,
                           image_job_options_t options) -> image_job_start_result_t {
+    return image_job_start_result_t::from(begin(project, document_revision, sources, options));
+}
+
+auto image_job_t::begin(song_id_t project, std::uint64_t document_revision,
+                          std::span<const resolved_visual_asset_t> sources,
+                          image_job_options_t options) -> async_job_start_outcome_t {
     if (!project || document_revision == 0 || sources.empty() ||
         maximum_sources_per_request_ == 0 || maximum_in_flight_jobs_ == 0 ||
         sources.size() > maximum_sources_per_request_ || options.maximum_result_rgba_bytes == 0) {
-        return {.status = image_job_start_status_t::invalid_request,
-                .message = "image decode request is empty or exceeds its configured bounds"};
+        return std::unexpected(error_t<async_job_start_status_t>{image_job_start_status_t::invalid_request, "image decode request is empty or exceeds its configured bounds"});
     }
     discard_terminal_jobs();
     if (workers_.size() >= maximum_in_flight_jobs_) {
-        return {.status = image_job_start_status_t::capacity_exceeded,
-                .message = "image decode jobs have not reached cancellation checkpoints"};
+        return std::unexpected(error_t<async_job_start_status_t>{image_job_start_status_t::capacity_exceeded, "image decode jobs have not reached cancellation checkpoints"});
     }
 
     auto generation = next_generation_ + 1U;
@@ -202,9 +206,7 @@ auto image_job_t::request(song_id_t project, std::uint64_t document_revision,
             return decode_images(cache_, project, document_revision, sources, options, stop);
         });
     if (!task) {
-        return {.status = image_job_start_status_t::scheduler_rejected,
-                .message =
-                    task.error ? task.error->message : "image decode task could not be created"};
+        return std::unexpected(error_t<async_job_start_status_t>{image_job_start_status_t::scheduler_rejected, task.error ? task.error->message : "image decode task could not be created"});
     }
     auto submitted = scheduler_.submit(std::move(graph));
     if (!submitted) {
@@ -212,9 +214,8 @@ auto image_job_t::request(song_id_t project, std::uint64_t document_revision,
                                     submitted.error->code == task_error_code_t::capacity_exceeded
                                 ? async_job_start_status_t::capacity_exceeded
                                 : async_job_start_status_t::scheduler_rejected;
-        return {.status = status,
-                .message = submitted.error ? submitted.error->message
-                                           : "image decode task could not be submitted"};
+        return std::unexpected(error_t<async_job_start_status_t>{status, submitted.error ? submitted.error->message
+                                           : "image decode task could not be submitted"});
     }
 
     for (const auto& worker : workers_) {
@@ -227,7 +228,7 @@ auto image_job_t::request(song_id_t project, std::uint64_t document_revision,
                         .document_revision = document_revision,
                         .graph = std::move(submitted.graph),
                         .task = *task.id});
-    return {.status = image_job_start_status_t::started, .generation = generation, .message = {}};
+    return generation;
 }
 
 auto image_job_t::poll() -> std::optional<image_job_completion_t> {

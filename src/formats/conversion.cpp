@@ -114,7 +114,7 @@ auto slug(std::string_view source, std::string_view fallback, std::size_t capaci
                 result.push_back('-');
             separator = false;
             if (result.size() < capacity)
-                result.push_back(static_cast<char>(text_util::ascii_fold(static_cast<char>(value))));
+                result.push_back(static_cast<char>(text_util::ascii_lowercase(static_cast<char>(value))));
         } else {
             separator = true;
         }
@@ -244,18 +244,18 @@ auto apply_quantization(conversion_context_t& context, song_document_t& prepared
                            "Quantization chart was not found in the detached document");
             return false;
         }
-        auto quantized = quantize_chart_exact(*found, *context.request.quantization);
+        auto quantized = quantization_plan_t::from(*found, *context.request.quantization);
         for (const auto& diagnostic : quantized.diagnostics) {
             add_diagnostic(context.result, diagnostic.severity,
                            conversion_diagnostic_code_t::transform_failed,
                            conversion_stage_t::transform, context.request.target, chart_id,
                            diagnostic.message);
         }
-        if (!quantized) {
+        if (!quantized.value.chart) {
             return false;
         }
-        const auto moved = quantized.resolution_moves.size() + quantized.quantized_moves.size();
-        *found = std::move(*quantized.chart);
+        const auto moved = quantized.value.resolution_moves.size() + quantized.value.quantized_moves.size();
+        *found = std::move(*quantized.value.chart);
         add_diagnostic(context.result, diagnostic_severity_t::info,
                        conversion_diagnostic_code_t::target_diagnostic,
                        conversion_stage_t::transform, context.request.target, chart_id,
@@ -572,7 +572,7 @@ auto prepare_slice_exports(conversion_context_t& context, song_document_t& prepa
     for (const auto id : charts) {
         auto chart = prepared.find_chart(id);
         if (chart->source_family != format_family_t::bmson) continue;
-        auto plan = build_slice_span_plan(prepared, id, context.request.slice_sources, options);
+        auto plan = plan_slice_spans(prepared, id, context.request.slice_sources, options);
         if (!plan) {
             for (const auto& diagnostic : plan.diagnostics)
                 add_diagnostic(context.result, diagnostic_severity_t::error,
@@ -1015,7 +1015,7 @@ conversion_result_t::operator bool() const noexcept {
 
 auto plan_conversion_slice_spans(const song_document_t& song, chart_id_t chart,
     std::span<const slice_span_source_t> sources, const slice_span_options_t& options) -> slice_span_plan_t {
-    return build_slice_span_plan(song, chart, sources, options);
+    return plan_slice_spans(song, chart, sources, options);
 }
 
 auto is_conversion_needs_slice_spans(const song_document_t& song, const conversion_request_t& request) -> bool {

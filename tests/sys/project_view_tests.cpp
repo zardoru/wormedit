@@ -9,7 +9,7 @@ void expect_project(bool value) { CHECK(value); }
 void require_project(bool value) { REQUIRE(value); }
 auto project_song() -> song_document_t {
     song_document_t song{.id = song_id_t{1}, .revision = 4};
-    auto history = make_document_history(std::move(song));
+    auto history = document_history_t::from(std::move(song));
     const auto created = apply_new_chart_command(history);
     require_project(static_cast<bool>(created));
     history.document.charts[0].metadata = {.name = "Normal", .author = "Author", .rating = signed_rational_t{7, 2}};
@@ -54,11 +54,9 @@ TEST_CASE("Project chart table cache refreshes revisions and reopened sessions",
 }
 
 TEST_CASE("Project chart commands preserve atomic rejection and open newly created charts", "[unit][project-view]") {
-    auto history = make_document_history(project_song());
-    auto created =
-        apply_project_chart_command(history, {.kind = project_chart_command_kind_t::create,
-                                              .expected_revision = history.document.revision,
-                                              .chart = history.document.charts[0].id});
+    auto history = document_history_t::from(project_song());
+    auto created = apply_project_chart_command(history, {.kind = project_chart_command_kind_t::create,
+        .expected_revision = history.document.revision, .chart = history.document.charts[0].id});
     require_project(static_cast<bool>(created.command));
     expect_project(created.open_chart == history.document.charts.back().id);
     const auto revision = history.document.revision;
@@ -85,7 +83,7 @@ TEST_CASE("Project chart commands preserve atomic rejection and open newly creat
 }
 
 TEST_CASE("Project chart UI rejects closed sessions stale delete and malformed batch ratings", "[unit][project-view]") {
-    auto history = make_document_history(project_song());
+    auto history = document_history_t::from(project_song());
     project_chart_runtime_t runtime;
     WormUiProjectChartAction action{.kind = WORM_UI_PROJECT_CHART_DELETE,
         .document_revision = history.document.revision, .session_generation = 0,
@@ -114,7 +112,7 @@ TEST_CASE("Project chart UI rejects closed sessions stale delete and malformed b
 }
 
 TEST_CASE("Project chart scalar projection exposes row rejection and refreshes after mutations", "[unit][project-view]") {
-    auto history = make_document_history(project_song());
+    auto history = document_history_t::from(project_song());
     project_chart_runtime_t runtime;
     WormUiSetupView view{.visible = true};
     project_chart_view(runtime, history.document, view);
@@ -132,15 +130,14 @@ TEST_CASE("Project chart scalar projection exposes row rejection and refreshes a
 }
 
 TEST_CASE("Project New templates the selected four-key chart instead of the first chart or default profile", "[unit][project-view]") {
-    auto history = make_document_history(project_song());
+    auto history = document_history_t::from(project_song());
     lane_input_profile_t profile{.layout = {.profile_id = "stepmania:dance-single", .display_name = "4K",
         .lanes = {{.id = lane_id_t{1}, .name = "Left", .display_order = 0, .glyph = lane_glyph_t::arrow_left},
                   {.id = lane_id_t{2}, .name = "Down", .display_order = 1, .glyph = lane_glyph_t::arrow_down},
                   {.id = lane_id_t{3}, .name = "Up", .display_order = 2, .glyph = lane_glyph_t::arrow_up},
                   {.id = lane_id_t{4}, .name = "Right", .display_order = 3, .glyph = lane_glyph_t::arrow_right}}}};
-    profile.input = *default_input_profile_for(profile.layout);
-    const auto active =
-        apply_new_chart_command(history, std::move(profile), format_family_t::stepmania);
+    profile.input = *make_default_input_profile_for(profile.layout);
+    const auto active = apply_new_chart_command(history, std::move(profile), format_family_t::stepmania);
     require_project(static_cast<bool>(active));
     auto& selected = history.document.charts.back();
     selected.divisions_per_standard_measure = 3840;
@@ -162,9 +159,9 @@ TEST_CASE("Project New templates the selected four-key chart instead of the firs
 }
 
 TEST_CASE("Project New allows an empty document fallback and rejects a missing active template otherwise", "[unit][project-view]") {
-    auto empty = make_document_history(song_document_t{.id = song_id_t{1}, .revision = 4});
-    const auto fallback = apply_project_chart_command(
-        empty, {.kind = project_chart_command_kind_t::create, .expected_revision = 4});
+    auto empty = document_history_t::from(song_document_t{.id = song_id_t{1}, .revision = 4});
+    const auto fallback = apply_project_chart_command(empty, {.kind = project_chart_command_kind_t::create,
+        .expected_revision = 4});
     require_project(static_cast<bool>(fallback.command));
     expect_project(empty.document.charts.back().lane_layouts[0].layout.profile_id == make_bms_7k_profile().layout.profile_id);
     const auto before = empty.document.revision;
@@ -178,7 +175,7 @@ TEST_CASE("Project New allows an empty document fallback and rejects a missing a
 
 namespace {
 auto reorder_history() -> document_history_t {
-    auto history = make_document_history(project_song());
+    auto history = document_history_t::from(project_song());
     const auto first = history.document.charts.front().id;
     require_project(static_cast<bool>(apply_duplicate_chart_command(history, first)));
     require_project(static_cast<bool>(apply_duplicate_chart_command(history, first)));
@@ -237,7 +234,7 @@ TEST_CASE("Project grip reorder rejects stale or missing targets and leaves adja
 }
 
 TEST_CASE("Project output group actions project complete editable membership and reject foreign sessions", "[unit][project-view][output-groups]") {
-    auto history = make_document_history(project_song());
+    auto history = document_history_t::from(project_song());
     project_chart_runtime_t runtime;
     task_scheduler_t scheduler{1, 1};
     WormUiSetupView view{.visible = true};
@@ -266,7 +263,7 @@ TEST_CASE("Project output group actions project complete editable membership and
 }
 
 TEST_CASE("Project conversion preview runs through the worker service and retires on document changes", "[unit][project-view][output-groups]") {
-    auto history = make_document_history(project_song());
+    auto history = document_history_t::from(project_song());
     history.document.output_groups[0].family = format_family_t::native_project;
     history.document.output_groups[0].relative_output_path = "exports/song.wormedit";
     project_chart_runtime_t runtime;

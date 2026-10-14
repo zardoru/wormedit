@@ -1,5 +1,7 @@
 #pragma once
 
+#include <wormedit/core/result.h>
+
 #include <cstdint>
 #include <optional>
 #include <string_view>
@@ -22,6 +24,8 @@ enum class measure_error_t {
 };
 
 struct rational_t {
+    [[nodiscard]] static auto from(std::string_view text) -> result_t<rational_t, measure_error_t>;
+
     std::uint64_t numerator{};
     std::uint64_t denominator{1};
 
@@ -35,15 +39,7 @@ struct meter_t {
     auto operator==(const meter_t&) const -> bool = default;
 };
 
-struct measure_parse_result_t {
-    std::optional<rational_t> value;
-    measure_error_t error{measure_error_t::none};
-
-    [[nodiscard]] explicit operator bool() const noexcept
-    {
-        return value.has_value();
-    }
-};
+using measure_parse_result_t = result_t<rational_t, measure_error_t>;
 
 struct measure_definition_t {
     rational_t length;
@@ -77,8 +73,6 @@ struct bmson_grid_t {
 [[nodiscard]] auto validate_measure(
     std::uint64_t divisions_per_standard_measure,
     const measure_definition_t& measure) -> measure_validation_t;
-[[nodiscard]] auto make_default_bmson_grid(
-    std::uint64_t divisions_per_standard_measure) -> std::optional<bmson_grid_t>;
 [[nodiscard]] auto bmson_pulse_for_row(
     const bmson_grid_t& grid,
     std::uint64_t absolute_editor_row) -> std::optional<std::uint64_t>;

@@ -60,7 +60,7 @@ auto apply_selection_transform(document_history_t& history, const editor_interac
     set_feedback_severity(severity, notification_severity_t::warning);
     const auto notes = editor_quantize_selection(state).notes;
     if (notes.empty()) return "Select notes before transforming them.";
-    const auto* chart = find_chart(history.document, state.chart);
+    const auto* chart = history.document.find_chart(state.chart);
     if (!chart) return "The selected difficulty is no longer available.";
     const auto revision = history.document.revision;
     switch (transform) {

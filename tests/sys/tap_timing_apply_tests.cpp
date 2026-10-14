@@ -30,13 +30,13 @@ auto record_apply_taps(tap_timing_runtime_t& runtime) -> tap_timing_clock_t {
 }
 
 TEST_CASE("Tap Apply binds a stable proposal and records both values once", "[sys][tap-apply]") {
-    auto history = make_document_history(apply_song());
+    auto history = document_history_t::from(apply_song());
     tap_timing_runtime_t runtime;
     const auto clock = record_apply_taps(runtime);
     runtime.prepare_apply(history.document, false);
     REQUIRE(runtime.apply_proposal());
     const auto proposal = *runtime.apply_proposal();
-    const auto preview = build_tap_timing_preview(history.document, proposal);
+    const auto preview = make_tap_timing_preview(history.document, proposal);
     REQUIRE(preview);
     const auto original = build_timing_index(history.document.charts.front());
     const auto proposed = build_timing_index(*preview);
@@ -62,7 +62,7 @@ TEST_CASE("Tap Apply binds a stable proposal and records both values once", "[sy
 
 TEST_CASE("Tap Apply rejects changed source session revision lock and expired estimate", "[sys][tap-apply]") {
     for (int failure = 0; failure < 7; ++failure) {
-        auto history = make_document_history(apply_song());
+        auto history = document_history_t::from(apply_song());
         tap_timing_runtime_t runtime;
         auto clock = record_apply_taps(runtime);
         runtime.prepare_apply(history.document, false);
@@ -87,7 +87,7 @@ TEST_CASE("Tap Apply rejects changed source session revision lock and expired es
 }
 
 TEST_CASE("Tap Apply choice and hidden panel invalidate the prepared proposal", "[sys][tap-apply]") {
-    auto history = make_document_history(apply_song());
+    auto history = document_history_t::from(apply_song());
     tap_timing_runtime_t runtime;
     const auto clock = record_apply_taps(runtime);
     runtime.prepare_apply(history.document, false);
@@ -102,7 +102,7 @@ TEST_CASE("Tap Apply choice and hidden panel invalidate the prepared proposal", 
 }
 
 TEST_CASE("Tap Apply cannot enable a structurally invalid preview", "[sys][tap-apply]") {
-    auto history = make_document_history(apply_song());
+    auto history = document_history_t::from(apply_song());
     tap_timing_runtime_t runtime;
     const auto clock = record_apply_taps(runtime);
     history.document.charts.front().measures.clear();

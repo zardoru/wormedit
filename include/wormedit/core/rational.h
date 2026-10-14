@@ -73,18 +73,26 @@ struct rationalization_options_t {
     std::optional<long double> maximum_absolute_error;
 };
 
-struct rationalization_result_t {
-    std::optional<rational_t> value;
-    rationalization_status_t status{rationalization_status_t::error};
-    rationalization_error_t error{rationalization_error_t::none};
-    // This is a conservative bound against the exact IEEE-754 input value.
+struct rationalization_error_info_t {
+    rationalization_error_t code{rationalization_error_t::none};
     long double absolute_error_bound{};
     std::uint32_t iterations{};
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return value.has_value();
-    }
+    auto operator==(const rationalization_error_info_t&) const -> bool = default;
 };
+
+struct rationalized_value_t {
+    [[nodiscard]] static auto from(double value, const rationalization_options_t& options = {})
+        -> result_t<rationalized_value_t, rationalization_error_info_t>;
+
+    rational_t value;
+    rationalization_status_t status{rationalization_status_t::exact};
+    // The conservative bound and actual iterations also travel with rejected approximations.
+    long double absolute_error_bound{};
+    std::uint32_t iterations{};
+    auto operator==(const rationalized_value_t&) const -> bool = default;
+};
+
+using rationalization_result_t = result_t<rationalized_value_t, rationalization_error_info_t>;
 
 // Converts a positive finite IEEE-754 double deterministically to a reduced
 // positive rational. Exact binary values are retained when both limits allow

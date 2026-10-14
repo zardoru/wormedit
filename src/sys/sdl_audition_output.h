@@ -65,6 +65,7 @@ class sdl_audition_output_t {
     }
 
   private:
+    friend struct sdl_audition_output_test_access_t;
     void refill_loop(std::stop_token stop);
     void set_refill_enabled(bool enabled) noexcept;
     [[nodiscard]] auto take_refill_result() -> std::optional<audio::audition_pump_result_t>;

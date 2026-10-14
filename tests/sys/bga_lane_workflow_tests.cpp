@@ -58,7 +58,7 @@ auto bga_history() -> wormedit::document_history_t {
                           {.id = asset_id_t{62}, .kind = asset_kind_t::video},
                           {.id = asset_id_t{63}, .kind = asset_kind_t::image},
                           {.id = asset_id_t{64}, .kind = asset_kind_t::image}};
-    return make_document_history(std::move(song));
+    return document_history_t::from(std::move(song));
 }
 
 void check_event_provenance(const wormedit::bga_event_t& event,
@@ -334,7 +334,7 @@ TEST_CASE("typed BGA deletion preserves neighboring objects across undo and redo
     using namespace wormedit;
     auto history = bga_history();
     constexpr std::array snaps{std::uint64_t{4}};
-    auto setup = make_editor_interaction(history, chart_id_t{7},
+    auto setup = editor_interaction_state_t::from(history, chart_id_t{7},
         history.document.charts.front().lane_layouts.front().layout.lanes.front().id,
         {measure_id_t{1}, 0}, snaps, 4);
     REQUIRE(setup);

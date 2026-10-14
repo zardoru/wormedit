@@ -1,3 +1,4 @@
+#include <wormedit/core/rational.h>
 #include "sys/compose_input_internal.h"
 namespace wormedit::sys::compose_input_detail {
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
@@ -16,7 +17,7 @@ auto fit_visible_source_frame(const wormedit::timing_index_t& timing,
                        state.pixels_per_standard_measure,
                    0.0L, static_cast<long double>(timing.total_rows));
     const auto at =
-        timing_at(timing, static_cast<std::uint64_t>(end ? std::ceil(row) : std::floor(row)),
+        timing.seconds_at(static_cast<std::uint64_t>(end ? std::ceil(row) : std::floor(row)),
                   end ? wormedit::timing_boundary_side_t::after_stops
                       : wormedit::timing_boundary_side_t::before_delays);
     if (!at || at.seconds->denominator == 0)
@@ -207,7 +208,7 @@ auto previous_beat_fit_anchor(const wormedit::chart_document_t& chart,
     std::optional<wormedit::local_position_t> anchor;
     std::uint64_t anchor_row{};
     const auto consider = [&](wormedit::local_position_t position) {
-        const auto row = wormedit::absolute_row(measures, position);
+        const auto row = (measures).row_of(position);
         if (row && *row < beat_row && (!anchor || *row > anchor_row)) {
             anchor = position;
             anchor_row = *row;
@@ -250,18 +251,18 @@ auto begin_compose_beat_fit(
         return compose_input_family_result_t{
             "No earlier BPM change or timing anchor can anchor this beat fit."};
     }
-    const auto begun = begin_beat_interval_anchor_drag(
+    const auto begun = beat_interval_drag_t::from(
         history.document, input_chart->id, *anchor, beat, scene_cache.waveform.waveform_overview_sample_rate,
         application_state.project.timing_recipe.timing_locked);
-    if (!begun.is_valid()) {
+    if (!begun.ok() || !begun.value) {
         return input_diagnostic_feedback(begun.diagnostics, "Beat fit could not start.",
                                          notification_severity_t::warning,
                                          notification_source_t::edit);
     }
-    if (begun.original_sample_frame >= scene_cache.waveform.waveform_overview_total_frames) {
+    if (begun.value->original_sample_frame >= scene_cache.waveform.waveform_overview_total_frames) {
         return compose_input_family_result_t{"Selected beat lies after the source audio ends."};
     }
-    scene_cache.timing.beat_fit_drag = begun;
+    scene_cache.timing.beat_fit_drag = begun.value;
     scene_cache.timing.beat_fit_asset = workspace.transport.audio_asset;
     scene_cache.timing.beat_fit_onset_snapped = false;
     capture_fit_onsets(scene_cache, state, workspace);
@@ -274,18 +275,18 @@ auto revise_beat_fit_proposal(const WormUiComposeInputAction& input,
                               const wormedit::document_history_t& history,
                               const wormedit::beat_interval_drag_t& drag,
                               std::uint64_t target_frame, bool timing_locked)
-    -> wormedit::beat_interval_drag_t {
+    -> wormedit::beat_interval_drag_outcome_t {
     using namespace wormedit;
     const auto frame_update =
-        revise_beat_interval_drag(history.document, drag, target_frame, timing_locked);
-    if (!frame_update.is_valid() || !input.beat_fit_ctrl_held || input.beat_fit_onset_snap_held)
+        drag.revise(history.document, target_frame, timing_locked);
+    if (!frame_update.ok() || !frame_update.value || !input.beat_fit_ctrl_held || input.beat_fit_onset_snap_held)
         return frame_update;
     const auto snapped_bpm =
-        quantize_bpm(frame_update.proposed_bpm,
+        quantize_bpm(frame_update.value->proposed_bpm,
                      {input.beat_fit_snap_step_numerator, input.beat_fit_snap_step_denominator});
     if (!snapped_bpm)
         return {};
-    return revise_beat_interval_drag_to_bpm(history.document, frame_update, *snapped_bpm,
+    return frame_update.value->revise(history.document, *snapped_bpm,
                                             timing_locked);
 }
 
@@ -316,15 +317,15 @@ auto revise_compose_beat_fit(const WormUiComposeInputAction& input,
     const auto target_frame = fit_onset_target(scene_cache, input, *frame);
     const auto updated = revise_beat_fit_proposal(input, history, *scene_cache.timing.beat_fit_drag,
                                                   target_frame, application_state.project.timing_recipe.timing_locked);
-    if (updated.is_valid() &&
-        updated.proposed_sample_frame >= scene_cache.waveform.waveform_overview_total_frames) {
+    if (updated.ok() && updated.value &&
+        updated.value->proposed_sample_frame >= scene_cache.waveform.waveform_overview_total_frames) {
         if (input.kind == WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE) {
             scene_cache.clear_beat_fit_capture();
         }
         return compose_input_family_result_t{
             "Snapped beat target is outside the source audio range."};
     }
-    if (!updated.is_valid()) {
+    if (!updated.ok() || !updated.value) {
         if (input.kind == WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE) {
             scene_cache.clear_beat_fit_capture();
         }
@@ -332,7 +333,7 @@ auto revise_compose_beat_fit(const WormUiComposeInputAction& input,
                                          notification_severity_t::warning,
                                          notification_source_t::edit);
     }
-    scene_cache.timing.beat_fit_drag = updated;
+    scene_cache.timing.beat_fit_drag = updated.value;
     scene_cache.timing.beat_fit_drag->snap_active =
         input.beat_fit_ctrl_held && !input.beat_fit_onset_snap_held;
     if (scene_cache.timing.beat_fit_drag->snap_active) {
@@ -379,16 +380,15 @@ auto seek_compose_waveform(const WormUiComposeInputAction& input, compose_input_
     const auto frame = static_cast<std::int64_t>(
         input.audio_fraction * static_cast<long double>(cache.waveform.waveform_overview_total_frames - 1));
     const auto musical =
-        musical_position_at(timing, signed_rational_t{frame, cache.waveform.waveform_overview_sample_rate});
+        timing.row_at(signed_rational_t{frame, cache.waveform.waveform_overview_sample_rate});
     long double row = 0.0L;
     if (musical && musical.absolute_row && musical.absolute_row->denominator != 0) {
-        row = static_cast<long double>(musical.absolute_row->numerator) /
-              musical.absolute_row->denominator;
+        row = wormedit::to_long_double(*musical.absolute_row);
     } else {
-        const auto end = timing_at(timing, timing.total_rows);
+        const auto end = timing.seconds_at(timing.total_rows);
         if (end && end.seconds) {
             const auto end_seconds =
-                static_cast<long double>(end.seconds->numerator) / end.seconds->denominator;
+                wormedit::to_long_double(*end.seconds);
             const auto audio_seconds =
                 static_cast<long double>(frame) / cache.waveform.waveform_overview_sample_rate;
             row = audio_seconds >= end_seconds ? static_cast<long double>(timing.total_rows) : 0.0L;
@@ -424,7 +424,7 @@ auto click_compose_waveform(const WormUiComposeInputAction& input, compose_input
         cache.scene.index->measures, edit_snap_denominator(*context.input_chart, context.state), end);
     if (!target)
         return compose_input_family_result_t{"Waveform overview seek is unavailable."};
-    const auto position = local_position_for_row(cache.scene.index->measures, target->snapped_row);
+    const auto position = (cache.scene.index->measures).position_at(target->snapped_row);
     if (!position)
         return compose_input_family_result_t{"Waveform cursor position is unavailable."};
     const auto outcome =

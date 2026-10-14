@@ -66,7 +66,7 @@ TEST_CASE("aligned waveform follows chart timing, offset, and viewport scroll",
     const wormedit::audio::aligned_waveform_request_t request{.viewport_scroll_pixels = 0.0,
                                                               .viewport_height_pixels = 960.0,
                                                               .pixels_per_standard_measure = 960.0};
-    const auto base = wormedit::audio::project_aligned_waveform(waveform, *timing.index, request);
+    const auto base = wormedit::audio::build_aligned_waveform_view(waveform, *timing.index, request);
     REQUIRE(base);
     REQUIRE_FALSE(base.rows.empty());
     CHECK(loudest_row(base) >= 475.0);
@@ -76,7 +76,7 @@ TEST_CASE("aligned waveform follows chart timing, offset, and viewport scroll",
     const auto shifted_timing = wormedit::build_timing_index(chart);
     REQUIRE(shifted_timing);
     const auto shifted =
-        wormedit::audio::project_aligned_waveform(waveform, *shifted_timing.index, request);
+        wormedit::audio::build_aligned_waveform_view(waveform, *shifted_timing.index, request);
     REQUIRE(shifted);
     REQUIRE_FALSE(shifted.rows.empty());
     CHECK(loudest_row(shifted) >= 235.0);
@@ -86,7 +86,7 @@ TEST_CASE("aligned waveform follows chart timing, offset, and viewport scroll",
     auto scrolled_request = request;
     scrolled_request.viewport_scroll_pixels = 240.0;
     const auto scrolled =
-        wormedit::audio::project_aligned_waveform(waveform, *timing.index, scrolled_request);
+        wormedit::audio::build_aligned_waveform_view(waveform, *timing.index, scrolled_request);
     REQUIRE(scrolled);
     REQUIRE_FALSE(scrolled.rows.empty());
     CHECK(loudest_row(scrolled) >= 235.0);
@@ -95,7 +95,7 @@ TEST_CASE("aligned waveform follows chart timing, offset, and viewport scroll",
     auto before_start = request;
     before_start.viewport_scroll_pixels = -192.0;
     const auto padded =
-        wormedit::audio::project_aligned_waveform(waveform, *timing.index, before_start);
+        wormedit::audio::build_aligned_waveform_view(waveform, *timing.index, before_start);
     REQUIRE(padded);
     REQUIRE_FALSE(padded.rows.empty());
     CHECK(loudest_row(padded) >= 667.0);
@@ -103,7 +103,7 @@ TEST_CASE("aligned waveform follows chart timing, offset, and viewport scroll",
 
     auto too_tall = request;
     too_tall.viewport_height_pixels = 4'097.0;
-    CHECK(wormedit::audio::project_aligned_waveform(waveform, *timing.index, too_tall).status ==
+    CHECK(wormedit::audio::build_aligned_waveform_view(waveform, *timing.index, too_tall).status ==
           wormedit::audio::aligned_waveform_status_t::capacity_exceeded);
 }
 
@@ -119,7 +119,7 @@ TEST_CASE("song overview retains source peaks while its window follows chart tim
     const auto timing = wormedit::build_timing_index(chart);
     REQUIRE(timing);
     const auto base =
-        wormedit::audio::project_waveform_overview(waveform, *timing.index, viewport, 200);
+        wormedit::audio::build_waveform_overview_view(waveform, *timing.index, viewport, 200);
     REQUIRE(base);
     REQUIRE(base.rows.size() == 200);
     const auto loudest = std::ranges::max_element(
@@ -135,7 +135,7 @@ TEST_CASE("song overview retains source peaks while its window follows chart tim
     const auto shifted_timing = wormedit::build_timing_index(chart);
     REQUIRE(shifted_timing);
     const auto shifted =
-        wormedit::audio::project_waveform_overview(waveform, *shifted_timing.index, viewport, 200);
+        wormedit::audio::build_waveform_overview_view(waveform, *shifted_timing.index, viewport, 200);
     REQUIRE(shifted);
     CHECK(shifted.visible_begin_fraction == 0.25);
     CHECK(shifted.visible_end_fraction == 0.75);
@@ -147,19 +147,19 @@ TEST_CASE("song overview retains source peaks while its window follows chart tim
     const auto early_timing = wormedit::build_timing_index(chart);
     REQUIRE(early_timing);
     const auto early =
-        wormedit::audio::project_waveform_overview(waveform, *early_timing.index, viewport, 200);
+        wormedit::audio::build_waveform_overview_view(waveform, *early_timing.index, viewport, 200);
     REQUIRE(early);
     CHECK_FALSE(early.beat_zero_fraction);
 
     auto scrolled = viewport;
     scrolled.viewport_scroll_pixels = 240.0;
     const auto moved =
-        wormedit::audio::project_waveform_overview(waveform, *timing.index, scrolled, 200);
+        wormedit::audio::build_waveform_overview_view(waveform, *timing.index, scrolled, 200);
     REQUIRE(moved);
     CHECK(moved.visible_begin_fraction == 0.25);
     CHECK(moved.visible_end_fraction == 0.75);
     CHECK(
-        wormedit::audio::project_waveform_overview(waveform, *timing.index, viewport, 513).status ==
+        wormedit::audio::build_waveform_overview_view(waveform, *timing.index, viewport, 513).status ==
         wormedit::audio::aligned_waveform_status_t::capacity_exceeded);
 }
 
@@ -178,7 +178,7 @@ TEST_CASE("BMSON channel waveform maps exact source cuts into its musical viewpo
                                               .viewport_height_pixels = 1440.0,
                                               .pixels_per_standard_measure = 960.0};
     const channel_waveform_source_geometry_t source{output_sample_rate, waveform.total_frames};
-    const auto base = project_channel_waveform(waveform, chart, chart.sound_channels.front(),
+    const auto base = build_channel_waveform_view(waveform, chart, chart.sound_channels.front(),
                                                *timing.index, viewport, source);
     REQUIRE(base);
     REQUIRE_FALSE(base.rows.empty());
@@ -189,7 +189,7 @@ TEST_CASE("BMSON channel waveform maps exact source cuts into its musical viewpo
     const auto slices = wormedit::derive_sound_channel_slices(
         chart, chart.sound_channels.front(), source.sample_rate, source.total_frames);
     REQUIRE(slices);
-    const auto cached = project_channel_waveform(waveform, chart.sound_channels.front(),
+    const auto cached = build_channel_waveform_view(waveform, chart.sound_channels.front(),
                                                  *timing.index, viewport, slices, source);
     REQUIRE(cached);
     CHECK(cached.rows.size() == base.rows.size());
@@ -197,7 +197,7 @@ TEST_CASE("BMSON channel waveform maps exact source cuts into its musical viewpo
 
     auto scrolled_viewport = viewport;
     scrolled_viewport.viewport_scroll_pixels = 240.0;
-    const auto scrolled = project_channel_waveform(waveform, chart, chart.sound_channels.front(),
+    const auto scrolled = build_channel_waveform_view(waveform, chart, chart.sound_channels.front(),
                                                    *timing.index, scrolled_viewport, source);
     REQUIRE(scrolled);
     CHECK(loudest_row(scrolled) >= 955.0);
@@ -214,7 +214,7 @@ TEST_CASE("BMSON channel waveform maps exact source cuts into its musical viewpo
         bin.frame_count = 441;
     const auto slower_timing = wormedit::build_timing_index(slower_chart);
     REQUIRE(slower_timing);
-    const auto slowed = project_channel_waveform(
+    const auto slowed = build_channel_waveform_view(
         longer_waveform, slower_chart, slower_chart.sound_channels.front(), *slower_timing.index,
         viewport,
         {.sample_rate = output_sample_rate, .total_frames = longer_waveform.total_frames});
@@ -225,14 +225,14 @@ TEST_CASE("BMSON channel waveform maps exact source cuts into its musical viewpo
     chart.beat_zero_audio_offset_seconds = {1, 2};
     const auto shifted_timing = wormedit::build_timing_index(chart);
     REQUIRE(shifted_timing);
-    const auto shifted = project_channel_waveform(waveform, chart, chart.sound_channels.front(),
+    const auto shifted = build_channel_waveform_view(waveform, chart, chart.sound_channels.front(),
                                                   *shifted_timing.index, viewport, source);
     REQUIRE(shifted);
     CHECK(loudest_row(shifted) == loudest_row(base));
 
     chart.beat_zero_audio_offset_seconds = {0, 1};
     chart.sound_channels.front().source_clip.begin_frame = output_sample_rate / 2U;
-    const auto clipped = project_channel_waveform(waveform, chart, chart.sound_channels.front(),
+    const auto clipped = build_channel_waveform_view(waveform, chart, chart.sound_channels.front(),
                                                   *timing.index, viewport, source);
     REQUIRE(clipped);
     CHECK(loudest_row(clipped) >= 475.0);
@@ -240,7 +240,7 @@ TEST_CASE("BMSON channel waveform maps exact source cuts into its musical viewpo
 
     chart.sound_channels.front().source_clip.begin_frame = 24'000;
     const auto native_48k =
-        project_channel_waveform(waveform, chart, chart.sound_channels.front(), *timing.index,
+        build_channel_waveform_view(waveform, chart, chart.sound_channels.front(), *timing.index,
                                  viewport, {.sample_rate = 48'000, .total_frames = 4U * 48'000U});
     REQUIRE(native_48k);
     CHECK(loudest_row(native_48k) >= 475.0);
@@ -249,7 +249,7 @@ TEST_CASE("BMSON channel waveform maps exact source cuts into its musical viewpo
     auto shortened = chart_fixture();
     shortened.sound_channels.front().events.resize(2);
     shortened.sound_channels.front().source_clip.end_frame = output_sample_rate * 3U / 4U;
-    const auto trimmed = project_channel_waveform(
+    const auto trimmed = build_channel_waveform_view(
         waveform, shortened, shortened.sound_channels.front(), *timing.index, viewport, source);
     REQUIRE(trimmed);
     CHECK(std::ranges::all_of(trimmed.rows,
@@ -257,7 +257,7 @@ TEST_CASE("BMSON channel waveform maps exact source cuts into its musical viewpo
 
     auto too_tall = viewport;
     too_tall.viewport_height_pixels = 4097.0;
-    CHECK(project_channel_waveform(waveform, chart, chart.sound_channels.front(), *timing.index,
+    CHECK(build_channel_waveform_view(waveform, chart, chart.sound_channels.front(), *timing.index,
                                    too_tall, source)
               .status == aligned_waveform_status_t::capacity_exceeded);
 }
@@ -333,7 +333,7 @@ auto stable_sample_follow() -> bool {
         const auto window = aligned_waveform_window(overview, *timing.index, request);
         if (!window) return false;
         update_aligned_waveform_style(style, window->frames_per_pixel);
-        const auto projected = project_composed_aligned_waveform(overview, &detail, *timing.index,
+        const auto projected = build_composed_aligned_waveform_view(overview, &detail, *timing.index,
                                                                   request, &cache, style);
         if (!projected || projected.rows.empty() || !style.sample_points || !style.detail_level ||
             projected.rows.size() > request.maximum_rows || projected.chosen_frames_per_bin != 32) return false;
@@ -485,9 +485,9 @@ auto display_channel_matches_reference() -> bool {
     display_row_table_t table;
     if (!slices || !prepare_display_row_table(table, *timing.index, request,
         {chart.id.value, chart.id.value, 1})) return false;
-    const auto reference = project_channel_waveform(waveform, chart, channel,
+    const auto reference = build_channel_waveform_view(waveform, chart, channel,
         *timing.index, request, source);
-    const auto projected = project_channel_waveform(waveform, channel, table,
+    const auto projected = build_channel_waveform_view(waveform, channel, table,
         request, slices, source);
     return reference && projected && !reference.rows.empty() && !projected.rows.empty() &&
         std::abs(loudest_row(reference) - loudest_row(projected)) <= 1.0 &&
@@ -523,9 +523,9 @@ auto channel_projection_matches_reference(wormedit::chart_document_t& chart,
     display_row_table_t table;
     if (!slices || !prepare_display_row_table(table, *timing.index, request,
         {chart.id.value, chart.id.value, 1})) return false;
-    const auto reference = project_channel_waveform(waveform, chart, channel,
+    const auto reference = build_channel_waveform_view(waveform, chart, channel,
         *timing.index, request, source);
-    const auto projected = project_channel_waveform(waveform, channel, table,
+    const auto projected = build_channel_waveform_view(waveform, channel, table,
         request, slices, source);
     return reference && projected && !reference.rows.empty() && !projected.rows.empty() &&
         channel_peaks_contained(reference, projected) &&
@@ -629,9 +629,9 @@ auto continuation_delay_keeps_pre_event_source() -> bool {
                                                      source.total_frames);
     display_row_table_t table;
     if (!slices || !prepare_display_row_table(table, *timing.index, request)) return false;
-    const auto reference = project_channel_waveform(waveform, chart, channel,
+    const auto reference = build_channel_waveform_view(waveform, chart, channel,
         *timing.index, request, source);
-    const auto projected = project_channel_waveform(waveform, channel, table,
+    const auto projected = build_channel_waveform_view(waveform, channel, table,
         request, slices, source);
     return reference && projected && channel_peak_near(reference, 720, 1) &&
         channel_peak_near(projected, 720, 1);
@@ -666,11 +666,11 @@ auto compare_display_channel_work() -> display_benchmark_result_t {
             if (!prepare_display_row_table(table, *timing.index, request,
                 {chart.id.value, chart.id.value, 1})) return {};
             const auto reference_start = std::chrono::steady_clock::now();
-            const auto reference = project_channel_waveform(waveform, chart, channel,
+            const auto reference = build_channel_waveform_view(waveform, chart, channel,
                 *timing.index, request, source);
             const auto reference_end = std::chrono::steady_clock::now();
             const auto display_start = std::chrono::steady_clock::now();
-            const auto projected = project_channel_waveform(waveform, channel, table,
+            const auto projected = build_channel_waveform_view(waveform, channel, table,
                 request, slices, source);
             const auto display_end = std::chrono::steady_clock::now();
             result.reference_microseconds += std::chrono::duration_cast<std::chrono::microseconds>(
@@ -704,7 +704,7 @@ auto base_only_low_zoom_keeps_channel_peaks() -> bool {
         .viewport_height_pixels = 32, .pixels_per_standard_measure = 120};
     display_row_table_t table;
     if (!slices || !prepare_display_row_table(table, *timing.index, request)) return false;
-    const auto projected = project_channel_waveform(waveform, channel, table,
+    const auto projected = build_channel_waveform_view(waveform, channel, table,
         request, slices, source);
     return projected && !projected.rows.empty() &&
         std::ranges::any_of(projected.rows, [](const auto& row) {
@@ -736,9 +736,9 @@ auto display_slice_boundaries_keep_delay_and_stop_audio() -> bool {
     display_row_table_t table;
     if (!slices || !prepare_display_row_table(table, *timing.index, request,
         {chart.id.value, chart.id.value, 1})) return false;
-    const auto reference = project_channel_waveform(waveform, chart, channel,
+    const auto reference = build_channel_waveform_view(waveform, chart, channel,
         *timing.index, request, source);
-    const auto projected = project_channel_waveform(waveform, channel, table, request, slices, source);
+    const auto projected = build_channel_waveform_view(waveform, channel, table, request, slices, source);
     return reference && projected && channel_peak_near(reference, 720, 1) &&
         channel_peak_near(projected, 720, 1) && channel_peak_near(reference, 960, 0) &&
         channel_peak_near(projected, 960, 0) && continuation_delay_keeps_pre_event_source();
@@ -761,7 +761,7 @@ auto display_channel_rejects_invalid_slices() -> bool {
         .pixels_per_standard_measure = 960};
     display_row_table_t table;
     if (slices || !prepare_display_row_table(table, *timing.index, request)) return false;
-    const auto projected = project_channel_waveform(waveform, channel, table,
+    const auto projected = build_channel_waveform_view(waveform, channel, table,
         request, slices, source);
     return projected.status == aligned_waveform_status_t::invalid_timing && projected.rows.empty();
 }
@@ -780,13 +780,13 @@ auto display_channel_rejects_invalid_clock_and_request() -> bool {
     const aligned_waveform_request_t good{.viewport_scroll_pixels = 0,
         .viewport_height_pixels = 32, .pixels_per_standard_measure = 960};
     display_row_table_t invalid_table;
-    const auto no_clock = project_channel_waveform(waveform, channel, invalid_table,
+    const auto no_clock = build_channel_waveform_view(waveform, channel, invalid_table,
                                                    good, slices, source);
     auto invalid_request = good;
     invalid_request.viewport_height_pixels = 0;
     display_row_table_t table;
     if (!prepare_display_row_table(table, *timing.index, good)) return false;
-    const auto no_request = project_channel_waveform(waveform, channel, table,
+    const auto no_request = build_channel_waveform_view(waveform, channel, table,
         invalid_request, slices, source);
     if (no_clock.status != aligned_waveform_status_t::invalid_timing || !no_clock.rows.empty() ||
         no_request.status != aligned_waveform_status_t::invalid_request || !no_request.rows.empty())
@@ -805,7 +805,7 @@ auto display_channel_rejects_invalid_clock_and_request() -> bool {
     display_row_table_t eof_table;
     if (!short_slices || !prepare_display_row_table(eof_table, *timing.index, eof_view))
         return false;
-    const auto eof = project_channel_waveform(short_waveform, channel, eof_table,
+    const auto eof = build_channel_waveform_view(short_waveform, channel, eof_table,
         eof_view, short_slices, short_source);
     return eof && eof.rows.empty();
 }
@@ -910,7 +910,7 @@ TEST_CASE("waveform range projection zooms into an absolute audio span",
     const auto waveform = pulse_waveform();
     using namespace wormedit::audio;
 
-    const auto whole = project_waveform_range(waveform, 0.0, 1.0, 200);
+    const auto whole = build_waveform_range_view(waveform, 0.0, 1.0, 200);
     REQUIRE(whole);
     CHECK(whole.visible_begin_fraction == 0.0);
     CHECK(whole.visible_end_fraction == 1.0);
@@ -919,7 +919,7 @@ TEST_CASE("waveform range projection zooms into an absolute audio span",
     CHECK(whole_loudest->audio_fraction >= 0.49);
     CHECK(whole_loudest->audio_fraction <= 0.51);
 
-    const auto zoomed = project_waveform_range(waveform, 0.4, 0.6, 50);
+    const auto zoomed = build_waveform_range_view(waveform, 0.4, 0.6, 50);
     REQUIRE(zoomed);
     REQUIRE_FALSE(zoomed.rows.empty());
     CHECK(zoomed.rows.size() <= 50);
@@ -933,7 +933,7 @@ TEST_CASE("waveform range projection zooms into an absolute audio span",
     CHECK(zoomed_loudest->audio_fraction >= 0.49);
     CHECK(zoomed_loudest->audio_fraction <= 0.51);
 
-    const auto away = project_waveform_range(waveform, 0.0, 0.25, 50);
+    const auto away = build_waveform_range_view(waveform, 0.0, 0.25, 50);
     REQUIRE(away);
     CHECK(std::ranges::all_of(away.rows, [](const auto& row) { return row.absolute_peak == 0.0f; }));
 }
@@ -942,15 +942,15 @@ TEST_CASE("waveform range projection rejects invalid spans and capacity",
           "[unit][audio][waveform][aligned][range]") {
     const auto waveform = pulse_waveform();
     using namespace wormedit::audio;
-    CHECK(project_waveform_range(waveform, 0.5, 0.5, 10).status == aligned_waveform_status_t::invalid_request);
-    CHECK(project_waveform_range(waveform, 0.6, 0.4, 10).status == aligned_waveform_status_t::invalid_request);
-    CHECK(project_waveform_range(waveform, -0.1, 0.4, 10).status == aligned_waveform_status_t::invalid_request);
-    CHECK(project_waveform_range(waveform, 0.0, 1.5, 10).status == aligned_waveform_status_t::invalid_request);
-    CHECK(project_waveform_range(waveform, 0.0, 1.0, 0).status == aligned_waveform_status_t::invalid_request);
-    CHECK(project_waveform_range(waveform, 0.0, 1.0, maximum_waveform_range_rows + 1).status ==
+    CHECK(build_waveform_range_view(waveform, 0.5, 0.5, 10).status == aligned_waveform_status_t::invalid_request);
+    CHECK(build_waveform_range_view(waveform, 0.6, 0.4, 10).status == aligned_waveform_status_t::invalid_request);
+    CHECK(build_waveform_range_view(waveform, -0.1, 0.4, 10).status == aligned_waveform_status_t::invalid_request);
+    CHECK(build_waveform_range_view(waveform, 0.0, 1.5, 10).status == aligned_waveform_status_t::invalid_request);
+    CHECK(build_waveform_range_view(waveform, 0.0, 1.0, 0).status == aligned_waveform_status_t::invalid_request);
+    CHECK(build_waveform_range_view(waveform, 0.0, 1.0, maximum_waveform_range_rows + 1).status ==
           aligned_waveform_status_t::capacity_exceeded);
     waveform_t empty;
-    CHECK(project_waveform_range(empty, 0.0, 1.0, 10).status == aligned_waveform_status_t::invalid_waveform);
+    CHECK(build_waveform_range_view(empty, 0.0, 1.0, 10).status == aligned_waveform_status_t::invalid_waveform);
 }
 
 TEST_CASE("aligned waveform leaves a blank gap where a warp consumes no time",
@@ -981,7 +981,7 @@ TEST_CASE("aligned waveform leaves a blank gap where a warp consumes no time",
 
     const auto plain_timing = build_timing_index(chart);
     REQUIRE(plain_timing);
-    const auto plain = audio::project_aligned_waveform(waveform, *plain_timing.index, request);
+    const auto plain = audio::build_aligned_waveform_view(waveform, *plain_timing.index, request);
     REQUIRE(plain);
     CHECK(count_rows_between(plain, 480.0, 960.0) > 0);
 
@@ -989,7 +989,7 @@ TEST_CASE("aligned waveform leaves a blank gap where a warp consumes no time",
         {.id = object_id_t{30}, .span = {{measure_id_t{1}, 480}, {measure_id_t{2}, 0}}});
     const auto warped_timing = build_timing_index(chart);
     REQUIRE(warped_timing);
-    const auto warped = audio::project_aligned_waveform(waveform, *warped_timing.index, request);
+    const auto warped = audio::build_aligned_waveform_view(waveform, *warped_timing.index, request);
     REQUIRE(warped);
     CHECK(count_rows_between(warped, 0.0, 479.0) > 0);
     CHECK(count_rows_between(warped, 482.0, 958.0) == 0);
@@ -1056,7 +1056,7 @@ TEST_CASE("song overview clamps a viewport that extends past the audio end",
             .pixels_per_standard_measure = 960.0,
         };
         const auto overview =
-            wormedit::audio::project_waveform_overview(waveform, *timing.index, viewport, 200);
+            wormedit::audio::build_waveform_overview_view(waveform, *timing.index, viewport, 200);
         REQUIRE(overview);
         CHECK(overview.visible_end_fraction == 1.0);
         CHECK(overview.visible_begin_fraction >= 0.0);

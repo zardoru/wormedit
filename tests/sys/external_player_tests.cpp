@@ -62,7 +62,7 @@ TEST_CASE("external_player expands quotes before source measure and path substit
 namespace {
 auto check_preferences_round_trip(const std::filesystem::path& path,
     const external_player_preferences_t& preferences) -> external_player_preferences_t {
-    auto loaded = default_external_player_preferences();
+    auto loaded = external_player_preferences_t::with_defaults();
     REQUIRE(load_external_player_preferences(path, loaded).empty());
     CHECK(loaded == preferences);
     loaded.players[0].name = "Changed";
@@ -75,7 +75,7 @@ auto check_preferences_round_trip(const std::filesystem::path& path,
 TEST_CASE("external_player defaults match iBMSC and preferences round trip atomically", "[external_player]") {
     temporary_directory_t directory;
     const auto path = directory.path / "external-players.conf";
-    auto preferences = default_external_player_preferences();
+    auto preferences = external_player_preferences_t::with_defaults();
     check_defaults_and_missing_preferences(path, preferences);
     preferences.selected = 1;
     preferences.players[1].path = "wrapper with spaces";
@@ -193,3 +193,17 @@ TEST_CASE("external_player actual stub receives quoted filenames source measure 
     check_stop_stub(player, definition, log);
 }
 #endif
+
+TEST_CASE("external_player accepts BML source extension through the shared catalog", "[external_player][catalog-wiring]") {
+    temporary_directory_t directory;
+    const auto preview = directory.path / "___wormedit_preview.bml";
+    { std::ofstream existing(preview); existing << "foreign preview"; }
+    const auto song = simple_song();
+    external_player_t player;
+    const external_player_definition_t definition{"Missing", "/nonexistent/wormedit-player", "", "", ""};
+    const auto result = player.launch(definition, external_player_action_t::play_start,
+        song, song.charts.front().id, directory.path / "source.BML", 0, {});
+    CHECK(result.preview_path == preview);
+    CHECK_FALSE(result.launched);
+    CHECK(read(preview) == "foreign preview");
+}

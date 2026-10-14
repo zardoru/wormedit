@@ -144,7 +144,7 @@ struct row_window_t {
 
 // Rasterizes one slice's part of the viewport into the shared pixel rows. A slice that has no
 // sound in view (outside the viewport, or already past the end of the sample) adds nothing.
-auto project_channel_slice(const channel_slice_context_t& context, const derived_sound_slice_t& slice,
+auto build_channel_slice_view(const channel_slice_context_t& context, const derived_sound_slice_t& slice,
                            std::optional<std::uint64_t> next_slice_row, row_window_t view,
                            std::vector<aligned_waveform_row_t>& pixels, std::vector<bool>& occupied)
     -> aligned_waveform_status_t {
@@ -172,7 +172,7 @@ auto project_channel_slice(const channel_slice_context_t& context, const derived
     const auto begin = std::max(*first_frame, *slice_begin);
     const auto end = std::min(*last_frame, *slice_end);
     if (begin >= end) return aligned_waveform_status_t::projected;
-    const auto projection = project_waveform(
+    const auto projection = build_waveform_view(
         context.waveform, {.begin_frame = begin, .end_frame = end,
                            .pixel_width = std::min(context.height * 2U, maximum_aligned_waveform_rows),
                            .maximum_columns = maximum_aligned_waveform_rows});
@@ -188,17 +188,17 @@ auto project_channel_slice(const channel_slice_context_t& context, const derived
 
 } // namespace
 
-auto project_channel_waveform(const waveform_t& waveform, const chart_document_t& chart,
+auto build_channel_waveform_view(const waveform_t& waveform, const chart_document_t& chart,
                               const sound_channel_t& channel, const timing_index_t& timing,
                               aligned_waveform_request_t request,
                               channel_waveform_source_geometry_t source)
     -> aligned_waveform_result_t {
     const auto slices =
         derive_sound_channel_slices(chart, channel, source.sample_rate, source.total_frames);
-    return project_channel_waveform(waveform, channel, timing, request, slices, source);
+    return build_channel_waveform_view(waveform, channel, timing, request, slices, source);
 }
 
-auto project_channel_waveform(const waveform_t& waveform, const sound_channel_t& channel,
+auto build_channel_waveform_view(const waveform_t& waveform, const sound_channel_t& channel,
                               const timing_index_t& timing, aligned_waveform_request_t request,
                               const sound_slice_result_t& slices,
                               channel_waveform_source_geometry_t source)
@@ -250,7 +250,7 @@ auto project_channel_waveform(const waveform_t& waveform, const sound_channel_t&
     // Each slice plays its own stretch of the sample from its own anchor (a restart rewinds the
     // audio), so the waveform is projected slice by slice rather than as one linear run.
     for (std::size_t index = 0; index < slices.slices.size(); ++index) {
-        const auto status = project_channel_slice(
+        const auto status = build_channel_slice_view(
             {waveform, timing, request, rows_per_pixel, height, source.sample_rate},
             slices.slices[index],
             index + 1 < slices.slices.size() ? std::optional{slices.slices[index + 1].absolute_row}
@@ -333,7 +333,7 @@ auto display_slice_column(const waveform_t& waveform,
     return sample_display_waveform_span(waveform, display_source_frame(low, slice, waveform, false),
         display_source_frame(high, slice, waveform, true), sampled_bins);
 }
-auto project_display_channel_row(const waveform_t& waveform,
+auto build_display_channel_row_view(const waveform_t& waveform,
     const display_row_time_t& row, std::span<const display_channel_slice_t> slices,
     std::size_t& cursor, aligned_waveform_result_t& result) -> std::optional<aligned_waveform_row_t> {
     while (cursor < slices.size() && slices[cursor].end_seconds <= row.begin_seconds) ++cursor;
@@ -353,7 +353,7 @@ auto project_display_channel_row(const waveform_t& waveform,
 }
 } // namespace
 
-auto project_channel_waveform(const waveform_t& waveform, const sound_channel_t& channel,
+auto build_channel_waveform_view(const waveform_t& waveform, const sound_channel_t& channel,
     const display_row_table_t& table, aligned_waveform_request_t request,
     const sound_slice_result_t& slices, channel_waveform_source_geometry_t source) -> aligned_waveform_result_t {
     aligned_waveform_result_t result;
@@ -372,7 +372,7 @@ auto project_channel_waveform(const waveform_t& waveform, const sound_channel_t&
     for (const auto& row : table.rows) {
         const auto y = static_cast<double>(row.world_pixel) - request.viewport_scroll_pixels + .5;
         if (!row.valid || y < 0 || y >= request.viewport_height_pixels) continue;
-        if (auto projected = project_display_channel_row(waveform, row, visible, cursor, result)) {
+        if (auto projected = build_display_channel_row_view(waveform, row, visible, cursor, result)) {
             projected->y_pixels = y;
             result.rows.push_back(*projected);
         }

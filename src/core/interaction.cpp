@@ -2322,15 +2322,5 @@ auto has_pending_editor_gesture(const editor_interaction_state_t& state) -> bool
     });
     return pending;
 }
-// Compatibility for the sys/ui migration wave.
-auto make_editor_interaction(const document_history_t& history, chart_id_t chart_id,
-                             lane_id_t lane_id, local_position_t cursor,
-                             std::span<const std::uint64_t> ordered_snap_denominators,
-                             std::uint64_t requested_snap_denominator,
-                             double viewport_height_pixels) -> editor_interaction_setup_t {
-    return editor_interaction_state_t::from(history, chart_id, lane_id, cursor,
-                                            ordered_snap_denominators, requested_snap_denominator,
-                                            viewport_height_pixels);
-}
 
 } // namespace wormedit

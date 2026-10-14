@@ -21,9 +21,9 @@ struct bms_clipboard_decode_options_t {
 // malformed records and unsupported objects reject the entire payload.
 // Positions use standard measures and bounded rational recovery (denominator
 // <= 192 * 64, error <= 1e-9 measure). This function never changes the document.
-[[nodiscard]] auto decode_bms_clipboard(std::string_view text,
-    const song_document_t& target_document, const chart_document_t& target_chart,
-    const lane_layout_t& target_layout, bms_clipboard_decode_options_t options = {})
-    -> chart_clipboard_result_t;
+[[nodiscard]] auto
+parse_bms_chart_clipboard(std::string_view text, const song_document_t& target_document,
+                          const chart_document_t& target_chart, const lane_layout_t& target_layout,
+                          bms_clipboard_decode_options_t options = {}) -> chart_clipboard_outcome_t;
 
 } // namespace wormedit

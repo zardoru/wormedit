@@ -144,7 +144,7 @@ auto form_history() -> document_history_t {
     recipe.parameters = {.value_from = {1, 1}, .value_to = {3, 1}};
     chart.sv_recipes.push_back(recipe);
     song.charts.push_back(chart);
-    return make_document_history(song);
+    return document_history_t::from(song);
 }
 
 } // namespace

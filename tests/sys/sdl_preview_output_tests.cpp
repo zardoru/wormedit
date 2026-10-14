@@ -1,3 +1,4 @@
+#include "project_audio_sources_fixture.h"
 #include "sys/sdl_preview_output.h"
 #include "sys/chart_preview_state.h"
 
@@ -35,13 +36,13 @@ auto fixture_path(std::string_view name) -> std::filesystem::path {
 auto wait_for_silent_preview_frame(wormedit::audio::preview_session_t& session,
                                    wormedit::sys::sdl_preview_output_t& output) -> bool {
     const auto deadline = SDL_GetTicks() + 2'000;
-    while (session.timeline_frame() == 0 && session.active() && SDL_GetTicks() < deadline) {
+    while (session.timeline_frame() == 0 && session.is_active() && SDL_GetTicks() < deadline) {
         const auto service = output.service();
         if (service && !*service)
             return false;
         SDL_Delay(2);
     }
-    return session.active() && session.timeline_frame() > 0;
+    return session.is_active() && session.timeline_frame() > 0;
 }
 
 auto silent_preview_advances() -> bool {
@@ -109,7 +110,7 @@ TEST_CASE("SDL dummy output drives seeks and hard-stops a chart preview session"
     const auto first_token = *started.session->token;
 
     const auto deadline = SDL_GetTicks() + 2'000;
-    while (session.timeline_frame() == 0 && session.active() && SDL_GetTicks() < deadline) {
+    while (session.timeline_frame() == 0 && session.is_active() && SDL_GetTicks() < deadline) {
         const auto service = output.service();
         if (service)
             REQUIRE(*service);
@@ -125,7 +126,7 @@ TEST_CASE("SDL dummy output drives seeks and hard-stops a chart preview session"
 
     const auto stopped = output.stop();
     CHECK(stopped.scheduled_voices <= 1);
-    CHECK_FALSE(session.active());
+    CHECK_FALSE(session.is_active());
     output.close();
 }
 
@@ -153,7 +154,8 @@ auto chart_music_preview_ignores_waveform_selection() -> bool {
                     .bpms = {{.id = object_id_t{11},
                               .position = {measure_id_t{10}, 0},
                               .beats_per_minute = {120, 1}}}}}};
-    audio::decoded_source_registry_t sources;
+    wormedit::sys::project_audio_sources_t project_sources;
+    wormedit::audio::decoded_source_registry_t& sources = project_sources.registry();
     const auto registered_music = sources.register_source(
         {.asset = asset_id_t{5},
          .path = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio/keysound-c4.ogg",
@@ -163,7 +165,7 @@ auto chart_music_preview_ignores_waveform_selection() -> bool {
          .path = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio/keysound-g4.ogg",
          .source = {"fixture:waveform-inspection", "waveform-v1"}});
     sys::runtime::chart_preview_t preview;
-    const auto error = preview.compile_if_needed(document.charts.front(), document, sources, {});
+    const auto error = preview.compile_if_needed(document.charts.front(), document, retained_sources_for(document, project_sources));
     workspace_controller_t workspace;
     workspace.selected_chart = chart_id_t{9};
     workspace.transport.audio_asset = asset_id_t{6};
@@ -184,14 +186,18 @@ TEST_CASE("count-in setting recompiles preview pulses without resetting paused m
         .charts = {{.id = {1}, .beat_zero_audio_offset_seconds = {4, 1},
             .measures = {{.id = {1}}},
             .bpms = {{.id = {2}, .position = {{1}, 0}, .beats_per_minute = {120, 1}}}}}};
-    audio::decoded_source_registry_t sources;
+    wormedit::sys::project_audio_sources_t project_sources;
+    wormedit::audio::decoded_source_registry_t& sources = project_sources.registry();
     sys::runtime::chart_preview_t preview;
-    REQUIRE_FALSE(preview.compile_if_needed(document.charts.front(), document, sources, {}));
+    REQUIRE_FALSE(preview.compile_if_needed(document.charts.front(), document, retained_sources_for(document, project_sources)));
     CHECK(preview.reusable({1}, 2, std::nullopt));
     preview.pause_at(3000);
-    preview.count_in_measures = 2;
+    sys::metronome_t metronome;
+    project_sources.metronome = &metronome;
+    preview.metronome = &metronome;
+    metronome.settings.count_in = 2;
     CHECK_FALSE(preview.reusable({1}, 2, std::nullopt));
-    REQUIRE_FALSE(preview.compile_if_needed(document.charts.front(), document, sources, {}));
+    REQUIRE_FALSE(preview.compile_if_needed(document.charts.front(), document, retained_sources_for(document, project_sources)));
     CHECK(preview.reusable({1}, 2, std::nullopt));
     CHECK(preview.resume_frame == 3000);
     CHECK(preview.paused);
@@ -231,7 +237,8 @@ auto fractional_preview_start(double subrow, std::optional<std::uint64_t> exact_
             .measures = {{.id = measure_id_t{1}}},
             .bpms = {{.id = object_id_t{1}, .position = {measure_id_t{1}, 0},
                       .beats_per_minute = {120, 1}}}}}};
-    audio::decoded_source_registry_t sources;
+    wormedit::sys::project_audio_sources_t project_sources;
+    wormedit::audio::decoded_source_registry_t& sources = project_sources.registry();
     audio::decoded_block_cache_t cache;
     audio::transport_t transport{cache};
     audio::preview_transport_bridge_t preview_bridge{transport};
@@ -242,7 +249,7 @@ auto fractional_preview_start(double subrow, std::optional<std::uint64_t> exact_
     sys::sdl_audition_output_t audition_output{audition};
     expect_pitch(bool(output.open()));
     sys::runtime::chart_preview_t preview;
-    (void)preview.play_pause(&document.charts.front(), document, sources, {}, audition_output,
+    (void)preview.play_pause(&document.charts.front(), document, retained_sources_for(document, project_sources), audition_output,
         session, output, local_position_t{measure_id_t{1}, 480}, false, exact_start, subrow);
     expect_pitch(output.playing());
     expect_pitch(preview.feedback.accepted &&
@@ -405,7 +412,8 @@ auto chart_preview_end_includes_music_tail() -> bool {
                     .bpms = {{.id = object_id_t{6},
                               .position = {measure_id_t{5}, 0},
                               .beats_per_minute = {120, 1}}}}}};
-    decoded_source_registry_t sources;
+    sys::project_audio_sources_t project_sources;
+    auto& sources = project_sources.registry();
     const auto registered = sources.register_source({
         .asset = asset_id_t{2},
         .path = fixture_path("sliced-seek-source.ogg"),
@@ -416,7 +424,7 @@ auto chart_preview_end_includes_music_tail() -> bool {
     if (music_frames <= output_sample_rate * 2U) return false;
 
     sys::runtime::chart_preview_t preview;
-    if (preview.compile_if_needed(document.charts.front(), document, sources, {}) ||
+    if (preview.compile_if_needed(document.charts.front(), document, retained_sources_for(document, project_sources)) ||
         !preview.schedule || !preview.schedule->music)
         return false;
     return preview.schedule->music->frame_count == music_frames && preview.end_frame == music_frames;
@@ -486,7 +494,7 @@ auto exercise_sdl_silent_tail_loop() -> bool {
         SDL_Delay(1);
     }
     const auto token = bridge.session_token();
-    const bool looped = wrapped && session.active() && output.playing() && token && initial &&
+    const bool looped = wrapped && session.is_active() && output.playing() && token && initial &&
         token->generation > initial->generation;
     static_cast<void>(output.stop());
     output.close();
@@ -605,7 +613,7 @@ void exercise_pitch_output(wormedit::rational_t rate) {
     while (output.playing() && SDL_GetTicks() < deadline) {
         const auto service = output.service();
         expect_pitch(!service || static_cast<bool>(*service));
-        if (!session.active() && output.playing()) {
+        if (!session.is_active() && output.playing()) {
             saw_drain = true;
             if (!restarted) {
                 exercise_failed_drain_seek(output, binding);
@@ -802,7 +810,7 @@ void exercise_refill_generations() {
         expect_pitch(!service || static_cast<bool>(*service));
     }
     static_cast<void>(output.stop());
-    expect_pitch(!session.active() && !output.playing());
+    expect_pitch(!session.is_active() && !output.playing());
     SDL_Delay(20);
     expect_pitch(!output.service());
     expect_pitch(static_cast<bool>(output.start(schedule, std::span{&binding, 1})));
@@ -839,7 +847,7 @@ void exercise_pending_refill_failure() {
     // The missing next block drops the voice and completes the session; the
     // unread worker failure must survive that completion until the frame reads it.
     SDL_Delay(800);
-    expect_pitch(!session.active());
+    expect_pitch(!session.is_active());
     const auto failed = output.service();
     expect_pitch(failed && failed->status == sys::sdl_preview_service_status_t::pump_failed);
     expect_pitch(failed->pump && failed->pump->status == preview_session_pump_status_t::decode_failed);
@@ -894,7 +902,7 @@ auto preview_stress_step(wormedit::sys::sdl_preview_output_t& output,
         std::array<float, 64> samples;
         samples.fill(1.0F);
         static_cast<void>(session.render(samples));
-        return !session.active() && std::ranges::all_of(samples, [](float value) { return value == 0.0F; });
+        return !session.is_active() && std::ranges::all_of(samples, [](float value) { return value == 0.0F; });
     }
     }
 }
@@ -945,7 +953,7 @@ auto exercise_preview_worker_closes(wormedit::sys::sdl_preview_output_t& output,
         if (!output.open() || !output.start(schedule, std::span{&binding, 1})) return false;
         static_cast<void>(output.stop());
         output.close(); // Worker may be entering its wait after Stop.
-        if (output.available() || session.active()) return false;
+        if (output.available() || session.is_active()) return false;
     }
     return true;
 }
@@ -1019,7 +1027,8 @@ TEST_CASE("SDL loop timeline reaches its end after chart audio has become silent
 
 namespace {
 struct preview_feedback_fixture_t {
-    wormedit::audio::decoded_source_registry_t sources;
+    wormedit::sys::project_audio_sources_t project_sources;
+    wormedit::audio::decoded_source_registry_t& sources = project_sources.registry();
     wormedit::audio::decoded_block_cache_t cache;
     wormedit::audio::transport_t transport{cache};
     wormedit::audio::preview_transport_bridge_t preview_bridge{transport};
@@ -1047,12 +1056,12 @@ TEST_CASE("chart preview result metadata separates user precondition from output
     using namespace wormedit;
     preview_feedback_fixture_t fixture;
     fixture.preview.resume_frame = 123;
-    CHECK(fixture.preview.play_pause(nullptr, fixture.document, fixture.sources, {},
+    CHECK(fixture.preview.play_pause(nullptr, fixture.document, retained_sources_for(fixture.document, fixture.project_sources),
         fixture.audition_output, fixture.session, fixture.output) == "Select a chart before starting preview.");
     expect_preview_feedback(fixture, notification_severity_t::warning, false);
     CHECK(fixture.preview.resume_frame == 123);
     const auto failed = fixture.preview.play_pause(&fixture.document.charts.front(), fixture.document,
-        fixture.sources, {}, fixture.audition_output, fixture.session, fixture.output);
+        retained_sources_for(fixture.document, fixture.project_sources), fixture.audition_output, fixture.session, fixture.output);
     CHECK_FALSE(failed.empty());
     expect_preview_feedback(fixture, notification_severity_t::error, false);
 }
@@ -1080,7 +1089,7 @@ TEST_CASE("chart preview starts and advances through unmetered partial measures"
     fixture.document.charts.front().beat_zero_audio_offset_seconds = {-1, 4};
     REQUIRE(fixture.output.open());
     const auto started = fixture.preview.play_pause(&fixture.document.charts.front(),
-        fixture.document, fixture.sources, {}, fixture.audition_output, fixture.session,
+        fixture.document, retained_sources_for(fixture.document, fixture.project_sources), fixture.audition_output, fixture.session,
         fixture.output, local_position_t{{1}, 0});
     expect_preview_feedback(fixture, notification_severity_t::success, true);
     CHECK(started == "Chart preview started at the cursor.");
@@ -1097,7 +1106,7 @@ TEST_CASE("chart preview reports a fatal diagnostic after preceding timing warni
     chart.beat_zero_audio_offset_seconds = {-1, 1};
     chart.divisions_per_standard_measure = 3;
     chart.measures.front().definition = {{1, 1}, meter_t{4, 4}};
-    const auto failed = fixture.preview.compile_if_needed(chart, fixture.document, fixture.sources, {});
+    const auto failed = fixture.preview.compile_if_needed(chart, fixture.document, retained_sources_for(fixture.document, fixture.project_sources));
     REQUIRE(failed);
     CHECK(*failed == "measure meter cannot produce exact metronome pulse rows");
     expect_preview_feedback(fixture, notification_severity_t::error, false);
@@ -1118,7 +1127,8 @@ struct seek_gap_capture_t {
 };
 
 struct seek_gap_fixture_t {
-    wormedit::audio::decoded_source_registry_t sources;
+    wormedit::sys::project_audio_sources_t project_sources;
+    wormedit::audio::decoded_source_registry_t& sources = project_sources.registry();
     wormedit::audio::decoded_block_cache_t cache;
     wormedit::audio::transport_t transport{cache};
     wormedit::audio::preview_transport_bridge_t bridge{transport};
@@ -1175,9 +1185,9 @@ void verify_warm_seek_measurement(const std::filesystem::path& path = {}) {
     const wormedit::audio::audio_block_key_t warm_key{fixture.binding.voices.front().source,
                                            first_frame / wormedit::audio::maximum_read_frames};
     const auto deadline = SDL_GetTicks() + 500;
-    while (!fixture.cache.contains(warm_key) && SDL_GetTicks() < deadline)
+    while (!fixture.cache.has_block(warm_key) && SDL_GetTicks() < deadline)
         SDL_Delay(1);
-    expect_pitch(fixture.cache.contains(warm_key));
+    expect_pitch(fixture.cache.has_block(warm_key));
     std::vector<double> latency, gaps;
     for (unsigned iteration = 0; iteration < 30; ++iteration) {
         const auto [returned, audible] = fixture.warm_seek_gap(first_frame + iteration * 10);
@@ -1236,7 +1246,8 @@ struct sdl_preview_output_test_access_t {
 
 namespace {
 struct t276_output_fixture_t {
-    wormedit::audio::decoded_source_registry_t sources;
+    wormedit::sys::project_audio_sources_t project_sources;
+    wormedit::audio::decoded_source_registry_t& sources = project_sources.registry();
     wormedit::audio::decoded_block_cache_t cache;
     wormedit::audio::transport_t transport{cache};
     wormedit::audio::preview_transport_bridge_t bridge{transport};
@@ -1386,7 +1397,7 @@ auto t276_seek_stop_publications_remain_coherent(t276_output_fixture_t& fixture)
 
 auto t471_service_finishes_with_stream_lock_held(t276_output_fixture_t& fixture) -> bool {
     using access = wormedit::sys::sdl_preview_output_test_access_t;
-    if (!fixture.output.playing() || !fixture.session.active() ||
+    if (!fixture.output.playing() || !fixture.session.is_active() ||
         fixture.session.loop_region().has_value() ||
         !access::lock_stream(fixture.output)) return false;
     if (access::source_finished(fixture.output)) {
@@ -1453,7 +1464,7 @@ auto t471_wait_for_output_block(t276_output_fixture_t& fixture) -> bool {
         const auto first = frame / wormedit::audio::maximum_read_frames;
         const auto last = (frame + 1'024U) / wormedit::audio::maximum_read_frames;
         const auto& source = fixture.binding.voices.front().source;
-        if (fixture.cache.contains({source, first}) && fixture.cache.contains({source, last}))
+        if (fixture.cache.has_block({source, first}) && fixture.cache.has_block({source, last}))
             return true;
         SDL_Delay(1);
     }
@@ -1547,7 +1558,7 @@ auto t276_completed_pitch_tail_retains_clock() -> bool {
         state = access::snapshot(fixture.output);
     }
     const bool valid_tail = state.source_finished && state.transport_generation != 0 &&
-                            state.timeline_frame > 0 && fixture.output.playing() && !fixture.session.active() &&
+                            state.timeline_frame > 0 && fixture.output.playing() && !fixture.session.is_active() &&
                             fixture.session.playhead().generation - state.generation == 1;
     static_cast<void>(fixture.session.stop());
     const auto cancelled = access::snapshot(fixture.output);
@@ -1703,13 +1714,13 @@ auto stale_loop_work_preserves_replacement() -> bool {
     static_cast<void>(fixture.session.stop(old));
     const auto wrapped = fixture.session.restart_loop(old);
     const auto hidden = access::snapshot(fixture.output);
-    const bool protected_session = replaced && !wrapped && fixture.session.active() &&
+    const bool protected_session = replaced && !wrapped && fixture.session.is_active() &&
         fixture.session.playhead().generation != old && !hidden.active && hidden.timeline_frame == 0 &&
         rendered.status == preview_session_render_status_t::stale_generation &&
         std::ranges::all_of(samples, [](float sample) { return sample == 0; });
     access::unlock_stream(fixture.output);
     SDL_Delay(30);
-    return protected_session && fixture.session.active() && fixture.output.timeline_frame() == 0;
+    return protected_session && fixture.session.is_active() && fixture.output.timeline_frame() == 0;
 }
 } // namespace
 TEST_CASE("Stale loop render restart and Stop cannot mutate a replacement generation", "[integration][audio][sdl][loop-generation][T559]") {
@@ -1774,4 +1785,35 @@ TEST_CASE("SDL BGM lane mixing mutes and resumes a live stem without restarting 
     capture.detach();
     (void)output.stop();
     output.close();
+}
+
+namespace {
+void check_revision_only_keeps_preview(preview_feedback_fixture_t& fixture) {
+    fixture.preview.paused = true;
+    fixture.preview.resume_frame = 123;
+    ++fixture.document.revision;
+    CHECK_FALSE(fixture.project_sources.reconcile_if_needed(fixture.document));
+    CHECK(fixture.preview.paused);
+    CHECK(fixture.preview.resume_frame == 123);
+}
+void check_binding_change_invalidates_preview(preview_feedback_fixture_t& fixture) {
+    using namespace wormedit;
+    fixture.document.audio_assets.push_back({.id = asset_id_t{55},
+        .source_path = fixture_path("keysound-c4.ogg")});
+    ++fixture.document.revision;
+    REQUIRE(fixture.project_sources.reconcile_if_needed(fixture.document) == std::optional<std::size_t>{0});
+    CHECK_FALSE(fixture.preview.paused);
+    CHECK(fixture.preview.resume_frame == 0);
+    CHECK(fixture.project_sources.registry().binding(asset_id_t{55}));
+}
+}
+TEST_CASE("project source reconciliation invalidates preview only when bindings change",
+          "[integration][sys][chart-preview][audio-sources]") {
+    preview_feedback_fixture_t fixture;
+    fixture.project_sources.audition_output = &fixture.audition_output;
+    fixture.project_sources.preview_output = &fixture.output;
+    fixture.project_sources.preview = &fixture.preview;
+    REQUIRE(fixture.project_sources.reconcile(fixture.document, {}) == std::optional<std::size_t>{0});
+    check_revision_only_keeps_preview(fixture);
+    check_binding_change_invalidates_preview(fixture);
 }

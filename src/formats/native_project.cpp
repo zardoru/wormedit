@@ -1371,12 +1371,11 @@ auto write_native_project(const song_document_t& song, native_project_limits_t l
             const auto migrated = native_project_internal::migrate_document(
                 serialized_document, native_project_schema_version,
                 native_project_internal::default_migrations());
-            if (migrated.status != native_project_internal::migration_status_t::migrated &&
-                migrated.status != native_project_internal::migration_status_t::unchanged) {
+            if (!migrated) {
                 result.diagnostics.push_back(
                     {diagnostic_severity_t::error,
                      native_project_diagnostic_code_t::invalid_document,
-                     "native project schema migration failed: " + migrated.message,
+                     "native project schema migration failed: " + migrated.error().message,
                      "$.document.schema_version"});
                 return result;
             }
@@ -1468,11 +1467,10 @@ auto parse_native_project_with_migrations(std::string_view bytes, native_project
         }
         auto document = root.at("document");
         if (const auto outcome = migrate_document(document, target_version, table);
-            outcome.status != migration_status_t::unchanged &&
-            outcome.status != migration_status_t::migrated) {
+            !outcome) {
             result.diagnostics.push_back(
-                {diagnostic_severity_t::error, migration_diagnostic_code(outcome.status),
-                 outcome.message, "$.document.schema_version"});
+                {diagnostic_severity_t::error, migration_diagnostic_code(outcome.error().code),
+                 outcome.error().message, "$.document.schema_version"});
             return result;
         }
         if (!strict_numeric_shape(document)) {

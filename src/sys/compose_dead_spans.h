@@ -38,7 +38,7 @@ struct dead_span_projection_t {
 // Projects every Stop, Delay and Warp of the chart. Stops and delays take their time from the
 // timing index, so units, BPM and warp suppression are already resolved; zero-time pauses and
 // unresolvable positions are omitted. Never mutates the chart.
-[[nodiscard]] auto project_dead_spans(const chart_document_t& chart,
+[[nodiscard]] auto build_dead_spans_view(const chart_document_t& chart,
                                       const measure_index_t& measures,
                                       const timing_index_t& timing, std::size_t limit)
     -> dead_span_projection_t;
@@ -65,7 +65,7 @@ struct dead_span_band_t {
 };
 
 // Bands intersecting [0, viewport_height], in span order.
-[[nodiscard]] auto project_dead_span_bands(const dead_span_projection_t& projection,
+[[nodiscard]] auto build_dead_span_bands_view(const dead_span_projection_t& projection,
                                            double pixels_per_row, double scroll_pixels,
                                            double viewport_height, bool downscroll,
                                            double pause_band_pixels)

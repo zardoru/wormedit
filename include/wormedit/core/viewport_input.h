@@ -40,8 +40,6 @@ struct viewport_action_batch_t {
     [[nodiscard]] auto is_empty() const noexcept -> bool {
         return count == 0;
     }
-    // Compatibility for the coordinated sys/UI migration.
-    inline auto empty() const noexcept -> bool { return is_empty(); }
     [[nodiscard]] auto operator[](std::size_t index) const noexcept -> const viewport_action_t& {
         return actions[index];
     }
@@ -122,8 +120,6 @@ class viewport_input_controller_t {
     // Compatibility for the coordinated sys/UI migration.
     inline auto autoscroll_active() const noexcept -> bool { return is_autoscroll_active(); }
     [[nodiscard]] auto is_momentum_active() const noexcept -> bool;
-    // Compatibility for the coordinated sys/UI migration.
-    inline auto momentum_active() const noexcept -> bool { return is_momentum_active(); }
     [[nodiscard]] auto is_trackpad_active() const noexcept -> bool;
 
 

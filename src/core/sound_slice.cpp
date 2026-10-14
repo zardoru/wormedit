@@ -6,6 +6,7 @@
 #include <limits>
 #include <numeric>
 #include <tuple>
+#include <utility>
 
 namespace wormedit {
 namespace {
@@ -43,7 +44,7 @@ struct sound_slice_build_context_t {
 };
 
 auto append_sound_slice_group(sound_slice_build_context_t& context, std::size_t begin,
-                              std::size_t end, sound_slice_result_t& result) -> bool {
+                              std::size_t end, sound_slice_outcome_t& result) -> bool {
     const auto& event = context.events[begin];
     const auto event_time = context.timing.seconds_at(event.row);
     const auto elapsed = event_time ? subtract_exact(*event_time.seconds, context.restart_time)
@@ -75,10 +76,10 @@ auto append_sound_slice_group(sound_slice_build_context_t& context, std::size_t 
     // of the source, so charts that keep marking points past the end of a sample still derive.
     const auto past_end = context.source_end.has_value() && source_begin >= *context.source_end;
     if (past_end) source_begin = *context.source_end;
-    const auto previous_empty = !result.slices.empty() && context.source_end.has_value() &&
-                                result.slices.back().source_begin_frame >= *context.source_end;
-    if (!past_end && !previous_empty && !result.slices.empty() &&
-        previous_end <= result.slices.back().source_begin_frame) {
+    const auto previous_empty = !result.value.slices.empty() && context.source_end.has_value() &&
+                                result.value.slices.back().source_begin_frame >= *context.source_end;
+    if (!past_end && !previous_empty && !result.value.slices.empty() &&
+        previous_end <= result.value.slices.back().source_begin_frame) {
         result.diagnostics.push_back(diagnostic(
             sound_slice_error_code_t::invalid_source_range,
             "distinct sound-channel markers must derive a positive source-frame range",
@@ -94,22 +95,22 @@ auto append_sound_slice_group(sound_slice_build_context_t& context, std::size_t 
     for (auto index = begin; index < end; ++index) {
         slice.events.push_back(context.events[index].event->id);
     }
-    if (!result.slices.empty()) {
-        result.slices.back().source_end_frame = previous_end;
+    if (!result.value.slices.empty()) {
+        result.value.slices.back().source_end_frame = previous_end;
     }
     if (restart) context.restart_time = *event_time.seconds;
-    result.slices.push_back(std::move(slice));
+    result.value.slices.push_back(std::move(slice));
     return true;
 }
 
 } // namespace
 
-auto derive_sound_channel_slices(const chart_document_t& chart,
+auto sound_slice_index_t::from(const chart_document_t& chart,
                                  const sound_channel_t& channel,
                                  std::uint32_t sample_rate,
                                  std::optional<std::uint64_t> source_frame_count,
-                                 sound_slice_options_t options) -> sound_slice_result_t {
-    sound_slice_result_t result;
+                                 sound_slice_options_t options) -> sound_slice_outcome_t {
+    sound_slice_outcome_t result;
     if (sample_rate == 0) {
         result.diagnostics.push_back(diagnostic(
             sound_slice_error_code_t::invalid_sample_rate,
@@ -160,7 +161,7 @@ auto derive_sound_channel_slices(const chart_document_t& chart,
             result.diagnostics.push_back(diagnostic(
                 sound_slice_error_code_t::invalid_document,
                 "sound-channel event lies outside the chart measure geometry", event.id));
-            result.slices.clear();
+            result.value.slices.clear();
             return result;
         }
         events.push_back({*row, &event});
@@ -186,21 +187,41 @@ auto derive_sound_channel_slices(const chart_document_t& chart,
             ++end;
         }
         if (!append_sound_slice_group(context, begin, end, result)) {
-            result.slices.clear();
+            result.value.slices.clear();
             return result;
         }
         begin = end;
     }
-    result.slices.back().source_end_frame = source_end;
+    result.value.slices.back().source_end_frame = source_end;
     return result;
+}
+
+auto sound_slice_index_t::find(std::span<const derived_sound_slice_t> slices, object_id_t event)
+    -> const derived_sound_slice_t* {
+    for (const auto& slice : slices) {
+        if (std::ranges::find(slice.events, event) != slice.events.end())
+            return &slice;
+    }
+    return nullptr;
+}
+
+auto sound_slice_result_t::from(sound_slice_outcome_t&& outcome) -> sound_slice_result_t {
+    return {.slices = std::move(outcome.value.slices),
+            .diagnostics = std::move(outcome.diagnostics)};
+}
+
+auto derive_sound_channel_slices(const chart_document_t& chart,
+                                 const sound_channel_t& channel,
+                                 std::uint32_t sample_rate,
+                                 std::optional<std::uint64_t> source_frame_count,
+                                 sound_slice_options_t options) -> sound_slice_result_t {
+    return sound_slice_result_t::from(
+        sound_slice_index_t::from(chart, channel, sample_rate, source_frame_count, options));
 }
 
 auto find_sound_slice(const sound_slice_result_t& result, object_id_t event)
     -> const derived_sound_slice_t* {
-    const auto found = std::ranges::find_if(result.slices, [&](const auto& slice) {
-        return std::ranges::find(slice.events, event) != slice.events.end();
-    });
-    return found == result.slices.end() ? nullptr : &*found;
+    return sound_slice_index_t::find(result.slices, event);
 }
 
 } // namespace wormedit

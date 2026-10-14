@@ -288,22 +288,22 @@ auto apply_quantize_command(document_history_t& history, chart_id_t chart_id,
         return result;
     }
 
-    auto proposal = quantize_chart_exact(*chart, request);
-    result.payload.resolution_moves = std::move(proposal.resolution_moves);
-    result.payload.quantized_moves = std::move(proposal.quantized_moves);
-    result.payload.promoted_from = proposal.promoted_from;
-    result.payload.promoted_to = proposal.promoted_to;
-    if (!proposal) {
+    auto proposal = quantization_plan_t::from(*chart, request);
+    result.payload.resolution_moves = std::move(proposal.value.resolution_moves);
+    result.payload.quantized_moves = std::move(proposal.value.quantized_moves);
+    result.payload.promoted_from = proposal.value.promoted_from;
+    result.payload.promoted_to = proposal.value.promoted_to;
+    if (!proposal.value.chart) {
         result.command.diagnostics = std::move(proposal.diagnostics);
         return result;
     }
 
-    if (request.selection && !is_quantized_stem_audio_valid(history.document, *chart, *proposal.chart,
+    if (request.selection && !is_quantized_stem_audio_valid(history.document, *chart, *proposal.value.chart,
                                                         result.command.diagnostics)) return result;
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed_document = transaction.copy_document();
     const auto proposed_chart = proposed_document.find_chart(chart_id);
-    *proposed_chart = std::move(*proposal.chart);
+    *proposed_chart = std::move(*proposal.value.chart);
     result.command =
         transaction.commit("Quantize chart");
     return result;
@@ -324,17 +324,17 @@ auto apply_redivision_command(document_history_t& history,
         return result;
     }
 
-    auto proposal = redivide_chart_exact(*chart, new_resolution);
-    if (!proposal) {
+    auto proposal = redivision_plan_t::from(*chart, new_resolution);
+    if (!proposal.value.chart) {
         result.command.diagnostics = std::move(proposal.diagnostics);
         return result;
     }
-    result.payload.moves = std::move(proposal.moves);
+    result.payload.moves = std::move(proposal.value.moves);
 
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed_document = transaction.copy_document();
     const auto proposed_chart = proposed_document.find_chart(chart_id);
-    *proposed_chart = std::move(*proposal.chart);
+    *proposed_chart = std::move(*proposal.value.chart);
     result.command =
         transaction.commit("Change chart resolution");
     return result;

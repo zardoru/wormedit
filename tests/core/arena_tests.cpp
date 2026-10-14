@@ -10,6 +10,7 @@
 #include <cstring>
 #include <memory_resource>
 #include <new>
+#include <optional>
 #include <span>
 #include <tuple>
 #include <type_traits>
@@ -34,10 +35,11 @@ class counting_resource_t final : public std::pmr::memory_resource {
     std::size_t deallocations{};
     std::size_t outstanding_bytes{};
     bool fail{};
+    std::optional<std::size_t> allocation_limit;
 
   private:
     auto do_allocate(std::size_t bytes, std::size_t alignment) -> void* override {
-        if (fail)
+        if (fail || (allocation_limit && allocations >= *allocation_limit))
             throw std::bad_alloc();
         ++allocations;
         outstanding_bytes += bytes;
@@ -174,6 +176,25 @@ auto snapshot_then_compact(counting_resource_t& resource,
         return {};
     arena = std::move(compacted.arena);
     return first.span.bytes;
+}
+
+auto failed_compaction_releases_chunks_and_keeps_capacity() -> bool {
+    counting_resource_t resource;
+    append_arena_t arena({.chunk_bytes = 64, .maximum_bytes = 256, .maximum_objects = 8},
+                         &resource);
+    const auto spans = append_patterned(arena, 2, 64, 0, 1);
+    if (spans.size() != 2)
+        return false;
+    const auto outstanding = resource.outstanding_bytes;
+    const auto before = stats_tuple(arena.statistics());
+    resource.allocation_limit = resource.allocations + 2;
+    const auto rejected = arena.compact(spans);
+    return !rejected && rejected.error == arena_compaction_error_t::allocation_failed &&
+           rejected.allocation_error == arena_error_t::out_of_memory && rejected.remap.empty() &&
+           rejected.remap.capacity() >= spans.size() &&
+           rejected.arena.statistics().chunk_count == 0 &&
+           resource.allocations == *resource.allocation_limit &&
+           resource.outstanding_bytes == outstanding && stats_tuple(arena.statistics()) == before;
 }
 
 } // namespace
@@ -404,4 +425,9 @@ TEST_CASE("append arena ceiling grows without relocating retained payload",
     arena.grow_maximum_bytes(8);
     REQUIRE(arena.append(16, 1));
     CHECK(arena.statistics().committed_bytes == 48);
+}
+
+TEST_CASE("append arena failed compaction releases copied chunks and retains empty remap capacity",
+          "[unit][arena][append][compact]") {
+    CHECK(failed_compaction_releases_chunks_and_keeps_capacity());
 }

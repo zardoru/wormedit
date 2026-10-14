@@ -78,7 +78,7 @@ auto history_with_chart(chart_document_t chart) -> document_history_t {
     song_document_t song;
     song.id = song_id_t{1};
     song.charts.push_back(std::move(chart));
-    return make_document_history(std::move(song));
+    return document_history_t::from(std::move(song));
 }
 
 void check_moved_note_report(const quantize_preview_t& preview) {
@@ -314,9 +314,9 @@ TEST_CASE("quantize preview hides malformed and layout-boundary collision geomet
         .layout = {.profile_id = "test",
                    .lanes = {{.id = lane_id_t{1}, .name = "Lane 1"}}}});
     const std::vector<object_id_t> boundary_ids{object_id_t{1}, object_id_t{2}};
-    const auto core_layout = quantize_chart_exact(
+    const auto core_layout = quantization_plan_t::from(
         layout_chart, quantize_request_t{.divisions = 4, .objects = boundary_ids});
-    check_expectation(!core_layout.chart.has_value());
+    check_expectation(!core_layout.value.chart.has_value());
     check_expectation(std::ranges::any_of(core_layout.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == diagnostic_code_t::collision &&
             diagnostic.object == object_id_t{2};

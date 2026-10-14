@@ -1,3 +1,4 @@
+#include <wormedit/core/rational.h>
 #include "sys/sound_usage_actions.h"
 
 #include <wormedit/core/chart_editor.h>
@@ -33,12 +34,12 @@ auto interaction_for_jump(const document_history_t& history, const chart_documen
         return previous;
     const auto built = build_measure_index(chart);
     const auto* index = std::get_if<measure_index_t>(&built);
-    const auto row = index ? absolute_row(*index, position) : std::nullopt;
+    const auto row = index ? (*index).row_of(position) : std::nullopt;
     const lane_layout_segment_t* active{};
     std::uint64_t active_row{};
     if (row) {
         for (const auto& segment : chart.lane_layouts) {
-            const auto start = absolute_row(*index, segment.position);
+            const auto start = (*index).row_of(segment.position);
             if (start && *start <= *row && (!active || *start >= active_row)) {
                 active = &segment;
                 active_row = *start;
@@ -47,11 +48,10 @@ auto interaction_for_jump(const document_history_t& history, const chart_documen
     }
     if (!active || active->layout.lanes.empty())
         return std::nullopt;
-    constexpr std::array<std::uint64_t, 6> snaps{4, 8, 16, 32, 48, 64};
-    const auto setup = make_editor_interaction(
+    const auto setup = editor_interaction_state_t::from(
         history, chart.id, active->layout.lanes.front().id, position,
         previous ? std::span<const std::uint64_t>{previous->supported_snap_denominators}
-                 : std::span<const std::uint64_t>{snaps},
+                 : std::span<const std::uint64_t>{wormedit::default_snap_denominators},
         previous ? previous->active_snap_denominator : 16,
         previous ? previous->viewport_height_pixels : 1.0);
     return setup.state;
@@ -77,7 +77,7 @@ auto dispatch_sound_usage_action(const WormUiWorkspaceAction& action,
         return rejection("Sound usage results changed; refresh Find uses.");
 
     const auto usage =
-        project_sound_usage(history.document, resource_id_t{action.sound_usage_resource_id});
+        build_sound_usage_view(history.document, resource_id_t{action.sound_usage_resource_id});
     if (!usage.valid || usage.asset.value != action.sound_usage_asset_id)
         return rejection("The selected sound is no longer available.");
     const auto found =
@@ -107,8 +107,8 @@ auto dispatch_sound_usage_action(const WormUiWorkspaceAction& action,
     }
 
     const auto chart =
-        std::ranges::find(history.document.charts, found->chart, &chart_document_t::id);
-    if (chart == history.document.charts.end())
+        history.document.find_chart(found->chart);
+    if (chart == nullptr)
         return rejection("The sound usage chart is unavailable.");
     auto candidate = interaction_for_jump(history, *chart, *found->position, next_interaction);
     if (!candidate ||

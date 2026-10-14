@@ -129,16 +129,4 @@ auto visual_image_quad_t::from(const visual_image_quad_request_t& request)
     return quad;
 }
 
-// Compatibility for the sys/ui migration wave.
-auto make_visual_image_layout(const visual_layout_request_t& request)
-    -> std::optional<visual_image_layout_t> {
-    return visual_image_layout_t::from(request);
-}
-
-// Compatibility for the sys/ui migration wave.
-auto make_visual_image_quad(const visual_image_quad_request_t& request)
-    -> std::optional<visual_image_quad_t> {
-    return visual_image_quad_t::from(request);
-}
-
 } // namespace wormedit

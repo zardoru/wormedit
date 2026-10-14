@@ -60,13 +60,13 @@ TEST_CASE("visual resources resolve through explicit project-relative asset path
                        .asset = asset_id_t{20},
                        .roles = {resource_role_t::bga}}},
     };
-    const auto resolved = resolve_visual_asset(document, resource_id_t{10}, "/project/song");
+    const auto resolved = resolved_visual_asset_t::from(document, resource_id_t{10}, "/project/song");
     REQUIRE(resolved);
-    CHECK(resolved.source->resource == resource_id_t{10});
-    CHECK(resolved.source->asset == asset_id_t{20});
-    CHECK(resolved.source->path == std::filesystem::path{"/project/song/images/background.png"});
-    CHECK(resolved.source->declared_width == 640);
-    CHECK(resolved.source->declared_height == 480);
+    CHECK(resolved->resource == resource_id_t{10});
+    CHECK(resolved->asset == asset_id_t{20});
+    CHECK(resolved->path == std::filesystem::path{"/project/song/images/background.png"});
+    CHECK(resolved->declared_width == 640);
+    CHECK(resolved->declared_height == 480);
 
     CHECK(resolve_visual_asset(document, resource_id_t{99}, "/project/song").status ==
           visual_asset_status_t::unknown_resource);
@@ -78,19 +78,19 @@ TEST_CASE("visual resources resolve through explicit project-relative asset path
 }
 
 TEST_CASE("bounded static image decoding publishes exact RGBA8 pixels", "[unit][visual][decode]") {
-    const auto decoded = decode_image_rgba(image_source(), encoded_bmp());
+    const auto decoded = rgba_image_t::from(image_source(), encoded_bmp());
     REQUIRE(decoded);
-    CHECK(decoded.image->width == 2);
-    CHECK(decoded.image->height == 1);
-    REQUIRE(decoded.image->pixels.size() == 8);
-    CHECK(decoded.image->pixels[0] == 255);
-    CHECK(decoded.image->pixels[1] == 0);
-    CHECK(decoded.image->pixels[2] == 0);
-    CHECK(decoded.image->pixels[3] == 255);
-    CHECK(decoded.image->pixels[4] == 0);
-    CHECK(decoded.image->pixels[5] == 255);
-    CHECK(decoded.image->pixels[6] == 0);
-    CHECK(decoded.image->pixels[7] == 255);
+    CHECK(decoded->width == 2);
+    CHECK(decoded->height == 1);
+    REQUIRE(decoded->pixels.size() == 8);
+    CHECK(decoded->pixels[0] == 255);
+    CHECK(decoded->pixels[1] == 0);
+    CHECK(decoded->pixels[2] == 0);
+    CHECK(decoded->pixels[3] == 255);
+    CHECK(decoded->pixels[4] == 0);
+    CHECK(decoded->pixels[5] == 255);
+    CHECK(decoded->pixels[6] == 0);
+    CHECK(decoded->pixels[7] == 255);
 }
 
 TEST_CASE("image decoding rejects unsupported kinds malformed data and every configured cap",
@@ -140,7 +140,7 @@ TEST_CASE("visual image file loading is bounded before decode", "[unit][visual][
     }
     auto source = image_source();
     source.path = temporary.path;
-    REQUIRE(load_image_rgba(source));
+    REQUIRE(open_image_rgba(source));
 
     auto bounded = image_decode_limits_t{};
     bounded.maximum_input_bytes = two_pixel_bmp.size() - 1;

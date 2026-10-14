@@ -1,5 +1,6 @@
 #pragma once
 
+#include <wormedit/core/result.h>
 #include <wormedit/formats/native_project.h>
 
 #include <nlohmann/json_fwd.hpp>
@@ -34,10 +35,8 @@ enum class migration_status_t {
     failed,
 };
 
-struct migration_outcome_t {
-    migration_status_t status{migration_status_t::unchanged};
-    std::string message;
-};
+// Success retains whether a migration ran; failures carry their status and message.
+using migration_outcome_t = result_t<migration_status_t, error_t<migration_status_t>>;
 
 // Migrations shipped with the reader: one `migrate_vN_to_vN+1` per released
 // schema bump. Schema 2 added `expression_source` to SV recipes.

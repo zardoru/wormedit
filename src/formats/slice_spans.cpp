@@ -24,7 +24,7 @@ auto normalized_frame(std::uint64_t frame, std::uint32_t rate) -> std::optional<
     return base + rounded;
 }
 
-using text_util::ascii_fold;
+using text_util::ascii_lowercase;
 
 auto filename_stem(const std::filesystem::path& path, asset_id_t asset) -> std::string {
     std::string stem;
@@ -225,7 +225,7 @@ auto append_semantics(plan_context_t& context, const chart_document_t& chart) ->
 
 void name_spans(plan_context_t& context) {
     std::set<std::string> occupied;
-    for (const auto& name : context.options.occupied_filenames) occupied.insert(ascii_fold(name));
+    for (const auto& name : context.options.occupied_filenames) occupied.insert(ascii_lowercase(name));
     std::size_t number{};
     for (auto& span : context.result.spans) {
         const auto stem = filename_stem(context.assets.at(span.asset.value)->source_path, span.asset);
@@ -233,13 +233,13 @@ void name_spans(plan_context_t& context) {
             auto suffix = std::to_string(++number);
             suffix.insert(0, suffix.size() < 3 ? 3 - suffix.size() : 0, '0');
             span.filename = stem + "_" + suffix + ".wav";
-        } while (!occupied.insert(ascii_fold(span.filename)).second);
+        } while (!occupied.insert(ascii_lowercase(span.filename)).second);
     }
 }
 
 } // namespace
 
-auto build_slice_span_plan(const song_document_t& song, chart_id_t chart_id,
+auto plan_slice_spans(const song_document_t& song, chart_id_t chart_id,
     std::span<const slice_span_source_t> sources, const slice_span_options_t& options) -> slice_span_plan_t {
     slice_span_plan_t result;
     plan_context_t context{song, options, result, {}, {}, {}, {}, {}, {}};

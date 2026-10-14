@@ -187,7 +187,7 @@ TEST_CASE("Program preferences failed publication preserves destination and clea
     expect_preference(values.general.autosave_minutes == 10);
     expect_preference(std::filesystem::file_size(destination / "existing") == 6);
     expect_preference(std::distance(std::filesystem::directory_iterator{directory.path}, std::filesystem::directory_iterator{}) == 1);
-    expect_preference(!save_file_atomic(directory.path / "too-large", "123", 2));
+    expect_preference(!create_file_atomic(directory.path / "too-large", "123", 2));
     expect_preference(!std::filesystem::exists(directory.path / "too-large"));
 }
 

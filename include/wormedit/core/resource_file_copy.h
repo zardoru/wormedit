@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/result.h>
 
 #include <cstdint>
 #include <filesystem>
@@ -56,21 +57,52 @@ export_asset_reference_path(const std::filesystem::path& relative_output_path,
                             const std::filesystem::path& copied_project_relative_path)
     -> std::optional<std::filesystem::path>;
 
-struct project_asset_copy_result_t {
-    project_asset_copy_status_t status{project_asset_copy_status_t::invalid_request};
-    std::filesystem::path relative_path;
-    std::filesystem::path absolute_path;
-    std::string message;
-    // Filled only for a newly published file. Used to discard an unlinked
-    // import without removing a reused or subsequently replaced file.
+struct project_asset_copy_receipt_t {
+    [[nodiscard]] static auto from(const std::filesystem::path& relative_path,
+                                   const std::filesystem::path& absolute_path,
+                                   project_asset_copy_status_t status)
+        -> project_asset_copy_receipt_t;
+
     struct published_identity_t {
         std::uint64_t volume{};
         std::uint64_t file{};
         std::uintmax_t size{};
         std::filesystem::file_time_type modified{};
+        auto operator==(const published_identity_t&) const -> bool = default;
     };
+    project_asset_copy_status_t status{project_asset_copy_status_t::copied};
+    std::filesystem::path relative_path;
+    std::filesystem::path absolute_path;
     std::optional<published_identity_t> published_identity;
+    auto operator==(const project_asset_copy_receipt_t&) const -> bool = default;
+};
+using project_asset_copy_outcome_t =
+    result_t<project_asset_copy_receipt_t, error_t<project_asset_copy_status_t>>;
 
+[[nodiscard]] auto create_project_asset_copy(const project_asset_copy_request_t& request,
+                                             std::stop_token stop = {})
+    -> project_asset_copy_outcome_t;
+[[nodiscard]] auto inspect_project_asset_file(const project_asset_copy_request_t& request,
+                                              std::stop_token stop = {})
+    -> project_asset_copy_outcome_t;
+[[nodiscard]] auto create_export_asset_copy(const export_asset_copy_request_t& request,
+                                            std::stop_token stop = {})
+    -> project_asset_copy_outcome_t;
+[[nodiscard]] auto inspect_export_asset_file(const export_asset_copy_request_t& request,
+                                             std::stop_token stop = {})
+    -> project_asset_copy_outcome_t;
+
+struct project_asset_copy_result_t {
+    [[nodiscard]] static auto from(project_asset_copy_outcome_t&& outcome)
+        -> project_asset_copy_result_t;
+
+    using published_identity_t = project_asset_copy_receipt_t::published_identity_t;
+    project_asset_copy_status_t status{project_asset_copy_status_t::invalid_request};
+    std::filesystem::path relative_path;
+    std::filesystem::path absolute_path;
+    std::string message;
+    // Filled only for a newly published file; used to discard an unlinked import safely.
+    std::optional<published_identity_t> published_identity;
     [[nodiscard]] explicit operator bool() const noexcept {
         return status == project_asset_copy_status_t::copied ||
                status == project_asset_copy_status_t::reused;

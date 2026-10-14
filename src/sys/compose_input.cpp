@@ -397,7 +397,7 @@ void advance_sound_after_paint_commit(const wormedit::editor_interaction_result_
 auto retained_bmson_source_geometry(const wormedit::document_history_t& history,
     const compose_scene_cache_t& cache, const wormedit::chart_document_t& chart,
     wormedit::asset_id_t asset) -> std::optional<wormedit::bmson_source_geometry_t> {
-    const auto& index = cache.scene.stem_index;
+    const auto& index = cache.stems.stem_index;
     if (!cache.is_scene_key_current(history.document, chart, compose_scene_key_policy_t::stem_geometry)) return std::nullopt;
     const auto binding = std::ranges::find(index.bindings, asset,
         &wormedit::audio::decoded_source_binding_t::asset);

@@ -5,7 +5,7 @@
 
 #if defined(_WIN32)
 
-#include <wormedit/core/document.h>
+#include "text_codec_result.h"
 
 #include <cstddef>
 #include <optional>
@@ -14,10 +14,7 @@
 
 namespace wormedit::win32_codepage {
 
-struct convert_result_t {
-    std::optional<std::string> text;
-    std::size_t error_offset{};
-};
+using convert_result_t = text_codec_result_t;
 
 [[nodiscard]] auto code_page_for(text_encoding_t encoding) -> std::optional<unsigned>;
 [[nodiscard]] auto to_utf8(unsigned code_page, std::string_view input) -> convert_result_t;

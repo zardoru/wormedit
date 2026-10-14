@@ -16,38 +16,6 @@
 namespace wormedit::sys {
 namespace {
 
-auto supported_lane_count(std::uint32_t count) -> bool {
-    switch (count) {
-    case 4:
-    case 5:
-    case 6:
-    case 7:
-    case 8:
-    case 9:
-    case 10:
-    case 14: return true;
-    default: return false;
-    }
-}
-
-auto step_type(std::uint32_t count) -> std::string_view {
-    switch (count) {
-    case 4: return "dance-single";
-    case 5: return "pump-single";
-    case 6: return "dance-solo";
-    case 7: return "kb7";
-    case 8: return "dance-double";
-    case 10: return "pump-double";
-    default: return {};
-    }
-}
-
-// New projects start as osu!mania key layouts (arrow styles are one profile switch away).
-auto make_playable_profile(std::uint32_t count) -> lane_input_profile_t {
-    if (auto profile = make_osu_mania_profile(count)) return std::move(*profile);
-    return {};
-}
-
 auto make_initial_chart(lane_input_profile_t profile, format_family_t source_family)
     -> chart_document_t {
     return {
@@ -76,27 +44,9 @@ auto make_bms_initial_chart() -> chart_document_t {
     return chart;
 }
 
-auto default_output_groups(std::uint32_t lane_count) -> std::vector<output_group_t> {
-    std::vector<output_group_t> groups{{.name = "osu!mania",
-                                        .family = format_family_t::osu_mania,
-                                        .charts = {chart_id_t{2}},
-                                        .relative_output_path = "osu"}};
-    if (!step_type(lane_count).empty()) {
-        groups.push_back({.name = "StepMania SM",
-                          .family = format_family_t::stepmania,
-                          .charts = {chart_id_t{2}},
-                          .relative_output_path = "sm"});
-        groups.push_back({.name = "StepMania SSC",
-                          .family = format_family_t::stepmania,
-                          .charts = {chart_id_t{2}},
-                          .relative_output_path = "ssc"});
-    }
-    return groups;
-}
-
 } // namespace
 
-auto new_session_project_id() -> song_id_t {
+auto create_session_project_id() -> song_id_t {
     try {
         std::random_device source;
         const auto value =
@@ -113,36 +63,51 @@ auto new_session_project_id() -> song_id_t {
     return song_id_t{value == 0 ? 1 : value};
 }
 
-auto empty_session_document(song_id_t session_id) -> song_document_t {
+auto make_empty_session_document(song_id_t session_id) -> song_document_t {
     return {.id = session_id, .revision = 1, .metadata = {.title = "No project loaded"}};
 }
 
-auto initial_document(song_id_t project_id) -> song_document_t {
+auto make_initial_document(song_id_t project_id) -> song_document_t {
     return {.id = project_id,
             .revision = 1,
             .metadata = {.title = "Untitled Project", .artist = "Unknown Artist"},
             .charts = {make_bms_initial_chart()}};
 }
 
-auto initial_document(song_id_t project_id, std::uint32_t lane_count)
+auto make_initial_document(song_id_t project_id, std::uint32_t lane_count)
     -> std::optional<song_document_t> {
-    if (!project_id || !supported_lane_count(lane_count)) return std::nullopt;
-    auto chart = make_initial_chart(make_playable_profile(lane_count),
+    return make_initial_document(project_id, "osu-mania-" + std::to_string(lane_count) + "k");
+}
+
+auto make_initial_document(song_id_t project_id, std::string_view layout_id)
+    -> std::optional<song_document_t> {
+    const auto* layout = find_new_project_layout(layout_id);
+    if (!project_id || !layout) return std::nullopt;
+    auto chart = make_initial_chart(layout->make_profile(),
                                     format_family_t::native_project);
     return song_document_t{.id = project_id,
                            .revision = 1,
                            .metadata = {.title = "Untitled Project", .artist = "Unknown Artist"},
                            .charts = {std::move(chart)},
-                           .output_groups = default_output_groups(lane_count)};
+                           .output_groups = make_new_project_output_groups(*layout, chart_id_t{2})};
 }
 
-auto audio_project_document(song_id_t project_id, std::filesystem::path audio_source_path,
+auto make_audio_project_document(song_id_t project_id, std::filesystem::path audio_source_path,
                             std::string title, std::string artist, std::uint32_t lane_count,
                             audio_stream_info_t stream)
     -> std::optional<song_document_t> {
-    if (!project_id || !supported_lane_count(lane_count) ||
-        audio_source_path.filename().empty()) return std::nullopt;
-    auto chart = make_initial_chart(make_playable_profile(lane_count),
+    return make_audio_project_document(project_id, std::move(audio_source_path), std::move(title),
+                                  std::move(artist),
+                                  "osu-mania-" + std::to_string(lane_count) + "k", stream);
+}
+
+auto make_audio_project_document(song_id_t project_id, std::filesystem::path audio_source_path,
+                            std::string title, std::string artist, std::string_view layout_id,
+                            audio_stream_info_t stream)
+    -> std::optional<song_document_t> {
+    const auto* layout = find_new_project_layout(layout_id);
+    if (!project_id || !layout || audio_source_path.filename().empty()) return std::nullopt;
+    auto chart = make_initial_chart(layout->make_profile(),
                                     format_family_t::native_project);
     if (!extend_chart_to_audio_end(chart, stream)) return std::nullopt;
     auto resource_name = audio_source_path.filename().generic_string();
@@ -157,7 +122,7 @@ auto audio_project_document(song_id_t project_id, std::filesystem::path audio_so
                        .asset = asset_id_t{6},
                        .roles = {resource_role_t::music, resource_role_t::bgm}}},
         .charts = {std::move(chart)},
-        .output_groups = default_output_groups(lane_count),
+        .output_groups = make_new_project_output_groups(*layout, chart_id_t{2}),
     };
 }
 

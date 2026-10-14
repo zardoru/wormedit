@@ -12,6 +12,8 @@
 
 namespace wormedit {
 namespace {
+
+using diagnostic_queries::has_errors;
 auto command_id_of(const command_t& command) -> const command_id_t& {
     return command.definition.id;
 }
@@ -33,12 +35,6 @@ constexpr shortcut_modifiers_t actual_modifiers =
 auto warning(diagnostic_code_t code, std::string message) -> diagnostic_t {
     return {
         .severity = diagnostic_severity_t::warning, .code = code, .message = std::move(message)};
-}
-
-[[nodiscard]] auto has_errors(const diagnostic_list_t& diagnostics) -> bool {
-    return std::ranges::any_of(diagnostics, [](const diagnostic_t& item) {
-        return item.severity == diagnostic_severity_t::error;
-    });
 }
 
 [[nodiscard]] auto is_valid_stable_text(std::string_view value, std::size_t maximum,
@@ -992,11 +988,6 @@ auto command_registry_t::from(command_invoker_t invoker) -> command_registry_t {
     return registry;
 }
 
-// Compatibility for the sys/ui migration wave.
-auto make_shortcut_profile(const command_registry_t& registry, std::string profile_id)
-    -> shortcut_profile_t {
-    return shortcut_profile_t::from(registry, std::move(profile_id));
-}
 
 // Compatibility for the sys/ui migration wave.
 auto make_default_editor_command_registry(command_invoker_t invoker) -> command_registry_t {

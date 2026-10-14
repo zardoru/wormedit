@@ -2,6 +2,7 @@
 
 #include <wormedit/core/command.h>
 #include <wormedit/core/interaction.h>
+#include <wormedit/core/result.h>
 
 #include <cstddef>
 #include <optional>
@@ -26,26 +27,20 @@ struct note_to_bgm_new_lane_t {
     object_id_t id;
     std::string name;
     std::size_t source_order{};
+    auto operator==(const note_to_bgm_new_lane_t&) const -> bool = default;
 };
 
-struct note_to_bgm_plan_t {
+struct note_to_bgm_allocation_t {
+    [[nodiscard]] static auto
+    from(const chart_document_t& chart, std::span<const resource_entry_t> resources,
+         std::span<const object_id_t> notes, std::optional<object_id_t> preferred_lane,
+         note_to_bgm_policy_t policy = {}) -> diagnosed_t<note_to_bgm_allocation_t>;
     std::vector<note_to_bgm_assignment_t> assignments;
     std::vector<note_to_bgm_new_lane_t> new_lanes;
     std::vector<object_id_t> retained_event_ids;
-    diagnostic_list_t diagnostics;
-
-    [[nodiscard]] auto is_accepted() const -> bool { return diagnostics.empty(); }
-
+    auto operator==(const note_to_bgm_allocation_t&) const -> bool = default;
 };
-
-// Pure ordinary-note allocator. Retained linked notes are rejected so callers route BMSON stem
-// reassignment through the existing command path. A supplied lane requests manual right/left
-// placement; nullopt requests canonical automatic group placement.
-[[nodiscard]] auto plan_notes_to_bgm(const chart_document_t& chart,
-                                     std::span<const resource_entry_t> resources,
-                                     std::span<const object_id_t> notes,
-                                     std::optional<object_id_t> preferred_lane,
-                                     note_to_bgm_policy_t policy = {}) -> note_to_bgm_plan_t;
+using note_to_bgm_allocation_outcome_t = diagnosed_t<note_to_bgm_allocation_t>;
 
 // Moves playable notes to the BGM area in one undo step. A null preferred_lane uses automatic
 // group-aware placement; an explicit lane keeps the compatible manual right-then-left route.
@@ -58,8 +53,7 @@ struct note_to_bgm_plan_t {
 [[nodiscard]] auto move_notes_to_bgm(document_history_t& history,
                                      chart_id_t chart, std::span<const object_id_t> notes,
                                      std::optional<object_id_t> preferred_lane,
-                                     note_to_bgm_policy_t policy = {})
-    -> document_command_result_t;
+                                     note_to_bgm_policy_t policy = {}) -> document_command_result_t;
 
 struct selected_note_to_bgm_payload_t {
     bool handled{};
@@ -85,9 +79,8 @@ using selected_note_to_bgm_result_t = command_result_with_t<selected_note_to_bgm
                                            lane_id_t lane) -> document_command_result_t;
 
 // Internal note-part validator/application used by the atomic mixed lane command.
-[[nodiscard]] auto assign_note_lanes(document_history_t& history,
-                                      editor_interaction_state_t& state, lane_id_t lane)
-    -> editor_interaction_result_t;
+[[nodiscard]] auto assign_note_lanes(document_history_t& history, editor_interaction_state_t& state,
+                                     lane_id_t lane) -> editor_interaction_result_t;
 
 // Assigns a mixed selected note/BGM set into a lane as one all-or-nothing undo command.
 [[nodiscard]] auto move_selected_objects_to_lane(

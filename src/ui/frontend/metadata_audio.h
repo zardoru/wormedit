@@ -1,4 +1,5 @@
 #pragma once
+#include "catalog.h"
 #include "project.h"
 
 typedef struct WormUiMetadataFormatFieldView {
@@ -65,6 +66,7 @@ typedef struct WormUiMetadataDropTarget {
 } WormUiMetadataDropTarget;
 
 typedef struct WormUiMetadataView {
+    WormUiKindCatalogView format_families;
     bool visible;
     bool song_fields_editable;
     bool chart_fields_editable;
@@ -241,6 +243,7 @@ typedef struct WormUiAudioSlicesView {
     int64_t offset_drag_delta_frames;
     int64_t proposed_offset_numerator;
     uint64_t proposed_offset_denominator;
+    WormUiKindCatalogView sound_kinds;
 } WormUiAudioSlicesView;
 
 typedef struct WormUiSoundUsageRequest {

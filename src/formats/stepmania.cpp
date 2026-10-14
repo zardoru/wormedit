@@ -368,7 +368,7 @@ auto make_layout(std::string step_type, std::uint32_t count, id_source_t& ids) -
     layout.display_name = step_type;
     static constexpr std::array<std::string_view, 10> dance_names{
         "Left", "Down", "Up", "Right", "Left 2", "Down 2", "Up 2", "Right 2", "Center", "Diagonal"};
-    const auto folded_step_type = text_util::ascii_fold(step_type);
+    const auto folded_step_type = text_util::ascii_lowercase(step_type);
     const bool cardinal_dance = folded_step_type == "dance-single" ||
                                 folded_step_type == "dance-double" ||
                                 folded_step_type == "dance-couple";
@@ -1171,7 +1171,7 @@ auto parse_one_chart(stepmania_parse_state_t& context, const chart_source_t& sou
         parse_row_map(note_map, *lane_count, chart.divisions_per_standard_measure,
                       context.options.max_measures, context.options.max_events, note_field->order);
     auto layout = make_layout(step_type, *lane_count, context.ids);
-    if (const auto input = default_input_profile_for(layout)) chart.input_profile = *input;
+    if (const auto input = make_default_input_profile_for(layout)) chart.input_profile = *input;
     chart.lane_layouts.push_back({.id = context.ids.take<object_id_t>(),
                                   .position = {measure_id_t{1}, 0},
                                   .layout = layout});

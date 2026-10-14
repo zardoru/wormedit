@@ -1,3 +1,4 @@
+#include <wormedit/core/rational.h>
 #include "sys/compose_sv_graph.h"
 
 #include <algorithm>
@@ -5,7 +6,7 @@
 
 namespace wormedit::sys {
 
-auto project_sv_steps(const chart_document_t& chart, const measure_index_t& measures,
+auto build_sv_steps_view(const chart_document_t& chart, const measure_index_t& measures,
                       std::size_t limit) -> sv_steps_t {
     struct placed_t {
         std::uint64_t row;
@@ -17,14 +18,13 @@ auto project_sv_steps(const chart_document_t& chart, const measure_index_t& meas
     std::vector<placed_t> placed;
     placed.reserve(chart.scrolls.size());
     for (const auto& scroll : chart.scrolls) {
-        const auto row = absolute_row(measures, scroll.position);
+        const auto row = (measures).row_of(scroll.position);
         if (!row || scroll.multiplier.denominator == 0) {
             result.truncated = true;
             continue;
         }
         placed.push_back({*row, scroll.provenance.source_order, scroll.id.value,
-                          static_cast<double>(scroll.multiplier.numerator) /
-                              static_cast<double>(scroll.multiplier.denominator)});
+                          wormedit::to_double(scroll.multiplier)});
     }
     std::ranges::sort(placed, [](const placed_t& left, const placed_t& right) {
         return std::tie(left.row, left.source_order, left.id) <

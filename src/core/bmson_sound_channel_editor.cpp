@@ -1121,11 +1121,6 @@ auto empty_stem_fallbacks_t::from(const song_document_t& document, const chart_d
     return result;
 }
 
-[[maybe_unused]] auto make_empty_stem_fallbacks(const song_document_t& document,
-                                                const chart_document_t& chart)
-    -> empty_stem_fallbacks_t {
-    return empty_stem_fallbacks_t::from(document, chart);
-}
 
 auto allocate_two_ids(chart_document_t& chart, std::uint64_t& largest,
                       std::uint64_t count) -> bool {

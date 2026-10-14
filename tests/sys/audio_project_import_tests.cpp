@@ -66,7 +66,7 @@ auto tagged_audio_creates_selectable_project() -> bool {
     using namespace wormedit;
     const auto imported = sys::inspect_audio_for_project(fixture("tagged-project.ogg"));
     if (!imported) return false;
-    auto document = sys::audio_project_document(song_id_t{42}, imported.source_path,
+    auto document = sys::make_audio_project_document(song_id_t{42}, imported.source_path,
                                                 imported.title, imported.artist, 4, imported.stream);
     if (!document || document->audio_assets.size() != 1) return false;
     if (document->metadata.title != "Título 雪" || document->metadata.artist != "Björk" ||
@@ -74,8 +74,8 @@ auto tagged_audio_creates_selectable_project() -> bool {
         document->charts.front().lane_layouts.front().layout.lanes.size() != 4 ||
         !validate_document(*document).empty()) return false;
 
-    auto history = make_document_history(std::move(*document), 128, true);
-    auto bound = make_workspace_controller(history);
+    auto history = document_history_t::from(std::move(*document), 128, true);
+    auto bound = workspace_controller_t::from(history);
     if (!bound) return false;
     auto& workspace = *bound.workspace;
     if (workspace.history.dirty || !workspace.selected_chart) return false;

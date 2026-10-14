@@ -25,7 +25,7 @@ void add_scroll(chart_document_t& chart, std::uint64_t id, std::size_t measure, 
 auto project(const chart_document_t& chart, std::size_t limit = 64) -> sv_steps_t {
     const auto measures = build_measure_index(chart);
     REQUIRE(std::holds_alternative<measure_index_t>(measures));
-    return project_sv_steps(chart, std::get<measure_index_t>(measures), limit);
+    return build_sv_steps_view(chart, std::get<measure_index_t>(measures), limit);
 }
 
 auto y_of(std::uint64_t row) { return static_cast<double>(row); }
@@ -81,4 +81,12 @@ TEST_CASE("sv graph normalizes to the visible window", "[unit][sys][sv-graph]") 
     CHECK(window.points[1].x == 0.5);
     CHECK(window.one_x < 0.0);
     CHECK(build_sv_graph(steps, 10, 10, y_of).points.empty());
+}
+
+TEST_CASE("SV projection converts fractions with shared careful rounding", "[sys][sv-graph][shared-arithmetic]") {
+    auto chart = base_chart();
+    add_scroll(chart, 1, 0, 0, 9'007'199'254'740'993LL, 3);
+    const auto projection = project(chart);
+    REQUIRE(projection.steps.size() == 1);
+    CHECK(projection.steps.front().value == 3'002'399'751'580'331.0);
 }

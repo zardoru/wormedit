@@ -1,11 +1,14 @@
 #pragma once
 
+#include <wormedit/core/result.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <memory_resource>
 #include <optional>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace wormedit {
@@ -22,7 +25,16 @@ enum class arena_error_t : std::uint8_t {
     out_of_memory,
 };
 
+using arena_allocation_outcome_t = result_t<void*, arena_error_t>;
+
 struct arena_allocation_t {
+    [[nodiscard]] static auto from(arena_allocation_outcome_t outcome) noexcept
+        -> arena_allocation_t {
+        if (!outcome)
+            return {.data = nullptr, .error = outcome.error()};
+        return {.data = *outcome, .error = arena_error_t::none};
+    }
+
     void* data{};
     arena_error_t error{arena_error_t::none};
 
@@ -61,7 +73,23 @@ class chunk_arena_core_t {
         std::size_t used{};
     };
 
+    struct allocation_location_t {
+        std::byte* data{};
+        std::size_t chunk_index{};
+        std::size_t offset{};
+
+        auto operator==(const allocation_location_t&) const -> bool = default;
+    };
+    using allocation_outcome_t = result_t<allocation_location_t, arena_error_t>;
+
     struct allocation_t {
+        [[nodiscard]] static auto from(allocation_outcome_t outcome) noexcept -> allocation_t {
+            if (!outcome)
+                return {.data = nullptr, .error = outcome.error(), .chunk_index = 0, .offset = 0};
+            return {.data = outcome->data, .error = arena_error_t::none,
+                    .chunk_index = outcome->chunk_index, .offset = outcome->offset};
+        }
+
         std::byte* data{};
         arena_error_t error{arena_error_t::none};
         std::size_t chunk_index{};
@@ -79,6 +107,8 @@ class chunk_arena_core_t {
     auto operator=(const chunk_arena_core_t&) -> chunk_arena_core_t& = delete;
     ~chunk_arena_core_t() = default;
 
+    [[nodiscard]] auto allocate(std::size_t size, std::size_t alignment,
+                                arena_fit_policy_t policy) noexcept -> allocation_outcome_t;
     [[nodiscard]] auto allocate_bytes(std::size_t size, std::size_t alignment,
                                       arena_fit_policy_t policy) noexcept -> allocation_t;
     // Rewinds every chunk to empty and keeps it committed.
@@ -93,7 +123,7 @@ class chunk_arena_core_t {
 
   private:
     [[nodiscard]] auto commit(std::size_t index, std::size_t begin, std::size_t size) noexcept
-        -> allocation_t;
+        -> allocation_location_t;
     struct placement_t {
         std::size_t chunk_index{};
         std::size_t begin{};
@@ -127,6 +157,9 @@ class frame_arena_t {
     frame_arena_t(const frame_arena_t&) = delete;
     auto operator=(const frame_arena_t&) -> frame_arena_t& = delete;
 
+    [[nodiscard]] auto allocate(std::size_t size,
+                                std::size_t alignment = alignof(void*)) noexcept
+        -> arena_allocation_outcome_t;
     [[nodiscard]] auto allocate_bytes(std::size_t size,
                                       std::size_t alignment = alignof(void*)) noexcept
         -> arena_allocation_t;
@@ -153,7 +186,16 @@ struct append_arena_span_t {
     std::size_t alignment{1};
 };
 
+using append_arena_outcome_t = result_t<append_arena_span_t, arena_error_t>;
+
 struct append_arena_result_t {
+    [[nodiscard]] static auto from(append_arena_outcome_t&& outcome) noexcept
+        -> append_arena_result_t {
+        if (!outcome)
+            return {.span = {}, .error = outcome.error()};
+        return {.span = std::move(*outcome), .error = arena_error_t::none};
+    }
+
     append_arena_span_t span;
     arena_error_t error{arena_error_t::none};
 
@@ -169,6 +211,15 @@ enum class arena_compaction_error_t : std::uint8_t {
     allocation_failed,
 };
 
+struct arena_compaction_failure_t {
+    arena_compaction_error_t code{arena_compaction_error_t::allocation_failed};
+    arena_error_t allocation_error{arena_error_t::none};
+    // Cleared on failure, retaining the legacy result's remap capacity.
+    std::vector<append_arena_span_t> remap;
+};
+struct append_arena_snapshot_t;
+using append_arena_compaction_outcome_t =
+    result_t<append_arena_snapshot_t, arena_compaction_failure_t>;
 struct append_arena_compaction_t;
 
 // Append-only storage: spans never move or get reused. Callers report
@@ -185,6 +236,9 @@ class append_arena_t {
     auto operator=(const append_arena_t&) -> append_arena_t& = delete;
     ~append_arena_t() = default;
 
+    [[nodiscard]] auto append_span(std::size_t size,
+                                   std::size_t alignment = alignof(void*)) noexcept
+        -> append_arena_outcome_t;
     [[nodiscard]] auto append(std::size_t size, std::size_t alignment = alignof(void*)) noexcept
         -> append_arena_result_t;
     // Adds payload bytes to the stale count, clamped to appended payload.
@@ -205,6 +259,9 @@ class append_arena_t {
     // options and resource. `order` lists indices into `live_spans` in copy
     // order and must be a permutation; empty means input order. remap[i] is the
     // new location of live_spans[i]. This arena is left unchanged.
+    [[nodiscard]] auto build_compaction(std::span<const append_arena_span_t> live_spans,
+                                        std::span<const std::size_t> order = {}) const noexcept
+        -> append_arena_compaction_outcome_t;
     [[nodiscard]] auto compact(std::span<const append_arena_span_t> live_spans,
                                std::span<const std::size_t> order = {}) const noexcept
         -> append_arena_compaction_t;
@@ -218,7 +275,26 @@ class append_arena_t {
     std::size_t stale_bytes_{};
 };
 
+struct append_arena_snapshot_t {
+    append_arena_t arena;
+    std::vector<append_arena_span_t> remap;
+};
+
 struct append_arena_compaction_t {
+    [[nodiscard]] static auto from(append_arena_compaction_outcome_t&& outcome,
+                                  arena_options_t options,
+                                  std::pmr::memory_resource* resource) noexcept
+        -> append_arena_compaction_t {
+        if (!outcome)
+            return {.arena = append_arena_t{options, resource},
+                    .remap = std::move(outcome.error().remap),
+                    .error = outcome.error().code,
+                    .allocation_error = outcome.error().allocation_error};
+        return {.arena = std::move(outcome->arena), .remap = std::move(outcome->remap),
+                .error = arena_compaction_error_t::none,
+                .allocation_error = arena_error_t::none};
+    }
+
     append_arena_t arena;
     std::vector<append_arena_span_t> remap;
     arena_compaction_error_t error{arena_compaction_error_t::none};

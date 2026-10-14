@@ -55,8 +55,10 @@ struct rgba_video_frame_t {
     std::int32_t time_base_denominator{1};
 };
 
-struct video_frame_decode_result_t;
-struct video_decoder_session_open_result_t;
+class video_decoder_session_t;
+using video_frame_decode_result_t = result_t<rgba_video_frame_t, error_t<video_frame_status_t>>;
+using video_decoder_session_open_result_t =
+    result_t<std::unique_ptr<video_decoder_session_t>, error_t<video_frame_status_t>>;
 
 class video_decoder_session_t {
   public:
@@ -82,16 +84,6 @@ class video_decoder_session_t {
         -> video_decoder_session_open_result_t;
 };
 
-struct video_decoder_session_open_result_t {
-    video_frame_status_t status{video_frame_status_t::open_failed};
-    std::unique_ptr<video_decoder_session_t> session;
-    std::string message;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == video_frame_status_t::ready && session != nullptr;
-    }
-};
-
 [[nodiscard]] auto open_video_decoder_session(const resolved_visual_asset_t& source,
                                               std::stop_token stop = {})
     -> video_decoder_session_open_result_t;
@@ -99,19 +91,6 @@ struct video_decoder_session_open_result_t {
 // A missing next timestamp denotes the final frame and an open-ended interval.
 [[nodiscard]] auto is_video_frame_covering_clock(const rgba_video_frame_t& frame,
                                             const video_preview_clock_t& clock) noexcept -> bool;
-// Compatibility for the coordinated sys/UI migration.
-inline auto video_frame_covers_clock(const rgba_video_frame_t& frame,
-                                            const video_preview_clock_t& clock) noexcept -> bool { return is_video_frame_covering_clock(frame, clock); }
-
-struct video_frame_decode_result_t {
-    video_frame_status_t status{video_frame_status_t::decode_failed};
-    std::optional<rgba_video_frame_t> frame;
-    std::string message;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == video_frame_status_t::ready && frame.has_value();
-    }
-};
 
 // Opens, seeks, and decodes the frame presented at an exact player-preview
 // media clock. FFmpeg state and pixel conversion stay behind this optional

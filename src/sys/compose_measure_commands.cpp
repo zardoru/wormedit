@@ -93,16 +93,16 @@ auto apply_cursor_measure_split(document_history_t& history, editor_interaction_
         set_feedback_severity(severity, notification_severity_t::hint);
         return "The cursor is already on a measure head.";
     }
-    const auto chart = std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
-    if (chart == history.document.charts.end()) return "The selected chart is unavailable.";
+    const auto chart = history.document.find_chart(state.chart);
+    if (chart == nullptr) return "The selected chart is unavailable.";
     const auto index = build_measure_index(*chart);
     const auto* before = std::get_if<measure_index_t>(&index);
-    const auto row = before ? absolute_row(*before, state.cursor) : std::nullopt;
+    const auto row = before ? (*before).row_of(state.cursor) : std::nullopt;
     if (!row) return "The cursor is outside the authored chart.";
     const auto result =
         apply_measure_edit(history, split_measure_action_t{state.chart, state.cursor});
     if (!result) return rejection(result, "The measure could not be split.", severity);
-    const auto current = std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+    const auto current = history.document.find_chart(state.chart);
     const auto after = build_measure_index(*current);
     if (const auto* measures = std::get_if<measure_index_t>(&after))
         if (const auto position = position_at_absolute_row(*measures, *row)) place_cursor_at(state, *position);
@@ -121,15 +121,15 @@ auto apply_cursor_measure_meter(document_history_t& history, editor_interaction_
     const auto top = parse_meter_part(numerator);
     const auto bottom = parse_meter_part(denominator);
     if (!top || !bottom) return "A meter needs a non-zero numerator and denominator.";
-    const auto found = std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
-    if (found == history.document.charts.end()) return "The selected difficulty is no longer available.";
-    const auto measure = std::ranges::find(found->measures, state.cursor.measure, &measure_chunk_t::id);
-    if (measure == found->measures.end()) return "The cursor is not inside a materialized measure.";
+    const auto found = history.document.find_chart(state.chart);
+    if (found == nullptr) return "The selected difficulty is no longer available.";
+    const auto measure = found->find_measure(state.cursor.measure);
+    if (measure == nullptr) return "The cursor is not inside a materialized measure.";
     const auto result = apply_measure_edit(
         history,
         resize_measure_keep_rows_action_t{
             .chart = found->id,
-            .measure_indices = {static_cast<std::size_t>(measure - found->measures.begin())},
+            .measure_indices = {static_cast<std::size_t>(measure - found->measures.data())},
             .definition = {.length = {*top, *bottom}, .meter = meter_t{*top, *bottom}}});
     if (result) {
         set_feedback_severity(severity, notification_severity_t::success);
@@ -189,11 +189,11 @@ auto apply_bar_line_move(document_history_t& history, editor_interaction_state_t
 auto apply_cursor_measure_command(document_history_t& history, editor_interaction_state_t& state,
                                   cursor_measure_command_t command, notification_severity_t* severity) -> std::string {
     set_feedback_severity(severity, notification_severity_t::warning);
-    const auto found = std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
-    if (found == history.document.charts.end()) return "The selected difficulty is no longer available.";
-    const auto measure = std::ranges::find(found->measures, state.cursor.measure, &measure_chunk_t::id);
-    if (measure == found->measures.end()) return "The cursor is not inside a materialized measure.";
-    const auto index = static_cast<std::size_t>(measure - found->measures.begin());
+    const auto found = history.document.find_chart(state.chart);
+    if (found == nullptr) return "The selected difficulty is no longer available.";
+    const auto measure = found->find_measure(state.cursor.measure);
+    if (measure == nullptr) return "The cursor is not inside a materialized measure.";
+    const auto index = static_cast<std::size_t>(measure - found->measures.data());
     // Copy: the history edit replaces the chart storage this reference points into.
     const auto chart = *found;
     switch (command) {

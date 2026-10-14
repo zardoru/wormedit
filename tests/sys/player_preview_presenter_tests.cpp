@@ -144,7 +144,7 @@ TEST_CASE("player preview publishes decoded Layer 2 and base sharing one image",
         .resource = resource, .kind = visual_event_kind_t::background},
         {.id = object_id_t{5}, .position = {measure_id_t{1}, 0},
          .resource = resource, .kind = visual_event_kind_t::layer2}};
-    const auto history = make_document_history(std::move(song));
+    const auto history = document_history_t::from(std::move(song));
     visual::image_cache_t image_cache;
     task_scheduler_t image_scheduler{1, 2};
     visual::image_job_t image_job{image_cache, image_scheduler};
@@ -162,7 +162,7 @@ TEST_CASE("player preview publishes decoded Layer 2 and base sharing one image",
 
 TEST_CASE("player preview asynchronously publishes and replaces exact video frames",
           "[integration][visual][video][player-preview]") {
-    const auto history = make_document_history(document());
+    const auto history = document_history_t::from(document());
     visual::image_cache_t image_cache;
     task_scheduler_t image_scheduler{1, 2};
     visual::image_job_t image_job{image_cache, image_scheduler};
@@ -185,7 +185,7 @@ TEST_CASE("player preview asynchronously publishes and replaces exact video fram
                        video_job);
     REQUIRE(view.visual_layers[0].image_ready);
     CHECK(view.visual_layers[0].image_content_id == red_content_id);
-    CHECK_FALSE(video_job.busy());
+    CHECK_FALSE(video_job.is_busy());
 
     REQUIRE(wait_for_frame(presenter, view, history, image_job, video_job, 72'000, red_content_id));
     CHECK(view.visual_layers[0].rgba_pixels[0] < 16);
@@ -201,7 +201,7 @@ TEST_CASE("player preview asynchronously publishes and replaces exact video fram
 
 TEST_CASE("player preview links a late video frame diagnostic to its event",
           "[integration][visual][video][player-preview][diagnostic]") {
-    const auto history = make_document_history(document());
+    const auto history = document_history_t::from(document());
     visual::image_cache_t image_cache;
     task_scheduler_t image_scheduler{1, 2};
     visual::image_job_t image_job{image_cache, image_scheduler};
@@ -226,7 +226,7 @@ TEST_CASE("player preview links a late video frame diagnostic to its event",
     const auto directory = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "video";
     presenter.populate(view, history, chart_id_t{7}, true, player_preview_skin_t::mania, 24'000,
                        48'000, directory, image_job, video_job);
-    REQUIRE(video_job.busy());
+    REQUIRE(video_job.is_busy());
     presenter.populate(view, history, chart_id_t{7}, true, player_preview_skin_t::mania, 24'000,
                        48'000, directory, image_job, video_job);
 
@@ -243,7 +243,7 @@ TEST_CASE("player preview publishes an event-linked video decoder failure",
           "[integration][visual][video][player-preview][diagnostic]") {
     auto broken_document = document();
     broken_document.visual_assets[0].source_path = "missing-video.mkv";
-    const auto history = make_document_history(std::move(broken_document));
+    const auto history = document_history_t::from(std::move(broken_document));
     visual::image_cache_t image_cache;
     task_scheduler_t image_scheduler{1, 2};
     visual::image_job_t image_job{image_cache, image_scheduler};

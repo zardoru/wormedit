@@ -95,7 +95,7 @@ auto conflicting_ids(const command_registry_t& registry, shortcut_primary_modifi
 
 } // namespace
 
-void project_shortcut_rows(const command_registry_t& registry,
+void build_shortcut_rows_view(const command_registry_t& registry,
                            shortcut_primary_modifier_t primary, shortcut_rows_projection_t& out) {
     const auto conflicts = conflicting_ids(registry, primary);
     const auto count = std::min(registry.commands.size(),

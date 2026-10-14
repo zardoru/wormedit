@@ -407,14 +407,14 @@ void append_player_preview_visual_layer(const Context& context, const auto& even
             layer.rgba_byte_count = decoded->image->pixels.size();
         }
     }
-    layer.image_pending = layer.static_image && !layer.image_ready && context.image_job.busy();
+    layer.image_pending = layer.static_image && !layer.image_ready && context.image_job.is_busy();
 #endif
 #if defined(WORMEDIT_HAS_VIDEO_DECODER)
     if (layer.video_clock_ready) {
         layer.video_frame = true;
         if (state.decoded_video && state.decoded_video->source.resource == event->resource &&
             state.decoded_video->clock.event == scene.video_clock->event &&
-            visual::video_frame_covers_clock(*state.decoded_video->frame, *scene.video_clock)) {
+            visual::is_video_frame_covering_clock(*state.decoded_video->frame, *scene.video_clock)) {
             layer.image_ready = true;
             layer.image_content_id = state.decoded_video_content_id;
             layer.image_width = state.decoded_video->frame->width;
@@ -422,7 +422,7 @@ void append_player_preview_visual_layer(const Context& context, const auto& even
             layer.rgba_pixels = state.decoded_video->frame->pixels.data();
             layer.rgba_byte_count = state.decoded_video->frame->pixels.size();
         }
-        layer.image_pending = !layer.image_ready && context.video_job.busy();
+        layer.image_pending = !layer.image_ready && context.video_job.is_busy();
         if (layer.image_pending) {
             layer.diagnostic = WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_VIDEO_FRAME_LATE;
             layer.diagnostic_text =
@@ -479,7 +479,7 @@ void append_player_preview_storyboard_sprite(const Context& context, const auto&
             sprite.rgba_byte_count = decoded->image->pixels.size();
         }
     }
-    sprite.image_pending = sprite.resource_id != 0 && !sprite.image_ready && context.image_job.busy();
+    sprite.image_pending = sprite.resource_id != 0 && !sprite.image_ready && context.image_job.is_busy();
 #endif
     context.state.storyboard_sprites.push_back(sprite);
 }
@@ -530,7 +530,7 @@ void request_player_preview_video(const Context& context) {
         return layer.video_clock_ready && layer.video_frame;
     });
     if (active_video == state.visual_layers.end()) {
-        if (video_job.busy()) video_job.cancel();
+        if (video_job.is_busy()) video_job.cancel();
         state.requested_video_clock.reset();
         state.failed_video_event.reset();
         state.video_diagnostic_message.clear();
@@ -552,7 +552,7 @@ void request_player_preview_video(const Context& context) {
     const auto sought_backward = state.requested_video_clock &&
         state.requested_video_clock->event == clock.event &&
         clock.elapsed_sample_frames < state.requested_video_clock->elapsed_sample_frames;
-    if ((switched_event || sought_backward) && video_job.busy()) video_job.cancel();
+    if ((switched_event || sought_backward) && video_job.is_busy()) video_job.cancel();
     if (switched_event) {
         state.failed_video_event.reset();
         state.video_diagnostic_message.clear();
@@ -560,8 +560,8 @@ void request_player_preview_video(const Context& context) {
     const auto decoded_covers_clock = state.decoded_video &&
         state.decoded_video->source.resource == clock.resource &&
         state.decoded_video->clock.event == clock.event &&
-        visual::video_frame_covers_clock(*state.decoded_video->frame, clock);
-    if (video_job.busy() || state.failed_video_event == clock.event || decoded_covers_clock ||
+        visual::is_video_frame_covering_clock(*state.decoded_video->frame, clock);
+    if (video_job.is_busy() || state.failed_video_event == clock.event || decoded_covers_clock ||
         (state.requested_video_clock && *state.requested_video_clock == clock)) return;
     const auto resolved = visual::resolve_visual_asset(
         context.history.document, clock.resource, context.project_directory);
@@ -607,7 +607,7 @@ template <typename Context, typename Frame>
 auto present_player_preview_frame(const Context& context, const Frame& frame) -> bool {
     auto& state = context.state;
     auto& view = context.view;
-    const auto scene = make_player_preview_scene(
+    const auto scene = player_preview_scene_t::from(
         *state.index, {.sample_frame = context.sample_frame,
                        .sample_rate = context.sample_rate,
                        .viewport_width_pixels = view.viewport_width_pixels,
@@ -733,8 +733,8 @@ void player_preview_presenter_t::populate(WormUiPlayerPreviewView& view,
         return;
     }
     const auto chart =
-        std::ranges::find(history.document.charts, *selected_chart, &chart_document_t::id);
-    if (chart == history.document.charts.end()) {
+        history.document.find_chart(*selected_chart);
+    if (chart == nullptr) {
         fail("The selected difficulty is unavailable.");
         return;
     }

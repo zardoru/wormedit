@@ -11,6 +11,9 @@
 namespace wormedit {
 
 struct native_project_autosave_target_t {
+    // Saved native projects keep the backup next to the primary. Sessions without
+    // a native primary use their stable project ID inside the platform recovery
+    // directory. An empty backup_path means no safe destination is available.
     [[nodiscard]] static auto from(song_id_t project_id, bool has_native_primary,
                                    const std::filesystem::path& native_primary_path,
                                    const std::filesystem::path& platform_recovery_directory,
@@ -23,14 +26,6 @@ struct native_project_autosave_target_t {
     // Relative source assets are anchored to this live session directory.
     std::filesystem::path asset_base;
 };
-
-// Saved native projects keep the backup next to the primary. Sessions without
-// a native primary use their stable project ID inside the platform recovery
-// directory. An empty backup_path means no safe destination is available.
-[[nodiscard]] auto make_native_project_autosave_target(
-    song_id_t project_id, bool has_native_primary, const std::filesystem::path& native_primary_path,
-    const std::filesystem::path& platform_recovery_directory,
-    std::filesystem::path original_source_path = {}) -> native_project_autosave_target_t;
 
 [[nodiscard]] auto
 native_project_recovery_session_sequence(const native_project_recovery_scan_result_t& scan,
@@ -74,8 +69,6 @@ class native_project_autosave_loop_t {
         -> std::optional<native_project_autosave_result_t>;
 
     [[nodiscard]] auto is_busy() const noexcept -> bool;
-    // Compatibility for the coordinated sys/UI migration.
-    inline auto busy() const noexcept -> bool { return is_busy(); }
     [[nodiscard]] auto session_sequence() const noexcept -> std::uint64_t;
 
   private:

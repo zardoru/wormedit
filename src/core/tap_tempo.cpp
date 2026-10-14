@@ -62,7 +62,7 @@ auto tap_tempo_estimator_t::estimate() const -> std::optional<tap_tempo_estimate
     if (!rational) return std::nullopt;
     const auto deviation = static_cast<double>(1000.0L * fitted->residual / options_.sample_rate);
     const auto coverage = std::min(1.0, static_cast<double>(count_) / 8.0);
-    return tap_tempo_estimate_t{bpm, *rational.value, std::round(bpm), std::round(bpm * 2) / 2,
+    return tap_tempo_estimate_t{bpm, rational->value, std::round(bpm), std::round(bpm * 2) / 2,
         static_cast<double>(static_cast<long double>(first_frame_) + fitted->intercept),
         deviation, count_, session_count_, coverage * std::max(0.0, 1.0 - deviation / 24.0),
         count_ >= 8 && deviation < 12.0};

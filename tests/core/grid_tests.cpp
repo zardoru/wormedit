@@ -21,11 +21,11 @@ auto make_chart(std::uint64_t divisions, std::vector<measure_chunk_t> measures)
 
 auto line_at(const editor_grid_result_t& result, std::uint64_t whole_row)
     -> const editor_grid_line_t* {
-    const auto found = std::ranges::find_if(result.lines, [whole_row](const auto& line) {
+    const auto found = std::ranges::find_if(result.value.lines, [whole_row](const auto& line) {
         return line.chart_row.whole_rows == whole_row &&
                line.chart_row.fractional_rows.numerator == 0;
     });
-    return found == result.lines.end() ? nullptr : &*found;
+    return found == result.value.lines.end() ? nullptr : &*found;
 }
 
 void expect_grid(bool condition,
@@ -50,7 +50,7 @@ TEST_CASE("editor grid lines use exact meter, compound groups, variable bars, an
     };
 
     const auto result = make_editor_grid_lines(chart, request);
-    REQUIRE(result);
+    REQUIRE(result.ok());
 
     const auto* first_group = line_at(result, 480);
     REQUIRE(first_group != nullptr);
@@ -73,7 +73,7 @@ TEST_CASE("editor grid lines use exact meter, compound groups, variable bars, an
 
     request.authored_groupings = {{.measure = measure_id_t{2}, .beat_counts = {2, 2, 2}}};
     const auto regrouped = make_editor_grid_lines(chart, request);
-    REQUIRE(regrouped);
+    REQUIRE(regrouped.ok());
     const auto* authored_group = line_at(regrouped, 1200);
     REQUIRE(authored_group != nullptr);
     CHECK(authored_group->kind == editor_grid_line_kind_t::group);
@@ -89,10 +89,10 @@ TEST_CASE("editor grid preserves fractional beat coordinates below note-row reso
                                                        .visible_end_row = 1,
                                                        .pixels_per_standard_measure = 192.0,
                                                        .density = {0.0, 0.0, 0.0}});
-    REQUIRE(result);
+    REQUIRE(result.ok());
     const auto beat = std::ranges::find_if(
-        result.lines, [](const auto& line) { return line.kind == editor_grid_line_kind_t::beat; });
-    REQUIRE(beat != result.lines.end());
+        result.value.lines, [](const auto& line) { return line.kind == editor_grid_line_kind_t::beat; });
+    REQUIRE(beat != result.value.lines.end());
     CHECK(beat->position.measure == measure_id_t{1});
     CHECK(beat->position.whole_rows == 0);
     CHECK((beat->position.fractional_rows == rational_t{1, 2}));
@@ -111,13 +111,13 @@ TEST_CASE("grid zoom suppresses dense subdivisions without moving retained lines
                                                          .visible_end_row = 960,
                                                          .active_snap_denominator = 16,
                                                          .pixels_per_standard_measure = 24.0});
-    REQUIRE(high_zoom);
-    REQUIRE(low_zoom);
+    REQUIRE(high_zoom.ok());
+    REQUIRE(low_zoom.ok());
 
-    CHECK(std::ranges::any_of(high_zoom.lines, [](const auto& line) {
+    CHECK(std::ranges::any_of(high_zoom.value.lines, [](const auto& line) {
         return line.kind == editor_grid_line_kind_t::active_snap;
     }));
-    CHECK(std::ranges::none_of(low_zoom.lines, [](const auto& line) {
+    CHECK(std::ranges::none_of(low_zoom.value.lines, [](const auto& line) {
         return line.kind == editor_grid_line_kind_t::active_snap ||
                line.kind == editor_grid_line_kind_t::beat;
     }));
@@ -137,9 +137,9 @@ TEST_CASE("visible grid intervals are half-open and reject malformed groupings",
                                                         .visible_end_row = 480,
                                                         .pixels_per_standard_measure = 192.0,
                                                         .density = {0.0, 0.0, 0.0}});
-    REQUIRE(clipped);
-    REQUIRE(clipped.lines.size() == 1);
-    CHECK(clipped.lines.front().chart_row.whole_rows == 240);
+    REQUIRE(clipped.ok());
+    REQUIRE(clipped.value.lines.size() == 1);
+    CHECK(clipped.value.lines.front().chart_row.whole_rows == 240);
 
     auto metered =
         make_chart(960, {
@@ -149,7 +149,7 @@ TEST_CASE("visible grid intervals are half-open and reject malformed groupings",
         metered, {.visible_begin_row = 0,
                   .visible_end_row = 720,
                   .authored_groupings = {{.measure = measure_id_t{2}, .beat_counts = {2, 2}}}});
-    CHECK_FALSE(invalid_grouping);
+    CHECK_FALSE(invalid_grouping.ok());
     CHECK(std::ranges::any_of(invalid_grouping.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == diagnostic_code_t::invalid_measure;
     }));
@@ -168,9 +168,9 @@ TEST_CASE("dense grid thinning retains stable representatives instead of hiding 
                 .density = {9.0, 9.0, 9.0},
                 .authored_groupings = {
                     {.measure = measure_id_t{1}, .beat_counts = {1, 1, 1, 1, 1, 1, 1}}}});
-    REQUIRE(result);
+    REQUIRE(result.ok());
     const auto groups = std::ranges::count_if(
-        result.lines, [](const auto& line) { return line.kind == editor_grid_line_kind_t::group; });
+        result.value.lines, [](const auto& line) { return line.kind == editor_grid_line_kind_t::group; });
     CHECK(groups > 0);
     CHECK(groups < 6);
 }
@@ -185,7 +185,7 @@ TEST_CASE("BMS grid projects the final virtual measure without materializing it"
                                                .include_virtual_bms_tail = true,
                                                .density = {0.0, 0.0, 0.0}};
     const auto projected = make_editor_grid_lines(chart, request);
-    REQUIRE(projected);
+    REQUIRE(projected.ok());
     const auto* final_measure = line_at(projected, 959'040);
     REQUIRE(final_measure);
     CHECK(final_measure->kind == editor_grid_line_kind_t::measure);
@@ -195,12 +195,12 @@ TEST_CASE("BMS grid projects the final virtual measure without materializing it"
     CHECK(beat->kind == editor_grid_line_kind_t::beat);
     CHECK(beat->position.measure == measure_id_t{});
     CHECK(std::ranges::none_of(
-        projected.lines, [](const auto& line) { return line.chart_row.whole_rows >= 959'520; }));
-    CHECK(projected.lines.size() < 24);
+        projected.value.lines, [](const auto& line) { return line.chart_row.whole_rows >= 959'520; }));
+    CHECK(projected.value.lines.size() < 24);
     CHECK(chart.measures.size() == 1);
     auto authored_only = request;
     authored_only.include_virtual_bms_tail = false;
-    CHECK_FALSE(make_editor_grid_lines(chart, authored_only));
+    CHECK_FALSE(make_editor_grid_lines(chart, authored_only).ok());
 }
 
 TEST_CASE("virtual BMS beats retain exact fractions when note rows are coarse",
@@ -211,12 +211,12 @@ TEST_CASE("virtual BMS beats retain exact fractions when note rows are coarse",
                                                      .visible_end_row = 6,
                                                      .include_virtual_bms_tail = true,
                                                      .density = {0.0, 0.0, 0.0}});
-    REQUIRE(grid);
-    const auto beat = std::ranges::find_if(grid.lines, [](const auto& line) {
+    REQUIRE(grid.ok());
+    const auto beat = std::ranges::find_if(grid.value.lines, [](const auto& line) {
         return line.kind == editor_grid_line_kind_t::beat && line.chart_row.whole_rows == 3 &&
                line.chart_row.fractional_rows == rational_t{3, 4};
     });
-    REQUIRE(beat != grid.lines.end());
+    REQUIRE(beat != grid.value.lines.end());
     CHECK(beat->position.measure == measure_id_t{});
     CHECK(beat->position.whole_rows == 0);
     CHECK(beat->position.fractional_rows == rational_t{3, 4});
@@ -233,7 +233,7 @@ TEST_CASE("snap subdivisions restart at every short authored measure head",
     const auto result = make_editor_grid_lines(chart, {
         .visible_begin_row = 180, .visible_end_row = 1140,
         .active_snap_denominator = 8, .density = {0.0, 0.0, 0.0}});
-    expect_grid(static_cast<bool>(result));
+    expect_grid(result.ok());
     const auto* snap = line_at(result, 300);
     expect_grid(snap);
     expect_grid(snap->kind == editor_grid_line_kind_t::active_snap);
@@ -259,7 +259,7 @@ TEST_CASE("offset measure grids retain authored grouping and clipped snap phase"
         .visible_begin_row = 121, .visible_end_row = 421,
         .active_snap_denominator = 16, .density = {0.0, 0.0, 0.0},
         .authored_groupings = {{.measure = measure_id_t{2}, .beat_counts = {2, 2, 2}}}});
-    expect_grid(static_cast<bool>(result));
+    expect_grid(result.ok());
     const auto* snap = line_at(result, 240);
     expect_grid(snap);
     expect_grid(snap->position.whole_rows == 180);
@@ -279,14 +279,14 @@ TEST_CASE("virtual BMS snap phase follows the final authored measure and stays b
         .visible_begin_row = 958'141, .visible_end_row = 958'501,
         .active_snap_denominator = 8, .include_virtual_bms_tail = true,
         .density = {0.0, 0.0, 0.0}, .maximum_line_count = 32});
-    expect_grid(static_cast<bool>(result));
+    expect_grid(result.ok());
     const auto* snap = line_at(result, 958'260);
     expect_grid(snap);
     expect_grid(snap->position.measure == measure_id_t{});
     expect_grid(snap->position.whole_rows == 120);
-    expect_grid(result.lines.size() < 16);
+    expect_grid(result.value.lines.size() < 16);
     expect_grid(!make_editor_grid_lines(chart, {
         .visible_begin_row = 60, .visible_end_row = 1020,
         .active_snap_denominator = 960, .include_virtual_bms_tail = true,
-        .density = {0.0, 0.0, 0.0}, .maximum_line_count = 16}));
+        .density = {0.0, 0.0, 0.0}, .maximum_line_count = 16}).ok());
 }

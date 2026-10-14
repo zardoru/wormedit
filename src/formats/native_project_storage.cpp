@@ -1878,7 +1878,7 @@ auto is_same_path_for_action(const std::filesystem::path& left, const std::files
            left.lexically_normal() == right.lexically_normal();
 }
 
-auto new_quarantine_path(const std::filesystem::path& source) -> std::filesystem::path {
+auto create_quarantine_path(const std::filesystem::path& source) -> std::filesystem::path {
     static std::atomic<std::uint64_t> sequence{1};
     const auto parent =
         source.has_parent_path() ? source.parent_path() : std::filesystem::path{"."};
@@ -2049,7 +2049,7 @@ void quarantine_scanned_recovery(const native_project_recovery_scan_result_t& sc
         primary != nullptr && !verify_primary_baseline(*primary, options, result)) {
         return;
     }
-    const auto destination = new_quarantine_path(candidate.path);
+    const auto destination = create_quarantine_path(candidate.path);
     std::string move_failure;
     if (!move_no_replace(candidate.path, destination, move_failure)) {
         add_action_error(result,

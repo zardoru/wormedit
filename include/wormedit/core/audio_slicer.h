@@ -1,5 +1,6 @@
 #pragma once
 
+#include <wormedit/core/result.h>
 #include <wormedit/core/timing.h>
 
 #include <cstddef>
@@ -22,6 +23,9 @@ enum class audio_slicer_error_code_t {
 struct audio_slicer_diagnostic_t {
     audio_slicer_error_code_t code{audio_slicer_error_code_t::invalid_tempo};
     std::string message;
+
+    [[nodiscard]] constexpr auto is_error() const noexcept -> bool { return true; }
+    auto operator==(const audio_slicer_diagnostic_t&) const -> bool = default;
 };
 
 // Cuts a long DAW export on a beat grid (the Woslicer model): a boundary every
@@ -50,7 +54,19 @@ struct audio_slice_range_t {
     auto operator==(const audio_slice_range_t&) const -> bool = default;
 };
 
+struct audio_slice_plan_t {
+    [[nodiscard]] static auto from(const audio_slicer_request_t& request)
+        -> diagnosed_t<audio_slice_plan_t, std::vector<audio_slicer_diagnostic_t>>;
+
+    std::vector<audio_slice_range_t> ranges;
+    auto operator==(const audio_slice_plan_t&) const -> bool = default;
+};
+using audio_slicer_outcome_t =
+    diagnosed_t<audio_slice_plan_t, std::vector<audio_slicer_diagnostic_t>>;
+
 struct audio_slicer_result_t {
+    [[nodiscard]] static auto from(audio_slicer_outcome_t&& outcome) -> audio_slicer_result_t;
+
     std::vector<audio_slice_range_t> ranges;
     std::vector<audio_slicer_diagnostic_t> diagnostics;
 

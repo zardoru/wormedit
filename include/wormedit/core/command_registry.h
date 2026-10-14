@@ -269,8 +269,6 @@ struct shortcut_profile_result_t {
     }
 };
 
-[[nodiscard]] auto make_shortcut_profile(const command_registry_t& registry, std::string profile_id)
-    -> shortcut_profile_t;
 [[nodiscard]] auto apply_shortcut_profile(command_registry_t& registry,
                                           const shortcut_profile_t& profile)
     -> shortcut_profile_result_t;

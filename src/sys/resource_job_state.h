@@ -44,7 +44,9 @@ namespace runtime {
 struct resource_copy_t {
     explicit resource_copy_t(std::optional<wormedit::notification_sink_t> notifications = {});
 
-    [[nodiscard]] auto busy() const noexcept -> bool { return pending_.has_value(); }
+    [[nodiscard]] auto is_busy() const noexcept -> bool { return pending_.has_value(); }
+    // Compatibility for the deferred hot action callers.
+    [[nodiscard]] auto busy() const noexcept -> bool { return is_busy(); }
 
     auto start(pending_project_resource_copy_t&& pending) -> bool;
     auto poll(wormedit::document_history_t& history,
@@ -70,7 +72,9 @@ public:
     wormedit::task_scheduler_t scheduler{1, 1, wormedit::background_scheduler_options()};
     std::optional<pending_output_group_export_t> pending;
 
-    [[nodiscard]] auto busy() const noexcept -> bool { return pending.has_value(); }
+    [[nodiscard]] auto is_busy() const noexcept -> bool { return pending.has_value(); }
+    // Compatibility for the deferred hot action callers.
+    [[nodiscard]] auto busy() const noexcept -> bool { return is_busy(); }
     auto start(pending_output_group_export_t&& pending) -> bool;
     auto poll(const wormedit::document_history_t& history) -> std::optional<std::string>;
     void cancel();

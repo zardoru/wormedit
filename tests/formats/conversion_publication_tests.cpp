@@ -141,7 +141,7 @@ TEST_CASE("new audio project publishes osu, SM, and SSC with the staged music fi
     temporary_directory_t temporary;
     const auto music = temporary.path / "music.ogg";
     std::ofstream(music) << "audio";
-    const auto document = wormedit::sys::audio_project_document(
+    const auto document = wormedit::sys::make_audio_project_document(
         wormedit::song_id_t{112}, music, "Title", "Artist", 7);
     REQUIRE(document);
     for (const auto& group : document->output_groups) {

@@ -125,7 +125,7 @@ auto timing_pause_unit_from_ui(WormUiTimingPauseUnit unit)
     return std::nullopt;
 }
 
-auto initial_timing_value_for_stage(const wormedit::chart_document_t& chart,
+auto make_initial_timing_value_for_stage(const wormedit::chart_document_t& chart,
                                     wormedit::timing_lane_kind_t kind,
                                     wormedit::local_position_t position,
                                     std::uint64_t active_snap_denominator)
@@ -146,7 +146,7 @@ auto initial_timing_value_for_stage(const wormedit::chart_document_t& chart,
         const auto measures_result = build_measure_index(chart);
         const auto* measures = std::get_if<measure_index_t>(&measures_result);
         const auto step = timing_stage_grid_step(chart, active_snap_denominator);
-        const auto start = measures ? absolute_row(*measures, position) : std::nullopt;
+        const auto start = measures ? (*measures).row_of(position) : std::nullopt;
         if (!measures || !start || step == 0 ||
             step > std::numeric_limits<std::uint64_t>::max() - *start ||
             *start + step >= measures->total_rows) {
@@ -189,9 +189,9 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
         if (preview.status == timing_lane_pseudonote_status_t::editing &&
             action.timing_has_target_y) {
             const auto chart =
-                std::ranges::find(history.document.charts, preview.stamp.chart, &chart_document_t::id);
+                history.document.find_chart(preview.stamp.chart);
             const auto target =
-                chart == history.document.charts.end()
+                chart == nullptr
                     ? std::optional<local_position_t>{}
                     : timing_position_from_fraction(
                           *chart, wormedit::sys::timing_target_fraction(action.timing_target),
@@ -206,9 +206,8 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
     if (!action.timing_has_target_y) {
         return rejected;
     }
-    const auto found = std::ranges::find(history.document.charts,
-                                         chart_id_t{action.timing_chart_id}, &chart_document_t::id);
-    if (found == history.document.charts.end()) {
+    const auto found = history.document.find_chart(chart_id_t{action.timing_chart_id});
+    if (found == nullptr) {
         return rejected;
     }
     const auto position = timing_position_from_fraction(
@@ -219,7 +218,7 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
     }
 
     const auto kind = *requested_kind;
-    auto initial = initial_timing_value_for_stage(*found, kind, *position, active_snap_denominator);
+    auto initial = make_initial_timing_value_for_stage(*found, kind, *position, active_snap_denominator);
     if (!initial) {
         return rejected;
     }
@@ -380,7 +379,7 @@ auto timing_stage_warp_value(const TimingStageInput& input, const wormedit::char
     const auto units = static_cast<std::uint64_t>(*input.secondary_numerator);
     const auto measures = build_measure_index(chart);
     const auto* index = std::get_if<measure_index_t>(&measures);
-    const auto start = index ? absolute_row(*index, input.preview.position) : std::nullopt;
+    const auto start = index ? (*index).row_of(input.preview.position) : std::nullopt;
     const auto step = input.preview.existing_event
                           ? std::uint64_t{1}
                           : timing_stage_grid_step(chart, active_snap_denominator);

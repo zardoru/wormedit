@@ -1,3 +1,4 @@
+#include <wormedit/core/document_index.h>
 #pragma once
 
 #include <wormedit/audio/source_registry.h>
@@ -44,13 +45,6 @@ struct packed_waveform_index_t {
     common::static_interval_index_t intervals;
 };
 
-inline auto packed_seconds(const timing_index_t& timing, std::uint64_t row,
-                           timing_boundary_side_t side = timing_boundary_side_t::event)
-    -> std::optional<double> {
-    const auto value = timing_at(timing, row, side);
-    if (!value.seconds || !value.seconds->denominator) return std::nullopt;
-    return static_cast<double>(value.seconds->numerator) / value.seconds->denominator;
-}
 inline auto packed_measure_seconds(const timing_index_t& timing,
     const measure_index_entry_t& measure, std::uint64_t row) -> std::optional<double> {
     const auto after = std::upper_bound(timing.rows.begin(), timing.rows.end(), row,
@@ -69,10 +63,10 @@ struct packed_geometry_builder_t {
     std::span<const audio::decoded_source_binding_t> bindings;
     std::unordered_set<std::uint64_t> lanes;
     std::unordered_map<std::uint64_t, const sound_channel_t*> channels;
-    std::unordered_map<std::uint64_t, const resource_entry_t*> resources;
-    std::unordered_map<std::uint64_t, const audio_asset_t*> assets;
+    document_id_index_t<resource_entry_t> resources;
+    document_id_index_t<audio_asset_t> assets;
     std::unordered_map<std::uint64_t, const audio::decoded_source_binding_t*> sources;
-    std::unordered_map<std::uint64_t, const measure_index_entry_t*> measures;
+    measure_lookup_t measures;
     std::unordered_map<std::uint64_t, sound_slice_result_t> slices;
     std::unordered_set<std::uint64_t> continuation_channels;
     std::unordered_map<std::uint64_t, const derived_sound_slice_t*> spans;
@@ -87,10 +81,10 @@ inline void prepare_packed_geometry(packed_geometry_builder_t& builder,
             if (event.continuation) builder.continuation_channels.insert(channel.id.value);
         }
     for (const auto& resource : builder.document.resources)
-        builder.resources.emplace(resource.id.value, &resource);
-    for (const auto& asset : builder.document.audio_assets) builder.assets.emplace(asset.id.value, &asset);
+        builder.resources.add(resource);
+    for (const auto& asset : builder.document.audio_assets) builder.assets.add(asset);
     for (const auto& binding : builder.bindings) builder.sources.emplace(binding.asset.value, &binding);
-    for (const auto& measure : measures.entries) builder.measures.emplace(measure.id.value, &measure);
+    builder.measures = measure_lookup_t::from(measures);
 }
 inline auto packed_event_clip(const packed_geometry_builder_t& builder, const bgm_event_t& event)
     -> std::optional<audio_clip_t> {
@@ -101,17 +95,17 @@ inline auto packed_event_clip(const packed_geometry_builder_t& builder, const bg
     }
     asset_id_t asset;
     if (event.sound) {
-        const auto found = builder.resources.find(event.sound->value);
-        if (found == builder.resources.end()) return std::nullopt;
-        asset = found->second->asset;
+        const auto found = builder.resources.find(*event.sound);
+        if (found == nullptr) return std::nullopt;
+        asset = found->asset;
     } else if (channel) asset = channel->source_clip.source;
-    if (!asset || !builder.assets.contains(asset.value)) return std::nullopt;
+    if (!asset || !builder.assets.has_entry(asset)) return std::nullopt;
     if (channel && channel->source_clip.source != asset) return std::nullopt;
     return channel ? channel->source_clip : audio_clip_t{.source = asset};
 }
 inline void packed_source_geometry(const packed_geometry_builder_t& builder,
                                    packed_waveform_piece_t& piece) {
-    const auto* asset = builder.assets.at(piece.clip.source.value);
+    const auto* asset = builder.assets.at(piece.clip.source);
     piece.sample_rate = asset->stream.sample_rate;
     piece.source_frames = asset->stream.frame_count;
     const auto source = builder.sources.find(piece.clip.source.value);
@@ -144,26 +138,20 @@ inline auto packed_linked_span(packed_geometry_builder_t& builder, const bgm_eve
 }
 inline auto packed_event_row(const packed_geometry_builder_t& builder, local_position_t position)
     -> std::optional<std::uint64_t> {
-    const auto measure = builder.measures.find(position.measure.value);
-    if (measure == builder.measures.end() || position.row >= measure->second->row_capacity ||
-        position.row > std::numeric_limits<std::uint64_t>::max() - measure->second->absolute_begin_row)
-        return std::nullopt;
-    return measure->second->absolute_begin_row + position.row;
+    return builder.measures.row_of(position);
 }
 inline auto make_packed_piece(packed_geometry_builder_t& builder, const bgm_event_t& event)
     -> std::optional<packed_waveform_piece_t> {
-    const auto measure = builder.measures.find(event.position.measure.value);
+    const auto* measure = builder.measures.entry_for(event.position.measure);
     const auto clip = packed_event_clip(builder, event);
-    if (!clip || measure == builder.measures.end() ||
-        event.position.row >= measure->second->row_capacity ||
-        event.position.row > std::numeric_limits<std::uint64_t>::max() - measure->second->absolute_begin_row)
+    const auto row = builder.measures.row_of(event.position);
+    if (!clip || !measure || !row)
         return std::nullopt;
-    const auto row = measure->second->absolute_begin_row + event.position.row;
-    const auto seconds = packed_seconds(builder.timing, row);
-    const auto duration = packed_measure_seconds(builder.timing, *measure->second, row);
+    const auto seconds = builder.timing.seconds_at_approx(*row, chart_end_policy_t::reject);
+    const auto duration = packed_measure_seconds(builder.timing, *measure, *row);
     if (!seconds || !duration || !std::isfinite(*seconds) || !std::isfinite(*duration)) return std::nullopt;
     packed_waveform_piece_t piece{.event = event.id, .lane = event.source_lane, .clip = *clip,
-        .position = event.position, .row = row, .begin_seconds = *seconds,
+        .position = event.position, .row = *row, .begin_seconds = *seconds,
         .end_seconds = std::numeric_limits<double>::infinity(), .measure_seconds = *duration};
     packed_source_geometry(builder, piece);
     if (!packed_linked_span(builder, event, piece)) return std::nullopt;
@@ -183,7 +171,7 @@ inline void finish_packed_pieces(std::vector<packed_waveform_piece_t>& pieces,
         const auto next = next_rows.find(piece.event.value);
         if (next != next_rows.end()) {
             piece.next_row = next->second;
-            piece.end_seconds = packed_seconds(timing, next->second).value_or(piece.begin_seconds);
+            piece.end_seconds = timing.seconds_at_approx(next->second, chart_end_policy_t::reject).value_or(piece.begin_seconds);
         }
         const auto duration = packed_known_duration(piece);
         if (duration) piece.end_seconds = std::min(piece.end_seconds, piece.begin_seconds + *duration);
@@ -255,22 +243,6 @@ inline auto visible_packed_waveform_pieces(const packed_waveform_index_t& index,
     return result;
 }
 
-inline auto packed_tail_seconds_per_row(const timing_index_t& timing) -> std::optional<double> {
-    if (timing.rows.empty() || timing.divisions_per_standard_measure == 0) return std::nullopt;
-    const auto bpm = timing.rows.back().effective_bpm;
-    if (bpm.numerator <= 0 || bpm.denominator == 0) return std::nullopt;
-    return 240.0 * static_cast<double>(bpm.denominator) / bpm.numerator /
-           timing.divisions_per_standard_measure;
-}
-inline auto packed_display_seconds(const timing_index_t& timing, std::uint64_t row,
-    timing_boundary_side_t side = timing_boundary_side_t::event) -> std::optional<double> {
-    if (row <= timing.total_rows) return packed_seconds(timing, row, side);
-    const auto end = packed_seconds(timing, timing.total_rows, timing_boundary_side_t::after_stops);
-    const auto scale = packed_tail_seconds_per_row(timing);
-    if (!end || !scale) return std::nullopt;
-    const auto seconds = *end + static_cast<double>(row - timing.total_rows) * *scale;
-    return std::isfinite(seconds) ? std::optional{seconds} : std::nullopt;
-}
 inline auto packed_window_seconds(const timing_index_t& timing, double scroll, double height, double zoom)
     -> std::optional<std::pair<double, double>> {
     if (!std::isfinite(scroll) || !std::isfinite(height) || !std::isfinite(zoom) ||
@@ -279,8 +251,8 @@ inline auto packed_window_seconds(const timing_index_t& timing, double scroll, d
     const auto first = std::max(0.0, std::floor((scroll - 1) * scale));
     const auto last = std::max(0.0, std::ceil((scroll + height + 1) * scale));
     if (!std::isfinite(last) || last >= static_cast<double>(std::numeric_limits<std::uint64_t>::max())) return std::nullopt;
-    const auto begin = packed_display_seconds(timing, static_cast<std::uint64_t>(first), timing_boundary_side_t::before_delays);
-    const auto end = packed_display_seconds(timing, static_cast<std::uint64_t>(last), timing_boundary_side_t::after_stops);
+    const auto begin = timing.seconds_at_approx(static_cast<std::uint64_t>(first), chart_end_policy_t::extrapolate_tail, timing_boundary_side_t::before_delays);
+    const auto end = timing.seconds_at_approx(static_cast<std::uint64_t>(last), chart_end_policy_t::extrapolate_tail, timing_boundary_side_t::after_stops);
     if (!begin || !end) return std::nullopt;
     return std::pair{*begin, *end};
 }
@@ -312,23 +284,15 @@ inline auto packed_window_seconds(const timing_index_t& timing, double scroll, d
     return result;
 }
 
-[[nodiscard]] inline auto stem_seconds_at(const timing_index_t& timing, std::uint64_t row)
-    -> std::optional<double> {
-    const auto query = timing_at(timing, row, timing_boundary_side_t::after_stops);
-    if (!query.seconds || !query.seconds->denominator)
-        return std::nullopt;
-    return static_cast<double>(query.seconds->numerator) /
-                                            static_cast<double>(query.seconds->denominator);
-}
 
 [[nodiscard]] inline auto
 stem_duration_seconds(const song_document_t& document, const sound_channel_t& channel,
                       std::span<const audio::decoded_source_binding_t> bindings)
     -> std::optional <
     double> {
-    const auto asset = std::ranges::find(document.audio_assets, channel.source_clip.source, &audio_asset_t::id);
-    auto rate =asset == document.audio_assets.end() ? 0U : asset->stream.sample_rate;
-    auto frames = asset == document.audio_assets.end() ? std::nullopt : asset->stream.frame_count;
+    const auto asset = document.find_audio_asset(channel.source_clip.source);
+    auto rate =asset == nullptr ? 0U : asset->stream.sample_rate;
+    auto frames = asset == nullptr ? std::nullopt : asset->stream.frame_count;
     if (rate == 0 || !frames) {
         const auto binding = std::ranges::find(bindings, channel.source_clip.source,
                                                &audio::decoded_source_binding_t::asset);
@@ -387,8 +351,8 @@ struct stem_slice_scan_t {
     for (const auto& event : channel.events) {
         const auto at = index_of.find(event.position.measure.value);
         const auto row =
-            at == index_of.end() ? std::nullopt : absolute_row(measures, event.position);
-        const auto event_time = row ? stem_seconds_at(timing, *row) : std::nullopt;
+            at == index_of.end() ? std::nullopt : (measures).row_of(event.position);
+        const auto event_time = row ? timing.seconds_at_approx(*row, chart_end_policy_t::reject, timing_boundary_side_t::after_stops) : std::nullopt;
         if (!event_time)
             return true;
         if (stem_event_reaches_window(event, at == index_of.end() ? 0 : at->second, *event_time,
@@ -451,8 +415,8 @@ inline void stem_add_interval(stem_index_channel_t& channel, double begin, doubl
     std::optional<double> duration, double chart_end) -> bool {
     const auto at = index.measure_by_id.find(event.position.measure.value);
     if (at == index.measure_by_id.end()) return false;
-    const auto row = absolute_row(index.measures, event.position);
-    const auto when = row ? stem_seconds_at(index.timing, *row) : std::nullopt;
+    const auto row = (index.measures).row_of(event.position);
+    const auto when = row ? index.timing.seconds_at_approx(*row, chart_end_policy_t::reject, timing_boundary_side_t::after_stops) : std::nullopt;
     if (!when || (scan.previous_time && *when < *scan.previous_time)) return false;
     if (scan.previous_time) {
         const auto end = duration ? std::min(*when, *scan.restart_time + *duration) : *when;
@@ -518,7 +482,7 @@ inline void build_stem_index(stem_index_t& index, const song_document_t& documen
         index.timing = std::move(*built.index);
     }
     index.timing_fingerprint = index.timing.source_fingerprint;
-    const auto chart_end = stem_seconds_at(index.timing, index.measures.total_rows);
+    const auto chart_end = index.timing.seconds_at_approx(index.measures.total_rows, chart_end_policy_t::reject, timing_boundary_side_t::after_stops);
     if (!chart_end) return;
     index.built = true;
     index.channels.reserve(std::min(chart.bgm_source_lanes.size(), chart.sound_channels.size()));
@@ -552,8 +516,8 @@ inline void update_stem_selection(stem_index_t& index, const chart_document_t& c
     const auto last = std::min(chart.measures.size(), center + window + 1);
     const auto begin_row = first < index.measures.entries.size() ? index.measures.entries[first].absolute_begin_row : index.measures.total_rows;
     const auto end_row = last < index.measures.entries.size() ? index.measures.entries[last].absolute_begin_row : index.measures.total_rows;
-    const auto begin = stem_seconds_at(index.timing, begin_row);
-    const auto end = stem_seconds_at(index.timing, end_row);
+    const auto begin = index.timing.seconds_at_approx(begin_row, chart_end_policy_t::reject, timing_boundary_side_t::after_stops);
+    const auto end = index.timing.seconds_at_approx(end_row, chart_end_policy_t::reject, timing_boundary_side_t::after_stops);
     for (std::size_t i = 0; i < index.channels.size(); ++i)
         if (stem_channel_index_selected(index.channels[i], first, last, begin, end))
             index.selected.push_back(i);
@@ -618,11 +582,11 @@ inline void update_stem_selection(stem_index_t& index, const chart_document_t& c
                                : measures.total_rows;
     const auto end_row = last < measures.entries.size() ? measures.entries[last].absolute_begin_row
                                                         : measures.total_rows;
-    const auto window_begin = stem_seconds_at(clock, start_row);
-    const auto window_end = stem_seconds_at(clock, end_row);
+    const auto window_begin = clock.seconds_at_approx(start_row, chart_end_policy_t::reject, timing_boundary_side_t::after_stops);
+    const auto window_end = clock.seconds_at_approx(end_row, chart_end_policy_t::reject, timing_boundary_side_t::after_stops);
     if (!window_begin || !window_end)
         return all_stem_channels(chart);
-    const auto chart_end = stem_seconds_at(clock, measures.total_rows).value_or(*window_end);
+    const auto chart_end = clock.seconds_at_approx(measures.total_rows, chart_end_policy_t::reject, timing_boundary_side_t::after_stops).value_or(*window_end);
     std::vector<const sound_channel_t*> visible;
     for (const auto& channel : chart.sound_channels) {
         if (!stem_lane_for_channel(chart, channel.id)) continue;

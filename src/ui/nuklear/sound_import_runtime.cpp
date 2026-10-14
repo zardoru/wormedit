@@ -163,7 +163,7 @@ void worm_ui_nuklear_render_pending_sound_import(nk_context* context,
     }
     // Dialog implementation supplies confirm/cancel intent; the borrowed payload
     // remains owned here until the next submission or frontend reset.
-    const auto intent = worm_ui_nuklear_render_sound_import_dialog(context, pending, width, height);
+    const auto intent = worm_ui_nuklear_render_sound_import_dialog(context, pending, width, height, view.sound_kinds);
     if (intent == worm_ui_sound_import_dialog_action_t::cancel)
         worm_ui_nuklear_sound_import_cancel(pending);
     else if (intent == worm_ui_sound_import_dialog_action_t::confirm &&

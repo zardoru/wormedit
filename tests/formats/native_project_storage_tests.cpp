@@ -931,3 +931,37 @@ TEST_CASE("schema 6 autosave recovery preserves a BGM tail",
     CHECK(recovered.snapshot->song.charts.front().measures.front().bgm_events.front().end ==
           wormedit::local_position_t{wormedit::measure_id_t{1}, 1});
 }
+
+TEST_CASE("native publication outcomes keep warning severity independent of publication", "[unit][native-storage][results]") {
+    using namespace wormedit;
+    native_project_storage_outcome_t outcome{.value = false,
+        .diagnostics = {{.severity = diagnostic_severity_t::warning, .message = "warning", .path = "marker"}}};
+    CHECK(outcome.ok());
+    const auto legacy = native_project_storage_result_t::from(std::move(outcome));
+    CHECK_FALSE(legacy.published);
+    CHECK_FALSE(legacy.has_errors());
+    CHECK(legacy.diagnostics.front().path == "marker");
+}
+
+TEST_CASE("native recovery parse outcomes retain warnings without a snapshot", "[unit][native-storage][results]") {
+    using namespace wormedit;
+    native_project_recovery_parse_outcome_t outcome{.diagnostics = {{.severity = diagnostic_severity_t::warning, .message = "warning"}}};
+    CHECK(outcome.ok());
+    const auto legacy = native_project_recovery_parse_result_t::from(std::move(outcome));
+    CHECK_FALSE(legacy.snapshot);
+    CHECK_FALSE(legacy.has_errors());
+    CHECK(legacy.diagnostics.front().message == "warning");
+}
+
+TEST_CASE("native primary byte publication writes and adapts the publication flag", "[unit][native-storage][results]") {
+    using namespace wormedit;
+    temporary_directory_t directory;
+    const auto path = directory.path / "marker";
+    auto outcome = create_native_bytes_file(path, "payload");
+    REQUIRE(outcome.ok());
+    CHECK(outcome.value);
+    CHECK(read_text(path) == "payload");
+    const auto legacy = native_project_storage_result_t::from(std::move(outcome));
+    CHECK(legacy.published);
+    CHECK_FALSE(legacy.has_errors());
+}

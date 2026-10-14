@@ -63,7 +63,9 @@ struct native_project_storage_options_t {
     std::function<bool(native_project_storage_stage_t, const std::filesystem::path&)> allow_stage;
 };
 
+using native_project_storage_outcome_t = diagnosed_t<bool, std::vector<native_project_storage_diagnostic_t>>;
 struct native_project_storage_result_t {
+    [[nodiscard]] static auto from(native_project_storage_outcome_t&& outcome) -> native_project_storage_result_t;
     bool published{};
     std::vector<native_project_storage_diagnostic_t> diagnostics;
 
@@ -90,7 +92,10 @@ struct native_project_recovery_snapshot_t {
     native_project_recovery_metadata_t metadata;
 };
 
+using native_project_recovery_parse_outcome_t = diagnosed_t<std::optional<native_project_recovery_snapshot_t>, std::vector<native_project_storage_diagnostic_t>>;
 struct native_project_recovery_parse_result_t {
+    [[nodiscard]] static auto from(std::string_view bytes, native_project_limits_t limits = {}) -> native_project_recovery_parse_outcome_t;
+    [[nodiscard]] static auto from(native_project_recovery_parse_outcome_t&& outcome) -> native_project_recovery_parse_result_t;
     std::optional<native_project_recovery_snapshot_t> snapshot;
     std::vector<native_project_storage_diagnostic_t> diagnostics;
 
@@ -185,6 +190,15 @@ struct native_project_recovery_scan_result_t {
 // Uses the documented adjacent name `<project-filename>.bak`.
 [[nodiscard]] auto native_project_adjacent_backup_path(const std::filesystem::path& primary)
     -> std::filesystem::path;
+
+// Canonical publication outcomes retain the publication flag independently of severity.
+[[nodiscard]] auto create_native_project_file(const std::filesystem::path& destination,
+    const song_document_t& song, native_project_storage_options_t options = {}) -> native_project_storage_outcome_t;
+[[nodiscard]] auto create_native_project_recovery_file(const std::filesystem::path& destination,
+    const song_document_t& song, native_project_recovery_metadata_t metadata,
+    native_project_storage_options_t options = {}) -> native_project_storage_outcome_t;
+[[nodiscard]] auto create_native_bytes_file(const std::filesystem::path& destination,
+    std::string_view bytes, native_project_storage_options_t options = {}) -> native_project_storage_outcome_t;
 
 // Atomically publish the native project JSON after a semantic re-open check.
 // Serialization and preflight validation finish before a temporary is created.

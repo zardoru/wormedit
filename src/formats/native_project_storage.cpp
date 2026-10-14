@@ -1011,8 +1011,8 @@ template <typename validator_t>
 auto publish_prevalidated_bytes(const std::filesystem::path& destination, std::string_view bytes,
                                 const native_project_storage_options_t& options,
                                 validator_t&& validate_reopened, bool replace_existing = true)
-    -> native_project_storage_result_t {
-    native_project_storage_result_t result;
+    -> native_project_storage_outcome_t {
+    native_project_storage_outcome_t result{};
     if (destination.empty() || destination.filename().empty()) {
         add_diagnostic(result.diagnostics,
                        native_project_storage_diagnostic_code_t::invalid_destination,
@@ -1128,7 +1128,7 @@ auto publish_prevalidated_bytes(const std::filesystem::path& destination, std::s
         return result;
     }
     temporary.keep = replace_existing;
-    result.published = true;
+    result.value = true;
     if (!replace_existing) {
         std::error_code cleanup_error;
         (void)std::filesystem::remove(temporary.path, cleanup_error);
@@ -1161,22 +1161,23 @@ auto publish_prevalidated_bytes(const std::filesystem::path& destination, std::s
 
 } // namespace
 
+auto native_project_storage_result_t::from(native_project_storage_outcome_t&& outcome) -> native_project_storage_result_t {
+    return {.published = outcome.value, .diagnostics = std::move(outcome.diagnostics)};
+}
+auto native_project_recovery_parse_result_t::from(native_project_recovery_parse_outcome_t&& outcome) -> native_project_recovery_parse_result_t {
+    return {.snapshot = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
+}
+
 auto native_project_storage_result_t::has_errors() const -> bool {
-    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-        return diagnostic.severity == diagnostic_severity_t::error;
-    });
+    return diagnostic_queries::has_errors(diagnostics);
 }
 
 auto native_project_recovery_parse_result_t::has_errors() const -> bool {
-    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-        return diagnostic.severity == diagnostic_severity_t::error;
-    });
+    return diagnostic_queries::has_errors(diagnostics);
 }
 
 auto native_project_recovery_action_result_t::has_errors() const -> bool {
-    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-        return diagnostic.severity == diagnostic_severity_t::error;
-    });
+    return diagnostic_queries::has_errors(diagnostics);
 }
 
 auto native_project_adjacent_backup_path(const std::filesystem::path& primary)
@@ -1186,14 +1187,18 @@ auto native_project_adjacent_backup_path(const std::filesystem::path& primary)
     return primary.has_parent_path() ? primary.parent_path() / filename : filename;
 }
 
-auto parse_native_project_recovery_snapshot(std::string_view bytes, native_project_limits_t limits)
-    -> native_project_recovery_parse_result_t {
-    native_project_recovery_parse_result_t result;
+auto native_project_recovery_parse_result_t::from(std::string_view bytes, native_project_limits_t limits)
+    -> native_project_recovery_parse_outcome_t {
+    native_project_recovery_parse_outcome_t result{};
     const auto parsed = parse_recovery_impl(bytes, limits, result.diagnostics);
     if (parsed.has_value()) {
-        result.snapshot = parsed->snapshot;
+        result.value = parsed->snapshot;
     }
     return result;
+}
+
+auto parse_native_project_recovery_snapshot(std::string_view bytes, native_project_limits_t limits) -> native_project_recovery_parse_result_t {
+    return native_project_recovery_parse_result_t::from(native_project_recovery_parse_result_t::from(bytes, limits));
 }
 
 namespace {
@@ -1717,8 +1722,8 @@ namespace {
 
 auto publish_native_project_create_only(const std::filesystem::path& destination,
                                         const song_document_t& song, native_project_limits_t limits)
-    -> native_project_storage_result_t {
-    native_project_storage_result_t result;
+    -> native_project_storage_outcome_t {
+    native_project_storage_outcome_t result{};
     if (destination.empty() || destination.filename().empty()) {
         add_diagnostic(result.diagnostics,
                        native_project_storage_diagnostic_code_t::invalid_destination,
@@ -1743,7 +1748,7 @@ auto publish_native_project_create_only(const std::filesystem::path& destination
     native_project_storage_options_t options{.codec_limits = limits};
     return publish_prevalidated_bytes(
         destination, *serialized.bytes, options,
-        [expected, limits](std::string_view reopened, auto& diagnostics, const auto& path) {
+        [expected, limits](std::string_view reopened, std::vector<native_project_storage_diagnostic_t>& diagnostics, const std::filesystem::path& path) {
             return validate_native_payload(reopened, expected, limits, diagnostics, path);
         },
         false);
@@ -2013,7 +2018,7 @@ void save_recovery_as_new_project(const native_project_recovery_scan_result_t& s
     const auto publication =
         publish_native_project_create_only(destination, *document, options.codec_limits);
     result.diagnostics = publication.diagnostics;
-    if (!publication.published || publication.has_errors()) {
+    if (!publication.value || !publication.ok()) {
         for (auto& diagnostic : result.diagnostics) {
             if (diagnostic.code == native_project_storage_diagnostic_code_t::replacement_failure) {
                 diagnostic.code = native_project_storage_diagnostic_code_t::recovery_target_exists;
@@ -2133,11 +2138,11 @@ void recover_scanned_document(const native_project_recovery_scan_result_t& scan,
 
 } // namespace
 
-auto publish_native_project_atomic(const std::filesystem::path& destination,
+auto create_native_project_file(const std::filesystem::path& destination,
                                    const song_document_t& song,
                                    native_project_storage_options_t options)
-    -> native_project_storage_result_t {
-    native_project_storage_result_t result;
+    -> native_project_storage_outcome_t {
+    native_project_storage_outcome_t result{};
     if (!is_stage_allowed(options, native_project_storage_stage_t::serialize, destination)) {
         add_diagnostic(result.diagnostics,
                        native_project_storage_diagnostic_code_t::serialization_failure,
@@ -2167,19 +2172,19 @@ auto publish_native_project_atomic(const std::filesystem::path& destination,
     const expected_document_t expected{.id = song.id, .revision = song.revision};
     return publish_prevalidated_bytes(
         destination, *serialized.bytes, options,
-        [expected, limits = options.codec_limits](std::string_view reopened, auto& diagnostics,
-                                                  const auto& path) {
+        [expected, limits = options.codec_limits](std::string_view reopened, std::vector<native_project_storage_diagnostic_t>& diagnostics,
+                                                  const std::filesystem::path& path) {
             return validate_native_payload(reopened, expected, limits, diagnostics, path);
         });
 }
 
-auto publish_native_bytes_atomic(const std::filesystem::path& destination, std::string_view bytes,
+auto create_native_bytes_file(const std::filesystem::path& destination, std::string_view bytes,
                                 native_project_storage_options_t options)
-    -> native_project_storage_result_t {
+    -> native_project_storage_outcome_t {
     const std::string expected{bytes};
     return publish_prevalidated_bytes(
         destination, bytes, options,
-        [expected](std::string_view reopened, auto& diagnostics, const auto& path) {
+        [expected](std::string_view reopened, std::vector<native_project_storage_diagnostic_t>& diagnostics, const std::filesystem::path& path) {
             if (reopened == expected) return true;
             add_diagnostic(diagnostics, native_project_storage_diagnostic_code_t::validation_failure,
                            "reopened bytes do not match the bytes that were written", path);
@@ -2187,12 +2192,12 @@ auto publish_native_bytes_atomic(const std::filesystem::path& destination, std::
         });
 }
 
-auto publish_native_project_recovery_atomic(const std::filesystem::path& destination,
+auto create_native_project_recovery_file(const std::filesystem::path& destination,
                                             const song_document_t& song,
                                             native_project_recovery_metadata_t metadata,
                                             native_project_storage_options_t options)
-    -> native_project_storage_result_t {
-    native_project_storage_result_t result;
+    -> native_project_storage_outcome_t {
+    native_project_storage_outcome_t result{};
     if (metadata.last_explicit_save_revision.has_value() &&
         *metadata.last_explicit_save_revision > song.revision) {
         add_diagnostic(
@@ -2239,11 +2244,25 @@ auto publish_native_project_recovery_atomic(const std::filesystem::path& destina
     }
     return publish_prevalidated_bytes(
         destination, *envelope, options,
-        [limits = options.codec_limits, expected](std::string_view reopened, auto& diagnostics,
-                                                  const auto& path) {
+        [limits = options.codec_limits, expected](std::string_view reopened, std::vector<native_project_storage_diagnostic_t>& diagnostics,
+                                                  const std::filesystem::path& path) {
             const auto parsed = parse_recovery_impl(reopened, limits, diagnostics, path);
             return parsed.has_value() && is_document_current(parsed->snapshot.song, expected);
         });
+}
+
+auto publish_native_project_atomic(const std::filesystem::path& destination, const song_document_t& song,
+    native_project_storage_options_t options) -> native_project_storage_result_t {
+    return native_project_storage_result_t::from(create_native_project_file(destination, song, std::move(options)));
+}
+auto publish_native_project_recovery_atomic(const std::filesystem::path& destination, const song_document_t& song,
+    native_project_recovery_metadata_t metadata, native_project_storage_options_t options) -> native_project_storage_result_t {
+    return native_project_storage_result_t::from(create_native_project_recovery_file(destination, song,
+        std::move(metadata), std::move(options)));
+}
+auto publish_native_bytes_atomic(const std::filesystem::path& destination, std::string_view bytes,
+    native_project_storage_options_t options) -> native_project_storage_result_t {
+    return native_project_storage_result_t::from(create_native_bytes_file(destination, bytes, std::move(options)));
 }
 
 auto apply_native_project_recovery_action(const native_project_recovery_scan_result_t& scan,
@@ -2394,10 +2413,10 @@ auto native_project_autosave_coordinator_t::maybe_autosave(
         .utc_write_time = std::chrono::system_clock::now(),
         .session_sequence = session_sequence_ + 1,
     };
-    const auto publication = publish_native_project_recovery_atomic(
+    const auto publication = create_native_project_recovery_file(
         caller_supplied_backup_path, song, std::move(metadata), std::move(options));
     result.diagnostics = publication.diagnostics;
-    if (!publication.published || publication.has_errors()) {
+    if (!publication.value || !publication.ok()) {
         result.status = native_project_autosave_status_t::failed;
         return result;
     }

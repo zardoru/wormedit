@@ -1337,9 +1337,12 @@ auto native_project_parse_result_t::has_errors() const -> bool {
     return wormedit::has_errors(diagnostics);
 }
 
-auto write_native_project(const song_document_t& song, native_project_limits_t limits)
-    -> native_project_write_result_t {
-    native_project_write_result_t result;
+auto native_project_write_result_t::from(native_project_write_outcome_t&& outcome) -> native_project_write_result_t {
+    return {.bytes = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
+}
+auto native_project_write_result_t::from(const song_document_t& song, native_project_limits_t limits)
+    -> native_project_write_outcome_t {
+    native_project_write_outcome_t result{};
     if (song.schema_version < 2 || song.schema_version > native_project_schema_version) {
         result.diagnostics.push_back(
             {diagnostic_severity_t::error, native_project_diagnostic_code_t::unsupported_version,
@@ -1351,7 +1354,7 @@ auto write_native_project(const song_document_t& song, native_project_limits_t l
             {diagnostic_severity_t::error, native_project_diagnostic_code_t::invalid_document,
              "document contains an enum value outside the native-project schema", "$.document"});
     }
-    if (result.has_errors()) {
+    if (!result.ok()) {
         return result;
     }
     const auto validation = validate_document(song);
@@ -1362,7 +1365,7 @@ auto write_native_project(const song_document_t& song, native_project_limits_t l
                                           graph_diagnostic_text(diagnostic), "$.document"});
         }
     }
-    if (result.has_errors()) {
+    if (!result.ok()) {
         return result;
     }
     try {
@@ -1397,7 +1400,7 @@ auto write_native_project(const song_document_t& song, native_project_limits_t l
                  "serialized native project exceeds the configured byte limit", "$"});
             return result;
         }
-        result.bytes = std::move(bytes);
+        result.value = std::move(bytes);
     } catch (const std::exception& exception) {
         result.diagnostics.push_back(
             {diagnostic_severity_t::error, native_project_diagnostic_code_t::serialization_failure,
@@ -1406,19 +1409,28 @@ auto write_native_project(const song_document_t& song, native_project_limits_t l
     return result;
 }
 
-auto parse_native_project(std::string_view bytes, native_project_limits_t limits)
-    -> native_project_parse_result_t {
-    return native_project_internal::parse_native_project_with_migrations(
-        bytes, limits, native_project_schema_version, native_project_internal::default_migrations());
+auto write_native_project(const song_document_t& song, native_project_limits_t limits) -> native_project_write_result_t {
+    return native_project_write_result_t::from(native_project_write_result_t::from(song, limits));
+}
+
+auto native_project_parse_result_t::from(native_project_parse_outcome_t&& outcome) -> native_project_parse_result_t {
+    return {.song = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
+}
+auto native_project_parse_result_t::from(std::string_view bytes, native_project_limits_t limits) -> native_project_parse_outcome_t {
+    return native_project_internal::build_native_project_parse(bytes, limits, native_project_schema_version,
+        native_project_internal::default_migrations());
+}
+auto parse_native_project(std::string_view bytes, native_project_limits_t limits) -> native_project_parse_result_t {
+    return native_project_parse_result_t::from(native_project_parse_result_t::from(bytes, limits));
 }
 
 namespace native_project_internal {
 
-auto parse_native_project_with_migrations(std::string_view bytes, native_project_limits_t limits,
+auto build_native_project_parse(std::string_view bytes, native_project_limits_t limits,
                                           std::uint32_t target_version,
                                           std::span<const migration_t> table)
-    -> native_project_parse_result_t {
-    native_project_parse_result_t result;
+    -> native_project_parse_outcome_t {
+    native_project_parse_outcome_t result{};
     if (bytes.size() > limits.maximum_source_bytes) {
         result.diagnostics.push_back({diagnostic_severity_t::error,
                                       native_project_diagnostic_code_t::resource_limit,
@@ -1510,8 +1522,8 @@ auto parse_native_project_with_migrations(std::string_view bytes, native_project
                                               graph_diagnostic_text(diagnostic), "$.document"});
             }
         }
-        if (!result.has_errors()) {
-            result.song = std::move(song);
+        if (result.ok()) {
+            result.value = std::move(song);
         }
     } catch (const json::exception& exception) {
         result.diagnostics.push_back(
@@ -1523,6 +1535,11 @@ auto parse_native_project_with_migrations(std::string_view bytes, native_project
              std::string("native project payload is malformed: ") + exception.what(), "$"});
     }
     return result;
+}
+
+auto parse_native_project_with_migrations(std::string_view bytes, native_project_limits_t limits,
+    std::uint32_t target_version, std::span<const migration_t> table) -> native_project_parse_result_t {
+    return native_project_parse_result_t::from(build_native_project_parse(bytes, limits, target_version, table));
 }
 
 } // namespace native_project_internal

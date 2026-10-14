@@ -54,6 +54,9 @@ using migration_outcome_t = result_t<migration_status_t, error_t<migration_statu
 [[nodiscard]] auto migrate_document(nlohmann::json& document, std::uint32_t target_version,
                                     std::span<const migration_t> table) -> migration_outcome_t;
 
+[[nodiscard]] auto build_native_project_parse(std::string_view bytes, native_project_limits_t limits,
+    std::uint32_t target_version, std::span<const migration_t> table) -> native_project_parse_outcome_t;
+
 // Same as parse_native_project with an explicit target schema version and
 // migration table, so tests can exercise the chain before a real v2 exists.
 [[nodiscard]] auto parse_native_project_with_migrations(std::string_view bytes,

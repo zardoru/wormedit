@@ -342,14 +342,14 @@ TEST_CASE("shortcut profiles round trip independently and apply atomically",
     REQUIRE(profile.bindings.size() == 2);
     const auto serialized = serialize_shortcut_profile(profile);
     REQUIRE_FALSE(serialized.empty());
-    const auto parsed = parse_shortcut_profile(serialized);
+    const auto parsed = shortcut_profile_parse_result_t::from(shortcut_profile_parse_result_t::from(serialized));
     REQUIRE(parsed);
     CHECK(*parsed.profile == profile);
 
     REQUIRE(remap_command(registry, command_id_t{"edit.one"}, {}).applied);
     REQUIRE(
         remap_command(registry, command_id_t{"edit.two"}, {{.key = shortcut_key_t::d}}).applied);
-    REQUIRE(apply_shortcut_profile(registry, *parsed.profile).applied);
+    REQUIRE(shortcut_profile_result_t::from(shortcut_profile_result_t::from(registry, *parsed.profile)).applied);
     CHECK(find_command(registry, command_id_t{"edit.one"})->current_shortcuts ==
           std::vector<shortcut_chord_t>{
               {.key = shortcut_key_t::c,
@@ -367,7 +367,7 @@ TEST_CASE("shortcut profiles round trip independently and apply atomically",
 
 TEST_CASE("malformed profiles, unknown chords, and all configured bounds are rejected",
           "[unit][core][command_registry][negative]") {
-    const auto invalid_json = parse_shortcut_profile("{bad json");
+    const auto invalid_json = shortcut_profile_parse_result_t::from(shortcut_profile_parse_result_t::from("{bad json"));
     CHECK_FALSE(invalid_json);
     CHECK(has_code(invalid_json.diagnostics, diagnostic_code_t::invalid_binding));
     const auto oversized_json =
@@ -989,4 +989,28 @@ TEST_CASE("Workspace project command uses the shared Project vocabulary", "[core
 TEST_CASE("warning-only invocation remains accepted by menu and shortcut dispatch",
           "[unit][core][command_registry]") {
     CHECK(has_warning_only_dispatch());
+}
+
+namespace {
+auto has_warning_profile_adapters() -> bool {
+    const diagnostic_t warning{.severity = diagnostic_severity_t::warning,
+        .code = diagnostic_code_t::duplicate_binding, .message = "conflict"};
+    shortcut_profile_outcome_t applied{.value = true, .diagnostics = {warning}};
+    if (!applied.ok()) return false;
+    const auto legacy_applied = shortcut_profile_result_t::from(std::move(applied));
+    shortcut_profile_parse_outcome_t parsed{.value = shortcut_profile_t{.id = "warning"},
+        .diagnostics = {warning}};
+    if (!parsed.ok()) return false;
+    const auto legacy_parsed = shortcut_profile_parse_result_t::from(std::move(parsed));
+    return legacy_applied.applied && !legacy_applied && legacy_parsed.profile.has_value() &&
+           !legacy_parsed && legacy_parsed.diagnostics.size() == 1 &&
+           legacy_applied.diagnostics.size() == 1 &&
+           legacy_parsed.diagnostics.front().message == "conflict" &&
+           legacy_applied.diagnostics.front().message == "conflict";
+}
+} // namespace
+
+TEST_CASE("shortcut profile adapters retain warning-bearing successful effects",
+          "[unit][core][command_registry][results]") {
+    CHECK(has_warning_profile_adapters());
 }

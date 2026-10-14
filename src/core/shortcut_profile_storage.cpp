@@ -128,14 +128,14 @@ auto open_shortcut_profile(const std::filesystem::path& path) -> shortcut_profil
                       "could not finish reading shortcut profile"}});
     }
 
-    auto parsed = parse_shortcut_profile(bytes);
-    if (!parsed.profile) {
+    auto parsed = shortcut_profile_parse_result_t::from(bytes);
+    if (!parsed.value) {
         return std::unexpected(diagnosed_t<error_t<shortcut_profile_load_status_t>>{
             .value = {shortcut_profile_load_status_t::invalid, {}},
             .diagnostics = std::move(parsed.diagnostics)});
     }
     // The legacy loader does not expose parser diagnostics on a successful load.
-    return std::move(*parsed.profile);
+    return std::move(*parsed.value);
 }
 
 auto create_shortcut_profile_file(const std::filesystem::path& path,

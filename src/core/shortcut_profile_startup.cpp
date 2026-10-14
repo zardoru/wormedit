@@ -68,11 +68,11 @@ auto apply_startup_shortcut_profile(const std::filesystem::path& path, command_r
                                 "Shortcut preferences could not be read and were ignored.");
         break;
     case shortcut_profile_load_status_t::loaded: {
-        auto applied = apply_shortcut_profile(registry, *loaded);
+        auto applied = shortcut_profile_result_t::from(registry, *loaded);
         result.diagnostics = std::move(applied.diagnostics);
-        result.value = applied.applied ? shortcut_profile_startup_status_t::applied
+        result.value = applied.value ? shortcut_profile_startup_status_t::applied
                                        : shortcut_profile_startup_status_t::rejected;
-        if (!applied.applied && result.diagnostics.empty()) {
+        if (!applied.value && result.diagnostics.empty()) {
             result.diagnostics =
                 fallback_diagnostic(diagnostic_severity_t::warning,
                                     "Shortcut preferences could not be applied and were ignored.");

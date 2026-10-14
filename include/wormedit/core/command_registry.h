@@ -273,7 +273,12 @@ struct shortcut_profile_t {
     auto operator==(const shortcut_profile_t&) const -> bool = default;
 };
 
+using shortcut_profile_outcome_t = diagnosed_t<bool>;
+
 struct shortcut_profile_result_t {
+    [[nodiscard]] static auto from(command_registry_t& registry, const shortcut_profile_t& profile)
+        -> shortcut_profile_outcome_t;
+    [[nodiscard]] static auto from(shortcut_profile_outcome_t&& outcome) -> shortcut_profile_result_t;
     bool applied{};
     diagnostic_list_t diagnostics;
 
@@ -303,7 +308,12 @@ struct shortcut_conflict_t {
     -> std::vector<shortcut_conflict_t>;
 [[nodiscard]] auto serialize_shortcut_profile(const shortcut_profile_t& profile) -> std::string;
 
+using shortcut_profile_parse_outcome_t = diagnosed_t<std::optional<shortcut_profile_t>>;
+
 struct shortcut_profile_parse_result_t {
+    [[nodiscard]] static auto from(std::string_view serialized) -> shortcut_profile_parse_outcome_t;
+    [[nodiscard]] static auto from(shortcut_profile_parse_outcome_t&& outcome)
+        -> shortcut_profile_parse_result_t;
     std::optional<shortcut_profile_t> profile;
     diagnostic_list_t diagnostics;
 

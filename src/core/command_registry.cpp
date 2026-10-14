@@ -503,9 +503,13 @@ auto remap_command(command_registry_t& registry, const command_id_t& id,
     return command_registry_result_t::from(command_registry_result_t::remap(registry, id, std::move(shortcuts)));
 }
 
-auto apply_shortcut_profile(command_registry_t& registry, const shortcut_profile_t& profile)
-    -> shortcut_profile_result_t {
-    shortcut_profile_result_t result;
+auto shortcut_profile_result_t::from(shortcut_profile_outcome_t&& outcome) -> shortcut_profile_result_t {
+    return {.applied = outcome.value, .diagnostics = std::move(outcome.diagnostics)};
+}
+
+auto shortcut_profile_result_t::from(command_registry_t& registry, const shortcut_profile_t& profile)
+    -> shortcut_profile_outcome_t {
+    shortcut_profile_outcome_t result{};
     result.diagnostics = valid_profile(profile);
     if (has_errors(result.diagnostics)) {
         return result;
@@ -534,9 +538,14 @@ auto apply_shortcut_profile(command_registry_t& registry, const shortcut_profile
         command->current_shortcuts = binding.shortcuts;
     }
     registry.commands = std::move(proposed);
-    result.applied = true;
+    result.value = true;
     result.diagnostics = diagnose_shortcut_conflicts(registry);
     return result;
+}
+
+auto apply_shortcut_profile(command_registry_t& registry, const shortcut_profile_t& profile)
+    -> shortcut_profile_result_t {
+    return shortcut_profile_result_t::from(shortcut_profile_result_t::from(registry, profile));
 }
 
 auto serialize_shortcut_profile(const shortcut_profile_t& profile) -> std::string {
@@ -564,8 +573,13 @@ auto serialize_shortcut_profile(const shortcut_profile_t& profile) -> std::strin
     return output;
 }
 
-auto parse_shortcut_profile(std::string_view serialized) -> shortcut_profile_parse_result_t {
-    shortcut_profile_parse_result_t result;
+auto shortcut_profile_parse_result_t::from(shortcut_profile_parse_outcome_t&& outcome)
+    -> shortcut_profile_parse_result_t {
+    return {.profile = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
+}
+
+auto shortcut_profile_parse_result_t::from(std::string_view serialized) -> shortcut_profile_parse_outcome_t {
+    shortcut_profile_parse_outcome_t result{};
     if (serialized.empty() || serialized.size() > maximum_shortcut_profile_bytes) {
         result.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                                            "shortcut profile bytes are empty or exceed the cap"));
@@ -628,13 +642,16 @@ auto parse_shortcut_profile(std::string_view serialized) -> shortcut_profile_par
         }
         result.diagnostics = valid_profile(profile);
         if (!has_errors(result.diagnostics)) {
-            result.profile = std::move(profile);
+            result.value = std::move(profile);
         }
     } catch (const json::exception&) {
         result.diagnostics.push_back(error(diagnostic_code_t::invalid_binding,
                                            "shortcut profile is not valid bounded JSON"));
     }
     return result;
+}
+auto parse_shortcut_profile(std::string_view serialized) -> shortcut_profile_parse_result_t {
+    return shortcut_profile_parse_result_t::from(shortcut_profile_parse_result_t::from(serialized));
 }
 
 namespace {

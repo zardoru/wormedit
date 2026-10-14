@@ -1028,7 +1028,8 @@ auto select_compose_same_sound(const WormUiComposeInputAction& input, compose_in
     wormedit::editor_interaction_result_t& result, std::string_view& accepted) -> std::optional<std::string> {
     using namespace wormedit;
     const auto* chart = context.chart();
-    if (!chart || !context.input_is_current()) return "Sound selection source is stale.";
+    // This private handler is reached after the per-item boundary without an intervening edit.
+    if (!chart) return "Sound selection source is stale.";
     const auto mode = context.selection_mode(input.selection_mode);
     if (!mode) return "Sound selection mode is invalid.";
     auto request = compose_same_sound_request(
@@ -1543,7 +1544,8 @@ auto dispatch_note_to_bgm_input(const WormUiComposeInputAction& input, compose_i
         // A drop on the playfield assigns the selected objects through the shared core action.
         const auto dragged = input.object_id != 0 ? std::optional<wormedit::object_id_t>{wormedit::object_id_t{input.object_id}}
                                                   : std::nullopt;
-        if (!context.input_is_current() || input.lane_id == 0) return std::nullopt;
+        // The per-item boundary precedes this private drop handler without an edit.
+        if (input.lane_id == 0) return std::nullopt;
         const auto outcome = wormedit::sys::move_selected_bgm_to_lane(
             context.environment.document.history, context.state, wormedit::lane_id_t{input.lane_id},
             dragged, input.successive);
@@ -2028,7 +2030,8 @@ auto dispatch_compose_input_batch(compose_input_context_t& context) -> std::stri
     using namespace wormedit;
     auto status = std::string{};
     for (std::size_t index = 0; index < context.ui_action.compose_input_count; ++index) {
-        if (!context.input_is_current()) {
+        // The entry boundary covers item zero; layout/hover setup cannot mutate the document.
+        if (index != 0 && !context.is_input_current()) {
             context.environment.commands.project.compose_gesture.bga_draw_stroke.reset();
             (void)dispatch_editor_action(context.environment.document.history, context.state,
                                          cancel_editor_gesture_action_t{});
@@ -2165,7 +2168,8 @@ auto dispatch_compose_viewport_batch(compose_input_context_t& context,
     -> std::string {
     using namespace wormedit;
     for (std::size_t index = 0; index < context.ui_action.compose_viewport_input_count; ++index) {
-        if (!context.input_is_current()) {
+        // With no object inputs, the entry boundary covers viewport item zero as well.
+        if ((index != 0 || context.ui_action.compose_input_count != 0) && !context.is_input_current()) {
             const auto message = stale_action_message("Remaining Compose viewport input");
             post_input_feedback(context.notifications, notification_severity_t::warning,
                                 notification_source_t::input, message);
@@ -2198,7 +2202,7 @@ auto dispatch_compose_viewport_batch(compose_input_context_t& context,
             context, status);
     }
     if (std::isfinite(viewport_delta_seconds) && viewport_delta_seconds > 0.0 &&
-        context.input_is_current())
+        context.is_input_current())
         apply_compose_viewport_actions(
             context.environment.controls.viewport.advance(viewport_delta_seconds), context,
             status);

@@ -1,3 +1,5 @@
+#include "../support/stale_action_assertions.h"
+#include <catch2/generators/catch_generators.hpp>
 #include <wormedit/core/command.h>
 #include <wormedit/core/metadata_editor.h>
 #include <wormedit/core/workspace.h>
@@ -182,6 +184,19 @@ auto apply(workspace_controller_t& workspace, const song_document_t& song,
 }
 
 } // namespace
+
+TEST_CASE("Workspace view binding rejects captured project and revision expiry",
+          "[unit][core][workspace][view-stamp]") {
+    const auto different_project = GENERATE(false, true);
+    auto song = workspace_song();
+    const auto binding = workspace_controller_t::from(song);
+    REQUIRE(binding.workspace.has_value());
+    if (different_project) ++song.id.value;
+    else ++song.revision;
+    const auto result = workspace_view_t::from(*binding.workspace, song);
+    REQUIRE_FALSE(result);
+    test::check_stale_action_message(result.diagnostics, "Workspace view");
+}
 
 TEST_CASE("workspace tabs retain chart, transport, and isolated logical focus",
           "[unit][core][workspace]") {

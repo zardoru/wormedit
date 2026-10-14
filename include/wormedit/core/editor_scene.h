@@ -70,6 +70,9 @@ struct editor_field_scene_layout_source_t {
 // sorted by their head row, while the max-end tree narrows holds that begin
 // before the visible interval without scanning every earlier note.
 struct editor_field_scene_index_t {
+    [[nodiscard]] auto is_current(chart_id_t current_chart, std::uint64_t current_revision) const noexcept -> bool;
+    [[nodiscard]] auto is_valid() const noexcept -> bool;
+
     chart_id_t chart;
     std::uint64_t document_revision{};
     measure_index_t measures;

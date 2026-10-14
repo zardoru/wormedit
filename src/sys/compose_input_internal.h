@@ -583,7 +583,7 @@ struct compose_input_context_t {
     double field_left_pixels{};
     double field_width_pixels{};
 
-    auto input_is_current() const -> bool {
+    auto is_input_current() const -> bool {
         const wormedit::chart_stamp_t stamp{
             .document = {environment.document.history.document.id,
                          ui_action.compose_input_document_revision},

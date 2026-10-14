@@ -133,6 +133,22 @@ auto make_stale_scene_preview(int kind) -> wormedit::editor_interaction_view_mod
 }
 }
 
+TEST_CASE("Field scene index binding rejects captured chart and view revision expiry",
+          "[unit][core][editor-scene][index-stamp]") {
+    const auto different_chart = GENERATE(false, true);
+    const auto chart = scene_chart();
+    const auto built = wormedit::build_editor_field_scene_index(chart, 7);
+    REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
+    auto index = std::get<wormedit::editor_field_scene_index_t>(built);
+    auto projected = view();
+    if (different_chart) index.chart = wormedit::chart_id_t{99};
+    else ++projected.document_revision;
+    const auto result = wormedit::make_editor_field_scene(chart, index, projected,
+        {.field_left_pixels = 10, .field_width_pixels = 200});
+    REQUIRE_FALSE(result);
+    wormedit::test::check_stale_action_message(result.diagnostics, "Field scene index");
+}
+
 TEST_CASE("Field scene preview expiry keeps hold duration move and paint guards",
           "[unit][core][editor-scene][captured-preview-stamp]") {
     const auto kind = GENERATE(0, 1, 2, 3, 4);

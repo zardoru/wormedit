@@ -1921,7 +1921,9 @@ TEST_CASE("Note context rejects stale and unknown hits without replacing selecti
     AreaFixture fixture;
     seed_membership_fixture(fixture);
     const auto selection = fixture.state.selected_notes;
-    check_membership(!select_compose_note_context(fixture.history, fixture.state, 8, object_id_t{3}));
+    const auto stale = select_compose_note_context(fixture.history, fixture.state, 8, object_id_t{3});
+    check_membership(!stale);
+    test::check_stale_action_message(stale.diagnostics, "Note context");
     check_membership(!select_compose_note_context(fixture.history, fixture.state, 9, object_id_t{999}));
     check_membership(fixture.state.selected_notes == selection);
     check_membership(fixture.history.undo.empty());

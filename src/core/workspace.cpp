@@ -1435,9 +1435,9 @@ auto workspace_view_t::from(const workspace_controller_t& workspace,
                             workspace_binding_validation_cache_t* binding_cache)
     -> workspace_view_result_t {
     workspace_view_result_t result;
-    if (document.id != workspace.song || document.revision != workspace.document_revision) {
-        add_error(result.diagnostics, diagnostic_code_t::invalid_id,
-                  "workspace view cannot be built from a stale or different document revision");
+    if (!document_stamp_t{.project = workspace.song, .revision = workspace.document_revision}
+             .is_current(document)) {
+        add_error(result.diagnostics, diagnostic_code_t::invalid_id, stale_action_message("Workspace view"));
         return result;
     }
     result.diagnostics = binding_diagnostics(document, workspace.limits, binding_cache);

@@ -21,10 +21,10 @@ inline auto selected_compose_bgm_events(const editor_interaction_state_t& state)
 inline auto select_compose_note_context(document_history_t& history,
     editor_interaction_state_t& state, std::uint64_t revision, object_id_t note)
     -> editor_interaction_result_t {
-    if (revision != history.document.revision)
+    if (!document_stamp_t{.project = history.document.id, .revision = revision}.is_current(history.document))
         return {.diagnostics = {{.severity = diagnostic_severity_t::error,
             .code = diagnostic_code_t::invalid_id,
-            .message = "Note context changed or a Compose gesture is active."}}};
+            .message = stale_action_message("Note context")}}};
     if (std::ranges::find(state.selected_notes, note) != state.selected_notes.end())
         return {.accepted = true};
     return dispatch_editor_action(history, state,

@@ -4477,6 +4477,48 @@ void check_wheel_displacement(bool downscroll, double delta,
 }
 } // namespace
 
+TEST_CASE("Compose batches reject later object or viewport input after an earlier edit",
+          "[sys][batch-stamp]") {
+    const auto viewport_later = GENERATE(false, true);
+    compose_test_fixture_t fixture{cursor_placement_song()};
+    fixture.binding.workspace->selected_chart = fixture.history.document.charts.front().id;
+    fixture.project();
+    auto& state = *fixture.interaction;
+    const auto& chart = fixture.history.document.charts.front();
+    const auto count = chart.measures.front().notes.size();
+    const auto inspected = inspect_editor_interaction(fixture.history, state);
+    const auto y = editor_position_y_pixels(chart, std::get<editor_interaction_view_model_t>(inspected),
+        {chart.measures.front().id, 240});
+    expect_compose_test(y.has_value());
+    auto action = cursor_placement_action(fixture);
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
+    action.compose_input_count = 1;
+    action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
+        .object_id = fixture.history.document.resources.front().id.value,
+        .resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE,
+        .x_pixels = fixture.flattened.view.compose.playable_field_left_pixels + 20,
+        .y_pixels = compose_source_y(*y, state.viewport_height_pixels,
+            compose_field_downscroll(chart, fixture.application.preferences.editor_preferences))};
+    if (viewport_later) {
+        action.compose_viewport_input_count = 1;
+        action.compose_viewport_inputs[0] = {.kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL,
+            .delta_y = -1, .cursor_x_pixels = 200, .cursor_y_pixels = 300};
+    } else {
+        action.compose_input_count = 2;
+        action.compose_inputs[1] = {.kind = WORM_UI_COMPOSE_INPUT_DRAW_SOURCE, .resource_role = 2, .resource_id = 999};
+    }
+    const auto scroll = state.viewport_scroll_pixels;
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    const auto status = dispatch_compose_input_action(action, fixture.history, *fixture.binding.workspace,
+        state, viewport, navigation, fixture.application, fixture.cache, 0);
+    test::check_stale_action_message(status, viewport_later ? "Remaining Compose viewport input" : "Remaining Compose input");
+    expect_compose_test(fixture.history.undo.size() == 1);
+    expect_compose_test(fixture.history.document.charts.front().measures.front().notes.size() == count + 1);
+    expect_compose_test(fixture.application.project.compose_gesture.draw_source_id != 999);
+    expect_compose_test(state.viewport_scroll_pixels == scroll);
+}
+
 TEST_CASE("Compose 10K lane presses commit Tap notes in every number row lane",
           "[sys][compose][lane-keys][regression]") {
     check_ten_key_note_commit();

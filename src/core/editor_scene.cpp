@@ -15,6 +15,21 @@
 #include <utility>
 
 namespace wormedit {
+
+auto editor_field_scene_index_t::is_current(chart_id_t current_chart,
+                                          std::uint64_t current_revision) const noexcept -> bool {
+    return chart == current_chart && document_revision == current_revision;
+}
+
+auto editor_field_scene_index_t::is_valid() const noexcept -> bool {
+    return measures.total_rows != 0 && note_tree_leaf_base != 0 && note_tree_leaf_base >= notes.size() &&
+           note_tree_leaf_base <= std::numeric_limits<std::size_t>::max() / 2 &&
+           note_tree_max_end.size() == note_tree_leaf_base * 2 && note_indices_by_id.size() == notes.size() &&
+           bgm_tree_leaf_base >= bgm_events.size() && bgm_tree_leaf_base != 0 &&
+           bgm_tree_leaf_base <= std::numeric_limits<std::size_t>::max() / 2 &&
+           bgm_tree_max_end.size() == bgm_tree_leaf_base * 2;
+}
+
 namespace {
 
 auto layout_at_row(const editor_field_scene_index_t& index, std::uint64_t row)
@@ -500,16 +515,7 @@ namespace {
 
 auto is_valid_scene_index(const chart_document_t& chart, const editor_field_scene_index_t& index,
                        const editor_interaction_view_model_t& view) -> bool {
-    return chart.id == index.chart && view.chart == chart.id &&
-           view.document_revision == index.document_revision && index.measures.total_rows != 0 &&
-           index.note_tree_leaf_base != 0 && index.note_tree_leaf_base >= index.notes.size() &&
-           index.note_tree_leaf_base <= std::numeric_limits<std::size_t>::max() / 2 &&
-           index.note_tree_max_end.size() == index.note_tree_leaf_base * 2 &&
-           index.note_indices_by_id.size() == index.notes.size() &&
-           index.bgm_tree_leaf_base >= index.bgm_events.size() &&
-           index.bgm_tree_leaf_base != 0 &&
-           index.bgm_tree_leaf_base <= std::numeric_limits<std::size_t>::max() / 2 &&
-           index.bgm_tree_max_end.size() == index.bgm_tree_leaf_base * 2;
+    return view.chart == chart.id && index.is_current(chart.id, view.document_revision) && index.is_valid();
 }
 
 auto is_valid_scene_request_geometry(const editor_field_scene_request_t& request,
@@ -2306,11 +2312,14 @@ auto prepare_scene_visible_rows(const chart_document_t& chart,
                                 const editor_field_scene_request_t& request,
                                 diagnostic_list_t& diagnostics)
     -> std::optional<scene_visible_rows_t> {
-    if (!is_valid_scene_index(chart, index, view) ||
-        !is_valid_scene_request_geometry(request, view.viewport_height_pixels) ||
+    if (!index.is_valid() || !is_valid_scene_request_geometry(request, view.viewport_height_pixels) ||
         !is_valid_scene_request_limits(request) || !is_valid_scene_view(view)) {
         diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                                     "field-scene index, view, or geometry is invalid"));
+        return std::nullopt;
+    }
+    if (view.chart != chart.id || !index.is_current(chart.id, view.document_revision)) {
+        diagnostics.push_back(error(diagnostic_code_t::invalid_resolution, stale_action_message("Field scene index")));
         return std::nullopt;
     }
     const auto canvas_rows = scene_canvas_rows(chart, index, request, diagnostics);

@@ -1,4 +1,5 @@
 #include "sys/compose_actions_internal.h"
+#include "sys/projection_notification_feedback.h"
 namespace wormedit::sys::compose_action_detail {
 auto finish_marker_edit_feedback(compose_action_context_t& context,
                                  const wormedit::document_command_result_t& applied,
@@ -506,19 +507,21 @@ auto recipe_form_target(compose_action_context_t& context) -> std::optional<reci
     return recipe_form_target_t{&*chart, &*recipe};
 }
 
-std::string preview_recipe_form_action(compose_action_context_t& context) {
+std::string propose_recipe_form_action(compose_action_context_t& context) {
     const auto target = recipe_form_target(context);
     if (!target)
         return compose_action_warning(
             context, "SV recipe form ignored because the recipe or the document changed.");
-    auto preview = wormedit::sys::preview_recipe_form(
-        *target->chart, context.environment.document.history.document.revision, *target->recipe,
+    auto preview = wormedit::sys::propose_recipe_form(
+        context.environment.document.history.document, *target->chart, *target->recipe,
         context.action.compose_recipe_form);
     const auto status =
-        preview.error.empty() ? std::string{"SV recipe preview updated."} : preview.error;
-    const auto severity = preview.error.empty() ? notification_severity_t::hint : preview.severity;
+        preview.diagnostics.empty() ? std::string{"SV recipe preview updated."}
+                                    : std::string{preview.message()};
+    const auto severity = preview.diagnostics.empty() ? notification_severity_t::hint
+        : projection_diagnostic_severity(preview.diagnostics.front().severity);
     const auto source =
-        preview.error.empty() ? notification_source_t::input : notification_source_t::edit;
+        preview.diagnostics.empty() ? notification_source_t::input : notification_source_t::edit;
     context.environment.editor.commands.project.timing_recipe.recipe_preview = std::move(preview);
     return publish_compose_feedback(context, status, severity, source);
 }
@@ -630,7 +633,7 @@ std::optional<std::string> dispatch_compose_marker_action(compose_action_context
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER)
         return set_cursor_measure_meter(context);
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_PREVIEW_SV_RECIPE_FORM)
-        return preview_recipe_form_action(context);
+        return propose_recipe_form_action(context);
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_SV_RECIPE_FORM)
         return apply_recipe_form_action(context);
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_CLEAR_SV_RECIPE_PREVIEW) {

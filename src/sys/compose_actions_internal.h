@@ -391,7 +391,7 @@ struct recipe_form_target_t {
 
 auto recipe_form_target(compose_action_context_t& context) -> std::optional<recipe_form_target_t>;
 
-std::string preview_recipe_form_action(compose_action_context_t& context);
+std::string propose_recipe_form_action(compose_action_context_t& context);
 
 std::string apply_recipe_form_action(compose_action_context_t& context);
 

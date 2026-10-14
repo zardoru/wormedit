@@ -156,26 +156,26 @@ TEST_CASE("a form preview carries the candidate and the validator's message with
     const auto& stored = chart.sv_recipes.front();
     auto form = recipe_form_from_recipe(stored);
     set(form.value_to, "5", "1");
-    const auto preview = preview_recipe_form(chart, history.document.revision, stored, form);
-    CHECK(preview.error.empty());
-    CHECK(preview.chart == chart.id);
-    CHECK(preview.revision == history.document.revision);
+    const auto preview = propose_recipe_form(history.document, chart, stored, form);
+    CHECK(preview.diagnostics.empty());
+    CHECK(preview.stamp.chart == chart.id);
+    CHECK(preview.stamp.document.revision == history.document.revision);
     CHECK(preview.candidate.parameters.value_to == signed_rational_t{5, 1});
     CHECK(stored.parameters.value_to == signed_rational_t{3, 1});
     CHECK(history.undo.empty());
 
     // A malformed value keeps the stored recipe and says why.
     set(form.value_to, "x", "1");
-    const auto malformed = preview_recipe_form(chart, history.document.revision, stored, form);
-    CHECK_FALSE(malformed.error.empty());
+    const auto malformed = propose_recipe_form(history.document, chart, stored, form);
+    CHECK_FALSE(malformed.diagnostics.empty());
     CHECK(malformed.candidate == stored);
 
     // Well-formed but out of range: the core validator's message, the candidate kept for editing.
     auto out_of_range = recipe_form_from_recipe(stored);
     out_of_range.curve = WORM_UI_TIMING_RECIPE_CURVE_EXPONENTIAL;
     set(out_of_range.shape, "99", "1");
-    const auto invalid = preview_recipe_form(chart, history.document.revision, stored, out_of_range);
-    CHECK_FALSE(invalid.error.empty());
+    const auto invalid = propose_recipe_form(history.document, chart, stored, out_of_range);
+    CHECK_FALSE(invalid.diagnostics.empty());
     CHECK(invalid.candidate.curve == sv_recipe_curve_t::exponential);
 }
 
@@ -215,4 +215,45 @@ TEST_CASE("applying a form updates the recipe in one undo step and rejects bad i
           "SV recipe is unchanged.");
     CHECK_FALSE(applied);
     CHECK(history.document.revision == revision);
+}
+
+TEST_CASE("captured recipe form applies once with revision-only identity",
+          "[sys][recipe-form][stamp]") {
+    auto history = form_history();
+    const auto& chart = history.document.charts.front();
+    auto form = recipe_form_from_recipe(chart.sv_recipes.front());
+    set(form.value_to, "7", "1");
+    const auto proposal = propose_recipe_form(history.document, chart, chart.sv_recipes.front(), form);
+    REQUIRE(proposal.is_valid());
+    history.document.id = song_id_t{99};
+    REQUIRE(apply_recipe_form(history, proposal));
+    CHECK(history.undo.size() == 1);
+    const auto stale = apply_recipe_form(history, proposal);
+    CHECK_FALSE(stale);
+    REQUIRE_FALSE(stale.diagnostics.empty());
+    CHECK(stale.diagnostics.front().message == stale_action_message("SV recipe form"));
+}
+
+namespace {
+void check_failed_recipe_candidate(const recipe_form_preview_t& proposal, const sv_recipe_t& stored) {
+    CHECK(proposal.diagnostics.front().severity == diagnostic_severity_t::warning);
+    CHECK(proposal.candidate == stored);
+}
+} // namespace
+
+TEST_CASE("failed recipe form owns warning diagnostics and retains the stored candidate",
+          "[sys][recipe-form][stamp]") {
+    auto history = form_history();
+    const auto& chart = history.document.charts.front();
+    const auto& stored = chart.sv_recipes.front();
+    auto form = recipe_form_from_recipe(stored);
+    set(form.value_to, "x", "1");
+    const auto proposal = propose_recipe_form(history.document, chart, stored, form);
+    REQUIRE_FALSE(proposal.is_valid());
+    REQUIRE_FALSE(proposal.diagnostics.empty());
+    check_failed_recipe_candidate(proposal, stored);
+    const auto result = apply_recipe_form(history, proposal);
+    REQUIRE_FALSE(result.diagnostics.empty());
+    CHECK(result.diagnostics.front().message == proposal.message());
+    CHECK(history.undo.empty());
 }

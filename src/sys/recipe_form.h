@@ -29,19 +29,28 @@ namespace wormedit::sys {
 // The unapplied form candidate of a stored recipe, with the message a malformed or invalid
 // candidate produced (empty when it is valid). It belongs to one chart at one document revision.
 struct recipe_form_preview_t {
-    chart_id_t chart;
-    std::uint64_t revision{};
+    chart_stamp_t stamp;
     sv_recipe_t candidate;
-    std::string error;
-    notification_severity_t severity{notification_severity_t::hint};
+    diagnostic_list_t diagnostics;
+
+    [[nodiscard]] auto message() const noexcept -> std::string_view {
+        return diagnostics.empty() ? std::string_view{} : diagnostics.front().message;
+    }
+    [[nodiscard]] auto is_valid() const noexcept -> bool {
+        return static_cast<bool>(stamp.chart) && diagnostics.empty();
+    }
 };
 
 // Builds the preview of `form` applied to the stored recipe `recipe` of `chart`. Nothing is
 // written. A malformed form keeps the stored recipe as candidate with an error; a candidate the
 // core validator rejects keeps its first message.
-[[nodiscard]] auto preview_recipe_form(const chart_document_t& chart, std::uint64_t revision,
+[[nodiscard]] auto propose_recipe_form(const song_document_t& document, const chart_document_t& chart,
                                        const sv_recipe_t& recipe, const WormUiTimingRecipeForm& form)
     -> recipe_form_preview_t;
+
+[[nodiscard]] auto apply_recipe_form(document_history_t& history,
+                                     const recipe_form_preview_t& proposal)
+    -> document_command_result_t;
 
 // Stores `form` as the recipe's new curve, values and sampling in one history command. Returns the
 // status line: success, or the core's message when the recipe, the revision or the values are

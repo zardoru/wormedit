@@ -809,7 +809,7 @@ void drop_stale_recipe_preview(application_command_state_t& application_state,
     auto& preview = application_state.project.timing_recipe.recipe_preview;
     if (!preview)
         return;
-    const bool current = preview->chart == chart.id && preview->revision == revision &&
+    const bool current = preview->stamp.is_current(chart.id, revision) &&
                          preview->candidate.id.value == application_state.project.timing_recipe.recipe_selected &&
                          std::ranges::any_of(chart.sv_recipes, [&](const auto& recipe) {
                              return recipe.id == preview->candidate.id;
@@ -833,7 +833,7 @@ void populate_compose_recipe_form(flattened_workspace_t& flattened,
     const auto& name = flattened.compose.recipe_form_text.emplace_back(recipe->name);
     const auto& source = flattened.compose.recipe_form_text.emplace_back(recipe->expression_source);
     const auto& status = flattened.compose.recipe_form_text.emplace_back(
-        application_state.project.timing_recipe.recipe_preview ? application_state.project.timing_recipe.recipe_preview->error : std::string{});
+        application_state.project.timing_recipe.recipe_preview ? std::string{application_state.project.timing_recipe.recipe_preview->message()} : std::string{});
     view.recipe_form.visible = true;
     view.recipe_form.recipe_id = recipe->id.value;
     view.recipe_form.enabled = recipe->enabled;

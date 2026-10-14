@@ -231,6 +231,10 @@ using sv_recipe_edit_action_t =
 // Every recipe edit is revision checked and published through shared document
 // history. Range changes are exact chart-grid positions, so dragging previews
 // can submit a snapped span as one atomic command.
+[[nodiscard]] auto apply_sv_recipe_edit(document_command_transaction_t& transaction,
+                                        const sv_recipe_edit_action_t& action)
+    -> document_command_result_t;
+
 [[nodiscard]] auto apply_sv_recipe_edit(document_history_t& history,
                                         const sv_recipe_edit_action_t& action)
     -> document_command_result_t;

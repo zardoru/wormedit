@@ -1705,6 +1705,12 @@ auto apply_sv_recipe_transaction(document_command_transaction_t& transaction,
 
 } // namespace
 
+auto apply_sv_recipe_edit(document_command_transaction_t& transaction,
+                          const sv_recipe_edit_action_t& action) -> document_command_result_t {
+    if (!transaction.is_ready()) return transaction.finish_without_commit();
+    return apply_sv_recipe_transaction(transaction, action);
+}
+
 auto apply_sv_recipe_edit(document_history_t& history,
                           const sv_recipe_edit_action_t& action) -> document_command_result_t {
     auto transaction = document_command_transaction_t::from(history);

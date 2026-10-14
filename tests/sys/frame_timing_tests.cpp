@@ -2632,16 +2632,16 @@ TEST_CASE("the selected recipe's form and its unapplied preview reach the Compos
     const auto& chart = fixture.history.document.charts.front();
     auto form = wormedit::sys::recipe_form_from_recipe(chart.sv_recipes.front());
     std::snprintf(form.value_to.numerator, sizeof(form.value_to.numerator), "9");
-    fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::preview_recipe_form(
-        chart, fixture.history.document.revision, chart.sv_recipes.front(), form);
+    fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::propose_recipe_form(
+        fixture.history.document, chart, chart.sv_recipes.front(), form);
     fixture.project();
     CHECK(fixture.flattened.view.compose.recipe_areas[0].previewing);
     CHECK(fixture.flattened.view.compose.recipe_areas[0].graph_count >= 2);
 
     form.curve = WORM_UI_TIMING_RECIPE_CURVE_EXPONENTIAL;
     std::snprintf(form.shape.numerator, sizeof(form.shape.numerator), "99");
-    fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::preview_recipe_form(
-        chart, fixture.history.document.revision, chart.sv_recipes.front(), form);
+    fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::propose_recipe_form(
+        fixture.history.document, chart, chart.sv_recipes.front(), form);
     fixture.project();
     REQUIRE(fixture.flattened.view.compose.recipe_form.status_text != nullptr);
     CHECK_FALSE(std::string(fixture.flattened.view.compose.recipe_form.status_text).empty());
@@ -2652,8 +2652,9 @@ TEST_CASE("the selected recipe's form and its unapplied preview reach the Compos
     CHECK_FALSE(fixture.flattened.view.compose.recipe_form.visible);
 
     fixture.application.project.timing_recipe.recipe_selected = 7001;
-    fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::preview_recipe_form(
-        chart, fixture.history.document.revision + 5, chart.sv_recipes.front(), form);
+    fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::propose_recipe_form(
+        fixture.history.document, chart, chart.sv_recipes.front(), form);
+    fixture.application.project.timing_recipe.recipe_preview->stamp.document.revision += 5;
     fixture.project();
     CHECK_FALSE(fixture.application.project.timing_recipe.recipe_preview.has_value());
 }

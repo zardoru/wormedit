@@ -339,7 +339,7 @@ TEST_CASE("Compose file picker ignores stale callbacks after frontend reset",
     CHECK_FALSE(worm_ui_nuklear_compose_file_dialog_open());
     const auto picked = worm_ui_nuklear_compose_file_dialog_take();
     REQUIRE(picked);
-    CHECK(picked->path == "/selected.wav");
+    CHECK(picked->value().path == "/selected.wav");
     CHECK_FALSE(worm_ui_nuklear_compose_file_dialog_take());
 
     const auto second = worm_ui_nuklear_compose_file_dialog_begin();

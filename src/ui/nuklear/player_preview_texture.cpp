@@ -5,6 +5,7 @@
 #include "wormedit/nuklear_config.h"
 
 #include <wormedit/core/visual_layout.h>
+#include <wormedit/core/result.h>
 
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_pixels.h>
@@ -43,11 +44,8 @@ std::size_t texture_count{};
 std::size_t texture_bytes{};
 std::uint64_t texture_use_sequence{};
 
-struct texture_result_t {
-    SDL_Texture* texture{};
-    worm_ui_nuklear_preview_visual_failure_t failure{
-        worm_ui_nuklear_preview_visual_failure_t::none};
-};
+using texture_result_t =
+    wormedit::result_t<SDL_Texture*, worm_ui_nuklear_preview_visual_failure_t>;
 
 auto next_texture_use() -> std::uint64_t {
     ++texture_use_sequence;
@@ -130,7 +128,7 @@ auto texture_for(SDL_Renderer* renderer, const WormUiPlayerPreviewView& view,
     if (!renderer || !layer.image_ready || view.project_id == 0 || view.document_revision == 0 ||
         layer.resource_id == 0 || layer.rgba_byte_count == 0 || !layer.rgba_pixels ||
         layer.rgba_byte_count > maximum_texture_bytes) {
-        return {.failure = worm_ui_nuklear_preview_visual_failure_t::invalid_image};
+        return std::unexpected{worm_ui_nuklear_preview_visual_failure_t::invalid_image};
     }
     const auto end = textures.begin() + static_cast<std::ptrdiff_t>(texture_count);
     const auto found = std::find_if(textures.begin(), end, [&](const auto& entry) {
@@ -142,7 +140,7 @@ auto texture_for(SDL_Renderer* renderer, const WormUiPlayerPreviewView& view,
     });
     if (found != end) {
         found->last_use = next_texture_use();
-        return {.texture = found->texture};
+        return found->texture;
     }
     while (texture_count != 0 && (texture_count >= maximum_texture_entries ||
                                   texture_bytes > maximum_texture_bytes - layer.rgba_byte_count)) {
@@ -152,7 +150,7 @@ auto texture_for(SDL_Renderer* renderer, const WormUiPlayerPreviewView& view,
     std::vector<std::uint8_t> keyed_pixels;
     const auto* upload_pixels = preview_upload_pixels(layer, black_key, keyed_pixels);
     if (!upload_pixels)
-        return {.failure = worm_ui_nuklear_preview_visual_failure_t::upload_out_of_memory};
+        return std::unexpected{worm_ui_nuklear_preview_visual_failure_t::upload_out_of_memory};
     SDL_ClearError();
     auto* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC,
                                       static_cast<int>(layer.image_width),
@@ -160,7 +158,7 @@ auto texture_for(SDL_Renderer* renderer, const WormUiPlayerPreviewView& view,
     if (!texture) {
         const auto* error = SDL_GetError();
         const auto out_of_memory = error && std::strstr(error, "Out of memory");
-        return {.failure = out_of_memory
+        return std::unexpected{out_of_memory
                                ? worm_ui_nuklear_preview_visual_failure_t::upload_out_of_memory
                                : worm_ui_nuklear_preview_visual_failure_t::texture_allocation};
     }
@@ -171,7 +169,7 @@ auto texture_for(SDL_Renderer* renderer, const WormUiPlayerPreviewView& view,
         const auto* error = SDL_GetError();
         const auto out_of_memory = error && std::strstr(error, "Out of memory");
         SDL_DestroyTexture(texture);
-        return {.failure = out_of_memory
+        return std::unexpected{out_of_memory
                                ? worm_ui_nuklear_preview_visual_failure_t::upload_out_of_memory
                                : worm_ui_nuklear_preview_visual_failure_t::upload_rejected};
     }
@@ -181,7 +179,7 @@ auto texture_for(SDL_Renderer* renderer, const WormUiPlayerPreviewView& view,
         uploaded_width != static_cast<float>(layer.image_width) ||
         uploaded_height != static_cast<float>(layer.image_height)) {
         SDL_DestroyTexture(texture);
-        return {.failure = worm_ui_nuklear_preview_visual_failure_t::upload_size_mismatch};
+        return std::unexpected{worm_ui_nuklear_preview_visual_failure_t::upload_size_mismatch};
     }
 
     textures[texture_count++] = {.project_id = view.project_id,
@@ -195,7 +193,7 @@ auto texture_for(SDL_Renderer* renderer, const WormUiPlayerPreviewView& view,
                                  .texture = texture,
                                  .last_use = next_texture_use()};
     texture_bytes += layer.rgba_byte_count;
-    return {.texture = texture};
+    return texture;
 }
 
 auto visual_fit_policy(WormUiVisualFitPolicy fit) -> wormedit::visual_fit_policy_t {
@@ -277,8 +275,8 @@ worm_ui_nuklear_preview_visual_result_t worm_ui_nuklear_draw_player_preview_visu
         const auto uploaded = texture_for(renderer, *view, *ordered[index],
             ordered[index]->kind == WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER ||
             ordered[index]->kind == WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER2);
-        if (uploaded.failure != worm_ui_nuklear_preview_visual_failure_t::none) {
-            record_failure(ordered[index]->resource_id, uploaded.failure);
+        if (!uploaded) {
+            record_failure(ordered[index]->resource_id, uploaded.error());
             continue;
         }
         const auto& layer = *ordered[index];
@@ -301,9 +299,9 @@ worm_ui_nuklear_preview_visual_result_t worm_ui_nuklear_draw_player_preview_visu
                                  source.height == layer.image_height;
         const auto image =
             full_source
-                ? nk_image_ptr(uploaded.texture)
+                ? nk_image_ptr(*uploaded)
                 : nk_subimage_ptr(
-                      uploaded.texture, static_cast<nk_ushort>(layer.image_width),
+                      *uploaded, static_cast<nk_ushort>(layer.image_width),
                       static_cast<nk_ushort>(layer.image_height),
                       nk_rect(static_cast<float>(source.left), static_cast<float>(source.top),
                               static_cast<float>(source.width), static_cast<float>(source.height)));
@@ -342,8 +340,8 @@ worm_ui_nuklear_preview_visual_result_t worm_ui_nuklear_draw_player_preview_stor
             continue;
         }
         const auto uploaded = texture_for(renderer, *view, sprite);
-        if (uploaded.failure != worm_ui_nuklear_preview_visual_failure_t::none) {
-            record_failure(sprite.resource_id, uploaded.failure);
+        if (!uploaded) {
+            record_failure(sprite.resource_id, uploaded.error());
             continue;
         }
         const auto quad =
@@ -369,7 +367,7 @@ worm_ui_nuklear_preview_visual_result_t worm_ui_nuklear_draw_player_preview_stor
         std::ranges::transform(quad->points, points.begin(), [](const auto& point) {
             return nk_vec2(static_cast<float>(point.x), static_cast<float>(point.y));
         });
-        const auto image = nk_image_ptr(uploaded.texture);
+        const auto image = nk_image_ptr(*uploaded);
         if (!worm_ui_nuklear_push_image_quad(
                 canvas, &image, points.data(),
                 nk_rgba(wormedit::ui::chrome::color_byte(sprite.red), wormedit::ui::chrome::color_byte(sprite.green), wormedit::ui::chrome::color_byte(sprite.blue),

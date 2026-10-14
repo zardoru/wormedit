@@ -47,7 +47,7 @@ struct batch_chart_metadata_action_t {
 
 // One undoable transaction for 1..256 selected charts; every ID must exist and occur exactly once.
 [[nodiscard]] auto apply_batch_chart_metadata_edit(document_history_t& history,
-    std::uint64_t expected_revision, const batch_chart_metadata_action_t& action,
+    const batch_chart_metadata_action_t& action,
     metadata_edit_limits_t limits = {}) -> document_command_result_t;
 
 struct set_output_group_path_action_t {
@@ -117,7 +117,7 @@ using metadata_edit_action_t =
 // Applies one mutation through document history. New fields may be inserted in
 // the authored suffix, not ahead of retained source identities. A semantic
 // no-op returns applied=false without a diagnostic or revision change.
-[[nodiscard]] auto apply_metadata_edit(document_history_t& history, std::uint64_t expected_revision,
+[[nodiscard]] auto apply_metadata_edit(document_history_t& history,
                                        const metadata_edit_action_t& action,
                                        metadata_edit_limits_t limits = {})
     -> document_command_result_t;

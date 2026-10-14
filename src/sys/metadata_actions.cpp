@@ -1,3 +1,4 @@
+#include "sys/metadata_commands.h"
 #include "sys/metadata_actions.h"
 #include "sys/application_edit_inputs.h"
 #include "wormedit/core/numeric_text.h"

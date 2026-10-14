@@ -200,6 +200,7 @@ TEST_CASE("metadata malformed and stale edits post once without mutation", "[uni
     action.metadata_document_revision = revision - 1;
     const auto stale = fixture.dispatch(action);
     require_metadata_notification(static_cast<bool>(stale));
+    check_metadata_notification(*stale == stale_action_message("Metadata edit"));
     entries = fixture.entries();
     require_metadata_notification(entries.size() == 2);
     expect_edit_entry(entries[0], notification_severity_t::error, *stale);
@@ -505,5 +506,23 @@ TEST_CASE("key-count preview refuses Custom and indices outside the chart's fami
     const auto refused = fixture.dispatch(lane_profile_preview_action(fixture, targets.size()));
     require_metadata_notification(refused.has_value());
     check_metadata_notification(!fixture.drop.lane_profile_preview.has_value());
+    check_metadata_notification(fixture.history.undo.empty());
+}
+
+TEST_CASE("Malformed metadata payload keeps precedence over its stale stamp",
+          "[unit][sys][metadata-notification][metadata-stamp-order]") {
+    metadata_notification_fixture_t fixture;
+    auto action = song_edit(fixture);
+    action.metadata_title = nullptr;
+    --action.metadata_document_revision;
+    const auto revision = fixture.history.document.revision;
+    const auto response = fixture.dispatch(action);
+    require_metadata_notification(response.has_value());
+    check_metadata_notification(*response ==
+        "Metadata edit payload is incomplete or exceeds the tag-count cap.");
+    const auto entries = fixture.entries();
+    require_metadata_notification(entries.size() == 1);
+    expect_edit_entry(entries.front(), notification_severity_t::warning, *response);
+    check_metadata_notification(fixture.history.document.revision == revision);
     check_metadata_notification(fixture.history.undo.empty());
 }

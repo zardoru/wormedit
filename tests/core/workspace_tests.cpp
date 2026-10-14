@@ -366,13 +366,13 @@ TEST_CASE("metadata workspace exposes bounded ordered song and difficulty format
     CHECK(metadata.format_fields[4].family == format_family_t::stepmania);
 
     auto history = document_history_t::from(song);
-    REQUIRE(apply_metadata_edit(history, history.document.revision,
-                                edit_format_metadata_field_action_t{
-                                    .target = {std::nullopt, format_family_t::bms},
-                                    .index = 1,
-                                    .name = "SUBARTIST",
-                                    .value = "edited primary group",
-                                    .mode = wormedit::format_metadata_field_mode_t::replace}));
+    REQUIRE(
+        apply_metadata_edit(history, edit_format_metadata_field_action_t{
+                                         .target = {std::nullopt, format_family_t::bms},
+                                         .index = 1,
+                                         .name = "SUBARTIST",
+                                         .value = "edited primary group",
+                                         .mode = wormedit::format_metadata_field_mode_t::replace}));
     CHECK(history.document.metadata.format_groups[1].ordered_fields[1].second ==
           "edited primary group");
     CHECK(history.document.metadata.format_groups[2].ordered_fields.front().second ==

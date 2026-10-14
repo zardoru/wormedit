@@ -1,3 +1,4 @@
+#include "sys/metadata_commands.h"
 #include "sys/project_view.h"
 
 #include <wormedit/core/timing.h>

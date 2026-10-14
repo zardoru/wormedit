@@ -324,56 +324,56 @@ auto fill_assist_clicks(const preview_assist_click_grid_t& grid,
 
 } // namespace
 
-auto preview_transport_bridge_t::start(
+auto preview_object_source_binding_t::is_valid() const -> bool {
+    return static_cast<bool>(object) && !voices.empty() &&
+           std::ranges::all_of(voices, is_valid_voice_source);
+}
+
+auto preview_metronome_source_binding_t::is_valid() const -> bool {
+    return is_valid_accent(accent) && is_valid_voice_source(voice);
+}
+
+auto preview_transport_bridge_t::start_preview(
     const preview_schedule_t& schedule, std::span<const preview_object_source_binding_t> objects,
     std::span<const preview_metronome_source_binding_t> metronome, std::uint64_t seek_frame)
-    -> preview_bridge_start_result_t {
+    -> preview_bridge_start_outcome_t {
     if (schedule.sample_rate != output_sample_rate) {
-        return {.status = preview_bridge_start_status_t::unsupported_sample_rate};
+        return std::unexpected(preview_bridge_start_status_t::unsupported_sample_rate);
     }
     if (!is_sorted_events(schedule.playable) || !is_sorted_events(schedule.bgm) ||
         !is_sorted_metronome_events(schedule.metronome)) {
-        return {.status = preview_bridge_start_status_t::invalid_schedule};
+        return std::unexpected(preview_bridge_start_status_t::invalid_schedule);
     }
     std::size_t total_voices{};
     for (const auto& binding : objects) {
         if (binding.voices.size() > maximum_layers_per_object_ ||
             binding.voices.size() > maximum_total_voices_ - total_voices) {
-            return {.status = preview_bridge_start_status_t::source_binding_capacity_exceeded};
+            return std::unexpected(preview_bridge_start_status_t::source_binding_capacity_exceeded);
         }
         total_voices += binding.voices.size();
     }
     if (objects.size() > maximum_object_bindings_ || total_voices > maximum_total_voices_) {
-        return {.status = preview_bridge_start_status_t::source_binding_capacity_exceeded};
+        return std::unexpected(preview_bridge_start_status_t::source_binding_capacity_exceeded);
     }
-    if (!std::ranges::all_of(objects,
-                             [](const auto& binding) {
-                                 return static_cast<bool>(binding.object) &&
-                                        !binding.voices.empty() &&
-                                        std::ranges::all_of(binding.voices, is_valid_voice_source);
-                             }) ||
-        !std::ranges::all_of(metronome, [](const auto& binding) {
-            return is_valid_accent(binding.accent) && is_valid_voice_source(binding.voice);
-        })) {
-        return {.status = preview_bridge_start_status_t::invalid_source_binding};
+    if (!std::ranges::all_of(objects, &preview_object_source_binding_t::is_valid) ||
+        !std::ranges::all_of(metronome, &preview_metronome_source_binding_t::is_valid)) {
+        return std::unexpected(preview_bridge_start_status_t::invalid_source_binding);
     }
 
     std::vector<preview_object_source_binding_t> sorted_objects{objects.begin(), objects.end()};
     std::ranges::sort(sorted_objects, {}, &preview_object_source_binding_t::object);
     if (std::ranges::adjacent_find(sorted_objects, {}, &preview_object_source_binding_t::object) !=
         sorted_objects.end()) {
-        return {.status = preview_bridge_start_status_t::duplicate_source_binding};
+        return std::unexpected(preview_bridge_start_status_t::duplicate_source_binding);
     }
 
     std::vector<preview_metronome_source_binding_t> sorted_metronome{metronome.begin(),
                                                                      metronome.end()};
-    std::ranges::sort(sorted_metronome, [](const auto& left, const auto& right) {
-        return left.accent < right.accent;
-    });
-    if (std::ranges::adjacent_find(sorted_metronome, [](const auto& left, const auto& right) {
-            return left.accent == right.accent;
-        }) != sorted_metronome.end()) {
-        return {.status = preview_bridge_start_status_t::duplicate_source_binding};
+    std::ranges::sort(sorted_metronome, {}, &preview_metronome_source_binding_t::accent);
+    if (std::ranges::adjacent_find(sorted_metronome, {},
+                                   &preview_metronome_source_binding_t::accent) !=
+        sorted_metronome.end()) {
+        return std::unexpected(preview_bridge_start_status_t::duplicate_source_binding);
     }
 
     schedule_ = &schedule;
@@ -382,19 +382,20 @@ auto preview_transport_bridge_t::start(
     return begin_session(seek_frame);
 }
 
-auto preview_transport_bridge_t::seek(std::uint64_t sample_frame) -> preview_bridge_start_result_t {
+auto preview_transport_bridge_t::seek_preview(std::uint64_t sample_frame)
+    -> preview_bridge_start_outcome_t {
     if (schedule_ == nullptr) {
-        return {.status = preview_bridge_start_status_t::not_started};
+        return std::unexpected(preview_bridge_start_status_t::not_started);
     }
     return begin_session(sample_frame);
 }
 
 auto preview_transport_bridge_t::begin_session(std::uint64_t seek_frame)
-    -> preview_bridge_start_result_t {
+    -> preview_bridge_start_outcome_t {
     const auto token = transport_.start();
     if (!token.has_value()) {
         token_.reset();
-        return {.status = preview_bridge_start_status_t::transport_start_failed};
+        return std::unexpected(preview_bridge_start_status_t::transport_start_failed);
     }
     token_ = token;
     resumed_objects_.clear();
@@ -426,15 +427,34 @@ auto preview_transport_bridge_t::begin_session(std::uint64_t seek_frame)
             }
         }
     }
-    layer_tick_head_ = static_cast<std::size_t>(std::ranges::lower_bound(layer_tick_frames_, seek_frame) -
-                                               layer_tick_frames_.begin());
+    layer_tick_head_ = static_cast<std::size_t>(
+        std::ranges::lower_bound(layer_tick_frames_, seek_frame) - layer_tick_frames_.begin());
     assist_grid_.reset();
     assist_count_ = assist_head_ = 0;
     last_assist_handed_frame_.reset();
     assist_begin_frame_ = seek_frame;
     next_voice_id_ = 1;
     last_materialized_end_ = seek_frame;
-    return {.status = preview_bridge_start_status_t::started, .token = token};
+    return *token;
+}
+
+auto preview_bridge_start_result_t::from(preview_bridge_start_outcome_t&& outcome)
+    -> preview_bridge_start_result_t {
+    if (!outcome)
+        return {.status = outcome.error(), .token = std::nullopt};
+    return {.status = preview_bridge_start_status_t::started, .token = *outcome};
+}
+
+auto preview_transport_bridge_t::start(
+    const preview_schedule_t& schedule, std::span<const preview_object_source_binding_t> objects,
+    std::span<const preview_metronome_source_binding_t> metronome, std::uint64_t seek_frame)
+    -> preview_bridge_start_result_t {
+    return preview_bridge_start_result_t::from(
+        start_preview(schedule, objects, metronome, seek_frame));
+}
+
+auto preview_transport_bridge_t::seek(std::uint64_t sample_frame) -> preview_bridge_start_result_t {
+    return preview_bridge_start_result_t::from(seek_preview(sample_frame));
 }
 
 auto preview_transport_bridge_t::stop() noexcept -> transport_stop_result_t {

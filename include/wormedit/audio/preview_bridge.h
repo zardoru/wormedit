@@ -2,6 +2,7 @@
 
 #include <wormedit/audio/transport.h>
 #include <wormedit/core/timing.h>
+#include <wormedit/core/result.h>
 
 #include <array>
 #include <atomic>
@@ -22,6 +23,7 @@ struct preview_voice_source_t {
 };
 
 struct preview_object_source_binding_t {
+    [[nodiscard]] auto is_valid() const -> bool;
     object_id_t object;
     // One chart event may expand to several exact BMSON slice/layer voices.
     // They are scheduled atomically at the event's timeline frame.
@@ -29,6 +31,7 @@ struct preview_object_source_binding_t {
 };
 
 struct preview_metronome_source_binding_t {
+    [[nodiscard]] auto is_valid() const -> bool;
     metronome_accent_t accent{metronome_accent_t::regular};
     preview_voice_source_t voice;
 };
@@ -55,7 +58,11 @@ enum class preview_bridge_start_status_t : std::uint8_t {
     transport_start_failed,
 };
 
+using preview_bridge_start_outcome_t = result_t<session_token_t, preview_bridge_start_status_t>;
+
 struct preview_bridge_start_result_t {
+    [[nodiscard]] static auto from(preview_bridge_start_outcome_t&& outcome)
+        -> preview_bridge_start_result_t;
     preview_bridge_start_status_t status{preview_bridge_start_status_t::transport_start_failed};
     std::optional<session_token_t> token;
 
@@ -100,6 +107,12 @@ class preview_transport_bridge_t {
                              std::span<const preview_metronome_source_binding_t> metronome = {},
                              std::uint64_t seek_frame = 0) -> preview_bridge_start_result_t;
     [[nodiscard]] auto seek(std::uint64_t sample_frame) -> preview_bridge_start_result_t;
+    [[nodiscard]] auto
+    start_preview(const preview_schedule_t& schedule,
+                  std::span<const preview_object_source_binding_t> objects,
+                  std::span<const preview_metronome_source_binding_t> metronome = {},
+                  std::uint64_t seek_frame = 0) -> preview_bridge_start_outcome_t;
+    [[nodiscard]] auto seek_preview(std::uint64_t sample_frame) -> preview_bridge_start_outcome_t;
     [[nodiscard]] auto restart() -> preview_bridge_start_result_t {
         return seek(0);
     }
@@ -135,7 +148,7 @@ class preview_transport_bridge_t {
     [[nodiscard]] auto is_exhausted() const noexcept -> bool;
 
   private:
-    [[nodiscard]] auto begin_session(std::uint64_t seek_frame) -> preview_bridge_start_result_t;
+    [[nodiscard]] auto begin_session(std::uint64_t seek_frame) -> preview_bridge_start_outcome_t;
 
     void record_assist_handoff(bool assist, std::uint64_t frame);
     void refill_assist_clicks(std::uint64_t exclusive_end_frame, std::uint64_t current_frame);

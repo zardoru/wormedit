@@ -422,9 +422,38 @@ auto transient_audition_event(const chart_document_t& chart, local_position_t ta
 
 } // namespace
 
-auto resolve_object_audition(const song_document_t& song, chart_id_t chart_id, object_id_t object,
+auto audition_resolution_t::from(audition_resolve_result_t&& report) -> audition_resolve_outcome_t {
+    return {.value = {.document_revision = report.document_revision,
+                      .chart = report.chart, .object = report.object,
+                      .clips = std::move(report.clips)},
+            .diagnostics = std::move(report.diagnostics)};
+}
+
+auto audition_resolve_result_t::from(audition_resolve_outcome_t&& outcome) -> audition_resolve_result_t {
+    return {.document_revision = outcome.value.document_revision,
+            .chart = outcome.value.chart, .object = outcome.value.object,
+            .clips = std::move(outcome.value.clips), .diagnostics = std::move(outcome.diagnostics)};
+}
+
+auto preview_bindings_resolution_t::from(preview_bindings_resolve_result_t&& report)
+    -> preview_bindings_resolve_outcome_t {
+    return {.value = {.document_revision = report.document_revision,
+                      .chart = report.chart, .bindings = std::move(report.bindings),
+                      .skipped_unavailable_objects = report.skipped_unavailable_objects},
+            .diagnostics = std::move(report.diagnostics)};
+}
+
+auto preview_bindings_resolve_result_t::from(preview_bindings_resolve_outcome_t&& outcome)
+    -> preview_bindings_resolve_result_t {
+    return {.document_revision = outcome.value.document_revision,
+            .chart = outcome.value.chart, .bindings = std::move(outcome.value.bindings),
+            .diagnostics = std::move(outcome.diagnostics),
+            .skipped_unavailable_objects = outcome.value.skipped_unavailable_objects};
+}
+
+auto audition_resolution_t::from(const song_document_t& song, chart_id_t chart_id, object_id_t object,
                              std::span<const audition_source_binding_t> bindings,
-                             audition_resolve_options_t options) -> audition_resolve_result_t {
+                             audition_resolve_options_t options) -> audition_resolve_outcome_t {
     const auto* chart = song.find_chart(chart_id);
     if (chart == nullptr) {
         auto result = audition_resolve_result_t{.document_revision = song.revision,
@@ -434,36 +463,36 @@ auto resolve_object_audition(const song_document_t& song, chart_id_t chart_id, o
                                                 .diagnostics = {}};
         result.diagnostics.push_back(
             error(audition_resolve_code_t::missing_chart, "audition chart does not exist"));
-        return result;
+        return from(std::move(result));
     }
     audition_resolver_index_t index{song, *chart, bindings, options};
-    return index.resolve(object);
+    return from(index.resolve(object));
 }
 
-auto resolve_preview_bindings(const song_document_t& song, chart_id_t chart_id,
+auto preview_bindings_resolution_t::from(const song_document_t& song, chart_id_t chart_id,
                               const preview_schedule_t& schedule,
                               std::span<const audition_source_binding_t> bindings,
                               audition_resolve_options_t options)
-    -> preview_bindings_resolve_result_t {
+    -> preview_bindings_resolve_outcome_t {
     auto result = preview_bindings_resolve_result_t{
         .document_revision = song.revision, .chart = chart_id, .bindings = {}, .diagnostics = {}};
     const auto* chart = song.find_chart(chart_id);
     if (chart == nullptr) {
         result.diagnostics.push_back(
             error(audition_resolve_code_t::missing_chart, "audition chart does not exist"));
-        return result;
+        return from(std::move(result));
     }
     audition_resolver_index_t index{song, *chart, bindings, options};
     if (index.semantic_count() > options.maximum_objects) {
         result.diagnostics.push_back(error(audition_resolve_code_t::capacity_exceeded,
                                            "chart exceeds the configured audition object limit"));
-        return result;
+        return from(std::move(result));
     }
 
     std::map<object_id_t, resource_id_t> scheduled;
     if (!collect_preview_events(schedule.playable, scheduled, result, options.maximum_objects) ||
         !collect_preview_events(schedule.bgm, scheduled, result, options.maximum_objects))
-        return result;
+        return from(std::move(result));
 
     result.bindings.reserve(scheduled.size());
     std::size_t total_clips{};
@@ -474,7 +503,7 @@ auto resolve_preview_bindings(const song_document_t& song, chart_id_t chart_id,
                                                "preview schedule object is stale or mismatched",
                                                object));
             result.bindings.clear();
-            return result;
+            return from(std::move(result));
         }
         auto resolved = index.resolve(object);
         // A point past the end of its sample resolves to no clips and no error: it is silent.
@@ -488,14 +517,14 @@ auto resolve_preview_bindings(const song_document_t& song, chart_id_t chart_id,
                                       std::make_move_iterator(resolved.diagnostics.begin()),
                                       std::make_move_iterator(resolved.diagnostics.end()));
             result.bindings.clear();
-            return result;
+            return from(std::move(result));
         }
         if (resolved.clips.size() > options.maximum_total_clips - total_clips) {
             result.diagnostics.push_back(
                 error(audition_resolve_code_t::capacity_exceeded,
                       "preview schedule exceeds the configured audition clip limit", object));
             result.bindings.clear();
-            return result;
+            return from(std::move(result));
         }
         total_clips += resolved.clips.size();
         auto& output = result.bindings.emplace_back();
@@ -508,7 +537,21 @@ auto resolve_preview_bindings(const song_document_t& song, chart_id_t chart_id,
                                      .gain = clip.gain});
         }
     }
-    return result;
+    return from(std::move(result));
+}
+
+auto resolve_object_audition(const song_document_t& song, chart_id_t chart, object_id_t object,
+                            std::span<const audition_source_binding_t> bindings,
+                            audition_resolve_options_t options) -> audition_resolve_result_t {
+    return audition_resolve_result_t::from(audition_resolution_t::from(song, chart, object, bindings, options));
+}
+
+auto resolve_preview_bindings(const song_document_t& song, chart_id_t chart,
+                             const preview_schedule_t& schedule,
+                             std::span<const audition_source_binding_t> bindings,
+                             audition_resolve_options_t options) -> preview_bindings_resolve_result_t {
+    return preview_bindings_resolve_result_t::from(
+        preview_bindings_resolution_t::from(song, chart, schedule, bindings, options));
 }
 
 auto resolve_bmson_draft_audition(const song_document_t& song,

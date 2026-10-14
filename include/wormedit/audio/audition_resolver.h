@@ -38,7 +38,45 @@ enum class audition_resolve_code_t {
 using audition_resolve_diagnostic_t =
     object_diagnostic_t<audition_resolve_code_t, audition_resolve_code_t::missing_object>;
 
+struct audition_resolve_result_t;
+struct preview_bindings_resolve_result_t;
+
+struct audition_resolution_t {
+    [[nodiscard]] static auto from(audition_resolve_result_t&& report)
+        -> diagnosed_t<audition_resolution_t, std::vector<audition_resolve_diagnostic_t>>;
+    [[nodiscard]] static auto from(const song_document_t& song, chart_id_t chart, object_id_t object,
+                                   std::span<const audition_source_binding_t> bindings,
+                                   audition_resolve_options_t options = {})
+        -> diagnosed_t<audition_resolution_t, std::vector<audition_resolve_diagnostic_t>>;
+    std::uint64_t document_revision{};
+    chart_id_t chart;
+    object_id_t object;
+    std::vector<audition_clip_t> clips;
+    auto operator==(const audition_resolution_t&) const -> bool = default;
+};
+using audition_resolve_outcome_t =
+    diagnosed_t<audition_resolution_t, std::vector<audition_resolve_diagnostic_t>>;
+
+struct preview_bindings_resolution_t {
+    [[nodiscard]] static auto from(preview_bindings_resolve_result_t&& report)
+        -> diagnosed_t<preview_bindings_resolution_t, std::vector<audition_resolve_diagnostic_t>>;
+    [[nodiscard]] static auto from(const song_document_t& song, chart_id_t chart,
+                                   const preview_schedule_t& schedule,
+                                   std::span<const audition_source_binding_t> bindings,
+                                   audition_resolve_options_t options = {})
+        -> diagnosed_t<preview_bindings_resolution_t, std::vector<audition_resolve_diagnostic_t>>;
+    std::uint64_t document_revision{};
+    chart_id_t chart;
+    std::vector<preview_object_source_binding_t> bindings;
+    std::size_t skipped_unavailable_objects{};
+    auto operator==(const preview_bindings_resolution_t&) const -> bool = default;
+};
+using preview_bindings_resolve_outcome_t =
+    diagnosed_t<preview_bindings_resolution_t, std::vector<audition_resolve_diagnostic_t>>;
+
 struct preview_bindings_resolve_result_t {
+    [[nodiscard]] static auto from(preview_bindings_resolve_outcome_t&& outcome)
+        -> preview_bindings_resolve_result_t;
     std::uint64_t document_revision{};
     chart_id_t chart;
     std::vector<preview_object_source_binding_t> bindings;
@@ -51,6 +89,7 @@ struct preview_bindings_resolve_result_t {
 };
 
 struct audition_resolve_result_t {
+    [[nodiscard]] static auto from(audition_resolve_outcome_t&& outcome) -> audition_resolve_result_t;
     std::uint64_t document_revision{};
     chart_id_t chart;
     object_id_t object;

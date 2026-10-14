@@ -47,6 +47,16 @@ auto runtime_binding(wormedit::asset_id_t asset, std::uint64_t frames = 200'000)
             .output_frame_count = frames};
 }
 
+auto is_silent_audition(const wormedit::song_document_t& song, wormedit::chart_id_t chart,
+                       wormedit::object_id_t object,
+                       std::span<const wormedit::audio::audition_source_binding_t> bindings,
+                       const wormedit::audio::preview_bindings_resolve_result_t& preview) -> bool {
+    auto outcome = wormedit::audio::audition_resolution_t::from(song, chart, object, bindings);
+    const auto is_silent = outcome.ok() && outcome.value.clips.empty();
+    const auto legacy = wormedit::audio::audition_resolve_result_t::from(std::move(outcome));
+    return is_silent && !legacy && legacy.diagnostics.empty() && preview.diagnostics.empty();
+}
+
 } // namespace
 
 TEST_CASE("audition resolver maps published BMSON slices into normalized transport frames",
@@ -414,7 +424,7 @@ TEST_CASE("preview points past the end of a short sample stay silent while the r
     schedule.playable = {{.sample_frame = 20, .object = restart.id, .resource = *restart.sound}};
     schedule.bgm = {{.sample_frame = 30, .object = bgm.id, .resource = *bgm.sound}};
     const auto resolved = wormedit::audio::resolve_preview_bindings(song, chart.id, schedule, bindings);
-    CHECK(resolved.diagnostics.empty());
+    CHECK(is_silent_audition(song, chart.id, bgm.id, bindings, resolved));
     const auto has = [&](wormedit::object_id_t object) {
         return std::ranges::any_of(resolved.bindings, [&](const auto& item) { return item.object == object; });
     };

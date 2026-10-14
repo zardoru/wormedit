@@ -20,6 +20,7 @@ struct preview_voice_source_t {
     std::uint64_t frame_count{};
     float gain{1.0F};
     std::uint64_t mix_group{};
+    auto operator==(const preview_voice_source_t&) const -> bool = default;
 };
 
 struct preview_object_source_binding_t {
@@ -28,6 +29,7 @@ struct preview_object_source_binding_t {
     // One chart event may expand to several exact BMSON slice/layer voices.
     // They are scheduled atomically at the event's timeline frame.
     std::vector<preview_voice_source_t> voices;
+    auto operator==(const preview_object_source_binding_t&) const -> bool = default;
 };
 
 struct preview_metronome_source_binding_t {

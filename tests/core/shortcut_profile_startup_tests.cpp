@@ -53,9 +53,9 @@ TEST_CASE("shortcut startup leaves a missing profile silent and preserves defaul
     auto registry = sample_registry();
 
     const auto result =
-        load_shortcut_profile_for_startup(directory.path / "shortcuts.json", registry);
+        apply_startup_shortcut_profile(directory.path / "shortcuts.json", registry);
 
-    CHECK(result.status == shortcut_profile_startup_status_t::missing);
+    CHECK(result.value == shortcut_profile_startup_status_t::missing);
     CHECK(result.diagnostics.empty());
     REQUIRE(registry.commands.size() == 1);
     CHECK(registry.commands.front().current_shortcuts ==
@@ -75,9 +75,9 @@ TEST_CASE("shortcut startup applies a valid user profile to the registry",
             shortcut_profile_save_status_t::published);
     auto registry = sample_registry();
 
-    const auto result = load_shortcut_profile_for_startup(path, registry);
+    const auto result = apply_startup_shortcut_profile(path, registry);
 
-    CHECK(result.status == shortcut_profile_startup_status_t::applied);
+    CHECK(result.value == shortcut_profile_startup_status_t::applied);
     CHECK(result.diagnostics.empty());
     REQUIRE(registry.commands.size() == 1);
     CHECK(registry.commands.front().current_shortcuts == profile.bindings.front().shortcuts);
@@ -97,9 +97,9 @@ TEST_CASE("rejected startup profiles do not partially change the command registr
     auto registry = sample_registry();
     const auto before = registry.commands;
 
-    const auto result = load_shortcut_profile_for_startup(path, registry);
+    const auto result = apply_startup_shortcut_profile(path, registry);
 
-    CHECK(result.status == shortcut_profile_startup_status_t::rejected);
+    CHECK(result.value == shortcut_profile_startup_status_t::rejected);
     CHECK_FALSE(result.diagnostics.empty());
     REQUIRE(registry.commands.size() == before.size());
     CHECK(registry.commands.front().current_shortcuts == before.front().current_shortcuts);
@@ -122,9 +122,9 @@ TEST_CASE("startup diagnostics have bounded count and message size",
              .current_shortcuts = {shared}});
     }
 
-    const auto result = load_shortcut_profile_for_startup(path, registry);
+    const auto result = apply_startup_shortcut_profile(path, registry);
 
-    CHECK(result.status == shortcut_profile_startup_status_t::applied);
+    CHECK(result.value == shortcut_profile_startup_status_t::applied);
     REQUIRE(result.diagnostics.size() == maximum_shortcut_profile_startup_diagnostics);
     CHECK(result.diagnostics.back().message ==
           "Additional shortcut profile diagnostics were omitted.");

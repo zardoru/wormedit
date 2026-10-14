@@ -19,7 +19,7 @@ inline auto make_initial_application_feedback(bool loaded_primary,
         post.source = notification_source_t::document;
         post.message = "Primary project was not loaded; review the completed recovery scan.";
     } else {
-        post.message = recovery ? "No project loaded; recovery scan complete."
+        post.message = recovery && !recovery->empty() ? "No project loaded; recovery scan complete."
                                 : "No project loaded; recovery discovery unavailable.";
     }
     // The platform producer owns its failure; never append it to this context.

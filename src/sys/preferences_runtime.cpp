@@ -12,11 +12,12 @@ auto load_program_preferences_runtime() -> program_preferences_runtime_t {
     program_preferences_runtime_t runtime;
     try {
         const auto shortcut_path = prepare_platform_shortcut_profile_path();
-        if (!shortcut_path) {
-            runtime.warnings.push_back("Program preferences directory unavailable: " + shortcut_path.error);
+        if (!shortcut_path || shortcut_path->empty()) {
+            runtime.warnings.push_back("Program preferences directory unavailable: " +
+                                       (shortcut_path ? std::string{} : shortcut_path.error()));
             return runtime;
         }
-        runtime.path = shortcut_path.path.parent_path() / "preferences.json";
+        runtime.path = shortcut_path->parent_path() / "preferences.json";
         auto loaded = load_program_preferences_for_startup(runtime.path,
             runtime.path.parent_path() / "external-players.conf");
         runtime.preferences = std::move(loaded.contents.preferences);

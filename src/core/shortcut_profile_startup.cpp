@@ -83,15 +83,4 @@ auto apply_startup_shortcut_profile(const std::filesystem::path& path, command_r
     return result;
 }
 
-auto shortcut_profile_startup_result_t::from(shortcut_profile_startup_outcome_t&& outcome)
-    -> shortcut_profile_startup_result_t {
-    return {.status = outcome.value, .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto load_shortcut_profile_for_startup(const std::filesystem::path& path,
-                                       command_registry_t& registry)
-    -> shortcut_profile_startup_result_t {
-    return shortcut_profile_startup_result_t::from(apply_startup_shortcut_profile(path, registry));
-}
-
 } // namespace wormedit

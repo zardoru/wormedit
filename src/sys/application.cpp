@@ -404,9 +404,11 @@ auto shortcut_profile_path(const wormedit::sys::program_preferences_runtime_t& p
 }
 
 auto load_preferred_shortcuts(const wormedit::sys::program_preferences_runtime_t& preferences,
-    wormedit::command_registry_t& registry) -> wormedit::shortcut_profile_startup_result_t {
-    if (preferences.path.empty()) return {};
-    return wormedit::load_shortcut_profile_for_startup(shortcut_profile_path(preferences), registry);
+    wormedit::command_registry_t& registry) -> wormedit::shortcut_profile_startup_outcome_t {
+    if (preferences.path.empty())
+        return {.value = wormedit::shortcut_profile_startup_status_t::unavailable,
+                .diagnostics = {}};
+    return wormedit::apply_startup_shortcut_profile(shortcut_profile_path(preferences), registry);
 }
 
 // Input & shortcuts editing: the projection feeds the Options page, and `capture` holds
@@ -1247,7 +1249,7 @@ void post_initial_application_feedback(wormedit::notification_sink_t& notificati
 }
 
 void post_shortcut_startup_diagnostic(
-    wormedit::notification_sink_t& sink, const wormedit::shortcut_profile_startup_result_t& result) {
+    wormedit::notification_sink_t& sink, const wormedit::shortcut_profile_startup_outcome_t& result) {
     if (!result.diagnostics.empty())
         sink.post(to_notification_severity(result.diagnostics.front().severity),
                   wormedit::notification_source_t::input, result.diagnostics.front().message);
@@ -2306,9 +2308,11 @@ struct application_t::implementation_t {
     void tick_loaded_project_autosave() {
         if (!session.project_identity.session_loaded)
             return;
+        static const std::filesystem::path unavailable_directory;
         wormedit::sys::tick_application_autosave(
             session.autosave_loop, session.history, session.project_identity.native_project_loaded,
-            session.project_identity.active_project_path, platform.recovery_directory.path,
+            session.project_identity.active_project_path,
+            platform.recovery_directory ? *platform.recovery_directory : unavailable_directory,
             platform.notification_sink, session.project_identity.asset_base);
     }
 
@@ -3940,9 +3944,9 @@ struct application_t::implementation_t {
         auto startup_request = std::move(platform.arguments.request);
         platform.recovery_directory =
             prepare_platform_recovery_directory(platform.notification_sink);
-        if (platform.recovery_directory) {
-            startup_request.recovery_directories.push_back(platform.recovery_directory.path);
-            platform.lifetime.crash_marker = crash_marker_path(platform.recovery_directory.path);
+        if (platform.recovery_directory && !platform.recovery_directory->empty()) {
+            startup_request.recovery_directories.push_back(*platform.recovery_directory);
+            platform.lifetime.crash_marker = crash_marker_path(*platform.recovery_directory);
             startup_request.crash_marker_path = platform.lifetime.crash_marker;
         }
         auto startup = prepare_native_project_startup(

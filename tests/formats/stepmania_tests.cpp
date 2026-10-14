@@ -208,8 +208,11 @@ auto sm_source_orders_allow_history_and_native_roundtrip(std::string_view source
     const auto bpm_revision = bpm_history.document.revision;
     const auto& bpm = bpm_history.document.charts.front().bpms.front();
     const auto bpm_edit = wormedit::apply_bpm_edit(
-        bpm_history, wormedit::update_bpm_event_action_t{
-                         bpm_history.document.charts.front().id, bpm.id, bpm.position, {110, 1}});
+        bpm_history, wormedit::update_edit_t<wormedit::bpm_edit_value_t>{
+                         .chart = bpm_history.document.charts.front().id,
+                         .id = bpm.id,
+                         .value = wormedit::bpm_edit_value_t::from(
+                             bpm.position, wormedit::timing_bpm_value_t{{110, 1}})});
     if (!bpm_edit || bpm_history.document.revision != bpm_revision + 1 ||
         !wormedit::undo_document_command(bpm_history)) return false;
 

@@ -83,15 +83,16 @@ auto edit_context(song_document_t& document, chart_id_t id, bpm_edit_limits_t li
     return &*found;
 }
 
-auto apply_insert(bpm_edit_context_t context, const insert_bpm_event_action_t& edit)
+auto apply_insert(bpm_edit_context_t context,
+                  const wormedit::insert_edit_t<wormedit::bpm_edit_value_t>& edit)
     -> bpm_edit_outcome_t {
     if (context.chart.bpms.size() >= context.limits.maximum_bpm_events) {
         reject(context.result, diagnostic_code_t::invalid_resolution,
                "BPM insertion would exceed the configured event cap");
         return {false, false, {}};
     }
-    if (!validate_bpm_position(context.chart, edit.position, context.result) ||
-        !validate_bpm_value(edit.beats_per_minute, context.result)) {
+    if (!validate_bpm_position(context.chart, edit.value.position, context.result) ||
+        !validate_bpm_value(edit.value.settings.beats_per_minute, context.result)) {
         return {false, false, {}};
     }
     const auto allocation =
@@ -110,14 +111,15 @@ auto apply_insert(bpm_edit_context_t context, const insert_bpm_event_action_t& e
     }
     context.chart.bpms.push_back({
         .id = *allocation.id,
-        .position = edit.position,
-        .beats_per_minute = edit.beats_per_minute,
+        .position = edit.value.position,
+        .beats_per_minute = edit.value.settings.beats_per_minute,
         .provenance = {.source_order = *source_order},
     });
     return {true, true, "Insert BPM event"};
 }
 
-auto apply_update(bpm_edit_context_t context, const update_bpm_event_action_t& edit)
+auto apply_update(bpm_edit_context_t context,
+                  const wormedit::update_edit_t<wormedit::bpm_edit_value_t>& edit)
     -> bpm_edit_outcome_t {
     if (!edit.id) {
         reject(context.result, diagnostic_code_t::invalid_id,
@@ -125,19 +127,22 @@ auto apply_update(bpm_edit_context_t context, const update_bpm_event_action_t& e
         return {false, false, {}};
     }
     auto* event = unique_bpm_event(context.chart, edit.id, context.result);
-    if (event == nullptr || !validate_bpm_position(context.chart, edit.position, context.result) ||
-        !validate_bpm_value(edit.beats_per_minute, context.result)) {
+    if (event == nullptr ||
+        !validate_bpm_position(context.chart, edit.value.position, context.result) ||
+        !validate_bpm_value(edit.value.settings.beats_per_minute, context.result)) {
         return {false, false, {}};
     }
-    if (event->position == edit.position && event->beats_per_minute == edit.beats_per_minute) {
+    if (event->position == edit.value.position &&
+        event->beats_per_minute == edit.value.settings.beats_per_minute) {
         return {true, false, {}};
     }
-    event->position = edit.position;
-    event->beats_per_minute = edit.beats_per_minute;
+    event->position = edit.value.position;
+    event->beats_per_minute = edit.value.settings.beats_per_minute;
     return {true, true, "Update BPM event"};
 }
 
-auto apply_delete(bpm_edit_context_t context, const delete_bpm_event_action_t& edit)
+auto apply_delete(bpm_edit_context_t context,
+                  const wormedit::delete_edit_t<wormedit::bpm_edit_value_t>& edit)
     -> bpm_edit_outcome_t {
     if (!edit.id) {
         reject(context.result, diagnostic_code_t::invalid_id,
@@ -163,9 +168,10 @@ auto apply_chart_edit(song_document_t& document, const Edit& edit, bpm_edit_limi
         return {false, false, {}};
     }
     auto context = bpm_edit_context_t{*chart, limits, result};
-    if constexpr (std::is_same_v<Edit, insert_bpm_event_action_t>) {
+    if constexpr (std::is_same_v<Edit, wormedit::insert_edit_t<wormedit::bpm_edit_value_t>>) {
         return apply_insert(context, edit);
-    } else if constexpr (std::is_same_v<Edit, update_bpm_event_action_t>) {
+    } else if constexpr (std::is_same_v<Edit,
+                                        wormedit::update_edit_t<wormedit::bpm_edit_value_t>>) {
         return apply_update(context, edit);
     } else {
         return apply_delete(context, edit);
@@ -590,8 +596,11 @@ namespace {
 auto apply_inserted_beat_fit(document_command_transaction_t& transaction, const beat_interval_drag_t& drag)
     -> document_command_result_t {
     if (drag.proposed_bpm == drag.original_bpm) return transaction.finish_without_commit();
-    return apply_bpm_edit(transaction, insert_bpm_event_action_t{drag.stamp.chart, drag.original_bpm_position,
-                                                             drag.proposed_bpm});
+    return apply_bpm_edit(transaction, wormedit::insert_edit_t<wormedit::bpm_edit_value_t>{
+                                           .chart = drag.stamp.chart,
+                                           .value = wormedit::bpm_edit_value_t::from(
+                                               drag.original_bpm_position,
+                                               wormedit::timing_bpm_value_t{drag.proposed_bpm})});
 }
 
 } // namespace
@@ -620,9 +629,12 @@ auto apply_beat_interval_drag(document_history_t& history, const beat_interval_d
         return transaction.reject(diagnostic_code_t::invalid_id,
                                   "beat fit proposal changed before commit");
     if (drag.insert_bpm) return apply_inserted_beat_fit(transaction, drag);
-    return apply_bpm_edit(transaction,
-        update_bpm_event_action_t{drag.stamp.chart, drag.bpm_event,
-                                 drag.original_bpm_position, drag.proposed_bpm});
+    return apply_bpm_edit(transaction, wormedit::update_edit_t<wormedit::bpm_edit_value_t>{
+                                           .chart = drag.stamp.chart,
+                                           .id = drag.bpm_event,
+                                           .value = wormedit::bpm_edit_value_t::from(
+                                               drag.original_bpm_position,
+                                               wormedit::timing_bpm_value_t{drag.proposed_bpm})});
 }
 
 } // namespace wormedit

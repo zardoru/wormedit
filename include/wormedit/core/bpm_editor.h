@@ -35,26 +35,24 @@ enum class bpm_step_direction_t { decrement, increment };
 [[nodiscard]] auto step_bpm_by_one(signed_rational_t bpm, bpm_step_direction_t direction)
     -> std::optional<signed_rational_t>;
 
-struct insert_bpm_event_action_t {
-    chart_id_t chart;
-    local_position_t position;
-    signed_rational_t beats_per_minute;
+struct timing_bpm_value_t {
+    signed_rational_t beats_per_minute{120, 1};
+
+    [[nodiscard]] static auto with_defaults(chart_edit_value_default_policy_t policy)
+        -> timing_bpm_value_t {
+        timing_bpm_value_t value;
+        if (policy == chart_edit_value_default_policy_t::command)
+            value.beats_per_minute = {};
+        return value;
+    }
+    [[nodiscard]] static auto from(const bpm_event_t& event) -> timing_bpm_value_t {
+        return {.beats_per_minute = event.beats_per_minute};
+    }
+    auto operator==(const timing_bpm_value_t&) const -> bool = default;
 };
 
-struct update_bpm_event_action_t {
-    chart_id_t chart;
-    object_id_t id;
-    local_position_t position;
-    signed_rational_t beats_per_minute;
-};
-
-struct delete_bpm_event_action_t {
-    chart_id_t chart;
-    object_id_t id;
-};
-
-using bpm_edit_action_t =
-    std::variant<insert_bpm_event_action_t, update_bpm_event_action_t, delete_bpm_event_action_t>;
+using bpm_edit_value_t = positioned_edit_value_t<timing_bpm_value_t>;
+using bpm_edit_action_t = chart_edit_t<bpm_edit_value_t>;
 
 // Mutates one chart BPM event through shared document history. Local positions
 // and exact positive rationals are preserved verbatim; same-row events remain

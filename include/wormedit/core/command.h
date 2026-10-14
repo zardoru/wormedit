@@ -7,9 +7,63 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 namespace wormedit {
+
+// Controller defaults and incomplete command defaults have distinct existing contracts.
+enum class chart_edit_value_default_policy_t { controller, command };
+
+template <typename Value> struct chart_edit_value_traits_t {
+    using id_type = object_id_t;
+    using delete_options_type = std::monostate;
+};
+
+template <typename Value> struct insert_edit_t {
+    chart_id_t chart;
+    Value value;
+    auto operator==(const insert_edit_t&) const -> bool = default;
+};
+
+template <typename Value> struct update_edit_t {
+    chart_id_t chart;
+    typename chart_edit_value_traits_t<Value>::id_type id;
+    Value value;
+    auto operator==(const update_edit_t&) const -> bool = default;
+};
+
+template <typename Value> struct delete_edit_t {
+    chart_id_t chart;
+    typename chart_edit_value_traits_t<Value>::id_type id;
+    [[no_unique_address]] typename chart_edit_value_traits_t<Value>::delete_options_type options{};
+    auto operator==(const delete_edit_t&) const -> bool = default;
+};
+
+template <typename Value>
+using chart_edit_t = std::variant<insert_edit_t<Value>, update_edit_t<Value>, delete_edit_t<Value>>;
+
+// Positions and scalar settings are independent values; no field-by-field translation.
+template <typename Settings> struct positioned_edit_value_t {
+    local_position_t position;
+    Settings settings{make_default_settings()};
+
+    [[nodiscard]] static auto from(local_position_t position, const Settings& settings)
+        -> positioned_edit_value_t {
+        return {.position = position, .settings = settings};
+    }
+    auto operator==(const positioned_edit_value_t&) const -> bool = default;
+
+  private:
+    static auto make_default_settings() -> Settings {
+        if constexpr (requires {
+                          Settings::with_defaults(chart_edit_value_default_policy_t::command);
+                      })
+            return Settings::with_defaults(chart_edit_value_default_policy_t::command);
+        else
+            return {};
+    }
+};
 
 // Older revision-only captures keep that contract when adopting a shared stamp.
 enum class document_identity_policy_t { project_and_revision, revision_only };

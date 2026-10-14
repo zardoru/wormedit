@@ -434,8 +434,12 @@ TEST_CASE("existing timing edit targets reject unknown, wrong-kind, locked, and 
     auto stale = begin_existing_timing_lane_pseudonote(
         history, chart_id_t{2}, timing_lane_kind_t::bpm, object_id_t{10}, false);
     REQUIRE(stale.status == timing_lane_pseudonote_status_t::editing);
-    const auto intervening = apply_bpm_edit(
-        history, update_bpm_event_action_t{chart_id_t{2}, object_id_t{11}, pos(0), {150, 1}});
+    const auto intervening =
+        apply_bpm_edit(history, wormedit::update_edit_t<wormedit::bpm_edit_value_t>{
+                                    .chart = chart_id_t{2},
+                                    .id = object_id_t{11},
+                                    .value = wormedit::bpm_edit_value_t::from(
+                                        pos(0), wormedit::timing_bpm_value_t{{150, 1}})});
     REQUIRE(intervening);
     const auto revision_after_intervening = history.document.revision;
     CHECK_FALSE(revise_timing_lane_pseudonote(history, stale, timing_bpm_value_t{{90, 1}}, false));
@@ -449,8 +453,12 @@ TEST_CASE("existing timing edit targets reject unknown, wrong-kind, locked, and 
     auto stale_confirm = begin_existing_timing_lane_pseudonote(
         history, chart_id_t{2}, timing_lane_kind_t::scroll, object_id_t{20}, false);
     REQUIRE(stale_confirm.status == timing_lane_pseudonote_status_t::editing);
-    const auto another_change = apply_bpm_edit(
-        history, update_bpm_event_action_t{chart_id_t{2}, object_id_t{11}, pos(0), {151, 1}});
+    const auto another_change =
+        apply_bpm_edit(history, wormedit::update_edit_t<wormedit::bpm_edit_value_t>{
+                                    .chart = chart_id_t{2},
+                                    .id = object_id_t{11},
+                                    .value = wormedit::bpm_edit_value_t::from(
+                                        pos(0), wormedit::timing_bpm_value_t{{151, 1}})});
     REQUIRE(another_change);
     const auto result = apply_timing_lane_pseudonote(history, stale_confirm, false);
     CHECK_FALSE(result);
@@ -484,7 +492,10 @@ TEST_CASE("pseudo-note insertion rejects locked, occupied, and stale timing edit
     auto stale = begin(history, timing_lane_kind_t::scroll, 120, timing_scroll_value_t{{2, 1}});
     REQUIRE(stale.status == timing_lane_pseudonote_status_t::editing);
     const auto intervening =
-        apply_bpm_edit(history, insert_bpm_event_action_t{chart_id_t{2}, pos(60), {150, 1}});
+        apply_bpm_edit(history, wormedit::insert_edit_t<wormedit::bpm_edit_value_t>{
+                                    .chart = chart_id_t{2},
+                                    .value = wormedit::bpm_edit_value_t::from(
+                                        pos(60), wormedit::timing_bpm_value_t{{150, 1}})});
     REQUIRE(intervening);
     const auto revision_after_intervening = history.document.revision;
     const auto result = apply_timing_lane_pseudonote(history, stale, false);
@@ -659,7 +670,10 @@ TEST_CASE("existing timing pseudo-note targets are exact, revision-bound, and no
     auto history = document_history_t::from(timing_song());
 
     const auto coincident = apply_bpm_edit(
-        history, insert_bpm_event_action_t{chart_id_t{2}, pos(0), signed_rational_t{130, 1}});
+        history, wormedit::insert_edit_t<wormedit::bpm_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .value = wormedit::bpm_edit_value_t::from(
+                         pos(0), wormedit::timing_bpm_value_t{signed_rational_t{130, 1}})});
     REQUIRE(coincident);
     auto own_row = begin_existing_timing_lane_pseudonote(
         history, chart_id_t{2}, timing_lane_kind_t::bpm, object_id_t{10}, false);
@@ -695,8 +709,12 @@ TEST_CASE("existing timing pseudo-note targets are exact, revision-bound, and no
     auto stale = begin_existing_timing_lane_pseudonote(
         history, chart_id_t{2}, timing_lane_kind_t::bpm, object_id_t{10}, false);
     REQUIRE(stale.status == timing_lane_pseudonote_status_t::editing);
-    const auto intervening = apply_bpm_edit(
-        history, update_bpm_event_action_t{chart_id_t{2}, object_id_t{10}, pos(0), {140, 1}});
+    const auto intervening =
+        apply_bpm_edit(history, wormedit::update_edit_t<wormedit::bpm_edit_value_t>{
+                                    .chart = chart_id_t{2},
+                                    .id = object_id_t{10},
+                                    .value = wormedit::bpm_edit_value_t::from(
+                                        pos(0), wormedit::timing_bpm_value_t{{140, 1}})});
     REQUIRE(intervening);
     CHECK_FALSE(revise_timing_lane_pseudonote(history, stale, timing_bpm_value_t{{150, 1}}, false));
     CHECK(stale.status == timing_lane_pseudonote_status_t::cancelled);
@@ -1075,4 +1093,25 @@ TEST_CASE("A rejected typed timing transaction cannot publish its abandoned snap
     CHECK_FALSE(retried.applied);
     CHECK(history.document.metadata.title.empty());
     CHECK(history.undo.empty());
+}
+
+TEST_CASE("BPM command and controller insertion retain their separate default contracts",
+          "[unit][core][timing-lane-controller][edit-value-defaults]") {
+    auto history = document_history_t::from(timing_song());
+    const auto rejected =
+        apply_bpm_edit(history, wormedit::insert_edit_t<wormedit::bpm_edit_value_t>{
+                                    .chart = chart_id_t{2},
+                                    .value = wormedit::bpm_edit_value_t{.position = pos(240)}});
+    REQUIRE_FALSE(rejected.applied);
+    REQUIRE(!rejected.diagnostics.empty());
+    CHECK(rejected.diagnostics.front().code == diagnostic_code_t::invalid_rational);
+    CHECK(history.undo.empty());
+    auto preview = begin_timing_lane_pseudonote(
+        history, chart_id_t{2}, timing_lane_kind_t::bpm, pos(240), timing_bpm_value_t{},
+        timing_lane_initial_value_source_t::explicit_default, false);
+    REQUIRE(preview.is_valid());
+    REQUIRE(apply_timing_lane_pseudonote(history, preview, false).applied);
+    CHECK(history.document.charts.front().bpms.back().beats_per_minute ==
+          signed_rational_t{120, 1});
+    CHECK(history.undo.size() == 1);
 }

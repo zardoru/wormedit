@@ -53,7 +53,7 @@ auto load_existing_event(const chart_document_t& chart, timing_lane_kind_t kind,
             return false;
         }
         position = found->position;
-        value = timing_bpm_value_t{found->beats_per_minute};
+        value = timing_bpm_value_t::from(*found);
         return true;
     }
     case timing_lane_kind_t::scroll: {
@@ -478,12 +478,17 @@ auto apply_timing_lane_preview(document_command_transaction_t& transaction,
         const auto& value = std::get<timing_bpm_value_t>(preview.value);
         if (preview.existing_event) {
             result = apply_bpm_edit(
-                transaction, update_bpm_event_action_t{preview.stamp.chart, *preview.existing_event,
-                                                   preview.position, value.beats_per_minute});
+                transaction,
+                wormedit::update_edit_t<wormedit::bpm_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .id = *preview.existing_event,
+                    .value = wormedit::bpm_edit_value_t::from(preview.position, value)});
         } else {
-            result =
-                apply_bpm_edit(transaction, insert_bpm_event_action_t{preview.stamp.chart, preview.position,
-                                                                  value.beats_per_minute});
+            result = apply_bpm_edit(
+                transaction,
+                wormedit::insert_edit_t<wormedit::bpm_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .value = wormedit::bpm_edit_value_t::from(preview.position, value)});
         }
         break;
     }
@@ -898,7 +903,8 @@ auto delete_existing_timing_lane_event(document_history_t& history, chart_id_t c
     }
     switch (kind) {
     case timing_lane_kind_t::bpm:
-        return apply_bpm_edit(history, delete_bpm_event_action_t{chart, event});
+        return apply_bpm_edit(history, wormedit::delete_edit_t<wormedit::bpm_edit_value_t>{
+                                           .chart = chart, .id = event});
     case timing_lane_kind_t::scroll:
         return apply_scroll_speed_edit(history, delete_scroll_event_action_t{chart, event});
     case timing_lane_kind_t::speed:

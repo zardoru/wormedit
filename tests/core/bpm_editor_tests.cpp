@@ -27,9 +27,12 @@ TEST_CASE("BPM edits extend native music charts through the audio end atomically
     REQUIRE(extend_native_charts_to_audio_end(song));
     REQUIRE(song.charts.front().measures.size() == 7);
     auto history = document_history_t::from(song);
-    REQUIRE(apply_bpm_edit(
-        history,
-        update_bpm_event_action_t{chart_id_t{2}, object_id_t{10}, {measure_id_t{3}, 0}, {240, 1}}));
+    REQUIRE(apply_bpm_edit(history,
+                           wormedit::update_edit_t<wormedit::bpm_edit_value_t>{
+                               .chart = chart_id_t{2},
+                               .id = object_id_t{10},
+                               .value = wormedit::bpm_edit_value_t::from(
+                                   {measure_id_t{3}, 0}, wormedit::timing_bpm_value_t{{240, 1}})}));
     check_music_extent(history.document.charts.front().measures.size() == 13);
     check_music_extent(history.undo.size() == 1);
     REQUIRE(undo_document_command(history));
@@ -213,7 +216,10 @@ TEST_CASE("BPM insert update and delete are undoable and retain exact identity a
     song.charts.front().source_family = format_family_t::bms;
     auto history = document_history_t::from(std::move(song));
     const auto insert = apply_bpm_edit(
-        history, insert_bpm_event_action_t{chart_id_t{2}, {measure_id_t{3}, 0}, {90, 2}});
+        history, wormedit::insert_edit_t<wormedit::bpm_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .value = wormedit::bpm_edit_value_t::from(
+                         {measure_id_t{3}, 0}, wormedit::timing_bpm_value_t{{90, 2}})});
     REQUIRE(insert);
     REQUIRE(history.document.charts.front().bpms.size() == 2);
     const auto inserted = history.document.charts.front().bpms.back();
@@ -233,8 +239,11 @@ TEST_CASE("BPM insert update and delete are undoable and retain exact identity a
     CHECK(history.document.charts.front().bpms.back().id == inserted.id);
 
     const auto update = apply_bpm_edit(
-        history,
-        update_bpm_event_action_t{chart_id_t{2}, inserted.id, {measure_id_t{3}, 0}, {180, 2}});
+        history, wormedit::update_edit_t<wormedit::bpm_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .id = inserted.id,
+                     .value = wormedit::bpm_edit_value_t::from(
+                         {measure_id_t{3}, 0}, wormedit::timing_bpm_value_t{{180, 2}})});
     REQUIRE(update);
     const auto& updated = history.document.charts.front().bpms.back();
     CHECK(updated.id == inserted.id);
@@ -248,14 +257,19 @@ TEST_CASE("BPM insert update and delete are undoable and retain exact identity a
     REQUIRE(after_one_beat);
     CHECK(after_one_beat.seconds == signed_rational_t{2, 3});
 
-    const auto no_op = apply_bpm_edit(history, update_bpm_event_action_t{chart_id_t{2}, inserted.id,
-                                                                         updated.position,
-                                                                         updated.beats_per_minute});
+    const auto no_op = apply_bpm_edit(
+        history,
+        wormedit::update_edit_t<wormedit::bpm_edit_value_t>{
+            .chart = chart_id_t{2},
+            .id = inserted.id,
+            .value = wormedit::bpm_edit_value_t::from(
+                updated.position, wormedit::timing_bpm_value_t{updated.beats_per_minute})});
     CHECK_FALSE(no_op.applied);
     CHECK(no_op.diagnostics.empty());
     CHECK(history.document.revision == 6);
 
-    REQUIRE(apply_bpm_edit(history, delete_bpm_event_action_t{chart_id_t{2}, inserted.id}));
+    REQUIRE(apply_bpm_edit(history, wormedit::delete_edit_t<wormedit::bpm_edit_value_t>{
+                                        .chart = chart_id_t{2}, .id = inserted.id}));
     CHECK(history.document.charts.front().bpms.size() == 1);
     REQUIRE(undo_document_command(history));
     REQUIRE(history.document.charts.front().bpms.size() == 2);
@@ -276,7 +290,10 @@ TEST_CASE("BPM same-row events use source order and remain valid for the timing 
     auto history = document_history_t::from(std::move(song));
 
     const auto inserted = apply_bpm_edit(
-        history, insert_bpm_event_action_t{chart_id_t{2}, {measure_id_t{3}, 0}, {90, 1}});
+        history, wormedit::insert_edit_t<wormedit::bpm_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .value = wormedit::bpm_edit_value_t::from(
+                         {measure_id_t{3}, 0}, wormedit::timing_bpm_value_t{{90, 1}})});
     REQUIRE(inserted);
     const auto& chart = history.document.charts.front();
     REQUIRE(chart.bpms.size() == 3);
@@ -290,8 +307,11 @@ TEST_CASE("BPM same-row events use source order and remain valid for the timing 
     CHECK(one_beat.seconds == signed_rational_t{2, 3});
 
     const auto updated = apply_bpm_edit(
-        history, update_bpm_event_action_t{
-                     chart_id_t{2}, chart.bpms.back().id, {measure_id_t{3}, 0}, {75, 1}});
+        history, wormedit::update_edit_t<wormedit::bpm_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .id = chart.bpms.back().id,
+                     .value = wormedit::bpm_edit_value_t::from(
+                         {measure_id_t{3}, 0}, wormedit::timing_bpm_value_t{{75, 1}})});
     REQUIRE(updated);
     CHECK(history.document.charts.front().bpms.back().provenance.source_order == 13);
     const auto updated_timing = build_timing_index(history.document.charts.front());
@@ -308,25 +328,35 @@ TEST_CASE("BPM editor rejects invalid IDs positions and invalid exact values ato
     const auto unchanged_bpm_count = history.document.charts.front().bpms.size();
 
     const auto unknown_chart = apply_bpm_edit(
-        history, insert_bpm_event_action_t{chart_id_t{99}, {measure_id_t{3}, 240}, {100, 1}});
+        history, wormedit::insert_edit_t<wormedit::bpm_edit_value_t>{
+                     .chart = chart_id_t{99},
+                     .value = wormedit::bpm_edit_value_t::from(
+                         {measure_id_t{3}, 240}, wormedit::timing_bpm_value_t{{100, 1}})});
     CHECK_FALSE(unknown_chart.applied);
     CHECK(has_code(unknown_chart, diagnostic_code_t::invalid_id));
 
     const auto unknown_event = apply_bpm_edit(
-        history,
-        update_bpm_event_action_t{chart_id_t{2}, object_id_t{99}, {measure_id_t{3}, 0}, {100, 1}});
+        history, wormedit::update_edit_t<wormedit::bpm_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .id = object_id_t{99},
+                     .value = wormedit::bpm_edit_value_t::from(
+                         {measure_id_t{3}, 0}, wormedit::timing_bpm_value_t{{100, 1}})});
     CHECK_FALSE(unknown_event.applied);
     CHECK(has_code(unknown_event, diagnostic_code_t::invalid_id));
 
     const auto unknown_delete =
-        apply_bpm_edit(history, delete_bpm_event_action_t{chart_id_t{2}, object_id_t{99}});
+        apply_bpm_edit(history, wormedit::delete_edit_t<wormedit::bpm_edit_value_t>{
+                                    .chart = chart_id_t{2}, .id = object_id_t{99}});
     CHECK_FALSE(unknown_delete.applied);
     CHECK(has_code(unknown_delete, diagnostic_code_t::invalid_id));
 
     for (const auto position :
          {local_position_t{measure_id_t{99}, 0}, local_position_t{measure_id_t{3}, 960}}) {
         const auto invalid_position =
-            apply_bpm_edit(history, insert_bpm_event_action_t{chart_id_t{2}, position, {100, 1}});
+            apply_bpm_edit(history, wormedit::insert_edit_t<wormedit::bpm_edit_value_t>{
+                                        .chart = chart_id_t{2},
+                                        .value = wormedit::bpm_edit_value_t::from(
+                                            position, wormedit::timing_bpm_value_t{{100, 1}})});
         CHECK_FALSE(invalid_position.applied);
         CHECK(has_code(invalid_position, diagnostic_code_t::row_out_of_range));
     }
@@ -334,7 +364,10 @@ TEST_CASE("BPM editor rejects invalid IDs positions and invalid exact values ato
     for (const auto value :
          {signed_rational_t{0, 1}, signed_rational_t{-1, 1}, signed_rational_t{120, 0}}) {
         const auto invalid_bpm = apply_bpm_edit(
-            history, insert_bpm_event_action_t{chart_id_t{2}, {measure_id_t{3}, 240}, value});
+            history, wormedit::insert_edit_t<wormedit::bpm_edit_value_t>{
+                         .chart = chart_id_t{2},
+                         .value = wormedit::bpm_edit_value_t::from(
+                             {measure_id_t{3}, 240}, wormedit::timing_bpm_value_t{value})});
         CHECK_FALSE(invalid_bpm.applied);
         CHECK(has_code(invalid_bpm, diagnostic_code_t::invalid_rational));
     }
@@ -353,24 +386,36 @@ TEST_CASE("BPM editor rejects ambiguous stable IDs and event caps",
                                                   .beats_per_minute = {90, 1},
                                                   .provenance = {.source_order = 5}});
     auto duplicate_history = document_history_t::from(duplicate_song);
-    const auto duplicate = apply_bpm_edit(
-        duplicate_history, update_bpm_event_action_t{
-                               chart_id_t{2}, object_id_t{10}, {measure_id_t{3}, 480}, {100, 1}});
+    const auto duplicate =
+        apply_bpm_edit(duplicate_history,
+                       wormedit::update_edit_t<wormedit::bpm_edit_value_t>{
+                           .chart = chart_id_t{2},
+                           .id = object_id_t{10},
+                           .value = wormedit::bpm_edit_value_t::from(
+                               {measure_id_t{3}, 480}, wormedit::timing_bpm_value_t{{100, 1}})});
     CHECK_FALSE(duplicate.applied);
     CHECK(has_code(duplicate, diagnostic_code_t::duplicate_id));
     CHECK(duplicate_history.document.charts.front().bpms.size() == 2);
     CHECK(duplicate_history.undo.empty());
 
     auto history = document_history_t::from(bpm_song());
-    const auto event_capped = apply_bpm_edit(
-        history, insert_bpm_event_action_t{chart_id_t{2}, {measure_id_t{3}, 240}, {100, 1}},
-        {.maximum_bpm_events = 1});
+    const auto event_capped =
+        apply_bpm_edit(history,
+                       wormedit::insert_edit_t<wormedit::bpm_edit_value_t>{
+                           .chart = chart_id_t{2},
+                           .value = wormedit::bpm_edit_value_t::from(
+                               {measure_id_t{3}, 240}, wormedit::timing_bpm_value_t{{100, 1}})},
+                       {.maximum_bpm_events = 1});
     CHECK_FALSE(event_capped.applied);
     CHECK(has_code(event_capped, diagnostic_code_t::invalid_resolution));
 
-    const auto objects_capped = apply_bpm_edit(
-        history, insert_bpm_event_action_t{chart_id_t{2}, {measure_id_t{3}, 240}, {100, 1}},
-        {.maximum_chart_objects = 1});
+    const auto objects_capped =
+        apply_bpm_edit(history,
+                       wormedit::insert_edit_t<wormedit::bpm_edit_value_t>{
+                           .chart = chart_id_t{2},
+                           .value = wormedit::bpm_edit_value_t::from(
+                               {measure_id_t{3}, 240}, wormedit::timing_bpm_value_t{{100, 1}})},
+                       {.maximum_chart_objects = 1});
     CHECK_FALSE(objects_capped.applied);
     CHECK(has_code(objects_capped, diagnostic_code_t::invalid_resolution));
     CHECK(history.document.charts.front().bpms.size() == 1);

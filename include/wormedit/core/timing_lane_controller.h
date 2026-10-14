@@ -1,5 +1,6 @@
 #pragma once
 
+#include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/command.h>
 
 #include <cstdint>
@@ -32,10 +33,6 @@ struct timing_lane_event_ref_t {
 enum class timing_lane_initial_value_source_t {
     explicit_default,
     effective_at_position,
-};
-
-struct timing_bpm_value_t {
-    signed_rational_t beats_per_minute{120, 1};
 };
 
 struct timing_scroll_value_t {

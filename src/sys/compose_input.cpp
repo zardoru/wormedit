@@ -327,31 +327,36 @@ auto dispatch_compose_navigation_input(
     case WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP: {
         const auto navigation = compose_navigation_action(input.navigation_action);
         if (!navigation || navigation_measure_count(*navigation) == 0)
-            return "Compose measure navigation step used an unknown action.";
+            return compose_input_family_result_t::from(
+                "Compose measure navigation step used an unknown action.");
         editor_navigation_action_batch_t batch;
         batch.actions[batch.count++] = *navigation;
         auto dispatched = compose_input_family_result_t::continue_batch(
             dispatch_compose_navigation_actions(batch, history, state, &application,
                                                 notifications));
-        dispatched.notification_posted = notifications != nullptr;
+        dispatched.outcome.delivery = notifications ? compose_feedback_delivery_t::none
+                                                    : compose_feedback_delivery_t::message;
         return dispatched;
     }
     case WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS: {
         const auto navigation = compose_navigation_action(input.navigation_action);
         if (!navigation) {
-            return "Compose navigation input used an unknown action.";
+            return compose_input_family_result_t::from(
+                "Compose navigation input used an unknown action.");
         }
         const auto status = dispatch_compose_navigation_actions(
             navigation_input.press(*navigation, static_cast<std::uint64_t>(SDL_GetTicks())),
             history, state, &application, notifications);
         auto dispatched = compose_input_family_result_t::continue_batch(status);
-        dispatched.notification_posted = notifications != nullptr;
+        dispatched.outcome.delivery = notifications ? compose_feedback_delivery_t::none
+                                                    : compose_feedback_delivery_t::message;
         return dispatched;
     }
     case WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE: {
         const auto navigation = compose_navigation_action(input.navigation_action);
         if (!navigation) {
-            return "Compose navigation release used an unknown action.";
+            return compose_input_family_result_t::from(
+                "Compose navigation release used an unknown action.");
         }
         navigation_input.release(*navigation);
         return compose_input_family_result_t::continue_batch("Compose navigation key released.");
@@ -426,7 +431,7 @@ auto dispatch_compose_lane_key_press(const WormUiComposeInputAction& input,
                                      std::string_view& accepted) -> compose_input_family_result_t {
     using namespace wormedit;
     if (input.lane_id == 0) {
-        return "Lane-key input did not identify a chart lane.";
+        return compose_input_family_result_t::from("Lane-key input did not identify a chart lane.");
     }
     if (!state.selected_notes.empty() || std::ranges::any_of(state.selected_objects, [](const auto& object) {
             return object.kind == editor_selection_object_kind_t::note ||
@@ -489,13 +494,16 @@ auto begin_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_c
     auto& history = environment.document.history;
     auto& application_state = environment.commands;
     if (gesture_active)
-        return "Finish or cancel the active Compose gesture before moving a BGM event.";
+        return compose_input_family_result_t::from(
+            "Finish or cancel the active Compose gesture before moving a BGM event.");
     const auto result = dispatch_editor_action(history, state,
         begin_note_move_gesture_action_t{object_id_t{input.object_id},
             application_state.preferences.editor_preferences.move_collision_policy == move_collision_policy_t::displace_to_bgm});
-    return result.accepted ? compose_input_family_result_t::continue_batch("Selected-object move started.")
-        : compose_input_family_result_t{result.diagnostics.empty() ? "Selected-object move could not start."
-                                                                   : result.diagnostics.front().message};
+    return result.accepted
+               ? compose_input_family_result_t::continue_batch("Selected-object move started.")
+               : compose_input_family_result_t::from(result.diagnostics.empty()
+                                                         ? "Selected-object move could not start."
+                                                         : result.diagnostics.front().message);
 }
 
 
@@ -506,13 +514,14 @@ auto revise_bmson_draft_marker(const WormUiComposeInputAction& input,
     auto& history = environment.document.history;
     auto& application_state = environment.commands;
     if (gesture_active)
-        return "Finish or cancel the active Compose gesture before editing a staged BMSON region.";
+        return compose_input_family_result_t::from(
+            "Finish or cancel the active Compose gesture before editing a staged BMSON region.");
     auto& draft = application_state.project.compose_gesture.bmson_marker_draft;
     if (!draft || input.object_id == 0 || input.object_id > draft->markers.size())
-        return "The staged BMSON region edit expired.";
+        return compose_input_family_result_t::from("The staged BMSON region edit expired.");
     if (!draft->stamp.is_current(history.document, state.chart,
                                   document_identity_policy_t::revision_only))
-        return stale_action_message("BMSON region edit");
+        return compose_input_family_result_t::from(stale_action_message("BMSON region edit"));
     auto proposed = draft->markers;
     const auto index = static_cast<std::size_t>(input.object_id - 1);
     if (input.kind == WORM_UI_COMPOSE_INPUT_BMSON_REMOVE_DRAFT) {
@@ -563,11 +572,13 @@ auto toggle_bmson_restart(const WormUiComposeInputAction& input, bmson_compose_c
     auto& history = environment.document.history;
     auto& workspace = environment.document.workspace;
     if (gesture_active)
-        return "Finish or cancel the active Compose gesture before editing a BMSON reset.";
+        return compose_input_family_result_t::from(
+            "Finish or cancel the active Compose gesture before editing a BMSON reset.");
     const auto chart =
         std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
     if (chart == history.document.charts.end())
-        return "The selected BMSON chart is no longer available.";
+        return compose_input_family_result_t::from(
+            "The selected BMSON chart is no longer available.");
     std::optional<object_id_t> source_event;
     for (const auto& measure : chart->measures) {
         const auto event =
@@ -578,7 +589,8 @@ auto toggle_bmson_restart(const WormUiComposeInputAction& input, bmson_compose_c
         }
     }
     if (!source_event)
-        return "This BGM tile has no BMSON sound-channel slice to reset.";
+        return compose_input_family_result_t::from(
+            "This BGM tile has no BMSON sound-channel slice to reset.");
     const auto applied = toggle_bmson_sound_channel_restart(
         history, state.chart, *source_event);
     if (!applied.diagnostics.empty())
@@ -804,7 +816,8 @@ auto handle_empty_semantic_layer_paint_target(const WormUiComposeInputAction& in
     auto& result = context.result;
     auto& accepted = context.accepted;
     if (input.kind == WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN)
-        return "Begin semantic-layer painting over a note or BGM event.";
+        return compose_input_family_result_t::from(
+            "Begin semantic-layer painting over a note or BGM event.");
     if (input.kind == WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_UPDATE) {
         result.accepted = true;
         accepted = "Semantic-layer paint moved between chart objects.";
@@ -1620,7 +1633,7 @@ auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
         context.environment.controls.navigation,
         context.environment.commands, result, accepted, context.notifications,
         context.environment.controls.cache);
-    if (keyboard.handled)
+    if (keyboard.is_handled())
         return keyboard;
     const auto position = [&context](const auto& chart, const auto& view, double y) {
         return context.position_at_compose_y(chart, view, y);
@@ -1631,7 +1644,7 @@ auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
     const auto bmson =
         dispatch_bmson_compose_input(context.ui_action, input, context.environment, context.state,
                                      context.gesture_active, position, virtual_row);
-    if (bmson.handled)
+    if (bmson.is_handled())
         return bmson;
     const auto hit_target = [&context, &input](const auto& chart, const auto& view, double x, double y) {
         return context.note_move_hit_target_at(input.kind, chart, view, x, y);
@@ -1651,7 +1664,7 @@ auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
     const auto gesture =
         dispatch_compose_gesture_input(input, context.environment, context.state, result, accepted,
                                        hit_target, bgm_event_at, position);
-    if (gesture.handled)
+    if (gesture.is_handled())
         return gesture;
     const auto selection_mode = [&context](WormUiComposeSelectionMode mode) {
         return context.selection_mode(mode);
@@ -1690,7 +1703,8 @@ auto dispatch_compose_paste_input(const WormUiComposeInputAction& input,
         }
         auto feedback = compose_input_family_result_t::stop_with_feedback(
             std::move(status), severity, wormedit::notification_source_t::edit);
-        feedback.notification_posted = context.notifications != nullptr;
+        feedback.outcome.delivery = context.notifications ? compose_feedback_delivery_t::none
+                                                          : compose_feedback_delivery_t::message;
         return feedback;
     }
 
@@ -1939,8 +1953,8 @@ auto dispatch_compose_input_event(const WormUiComposeInputAction& input,
     }
     if (const auto pasted = dispatch_compose_paste_input(input, context)) return *pasted;
     const auto family = dispatch_compose_input_families(input, context, result, accepted);
-    return family.handled ? family
-                          : dispatch_unhandled_compose_input(input, context, result, accepted);
+    return family.is_handled() ? family
+                               : dispatch_unhandled_compose_input(input, context, result, accepted);
 }
 
 auto pointer_placement_keeps_cursor(const WormUiComposeInputAction& input,
@@ -1970,27 +1984,24 @@ void restore_pointer_placement_cursor(compose_input_context_t& context,
     }
 }
 
-
 auto process_compose_input_result(const WormUiComposeInputAction& input,
                                   compose_input_context_t& context,
-                                  const compose_input_family_result_t& dispatched,
+                                  compose_input_family_result_t&& dispatched,
                                   wormedit::editor_interaction_result_t& result,
                                   std::string_view accepted) -> compose_input_step_t {
     using namespace wormedit;
-    if (!dispatched.handled) return {};
-    if (dispatched.stop_batch) {
-        if (!dispatched.notification_posted)
-            post_input_feedback(context.notifications, dispatched.severity,
-                                input_feedback_source(input.kind, dispatched.source, dispatched.severity),
-                                dispatched.status);
-        return {.handled = true, .stop = true, .status = dispatched.status};
-    }
-    if (!dispatched.process_result) {
-        if (!dispatched.notification_posted)
-            post_input_feedback(context.notifications, dispatched.severity,
-                                input_feedback_source(input.kind, dispatched.source, dispatched.severity),
-                                dispatched.status);
-        return {.handled = true, .status = dispatched.status};
+    if (!dispatched.is_handled())
+        return {};
+    if (!dispatched.has_editor_result()) {
+        auto outcome = std::move(dispatched.outcome);
+        if (outcome.source == notification_source_t::input &&
+            outcome.severity != notification_severity_t::hint)
+            outcome.source = compose_input_notification_source(input.kind);
+        const auto stop = dispatched.is_stopping_batch();
+        auto finished = finish_compose_action(context.notifications ? *context.notifications
+                                                                    : notification_sink_t::muted(),
+                                              std::move(outcome));
+        return {.handled = true, .stop = stop, .status = std::move(finished.message)};
     }
     auto status = compose_result_status(result, accepted);
     if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE && result.accepted &&
@@ -2064,11 +2075,12 @@ auto dispatch_compose_input_batch(compose_input_context_t& context) -> std::stri
         editor_interaction_result_t result;
         std::string_view accepted = "Compose interaction applied.";
         const auto cursor = capture_cursor_pose(context.state);
-        const auto dispatched = dispatch_compose_input_with_travel(input, context, result, accepted);
+        auto dispatched = dispatch_compose_input_with_travel(input, context, result, accepted);
         if (pointer_placement_keeps_cursor(input, result))
             restore_pointer_placement_cursor(context, cursor, result);
         finish_interrupted_compose_travel(input, context);
-        auto step = process_compose_input_result(input, context, dispatched, result, accepted);
+        auto step =
+            process_compose_input_result(input, context, std::move(dispatched), result, accepted);
         if (!step.handled) continue;
         status = std::move(step.status);
         if (step.stop) return status;

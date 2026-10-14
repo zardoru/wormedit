@@ -187,33 +187,35 @@ auto dispatch_resource_pointer(const WormUiComposeInputAction& input,
     using namespace wormedit;
     const auto spec_result = resource_pointer_spec(input, context);
     if (const auto* error = std::get_if<std::string>(&spec_result))
-        return *error;
+        return compose_input_family_result_t::from(*error);
     const auto& spec = std::get<resource_pointer_spec_t>(spec_result);
     const auto* chart = context.chart();
     const auto view = compose_view_for_state(context.environment.document.history, context.state);
     if (!chart || !view)
-        return "The selected chart or armed resource is no longer available.";
+        return compose_input_family_result_t::from(
+            "The selected chart or armed resource is no longer available.");
     const auto target_result =
         resolve_resource_pointer_target(input, context, *chart, *view, spec, result, accepted);
     if (const auto* error = std::get_if<std::string>(&target_result))
-        return *error;
+        return compose_input_family_result_t::from(*error);
     const auto& pointer = std::get<resource_pointer_target_t>(target_result);
     if (!pointer.position) {
         return pointer.handled_virtual
                    ? compose_input_family_result_t::continue_with_result()
-                   : compose_input_family_result_t{
-                         "Pointer placement could not snap to a valid chart row."};
+                   : compose_input_family_result_t::from(
+                         "Pointer placement could not snap to a valid chart row.");
     }
     const auto position = resolve_resource_placement_position(
         *chart, *pointer.position, edit_snap_denominator(*chart, context.state));
     if (!position)
-        return "Pointer placement could not snap to a valid chart row.";
+        return compose_input_family_result_t::from(
+            "Pointer placement could not snap to a valid chart row.");
     document_command_result_t applied;
     if (spec.replacing) {
         const auto replacement =
             replacement_target_for_resource(input, *chart, spec, *position, pointer);
         if (const auto* error = std::get_if<std::string>(&replacement))
-            return *error;
+            return compose_input_family_result_t::from(*error);
         applied = apply_resource_assignment(
             context.environment.document.history,
             {.chart = context.state.chart,

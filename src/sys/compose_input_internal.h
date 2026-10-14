@@ -194,50 +194,57 @@ auto dispatch_bmson_razor_input(const WormUiComposeInputAction& input,
     return status;
 }
 
+enum class compose_input_route_t { unhandled, continue_batch, stop_batch, editor_result };
+
 struct compose_input_family_result_t {
-    bool handled{};
-    bool stop_batch{};
-    bool process_result{};
-    bool notification_posted{};
-    wormedit::notification_severity_t severity{wormedit::notification_severity_t::warning};
-    wormedit::notification_source_t source{wormedit::notification_source_t::input};
-    std::string status;
+    compose_input_route_t route{compose_input_route_t::unhandled};
+    compose_action_outcome_t outcome;
 
-    compose_input_family_result_t() = default;
-    compose_input_family_result_t(const char* message)
-        : compose_input_family_result_t(std::string{message}) {}
-    compose_input_family_result_t(std::string message)
-        : handled(true), stop_batch(true), status(std::move(message)) {}
-
-    static auto continue_batch(
-        std::string message,
-        wormedit::notification_severity_t severity = wormedit::notification_severity_t::hint,
-        wormedit::notification_source_t source = wormedit::notification_source_t::input)
-        -> compose_input_family_result_t {
-        auto result = compose_input_family_result_t{};
-        result.handled = true;
-        result.severity = severity;
-        result.source = source;
-        result.status = std::move(message);
-        return result;
+    [[nodiscard]] auto is_handled() const -> bool {
+        return route != compose_input_route_t::unhandled;
     }
-    static auto stop_with_feedback(std::string message, wormedit::notification_severity_t severity,
-                                   wormedit::notification_source_t source)
-        -> compose_input_family_result_t {
-        auto result = compose_input_family_result_t{std::move(message)};
-        result.severity = severity;
-        result.source = source;
-        return result;
+    [[nodiscard]] auto is_stopping_batch() const -> bool {
+        return route == compose_input_route_t::stop_batch;
     }
-    static auto continue_with_result() -> compose_input_family_result_t {
-        auto result = compose_input_family_result_t{};
-        result.handled = true;
-        result.process_result = true;
-        return result;
+    [[nodiscard]] auto has_editor_result() const -> bool {
+        return route == compose_input_route_t::editor_result;
+    }
+    [[nodiscard]] static auto from(std::string message) -> compose_input_family_result_t {
+        return {.route = compose_input_route_t::stop_batch,
+                .outcome = compose_action_outcome_t::blocked(std::move(message),
+                                                             notification_source_t::input)};
+    }
+    [[nodiscard]] static auto from(compose_action_outcome_t outcome,
+                                   compose_input_route_t route = compose_input_route_t::stop_batch)
+        -> compose_input_family_result_t {
+        return {.route = route, .outcome = std::move(outcome)};
+    }
+    [[nodiscard]] static auto
+    continue_batch(std::string message,
+                   notification_severity_t severity = notification_severity_t::hint,
+                   notification_source_t source = notification_source_t::input)
+        -> compose_input_family_result_t {
+        return from(compose_action_outcome_t::from(std::move(message), severity,
+                                                   severity == notification_severity_t::hint
+                                                       ? notification_source_t::input
+                                                       : source),
+                    compose_input_route_t::continue_batch);
+    }
+    [[nodiscard]] static auto stop_with_feedback(std::string message,
+                                                 notification_severity_t severity,
+                                                 notification_source_t source)
+        -> compose_input_family_result_t {
+        return from(compose_action_outcome_t::from(
+            std::move(message), severity,
+            severity == notification_severity_t::hint ? notification_source_t::input : source));
+    }
+    [[nodiscard]] static auto continue_with_result() -> compose_input_family_result_t {
+        return {.route = compose_input_route_t::editor_result};
     }
 };
 
-auto input_diagnostic_feedback(const auto& diagnostics, std::string_view fallback,
+inline auto input_diagnostic_feedback(const wormedit::diagnostic_list_t& diagnostics,
+                               std::string_view fallback,
                                wormedit::notification_severity_t fallback_severity,
                                wormedit::notification_source_t source)
     -> compose_input_family_result_t {
@@ -384,7 +391,7 @@ auto update_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_
     auto& workspace = environment.document.workspace;
     if (!state.pending_note_move_gesture ||
         state.pending_note_move_gesture->reference_note != object_id_t{input.object_id})
-        return "BGM event drag expired before release.";
+        return compose_input_family_result_t::from("BGM event drag expired before release.");
     const auto chart =
         std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
     const auto view = compose_view_for_state(history, state);
@@ -400,7 +407,8 @@ auto update_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_
                                     edit_snap_denominator(*chart, state), virtual_bms_row_at);
     if (!position && !virtual_row) {
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
-        return "Selected-object move fell outside chart geometry.";
+        return compose_input_family_result_t::from(
+            "Selected-object move fell outside chart geometry.");
     }
     const auto target = position.value_or(state.pending_note_move_gesture->preview_position);
     const auto lane = input.lane_id ? std::optional{object_id_t{input.lane_id}} : std::nullopt;
@@ -415,10 +423,12 @@ auto update_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_
                                           releasing ? editor_gesture_phase_t::commit
                                                     : editor_gesture_phase_t::update});
     if (!result.accepted)
-        return result.diagnostics.empty() ? "Selected-object move could not be applied."
-                                          : result.diagnostics.front().message;
+        return compose_input_family_result_t::from(
+            result.diagnostics.empty() ? "Selected-object move could not be applied."
+                                       : result.diagnostics.front().message);
     if (result.document_changed && !rebind_workspace(workspace, history))
-        return "Objects moved, but workspace rebinding failed.";
+        return compose_input_family_result_t::from(
+            "Objects moved, but workspace rebinding failed.");
     if (releasing)
         return compose_input_family_result_t::stop_with_feedback(
             result.document_changed ? "Selected objects moved to the snapped row."
@@ -461,18 +471,20 @@ auto insert_bmson_stem_point(const WormUiComposeInputAction& input,
     auto& application_state = environment.commands;
     if (gesture_active || !application_state.project.compose_gesture.note_paint_mode_active ||
         !wormedit::ui::compose_notes_editable(compose_mode_of(application_state)))
-        return "Draw requires an editable chart without an active gesture.";
+        return compose_input_family_result_t::from(
+            "Draw requires an editable chart without an active gesture.");
     const auto chart =
         std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
     const auto view = compose_view_for_state(history, state);
     if (chart == history.document.charts.end() || !view || !std::isfinite(input.y_pixels))
-        return "The BMSON chart field is no longer available.";
+        return compose_input_family_result_t::from("The BMSON chart field is no longer available.");
     const auto raw = position_at_compose_y(*chart, *view, input.y_pixels);
     const auto position = raw ? resolve_resource_placement_position(
                                     *chart, *raw, edit_snap_denominator(*chart, state))
                               : std::nullopt;
     if (!position)
-        return "The point could not snap to a valid chart row.";
+        return compose_input_family_result_t::from(
+            "The point could not snap to a valid chart row.");
     const auto applied = apply_bmson_draw_point(input, context, *chart, *position);
     if (!applied.diagnostics.empty())
         return compose_input_family_result_t::stop_with_feedback(
@@ -480,7 +492,7 @@ auto insert_bmson_stem_point(const WormUiComposeInputAction& input,
             to_notification_severity(applied.diagnostics.front().severity),
             notification_source_t::edit);
     if (!applied.applied)
-        return "No BMSON point was added.";
+        return compose_input_family_result_t::from("No BMSON point was added.");
     const auto rebound = rebind_workspace(workspace, history);
     if (!rebound)
         return compose_input_family_result_t::stop_with_feedback(
@@ -527,10 +539,12 @@ auto dispatch_bmson_compose_input(const WormUiWorkspaceAction& ui_action,
     case WORM_UI_COMPOSE_INPUT_BMSON_AUDITION_DRAFT: {
         const auto& draft = application_state.project.compose_gesture.bmson_marker_draft;
         if (!draft || input.object_id == 0 || input.object_id > draft->markers.size())
-            return "The BMSON region audition request expired.";
+            return compose_input_family_result_t::from(
+                "The BMSON region audition request expired.");
         if (!draft->stamp.is_current(history.document, state.chart,
                 wormedit::document_identity_policy_t::revision_only))
-            return wormedit::stale_action_message("BMSON region audition");
+            return compose_input_family_result_t::from(
+                wormedit::stale_action_message("BMSON region audition"));
         scene_cache.frame.draft_audition_request = bmson_draft_audition_request_t{
             draft->stamp.chart, draft->stamp.document.revision, draft->reference, draft->markers,
             static_cast<std::size_t>(input.object_id - 1)};
@@ -769,11 +783,13 @@ auto begin_alt_pointer_gesture(const WormUiComposeInputAction& input,
         std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
     const auto view = compose_view_for_state(history, state);
     if (chart == history.document.charts.end() || !view) {
-        return "The selected chart field is no longer available.";
+        return compose_input_family_result_t::from(
+            "The selected chart field is no longer available.");
     }
     const auto target = hit_target_at(*chart, *view, input.x_pixels, input.y_pixels);
     if (!target)
-        return "Alt/Option-drag must begin over an editable lane.";
+        return compose_input_family_result_t::from(
+            "Alt/Option-drag must begin over an editable lane.");
     if (target->note && target->note_kind &&
         (*target->note_kind == note_kind_t::tap || *target->note_kind == note_kind_t::hold)) {
         state.active_lane = target->lane;
@@ -782,7 +798,8 @@ auto begin_alt_pointer_gesture(const WormUiComposeInputAction& input,
                                         begin_note_duration_gesture_action_t{*target->note});
         accepted = "Note resize started; drag to change duration and release to finish.";
     } else if (target->note) {
-        return "Alt/Option-drag resizes tap and hold notes; this note kind is not resizable.";
+        return compose_input_family_result_t::from(
+            "Alt/Option-drag resizes tap and hold notes; this note kind is not resizable.");
     } else {
         result = dispatch_editor_action(history, state,
                                         begin_alt_pointer_hold_gesture_action_t{
@@ -812,14 +829,16 @@ auto update_alt_pointer_gesture(const WormUiComposeInputAction& input,
     const auto view = compose_view_for_state(history, state);
     if (chart == history.document.charts.end() || !view) {
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
-        return "The selected chart field is no longer available.";
+        return compose_input_family_result_t::from(
+            "The selected chart field is no longer available.");
     }
     const auto y =
         std::clamp(input.y_pixels, 0.0, std::max(0.0, view->viewport_height_pixels - 0.001));
     const auto position = position_at_compose_y(*chart, *view, y);
     if (!position) {
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
-        return "Pointer hold input fell outside chart geometry and was canceled.";
+        return compose_input_family_result_t::from(
+            "Pointer hold input fell outside chart geometry and was canceled.");
     }
     const auto releasing = input.kind == WORM_UI_COMPOSE_INPUT_ALT_POINTER_RELEASE;
     if (state.pending_note_duration_gesture) {
@@ -891,12 +910,14 @@ auto dispatch_note_paint_gesture(const WormUiComposeInputAction& input,
     const auto view = compose_view_for_state(history, state);
     if (chart == history.document.charts.end() || !view) {
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
-        return "The selected chart field is no longer available.";
+        return compose_input_family_result_t::from(
+            "The selected chart field is no longer available.");
     }
     const auto target = hit_target_at(*chart, *view, input.x_pixels, input.y_pixels);
     if (!target) {
         if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN)
-            return "Begin note painting over an editable chart lane.";
+            return compose_input_family_result_t::from(
+                "Begin note painting over an editable chart lane.");
         if (input.kind != WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE ||
             !state.pending_note_paint_gesture) {
             result.accepted = true;
@@ -994,14 +1015,16 @@ auto dispatch_semantic_layer_paint_gesture(const WormUiComposeInputAction& input
     const auto view = compose_view_for_state(history, state);
     if (chart == history.document.charts.end() || !view) {
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
-        return "The selected chart field is no longer available.";
+        return compose_input_family_result_t::from(
+            "The selected chart field is no longer available.");
     }
     const auto* layer = visible_semantic_layer_by_id(
         *chart, application_state.project.semantic_layer.semantic_layer_target.value_or(layer_id_t{}));
     if (!semantic_layer_paint_target_editable(application_state, layer)) {
         application_state.project.compose_gesture.semantic_layer_paint_mode_active = false;
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
-        return "Choose an unlocked visible semantic layer before painting chart membership.";
+        return compose_input_family_result_t::from(
+            "Choose an unlocked visible semantic layer before painting chart membership.");
     }
     const auto target = hit_target_at(*chart, *view, input.x_pixels, input.y_pixels);
     const auto bgm_event = target && target->note ? std::optional<object_id_t>{}
@@ -1027,13 +1050,15 @@ auto dispatch_note_move_gesture(const WormUiComposeInputAction& input,
     const auto view = compose_view_for_state(history, state);
     if (chart == history.document.charts.end() || !view) {
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
-        return "The selected chart field is no longer available.";
+        return compose_input_family_result_t::from(
+            "The selected chart field is no longer available.");
     }
     if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_MOVE_BEGIN) {
         const auto target = hit_target_at(*chart, *view, input.x_pixels, input.y_pixels);
         if (!target || !target->note ||
             std::ranges::find(state.selected_notes, *target->note) == state.selected_notes.end())
-            return "Begin a note move by dragging a selected playable note.";
+            return compose_input_family_result_t::from(
+                "Begin a note move by dragging a selected playable note.");
         state.active_lane = target->lane;
         place_cursor_on_picked_row(state, target->position);
         result = dispatch_editor_action(
@@ -1052,7 +1077,8 @@ auto dispatch_note_move_gesture(const WormUiComposeInputAction& input,
     const auto target = hit_target_at(*chart, *view, input.x_pixels, input.y_pixels);
     if (!position || (!target && !input.note_move_to_bgm)) {
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
-        return "Note move input fell outside chart lane geometry and was canceled.";
+        return compose_input_family_result_t::from(
+            "Note move input fell outside chart lane geometry and was canceled.");
     }
     if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE) {
         result = dispatch_editor_action(
@@ -1124,7 +1150,8 @@ auto dispatch_compose_selection_input(
     switch (input.kind) {
     case WORM_UI_COMPOSE_INPUT_AREA_SELECTION_BEGIN:
         if (!selection_mode(input.selection_mode).has_value()) {
-            return "Compose area selection used an unknown selection mode.";
+            return compose_input_family_result_t::from(
+                "Compose area selection used an unknown selection mode.");
         }
         result = dispatch_editor_action(
             history, state,
@@ -1159,7 +1186,8 @@ auto dispatch_compose_selection_input(
     case WORM_UI_COMPOSE_INPUT_SPACE_RANGE_SELECTION:
     case WORM_UI_COMPOSE_INPUT_LATCHED_RANGE_SELECTION:
         if (!selection_mode(input.selection_mode).has_value()) {
-            return "Compose Shift range used an unknown selection mode.";
+            return compose_input_family_result_t::from(
+                "Compose Shift range used an unknown selection mode.");
         }
         result = dispatch_editor_action(
             history, state,
@@ -1580,7 +1608,7 @@ struct compose_input_step_t {
 
 auto process_compose_input_result(const WormUiComposeInputAction& input,
                                   compose_input_context_t& context,
-                                  const compose_input_family_result_t& dispatched,
+                                  compose_input_family_result_t&& dispatched,
                                   wormedit::editor_interaction_result_t& result,
                                   std::string_view accepted) -> compose_input_step_t;
 

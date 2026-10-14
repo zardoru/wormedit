@@ -121,8 +121,8 @@ auto dispatch_compose_offset_fit_input(const WormUiComposeInputAction& input,
         if (context.environment.commands.audio_offset_edits_locked() ||
             cache.timing.offset_fit_drag || !cache.timing.marker_timing_index ||
             !context.environment.document.workspace.transport.audio_asset || input.object_id == 0) {
-            return compose_input_family_result_t{
-                "Offset fitting requires an unlocked waveform and idle chart gesture."};
+            return compose_input_family_result_t::from(
+                "Offset fitting requires an unlocked waveform and idle chart gesture.");
         }
         cache.clear_beat_fit_capture();
         const auto status = begin_compose_beat_fit(
@@ -155,15 +155,15 @@ auto dispatch_compose_offset_fit_input(const WormUiComposeInputAction& input,
         context.environment.commands.audio_offset_edits_locked()) {
         cache.timing.offset_fit_drag.reset();
         action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
-        return compose_input_family_result_t{
-            "Offset fit expired after its chart or waveform changed."};
+        return compose_input_family_result_t::from(
+            "Offset fit expired after its chart or waveform changed.");
     }
     const auto& document = context.environment.document.history.document;
     if (!cache.timing.offset_fit_drag->beat.stamp.document.is_current(
             document, document_identity_policy_t::revision_only)) {
         cache.timing.offset_fit_drag.reset();
         action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
-        return compose_input_family_result_t{stale_action_message("Offset fit")};
+        return compose_input_family_result_t::from(stale_action_message("Offset fit"));
     }
     const auto& drag = *cache.timing.offset_fit_drag;
     cache.timing.offset_fit_drag->target_y_pixels = input.y_pixels;
@@ -176,13 +176,15 @@ auto dispatch_compose_offset_fit_input(const WormUiComposeInputAction& input,
             cache.timing.offset_fit_drag.reset();
             action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
         }
-        return compose_input_family_result_t{"Offset target is outside the source audio range."};
+        return compose_input_family_result_t::from(
+            "Offset target is outside the source audio range.");
     }
     constexpr auto max_frame = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
     if (*target > max_frame || drag.beat.original_sample_frame > max_frame) {
         cache.timing.offset_fit_drag.reset();
         action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
-        return compose_input_family_result_t{"Offset target exceeds the supported frame range."};
+        return compose_input_family_result_t::from(
+            "Offset target exceeds the supported frame range.");
     }
     const auto delta = static_cast<std::int64_t>(*target) -
                        static_cast<std::int64_t>(drag.beat.original_sample_frame);
@@ -231,25 +233,25 @@ auto begin_compose_beat_fit(
         editor_interaction_has_pending_gesture(state) || !scene_cache.scene.index ||
         !scene_cache.timing.marker_timing_index || scene_cache.waveform.waveform_overview_sample_rate == 0 ||
         scene_cache.waveform.waveform_overview_total_frames == 0 || !input_chart || input.object_id == 0) {
-        return compose_input_family_result_t{
-            "Beat fitting requires an unlocked waveform and idle chart gesture."};
+        return compose_input_family_result_t::from(
+            "Beat fitting requires an unlocked waveform and idle chart gesture.");
     }
     const auto& measures = scene_cache.scene.index->measures;
     const auto beat_row = input.object_id;
     const auto measure = std::ranges::upper_bound(measures.entries, beat_row, {},
                                                   &measure_index_entry_t::absolute_begin_row);
     if (measure == measures.entries.begin()) {
-        return compose_input_family_result_t{"Selected beat is outside the chart."};
+        return compose_input_family_result_t::from("Selected beat is outside the chart.");
     }
     const auto& entry = *std::prev(measure);
     if (beat_row - entry.absolute_begin_row >= entry.row_capacity) {
-        return compose_input_family_result_t{"Selected beat is outside the chart."};
+        return compose_input_family_result_t::from("Selected beat is outside the chart.");
     }
     const auto beat = local_position_t{entry.id, beat_row - entry.absolute_begin_row};
     const auto anchor = previous_beat_fit_anchor(*input_chart, measures, beat_row);
     if (!anchor) {
-        return compose_input_family_result_t{
-            "No earlier BPM change or timing anchor can anchor this beat fit."};
+        return compose_input_family_result_t::from(
+            "No earlier BPM change or timing anchor can anchor this beat fit.");
     }
     const auto begun = beat_interval_drag_t::from(
         history.document, input_chart->id, *anchor, beat, scene_cache.waveform.waveform_overview_sample_rate,
@@ -260,7 +262,8 @@ auto begin_compose_beat_fit(
                                          notification_source_t::edit);
     }
     if (begun.value->original_sample_frame >= scene_cache.waveform.waveform_overview_total_frames) {
-        return compose_input_family_result_t{"Selected beat lies after the source audio ends."};
+        return compose_input_family_result_t::from(
+            "Selected beat lies after the source audio ends.");
     }
     scene_cache.timing.beat_fit_drag = begun.value;
     scene_cache.timing.beat_fit_asset = workspace.transport.audio_asset;
@@ -302,7 +305,8 @@ auto revise_compose_beat_fit(const WormUiComposeInputAction& input,
         scene_cache.timing.beat_fit_asset != workspace.transport.audio_asset ||
         scene_cache.waveform.waveform_overview_sample_rate != scene_cache.timing.beat_fit_drag->sample_rate) {
         scene_cache.clear_beat_fit_capture();
-        return compose_input_family_result_t{"Beat fit has no matching captured transaction."};
+        return compose_input_family_result_t::from(
+            "Beat fit has no matching captured transaction.");
     }
     const auto frame = sample_frame_at_chart_y(
         *scene_cache.timing.marker_timing_index, state.viewport_scroll_pixels,
@@ -312,7 +316,8 @@ auto revise_compose_beat_fit(const WormUiComposeInputAction& input,
         if (input.kind == WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE) {
             scene_cache.clear_beat_fit_capture();
         }
-        return compose_input_family_result_t{"Beat target is outside the source audio range."};
+        return compose_input_family_result_t::from(
+            "Beat target is outside the source audio range.");
     }
     const auto target_frame = fit_onset_target(scene_cache, input, *frame);
     const auto updated = revise_beat_fit_proposal(input, history, *scene_cache.timing.beat_fit_drag,
@@ -322,8 +327,8 @@ auto revise_compose_beat_fit(const WormUiComposeInputAction& input,
         if (input.kind == WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE) {
             scene_cache.clear_beat_fit_capture();
         }
-        return compose_input_family_result_t{
-            "Snapped beat target is outside the source audio range."};
+        return compose_input_family_result_t::from(
+            "Snapped beat target is outside the source audio range.");
     }
     if (!updated.ok() || !updated.value) {
         if (input.kind == WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE) {
@@ -372,10 +377,10 @@ auto seek_compose_waveform(const WormUiComposeInputAction& input, compose_input_
         input.audio_fraction > 1.0 || !cache.timing.marker_timing_index ||
         cache.waveform.waveform_overview_total_frames == 0 || cache.waveform.waveform_overview_sample_rate == 0 ||
         !context.input_chart)
-        return compose_input_family_result_t{"Waveform overview seek is unavailable."};
+        return compose_input_family_result_t::from("Waveform overview seek is unavailable.");
     if (editor_interaction_has_pending_gesture(state))
-        return compose_input_family_result_t{
-            "Finish or cancel the active gesture before navigating the waveform."};
+        return compose_input_family_result_t::from(
+            "Finish or cancel the active gesture before navigating the waveform.");
     const auto& timing = *cache.timing.marker_timing_index;
     const auto frame = static_cast<std::int64_t>(
         input.audio_fraction * static_cast<long double>(cache.waveform.waveform_overview_total_frames - 1));
@@ -412,8 +417,8 @@ auto click_compose_waveform(const WormUiComposeInputAction& input, compose_input
     auto& cache = context.environment.controls.cache;
     if (!cache.timing.marker_timing_index || !cache.scene.index || !context.input_chart ||
         editor_interaction_has_pending_gesture(context.state))
-        return compose_input_family_result_t{
-            "Waveform overview seek is unavailable during an active gesture."};
+        return compose_input_family_result_t::from(
+            "Waveform overview seek is unavailable during an active gesture.");
     const auto end =
         context.environment.commands.services.transport_preview_end_frame
             ? context.environment.commands.services.transport_preview_end_frame()
@@ -423,10 +428,10 @@ auto click_compose_waveform(const WormUiComposeInputAction& input, compose_input
         cache.waveform.waveform_overview_sample_rate, audio::output_sample_rate, *cache.timing.marker_timing_index,
         cache.scene.index->measures, edit_snap_denominator(*context.input_chart, context.state), end);
     if (!target)
-        return compose_input_family_result_t{"Waveform overview seek is unavailable."};
+        return compose_input_family_result_t::from("Waveform overview seek is unavailable.");
     const auto position = (cache.scene.index->measures).position_at(target->snapped_row);
     if (!position)
-        return compose_input_family_result_t{"Waveform cursor position is unavailable."};
+        return compose_input_family_result_t::from("Waveform cursor position is unavailable.");
     auto outcome = navigate_compose_position(
         context.environment.document.history, context.state, context.environment.commands,
         {.position = *position,
@@ -446,7 +451,7 @@ auto click_compose_waveform(const WormUiComposeInputAction& input, compose_input
                                           std::move(outcome));
     auto feedback = compose_input_family_result_t::stop_with_feedback(
         std::move(finished.message), finished.severity, finished.source);
-    feedback.notification_posted = true;
+    feedback.outcome.delivery = compose_feedback_delivery_t::none;
     return feedback;
 }
 } // namespace wormedit::sys::compose_input_detail

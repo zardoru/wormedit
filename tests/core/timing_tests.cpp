@@ -1395,20 +1395,20 @@ TEST_CASE("bulk SPEEDS transition spans preserve compiled order and report caps"
     }
 
     const auto capped =
-        scroll_speed_transition_spans(*speed.index, *timing.index, {.maximum_spans = 1});
-    REQUIRE(capped);
-    REQUIRE(capped.spans.size() == 1);
-    CHECK(capped.truncated);
+        scroll_speed_transition_spans_t::from(*speed.index, *timing.index, {.maximum_spans = 1});
+    REQUIRE(capped.ok());
+    REQUIRE(capped.value.spans.size() == 1);
+    CHECK(capped.value.truncated);
     REQUIRE(capped.diagnostics.size() == 1);
     CHECK(capped.diagnostics[0].severity == diagnostic_severity_t::warning);
     CHECK(capped.diagnostics[0].code == timing_error_code_t::capacity_exceeded);
-    CHECK(capped.spans[0].source_event == speed.index->speed_segments[0].source_event);
+    CHECK(capped.value.spans[0].source_event == speed.index->speed_segments[0].source_event);
 
     const auto zero_cap =
-        scroll_speed_transition_spans(*speed.index, *timing.index, {.maximum_spans = 0});
-    REQUIRE(zero_cap);
-    CHECK(zero_cap.spans.empty());
-    CHECK(zero_cap.truncated);
+        scroll_speed_transition_spans_t::from(*speed.index, *timing.index, {.maximum_spans = 0});
+    REQUIRE(zero_cap.ok());
+    CHECK(zero_cap.value.spans.empty());
+    CHECK(zero_cap.value.truncated);
     REQUIRE(zero_cap.diagnostics.size() == 1);
     CHECK(zero_cap.diagnostics[0].severity == diagnostic_severity_t::warning);
 

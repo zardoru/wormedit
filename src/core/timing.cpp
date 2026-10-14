@@ -936,9 +936,9 @@ auto compile_timing_with_policy(timing_build_context_t& source, signed_rational_
 
 } // namespace
 
-auto build_timing_index(const chart_document_t& chart, timing_build_options_t options)
-    -> timing_build_result_t {
-    timing_build_result_t result;
+auto timing_index_t::from(const chart_document_t& chart, timing_build_options_t options)
+    -> timing_build_outcome_t {
+    timing_build_outcome_t result{};
     if (options.discontinuity_profile &&
         !is_valid_timing_discontinuity_profile(*options.discontinuity_profile)) {
         result.diagnostics.push_back(error(timing_error_code_t::invalid_document,
@@ -998,8 +998,16 @@ auto build_timing_index(const chart_document_t& chart, timing_build_options_t op
         return result;
     }
 
-    result.index = std::move(*index);
+    result.value = std::move(*index);
     return result;
+}
+
+auto timing_build_result_t::from(timing_build_outcome_t&& outcome) -> timing_build_result_t {
+    return {.index = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
+}
+
+auto build_timing_index(const chart_document_t& chart, timing_build_options_t options) -> timing_build_result_t {
+    return timing_build_result_t::from(timing_index_t::from(chart, options));
 }
 
 namespace {
@@ -1648,6 +1656,9 @@ namespace {
 enum class scroll_speed_source_kind_t : std::uint8_t { scroll, speed };
 
 struct positioned_scroll_speed_event_t {
+    [[nodiscard]] auto sort_key() const {
+        return std::tuple{row, source_order, insertion_order, id.value, static_cast<std::uint8_t>(kind)};
+    }
     std::uint64_t row{};
     std::size_t insertion_order{};
     object_id_t id;
@@ -2020,9 +2031,9 @@ auto compile_displacement_segments(scroll_speed_event_context_t& context,
 
 } // namespace
 
-auto build_scroll_speed_index(const chart_document_t& chart, const timing_index_t& timing,
-                              scroll_speed_build_options_t options) -> scroll_speed_build_result_t {
-    scroll_speed_build_result_t result;
+auto scroll_speed_index_t::from(const chart_document_t& chart, const timing_index_t& timing,
+                              scroll_speed_build_options_t options) -> scroll_speed_build_outcome_t {
+    scroll_speed_build_outcome_t result{};
     const auto built_measures = build_measure_index(chart);
     if (!std::holds_alternative<measure_index_t>(built_measures)) {
         result.diagnostics.push_back(error(timing_error_code_t::invalid_document,
@@ -2072,12 +2083,7 @@ auto build_scroll_speed_index(const chart_document_t& chart, const timing_index_
     if (has_errors(result.diagnostics)) {
         return result;
     }
-    std::ranges::stable_sort(events, [](const auto& left, const auto& right) {
-        return std::tuple{left.row, left.source_order, left.insertion_order, left.id.value,
-                          static_cast<std::uint8_t>(left.kind)} <
-               std::tuple{right.row, right.source_order, right.insertion_order, right.id.value,
-                          static_cast<std::uint8_t>(right.kind)};
-    });
+    std::ranges::stable_sort(events, {}, &positioned_scroll_speed_event_t::sort_key);
 
     scroll_speed_index_t index{
         .divisions_per_standard_measure = chart.divisions_per_standard_measure,
@@ -2101,8 +2107,17 @@ auto build_scroll_speed_index(const chart_document_t& chart, const timing_index_
     if (!compile_displacement_segments(event_context, index, displacement_boundaries)) {
         return result;
     }
-    result.index = std::move(index);
+    result.value = std::move(index);
     return result;
+}
+
+auto scroll_speed_build_result_t::from(scroll_speed_build_outcome_t&& outcome) -> scroll_speed_build_result_t {
+    return {.index = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
+}
+
+auto build_scroll_speed_index(const chart_document_t& chart, const timing_index_t& timing,
+                              scroll_speed_build_options_t options) -> scroll_speed_build_result_t {
+    return scroll_speed_build_result_t::from(scroll_speed_index_t::from(chart, timing, options));
 }
 
 auto is_scroll_speed_index_current(const scroll_speed_index_t& index, const chart_document_t& chart,
@@ -2470,10 +2485,10 @@ auto scroll_speed_transition_span(const scroll_speed_index_t& index, const timin
     return scroll_speed_transition_span_at(index, timing, segment);
 }
 
-auto scroll_speed_transition_spans(const scroll_speed_index_t& index, const timing_index_t& timing,
+auto scroll_speed_transition_spans_t::from(const scroll_speed_index_t& index, const timing_index_t& timing,
                                    scroll_speed_transition_spans_options_t options)
-    -> scroll_speed_transition_spans_result_t {
-    scroll_speed_transition_spans_result_t result;
+    -> scroll_speed_transition_spans_outcome_t {
+    scroll_speed_transition_spans_outcome_t result{};
     if (!is_scroll_speed_span_index_current(index, timing)) {
         result.diagnostics.push_back(error(timing_error_code_t::invalid_document,
                                            "scroll/speed index does not match the timing index"));
@@ -2481,8 +2496,8 @@ auto scroll_speed_transition_spans(const scroll_speed_index_t& index, const timi
     }
 
     const auto count = std::min(index.speed_segments.size(), options.maximum_spans);
-    result.truncated = count < index.speed_segments.size();
-    result.spans.reserve(count);
+    result.value.truncated = count < index.speed_segments.size();
+    result.value.spans.reserve(count);
     const auto first = index.speed_segments.cbegin();
     for (std::size_t position = 0; position < count; ++position) {
         const auto span = scroll_speed_transition_span_at(
@@ -2493,14 +2508,27 @@ auto scroll_speed_transition_spans(const scroll_speed_index_t& index, const timi
                                           "SPEEDS transition span could not be built")));
             break;
         }
-        result.spans.push_back(*span.span);
+        result.value.spans.push_back(*span.span);
     }
-    if (result.truncated) {
+    if (result.value.truncated) {
         result.diagnostics.push_back(
             warning(timing_error_code_t::capacity_exceeded,
                     "SPEEDS transition spans were truncated at the configured cap"));
     }
     return result;
+}
+
+auto scroll_speed_transition_spans_result_t::from(scroll_speed_transition_spans_outcome_t&& outcome)
+    -> scroll_speed_transition_spans_result_t {
+    return {.spans = std::move(outcome.value.spans), .diagnostics = std::move(outcome.diagnostics),
+            .truncated = outcome.value.truncated};
+}
+
+auto scroll_speed_transition_spans(const scroll_speed_index_t& index, const timing_index_t& timing,
+                                   scroll_speed_transition_spans_options_t options)
+    -> scroll_speed_transition_spans_result_t {
+    return scroll_speed_transition_spans_result_t::from(
+        scroll_speed_transition_spans_t::from(index, timing, options));
 }
 
 namespace {
@@ -2962,11 +2990,43 @@ auto append_chart_timing_markers(preview_discontinuity_context_t& context) -> vo
     }
 }
 
+template <class Event>
+void append_preview_discontinuity_family(preview_schedule_t& schedule, const std::vector<Event>& events,
+                                         preview_discontinuity_kind_t kind) {
+    for (std::size_t index = 0; index < events.size(); ++index) {
+        const auto& event = events[index];
+        schedule.discontinuities.push_back({.sample_frame = event.sample_frame, .kind = kind,
+                                            .object = event.object, .source_order = event.source_order,
+                                            .family_index = index});
+    }
+}
+
+void append_metronome_discontinuities(preview_schedule_t& schedule) {
+    for (std::size_t index = 0; index < schedule.metronome.size(); ++index) {
+        const auto& event = schedule.metronome[index];
+        schedule.discontinuities.push_back({.sample_frame = event.sample_frame,
+                                            .kind = preview_discontinuity_kind_t::metronome,
+                                            .object = {}, .source_order = index, .family_index = index});
+    }
+}
+
+struct preview_discontinuity_less_t {
+    [[nodiscard]] static auto from(timing_discontinuity_profile_t profile) -> preview_discontinuity_less_t {
+        return {.profile = profile};
+    }
+    [[nodiscard]] auto operator()(const preview_discontinuity_event_t& left,
+                                  const preview_discontinuity_event_t& right) const -> bool {
+        return left.sort_key(profile) < right.sort_key(profile);
+    }
+    timing_discontinuity_profile_t profile;
+};
+
+
 } // namespace
 
-auto build_preview_schedule(const chart_document_t& chart, const timing_index_t& timing,
-                            preview_schedule_options_t options) -> preview_schedule_result_t {
-    preview_schedule_result_t result;
+auto preview_schedule_t::from(const chart_document_t& chart, const timing_index_t& timing,
+                            preview_schedule_options_t options) -> preview_schedule_outcome_t {
+    preview_schedule_outcome_t result{};
     if (options.sample_rate == 0 ||
         timing.divisions_per_standard_measure != chart.divisions_per_standard_measure ||
         !is_valid_timing_discontinuity_profile(timing.discontinuity_profile)) {
@@ -3044,20 +3104,9 @@ auto build_preview_schedule(const chart_document_t& chart, const timing_index_t&
         return result;
     }
 
-    std::ranges::stable_sort(schedule.playable, [](const auto& left, const auto& right) {
-        return std::tie(left.sample_frame, left.source_order, left.object.value) <
-               std::tie(right.sample_frame, right.source_order, right.object.value);
-    });
-    std::ranges::stable_sort(schedule.bgm, [](const auto& left, const auto& right) {
-        return std::tie(left.sample_frame, left.source_order, left.secondary_order,
-                        left.object.value) < std::tie(right.sample_frame, right.source_order,
-                                                      right.secondary_order, right.object.value);
-    });
-    std::ranges::stable_sort(schedule.bga, [](const auto& left, const auto& right) {
-        return std::tie(left.sample_frame, left.draw_order, left.source_order, left.object.value) <
-               std::tie(right.sample_frame, right.draw_order, right.source_order,
-                        right.object.value);
-    });
+    std::ranges::stable_sort(schedule.playable, {}, &preview_audio_event_t::playable_sort_key);
+    std::ranges::stable_sort(schedule.bgm, {}, &preview_audio_event_t::bgm_sort_key);
+    std::ranges::stable_sort(schedule.bga, {}, &preview_visual_event_t::sort_key);
     std::ranges::stable_sort(schedule.metronome, {}, &preview_metronome_event_t::sample_frame);
 
     const auto activation_count = schedule.playable.size() + schedule.bgm.size() +
@@ -3072,49 +3121,29 @@ auto build_preview_schedule(const chart_document_t& chart, const timing_index_t&
         return result;
     }
     schedule.discontinuities.reserve(activation_count + chart.bpms.size() + chart.pauses.size());
-    const auto append_family = [&](const auto& events, preview_discontinuity_kind_t kind) {
-        for (std::size_t index = 0; index < events.size(); ++index) {
-            const auto& event = events[index];
-            schedule.discontinuities.push_back({.sample_frame = event.sample_frame,
-                                                .kind = kind,
-                                                .object = event.object,
-                                                .source_order = event.source_order,
-                                                .family_index = index});
-        }
-    };
-    append_family(schedule.playable, preview_discontinuity_kind_t::playable);
-    append_family(schedule.bgm, preview_discontinuity_kind_t::bgm);
-    append_family(schedule.bga, preview_discontinuity_kind_t::bga);
-    for (std::size_t index = 0; index < schedule.metronome.size(); ++index) {
-        const auto& event = schedule.metronome[index];
-        schedule.discontinuities.push_back({.sample_frame = event.sample_frame,
-                                            .kind = preview_discontinuity_kind_t::metronome,
-                                            .object = {},
-                                            .source_order = index,
-                                            .family_index = index});
-    }
+    append_preview_discontinuity_family(schedule, schedule.playable, preview_discontinuity_kind_t::playable);
+    append_preview_discontinuity_family(schedule, schedule.bgm, preview_discontinuity_kind_t::bgm);
+    append_preview_discontinuity_family(schedule, schedule.bga, preview_discontinuity_kind_t::bga);
+    append_metronome_discontinuities(schedule);
     auto discontinuity_context = preview_discontinuity_context_t{
         chart, timing, options, row_lookup, schedule, result.diagnostics};
     append_chart_timing_markers(discontinuity_context);
-    std::ranges::stable_sort(schedule.discontinuities, [&](const auto& left, const auto& right) {
-        return std::tuple{left.sample_frame,
-                          timing_discontinuity_order(schedule.discontinuity_profile, left.kind),
-                          left.source_order,
-                          static_cast<std::uint8_t>(left.kind),
-                          left.object.value,
-                          left.family_index} <
-               std::tuple{right.sample_frame,
-                          timing_discontinuity_order(schedule.discontinuity_profile, right.kind),
-                          right.source_order,
-                          static_cast<std::uint8_t>(right.kind),
-                          right.object.value,
-                          right.family_index};
-    });
+    std::ranges::stable_sort(schedule.discontinuities,
+        preview_discontinuity_less_t::from(schedule.discontinuity_profile));
     if (has_errors(result.diagnostics)) {
         return result;
     }
-    result.schedule = std::move(schedule);
+    result.value = std::move(schedule);
     return result;
+}
+
+auto preview_schedule_result_t::from(preview_schedule_outcome_t&& outcome) -> preview_schedule_result_t {
+    return {.schedule = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
+}
+
+auto build_preview_schedule(const chart_document_t& chart, const timing_index_t& timing,
+                            preview_schedule_options_t options) -> preview_schedule_result_t {
+    return preview_schedule_result_t::from(preview_schedule_t::from(chart, timing, options));
 }
 
 auto timing_index_t::seconds_at(std::uint64_t row, timing_boundary_side_t side) const
@@ -3125,6 +3154,7 @@ auto timing_index_t::seconds_at(const measure_index_t& measures, local_position_
     timing_boundary_side_t side) const -> timing_query_result_t {
     return timing_at(*this, measures, position, side);
 }
+
 auto timing_index_t::row_at(signed_rational_t seconds, timing_inverse_options_t options) const
     -> timing_position_query_result_t { return musical_position_at(*this, seconds, options); }
 

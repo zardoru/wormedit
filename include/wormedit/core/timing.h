@@ -11,6 +11,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace wormedit {
@@ -111,6 +112,9 @@ struct timing_position_query_result_t {
 enum class chart_end_policy_t { reject, clamp_to_end, clamp_to_last_row, extrapolate_tail };
 
 struct timing_index_t {
+    [[nodiscard]] static auto from(const chart_document_t& chart, timing_build_options_t options = {})
+        -> diagnosed_t<std::optional<timing_index_t>, std::vector<timing_diagnostic_t>>;
+
     std::uint64_t divisions_per_standard_measure{};
     std::uint64_t total_rows{};
     // Detects accidental reuse after timing/measure edits. UI publication still
@@ -145,7 +149,10 @@ struct timing_index_t {
     [[nodiscard]] auto row_at_frame(std::uint64_t frame, std::uint32_t sample_rate,
         chart_end_policy_t policy, timing_inverse_options_t options = {}) const -> std::optional<double>;
 };
+using timing_build_outcome_t = diagnosed_t<std::optional<timing_index_t>, std::vector<timing_diagnostic_t>>;
+
 struct timing_build_result_t {
+    [[nodiscard]] static auto from(timing_build_outcome_t&& outcome) -> timing_build_result_t;
     std::optional<timing_index_t> index;
     std::vector<timing_diagnostic_t> diagnostics;
 
@@ -262,7 +269,17 @@ struct scroll_displacement_segment_t {
     bool warped{};
 };
 
+struct scroll_speed_build_options_t {
+    std::size_t maximum_events{200'000};
+    std::size_t maximum_timing_boundaries{100'000};
+    std::size_t maximum_segments{200'001};
+};
+
 struct scroll_speed_index_t {
+    [[nodiscard]] static auto from(const chart_document_t& chart, const timing_index_t& timing,
+                                   scroll_speed_build_options_t options = {})
+        -> diagnosed_t<std::optional<scroll_speed_index_t>, std::vector<timing_diagnostic_t>>;
+
     std::uint64_t divisions_per_standard_measure{};
     std::uint64_t total_rows{};
     std::uint64_t timing_source_fingerprint{};
@@ -281,13 +298,10 @@ struct scroll_speed_index_t {
     signed_rational_t total_displacement_beats{};
 };
 
-struct scroll_speed_build_options_t {
-    std::size_t maximum_events{200'000};
-    std::size_t maximum_timing_boundaries{100'000};
-    std::size_t maximum_segments{200'001};
-};
+using scroll_speed_build_outcome_t = diagnosed_t<std::optional<scroll_speed_index_t>, std::vector<timing_diagnostic_t>>;
 
 struct scroll_speed_build_result_t {
+    [[nodiscard]] static auto from(scroll_speed_build_outcome_t&& outcome) -> scroll_speed_build_result_t;
     std::optional<scroll_speed_index_t> index;
     std::vector<timing_diagnostic_t> diagnostics;
 
@@ -345,7 +359,19 @@ struct scroll_speed_transition_spans_options_t {
     std::size_t maximum_spans{100'000};
 };
 
+struct scroll_speed_transition_spans_t {
+    [[nodiscard]] static auto from(const scroll_speed_index_t& index, const timing_index_t& timing,
+                                   scroll_speed_transition_spans_options_t options = {})
+        -> diagnosed_t<scroll_speed_transition_spans_t, std::vector<timing_diagnostic_t>>;
+    std::vector<scroll_speed_transition_span_t> spans;
+    bool truncated{};
+};
+using scroll_speed_transition_spans_outcome_t =
+    diagnosed_t<scroll_speed_transition_spans_t, std::vector<timing_diagnostic_t>>;
+
 struct scroll_speed_transition_spans_result_t {
+    [[nodiscard]] static auto from(scroll_speed_transition_spans_outcome_t&& outcome)
+        -> scroll_speed_transition_spans_result_t;
     // Successful spans are returned in compiled SPEEDS order. If an exact
     // evaluation fails, prior spans are retained and an error diagnostic is
     // included. A cap warning is reported separately through diagnostics.
@@ -354,9 +380,7 @@ struct scroll_speed_transition_spans_result_t {
     bool truncated{};
 
     [[nodiscard]] explicit operator bool() const noexcept {
-        return std::ranges::none_of(diagnostics, [](const auto& diagnostic) {
-            return diagnostic.severity == diagnostic_severity_t::error;
-        });
+        return !diagnostic_queries::has_errors(diagnostics);
     }
 };
 
@@ -410,6 +434,12 @@ enum class metronome_accent_t : std::uint8_t {
 };
 
 struct preview_audio_event_t {
+    [[nodiscard]] auto playable_sort_key() const {
+        return std::tie(sample_frame, source_order, object.value);
+    }
+    [[nodiscard]] auto bgm_sort_key() const {
+        return std::tie(sample_frame, source_order, secondary_order, object.value);
+    }
     std::uint64_t sample_frame{};
     object_id_t object;
     resource_id_t resource;
@@ -419,6 +449,9 @@ struct preview_audio_event_t {
 };
 
 struct preview_visual_event_t {
+    [[nodiscard]] auto sort_key() const {
+        return std::tie(sample_frame, draw_order, source_order, object.value);
+    }
     std::uint64_t sample_frame{};
     object_id_t object;
     resource_id_t resource;
@@ -439,6 +472,10 @@ struct preview_metronome_event_t {
 };
 
 struct preview_discontinuity_event_t {
+    [[nodiscard]] auto sort_key(timing_discontinuity_profile_t profile) const {
+        return std::tuple{sample_frame, timing_discontinuity_order(profile, kind), source_order,
+                          static_cast<std::uint8_t>(kind), object.value, family_index};
+    }
     std::uint64_t sample_frame{};
     preview_discontinuity_kind_t kind{preview_discontinuity_kind_t::playable};
     object_id_t object;
@@ -455,7 +492,29 @@ struct preview_layer_tick_t {
     std::vector<layer_id_t> layers;
 };
 
+struct preview_schedule_options_t {
+    std::uint32_t sample_rate{44'100};
+    sample_rounding_t rounding{sample_rounding_t::nearest_ties_to_even};
+    std::size_t maximum_playable_events{100'000};
+    std::size_t maximum_bgm_events{100'000};
+    std::size_t maximum_bga_events{100'000};
+    std::size_t maximum_metronome_events{100'000};
+    // Covers all four 100k presentation queues plus the 200k timing-event cap.
+    std::size_t maximum_discontinuity_events{600'000};
+    bool include_metronome{true};
+    // Number of first-measure metronome pulses to schedule before row zero.
+    // They use the row-zero BPM and meter, and are included only when their
+    // exact audio time maps to a nonnegative sample frame.
+    std::uint32_t count_in_pulses{};
+    bool include_layer_ticks{};
+    std::size_t maximum_layer_tick_events{200'000};
+};
+
 struct preview_schedule_t {
+    [[nodiscard]] static auto from(const chart_document_t& chart, const timing_index_t& timing,
+                                   preview_schedule_options_t options = {})
+        -> diagnosed_t<std::optional<preview_schedule_t>, std::vector<timing_diagnostic_t>>;
+
     std::uint32_t sample_rate{};
     timing_discontinuity_profile_t discontinuity_profile{
         timing_discontinuity_profile_t::canonical};
@@ -481,25 +540,10 @@ struct preview_schedule_t {
     const preview_schedule_t::music_event_t& music, std::uint64_t timeline_frame)
     -> std::optional<std::uint64_t>;
 
-struct preview_schedule_options_t {
-    std::uint32_t sample_rate{44'100};
-    sample_rounding_t rounding{sample_rounding_t::nearest_ties_to_even};
-    std::size_t maximum_playable_events{100'000};
-    std::size_t maximum_bgm_events{100'000};
-    std::size_t maximum_bga_events{100'000};
-    std::size_t maximum_metronome_events{100'000};
-    // Covers all four 100k presentation queues plus the 200k timing-event cap.
-    std::size_t maximum_discontinuity_events{600'000};
-    bool include_metronome{true};
-    // Number of first-measure metronome pulses to schedule before row zero.
-    // They use the row-zero BPM and meter, and are included only when their
-    // exact audio time maps to a nonnegative sample frame.
-    std::uint32_t count_in_pulses{};
-    bool include_layer_ticks{};
-    std::size_t maximum_layer_tick_events{200'000};
-};
+using preview_schedule_outcome_t = diagnosed_t<std::optional<preview_schedule_t>, std::vector<timing_diagnostic_t>>;
 
 struct preview_schedule_result_t {
+    [[nodiscard]] static auto from(preview_schedule_outcome_t&& outcome) -> preview_schedule_result_t;
     std::optional<preview_schedule_t> schedule;
     std::vector<timing_diagnostic_t> diagnostics;
 

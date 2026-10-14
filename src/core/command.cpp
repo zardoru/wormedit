@@ -260,16 +260,11 @@ auto apply_quantize_command(document_history_t& history, chart_id_t chart_id,
     return result;
 }
 
-auto apply_redivision_command(document_history_t& history, std::uint64_t expected_revision,
+auto apply_redivision_command(document_history_t& history,
                               chart_id_t chart_id, std::uint64_t new_resolution)
     -> redivision_command_result_t {
     redivision_command_result_t result;
     result.command.revision = history.document.revision;
-    if (history.document.revision != expected_revision) {
-        result.command.diagnostics.push_back(
-            error(diagnostic_code_t::invalid_id, "redivision command targets a stale revision"));
-        return result;
-    }
     const auto chart = history.document.find_chart(chart_id);
     if (chart == nullptr) {
         result.command.diagnostics.push_back(

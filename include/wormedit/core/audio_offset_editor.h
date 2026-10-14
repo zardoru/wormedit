@@ -43,8 +43,7 @@ struct audio_offset_drag_result_t {
     -> document_command_result_t;
 
 // Shared exact command for numeric Metadata edits and completed waveform drags.
-[[nodiscard]] auto apply_audio_offset_edit(document_history_t& history,
-                                           std::uint64_t expected_revision, chart_id_t chart,
+[[nodiscard]] auto apply_audio_offset_edit(document_history_t& history, chart_id_t chart,
                                            signed_rational_t offset_seconds,
                                            bool timing_locked = false) -> document_command_result_t;
 

@@ -30,8 +30,8 @@ struct metadata_notification_fixture_t {
         workspace = *binding.workspace;
     }
 
-    auto dispatch(const WormUiWorkspaceAction& action) -> std::optional<std::string> {
-        return dispatch_metadata_action(action, history, workspace, false, drop, assets,
+    auto dispatch(const WormUiWorkspaceAction& action, bool timing_locked = false) -> std::optional<std::string> {
+        return dispatch_metadata_action(action, history, workspace, timing_locked, drop, assets,
                                         {}, scheduler, false, false, sink);
     }
 
@@ -525,4 +525,42 @@ TEST_CASE("Malformed metadata payload keeps precedence over its stale stamp",
     expect_edit_entry(entries.front(), notification_severity_t::warning, *response);
     check_metadata_notification(fixture.history.document.revision == revision);
     check_metadata_notification(fixture.history.undo.empty());
+}
+
+namespace {
+void check_metadata_timing_boundary(WormUiMetadataEditKind kind, bool timing_locked) {
+    metadata_notification_fixture_t fixture;
+    auto action = redivision_action(fixture, 192);
+    action.metadata_edit = kind;
+    action.metadata_audio_offset_numerator_text = "1";
+    action.metadata_audio_offset_denominator_text = "4";
+    --action.metadata_document_revision;
+    const auto revision = fixture.history.document.revision;
+    const auto response = fixture.dispatch(action, timing_locked);
+    require_metadata_notification(response.has_value());
+    const auto expected = timing_locked
+        ? std::string{"audio offset editing is disabled while timing is locked"}
+        : kind == WORM_UI_METADATA_EDIT_REDIVIDE_CHART
+            ? "Resolution change rejected: " + stale_action_message("Resolution change")
+            : stale_action_message("Audio offset edit");
+    check_metadata_notification(*response == expected);
+    const auto entries = fixture.entries();
+    require_metadata_notification(entries.size() == 1);
+    expect_edit_entry(entries.front(), notification_severity_t::error, *response);
+    check_metadata_notification(fixture.history.document.revision == revision);
+    check_metadata_notification(fixture.history.undo.empty());
+}
+} // namespace
+
+TEST_CASE("Metadata audio offset stale rejection uses the shared formatter",
+          "[unit][sys][metadata-notification][metadata-timing-stamp]") {
+    check_metadata_timing_boundary(WORM_UI_METADATA_EDIT_AUDIO_OFFSET, false);
+}
+TEST_CASE("Metadata resolution stale rejection uses the shared formatter",
+          "[unit][sys][metadata-notification][metadata-timing-stamp]") {
+    check_metadata_timing_boundary(WORM_UI_METADATA_EDIT_REDIVIDE_CHART, false);
+}
+TEST_CASE("Metadata audio offset keeps lock priority over a stale stamp",
+          "[unit][sys][metadata-notification][metadata-timing-stamp]") {
+    check_metadata_timing_boundary(WORM_UI_METADATA_EDIT_AUDIO_OFFSET, true);
 }

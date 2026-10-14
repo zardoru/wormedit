@@ -109,7 +109,7 @@ auto update_audio_offset_drag(const song_document_t& document, const audio_offse
     return {.drag = std::move(updated)};
 }
 
-auto apply_audio_offset_edit(document_history_t& history, std::uint64_t expected_revision,
+auto apply_audio_offset_edit(document_history_t& history,
                              chart_id_t chart, signed_rational_t offset_seconds, bool timing_locked)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
@@ -117,11 +117,6 @@ auto apply_audio_offset_edit(document_history_t& history, std::uint64_t expected
         result.diagnostics.push_back(
             error(diagnostic_code_t::unsupported_feature,
                   "audio offset editing is disabled while timing is locked"));
-        return result;
-    }
-    if (expected_revision != history.document.revision) {
-        result.diagnostics.push_back(
-            error(diagnostic_code_t::invalid_id, "audio offset edit document revision is stale"));
         return result;
     }
     if (offset_seconds.denominator == 0) {
@@ -166,8 +161,8 @@ auto commit_audio_offset_drag(document_history_t& history, const audio_offset_dr
                   "audio offset drag no longer matches the selected chart"));
         return result;
     }
-    return apply_audio_offset_edit(history, drag.document_revision, drag.chart,
-                                   drag.proposed_offset_seconds, timing_locked);
+    return apply_audio_offset_edit(history, drag.chart, drag.proposed_offset_seconds,
+                                   timing_locked);
 }
 
 } // namespace wormedit

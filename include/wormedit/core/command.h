@@ -156,8 +156,7 @@ struct document_command_transaction_t {
 // Exact global redivision of one chart as a single undoable command. Rounds
 // nothing: any inexact position rejects the whole command and leaves history
 // untouched. Redividing to the current resolution is a no-op without an entry.
-[[nodiscard]] auto apply_redivision_command(document_history_t& history,
-                                            std::uint64_t expected_revision, chart_id_t chart,
+[[nodiscard]] auto apply_redivision_command(document_history_t& history, chart_id_t chart,
                                             std::uint64_t new_resolution)
     -> redivision_command_result_t;
 

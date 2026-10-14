@@ -403,8 +403,7 @@ std::optional<std::string> dispatch_compose_audio_offset(compose_action_context_
         return compose_action_warning(context,
             "Finish or cancel the active Compose gesture before editing audio offset.");
     const auto applied = wormedit::apply_audio_offset_edit(
-        context.environment.document.history, context.action.compose_input_document_revision,
-        context.state.chart,
+        context.environment.document.history, context.state.chart,
         {context.action.compose_audio_offset_numerator,
          context.action.compose_audio_offset_denominator},
         context.environment.editor.commands.audio_offset_edits_locked());

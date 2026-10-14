@@ -99,9 +99,8 @@ TEST_CASE("audio offset drag remains sample-frame exact and commits atomically",
           signed_rational_t{1, 1});
 
     const auto revision = history.document.revision;
-    const auto unchanged =
-        apply_audio_offset_edit(history, revision, chart_id_t{2},
-                                history.document.charts.front().beat_zero_audio_offset_seconds);
+    const auto unchanged = apply_audio_offset_edit(
+        history, chart_id_t{2}, history.document.charts.front().beat_zero_audio_offset_seconds);
     CHECK_FALSE(unchanged.applied);
     CHECK(unchanged.diagnostics.empty());
     CHECK(history.document.revision == revision);
@@ -139,7 +138,7 @@ TEST_CASE("audio offset drag rejects stale locked invalid and overflowing reques
     CHECK(has_code(overflow.diagnostics, diagnostic_code_t::invalid_rational));
 
     const auto revision = history.document.revision;
-    const auto rejected = apply_audio_offset_edit(history, revision, chart_id_t{2}, {1, 0});
+    const auto rejected = apply_audio_offset_edit(history, chart_id_t{2}, {1, 0});
     CHECK_FALSE(rejected);
     CHECK(history.document.revision == revision);
 }

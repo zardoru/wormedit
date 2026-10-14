@@ -1037,7 +1037,7 @@ void check_cross_measure_offset_edit(wormedit::stepmania_profile_t profile) {
     auto history = wormedit::document_history_t::from(cross_measure_hold_song(profile));
     check_cross_measure_holds(history.document);
     const auto chart = history.document.charts.front().id;
-    const auto edited = wormedit::apply_audio_offset_edit(history, history.document.revision, chart, {1, 4});
+    const auto edited = wormedit::apply_audio_offset_edit(history, chart, {1, 4});
     REQUIRE(edited.applied);
     const wormedit::signed_rational_t expected{1, 4};
     CHECK(history.document.charts.front().beat_zero_audio_offset_seconds == expected);

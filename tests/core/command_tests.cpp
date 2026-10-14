@@ -215,7 +215,7 @@ TEST_CASE("redivision commits exactly, undoes, and rejects inexact positions unt
     auto history = document_history_t::from(make_song(130));
     const auto revision = history.document.revision;
 
-    const auto applied = apply_redivision_command(history, revision, chart_id_t{1}, 192);
+    const auto applied = apply_redivision_command(history, chart_id_t{1}, 192);
     REQUIRE(applied);
     CHECK(history.document.charts.front().divisions_per_standard_measure == 192);
     CHECK(note_row(history) == 26);
@@ -227,8 +227,7 @@ TEST_CASE("redivision commits exactly, undoes, and rejects inexact positions unt
     CHECK(note_row(history) == 130);
 
     auto inexact = document_history_t::from(make_song(131));
-    const auto rejected =
-        apply_redivision_command(inexact, inexact.document.revision, chart_id_t{1}, 192);
+    const auto rejected = apply_redivision_command(inexact, chart_id_t{1}, 192);
     CHECK_FALSE(rejected);
     CHECK(rejected.payload.moves.empty());
     CHECK_FALSE(rejected.command.diagnostics.empty());
@@ -236,16 +235,15 @@ TEST_CASE("redivision commits exactly, undoes, and rejects inexact positions unt
     CHECK(note_row(inexact) == 131);
 }
 
-TEST_CASE("redivision rejects stale revisions and unknown charts and ignores no-ops",
+TEST_CASE("redivision rejects unknown charts and ignores no-ops",
           "[unit][core][command][negative]") {
     auto history = document_history_t::from(make_song(130));
     const auto revision = history.document.revision;
 
-    CHECK_FALSE(apply_redivision_command(history, revision + 1, chart_id_t{1}, 192));
-    CHECK_FALSE(apply_redivision_command(history, revision, chart_id_t{9}, 192));
-    CHECK_FALSE(apply_redivision_command(history, revision, chart_id_t{1}, 0));
+    CHECK_FALSE(apply_redivision_command(history, chart_id_t{9}, 192));
+    CHECK_FALSE(apply_redivision_command(history, chart_id_t{1}, 0));
 
-    const auto same = apply_redivision_command(history, revision, chart_id_t{1}, 960);
+    const auto same = apply_redivision_command(history, chart_id_t{1}, 960);
     CHECK_FALSE(same);
     CHECK(same.command.diagnostics.empty());
     CHECK(history.undo.empty());

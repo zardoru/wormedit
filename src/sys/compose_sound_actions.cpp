@@ -249,7 +249,7 @@ auto import_keysound_feedback(document_history_t& history, workspace_controller_
         count <= bms_identifier_capacity(history.document, "WAV").total -
                      bms_identifier_capacity(history.document, "WAV").used &&
         !find_bms_identifier_run(history.document, "WAV", count).has_value();
-    const auto applied = apply_bulk_sound_import(history, history.document.revision,
+    const auto applied = apply_bulk_sound_import(history,
                                                  {.chart = kind == sound_kind_t::stem ? chart : chart_id_t{},
                                                   .entries = std::move(plan.entries)});
     if (!applied.diagnostics.empty()) return sound_diagnostic_feedback(applied.diagnostics.front());
@@ -596,10 +596,12 @@ auto confirmed_import_groups(const WormUiWorkspaceAction& action, std::size_t en
 
 auto confirm_import(const WormUiWorkspaceAction& action, document_history_t& history,
                     workspace_controller_t& workspace, chart_id_t chart) -> sound_feedback_t {
-    if (action.sound_import_project_id != history.document.id.value ||
-        action.compose_input_chart_id != chart.value ||
-        action.compose_input_document_revision != history.document.revision)
-        return {notification_severity_t::warning, "The sound import target changed; review the files again."};
+    const chart_stamp_t stamp{
+        .document = {.project = song_id_t{action.sound_import_project_id},
+                     .revision = action.compose_input_document_revision},
+        .chart = chart_id_t{action.compose_input_chart_id}};
+    if (!stamp.is_current(history.document, chart))
+        return {notification_severity_t::warning, stale_action_message("Sound import")};
     const auto target = std::ranges::find(history.document.charts, chart,
                                           &chart_document_t::id);
     if (target == history.document.charts.end())
@@ -617,7 +619,7 @@ auto confirm_import(const WormUiWorkspaceAction& action, document_history_t& his
     auto import = bulk_sound_import_action_t{.chart = chart, .entries = std::move(*entries),
                                              .groups = std::move(*groups)};
     const auto applied = apply_bulk_sound_import(
-        history, action.compose_input_document_revision, import);
+        history, import);
     if (!applied.diagnostics.empty()) return sound_diagnostic_feedback(applied.diagnostics.front());
     if (!applied.applied) return {notification_severity_t::info, "Sound import made no document change."};
     const auto rebound = rebind_workspace(workspace, history);

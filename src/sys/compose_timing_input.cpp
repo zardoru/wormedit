@@ -368,7 +368,7 @@ auto run_compose_recipe_command(std::uint64_t id, std::uint8_t command,
         accepted = "SV recipe materialized into events.";
     }
     const auto edited = apply_sv_recipe_edit(
-        context.environment.document.history, context.environment.document.history.document.revision, action);
+        context.environment.document.history, action);
     result.accepted = edited.applied;
     result.document_changed = edited.applied;
     result.diagnostics = edited.diagnostics;

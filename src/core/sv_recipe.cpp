@@ -1093,11 +1093,11 @@ auto apply_sv_recipe_draft(document_history_t& history, sv_recipe_draft_t& draft
     if (draft.existing_recipe) {
         candidate.id = *draft.existing_recipe;
         result = apply_sv_recipe_edit(
-            history, draft.document_revision,
+            history,
             update_sv_recipe_action_t{draft.chart, *draft.existing_recipe, std::move(candidate)});
     } else {
         candidate.id = {};
-        result = apply_sv_recipe_edit(history, draft.document_revision,
+        result = apply_sv_recipe_edit(history,
                                       insert_sv_recipe_action_t{draft.chart, std::move(candidate)});
     }
     draft.diagnostics = result.diagnostics;
@@ -1412,7 +1412,7 @@ auto commit_sv_recipe_range_drag(document_history_t& history, sv_recipe_range_dr
         return result;
     }
     result = apply_sv_recipe_edit(
-        history, drag.document_revision,
+        history,
         move_sv_recipe_range_action_t{drag.chart, drag.recipe, drag.preview_range});
     drag.diagnostics = result.diagnostics;
     drag.status =
@@ -1646,14 +1646,9 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context, const Edit& edit)
 
 } // namespace
 
-auto apply_sv_recipe_edit(document_history_t& history, std::uint64_t expected_revision,
+auto apply_sv_recipe_edit(document_history_t& history,
                           const sv_recipe_edit_action_t& action) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
-    if (expected_revision != history.document.revision) {
-        reject(result.diagnostics, diagnostic_code_t::invalid_id,
-               "SV recipe edit document revision is stale");
-        return result;
-    }
 
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();

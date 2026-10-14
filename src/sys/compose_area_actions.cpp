@@ -91,7 +91,7 @@ std::string add_sv_recipe_over_area(area_action_context_t& context,
                        .output = sv_recipe_output_t::sv,
                        .curve = sv_recipe_curve_t::linear,
                        .parameters = {.value_from = {1, 1}, .value_to = {2, 1}}};
-    const auto inserted = apply_sv_recipe_edit(context.history, context.history.document.revision,
+    const auto inserted = apply_sv_recipe_edit(context.history,
                                                insert_sv_recipe_action_t{chart.id, std::move(recipe)});
     if (inserted.applied)
         return area_feedback(context, "SV recipe added over the selected area.",
@@ -176,7 +176,7 @@ std::string delete_compose_area_contents(area_action_context_t& context,
     if (!supported_area_contents(*selected))
         return area_rejection(context, "Area deletion supports notes and BGM only; the area contains other objects.");
     const auto result =
-        delete_selection_all(context.history, *selected, context.history.document.revision,
+        delete_selection_all(context.history, *selected,
                              {.timing_locked = context.timing_locked});
     if (result.accepted) {
         context.state.selected_notes = std::move(selected->selected_notes);

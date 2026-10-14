@@ -229,7 +229,7 @@ TEST_CASE("SV recipe commands are revision checked and share undo history",
     auto history = document_history_t::from(make_recipe_song());
     const auto initial_revision = history.document.revision;
     auto recipe = make_linear_recipe({}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {2, 1});
-    auto inserted = apply_sv_recipe_edit(history, initial_revision,
+    auto inserted = apply_sv_recipe_edit(history,
                                          insert_sv_recipe_action_t{chart_id_t{10}, recipe});
     REQUIRE(inserted);
     REQUIRE(history.document.charts.front().sv_recipes.size() == 1);
@@ -237,13 +237,9 @@ TEST_CASE("SV recipe commands are revision checked and share undo history",
     CHECK(id);
     CHECK(is_document_dirty(history));
 
-    const auto stale = apply_sv_recipe_edit(
-        history, initial_revision, set_sv_recipe_enabled_action_t{chart_id_t{10}, id, false});
-    CHECK_FALSE(stale);
-    CHECK(history.document.charts.front().sv_recipes.front().enabled);
 
     auto moved = apply_sv_recipe_edit(
-        history, history.document.revision,
+        history,
         move_sv_recipe_range_action_t{
             chart_id_t{10}, id, {{measure_id_t{11}, 240}, {measure_id_t{12}, 240}}});
     REQUIRE(moved);
@@ -256,7 +252,7 @@ TEST_CASE("SV recipe commands are revision checked and share undo history",
     const auto old_revision = history.document.revision;
     const auto range = history.document.charts.front().sv_recipes.front().range;
     const auto invalid_drag = apply_sv_recipe_edit(
-        history, old_revision,
+        history,
         move_sv_recipe_range_action_t{
             chart_id_t{10}, id, {{measure_id_t{12}, 240}, {measure_id_t{11}, 240}}});
     CHECK_FALSE(invalid_drag);
@@ -272,12 +268,12 @@ TEST_CASE("SV recipe order and enabled state edits remain undoable", "[unit][sv-
     auto song = song_document_t{.id = song_id_t{1}, .charts = {chart}};
     auto history = document_history_t::from(std::move(song));
     auto result =
-        apply_sv_recipe_edit(history, history.document.revision,
+        apply_sv_recipe_edit(history,
                              reorder_sv_recipe_action_t{chart_id_t{10}, recipe_id_t{21}, 0});
     REQUIRE(result);
     CHECK(history.document.charts.front().sv_recipes.front().id == recipe_id_t{21});
     result = apply_sv_recipe_edit(
-        history, history.document.revision,
+        history,
         set_sv_recipe_enabled_action_t{chart_id_t{10}, recipe_id_t{21}, false});
     REQUIRE(result);
     CHECK_FALSE(history.document.charts.front().sv_recipes.front().enabled);
@@ -595,7 +591,7 @@ TEST_CASE("materializing a recipe replaces it with ordinary events in one undo s
     auto history = document_history_t::from(song);
 
     const auto result = apply_sv_recipe_edit(
-        history, history.document.revision,
+        history,
         materialize_sv_recipe_action_t{chart_id_t{10}, recipe_id_t{20}});
     REQUIRE(result);
     const auto& after = history.document.charts.front();
@@ -618,7 +614,7 @@ TEST_CASE("materializing a recipe replaces it with ordinary events in one undo s
     CHECK(history.document.charts.front().scrolls.size() == 1);
 }
 
-TEST_CASE("materializing rejects stale, unknown and non-evaluable recipes without a revision",
+TEST_CASE("materializing rejects unknown and non-evaluable recipes without a revision",
           "[unit][sv-recipe][materialize]") {
     auto song = make_recipe_song();
     auto recipe =
@@ -633,12 +629,10 @@ TEST_CASE("materializing rejects stale, unknown and non-evaluable recipes withou
     auto history = document_history_t::from(song);
     const auto revision = history.document.revision;
 
-    CHECK_FALSE(apply_sv_recipe_edit(history, revision + 1,
-                                     materialize_sv_recipe_action_t{chart_id_t{10}, recipe_id_t{20}}));
-    CHECK_FALSE(apply_sv_recipe_edit(history, revision,
+    CHECK_FALSE(apply_sv_recipe_edit(history,
                                      materialize_sv_recipe_action_t{chart_id_t{10}, recipe_id_t{99}}));
     const auto unsupported = apply_sv_recipe_edit(
-        history, revision, materialize_sv_recipe_action_t{chart_id_t{10}, recipe_id_t{21}});
+        history, materialize_sv_recipe_action_t{chart_id_t{10}, recipe_id_t{21}});
     CHECK_FALSE(unsupported);
     CHECK(unsupported.diagnostics.front().code == diagnostic_code_t::unsupported_feature);
     CHECK(history.document.revision == revision);

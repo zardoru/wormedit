@@ -2302,3 +2302,43 @@ TEST_CASE("Captured BMSON marker batches share stale feedback and keep missing t
     check_action(fixture.history.document.revision == 1);
     check_action(fixture.history.undo.empty());
 }
+
+TEST_CASE("BMS statement boundary shares stale feedback after missing-target checks",
+          "[compose-action-notifications][bms-statement-stamp]") {
+    action_notification_fixture_t fixture;
+    const bool missing = GENERATE(false, true);
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_EDIT_BMS_BRANCH_STATEMENT);
+    --action.compose_input_document_revision;
+    action.compose_branch_statement_id = missing ? 0 : 7;
+    std::optional<editor_interaction_state_t> interaction = fixture.state;
+    require_action(fixture.dispatch_workspace(action, interaction));
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().message == (missing ? "Select a raw BMS branch statement first."
+        : stale_action_message("BMS branch statement action")));
+    check_action(entries.front().severity == (missing ? notification_severity_t::warning
+                                                    : notification_severity_t::error));
+    check_action(entries.front().source == notification_source_t::format);
+    check_action(fixture.history.document.revision == 1);
+    check_action(fixture.history.undo.empty());
+}
+
+TEST_CASE("Standalone sound-import confirmation shares stale feedback",
+          "[compose-action-notifications][sound-import-stamp]") {
+    action_notification_fixture_t fixture;
+    const auto kind = GENERATE(0, 1, 2);
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT);
+    action.sound_import_project_id = fixture.history.document.id.value + (kind == 0 ? 1 : 0);
+    if (kind == 1) ++action.compose_input_chart_id;
+    if (kind == 2) --action.compose_input_document_revision;
+    const auto response = dispatch_compose_sound_action(action, fixture.history, fixture.workspace,
+        fixture.state.chart, fixture.application, fixture.sink);
+    require_action(response.has_value());
+    check_action(*response == stale_action_message("Sound import"));
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::warning);
+    check_action(entries.front().source == notification_source_t::import_);
+    check_action(fixture.history.document.revision == 1);
+    check_action(fixture.history.undo.empty());
+}

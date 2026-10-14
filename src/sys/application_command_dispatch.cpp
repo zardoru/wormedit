@@ -458,7 +458,6 @@ auto clipboard_commands(command_context_t& context) -> std::optional<command_res
     auto copied =
         kind == command_kind_t::edit_cut
             ? wormedit::cut_chart_selection(context.environment.document.history, *state,
-                                            context.environment.document.history.document.revision,
                                             options)
             : wormedit::copy_chart_selection(context.environment.document.history.document, *state,
                                              context.environment.document.history.document.revision,
@@ -486,7 +485,7 @@ auto edit_commands(command_context_t& context) -> std::optional<command_result_t
             context.environment.document.notifications, "Delete requires the active Compose chart.",
             notification_severity_t::warning, notification_source_t::edit);
     const auto result = wormedit::delete_selection_all(
-        context.environment.document.history, *state, context.environment.document.history.document.revision,
+        context.environment.document.history, *state,
         {.kiai_head =
              wormedit::object_id_t{
                  context.environment.editor.commands.project.timing_recipe.kiai_selected_head},

@@ -46,7 +46,6 @@ struct bulk_sound_import_action_t {
 // One invalid entry (or duplicate source path) rejects the whole batch and
 // leaves the document alone.
 [[nodiscard]] auto apply_bulk_sound_import(document_history_t& history,
-                                           std::uint64_t expected_revision,
                                            const bulk_sound_import_action_t& action)
     -> document_command_result_t;
 

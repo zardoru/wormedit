@@ -207,7 +207,7 @@ auto apply_recipe_form(document_history_t& history, chart_id_t chart_id, recipe_
     if (recipe == chart->sv_recipes.end()) return "The SV recipe no longer exists.";
     const auto candidate = recipe_from_form(form, *recipe);
     if (!candidate) return "Values must be exact fractions and counts must be whole numbers.";
-    const auto result = apply_sv_recipe_edit(history, history.document.revision,
+    const auto result = apply_sv_recipe_edit(history,
                                              update_sv_recipe_action_t{chart_id, recipe_id, *candidate});
     applied = result.applied;
     if (result.applied) {

@@ -12,6 +12,7 @@
 #include "sys/compose_resource_presenter.h"
 #include "sys/compose_scroll_geometry.h"
 #include "sys/compose_semantic_layer_commands.h"
+#include "sys/metadata_commands.h"
 #include "sys/transport_player_actions.h"
 #include "ui/frontend.h"
 #include <wormedit/core/bmson_lane_mode.h>
@@ -1533,7 +1534,7 @@ std::string dispatch_bms_branch_choice_action(
         return warning("Choose a current BMS RANDOM or SWITCH control first.");
     }
     const auto applied = apply_bms_branch_choice_command(
-        history, action.compose_input_document_revision,
+        history,
         {.chart = *workspace.selected_chart,
          .branch = branch_id_t{action.compose_branch_id},
          .selected_value = action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE
@@ -1627,20 +1628,17 @@ std::string dispatch_bms_branch_statement_action(
         return warning("Finish or cancel the active Compose gesture before editing a BMS branch.");
     if (action.compose_branch_statement_id == 0)
         return warning("Select a raw BMS branch statement first.");
-    if (history.document.revision != action.compose_input_document_revision) {
-        const auto stale = apply_bms_branch_statement_edit_command(
-            history, action.compose_input_document_revision,
-            {.chart = *workspace.selected_chart,
-             .statement = branch_id_t{action.compose_branch_statement_id}});
-        return publish_bms_statement_diagnostic(notifications, stale);
-    }
+    if (auto rejected = metadata_command_detail::stale_rejection(
+            history, action.compose_input_document_revision, "BMS branch statement action"))
+        return publish_bms_statement_diagnostic(notifications,
+            bms_branch_statement_command_result_t{.command = std::move(*rejected)});
     const auto chart = std::ranges::find(history.document.charts, *workspace.selected_chart,
                                          &chart_document_t::id);
     if (chart == history.document.charts.end())
         return warning("The selected BMS chart is no longer available.");
     if (!chart->bms_control_tree) {
         const auto missing_tree = apply_bms_branch_statement_edit_command(
-            history, action.compose_input_document_revision,
+            history,
             {.chart = *workspace.selected_chart,
              .statement = branch_id_t{action.compose_branch_statement_id}});
         return publish_bms_statement_diagnostic(notifications, missing_tree);
@@ -1650,7 +1648,7 @@ std::string dispatch_bms_branch_statement_action(
                               nullptr, target);
     if (!target.statement) {
         const auto missing_target = apply_bms_branch_statement_edit_command(
-            history, action.compose_input_document_revision,
+            history,
             {.chart = *workspace.selected_chart,
              .statement = branch_id_t{action.compose_branch_statement_id}});
         return publish_bms_statement_diagnostic(notifications, missing_target);
@@ -1671,7 +1669,7 @@ std::string dispatch_bms_branch_statement_action(
     if (!target.leaf && action.compose_action ==
                             WORM_UI_COMPOSE_ACTION_INSERT_BMS_BRANCH_STATEMENT) {
         const auto invalid = apply_bms_branch_statement_insert_command(
-            history, action.compose_input_document_revision,
+            history,
             {.chart = *workspace.selected_chart,
              .after_statement = target.statement->id,
              .expected_statement_source_order = target.statement->source_order,
@@ -1683,7 +1681,7 @@ std::string dispatch_bms_branch_statement_action(
     if (!target.leaf && action.compose_action ==
                             WORM_UI_COMPOSE_ACTION_DELETE_BMS_BRANCH_STATEMENT) {
         const auto invalid = apply_bms_branch_statement_delete_command(
-            history, action.compose_input_document_revision,
+            history,
             {.chart = *workspace.selected_chart,
              .statement = target.statement->id,
              .expected_source_order = target.statement->source_order,
@@ -1695,7 +1693,7 @@ std::string dispatch_bms_branch_statement_action(
     switch (action.compose_action) {
     case WORM_UI_COMPOSE_ACTION_EDIT_BMS_BRANCH_STATEMENT:
         applied = apply_bms_branch_statement_edit_command(
-            history, action.compose_input_document_revision,
+            history,
             {.chart = *workspace.selected_chart,
              .statement = target.statement->id,
              .expected_source_order = target.statement->source_order,
@@ -1705,7 +1703,7 @@ std::string dispatch_bms_branch_statement_action(
         break;
     case WORM_UI_COMPOSE_ACTION_INSERT_BMS_BRANCH_STATEMENT:
         applied = apply_bms_branch_statement_insert_command(
-            history, action.compose_input_document_revision,
+            history,
             {.chart = *workspace.selected_chart,
              .leaf_branch = target.leaf->id,
              .expected_leaf_source_order = target.leaf->source_order,
@@ -1719,7 +1717,7 @@ std::string dispatch_bms_branch_statement_action(
         break;
     case WORM_UI_COMPOSE_ACTION_DELETE_BMS_BRANCH_STATEMENT:
         applied = apply_bms_branch_statement_delete_command(
-            history, action.compose_input_document_revision,
+            history,
             {.chart = *workspace.selected_chart,
              .leaf_branch = target.leaf->id,
              .expected_leaf_source_order = target.leaf->source_order,
@@ -1781,13 +1779,12 @@ auto run_bms_block_command(const WormUiWorkspaceAction& action, wormedit::docume
                            const wormedit::chart_document_t& chart, wormedit::chart_id_t chart_id)
     -> bms_block_outcome_t {
     using namespace wormedit;
-    const auto revision = action.compose_input_document_revision;
     const auto& tree = *chart.bms_control_tree;
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_CREATE_BMS_BRANCH_BLOCK) {
         const auto* statement = find_bms_control_node(tree, action.compose_branch_statement_id);
         if (!statement || statement->kind != bms_control_kind_t::raw_statement)
             return {{}, "Select a raw BMS statement at the top level first.", false};
-        return {apply_bms_branch_block_create_command(history, revision,
+        return {apply_bms_branch_block_create_command(history,
             {.chart = chart_id, .first_statement = statement->id,
              .first_source_order = statement->source_order, .first_source_span = statement->source_span,
              .first_original_text = statement->original_text, .last_statement = statement->id,
@@ -1798,7 +1795,7 @@ auto run_bms_block_command(const WormUiWorkspaceAction& action, wormedit::docume
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_REMOVE_BMS_BRANCH_BLOCK) {
         const auto* block = find_bms_control_node(tree, action.compose_branch_id);
         if (!block) return {{}, "Select a BMS RANDOM block first.", false};
-        return {apply_bms_branch_block_remove_command(history, revision,
+        return {apply_bms_branch_block_remove_command(history,
             {.chart = chart_id, .random_block = block->id, .expected_source_order = block->source_order,
              .expected_source_span = block->source_span, .expected_original_text = block->original_text}),
                 "Empty BMS branch block removed."};
@@ -1806,7 +1803,7 @@ auto run_bms_block_command(const WormUiWorkspaceAction& action, wormedit::docume
     bms_leaf_target_t target;
     find_bms_leaf_target(tree, action.compose_branch_id, target);
     if (!target.leaf) return {{}, "Select a BMS branch leaf first.", false};
-    return {apply_bms_branch_leaf_move_command(history, revision,
+    return {apply_bms_branch_leaf_move_command(history,
         {.chart = chart_id, .random_block = target.block->id, .leaf = target.leaf->id,
          .expected_leaf_source_order = target.leaf->source_order,
          .expected_leaf_original_text = target.leaf->original_text,

@@ -11,17 +11,6 @@
 namespace wormedit {
 namespace {
 
-auto stale_revision_result(const document_history_t& history)
-    -> bms_branch_statement_command_result_t {
-    bms_branch_statement_command_result_t result;
-    result.command.revision = history.document.revision;
-    result.command.diagnostics.push_back({
-        .severity = diagnostic_severity_t::error,
-        .code = diagnostic_code_t::invalid_id,
-        .message = "BMS branch editor document revision is stale",
-    });
-    return result;
-}
 
 auto publish_branch_edit(document_history_t& history, bms_branch_statement_edit_result_t edit,
                          std::string label) -> bms_branch_statement_command_result_t {
@@ -1034,56 +1023,34 @@ auto leaf_move(document_history_t& history, const chart_document_t& chart,
 } // namespace
 
 auto apply_bms_branch_statement_edit_command(document_history_t& history,
-                                             std::uint64_t expected_revision,
                                              bms_branch_statement_edit_t edit)
     -> bms_branch_statement_command_result_t {
-    if (expected_revision != history.document.revision) {
-        return stale_revision_result(history);
-    }
     return publish_branch_edit(
         history, edit_bms_inactive_branch_statement(history.document, std::move(edit)),
         "Edit inactive BMS statement");
 }
 
 auto apply_bms_branch_statement_insert_command(document_history_t& history,
-                                               std::uint64_t expected_revision,
                                                bms_branch_statement_insert_t insertion)
     -> bms_branch_statement_command_result_t {
-    if (expected_revision != history.document.revision) {
-        return stale_revision_result(history);
-    }
     return publish_branch_edit(
         history, insert_bms_inactive_branch_statement(history.document, std::move(insertion)),
         "Insert inactive BMS statement");
 }
 
 auto apply_bms_branch_statement_delete_command(document_history_t& history,
-                                               std::uint64_t expected_revision,
                                                bms_branch_statement_delete_t deletion)
     -> bms_branch_statement_command_result_t {
-    if (expected_revision != history.document.revision) {
-        return stale_revision_result(history);
-    }
     return publish_branch_edit(
         history, delete_bms_inactive_branch_statement(history.document, std::move(deletion)),
         "Delete inactive BMS statement");
 }
 
 auto apply_bms_branch_selection_command(document_history_t& history,
-                                        std::uint64_t expected_revision,
                                         bms_branch_selection_request_t request)
     -> bms_branch_selection_command_result_t {
     bms_branch_selection_command_result_t result;
     result.command.revision = history.document.revision;
-    if (expected_revision != history.document.revision) {
-        result.command.diagnostics.push_back({
-            .severity = diagnostic_severity_t::error,
-            .code = diagnostic_code_t::invalid_id,
-            .message = "BMS branch selection document revision is stale",
-            .object = std::nullopt,
-        });
-        return result;
-    }
 
     auto rematerialized = rematerialize_bms_branch_selection(history.document, request);
     const auto can_publish = rematerialized.song.has_value() && !rematerialized.has_errors();
@@ -1100,40 +1067,33 @@ auto apply_bms_branch_selection_command(document_history_t& history,
     return result;
 }
 
-auto apply_bms_branch_choice_command(document_history_t& history, std::uint64_t expected_revision,
+auto apply_bms_branch_choice_command(document_history_t& history,
                                      bms_branch_choice_command_t choice)
     -> bms_branch_selection_command_result_t {
     bms_branch_selection_request_t request{.chart = choice.chart};
-    if (expected_revision == history.document.revision) {
-        const auto chart =
-            history.document.find_chart(choice.chart);
-        if (chart != nullptr) {
-            request.proposed = chart->active_branch_selection;
-            const auto selected =
-                std::ranges::find(request.proposed, choice.branch, &branch_selection_t::branch);
-            if (choice.selected_value.has_value()) {
-                if (selected == request.proposed.end()) {
-                    request.proposed.push_back({choice.branch, *choice.selected_value});
-                } else {
-                    selected->selected_value = *choice.selected_value;
-                }
-            } else if (selected != request.proposed.end()) {
-                request.proposed.erase(selected);
+    const auto chart =
+        history.document.find_chart(choice.chart);
+    if (chart != nullptr) {
+        request.proposed = chart->active_branch_selection;
+        const auto selected =
+            std::ranges::find(request.proposed, choice.branch, &branch_selection_t::branch);
+        if (choice.selected_value.has_value()) {
+            if (selected == request.proposed.end()) {
+                request.proposed.push_back({choice.branch, *choice.selected_value});
+            } else {
+                selected->selected_value = *choice.selected_value;
             }
+        } else if (selected != request.proposed.end()) {
+            request.proposed.erase(selected);
         }
     }
-    return apply_bms_branch_selection_command(history, expected_revision, std::move(request));
+    return apply_bms_branch_selection_command(history, std::move(request));
 }
 
 auto apply_bms_branch_block_create_command(document_history_t& history,
-                                           std::uint64_t expected_revision,
                                            bms_branch_block_create_command_t request)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
-    if (expected_revision != history.document.revision) {
-        add_block_error(result, "BMS branch block creation revision is stale");
-        return result;
-    }
     const auto* chart = history.document.find_chart(request.chart);
     if (chart == nullptr) {
         add_block_error(result, "selected BMS chart no longer exists");
@@ -1144,14 +1104,9 @@ auto apply_bms_branch_block_create_command(document_history_t& history,
 }
 
 auto apply_bms_branch_block_remove_command(document_history_t& history,
-                                           std::uint64_t expected_revision,
                                            bms_branch_block_remove_command_t request)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
-    if (expected_revision != history.document.revision) {
-        add_block_error(result, "BMS branch block removal revision is stale");
-        return result;
-    }
     const auto* chart = history.document.find_chart(request.chart);
     if (chart == nullptr) {
         add_block_error(result, "selected BMS chart no longer exists");
@@ -1161,14 +1116,10 @@ auto apply_bms_branch_block_remove_command(document_history_t& history,
     return remove_block(history, *chart, request);
 }
 
-auto apply_bms_branch_leaf_move_command(document_history_t& history, std::uint64_t expected_revision,
+auto apply_bms_branch_leaf_move_command(document_history_t& history,
                                         bms_branch_leaf_move_command_t request)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
-    if (expected_revision != history.document.revision) {
-        add_block_error(result, "BMS branch leaf move revision is stale");
-        return result;
-    }
     const auto* chart = history.document.find_chart(request.chart);
     if (chart == nullptr) {
         add_block_error(result, "selected BMS chart no longer exists");

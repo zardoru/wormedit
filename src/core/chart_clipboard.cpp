@@ -229,7 +229,7 @@ auto stage_selection_spans(document_history_t& staged, editor_interaction_state_
         });
     }
     if (options.recipe) {
-        const auto edited = apply_sv_recipe_edit(staged, staged.document.revision,
+        const auto edited = apply_sv_recipe_edit(staged,
             delete_sv_recipe_action_t{state.chart, options.recipe});
         if (!edited) return edited.diagnostics;
     }
@@ -253,10 +253,8 @@ auto stage_selection_timing(document_history_t& staged, editor_interaction_state
 }
 } // namespace
 
-auto delete_selection_all(document_history_t& history, editor_interaction_state_t& state,
-                          std::uint64_t expected_revision, const selection_delete_options_t& options)
+auto delete_selection_all(document_history_t& history, editor_interaction_state_t& state, const selection_delete_options_t& options)
     -> editor_interaction_result_t {
-    if (history.document.revision != expected_revision) return selection_error("The document has changed.");
     if (has_pending_editor_gesture(state)) return selection_error("Finish or cancel the active gesture first.");
     const auto boundaries = selected_kiai_boundaries(history.document, state, options.kiai_head);
     if (!boundaries) return selection_error("The selected Kiai area no longer exists.");
@@ -285,14 +283,13 @@ auto delete_selection_all(document_history_t& history, editor_interaction_state_
     return {.accepted = true, .document_changed = true, .diagnostics = committed.diagnostics};
 }
 
-auto cut_chart_selection(document_history_t& history, editor_interaction_state_t& state,
-                         std::uint64_t expected_revision, selection_delete_options_t options)
+auto cut_chart_selection(document_history_t& history, editor_interaction_state_t& state, selection_delete_options_t options)
     -> chart_clipboard_result_t {
     if (options.recipe) return {{}, "SV recipes cannot be copied to the chart clipboard."};
-    auto result = copy_chart_selection(history.document, state, expected_revision, options.kiai_head);
+    auto result = copy_chart_selection(history.document, state, history.document.revision, options.kiai_head);
     if (!result) return result;
     options.label = "Cut selection";
-    const auto deleted = delete_selection_all(history, state, expected_revision, options);
+    const auto deleted = delete_selection_all(history, state, options);
     if (!deleted) return {{}, deleted.diagnostics.empty() ? "The selection could not be cut."
                                                         : deleted.diagnostics.front().message};
     return result;
@@ -715,9 +712,8 @@ auto propose_chart_paste(const song_document_t& document, chart_id_t chart_id,
 }
 
 auto paste_chart_clipboard(document_history_t& history, chart_id_t chart_id,
-                          const chart_clipboard_t& clipboard, local_position_t anchor,
-                          std::uint64_t expected_revision) -> document_command_result_t {
-    auto proposal = propose_chart_paste(history.document, chart_id, clipboard, anchor, expected_revision);
+                          const chart_clipboard_t& clipboard, local_position_t anchor) -> document_command_result_t {
+    auto proposal = propose_chart_paste(history.document, chart_id, clipboard, anchor, history.document.revision);
     if (!proposal.valid) return document_command_transaction_t::rejection(
         history.document.revision, diagnostic_code_t::collision, std::move(proposal.error));
     auto transaction = document_command_transaction_t::from(history);

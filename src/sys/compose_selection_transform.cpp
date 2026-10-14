@@ -30,7 +30,7 @@ auto shift_selection(document_history_t& history, const editor_interaction_state
     const auto step = static_cast<std::int64_t>(chart.divisions_per_standard_measure /
                                                 state.active_snap_denominator);
     const auto result = apply_shift_selection(
-        history, history.document.revision,
+        history,
         {.chart = state.chart, .notes = notes, .rows = later ? step : -step});
     return command_status(result.command, "Selection shifted by one snap step.",
                           "Selection did not move.", severity);

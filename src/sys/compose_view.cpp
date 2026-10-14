@@ -248,7 +248,7 @@ auto commit_compose_paste(application_command_state_t& application_state,
     if (!session.anchor_available) { status = session.anchor_error; return false; }
     if (!session.proposal.valid) { status = session.proposal.error; return false; }
     const auto applied = wormedit::paste_chart_clipboard(history, state.chart, session.clipboard,
-                                                       session.anchor, session.proposal.revision);
+                                                       session.anchor);
     if (!applied.applied) {
         status = applied.diagnostics.empty() ? "Paste failed." : applied.diagnostics.front().message;
         if (severity && !applied.diagnostics.empty()) {

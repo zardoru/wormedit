@@ -38,7 +38,7 @@ TEST_CASE("A selected Kiai area and speed marker are copied and cut together",
     CHECK(copied.clipboard->objects.size() == 3);
 
     const auto undo_before = history.undo.size();
-    const auto cut = cut_chart_selection(history, state, history.document.revision,
+    const auto cut = cut_chart_selection(history, state,
                                           {.kiai_head = object_id_t{kiai_head}});
     CHECK(cut.error.empty());
     CHECK(history.undo.size() == undo_before + 1);
@@ -53,7 +53,7 @@ TEST_CASE("A selected Kiai area and speed marker are copied and cut together",
     REQUIRE(redo_document_command(history));
 
     const auto pasted = paste_chart_clipboard(history, chart_id_t{1}, *copied.clipboard,
-                                              {measure_id_t{2}, 0}, history.document.revision);
+                                              {measure_id_t{2}, 0});
     CHECK(pasted.diagnostics.empty());
     const auto& after = history.document.charts.front();
     CHECK(after.speeds.size() == 1);

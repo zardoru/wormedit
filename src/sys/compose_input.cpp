@@ -1594,7 +1594,6 @@ auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
     if (input.kind == WORM_UI_COMPOSE_INPUT_DELETE_SELECTION) {
         result = wormedit::delete_selection_all(
             context.environment.document.history, context.state,
-            context.environment.document.history.document.revision,
             {.kiai_head =
                  wormedit::object_id_t{
                      context.environment.commands.project.timing_recipe.kiai_selected_head},

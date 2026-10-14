@@ -1172,7 +1172,7 @@ TEST_CASE("BMSON editor export publishes sliced audio and reports conversion los
     require_action_false(parsed.has_errors());
     fixture.history = make_document_history(*parsed.song);
     if (other_selected_chart) {
-        const auto added = apply_new_chart_command(fixture.history, fixture.history.document.revision);
+        const auto added = apply_new_chart_command(fixture.history);
         INFO((added.command.diagnostics.empty() ? "" : added.command.diagnostics.front().message));
         require_action(static_cast<bool>(added));
         fixture.history.undo.clear();

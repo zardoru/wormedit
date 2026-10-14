@@ -23,7 +23,7 @@ struct metadata_notification_fixture_t {
 
     metadata_notification_fixture_t() {
         history = make_document_history(song_document_t{.id = song_id_t{1}, .revision = 4});
-        REQUIRE(apply_new_chart_command(history, 4));
+        REQUIRE(apply_new_chart_command(history));
         history = make_document_history(std::move(history.document));
         const auto binding = make_workspace_controller(history);
         REQUIRE(binding);
@@ -329,7 +329,7 @@ TEST_CASE("stale channel-map preview rejects apply without touching the document
 TEST_CASE("batch metadata edit writes every selected difficulty in one undo step",
           "[unit][sys][metadata-notification][batch]") {
     metadata_notification_fixture_t fixture;
-    REQUIRE(apply_new_chart_command(fixture.history, fixture.history.document.revision));
+    REQUIRE(apply_new_chart_command(fixture.history));
     REQUIRE(fixture.history.document.charts.size() == 2);
     const std::array<std::uint64_t, 2> ids{fixture.history.document.charts[0].id.value,
                                            fixture.history.document.charts[1].id.value};

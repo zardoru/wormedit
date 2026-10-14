@@ -361,7 +361,7 @@ auto import_one_chart(document_history_t& scratch, const chart_document_t& sourc
     staged.id = chart_id_t{highest_chart_id(scratch.document) + 1};
     const auto staged_id = staged.id;
     scratch.document.charts.push_back(std::move(staged));
-    const auto duplicated = apply_duplicate_chart_command(scratch, scratch.document.revision, staged_id);
+    const auto duplicated = apply_duplicate_chart_command(scratch, staged_id);
     if (!duplicated || !duplicated.payload.chart) return std::nullopt;
     auto chart = *scratch.document.find_chart(*duplicated.payload.chart);
     chart.metadata.name = name;

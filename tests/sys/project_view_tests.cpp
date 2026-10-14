@@ -10,7 +10,7 @@ void require_project(bool value) { REQUIRE(value); }
 auto project_song() -> song_document_t {
     song_document_t song{.id = song_id_t{1}, .revision = 4};
     auto history = make_document_history(std::move(song));
-    const auto created = apply_new_chart_command(history, 4);
+    const auto created = apply_new_chart_command(history);
     require_project(static_cast<bool>(created));
     history.document.charts[0].metadata = {.name = "Normal", .author = "Author", .rating = signed_rational_t{7, 2}};
     const auto& chart = history.document.charts[0];
@@ -55,21 +55,32 @@ TEST_CASE("Project chart table cache refreshes revisions and reopened sessions",
 
 TEST_CASE("Project chart commands preserve atomic rejection and open newly created charts", "[unit][project-view]") {
     auto history = make_document_history(project_song());
-    auto created = apply_project_chart_command(history, {.kind = project_chart_command_kind_t::create,
-        .expected_revision = history.document.revision, .chart = history.document.charts[0].id});
+    auto created =
+        apply_project_chart_command(history, {.kind = project_chart_command_kind_t::create,
+                                              .expected_revision = history.document.revision,
+                                              .chart = history.document.charts[0].id});
     require_project(static_cast<bool>(created.command));
     expect_project(created.open_chart == history.document.charts.back().id);
     const auto revision = history.document.revision;
     const auto count = history.document.charts.size();
-    const auto stale = apply_project_chart_command(history, {.kind = project_chart_command_kind_t::erase,
-        .expected_revision = revision - 1, .chart = history.document.charts[0].id});
+    const auto stale =
+        apply_project_chart_command(history, {.kind = project_chart_command_kind_t::erase,
+                                              .expected_revision = revision - 1,
+                                              .chart = history.document.charts[0].id});
     expect_project(!stale.command && !stale.command.diagnostics.empty());
+    require_project(!stale.command.diagnostics.empty());
+    expect_project(stale.command.diagnostics.front().message == stale_action_message("Project chart action"));
     expect_project(history.document.revision == revision && history.document.charts.size() == count);
-    const auto opened = apply_project_chart_command(history, {.kind = project_chart_command_kind_t::open,
-        .expected_revision = revision, .chart = *created.open_chart});
+    const auto opened =
+        apply_project_chart_command(history, {.kind = project_chart_command_kind_t::open,
+                                              .expected_revision = revision,
+                                              .chart = *created.open_chart});
     expect_project(opened.open_chart == created.open_chart && !opened.command.applied);
-    require_project(static_cast<bool>(apply_project_chart_command(history, {.kind = project_chart_command_kind_t::move_up,
-        .expected_revision = revision, .chart = *created.open_chart}).command));
+    require_project(static_cast<bool>(
+        apply_project_chart_command(history, {.kind = project_chart_command_kind_t::move_up,
+                                              .expected_revision = revision,
+                                              .chart = *created.open_chart})
+            .command));
     expect_project(history.document.charts.front().id == *created.open_chart);
 }
 
@@ -82,6 +93,7 @@ TEST_CASE("Project chart UI rejects closed sessions stale delete and malformed b
     auto result = apply_project_chart_ui_action(runtime, history, action);
     expect_project(!result.applied && !result.status.empty());
     expect_project(result.severity == notification_severity_t::warning);
+    expect_project(result.status == stale_action_message("Project chart action"));
     action.session_generation = runtime.session_generation;
     --action.document_revision;
     result = apply_project_chart_ui_action(runtime, history, action);
@@ -127,7 +139,8 @@ TEST_CASE("Project New templates the selected four-key chart instead of the firs
                   {.id = lane_id_t{3}, .name = "Up", .display_order = 2, .glyph = lane_glyph_t::arrow_up},
                   {.id = lane_id_t{4}, .name = "Right", .display_order = 3, .glyph = lane_glyph_t::arrow_right}}}};
     profile.input = *default_input_profile_for(profile.layout);
-    const auto active = apply_new_chart_command(history, history.document.revision, std::move(profile), format_family_t::stepmania);
+    const auto active =
+        apply_new_chart_command(history, std::move(profile), format_family_t::stepmania);
     require_project(static_cast<bool>(active));
     auto& selected = history.document.charts.back();
     selected.divisions_per_standard_measure = 3840;
@@ -150,13 +163,15 @@ TEST_CASE("Project New templates the selected four-key chart instead of the firs
 
 TEST_CASE("Project New allows an empty document fallback and rejects a missing active template otherwise", "[unit][project-view]") {
     auto empty = make_document_history(song_document_t{.id = song_id_t{1}, .revision = 4});
-    const auto fallback = apply_project_chart_command(empty, {.kind = project_chart_command_kind_t::create,
-        .expected_revision = 4});
+    const auto fallback = apply_project_chart_command(
+        empty, {.kind = project_chart_command_kind_t::create, .expected_revision = 4});
     require_project(static_cast<bool>(fallback.command));
     expect_project(empty.document.charts.back().lane_layouts[0].layout.profile_id == make_bms_7k_profile().layout.profile_id);
     const auto before = empty.document.revision;
-    const auto rejected = apply_project_chart_command(empty, {.kind = project_chart_command_kind_t::create,
-        .expected_revision = before, .chart = chart_id_t{9999}});
+    const auto rejected =
+        apply_project_chart_command(empty, {.kind = project_chart_command_kind_t::create,
+                                            .expected_revision = before,
+                                            .chart = chart_id_t{9999}});
     expect_project(!rejected.command.applied && !rejected.command.diagnostics.empty());
     expect_project(empty.document.charts.size() == 1 && empty.document.revision == before);
 }
@@ -165,8 +180,8 @@ namespace {
 auto reorder_history() -> document_history_t {
     auto history = make_document_history(project_song());
     const auto first = history.document.charts.front().id;
-    require_project(static_cast<bool>(apply_duplicate_chart_command(history, history.document.revision, first)));
-    require_project(static_cast<bool>(apply_duplicate_chart_command(history, history.document.revision, first)));
+    require_project(static_cast<bool>(apply_duplicate_chart_command(history, first)));
+    require_project(static_cast<bool>(apply_duplicate_chart_command(history, first)));
     history.undo.clear();
     return history;
 }
@@ -209,7 +224,9 @@ TEST_CASE("Project grip reorder rejects stale or missing targets and leaves adja
     expect_project(history.undo.empty());
     action.insert_after = true;
     --action.document_revision;
-    expect_project(!apply_project_chart_ui_action(runtime, history, action).applied);
+    const auto stale_reorder = apply_project_chart_ui_action(runtime, history, action);
+    expect_project(!stale_reorder.applied);
+    expect_project(stale_reorder.status == stale_action_message("Chart reorder"));
     action.document_revision = history.document.revision;
     ++action.session_generation;
     expect_project(!apply_project_chart_ui_action(runtime, history, action).applied);
@@ -233,7 +250,9 @@ TEST_CASE("Project output group actions project complete editable membership and
         .chart_count = 1};
     action.chart_ids[0] = history.document.charts[0].id.value;
     ++action.session_generation;
-    expect_project(!apply_project_output_group_ui_action(runtime, history, action, scheduler).applied);
+    const auto wrong_session = apply_project_output_group_ui_action(runtime, history, action, scheduler);
+    expect_project(!wrong_session.applied);
+    expect_project(wrong_session.status == stale_action_message("Output group action"));
     --action.session_generation;
     require_project(apply_project_output_group_ui_action(runtime, history, action, scheduler).applied);
     project_chart_view(runtime, history.document, view);

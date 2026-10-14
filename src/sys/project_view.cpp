@@ -87,7 +87,7 @@ auto reorder_project_chart(document_history_t& history, const project_chart_comm
     const auto& charts = history.document.charts;
     const auto source = std::ranges::find(charts, action.chart, &chart_document_t::id);
     const auto target = std::ranges::find(charts, action.target_chart, &chart_document_t::id);
-    if (action.expected_revision != history.document.revision || source == charts.end() || target == charts.end())
+    if (source == charts.end() || target == charts.end())
         return {.command = {.revision = history.document.revision, .diagnostics = {{
             .severity = diagnostic_severity_t::error, .code = diagnostic_code_t::invalid_id,
             .message = "Chart reorder is stale or its source or destination no longer exists."}}}};
@@ -95,30 +95,35 @@ auto reorder_project_chart(document_history_t& history, const project_chart_comm
     auto destination = static_cast<std::size_t>(target - charts.begin()) + (action.insert_after ? 1 : 0);
     if (destination > source_index) --destination;
     if (destination == source_index) return {.command = {.revision = history.document.revision}};
-    return {.command = apply_reorder_chart_command(history, action.expected_revision, action.chart, destination)};
+    return {.command = apply_reorder_chart_command(history, action.chart, destination)};
 }
 } // namespace
 
 auto apply_project_chart_command(document_history_t& history,
     const project_chart_command_t& action) -> project_chart_command_result_t {
+    if (action.kind == project_chart_command_kind_t::batch_metadata)
+        return {.command = apply_batch_chart_metadata_edit(history, action.expected_revision, action.metadata)};
+    const auto label = action.kind == project_chart_command_kind_t::reorder
+        ? "Chart reorder" : "Project chart action";
+    if (auto rejected = metadata_command_detail::stale_rejection(history, action.expected_revision, label))
+        return {.command = std::move(*rejected)};
     if (action.kind == project_chart_command_kind_t::reorder)
         return reorder_project_chart(history, action);
     if (action.kind == project_chart_command_kind_t::create) {
         auto created = history.document.charts.empty()
-            ? apply_new_chart_command(history, action.expected_revision)
-            : apply_add_chart_command(history, action.expected_revision, action.chart);
+                           ? apply_new_chart_command(history)
+                           : apply_add_chart_command(history, action.chart);
         return {.command = std::move(created.command), .open_chart = created.payload.chart};
     }
     if (action.kind == project_chart_command_kind_t::duplicate) {
-        auto copy = apply_duplicate_chart_command(history, action.expected_revision, action.chart);
+        auto copy = apply_duplicate_chart_command(history, action.chart);
         return {.command = std::move(copy.command)};
     }
     if (action.kind == project_chart_command_kind_t::erase)
-        return {.command = apply_delete_chart_command(history, action.expected_revision, action.chart)};
-    if (action.kind == project_chart_command_kind_t::batch_metadata)
-        return {.command = apply_batch_chart_metadata_edit(history, action.expected_revision, action.metadata)};
+        return {.command = apply_delete_chart_command(history, action.chart)};
+
     const auto chart = std::ranges::find(history.document.charts, action.chart, &chart_document_t::id);
-    if (action.expected_revision != history.document.revision || chart == history.document.charts.end())
+    if (chart == history.document.charts.end())
         return {.command = {.revision = history.document.revision, .diagnostics = {{
             .severity = diagnostic_severity_t::error, .code = diagnostic_code_t::invalid_id,
             .message = "Project chart action is stale or its chart no longer exists."}}}};
@@ -128,8 +133,8 @@ auto apply_project_chart_command(document_history_t& history,
     const bool up = action.kind == project_chart_command_kind_t::move_up;
     if ((up && index == 0) || (!up && index + 1 == history.document.charts.size()))
         return {.command = {.revision = history.document.revision}};
-    return {.command = apply_reorder_chart_command(history, action.expected_revision, action.chart,
-                                                   up ? index - 1 : index + 1)};
+    return {.command =
+                apply_reorder_chart_command(history, action.chart, up ? index - 1 : index + 1)};
 }
 
 auto build_project_chart_table(const song_document_t& document) -> project_chart_table_t {
@@ -278,9 +283,10 @@ auto start_output_preview(project_chart_runtime_t& runtime, const song_document_
 auto apply_project_output_group_ui_action(project_chart_runtime_t& runtime,
     document_history_t& history, const WormUiProjectOutputGroupAction& action,
     task_scheduler_t& scheduler) -> project_chart_ui_result_t {
-    if (action.project_id != history.document.id.value || action.document_revision != history.document.revision ||
-        action.session_generation != runtime.session_generation)
-        return {.status = "Output group action belongs to a changed project or session."};
+    const document_stamp_t stamp{.project = song_id_t{action.project_id},
+                                 .revision = action.document_revision};
+    if (!stamp.is_current(history.document) || action.session_generation != runtime.session_generation)
+        return {.status = stale_action_message("Output group action")};
     const bool create = action.kind == WORM_UI_PROJECT_OUTPUT_GROUP_CREATE;
     if (!create && action.group_index >= history.document.output_groups.size())
         return {.status = "Output group is no longer available."};
@@ -288,7 +294,7 @@ auto apply_project_output_group_ui_action(project_chart_runtime_t& runtime,
         return start_output_preview(runtime, history.document, action.group_index, scheduler);
     document_command_result_t result;
     if (action.kind == WORM_UI_PROJECT_OUTPUT_GROUP_DELETE)
-        result = apply_delete_output_group_command(history, action.document_revision, action.group_index);
+        result = apply_delete_output_group_command(history, action.group_index);
     else {
         if (action.kind != WORM_UI_PROJECT_OUTPUT_GROUP_CREATE && action.kind != WORM_UI_PROJECT_OUTPUT_GROUP_UPDATE)
             return {.status = "Output group action is invalid."};
@@ -297,8 +303,8 @@ auto apply_project_output_group_ui_action(project_chart_runtime_t& runtime,
         output_group_t group{.name = action.name, .family = static_cast<format_family_t>(action.family),
             .relative_output_path = action.path};
         for (size_t i = 0; i < action.chart_count; ++i) group.charts.push_back(chart_id_t{action.chart_ids[i]});
-        result = apply_set_output_group_command(history, action.document_revision,
-            create ? std::nullopt : std::optional{action.group_index}, std::move(group));
+        result = apply_set_output_group_command(
+            history, create ? std::nullopt : std::optional{action.group_index}, std::move(group));
     }
     if (!result) return {.status = result.diagnostics.empty() ? "Output group was not changed." : result.diagnostics.front().message};
     return {.status = "Output groups updated.", .applied = true, .severity = notification_severity_t::success};
@@ -335,7 +341,7 @@ auto apply_project_chart_ui_action(project_chart_runtime_t& runtime,
     document_history_t& history, const WormUiProjectChartAction& action,
     std::optional<chart_id_t> active_chart) -> project_chart_ui_result_t {
     if (action.session_generation != runtime.session_generation)
-        return {.status = "Project chart action belongs to a closed session."};
+        return {.status = stale_action_message("Project chart action")};
     const auto kind = ui_command_kind(action.kind);
     if (!kind) return {.status = "Project chart action is invalid."};
     project_chart_command_t command{.kind = *kind, .expected_revision = action.document_revision,

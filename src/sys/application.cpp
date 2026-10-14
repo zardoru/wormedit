@@ -2010,8 +2010,8 @@ auto create_chart_from_registered_command(wormedit::document_history_t& history,
     -> wormedit::command_invocation_result_t {
     using severity_t = wormedit::notification_severity_t;
     using source_t = wormedit::notification_source_t;
-    const auto created = wormedit::apply_add_chart_command(history, history.document.revision,
-        workspace.selected_chart.value_or(wormedit::chart_id_t{}));
+    const auto created = wormedit::apply_add_chart_command(
+        history, workspace.selected_chart.value_or(wormedit::chart_id_t{}));
     if (!created) return wormedit::sys::reject_application_command(notifications,
         created.command.diagnostics.empty() ? "New chart could not be created." : created.command.diagnostics.front().message,
         created.command.diagnostics.empty() ? severity_t::warning

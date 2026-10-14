@@ -12,12 +12,6 @@ auto is_valid_source(const audio_source_identity_t& source) -> bool {
     return !source.asset_identity.empty() && !source.source_identity.empty();
 }
 
-auto invalid_decode() -> block_decode_result_t {
-    return {.status = block_decode_status_t::invalid_key,
-            .frames = 0,
-            .decoder_status = read_status_t::not_open};
-}
-
 } // namespace
 
 enum class probe_state_t { pending, probing, ready, failed };
@@ -495,22 +489,21 @@ auto decoded_source_registry_t::binding(asset_id_t asset) const
     return (*found)->binding;
 }
 
-auto decoded_source_registry_t::decode_block(transport_t& transport, session_token_t token,
-                                             audio_block_key_t key) -> block_decode_result_t {
+auto decoded_source_registry_t::decode_source_block(transport_t& transport, session_token_t token,
+                                                    audio_block_key_t key)
+    -> block_decode_outcome_t {
     if (!is_valid_source(key.source)) {
-        return invalid_decode();
+        return block_decode_result_t::from(block_decode_status_t::invalid_key);
     }
     if (const auto resident = transport.resident_block_hit(token, key)) {
-        return *resident;
+        return block_decode_result_t::from(block_decode_result_t{*resident});
     }
     std::shared_ptr<entry_t> entry;
     {
         const std::scoped_lock lock(mutex_);
-        const auto found = std::ranges::find_if(entries_, [&](const auto& candidate) {
-            return candidate->source == key.source;
-        });
+        const auto found = std::ranges::find(entries_, key.source, &entry_t::source);
         if (found == entries_.end()) {
-            return invalid_decode();
+            return block_decode_result_t::from(block_decode_status_t::invalid_key);
         }
         entry = *found;
     }
@@ -518,20 +511,28 @@ auto decoded_source_registry_t::decode_block(transport_t& transport, session_tok
     // its geometry instead of failing.
     const auto lease = acquire_lease(entry);
     if (!lease) {
-        return invalid_decode();
+        return block_decode_result_t::from(block_decode_status_t::invalid_key);
     }
-    return transport.decode_block(lease.decoder(), token, std::move(key));
+    return transport.decode_source_block(lease.decoder(), token, std::move(key));
+}
+
+auto decoded_source_registry_t::decode_block(transport_t& transport, session_token_t token,
+                                             audio_block_key_t key) -> block_decode_result_t {
+    return block_decode_result_t::from(decode_source_block(transport, token, std::move(key)));
 }
 
 auto decoded_source_registry_t::preload_head(asset_id_t asset, decoded_block_cache_t& block_cache,
                                              std::uint64_t frames, std::stop_token stop)
     -> std::size_t {
     const auto entry = find_entry(asset);
-    if (!entry) return 0;
+    if (!entry)
+        return 0;
     const auto lease = acquire_lease(entry);
-    if (!lease) return 0;
+    if (!lease)
+        return 0;
     const auto info = lease.decoder().info();
-    if (!info) return 0;
+    if (!info)
+        return 0;
     // A private session: nothing is published to any transport.
     decode_session_t session;
     const auto token = session.start();

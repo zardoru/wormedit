@@ -123,6 +123,8 @@ class transport_t {
 
     [[nodiscard]] auto decode_block(decoder_t& decoder, session_token_t token,
                                     audio_block_key_t key) -> block_decode_result_t;
+    [[nodiscard]] auto decode_source_block(decoder_t& decoder, session_token_t token,
+                                         audio_block_key_t key) -> block_decode_outcome_t;
     // Control/worker threads only. The mixer reads the published snapshot under
     // the transport lock; the replaced snapshot is released after the lock drops,
     // never on the audio callback.

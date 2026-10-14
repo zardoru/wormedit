@@ -306,3 +306,27 @@ TEST_CASE("current generation reads remain available during queue handoff",
     verify_cache_condition(session.publish_if_current(*first, key("asset", "source", 1)) ==
           wormedit::audio::session_publish_status_t::stale_generation);
 }
+
+namespace {
+auto expected_block_failure_keeps_decoded_frames_and_cached_pcm() -> bool {
+    using namespace wormedit::audio;
+    decoder_t decoder;
+    const std::vector<float> pcm{0.25F, 0.5F, 0.75F, 1.0F};
+    if (!decoder.open_pcm(pcm)) return false;
+    decoded_block_cache_t cache;
+    decode_session_t session{0};
+    const auto token = session.start();
+    if (!token) return false;
+    const auto block_key = key("fixture:pcm", "generated:v1", 0);
+    const auto decoded = decode_cached_block(decoder, cache, session, *token, block_key);
+    if (decoded) return false;
+    return decoded.error().status == block_decode_status_t::session_queue_full &&
+           decoded.error().frames == 2 && decoded.error().decoder_status == read_status_t::success &&
+           cache.has_block(block_key) && session.pending_count() == 0;
+}
+} // namespace
+
+TEST_CASE("block decode expected publication errors retain frames and cached PCM",
+          "[unit][audio][cache][result][publication]") {
+    CHECK(expected_block_failure_keeps_decoded_frames_and_cached_pcm());
+}

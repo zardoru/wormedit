@@ -15,50 +15,45 @@ struct pause_warp_edit_limits_t {
     std::size_t maximum_chart_objects{default_maximum_chart_objects};
 };
 
-struct insert_pause_event_action_t {
-    chart_id_t chart;
-    local_position_t position;
-    pause_kind_t kind{pause_kind_t::stop};
-    signed_rational_t duration;
+struct timing_pause_value_t {
+    signed_rational_t duration{};
     pause_unit_t source_unit{pause_unit_t::seconds};
-};
-
-struct update_pause_event_action_t {
-    chart_id_t chart;
-    object_id_t event;
-    local_position_t position;
     pause_kind_t kind{pause_kind_t::stop};
-    signed_rational_t duration;
-    pause_unit_t source_unit{pause_unit_t::seconds};
+
+    [[nodiscard]] static auto from(const pause_event_t& event) -> timing_pause_value_t {
+        return {.duration = event.duration, .source_unit = event.source_unit, .kind = event.kind};
+    }
+    auto operator==(const timing_pause_value_t&) const -> bool = default;
 };
 
-struct delete_pause_event_action_t {
-    chart_id_t chart;
-    object_id_t event;
-};
+using pause_edit_value_t = positioned_edit_value_t<timing_pause_value_t>;
 
-struct insert_warp_event_action_t {
-    chart_id_t chart;
-    position_span_t span;
+struct timing_warp_value_t {
+    local_position_t end;
     warp_provenance_t source_encoding{warp_provenance_t::native};
+    // Existing timing previews preserve provenance; raw updates can select replacement.
+    bool is_source_encoding_replaced{};
+
+    [[nodiscard]] static auto from(const warp_event_t& event) -> timing_warp_value_t {
+        return {.end = event.span.end, .source_encoding = event.source_encoding};
+    }
+    [[nodiscard]] static auto from(local_position_t end, std::optional<warp_provenance_t> encoding)
+        -> timing_warp_value_t {
+        return {.end = end,
+                .source_encoding = encoding.value_or(warp_provenance_t::native),
+                .is_source_encoding_replaced = encoding.has_value()};
+    }
+    auto operator==(const timing_warp_value_t&) const -> bool = default;
 };
 
-struct update_warp_event_action_t {
-    chart_id_t chart;
-    object_id_t event;
-    position_span_t span;
-    std::optional<warp_provenance_t> source_encoding;
-};
+using warp_edit_value_t = positioned_edit_value_t<timing_warp_value_t>;
 
-struct delete_warp_event_action_t {
-    chart_id_t chart;
-    object_id_t event;
-};
-
-using pause_warp_edit_action_t =
-    std::variant<insert_pause_event_action_t, update_pause_event_action_t,
-                 delete_pause_event_action_t, insert_warp_event_action_t,
-                 update_warp_event_action_t, delete_warp_event_action_t>;
+using pause_warp_edit_action_t = std::variant<wormedit::insert_edit_t<wormedit::pause_edit_value_t>,
+                                              wormedit::update_edit_t<wormedit::pause_edit_value_t>,
+                                              wormedit::delete_edit_t<wormedit::pause_edit_value_t>,
+                                              wormedit::insert_edit_t<wormedit::warp_edit_value_t>,
+                                              wormedit::update_edit_t<wormedit::warp_edit_value_t>,
+                                              wormedit::delete_edit_t<wormedit::warp_edit_value_t>>;
 
 // Mutates one pause or warp through shared document history. Positions and
 // durations remain exact, same-row timing events are legal, and inserts use
@@ -66,8 +61,13 @@ using pause_warp_edit_action_t =
 // event family. BMS pause import baselines are preserved on update and removed
 // with their event on delete.
 [[nodiscard]] auto
-apply_pause_warp_edit(document_history_t& history, std::uint64_t expected_revision,
+apply_pause_warp_edit(document_history_t& history,
                       const pause_warp_edit_action_t& action, pause_warp_edit_limits_t limits = {})
+    -> document_command_result_t;
+
+// Uses a ready command transaction supplied by a captured edit proposal.
+[[nodiscard]] auto apply_pause_warp_edit(document_command_transaction_t& transaction,
+    const pause_warp_edit_action_t& action, pause_warp_edit_limits_t limits = {})
     -> document_command_result_t;
 
 } // namespace wormedit

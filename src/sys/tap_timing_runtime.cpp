@@ -175,10 +175,10 @@ void tap_timing_runtime_t::prepare_apply(const song_document_t& document, bool t
         std::tie(estimate->bpm, estimate->phase_frame, estimate->stable)) return;
     proposal_.reset();
     proposal_clock_.reset();
-    auto proposed = propose_tap_timing_apply(document, {clock_->chart}, *estimate,
+    auto proposed = tap_timing_apply_proposal_t::from(document, {clock_->chart}, *estimate,
         clock_->sample_rate, clock_->beats_per_measure, choice_, timing_locked);
-    if (!proposed || !make_tap_timing_preview(document, *proposed.proposal)) return;
-    proposal_ = std::move(proposed.proposal);
+    if (!proposed.ok() || !proposed.value || !make_tap_timing_preview(document, *proposed.value)) return;
+    proposal_ = std::move(proposed.value);
     proposal_clock_ = clock_;
     proposal_estimate_ = estimate;
 }
@@ -191,13 +191,19 @@ auto tap_timing_runtime_t::apply(document_history_t& history, const tap_timing_c
     const auto observed = observe(clock);
     const auto estimate = estimator_.estimate();
     if (!observed || !visible_ || !captured || !matching || !clock.playing ||
-        !clock.source_frame || !estimate || !estimate->stable ||
-        captured->document_revision != expected_revision) {
+        !clock.source_frame || !estimate || !estimate->stable) {
         proposal_.reset();
         status_ = "Tap result expired; play and tap again before Apply.";
         return {.revision = history.document.revision};
     }
-    auto result = apply_tap_timing_proposal(history, expected_revision, *captured, timing_locked);
+    if (!captured->stamp.document.is_revision_current(expected_revision)) {
+        proposal_.reset();
+        // Preserve the status pointer's static lifetime and avoid allocation on repeated rejection.
+        static const auto stale_result_status = stale_action_message("Tap timing result");
+        status_ = stale_result_status.c_str();
+        return {.revision = history.document.revision};
+    }
+    auto result = apply_tap_timing_proposal(history, *captured, timing_locked);
     if (result) reset();
     else status_ = "Apply rejected; check timing lock and tap again.";
     return result;

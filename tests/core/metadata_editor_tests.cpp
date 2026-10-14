@@ -68,13 +68,12 @@ TEST_CASE("normalized song and difficulty metadata edits are atomic and undoable
           "[unit][core][metadata-editor]") {
     auto history = document_history_t::from(metadata_song());
     REQUIRE(apply_metadata_edit(
-        history, 4, set_song_metadata_action_t{"New title", "New artist", {"tag one", "tag two"}}));
+        history, set_song_metadata_action_t{"New title", "New artist", {"tag one", "tag two"}}));
     CHECK(history.document.metadata.title == "New title");
     CHECK(history.document.metadata.ordered_search_tags ==
           std::vector<std::string>{"tag one", "tag two"});
     REQUIRE(apply_metadata_edit(
-        history, 5,
-        set_chart_metadata_action_t{chart_id_t{2}, "Challenge", "New mapper", {{15, 1}}}));
+        history, set_chart_metadata_action_t{chart_id_t{2}, "Challenge", "New mapper", {{15, 1}}}));
     CHECK(history.document.charts.front().metadata.name == "Challenge");
     CHECK(history.document.charts.front().metadata.rating == signed_rational_t{15, 1});
     REQUIRE(undo_document_command(history));
@@ -88,14 +87,13 @@ TEST_CASE("ordered search-tag occurrence edits preserve reordering and duplicate
     auto history = document_history_t::from(metadata_song());
     const std::vector<std::string> reordered{"third", "first", "third", "second"};
     const auto edited = apply_metadata_edit(
-        history, 4, set_song_metadata_action_t{"Old title", "Old artist", reordered});
+        history, set_song_metadata_action_t{"Old title", "Old artist", reordered});
     REQUIRE(edited);
     CHECK(history.document.metadata.ordered_search_tags == reordered);
     CHECK(history.undo.size() == 1);
 
-    const auto no_op =
-        apply_metadata_edit(history, history.document.revision,
-                            set_song_metadata_action_t{"Old title", "Old artist", reordered});
+    const auto no_op = apply_metadata_edit(
+        history, set_song_metadata_action_t{"Old title", "Old artist", reordered});
     CHECK_FALSE(no_op.applied);
     CHECK(no_op.diagnostics.empty());
     CHECK(history.undo.size() == 1);
@@ -106,7 +104,7 @@ TEST_CASE("ordered search-tag occurrence edits preserve reordering and duplicate
     CHECK(history.document.metadata.ordered_search_tags == reordered);
 }
 
-TEST_CASE("output group path edits are safe, revision checked, and undoable",
+TEST_CASE("output group path edits are safe and undoable",
           "[unit][core][metadata-editor][output-path]") {
     auto song = metadata_song();
     song.output_groups.push_back({.name = "BMS output",
@@ -114,26 +112,20 @@ TEST_CASE("output group path edits are safe, revision checked, and undoable",
                                   .charts = {chart_id_t{2}},
                                   .relative_output_path = "exports/old.bms"});
     auto history = document_history_t::from(std::move(song));
-    CHECK_FALSE(apply_metadata_edit(history, 3,
-                                    set_output_group_path_action_t{0, "exports/new.bms"}));
-    CHECK_FALSE(apply_metadata_edit(history, 4,
-                                    set_output_group_path_action_t{1, "exports/new.bms"}));
+    CHECK_FALSE(apply_metadata_edit(history, set_output_group_path_action_t{1, "exports/new.bms"}));
     for (const auto path : {"/outside.bms", "../outside.bms", "exports/../outside.bms",
                             "exports\\outside.bms", "C:outside.bms", ""}) {
-        const auto rejected = apply_metadata_edit(
-            history, 4, set_output_group_path_action_t{0, path});
+        const auto rejected = apply_metadata_edit(history, set_output_group_path_action_t{0, path});
         CHECK_FALSE(rejected);
         CHECK(has_error(rejected));
     }
     CHECK(history.document.output_groups.front().relative_output_path == "exports/old.bms");
     CHECK(history.undo.empty());
-    REQUIRE(apply_metadata_edit(history, 4,
-                                set_output_group_path_action_t{0, "exports/new.bms"}));
+    REQUIRE(apply_metadata_edit(history, set_output_group_path_action_t{0, "exports/new.bms"}));
     CHECK(history.document.output_groups.front().relative_output_path == "exports/new.bms");
     CHECK(history.undo.size() == 1);
-    const auto no_op = apply_metadata_edit(
-        history, history.document.revision,
-        set_output_group_path_action_t{0, "exports/new.bms"});
+    const auto no_op =
+        apply_metadata_edit(history, set_output_group_path_action_t{0, "exports/new.bms"});
     CHECK_FALSE(no_op.applied);
     CHECK(no_op.diagnostics.empty());
     REQUIRE(undo_document_command(history));
@@ -188,7 +180,7 @@ TEST_CASE("rating text parser preserves exact signed rational values within inte
     CHECK_FALSE(parse_metadata_rating("000000000000000000000", "1"));
 }
 
-TEST_CASE("rating action helper supports exact set and explicit unset through revision checks",
+TEST_CASE("rating action helper supports exact set and explicit unset",
           "[unit][core][metadata-editor][rating]") {
     const auto set = chart_rating_edit_t::from(chart_id_t{2}, false, "-9", "12");
     REQUIRE(set);
@@ -200,12 +192,9 @@ TEST_CASE("rating action helper supports exact set and explicit unset through re
     auto history = document_history_t::from(metadata_song());
     const set_chart_metadata_action_t apply_set{set->chart, "Staged name", "Staged mapper",
                                                 set->rating};
-    const auto stale = apply_metadata_edit(history, 3, apply_set);
-    CHECK_FALSE(stale.applied);
-    CHECK(has_error(stale));
     CHECK_FALSE(history.document.charts.front().metadata.rating);
 
-    REQUIRE(apply_metadata_edit(history, 4, apply_set));
+    REQUIRE(apply_metadata_edit(history, apply_set));
     CHECK(history.document.charts.front().metadata.name == "Staged name");
     CHECK(history.document.charts.front().metadata.author == "Staged mapper");
     CHECK(history.document.charts.front().metadata.rating == signed_rational_t{-9, 12});
@@ -213,7 +202,7 @@ TEST_CASE("rating action helper supports exact set and explicit unset through re
     REQUIRE(unset);
     const set_chart_metadata_action_t apply_unset{unset->chart, "Still staged", "Still mapper",
                                                   unset->rating};
-    REQUIRE(apply_metadata_edit(history, 5, apply_unset));
+    REQUIRE(apply_metadata_edit(history, apply_unset));
     CHECK(history.document.charts.front().metadata.name == "Still staged");
     CHECK(history.document.charts.front().metadata.author == "Still mapper");
     CHECK_FALSE(history.document.charts.front().metadata.rating);
@@ -224,43 +213,43 @@ TEST_CASE("format metadata keeps duplicate occurrences and source identities ali
     auto history = document_history_t::from(metadata_song());
     const format_metadata_target_t song_bms{std::nullopt, format_family_t::bms};
 
-    REQUIRE(apply_metadata_edit(history, 4,
-                                edit_format_metadata_field_action_t{
-                                    .target = song_bms,
-                                    .index = 1,
-                                    .name = "SUBARTIST",
-                                    .value = "second guest",
-                                    .mode = wormedit::format_metadata_field_mode_t::replace}));
+    REQUIRE(
+        apply_metadata_edit(history, edit_format_metadata_field_action_t{
+                                         .target = song_bms,
+                                         .index = 1,
+                                         .name = "SUBARTIST",
+                                         .value = "second guest",
+                                         .mode = wormedit::format_metadata_field_mode_t::replace}));
     const auto& replaced = history.document.metadata.format_groups.front();
     CHECK(replaced.ordered_fields[1] == std::pair<std::string, std::string>{"SUBARTIST", "second guest"});
     CHECK(replaced.ordered_field_source_orders == std::vector<std::size_t>{10, 11, 12});
 
-    REQUIRE(apply_metadata_edit(history, 5,
-                                edit_format_metadata_field_action_t{
-                                    .target = song_bms,
-                                    .index = 3,
-                                    .name = "SUBARTIST",
-                                    .value = "third guest",
-                                    .mode = wormedit::format_metadata_field_mode_t::insert}));
+    REQUIRE(
+        apply_metadata_edit(history, edit_format_metadata_field_action_t{
+                                         .target = song_bms,
+                                         .index = 3,
+                                         .name = "SUBARTIST",
+                                         .value = "third guest",
+                                         .mode = wormedit::format_metadata_field_mode_t::insert}));
     const auto& inserted = history.document.metadata.format_groups.front();
     REQUIRE(inserted.ordered_fields.size() == 4);
     CHECK(inserted.ordered_fields[1].first == "SUBARTIST");
     CHECK(inserted.ordered_fields[3] == std::pair<std::string, std::string>{"SUBARTIST", "third guest"});
     CHECK(inserted.ordered_field_source_orders == std::vector<std::size_t>{10, 11, 12});
 
-    REQUIRE(apply_metadata_edit(history, 6, erase_format_metadata_field_action_t{song_bms, 0}));
+    REQUIRE(apply_metadata_edit(history, erase_format_metadata_field_action_t{song_bms, 0}));
     const auto& erased = history.document.metadata.format_groups.front();
     CHECK(erased.ordered_fields.front().first == "SUBARTIST");
     CHECK(erased.ordered_field_source_orders == std::vector<std::size_t>{11, 12});
 
     const format_metadata_target_t chart_osu{chart_id_t{2}, format_family_t::osu_mania};
-    REQUIRE(apply_metadata_edit(history, 7,
-                                edit_format_metadata_field_action_t{
-                                    .target = chart_osu,
-                                    .index = 0,
-                                    .name = "Difficulty.Version",
-                                    .value = "Insane",
-                                    .mode = wormedit::format_metadata_field_mode_t::insert}));
+    REQUIRE(
+        apply_metadata_edit(history, edit_format_metadata_field_action_t{
+                                         .target = chart_osu,
+                                         .index = 0,
+                                         .name = "Difficulty.Version",
+                                         .value = "Insane",
+                                         .mode = wormedit::format_metadata_field_mode_t::insert}));
     const auto& chart_groups = history.document.charts.front().metadata.format_groups;
     REQUIRE(chart_groups.size() == 1);
     CHECK(chart_groups.front().family == format_family_t::osu_mania);
@@ -268,44 +257,38 @@ TEST_CASE("format metadata keeps duplicate occurrences and source identities ali
           std::vector<std::pair<std::string, std::string>>{{"Difficulty.Version", "Insane"}});
 }
 
-TEST_CASE("metadata edits reject stale, unsafe, over-cap, and provenance-breaking actions",
+TEST_CASE("metadata edits reject unsafe, over-cap, and provenance-breaking actions",
           "[unit][core][metadata-editor][negative]") {
     auto history = document_history_t::from(metadata_song());
     const format_metadata_target_t song_bms{std::nullopt, format_family_t::bms};
 
-    const auto stale =
-        apply_metadata_edit(history, 3, set_song_metadata_action_t{"ignored", "ignored", {}});
-    CHECK_FALSE(stale.applied);
-    CHECK(has_error(stale));
     CHECK(history.document.metadata.title == "Old title");
 
     const auto before_prefix =
-        apply_metadata_edit(history, 4,
-                            edit_format_metadata_field_action_t{
-                                .target = song_bms,
-                                .index = 1,
-                                .name = "GENRE",
-                                .value = "test",
-                                .mode = wormedit::format_metadata_field_mode_t::insert});
+        apply_metadata_edit(history, edit_format_metadata_field_action_t{
+                                         .target = song_bms,
+                                         .index = 1,
+                                         .name = "GENRE",
+                                         .value = "test",
+                                         .mode = wormedit::format_metadata_field_mode_t::insert});
     CHECK_FALSE(before_prefix.applied);
     CHECK(has_error(before_prefix));
 
     const std::string invalid_utf8{"\xc3\x28", 2};
     const auto invalid =
-        apply_metadata_edit(history, 4,
-                            edit_format_metadata_field_action_t{
-                                .target = song_bms,
-                                .index = 0,
-                                .name = "SUBTITLE",
-                                .value = invalid_utf8,
-                                .mode = wormedit::format_metadata_field_mode_t::replace});
+        apply_metadata_edit(history, edit_format_metadata_field_action_t{
+                                         .target = song_bms,
+                                         .index = 0,
+                                         .name = "SUBTITLE",
+                                         .value = invalid_utf8,
+                                         .mode = wormedit::format_metadata_field_mode_t::replace});
     CHECK_FALSE(invalid.applied);
     CHECK(has_error(invalid));
 
     auto limits = metadata_edit_limits_t{};
     limits.maximum_total_metadata_bytes = 4;
     const auto capped = apply_metadata_edit(
-        history, 4, set_song_metadata_action_t{"long title", "artist", {}}, limits);
+        history, set_song_metadata_action_t{"long title", "artist", {}}, limits);
     CHECK_FALSE(capped.applied);
     CHECK(has_error(capped));
     CHECK(history.undo.empty());
@@ -313,7 +296,7 @@ TEST_CASE("metadata edits reject stale, unsafe, over-cap, and provenance-breakin
     limits = metadata_edit_limits_t{};
     limits.maximum_fields_per_group = 2;
     const auto existing_group_capped = apply_metadata_edit(
-        history, 4, set_song_metadata_action_t{"Changed", "Old artist", {}}, limits);
+        history, set_song_metadata_action_t{"Changed", "Old artist", {}}, limits);
     CHECK_FALSE(existing_group_capped.applied);
     CHECK(has_error(existing_group_capped));
     CHECK(history.document.metadata.title == "Old title");
@@ -323,7 +306,7 @@ TEST_CASE("semantic metadata no-ops do not dirty or advance the document",
           "[unit][core][metadata-editor]") {
     auto history = document_history_t::from(metadata_song());
     const auto no_op =
-        apply_metadata_edit(history, 4, set_song_metadata_action_t{"Old title", "Old artist", {}});
+        apply_metadata_edit(history, set_song_metadata_action_t{"Old title", "Old artist", {}});
     CHECK_FALSE(no_op.applied);
     CHECK(no_op.diagnostics.empty());
     CHECK(history.document.revision == 4);
@@ -341,18 +324,18 @@ TEST_CASE("metadata edits synchronize scoped copies of one retained source field
     auto history = document_history_t::from(std::move(song));
     const format_metadata_target_t song_bms{std::nullopt, format_family_t::bms};
 
-    REQUIRE(apply_metadata_edit(history, 4,
-                                edit_format_metadata_field_action_t{
-                                    .target = song_bms,
-                                    .index = 1,
-                                    .name = "SUBARTIST",
-                                    .value = "updated",
-                                    .mode = wormedit::format_metadata_field_mode_t::replace}));
+    REQUIRE(
+        apply_metadata_edit(history, edit_format_metadata_field_action_t{
+                                         .target = song_bms,
+                                         .index = 1,
+                                         .name = "SUBARTIST",
+                                         .value = "updated",
+                                         .mode = wormedit::format_metadata_field_mode_t::replace}));
     CHECK(history.document.metadata.format_groups.front().ordered_fields[1].second == "updated");
     CHECK(history.document.charts.front().metadata.format_groups.front().ordered_fields[1].second ==
           "updated");
 
-    REQUIRE(apply_metadata_edit(history, 5, erase_format_metadata_field_action_t{song_bms, 0}));
+    REQUIRE(apply_metadata_edit(history, erase_format_metadata_field_action_t{song_bms, 0}));
     CHECK(history.document.metadata.format_groups.front().ordered_field_source_orders ==
           std::vector<std::size_t>{11, 12});
     CHECK(history.document.charts.front()
@@ -374,7 +357,7 @@ TEST_CASE("Chart metadata batch commits selected charts once and preserves names
     auto history = document_history_t::from(song);
     const batch_chart_metadata_action_t action{.charts = {chart_id_t{2}, chart_id_t{6}},
         .author = "Batch author", .edit_rating = true, .rating = signed_rational_t{7, 2}};
-    require_metadata_batch(static_cast<bool>(apply_batch_chart_metadata_edit(history, 4, action)));
+    require_metadata_batch(static_cast<bool>(apply_batch_chart_metadata_edit(history, action)));
     expect_metadata_batch(static_cast<bool>(history.document.revision == 5));
     expect_metadata_batch(static_cast<bool>(history.undo.size() == 1));
     expect_metadata_batch(static_cast<bool>(history.document.charts[0].metadata.name == "Normal"));
@@ -395,19 +378,19 @@ TEST_CASE("Chart metadata batch commits selected charts once and preserves names
 TEST_CASE("Chart metadata batch rejects the whole selection on invalid target or value", "[unit][core][metadata-editor]") {
     auto history = document_history_t::from(metadata_song());
     batch_chart_metadata_action_t action{.charts = {chart_id_t{2}, chart_id_t{999}}, .author = "Changed"};
-    expect_metadata_batch(!static_cast<bool>(apply_batch_chart_metadata_edit(history, 4, action)));
+    expect_metadata_batch(!static_cast<bool>(apply_batch_chart_metadata_edit(history, action)));
     action.charts = {chart_id_t{2}, chart_id_t{2}};
-    expect_metadata_batch(!static_cast<bool>(apply_batch_chart_metadata_edit(history, 4, action)));
+    expect_metadata_batch(!static_cast<bool>(apply_batch_chart_metadata_edit(history, action)));
     action.charts = {chart_id_t{2}};
-    expect_metadata_batch(!static_cast<bool>(apply_batch_chart_metadata_edit(history, 3, action)));
     action.author = std::string{"bad\0text", 8};
-    expect_metadata_batch(!static_cast<bool>(apply_batch_chart_metadata_edit(history, 4, action)));
+    expect_metadata_batch(!static_cast<bool>(apply_batch_chart_metadata_edit(history, action)));
     action.author = "Changed";
     action.edit_rating = true;
     action.rating = signed_rational_t{3, 0};
-    expect_metadata_batch(!static_cast<bool>(apply_batch_chart_metadata_edit(history, 4, action)));
+    expect_metadata_batch(!static_cast<bool>(apply_batch_chart_metadata_edit(history, action)));
     action.rating = signed_rational_t{3, 2};
-    expect_metadata_batch(!static_cast<bool>(apply_batch_chart_metadata_edit(history, 4, action, {.maximum_total_metadata_bytes = 1})));
+    expect_metadata_batch(!static_cast<bool>(
+        apply_batch_chart_metadata_edit(history, action, {.maximum_total_metadata_bytes = 1})));
     expect_metadata_batch(static_cast<bool>(history.document.revision == 4));
     expect_metadata_batch(static_cast<bool>(history.document.charts[0].metadata.author == "Mapper"));
     expect_metadata_batch(!static_cast<bool>(history.document.charts[0].metadata.rating));
@@ -419,12 +402,15 @@ TEST_CASE("Chart metadata batch supports explicit rating clearing and preserves 
     auto song = metadata_song();
     song.charts[0].metadata.rating = signed_rational_t{11, 3};
     auto history = document_history_t::from(song);
-    require_metadata_batch(static_cast<bool>(apply_batch_chart_metadata_edit(history, 4, {.charts = {chart_id_t{2}}, .author = "New author"})));
+    require_metadata_batch(static_cast<bool>(apply_batch_chart_metadata_edit(
+        history, {.charts = {chart_id_t{2}}, .author = "New author"})));
     expect_metadata_batch(static_cast<bool>(history.document.charts[0].metadata.rating == signed_rational_t{11, 3}));
-    require_metadata_batch(static_cast<bool>(apply_batch_chart_metadata_edit(history, 5, {.charts = {chart_id_t{2}}, .edit_rating = true})));
+    require_metadata_batch(static_cast<bool>(apply_batch_chart_metadata_edit(
+        history, {.charts = {chart_id_t{2}}, .edit_rating = true})));
     expect_metadata_batch(!static_cast<bool>(history.document.charts[0].metadata.rating));
     expect_metadata_batch(static_cast<bool>(history.document.charts[0].metadata.author == "New author"));
-    expect_metadata_batch(!static_cast<bool>(apply_batch_chart_metadata_edit(history, 6, {.charts = {chart_id_t{2}}, .edit_rating = true})));
+    expect_metadata_batch(!static_cast<bool>(apply_batch_chart_metadata_edit(
+        history, {.charts = {chart_id_t{2}}, .edit_rating = true})));
     expect_metadata_batch(static_cast<bool>(history.document.revision == 6));
     expect_metadata_batch(static_cast<bool>(history.undo.size() == 2));
 }

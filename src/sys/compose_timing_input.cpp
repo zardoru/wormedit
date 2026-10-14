@@ -45,10 +45,10 @@ auto select_compose_timing_marker(const WormUiComposeInputAction& input,
     using namespace wormedit;
     const auto identity = compose_timing_identity(input.timing_lane);
     const auto mode = context.selection_mode(input.selection_mode);
-    if (!identity || !mode || input.object_id == 0 ||
-        input.timing_chart_id != context.state.chart.value ||
-        input.timing_document_revision != context.environment.document.history.document.revision)
+    if (!identity || !mode || input.object_id == 0)
         return "Timing marker selection is stale or invalid.";
+    if (!context.is_timing_input_current(input))
+        return stale_action_message("Timing marker selection");
     result = dispatch_editor_action(
         context.environment.document.history, context.state,
         select_editor_objects_action_t{
@@ -81,10 +81,10 @@ auto move_compose_timing_selection(const WormUiComposeInputAction& input,
     const auto identity = compose_timing_identity(input.timing_lane);
     const auto* chart = context.chart();
     const auto view = compose_view_for_state(context.environment.document.history, context.state);
-    if (!identity || !chart || !view || !std::isfinite(input.y_pixels) ||
-        input.timing_chart_id != chart->id.value ||
-        input.timing_document_revision != context.environment.document.history.document.revision)
+    if (!identity || !chart || !view || !std::isfinite(input.y_pixels))
         return "Timing marker move is stale or invalid.";
+    if (!context.is_timing_input_current(input))
+        return stale_action_message("Timing marker move");
     const auto clicked =
         editor_selection_object_t{identity->selection, object_id_t{input.object_id}};
     if (std::ranges::find(context.state.selected_objects, clicked) ==
@@ -114,8 +114,7 @@ auto move_compose_timing_selection(const WormUiComposeInputAction& input,
         return std::nullopt;
     }
     const auto moved = move_timing_lane_event_group(
-        context.environment.document.history, chart->id, selected, delta, input.timing_document_revision,
-        context.environment.commands.project.timing_recipe.timing_locked);
+        context.environment.document.history, chart->id, selected, delta, context.environment.commands.project.timing_recipe.timing_locked);
     result.accepted = moved.applied;
     result.document_changed = moved.applied;
     result.diagnostics = moved.diagnostics;
@@ -146,9 +145,9 @@ auto edit_compose_kiai_span(const WormUiComposeInputAction& input, compose_input
     using namespace wormedit;
     const auto* chart = context.chart();
     const auto view = compose_view_for_state(context.environment.document.history, context.state);
-    if (!chart || !view || input.timing_chart_id != chart->id.value ||
-        input.timing_document_revision != context.environment.document.history.document.revision)
-        return "Kiai edit is stale or invalid.";
+    if (!chart || !view) return "Kiai edit is stale or invalid.";
+    if (!context.is_timing_input_current(input))
+        return stale_action_message("Kiai edit");
     if (context.environment.commands.project.timing_recipe.timing_locked)
         return "Timing is locked.";
     const auto measures = build_measure_index(*chart);
@@ -180,9 +179,9 @@ auto edit_compose_kiai_span(const WormUiComposeInputAction& input, compose_input
         accepted = "Kiai area unchanged.";
         return std::nullopt;
     }
-    const auto edited = apply_marker_edit(
-        context.environment.document.history, context.environment.document.history.document.revision,
-        edit_kiai_span_action_t{.chart = chart->id, .edit = edit});
+    const auto edited =
+        apply_marker_edit(context.environment.document.history,
+                          edit_kiai_span_action_t{.chart = chart->id, .edit = edit});
     result.accepted = edited.applied;
     result.document_changed = edited.applied;
     result.diagnostics = edited.diagnostics;
@@ -217,9 +216,9 @@ auto edit_compose_speed_span(const WormUiComposeInputAction& input,
     using namespace wormedit;
     const auto* chart = context.chart();
     const auto view = compose_view_for_state(context.environment.document.history, context.state);
-    if (!chart || !view || input.timing_chart_id != chart->id.value ||
-        input.timing_document_revision != context.environment.document.history.document.revision)
-        return "Speed edit is stale or invalid.";
+    if (!chart || !view) return "Speed edit is stale or invalid.";
+    if (!context.is_timing_input_current(input))
+        return stale_action_message("Speed edit");
     const auto measures = build_measure_index(*chart);
     const auto* index = std::get_if<measure_index_t>(&measures);
     const auto speed =
@@ -290,9 +289,9 @@ auto edit_compose_recipe_range(const WormUiComposeInputAction& input,
     using namespace wormedit;
     const auto* chart = context.chart();
     const auto view = compose_view_for_state(context.environment.document.history, context.state);
-    if (!chart || !view || input.timing_chart_id != chart->id.value ||
-        input.timing_document_revision != context.environment.document.history.document.revision)
-        return "SV recipe edit is stale or invalid.";
+    if (!chart || !view) return "SV recipe edit is stale or invalid.";
+    if (!context.is_timing_input_current(input))
+        return stale_action_message("SV recipe edit");
     if (!find_input_recipe(*chart, input.object_id))
         return "The SV recipe no longer exists.";
     const auto press = context.position_at_compose_y_unrestricted(
@@ -315,14 +314,14 @@ auto edit_compose_recipe_range(const WormUiComposeInputAction& input,
         return drag.diagnostics.empty() ? "SV recipe edit was rejected."
                                         : drag.diagnostics.front().message;
     }
-    if (!update_sv_recipe_range_drag(
+    if (!revise_sv_recipe_range_drag(
             context.environment.document.history, drag, *release,
             context.environment.commands.project.timing_recipe.timing_locked)) {
         result.diagnostics = drag.diagnostics;
         return drag.diagnostics.empty() ? "SV recipe edit was rejected."
                                         : drag.diagnostics.front().message;
     }
-    const auto committed = commit_sv_recipe_range_drag(
+    const auto committed = apply_sv_recipe_range_drag(
         context.environment.document.history, drag,
         context.environment.commands.project.timing_recipe.timing_locked);
     result.accepted = committed.applied;
@@ -346,7 +345,8 @@ auto run_compose_recipe_command(std::uint64_t id, std::uint8_t command,
     const auto recipe_id = recipe->id;
     const auto chart_id = chart->id;
     const auto enabled = recipe->enabled;
-    sv_recipe_edit_action_t action = delete_sv_recipe_action_t{chart_id, recipe_id};
+    sv_recipe_edit_action_t action =
+        wormedit::delete_edit_t<wormedit::sv_recipe_t>{.chart = chart_id, .id = recipe_id};
     accepted = "SV recipe deleted.";
     if (command == 0) {
         action = set_sv_recipe_enabled_action_t{chart_id, recipe_id, !enabled};
@@ -356,7 +356,7 @@ auto run_compose_recipe_command(std::uint64_t id, std::uint8_t command,
         accepted = "SV recipe materialized into events.";
     }
     const auto edited = apply_sv_recipe_edit(
-        context.environment.document.history, context.environment.document.history.document.revision, action);
+        context.environment.document.history, action);
     result.accepted = edited.applied;
     result.document_changed = edited.applied;
     result.diagnostics = edited.diagnostics;

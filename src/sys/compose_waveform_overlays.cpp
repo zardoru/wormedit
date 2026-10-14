@@ -416,8 +416,9 @@ auto audio_offset_drag_matches(const std::optional<audio_offset_drag_t>& drag,
                                const workspace_controller_t& workspace,
                                const document_history_t& history) -> bool {
     return drag && drag_tab && workspace.selected_chart &&
-           *drag_tab == workspace_tab_t::compose && drag->chart == *workspace.selected_chart &&
-           drag->document_revision == history.document.revision;
+           *drag_tab == workspace_tab_t::compose &&
+           drag->stamp.is_current(history.document, *workspace.selected_chart,
+                                  document_identity_policy_t::revision_only);
 }
 
 void rebuild_offset_timing_index(compose_scene_cache_t& cache,
@@ -489,7 +490,7 @@ auto beat_fit_drag_matches(const compose_scene_cache_t& cache,
     return workspace.transport.audio_asset && cache.timing.beat_fit_drag &&
            cache.timing.beat_fit_asset == workspace.transport.audio_asset &&
            cache.timing.beat_fit_drag->sample_rate == waveform.waveform->sample_rate &&
-           cache.timing.beat_fit_drag->document_revision == history.document.revision;
+           cache.timing.beat_fit_drag->stamp.document.is_current(history.document, document_identity_policy_t::revision_only);
 }
 
 void populate_beat_fit_fields(WormUiComposeView& compose, const beat_interval_drag_t& drag) {
@@ -561,7 +562,7 @@ void populate_beat_fit_overlay(flattened_workspace_t& flattened,
     auto& compose = flattened.view.compose;
     populate_beat_fit_fields(compose, drag);
     compose.beat_fit_onset_snap_active = cache.timing.beat_fit_onset_snapped;
-    const auto chart = history.document.find_chart(drag.chart);
+    const auto chart = history.document.find_chart(drag.stamp.chart);
     if (chart == nullptr || !cache.scene.index || !interaction ||
         !cache.timing.marker_timing_index) return;
     build_beat_fit_positions_view(compose, cache, *chart, *interaction, drag);
@@ -586,12 +587,12 @@ void populate_tap_apply_overlay(flattened_workspace_t& flattened,
     if (!workspace.selected_chart || !interaction ||
         !analysis || !analysis->waveform || !cache.timing.marker_timing_index) return;
     const auto& proposal = *cache.timing.tap_apply_proposal;
-    if (proposal.chart != *workspace.selected_chart ||
-        proposal.document_revision != history.document.revision) return;
+    if (!proposal.stamp.is_current(history.document, *workspace.selected_chart,
+            document_identity_policy_t::revision_only)) return;
     const auto& bound = cache.timing.tap_preview_binding;
-    if (!bound || std::tie(bound->chart, bound->document_revision, bound->beats_per_minute,
+    if (!bound || std::tie(bound->stamp.chart, bound->stamp.document.revision, bound->beats_per_minute,
                            bound->beat_zero_audio_offset_seconds) !=
-                  std::tie(proposal.chart, proposal.document_revision, proposal.beats_per_minute,
+                  std::tie(proposal.stamp.chart, proposal.stamp.document.revision, proposal.beats_per_minute,
                            proposal.beat_zero_audio_offset_seconds)) {
         cache.timing.tap_preview_binding = proposal;
         cache.timing.tap_preview_timing.reset();
@@ -601,12 +602,11 @@ void populate_tap_apply_overlay(flattened_workspace_t& flattened,
         if (timing) cache.timing.tap_preview_timing = std::move(timing.index);
     }
     if (!cache.timing.tap_preview_timing) return;
-    const auto chart = history.document.find_chart(proposal.chart);
+    const auto chart = history.document.find_chart(proposal.stamp.chart);
     if (chart == nullptr) return;
     build_compose_proposed_grid_view(flattened, cache, *chart, *cache.timing.marker_timing_index,
                                   *cache.timing.tap_preview_timing, *interaction);
-    const audio_offset_drag_t offset{.chart = proposal.chart,
-        .document_revision = proposal.document_revision, .sample_rate = proposal.sample_rate,
+    const audio_offset_drag_t offset{.stamp = proposal.stamp, .sample_rate = proposal.sample_rate,
         .proposed_offset_seconds = proposal.beat_zero_audio_offset_seconds};
     update_proposed_beat_zero(flattened, offset, analysis);
     flattened.view.compose.waveform_offset_drag_active = true;
@@ -633,7 +633,7 @@ void populate_compose_waveform_overlays(
                                     waveform_analysis);
     if (cache.timing.offset_fit_drag && workspace.transport.audio_asset &&
         cache.timing.offset_fit_drag->asset == workspace.transport.audio_asset &&
-        cache.timing.offset_fit_drag->beat.document_revision == history.document.revision) {
+        cache.timing.offset_fit_drag->beat.stamp.document.is_current(history.document, document_identity_policy_t::revision_only)) {
         flattened.view.compose.offset_fit_drag_active = true;
         flattened.view.compose.offset_fit_target_y_pixels =
             cache.timing.offset_fit_drag->target_y_pixels;

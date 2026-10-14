@@ -13,13 +13,11 @@
 
 namespace wormedit::sys {
 
-inline auto compose_measure_edit_rejection(const document_history_t& history,
-    const editor_interaction_state_t& state, bool paste_active, std::uint64_t expected_revision)
+inline auto compose_measure_edit_rejection(const editor_interaction_state_t& state,
+                                           bool paste_active)
     -> std::optional<std::string> {
     if (editor_interaction_has_pending_gesture(state) || paste_active)
         return "Finish or cancel the active Compose gesture before editing measures.";
-    if (history.document.revision != expected_revision)
-        return "Measure edit ignored because the document changed.";
     return std::nullopt;
 }
 

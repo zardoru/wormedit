@@ -315,11 +315,14 @@ auto make_space_range_preview(const document_history_t& history,
     if (!state.pending_space_range_selection)
         return std::optional<space_range_selection_preview_t>{};
     const auto& pending = *state.pending_space_range_selection;
-    if (pending.document_revision != history.document.revision || !pending.hit_index ||
+    if (!pending.hit_index)
+        return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
+                                       "Space range selection is stale after a document edit")};
+    if (!pending.stamp.is_revision_current(history.document.revision) ||
         pending.hit_index->document_revision != history.document.revision ||
         pending.hit_index->chart != geometry.chart->id)
         return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
-                                       "Space range selection is stale after a document edit")};
+                                       stale_action_message("Editor gesture"))};
     if (pending.anchor_canvas_row >= geometry.canvas_rows)
         return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                        "Space range anchor lies outside chart geometry")};
@@ -333,7 +336,7 @@ auto make_space_range_preview(const document_history_t& history,
     auto objects = std::get<std::vector<editor_selection_object_t>>(std::move(combined));
     auto notes = notes_from_objects(objects);
     return std::optional{space_range_selection_preview_t{
-        .document_revision = pending.document_revision, .anchor = pending.anchor,
+        .stamp = pending.stamp, .anchor = pending.anchor,
         .cursor = state.cursor, .anchor_canvas_row = pending.anchor_canvas_row,
         .cursor_canvas_row = geometry.absolute_row, .first_row = first, .last_row = last,
         .mode = pending.mode,
@@ -418,13 +421,13 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         .pending_note_paint_gesture =
             state.pending_note_paint_gesture
                 ? std::optional{note_paint_gesture_preview_t{
-                      .document_revision = state.pending_note_paint_gesture->document_revision,
+                      .stamp = state.pending_note_paint_gesture->stamp,
                       .targets = state.pending_note_paint_gesture->targets}}
                 : std::nullopt,
         .pending_editor_area_selection =
             state.pending_editor_area_selection
                 ? std::optional{editor_area_selection_preview_t{
-                      .document_revision = state.pending_editor_area_selection->document_revision,
+                      .stamp = state.pending_editor_area_selection->stamp,
                       .left_pixels =
                           std::min(state.pending_editor_area_selection->anchor_x_pixels,
                                    state.pending_editor_area_selection->current_x_pixels),
@@ -573,13 +576,14 @@ auto follow_editor_playhead(document_history_t& history, editor_interaction_stat
                             double target_scroll, double following_anchor_fraction,
                             double cursor_subrow) -> editor_interaction_result_t {
     const auto* chart = history.document.find_chart(state.chart);
-    if (!chart || !geometry.index || geometry.chart != state.chart ||
-        geometry.document_revision != history.document.revision ||
-        !std::isfinite(target_scroll) || !std::isfinite(following_anchor_fraction) ||
-        !std::isfinite(cursor_subrow) ||
+    if (!chart || !geometry.index || !std::isfinite(target_scroll) ||
+        !std::isfinite(following_anchor_fraction) || !std::isfinite(cursor_subrow) ||
         following_anchor_fraction < 0.0 || following_anchor_fraction > 1.0 || is_playhead_gesture_active(state))
         return {.diagnostics = {error(diagnostic_code_t::invalid_id,
                                      "playhead geometry is stale or playback editing is blocked")}};
+    if (geometry.chart != state.chart || geometry.document_revision != history.document.revision)
+        return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                                     stale_action_message("Playhead geometry"))}};
     const auto& index = *geometry.index;
     if (!absolute_row(index, position))
         return {.diagnostics = {error(diagnostic_code_t::row_out_of_range,
@@ -886,7 +890,7 @@ auto stage_delete_stem_points(song_document_t& proposed, const editor_edit_conte
         }
     if (stems.empty()) return std::size_t{0};
     auto scratch = document_history_t::from(proposed);
-    const auto moved = move_notes_to_bgm(scratch, scratch.document.revision, context.state.chart, stems, std::nullopt);
+    const auto moved = move_notes_to_bgm(scratch, context.state.chart, stems, std::nullopt);
     if (!moved.applied) return moved.diagnostics;
     proposed = std::move(scratch.document);
     return stems.size();
@@ -905,7 +909,6 @@ auto delete_editor_selection(editor_edit_context_t& context) -> editor_interacti
     const auto linked_event = std::get<std::optional<object_id_t>>(inspected);
     if (linked_event) {
         auto command = delete_bmson_bgm_marker(context.history,
-                                              context.history.document.revision,
                                               context.state.chart, *linked_event);
         if (!command)
             return diagnostic_result(context.history, context.state,
@@ -1214,7 +1217,7 @@ auto assign_selected_objects_to_lane(editor_edit_context_t& context,
     }
     const auto revision = context.history.document.revision;
     const auto command = move_selected_objects_to_lane(
-        context.history, revision, context.state, notes, events, action.lane);
+        context.history, context.state, notes, events, action.lane);
     if (!command.applied)
         return diagnostic_result(context.history, context.state, command.diagnostics);
     std::unordered_set<std::uint64_t> assigned_ids;
@@ -1379,7 +1382,7 @@ auto stage_keyboard_occupant(document_history_t& scratch, editor_interaction_sta
     if (to_bgm) {
         const std::array ids{occupant.id};
         const auto moved =
-            move_notes_to_bgm(scratch, scratch.document.revision, state.chart, ids, std::nullopt);
+            move_notes_to_bgm(scratch, state.chart, ids, std::nullopt);
         return moved.diagnostics;
     }
     state.pending_hold.reset();
@@ -1412,7 +1415,7 @@ auto place_keyboard_entry(document_history_t& scratch, editor_interaction_state_
                                        "Choose a non-hold note kind to replace an occupied head")};
     }
     const auto inserted = insert_bmson_playable_stem_point(
-        scratch, scratch.document.revision, state.chart, *stem, target, lane, geometry);
+        scratch, state.chart, *stem, target, lane, geometry);
     if (!inserted)
         return inserted.diagnostics;
     const auto* chart = scratch.document.find_chart(state.chart);
@@ -1589,7 +1592,7 @@ auto begin_semantic_paint(editor_edit_context_t& context, layer_id_t layer_id,
     if (bgm_event) bgm_events->push_back(*bgm_event);
     pending_semantic_layer_paint_gesture_t pending{
         .layer = layer_id,
-        .document_revision = history.document.revision,
+        .stamp = document_stamp_t::from(history.document.revision),
         .notes = std::move(notes),
         .bgm_events = std::move(bgm_events),
         .replace_memberships = replace_memberships,
@@ -1640,11 +1643,14 @@ auto end_semantic_paint(editor_edit_context_t& context, object_id_t note_id,
             {error(diagnostic_code_t::invalid_hold,
                    "semantic-layer paint gesture was cancelled before commit")});
     const auto pending = *state.pending_semantic_layer_paint_gesture;
-    if (pending.document_revision != history.document.revision || !pending.notes ||
-        !pending.bgm_events || (pending.notes->empty() && pending.bgm_events->empty()))
+    if (!pending.notes || !pending.bgm_events || (pending.notes->empty() && pending.bgm_events->empty()))
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "semantic-layer paint gesture is malformed or stale")});
+    if (!pending.stamp.is_revision_current(history.document.revision))
+        return diagnostic_result(history, state,
+                                 {error(diagnostic_code_t::invalid_hold,
+                                        stale_action_message("Editor gesture"))});
     const auto layer = std::ranges::find(context.scope.chart.semantic_layers, pending.layer,
                                         &semantic_layer_t::id);
     if (!pending.clear_memberships &&
@@ -1653,7 +1659,7 @@ auto end_semantic_paint(editor_edit_context_t& context, object_id_t note_id,
             {error(diagnostic_code_t::invalid_id,
                    "semantic-layer paint requires an unlocked visible layer")});
     const auto edit = semantic_paint_edit(state.chart, pending);
-    const auto applied = apply_semantic_layer_edit(history, pending.document_revision, edit);
+    const auto applied = apply_semantic_layer_edit(history, edit);
     if (!applied && !applied.diagnostics.empty())
         return diagnostic_result(history, state, applied.diagnostics);
     state.pending_semantic_layer_paint_gesture.reset();
@@ -1857,7 +1863,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         clear_editor_gestures(state);
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_hold,
-                                        "Editor gesture is stale after a document edit.")});
+                                        stale_action_message("Editor gesture"))});
     }
     auto result = dispatch_editor_action_impl(history, state, action);
     if (!result && is_terminal_editor_gesture_action(state, action)) {

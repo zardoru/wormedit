@@ -9,6 +9,53 @@
 #include <utility>
 
 namespace wormedit {
+auto document_stamp_t::from(std::uint64_t revision) noexcept -> document_stamp_t {
+    return {.project = {}, .revision = revision};
+}
+
+auto document_stamp_t::from(const song_document_t& document) noexcept -> document_stamp_t {
+    return {.project = document.id, .revision = document.revision};
+}
+
+auto document_stamp_t::is_revision_current(std::uint64_t current_revision) const noexcept -> bool {
+    return revision == current_revision;
+}
+
+auto document_stamp_t::is_current(const song_document_t& document,
+    document_identity_policy_t policy) const noexcept -> bool {
+    return is_revision_current(document.revision) &&
+           (policy == document_identity_policy_t::revision_only || project == document.id);
+}
+
+auto chart_stamp_t::from(const song_document_t& document, chart_id_t chart) noexcept -> chart_stamp_t {
+    return {.document = document_stamp_t::from(document), .chart = chart};
+}
+
+auto chart_stamp_t::is_identity_current(const song_document_t& current,
+                                          chart_id_t selected) const noexcept -> bool {
+    return document.project == current.id && chart == selected;
+}
+
+auto chart_stamp_t::is_current(chart_id_t current_chart,
+                                std::uint64_t current_revision) const noexcept -> bool {
+    return chart == current_chart && document.is_revision_current(current_revision);
+}
+
+auto chart_stamp_t::is_current(const song_document_t& current, chart_id_t selected,
+    document_identity_policy_t policy) const noexcept -> bool {
+    return document.is_current(current, policy) && chart == selected;
+}
+
+auto stale_action_message(std::string_view label) -> std::string {
+    constexpr std::string_view suffix =
+        " ignored because the project, chart or document revision changed.";
+    std::string message;
+    message.reserve(label.size() + suffix.size());
+    message.append(label);
+    message.append(suffix);
+    return message;
+}
+
 void reject(document_command_result_t& result, diagnostic_code_t code, std::string message,
             std::optional<object_id_t> object) {
     result.diagnostics.push_back(error(code, std::move(message), object));
@@ -79,11 +126,6 @@ auto document_history_t::from(song_document_t document, std::size_t maximum_undo
     };
 }
 
-auto make_document_history(song_document_t document, std::size_t maximum_undo_entries,
-                           bool initially_saved) -> document_history_t {
-    return document_history_t::from(std::move(document), maximum_undo_entries, initially_saved);
-}
-
 auto is_document_dirty(const document_history_t& history) noexcept -> bool {
     return !history.saved_revision.has_value() ||
            *history.saved_revision != history.document.revision;
@@ -133,6 +175,22 @@ auto document_command_transaction_t::from(document_history_t& history)
     return {.history = history, .outcome = {.revision = history.document.revision}};
 }
 
+auto document_command_transaction_t::from(document_history_t& history, const document_stamp_t& stamp,
+    std::string_view label, document_identity_policy_t policy, diagnostic_code_t stale_code)
+    -> document_command_transaction_t {
+    if (stamp.is_current(history.document, policy)) return from(history);
+    return {.history = history,
+            .outcome = rejection(history.document.revision, stale_code, stale_action_message(label)),
+            .finished = true};
+}
+
+auto document_command_transaction_t::from(document_history_t& history, const chart_stamp_t& stamp,
+    std::string_view label, document_identity_policy_t policy, diagnostic_code_t stale_code)
+    -> document_command_transaction_t {
+    // The proposal owns its target chart; its existing missing-target validation follows this guard.
+    return from(history, stamp.document, label, policy, stale_code);
+}
+
 auto document_command_transaction_t::is_ready() const noexcept -> bool {
     if (finished) return false;
     for (const auto& diagnostic : outcome.diagnostics) {
@@ -176,6 +234,19 @@ auto document_command_transaction_t::rejection(std::uint64_t revision, diagnosti
 auto document_command_transaction_t::rejection(std::uint64_t revision,
     diagnostic_list_t diagnostics) -> document_command_result_t {
     return {.revision = revision, .diagnostics = std::move(diagnostics)};
+}
+
+auto document_command_transaction_t::finish_without_commit() -> document_command_result_t {
+    finished = true;
+    proposed.reset();
+    return std::move(outcome);
+}
+
+auto document_command_transaction_t::finish_with(document_command_result_t result)
+    -> document_command_result_t {
+    if (finished) return result;
+    outcome = std::move(result);
+    return finish_without_commit();
 }
 
 auto document_command_transaction_t::reject(diagnostic_code_t code, std::string message,
@@ -233,16 +304,11 @@ auto apply_quantize_command(document_history_t& history, chart_id_t chart_id,
     return result;
 }
 
-auto apply_redivision_command(document_history_t& history, std::uint64_t expected_revision,
+auto apply_redivision_command(document_history_t& history,
                               chart_id_t chart_id, std::uint64_t new_resolution)
     -> redivision_command_result_t {
     redivision_command_result_t result;
     result.command.revision = history.document.revision;
-    if (history.document.revision != expected_revision) {
-        result.command.diagnostics.push_back(
-            error(diagnostic_code_t::invalid_id, "redivision command targets a stale revision"));
-        return result;
-    }
     const auto chart = history.document.find_chart(chart_id);
     if (chart == nullptr) {
         result.command.diagnostics.push_back(

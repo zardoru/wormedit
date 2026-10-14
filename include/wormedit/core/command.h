@@ -6,9 +6,117 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <variant>
 #include <vector>
 
 namespace wormedit {
+
+// Controller defaults and incomplete command defaults have distinct existing contracts.
+enum class chart_edit_value_default_policy_t { controller, command };
+
+template <typename Value> struct chart_edit_value_traits_t {
+    using id_type = object_id_t;
+    using delete_options_type = std::monostate;
+};
+
+template <typename Value> struct insert_edit_t {
+    chart_id_t chart;
+    Value value;
+    auto operator==(const insert_edit_t&) const -> bool = default;
+};
+
+template <typename Value> struct update_edit_t {
+    chart_id_t chart;
+    typename chart_edit_value_traits_t<Value>::id_type id;
+    Value value;
+    auto operator==(const update_edit_t&) const -> bool = default;
+};
+
+template <typename Value> struct delete_edit_t {
+    chart_id_t chart;
+    typename chart_edit_value_traits_t<Value>::id_type id;
+    [[no_unique_address]] typename chart_edit_value_traits_t<Value>::delete_options_type options{};
+    auto operator==(const delete_edit_t&) const -> bool = default;
+};
+
+template <typename Value>
+using chart_edit_t = std::variant<insert_edit_t<Value>, update_edit_t<Value>, delete_edit_t<Value>>;
+
+// Positions and scalar settings are independent values; no field-by-field translation.
+template <typename Settings> struct positioned_edit_value_t {
+    local_position_t position;
+    Settings settings{make_default_settings()};
+
+    [[nodiscard]] static auto from(local_position_t position, const Settings& settings)
+        -> positioned_edit_value_t {
+        return {.position = position, .settings = settings};
+    }
+    [[nodiscard]] static auto from(position_span_t span, std::optional<warp_provenance_t> encoding)
+        -> positioned_edit_value_t
+        requires requires { Settings::from(span.end, encoding); }
+    {
+        return from(span.begin, Settings::from(span.end, encoding));
+    }
+    [[nodiscard]] auto span() const -> position_span_t
+        requires requires(const Settings& value) { value.end; }
+    {
+        return {.begin = position, .end = settings.end};
+    }
+    [[nodiscard]] auto source_encoding() const -> std::optional<warp_provenance_t>
+        requires requires(const Settings& value) {
+            value.source_encoding;
+            value.is_source_encoding_replaced;
+        }
+    {
+        return settings.is_source_encoding_replaced ? std::optional{settings.source_encoding}
+                                                    : std::nullopt;
+    }
+    auto operator==(const positioned_edit_value_t&) const -> bool = default;
+
+  private:
+    static auto make_default_settings() -> Settings {
+        if constexpr (requires {
+                          Settings::with_defaults(chart_edit_value_default_policy_t::command);
+                      })
+            return Settings::with_defaults(chart_edit_value_default_policy_t::command);
+        else
+            return {};
+    }
+};
+
+// Older revision-only captures keep that contract when adopting a shared stamp.
+enum class document_identity_policy_t { project_and_revision, revision_only };
+
+struct document_stamp_t {
+    song_id_t project;
+    std::uint64_t revision{};
+
+    // Revision-only captures have no project identity; callers use the clock query.
+    [[nodiscard]] static auto from(std::uint64_t revision) noexcept -> document_stamp_t;
+    [[nodiscard]] static auto from(const song_document_t& document) noexcept -> document_stamp_t;
+    [[nodiscard]] auto is_revision_current(std::uint64_t current_revision) const noexcept -> bool;
+    [[nodiscard]] auto is_current(const song_document_t& document,
+        document_identity_policy_t policy = document_identity_policy_t::project_and_revision) const noexcept -> bool;
+    auto operator==(const document_stamp_t&) const -> bool = default;
+};
+
+struct chart_stamp_t {
+    document_stamp_t document;
+    chart_id_t chart;
+
+    [[nodiscard]] static auto from(const song_document_t& document, chart_id_t chart) noexcept
+        -> chart_stamp_t;
+    [[nodiscard]] auto is_identity_current(const song_document_t& document,
+                                            chart_id_t selected) const noexcept -> bool;
+    [[nodiscard]] auto is_current(chart_id_t current_chart,
+                                  std::uint64_t current_revision) const noexcept -> bool;
+    [[nodiscard]] auto is_current(const song_document_t& current, chart_id_t selected,
+        document_identity_policy_t policy = document_identity_policy_t::project_and_revision) const noexcept -> bool;
+    auto operator==(const chart_stamp_t&) const -> bool = default;
+};
+
+[[nodiscard]] auto stale_action_message(std::string_view label) -> std::string;
 
 struct document_command_record_t {
     std::string label;
@@ -73,10 +181,6 @@ struct redivision_command_payload_t {
 
 using redivision_command_result_t = command_result_with_t<redivision_command_payload_t>;
 
-// Compatibility for the sys/ui migration wave; new callers use document_history_t::from.
-[[nodiscard]] auto make_document_history(song_document_t document,
-                                         std::size_t maximum_undo_entries = 128,
-                                         bool initially_saved = true) -> document_history_t;
 
 [[nodiscard]] auto is_document_dirty(const document_history_t& history) noexcept -> bool;
 void mark_document_saved(document_history_t& history) noexcept;
@@ -88,7 +192,7 @@ struct document_command_options_t {
 };
 
 // A synchronous command owns its working document only after the first edit.
-// Keep revision checks at apply entry points until command stamps are introduced.
+// Captured proposals use the stamped factory; synchronous commands use from(history).
 struct document_command_transaction_t {
     document_history_t& history;
     document_command_result_t outcome;
@@ -97,6 +201,16 @@ struct document_command_transaction_t {
 
     [[nodiscard]] static auto from(document_history_t& history)
         -> document_command_transaction_t;
+    [[nodiscard]] static auto from(document_history_t& history, const document_stamp_t& stamp,
+        std::string_view label,
+        document_identity_policy_t policy = document_identity_policy_t::project_and_revision,
+        diagnostic_code_t stale_code = diagnostic_code_t::invalid_id)
+        -> document_command_transaction_t;
+    [[nodiscard]] static auto from(document_history_t& history, const chart_stamp_t& stamp,
+        std::string_view label,
+        document_identity_policy_t policy = document_identity_policy_t::project_and_revision,
+        diagnostic_code_t stale_code = diagnostic_code_t::invalid_id)
+        -> document_command_transaction_t;
     [[nodiscard]] auto is_ready() const noexcept -> bool;
     [[nodiscard]] auto has_copy() const noexcept -> bool;
     [[nodiscard]] auto source_chart(chart_id_t id) const -> const chart_document_t*;
@@ -104,6 +218,9 @@ struct document_command_transaction_t {
     // Staged editors hand over their existing snapshot without copying the live document.
     void adopt_document(song_document_t&& document);
     auto chart(chart_id_t id) -> chart_document_t*;
+    // Returns the current outcome and discards the working snapshot without publication.
+    [[nodiscard]] auto finish_without_commit() -> document_command_result_t;
+    [[nodiscard]] auto finish_with(document_command_result_t result) -> document_command_result_t;
     [[nodiscard]] auto reject(diagnostic_code_t code, std::string message,
                 std::optional<object_id_t> object = std::nullopt) -> document_command_result_t;
     [[nodiscard]] static auto rejection(std::uint64_t revision, diagnostic_code_t code,
@@ -133,8 +250,7 @@ struct document_command_transaction_t {
 // Exact global redivision of one chart as a single undoable command. Rounds
 // nothing: any inexact position rejects the whole command and leaves history
 // untouched. Redividing to the current resolution is a no-op without an entry.
-[[nodiscard]] auto apply_redivision_command(document_history_t& history,
-                                            std::uint64_t expected_revision, chart_id_t chart,
+[[nodiscard]] auto apply_redivision_command(document_history_t& history, chart_id_t chart,
                                             std::uint64_t new_resolution)
     -> redivision_command_result_t;
 

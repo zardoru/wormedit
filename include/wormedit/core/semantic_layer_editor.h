@@ -26,14 +26,21 @@ struct semantic_layer_rgba_t {
     double green{};
     double blue{};
     double alpha{1.0};
+    auto operator==(const semantic_layer_rgba_t&) const -> bool = default;
 };
 
 struct semantic_layer_palette_window_t {
+    // Projects one bounded palette page from visible layers plus an explicitly
+    // selected hidden layer. reveal_selected moves the window to that stable ID;
+    // otherwise requested_page is clamped after document edits.
     [[nodiscard]] static auto from(const chart_document_t& chart,
                                    std::optional<layer_id_t> selected_layer,
                                    std::size_t requested_page, bool reveal_selected,
                                    std::size_t page_size, std::size_t maximum_layers = 100'000)
         -> std::optional<semantic_layer_palette_window_t>;
+    // Projects a bounded scrolling window over every layer, including hidden
+    // layers, in chart order. The first row clamps after catalog edits. A zero
+    // row count or a chart exceeding maximum_layers rejects the request.
     [[nodiscard]] static auto from(const chart_document_t& chart, std::size_t first_row,
                                    std::size_t row_count, std::size_t maximum_layers = 100'000)
         -> std::optional<semantic_layer_palette_window_t>;
@@ -45,46 +52,22 @@ struct semantic_layer_palette_window_t {
     std::vector<std::size_t> layer_indices;
 };
 
-// Projects one bounded palette page from visible layers plus an explicitly
-// selected hidden layer. reveal_selected moves the window to that stable ID;
-// otherwise requested_page is clamped after document edits.
-[[nodiscard]] auto make_semantic_layer_palette_window(const chart_document_t& chart,
-                                                      std::optional<layer_id_t> selected_layer,
-                                                      std::size_t requested_page,
-                                                      bool reveal_selected, std::size_t page_size,
-                                                      std::size_t maximum_layers = 100'000)
-    -> std::optional<semantic_layer_palette_window_t>;
-
-// Projects a bounded scrolling window over every layer, including hidden
-// layers, in chart order. The first row clamps after catalog edits. A zero
-// row count or a chart exceeding maximum_layers rejects the request.
-[[nodiscard]] auto make_semantic_layer_palette_window(const chart_document_t& chart,
-                                                      std::size_t first_row,
-                                                      std::size_t row_count,
-                                                      std::size_t maximum_layers = 100'000)
-    -> std::optional<semantic_layer_palette_window_t>;
-
-struct insert_semantic_layer_action_t {
-    chart_id_t chart;
+struct semantic_layer_edit_value_t {
     std::string name;
     semantic_layer_rgba_t color;
     bool visible{true};
-    bool locked{false};
+    bool locked{};
+    auto operator==(const semantic_layer_edit_value_t&) const -> bool = default;
 };
 
-struct update_semantic_layer_action_t {
-    chart_id_t chart;
-    layer_id_t layer;
-    std::string name;
-    semantic_layer_rgba_t color;
-    bool visible{true};
-    bool locked{false};
+struct semantic_layer_delete_options_t {
+    bool remove_from_notes{};
+    auto operator==(const semantic_layer_delete_options_t&) const -> bool = default;
 };
 
-struct delete_semantic_layer_action_t {
-    chart_id_t chart;
-    layer_id_t layer;
-    bool remove_from_notes{false};
+template <> struct chart_edit_value_traits_t<semantic_layer_edit_value_t> {
+    using id_type = layer_id_t;
+    using delete_options_type = semantic_layer_delete_options_t;
 };
 
 struct reorder_semantic_layers_action_t {
@@ -120,10 +103,11 @@ struct replace_notes_semantic_layer_action_t {
 };
 
 using semantic_layer_edit_action_t =
-    std::variant<insert_semantic_layer_action_t, update_semantic_layer_action_t,
-                 delete_semantic_layer_action_t, reorder_semantic_layers_action_t,
-                 semantic_layer_membership_edit_t, clear_semantic_layer_membership_action_t,
-                 replace_notes_semantic_layer_action_t>;
+    std::variant<wormedit::insert_edit_t<wormedit::semantic_layer_edit_value_t>,
+                 wormedit::update_edit_t<wormedit::semantic_layer_edit_value_t>,
+                 wormedit::delete_edit_t<wormedit::semantic_layer_edit_value_t>,
+                 reorder_semantic_layers_action_t, semantic_layer_membership_edit_t,
+                 clear_semantic_layer_membership_action_t, replace_notes_semantic_layer_action_t>;
 
 // Applies one layer edit through shared document history. Layer IDs are stable,
 // nonzero, chart-local values. Membership actions affect only the explicitly
@@ -132,7 +116,6 @@ using semantic_layer_edit_action_t =
 // so a layer can be renamed or unlocked. Deleting a populated layer requires
 // remove_from_notes=true and removes its memberships in the same transaction.
 [[nodiscard]] auto apply_semantic_layer_edit(document_history_t& history,
-                                             std::uint64_t expected_revision,
                                              const semantic_layer_edit_action_t& action,
                                              semantic_layer_edit_limits_t limits = {})
     -> document_command_result_t;
@@ -152,7 +135,6 @@ inline constexpr std::size_t maximum_sound_layer_default_resources = 100'000;
 // on the chart, be unlocked and unique; resources must be catalog sounds. Any
 // invalid entry rejects the whole batch. A no-op creates no history entry.
 [[nodiscard]] auto apply_sound_layer_defaults(document_history_t& history,
-                                              std::uint64_t expected_revision,
                                               const sound_layer_defaults_action_t& action)
     -> document_command_result_t;
 
@@ -174,7 +156,6 @@ struct sound_layer_membership_action_t {
 // Adding tags matching unlayered notes in the same history step. Overwrite also
 // replaces assigned memberships; locked memberships reject the whole request.
 [[nodiscard]] auto apply_sound_layer_membership(document_history_t& history,
-                                                std::uint64_t expected_revision,
                                                 const sound_layer_membership_action_t& action)
     -> document_command_result_t;
 
@@ -189,8 +170,7 @@ struct add_selected_sounds_to_semantic_layer_action_t {
 // and fills matching unassigned notes/BGM across this chart in one Undo step.
 // Explicit memberships are retained. Silent selected objects are ignored; an all-
 // silent selection is a no-op. Invalid or repeated selected IDs reject the batch.
-[[nodiscard]] auto add_selected_sounds_to_semantic_layer(document_history_t& history,
-    std::uint64_t expected_revision, const add_selected_sounds_to_semantic_layer_action_t& action,
+[[nodiscard]] auto add_selected_sounds_to_semantic_layer(document_history_t& history, const add_selected_sounds_to_semantic_layer_action_t& action,
     semantic_layer_edit_limits_t limits = {}) -> document_command_result_t;
 
 // Layers a sound brings to a freshly placed note: its defaults that still exist

@@ -45,7 +45,7 @@ class native_project_autosave_loop_t {
         std::uint64_t initial_session_sequence = 0,
         clock_t::duration interval = std::chrono::minutes{5},
         clock_t::duration retry_delay = std::chrono::seconds{30},
-        std::optional<notification_sink_t> notifications = {});
+        notification_sink_t notifications = notification_sink_t::muted());
     ~native_project_autosave_loop_t();
 
     native_project_autosave_loop_t(const native_project_autosave_loop_t&) = delete;
@@ -86,7 +86,7 @@ class native_project_autosave_loop_t {
                            std::optional<native_project_autosave_result_t>& result);
 
     task_scheduler_t& scheduler_;
-    std::optional<notification_sink_t> notifications_;
+    notification_sink_t notifications_{notification_sink_t::muted()};
     native_project_autosave_coordinator_t coordinator_;
     clock_t::duration interval_;
     clock_t::duration retry_delay_;

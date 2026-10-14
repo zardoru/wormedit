@@ -7,6 +7,7 @@
 #include "sys/compose_input.h"
 #include "sys/external_player_runtime.h"
 #include "sys/metadata_actions.h"
+#include "sys/project_open.h"
 #include "sys/project_view.h"
 #include "sys/timing_edit_runtime.h"
 #include "sys/timing_view.h"
@@ -56,19 +57,20 @@ inline auto dispatch_compose_view_action(
     double viewport_height, application_command_state_t& application_state,
     const std::filesystem::path& asset_base, wormedit::task_scheduler_t& resource_copy_scheduler,
     runtime::resource_copy_t& resource_copy_runtime, runtime::output_group_export_t& export_runtime,
-    bool metadata_import_busy, std::optional<wormedit::notification_sink_t> notifications = {})
-    -> std::string {
+    bool metadata_import_busy,
+    wormedit::notification_sink_t notifications = wormedit::notification_sink_t::muted(),
+    bool post_notifications = true) -> std::string {
     test_dispatch::defaults_t defaults;
     defaults.project_identity.asset_base = asset_base;
-    auto& sink = notifications ? *notifications : defaults.notification_sink;
+    auto& sink = notifications;
     const compose_action_inputs_t environment{
         {history, workspace, sink},
         {application_state, defaults.compose_interaction_state},
-        {defaults.project_identity.asset_base,
-         {resource_copy_scheduler, resource_copy_runtime, export_runtime},
-         {defaults.metadata_drop, defaults.metadata_asset_runtime}}};
+        compose_resource_inputs_t{defaults.project_identity.asset_base,
+                                  {resource_copy_scheduler, resource_copy_runtime, export_runtime},
+                                  {defaults.metadata_drop, defaults.metadata_asset_runtime}}};
     return dispatch_compose_view_action(action, environment, state, viewport_height,
-                                        metadata_import_busy, bool(notifications));
+                                        metadata_import_busy, post_notifications);
 }
 
 inline auto dispatch_compose_workspace_action(
@@ -86,9 +88,9 @@ inline auto dispatch_compose_workspace_action(
     const compose_action_inputs_t environment{
         {history, workspace, notifications},
         {application_state, interaction_state},
-        {defaults.project_identity.asset_base,
-         {resource_copy_scheduler, resource_copy_runtime, export_runtime},
-         {metadata_drop, metadata_asset_runtime}}};
+        compose_resource_inputs_t{defaults.project_identity.asset_base,
+                                  {resource_copy_scheduler, resource_copy_runtime, export_runtime},
+                                  {metadata_drop, metadata_asset_runtime}}};
     return dispatch_compose_workspace_action(action, environment, viewport_height,
                                              metadata_import_busy);
 }
@@ -129,15 +131,16 @@ inline auto dispatch_metadata_action(
     metadata_drop_state_t& metadata_drop, runtime::metadata_asset_t& metadata_asset_runtime,
     const std::filesystem::path& asset_base, wormedit::task_scheduler_t& resource_copy_scheduler,
     bool resource_copy_busy, bool export_busy,
-    std::optional<notification_sink_t> notifications = {}) -> std::optional<std::string> {
+    notification_sink_t notifications = notification_sink_t::muted())
+    -> std::optional<std::string> {
     test_dispatch::defaults_t defaults;
     defaults.project_identity.asset_base = asset_base;
-    auto& sink = notifications ? *notifications : defaults.notification_sink;
+    auto& sink = notifications;
     const metadata_action_inputs_t environment{
         {history, workspace, sink},
         {metadata_drop, metadata_asset_runtime, resource_copy_scheduler},
         defaults.project_identity.asset_base};
     return dispatch_metadata_action(action, environment, timing_locked, resource_copy_busy,
-                                    export_busy, bool(notifications));
+                                    export_busy, true);
 }
 } // namespace wormedit::sys

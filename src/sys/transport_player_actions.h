@@ -61,7 +61,6 @@ inline auto play_stop_transport(application_command_state_t& state)
 [[nodiscard]] auto dispatch_transport_player_action(
     const WormUiWorkspaceAction& action, application_command_state_t& application_state,
     wormedit::stepmania_export_policy_t& stepmania_export_policy,
-    std::optional<notification_sink_t> notifications = {})
-    -> std::optional<std::string>;
+    notification_sink_t notifications = notification_sink_t::muted()) -> std::optional<std::string>;
 
 } // namespace wormedit::sys

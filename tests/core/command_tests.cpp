@@ -1,3 +1,5 @@
+#include "../support/stale_action_assertions.h"
+#include <catch2/generators/catch_generators.hpp>
 #include <wormedit/core/proposal_apply_result.h>
 #include <type_traits>
 #include <wormedit/core/command.h>
@@ -12,6 +14,8 @@
 using namespace wormedit;
 
 static_assert(std::is_aggregate_v<document_history_t>);
+static_assert(std::is_aggregate_v<document_stamp_t>);
+static_assert(std::is_aggregate_v<chart_stamp_t>);
 
 namespace {
 
@@ -52,6 +56,66 @@ auto note_row(const document_history_t& history) -> std::uint64_t {
 }
 
 } // namespace
+
+TEST_CASE("Stamped command transactions reject stale captures before copying",
+          "[core][command][stamped-transaction]") {
+    const auto different_project = GENERATE(false, true);
+    auto history = document_history_t::from(make_song());
+    auto stamp = chart_stamp_t::from(history.document, chart_id_t{1});
+    if (different_project) ++stamp.document.project.value;
+    else ++stamp.document.revision;
+    auto transaction = document_command_transaction_t::from(history, stamp, "Staged command");
+    CHECK_FALSE(transaction.is_ready());
+    CHECK_FALSE(transaction.has_copy());
+    test::check_stale_action_message(transaction.outcome.diagnostics, "Staged command");
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Revision-only stamp policy preserves older capture identity coverage",
+          "[core][command][stamped-transaction]") {
+    auto history = document_history_t::from(make_song());
+    const auto stamp = document_stamp_t::from(history.document);
+    ++history.document.id.value;
+    CHECK_FALSE(stamp.is_current(history.document));
+    CHECK(stamp.is_current(history.document, document_identity_policy_t::revision_only));
+    auto transaction = document_command_transaction_t::from(history, stamp, "Legacy capture",
+        document_identity_policy_t::revision_only);
+    CHECK(transaction.is_ready());
+    CHECK_FALSE(transaction.has_copy());
+    ++history.document.revision;
+    CHECK_FALSE(stamp.is_revision_current(history.document.revision));
+    auto stale = document_command_transaction_t::from(history, stamp, "Legacy capture",
+        document_identity_policy_t::revision_only);
+    test::check_stale_action_message(stale.outcome.diagnostics, "Legacy capture");
+}
+
+TEST_CASE("document stamps reject replaced projects and changed revisions", "[unit][core][command]") {
+    auto document = make_song();
+    const auto stamp = document_stamp_t::from(document);
+    CHECK(stamp.is_current(document));
+    CHECK(stamp == document_stamp_t::from(document));
+    ++document.revision;
+    CHECK_FALSE(stamp.is_current(document));
+    --document.revision;
+    document.id = song_id_t{2};
+    CHECK_FALSE(stamp.is_current(document));
+}
+
+TEST_CASE("chart stamps reject a changed selection without conflating missing targets",
+          "[unit][core][command]") {
+    const auto document = make_song();
+    const auto stamp = chart_stamp_t::from(document, chart_id_t{1});
+    CHECK(stamp.is_current(document, chart_id_t{1}));
+    CHECK_FALSE(stamp.is_current(document, chart_id_t{2}));
+    // Existence is a command validation error, separate from stamp freshness.
+    const auto missing = chart_stamp_t::from(document, chart_id_t{99});
+    CHECK(missing.is_current(document, chart_id_t{99}));
+}
+
+TEST_CASE("stale actions share the owner-approved message template", "[unit][core][command]") {
+    CHECK(stale_action_message("Compose view action") ==
+          "Compose view action ignored because the project, chart or document revision changed.");
+}
 
 TEST_CASE("quantization commits atomically through bounded document history",
           "[unit][core][command]") {
@@ -185,7 +249,7 @@ TEST_CASE("redivision commits exactly, undoes, and rejects inexact positions unt
     auto history = document_history_t::from(make_song(130));
     const auto revision = history.document.revision;
 
-    const auto applied = apply_redivision_command(history, revision, chart_id_t{1}, 192);
+    const auto applied = apply_redivision_command(history, chart_id_t{1}, 192);
     REQUIRE(applied);
     CHECK(history.document.charts.front().divisions_per_standard_measure == 192);
     CHECK(note_row(history) == 26);
@@ -197,8 +261,7 @@ TEST_CASE("redivision commits exactly, undoes, and rejects inexact positions unt
     CHECK(note_row(history) == 130);
 
     auto inexact = document_history_t::from(make_song(131));
-    const auto rejected =
-        apply_redivision_command(inexact, inexact.document.revision, chart_id_t{1}, 192);
+    const auto rejected = apply_redivision_command(inexact, chart_id_t{1}, 192);
     CHECK_FALSE(rejected);
     CHECK(rejected.payload.moves.empty());
     CHECK_FALSE(rejected.command.diagnostics.empty());
@@ -206,16 +269,15 @@ TEST_CASE("redivision commits exactly, undoes, and rejects inexact positions unt
     CHECK(note_row(inexact) == 131);
 }
 
-TEST_CASE("redivision rejects stale revisions and unknown charts and ignores no-ops",
+TEST_CASE("redivision rejects unknown charts and ignores no-ops",
           "[unit][core][command][negative]") {
     auto history = document_history_t::from(make_song(130));
     const auto revision = history.document.revision;
 
-    CHECK_FALSE(apply_redivision_command(history, revision + 1, chart_id_t{1}, 192));
-    CHECK_FALSE(apply_redivision_command(history, revision, chart_id_t{9}, 192));
-    CHECK_FALSE(apply_redivision_command(history, revision, chart_id_t{1}, 0));
+    CHECK_FALSE(apply_redivision_command(history, chart_id_t{9}, 192));
+    CHECK_FALSE(apply_redivision_command(history, chart_id_t{1}, 0));
 
-    const auto same = apply_redivision_command(history, revision, chart_id_t{1}, 960);
+    const auto same = apply_redivision_command(history, chart_id_t{1}, 960);
     CHECK_FALSE(same);
     CHECK(same.command.diagnostics.empty());
     CHECK(history.undo.empty());
@@ -312,4 +374,47 @@ TEST_CASE("shared transaction rejections preserve diagnostic lists", "[unit][cor
     CHECK(rejected.revision == 88);
     REQUIRE(rejected.diagnostics.size() == 2);
     CHECK(rejected.diagnostics[1].message == "Second");
+}
+
+TEST_CASE("Stamped transactions preserve a proposal's stale diagnostic code",
+          "[core][command][stamped-transaction]") {
+    const auto chart_capture = GENERATE(false, true);
+    auto history = document_history_t::from(make_song());
+    const auto stamp = chart_stamp_t::from(history.document, chart_id_t{1});
+    ++history.document.revision;
+    auto transaction = chart_capture
+        ? document_command_transaction_t::from(history, stamp, "Binding proposal",
+              document_identity_policy_t::revision_only, diagnostic_code_t::invalid_binding)
+        : document_command_transaction_t::from(history, stamp.document, "Binding proposal",
+              document_identity_policy_t::revision_only, diagnostic_code_t::invalid_binding);
+    CHECK_FALSE(transaction.is_ready());
+    CHECK_FALSE(transaction.has_copy());
+    REQUIRE(transaction.outcome.diagnostics.size() == 1);
+    CHECK(transaction.outcome.diagnostics.front().code == diagnostic_code_t::invalid_binding);
+    test::check_stale_action_message(transaction.outcome.diagnostics, "Binding proposal");
+}
+
+TEST_CASE("Finishing an unpublished transaction closes and discards its snapshot",
+          "[core][command][stamped-transaction]") {
+    auto history = document_history_t::from(make_song());
+    auto transaction = document_command_transaction_t::from(history);
+    transaction.copy_document().metadata.title = "Unpublished";
+    const auto result = transaction.finish_without_commit();
+    CHECK_FALSE(result.applied);
+    CHECK_FALSE(transaction.is_ready());
+    CHECK_FALSE(transaction.has_copy());
+    CHECK(history.document.metadata.title.empty());
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("chart identity stamp query ignores revision for persistent configuration",
+          "[core][command][stamp]") {
+    song_document_t document{.id = song_id_t{1}, .revision = 4};
+    const auto stamp = chart_stamp_t::from(document, chart_id_t{2});
+    ++document.revision;
+    CHECK(stamp.is_identity_current(document, chart_id_t{2}));
+    CHECK_FALSE(stamp.is_current(document, chart_id_t{2}));
+    CHECK_FALSE(stamp.is_identity_current(document, chart_id_t{3}));
+    document.id = song_id_t{99};
+    CHECK_FALSE(stamp.is_identity_current(document, chart_id_t{2}));
 }

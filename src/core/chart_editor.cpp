@@ -153,9 +153,8 @@ struct chart_id_remap_t {
     }
 };
 
-auto check_chart(const document_history_t& history, std::uint64_t revision, chart_id_t id)
+auto check_chart(const document_history_t& history, chart_id_t id)
     -> std::optional<document_command_result_t> {
-    if (history.document.revision != revision) return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "chart command revision is stale");
     if (history.document.find_chart(id) == nullptr)
         return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "chart command refers to an unknown chart");
     return std::nullopt;
@@ -194,17 +193,15 @@ auto commit_empty_chart(document_history_t& history, lane_input_profile_t profil
 
 } // namespace
 
-auto apply_new_chart_command(document_history_t& history, std::uint64_t revision,
+auto apply_new_chart_command(document_history_t& history,
     lane_input_profile_t profile, format_family_t source_family) -> duplicate_chart_result_t {
-    if (history.document.revision != revision)
-        return {.command = document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "chart command revision is stale")};
     return commit_empty_chart(history, std::move(profile), source_family,
         default_divisions_per_standard_measure, {});
 }
 
-auto apply_add_chart_command(document_history_t& history, std::uint64_t revision,
+auto apply_add_chart_command(document_history_t& history,
     chart_id_t template_chart) -> duplicate_chart_result_t {
-    if (auto invalid = check_chart(history, revision, template_chart))
+    if (auto invalid = check_chart(history, template_chart))
         return {.command = std::move(*invalid)};
     const auto source = history.document.find_chart(template_chart);
     if (source->lane_layouts.empty())
@@ -218,9 +215,9 @@ auto apply_add_chart_command(document_history_t& history, std::uint64_t revision
         source->divisions_per_standard_measure, source->beat_zero_audio_offset_seconds);
 }
 
-auto apply_duplicate_chart_command(document_history_t& history, std::uint64_t revision,
+auto apply_duplicate_chart_command(document_history_t& history,
                                    chart_id_t id) -> duplicate_chart_result_t {
-    if (auto invalid = check_chart(history, revision, id)) return {.command = std::move(*invalid)};
+    if (auto invalid = check_chart(history, id)) return {.command = std::move(*invalid)};
     const auto ceiling = history_id_ceiling(history);
     if (ceiling == std::numeric_limits<std::uint64_t>::max())
         return {.command = document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "chart ID sequence is exhausted")};
@@ -238,9 +235,9 @@ auto apply_duplicate_chart_command(document_history_t& history, std::uint64_t re
     return {.command = std::move(result), .payload = {.chart = applied ? std::optional{new_id} : std::nullopt}};
 }
 
-auto apply_delete_chart_command(document_history_t& history, std::uint64_t revision,
+auto apply_delete_chart_command(document_history_t& history,
                                 chart_id_t id) -> document_command_result_t {
-    if (auto invalid = check_chart(history, revision, id)) return std::move(*invalid);
+    if (auto invalid = check_chart(history, id)) return std::move(*invalid);
     if (history.document.charts.size() == 1) return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "cannot delete the last chart");
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
@@ -249,9 +246,9 @@ auto apply_delete_chart_command(document_history_t& history, std::uint64_t revis
     return transaction.commit("Delete chart");
 }
 
-auto apply_reorder_chart_command(document_history_t& history, std::uint64_t revision,
+auto apply_reorder_chart_command(document_history_t& history,
                                  chart_id_t id, std::size_t destination) -> document_command_result_t {
-    if (auto invalid = check_chart(history, revision, id)) return std::move(*invalid);
+    if (auto invalid = check_chart(history, id)) return std::move(*invalid);
     if (destination >= history.document.charts.size()) return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "chart destination is out of range");
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
@@ -262,9 +259,9 @@ auto apply_reorder_chart_command(document_history_t& history, std::uint64_t revi
     return transaction.commit("Reorder charts");
 }
 
-auto apply_move_chart_group_command(document_history_t& history, std::uint64_t revision,
+auto apply_move_chart_group_command(document_history_t& history,
                                     chart_id_t id, std::optional<std::size_t> group) -> document_command_result_t {
-    if (auto invalid = check_chart(history, revision, id)) return std::move(*invalid);
+    if (auto invalid = check_chart(history, id)) return std::move(*invalid);
     if (group && *group >= history.document.output_groups.size()) return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "output group is out of range");
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
@@ -307,9 +304,8 @@ auto output_group_error(const song_document_t& doc, std::optional<std::size_t> i
 }
 } // namespace
 
-auto apply_set_output_group_command(document_history_t& history, std::uint64_t revision,
+auto apply_set_output_group_command(document_history_t& history,
     std::optional<std::size_t> index, output_group_t group) -> document_command_result_t {
-    if (history.document.revision != revision) return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "Output group revision is stale.");
     if (const auto error = output_group_error(history.document, index, group); !error.empty())
         return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, error);
     auto transaction = document_command_transaction_t::from(history);
@@ -318,9 +314,8 @@ auto apply_set_output_group_command(document_history_t& history, std::uint64_t r
     else proposed.output_groups.push_back(std::move(group));
     return transaction.commit(index ? "Edit output group" : "Create output group");
 }
-auto apply_delete_output_group_command(document_history_t& history, std::uint64_t revision,
+auto apply_delete_output_group_command(document_history_t& history,
     std::size_t index) -> document_command_result_t {
-    if (history.document.revision != revision) return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "Output group revision is stale.");
     if (index >= history.document.output_groups.size()) return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "Output group is no longer available.");
     auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();

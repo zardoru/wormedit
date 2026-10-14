@@ -64,6 +64,9 @@ struct scroll_speed_edit_context_t {
     scroll_speed_edit_limits_t limits;
     std::string command_label;
     bool changed{};
+
+    template <typename Edit> void operator()(const Edit& edit);
+
 };
 
 auto target_chart(scroll_speed_edit_context_t& context, chart_id_t id) -> chart_document_t* {
@@ -117,10 +120,11 @@ auto allocate_event_id(scroll_speed_edit_context_t& context, const chart_documen
 }
 
 auto insert_scroll(scroll_speed_edit_context_t& context, chart_document_t& chart,
-                   const insert_scroll_event_action_t& edit) -> void {
+                   const wormedit::insert_edit_t<wormedit::scroll_edit_value_t>& edit) -> void {
     if (!check_scroll_cap(context, chart, true)) return;
-    const auto valid = validate_scroll_value(edit.multiplier, context.result);
-    if (!validate_position(chart, edit.position, context.result) || !valid) return;
+    const auto valid = validate_scroll_value(edit.value.settings.multiplier, context.result);
+    if (!validate_position(chart, edit.value.position, context.result) || !valid)
+        return;
     const auto id = allocate_event_id(context, chart);
     if (!id) return;
     const auto order = next_source_order(chart.scrolls);
@@ -129,18 +133,21 @@ auto insert_scroll(scroll_speed_edit_context_t& context, chart_document_t& chart
                "scroll source-order sequence is exhausted");
         return;
     }
-    chart.scrolls.push_back({.id = *id, .position = edit.position,
-        .multiplier = edit.multiplier, .provenance = {.source_order = *order}});
+    chart.scrolls.push_back({.id = *id,
+                             .position = edit.value.position,
+                             .multiplier = edit.value.settings.multiplier,
+                             .provenance = {.source_order = *order}});
     context.command_label = "Insert scroll event";
     context.changed = true;
 }
 
 auto insert_speed(scroll_speed_edit_context_t& context, chart_document_t& chart,
-                  const insert_speed_event_action_t& edit) -> void {
+                  const wormedit::insert_edit_t<wormedit::speed_edit_value_t>& edit) -> void {
     if (!check_speed_cap(context, chart, true)) return;
-    const auto valid = validate_speed_values(edit.multiplier, edit.transition_beats,
-                                              context.result);
-    if (!validate_position(chart, edit.position, context.result) || !valid) return;
+    const auto valid = validate_speed_values(edit.value.settings.multiplier,
+                                             edit.value.settings.transition_beats, context.result);
+    if (!validate_position(chart, edit.value.position, context.result) || !valid)
+        return;
     const auto id = allocate_event_id(context, chart);
     if (!id) return;
     const auto order = next_source_order(chart.speeds);
@@ -149,105 +156,119 @@ auto insert_speed(scroll_speed_edit_context_t& context, chart_document_t& chart,
                "speed source-order sequence is exhausted");
         return;
     }
-    chart.speeds.push_back({.id = *id, .position = edit.position,
-        .multiplier = edit.multiplier, .transition_beats = edit.transition_beats,
-        .transition_is_seconds = edit.transition_is_seconds,
-        .provenance = {.source_order = *order}});
+    chart.speeds.push_back({.id = *id,
+                            .position = edit.value.position,
+                            .multiplier = edit.value.settings.multiplier,
+                            .transition_beats = edit.value.settings.transition_beats,
+                            .transition_is_seconds = edit.value.settings.transition_is_seconds,
+                            .provenance = {.source_order = *order}});
     context.command_label = "Insert speed event";
     context.changed = true;
 }
 
 auto update_scroll(scroll_speed_edit_context_t& context, chart_document_t& chart,
-                   const update_scroll_event_action_t& edit) -> void {
+                   const wormedit::update_edit_t<wormedit::scroll_edit_value_t>& edit) -> void {
     if (!check_scroll_cap(context, chart, false)) return;
-    if (!edit.event) {
+    if (!edit.id) {
         reject(context.result, diagnostic_code_t::invalid_id,
                "scroll update uses the reserved zero event ID");
         return;
     }
-    auto* event = unique_event(chart, chart.scrolls, edit.event, "scroll", context.result);
-    const auto valid = validate_scroll_value(edit.multiplier, context.result);
-    if (!event || !validate_position(chart, edit.position, context.result) || !valid) return;
-    context.changed = event->position != edit.position || event->multiplier != edit.multiplier;
+    auto* event = unique_event(chart, chart.scrolls, edit.id, "scroll", context.result);
+    const auto valid = validate_scroll_value(edit.value.settings.multiplier, context.result);
+    if (!event || !validate_position(chart, edit.value.position, context.result) || !valid)
+        return;
+    context.changed = event->position != edit.value.position ||
+                      event->multiplier != edit.value.settings.multiplier;
     if (!context.changed) return;
-    event->position = edit.position;
-    event->multiplier = edit.multiplier;
+    event->position = edit.value.position;
+    event->multiplier = edit.value.settings.multiplier;
     context.command_label = "Update scroll event";
 }
 
 auto update_speed(scroll_speed_edit_context_t& context, chart_document_t& chart,
-                  const update_speed_event_action_t& edit) -> void {
+                  const wormedit::update_edit_t<wormedit::speed_edit_value_t>& edit) -> void {
     if (!check_speed_cap(context, chart, false)) return;
-    if (!edit.event) {
+    if (!edit.id) {
         reject(context.result, diagnostic_code_t::invalid_id,
                "speed update uses the reserved zero event ID");
         return;
     }
-    auto* event = unique_event(chart, chart.speeds, edit.event, "speed", context.result);
-    const auto valid = validate_speed_values(edit.multiplier, edit.transition_beats,
-                                              context.result);
-    if (!event || !validate_position(chart, edit.position, context.result) || !valid) return;
-    context.changed = event->position != edit.position || event->multiplier != edit.multiplier ||
-        event->transition_beats != edit.transition_beats ||
-        event->transition_is_seconds != edit.transition_is_seconds;
+    auto* event = unique_event(chart, chart.speeds, edit.id, "speed", context.result);
+    const auto valid = validate_speed_values(edit.value.settings.multiplier,
+                                             edit.value.settings.transition_beats, context.result);
+    if (!event || !validate_position(chart, edit.value.position, context.result) || !valid)
+        return;
+    context.changed = event->position != edit.value.position ||
+                      event->multiplier != edit.value.settings.multiplier ||
+                      event->transition_beats != edit.value.settings.transition_beats ||
+                      event->transition_is_seconds != edit.value.settings.transition_is_seconds;
     if (!context.changed) return;
-    event->position = edit.position;
-    event->multiplier = edit.multiplier;
-    event->transition_beats = edit.transition_beats;
-    event->transition_is_seconds = edit.transition_is_seconds;
+    event->position = edit.value.position;
+    event->multiplier = edit.value.settings.multiplier;
+    event->transition_beats = edit.value.settings.transition_beats;
+    event->transition_is_seconds = edit.value.settings.transition_is_seconds;
     context.command_label = "Update speed event";
 }
 
 auto delete_scroll(scroll_speed_edit_context_t& context, chart_document_t& chart,
-                   const delete_scroll_event_action_t& edit) -> void {
+                   const wormedit::delete_edit_t<wormedit::scroll_edit_value_t>& edit) -> void {
     if (!check_scroll_cap(context, chart, false)) return;
-    if (!edit.event) {
+    if (!edit.id) {
         reject(context.result, diagnostic_code_t::invalid_id,
                "scroll deletion uses the reserved zero event ID");
         return;
     }
-    if (!unique_event(chart, chart.scrolls, edit.event, "scroll", context.result)) return;
-    std::erase_if(chart.scrolls, [&](const auto& item) { return item.id == edit.event; });
+    if (!unique_event(chart, chart.scrolls, edit.id, "scroll", context.result))
+        return;
+    std::erase_if(chart.scrolls, [&](const auto& item) { return item.id == edit.id; });
     context.command_label = "Delete scroll event";
     context.changed = true;
 }
 
 auto delete_speed(scroll_speed_edit_context_t& context, chart_document_t& chart,
-                  const delete_speed_event_action_t& edit) -> void {
+                  const wormedit::delete_edit_t<wormedit::speed_edit_value_t>& edit) -> void {
     if (!check_speed_cap(context, chart, false)) return;
-    if (!edit.event) {
+    if (!edit.id) {
         reject(context.result, diagnostic_code_t::invalid_id,
                "speed deletion uses the reserved zero event ID");
         return;
     }
-    if (!unique_event(chart, chart.speeds, edit.event, "speed", context.result)) return;
-    std::erase_if(chart.speeds, [&](const auto& item) { return item.id == edit.event; });
+    if (!unique_event(chart, chart.speeds, edit.id, "speed", context.result))
+        return;
+    std::erase_if(chart.speeds, [&](const auto& item) { return item.id == edit.id; });
     context.command_label = "Delete speed event";
     context.changed = true;
 }
 
 auto apply_scroll_speed_action(scroll_speed_edit_context_t& context, chart_document_t& chart,
-                               const insert_scroll_event_action_t& edit) -> void {
+                               const wormedit::insert_edit_t<wormedit::scroll_edit_value_t>& edit)
+    -> void {
     insert_scroll(context, chart, edit);
 }
 auto apply_scroll_speed_action(scroll_speed_edit_context_t& context, chart_document_t& chart,
-                               const update_scroll_event_action_t& edit) -> void {
+                               const wormedit::update_edit_t<wormedit::scroll_edit_value_t>& edit)
+    -> void {
     update_scroll(context, chart, edit);
 }
 auto apply_scroll_speed_action(scroll_speed_edit_context_t& context, chart_document_t& chart,
-                               const delete_scroll_event_action_t& edit) -> void {
+                               const wormedit::delete_edit_t<wormedit::scroll_edit_value_t>& edit)
+    -> void {
     delete_scroll(context, chart, edit);
 }
 auto apply_scroll_speed_action(scroll_speed_edit_context_t& context, chart_document_t& chart,
-                               const insert_speed_event_action_t& edit) -> void {
+                               const wormedit::insert_edit_t<wormedit::speed_edit_value_t>& edit)
+    -> void {
     insert_speed(context, chart, edit);
 }
 auto apply_scroll_speed_action(scroll_speed_edit_context_t& context, chart_document_t& chart,
-                               const update_speed_event_action_t& edit) -> void {
+                               const wormedit::update_edit_t<wormedit::speed_edit_value_t>& edit)
+    -> void {
     update_speed(context, chart, edit);
 }
 auto apply_scroll_speed_action(scroll_speed_edit_context_t& context, chart_document_t& chart,
-                               const delete_speed_event_action_t& edit) -> void {
+                               const wormedit::delete_edit_t<wormedit::speed_edit_value_t>& edit)
+    -> void {
     delete_speed(context, chart, edit);
 }
 
@@ -257,31 +278,38 @@ auto apply_scroll_speed_operation(scroll_speed_edit_context_t& context, const Ed
     if (chart) apply_scroll_speed_action(context, *chart, edit);
 }
 
+template <typename Edit>
+void scroll_speed_edit_context_t::operator()(const Edit& edit) {
+    apply_scroll_speed_operation(*this, edit);
+}
+
+
 } // namespace
 
-auto apply_scroll_speed_edit(document_history_t& history, std::uint64_t expected_revision,
+auto apply_scroll_speed_edit(document_history_t& history,
+    const scroll_speed_edit_action_t& action, scroll_speed_edit_limits_t limits) -> document_command_result_t {
+    auto transaction = document_command_transaction_t::from(history);
+    return apply_scroll_speed_edit(transaction, action, limits);
+}
+
+auto apply_scroll_speed_edit(document_command_transaction_t& transaction,
                              const scroll_speed_edit_action_t& action,
                              scroll_speed_edit_limits_t limits) -> document_command_result_t {
-    document_command_result_t result{.revision = history.document.revision};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "scroll/speed editor document revision is stale");
-        return result;
-    }
+    if (!transaction.is_ready()) return transaction.commit({});
+    auto& result = transaction.outcome;
     if (limits.maximum_scroll_events == 0 || limits.maximum_speed_events == 0) {
         reject(result, diagnostic_code_t::invalid_resolution,
                "scroll and speed event caps must be positive");
-        return result;
+        return transaction.finish_without_commit();
     }
 
-    auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
     scroll_speed_edit_context_t context{.proposed = proposed, .result = result,
         .limits = limits, .command_label = {}, .changed = false};
-    std::visit([&](const auto& edit) { apply_scroll_speed_operation(context, edit); }, action);
+    std::visit(context, action);
 
     if (!result.diagnostics.empty() || !context.changed) {
-        return result;
+        return transaction.finish_without_commit();
     }
     return transaction.commit(std::move(context.command_label));
 }

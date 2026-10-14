@@ -1,0 +1,52 @@
+#pragma once
+
+#include "sys/compose_action_context.h"
+#include "sys/compose_area_actions.h"
+
+namespace wormedit::sys {
+// Standalone area tests retain their boundary; production borrows the existing dispatch context.
+inline auto
+dispatch_compose_area_action(const WormUiWorkspaceAction& action, document_history_t& history,
+                             editor_interaction_state_t& state,
+                             notification_sink_t notifications = notification_sink_t::muted(),
+                             bool timing_locked = false) -> std::optional<std::string> {
+    const auto kind = action.compose_action;
+    if (!action.compose_area_clear_requested && kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_CLEAR &&
+        kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET &&
+        kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE &&
+        kind != WORM_UI_COMPOSE_ACTION_AREA_DELETE &&
+        kind != WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE &&
+        kind != WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE &&
+        kind != WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN && !compose_area_pause_conversion(kind))
+        return std::nullopt;
+    if (compose_area_pause_conversion(kind) &&
+        history.document.id.value != action.compose_input_project_id) {
+        auto message = stale_action_message("Area conversion");
+        notifications.post_feedback(notification_severity_t::warning, notification_source_t::edit,
+                                    message);
+        return message;
+    }
+    if (state.chart.value != action.compose_input_chart_id ||
+        history.document.revision != action.compose_input_document_revision) {
+        auto message = stale_action_message("Area action");
+        notifications.post_feedback(notification_severity_t::warning, notification_source_t::edit,
+                                    message);
+        return message;
+    }
+    workspace_controller_t workspace;
+    workspace.song = history.document.id;
+    workspace.selected_chart = state.chart;
+    workspace.active_tab = workspace_tab_t::compose;
+    application_command_state_t commands;
+    commands.project.timing_recipe.timing_locked = timing_locked;
+    std::optional<editor_interaction_state_t> retained;
+    const compose_action_inputs_t environment{
+        {history, workspace, notifications}, {commands, retained}, {}};
+    compose_action_detail::compose_action_context_t context{
+        environment, action, state, 0.0, false, editor_field_scroll_direction_t::up, notifications};
+    auto outcome = compose_action_detail::dispatch_compose_area_action(context);
+    if (!outcome)
+        return std::nullopt;
+    return compose_action_detail::finish_compose_action(context, std::move(*outcome));
+}
+} // namespace wormedit::sys

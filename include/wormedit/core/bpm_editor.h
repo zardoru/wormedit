@@ -35,35 +35,35 @@ enum class bpm_step_direction_t { decrement, increment };
 [[nodiscard]] auto step_bpm_by_one(signed_rational_t bpm, bpm_step_direction_t direction)
     -> std::optional<signed_rational_t>;
 
-struct insert_bpm_event_action_t {
-    chart_id_t chart;
-    local_position_t position;
-    signed_rational_t beats_per_minute;
+struct timing_bpm_value_t {
+    signed_rational_t beats_per_minute{120, 1};
+
+    [[nodiscard]] static auto with_defaults(chart_edit_value_default_policy_t policy)
+        -> timing_bpm_value_t {
+        timing_bpm_value_t value;
+        if (policy == chart_edit_value_default_policy_t::command)
+            value.beats_per_minute = {};
+        return value;
+    }
+    [[nodiscard]] static auto from(const bpm_event_t& event) -> timing_bpm_value_t {
+        return {.beats_per_minute = event.beats_per_minute};
+    }
+    auto operator==(const timing_bpm_value_t&) const -> bool = default;
 };
 
-struct update_bpm_event_action_t {
-    chart_id_t chart;
-    object_id_t event;
-    local_position_t position;
-    signed_rational_t beats_per_minute;
-};
-
-struct delete_bpm_event_action_t {
-    chart_id_t chart;
-    object_id_t event;
-};
-
-using bpm_edit_action_t =
-    std::variant<insert_bpm_event_action_t, update_bpm_event_action_t, delete_bpm_event_action_t>;
+using bpm_edit_value_t = positioned_edit_value_t<timing_bpm_value_t>;
+using bpm_edit_action_t = chart_edit_t<bpm_edit_value_t>;
 
 // Mutates one chart BPM event through shared document history. Local positions
 // and exact positive rationals are preserved verbatim; same-row events remain
 // legal and timing order uses source order before insertion order and stable ID.
 // Insert assigns a fresh chart-wide object ID and an order after existing BPMs.
-[[nodiscard]] auto apply_bpm_edit(document_history_t& history, std::uint64_t expected_revision,
+[[nodiscard]] auto apply_bpm_edit(document_history_t& history,
                                   const bpm_edit_action_t& action, bpm_edit_limits_t limits = {})
     -> document_command_result_t;
 
+// Begins a fit anchored at a timing row. Updates the BPM event already at that
+// row, or inserts one there when none exists (committed as one undoable edit).
 struct beat_interval_drag_t {
     [[nodiscard]] static auto from(const song_document_t& document, chart_id_t chart,
                                   object_id_t bpm_event, local_position_t beat,
@@ -80,8 +80,7 @@ struct beat_interval_drag_t {
                               bool timing_locked = false) const
         -> diagnosed_t<std::optional<beat_interval_drag_t>>;
 
-    chart_id_t chart;
-    std::uint64_t document_revision{};
+    chart_stamp_t stamp;
     // Existing BPM event being updated, or a placeholder id when insert_bpm is set.
     object_id_t bpm_event;
     // Anchor row: the existing BPM event's position, or where a new BPM event is inserted.
@@ -95,46 +94,24 @@ struct beat_interval_drag_t {
     signed_rational_t proposed_bpm;
     bool snap_active{};
     signed_rational_t snap_step{1, 1};
+
+    [[nodiscard]] auto is_valid() const noexcept -> bool {
+        return static_cast<bool>(stamp.chart);
+    }
 };
 
 using beat_interval_drag_outcome_t = diagnosed_t<std::optional<beat_interval_drag_t>>;
 
-struct beat_interval_drag_result_t {
-    [[nodiscard]] static auto from(beat_interval_drag_outcome_t&& outcome)
-        -> beat_interval_drag_result_t;
-
-    std::optional<beat_interval_drag_t> drag;
-    diagnostic_list_t diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return drag.has_value() && diagnostics.empty();
-    }
-};
-
-[[nodiscard]] auto begin_beat_interval_drag(const song_document_t& document, chart_id_t chart,
-                                            object_id_t bpm_event, local_position_t beat,
-                                            std::uint32_t sample_rate, bool timing_locked = false)
-    -> beat_interval_drag_result_t;
-// Begins a fit anchored at a timing row. Updates the BPM event already at that
-// row, or inserts one there when none exists (committed as one undoable edit).
-[[nodiscard]] auto begin_beat_interval_anchor_drag(const song_document_t& document,
-                                                   chart_id_t chart, local_position_t anchor,
-                                                   local_position_t beat,
-                                                   std::uint32_t sample_rate,
-                                                   bool timing_locked = false)
-    -> beat_interval_drag_result_t;
-[[nodiscard]] auto
-update_beat_interval_drag(const song_document_t& document, const beat_interval_drag_t& drag,
-                          std::uint64_t target_sample_frame, bool timing_locked = false)
-    -> beat_interval_drag_result_t;
-[[nodiscard]] auto update_beat_interval_drag_to_bpm(
-    const song_document_t& document, const beat_interval_drag_t& drag,
-    signed_rational_t target_bpm, bool timing_locked = false) -> beat_interval_drag_result_t;
 [[nodiscard]] auto quantize_bpm(signed_rational_t bpm, signed_rational_t step)
     -> std::optional<signed_rational_t>;
-[[nodiscard]] auto commit_beat_interval_drag(document_history_t& history,
+[[nodiscard]] auto apply_beat_interval_drag(document_history_t& history,
                                              const beat_interval_drag_t& drag,
                                              bool timing_locked = false)
+    -> document_command_result_t;
+
+// Uses a ready command transaction supplied by a captured edit proposal.
+[[nodiscard]] auto apply_bpm_edit(document_command_transaction_t& transaction,
+    const bpm_edit_action_t& action, bpm_edit_limits_t limits = {})
     -> document_command_result_t;
 
 } // namespace wormedit

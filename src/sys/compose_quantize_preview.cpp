@@ -56,10 +56,10 @@ auto scaled_absolute(const detail::quantize_geometry_t& geometry, local_position
     return *begin + position.row;
 }
 
-auto note_moves(const quantization_result_t& result)
+auto note_moves(const quantization_outcome_t& result)
     -> std::unordered_map<std::uint64_t, moved_note_positions_t> {
     std::unordered_map<std::uint64_t, moved_note_positions_t> moves;
-    for (const auto& move : result.quantized_moves) {
+    for (const auto& move : result.value.quantized_moves) {
         auto& note = moves[move.object.value];
         if (move.role == position_role_t::point) note.start = move.after;
         if (move.role == position_role_t::note_end) note.end = move.after;
@@ -320,15 +320,15 @@ void count_selected_note(quantize_preview_t& preview, const note_t& note,
 void populate_selection_counts(quantize_preview_t& preview, const chart_document_t& chart,
                                const detail::quantize_geometry_t& geometry,
                                const quantize_request_t& request,
-                               const quantization_result_t& result, std::uint64_t scale) {
+                               const quantization_outcome_t& result, std::uint64_t scale) {
     std::unordered_set<std::uint64_t> selected;
     for (const auto id : request.objects)
         selected.insert(id.value);
     if (selected.empty())
         return;
-    const auto resolution = result.promoted_to.value_or(chart.divisions_per_standard_measure);
-    const auto retain_stationary_tails = result.chart.has_value() &&
-        result.quantized_moves.empty() && request.holds == quantization_hold_t::start_only;
+    const auto resolution = result.value.promoted_to.value_or(chart.divisions_per_standard_measure);
+    const auto retain_stationary_tails = result.value.chart.has_value() &&
+        result.value.quantized_moves.empty() && request.holds == quantization_hold_t::start_only;
     for (const auto& measure : chart.measures) {
         if (selected.empty()) break;
         for (const auto& note : measure.notes) {
@@ -359,10 +359,10 @@ auto selected_collision_note_ids(const std::vector<note_report_candidate_t>& can
     return result;
 }
 
-auto collision_only_failure(const quantization_result_t& result,
+auto collision_only_failure(const quantization_outcome_t& result,
                             const std::unordered_set<std::uint64_t>& eligible_note_ids,
                             const std::unordered_set<std::uint64_t>& layout_ids) -> bool {
-    return !result.chart && !result.diagnostics.empty() &&
+    return !result.value.chart && !result.diagnostics.empty() &&
         std::ranges::all_of(result.diagnostics, [&](const auto& diagnostic) {
             return diagnostic.code == diagnostic_code_t::collision && diagnostic.object &&
                 eligible_note_ids.contains(diagnostic.object->value) &&
@@ -379,20 +379,20 @@ auto candidates_have_bounded_geometry(
     });
 }
 
-void populate_status(quantize_preview_t& preview, const quantization_result_t& result) {
+void populate_status(quantize_preview_t& preview, const quantization_outcome_t& result) {
     std::set<std::pair<quantize_object_family_t, std::uint64_t>> moved_ids;
-    for (const auto& move : result.quantized_moves) moved_ids.emplace(move.family, move.object.value);
+    for (const auto& move : result.value.quantized_moves) moved_ids.emplace(move.family, move.object.value);
     preview.moved = moved_ids.size();
     preview.unchanged = preview.selected > preview.moved ? preview.selected - preview.moved : 0;
-    preview.blocked = result.chart ? 0 : std::max<std::size_t>(result.diagnostics.size(), 1);
-    if (!result.chart && !result.diagnostics.empty())
+    preview.blocked = result.value.chart ? 0 : std::max<std::size_t>(result.diagnostics.size(), 1);
+    if (!result.value.chart && !result.diagnostics.empty())
         preview.message = result.diagnostics.front().message;
 }
 
 void set_report_resolution(quantize_preview_t& preview, const chart_document_t& chart,
-                           const quantization_result_t& result) {
+                           const quantization_outcome_t& result) {
     preview.source_resolution = chart.divisions_per_standard_measure;
-    preview.display_resolution = result.promoted_to.value_or(chart.divisions_per_standard_measure);
+    preview.display_resolution = result.value.promoted_to.value_or(chart.divisions_per_standard_measure);
     if (chart.divisions_per_standard_measure != 0 &&
         preview.display_resolution % chart.divisions_per_standard_measure == 0) {
         preview.resolution_scale = preview.display_resolution / chart.divisions_per_standard_measure;
@@ -403,11 +403,11 @@ void set_report_resolution(quantize_preview_t& preview, const chart_document_t& 
 
 auto moved_report_is_drawable(const quantize_preview_t& preview,
                               const quantize_request_t& request,
-                              const quantization_result_t& result,
+                              const quantization_outcome_t& result,
                               const std::vector<note_report_candidate_t>& candidates,
                               const chart_document_t& chart) -> bool {
     if (!candidates_have_bounded_geometry(candidates)) return false;
-    if (result.chart) return true;
+    if (result.value.chart) return true;
     if (request.tie == quantization_tie_t::reject && preview.halfway_notes != 0) return false;
     const auto eligible_collision_ids = selected_collision_note_ids(candidates);
     std::unordered_set<std::uint64_t> layout_ids;
@@ -418,11 +418,11 @@ auto moved_report_is_drawable(const quantize_preview_t& preview,
 void populate_moved_report(quantize_preview_t& preview, const chart_document_t& chart,
                            const std::vector<object_id_t>& selected,
                            const quantize_request_t& request,
-                           const quantization_result_t& result,
+                           const quantization_outcome_t& result,
                            const detail::quantize_geometry_t& geometry) {
     const auto moves = note_moves(result);
     if (moves.empty()) {
-        preview.geometry_valid = result.chart.has_value() && preview.resolution_scale != 0;
+        preview.geometry_valid = result.value.chart.has_value() && preview.resolution_scale != 0;
         preview.drawable = preview.geometry_valid;
         return;
     }
@@ -441,7 +441,7 @@ void populate_moved_report(quantize_preview_t& preview, const chart_document_t& 
 void populate_geometry_report(quantize_preview_t& preview, const chart_document_t& chart,
                               const std::vector<object_id_t>& selected,
                               const quantize_request_t& request,
-                              const quantization_result_t& result,
+                              const quantization_outcome_t& result,
                               const detail::quantize_geometry_t& geometry) {
     if (preview.resolution_scale == 0) return;
     populate_selection_counts(preview, chart, geometry, request, result,
@@ -449,14 +449,14 @@ void populate_geometry_report(quantize_preview_t& preview, const chart_document_
     populate_moved_report(preview, chart, selected, request, result, geometry);
 }
 
-auto report_family_result(const quantization_result_t& result, quantize_object_family_t family)
-    -> quantization_result_t {
-    quantization_result_t filtered;
-    if (result.chart) filtered.chart.emplace();
-    filtered.promoted_to = result.promoted_to;
+auto report_family_result(const quantization_outcome_t& result, quantize_object_family_t family)
+    -> quantization_outcome_t {
+    quantization_outcome_t filtered;
+    if (result.value.chart) filtered.value.chart.emplace();
+    filtered.value.promoted_to = result.value.promoted_to;
     filtered.diagnostics = result.diagnostics;
-    for (const auto& move : result.quantized_moves)
-        if (move.family == family) filtered.quantized_moves.push_back(move);
+    for (const auto& move : result.value.quantized_moves)
+        if (move.family == family) filtered.value.quantized_moves.push_back(move);
     return filtered;
 }
 
@@ -477,7 +477,7 @@ auto bgm_report_chart(const chart_document_t& chart) -> chart_document_t {
 }
 
 void populate_typed_report(quantize_preview_t& preview, const chart_document_t& chart,
-                           quantize_request_t request, const quantization_result_t& result,
+                           quantize_request_t request, const quantization_outcome_t& result,
                            const detail::quantize_geometry_t& geometry) {
     const auto selection = *request.selection;
     request.selection.reset();
@@ -526,7 +526,7 @@ auto preview_quantize_selection(const chart_document_t& chart,
         return preview;
     }
     request.objects = selected;
-    const auto result = quantize_chart_exact(chart, request);
+    const auto result = quantization_plan_t::from(chart, request);
     populate_status(preview, result);
     set_report_resolution(preview, chart, result);
 

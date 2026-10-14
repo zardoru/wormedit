@@ -77,6 +77,9 @@ struct editor_field_scene_index_t {
     [[nodiscard]] static auto from(const chart_document_t& chart, std::uint64_t document_revision,
         editor_field_scene_index_options_t options = {})
         -> result_t<editor_field_scene_index_t, diagnostic_list_t>;
+    [[nodiscard]] auto is_current(chart_id_t current_chart, std::uint64_t current_revision) const noexcept -> bool;
+    [[nodiscard]] auto is_valid() const noexcept -> bool;
+
     chart_id_t chart;
     std::uint64_t document_revision{};
     measure_index_t measures;

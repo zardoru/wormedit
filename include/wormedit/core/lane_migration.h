@@ -10,6 +10,7 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace wormedit {
@@ -47,10 +48,8 @@ struct lane_migration_collision_t {
 
 struct lane_migration_proposal_t {
     lane_migration_issue_t issue{lane_migration_issue_t::none};
-    std::string message;
-    song_id_t song;
-    chart_id_t chart;
-    std::uint64_t revision{};
+    chart_stamp_t stamp;
+    diagnostic_list_t diagnostics;
     lane_input_profile_t target;
     std::vector<lane_migration_mapping_t> mapping;
     std::vector<object_id_t> dropped_notes;
@@ -65,6 +64,10 @@ struct lane_migration_proposal_t {
     std::size_t notes_in_merged_lanes{};
     // Number of old bindings removed plus new target bindings added.
     std::size_t changed_bindings{};
+
+    [[nodiscard]] auto message() const noexcept -> std::string_view {
+        return diagnostics.empty() ? std::string_view{} : std::string_view{diagnostics.front().message};
+    }
 
     [[nodiscard]] explicit operator bool() const noexcept {
         return issue == lane_migration_issue_t::none && static_cast<bool>(canonical_);

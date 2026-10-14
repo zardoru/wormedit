@@ -4,6 +4,8 @@
 #include <wormedit/core/quantize.h>
 
 namespace wormedit::sys {
+inline constexpr auto compose_quantize_idle_message =
+    "Quantize requires an idle active Compose chart.";
 inline auto quantize_request_from_action(const WormUiWorkspaceAction& action,
                                  const std::vector<wormedit::object_id_t>& objects)
     -> std::optional<wormedit::quantize_request_t> {

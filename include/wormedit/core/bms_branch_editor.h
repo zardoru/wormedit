@@ -16,16 +16,14 @@ using bms_branch_statement_command_result_t = command_result_with_t<bms_branch_s
 // document history. The expected revision rejects stale editor actions before
 // inspecting their retained-source identities.
 [[nodiscard]] auto apply_bms_branch_statement_edit_command(document_history_t& history,
-                                                           std::uint64_t expected_revision,
                                                            bms_branch_statement_edit_t edit)
     -> bms_branch_statement_command_result_t;
 
 [[nodiscard]] auto apply_bms_branch_statement_insert_command(
-    document_history_t& history, std::uint64_t expected_revision,
+    document_history_t& history,
     bms_branch_statement_insert_t insertion) -> bms_branch_statement_command_result_t;
 
 [[nodiscard]] auto apply_bms_branch_statement_delete_command(document_history_t& history,
-                                                             std::uint64_t expected_revision,
                                                              bms_branch_statement_delete_t deletion)
     -> bms_branch_statement_command_result_t;
 
@@ -41,7 +39,6 @@ using bms_branch_selection_command_result_t = command_result_with_t<bms_branch_s
 // Revision-checks, rematerializes, validates, and publishes one complete BMS
 // branch choice as a single undoable document command.
 [[nodiscard]] auto apply_bms_branch_selection_command(document_history_t& history,
-                                                      std::uint64_t expected_revision,
                                                       bms_branch_selection_request_t request)
     -> bms_branch_selection_command_result_t;
 
@@ -55,7 +52,6 @@ struct bms_branch_choice_command_t {
 // Scalar choice boundary for frontends. The complete proposal is derived from
 // the current revision before using the same atomic rematerialization command.
 [[nodiscard]] auto apply_bms_branch_choice_command(document_history_t& history,
-                                                   std::uint64_t expected_revision,
                                                    bms_branch_choice_command_t choice)
     -> bms_branch_selection_command_result_t;
 
@@ -83,13 +79,13 @@ struct bms_branch_block_remove_command_t {
 // These commands only accept one exact contiguous range of root-level raw
 // statements. Creation places that range in leaf 1; remaining leaves are empty.
 [[nodiscard]] auto apply_bms_branch_block_create_command(
-    document_history_t& history, std::uint64_t expected_revision,
+    document_history_t& history,
     bms_branch_block_create_command_t request) -> document_command_result_t;
 
 // Only an empty RANDOM/IF block can be removed. The complete edit is reparsed
 // and published as one history command, preserving unrelated retained source.
 [[nodiscard]] auto apply_bms_branch_block_remove_command(
-    document_history_t& history, std::uint64_t expected_revision,
+    document_history_t& history,
     bms_branch_block_remove_command_t request) -> document_command_result_t;
 
 enum class bms_branch_leaf_move_direction_t { up, down };
@@ -109,7 +105,7 @@ struct bms_branch_leaf_move_command_t {
 // follows the moved content. Leaves with nested control flow, #ELSE leaves and edges
 // reject atomically. One undoable history command.
 [[nodiscard]] auto apply_bms_branch_leaf_move_command(
-    document_history_t& history, std::uint64_t expected_revision,
+    document_history_t& history,
     bms_branch_leaf_move_command_t request) -> document_command_result_t;
 
 } // namespace wormedit

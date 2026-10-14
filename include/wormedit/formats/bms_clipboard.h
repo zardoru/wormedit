@@ -26,9 +26,4 @@ parse_bms_chart_clipboard(std::string_view text, const song_document_t& target_d
                           const chart_document_t& target_chart, const lane_layout_t& target_layout,
                           bms_clipboard_decode_options_t options = {}) -> chart_clipboard_outcome_t;
 
-[[nodiscard]] auto
-decode_bms_clipboard(std::string_view text, const song_document_t& target_document,
-                     const chart_document_t& target_chart, const lane_layout_t& target_layout,
-                     bms_clipboard_decode_options_t options = {}) -> chart_clipboard_result_t;
-
 } // namespace wormedit

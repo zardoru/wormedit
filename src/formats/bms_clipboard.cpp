@@ -760,11 +760,4 @@ auto parse_bms_chart_clipboard(std::string_view text, const song_document_t& tar
     return build_clipboard(records, *grammar, context);
 }
 
-auto decode_bms_clipboard(std::string_view text, const song_document_t& target_document,
-                          const chart_document_t& target_chart, const lane_layout_t& target_layout,
-                          bms_clipboard_decode_options_t options) -> chart_clipboard_result_t {
-    return chart_clipboard_result_t::from(
-        parse_bms_chart_clipboard(text, target_document, target_chart, target_layout, options));
-}
-
 } // namespace wormedit

@@ -26,6 +26,15 @@ enum class notification_severity_t : std::uint8_t {
     error,
 };
 
+[[nodiscard]] auto to_notification_severity(
+    diagnostic_severity_t severity,
+    notification_severity_t unknown_severity = notification_severity_t::error) noexcept
+    -> notification_severity_t;
+[[nodiscard]] auto to_notification_severity(
+    const diagnostic_list_t& diagnostics,
+    notification_severity_t empty_severity = notification_severity_t::error) noexcept
+    -> notification_severity_t;
+
 enum class notification_source_t : std::uint8_t {
     document,
     edit,
@@ -194,15 +203,31 @@ class notification_sink_t {
   public:
     explicit notification_sink_t(notification_center_t& center) noexcept : center_(&center) {}
 
+    [[nodiscard]] static auto muted() noexcept -> notification_sink_t {
+        return notification_sink_t{};
+    }
+    [[nodiscard]] static auto from(const notification_sink_t* sink) noexcept
+        -> notification_sink_t {
+        return sink ? *sink : muted();
+    }
+    [[nodiscard]] auto is_muted() const noexcept -> bool {
+        return center_ == nullptr;
+    }
+    void post_feedback(notification_severity_t severity, notification_source_t source,
+                       std::string_view message) const noexcept;
+
     void post(notification_severity_t severity, notification_source_t source,
               std::string_view message) const noexcept;
     void post_transient_hint(notification_source_t source, std::string_view message) const noexcept;
     void post(const notification_post_t& request) const noexcept;
+    void post_diagnostic(notification_source_t source,
+                         const diagnostic_t& diagnostic) const noexcept;
     void post_diagnostics(notification_source_t source, const diagnostic_list_t& diagnostics,
                           const notification_target_resolver_t& resolve_target = {}) const noexcept;
 
   private:
-    notification_center_t* center_;
+    notification_sink_t() noexcept = default;
+    notification_center_t* center_{};
 };
 
 } // namespace wormedit

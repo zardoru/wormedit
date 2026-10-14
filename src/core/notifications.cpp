@@ -100,18 +100,6 @@ auto find_entry(std::vector<notification_entry_t>& entries, notification_id_t id
                         [id](const notification_entry_t& entry) { return entry.id == id; });
 }
 
-auto diagnostic_severity(diagnostic_severity_t severity) noexcept -> notification_severity_t {
-    switch (severity) {
-    case diagnostic_severity_t::info:
-        return notification_severity_t::info;
-    case diagnostic_severity_t::warning:
-        return notification_severity_t::warning;
-    case diagnostic_severity_t::error:
-        return notification_severity_t::error;
-    }
-    return notification_severity_t::error;
-}
-
 auto diagnostic_target(const diagnostic_t& diagnostic,
                        const notification_target_resolver_t& resolve_target)
     -> notification_target_t {
@@ -147,7 +135,7 @@ auto collapsed_diagnostic_post(notification_source_t source, const diagnostic_li
     -> notification_post_t {
     auto highest = notification_severity_t::info;
     for (const auto& diagnostic : diagnostics)
-        highest = std::max(highest, diagnostic_severity(diagnostic.severity));
+        highest = std::max(highest, to_notification_severity(diagnostic.severity));
     return notification_post_t{
         .severity = highest,
         .source = source,
@@ -166,12 +154,12 @@ auto diagnostic_posts(notification_source_t source, const diagnostic_list_t& dia
     std::vector<notification_post_t> posts;
     posts.reserve(diagnostics.size());
     for (const auto& diagnostic : diagnostics) {
-        posts.push_back(notification_post_t{
-            .severity = diagnostic_severity(diagnostic.severity),
-            .source = source,
-            .message = diagnostic.message,
-            .detail = {},
-            .target = diagnostic_target(diagnostic, resolve_target)});
+        posts.push_back(
+            notification_post_t{.severity = to_notification_severity(diagnostic.severity),
+                                .source = source,
+                                .message = diagnostic.message,
+                                .detail = {},
+                                .target = diagnostic_target(diagnostic, resolve_target)});
     }
     return posts;
 }
@@ -184,6 +172,27 @@ void add_statistics(notification_statistics_t& total, const notification_statist
 }
 
 } // namespace
+
+auto to_notification_severity(diagnostic_severity_t severity,
+                              notification_severity_t unknown_severity) noexcept
+    -> notification_severity_t {
+    switch (severity) {
+    case diagnostic_severity_t::info:
+        return notification_severity_t::info;
+    case diagnostic_severity_t::warning:
+        return notification_severity_t::warning;
+    case diagnostic_severity_t::error:
+        return notification_severity_t::error;
+    }
+    return unknown_severity;
+}
+
+auto to_notification_severity(const diagnostic_list_t& diagnostics,
+                              notification_severity_t empty_severity) noexcept
+    -> notification_severity_t {
+    return diagnostics.empty() ? empty_severity
+                               : to_notification_severity(diagnostics.front().severity);
+}
 
 void truncate_notification_text(std::string& text, std::size_t max_bytes) {
     if (text.size() <= max_bytes)
@@ -255,9 +264,18 @@ void notification_center_t::post_diagnostics(notification_source_t source,
         post(std::move(request));
 }
 
+void notification_sink_t::post_feedback(notification_severity_t severity,
+                                        notification_source_t source,
+                                        std::string_view message) const noexcept {
+    if (severity == notification_severity_t::hint)
+        post_transient_hint(source, message);
+    else
+        post(severity, source, message);
+}
+
 void notification_sink_t::post(notification_severity_t severity, notification_source_t source,
                                std::string_view message) const noexcept {
-    if (message.empty())
+    if (is_muted() || message.empty())
         return;
     try {
         center_->post(notification_post_t{.severity = severity,
@@ -273,7 +291,8 @@ void notification_sink_t::post(notification_severity_t severity, notification_so
 
 void notification_sink_t::post_transient_hint(notification_source_t source,
     std::string_view message) const noexcept {
-    if (message.empty()) return;
+    if (is_muted() || message.empty())
+        return;
     try {
         center_->post_transient_hint(source, std::string{message});
     } catch (...) {
@@ -282,7 +301,7 @@ void notification_sink_t::post_transient_hint(notification_source_t source,
 }
 
 void notification_sink_t::post(const notification_post_t& request) const noexcept {
-    if (request.message.empty())
+    if (is_muted() || request.message.empty())
         return;
     try {
         center_->post(notification_post_t{.severity = request.severity,
@@ -297,9 +316,25 @@ void notification_sink_t::post(const notification_post_t& request) const noexcep
     }
 }
 
+void notification_sink_t::post_diagnostic(notification_source_t source,
+                                          const diagnostic_t& diagnostic) const noexcept {
+    if (is_muted())
+        return;
+    try {
+        post(notification_post_t{.severity = to_notification_severity(diagnostic.severity),
+                                 .source = source,
+                                 .message = diagnostic.message,
+                                 .target = diagnostic_target(diagnostic, {})});
+    } catch (...) {
+        // Diagnostic construction shares the sink's noexcept posting contract.
+    }
+}
+
 void notification_sink_t::post_diagnostics(notification_source_t source,
                                            const diagnostic_list_t& diagnostics,
                                            const notification_target_resolver_t& resolve_target) const noexcept {
+    if (is_muted())
+        return;
     std::vector<notification_post_t> posts;
     try {
         posts = diagnostic_posts(source, diagnostics, resolve_target);

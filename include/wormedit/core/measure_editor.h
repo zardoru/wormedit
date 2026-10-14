@@ -140,7 +140,7 @@ struct measure_removal_proposal_t {
 // Insertions preserve existing measure IDs and local positions. Deletion is
 // deliberately conservative: any remaining object that names the measure makes
 // the complete proposal invalid and leaves history untouched.
-[[nodiscard]] auto apply_measure_edit(document_history_t& history, std::uint64_t expected_revision,
+[[nodiscard]] auto apply_measure_edit(document_history_t& history,
                                       const measure_edit_action_t& action,
                                       measure_edit_limits_t limits = {})
     -> document_command_result_t;

@@ -116,13 +116,17 @@ auto playhead_skip_target_row(const measure_index_t& measures, double playhead_r
 }
 
 auto skip_playing_playhead(application_command_state_t& application, const chart_document_t& chart,
-                           std::uint64_t snap_denominator, playhead_skip_unit_t unit,
-                           double amount) -> bookmark_command_outcome_t {
+                           std::uint64_t snap_denominator, playhead_skip_unit_t unit, double amount)
+    -> compose_action_outcome_t {
     if (!application.project.transport.preview_playhead_absolute_row)
-        return {.status = "The playhead row is not available yet."};
+        return compose_action_outcome_t::from("The playhead row is not available yet.",
+                                              notification_severity_t::warning,
+                                              notification_source_t::input, false, false);
     const auto built = build_measure_index(chart);
     if (!std::holds_alternative<measure_index_t>(built))
-        return {.status = "The playhead could not be moved."};
+        return compose_action_outcome_t::from("The playhead could not be moved.",
+                                              notification_severity_t::warning,
+                                              notification_source_t::input, false, false);
     const auto& measures = std::get<measure_index_t>(built);
     const auto forward = amount > 0.0;
     const auto row = playhead_skip_target_row(measures,
@@ -132,7 +136,9 @@ auto skip_playing_playhead(application_command_state_t& application, const chart
     const auto position = row ? (measures).position_at(*row) : std::nullopt;
     if (!position) {
         application.project.transport.last_playhead_skip.reset();
-        return {.status = "The playhead could not be moved."};
+        return compose_action_outcome_t::from("The playhead could not be moved.",
+                                              notification_severity_t::warning,
+                                              notification_source_t::input, false, false);
     }
     auto outcome = seek_compose_navigation_position(chart, application, {.position = *position});
     if (!outcome.accepted) {

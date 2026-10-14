@@ -47,12 +47,10 @@ using time_shift_result_t = command_result_with_t<time_shift_payload_t>;
 // BMSON sound-channel event rejects the whole command. A zero shift, or one
 // that moves nothing, creates no history entry.
 [[nodiscard]] auto apply_shift_selection(document_history_t& history,
-                                         std::uint64_t expected_revision,
                                          const shift_selection_action_t& action,
                                          time_shift_limits_t limits = {}) -> time_shift_result_t;
 
 [[nodiscard]] auto apply_shift_from_cursor(document_history_t& history,
-                                           std::uint64_t expected_revision,
                                            const shift_from_cursor_action_t& action,
                                            time_shift_limits_t limits = {}) -> time_shift_result_t;
 

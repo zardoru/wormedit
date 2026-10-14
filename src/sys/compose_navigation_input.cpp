@@ -42,31 +42,6 @@ auto compose_navigation_action(WormUiComposeNavigationAction action)
 
 namespace compose_navigation_input_detail {
 
-auto input_notification_severity(wormedit::diagnostic_severity_t severity)
-    -> wormedit::notification_severity_t {
-    using namespace wormedit;
-    switch (severity) {
-    case diagnostic_severity_t::info:
-        return notification_severity_t::info;
-    case diagnostic_severity_t::warning:
-        return notification_severity_t::warning;
-    case diagnostic_severity_t::error:
-        return notification_severity_t::error;
-    }
-    return notification_severity_t::error;
-}
-
-auto post_input_feedback(const wormedit::notification_sink_t* notifications,
-                         wormedit::notification_severity_t severity,
-                         wormedit::notification_source_t source, std::string_view message) -> void {
-    if (notifications && !message.empty()) {
-        if (severity == wormedit::notification_severity_t::hint)
-            notifications->post_transient_hint(source, message);
-        else
-            notifications->post(severity, source, message);
-    }
-}
-
 auto staged_input_severity(bool staged, wormedit::notification_severity_t fallback)
     -> wormedit::notification_severity_t {
     return staged ? wormedit::notification_severity_t::hint : fallback;
@@ -118,25 +93,22 @@ auto skip_playhead_for_navigation(wormedit::editor_navigation_action_t action,
                                   const wormedit::document_history_t& history,
                                   const wormedit::editor_interaction_state_t& state,
                                   application_command_state_t& application)
-    -> playhead_navigation_feedback_t {
+    -> compose_action_outcome_t {
     using namespace wormedit;
     const auto found =
         history.document.find_chart(state.chart);
     if (found == nullptr)
-        return {"The selected difficulty is no longer available."};
+        return compose_action_outcome_t::blocked("The selected difficulty is no longer available.",
+                                                 notification_source_t::input);
     const auto forward = action == editor_navigation_action_t::cursor_forward ||
                          action == editor_navigation_action_t::page_forward ||
                          action == editor_navigation_action_t::double_page_forward;
     const auto measures = navigation_measure_count(action);
     const auto paged = measures != 0;
-    const auto outcome = skip_playing_playhead(
-        application, *found, state.active_snap_denominator,
-        paged ? playhead_skip_unit_t::page : playhead_skip_unit_t::beat,
-        (forward ? 1.0 : -1.0) * (paged ? static_cast<double>(measures) : 1.0));
-    return {.message = outcome.status,
-            .severity =
-                outcome.accepted ? notification_severity_t::hint : notification_severity_t::warning,
-            .posted_by_seek = outcome.accepted && application.preferences.transport_seek_posts_feedback};
+    return skip_playing_playhead(application, *found, state.active_snap_denominator,
+                                 paged ? playhead_skip_unit_t::page : playhead_skip_unit_t::beat,
+                                 (forward ? 1.0 : -1.0) *
+                                     (paged ? static_cast<double>(measures) : 1.0));
 }
 
 } // namespace compose_navigation_input_detail
@@ -153,10 +125,9 @@ auto dispatch_compose_navigation_actions(const wormedit::editor_navigation_actio
         if (application && is_preview_playing(*application)) {
             auto feedback =
                 skip_playhead_for_navigation(actions[index], history, state, *application);
-            status = std::move(feedback.message);
-            if (!feedback.posted_by_seek)
-                post_input_feedback(notifications, feedback.severity, notification_source_t::input,
-                                    status);
+            auto finished = finish_compose_action(
+                notifications ? *notifications : notification_sink_t::muted(), std::move(feedback));
+            status = std::move(finished.message);
             continue;
         }
         editor_interaction_result_t result;
@@ -194,9 +165,10 @@ auto dispatch_compose_navigation_actions(const wormedit::editor_navigation_actio
         status = compose_result_status(result, accepted);
         const auto severity = result.accepted ? notification_severity_t::hint
                               : !result.diagnostics.empty()
-                                  ? input_notification_severity(result.diagnostics.front().severity)
+                                  ? to_notification_severity(result.diagnostics.front().severity)
                                   : notification_severity_t::warning;
-        post_input_feedback(notifications, severity, notification_source_t::input, status);
+        notification_sink_t::from(notifications)
+            .post_feedback(severity, notification_source_t::input, status);
         if (!result.accepted)
             break;
     }

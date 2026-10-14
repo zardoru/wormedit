@@ -79,7 +79,7 @@ TEST_CASE("mirror reverses keys, keeps the scratch lane, and undoes",
           "[unit][core][lane-transform]") {
     auto history = document_history_t::from(seven_key_song());
     const auto before = history.document.charts.front().measures.front().notes;
-    const auto result = apply_lane_mirror(history, 4, {.chart = chart_id_t{2}, .notes = all_notes});
+    const auto result = apply_lane_mirror(history, {.chart = chart_id_t{2}, .notes = all_notes});
     REQUIRE(result);
     CHECK(lane_of(history, 10) == 7);
     CHECK(lane_of(history, 11) == 5);
@@ -103,7 +103,7 @@ TEST_CASE("mirror works inside each stage of a split layout", "[unit][core][lane
          {.id = lane_id_t{8}, .name = "Scratch", .role = lane_role_t::scratch, .display_order = 4},
          key_lane(7, 5, stage_group_t::right)}));
     // Notes: 1 (left), 3 (right), 8 (scratch), 7 (right hold).
-    const auto result = apply_lane_mirror(history, 4, {.chart = chart_id_t{2}, .notes = all_notes});
+    const auto result = apply_lane_mirror(history, {.chart = chart_id_t{2}, .notes = all_notes});
     REQUIRE(result);
     CHECK(lane_of(history, 10) == 2);
     CHECK(lane_of(history, 11) == 7);
@@ -114,7 +114,7 @@ TEST_CASE("mirror works inside each stage of a split layout", "[unit][core][lane
 TEST_CASE("mirror of only non-playable notes is a no-op", "[unit][core][lane-transform]") {
     auto history = document_history_t::from(seven_key_song());
     const auto result =
-        apply_lane_mirror(history, 4, {.chart = chart_id_t{2}, .notes = {object_id_t{12}}});
+        apply_lane_mirror(history, {.chart = chart_id_t{2}, .notes = {object_id_t{12}}});
     CHECK_FALSE(result.applied);
     CHECK(result.diagnostics.empty());
     CHECK(history.document.revision == 4);
@@ -125,10 +125,9 @@ TEST_CASE("remap swaps lanes and rejects collisions, missing lanes and bad permu
           "[unit][core][lane-transform]") {
     auto history = document_history_t::from(seven_key_song());
     const auto swap = apply_lane_remap(
-        history, 4,
-        {.chart = chart_id_t{2},
-         .notes = {object_id_t{10}, object_id_t{11}},
-         .permutation = {{lane_id_t{1}, lane_id_t{3}}, {lane_id_t{3}, lane_id_t{1}}}});
+        history, {.chart = chart_id_t{2},
+                  .notes = {object_id_t{10}, object_id_t{11}},
+                  .permutation = {{lane_id_t{1}, lane_id_t{3}}, {lane_id_t{3}, lane_id_t{1}}}});
     REQUIRE(swap);
     CHECK(lane_of(history, 10) == 3);
     CHECK(lane_of(history, 11) == 1);
@@ -138,45 +137,40 @@ TEST_CASE("remap swaps lanes and rejects collisions, missing lanes and bad permu
     stacked.charts.front().measures.front().notes.push_back(tap(15, 2, 0));
     auto collide = document_history_t::from(std::move(stacked));
     const auto collision = apply_lane_remap(
-        collide, 4,
-        {.chart = chart_id_t{2},
-         .notes = {object_id_t{10}},
-         .permutation = {{lane_id_t{1}, lane_id_t{2}}, {lane_id_t{2}, lane_id_t{1}}}});
+        collide, {.chart = chart_id_t{2},
+                  .notes = {object_id_t{10}},
+                  .permutation = {{lane_id_t{1}, lane_id_t{2}}, {lane_id_t{2}, lane_id_t{1}}}});
     CHECK_FALSE(collision.applied);
     CHECK(has_code(collision, diagnostic_code_t::collision));
     CHECK(collide.document.revision == 4);
 
     const auto missing = apply_lane_remap(
-        history, history.document.revision,
-        {.chart = chart_id_t{2},
-         .notes = {object_id_t{10}},
-         .permutation = {{lane_id_t{3}, lane_id_t{99}}, {lane_id_t{99}, lane_id_t{3}}}});
+        history, {.chart = chart_id_t{2},
+                  .notes = {object_id_t{10}},
+                  .permutation = {{lane_id_t{3}, lane_id_t{99}}, {lane_id_t{99}, lane_id_t{3}}}});
     CHECK_FALSE(missing.applied);
     CHECK(has_code(missing, diagnostic_code_t::unknown_lane));
 
-    const auto not_bijection = apply_lane_remap(
-        history, history.document.revision,
-        {.chart = chart_id_t{2},
-         .notes = {object_id_t{10}},
-         .permutation = {{lane_id_t{1}, lane_id_t{2}}}});
+    const auto not_bijection =
+        apply_lane_remap(history, {.chart = chart_id_t{2},
+                                   .notes = {object_id_t{10}},
+                                   .permutation = {{lane_id_t{1}, lane_id_t{2}}}});
     CHECK_FALSE(not_bijection.applied);
     CHECK(has_code(not_bijection, diagnostic_code_t::invalid_resolution));
 }
 
-TEST_CASE("lane transforms reject stale revisions and unknown notes",
+TEST_CASE("lane transforms reject unknown notes",
           "[unit][core][lane-transform]") {
     auto history = document_history_t::from(seven_key_song());
-    const auto stale = apply_lane_mirror(history, 3, {.chart = chart_id_t{2}, .notes = all_notes});
-    CHECK_FALSE(stale.applied);
     const auto unknown =
-        apply_lane_mirror(history, 4, {.chart = chart_id_t{2}, .notes = {object_id_t{99}}});
+        apply_lane_mirror(history, {.chart = chart_id_t{2}, .notes = {object_id_t{99}}});
     CHECK_FALSE(unknown.applied);
     CHECK(has_code(unknown, diagnostic_code_t::invalid_id));
     const auto wrong_chart =
-        apply_lane_mirror(history, 4, {.chart = chart_id_t{9}, .notes = all_notes});
+        apply_lane_mirror(history, {.chart = chart_id_t{9}, .notes = all_notes});
     CHECK_FALSE(wrong_chart.applied);
     const auto twice = apply_lane_mirror(
-        history, 4, {.chart = chart_id_t{2}, .notes = {object_id_t{10}, object_id_t{10}}});
+        history, {.chart = chart_id_t{2}, .notes = {object_id_t{10}, object_id_t{10}}});
     CHECK(has_code(twice, diagnostic_code_t::duplicate_id));
     CHECK(history.document.revision == 4);
 }

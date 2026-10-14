@@ -48,6 +48,20 @@ struct marker_navigation_item_t {
     auto operator==(const marker_navigation_item_t&) const -> bool = default;
 };
 
+// Beat cursors and beat markers are compared as exact absolute editor rows
+// through the selected chart's measure index, so variable measure lengths are
+// respected. Navigation is strict: previous/next excludes an item exactly at
+// the cursor. At equal positions, stable chart-wide object IDs determine order;
+// next returns the lowest ID and previous the highest ID.
+//
+// When a timing index is passed, audio-time bookmarks and section boundaries are
+// also candidates: each millisecond value is converted to an absolute row by
+// inverse timing lookup (warp side = entry) and floored to the row that contains
+// it; the item then carries both beat_position and audio_milliseconds. A marker
+// outside the timing range is skipped and reported as a warning diagnostic, and
+// an unusable timing index falls back to beat markers with one warning. The
+// result keeps status found; callers choose whether warning diagnostics permit navigation.
+// With no timing index, behavior is unchanged and audio markers are ignored.
 struct marker_navigation_match_t {
     [[nodiscard]] static auto
     from(const song_document_t& song, std::uint64_t expected_revision, chart_id_t chart,
@@ -63,57 +77,15 @@ struct marker_navigation_match_t {
     std::uint64_t document_revision{};
     chart_id_t chart;
     std::optional<marker_navigation_item_t> item;
+    [[nodiscard]] auto is_found() const noexcept -> bool {
+        return status == marker_navigation_status_t::found && item.has_value();
+    }
     auto operator==(const marker_navigation_match_t&) const -> bool = default;
 };
 using marker_navigation_outcome_t = diagnosed_t<marker_navigation_match_t>;
 
-struct marker_navigation_result_t {
-    [[nodiscard]] static auto from(marker_navigation_outcome_t&& outcome)
-        -> marker_navigation_result_t;
-
-    marker_navigation_status_t status{marker_navigation_status_t::no_result};
-    std::uint64_t document_revision{};
-    chart_id_t chart;
-    std::optional<marker_navigation_item_t> item;
-    diagnostic_list_t diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == marker_navigation_status_t::found && item.has_value() &&
-               diagnostics.empty();
-    }
-};
-
-// Beat cursors and beat markers are compared as exact absolute editor rows
-// through the selected chart's measure index, so variable measure lengths are
-// respected. Navigation is strict: previous/next excludes an item exactly at
-// the cursor. At equal positions, stable chart-wide object IDs determine order;
-// next returns the lowest ID and previous the highest ID.
-//
-// When a timing index is passed, audio-time bookmarks and section boundaries are
-// also candidates: each millisecond value is converted to an absolute row by
-// inverse timing lookup (warp side = entry) and floored to the row that contains
-// it; the item then carries both beat_position and audio_milliseconds. A marker
-// outside the timing range is skipped and reported as a warning diagnostic, and
-// an unusable timing index falls back to beat markers with one warning. The
-// result keeps status found, but operator bool is false while warnings exist.
-// With no timing index, behavior is unchanged and audio markers are ignored.
-[[nodiscard]] auto
-navigate_markers(const song_document_t& song, std::uint64_t expected_revision, chart_id_t chart,
-                 local_position_t beat_cursor, marker_navigation_direction_t direction,
-                 marker_navigation_filter_t filter = {}, marker_navigation_limits_t limits = {},
-                 const timing_index_t* timing = nullptr) -> marker_navigation_result_t;
-
-// True when the chart has any bookmark or section that navigate_markers can return
-// (beat-anchored, or audio-time when a timing index is supplied).
+// True when the chart has a bookmark or section available for navigation.
 [[nodiscard]] auto has_marker_navigation_targets(const chart_document_t& chart) -> bool;
-
-// Audio-time cursors compare only audio-anchored bookmarks and section
-// boundaries, using signed integer milliseconds without a timing approximation.
-[[nodiscard]] auto
-navigate_markers(const song_document_t& song, std::uint64_t expected_revision, chart_id_t chart,
-                 std::int64_t audio_millisecond_cursor, marker_navigation_direction_t direction,
-                 marker_navigation_filter_t filter = {}, marker_navigation_limits_t limits = {})
-    -> marker_navigation_result_t;
 
 enum class section_selection_status_t : std::uint8_t {
     resolved,
@@ -121,6 +93,8 @@ enum class section_selection_status_t : std::uint8_t {
     invalid_request,
 };
 
+// Resolves beat sections to their authored selection spans. Audio-time sections require
+// timing projection by the caller.
 struct section_selection_t {
     [[nodiscard]] static auto from(const song_document_t& song, std::uint64_t expected_revision,
                                    chart_id_t chart, object_id_t section,
@@ -131,34 +105,11 @@ struct section_selection_t {
     chart_id_t chart;
     object_id_t section;
     std::optional<position_span_t> beat_span;
+    [[nodiscard]] auto is_resolved() const noexcept -> bool {
+        return status == section_selection_status_t::resolved && beat_span.has_value();
+    }
     auto operator==(const section_selection_t&) const -> bool = default;
 };
 using section_selection_outcome_t = diagnosed_t<section_selection_t>;
-
-struct section_selection_result_t {
-    [[nodiscard]] static auto from(section_selection_outcome_t&& outcome)
-        -> section_selection_result_t;
-
-    section_selection_status_t status{section_selection_status_t::invalid_request};
-    std::uint64_t document_revision{};
-    chart_id_t chart;
-    object_id_t section;
-    std::optional<position_span_t> beat_span;
-    diagnostic_list_t diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == section_selection_status_t::resolved && beat_span.has_value() &&
-               diagnostics.empty();
-    }
-};
-
-// Resolves a beat-anchored section to its exact authored selection span. An
-// audio-time section returns timing_projection_required; converting its bounds
-// to chart positions requires a timing projection supplied by the caller.
-[[nodiscard]] auto resolve_section_selection(const song_document_t& song,
-                                             std::uint64_t expected_revision, chart_id_t chart,
-                                             object_id_t section,
-                                             marker_navigation_limits_t limits = {})
-    -> section_selection_result_t;
 
 } // namespace wormedit

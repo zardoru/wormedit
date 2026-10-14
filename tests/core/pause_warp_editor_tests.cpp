@@ -55,9 +55,12 @@ TEST_CASE("pause and warp editing allocates IDs, preserves identity, and shares 
     auto history = document_history_t::from(pause_warp_song());
     const auto position = local_position_t{measure_id_t{3}, 240};
     const auto inserted_pause = apply_pause_warp_edit(
-        history, 4,
-        insert_pause_event_action_t{
-            chart_id_t{2}, position, pause_kind_t::stop, {1, 4}, pause_unit_t::seconds});
+        history, wormedit::insert_edit_t<wormedit::pause_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .value = {.position = position,
+                               .settings = {.duration = {1, 4},
+                                            .source_unit = pause_unit_t::seconds,
+                                            .kind = pause_kind_t::stop}}});
     REQUIRE(inserted_pause);
     const auto pause = history.document.charts.front().pauses.back();
     CHECK(pause.id == object_id_t{31});
@@ -69,9 +72,11 @@ TEST_CASE("pause and warp editing allocates IDs, preserves identity, and shares 
     CHECK(pause.provenance.family == format_family_t::native_project);
 
     const position_span_t new_span{{measure_id_t{3}, 480}, {measure_id_t{3}, 600}};
-    const auto inserted_warp = apply_pause_warp_edit(
-        history, 5,
-        insert_warp_event_action_t{chart_id_t{2}, new_span, warp_provenance_t::negative_stop});
+    const auto inserted_warp =
+        apply_pause_warp_edit(history, wormedit::insert_edit_t<wormedit::warp_edit_value_t>{
+                                           .chart = chart_id_t{2},
+                                           .value = wormedit::warp_edit_value_t::from(
+                                               new_span, warp_provenance_t::negative_stop)});
     REQUIRE(inserted_warp);
     const auto warp = history.document.charts.front().warps.back();
     CHECK(warp.id == object_id_t{32});
@@ -82,7 +87,10 @@ TEST_CASE("pause and warp editing allocates IDs, preserves identity, and shares 
 
     const auto updated_span = position_span_t{{measure_id_t{3}, 480}, {measure_id_t{3}, 660}};
     const auto updated = apply_pause_warp_edit(
-        history, 6, update_warp_event_action_t{chart_id_t{2}, warp.id, updated_span, std::nullopt});
+        history, wormedit::update_edit_t<wormedit::warp_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .id = warp.id,
+                     .value = wormedit::warp_edit_value_t::from(updated_span, std::nullopt)});
     REQUIRE(updated);
     const auto& updated_warp = history.document.charts.front().warps.back();
     CHECK(updated_warp.id == warp.id);
@@ -93,7 +101,10 @@ TEST_CASE("pause and warp editing allocates IDs, preserves identity, and shares 
     CHECK(updated_warp.provenance.family == warp.provenance.family);
 
     const auto no_op = apply_pause_warp_edit(
-        history, 7, update_warp_event_action_t{chart_id_t{2}, warp.id, updated_span, std::nullopt});
+        history, wormedit::update_edit_t<wormedit::warp_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .id = warp.id,
+                     .value = wormedit::warp_edit_value_t::from(updated_span, std::nullopt)});
     CHECK_FALSE(no_op.applied);
     CHECK(no_op.diagnostics.empty());
     CHECK(history.document.revision == 7);
@@ -104,10 +115,12 @@ TEST_CASE("pause and warp editing allocates IDs, preserves identity, and shares 
     CHECK(history.document.charts.front().warps.back().span.end == updated_span.end);
     CHECK(is_document_dirty(history));
 
-    const auto explicit_encoding =
-        apply_pause_warp_edit(history, 7,
-                              update_warp_event_action_t{chart_id_t{2}, warp.id, updated_span,
-                                                         warp_provenance_t::native});
+    const auto explicit_encoding = apply_pause_warp_edit(
+        history,
+        wormedit::update_edit_t<wormedit::warp_edit_value_t>{
+            .chart = chart_id_t{2},
+            .id = warp.id,
+            .value = wormedit::warp_edit_value_t::from(updated_span, warp_provenance_t::native)});
     REQUIRE(explicit_encoding);
     CHECK(history.document.charts.front().warps.back().source_encoding ==
           warp_provenance_t::native);
@@ -116,12 +129,13 @@ TEST_CASE("pause and warp editing allocates IDs, preserves identity, and shares 
 TEST_CASE("same-row pause insertion gets a later source order and updates exact timing",
           "[unit][core][pause-warp-editor][ordering]") {
     auto history = document_history_t::from(pause_warp_song());
-    const auto inserted = apply_pause_warp_edit(history, 4,
-                                                insert_pause_event_action_t{chart_id_t{2},
-                                                                            {measure_id_t{3}, 240},
-                                                                            pause_kind_t::stop,
-                                                                            {1, 4},
-                                                                            pause_unit_t::seconds});
+    const auto inserted = apply_pause_warp_edit(
+        history, wormedit::insert_edit_t<wormedit::pause_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .value = {.position = {measure_id_t{3}, 240},
+                               .settings = {.duration = {1, 4},
+                                            .source_unit = pause_unit_t::seconds,
+                                            .kind = pause_kind_t::stop}}});
     REQUIRE(inserted);
     const auto& chart = history.document.charts.front();
     REQUIRE(chart.pauses.back().provenance.source_order == 8);
@@ -158,14 +172,14 @@ TEST_CASE("pause edits preserve BMS baselines, reject incoherent updates, and de
     REQUIRE(validate_document(song).empty());
     auto history = document_history_t::from(std::move(song));
 
-    const auto update =
-        apply_pause_warp_edit(history, 4,
-                              update_pause_event_action_t{chart_id_t{2},
-                                                          object_id_t{40},
-                                                          {measure_id_t{3}, 480},
-                                                          pause_kind_t::stop,
-                                                          {96, 1},
-                                                          pause_unit_t::bms_stop_ticks});
+    const auto update = apply_pause_warp_edit(
+        history, wormedit::update_edit_t<wormedit::pause_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .id = object_id_t{40},
+                     .value = {.position = {measure_id_t{3}, 480},
+                               .settings = {.duration = {96, 1},
+                                            .source_unit = pause_unit_t::bms_stop_ticks,
+                                            .kind = pause_kind_t::stop}}});
     REQUIRE(update);
     REQUIRE(history.document.charts.front().bms_pause_projections.size() == 1);
     const auto& projection = history.document.charts.front().bms_pause_projections.front();
@@ -173,77 +187,74 @@ TEST_CASE("pause edits preserve BMS baselines, reject incoherent updates, and de
     CHECK(projection.imported_duration == signed_rational_t{48, 1});
     CHECK(projection.source_order == 55);
 
-    const auto incoherent =
-        apply_pause_warp_edit(history, 5,
-                              update_pause_event_action_t{chart_id_t{2},
-                                                          object_id_t{40},
-                                                          {measure_id_t{3}, 480},
-                                                          pause_kind_t::delay,
-                                                          {96, 1},
-                                                          pause_unit_t::seconds});
+    const auto incoherent = apply_pause_warp_edit(
+        history, wormedit::update_edit_t<wormedit::pause_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .id = object_id_t{40},
+                     .value = {.position = {measure_id_t{3}, 480},
+                               .settings = {.duration = {96, 1},
+                                            .source_unit = pause_unit_t::seconds,
+                                            .kind = pause_kind_t::delay}}});
     CHECK_FALSE(incoherent);
     CHECK(has_code(incoherent, diagnostic_code_t::invalid_resolution));
     CHECK(history.document.revision == 5);
     CHECK(history.document.charts.front().pauses.front().kind == pause_kind_t::stop);
 
-    const auto deleted = apply_pause_warp_edit(
-        history, 5, delete_pause_event_action_t{chart_id_t{2}, object_id_t{40}});
+    const auto deleted =
+        apply_pause_warp_edit(history, wormedit::delete_edit_t<wormedit::pause_edit_value_t>{
+                                           .chart = chart_id_t{2}, .id = object_id_t{40}});
     REQUIRE(deleted);
     CHECK(history.document.charts.front().pauses.empty());
     CHECK(history.document.charts.front().bms_pause_projections.empty());
 }
 
-TEST_CASE("pause and warp edits reject stale, duplicate, invalid, and over-cap requests atomically",
+TEST_CASE("pause and warp edits reject duplicate, invalid, and over-cap requests atomically",
           "[unit][core][pause-warp-editor][negative]") {
     auto history = document_history_t::from(pause_warp_song());
     const auto initial_revision = history.document.revision;
 
-    const auto stale = apply_pause_warp_edit(history, 3,
-                                             insert_pause_event_action_t{chart_id_t{2},
-                                                                         {measure_id_t{3}, 120},
-                                                                         pause_kind_t::stop,
-                                                                         {1, 1},
-                                                                         pause_unit_t::seconds});
-    CHECK_FALSE(stale);
-    CHECK(has_code(stale, diagnostic_code_t::invalid_id));
-
-    const auto unknown = apply_pause_warp_edit(
-        history, initial_revision, delete_warp_event_action_t{chart_id_t{2}, object_id_t{99}});
+    const auto unknown =
+        apply_pause_warp_edit(history, wormedit::delete_edit_t<wormedit::warp_edit_value_t>{
+                                           .chart = chart_id_t{2}, .id = object_id_t{99}});
     CHECK_FALSE(unknown);
     CHECK(has_code(unknown, diagnostic_code_t::invalid_id));
-    const auto zero = apply_pause_warp_edit(
-        history, initial_revision, delete_pause_event_action_t{chart_id_t{2}, object_id_t{0}});
+    const auto zero =
+        apply_pause_warp_edit(history, wormedit::delete_edit_t<wormedit::pause_edit_value_t>{
+                                           .chart = chart_id_t{2}, .id = object_id_t{0}});
     CHECK_FALSE(zero);
     CHECK(has_code(zero, diagnostic_code_t::invalid_id));
 
     for (const auto position :
          {local_position_t{measure_id_t{99}, 0}, local_position_t{measure_id_t{3}, 960}}) {
         const auto invalid = apply_pause_warp_edit(
-            history, initial_revision,
-            insert_pause_event_action_t{
-                chart_id_t{2}, position, pause_kind_t::stop, {1, 1}, pause_unit_t::seconds});
+            history, wormedit::insert_edit_t<wormedit::pause_edit_value_t>{
+                         .chart = chart_id_t{2},
+                         .value = {.position = position,
+                                   .settings = {.duration = {1, 1},
+                                                .source_unit = pause_unit_t::seconds,
+                                                .kind = pause_kind_t::stop}}});
         CHECK_FALSE(invalid);
         CHECK(has_code(invalid, diagnostic_code_t::row_out_of_range));
     }
 
     for (const auto duration : {signed_rational_t{-1, 1}, signed_rational_t{1, 0}}) {
-        const auto invalid =
-            apply_pause_warp_edit(history, initial_revision,
-                                  insert_pause_event_action_t{chart_id_t{2},
-                                                              {measure_id_t{3}, 120},
-                                                              pause_kind_t::stop,
-                                                              duration,
-                                                              pause_unit_t::seconds});
+        const auto invalid = apply_pause_warp_edit(
+            history, wormedit::insert_edit_t<wormedit::pause_edit_value_t>{
+                         .chart = chart_id_t{2},
+                         .value = {.position = {measure_id_t{3}, 120},
+                                   .settings = {.duration = duration,
+                                                .source_unit = pause_unit_t::seconds,
+                                                .kind = pause_kind_t::stop}}});
         CHECK_FALSE(invalid);
         CHECK(has_code(invalid, diagnostic_code_t::invalid_rational));
     }
-    const auto invalid_unit =
-        apply_pause_warp_edit(history, initial_revision,
-                              insert_pause_event_action_t{chart_id_t{2},
-                                                          {measure_id_t{3}, 120},
-                                                          pause_kind_t::delay,
-                                                          {1, 1},
-                                                          pause_unit_t::bms_stop_ticks});
+    const auto invalid_unit = apply_pause_warp_edit(
+        history, wormedit::insert_edit_t<wormedit::pause_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .value = {.position = {measure_id_t{3}, 120},
+                               .settings = {.duration = {1, 1},
+                                            .source_unit = pause_unit_t::bms_stop_ticks,
+                                            .kind = pause_kind_t::delay}}});
     CHECK_FALSE(invalid_unit);
     CHECK(has_code(invalid_unit, diagnostic_code_t::invalid_resolution));
 
@@ -251,8 +262,10 @@ TEST_CASE("pause and warp edits reject stale, duplicate, invalid, and over-cap r
                             position_span_t{{measure_id_t{3}, 480}, {measure_id_t{3}, 240}},
                             position_span_t{{measure_id_t{3}, 0}, {measure_id_t{99}, 0}}}) {
         const auto invalid = apply_pause_warp_edit(
-            history, initial_revision,
-            insert_warp_event_action_t{chart_id_t{2}, span, warp_provenance_t::native});
+            history,
+            wormedit::insert_edit_t<wormedit::warp_edit_value_t>{
+                .chart = chart_id_t{2},
+                .value = wormedit::warp_edit_value_t::from(span, warp_provenance_t::native)});
         CHECK_FALSE(invalid);
         CHECK(has_code(invalid, span.end.measure == measure_id_t{99}
                                     ? diagnostic_code_t::row_out_of_range
@@ -260,30 +273,33 @@ TEST_CASE("pause and warp edits reject stale, duplicate, invalid, and over-cap r
     }
 
     const auto pause_capped =
-        apply_pause_warp_edit(history, initial_revision,
-                              insert_pause_event_action_t{chart_id_t{2},
-                                                          {measure_id_t{3}, 120},
-                                                          pause_kind_t::stop,
-                                                          {1, 1},
-                                                          pause_unit_t::seconds},
+        apply_pause_warp_edit(history,
+                              wormedit::insert_edit_t<wormedit::pause_edit_value_t>{
+                                  .chart = chart_id_t{2},
+                                  .value = {.position = {measure_id_t{3}, 120},
+                                            .settings = {.duration = {1, 1},
+                                                         .source_unit = pause_unit_t::seconds,
+                                                         .kind = pause_kind_t::stop}}},
                               {.maximum_pause_events = 2});
     CHECK_FALSE(pause_capped);
     CHECK(has_code(pause_capped, diagnostic_code_t::invalid_resolution));
     const auto warp_capped = apply_pause_warp_edit(
-        history, initial_revision,
-        insert_warp_event_action_t{chart_id_t{2},
-                                   {{measure_id_t{3}, 0}, {measure_id_t{3}, 120}},
-                                   warp_provenance_t::native},
+        history,
+        wormedit::insert_edit_t<wormedit::warp_edit_value_t>{
+            .chart = chart_id_t{2},
+            .value = wormedit::warp_edit_value_t::from(
+                {{measure_id_t{3}, 0}, {measure_id_t{3}, 120}}, warp_provenance_t::native)},
         {.maximum_warp_events = 1});
     CHECK_FALSE(warp_capped);
     CHECK(has_code(warp_capped, diagnostic_code_t::invalid_resolution));
     const auto objects_capped =
-        apply_pause_warp_edit(history, initial_revision,
-                              insert_pause_event_action_t{chart_id_t{2},
-                                                          {measure_id_t{3}, 120},
-                                                          pause_kind_t::stop,
-                                                          {1, 1},
-                                                          pause_unit_t::seconds},
+        apply_pause_warp_edit(history,
+                              wormedit::insert_edit_t<wormedit::pause_edit_value_t>{
+                                  .chart = chart_id_t{2},
+                                  .value = {.position = {measure_id_t{3}, 120},
+                                            .settings = {.duration = {1, 1},
+                                                         .source_unit = pause_unit_t::seconds,
+                                                         .kind = pause_kind_t::stop}}},
                               {.maximum_chart_objects = 4});
     CHECK_FALSE(objects_capped);
     CHECK(has_code(objects_capped, diagnostic_code_t::invalid_resolution));
@@ -292,23 +308,23 @@ TEST_CASE("pause and warp edits reject stale, duplicate, invalid, and over-cap r
     duplicate_song.charts.front().pauses.push_back(
         {.id = object_id_t{20}, .position = {measure_id_t{3}, 120}, .duration = {1, 1}});
     auto duplicate_history = document_history_t::from(std::move(duplicate_song));
-    const auto ambiguous =
-        apply_pause_warp_edit(duplicate_history, initial_revision,
-                              update_pause_event_action_t{chart_id_t{2},
-                                                          object_id_t{20},
-                                                          {measure_id_t{3}, 120},
-                                                          pause_kind_t::stop,
-                                                          {1, 1},
-                                                          pause_unit_t::seconds});
+    const auto ambiguous = apply_pause_warp_edit(
+        duplicate_history, wormedit::update_edit_t<wormedit::pause_edit_value_t>{
+                               .chart = chart_id_t{2},
+                               .id = object_id_t{20},
+                               .value = {.position = {measure_id_t{3}, 120},
+                                         .settings = {.duration = {1, 1},
+                                                      .source_unit = pause_unit_t::seconds,
+                                                      .kind = pause_kind_t::stop}}});
     CHECK_FALSE(ambiguous);
     CHECK(has_code(ambiguous, diagnostic_code_t::duplicate_id));
 
     auto cross_type_song = pause_warp_song();
     cross_type_song.charts.front().bpms.front().id = object_id_t{20};
     auto cross_type_history = document_history_t::from(std::move(cross_type_song));
-    const auto cross_type_ambiguous =
-        apply_pause_warp_edit(cross_type_history, initial_revision,
-                              delete_pause_event_action_t{chart_id_t{2}, object_id_t{20}});
+    const auto cross_type_ambiguous = apply_pause_warp_edit(
+        cross_type_history, wormedit::delete_edit_t<wormedit::pause_edit_value_t>{
+                                .chart = chart_id_t{2}, .id = object_id_t{20}});
     CHECK_FALSE(cross_type_ambiguous);
     CHECK(has_code(cross_type_ambiguous, diagnostic_code_t::duplicate_id));
     CHECK(cross_type_history.document.charts.front().pauses.size() == 2);

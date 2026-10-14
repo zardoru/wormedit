@@ -643,18 +643,18 @@ auto stage_single_bgm_move(document_history_t& scratch, chart_id_t chart, const 
             return {.revision = scratch.document.revision,
                     .diagnostics = {error(diagnostic_code_t::row_out_of_range,
                                           "Stem markers cannot move into virtual BMS rows")}};
-        return move_bmson_bgm_marker(scratch, scratch.document.revision, chart, source.id,
+        return move_bmson_bgm_marker(scratch, chart, source.id,
                                      position);
     }
     if (canvas_row)
-        return apply_virtual_bms_bgm_event_move(scratch, scratch.document.revision,
+        return apply_virtual_bms_bgm_event_move(scratch,
                                                 {.chart = chart,
                                                  .event = source.id,
                                                  .canvas_row = *canvas_row,
                                                  .source_lane = lane,
                                                  .snap_denominator = snap});
     return apply_bgm_event_move(
-        scratch, scratch.document.revision,
+        scratch,
         {.chart = chart, .event = source.id, .position = position, .source_lane = lane});
 }
 } // namespace wormedit::interaction_detail
@@ -740,7 +740,7 @@ auto relocate_selected_bgm(song_document_t& proposed, chart_id_t chart_id,
             return {error(diagnostic_code_t::invalid_id, "Selected BGM event is unavailable",
                           preview.note)};
         if (source->sound_channel_event) {
-            const auto moved = move_bmson_bgm_marker(scratch, scratch.document.revision, chart_id,
+            const auto moved = move_bmson_bgm_marker(scratch, chart_id,
                                                      preview.note, preview.position);
             if (!moved.diagnostics.empty())
                 return moved.diagnostics;
@@ -776,7 +776,7 @@ auto relocate_selected_bgm(song_document_t& proposed, chart_id_t chart_id,
         const auto* source = (*scratch.document.find_chart(chart_id)).find_bgm_event(preview.note);
         if (source->sound_channel_event)
             continue;
-        const auto validated = apply_bgm_event_move(scratch, scratch.document.revision,
+        const auto validated = apply_bgm_event_move(scratch,
                                                     {.chart = chart_id,
                                                      .event = preview.note,
                                                      .position = preview.position,
@@ -912,7 +912,7 @@ auto stage_bgm_note_move(const document_history_t& history, editor_interaction_s
                                           source->source_family == format_family_t::bmson ||
                                           source->source_family == format_family_t::native_project};
     if (!pending.to_bgm) {
-        auto converted = move_notes_to_bgm(scratch, scratch.document.revision, state.chart,
+        auto converted = move_notes_to_bgm(scratch, state.chart,
                                            plan.occupants, std::nullopt, policy);
         if (!converted)
             return converted.diagnostics;
@@ -921,7 +921,7 @@ auto stage_bgm_note_move(const document_history_t& history, editor_interaction_s
     if (auto failure = relocate_moved_notes(*chart, plan, scratch, state))
         return diagnostic_list_t{*failure};
     if (pending.to_bgm) {
-        auto converted = move_notes_to_bgm(scratch, scratch.document.revision, state.chart,
+        auto converted = move_notes_to_bgm(scratch, state.chart,
                                            plan.notes, pending.preferred_bgm_lane, policy);
         if (!converted)
             return converted.diagnostics;

@@ -57,7 +57,7 @@ TEST_CASE("note labels apply atomically to an exact selection and preserve gamep
     auto history = document_history_t::from(label_song());
     const auto before = history.document.charts.front().measures.front().notes;
     const auto applied = apply_note_label_edit(
-        history, 4,
+        history,
         {.chart = chart_id_t{2}, .notes = {object_id_t{10}, object_id_t{11}}, .label = "vocal"});
     REQUIRE(applied);
     const auto& notes = history.document.charts.front().measures.front().notes;
@@ -73,14 +73,14 @@ TEST_CASE("note labels apply atomically to an exact selection and preserve gamep
     CHECK(notes[0].provenance.source_order == before[0].provenance.source_order);
 
     const auto no_op = apply_note_label_edit(
-        history, 5,
+        history,
         {.chart = chart_id_t{2}, .notes = {object_id_t{10}, object_id_t{11}}, .label = "vocal"});
     CHECK_FALSE(no_op.applied);
     CHECK(no_op.diagnostics.empty());
     CHECK(history.document.revision == 5);
 
     const auto cleared = apply_note_label_edit(
-        history, 5, {.chart = chart_id_t{2}, .notes = {object_id_t{10}}, .label = std::nullopt});
+        history, {.chart = chart_id_t{2}, .notes = {object_id_t{10}}, .label = std::nullopt});
     REQUIRE(cleared);
     CHECK_FALSE(history.document.charts.front().measures.front().notes[0].label.has_value());
     CHECK(history.document.charts.front().measures.front().notes[1].label == "vocal");
@@ -91,7 +91,7 @@ TEST_CASE("note labels apply atomically to an exact selection and preserve gamep
     CHECK(is_document_dirty(history));
 }
 
-TEST_CASE("note-label editing rejects stale unknown duplicate and malformed requests atomically",
+TEST_CASE("note-label editing rejects unknown duplicate and malformed requests atomically",
           "[unit][core][note-label-editor][bounds]") {
     auto history = document_history_t::from(label_song());
     const auto check_unchanged = [&] {
@@ -101,41 +101,37 @@ TEST_CASE("note-label editing rejects stale unknown duplicate and malformed requ
         CHECK(history.undo.empty());
     };
 
-    const auto stale = apply_note_label_edit(
-        history, 3, {.chart = chart_id_t{2}, .notes = {object_id_t{10}}, .label = "new"});
-    CHECK_FALSE(stale);
-    CHECK(has_code(stale, diagnostic_code_t::invalid_id));
     const auto empty =
-        apply_note_label_edit(history, 4, {.chart = chart_id_t{2}, .notes = {}, .label = "new"});
+        apply_note_label_edit(history, {.chart = chart_id_t{2}, .notes = {}, .label = "new"});
     CHECK_FALSE(empty);
     CHECK(has_code(empty, diagnostic_code_t::invalid_resolution));
     const auto unknown = apply_note_label_edit(
-        history, 4, {.chart = chart_id_t{2}, .notes = {object_id_t{99}}, .label = "new"});
+        history, {.chart = chart_id_t{2}, .notes = {object_id_t{99}}, .label = "new"});
     CHECK_FALSE(unknown);
     CHECK(has_code(unknown, diagnostic_code_t::invalid_id));
     const auto duplicate_request = apply_note_label_edit(
-        history, 4,
+        history,
         {.chart = chart_id_t{2}, .notes = {object_id_t{10}, object_id_t{10}}, .label = "new"});
     CHECK_FALSE(duplicate_request);
     CHECK(has_code(duplicate_request, diagnostic_code_t::duplicate_id));
-    const auto embedded_nul = apply_note_label_edit(history, 4,
-                                                    {.chart = chart_id_t{2},
-                                                     .notes = {object_id_t{10}},
-                                                     .label = std::string{"bad\0label", 9}});
+    const auto embedded_nul =
+        apply_note_label_edit(history, {.chart = chart_id_t{2},
+                                        .notes = {object_id_t{10}},
+                                        .label = std::string{"bad\0label", 9}});
     CHECK_FALSE(embedded_nul);
     CHECK(has_code(embedded_nul, diagnostic_code_t::unsupported_feature));
     const auto malformed_utf8 = apply_note_label_edit(
-        history, 4,
+        history,
         {.chart = chart_id_t{2}, .notes = {object_id_t{10}}, .label = std::string{"\xc0\x80", 2}});
     CHECK_FALSE(malformed_utf8);
     CHECK(has_code(malformed_utf8, diagnostic_code_t::unsupported_feature));
     const auto capped = apply_note_label_edit(
-        history, 4, {.chart = chart_id_t{2}, .notes = {object_id_t{10}}, .label = "12345"},
+        history, {.chart = chart_id_t{2}, .notes = {object_id_t{10}}, .label = "12345"},
         {.maximum_label_bytes = 4});
     CHECK_FALSE(capped);
     CHECK(has_code(capped, diagnostic_code_t::unsupported_feature));
     const auto object_capped = apply_note_label_edit(
-        history, 4, {.chart = chart_id_t{2}, .notes = {object_id_t{10}}, .label = "new"},
+        history, {.chart = chart_id_t{2}, .notes = {object_id_t{10}}, .label = "new"},
         {.maximum_chart_objects = 2});
     CHECK_FALSE(object_capped);
     CHECK(has_code(object_capped, diagnostic_code_t::invalid_resolution));
@@ -146,7 +142,7 @@ TEST_CASE("note-label editing enforces aggregate bytes and chart-wide identity",
           "[unit][core][note-label-editor][bounds]") {
     auto history = document_history_t::from(label_song());
     const auto aggregate = apply_note_label_edit(
-        history, 4, {.chart = chart_id_t{2}, .notes = {object_id_t{11}}, .label = "four"},
+        history, {.chart = chart_id_t{2}, .notes = {object_id_t{11}}, .label = "four"},
         {.maximum_total_label_bytes = 6});
     CHECK_FALSE(aggregate);
     CHECK(has_code(aggregate, diagnostic_code_t::invalid_resolution));
@@ -156,7 +152,7 @@ TEST_CASE("note-label editing enforces aggregate bytes and chart-wide identity",
     ambiguous_song.charts.front().bpms.front().id = object_id_t{10};
     auto ambiguous_history = document_history_t::from(std::move(ambiguous_song));
     const auto ambiguous = apply_note_label_edit(
-        ambiguous_history, 4, {.chart = chart_id_t{2}, .notes = {object_id_t{10}}, .label = "new"});
+        ambiguous_history, {.chart = chart_id_t{2}, .notes = {object_id_t{10}}, .label = "new"});
     CHECK_FALSE(ambiguous);
     CHECK(has_code(ambiguous, diagnostic_code_t::duplicate_id));
     CHECK(ambiguous_history.document.charts.front().measures.front().notes[0].label == "old");
@@ -183,7 +179,7 @@ TEST_CASE("note-label editing stays bounded for fifty thousand selected notes",
 
     const auto started = std::chrono::steady_clock::now();
     const auto applied = apply_note_label_edit(
-        history, 4, {.chart = chart_id_t{2}, .notes = std::move(selected), .label = "vocal"});
+        history, {.chart = chart_id_t{2}, .notes = std::move(selected), .label = "vocal"});
     const auto elapsed = std::chrono::steady_clock::now() - started;
     REQUIRE(applied);
     CHECK(history.document.charts.front().measures.front().notes.size() == 50'000);

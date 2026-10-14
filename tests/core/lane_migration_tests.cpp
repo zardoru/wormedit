@@ -1,3 +1,4 @@
+#include "../support/stale_action_assertions.h"
 #include <wormedit/core/lane_migration.h>
 #include <wormedit/formats/bmson.h>
 #include <wormedit/formats/bms.h>
@@ -357,7 +358,9 @@ TEST_CASE("lane migration rejects modified previews and another song at matching
 
     auto other = song;
     other.id = song_id_t{9};
+    test::check_stale_action_message(propose_lane_migration(song, song.revision + 1, chart_id_t{2}, *target).message(), "Lane migration");
     auto other_history = document_history_t::from(other);
+    test::check_stale_action_message(apply_lane_migration(other_history, preview, false).payload.message, "Lane migration");
     CHECK(apply_lane_migration(other_history, preview, false).payload.issue ==
           lane_migration_issue_t::stale_revision);
 
@@ -592,4 +595,34 @@ TEST_CASE("lane migration rejects parsed BMS branch holds moved to another chann
     explicit_lane->target_lane = destination->id;
     CHECK(propose_lane_migration(*parsed.song, parsed.song->revision, chart.id, target, mapping)
               .issue == lane_migration_issue_t::unsupported_branch_identity);
+}
+
+TEST_CASE("Sealed lane migration stamp changes stay tamper errors before staleness",
+          "[unit][core][lane-migration][proposal-stamp]") {
+    auto history = document_history_t::from(migration_song());
+    const auto target = make_osu_mania_profile(5);
+    REQUIRE(target);
+    auto proposal = propose_lane_migration(history.document, history.document.revision,
+        chart_id_t{2}, *target);
+    ++proposal.stamp.document.revision;
+    const auto result = apply_lane_migration(history, proposal, false);
+    CHECK(result.payload.issue == lane_migration_issue_t::invalid_mapping);
+    CHECK(result.payload.message == "Lane migration preview data was changed after proposal.");
+    CHECK(result.command.diagnostics.empty());
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Lane migration diagnostics own the existing proposal failure message",
+          "[unit][core][lane-migration][proposal-stamp]") {
+    auto history = document_history_t::from(migration_song());
+    const auto target = make_osu_mania_profile(5);
+    REQUIRE(target);
+    const auto proposal = propose_lane_migration(history.document, history.document.revision + 1,
+        chart_id_t{2}, *target);
+    REQUIRE(proposal.diagnostics.size() == 1);
+    test::check_stale_action_message(proposal.diagnostics, "Lane migration");
+    const auto result = apply_lane_migration(history, proposal, false);
+    CHECK(result.payload.message == proposal.message());
+    CHECK(result.command.diagnostics.empty());
+    CHECK(history.undo.empty());
 }

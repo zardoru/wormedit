@@ -425,12 +425,14 @@ auto append_projected_area_selection(const chart_document_t& chart,
     const editor_interaction_view_model_t& view, const editor_area_selection_request_t& request,
     std::vector<editor_selection_object_t>& selected) -> std::optional<diagnostic_list_t> {
     const auto& snapshot = *request.object_geometry;
-    if (snapshot.chart != chart.id || snapshot.document_revision != view.document_revision ||
-        snapshot.objects.size() > 200000 || !is_valid_area_geometry_projection(snapshot, view) ||
+    if (snapshot.objects.size() > 200000 || !is_valid_area_geometry_projection(snapshot, view) ||
         !std::isfinite(request.start_x_pixels) || !std::isfinite(request.end_x_pixels) ||
         !std::isfinite(request.start_y_pixels) || !std::isfinite(request.end_y_pixels))
         return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
                                        "projected selection geometry is stale or invalid")};
+    if (snapshot.chart != chart.id || snapshot.document_revision != view.document_revision)
+        return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
+                                       stale_action_message("Projected selection geometry"))};
     const auto left = std::min(request.start_x_pixels, request.end_x_pixels);
     const auto right = std::max(request.start_x_pixels, request.end_x_pixels);
     const auto scroll_delta = snapshot.projection
@@ -592,7 +594,7 @@ auto begin_space_range_selection(space_range_selection_context_t& context,
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built))
         return diagnostic_result(history, state, *diagnostics);
     state.pending_space_range_selection = pending_space_range_selection_t{
-        .document_revision = history.document.revision,
+        .stamp = document_stamp_t::from(history.document.revision),
         .hit_index = std::make_shared<editor_hit_test_index_t>(
             std::move(std::get<editor_hit_test_index_t>(built))),
         .anchor = state.cursor,
@@ -615,12 +617,15 @@ auto commit_space_range_selection(space_range_selection_context_t& context)
     auto& history = context.edit.history;
     auto& state = context.edit.state;
     const auto pending = *state.pending_space_range_selection;
-    if (pending.hit_index == nullptr || pending.document_revision != history.document.revision ||
-        pending.hit_index->document_revision != history.document.revision) {
+    if (pending.hit_index == nullptr)
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "Space range selection is stale after a document edit")});
-    }
+    if (!pending.stamp.is_revision_current(history.document.revision) ||
+        pending.hit_index->document_revision != history.document.revision)
+        return diagnostic_result(history, state,
+                                 {error(diagnostic_code_t::invalid_hold,
+                                        stale_action_message("Editor gesture"))});
     const auto& current_view = std::get<editor_interaction_view_model_t>(context.initial_view);
     if (!current_view.pending_space_range_selection.has_value() ||
         current_view.pending_space_range_selection->objects == nullptr) {
@@ -724,7 +729,7 @@ auto begin_area_selection_gesture(area_selection_context_t& context,
         return diagnostic_result(history, state, *diagnostics);
     auto objects = std::get<std::vector<editor_selection_object_t>>(std::move(combined));
     state.pending_editor_area_selection = pending_editor_area_selection_t{
-        .document_revision = history.document.revision,
+        .stamp = document_stamp_t::from(history.document.revision),
         .hit_index = std::move(hit_index),
         .anchor_x_pixels = request.x_pixels,
         .anchor_y_pixels = request.y_pixels,
@@ -757,11 +762,15 @@ auto update_area_selection_gesture(area_selection_context_t& context, double x_p
                                  {error(diagnostic_code_t::invalid_hold,
                                         "area selection update requires an active gesture")});
     const auto& pending = *state.pending_editor_area_selection;
-    if (pending.document_revision != history.document.revision || !pending.hit_index ||
-        pending.hit_index->document_revision != history.document.revision)
+    if (!pending.hit_index)
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "area selection gesture is stale after a document edit")});
+    if (!pending.stamp.is_revision_current(history.document.revision) ||
+        pending.hit_index->document_revision != history.document.revision)
+        return diagnostic_result(history, state,
+                                 {error(diagnostic_code_t::invalid_hold,
+                                        stale_action_message("Editor gesture"))});
     if (!std::isfinite(x_pixels) || !std::isfinite(y_pixels))
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_resolution,
@@ -852,10 +861,14 @@ auto commit_area_selection_gesture(area_selection_context_t& context, double x_p
     if (!updated || !context.edit.state.pending_editor_area_selection)
         return updated;
     const auto& pending = *context.edit.state.pending_editor_area_selection;
-    if (pending.document_revision != context.edit.history.document.revision || !pending.objects)
+    if (!pending.objects)
         return diagnostic_result(context.edit.history, context.edit.state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "area selection gesture is stale after a document edit")});
+    if (!pending.stamp.is_revision_current(context.edit.history.document.revision))
+        return diagnostic_result(context.edit.history, context.edit.state,
+                                 {error(diagnostic_code_t::invalid_hold,
+                                        stale_action_message("Editor gesture"))});
     set_selected_objects(context.edit.state, *pending.objects);
     retain_area_selection_range(context, pending);
     context.edit.state.pending_editor_area_selection.reset();

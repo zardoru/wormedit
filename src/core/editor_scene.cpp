@@ -1,6 +1,7 @@
 #include <wormedit/core/rational.h>
 #include "interaction_geometry.h"
 #include <wormedit/core/editor_scene.h>
+#include <wormedit/core/command.h>
 #include <wormedit/core/virtual_canvas.h>
 
 #include <algorithm>
@@ -15,6 +16,21 @@
 #include <utility>
 
 namespace wormedit {
+
+auto editor_field_scene_index_t::is_current(chart_id_t current_chart,
+                                          std::uint64_t current_revision) const noexcept -> bool {
+    return chart == current_chart && document_revision == current_revision;
+}
+
+auto editor_field_scene_index_t::is_valid() const noexcept -> bool {
+    return measures.total_rows != 0 && note_tree_leaf_base != 0 && note_tree_leaf_base >= notes.size() &&
+           note_tree_leaf_base <= std::numeric_limits<std::size_t>::max() / 2 &&
+           note_tree_max_end.size() == note_tree_leaf_base * 2 && note_indices_by_id.size() == notes.size() &&
+           bgm_tree_leaf_base >= bgm_events.size() && bgm_tree_leaf_base != 0 &&
+           bgm_tree_leaf_base <= std::numeric_limits<std::size_t>::max() / 2 &&
+           bgm_tree_max_end.size() == bgm_tree_leaf_base * 2;
+}
+
 namespace {
 
 auto layout_at_row(const editor_field_scene_index_t& index, std::uint64_t row)
@@ -505,16 +521,7 @@ namespace {
 
 auto is_valid_scene_index(const chart_document_t& chart, const editor_field_scene_index_t& index,
                        const editor_interaction_view_model_t& view) -> bool {
-    return chart.id == index.chart && view.chart == chart.id &&
-           view.document_revision == index.document_revision && index.measures.total_rows != 0 &&
-           index.note_tree_leaf_base != 0 && index.note_tree_leaf_base >= index.notes.size() &&
-           index.note_tree_leaf_base <= std::numeric_limits<std::size_t>::max() / 2 &&
-           index.note_tree_max_end.size() == index.note_tree_leaf_base * 2 &&
-           index.note_indices_by_id.size() == index.notes.size() &&
-           index.bgm_tree_leaf_base >= index.bgm_events.size() &&
-           index.bgm_tree_leaf_base != 0 &&
-           index.bgm_tree_leaf_base <= std::numeric_limits<std::size_t>::max() / 2 &&
-           index.bgm_tree_max_end.size() == index.bgm_tree_leaf_base * 2;
+    return view.chart == chart.id && index.is_current(chart.id, view.document_revision) && index.is_valid();
 }
 
 auto is_valid_scene_request_geometry(const editor_field_scene_request_t& request,
@@ -685,11 +692,16 @@ auto collect_duration_proposals(scene_geometry_context_t& context, duration_prop
         return true;
     }
     const auto& pending = *context.view.pending_note_duration_gesture;
-    if (pending.document_revision != context.index.document_revision || pending.notes.empty() ||
+    if (pending.notes.empty() ||
         pending.notes.size() != pending.preview.size() ||
         pending.notes.size() > context.index.notes.size()) {
         context.diagnostics.push_back(error(diagnostic_code_t::invalid_hold,
                                             "field-scene duration preview is malformed or stale"));
+        return false;
+    }
+    if (!pending.stamp.is_revision_current(context.index.document_revision)) {
+        context.diagnostics.push_back(error(diagnostic_code_t::invalid_hold,
+                                            stale_action_message("Field scene preview")));
         return false;
     }
     std::unordered_set<std::uint64_t> expected;
@@ -834,10 +846,15 @@ auto append_regular_hold(scene_geometry_context_t& context, hold_proposals_t& ho
         return true;
     }
     const auto anchor = absolute_row(context.index.measures, pending.position);
-    if (pending.document_revision != context.index.document_revision || !anchor ||
+    if (!anchor ||
         !has_lane(layout_at_row(context.index, *anchor), pending.lane)) {
         context.diagnostics.push_back(
             error(diagnostic_code_t::invalid_hold, "field-scene hold preview is stale or invalid"));
+        return false;
+    }
+    if (!pending.stamp.is_revision_current(context.index.document_revision)) {
+        context.diagnostics.push_back(error(diagnostic_code_t::invalid_hold,
+                                            stale_action_message("Field scene preview")));
         return false;
     }
     std::optional<std::uint64_t> moving;
@@ -882,13 +899,17 @@ template <typename Operate>
 auto append_virtual_hold(scene_geometry_context_t& context, hold_proposals_t& holds,
                          const editor_interaction_view_model_t::virtual_hold_preview_t& pending,
                          Operate&& operate) -> bool {
-    if (pending.document_revision != context.index.document_revision ||
-        !has_chart_virtual_tail(context.chart) ||
+    if (!has_chart_virtual_tail(context.chart) ||
         !context.request.include_virtual_bms_tail || pending.anchor_row >= context.canvas_rows ||
         pending.end_row >= context.canvas_rows || context.index.layouts.empty() ||
         !has_lane(&context.index.layouts.back(), pending.lane)) {
         context.diagnostics.push_back(
             error(diagnostic_code_t::invalid_hold, "virtual BMS hold preview is stale or invalid"));
+        return false;
+    }
+    if (pending.document_revision != context.index.document_revision) {
+        context.diagnostics.push_back(error(diagnostic_code_t::invalid_hold,
+                                            stale_action_message("Field scene preview")));
         return false;
     }
     const auto final_tail = pending.tail_row.value_or(pending.head_row);
@@ -1063,13 +1084,17 @@ auto collect_move_proposals(scene_geometry_context_t& context, move_proposals_t&
         return true;
     }
     const auto& pending = *context.view.pending_note_move_gesture;
-    if (pending.document_revision != context.index.document_revision ||
-        (pending.notes.empty() && std::ranges::find(context.index.bgm_events, pending.reference_note,
+    if ((pending.notes.empty() && std::ranges::find(context.index.bgm_events, pending.reference_note,
             &editor_field_scene_bgm_source_t::event) == context.index.bgm_events.end()) ||
         pending.notes.size() != pending.preview.size() ||
         pending.notes.size() > context.index.notes.size()) {
         context.diagnostics.push_back(error(diagnostic_code_t::invalid_hold,
                                             "field-scene note move preview is malformed or stale"));
+        return false;
+    }
+    if (!pending.stamp.is_revision_current(context.index.document_revision)) {
+        context.diagnostics.push_back(error(diagnostic_code_t::invalid_hold,
+                                            stale_action_message("Field scene preview")));
         return false;
     }
     if (pending.to_bgm) return true;
@@ -2216,9 +2241,9 @@ auto is_valid_scene_paint_preview(const editor_interaction_view_model_t& view,
         return true;
     }
     const auto& pending = *view.pending_note_paint_gesture;
-    if (pending.document_revision != index.document_revision) {
+    if (!pending.stamp.is_revision_current(index.document_revision)) {
         diagnostics.push_back(
-            error(diagnostic_code_t::invalid_hold, "field-scene paint preview is stale"));
+            error(diagnostic_code_t::invalid_hold, stale_action_message("Field scene preview")));
         return false;
     }
     if (!pending.targets || pending.targets->empty() ||
@@ -2293,11 +2318,14 @@ auto prepare_scene_visible_rows(const chart_document_t& chart,
                                 const editor_field_scene_request_t& request,
                                 diagnostic_list_t& diagnostics)
     -> std::optional<scene_visible_rows_t> {
-    if (!is_valid_scene_index(chart, index, view) ||
-        !is_valid_scene_request_geometry(request, view.viewport_height_pixels) ||
+    if (!index.is_valid() || !is_valid_scene_request_geometry(request, view.viewport_height_pixels) ||
         !is_valid_scene_request_limits(request) || !is_valid_scene_view(view)) {
         diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                                     "field-scene index, view, or geometry is invalid"));
+        return std::nullopt;
+    }
+    if (view.chart != chart.id || !index.is_current(chart.id, view.document_revision)) {
+        diagnostics.push_back(error(diagnostic_code_t::invalid_resolution, stale_action_message("Field scene index")));
         return std::nullopt;
     }
     const auto canvas_rows = scene_canvas_rows(chart, index, request, diagnostics);

@@ -48,11 +48,11 @@ TEST_CASE("marker editor inserts beat and audio markers and sections with chart-
           "[unit][core][marker-editor]") {
     auto history = document_history_t::from(marker_song());
     const auto beat_marker = apply_marker_edit(
-        history, 4,
-        insert_bookmark_action_t{.chart = chart_id_t{2},
-                                 .label = "",
-                                 .anchor = marker_anchor_t::beat,
-                                 .position = local_position_t{measure_id_t{3}, 0}});
+        history, wormedit::insert_edit_t<wormedit::bookmark_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .value = {.label = "",
+                               .anchor = marker_anchor_t::beat,
+                               .position = local_position_t{measure_id_t{3}, 0}}});
     REQUIRE(beat_marker);
     const auto inserted_bookmark = history.document.charts.front().bookmarks.back();
     CHECK(inserted_bookmark.id == object_id_t{14});
@@ -71,11 +71,11 @@ TEST_CASE("marker editor inserts beat and audio markers and sections with chart-
     CHECK(is_document_dirty(history));
 
     const auto audio_marker =
-        apply_marker_edit(history, 5,
-                          insert_bookmark_action_t{.chart = chart_id_t{2},
-                                                   .label = "Audio cue",
-                                                   .anchor = marker_anchor_t::audio_time,
-                                                   .audio_milliseconds = -250});
+        apply_marker_edit(history, wormedit::insert_edit_t<wormedit::bookmark_edit_value_t>{
+                                       .chart = chart_id_t{2},
+                                       .value = {.label = "Audio cue",
+                                                 .anchor = marker_anchor_t::audio_time,
+                                                 .audio_milliseconds = -250}});
     REQUIRE(audio_marker);
     const auto inserted_audio_bookmark = history.document.charts.front().bookmarks.back();
     CHECK(inserted_audio_bookmark.id == object_id_t{15});
@@ -83,23 +83,22 @@ TEST_CASE("marker editor inserts beat and audio markers and sections with chart-
     CHECK_FALSE(inserted_audio_bookmark.position.has_value());
 
     const auto audio_section = apply_marker_edit(
-        history, 6,
-        insert_section_action_t{.chart = chart_id_t{2},
-                                .label = "Intro",
-                                .anchor = marker_anchor_t::audio_time,
-                                .audio_millisecond_span =
-                                    std::pair<std::int64_t, std::int64_t>{-500, 1'000}});
+        history, wormedit::insert_edit_t<wormedit::section_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .value = {.label = "Intro",
+                               .anchor = marker_anchor_t::audio_time,
+                               .audio_millisecond_span =
+                                   std::pair<std::int64_t, std::int64_t>{-500, 1'000}}});
     REQUIRE(audio_section);
     CHECK(history.document.charts.front().sections.back().id == object_id_t{16});
     CHECK(history.document.charts.front().sections.back().audio_millisecond_span ==
           std::pair<std::int64_t, std::int64_t>{-500, 1'000});
 
-    const auto kiai =
-        apply_marker_edit(history, 7,
-                          insert_kiai_event_action_t{.chart = chart_id_t{2},
-                                                     .position = {measure_id_t{3}, 720},
-                                                     .enabled = false,
-                                                     .retained_effect_bits = 13});
+    const auto kiai = apply_marker_edit(
+        history, wormedit::insert_edit_t<wormedit::kiai_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .value = {.position = {measure_id_t{3}, 720},
+                               .settings = {.enabled = false, .retained_effect_bits = 13}}});
     REQUIRE(kiai);
     const auto inserted_kiai = history.document.charts.front().kiai.back();
     CHECK(inserted_kiai.id == object_id_t{17});
@@ -110,11 +109,11 @@ TEST_CASE("marker editor inserts beat and audio markers and sections with chart-
 
     auto empty_section_history = document_history_t::from(marker_song());
     const auto empty_section = apply_marker_edit(
-        empty_section_history, 4,
-        insert_section_action_t{.chart = chart_id_t{2},
-                                .label = "",
-                                .beat_span =
-                                    position_span_t{{measure_id_t{3}, 0}, {measure_id_t{3}, 120}}});
+        empty_section_history,
+        wormedit::insert_edit_t<wormedit::section_edit_value_t>{
+            .chart = chart_id_t{2},
+            .value = {.label = "",
+                      .beat_span = position_span_t{{measure_id_t{3}, 0}, {measure_id_t{3}, 120}}}});
     REQUIRE(empty_section);
     CHECK(empty_section_history.document.charts.front().sections.back().label.empty());
 }
@@ -123,12 +122,12 @@ TEST_CASE("marker updates retain identity and kiai source data and no-op cleanly
           "[unit][core][marker-editor]") {
     auto history = document_history_t::from(marker_song());
     const auto bookmark_update =
-        apply_marker_edit(history, 4,
-                          update_bookmark_action_t{.chart = chart_id_t{2},
-                                                   .bookmark = object_id_t{12},
-                                                   .label = "Audio marker",
-                                                   .anchor = marker_anchor_t::audio_time,
-                                                   .audio_milliseconds = 1'250});
+        apply_marker_edit(history, wormedit::update_edit_t<wormedit::bookmark_edit_value_t>{
+                                       .chart = chart_id_t{2},
+                                       .id = object_id_t{12},
+                                       .value = {.label = "Audio marker",
+                                                 .anchor = marker_anchor_t::audio_time,
+                                                 .audio_milliseconds = 1'250}});
     REQUIRE(bookmark_update);
     const auto& bookmark = history.document.charts.front().bookmarks.front();
     CHECK(bookmark.id == object_id_t{12});
@@ -138,23 +137,23 @@ TEST_CASE("marker updates retain identity and kiai source data and no-op cleanly
     CHECK_FALSE(bookmark.position.has_value());
 
     const auto section_update = apply_marker_edit(
-        history, 5,
-        update_section_action_t{
-            .chart = chart_id_t{2},
-            .section = object_id_t{13},
-            .label = "Chorus",
-            .anchor = marker_anchor_t::beat,
-            .beat_span = position_span_t{{measure_id_t{3}, 480}, {measure_id_t{3}, 720}}});
+        history, wormedit::update_edit_t<wormedit::section_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .id = object_id_t{13},
+                     .value = {.label = "Chorus",
+                               .anchor = marker_anchor_t::beat,
+                               .beat_span = position_span_t{{measure_id_t{3}, 480},
+                                                            {measure_id_t{3}, 720}}}});
     REQUIRE(section_update);
     CHECK(history.document.charts.front().sections.front().id == object_id_t{13});
     CHECK(history.document.charts.front().sections.front().label == "Chorus");
 
-    const auto kiai_update =
-        apply_marker_edit(history, 6,
-                          update_kiai_event_action_t{.chart = chart_id_t{2},
-                                                     .event = object_id_t{11},
-                                                     .position = {measure_id_t{3}, 360},
-                                                     .enabled = false});
+    const auto kiai_update = apply_marker_edit(
+        history, wormedit::update_edit_t<wormedit::kiai_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .id = object_id_t{11},
+                     .value = {.position = {measure_id_t{3}, 360},
+                               .settings = {.enabled = false, .retained_effect_bits = 0}}});
     REQUIRE(kiai_update);
     const auto updated_kiai = history.document.charts.front().kiai.front();
     CHECK(updated_kiai.id == object_id_t{11});
@@ -164,12 +163,13 @@ TEST_CASE("marker updates retain identity and kiai source data and no-op cleanly
     CHECK(updated_kiai.provenance.family == format_family_t::osu_mania);
     CHECK(updated_kiai.provenance.source_order == 7);
 
-    const auto no_op =
-        apply_marker_edit(history, 7,
-                          update_kiai_event_action_t{.chart = chart_id_t{2},
-                                                     .event = object_id_t{11},
-                                                     .position = updated_kiai.position,
-                                                     .enabled = updated_kiai.enabled});
+    const auto no_op = apply_marker_edit(
+        history,
+        wormedit::update_edit_t<wormedit::kiai_edit_value_t>{
+            .chart = chart_id_t{2},
+            .id = object_id_t{11},
+            .value = {.position = updated_kiai.position,
+                      .settings = {.enabled = updated_kiai.enabled, .retained_effect_bits = 0}}});
     CHECK_FALSE(no_op.applied);
     CHECK(no_op.diagnostics.empty());
     CHECK(history.document.revision == 7);
@@ -188,41 +188,43 @@ TEST_CASE("marker updates retain identity and kiai source data and no-op cleanly
 TEST_CASE("audio-time marker CRUD preserves exact signed millisecond bounds",
           "[unit][core][marker-editor][audio-time]") {
     auto history = document_history_t::from(marker_song());
-    REQUIRE(apply_marker_edit(history, 4,
-                              insert_bookmark_action_t{.chart = chart_id_t{2},
-                                                       .label = "Preroll",
-                                                       .anchor = marker_anchor_t::audio_time,
-                                                       .audio_milliseconds = INT64_MIN}));
+    REQUIRE(apply_marker_edit(history, wormedit::insert_edit_t<wormedit::bookmark_edit_value_t>{
+                                           .chart = chart_id_t{2},
+                                           .value = {.label = "Preroll",
+                                                     .anchor = marker_anchor_t::audio_time,
+                                                     .audio_milliseconds = INT64_MIN}}));
     const auto bookmark_id = history.document.charts.front().bookmarks.back().id;
     REQUIRE(apply_marker_edit(
-        history, 5,
-        insert_section_action_t{.chart = chart_id_t{2},
-                                .label = "Audio span",
-                                .anchor = marker_anchor_t::audio_time,
-                                .audio_millisecond_span =
-                                    std::pair<std::int64_t, std::int64_t>{-1'500, 2'500}}));
+        history, wormedit::insert_edit_t<wormedit::section_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .value = {.label = "Audio span",
+                               .anchor = marker_anchor_t::audio_time,
+                               .audio_millisecond_span =
+                                   std::pair<std::int64_t, std::int64_t>{-1'500, 2'500}}}));
     const auto section_id = history.document.charts.front().sections.back().id;
 
-    REQUIRE(apply_marker_edit(history, 6,
-                              update_bookmark_action_t{.chart = chart_id_t{2},
-                                                       .bookmark = bookmark_id,
-                                                       .label = "Postroll",
-                                                       .anchor = marker_anchor_t::audio_time,
-                                                       .audio_milliseconds = INT64_MAX}));
+    REQUIRE(apply_marker_edit(history, wormedit::update_edit_t<wormedit::bookmark_edit_value_t>{
+                                           .chart = chart_id_t{2},
+                                           .id = bookmark_id,
+                                           .value = {.label = "Postroll",
+                                                     .anchor = marker_anchor_t::audio_time,
+                                                     .audio_milliseconds = INT64_MAX}}));
     REQUIRE(apply_marker_edit(
-        history, 7,
-        update_section_action_t{.chart = chart_id_t{2},
-                                .section = section_id,
-                                .label = "Expanded audio span",
-                                .anchor = marker_anchor_t::audio_time,
-                                .audio_millisecond_span =
-                                    std::pair<std::int64_t, std::int64_t>{INT64_MIN, INT64_MAX}}));
+        history, wormedit::update_edit_t<wormedit::section_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .id = section_id,
+                     .value = {.label = "Expanded audio span",
+                               .anchor = marker_anchor_t::audio_time,
+                               .audio_millisecond_span =
+                                   std::pair<std::int64_t, std::int64_t>{INT64_MIN, INT64_MAX}}}));
     CHECK(history.document.charts.front().bookmarks.back().audio_milliseconds == INT64_MAX);
     CHECK(history.document.charts.front().sections.back().audio_millisecond_span ==
           std::pair<std::int64_t, std::int64_t>{INT64_MIN, INT64_MAX});
 
-    REQUIRE(apply_marker_edit(history, 8, delete_bookmark_action_t{chart_id_t{2}, bookmark_id}));
-    REQUIRE(apply_marker_edit(history, 9, delete_section_action_t{chart_id_t{2}, section_id}));
+    REQUIRE(apply_marker_edit(history, wormedit::delete_edit_t<wormedit::bookmark_edit_value_t>{
+                                           .chart = chart_id_t{2}, .id = bookmark_id}));
+    REQUIRE(apply_marker_edit(history, wormedit::delete_edit_t<wormedit::section_edit_value_t>{
+                                           .chart = chart_id_t{2}, .id = section_id}));
     REQUIRE(undo_document_command(history));
     CHECK(history.document.charts.front().sections.back().id == section_id);
     REQUIRE(undo_document_command(history));
@@ -232,17 +234,18 @@ TEST_CASE("audio-time marker CRUD preserves exact signed millisecond bounds",
 TEST_CASE("marker editor deletes bookmark section and kiai events atomically and undoably",
           "[unit][core][marker-editor]") {
     auto history = document_history_t::from(marker_song());
-    REQUIRE(
-        apply_marker_edit(history, 4, delete_bookmark_action_t{chart_id_t{2}, object_id_t{12}}));
+    REQUIRE(apply_marker_edit(history, wormedit::delete_edit_t<wormedit::bookmark_edit_value_t>{
+                                           .chart = chart_id_t{2}, .id = object_id_t{12}}));
     CHECK(history.document.charts.front().bookmarks.empty());
     CHECK(validate_document(history.document).empty());
 
-    REQUIRE(apply_marker_edit(history, 5, delete_section_action_t{chart_id_t{2}, object_id_t{13}}));
+    REQUIRE(apply_marker_edit(history, wormedit::delete_edit_t<wormedit::section_edit_value_t>{
+                                           .chart = chart_id_t{2}, .id = object_id_t{13}}));
     CHECK(history.document.charts.front().sections.empty());
     CHECK(validate_document(history.document).empty());
 
-    REQUIRE(
-        apply_marker_edit(history, 6, delete_kiai_event_action_t{chart_id_t{2}, object_id_t{11}}));
+    REQUIRE(apply_marker_edit(history, wormedit::delete_edit_t<wormedit::kiai_edit_value_t>{
+                                           .chart = chart_id_t{2}, .id = object_id_t{11}}));
     CHECK(history.document.charts.front().kiai.empty());
     CHECK(validate_document(history.document).empty());
     REQUIRE(undo_document_command(history));
@@ -254,106 +257,101 @@ TEST_CASE("marker editor deletes bookmark section and kiai events atomically and
     CHECK_FALSE(is_document_dirty(history));
 }
 
-TEST_CASE("marker editor rejects stale IDs anchors positions ranges labels and caps atomically",
+TEST_CASE("marker editor rejects invalid IDs anchors positions ranges labels and caps atomically",
           "[unit][core][marker-editor][negative]") {
     auto history = document_history_t::from(marker_song());
-    const auto stale = apply_marker_edit(
-        history, 3,
-        insert_bookmark_action_t{.chart = chart_id_t{2},
-                                 .label = "stale",
-                                 .position = local_position_t{measure_id_t{3}, 120}});
-    CHECK_FALSE(stale);
-    CHECK(has_code(stale, diagnostic_code_t::invalid_id));
 
     const auto unknown = apply_marker_edit(
-        history, 4,
-        update_bookmark_action_t{.chart = chart_id_t{2},
-                                 .bookmark = object_id_t{99},
-                                 .label = "missing",
-                                 .position = local_position_t{measure_id_t{3}, 120}});
+        history,
+        wormedit::update_edit_t<wormedit::bookmark_edit_value_t>{
+            .chart = chart_id_t{2},
+            .id = object_id_t{99},
+            .value = {.label = "missing", .position = local_position_t{measure_id_t{3}, 120}}});
     CHECK_FALSE(unknown);
     CHECK(has_code(unknown, diagnostic_code_t::invalid_id));
 
     const auto wrong_type =
-        apply_marker_edit(history, 4, delete_kiai_event_action_t{chart_id_t{2}, object_id_t{12}});
+        apply_marker_edit(history, wormedit::delete_edit_t<wormedit::kiai_edit_value_t>{
+                                       .chart = chart_id_t{2}, .id = object_id_t{12}});
     CHECK_FALSE(wrong_type);
     CHECK(has_code(wrong_type, diagnostic_code_t::invalid_id));
 
-    const auto both_bookmark_anchors = apply_marker_edit(
-        history, 4,
-        insert_bookmark_action_t{.chart = chart_id_t{2},
-                                 .anchor = marker_anchor_t::beat,
-                                 .position = local_position_t{measure_id_t{3}, 120},
-                                 .audio_milliseconds = 300});
+    const auto both_bookmark_anchors =
+        apply_marker_edit(history, wormedit::insert_edit_t<wormedit::bookmark_edit_value_t>{
+                                       .chart = chart_id_t{2},
+                                       .value = {.anchor = marker_anchor_t::beat,
+                                                 .position = local_position_t{measure_id_t{3}, 120},
+                                                 .audio_milliseconds = 300}});
     CHECK_FALSE(both_bookmark_anchors);
     CHECK(has_code(both_bookmark_anchors, diagnostic_code_t::invalid_id));
 
     const auto missing_bookmark_value = apply_marker_edit(
-        history, 4,
-        insert_bookmark_action_t{.chart = chart_id_t{2}, .anchor = marker_anchor_t::audio_time});
+        history, wormedit::insert_edit_t<wormedit::bookmark_edit_value_t>{
+                     .chart = chart_id_t{2}, .value = {.anchor = marker_anchor_t::audio_time}});
     CHECK_FALSE(missing_bookmark_value);
     CHECK(has_code(missing_bookmark_value, diagnostic_code_t::invalid_id));
 
     const auto both_section_anchors = apply_marker_edit(
-        history, 4,
-        insert_section_action_t{
+        history,
+        wormedit::insert_edit_t<wormedit::section_edit_value_t>{
             .chart = chart_id_t{2},
-            .label = "Mixed",
-            .anchor = marker_anchor_t::beat,
-            .beat_span = position_span_t{{measure_id_t{3}, 120}, {measure_id_t{3}, 240}},
-            .audio_millisecond_span = std::pair<std::int64_t, std::int64_t>{0, 1}});
+            .value = {.label = "Mixed",
+                      .anchor = marker_anchor_t::beat,
+                      .beat_span = position_span_t{{measure_id_t{3}, 120}, {measure_id_t{3}, 240}},
+                      .audio_millisecond_span = std::pair<std::int64_t, std::int64_t>{0, 1}}});
     CHECK_FALSE(both_section_anchors);
     CHECK(has_code(both_section_anchors, diagnostic_code_t::invalid_id));
 
     const auto bad_beat_range = apply_marker_edit(
-        history, 4,
-        insert_section_action_t{
-            .chart = chart_id_t{2},
-            .label = "Backwards",
-            .beat_span = position_span_t{{measure_id_t{3}, 240}, {measure_id_t{3}, 120}}});
+        history, wormedit::insert_edit_t<wormedit::section_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .value = {.label = "Backwards",
+                               .beat_span = position_span_t{{measure_id_t{3}, 240},
+                                                            {measure_id_t{3}, 120}}}});
     CHECK_FALSE(bad_beat_range);
     CHECK(has_code(bad_beat_range, diagnostic_code_t::invalid_hold));
 
     const auto bad_audio_range = apply_marker_edit(
-        history, 4,
-        insert_section_action_t{.chart = chart_id_t{2},
-                                .label = "Backwards",
-                                .anchor = marker_anchor_t::audio_time,
-                                .audio_millisecond_span =
-                                    std::pair<std::int64_t, std::int64_t>{500, 100}});
+        history,
+        wormedit::insert_edit_t<wormedit::section_edit_value_t>{
+            .chart = chart_id_t{2},
+            .value = {.label = "Backwards",
+                      .anchor = marker_anchor_t::audio_time,
+                      .audio_millisecond_span = std::pair<std::int64_t, std::int64_t>{500, 100}}});
     CHECK_FALSE(bad_audio_range);
     CHECK(has_code(bad_audio_range, diagnostic_code_t::invalid_hold));
 
     const auto bad_position = apply_marker_edit(
-        history, 4,
-        insert_kiai_event_action_t{
-            .chart = chart_id_t{2}, .position = {measure_id_t{99}, 0}, .enabled = true});
+        history, wormedit::insert_edit_t<wormedit::kiai_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .value = {.position = {measure_id_t{99}, 0},
+                               .settings = {.enabled = true, .retained_effect_bits = 0}}});
     CHECK_FALSE(bad_position);
     CHECK(has_code(bad_position, diagnostic_code_t::row_out_of_range));
 
     const auto bad_utf8 = apply_marker_edit(
-        history, 4,
-        insert_section_action_t{.chart = chart_id_t{2},
-                                .label = std::string("bad\xc0\xaf", 5),
-                                .beat_span =
-                                    position_span_t{{measure_id_t{3}, 0}, {measure_id_t{3}, 120}}});
+        history,
+        wormedit::insert_edit_t<wormedit::section_edit_value_t>{
+            .chart = chart_id_t{2},
+            .value = {.label = std::string("bad\xc0\xaf", 5),
+                      .beat_span = position_span_t{{measure_id_t{3}, 0}, {measure_id_t{3}, 120}}}});
     CHECK_FALSE(bad_utf8);
     CHECK(has_code(bad_utf8, diagnostic_code_t::unsupported_feature));
 
     const auto event_capped = apply_marker_edit(
-        history, 4,
-        insert_bookmark_action_t{.chart = chart_id_t{2},
-                                 .label = "cap",
-                                 .position = local_position_t{measure_id_t{3}, 240}},
+        history,
+        wormedit::insert_edit_t<wormedit::bookmark_edit_value_t>{
+            .chart = chart_id_t{2},
+            .value = {.label = "cap", .position = local_position_t{measure_id_t{3}, 240}}},
         {.maximum_bookmarks = 1});
     CHECK_FALSE(event_capped);
     CHECK(has_code(event_capped, diagnostic_code_t::invalid_resolution));
 
     const auto text_capped = apply_marker_edit(
-        history, 4,
-        insert_bookmark_action_t{.chart = chart_id_t{2},
-                                 .label = "too long",
-                                 .position = local_position_t{measure_id_t{3}, 240}},
+        history,
+        wormedit::insert_edit_t<wormedit::bookmark_edit_value_t>{
+            .chart = chart_id_t{2},
+            .value = {.label = "too long", .position = local_position_t{measure_id_t{3}, 240}}},
         {.maximum_label_bytes = 3});
     CHECK_FALSE(text_capped);
     CHECK(has_code(text_capped, diagnostic_code_t::unsupported_feature));
@@ -375,23 +373,23 @@ TEST_CASE("marker editor rejects ambiguous chart-wide IDs and object allocation 
          .position = local_position_t{measure_id_t{3}, 0}});
     auto duplicate_history = document_history_t::from(std::move(duplicate_song));
     const auto duplicate = apply_marker_edit(
-        duplicate_history, 4,
-        update_section_action_t{.chart = chart_id_t{2},
-                                .section = object_id_t{13},
-                                .label = "Renamed",
-                                .beat_span =
-                                    position_span_t{{measure_id_t{3}, 0}, {measure_id_t{3}, 120}}});
+        duplicate_history,
+        wormedit::update_edit_t<wormedit::section_edit_value_t>{
+            .chart = chart_id_t{2},
+            .id = object_id_t{13},
+            .value = {.label = "Renamed",
+                      .beat_span = position_span_t{{measure_id_t{3}, 0}, {measure_id_t{3}, 120}}}});
     CHECK_FALSE(duplicate);
     CHECK(has_code(duplicate, diagnostic_code_t::duplicate_id));
     CHECK(duplicate_history.undo.empty());
 
     auto history = document_history_t::from(marker_song());
     const auto objects_capped = apply_marker_edit(
-        history, 4,
-        insert_section_action_t{.chart = chart_id_t{2},
-                                .label = "Blocked",
-                                .beat_span =
-                                    position_span_t{{measure_id_t{3}, 0}, {measure_id_t{3}, 120}}},
+        history,
+        wormedit::insert_edit_t<wormedit::section_edit_value_t>{
+            .chart = chart_id_t{2},
+            .value = {.label = "Blocked",
+                      .beat_span = position_span_t{{measure_id_t{3}, 0}, {measure_id_t{3}, 120}}}},
         {.maximum_chart_objects = 1});
     CHECK_FALSE(objects_capped);
     CHECK(has_code(objects_capped, diagnostic_code_t::invalid_resolution));
@@ -409,7 +407,7 @@ auto kiai_spans(const document_history_t& history) -> std::vector<kiai_span_t> {
 }
 
 auto edit_kiai(document_history_t& history, kiai_span_edit_t edit) -> document_command_result_t {
-    return apply_marker_edit(history, history.document.revision,
+    return apply_marker_edit(history,
                              edit_kiai_span_action_t{.chart = chart_id_t{2}, .edit = edit});
 }
 

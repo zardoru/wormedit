@@ -1,5 +1,7 @@
 #pragma once
 
+#include "sys/metadata_commands.h"
+
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/semantic_layer_editor.h>
 #include <algorithm>
@@ -19,10 +21,10 @@ inline auto selected_compose_bgm_events(const editor_interaction_state_t& state)
 inline auto select_compose_note_context(document_history_t& history,
     editor_interaction_state_t& state, std::uint64_t revision, object_id_t note)
     -> editor_interaction_result_t {
-    if (revision != history.document.revision)
+    if (!document_stamp_t{.project = history.document.id, .revision = revision}.is_current(history.document))
         return {.diagnostics = {{.severity = diagnostic_severity_t::error,
             .code = diagnostic_code_t::invalid_id,
-            .message = "Note context changed or a Compose gesture is active."}}};
+            .message = stale_action_message("Note context")}}};
     if (std::ranges::find(state.selected_notes, note) != state.selected_notes.end())
         return {.accepted = true};
     return dispatch_editor_action(history, state,
@@ -41,7 +43,10 @@ inline auto apply_compose_layer_assignment(document_history_t& history,
               state.chart, state.selected_notes, bgm_events}}
         : semantic_layer_edit_action_t{replace_notes_semantic_layer_action_t{
               state.chart, candidate, state.selected_notes, false, bgm_events}};
-    const auto result = apply_semantic_layer_edit(history, revision, edit);
+    if (auto rejected = metadata_command_detail::stale_rejection(
+            history, revision, "Semantic layer assignment"))
+        return std::move(*rejected);
+    const auto result = apply_semantic_layer_edit(history, edit);
     if (result.applied || result.diagnostics.empty()) {
         target_none = candidate_none;
         target = candidate_none ? std::nullopt : std::optional{candidate};
@@ -52,7 +57,10 @@ inline auto apply_compose_layer_assignment(document_history_t& history,
 inline auto apply_compose_selected_sound_layer_assignment(document_history_t& history,
     const editor_interaction_state_t& state, std::uint64_t revision, layer_id_t target)
     -> document_command_result_t {
-    return add_selected_sounds_to_semantic_layer(history, revision,
+    if (auto rejected = metadata_command_detail::stale_rejection(
+            history, revision, "Selected sound layer assignment"))
+        return std::move(*rejected);
+    return add_selected_sounds_to_semantic_layer(history,
         {state.chart, target, state.selected_notes, selected_compose_bgm_events(state)});
 }
 

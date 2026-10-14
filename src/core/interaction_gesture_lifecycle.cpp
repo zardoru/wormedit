@@ -25,7 +25,7 @@ auto begin_note_duration_gesture(editor_edit_context_t& context, object_id_t ref
     const auto& plan = std::get<duration_resize_plan_t>(planned);
     state.pending_note_duration_gesture = pending_note_duration_gesture_t{
         .reference_note = reference_id,
-        .document_revision = context.history.document.revision,
+        .stamp = document_stamp_t::from(context.history.document.revision),
         .notes = plan.notes,
         .preview_end = plan.reference_end,
         .preview = duration_previews(plan),
@@ -53,10 +53,10 @@ auto update_note_duration_gesture(editor_edit_context_t& context, local_position
                                  {error(diagnostic_code_t::invalid_hold,
                                         "duration gesture update requires an active gesture")});
     const auto pending = *state.pending_note_duration_gesture;
-    if (pending.document_revision != context.history.document.revision)
+    if (!pending.stamp.is_revision_current(context.history.document.revision))
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
-                                        "duration gesture is stale after a document edit")});
+                                        stale_action_message("Editor gesture"))});
     const auto* reference = context.scope.chart.find_note(pending.reference_note);
     if (!reference)
         return diagnostic_result(
@@ -239,7 +239,7 @@ auto begin_note_move_gesture(editor_edit_context_t& context, object_id_t referen
     const auto& plan = std::get<note_move_plan_t>(planned);
     state.pending_note_move_gesture = pending_note_move_gesture_t{
         .reference_note = reference_id,
-        .document_revision = context.history.document.revision,
+        .stamp = document_stamp_t::from(context.history.document.revision),
         .notes = plan.notes,
         .preview_position = plan.reference_position,
         .preview = move_previews(plan),
@@ -273,11 +273,11 @@ auto update_note_move_gesture(editor_edit_context_t& context, local_position_t r
                                  {error(diagnostic_code_t::invalid_hold,
                                         "note move update requires an active gesture")});
     const auto pending = *state.pending_note_move_gesture;
-    if (pending.document_revision != context.history.document.revision) {
+    if (!pending.stamp.is_revision_current(context.history.document.revision)) {
         state.pending_note_move_gesture.reset();
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
-                                        "note move gesture is stale after a document edit")});
+                                        stale_action_message("Editor gesture"))});
     }
     auto planned = make_move_plan(context, pending.notes, pending.reference_note,
                                   requested_position, to_bgm ? lane_id_t{} : requested_lane, false,
@@ -442,11 +442,11 @@ auto append_note_paint_target(editor_edit_context_t& context, lane_id_t lane,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "note paint update requires an active gesture")});
     auto& pending = *state.pending_note_paint_gesture;
-    if (pending.document_revision != context.history.document.revision) {
+    if (!pending.stamp.is_revision_current(context.history.document.revision)) {
         cancel_stale_explicit_paint(state);
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
-                                        "note paint gesture is stale after a document edit")});
+                                        stale_action_message("Editor gesture"))});
     }
     const auto target = snapped_position(context.scope.chart, context.scope.measures, position,
                                          edit_snap_denominator(context.scope.chart, state));
@@ -555,7 +555,7 @@ auto begin_note_paint_gesture(editor_edit_context_t& context, lane_id_t lane,
     auto targets = std::make_shared<std::vector<note_paint_target_t>>();
     targets->push_back({lane, *target});
     pending_note_paint_gesture_t pending{
-        .document_revision = context.history.document.revision,
+        .stamp = document_stamp_t::from(context.history.document.revision),
         .targets = std::move(targets),
         .last_lane = lane,
         .last_position = *target,
@@ -634,7 +634,7 @@ auto prepare_stem_note_paint(const document_history_t& history, chart_id_t chart
     std::vector<object_id_t> notes;
     for (const auto& target : plan.additions) {
         const auto placed =
-            insert_bmson_playable_stem_point(scratch, scratch.document.revision, chart_id, channel,
+            insert_bmson_playable_stem_point(scratch, chart_id, channel,
                                              target.position, target.lane, geometry);
         if (!placed && !placed.diagnostics.empty())
             return placed.diagnostics;
@@ -741,10 +741,10 @@ auto end_note_paint_gesture(editor_edit_context_t& context, lane_id_t lane,
     const auto pending = *state.pending_note_paint_gesture;
     if (pending.intent != note_paint_intent_t::toggle)
         state.pending_note_paint_gesture.reset();
-    if (pending.document_revision != context.history.document.revision) {
+    if (!pending.stamp.is_revision_current(context.history.document.revision)) {
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
-                                        "note paint gesture is stale after a document edit")});
+                                        stale_action_message("Editor gesture"))});
     }
     auto planned = plan_note_paint(context.scope.chart, context.scope.measures, *pending.targets,
                                    pending.kind, pending.intent);
@@ -860,10 +860,10 @@ auto update_hold_gesture(editor_edit_context_t& context, hold_gesture_source_t s
                                  {error(diagnostic_code_t::invalid_hold,
                                         "hold gesture update does not match the active input")});
     const auto pending = *state.pending_hold;
-    if (pending.document_revision != context.history.document.revision)
+    if (!pending.stamp.is_revision_current(context.history.document.revision))
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
-                                        "pending hold gesture is stale after a document edit")});
+                                        stale_action_message("Editor gesture"))});
     const auto target = snapped_position(context.scope.chart, context.scope.measures, position,
                                          edit_snap_denominator(context.scope.chart, state));
     state.pending_hold->gesture_source.reset();
@@ -948,7 +948,7 @@ auto begin_hold_action(editor_edit_context_t& context, local_position_t position
     state.pending_hold = pending_hold_t{
         .position = *snapped,
         .lane = state.active_lane,
-        .document_revision = history.document.revision,
+        .stamp = document_stamp_t::from(history.document.revision),
         .placement_preview = std::get<pending_hold_placement_preview_t>(plan),
         .sound = sound,
         .kind = state.armed_note_kind,
@@ -966,8 +966,10 @@ using namespace interaction_detail;
 auto validate_pending_hold_start(const editor_edit_context_t& context,
                                  const pending_hold_t& pending)
     -> std::optional<editor_interaction_result_t> {
-    if (pending.document_revision == context.history.document.revision &&
-        snapped_position(context.scope.chart, context.scope.measures, pending.position,
+    if (!pending.stamp.is_revision_current(context.history.document.revision))
+        return diagnostic_result(context.history, context.state,
+            {error(diagnostic_code_t::invalid_hold, stale_action_message("Editor gesture"))});
+    if (snapped_position(context.scope.chart, context.scope.measures, pending.position,
                          edit_snap_denominator(context.scope.chart, context.state)) ==
             pending.position)
         return std::nullopt;
@@ -1159,9 +1161,9 @@ using namespace interaction_detail;
 auto refresh_keyboard_hold_revisions(editor_edit_context_t& context) -> void {
     auto& state = context.state;
     if (state.pending_hold)
-        state.pending_hold->document_revision = context.history.document.revision;
+        state.pending_hold->stamp = document_stamp_t::from(context.history.document.revision);
     for (auto& hold : state.additional_keyboard_holds)
-        hold.document_revision = context.history.document.revision;
+        hold.stamp = document_stamp_t::from(context.history.document.revision);
 }
 } // namespace wormedit
 
@@ -1193,7 +1195,7 @@ auto begin_lane_key_hold_gesture(editor_edit_context_t& context, lane_id_t lane,
         state.pending_hold = pending_hold_t{
             .position = state.cursor,
             .lane = lane,
-            .document_revision = context.history.document.revision,
+            .stamp = document_stamp_t::from(context.history.document.revision),
             .anchor_canvas_row = *state.virtual_bms_cursor_row,
             .preview_canvas_row = *state.virtual_bms_cursor_row,
             .gesture_source = hold_gesture_source_t::keyboard_lane,

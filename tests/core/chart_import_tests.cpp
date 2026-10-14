@@ -5,6 +5,7 @@
 #include <wormedit/formats/stepmania.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -100,7 +101,7 @@ TEST_CASE("Chart import adds an SM difficulty to a BMS song as one undoable comm
     const auto source = parse_sm_fixture("keysounds.sm");
     const chart_import_paths_t paths{scratch.root / "source", scratch.root / "project"};
     const std::vector<chart_id_t> selected{source.charts.front().id};
-    const auto result = apply_chart_import(history, history.document.revision, source, paths, selected);
+    const auto result = apply_chart_import(history, source, paths, selected);
     INFO((result.command.diagnostics.empty() ? "" : result.command.diagnostics.front().message));
     REQUIRE(result.command.applied);
     REQUIRE(result.payload.charts.size() == 1);
@@ -141,7 +142,7 @@ TEST_CASE("Chart import reports missing files and still adds the chart with flag
     const std::vector<chart_id_t> selected{source.charts.front().id};
     const auto proposal = plan_chart_import(history.document, source, paths, selected);
     CHECK(proposal.count(chart_import_resource_action_t::missing) == proposal.resources.size());
-    const auto result = apply_chart_import(history, history.document.revision, source, paths, selected);
+    const auto result = apply_chart_import(history, source, paths, selected);
     REQUIRE(result.command.applied);
     const auto missing = std::ranges::count_if(history.document.resources, [](const auto& resource) {
         return resource.missing;
@@ -149,7 +150,7 @@ TEST_CASE("Chart import reports missing files and still adds the chart with flag
     CHECK(missing >= 1);
 }
 
-TEST_CASE("Chart import rejects stale revisions, empty and unknown selections without changes",
+TEST_CASE("Chart import rejects empty and unknown selections without changes",
           "[unit][core][chart-import]") {
     scratch_t scratch;
     auto history = document_history_t::from(parse_bms_text(target_bms));
@@ -157,10 +158,9 @@ TEST_CASE("Chart import rejects stale revisions, empty and unknown selections wi
     const chart_import_paths_t paths{scratch.root / "source", scratch.root / "project"};
     const auto revision = history.document.revision;
     const std::vector<chart_id_t> selected{source.charts.front().id};
-    CHECK_FALSE(apply_chart_import(history, revision + 1, source, paths, selected).command.applied);
-    CHECK_FALSE(apply_chart_import(history, revision, source, paths, {}).command.applied);
+    CHECK_FALSE(apply_chart_import(history, source, paths, {}).command.applied);
     const std::vector<chart_id_t> unknown{chart_id_t{999999}};
-    const auto result = apply_chart_import(history, revision, source, paths, unknown);
+    const auto result = apply_chart_import(history, source, paths, unknown);
     CHECK_FALSE(result.command.applied);
     CHECK_FALSE(result.command.diagnostics.empty());
     CHECK(history.document.revision == revision);
@@ -181,7 +181,7 @@ TEST_CASE("Importing two difficulties gives each fresh unique identities",
     source.charts.push_back(second);
     const chart_import_paths_t paths{scratch.root / "source", scratch.root / "project"};
     const std::vector<chart_id_t> selected{source.charts.front().id, second.id};
-    const auto result = apply_chart_import(history, history.document.revision, source, paths, selected);
+    const auto result = apply_chart_import(history, source, paths, selected);
     REQUIRE(result.command.applied);
     REQUIRE(result.payload.charts.size() == 2);
     CHECK(result.payload.charts[0] != result.payload.charts[1]);
@@ -241,6 +241,34 @@ TEST_CASE("Chart import session reports unreadable files and keeps the project u
     CHECK_FALSE(session.error.empty());
     const auto result = sys::chart_import_confirm(session, history, revision, scratch.root / "project");
     CHECK_FALSE(result.command.applied);
+    CHECK(history.document.revision == revision);
+    CHECK(history.undo.empty());
+}
+
+namespace {
+void check_chart_import_rejection(const chart_import_result_t& result,
+                                   const std::string& expected) {
+    CHECK_FALSE(result.command.applied);
+    REQUIRE(result.command.diagnostics.size() == 1);
+    CHECK(result.command.diagnostics.front().message == expected);
+}
+} // namespace
+
+TEST_CASE("Chart import session shares stale feedback after missing-source checks",
+          "[unit][core][chart-import][chart-import-stamp]") {
+    scratch_t scratch;
+    auto history = document_history_t::from(parse_bms_text(target_bms));
+    sys::chart_import_session_t session;
+    sys::chart_import_begin(session);
+    const bool missing = GENERATE(false, true);
+    if (!missing) session.source = parse_bms_text(target_bms);
+    const auto revision = history.document.revision;
+    const auto result = sys::chart_import_confirm(session, history, revision + 1,
+                                                  scratch.root / "project");
+    const auto expected = missing ? std::string{"Read a chart file before importing."}
+                                  : stale_action_message("Chart import");
+    check_chart_import_rejection(result, expected);
+    if (!missing) CHECK(session.error == expected);
     CHECK(history.document.revision == revision);
     CHECK(history.undo.empty());
 }

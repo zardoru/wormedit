@@ -1,5 +1,6 @@
-#include "sys/compose_quantize_preview.h"
+#include "compose_area_dispatch_fixture.h"
 #include "sys/compose_area_actions.h"
+#include "sys/compose_quantize_preview.h"
 #include <wormedit/core/command.h>
 #include <wormedit/core/quantize.h>
 
@@ -314,9 +315,9 @@ TEST_CASE("quantize preview hides malformed and layout-boundary collision geomet
         .layout = {.profile_id = "test",
                    .lanes = {{.id = lane_id_t{1}, .name = "Lane 1"}}}});
     const std::vector<object_id_t> boundary_ids{object_id_t{1}, object_id_t{2}};
-    const auto core_layout = quantize_chart_exact(
+    const auto core_layout = quantization_plan_t::from(
         layout_chart, quantize_request_t{.divisions = 4, .objects = boundary_ids});
-    check_expectation(!core_layout.chart.has_value());
+    check_expectation(!core_layout.value.chart.has_value());
     check_expectation(std::ranges::any_of(core_layout.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == diagnostic_code_t::collision &&
             diagnostic.object == object_id_t{2};

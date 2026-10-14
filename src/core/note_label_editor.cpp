@@ -149,15 +149,10 @@ auto validate_note_label_request(const set_note_label_action_t& action,
 
 } // namespace
 
-auto apply_note_label_edit(document_history_t& history, std::uint64_t expected_revision,
+auto apply_note_label_edit(document_history_t& history,
                            const set_note_label_action_t& action, note_label_edit_limits_t limits)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "note-label editor document revision is stale");
-        return result;
-    }
     if (!validate_note_label_request(action, limits, result)) {
         return result;
     }

@@ -1,4 +1,7 @@
 #include "sys/project_view.h"
+#include "core/text_util.h"
+#include "sys/metadata_commands.h"
+#include <wormedit/core/rational.h>
 
 #include <wormedit/core/timing.h>
 #include <wormedit/core/chart_editor.h>
@@ -14,21 +17,18 @@ namespace {
 auto display_text(std::string_view text) -> std::string {
     constexpr std::size_t capacity = 4096;
     if (text.size() <= capacity) return std::string{text};
-    auto end = capacity - 3;
-    while (end > 0 && (static_cast<unsigned char>(text[end]) & 0xc0U) == 0x80U) --end;
-    return std::string{text.substr(0, end)} + "...";
+    return std::string{text_util::truncate_utf8(text, capacity - 3)} + "...";
 }
 
 auto decimal_value(signed_rational_t value, unsigned precision) -> std::string {
     if (value.denominator == 0) return "Invalid";
     std::ostringstream stream;
     stream.imbue(std::locale::classic());
-    stream << std::fixed << std::setprecision(precision) <<
-        static_cast<long double>(value.numerator) / value.denominator;
+    stream << std::fixed << std::setprecision(precision) << to_long_double(value);
     return stream.str();
 }
 
-void project_chart_mode(const chart_document_t& chart, project_chart_row_t& row) {
+void build_project_chart_mode_view(const chart_document_t& chart, project_chart_row_t& row) {
     if (chart.lane_layouts.empty()) { row.mode = "No lane layout"; return; }
     const auto& layout = chart.lane_layouts.front().layout;
     row.mode = display_text(layout.display_name.empty() ? layout.profile_id : layout.display_name);
@@ -37,7 +37,7 @@ void project_chart_mode(const chart_document_t& chart, project_chart_row_t& row)
     }));
 }
 
-void project_chart_groups(const song_document_t& document, project_chart_row_t& row) {
+void build_project_chart_groups_view(const song_document_t& document, project_chart_row_t& row) {
     std::string names;
     for (const auto& group : document.output_groups) {
         if (std::ranges::find(group.charts, row.chart) == group.charts.end()) continue;
@@ -49,7 +49,7 @@ void project_chart_groups(const song_document_t& document, project_chart_row_t& 
     row.output_groups = names.empty() ? "Unassigned" : display_text(names);
 }
 
-void project_chart_length(const chart_document_t& chart, project_chart_row_t& row) {
+void build_project_chart_length_view(const chart_document_t& chart, project_chart_row_t& row) {
     const auto built = build_timing_index(chart, {.allow_bounded_clock = true});
     if (!built) {
         row.length = "Unavailable";
@@ -57,25 +57,26 @@ void project_chart_length(const chart_document_t& chart, project_chart_row_t& ro
             : display_text(built.diagnostics.front().message);
         return;
     }
-    const auto begin = timing_at(*built.index, 0, timing_boundary_side_t::before_delays);
-    const auto end = timing_at(*built.index, built.index->total_rows, timing_boundary_side_t::after_stops);
+    const auto begin = built.index->seconds_at(0, timing_boundary_side_t::before_delays);
+    const auto end =
+        built.index->seconds_at(built.index->total_rows, timing_boundary_side_t::after_stops);
     if (!begin || !end) { row.length = "Unavailable"; row.diagnostic = "Chart length query failed."; return; }
-    const auto seconds = static_cast<long double>(end.seconds->numerator) / end.seconds->denominator -
-                         static_cast<long double>(begin.seconds->numerator) / begin.seconds->denominator;
+    const auto seconds = to_long_double(*end.seconds) - to_long_double(*begin.seconds);
     std::ostringstream stream;
     stream.imbue(std::locale::classic());
     stream << std::fixed << std::setprecision(2) << seconds << " s";
     row.length = stream.str();
 }
 
-auto project_chart_row(const song_document_t& document, const chart_document_t& chart) -> project_chart_row_t {
+auto build_project_chart_row_view(const song_document_t& document, const chart_document_t& chart)
+    -> project_chart_row_t {
     project_chart_row_t row{.chart = chart.id, .name = display_text(chart.metadata.name),
         .author = display_text(chart.metadata.author),
         .rating = chart.metadata.rating ? decimal_value(*chart.metadata.rating, 2) : "Unset"};
-    project_chart_mode(chart, row);
-    project_chart_groups(document, row);
+    build_project_chart_mode_view(chart, row);
+    build_project_chart_groups_view(document, row);
     for (const auto& measure : chart.measures) row.note_count += measure.notes.size();
-    project_chart_length(chart, row);
+    build_project_chart_length_view(chart, row);
     return row;
 }
 } // namespace
@@ -84,51 +85,57 @@ namespace {
 auto reorder_project_chart(document_history_t& history, const project_chart_command_t& action)
     -> project_chart_command_result_t {
     const auto& charts = history.document.charts;
-    const auto source = std::ranges::find(charts, action.chart, &chart_document_t::id);
-    const auto target = std::ranges::find(charts, action.target_chart, &chart_document_t::id);
-    if (action.expected_revision != history.document.revision || source == charts.end() || target == charts.end())
+    const auto* source = history.document.find_chart(action.chart);
+    const auto* target = history.document.find_chart(action.target_chart);
+    if (!source || !target)
         return {.command = {.revision = history.document.revision, .diagnostics = {{
             .severity = diagnostic_severity_t::error, .code = diagnostic_code_t::invalid_id,
             .message = "Chart reorder is stale or its source or destination no longer exists."}}}};
-    const auto source_index = static_cast<std::size_t>(source - charts.begin());
-    auto destination = static_cast<std::size_t>(target - charts.begin()) + (action.insert_after ? 1 : 0);
+    const auto source_index = static_cast<std::size_t>(source - charts.data());
+    auto destination =
+        static_cast<std::size_t>(target - charts.data()) + (action.insert_after ? 1 : 0);
     if (destination > source_index) --destination;
     if (destination == source_index) return {.command = {.revision = history.document.revision}};
-    return {.command = apply_reorder_chart_command(history, action.expected_revision, action.chart, destination)};
+    return {.command = apply_reorder_chart_command(history, action.chart, destination)};
 }
 } // namespace
 
 auto apply_project_chart_command(document_history_t& history,
     const project_chart_command_t& action) -> project_chart_command_result_t {
+    if (action.kind == project_chart_command_kind_t::batch_metadata)
+        return {.command = apply_batch_chart_metadata_edit(history, action.expected_revision, action.metadata)};
+    const auto label = action.kind == project_chart_command_kind_t::reorder
+        ? "Chart reorder" : "Project chart action";
+    if (auto rejected = metadata_command_detail::stale_rejection(history, action.expected_revision, label))
+        return {.command = std::move(*rejected)};
     if (action.kind == project_chart_command_kind_t::reorder)
         return reorder_project_chart(history, action);
     if (action.kind == project_chart_command_kind_t::create) {
         auto created = history.document.charts.empty()
-            ? apply_new_chart_command(history, action.expected_revision)
-            : apply_add_chart_command(history, action.expected_revision, action.chart);
+                           ? apply_new_chart_command(history)
+                           : apply_add_chart_command(history, action.chart);
         return {.command = std::move(created.command), .open_chart = created.payload.chart};
     }
     if (action.kind == project_chart_command_kind_t::duplicate) {
-        auto copy = apply_duplicate_chart_command(history, action.expected_revision, action.chart);
+        auto copy = apply_duplicate_chart_command(history, action.chart);
         return {.command = std::move(copy.command)};
     }
     if (action.kind == project_chart_command_kind_t::erase)
-        return {.command = apply_delete_chart_command(history, action.expected_revision, action.chart)};
-    if (action.kind == project_chart_command_kind_t::batch_metadata)
-        return {.command = apply_batch_chart_metadata_edit(history, action.expected_revision, action.metadata)};
-    const auto chart = std::ranges::find(history.document.charts, action.chart, &chart_document_t::id);
-    if (action.expected_revision != history.document.revision || chart == history.document.charts.end())
+        return {.command = apply_delete_chart_command(history, action.chart)};
+
+    const auto* chart = history.document.find_chart(action.chart);
+    if (chart == nullptr)
         return {.command = {.revision = history.document.revision, .diagnostics = {{
             .severity = diagnostic_severity_t::error, .code = diagnostic_code_t::invalid_id,
             .message = "Project chart action is stale or its chart no longer exists."}}}};
     if (action.kind == project_chart_command_kind_t::open)
         return {.command = {.revision = history.document.revision}, .open_chart = action.chart};
-    const auto index = static_cast<std::size_t>(chart - history.document.charts.begin());
+    const auto index = static_cast<std::size_t>(chart - history.document.charts.data());
     const bool up = action.kind == project_chart_command_kind_t::move_up;
     if ((up && index == 0) || (!up && index + 1 == history.document.charts.size()))
         return {.command = {.revision = history.document.revision}};
-    return {.command = apply_reorder_chart_command(history, action.expected_revision, action.chart,
-                                                   up ? index - 1 : index + 1)};
+    return {.command =
+                apply_reorder_chart_command(history, action.chart, up ? index - 1 : index + 1)};
 }
 
 auto build_project_chart_table(const song_document_t& document) -> project_chart_table_t {
@@ -137,12 +144,14 @@ auto build_project_chart_table(const song_document_t& document) -> project_chart
         .rows_truncated = document.charts.size() > count};
     table.rows.reserve(count);
     for (std::size_t index = 0; index < count; ++index)
-        table.rows.push_back(project_chart_row(document, document.charts[index]));
+        table.rows.push_back(build_project_chart_row_view(document, document.charts[index]));
     return table;
 }
 
-auto project_chart_table_for(project_chart_table_cache_t& cache,
-    const song_document_t& document, std::uint64_t session_generation) -> const project_chart_table_t& {
+auto build_project_chart_table_view(project_chart_table_cache_t& cache,
+                                    const song_document_t& document,
+                                    std::uint64_t session_generation)
+    -> const project_chart_table_t& {
     if (!cache.populated || cache.song != document.id || cache.session_generation != session_generation ||
         cache.revision != document.revision) {
         cache.table = build_project_chart_table(document);
@@ -213,8 +222,8 @@ void poll_output_group_preview(project_chart_runtime_t& runtime, const song_docu
         (result->error ? result->error->message : "Preview failed.");
     runtime.preview_graph = {};
 }
-void project_output_group_view(project_chart_runtime_t& runtime, const song_document_t& doc,
-    WormUiSetupView& view) {
+void build_output_group_view(project_chart_runtime_t& runtime, const song_document_t& doc,
+                             WormUiSetupView& view) {
     poll_output_group_preview(runtime, doc);
     if (!view.visible) return;
     const auto count = std::min(doc.output_groups.size(), maximum_project_chart_rows);
@@ -260,7 +269,7 @@ auto start_output_preview(project_chart_runtime_t& runtime, const song_document_
     const auto added = graph.add_task({}, [snapshot = doc, group = doc.output_groups[index]](
         std::span<const task_result_t>, std::stop_token stop) {
         if (stop.stop_requested()) return task_result_t::failure(task_error_code_t::cancelled, "Preview cancelled.");
-        return task_result_t::success(make_task_value<std::string>(
+        return task_result_t::success(wormedit::task_value_t::from<std::string>(
             std::make_shared<const std::string>(output_preview(snapshot, group))));
     });
     if (!added) return {.status = added.error->message};
@@ -277,9 +286,10 @@ auto start_output_preview(project_chart_runtime_t& runtime, const song_document_
 auto apply_project_output_group_ui_action(project_chart_runtime_t& runtime,
     document_history_t& history, const WormUiProjectOutputGroupAction& action,
     task_scheduler_t& scheduler) -> project_chart_ui_result_t {
-    if (action.project_id != history.document.id.value || action.document_revision != history.document.revision ||
-        action.session_generation != runtime.session_generation)
-        return {.status = "Output group action belongs to a changed project or session."};
+    const document_stamp_t stamp{.project = song_id_t{action.project_id},
+                                 .revision = action.document_revision};
+    if (!stamp.is_current(history.document) || action.session_generation != runtime.session_generation)
+        return {.status = stale_action_message("Output group action")};
     const bool create = action.kind == WORM_UI_PROJECT_OUTPUT_GROUP_CREATE;
     if (!create && action.group_index >= history.document.output_groups.size())
         return {.status = "Output group is no longer available."};
@@ -287,7 +297,7 @@ auto apply_project_output_group_ui_action(project_chart_runtime_t& runtime,
         return start_output_preview(runtime, history.document, action.group_index, scheduler);
     document_command_result_t result;
     if (action.kind == WORM_UI_PROJECT_OUTPUT_GROUP_DELETE)
-        result = apply_delete_output_group_command(history, action.document_revision, action.group_index);
+        result = apply_delete_output_group_command(history, action.group_index);
     else {
         if (action.kind != WORM_UI_PROJECT_OUTPUT_GROUP_CREATE && action.kind != WORM_UI_PROJECT_OUTPUT_GROUP_UPDATE)
             return {.status = "Output group action is invalid."};
@@ -296,16 +306,16 @@ auto apply_project_output_group_ui_action(project_chart_runtime_t& runtime,
         output_group_t group{.name = action.name, .family = static_cast<format_family_t>(action.family),
             .relative_output_path = action.path};
         for (size_t i = 0; i < action.chart_count; ++i) group.charts.push_back(chart_id_t{action.chart_ids[i]});
-        result = apply_set_output_group_command(history, action.document_revision,
-            create ? std::nullopt : std::optional{action.group_index}, std::move(group));
+        result = apply_set_output_group_command(
+            history, create ? std::nullopt : std::optional{action.group_index}, std::move(group));
     }
     if (!result) return {.status = result.diagnostics.empty() ? "Output group was not changed." : result.diagnostics.front().message};
     return {.status = "Output groups updated.", .applied = true, .severity = notification_severity_t::success};
 }
 
-void project_chart_view(project_chart_runtime_t& runtime, const song_document_t& document,
-    WormUiSetupView& view) {
-    project_output_group_view(runtime, document, view);
+void build_project_chart_view(project_chart_runtime_t& runtime, const song_document_t& document,
+                              WormUiSetupView& view) {
+    build_output_group_view(runtime, document, view);
     if (!view.visible) return;
     if (!runtime.cache.populated || runtime.cache.revision != document.revision)
         std::erase_if(runtime.row_errors, [&](const auto& error) {
@@ -313,7 +323,8 @@ void project_chart_view(project_chart_runtime_t& runtime, const song_document_t&
                 return chart.id.value == error.first;
             });
         });
-    const auto& table = project_chart_table_for(runtime.cache, document, runtime.session_generation);
+    const auto& table =
+        build_project_chart_table_view(runtime.cache, document, runtime.session_generation);
     runtime.rows.clear();
     runtime.rows.reserve(table.rows.size());
     for (const auto& row : table.rows) {
@@ -334,7 +345,7 @@ auto apply_project_chart_ui_action(project_chart_runtime_t& runtime,
     document_history_t& history, const WormUiProjectChartAction& action,
     std::optional<chart_id_t> active_chart) -> project_chart_ui_result_t {
     if (action.session_generation != runtime.session_generation)
-        return {.status = "Project chart action belongs to a closed session."};
+        return {.status = stale_action_message("Project chart action")};
     const auto kind = ui_command_kind(action.kind);
     if (!kind) return {.status = "Project chart action is invalid."};
     project_chart_command_t command{.kind = *kind, .expected_revision = action.document_revision,
@@ -356,9 +367,7 @@ auto apply_project_chart_ui_action(project_chart_runtime_t& runtime,
     if (!error.empty()) {
         const auto severity = result.command.diagnostics.front().severity;
         return {.status = error,
-            .severity = severity == diagnostic_severity_t::error ? notification_severity_t::error
-                      : severity == diagnostic_severity_t::warning ? notification_severity_t::warning
-                                                                  : notification_severity_t::info};
+                .severity = to_notification_severity(severity, notification_severity_t::info)};
     }
     return {.status = result.command.applied ? "Project chart changes applied." : "Project chart action completed.",
         .open_chart = result.open_chart, .applied = result.command.applied,

@@ -1,3 +1,4 @@
+#include "sys/metadata_commands.h"
 #include "sys/metadata_actions.h"
 #include "sys/application_edit_inputs.h"
 #include "wormedit/core/numeric_text.h"
@@ -31,10 +32,7 @@ struct metadata_edit_feedback_t {
 
 auto diagnostic_feedback(const diagnostic_t& diagnostic) -> metadata_edit_feedback_t {
     const auto severity = diagnostic.severity;
-    return {severity == diagnostic_severity_t::error ? notification_severity_t::error
-            : severity == diagnostic_severity_t::warning ? notification_severity_t::warning
-                                                         : notification_severity_t::info,
-            diagnostic.message};
+    return {to_notification_severity(severity, notification_severity_t::info), diagnostic.message};
 }
 
 auto parse_unsigned(const char* text) -> std::optional<std::uint64_t> {
@@ -86,12 +84,13 @@ auto dispatch_chart_edit(const WormUiWorkspaceAction& action, document_history_t
           !action.metadata_chart_rating_denominator_text))) {
         return {notification_severity_t::warning, "Chart metadata edit payload is incomplete."};
     }
-    const auto rating = make_chart_rating_metadata_edit(
+    const auto rating = wormedit::chart_rating_edit_t::from(
         chart_id_t{action.metadata_chart_id}, !action.metadata_has_chart_rating,
         action.metadata_chart_rating_numerator_text ? action.metadata_chart_rating_numerator_text
                                                     : "",
-        action.metadata_chart_rating_denominator_text ? action.metadata_chart_rating_denominator_text
-                                                      : "");
+        action.metadata_chart_rating_denominator_text
+            ? action.metadata_chart_rating_denominator_text
+            : "");
     if (!rating)
         return {notification_severity_t::warning, "Rating must use a signed 64-bit numerator and positive 64-bit denominator."};
     return publish_metadata_edit(
@@ -119,10 +118,14 @@ auto dispatch_batch_chart_edit(const WormUiWorkspaceAction& action, document_his
     if (action.metadata_batch_edit_author) batch.author = action.metadata_chart_author;
     batch.edit_rating = action.metadata_batch_edit_rating;
     if (batch.edit_rating) {
-        const auto rating = make_chart_rating_metadata_edit(
+        const auto rating = wormedit::chart_rating_edit_t::from(
             batch.charts.front(), !action.metadata_has_chart_rating,
-            action.metadata_chart_rating_numerator_text ? action.metadata_chart_rating_numerator_text : "",
-            action.metadata_chart_rating_denominator_text ? action.metadata_chart_rating_denominator_text : "");
+            action.metadata_chart_rating_numerator_text
+                ? action.metadata_chart_rating_numerator_text
+                : "",
+            action.metadata_chart_rating_denominator_text
+                ? action.metadata_chart_rating_denominator_text
+                : "");
         if (!rating)
             return {notification_severity_t::warning, "Rating must use a signed 64-bit numerator and positive 64-bit denominator."};
         batch.rating = rating->rating;
@@ -246,7 +249,7 @@ auto dispatch_channel_map_preview(const WormUiWorkspaceAction& action, const doc
     auto preview = propose_bms_channel_map_edit(
         history.document, action.metadata_document_revision, chart_id_t{action.metadata_chart_id},
         object_id_t{action.metadata_channel_map_layout_segment_id}, *replacements);
-    auto feedback = metadata_edit_feedback_t{notification_severity_t::info, preview.message};
+    auto feedback = metadata_edit_feedback_t{notification_severity_t::info, std::string{preview.message()}};
     if (!preview) {
         feedback.severity = notification_severity_t::error;
     } else if (preview.conflict_count != 0) {
@@ -297,7 +300,7 @@ auto dispatch_lane_profile_preview(const WormUiWorkspaceAction& action, const do
                                            chart->id, targets[action.metadata_lane_profile_index]);
     if (proposal.issue != lane_migration_issue_t::none) {
         metadata_drop.clear_lane_profile_preview();
-        return {notification_severity_t::error, proposal.message};
+        return {notification_severity_t::error, std::string{proposal.message()}};
     }
     const auto message = "Key-count preview: " + std::to_string(proposal.mapped_note_count) + " notes map, " +
                          std::to_string(proposal.dropped_notes.size()) + " dropped, " +
@@ -399,12 +402,12 @@ auto dispatch_metadata_action(const WormUiWorkspaceAction& action,
     auto& metadata_asset_runtime = environment.import.runtime;
     auto& asset_base = environment.asset_base;
     auto& resource_copy_scheduler = environment.import.scheduler;
-    const std::optional<notification_sink_t> notifications =
-        post_notifications ? std::optional{environment.document.notifications} : std::nullopt;
+    const notification_sink_t notifications =
+        post_notifications ? environment.document.notifications : notification_sink_t::muted();
 
     if (action.metadata_edit != WORM_UI_METADATA_EDIT_NONE) {
         auto feedback = dispatch_metadata_edit(action, history, workspace, timing_locked, metadata_drop);
-        if (notifications) notifications->post(feedback.severity, notification_source_t::edit, feedback.message);
+        notifications.post(feedback.severity, notification_source_t::edit, feedback.message);
         if (action.metadata_edit == WORM_UI_METADATA_EDIT_OUTPUT_PATH)
             metadata_drop.clear_output();
         return std::move(feedback.message);

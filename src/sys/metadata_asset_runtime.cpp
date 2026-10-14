@@ -61,24 +61,14 @@ struct metadata_import_feedback_t {
     bool linked{};
 };
 
-auto post_runtime_message(const std::optional<wormedit::notification_sink_t>& notifications,
+auto post_runtime_message(const wormedit::notification_sink_t& notifications,
                           wormedit::notification_severity_t severity,
-                          wormedit::notification_source_t source, std::string_view message) -> void {
-    if (notifications)
-        notifications->post(severity, source, message);
+                          wormedit::notification_source_t source, std::string_view message)
+    -> void {
+    notifications.post(severity, source, message);
 }
 
-auto notification_severity(wormedit::diagnostic_severity_t severity)
-    -> wormedit::notification_severity_t {
-    switch (severity) {
-    case wormedit::diagnostic_severity_t::info: return wormedit::notification_severity_t::info;
-    case wormedit::diagnostic_severity_t::warning: return wormedit::notification_severity_t::warning;
-    case wormedit::diagnostic_severity_t::error: return wormedit::notification_severity_t::error;
-    }
-    return wormedit::notification_severity_t::error;
-}
-
-auto post_start_result(const std::optional<wormedit::notification_sink_t>& notifications,
+auto post_start_result(const wormedit::notification_sink_t& notifications,
                        wormedit::notification_severity_t severity,
                        wormedit::notification_source_t source, std::string message) -> std::string {
     post_runtime_message(notifications, severity, source, message);
@@ -95,7 +85,7 @@ auto link_imported_metadata_audio(
     if (name.size() > 255)
         name.clear();
     const auto applied = wormedit::apply_primary_music_set(
-        history, request.revision,
+        history,
         {.source_path = request.source_path,
          .copied_project_relative_path =
              request.export_copy ? std::optional<std::filesystem::path>{}
@@ -108,7 +98,7 @@ auto link_imported_metadata_audio(
     if (!applied.diagnostics.empty()) {
         source = wormedit::notification_source_t::document;
         status = applied.diagnostics.front().message;
-        severity = notification_severity(applied.diagnostics.front().severity);
+        severity = to_notification_severity(applied.diagnostics.front().severity);
         return false;
     }
     if (!applied.applied) {
@@ -120,8 +110,9 @@ auto link_imported_metadata_audio(
     const auto rebound = wormedit::rebind_workspace(workspace, history);
     if (!rebound) {
         source = wormedit::notification_source_t::document;
-        severity = rebound.diagnostics.empty() ? wormedit::notification_severity_t::error
-            : notification_severity(rebound.diagnostics.front().severity);
+        severity = rebound.diagnostics.empty()
+                       ? wormedit::notification_severity_t::error
+                       : to_notification_severity(rebound.diagnostics.front().severity);
         status = rebound.diagnostics.empty()
                      ? "Audio imported, but workspace rebinding failed."
                      : rebound.diagnostics.front().message;
@@ -133,7 +124,7 @@ auto link_imported_metadata_audio(
                    resource.roles.end();
         });
         (void)wormedit::apply_workspace_action(
-            workspace, history.document, history.document.revision,
+            workspace, history.document,
             wormedit::workspace_select_asset_action_t{
                 .asset = music != resources.end() ? music->asset : request.asset,
                 .slot = wormedit::workspace_asset_slot_t::audio});
@@ -189,9 +180,14 @@ auto complete_import_feedback(
         failure->source = result.source;
         return *failure;
     }
-    if (history.document.id != request.song || history.document.revision != request.revision ||
-        !workspace.selected_chart || *workspace.selected_chart != request.chart) {
+    if (!workspace.selected_chart) {
         result.message = "Document changed before copied audio could be linked.";
+        result.severity = notification_severity_t::warning;
+        return result;
+    }
+    if (!chart_stamp_t{.document = {.project = request.song, .revision = request.revision},
+                       .chart = request.chart}.is_current(history.document, *workspace.selected_chart)) {
+        result.message = stale_action_message("Metadata audio copy linking");
         result.severity = notification_severity_t::warning;
         return result;
     }
@@ -233,8 +229,7 @@ auto copy_preview_feedback(const wormedit::task_result_t& completed,
 auto process_pending_metadata_asset_import(
     std::optional<pending_metadata_asset_import_t>& pending_import,
     wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace,
-    const std::filesystem::path& asset_base,
-    const std::optional<wormedit::notification_sink_t>& notifications)
+    const std::filesystem::path& asset_base, const wormedit::notification_sink_t& notifications)
     -> std::optional<std::string> {
     if (!pending_import)
         return std::nullopt;
@@ -269,9 +264,8 @@ auto process_pending_metadata_asset_import(
     return feedback.message;
 }
 
-void process_metadata_copy_preview(
-    metadata_copy_preview_t& runtime,
-    const std::optional<wormedit::notification_sink_t>& notifications) {
+void process_metadata_copy_preview(metadata_copy_preview_t& runtime,
+                                   const wormedit::notification_sink_t& notifications) {
     if (!runtime.pending)
         return;
     const auto source = runtime.pending->source;
@@ -389,10 +383,10 @@ auto copy_and_decode_metadata_audio(const wormedit::project_asset_copy_request_t
 struct metadata_asset_t::impl_t {
     std::optional<pending_metadata_asset_import_t> pending_import;
     metadata_copy_preview_t copy_preview;
-    std::optional<notification_sink_t> notifications;
+    notification_sink_t notifications{notification_sink_t::muted()};
 };
 
-metadata_asset_t::metadata_asset_t(std::optional<notification_sink_t> notifications)
+metadata_asset_t::metadata_asset_t(notification_sink_t notifications)
     : impl_(std::make_unique<impl_t>()) {
     impl_->notifications = std::move(notifications);
 }
@@ -410,11 +404,14 @@ auto metadata_asset_t::start_copy_preview(
     const auto finish = [&](std::string message, notification_severity_t severity) {
         return post_start_result(impl_->notifications, severity, source, std::move(message));
     };
-    if (workspace.active_tab != workspace_tab_t::metadata || !workspace.selected_chart ||
-        workspace.selected_chart->value != action.compose_input_chart_id ||
-        history.document.revision != action.compose_input_document_revision)
-        return finish("Metadata copy inspection expired after the chart or document changed.",
-                      notification_severity_t::warning);
+    if (!workspace.selected_chart)
+        return finish("Metadata copy inspection expired after the chart or document changed.", notification_severity_t::warning);
+    if (workspace.active_tab != workspace_tab_t::metadata ||
+        !chart_stamp_t{.document = {.project = history.document.id,
+                                   .revision = action.compose_input_document_revision},
+                       .chart = chart_id_t{action.compose_input_chart_id}}
+             .is_current(history.document, *workspace.selected_chart))
+        return finish(stale_action_message("Metadata copy inspection"), notification_severity_t::warning);
     if (asset_base.empty())
         return finish("Open a saved native project before inspecting asset copies.",
                       notification_severity_t::warning);
@@ -495,11 +492,14 @@ auto metadata_asset_t::start_import_copy(
     return finish("Audio import is unavailable in this build.", notification_severity_t::warning);
 #else
     auto& pending_import = impl_->pending_import;
-    if (workspace.active_tab != workspace_tab_t::metadata || !workspace.selected_chart ||
-        workspace.selected_chart->value != action.compose_input_chart_id ||
-        history.document.revision != action.compose_input_document_revision)
-        return finish("Metadata import-copy expired after the chart or document changed.",
-                      notification_severity_t::warning);
+    if (!workspace.selected_chart)
+        return finish("Metadata import-copy expired after the chart or document changed.", notification_severity_t::warning);
+    if (workspace.active_tab != workspace_tab_t::metadata ||
+        !chart_stamp_t{.document = {.project = history.document.id,
+                                   .revision = action.compose_input_document_revision},
+                       .chart = chart_id_t{action.compose_input_chart_id}}
+             .is_current(history.document, *workspace.selected_chart))
+        return finish(stale_action_message("Metadata import-copy"), notification_severity_t::warning);
     if (asset_base.empty())
         return finish("Open a saved native project before importing an asset copy.",
                       notification_severity_t::warning);

@@ -19,17 +19,6 @@ auto copy_failure_severity(wormedit::project_asset_copy_status_t status)
     return notification_severity_t::error;
 }
 
-auto diagnostic_notification_severity(wormedit::diagnostic_severity_t severity)
-    -> wormedit::notification_severity_t {
-    using namespace wormedit;
-    switch (severity) {
-    case diagnostic_severity_t::info: return notification_severity_t::info;
-    case diagnostic_severity_t::warning: return notification_severity_t::warning;
-    case diagnostic_severity_t::error: return notification_severity_t::error;
-    }
-    return notification_severity_t::error;
-}
-
 struct resource_copy_feedback_t {
     std::string message;
     wormedit::notification_severity_t severity{wormedit::notification_severity_t::error};
@@ -63,8 +52,9 @@ auto complete_project_resource_copy(const pending_project_resource_copy_t& reque
                                     wormedit::workspace_controller_t& workspace)
     -> resource_copy_feedback_t {
     using namespace wormedit;
-    if (history.document.id != request.song || history.document.revision != request.revision)
-        return {"Resource copy finished, but the document changed; source was not relinked.",
+    if (!document_stamp_t{.project = request.song, .revision = request.revision}
+             .is_current(history.document))
+        return {stale_action_message("Resource copy relink"),
                 notification_severity_t::warning};
     const auto audio = history.document.find_audio_asset(request.asset);
     const auto visual = std::ranges::find(history.document.visual_assets, request.asset,
@@ -77,11 +67,11 @@ auto complete_project_resource_copy(const pending_project_resource_copy_t& reque
         return {"Resource copy finished, but its source changed; it was not relinked.",
                 notification_severity_t::warning};
     const auto relinked = apply_resource_asset_relink(
-        history, request.revision,
+        history,
         {.asset = request.asset, .source_path = copied.relative_path});
     if (!relinked.diagnostics.empty())
         return {relinked.diagnostics.front().message,
-                diagnostic_notification_severity(relinked.diagnostics.front().severity)};
+                to_notification_severity(relinked.diagnostics.front().severity)};
     if (!rebind_workspace(workspace, history))
         return {"Resource copied, but workspace rebinding failed.", notification_severity_t::error,
                 true, notification_source_t::document};
@@ -110,8 +100,7 @@ auto complete_resource_copy(const pending_project_resource_copy_t& request,
 }
 } // namespace
 
-runtime::resource_copy_t::resource_copy_t(
-    std::optional<wormedit::notification_sink_t> notifications)
+runtime::resource_copy_t::resource_copy_t(wormedit::notification_sink_t notifications)
     : notifications_(std::move(notifications)) {}
 
 auto runtime::resource_copy_t::start(pending_project_resource_copy_t&& pending) -> bool {
@@ -120,10 +109,9 @@ auto runtime::resource_copy_t::start(pending_project_resource_copy_t&& pending) 
     const auto source = pending.export_copy ? wormedit::notification_source_t::export_
                                             : wormedit::notification_source_t::import_;
     pending_ = std::move(pending);
-    if (notifications_)
-        notifications_->post(wormedit::notification_severity_t::info, source,
-                             pending_->export_copy ? "Export copy started in the background."
-                                                   : "Resource copy started in the background.");
+    notifications_.post(wormedit::notification_severity_t::info, source,
+                        pending_->export_copy ? "Export copy started in the background."
+                                              : "Resource copy started in the background.");
     return true;
 }
 
@@ -143,11 +131,11 @@ auto runtime::resource_copy_t::poll(wormedit::document_history_t& history,
     const auto source = request.export_copy ? notification_source_t::export_
                                             : notification_source_t::import_;
     const auto finish = [&](std::string message, notification_severity_t severity,
-                             bool publish = true,
-                             std::optional<notification_source_t> source_override = {})
+                            bool publish = true,
+                            std::optional<notification_source_t> source_override = {})
         -> std::optional<std::string> {
-        if (publish && notifications_ && !message.empty())
-            notifications_->post(severity, source_override.value_or(source), message);
+        if (publish && !message.empty())
+            notifications_.post(severity, source_override.value_or(source), message);
         return message;
     };
     const auto copied = task_value_cast<project_asset_copy_result_t>(*completed);
@@ -165,8 +153,7 @@ void runtime::resource_copy_t::cancel() {
     pending_.reset();
 }
 
-runtime::output_group_export_t::output_group_export_t(
-    std::optional<wormedit::notification_sink_t> notifications)
+runtime::output_group_export_t::output_group_export_t(wormedit::notification_sink_t notifications)
     : notifications_(std::move(notifications)) {}
 
 runtime::output_group_export_t::~output_group_export_t() noexcept {
@@ -180,10 +167,9 @@ auto runtime::output_group_export_t::start(pending_output_group_export_t&& pendi
     if (is_busy())
         return false;
     this->pending = std::move(pending);
-    if (notifications_)
-        notifications_->post(wormedit::notification_severity_t::info,
-                             wormedit::notification_source_t::export_,
-                             "Output group conversion started in the background.");
+    notifications_.post(wormedit::notification_severity_t::info,
+                        wormedit::notification_source_t::export_,
+                        "Output group conversion started in the background.");
     return true;
 }
 
@@ -215,11 +201,11 @@ auto runtime::output_group_export_t::poll(const wormedit::document_history_t& hi
         status += " The editor session changed after this export started.";
         severity = wormedit::notification_severity_t::warning;
     }
-    if (notifications_ && !status.empty())
-        notifications_->post({.severity = severity,
-                              .source = wormedit::notification_source_t::export_,
-                              .message = status,
-                              .detail = exported ? exported->detail : std::string{}});
+    if (!status.empty())
+        notifications_.post({.severity = severity,
+                             .source = wormedit::notification_source_t::export_,
+                             .message = status,
+                             .detail = exported ? exported->detail : std::string{}});
     return status;
 }
 

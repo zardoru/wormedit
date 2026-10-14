@@ -215,9 +215,9 @@ void populate_timing_stage_view(
     const wormedit::timing_lane_pseudonote_preview_t* stage,
     const timing_grid_state_t& timing_grid, std::uint64_t revision, RowToPixels row_to_pixels) {
     if (stage && stage->status == wormedit::timing_lane_pseudonote_status_t::editing &&
-        stage->chart == chart.id && stage->document_revision == revision) {
+        stage->stamp.is_current(chart.id, revision)) {
         view.stage_active = true;
-        view.stage_valid = stage->valid;
+        view.stage_valid = stage->is_valid();
         view.stage_existing_object_id =
             stage->existing_event.has_value() ? stage->existing_event->value : 0;
         view.stage_lane = timing_lane_kind_to_ui(stage->kind);

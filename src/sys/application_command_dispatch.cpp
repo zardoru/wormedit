@@ -1,8 +1,10 @@
 #include "sys/application_command_dispatch.h"
 #include "sys/application_edit_inputs.h"
 #include "sys/compose_actions.h"
+#include "sys/compose_area_actions.h"
 #include "sys/compose_measure_commands.h"
 #include "sys/compose_note_to_bgm.h"
+#include "sys/compose_quantize_request.h"
 #include "sys/compose_semantic_layer_commands.h"
 
 #include "sys/bookmark_commands.h"
@@ -51,7 +53,7 @@ void follow_snap_with_quantize_grid(application_command_state_t& application,
                                     const wormedit::document_history_t& history,
                                     const wormedit::editor_interaction_state_t& state) {
     auto& editor = application.project.quantize.quantize_editor;
-    if (!editor || editor->song != history.document.id || editor->chart != state.chart ||
+    if (!editor || !editor->stamp.is_identity_current(history.document, state.chart) ||
         editor->request.divisions == state.active_snap_denominator)
         return;
     editor->request.divisions = state.active_snap_denominator;
@@ -95,18 +97,7 @@ auto clear_selection_or_cancel_preview(wormedit::document_history_t& history,
 auto post_command_message(notification_sink_t& sink, notification_severity_t severity,
                           notification_source_t source, std::string_view message)
     -> void {
-    if (severity == notification_severity_t::hint) sink.post_transient_hint(source, message);
-    else sink.post(severity, source, message);
-}
-
-auto notification_severity(wormedit::diagnostic_severity_t severity)
-    -> notification_severity_t {
-    switch (severity) {
-    case wormedit::diagnostic_severity_t::info: return notification_severity_t::info;
-    case wormedit::diagnostic_severity_t::warning: return notification_severity_t::warning;
-    case wormedit::diagnostic_severity_t::error: return notification_severity_t::error;
-    }
-    return notification_severity_t::error;
+    sink.post_feedback(severity, source, message);
 }
 
 } // namespace
@@ -132,7 +123,7 @@ auto accept_editor_command(const wormedit::editor_interaction_result_t& result,
         post_command_message(sink, accepted_severity, source, std::string{accepted});
     } else if (!result.diagnostics.empty()) {
         const auto& diagnostic = result.diagnostics.front();
-        post_command_message(sink, notification_severity(diagnostic.severity), source,
+        post_command_message(sink, to_notification_severity(diagnostic.severity), source,
                              diagnostic.message);
     } else {
         post_command_message(sink, notification_severity_t::warning, source,
@@ -155,16 +146,19 @@ struct application_command_context_t {
                    : nullptr;
     }
     auto rebind() -> wormedit::command_invocation_result_t {
-        const auto rebound =
-            wormedit::rebind_workspace(environment.document.workspace, environment.document.history);
-        if (!rebound)
-            return reject_application_command(
-                environment.document.notifications,
-                rebound.diagnostics.empty()
-                    ? "Command applied, but environment.document.workspace rebinding failed."
-                    : rebound.diagnostics.front().message,
-                notification_severity_t::error, notification_source_t::document,
-                wormedit::diagnostic_code_t::invalid_id);
+        auto outcome = compose_action_outcome_t::from({}, notification_severity_t::success,
+                                                      notification_source_t::document, true);
+        outcome.delivery = compose_feedback_delivery_t::none;
+        outcome.rebind_failure =
+            "Command applied, but environment.document.workspace rebinding failed.";
+        outcome.rebind_feedback_policy = compose_rebind_feedback_policy_t::document_only;
+        outcome.is_rebind_severity_diagnostic = false;
+        auto finished = finish_compose_action(
+            environment.document, environment.document.notifications, std::move(outcome));
+        if (!finished.accepted)
+            return {.diagnostics = {{.severity = diagnostic_severity_t::error,
+                                     .code = diagnostic_code_t::invalid_id,
+                                     .message = std::move(finished.message)}}};
         return {.accepted = true};
     }
 };
@@ -251,9 +245,7 @@ auto measure_command(command_context_t& context) -> std::optional<command_result
                                           notification_severity_t::warning,
                                           notification_source_t::edit);
     if (const auto error = compose_measure_edit_rejection(
-            context.environment.document.history, *state,
-            context.environment.editor.commands.project.clipboard.paste_session.has_value(),
-            context.environment.document.history.document.revision))
+            *state, context.environment.editor.commands.project.clipboard.paste_session.has_value()))
         return reject_application_command(context.environment.document.notifications, *error,
                                           notification_severity_t::warning,
                                           notification_source_t::edit);
@@ -277,11 +269,9 @@ auto loop_selection_command(command_context_t& context) -> std::optional<command
         context.environment.editor.commands.services.transport_loop_selection_active &&
         context.environment.editor.commands.services.transport_loop_selection_active();
     const auto* state = context.compose();
-    const auto chart =
-        std::ranges::find(context.environment.document.history.document.charts,
-                          state ? state->chart : chart_id_t{}, &chart_document_t::id);
-    if (!state || chart == context.environment.document.history.document.charts.end() ||
-        (!disable && !state->retained_selection_range) ||
+    const auto* chart = context.environment.document.history.document.find_chart(
+        state ? state->chart : chart_id_t{});
+    if (!state || chart == nullptr || (!disable && !state->retained_selection_range) ||
         editor_interaction_has_pending_gesture(*state) ||
         context.environment.editor.commands.project.clipboard.paste_session ||
         !context.environment.editor.commands.services.transport_set_loop_selection)
@@ -384,11 +374,9 @@ auto note_to_bgm_command(command_context_t& context) -> std::optional<command_re
     if (kind != command_kind_t::edit_move_to_bgm && kind != command_kind_t::edit_move_next_to_bgm)
         return std::nullopt;
     auto* state = context.compose();
-    const auto found =
-        std::ranges::find(context.environment.document.history.document.charts,
-                          state ? state->chart : chart_id_t{}, &chart_document_t::id);
-    const auto* chart =
-        found == context.environment.document.history.document.charts.end() ? nullptr : &*found;
+    const auto* found = context.environment.document.history.document.find_chart(
+        state ? state->chart : chart_id_t{});
+    const auto* chart = found == nullptr ? nullptr : &*found;
     if (!state || !chart ||
         !compose_move_to_bgm_available(*chart, *state,
                                        context.environment.editor.commands))
@@ -397,7 +385,7 @@ auto note_to_bgm_command(command_context_t& context) -> std::optional<command_re
             "Move to BGM requires selected notes on an editable BMS chart.",
             notification_severity_t::hint, notification_source_t::edit);
     const auto moved = move_editor_selection_to_bgm(
-        context.environment.document.history, context.environment.document.history.document.revision, *state,
+        context.environment.document.history, *state,
         std::nullopt, kind == command_kind_t::edit_move_next_to_bgm);
     if (!moved.payload.handled)
         return reject_application_command(context.environment.document.notifications,
@@ -460,19 +448,18 @@ auto clipboard_commands(command_context_t& context) -> std::optional<command_res
                                           notification_source_t::edit);
     auto copied =
         kind == command_kind_t::edit_cut
-            ? wormedit::cut_chart_selection(context.environment.document.history, *state,
-                                            context.environment.document.history.document.revision,
+            ? wormedit::create_cut_chart_clipboard(context.environment.document.history, *state,
                                             options)
-            : wormedit::copy_chart_selection(context.environment.document.history.document, *state,
+            : wormedit::chart_clipboard_t::from(context.environment.document.history.document, *state,
                                              context.environment.document.history.document.revision,
                                              options.kiai_head);
     if (!copied)
         return reject_application_command(context.environment.document.notifications,
-                                          std::move(copied.error), notification_severity_t::warning,
+                                          std::move(copied.error()), notification_severity_t::warning,
                                           notification_source_t::edit);
     if (kind == command_kind_t::edit_cut)
         context.environment.editor.commands.project.timing_recipe.kiai_selected_head = 0;
-    context.environment.editor.commands.project.clipboard.chart_clipboard = std::move(copied.clipboard);
+    context.environment.editor.commands.project.clipboard.chart_clipboard = std::move(*copied);
     post_command_message(context.environment.document.notifications,
                          notification_severity_t::success, notification_source_t::edit,
                          kind == command_kind_t::edit_cut ? "Selection cut." : "Selection copied.");
@@ -489,7 +476,7 @@ auto edit_commands(command_context_t& context) -> std::optional<command_result_t
             context.environment.document.notifications, "Delete requires the active Compose chart.",
             notification_severity_t::warning, notification_source_t::edit);
     const auto result = wormedit::delete_selection_all(
-        context.environment.document.history, *state, context.environment.document.history.document.revision,
+        context.environment.document.history, *state,
         {.kiai_head =
              wormedit::object_id_t{
                  context.environment.editor.commands.project.timing_recipe.kiai_selected_head},
@@ -585,14 +572,14 @@ auto marker_timing_index(const wormedit::chart_document_t& chart,
 auto navigate_active_markers(command_context_t& context,
                              const wormedit::editor_interaction_state_t& state,
                              wormedit::marker_navigation_direction_t direction)
-    -> wormedit::marker_navigation_result_t {
+    -> wormedit::marker_navigation_outcome_t {
     using namespace wormedit;
     const auto* chart =
         selected_chart(context.environment.document.history, context.environment.document.workspace);
     const auto timing = chart
                             ? marker_timing_index(*chart, context.environment.document.notifications)
                             : std::nullopt;
-    return navigate_markers(context.environment.document.history.document,
+    return marker_navigation_match_t::from(context.environment.document.history.document,
                             context.environment.document.history.document.revision, state.chart,
                             state.cursor, direction, {}, {}, timing ? &*timing : nullptr);
 }
@@ -600,7 +587,7 @@ auto navigate_active_markers(command_context_t& context,
 void post_marker_warnings(notification_sink_t& sink,
                           const wormedit::diagnostic_list_t& diagnostics) {
     for (const auto& diagnostic : diagnostics)
-        post_command_message(sink, notification_severity(diagnostic.severity),
+        post_command_message(sink, to_notification_severity(diagnostic.severity),
                              notification_source_t::input, diagnostic.message);
 }
 
@@ -641,7 +628,7 @@ auto navigation_commands(command_context_t& context) -> std::optional<command_re
     const auto direction = kind == command_kind_t::navigation_previous_marker
         ? marker_navigation_direction_t::previous : marker_navigation_direction_t::next;
     const auto marker = navigate_active_markers(context, *state, direction);
-    if (marker.status == marker_navigation_status_t::no_result) {
+    if (marker.value.status == marker_navigation_status_t::no_result) {
         post_command_message(context.environment.document.notifications,
                              notification_severity_t::info, notification_source_t::input,
                              direction == marker_navigation_direction_t::previous
@@ -649,43 +636,26 @@ auto navigation_commands(command_context_t& context) -> std::optional<command_re
                                  : "No next beat-anchored bookmark or section boundary.");
         return command_result_t{.accepted = true};
     }
-    if (marker.status != marker_navigation_status_t::found || !marker.item ||
-        !marker.item->beat_position)
+    if (marker.value.status != marker_navigation_status_t::found || !marker.value.item ||
+        !marker.value.item->beat_position)
         return reject_application_command(
             context.environment.document.notifications,
             marker.diagnostics.empty() ? "Bookmark navigation could not resolve an exact beat row."
                                        : marker.diagnostics.front().message,
-            marker.diagnostics.empty() ? notification_severity_t::error
-                                       : notification_severity(marker.diagnostics.front().severity),
+            marker.diagnostics.empty()
+                ? notification_severity_t::error
+                : to_notification_severity(marker.diagnostics.front().severity),
             notification_source_t::input, diagnostic_code_t::invalid_id);
     post_marker_warnings(context.environment.document.notifications, marker.diagnostics);
     return accept_editor_command(
         dispatch_editor_action(
             context.environment.document.history, *state,
-            jump_edit_cursor_action_t{*marker.item->beat_position, marker.document_revision}),
+            jump_edit_cursor_action_t{*marker.value.item->beat_position, marker.value.document_revision}),
         context.environment.document.notifications,
         direction == marker_navigation_direction_t::previous
             ? "Moved to the previous bookmark or section boundary."
             : "Moved to the next bookmark or section boundary.",
         notification_severity_t::hint, notification_source_t::input);
-}
-
-void post_bookmark_outcome(notification_sink_t& sink, command_kind_t kind,
-                           const bookmark_command_outcome_t& outcome) {
-    if (outcome.feedback_posted) return;
-    const bool adding = kind == command_kind_t::markers_add_bookmark;
-    const auto source = adding ? notification_source_t::edit : notification_source_t::input;
-    if (outcome.accepted) {
-        post_command_message(sink, adding ? (outcome.document_changed ? notification_severity_t::success
-                                                       : notification_severity_t::info)
-                                          : notification_severity_t::hint,
-                             source, outcome.status);
-    } else if (!outcome.diagnostics.empty()) {
-        post_command_message(sink, notification_severity(outcome.diagnostics.front().severity),
-                             source, outcome.diagnostics.front().message);
-    } else {
-        post_command_message(sink, notification_severity_t::warning, source, outcome.status);
-    }
 }
 
 auto open_bookmark_chooser_command(command_context_t& context) -> std::optional<command_result_t> {
@@ -742,26 +712,30 @@ auto compose_quantize_command(command_context_t& context) -> std::optional<comma
     if (kind != command_kind_t::edit_toggle_quantize_preview &&
         kind != command_kind_t::edit_apply_quantize) return std::nullopt;
     auto* state = context.compose();
-    if (!state || context.environment.editor.commands.project.compose_view.compose_timing_focus ||
-        context.environment.editor.commands.project.clipboard.paste_session ||
-        editor_interaction_has_pending_gesture(*state))
-        return reject_application_command(context.environment.document.notifications,
-                                          "Quantize requires an idle active Compose chart.",
-                                          notification_severity_t::warning,
-                                          notification_source_t::input);
+    if (!state || !can_apply_compose_quantize(context.environment.editor.commands, *state))
+        return reject_application_command(
+            context.environment.document.notifications, compose_quantize_idle_message,
+            notification_severity_t::warning, notification_source_t::input);
     const auto toggle = kind == command_kind_t::edit_toggle_quantize_preview;
-    const auto accepted =
-        invoke_compose_quantize_command(toggle, context.environment.document.history, *state,
-                                        context.environment.editor.commands,
-                                        context.environment.document.notifications);
+    auto outcome = invoke_compose_quantize_command(toggle, context.environment.document.history,
+                                                   *state, context.environment.editor.commands);
     if (toggle)
         context.environment.document.notifications.post_transient_hint(
             notification_source_t::edit,
             context.environment.editor.commands.project.quantize.quantize_editor->preview_enabled
                 ? "Quantize preview enabled."
                 : "Quantize preview disabled.");
-    if (accepted && !toggle) return context.rebind();
-    return command_result_t{.accepted = accepted};
+    if (toggle)
+        return command_result_t{.accepted = outcome.accepted};
+    auto finished =
+        finish_compose_action(context.environment.document,
+                              context.environment.document.notifications, std::move(outcome));
+    if (!finished.accepted && finished.mutated)
+        return command_result_t{.accepted = false,
+                                .diagnostics = {{.severity = diagnostic_severity_t::error,
+                                                 .code = diagnostic_code_t::invalid_id,
+                                                 .message = std::move(finished.message)}}};
+    return command_result_t{.accepted = finished.accepted};
 }
 
 auto project_export_command(command_context_t& context) -> std::optional<command_result_t> {
@@ -827,6 +801,22 @@ auto compose_auxiliary_command(command_context_t& context) -> std::optional<comm
     return command_result_t{.accepted = true};
 }
 
+auto run_bookmark_command(application_command_context_t& context, editor_interaction_state_t& state,
+                          const chart_document_t& chart, bool previous)
+    -> compose_action_outcome_t {
+    if (context.command.kind == command_kind_t::markers_add_bookmark)
+        return context.environment.editor.commands.bookmarks.add_beat_bookmark_here(
+            context.environment.document.history, state, context.environment.editor.commands);
+    const auto downscroll = compose_field_downscroll(
+        chart, context.environment.editor.commands.preferences.editor_preferences);
+    // Commands are bound to screen directions; a flipped field reverses the jump.
+    const auto direction = compose_visual_navigation_direction(downscroll, previous);
+    return context.environment.editor.commands.bookmarks.navigate_beat_bookmark(
+        context.environment.document.history, state, context.environment.editor.commands,
+        direction == interaction_direction_t::backward ? marker_navigation_direction_t::previous
+                                                       : marker_navigation_direction_t::next);
+}
+
 // Primary+Up/Down jump bookmarks in screen direction; Primary+B adds one here.
 auto bookmark_commands(command_context_t& context) -> std::optional<command_result_t> {
     using namespace wormedit;
@@ -852,31 +842,24 @@ auto bookmark_commands(command_context_t& context) -> std::optional<command_resu
             notification_severity_t::warning, notification_source_t::edit);
     const auto previous_revision = context.environment.document.history.document.revision;
     const auto bookmark_chart = state->chart;
-    auto outcome = [&] {
-        if (kind == command_kind_t::markers_add_bookmark)
-            return context.environment.editor.commands.bookmarks.add_beat_bookmark_here(context.environment.document.history, *state,
-                                          context.environment.editor.commands);
-        const auto downscroll = compose_field_downscroll(
-            *chart, context.environment.editor.commands.preferences.editor_preferences);
-        // The commands are bound to screen directions: Up is "previous" unless the field is flipped.
-        const auto direction = compose_visual_navigation_direction(downscroll, previous);
-        return context.environment.editor.commands.bookmarks.navigate_beat_bookmark(context.environment.document.history, *state,
-                                      context.environment.editor.commands,
-                                      direction == interaction_direction_t::backward
-                                          ? marker_navigation_direction_t::previous
-                                          : marker_navigation_direction_t::next);
-    }();
-    post_bookmark_outcome(context.environment.document.notifications, kind, outcome);
-    if (outcome.document_changed) {
-        const auto rebound = context.rebind();
-        if (!rebound.accepted) return rebound;
-        if (kind == command_kind_t::markers_add_bookmark && outcome.accepted) {
-            static_cast<void>(context.environment.editor.commands.bookmarks.preserve_preview_revision(
-                                      bookmark_chart, previous_revision,
-                                      context.environment.document.history.document.revision));
-        }
+    auto outcome = run_bookmark_command(context, *state, *chart, previous);
+    if (!outcome.accepted && !outcome.diagnostics.empty())
+        outcome.delivery = compose_feedback_delivery_t::diagnostic_message;
+    outcome = finish_compose_action(context.environment.document,
+                                    context.environment.document.notifications, std::move(outcome));
+    if (outcome.mutated && !outcome.accepted) {
+        // Registered commands retain the old rebind rejection code and one diagnostic.
+        outcome.diagnostics.resize(1);
+        outcome.diagnostics.front() = {.severity = diagnostic_severity_t::error,
+                                       .code = diagnostic_code_t::invalid_id,
+                                       .message = std::move(outcome.message)};
     }
-    return command_result_t{.accepted = outcome.accepted, .diagnostics = outcome.diagnostics};
+    if (outcome.mutated && outcome.accepted && kind == command_kind_t::markers_add_bookmark)
+        static_cast<void>(context.environment.editor.commands.bookmarks.preserve_preview_revision(
+            bookmark_chart, previous_revision,
+            context.environment.document.history.document.revision));
+    return command_result_t{.accepted = outcome.accepted,
+                            .diagnostics = std::move(outcome.diagnostics)};
 }
 
 auto workspace_tab_command(command_context_t& context) -> std::optional<command_result_t> {
@@ -900,14 +883,14 @@ auto workspace_tab_command(command_context_t& context) -> std::optional<command_
     case command_kind_t::workspace_open_compare_validate: tab = workspace_tab_t::compare_validate; break;
     default: return std::nullopt;
     }
-    const auto applied = apply_workspace_action(
-        context.environment.document.workspace, context.environment.document.history.document,
-        context.environment.document.history.document.revision, workspace_switch_tab_action_t{*tab});
+    const auto applied = apply_workspace_action(context.environment.document.workspace,
+                                                context.environment.document.history.document,
+                                                workspace_switch_tab_action_t{*tab});
     post_command_message(context.environment.document.notifications,
                          applied.applied ? notification_severity_t::info
                          : applied.diagnostics.empty()
                              ? notification_severity_t::warning
-                             : notification_severity(applied.diagnostics.front().severity),
+                             : to_notification_severity(applied.diagnostics.front().severity),
                          notification_source_t::input,
                          applied.applied               ? "Workspace tab changed."
                          : applied.diagnostics.empty() ? "Workspace tab change was rejected."
@@ -1022,7 +1005,7 @@ auto timing_insert_command(command_context_t& context) -> std::optional<command_
             context.environment.document.notifications, message,
             preview.diagnostics.empty()
                 ? notification_severity_t::warning
-                : notification_severity(preview.diagnostics.front().severity),
+                : to_notification_severity(preview.diagnostics.front().severity),
             notification_source_t::edit);
     }
     context.environment.editor.timing_stage = std::move(preview);
@@ -1120,8 +1103,9 @@ auto semantic_layer_slot_command(command_context_t& context) -> command_result_t
         app.project.semantic_layer.semantic_layer_palette_chart = chart->id;
         app.project.semantic_layer.semantic_layer_palette_page = 0;
     }
-    const auto palette = make_semantic_layer_palette_window(
-        *chart, app.project.semantic_layer.semantic_layer_target, app.project.semantic_layer.semantic_layer_palette_page, false,
+    const auto palette = wormedit::semantic_layer_palette_window_t::from(
+        *chart, app.project.semantic_layer.semantic_layer_target,
+        app.project.semantic_layer.semantic_layer_palette_page, false,
         WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY);
     if (!palette || slot > palette->layer_indices.size())
         return reject_application_command(
@@ -1164,8 +1148,7 @@ auto semantic_layer_membership_command(command_context_t& context) -> command_re
     else
         edit = replace_notes_semantic_layer_action_t{
             state->chart, *app.project.semantic_layer.semantic_layer_target, state->selected_notes, true};
-    const auto applied = apply_semantic_layer_edit(
-        context.environment.document.history, context.environment.document.history.document.revision, edit);
+    const auto applied = apply_semantic_layer_edit(context.environment.document.history, edit);
     if (applied.applied) {
         const auto rebound = context.rebind();
         if (!rebound.accepted) return rebound;
@@ -1179,7 +1162,7 @@ auto semantic_layer_membership_command(command_context_t& context) -> command_re
                                              : "Semantic-layer membership was unchanged.");
     else
         post_command_message(context.environment.document.notifications,
-                             notification_severity(applied.diagnostics.front().severity),
+                             to_notification_severity(applied.diagnostics.front().severity),
                              notification_source_t::edit, applied.diagnostics.front().message);
     return {.accepted = applied.applied || applied.diagnostics.empty(),
             .diagnostics = applied.diagnostics};

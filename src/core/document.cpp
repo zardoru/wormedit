@@ -57,12 +57,6 @@ auto chart_document_t::find_bgm_event(object_id_t id) -> bgm_event_t* { return f
 auto chart_document_t::find_bgm_event(object_id_t id) const -> const bgm_event_t* { return find_measure_object(*this, id, &measure_chunk_t::bgm_events); }
 auto lane_layout_t::find(lane_id_t id) -> lane_definition_t* { return find_id(lanes, id); }
 auto lane_layout_t::find(lane_id_t id) const -> const lane_definition_t* { return find_id(lanes, id); }
-auto find_chart(const song_document_t& document, chart_id_t id) -> const chart_document_t* {
-    return document.find_chart(id);
-}
-auto find_chart(song_document_t& document, chart_id_t id) -> chart_document_t* {
-    return document.find_chart(id);
-}
 auto lane_definition_t::is_editable() const noexcept -> bool {
     return role != lane_role_t::autoplay && role != lane_role_t::invisible && role != lane_role_t::mine;
 }
@@ -1957,18 +1951,6 @@ auto redivision_plan_t::from(const chart_document_t& chart,
     transformed.divisions_per_standard_measure = target_divisions_per_standard_measure;
     result.value.chart = std::move(transformed);
     return result;
-}
-
-auto redivision_result_t::from(redivision_outcome_t&& outcome) -> redivision_result_t {
-    return {.chart = std::move(outcome.value.chart), .moves = std::move(outcome.value.moves),
-            .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto redivide_chart_exact(const chart_document_t& chart,
-                          std::uint64_t target_divisions_per_standard_measure)
-    -> redivision_result_t {
-    return redivision_result_t::from(
-        redivision_plan_t::from(chart, target_divisions_per_standard_measure));
 }
 
 } // namespace wormedit

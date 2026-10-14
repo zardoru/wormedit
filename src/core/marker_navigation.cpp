@@ -1,5 +1,6 @@
 #include "chart_object_ids.h"
 #include <wormedit/core/marker_navigation.h>
+#include <wormedit/core/command.h>
 
 #include <algorithm>
 #include <iterator>
@@ -24,9 +25,10 @@ using chart_query_t = diagnosed_t<const chart_document_t*>;
 auto validate_chart_query(const song_document_t& song, std::uint64_t expected_revision,
                           chart_id_t chart_id, marker_navigation_limits_t limits) -> chart_query_t {
     chart_query_t query{};
-    if (expected_revision != song.revision) {
+    const document_stamp_t stamp{.project = song.id, .revision = expected_revision};
+    if (!stamp.is_current(song)) {
         query.diagnostics.push_back(
-            error(diagnostic_code_t::invalid_id, "marker navigation document revision is stale"));
+            error(diagnostic_code_t::invalid_id, stale_action_message("Marker navigation")));
         return query;
     }
     const auto found = song.find_chart(chart_id);
@@ -407,15 +409,14 @@ auto validate_selected_marker(const chart_document_t& chart, const marker_naviga
 }
 
 template <typename coordinate_t>
-auto navigate_impl(const song_document_t& song, std::uint64_t expected_revision,
+auto navigate_impl(const song_document_t& song, chart_query_t&& query,
                    chart_id_t chart_id, coordinate_t cursor,
                    marker_navigation_direction_t direction, marker_navigation_filter_t filter,
-                   marker_navigation_limits_t limits, marker_anchor_t anchor,
+                   marker_anchor_t anchor,
                    const measure_lookup_t* measures, audio_projection_t* projection = nullptr)
     -> marker_navigation_outcome_t {
     marker_navigation_outcome_t result{
         .value = {.document_revision = song.revision, .chart = chart_id}};
-    auto query = validate_chart_query(song, expected_revision, chart_id, limits);
     if (!query.diagnostics.empty()) {
         result.value.status = marker_navigation_status_t::invalid_request;
         result.diagnostics = std::move(query.diagnostics);
@@ -490,7 +491,7 @@ auto marker_navigation_match_t::from(const song_document_t& song, std::uint64_t 
         return result;
     }
     audio_projection_t projection{.timing = timing, .measures = &measures};
-    return navigate_impl(song, expected_revision, chart, *cursor_row, direction, filter, limits,
+    return navigate_impl(song, std::move(query), chart, *cursor_row, direction, filter,
                          marker_anchor_t::beat, &measure_lookup, timing ? &projection : nullptr);
 }
 
@@ -500,8 +501,9 @@ auto marker_navigation_match_t::from(const song_document_t& song, std::uint64_t 
                                      marker_navigation_filter_t filter,
                                      marker_navigation_limits_t limits)
     -> marker_navigation_outcome_t {
-    return navigate_impl(song, expected_revision, chart, audio_millisecond_cursor, direction,
-                         filter, limits, marker_anchor_t::audio_time, nullptr);
+    auto query = validate_chart_query(song, expected_revision, chart, limits);
+    return navigate_impl(song, std::move(query), chart, audio_millisecond_cursor, direction,
+                         filter, marker_anchor_t::audio_time, nullptr);
 }
 
 auto section_selection_t::from(const song_document_t& song, std::uint64_t expected_revision,
@@ -583,49 +585,6 @@ auto section_selection_t::from(const song_document_t& song, std::uint64_t expect
     result.value.status = section_selection_status_t::resolved;
     result.value.beat_span = found->beat_span;
     return result;
-}
-
-auto marker_navigation_result_t::from(marker_navigation_outcome_t&& outcome)
-    -> marker_navigation_result_t {
-    return {.status = outcome.value.status,
-            .document_revision = outcome.value.document_revision,
-            .chart = outcome.value.chart,
-            .item = std::move(outcome.value.item),
-            .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto section_selection_result_t::from(section_selection_outcome_t&& outcome)
-    -> section_selection_result_t {
-    return {.status = outcome.value.status,
-            .document_revision = outcome.value.document_revision,
-            .chart = outcome.value.chart,
-            .section = outcome.value.section,
-            .beat_span = std::move(outcome.value.beat_span),
-            .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto navigate_markers(const song_document_t& song, std::uint64_t expected_revision,
-                      chart_id_t chart, local_position_t beat_cursor,
-                      marker_navigation_direction_t direction, marker_navigation_filter_t filter,
-                      marker_navigation_limits_t limits, const timing_index_t* timing)
-    -> marker_navigation_result_t {
-    return marker_navigation_result_t::from(marker_navigation_match_t::from(
-        song, expected_revision, chart, beat_cursor, direction, filter, limits, timing));
-}
-
-auto navigate_markers(const song_document_t& song, std::uint64_t expected_revision,
-                      chart_id_t chart, std::int64_t audio_millisecond_cursor,
-                      marker_navigation_direction_t direction, marker_navigation_filter_t filter,
-                      marker_navigation_limits_t limits) -> marker_navigation_result_t {
-    return marker_navigation_result_t::from(marker_navigation_match_t::from(
-        song, expected_revision, chart, audio_millisecond_cursor, direction, filter, limits));
-}
-
-auto resolve_section_selection(const song_document_t& song, std::uint64_t expected_revision,
-                               chart_id_t chart, object_id_t section,
-                               marker_navigation_limits_t limits) -> section_selection_result_t {
-    return section_selection_result_t::from(
-        section_selection_t::from(song, expected_revision, chart, section, limits));
 }
 
 } // namespace wormedit

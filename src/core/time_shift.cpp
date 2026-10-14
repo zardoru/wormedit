@@ -157,14 +157,10 @@ struct prepared_shift_t {
 };
 
 // Validates the common preconditions and clones the document for editing.
-auto prepare_shift(const document_history_t& history, std::uint64_t expected_revision,
+auto prepare_shift(const document_history_t& history,
                    chart_id_t chart_id, std::int64_t rows, time_shift_result_t& result)
     -> std::optional<prepared_shift_t> {
     result.command.revision = history.document.revision;
-    if (expected_revision != history.document.revision) {
-        reject(result.command, diagnostic_code_t::invalid_id, "time shift document revision is stale");
-        return std::nullopt;
-    }
     if (rows == 0)
         return std::nullopt;
     prepared_shift_t prepared{.proposed = history.document};
@@ -256,7 +252,7 @@ auto shift_timing_family(shift_context_t& context, events_t& events, member_t po
 
 } // namespace
 
-auto apply_shift_selection(document_history_t& history, std::uint64_t expected_revision,
+auto apply_shift_selection(document_history_t& history,
                            const shift_selection_action_t& action, time_shift_limits_t limits)
     -> time_shift_result_t {
     time_shift_result_t result;
@@ -265,7 +261,7 @@ auto apply_shift_selection(document_history_t& history, std::uint64_t expected_r
                "time shift selection exceeds its configured cap");
         return result;
     }
-    auto prepared = prepare_shift(history, expected_revision, action.chart, action.rows, result);
+    auto prepared = prepare_shift(history, action.chart, action.rows, result);
     if (!prepared)
         return result;
     auto selected = collect_selection(*prepared->chart, action, result);
@@ -377,11 +373,11 @@ auto shift_markers_after_cursor(shift_context_t& context, std::uint64_t cursor_r
 
 } // namespace
 
-auto apply_shift_from_cursor(document_history_t& history, std::uint64_t expected_revision,
+auto apply_shift_from_cursor(document_history_t& history,
                              const shift_from_cursor_action_t& action, time_shift_limits_t)
     -> time_shift_result_t {
     time_shift_result_t result;
-    auto prepared = prepare_shift(history, expected_revision, action.chart, action.rows, result);
+    auto prepared = prepare_shift(history, action.chart, action.rows, result);
     if (!prepared)
         return result;
     if (!prepared->chart->sound_channels.empty() ||

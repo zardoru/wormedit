@@ -29,7 +29,27 @@ struct compose_notification_fixture_t {
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
 
-    compose_notification_fixture_t() {
+    bool is_workspace_current_when_feedback_posted{true};
+    std::size_t feedback_post_count{};
+    inline static thread_local compose_notification_fixture_t* feedback_probe{};
+
+    static auto feedback_time() -> notification_time_t {
+        if (feedback_probe) {
+            ++feedback_probe->feedback_post_count;
+            feedback_probe->is_workspace_current_when_feedback_posted &=
+                feedback_probe->workspace.document_revision ==
+                feedback_probe->history.document.revision;
+        }
+        return {};
+    }
+
+    ~compose_notification_fixture_t() {
+        if (feedback_probe == this)
+            feedback_probe = nullptr;
+    }
+
+    explicit compose_notification_fixture_t(notification_clock_t clock = {})
+        : center(std::move(clock)) {
         chart_document_t chart{
             .id = chart_id_t{7}, .divisions_per_standard_measure = 960,
             .measures = {{.id = measure_id_t{1}}},
@@ -95,7 +115,9 @@ void check_legacy_seek(compose_notification_fixture_t& fixture) {
     fixture.application.services.transport_preview_playing = [] { return true; };
     fixture.application.project.transport.preview_playhead_absolute_row = 120.0;
     fixture.application.services.transport_seek = [](std::uint64_t) {
-        return std::string{"Legacy seek performed."};
+        return compose_action_outcome_t::from(std::string{"Legacy seek performed."},
+                                              notification_severity_t::hint,
+                                              notification_source_t::input);
     };
     editor_navigation_action_batch_t actions;
     actions.actions[actions.count++] = editor_navigation_action_t::cursor_forward;
@@ -110,11 +132,10 @@ void check_legacy_seek(compose_notification_fixture_t& fixture) {
 }
 
 void check_producer_seek(compose_notification_fixture_t& fixture) {
-    fixture.application.preferences.transport_seek_posts_feedback = true;
     fixture.application.services.transport_seek = [&](std::uint64_t) {
-        fixture.sink.post(notification_severity_t::warning, notification_source_t::audio,
-                          "Audio seek was clamped.");
-        return std::string{"Audio seek was clamped."};
+        return compose_action_outcome_t::from(
+            std::string{"Audio seek was clamped."}, notification_severity_t::warning,
+            notification_source_t::audio, compose_feedback_delivery_t::notification);
     };
     editor_navigation_action_batch_t actions;
     actions.actions[actions.count++] = editor_navigation_action_t::cursor_forward;
@@ -145,7 +166,7 @@ void check_stale_rejection(compose_notification_fixture_t& fixture,
     const auto entries = fixture.drain();
     REQUIRE(entries.size() == 1);
     expect_entry(entries[0], notification_severity_t::warning, notification_source_t::input,
-                 "Compose input ignored because the chart or document revision changed.");
+                 "Compose input ignored because the project, chart or document revision changed.");
     CHECK(fixture.history.document.revision == revision);
     CHECK(fixture.history.undo.empty());
 }
@@ -215,7 +236,11 @@ TEST_CASE("Viewport wheel seek feedback keeps explicit callback ownership", "[un
     compose_notification_fixture_t fixture;
     fixture.application.services.transport_preview_playing = [] { return true; };
     fixture.application.project.transport.preview_playhead_absolute_row = 120.0;
-    fixture.application.services.transport_seek = [](std::uint64_t) { return std::string{"Legacy wheel seek."}; };
+    fixture.application.services.transport_seek = [](std::uint64_t) {
+        return compose_action_outcome_t::from(std::string{"Legacy wheel seek."},
+                                              notification_severity_t::hint,
+                                              notification_source_t::input);
+    };
     WormUiWorkspaceAction action{};
     action.compose_input_chart_id = fixture.state.chart.value;
     action.compose_input_document_revision = fixture.history.document.revision;
@@ -232,11 +257,10 @@ TEST_CASE("Viewport wheel seek feedback keeps explicit callback ownership", "[un
     REQUIRE(fixture.center.current_line() != nullptr);
     expect_entry(*fixture.center.current_line(), notification_severity_t::hint, notification_source_t::input,
         "Legacy wheel seek.");
-    fixture.application.preferences.transport_seek_posts_feedback = true;
     fixture.application.services.transport_seek = [&](std::uint64_t) {
-        fixture.sink.post(notification_severity_t::warning, notification_source_t::audio,
-            "Producer wheel seek clamped.");
-        return std::string{"Producer wheel seek clamped."};
+        return compose_action_outcome_t::from(
+            std::string{"Producer wheel seek clamped."}, notification_severity_t::warning,
+            notification_source_t::audio, compose_feedback_delivery_t::notification);
     };
     CHECK(dispatch() == "Producer wheel seek clamped.");
     entries = fixture.drain();
@@ -516,10 +540,10 @@ TEST_CASE("pasting inside a visual Stop band uses its valid chart row",
           "[unit][sys][compose-notification][dead-span]") {
     dead_span_fixture_t fixture;
     fixture.state.selected_notes = {object_id_t{1}};
-    auto copied = copy_chart_selection(fixture.history.document, fixture.state,
+    auto copied = chart_clipboard_t::from(fixture.history.document, fixture.state,
                                        fixture.history.document.revision);
     REQUIRE(copied);
-    fixture.application.project.clipboard.chart_clipboard = std::move(copied.clipboard);
+    fixture.application.project.clipboard.chart_clipboard = std::move(*copied);
     std::string status;
     REQUIRE(begin_compose_paste(fixture.application, fixture.history.document, fixture.state, status));
     const auto y = fixture.stop_band_y();
@@ -572,10 +596,10 @@ TEST_CASE("the same paste and drag succeed away from the Stop band",
     SECTION("paste") {
         dead_span_fixture_t fixture;
         fixture.state.selected_notes = {object_id_t{1}};
-        auto copied = copy_chart_selection(fixture.history.document, fixture.state,
+        auto copied = chart_clipboard_t::from(fixture.history.document, fixture.state,
                                            fixture.history.document.revision);
         REQUIRE(copied);
-        fixture.application.project.clipboard.chart_clipboard = std::move(copied.clipboard);
+        fixture.application.project.clipboard.chart_clipboard = std::move(*copied);
         std::string status;
         REQUIRE(begin_compose_paste(fixture.application, fixture.history.document, fixture.state, status));
         (void)fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_PASTE_UPDATE, .x_pixels = fixture.lane_x(), .y_pixels = free_row_y(fixture)},
@@ -611,13 +635,84 @@ TEST_CASE("pasting a note at a cursor inside a Warp is rejected and changes noth
           "[unit][sys][compose-notification][dead-span]") {
     dead_span_fixture_t fixture;
     fixture.state.selected_notes = {object_id_t{1}};
-    auto copied = copy_chart_selection(fixture.history.document, fixture.state,
+    auto copied = chart_clipboard_t::from(fixture.history.document, fixture.state,
                                        fixture.history.document.revision);
     REQUIRE(copied);
-    fixture.application.project.clipboard.chart_clipboard = std::move(copied.clipboard);
+    fixture.application.project.clipboard.chart_clipboard = std::move(*copied);
     fixture.state.cursor = {measure_id_t{1}, 780};
     std::string status;
     REQUIRE(begin_compose_paste(fixture.application, fixture.history.document, fixture.state, status));
     (void)fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_PASTE_COMMIT}});
     fixture.check_document_unchanged();
+}
+
+TEST_CASE("Compose input mutation rebind failures preserve both feedback entries",
+          "[compose-notification][compose-outcome]") {
+    compose_notification_fixture_t fixture;
+    fixture.workspace.limits.maximum_charts = 0;
+    const auto status = fixture.input(WORM_UI_COMPOSE_INPUT_DELETE_SELECTION);
+    const auto entries = fixture.drain();
+    REQUIRE(entries.size() == 2);
+    check_mixed_input(status == entries.front().message);
+    expect_entry(entries.front(), notification_severity_t::error, notification_source_t::document,
+                 status);
+    check_mixed_input(entries.back().severity == notification_severity_t::success);
+    check_mixed_input(entries.back().source == notification_source_t::edit);
+    check_mixed_input(fixture.history.undo.size() == 1);
+    check_mixed_input(fixture.workspace.document_revision != fixture.history.document.revision);
+}
+
+TEST_CASE("Compose input history rebind failures preserve one document error",
+          "[compose-notification][compose-outcome]") {
+    compose_notification_fixture_t fixture;
+    (void)fixture.input(WORM_UI_COMPOSE_INPUT_DELETE_SELECTION);
+    (void)fixture.drain();
+    fixture.center.dismiss_all();
+    fixture.workspace.limits.maximum_charts = 0;
+    const auto status = fixture.input(WORM_UI_COMPOSE_INPUT_UNDO);
+    const auto entries = fixture.drain();
+    REQUIRE(entries.size() == 1);
+    expect_entry(entries.front(), notification_severity_t::error, notification_source_t::document,
+                 status);
+    check_mixed_input(fixture.history.undo.empty());
+    check_mixed_input(fixture.history.redo.size() == 1);
+    check_mixed_input(fixture.history.document.charts.front().measures.front().notes.size() == 1);
+}
+
+TEST_CASE("Compose paste keeps its original status after posting a rebind error",
+          "[compose-notification][compose-outcome]") {
+    dead_span_fixture_t fixture;
+    fixture.state.selected_notes = {object_id_t{1}};
+    auto copied = chart_clipboard_t::from(fixture.history.document, fixture.state,
+                                          fixture.history.document.revision);
+    REQUIRE(copied);
+    fixture.application.project.clipboard.chart_clipboard = std::move(*copied);
+    std::string status;
+    REQUIRE(
+        begin_compose_paste(fixture.application, fixture.history.document, fixture.state, status));
+    fixture.workspace.limits.maximum_charts = 0;
+    const auto returned = fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_PASTE_UPDATE,
+                                        .x_pixels = fixture.lane_x(),
+                                        .y_pixels = fixture.stop_band_y()},
+                                       {.kind = WORM_UI_COMPOSE_INPUT_PASTE_COMMIT}});
+    fixture.center.drain_inbox(notification_time_t{});
+    const auto entries = fixture.center.snapshot(notification_capacity);
+    REQUIRE(entries.size() == 2);
+    check_mixed_input(returned == "Selection pasted.");
+    expect_entry(entries.back(), notification_severity_t::success, notification_source_t::edit,
+                 returned);
+    check_mixed_input(entries.front().severity == notification_severity_t::error);
+    check_mixed_input(entries.front().source == notification_source_t::document);
+    check_mixed_input(fixture.history.undo.size() == 1);
+}
+
+TEST_CASE("Compose input binds the workspace before publishing mutation feedback",
+          "[compose-notification][compose-outcome][compose-publication-order]") {
+    compose_notification_fixture_t fixture{compose_notification_fixture_t::feedback_time};
+    compose_notification_fixture_t::feedback_probe = &fixture;
+    (void)fixture.input(WORM_UI_COMPOSE_INPUT_DELETE_SELECTION);
+    check_mixed_input(fixture.feedback_post_count == 1);
+    check_mixed_input(fixture.is_workspace_current_when_feedback_posted);
+    check_mixed_input(fixture.workspace.document_revision == fixture.history.document.revision);
+    check_mixed_input(fixture.history.undo.size() == 1);
 }

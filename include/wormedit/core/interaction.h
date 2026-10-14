@@ -491,7 +491,7 @@ using pending_hold_placement_preview_t = hold_placement_t<hold_preview_removals_
 struct pending_hold_t {
     local_position_t position;
     lane_id_t lane;
-    std::uint64_t document_revision{};
+    document_stamp_t stamp;
     std::optional<std::uint64_t> anchor_canvas_row;
     std::optional<std::uint64_t> preview_canvas_row;
     std::optional<local_position_t> preview_end;
@@ -517,7 +517,7 @@ struct note_duration_preview_t {
 
 struct pending_note_duration_gesture_t {
     object_id_t reference_note;
-    std::uint64_t document_revision{};
+    document_stamp_t stamp;
     std::vector<object_id_t> notes;
     local_position_t preview_end;
     std::vector<note_duration_preview_t> preview;
@@ -562,7 +562,7 @@ struct note_move_bgm_lane_preview_t {
 
 struct pending_note_move_gesture_t {
     object_id_t reference_note;
-    std::uint64_t document_revision{};
+    document_stamp_t stamp;
     std::vector<object_id_t> notes;
     local_position_t preview_position;
     std::vector<note_move_preview_t> preview;
@@ -580,7 +580,7 @@ struct pending_note_move_gesture_t {
 };
 
 struct pending_note_paint_gesture_t {
-    std::uint64_t document_revision{};
+    document_stamp_t stamp;
     std::shared_ptr<const std::vector<note_paint_target_t>> targets;
     std::unordered_set<paint_cell_key_t, paint_cell_hash_t> visited;
     lane_id_t last_lane;
@@ -593,13 +593,13 @@ struct pending_note_paint_gesture_t {
 };
 
 struct note_paint_gesture_preview_t {
-    std::uint64_t document_revision{};
+    document_stamp_t stamp;
     std::shared_ptr<const std::vector<note_paint_target_t>> targets;
 };
 
 struct pending_semantic_layer_paint_gesture_t {
     layer_id_t layer;
-    std::uint64_t document_revision{};
+    document_stamp_t stamp;
     std::shared_ptr<const std::vector<object_id_t>> notes;
     std::shared_ptr<const std::vector<object_id_t>> bgm_events;
     std::unordered_set<std::uint64_t> visited;
@@ -611,7 +611,7 @@ struct pending_semantic_layer_paint_gesture_t {
 struct editor_hit_test_index_t;
 
 struct pending_space_range_selection_t {
-    std::uint64_t document_revision{};
+    document_stamp_t stamp;
     std::shared_ptr<const editor_hit_test_index_t> hit_index;
     local_position_t anchor;
     std::uint64_t anchor_canvas_row{};
@@ -621,7 +621,7 @@ struct pending_space_range_selection_t {
 };
 
 struct space_range_selection_preview_t {
-    std::uint64_t document_revision{};
+    document_stamp_t stamp;
     local_position_t anchor;
     local_position_t cursor;
     std::uint64_t anchor_canvas_row{};
@@ -641,7 +641,7 @@ struct canvas_row_span_t {
 };
 
 struct editor_area_selection_preview_t {
-    std::uint64_t document_revision{};
+    document_stamp_t stamp;
     double left_pixels{};
     double top_pixels{};
     double right_pixels{};
@@ -651,7 +651,7 @@ struct editor_area_selection_preview_t {
 };
 
 struct pending_editor_area_selection_t {
-    std::uint64_t document_revision{};
+    document_stamp_t stamp;
     std::shared_ptr<const editor_hit_test_index_t> hit_index;
     double anchor_x_pixels{};
     double anchor_y_pixels{};

@@ -1,3 +1,4 @@
+#include "../support/stale_action_assertions.h"
 #include "sys/tap_timing_runtime.h"
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -30,6 +31,27 @@ void check_timing_estimate(const tap_timing_runtime_t& runtime) {
     CHECK(state.tap_count == 10);
 }
 } // namespace
+
+TEST_CASE("Tap timing captured proposal rejects a stale Apply request without an undo",
+          "[sys][tap-timing][tap-stamp]") {
+    tap_timing_runtime_t runtime;
+    record_timing_taps(runtime);
+    song_document_t song{.id = song_id_t{1}, .revision = 2,
+        .charts = {{.id = chart_id_t{1}, .divisions_per_standard_measure = 960,
+            .measures = {{.id = measure_id_t{10}}, {.id = measure_id_t{11}}},
+            .lane_layouts = {{.id = object_id_t{20}, .position = {measure_id_t{10}, 0},
+                .layout = {.profile_id = "tap-runtime", .lanes = {{.id = lane_id_t{30}, .name = "Key"}}}}}}}};
+    song.charts.front().bpms.push_back({.id = object_id_t{21}, .position = {measure_id_t{10}, 0},
+                                       .beats_per_minute = {120, 1}});
+    auto history = document_history_t::from(std::move(song));
+    runtime.prepare_apply(history.document, false);
+    REQUIRE(runtime.apply_proposal().has_value());
+    const auto result = runtime.apply(history, tap_clock(7'000'000'000, 300'000), 3, false);
+    REQUIRE_FALSE(result);
+    test::check_stale_action_message(runtime.state().status, "Tap timing result");
+    CHECK(history.undo.empty());
+    CHECK_FALSE(runtime.apply_proposal().has_value());
+}
 
 TEST_CASE("Tap timing reconstructs event-time music frames at every transport rate", "[sys][tap-timing]") {
     for (const rational_t rate : {rational_t{1, 10}, {1, 4}, {1, 2}, {9, 10}, {1, 1}}) {

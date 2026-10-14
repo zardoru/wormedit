@@ -84,11 +84,11 @@ void check_bgm_only_chart(const document_history_t& history, std::size_t expecte
 }
 
 void require_column_count(document_history_t& history, std::size_t count) {
-    REQUIRE(apply_bgm_column_count(history, history.document.revision, chart_id_t{2}, count));
+    REQUIRE(apply_bgm_column_count(history, chart_id_t{2}, count));
 }
 
 void check_blocked_shrink(document_history_t& history) {
-    const auto blocked = apply_bgm_column_count(history, history.document.revision,
+    const auto blocked = apply_bgm_column_count(history,
                                                 chart_id_t{2}, 1);
     CHECK_FALSE(blocked);
     REQUIRE_FALSE(blocked.diagnostics.empty());
@@ -101,7 +101,7 @@ void check_blocked_shrink(document_history_t& history) {
 TEST_CASE("BGM column count grows with fresh IDs orders and names",
           "[unit][core][bgm-columns]") {
     auto history = document_history_t::from(column_song());
-    REQUIRE(apply_bgm_column_count(history, 4, chart_id_t{2}, 4));
+    REQUIRE(apply_bgm_column_count(history, chart_id_t{2}, 4));
     const auto& lanes = history.document.charts.front().bgm_source_lanes;
     REQUIRE(lanes.size() == 4);
     CHECK(lanes[3].name == "BGM 4");
@@ -115,7 +115,7 @@ TEST_CASE("BGM-only BMS charts change column count without inventing playable la
           "[unit][core][bgm-columns]") {
     auto history = document_history_t::from(bgm_only_song());
 
-    REQUIRE(apply_bgm_column_count(history, history.document.revision, chart_id_t{2}, 3));
+    REQUIRE(apply_bgm_column_count(history, chart_id_t{2}, 3));
     check_bgm_only_chart(history, 3);
     REQUIRE(undo_document_command(history));
     check_bgm_only_chart(history, 1);
@@ -136,21 +136,20 @@ TEST_CASE("BGM column count shrinks empty trailing columns only",
     check_blocked_shrink(history);
 }
 
-TEST_CASE("BGM column count enforces its range and revision",
+TEST_CASE("BGM column count enforces its range and chart",
           "[unit][core][bgm-columns]") {
     auto history = document_history_t::from(column_song());
-    CHECK_FALSE(apply_bgm_column_count(history, 4, chart_id_t{2}, 0));
-    CHECK_FALSE(apply_bgm_column_count(history, 4, chart_id_t{2}, 129));
-    CHECK_FALSE(apply_bgm_column_count(history, 3, chart_id_t{2}, 5));
-    CHECK_FALSE(apply_bgm_column_count(history, 4, chart_id_t{99}, 5));
-    CHECK(apply_bgm_column_count(history, 4, chart_id_t{2}, 128));
+    CHECK_FALSE(apply_bgm_column_count(history, chart_id_t{2}, 0));
+    CHECK_FALSE(apply_bgm_column_count(history, chart_id_t{2}, 129));
+    CHECK_FALSE(apply_bgm_column_count(history, chart_id_t{99}, 5));
+    CHECK(apply_bgm_column_count(history, chart_id_t{2}, 128));
     CHECK(lane_count(history) == 128);
 }
 
 TEST_CASE("BGM column count changes undo and redo as one step",
           "[unit][core][bgm-columns]") {
     auto history = document_history_t::from(column_song());
-    REQUIRE(apply_bgm_column_count(history, 4, chart_id_t{2}, 6));
+    REQUIRE(apply_bgm_column_count(history, chart_id_t{2}, 6));
     REQUIRE(undo_document_command(history));
     CHECK(lane_count(history) == 1);
     REQUIRE(redo_document_command(history));
@@ -162,7 +161,7 @@ TEST_CASE("osu!mania BGM column growth preserves samples and undoes as one step"
     auto song = osu_mania_column_song();
     auto history = document_history_t::from(std::move(song));
 
-    REQUIRE(apply_bgm_column_count(history, history.document.revision, chart_id_t{2}, 4));
+    REQUIRE(apply_bgm_column_count(history, chart_id_t{2}, 4));
     CHECK(lane_count(history) == 4);
     check_original_bgm_event(history.document.charts.front());
     CHECK(history.document.charts.front().measures.front().bgm_events.front().sound ==
@@ -181,7 +180,7 @@ TEST_CASE("BGM column count rejects BMSON without changing its lanes",
     song.charts.front().source_family = format_family_t::bmson;
     auto history = document_history_t::from(std::move(song));
     const auto revision = history.document.revision;
-    const auto result = apply_bgm_column_count(history, revision, chart_id_t{2}, 6);
+    const auto result = apply_bgm_column_count(history, chart_id_t{2}, 6);
     CHECK_FALSE(result.applied);
     REQUIRE(result.diagnostics.size() == 1);
     CHECK(result.diagnostics.front().message ==

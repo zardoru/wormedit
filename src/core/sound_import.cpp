@@ -294,7 +294,7 @@ auto import_entry(document_history_t& draft, const bulk_sound_import_entry_t& en
                   document_command_result_t& result) -> bool {
     auto asset = entry.asset;
     asset.role = resource_role_t::sample;
-    const auto imported = apply_resource_asset_import(draft, draft.document.revision, asset);
+    const auto imported = apply_resource_asset_import(draft, asset);
     if (!imported.applied) {
         result.diagnostics.insert(result.diagnostics.end(), imported.diagnostics.begin(),
                                   imported.diagnostics.end());
@@ -310,7 +310,7 @@ auto import_entry(document_history_t& draft, const bulk_sound_import_entry_t& en
             {format_family_t::bms, *bms_identifier, "WAV"});
     }
     const auto metadata = apply_resource_sound_metadata(
-        draft, draft.document.revision,
+        draft,
         {.resource = resource_id, .kind = entry.kind, .tags = entry.tags});
     if (!metadata.diagnostics.empty()) {
         result.diagnostics.insert(result.diagnostics.end(), metadata.diagnostics.begin(),
@@ -436,14 +436,10 @@ auto apply_import_groups(song_document_t& song, const bulk_sound_import_action_t
 
 } // namespace
 
-auto apply_bulk_sound_import(document_history_t& history, std::uint64_t expected_revision,
+auto apply_bulk_sound_import(document_history_t& history,
                              const bulk_sound_import_action_t& action)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id, "sound import document revision is stale");
-        return result;
-    }
     if (!validate_batch(action, result)) return result;
     const auto identifiers = assigned_bms_ids(history.document, action, result);
     if (!identifiers) return result;

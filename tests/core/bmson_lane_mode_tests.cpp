@@ -25,7 +25,7 @@ auto fixture() -> song_document_t {
 auto change(document_history_t& history, std::size_t channel, bmson_channel_lane_mode_t mode,
             bool restart = false, note_to_bgm_policy_t policy = {}) -> document_command_result_t {
     const auto& chart = history.document.charts.front();
-    return set_bmson_channel_lane_mode(history, history.document.revision, chart.id,
+    return set_bmson_channel_lane_mode(history, chart.id,
         chart.sound_channels.at(channel).id, mode, restart, policy);
 }
 auto snapshot(const document_history_t& history) -> std::string {
@@ -78,15 +78,13 @@ TEST_CASE("BMSON lane_mode continuation refusal is atomic and conversion is undo
     check_mode(write_native_project(restored).bytes == before);
 }
 
-TEST_CASE("BMSON lane_mode stale format unknown and capacity failures change nothing", "[core][bmson][lane_mode]") {
+TEST_CASE("BMSON lane_mode format unknown and capacity failures change nothing", "[core][bmson][lane_mode]") {
     using namespace wormedit;
     auto history = document_history_t::from(fixture());
     require_mode(change(history, 0, bmson_channel_lane_mode_t::stem).applied);
     const auto before = snapshot(history);
     const auto& chart = history.document.charts.front();
-    check_mode(!set_bmson_channel_lane_mode(history, history.document.revision - 1,
-        chart.id, chart.sound_channels.front().id, bmson_channel_lane_mode_t::packed).applied);
-    check_mode(!set_bmson_channel_lane_mode(history, history.document.revision,
+    check_mode(!set_bmson_channel_lane_mode(history,
         chart.id, object_id_t{99999}, bmson_channel_lane_mode_t::packed).applied);
     check_mode(!change(history, 0, bmson_channel_lane_mode_t::packed, false, {.max_lanes = 0}).applied);
     check_mode(snapshot(history) == before && history.undo.size() == 1);

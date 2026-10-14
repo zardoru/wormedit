@@ -17,7 +17,7 @@ enum class bmson_channel_lane_mode_t { stem, packed };
 // explicitly confirms converting every continuation in this channel to a restart.
 // The complete conversion, including resource kind, is one atomic undo step.
 [[nodiscard]] auto set_bmson_channel_lane_mode(
-    document_history_t& history, std::uint64_t expected_revision, chart_id_t chart,
+    document_history_t& history, chart_id_t chart,
     object_id_t channel, bmson_channel_lane_mode_t mode,
     bool convert_continuations_to_restarts = false, note_to_bgm_policy_t policy = {})
     -> document_command_result_t;

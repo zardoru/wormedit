@@ -37,8 +37,7 @@ inline constexpr std::size_t native_unanchored_virtual_measure_count = 64;
 // or when it has no time anchor to bound it (native chart without timed BGM).
 [[nodiscard]] auto virtual_tail_measure_limit(const chart_document_t& chart) -> std::size_t;
 [[nodiscard]] auto has_chart_virtual_tail(const chart_document_t& chart) -> bool;
-// Compatibility for the coordinated sys/UI migration.
-inline auto chart_has_virtual_tail(const chart_document_t& chart) -> bool { return has_chart_virtual_tail(chart); }
+
 // Recomputes chart.virtual_tail_measures for every chart from the document's BGM.
 void sync_virtual_tails(song_document_t& document);
 

@@ -79,13 +79,9 @@ auto shrink_columns(chart_document_t& chart, std::size_t count, document_command
 
 } // namespace
 
-auto apply_bgm_column_count(document_history_t& history, std::uint64_t expected_revision,
+auto apply_bgm_column_count(document_history_t& history,
                             chart_id_t chart, std::size_t count) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id, "BGM column document revision is stale");
-        return result;
-    }
     if (count < minimum_bgm_column_count || count > maximum_bgm_column_count) {
         reject(result, diagnostic_code_t::invalid_id, "BGM column count must be 1 to 128");
         return result;

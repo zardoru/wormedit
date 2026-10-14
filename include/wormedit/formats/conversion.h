@@ -130,8 +130,6 @@ struct conversion_result_t {
 
 [[nodiscard]] auto is_conversion_needs_slice_spans(const song_document_t& song,
     const conversion_request_t& request) -> bool;
-// Compatibility for the coordinated sys/UI migration.
-inline auto conversion_needs_slice_spans(const song_document_t& song, const conversion_request_t& request) -> bool { return is_conversion_needs_slice_spans(song, request); }
 
 // Builds a detached, bounded output plan. It never mutates the source document
 // or publishes files. Every serialized artifact is parsed again before the

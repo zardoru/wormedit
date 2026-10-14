@@ -16,8 +16,6 @@ namespace wormedit {
 // Only all-key layouts can use the same-count key-profile switcher. Scratch and auxiliary
 // roles need an explicit layout edit, rather than being relabeled as ordinary keys.
 [[nodiscard]] auto can_use_lane_key_profiles(const lane_layout_t& layout) -> bool;
-// Compatibility for the coordinated sys/UI migration.
-inline auto lane_layout_supports_key_profiles(const lane_layout_t& layout) -> bool { return can_use_lane_key_profiles(layout); }
 
 // Built-in profiles offered when a chart has no playable layout yet.
 [[nodiscard]] auto lane_profile_choices() -> std::vector<lane_input_profile_t>;
@@ -34,8 +32,7 @@ inline auto lane_layout_supports_key_profiles(const lane_layout_t& layout) -> bo
 
 // Switches the layout segment active at `position` to `target` as one undoable command. Notes
 // never move; lane IDs are unchanged.
-[[nodiscard]] auto apply_lane_profile_switch(document_history_t& history,
-                                             std::uint64_t expected_revision, chart_id_t chart,
+[[nodiscard]] auto apply_lane_profile_switch(document_history_t& history, chart_id_t chart,
                                              local_position_t position,
                                              const lane_layout_t& target)
     -> document_command_result_t;

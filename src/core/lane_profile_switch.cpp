@@ -11,6 +11,34 @@
 #include <utility>
 
 namespace wormedit {
+
+// Key bindings for a built-in BMS layout whose lane IDs were just assigned, for a chart that has
+// none; the built-in lanes and the layout's lanes pair up by display order.
+auto input_profile_t::with_defaults(const chart_document_t& chart, const lane_layout_t& layout)
+    -> std::optional<input_profile_t> {
+    if (!chart.input_profile.bindings.empty())
+        return std::nullopt;
+    for (const auto& builtin : wormedit::built_in_bms_lane_profiles()) {
+        if (builtin.profile.layout.profile_id != layout.profile_id)
+            continue;
+        lane_layout_t source{.lanes = builtin.profile.layout.lanes};
+        auto target = layout.lanes;
+        std::ranges::stable_sort(source.lanes, {}, &lane_definition_t::display_order);
+        std::ranges::stable_sort(target, {}, &lane_definition_t::display_order);
+        if (source.lanes.size() != target.size())
+            return std::nullopt;
+        auto input = builtin.profile.input;
+        for (auto& binding : input.bindings) {
+            const auto found = source.find(binding.lane);
+            if (found == nullptr)
+                return std::nullopt;
+            binding.lane = target[static_cast<std::size_t>(found - source.lanes.data())].id;
+        }
+        return input;
+    }
+    return std::nullopt;
+}
+
 namespace {
 
 constexpr std::array<std::string_view, 3> step_types{"pump-single", "pump-double", "dance-solo"};
@@ -46,8 +74,8 @@ auto materialize_initial_profile_target(document_history_t& scratch, chart_id_t 
     if (found->measures.empty()) {
         if (!has_chart_virtual_tail(*found) || virtual_tail_measure_limit(*found) == 0)
             return std::nullopt;
-        const auto materialized = apply_measure_edit(
-            scratch, scratch.document.revision, materialize_measures_action_t{chart, 1});
+        const auto materialized =
+            apply_measure_edit(scratch, materialize_measures_action_t{chart, 1});
         if (!materialized.applied) return std::nullopt;
         found = scratch.document.find_chart(chart);
         return local_position_t{found->measures.front().id, 0};
@@ -111,8 +139,10 @@ auto insert_initial_lane_profile(document_history_t& history, chart_id_t chart,
     const auto bindings = found->input_profile.bindings.empty()
         ? std::optional{prepared->second} : std::nullopt;
     const auto inserted = apply_lane_layout_edit(
-        scratch, scratch.document.revision,
-        insert_lane_layout_action_t{chart, *target_position, prepared->first, bindings});
+        scratch,
+        wormedit::insert_edit_t<wormedit::lane_layout_edit_value_t>{
+            .chart = chart,
+            .value = {.position = *target_position, .layout = prepared->first, .input = bindings}});
     if (!inserted.applied) return inserted;
     auto transaction = document_command_transaction_t::from(history);
     transaction.adopt_document(std::move(scratch.document));
@@ -227,14 +257,10 @@ auto retarget_lane_layout(const lane_layout_t& current, const lane_layout_t& tar
     return result;
 }
 
-auto apply_lane_profile_switch(document_history_t& history, std::uint64_t expected_revision,
+auto apply_lane_profile_switch(document_history_t& history,
                                chart_id_t chart, local_position_t position,
                                const lane_layout_t& target) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id, "Lane profile switch has a stale document revision.");
-        return result;
-    }
     const auto found = history.document.find_chart(chart);
     if (found == nullptr) {
         reject(result, diagnostic_code_t::invalid_id, "The selected difficulty is no longer available.");
@@ -247,8 +273,9 @@ auto apply_lane_profile_switch(document_history_t& history, std::uint64_t expect
         reject(result, diagnostic_code_t::invalid_id, "That profile has a different number of lanes or incompatible lane roles.");
         return result;
     }
-    return apply_lane_layout_edit(history, expected_revision,
-                                  update_lane_layout_action_t{chart, segment->id, std::move(*layout)});
+    return apply_lane_layout_edit(
+        history, wormedit::update_edit_t<wormedit::lane_layout_edit_value_t>{
+                     .chart = chart, .id = segment->id, .value = {.layout = std::move(*layout)}});
 }
 
 } // namespace wormedit

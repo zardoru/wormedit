@@ -20,6 +20,8 @@
 
 namespace wormedit {
 
+struct chart_document_t;
+
 inline constexpr std::size_t default_maximum_chart_objects = 1'000'000;
 
 struct signed_rational_t {
@@ -234,13 +236,19 @@ struct lane_binding_t {
     physical_key_t key{physical_key_t::unknown};
     lane_id_t lane;
     std::optional<std::uint32_t> focused_stage;
+    auto operator==(const lane_binding_t&) const -> bool = default;
 };
 
 struct input_profile_t {
+    [[nodiscard]] static auto with_defaults(const chart_document_t& chart,
+                                            const lane_layout_t& layout)
+        -> std::optional<input_profile_t>;
+
     std::string profile_id;
     std::vector<lane_binding_t> bindings;
     std::uint32_t stage_count{1};
     bool requires_focused_stage{false};
+    auto operator==(const input_profile_t&) const -> bool = default;
 };
 
 struct semantic_layer_t {
@@ -970,8 +978,6 @@ struct quantize_request_t {
 
 [[nodiscard]] auto error(diagnostic_code_t code, std::string message,
                          std::optional<object_id_t> object = std::nullopt) -> diagnostic_t;
-[[nodiscard]] auto find_chart(const song_document_t& document, chart_id_t id) -> const chart_document_t*;
-[[nodiscard]] auto find_chart(song_document_t& document, chart_id_t id) -> chart_document_t*;
 
 struct conversion_statistics_t {
     std::size_t preserved_fields{};
@@ -1047,18 +1053,6 @@ struct redivision_plan_t {
 };
 using redivision_outcome_t = diagnosed_t<redivision_plan_t>;
 
-struct redivision_result_t {
-    [[nodiscard]] static auto from(redivision_outcome_t&& outcome) -> redivision_result_t;
-
-    std::optional<chart_document_t> chart;
-    std::vector<redivision_move_t> moves;
-    diagnostic_list_t diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return chart.has_value();
-    }
-};
-
 [[nodiscard]] auto layout_at(const chart_document_t& chart, const measure_index_t& index,
     local_position_t position) -> const lane_layout_t*;
 [[nodiscard]] auto layout_at(const chart_document_t& chart, const measure_index_t& index,
@@ -1071,8 +1065,5 @@ struct redivision_result_t {
 [[nodiscard]] auto validate_input_profile(const lane_layout_t& layout,
                                           const input_profile_t& profile) -> diagnostic_list_t;
 [[nodiscard]] auto validate_document(const song_document_t& song) -> diagnostic_list_t;
-[[nodiscard]] auto redivide_chart_exact(const chart_document_t& chart,
-                                        std::uint64_t target_divisions_per_standard_measure)
-    -> redivision_result_t;
 
 } // namespace wormedit

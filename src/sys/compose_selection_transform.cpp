@@ -13,7 +13,8 @@ namespace {
 auto command_status(const document_command_result_t& result, const char* applied,
                     const char* unchanged, notification_severity_t* severity) -> std::string {
     if (!result.diagnostics.empty() && !result.applied) {
-        set_feedback_severity(severity, projection_diagnostic_severity(result.diagnostics.front().severity));
+        set_feedback_severity(severity,
+                              to_notification_severity(result.diagnostics.front().severity));
         return result.diagnostics.front().message;
     }
     set_feedback_severity(severity, result.applied ? notification_severity_t::success
@@ -30,7 +31,7 @@ auto shift_selection(document_history_t& history, const editor_interaction_state
     const auto step = static_cast<std::int64_t>(chart.divisions_per_standard_measure /
                                                 state.active_snap_denominator);
     const auto result = apply_shift_selection(
-        history, history.document.revision,
+        history,
         {.chart = state.chart, .notes = notes, .rows = later ? step : -step});
     return command_status(result.command, "Selection shifted by one snap step.",
                           "Selection did not move.", severity);
@@ -65,9 +66,8 @@ auto apply_selection_transform(document_history_t& history, const editor_interac
     const auto revision = history.document.revision;
     switch (transform) {
     case selection_transform_t::mirror:
-        return command_status(
-            apply_lane_mirror(history, revision, {.chart = state.chart, .notes = notes}),
-            "Selection mirrored.", "Mirroring moved no notes.", severity);
+        return command_status(apply_lane_mirror(history, {.chart = state.chart, .notes = notes}),
+                              "Selection mirrored.", "Mirroring moved no notes.", severity);
     case selection_transform_t::rotate_left:
     case selection_transform_t::rotate_right: {
         const auto* segment = active_lane_layout_segment(*chart, state.cursor);
@@ -75,11 +75,10 @@ auto apply_selection_transform(document_history_t& history, const editor_interac
         auto permutation = rotate_lane_permutation(segment->layout,
                                                    transform == selection_transform_t::rotate_left);
         if (permutation.size() < 2) return "The layout has no lanes to rotate.";
-        return command_status(
-            apply_lane_remap(history, revision,
-                             {.chart = state.chart, .notes = notes,
-                              .permutation = std::move(permutation)}),
-            "Selection rotated.", "Rotation moved no notes.", severity);
+        return command_status(apply_lane_remap(history, {.chart = state.chart,
+                                                         .notes = notes,
+                                                         .permutation = std::move(permutation)}),
+                              "Selection rotated.", "Rotation moved no notes.", severity);
     }
     case selection_transform_t::shift_earlier:
     case selection_transform_t::shift_later:

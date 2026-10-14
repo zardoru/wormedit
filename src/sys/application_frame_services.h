@@ -43,9 +43,9 @@ void tick_application_autosave(native_project_autosave_loop_t& autosave_loop,
                                notification_sink_t& notifications,
                                const std::filesystem::path& asset_base = {});
 
-void rebind_workspace_after_edit(workspace_controller_t& workspace,
-                                 const document_history_t& history,
-                                 notification_sink_t notifications, workspace_edit_feedback_t& feedback);
+void rebind_workspace_after_edit(workspace_controller_t& workspace, document_history_t& history,
+                                 notification_sink_t notifications,
+                                 workspace_edit_feedback_t& feedback);
 
 void render_application_frame(WormWindow& window, std::uint64_t frame_start_ns);
 

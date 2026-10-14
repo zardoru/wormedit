@@ -1,8 +1,9 @@
 #pragma once
-#include "sys/metronome.h"
-#include <wormedit/audio/playback_rate.h>
 #include "sys/bookmark_navigation.h"
+#include "sys/compose_action_outcome.h"
+#include "sys/metronome.h"
 #include <algorithm>
+#include <wormedit/audio/playback_rate.h>
 
 #include "core/interaction_context.h"
 
@@ -434,9 +435,9 @@ struct application_command_services_t {
     std::function<double(std::uint64_t, std::uint64_t, std::uint64_t)> compose_bgm_lane_width;
     std::function<std::string()> transport_play_pause;
     std::function<std::string()> transport_play_from_start;
-    std::function<std::string(std::uint64_t)> transport_seek;
+    std::function<compose_action_outcome_t(std::uint64_t)> transport_seek;
     std::function<std::optional<std::int64_t>()> transport_audio_milliseconds;
-    std::function<std::string(std::int64_t)> transport_seek_audio_milliseconds;
+    std::function<compose_action_outcome_t(std::int64_t)> transport_seek_audio_milliseconds;
     std::function<void()> transport_stop;
     std::function<bool(wormedit::chart_id_t, std::uint64_t, std::uint64_t, std::uint64_t, bool)>
         transport_set_loop_selection;
@@ -460,8 +461,7 @@ struct application_command_state_t {
         std::string message;
     };
     struct quantize_editor_t {
-        wormedit::song_id_t song;
-        wormedit::chart_id_t chart;
+        wormedit::chart_stamp_t stamp;
         wormedit::quantize_request_t request;
         std::optional<std::size_t> preset_index;
         bool preview_enabled{};
@@ -485,27 +485,27 @@ struct application_command_state_t {
         std::vector<WormUiComposePasteGhostView> ghosts;
     };
     struct bmson_marker_draft_t {
-        wormedit::chart_id_t chart;
-        std::uint64_t revision{};
+        wormedit::chart_stamp_t stamp;
         wormedit::object_id_t reference;
         std::vector<wormedit::bmson_sound_marker_insertion_t> markers;
+        wormedit::diagnostic_list_t diagnostics;
     };
     struct bmson_razor_stroke_t {
-        wormedit::chart_id_t chart;
-        std::uint64_t revision{};
+        wormedit::chart_stamp_t stamp;
         wormedit::object_id_t reference;
         std::uint64_t snap_denominator{};
         wormedit::local_position_t last_position;
+        wormedit::diagnostic_list_t diagnostics;
     };
     struct bga_draw_stroke_t {
-        wormedit::chart_id_t chart;
-        uint64_t revision{};
+        wormedit::chart_stamp_t stamp;
         std::optional<wormedit::resource_id_t> resource;
         bool erase{};
         uint64_t last_row{};
         wormedit::measure_index_t geometry;
         std::vector<wormedit::bga_stroke_target_t> targets;
         std::set<std::pair<uint64_t, uint8_t>> visited;
+        wormedit::diagnostic_list_t diagnostics;
     };
     struct minimap_start_frame_t {
         wormedit::chart_id_t chart;
@@ -536,8 +536,6 @@ struct application_command_state_t {
         std::size_t transport_rate_index{static_cast<std::size_t>(wormedit::audio::playback_rate_id_t::normal)};
         bool transport_keep_pitch{};
         bool transport_keep_pitch_available{};
-        // Production seek services publish feedback; legacy/test callbacks leave this false.
-        bool transport_seek_posts_feedback{};
         bool timing_settings_visible{};
     } preferences;
     // Resolved from display preferences and the field skin, outside the project lifetime.
@@ -709,10 +707,10 @@ auto editor_interaction_has_pending_gesture(
 auto begin_compose_paste(application_command_state_t& application_state,
     const wormedit::song_document_t& document, const wormedit::editor_interaction_state_t& state,
     std::string& status) -> bool;
-auto update_compose_paste(application_command_state_t& application_state,
+auto revise_compose_paste(application_command_state_t& application_state,
     const wormedit::song_document_t& document, wormedit::chart_id_t chart,
-    wormedit::local_position_t anchor) -> bool;
-auto commit_compose_paste(application_command_state_t& application_state,
+    wormedit::local_position_t anchor, std::string* failure = nullptr) -> bool;
+auto apply_compose_paste(application_command_state_t& application_state,
     wormedit::document_history_t& history, wormedit::editor_interaction_state_t& state,
     std::string& status, wormedit::notification_severity_t* severity = nullptr) -> bool;
 

@@ -244,18 +244,18 @@ auto apply_quantization(conversion_context_t& context, song_document_t& prepared
                            "Quantization chart was not found in the detached document");
             return false;
         }
-        auto quantized = quantize_chart_exact(*found, *context.request.quantization);
+        auto quantized = quantization_plan_t::from(*found, *context.request.quantization);
         for (const auto& diagnostic : quantized.diagnostics) {
             add_diagnostic(context.result, diagnostic.severity,
                            conversion_diagnostic_code_t::transform_failed,
                            conversion_stage_t::transform, context.request.target, chart_id,
                            diagnostic.message);
         }
-        if (!quantized) {
+        if (!quantized.value.chart) {
             return false;
         }
-        const auto moved = quantized.resolution_moves.size() + quantized.quantized_moves.size();
-        *found = std::move(*quantized.chart);
+        const auto moved = quantized.value.resolution_moves.size() + quantized.value.quantized_moves.size();
+        *found = std::move(*quantized.value.chart);
         add_diagnostic(context.result, diagnostic_severity_t::info,
                        conversion_diagnostic_code_t::target_diagnostic,
                        conversion_stage_t::transform, context.request.target, chart_id,

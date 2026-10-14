@@ -24,7 +24,7 @@ auto dispatch_compose_navigation_actions(const wormedit::editor_navigation_actio
                                          application_command_state_t* application = nullptr,
                                          const wormedit::notification_sink_t* notifications = nullptr)
     -> std::string;
-auto stage_bmson_bgm_marker(const wormedit::document_history_t& history,
+auto propose_bmson_bgm_marker(const wormedit::document_history_t& history,
                             const wormedit::editor_interaction_state_t& state,
                             application_command_state_t& application_state,
                             wormedit::object_id_t reference, wormedit::local_position_t position,

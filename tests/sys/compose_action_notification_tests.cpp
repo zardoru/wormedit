@@ -1,3 +1,4 @@
+#include "sys/compose_sound_actions.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "sys/application_command_dispatch.h"
 #include "sys/compose_actions.h"
@@ -101,9 +102,11 @@ struct action_notification_fixture_t {
         value.compose_input_document_revision = history.document.revision;
         return value;
     }
-    auto dispatch(const WormUiWorkspaceAction& value) -> std::string {
+    auto dispatch(const WormUiWorkspaceAction& value, bool post_notifications = true)
+        -> std::string {
         return dispatch_compose_view_action(value, history, workspace, state, 800, application,
-            asset_base, scheduler, resource_copy, export_runtime, false, sink);
+                                            asset_base, scheduler, resource_copy, export_runtime,
+                                            false, sink, post_notifications);
     }
     auto dispatch_workspace(const WormUiWorkspaceAction& value,
                             std::optional<editor_interaction_state_t>& interaction) -> bool {
@@ -274,7 +277,8 @@ TEST_CASE("Compose dispatcher rejects stale actions without changing history", "
     auto action = fixture.action(WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER);
     --action.compose_input_document_revision;
     const auto revision = fixture.history.document.revision;
-    check_action(fixture.dispatch(action) == "Compose view action ignored because the chart or document revision changed.");
+    check_action(fixture.dispatch(action) ==
+                 "Compose view action ignored because the project, chart or document revision changed.");
     check_action(fixture.history.document.revision == revision);
     check_action(fixture.history.undo.empty());
     check_action(fixture.history.document.charts.front().semantic_layers.empty());
@@ -289,6 +293,36 @@ TEST_CASE("Compose NONE remains quiet even with an absent chart", "[compose-acti
     check_action(fixture.dispatch(WormUiWorkspaceAction{}) == "");
     check_action(fixture.entries().empty());
     check_action(fixture.history.undo.empty());
+}
+
+TEST_CASE("Compose edits reject a stale boundary before reaching synchronous handlers",
+          "[compose-action-notifications]") {
+    action_notification_fixture_t fixture;
+    const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER,
+                               WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER,
+                               WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS,
+                               WORM_UI_COMPOSE_ACTION_MOVE_BAR_LINE,
+                               WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE,
+                               WORM_UI_COMPOSE_ACTION_TRANSFORM_MIRROR,
+                               WORM_UI_COMPOSE_ACTION_PREVIEW_SV_RECIPE_FORM,
+                               WORM_UI_COMPOSE_ACTION_APPLY_SV_RECIPE_FORM,
+                               WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP);
+    auto action = fixture.action(kind);
+    std::snprintf(action.timing_meter_numerator_text, sizeof(action.timing_meter_numerator_text), "3");
+    std::snprintf(action.timing_meter_denominator_text, sizeof(action.timing_meter_denominator_text), "4");
+    const std::uint64_t measure = 1;
+    action.compose_measure_ids = &measure;
+    action.compose_measure_id_count = 1;
+    --action.compose_input_document_revision;
+    check_action(fixture.dispatch(action) ==
+                 "Compose view action ignored because the project, chart or document revision changed.");
+    check_action(fixture.history.document.revision == 1);
+    check_action(fixture.history.undo.empty());
+    check_action(fixture.history.document.charts.front().measures.front().definition.meter ==
+                 meter_t{4, 4});
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::warning);
 }
 
 TEST_CASE("Compose area navigation and validation keep typed source and unchanged history", "[compose-action-notifications]") {
@@ -331,21 +365,25 @@ TEST_CASE("Compose BGA no-op remains producer-owned and posts info once", "[comp
     check_action(fixture.history.undo.empty());
 }
 
-TEST_CASE("Compose bookmark seek callback owns its feedback", "[compose-action-notifications]") {
+TEST_CASE("Compose bookmark seek feedback is finished once and respects muting",
+          "[compose-action-notifications]") {
     action_notification_fixture_t fixture;
     fixture.history.document.charts.front().bookmarks = {{.id = object_id_t{4},
         .anchor = marker_anchor_t::beat, .position = local_position_t{measure_id_t{1}, 480}}};
     fixture.application.services.transport_preview_playing = [] { return true; };
-    fixture.application.preferences.transport_seek_posts_feedback = true;
     fixture.application.services.transport_seek = [&](std::uint64_t) {
-        fixture.sink.post(notification_severity_t::hint, notification_source_t::audio, "Playback cursor moved.");
-        return std::string{"Playback cursor moved."};
+        return compose_action_outcome_t::from(
+            std::string{"Playback cursor moved."}, notification_severity_t::hint,
+            notification_source_t::audio, compose_feedback_delivery_t::notification);
     };
     auto action = fixture.action(WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK);
     action.compose_bookmark_id = 4;
-    check_action(fixture.dispatch(action) == "Playback cursor moved.");
+    const auto post_notifications = GENERATE(true, false);
+    check_action(fixture.dispatch(action, post_notifications) == "Playback cursor moved.");
     const auto entries = fixture.entries();
-    require_action(entries.size() == 1);
+    require_action(entries.size() == (post_notifications ? 1 : 0));
+    if (!post_notifications)
+        return;
     check_action(entries.front().count == 1);
     check_action(entries.front().source == notification_source_t::audio);
     check_action(fixture.history.undo.empty());
@@ -1141,7 +1179,7 @@ TEST_CASE("BMSON editor export publishes sliced audio and reports conversion los
     require_action_false(parsed.has_errors());
     fixture.history = document_history_t::from(*parsed.song);
     if (other_selected_chart) {
-        const auto added = apply_new_chart_command(fixture.history, fixture.history.document.revision);
+        const auto added = apply_new_chart_command(fixture.history);
         INFO((added.command.diagnostics.empty() ? "" : added.command.diagnostics.front().message));
         require_action(static_cast<bool>(added));
         fixture.history.undo.clear();
@@ -1268,8 +1306,8 @@ void seed_quantize_rename(action_notification_fixture_t& fixture) {
          .tie = quantization_tie_t::later,
          .holds = quantization_hold_t::start_only}};
     fixture.application.project.quantize.quantize_editor =
-        application_command_state_t::quantize_editor_t{.song = fixture.history.document.id,
-                                                       .chart = fixture.state.chart,
+        application_command_state_t::quantize_editor_t{
+                                                       .stamp = chart_stamp_t::from(fixture.history.document, fixture.state.chart),
                                                        .request = {.divisions = 16},
                                                        .preset_index = 0};
 }
@@ -1350,15 +1388,23 @@ auto draw_bgm_input(bga_input_fixture_t& fixture, WormUiComposeInputKind kind, u
     value.compose_inputs[0].resource_id = erase ? 0 : 33;
     return value;
 }
-}
-TEST_CASE("A single BGM click stroke commits once without a draw warning",
-          "[bgm][draw][compose-input]") {
-    bga_input_fixture_t fixture;
+void prepare_bgm_draw_fixture(bga_input_fixture_t& fixture) {
     fixture.history.document.audio_assets = {{.id = asset_id_t{71}}};
     fixture.history.document.resources.push_back({.id = resource_id_t{33}, .asset = asset_id_t{71},
         .roles = {resource_role_t::sample}});
     fixture.history.document.charts.front().bgm_source_lanes = {{.id = object_id_t{50}, .name = "BGM"}};
     fixture.application.project.compose_gesture.note_paint_mode_active = true;
+}
+auto draw_stroke_input(bga_input_fixture_t& fixture, bool bgm, WormUiComposeInputKind kind,
+                       uint64_t row) -> WormUiWorkspaceAction {
+    return bgm ? draw_bgm_input(fixture, kind, row) : draw_bga_input(fixture, kind, row);
+}
+
+}
+TEST_CASE("A single BGM click stroke commits once without a draw warning",
+          "[bgm][draw][compose-input]") {
+    bga_input_fixture_t fixture;
+    prepare_bgm_draw_fixture(fixture);
     // A click presses and releases on the same row, so the release lands on the begin's row.
     auto begin = draw_bgm_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 240);
     check_action(fixture.dispatch_input(begin) == "BGM Draw stroke preview updated.");
@@ -1377,11 +1423,7 @@ TEST_CASE("A single BGM click stroke commits once without a draw warning",
 TEST_CASE("Draw BGM production stroke commits once and erase removes the lane once",
           "[bgm][draw][compose-input]") {
     bga_input_fixture_t fixture;
-    fixture.history.document.audio_assets = {{.id = asset_id_t{71}}};
-    fixture.history.document.resources.push_back({.id = resource_id_t{33}, .asset = asset_id_t{71},
-        .roles = {resource_role_t::sample}});
-    fixture.history.document.charts.front().bgm_source_lanes = {{.id = object_id_t{50}, .name = "BGM"}};
-    fixture.application.project.compose_gesture.note_paint_mode_active = true;
+    prepare_bgm_draw_fixture(fixture);
     auto begin = draw_bgm_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 240);
     (void)fixture.dispatch_input(begin);
     check_action(fixture.history.undo.empty());
@@ -1584,7 +1626,11 @@ TEST_CASE("Playing Compose navigation uses beats while stopped editing retains i
     f.application.project.transport.preview_playhead_absolute_row = 240;
     f.application.services.transport_preview_playing = [] { return true; };
     std::uint64_t sought{};
-    f.application.services.transport_seek = [&](std::uint64_t frame) { sought = frame; return std::string{}; };
+    f.application.services.transport_seek = [&](std::uint64_t frame) {
+        sought = frame;
+        return compose_action_outcome_t::from(std::string{}, notification_severity_t::hint,
+                                              notification_source_t::input);
+    };
     auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0);
     action.compose_inputs[0].navigation_action = WORM_UI_COMPOSE_NAVIGATION_CURSOR_FORWARD;
     (void)f.dispatch_input(action);
@@ -1653,7 +1699,10 @@ TEST_CASE("Playback wheel skips one beat in chart direction independently of sna
     f.application.preferences.editor_preferences.scroll_directions.fill(downscroll ? 2 : 1);
     f.application.project.transport.preview_playhead_absolute_row = 480;
     f.application.services.transport_preview_playing = [] { return true; };
-    f.application.services.transport_seek = [](std::uint64_t) { return std::string{}; };
+    f.application.services.transport_seek = [](std::uint64_t) {
+        return compose_action_outcome_t::from(std::string{}, notification_severity_t::hint,
+                                              notification_source_t::input);
+    };
     auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE, 0);
     action.compose_input_count = 0;
     action.compose_viewport_input_count = 1;
@@ -1726,7 +1775,10 @@ TEST_CASE("Page navigation distance and minimum match while stopped and playing"
     place_cursor_at(f.state, {measure_id_t{1}, 959});
     f.application.services.transport_preview_playing = [=] { return playing; };
     f.application.project.transport.preview_playhead_absolute_row = 959;
-    f.application.services.transport_seek = [](std::uint64_t) { return std::string{}; };
+    f.application.services.transport_seek = [](std::uint64_t) {
+        return compose_action_outcome_t::from(std::string{}, notification_severity_t::hint,
+                                              notification_source_t::input);
+    };
     auto action = f.input(doubled ? WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP
                                   : WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0);
     action.compose_inputs[0].navigation_action = doubled
@@ -1809,6 +1861,21 @@ TEST_CASE("Add SPEEDS span from an area writes the length in beats as one undo s
     check_action(fixture.history.document.charts.front().speeds.empty());
 }
 
+TEST_CASE("Area SPEEDS duration reduces a wide row product",
+          "[compose-action-notifications][speeds][wide-area]") {
+    action_notification_fixture_t fixture;
+    fixture.history.document.charts.front().divisions_per_standard_measure = std::uint64_t{1} << 63;
+    fixture.state.retained_selection_range =
+        position_span_t{{measure_id_t{1}, 0}, {measure_id_t{1}, std::uint64_t{1} << 62}};
+    (void)fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN));
+    const auto& speeds = fixture.history.document.charts.front().speeds;
+    require_action(speeds.size() == 1);
+    check_action(speeds.front().transition_beats == rational_t{2, 1});
+    require_action(fixture.history.undo.size() == 1);
+    require_action(undo_document_command(fixture.history));
+    check_action(fixture.history.document.charts.front().speeds.empty());
+}
+
 TEST_CASE("Add SPEEDS span without an area changes nothing", "[compose-action-notifications][speeds]") {
     action_notification_fixture_t fixture;
     const auto revision = fixture.history.document.revision;
@@ -1844,6 +1911,8 @@ TEST_CASE("Relinking a missing sound to a fallback candidate is one undo step",
 
     action.compose_fallback_candidate = 1;
     check_action(fixture.dispatch(action) == "Sound relinked to snare.flac.");
+    check_action(fixture.workspace.document_revision == fixture.history.document.revision);
+    check_action(fixture.workspace.history.undo_depth == 1);
     check_action(fixture.history.document.audio_assets.front().source_path == std::filesystem::path{"snare.flac"});
     check_action_false(fixture.history.document.resources.front().missing);
     check_action(fixture.history.undo.size() == 1);
@@ -2164,7 +2233,7 @@ TEST_CASE("Project export rejects stale stamps and reports missing paths without
     if (stale) ++action.compose_input_project_id;
     require_action(fixture.dispatch_workspace(action, state));
     const auto entries = fixture.entries();
-    const std::string_view expected = stale ? "project, chart or revision changed" : "saved native project";
+    const std::string_view expected = stale ? "project, chart or document revision changed" : "saved native project";
     INFO("Expected export rejection: " << expected);
     check_action(std::ranges::any_of(entries, [&](const auto& entry) {
         return entry.message.find(expected) != std::string::npos;
@@ -2172,4 +2241,368 @@ TEST_CASE("Project export rejects stale stamps and reports missing paths without
     check_action(!state);
     check_action(fixture.history.undo.empty());
     check_action(!fixture.export_runtime.is_busy());
+}
+
+TEST_CASE("Workspace stale actions use the shared message without mutation",
+          "[compose-action-notifications][stale-message]") {
+    const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE,
+                              WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT,
+                              WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK,
+                              WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE);
+    action_notification_fixture_t fixture;
+    const auto revision = fixture.history.document.revision;
+    auto action = fixture.action(kind);
+    --action.compose_input_document_revision;
+    std::optional<editor_interaction_state_t> interaction;
+    require_action(fixture.dispatch_workspace(action, interaction));
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    const char* label = "BMS branch action";
+    if (kind == WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE) label = "Lane layout change";
+    if (kind == WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT) label = "BGM column count edit";
+    if (kind == WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK) label = "Sound relink";
+    check_action(entries.front().message == stale_action_message(label));
+    check_action(entries.front().severity == notification_severity_t::warning);
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
+}
+
+TEST_CASE("Standalone sound-layer entry rejects stale revisions with shared feedback",
+          "[compose-action-notifications][sound-layer-stamp]") {
+    action_notification_fixture_t fixture;
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER);
+    --action.compose_input_document_revision;
+    const std::uint64_t resource = 21;
+    action.compose_sound_resource_ids = &resource;
+    action.compose_sound_resource_count = 1;
+    action.compose_semantic_layer_id = 7;
+    const auto revision = fixture.history.document.revision;
+    const auto response = dispatch_compose_sound_action(action, fixture.history, fixture.workspace,
+        fixture.state.chart, fixture.application, fixture.sink);
+    require_action(response.has_value());
+    check_action(*response == stale_action_message("Sound layer edit"));
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::error);
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
+}
+
+TEST_CASE("Standalone sound edits use shared stale feedback without mutation",
+          "[compose-action-notifications][sound-command-stamp]") {
+    action_notification_fixture_t fixture;
+    fixture.history.document.charts.front().source_family = format_family_t::bms;
+    const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS,
+                               WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS,
+                               WORM_UI_COMPOSE_ACTION_UNGROUP_SOUNDS,
+                               WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS);
+    auto action = fixture.action(kind);
+    --action.compose_input_document_revision;
+    const std::uint64_t resource = 21;
+    action.compose_sound_resource_ids = &resource;
+    action.compose_sound_resource_count = 1;
+    const WormUiSoundGroupAssignment assignment{.name = "Group", .sound_ids = &resource,
+                                               .sound_count = 1};
+    action.compose_sound_group_assignments = &assignment;
+    action.compose_sound_group_assignment_count = 1;
+    const auto revision = fixture.history.document.revision;
+    const auto response = dispatch_compose_sound_action(action, fixture.history, fixture.workspace,
+        fixture.state.chart, fixture.application, fixture.sink);
+    require_action(response.has_value());
+    const auto* label = kind == WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS ? "Resource deletion"
+        : kind == WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS ? "BMS identifier renumber"
+        : "Sound group edit";
+    check_action(*response == stale_action_message(label));
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::error);
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
+}
+
+TEST_CASE("Captured BMSON marker batches share stale feedback and keep missing targets separate",
+          "[compose-action-notifications][bmson-marker-stamp]") {
+    action_notification_fixture_t fixture;
+    const auto kind = GENERATE(0, 1, 2, 3);
+    auto& draft = fixture.application.project.compose_gesture.bmson_marker_draft;
+    if (kind != 0) {
+        draft.emplace();
+        draft->stamp = chart_stamp_t::from(fixture.history.document,
+            kind == 3 ? chart_id_t{99} : fixture.state.chart);
+        draft->stamp.document.revision -= kind == 2 ? 1 : 0;
+        if (kind != 1) draft->markers.push_back({.position = {measure_id_t{1}, 120}});
+    }
+    const auto action = fixture.action(WORM_UI_COMPOSE_ACTION_COMMIT_STAGED_BMSON_BGM);
+    const auto response = fixture.dispatch(action);
+    check_action(response == (kind < 2
+        ? "The BMSON marker batch is no longer available for this chart revision."
+        : stale_action_message("BMSON marker batch")));
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::warning);
+    check_action(!draft.has_value());
+    check_action(fixture.history.document.revision == 1);
+    check_action(fixture.history.undo.empty());
+}
+
+TEST_CASE("BMS statement boundary shares stale feedback after missing-target checks",
+          "[compose-action-notifications][bms-statement-stamp]") {
+    action_notification_fixture_t fixture;
+    const bool missing = GENERATE(false, true);
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_EDIT_BMS_BRANCH_STATEMENT);
+    --action.compose_input_document_revision;
+    action.compose_branch_statement_id = missing ? 0 : 7;
+    std::optional<editor_interaction_state_t> interaction = fixture.state;
+    require_action(fixture.dispatch_workspace(action, interaction));
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().message == (missing ? "Select a raw BMS branch statement first."
+        : stale_action_message("BMS branch statement action")));
+    check_action(entries.front().severity == (missing ? notification_severity_t::warning
+                                                    : notification_severity_t::error));
+    check_action(entries.front().source == notification_source_t::format);
+    check_action(fixture.history.document.revision == 1);
+    check_action(fixture.history.undo.empty());
+}
+
+TEST_CASE("Standalone sound-import confirmation shares stale feedback",
+          "[compose-action-notifications][sound-import-stamp]") {
+    action_notification_fixture_t fixture;
+    const auto kind = GENERATE(0, 1, 2);
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT);
+    action.sound_import_project_id = fixture.history.document.id.value + (kind == 0 ? 1 : 0);
+    if (kind == 1) ++action.compose_input_chart_id;
+    if (kind == 2) --action.compose_input_document_revision;
+    const auto response = dispatch_compose_sound_action(action, fixture.history, fixture.workspace,
+        fixture.state.chart, fixture.application, fixture.sink);
+    require_action(response.has_value());
+    check_action(*response == stale_action_message("Sound import"));
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::warning);
+    check_action(entries.front().source == notification_source_t::import_);
+    check_action(fixture.history.document.revision == 1);
+    check_action(fixture.history.undo.empty());
+}
+
+TEST_CASE("Captured BGA and BGM stroke expiry shares stale feedback without a document edit",
+          "[bga][draw][compose-input][stroke-stamp]") {
+    const auto bgm = GENERATE(false, true);
+    bga_input_fixture_t fixture;
+    if (bgm) prepare_bgm_draw_fixture(fixture);
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
+    auto begin = draw_stroke_input(fixture, bgm, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 240);
+    (void)fixture.dispatch_input(begin);
+    require_action(fixture.application.project.compose_gesture.bga_draw_stroke.has_value());
+    --fixture.application.project.compose_gesture.bga_draw_stroke->stamp.document.revision;
+    auto release = draw_stroke_input(fixture, bgm, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, 480);
+    check_action(fixture.dispatch_input(release) == stale_action_message(bgm ? "BGM Draw stroke" : "BGA Draw stroke"));
+    check_action(!fixture.application.project.compose_gesture.bga_draw_stroke);
+    check_action(fixture.history.undo.empty());
+}
+
+TEST_CASE("Captured BGA stroke keeps revision-only project identity",
+          "[bga][draw][compose-input][stroke-stamp]") {
+    bga_input_fixture_t fixture;
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
+    auto begin = draw_bga_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 240);
+    (void)fixture.dispatch_input(begin);
+    require_action(fixture.application.project.compose_gesture.bga_draw_stroke.has_value());
+    fixture.application.project.compose_gesture.bga_draw_stroke->stamp.document.project = song_id_t{99};
+    auto release = draw_bga_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, 480);
+    check_action(fixture.dispatch_input(release) == "BGA Draw stroke committed.");
+    check_action(fixture.history.undo.size() == 1);
+}
+
+TEST_CASE("Captured BMSON razor expiry is distinct from starting a new stroke",
+          "[compose-input][bmson-razor-stamp]") {
+    bga_input_fixture_t fixture;
+    fixture.history.document.charts.front().source_family = format_family_t::bmson;
+    const auto kind = GENERATE(0, 1, 2, 3);
+    auto& stroke = fixture.application.project.compose_gesture.bmson_razor_stroke;
+    if (kind != 0) {
+        stroke.emplace();
+        stroke->stamp = chart_stamp_t::from(fixture.history.document, fixture.state.chart);
+        stroke->reference = object_id_t{kind == 2 ? 99u : 41u};
+        if (kind == 1) --stroke->stamp.document.revision;
+        if (kind == 3) stroke->stamp.chart = chart_id_t{99};
+    }
+    auto action = fixture.input(WORM_UI_COMPOSE_INPUT_BMSON_RAZOR_RESTART, 0);
+    const auto message = fixture.dispatch_input(action);
+    check_action(message == (kind == 1 ? stale_action_message("BMSON razor stroke")
+        : "Begin a new BMSON razor stroke on the selected sound channel."));
+    check_action(!stroke);
+    check_action(fixture.history.undo.empty());
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::warning);
+}
+
+TEST_CASE("Rejected Compose meter edits keep their validation feedback without rebinding",
+          "[compose-action-notifications][compose-outcome]") {
+    action_notification_fixture_t fixture;
+    fixture.workspace.song = song_id_t{99};
+    const auto selected = GENERATE(false, true);
+    auto action = fixture.action(selected ? WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER
+                                          : WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER);
+    const std::array<std::uint64_t, 1> ids{0};
+    action.compose_measure_ids = ids.data();
+    action.compose_measure_id_count = ids.size();
+    std::snprintf(action.timing_meter_numerator_text, sizeof(action.timing_meter_numerator_text),
+                  "0");
+    std::snprintf(action.timing_meter_denominator_text,
+                  sizeof(action.timing_meter_denominator_text), "4");
+    check_action(fixture.dispatch(action) == "A meter needs a non-zero numerator and denominator.");
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::warning);
+    check_action(fixture.history.undo.empty());
+}
+
+TEST_CASE("Rejected Compose transforms and measure edits retain validation feedback",
+          "[compose-action-notifications][compose-outcome]") {
+    action_notification_fixture_t fixture;
+    fixture.workspace.song = song_id_t{99};
+    const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_TRANSFORM_MIRROR,
+                               WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS,
+                               WORM_UI_COMPOSE_ACTION_MOVE_BAR_LINE);
+    auto action = fixture.action(kind);
+    const std::array<std::uint64_t, 1> ids{0};
+    action.compose_measure_ids = ids.data();
+    action.compose_measure_id_count = ids.size();
+    const auto expected = kind == WORM_UI_COMPOSE_ACTION_TRANSFORM_MIRROR
+                              ? "Select notes before transforming them."
+                          : kind == WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS
+                              ? "A chart needs at least one measure."
+                              : "A meter needs a non-zero numerator and denominator.";
+    check_action(fixture.dispatch(action) == expected);
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::warning);
+    check_action(fixture.history.undo.empty());
+}
+
+TEST_CASE("Compose area mutations rebind the workspace before publishing feedback",
+          "[compose-action-notifications][compose-outcome]") {
+    action_notification_fixture_t fixture;
+    fixture.state.retained_selection_range =
+        position_span_t{{measure_id_t{1}, 0}, {measure_id_t{1}, 240}};
+    const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE,
+                               WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN);
+    const auto status = fixture.dispatch(fixture.action(kind));
+    check_action(status == (kind == WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE
+                                ? "SV recipe added over the selected area."
+                                : "SPEEDS span added over the selected area."));
+    check_action(fixture.history.undo.size() == 1);
+    check_action(fixture.workspace.document_revision == fixture.history.document.revision);
+    check_action(fixture.workspace.history.undo_depth == 1);
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::success);
+}
+
+TEST_CASE("Registered quantize rebind failure posts the edit and one error while rejecting the command",
+          "[compose-action-notifications][compose-outcome]") {
+    action_notification_fixture_t fixture;
+    fixture.history.document.charts.front().measures.front().notes = {
+        {.id = object_id_t{4}, .position = {measure_id_t{1}, 130}, .lane = lane_id_t{1}}};
+    fixture.state.selected_notes = {object_id_t{4}};
+    fixture.workspace.song = song_id_t{99};
+    check_action_false(fixture.invoke_registered("edit.apply_quantize"));
+    check_action(fixture.history.undo.size() == 1);
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 2);
+    check_action(entries.front().severity == notification_severity_t::error);
+    check_action(entries.front().source == notification_source_t::document);
+    check_action(entries.back().severity == notification_severity_t::success);
+    check_action(entries.back().source == notification_source_t::edit);
+}
+
+TEST_CASE("Sound and BGA rebind failures keep one edit-sourced error and their distinct text",
+          "[compose-action-notifications][compose-outcome]") {
+    action_notification_fixture_t fixture;
+    const auto bga = GENERATE(false, true);
+    if (bga)
+        fixture.history.document.visual_assets = {{.id = asset_id_t{61}, .kind = asset_kind_t::image}};
+    else
+        fixture.history.document.audio_assets = {{.id = asset_id_t{61}, .source_path = "unused.wav"}};
+    fixture.history.document.resources = {{.id = resource_id_t{31}, .name = "Unused",
+        .asset = asset_id_t{61}, .roles = {bga ? resource_role_t::bga : resource_role_t::sample}}};
+    fixture.workspace.song = song_id_t{99};
+    auto action = fixture.action(bga ? WORM_UI_COMPOSE_ACTION_REMOVE_UNUSED_BGA
+                                    : WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS);
+    const std::array<std::uint64_t, 1> ids{31};
+    action.compose_sound_resource_ids = ids.data();
+    action.compose_sound_resource_count = ids.size();
+    check_action(fixture.dispatch(action) == (bga ? "BGA changed, but workspace rebinding failed."
+        : "workspace cannot be rebound to a different song identity"));
+    check_action(fixture.history.undo.size() == 1);
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::error);
+    check_action(entries.front().source == notification_source_t::edit);
+    check_action(entries.front().count == 1);
+}
+
+TEST_CASE("Sound import rebind failure retains one import-sourced diagnostic", "[compose-action-notifications][compose-outcome]") {
+    action_notification_fixture_t fixture;
+    const auto directory = std::filesystem::temp_directory_path() /
+        ("wormedit-feedback-import-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::filesystem::create_directories(directory);
+    const auto path = directory / "sound.wav";
+    const std::vector<float> pcm(882, 0.125F);
+    const auto wav = audio::encode_wav_pcm16(pcm, 44'100);
+    std::ofstream(path, std::ios::binary).write(wav.data(), wav.size());
+    fixture.workspace.song = song_id_t{99};
+    const std::array<std::string, 1> paths{path.string()};
+    const auto message = import_keysound_files(fixture.history, fixture.workspace, fixture.state.chart,
+                                               paths, fixture.sink);
+    std::filesystem::remove_all(directory);
+    check_action(message == "workspace cannot be rebound to a different song identity");
+    check_action(fixture.history.undo.size() == 1);
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::error);
+    check_action(entries.front().source == notification_source_t::import_);
+    check_action(entries.front().count == 1);
+}
+
+TEST_CASE("Quantization preset mutations bind the workspace to the edited history",
+          "[compose-action-notifications][compose-outcome]") {
+    action_notification_fixture_t fixture;
+    const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_SAVE_QUANTIZE_PRESET,
+                               WORM_UI_COMPOSE_ACTION_DELETE_QUANTIZE_PRESET,
+                               WORM_UI_COMPOSE_ACTION_RENAME_QUANTIZE_PRESET);
+    if (kind != WORM_UI_COMPOSE_ACTION_SAVE_QUANTIZE_PRESET)
+        fixture.history.document.quantization_presets = {{.name = "Original", .divisions = 4}};
+    auto action = fixture.action(kind);
+    std::snprintf(action.compose_quantize_preset_name, sizeof(action.compose_quantize_preset_name),
+                  "Updated");
+    action.compose_quantize_divisions = 4;
+    action.compose_quantize_preset_index = 0;
+    fixture.dispatch(action);
+    check_action(fixture.history.undo.size() == 1);
+    check_action(fixture.workspace.document_revision == fixture.history.document.revision);
+    check_action(fixture.workspace.history.undo_depth == 1);
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::success);
+}
+
+TEST_CASE("Late lane-layout rejection rebinds an already materialized virtual measure",
+          "[compose-action-notifications][compose-outcome]") {
+    action_notification_fixture_t fixture;
+    fixture.history.document.charts.front().source_family = format_family_t::bms;
+    fixture.history = document_history_t::from(fixture.history.document);
+    require_action(static_cast<bool>(rebind_workspace(fixture.workspace, fixture.history)));
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE);
+    action.compose_measure_number = 2;
+    check_action(fixture.dispatch(action) == "Choose a lane layout profile first.");
+    check_action(fixture.history.document.charts.front().measures.size() == 2);
+    check_action(fixture.history.undo.size() == 1);
+    check_action(fixture.workspace.document_revision == fixture.history.document.revision);
+    check_action(fixture.workspace.history.undo_depth == 1);
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::warning);
 }

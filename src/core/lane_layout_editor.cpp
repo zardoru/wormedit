@@ -89,10 +89,12 @@ auto find_segment(layout_edit_context_t& context, object_id_t id)
     return found;
 }
 
-void apply_edit(layout_edit_context_t& context, const insert_lane_layout_action_t& edit) {
-    if (!is_position_allowed(context, edit.position)) return;
+void apply_edit(layout_edit_context_t& context,
+                const wormedit::insert_edit_t<wormedit::lane_layout_edit_value_t>& edit) {
+    if (!is_position_allowed(context, edit.value.position))
+        return;
     const auto occupied = std::ranges::any_of(context.chart.lane_layouts, [&](const auto& segment) {
-        return segment.position == edit.position;
+        return segment.position == edit.value.position;
     });
     if (occupied) {
         reject(context.result, diagnostic_code_t::duplicate_id,
@@ -104,21 +106,24 @@ void apply_edit(layout_edit_context_t& context, const insert_lane_layout_action_
         reject(context.result, diagnostic_code_t::invalid_id, "object ID sequence is exhausted");
         return;
     }
-    if (edit.input && context.chart.input_profile.bindings.empty())
-        context.chart.input_profile = *edit.input;
-    context.chart.lane_layouts.push_back({.id = *id, .position = edit.position, .layout = edit.layout});
+    if (edit.value.input && context.chart.input_profile.bindings.empty())
+        context.chart.input_profile = *edit.value.input;
+    context.chart.lane_layouts.push_back(
+        {.id = *id, .position = edit.value.position, .layout = edit.value.layout});
     context.label = "Insert lane layout";
 }
 
-void apply_edit(layout_edit_context_t& context, const update_lane_layout_action_t& edit) {
-    const auto found = find_segment(context, edit.segment);
+void apply_edit(layout_edit_context_t& context,
+                const wormedit::update_edit_t<wormedit::lane_layout_edit_value_t>& edit) {
+    const auto found = find_segment(context, edit.id);
     if (found == context.chart.lane_layouts.end()) return;
-    found->layout = edit.layout;
+    found->layout = edit.value.layout;
     context.label = "Update lane layout";
 }
 
-void apply_edit(layout_edit_context_t& context, const delete_lane_layout_action_t& edit) {
-    const auto found = find_segment(context, edit.segment);
+void apply_edit(layout_edit_context_t& context,
+                const wormedit::delete_edit_t<wormedit::lane_layout_edit_value_t>& edit) {
+    const auto found = find_segment(context, edit.id);
     if (found == context.chart.lane_layouts.end()) return;
     const auto built = build_measure_index(context.chart);
     const auto* index = std::get_if<measure_index_t>(&built);
@@ -143,15 +148,11 @@ void sort_segments(chart_document_t& chart) {
 
 } // namespace
 
-auto apply_lane_layout_edit(document_history_t& history, std::uint64_t expected_revision,
+auto apply_lane_layout_edit(document_history_t& history,
                             const lane_layout_action_t& action, lane_layout_change_policy_t policy)
     -> document_command_result_t {
     auto transaction = document_command_transaction_t::from(history);
     auto& result = transaction.outcome;
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id, "lane layout editor revision is stale");
-        return result;
-    }
     const auto chart_id = std::visit([](const auto& edit) { return edit.chart; }, action);
     auto& proposed = transaction.copy_document();
     const auto chart = proposed.find_chart(chart_id);

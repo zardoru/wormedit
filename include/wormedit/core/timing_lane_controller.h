@@ -1,6 +1,11 @@
 #pragma once
 
+#include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/command.h>
+#include <wormedit/core/marker_editor.h>
+#include <wormedit/core/pause_warp_editor.h>
+#include <wormedit/core/scroll_speed_editor.h>
+#include <wormedit/core/timing_anchor_editor.h>
 
 #include <cstdint>
 #include <optional>
@@ -34,40 +39,7 @@ enum class timing_lane_initial_value_source_t {
     effective_at_position,
 };
 
-struct timing_bpm_value_t {
-    signed_rational_t beats_per_minute{120, 1};
-};
-
-struct timing_scroll_value_t {
-    signed_rational_t multiplier{1, 1};
-};
-
-struct timing_speed_value_t {
-    signed_rational_t multiplier{1, 1};
-    rational_t transition_beats{};
-    bool transition_is_seconds{};
-};
-
-struct timing_pause_value_t {
-    signed_rational_t duration{};
-    pause_unit_t source_unit{pause_unit_t::seconds};
-};
-
 // A warp's start is the pseudo-note row; its end is required user input.
-struct timing_warp_value_t {
-    local_position_t end;
-    warp_provenance_t source_encoding{warp_provenance_t::native};
-};
-
-struct timing_kiai_value_t {
-    bool enabled{true};
-    std::uint32_t retained_effect_bits{};
-};
-
-struct timing_anchor_value_t {
-    std::uint64_t source_sample_frame{};
-    bool locked{};
-};
 
 using timing_lane_value_t =
     std::variant<timing_bpm_value_t, timing_scroll_value_t, timing_speed_value_t,
@@ -84,16 +56,21 @@ enum class timing_lane_pseudonote_status_t {
 
 struct timing_lane_pseudonote_preview_t {
     timing_lane_pseudonote_status_t status{timing_lane_pseudonote_status_t::inactive};
-    chart_id_t chart;
+    chart_stamp_t stamp;
     timing_lane_kind_t kind{timing_lane_kind_t::bpm};
     local_position_t position;
     timing_lane_value_t value{timing_bpm_value_t{}};
     std::optional<object_id_t> existing_event;
     timing_lane_initial_value_source_t initial_value_source{
         timing_lane_initial_value_source_t::explicit_default};
-    std::uint64_t document_revision{};
-    bool valid{};
     diagnostic_list_t diagnostics;
+
+    void set_value(timing_lane_value_t&& next);
+
+    [[nodiscard]] auto is_valid() const noexcept -> bool {
+        return status == timing_lane_pseudonote_status_t::committed ||
+               (status == timing_lane_pseudonote_status_t::editing && diagnostics.empty());
+    }
 };
 
 // BPM, scroll/SV, speed, stop, delay, warp, kiai, and timing-anchor lanes are
@@ -127,7 +104,7 @@ begin_timing_lane_pseudonote(const document_history_t& history, chart_id_t chart
 // Updates only the transient preview. Invalid typed values remain visible in
 // the preview with diagnostics and cannot be confirmed. A lock or revision
 // change cancels the preview immediately.
-[[nodiscard]] auto update_timing_lane_pseudonote(const document_history_t& history,
+[[nodiscard]] auto revise_timing_lane_pseudonote(const document_history_t& history,
                                                  timing_lane_pseudonote_preview_t& preview,
                                                  timing_lane_value_t value, bool timing_locked)
     -> bool;
@@ -136,7 +113,7 @@ begin_timing_lane_pseudonote(const document_history_t& history, chart_id_t chart
 // preview. The caller supplies an already-snapped exact position; confirmation
 // remains one typed update command and preserves the marker's stable ID and
 // source provenance. New pseudo-notes keep their insertion row fixed.
-[[nodiscard]] auto move_existing_timing_lane_pseudonote(
+[[nodiscard]] auto revise_existing_timing_lane_pseudonote_position(
     const document_history_t& history, timing_lane_pseudonote_preview_t& preview,
     local_position_t exact_snapped_position, bool timing_locked) -> bool;
 
@@ -145,30 +122,29 @@ begin_timing_lane_pseudonote(const document_history_t& history, chart_id_t chart
 // The fixed effective initial BPM cannot be part of the selection.
 [[nodiscard]] auto move_timing_lane_event_group(
     document_history_t& history, chart_id_t chart, std::span<const timing_lane_event_ref_t> events,
-    std::int64_t row_delta, std::uint64_t expected_revision, bool timing_locked)
+    std::int64_t row_delta, bool timing_locked)
     -> document_command_result_t;
 
-// Confirmation makes exactly one call to the existing revision-checked timing
+// Confirmation validates the captured preview and calls the typed timing
 // command API, using an update command for an existing event. No playable note
 // is ever created by this controller.
-[[nodiscard]] auto confirm_timing_lane_pseudonote(document_history_t& history,
+[[nodiscard]] auto apply_timing_lane_pseudonote(document_history_t& history,
                                                   timing_lane_pseudonote_preview_t& preview,
                                                   bool timing_locked) -> document_command_result_t;
 
 // Deletes an existing marker through its typed editor command. The event kind,
-// identity, lock, and expected revision are all checked before history changes.
+// identity and lock are checked before history changes. Delayed callers validate their stamp.
 [[nodiscard]] auto delete_existing_timing_lane_event(document_history_t& history,
                                                       chart_id_t chart, timing_lane_kind_t kind,
                                                       object_id_t event,
-                                                      std::uint64_t expected_revision,
                                                       bool timing_locked)
     -> document_command_result_t;
 
 // Deletes a bounded selection of timing markers as one atomic undoable command. The fixed
-// initial BPM is skipped when other markers are selected; a lock or stale revision rejects all.
+// initial BPM is skipped when other markers are selected; a lock rejects all.
+// Delayed callers validate their captured stamp before this synchronous command.
 [[nodiscard]] auto delete_timing_lane_event_group(
-    document_history_t& history, chart_id_t chart, std::span<const timing_lane_event_ref_t> events,
-    std::uint64_t expected_revision, bool timing_locked) -> document_command_result_t;
+    document_history_t& history, chart_id_t chart, std::span<const timing_lane_event_ref_t> events, bool timing_locked) -> document_command_result_t;
 
 // One speed event as a span: its begin row and the length of its transition. Either part may be
 // left unchanged. Applies as one undoable update that keeps the event's identity and multiplier.

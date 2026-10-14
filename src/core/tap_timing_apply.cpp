@@ -148,8 +148,7 @@ auto prepare_tap_timing_proposal(const song_document_t& document, chart_id_t cha
         return std::unexpected(error(diagnostic_code_t::invalid_rational, "tap timing phase exceeds the exact audio offset range"));
     }
     return tap_timing_apply_proposal_t{
-        .chart = chart_id,
-        .document_revision = document.revision,
+        .stamp = chart_stamp_t::from(document, chart_id),
         .sample_rate = sample_rate,
         .beats_per_measure = beats_per_measure,
         .estimate = estimate,
@@ -195,13 +194,13 @@ auto apply_proposal_to_chart(chart_document_t& chart,
 
 auto proposed_document(const song_document_t& document,
                       const tap_timing_apply_proposal_t& proposal) -> std::optional<song_document_t> {
-    const auto verified = prepare_tap_timing_proposal(document, proposal.chart, proposal.estimate,
+    const auto verified = prepare_tap_timing_proposal(document, proposal.stamp.chart, proposal.estimate,
         proposal.sample_rate, proposal.beats_per_measure, proposal.choice);
     if (!verified || verified->beats_per_minute != proposal.beats_per_minute ||
         verified->beat_zero_audio_offset_seconds != proposal.beat_zero_audio_offset_seconds)
         return std::nullopt;
     auto proposed = document;
-    const auto chart = proposed.find_chart(proposal.chart);
+    const auto chart = proposed.find_chart(proposal.stamp.chart);
     if (chart == nullptr || !apply_proposal_to_chart(*chart, *verified) ||
         !extend_native_charts_to_audio_end(proposed)) return std::nullopt;
     const auto diagnostics = validate_document(proposed);
@@ -232,31 +231,19 @@ auto tap_timing_apply_proposal_t::from(const song_document_t& document, chart_id
     return result;
 }
 
-auto tap_timing_apply_proposal_result_t::from(tap_timing_apply_proposal_outcome_t&& outcome)
-    -> tap_timing_apply_proposal_result_t {
-    return {.proposal = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto propose_tap_timing_apply(const song_document_t& document, chart_id_t chart,
-                              const tap_tempo_estimate_t& estimate, std::uint32_t sample_rate,
-                              std::uint16_t beats_per_measure, tap_bpm_choice_t choice,
-                              bool timing_locked) -> tap_timing_apply_proposal_result_t {
-    return tap_timing_apply_proposal_result_t::from(tap_timing_apply_proposal_t::from(
-        document, chart, estimate, sample_rate, beats_per_measure, choice, timing_locked));
-}
-
 auto make_tap_timing_preview(const song_document_t& document,
                              const tap_timing_apply_proposal_t& proposal)
     -> std::optional<chart_document_t> {
-    if (proposal.document_revision != document.revision) return std::nullopt;
+    if (!proposal.stamp.document.is_current(document,
+            document_identity_policy_t::revision_only)) return std::nullopt;
     const auto proposed = proposed_document(document, proposal);
     if (!proposed) return std::nullopt;
-    const auto chart = proposed->find_chart(proposal.chart);
+    const auto chart = proposed->find_chart(proposal.stamp.chart);
     return chart == nullptr ? std::nullopt
                                            : std::optional<chart_document_t>{*chart};
 }
 
-auto apply_tap_timing_proposal(document_history_t& history, std::uint64_t expected_revision,
+auto apply_tap_timing_proposal(document_history_t& history,
                                const tap_timing_apply_proposal_t& proposal, bool timing_locked)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
@@ -265,18 +252,14 @@ auto apply_tap_timing_proposal(document_history_t& history, std::uint64_t expect
                "tap timing apply is disabled while timing is locked");
         return result;
     }
-    if (expected_revision != history.document.revision ||
-        proposal.document_revision != expected_revision) {
-        reject(result, diagnostic_code_t::invalid_id, "tap timing proposal targets a stale revision");
-        return result;
-    }
+    auto transaction = document_command_transaction_t::from(history, proposal.stamp,
+        "Tap timing proposal", document_identity_policy_t::revision_only);
+    if (!transaction.is_ready()) return transaction.finish_without_commit();
     auto proposed = proposed_document(history.document, proposal);
     if (!proposed) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "tap timing proposal no longer matches a valid chart");
-        return result;
+        return transaction.reject(diagnostic_code_t::invalid_id,
+            "tap timing proposal no longer matches a valid chart");
     }
-    auto transaction = document_command_transaction_t::from(history);
     transaction.adopt_document(std::move(*proposed));
     return transaction.commit("Apply tap timing");
 }

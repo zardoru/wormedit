@@ -176,7 +176,7 @@ TEST_CASE("BGA lane move keeps event identity and leaves other event kinds untou
     auto history = bga_history();
     const auto before = history.document.charts.front();
     const auto moved = apply_bga_event_move(
-        history, history.document.revision,
+        history,
         {.chart = chart_id_t{7}, .event = object_id_t{11},
          .position = {measure_id_t{1}, 480}, .snap_denominator = 4});
     if (!moved) for (const auto& diagnostic : moved.diagnostics) WARN(diagnostic.message);
@@ -196,7 +196,7 @@ TEST_CASE("BGA lane replacement preserves event kind, ID, provenance, and undo b
     auto history = bga_history();
     const auto original = history.document.charts.front().bga_events.front();
     const auto replaced = apply_resource_assignment(
-        history, history.document.revision,
+        history,
         {.chart = chart_id_t{7}, .resource = resource_id_t{34},
          .objects = {{editor_selection_object_kind_t::bga_event, object_id_t{11}}}});
     if (!replaced) for (const auto& diagnostic : replaced.diagnostics) WARN(diagnostic.message);
@@ -206,20 +206,16 @@ TEST_CASE("BGA lane replacement preserves event kind, ID, provenance, and undo b
     check_replaced_event(event, original);
 }
 
-TEST_CASE("BGA lane move rejects stale, missing, and non-lane event targets unchanged",
+TEST_CASE("BGA lane move rejects missing and non-lane event targets unchanged",
           "[unit][sys][bga-lane]") {
     using namespace wormedit;
     auto history = bga_history();
     const auto before = history.document.charts.front().bga_events;
-    const auto revision = history.document.revision;
-    const auto stale = apply_bga_event_move(history, revision + 1,
-        {.chart = chart_id_t{7}, .event = object_id_t{11}, .position = {measure_id_t{1}, 480}});
-    const auto missing = apply_bga_event_move(history, revision,
+    const auto missing = apply_bga_event_move(history,
         {.chart = chart_id_t{7}, .event = object_id_t{99}, .position = {measure_id_t{1}, 480}});
-    const auto unsupported = apply_bga_event_move(history, revision,
+    const auto unsupported = apply_bga_event_move(history,
         {.chart = chart_id_t{7}, .event = object_id_t{13}, .position = {measure_id_t{1}, 480},
          .bga_kind = visual_event_kind_t::storyboard});
-    CHECK_FALSE(stale);
     CHECK_FALSE(missing);
     CHECK_FALSE(unsupported);
     check_rejections_leave_state(history, before);
@@ -229,7 +225,7 @@ TEST_CASE("Layer to Layer 2 changes kind at the same row with one undo", "[bga][
     using namespace wormedit;
     auto history = bga_history();
     const auto original = history.document.charts.front().bga_events.back();
-    REQUIRE(apply_bga_event_move(history, history.document.revision,
+    REQUIRE(apply_bga_event_move(history,
         {.chart = chart_id_t{7}, .event = original.id, .position = original.position,
          .bga_kind = visual_event_kind_t::layer2}));
     CHECK(history.undo.size() == 1);
@@ -248,7 +244,7 @@ void check_stacked_bga_move(bool change_kind) {
     const auto kind = change_kind ? visual_event_kind_t::layer2 : original.kind;
     if (change_kind) history.document.charts.front().bga_events.push_back({.id = object_id_t{14},
         .position = destination, .resource = original.resource, .kind = kind});
-    REQUIRE(apply_bga_event_move(history, history.document.revision,
+    REQUIRE(apply_bga_event_move(history,
         {.chart = chart_id_t{7}, .event = original.id, .position = destination, .bga_kind = kind}));
     CHECK(history.undo.size() == 1);
     const auto moved = std::ranges::find(history.document.charts.front().bga_events, original.id, &bga_event_t::id);
@@ -269,12 +265,12 @@ TEST_CASE("BGA overlay video move and placement reject unchanged", "[bga][bga-la
     auto history = bga_history();
     const auto revision = history.document.revision;
     const auto original = history.document.charts.front().bga_events;
-    const auto moved = apply_bga_event_move(history, revision,
+    const auto moved = apply_bga_event_move(history,
         {.chart = chart_id_t{7}, .event = object_id_t{12}, .position = {measure_id_t{1}, 480},
          .bga_kind = visual_event_kind_t::layer2});
     CHECK_FALSE(moved);
     REQUIRE_FALSE(moved.diagnostics.empty());
-    const auto placed = apply_resource_placement(history, revision,
+    const auto placed = apply_resource_placement(history,
         {.chart = chart_id_t{7}, .resource = resource_id_t{32}, .position = {measure_id_t{1}, 480},
          .kind = resource_placement_kind_t::bga_background, .bga_kind = visual_event_kind_t::layer});
     CHECK_FALSE(placed);
@@ -288,11 +284,11 @@ TEST_CASE("BGA per-kind placement shares a row and a collision rejects atomicall
     const place_resource_action_t action{.chart = chart_id_t{7}, .resource = resource_id_t{31},
         .position = {measure_id_t{1}, 120}, .kind = resource_placement_kind_t::bga_background,
         .bga_kind = visual_event_kind_t::layer2};
-    REQUIRE(apply_resource_placement(history, history.document.revision, action));
+    REQUIRE(apply_resource_placement(history, action));
     CHECK(history.undo.size() == 1);
     CHECK(history.document.charts.front().bga_events.back().kind == visual_event_kind_t::layer2);
     const auto revision = history.document.revision;
-    CHECK_FALSE(apply_resource_placement(history, revision, action));
+    CHECK_FALSE(apply_resource_placement(history, action));
     CHECK(history.document.revision == revision);
     CHECK(history.undo.size() == 1);
 }
@@ -304,7 +300,7 @@ TEST_CASE("BGA move materializes one virtual BMS measure in the same undo step",
     history.document.charts.front().source_family = format_family_t::bms;
     const auto original = history.document.charts.front().bga_events.front();
     const auto moved = apply_virtual_bms_bga_event_move(
-        history, history.document.revision,
+        history,
         {.chart = chart_id_t{7}, .event = original.id, .canvas_row = 2 * 960 + 120,
          .snap_denominator = 4});
     if (!moved) for (const auto& diagnostic : moved.diagnostics) WARN(diagnostic.message);
@@ -321,7 +317,7 @@ TEST_CASE("BGA move with snap disabled preserves the requested virtual BMS row",
     history.document.charts.front().source_family = format_family_t::bms;
     const auto original = history.document.charts.front().bga_events.front();
     const auto moved = apply_virtual_bms_bga_event_move(
-        history, history.document.revision,
+        history,
         {.chart = chart_id_t{7}, .event = original.id, .canvas_row = 2 * 960 + 120,
          .snap_denominator = 0});
     REQUIRE(moved);

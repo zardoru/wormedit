@@ -2,9 +2,10 @@
 
 #include "sys/application_edit_inputs.h"
 
+#include "sys/compose_action_outcome.h"
 #include "sys/compose_input.h"
-#include "sys/metadata_drop_state.h"
 #include "sys/metadata_asset_runtime.h"
+#include "sys/metadata_drop_state.h"
 #include "sys/resource_job_state.h"
 
 #include <filesystem>
@@ -15,8 +16,9 @@ namespace wormedit::sys {
 
 // Shared inspector/registry quantize path; preview is session state, Apply records the usual report.
 auto invoke_compose_quantize_command(bool toggle_preview, wormedit::document_history_t& history,
-    wormedit::editor_interaction_state_t& state, application_command_state_t& application,
-    std::optional<wormedit::notification_sink_t> notifications = {}) -> bool;
+                                     wormedit::editor_interaction_state_t& state,
+                                     application_command_state_t& application)
+    -> compose_action_outcome_t;
 
 auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                                   const compose_action_inputs_t& environment,

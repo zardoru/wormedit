@@ -16,10 +16,11 @@
 namespace wormedit {
 namespace {
 
-void post_recovery_directory_error(const std::optional<notification_sink_t>& notifications,
-                                  const std::string& message) {
-    if (!notifications || message.empty()) return;
-    notifications->post(notification_severity_t::error, notification_source_t::recovery, message);
+void post_recovery_directory_error(const notification_sink_t& notifications,
+                                   const std::string& message) {
+    if (notifications.is_muted() || message.empty())
+        return;
+    notifications.post(notification_severity_t::error, notification_source_t::recovery, message);
 }
 
 auto current_process_id() -> long long {
@@ -51,7 +52,7 @@ void remove_crash_marker(const std::filesystem::path& marker) noexcept {
     std::filesystem::remove(marker, error);
 }
 
-auto prepare_platform_recovery_directory(std::optional<notification_sink_t> notifications)
+auto prepare_platform_recovery_directory(notification_sink_t notifications)
     -> platform_recovery_directory_result_t {
     platform_recovery_directory_result_t result;
     char* preference_path = SDL_GetPrefPath("otoworld", "wormedit");

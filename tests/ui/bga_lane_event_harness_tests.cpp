@@ -1362,7 +1362,7 @@ auto core_payload_undoes_once(const WormUiComposeInputAction& input, std::uint64
     const auto revision = history.document.revision;
     wormedit::document_command_result_t result;
     if (input.kind == WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW) {
-        result = wormedit::insert_bmson_packed_one_shot(history, revision,
+        result = wormedit::insert_bmson_packed_one_shot(history,
             history.document.charts.front().id, wormedit::object_id_t{input.lane_id},
             wormedit::resource_id_t{input.resource_id},
             {history.document.charts.front().measures.front().id, row});
@@ -1376,7 +1376,7 @@ auto core_payload_undoes_once(const WormUiComposeInputAction& input, std::uint64
         if (channel == history.document.charts.front().sound_channels.end()) return false;
         const auto geometry = wormedit::bmson_source_geometry_t{
             .asset = channel->source_clip.source, .sample_rate = 48'000, .frame_count = 200'000};
-        result = wormedit::insert_bmson_stem_point(history, revision,
+        result = wormedit::insert_bmson_stem_point(history,
             history.document.charts.front().id, channel->id,
             {history.document.charts.front().measures.front().id, row},
             input.kind == WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART, geometry);
@@ -1396,7 +1396,7 @@ auto packed_stroke_undoes_once(const WormUiComposeInputAction& input, std::uint6
     const std::array cells{wormedit::local_position_t{
         history.document.charts.front().measures.front().id, row}};
     const auto original = history.document.charts.front().sound_channels.size();
-    const auto result = wormedit::apply_bmson_packed_stroke(history, history.document.revision,
+    const auto result = wormedit::apply_bmson_packed_stroke(history,
         history.document.charts.front().id, wormedit::object_id_t{input.lane_id},
         wormedit::resource_id_t{input.resource_id}, cells);
     if (!result || history.undo.size() != 1 || !wormedit::validate_document(history.document).empty())

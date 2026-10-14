@@ -24,7 +24,6 @@ using wormedit::reject;
 
 auto reject(timing_lane_pseudonote_preview_t& preview, diagnostic_code_t code, std::string message)
     -> void {
-    preview.valid = false;
     preview.diagnostics = {error(code, std::move(message))};
 }
 
@@ -54,7 +53,7 @@ auto load_existing_event(const chart_document_t& chart, timing_lane_kind_t kind,
             return false;
         }
         position = found->position;
-        value = timing_bpm_value_t{found->beats_per_minute};
+        value = timing_bpm_value_t::from(*found);
         return true;
     }
     case timing_lane_kind_t::scroll: {
@@ -63,7 +62,7 @@ auto load_existing_event(const chart_document_t& chart, timing_lane_kind_t kind,
             return false;
         }
         position = found->position;
-        value = timing_scroll_value_t{found->multiplier};
+        value = timing_scroll_value_t::from(*found);
         return true;
     }
     case timing_lane_kind_t::speed: {
@@ -72,8 +71,7 @@ auto load_existing_event(const chart_document_t& chart, timing_lane_kind_t kind,
             return false;
         }
         position = found->position;
-        value = timing_speed_value_t{found->multiplier, found->transition_beats,
-                                     found->transition_is_seconds};
+        value = timing_speed_value_t::from(*found);
         return true;
     }
     case timing_lane_kind_t::stop:
@@ -85,7 +83,7 @@ auto load_existing_event(const chart_document_t& chart, timing_lane_kind_t kind,
             return false;
         }
         position = found->position;
-        value = timing_pause_value_t{found->duration, found->source_unit};
+        value = timing_pause_value_t::from(*found);
         return true;
     }
     case timing_lane_kind_t::warp: {
@@ -94,7 +92,7 @@ auto load_existing_event(const chart_document_t& chart, timing_lane_kind_t kind,
             return false;
         }
         position = found->span.begin;
-        value = timing_warp_value_t{found->span.end, found->source_encoding};
+        value = timing_warp_value_t::from(*found);
         return true;
     }
     case timing_lane_kind_t::kiai: {
@@ -103,7 +101,7 @@ auto load_existing_event(const chart_document_t& chart, timing_lane_kind_t kind,
             return false;
         }
         position = found->position;
-        value = timing_kiai_value_t{found->enabled, found->retained_effect_bits};
+        value = timing_kiai_value_t::from(*found);
         return true;
     }
     case timing_lane_kind_t::anchor: {
@@ -112,7 +110,7 @@ auto load_existing_event(const chart_document_t& chart, timing_lane_kind_t kind,
             return false;
         }
         position = found->position;
-        value = timing_anchor_value_t{found->source_sample_frame, found->locked};
+        value = timing_anchor_value_t::from(*found);
         return true;
     }
     }
@@ -410,19 +408,18 @@ auto validate_value(const chart_document_t& chart, timing_lane_pseudonote_previe
 
 auto initial_status(timing_lane_pseudonote_preview_t& preview, const document_history_t& history,
                     bool timing_locked) -> bool {
-    preview.document_revision = history.document.revision;
     if (timing_locked) {
         reject(preview, diagnostic_code_t::unsupported_feature,
                "timing is locked; timing lane edits are unavailable");
         preview.status = timing_lane_pseudonote_status_t::rejected;
         return false;
     }
-    if (!preview.chart) {
+    if (!preview.stamp.chart) {
         reject(preview, diagnostic_code_t::invalid_id, "timing pseudo-note uses an empty chart ID");
         preview.status = timing_lane_pseudonote_status_t::rejected;
         return false;
     }
-    const auto* chart = history.document.find_chart(preview.chart);
+    const auto* chart = history.document.find_chart(preview.stamp.chart);
     if (chart == nullptr) {
         reject(preview, diagnostic_code_t::invalid_id,
                "timing pseudo-note refers to an unknown chart");
@@ -430,7 +427,6 @@ auto initial_status(timing_lane_pseudonote_preview_t& preview, const document_hi
         return false;
     }
     if (!validate_position(*chart, preview.position, preview.diagnostics, "timing event")) {
-        preview.valid = false;
         preview.status = timing_lane_pseudonote_status_t::rejected;
         return false;
     }
@@ -447,11 +443,9 @@ auto initial_status(timing_lane_pseudonote_preview_t& preview, const document_hi
         return false;
     }
     if (!validate_value(*chart, preview)) {
-        preview.valid = false;
         preview.status = timing_lane_pseudonote_status_t::rejected;
         return false;
     }
-    preview.valid = true;
     preview.status = timing_lane_pseudonote_status_t::editing;
     return true;
 }
@@ -459,9 +453,9 @@ auto initial_status(timing_lane_pseudonote_preview_t& preview, const document_hi
 auto cancel_for_revision_or_lock(const document_history_t& history,
                                  timing_lane_pseudonote_preview_t& preview, bool timing_locked)
     -> bool {
-    if (preview.document_revision != history.document.revision) {
+    if (!preview.stamp.document.is_current(history.document, document_identity_policy_t::revision_only)) {
         reject(preview, diagnostic_code_t::invalid_id,
-               "timing pseudo-note document revision is stale");
+               stale_action_message("Timing pseudo-note"));
         preview.status = timing_lane_pseudonote_status_t::cancelled;
         return true;
     }
@@ -474,22 +468,26 @@ auto cancel_for_revision_or_lock(const document_history_t& history,
     return false;
 }
 
-auto apply_timing_lane_preview(document_history_t& history,
+auto apply_timing_lane_preview(document_command_transaction_t& transaction,
                                const timing_lane_pseudonote_preview_t& preview)
     -> document_command_result_t {
-    document_command_result_t result{.revision = history.document.revision};
+    document_command_result_t result{.revision = transaction.history.document.revision};
     switch (preview.kind) {
     case timing_lane_kind_t::bpm: {
         const auto& value = std::get<timing_bpm_value_t>(preview.value);
         if (preview.existing_event) {
-            result =
-                apply_bpm_edit(history, preview.document_revision,
-                               update_bpm_event_action_t{preview.chart, *preview.existing_event,
-                                                         preview.position, value.beats_per_minute});
+            result = apply_bpm_edit(
+                transaction,
+                wormedit::update_edit_t<wormedit::bpm_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .id = *preview.existing_event,
+                    .value = wormedit::bpm_edit_value_t::from(preview.position, value)});
         } else {
             result = apply_bpm_edit(
-                history, preview.document_revision,
-                insert_bpm_event_action_t{preview.chart, preview.position, value.beats_per_minute});
+                transaction,
+                wormedit::insert_edit_t<wormedit::bpm_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .value = wormedit::bpm_edit_value_t::from(preview.position, value)});
         }
         break;
     }
@@ -497,13 +495,17 @@ auto apply_timing_lane_preview(document_history_t& history,
         const auto& value = std::get<timing_scroll_value_t>(preview.value);
         if (preview.existing_event) {
             result = apply_scroll_speed_edit(
-                history, preview.document_revision,
-                update_scroll_event_action_t{preview.chart, *preview.existing_event,
-                                             preview.position, value.multiplier});
+                transaction,
+                wormedit::update_edit_t<wormedit::scroll_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .id = *preview.existing_event,
+                    .value = wormedit::scroll_edit_value_t::from(preview.position, value)});
         } else {
             result = apply_scroll_speed_edit(
-                history, preview.document_revision,
-                insert_scroll_event_action_t{preview.chart, preview.position, value.multiplier});
+                transaction,
+                wormedit::insert_edit_t<wormedit::scroll_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .value = wormedit::scroll_edit_value_t::from(preview.position, value)});
         }
         break;
     }
@@ -511,34 +513,36 @@ auto apply_timing_lane_preview(document_history_t& history,
         const auto& value = std::get<timing_speed_value_t>(preview.value);
         if (preview.existing_event) {
             result = apply_scroll_speed_edit(
-                history, preview.document_revision,
-                update_speed_event_action_t{preview.chart, *preview.existing_event,
-                                            preview.position, value.multiplier,
-                                            value.transition_beats, value.transition_is_seconds});
+                transaction,
+                wormedit::update_edit_t<wormedit::speed_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .id = *preview.existing_event,
+                    .value = wormedit::speed_edit_value_t::from(preview.position, value)});
         } else {
             result = apply_scroll_speed_edit(
-                history, preview.document_revision,
-                insert_speed_event_action_t{preview.chart, preview.position, value.multiplier,
-                                            value.transition_beats, value.transition_is_seconds});
+                transaction,
+                wormedit::insert_edit_t<wormedit::speed_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .value = wormedit::speed_edit_value_t::from(preview.position, value)});
         }
         break;
     }
     case timing_lane_kind_t::stop:
     case timing_lane_kind_t::delay: {
         const auto& value = std::get<timing_pause_value_t>(preview.value);
-        const auto pause_kind =
-            preview.kind == timing_lane_kind_t::stop ? pause_kind_t::stop : pause_kind_t::delay;
         if (preview.existing_event) {
-            result =
-                apply_pause_warp_edit(history, preview.document_revision,
-                                      update_pause_event_action_t{
-                                          preview.chart, *preview.existing_event, preview.position,
-                                          pause_kind, value.duration, value.source_unit});
+            result = apply_pause_warp_edit(
+                transaction,
+                wormedit::update_edit_t<wormedit::pause_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .id = *preview.existing_event,
+                    .value = wormedit::pause_edit_value_t::from(preview.position, value)});
         } else {
             result = apply_pause_warp_edit(
-                history, preview.document_revision,
-                insert_pause_event_action_t{preview.chart, preview.position, pause_kind,
-                                            value.duration, value.source_unit});
+                transaction,
+                wormedit::insert_edit_t<wormedit::pause_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .value = wormedit::pause_edit_value_t::from(preview.position, value)});
         }
         break;
     }
@@ -546,32 +550,35 @@ auto apply_timing_lane_preview(document_history_t& history,
         const auto& value = std::get<timing_warp_value_t>(preview.value);
         if (preview.existing_event) {
             result = apply_pause_warp_edit(
-                history, preview.document_revision,
-                update_warp_event_action_t{preview.chart,
-                                           *preview.existing_event,
-                                           {.begin = preview.position, .end = value.end},
-                                           std::nullopt});
+                transaction,
+                wormedit::update_edit_t<wormedit::warp_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .id = *preview.existing_event,
+                    .value = wormedit::warp_edit_value_t::from(preview.position, value)});
         } else {
             result = apply_pause_warp_edit(
-                history, preview.document_revision,
-                insert_warp_event_action_t{preview.chart,
-                                           {.begin = preview.position, .end = value.end},
-                                           value.source_encoding});
+                transaction,
+                wormedit::insert_edit_t<wormedit::warp_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .value = wormedit::warp_edit_value_t::from(preview.position, value)});
         }
         break;
     }
     case timing_lane_kind_t::kiai: {
         const auto& value = std::get<timing_kiai_value_t>(preview.value);
         if (preview.existing_event) {
-            result =
-                apply_marker_edit(history, preview.document_revision,
-                                  update_kiai_event_action_t{preview.chart, *preview.existing_event,
-                                                             preview.position, value.enabled});
+            result = apply_marker_edit(
+                transaction,
+                wormedit::update_edit_t<wormedit::kiai_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .id = *preview.existing_event,
+                    .value = wormedit::kiai_edit_value_t::from(preview.position, value)});
         } else {
-            result = apply_marker_edit(history, preview.document_revision,
-                                       insert_kiai_event_action_t{preview.chart, preview.position,
-                                                                  value.enabled,
-                                                                  value.retained_effect_bits});
+            result = apply_marker_edit(
+                transaction,
+                wormedit::insert_edit_t<wormedit::kiai_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .value = wormedit::kiai_edit_value_t::from(preview.position, value)});
         }
         break;
     }
@@ -579,15 +586,17 @@ auto apply_timing_lane_preview(document_history_t& history,
         const auto& value = std::get<timing_anchor_value_t>(preview.value);
         if (preview.existing_event) {
             result = apply_timing_anchor_edit(
-                history, preview.document_revision,
-                update_timing_anchor_action_t{preview.chart, *preview.existing_event,
-                                              preview.position, value.source_sample_frame,
-                                              value.locked});
+                transaction,
+                wormedit::update_edit_t<wormedit::timing_anchor_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .id = *preview.existing_event,
+                    .value = wormedit::timing_anchor_edit_value_t::from(preview.position, value)});
         } else {
             result = apply_timing_anchor_edit(
-                history, preview.document_revision,
-                insert_timing_anchor_action_t{preview.chart, preview.position,
-                                              value.source_sample_frame, value.locked});
+                transaction,
+                wormedit::insert_edit_t<wormedit::timing_anchor_edit_value_t>{
+                    .chart = preview.stamp.chart,
+                    .value = wormedit::timing_anchor_edit_value_t::from(preview.position, value)});
         }
         break;
     }
@@ -596,6 +605,14 @@ auto apply_timing_lane_preview(document_history_t& history,
 }
 
 } // namespace
+
+void timing_lane_pseudonote_preview_t::set_value(timing_lane_value_t&& next) {
+    value = std::move(next);
+    if (auto* pause = std::get_if<timing_pause_value_t>(&value))
+        pause->kind = kind == timing_lane_kind_t::delay ? pause_kind_t::delay : pause_kind_t::stop;
+    if (auto* warp = std::get_if<timing_warp_value_t>(&value); warp && existing_event)
+        warp->is_source_encoding_replaced = false;
+}
 
 auto effective_bpm_at(const chart_document_t& chart, local_position_t position)
     -> std::optional<signed_rational_t> {
@@ -630,11 +647,11 @@ auto begin_timing_lane_pseudonote(const document_history_t& history, chart_id_t 
                                   timing_lane_initial_value_source_t initial_value_source,
                                   bool timing_locked) -> timing_lane_pseudonote_preview_t {
     timing_lane_pseudonote_preview_t preview{.status = timing_lane_pseudonote_status_t::inactive,
-                                             .chart = chart,
+                                             .stamp = chart_stamp_t::from(history.document, chart),
                                              .kind = kind,
                                              .position = exact_snapped_position,
-                                             .value = std::move(initial_value),
                                              .initial_value_source = initial_value_source};
+    preview.set_value(std::move(initial_value));
     (void)initial_status(preview, history, timing_locked);
     return preview;
 }
@@ -643,10 +660,9 @@ auto begin_existing_timing_lane_pseudonote(const document_history_t& history, ch
                                            timing_lane_kind_t kind, object_id_t event,
                                            bool timing_locked) -> timing_lane_pseudonote_preview_t {
     timing_lane_pseudonote_preview_t preview{.status = timing_lane_pseudonote_status_t::inactive,
-                                             .chart = chart,
+                                             .stamp = chart_stamp_t::from(history.document, chart),
                                              .kind = kind,
                                              .existing_event = event};
-    preview.document_revision = history.document.revision;
     if (timing_locked) {
         reject(preview, diagnostic_code_t::unsupported_feature,
                "timing is locked; timing lane edits are unavailable");
@@ -689,7 +705,7 @@ auto begin_existing_timing_lane_pseudonote(const document_history_t& history, ch
     return preview;
 }
 
-auto update_timing_lane_pseudonote(const document_history_t& history,
+auto revise_timing_lane_pseudonote(const document_history_t& history,
                                    timing_lane_pseudonote_preview_t& preview,
                                    timing_lane_value_t value, bool timing_locked) -> bool {
     if (preview.status != timing_lane_pseudonote_status_t::editing) {
@@ -698,7 +714,7 @@ auto update_timing_lane_pseudonote(const document_history_t& history,
     if (cancel_for_revision_or_lock(history, preview, timing_locked)) {
         return false;
     }
-    const auto* chart = history.document.find_chart(preview.chart);
+    const auto* chart = history.document.find_chart(preview.stamp.chart);
     if (chart == nullptr) {
         reject(preview, diagnostic_code_t::invalid_id,
                "timing pseudo-note refers to an unknown chart");
@@ -711,20 +727,18 @@ auto update_timing_lane_pseudonote(const document_history_t& history,
         preview.status = timing_lane_pseudonote_status_t::cancelled;
         return false;
     }
-    preview.value = std::move(value);
+    preview.set_value(std::move(value));
     preview.diagnostics.clear();
     if (!preview.existing_event && is_same_row_is_occupied(*chart, preview.kind, preview.position)) {
         reject(preview, diagnostic_code_t::collision,
                "timing lane row already contains an event of this type");
         return false;
     }
-    preview.valid =
-        validate_position(*chart, preview.position, preview.diagnostics, "timing event") &&
-        validate_value(*chart, preview);
-    return preview.valid;
+    return validate_position(*chart, preview.position, preview.diagnostics, "timing event") &&
+           validate_value(*chart, preview);
 }
 
-auto move_existing_timing_lane_pseudonote(const document_history_t& history,
+auto revise_existing_timing_lane_pseudonote_position(const document_history_t& history,
                                           timing_lane_pseudonote_preview_t& preview,
                                           local_position_t exact_snapped_position,
                                           bool timing_locked) -> bool {
@@ -734,7 +748,7 @@ auto move_existing_timing_lane_pseudonote(const document_history_t& history,
     if (cancel_for_revision_or_lock(history, preview, timing_locked)) {
         return false;
     }
-    const auto* chart = history.document.find_chart(preview.chart);
+    const auto* chart = history.document.find_chart(preview.stamp.chart);
     if (chart == nullptr || !is_existing_target_current(*chart, preview)) {
         reject(preview, diagnostic_code_t::invalid_id,
                "existing timing event no longer matches the staged target");
@@ -750,26 +764,19 @@ auto move_existing_timing_lane_pseudonote(const document_history_t& history,
     }
     preview.position = exact_snapped_position;
     preview.diagnostics.clear();
-    preview.valid =
-        validate_position(*chart, preview.position, preview.diagnostics, "timing event") &&
-        validate_value(*chart, preview);
-    return preview.valid;
+    return validate_position(*chart, preview.position, preview.diagnostics, "timing event") &&
+           validate_value(*chart, preview);
 }
 
 auto move_timing_lane_event_group(document_history_t& history, chart_id_t chart_id,
                                   std::span<const timing_lane_event_ref_t> events,
-                                  std::int64_t row_delta, std::uint64_t expected_revision,
+                                  std::int64_t row_delta,
                                   bool timing_locked) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
     constexpr std::size_t maximum_group_events = 4096;
     if (timing_locked) {
         result.diagnostics = {error(diagnostic_code_t::unsupported_feature,
                                     "timing is locked; timing group moves are unavailable")};
-        return result;
-    }
-    if (expected_revision != history.document.revision) {
-        result.diagnostics = {error(diagnostic_code_t::invalid_id,
-                                    "timing group move uses a stale document revision")};
         return result;
     }
     if (events.empty() || events.size() > maximum_group_events) {
@@ -809,11 +816,11 @@ auto move_timing_lane_event_group(document_history_t& history, chart_id_t chart_
             std::get<timing_warp_value_t>(preview.value).end = *move.warp_end;
         }
         if (preview.status != timing_lane_pseudonote_status_t::editing ||
-            !move_existing_timing_lane_pseudonote(staged, preview, move.target, false)) {
+            !revise_existing_timing_lane_pseudonote_position(staged, preview, move.target, false)) {
             result.diagnostics = std::move(preview.diagnostics);
             return result;
         }
-        auto applied = confirm_timing_lane_pseudonote(staged, preview, false);
+        auto applied = apply_timing_lane_pseudonote(staged, preview, false);
         if (!applied) {
             result.diagnostics = std::move(applied.diagnostics);
             return result;
@@ -824,7 +831,7 @@ auto move_timing_lane_event_group(document_history_t& history, chart_id_t chart_
     return transaction.commit("Move timing markers");
 }
 
-auto confirm_timing_lane_pseudonote(document_history_t& history,
+auto apply_timing_lane_pseudonote(document_history_t& history,
                                     timing_lane_pseudonote_preview_t& preview, bool timing_locked)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
@@ -832,11 +839,22 @@ auto confirm_timing_lane_pseudonote(document_history_t& history,
         result.diagnostics = preview.diagnostics;
         return result;
     }
-    if (cancel_for_revision_or_lock(history, preview, timing_locked)) {
+    auto transaction = document_command_transaction_t::from(history, preview.stamp,
+        "Timing pseudo-note", document_identity_policy_t::revision_only);
+    if (!transaction.is_ready()) {
+        result = transaction.commit({});
+        preview.diagnostics = result.diagnostics;
+        preview.status = timing_lane_pseudonote_status_t::cancelled;
+        return result;
+    }
+    if (timing_locked) {
+        reject(preview, diagnostic_code_t::unsupported_feature,
+               "timing lock changed while a pseudo-note was being edited");
+        preview.status = timing_lane_pseudonote_status_t::cancelled;
         result.diagnostics = preview.diagnostics;
         return result;
     }
-    const auto* chart = history.document.find_chart(preview.chart);
+    const auto* chart = history.document.find_chart(preview.stamp.chart);
     if (chart == nullptr) {
         reject(preview, diagnostic_code_t::invalid_id,
                "timing pseudo-note refers to an unknown chart");
@@ -868,44 +886,35 @@ auto confirm_timing_lane_pseudonote(document_history_t& history,
         return result;
     }
     preview.diagnostics.clear();
-    preview.valid =
-        validate_position(*chart, preview.position, preview.diagnostics, "timing event") &&
-        validate_value(*chart, preview);
-    if (!preview.valid) {
+    if (!validate_position(*chart, preview.position, preview.diagnostics, "timing event") ||
+        !validate_value(*chart, preview)) {
         preview.status = timing_lane_pseudonote_status_t::rejected;
         result.diagnostics = preview.diagnostics;
         return result;
     }
 
-    result = apply_timing_lane_preview(history, preview);
+    result = apply_timing_lane_preview(transaction, preview);
     preview.diagnostics = result.diagnostics;
-    preview.valid = result.applied || result.diagnostics.empty();
-    preview.status = preview.valid ? timing_lane_pseudonote_status_t::committed
-                                   : timing_lane_pseudonote_status_t::rejected;
+    preview.status = result.applied || result.diagnostics.empty()
+        ? timing_lane_pseudonote_status_t::committed
+        : timing_lane_pseudonote_status_t::rejected;
     return result;
 }
 
 void cancel_timing_lane_pseudonote(timing_lane_pseudonote_preview_t& preview) noexcept {
     if (preview.status == timing_lane_pseudonote_status_t::editing) {
         preview.status = timing_lane_pseudonote_status_t::cancelled;
-        preview.valid = false;
         preview.diagnostics.clear();
     }
 }
 
 auto delete_existing_timing_lane_event(document_history_t& history, chart_id_t chart,
-                                       timing_lane_kind_t kind, object_id_t event,
-                                       std::uint64_t expected_revision, bool timing_locked)
+                                       timing_lane_kind_t kind, object_id_t event, bool timing_locked)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
     if (timing_locked) {
         result.diagnostics = {error(diagnostic_code_t::unsupported_feature,
                                     "timing is locked; timing lane edits are unavailable")};
-        return result;
-    }
-    if (expected_revision != history.document.revision) {
-        result.diagnostics = {error(diagnostic_code_t::invalid_id,
-                                    "timing marker deletion uses a stale document revision")};
         return result;
     }
     const auto preview = begin_existing_timing_lane_pseudonote(history, chart, kind, event, false);
@@ -921,26 +930,30 @@ auto delete_existing_timing_lane_event(document_history_t& history, chart_id_t c
     }
     switch (kind) {
     case timing_lane_kind_t::bpm:
-        return apply_bpm_edit(history, expected_revision, delete_bpm_event_action_t{chart, event});
+        return apply_bpm_edit(history, wormedit::delete_edit_t<wormedit::bpm_edit_value_t>{
+                                           .chart = chart, .id = event});
     case timing_lane_kind_t::scroll:
-        return apply_scroll_speed_edit(history, expected_revision,
-                                       delete_scroll_event_action_t{chart, event});
+        return apply_scroll_speed_edit(
+            history,
+            wormedit::delete_edit_t<wormedit::scroll_edit_value_t>{.chart = chart, .id = event});
     case timing_lane_kind_t::speed:
-        return apply_scroll_speed_edit(history, expected_revision,
-                                       delete_speed_event_action_t{chart, event});
+        return apply_scroll_speed_edit(
+            history,
+            wormedit::delete_edit_t<wormedit::speed_edit_value_t>{.chart = chart, .id = event});
     case timing_lane_kind_t::stop:
     case timing_lane_kind_t::delay:
-        return apply_pause_warp_edit(history, expected_revision,
-                                     delete_pause_event_action_t{chart, event});
+        return apply_pause_warp_edit(history, wormedit::delete_edit_t<wormedit::pause_edit_value_t>{
+                                                  .chart = chart, .id = event});
     case timing_lane_kind_t::warp:
-        return apply_pause_warp_edit(history, expected_revision,
-                                     delete_warp_event_action_t{chart, event});
+        return apply_pause_warp_edit(history, wormedit::delete_edit_t<wormedit::warp_edit_value_t>{
+                                                  .chart = chart, .id = event});
     case timing_lane_kind_t::kiai:
-        return apply_marker_edit(history, expected_revision,
-                                 delete_kiai_event_action_t{chart, event});
+        return apply_marker_edit(history, wormedit::delete_edit_t<wormedit::kiai_edit_value_t>{
+                                              .chart = chart, .id = event});
     case timing_lane_kind_t::anchor:
-        return apply_timing_anchor_edit(history, expected_revision,
-                                        delete_timing_anchor_action_t{chart, event});
+        return apply_timing_anchor_edit(
+            history, wormedit::delete_edit_t<wormedit::timing_anchor_edit_value_t>{.chart = chart,
+                                                                                   .id = event});
     }
     return result;
 }
@@ -958,35 +971,29 @@ auto edit_speed_event_span(document_history_t& history, chart_id_t chart, object
         return result;
     }
     if (edit.position &&
-        !move_existing_timing_lane_pseudonote(history, preview, *edit.position, timing_locked)) {
+        !revise_existing_timing_lane_pseudonote_position(history, preview, *edit.position, timing_locked)) {
         result.diagnostics = preview.diagnostics;
         return result;
     }
     if (edit.transition) {
         auto value = std::get<timing_speed_value_t>(preview.value);
         value.transition_beats = *edit.transition;
-        if (!update_timing_lane_pseudonote(history, preview, value, timing_locked)) {
+        if (!revise_timing_lane_pseudonote(history, preview, value, timing_locked)) {
             result.diagnostics = preview.diagnostics;
             return result;
         }
     }
-    return confirm_timing_lane_pseudonote(history, preview, timing_locked);
+    return apply_timing_lane_pseudonote(history, preview, timing_locked);
 }
 
 auto delete_timing_lane_event_group(document_history_t& history, chart_id_t chart_id,
-                                    std::span<const timing_lane_event_ref_t> events,
-                                    std::uint64_t expected_revision, bool timing_locked)
+                                    std::span<const timing_lane_event_ref_t> events, bool timing_locked)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
     constexpr std::size_t maximum_group_events = 4096;
     if (timing_locked) {
         result.diagnostics = {error(diagnostic_code_t::unsupported_feature,
                                     "timing is locked; timing group deletion is unavailable")};
-        return result;
-    }
-    if (expected_revision != history.document.revision) {
-        result.diagnostics = {error(diagnostic_code_t::invalid_id,
-                                    "timing group deletion uses a stale document revision")};
         return result;
     }
     if (events.empty() || events.size() > maximum_group_events) {
@@ -1015,8 +1022,7 @@ auto delete_timing_lane_event_group(document_history_t& history, chart_id_t char
     }
     auto staged = document_history_t::from(history.document);
     for (const auto& event : doomed) {
-        auto deleted = delete_existing_timing_lane_event(staged, chart_id, event.kind, event.event,
-                                                         staged.document.revision, false);
+        auto deleted = delete_existing_timing_lane_event(staged, chart_id, event.kind, event.event, false);
         if (!deleted) {
             result.diagnostics = std::move(deleted.diagnostics);
             return result;

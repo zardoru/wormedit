@@ -467,7 +467,7 @@ auto parse_branch_fixture(std::string_view text, text_encoding_t encoding = text
 auto edit_or_throw(document_history_t& history, std::string_view before, std::string after)
     -> bms_branch_statement_command_result_t {
     auto result = apply_bms_branch_statement_edit_command(
-        history, history.document.revision, replace_request(history, before, std::move(after)));
+        history, replace_request(history, before, std::move(after)));
     if (!result) {
         throw std::runtime_error("BMS statement edit fixture command failed");
     }
@@ -477,7 +477,7 @@ auto edit_or_throw(document_history_t& history, std::string_view before, std::st
 auto insert_or_throw(document_history_t& history, std::string_view anchor,
                      std::string statement) -> bms_branch_statement_command_result_t {
     auto result = apply_bms_branch_statement_insert_command(
-        history, history.document.revision,
+        history,
         insert_request_after(history, anchor, std::move(statement)));
     if (!result) {
         throw std::runtime_error("BMS statement insert fixture command failed");
@@ -488,7 +488,7 @@ auto insert_or_throw(document_history_t& history, std::string_view anchor,
 auto delete_or_throw(document_history_t& history, std::string_view statement)
     -> bms_branch_statement_command_result_t {
     auto result = apply_bms_branch_statement_delete_command(
-        history, history.document.revision, delete_request_for(history, statement));
+        history, delete_request_for(history, statement));
     if (!result) {
         throw std::runtime_error("BMS statement delete fixture command failed");
     }
@@ -558,7 +558,7 @@ auto reject_unrepresentable_cp932(document_history_t& history) -> bool {
     const auto original_bytes = retained_bms_bytes(history.document);
     const auto revision = history.document.revision;
     const auto result = apply_bms_branch_statement_edit_command(
-        history, revision,
+        history,
         replace_request(history, "#COMMENT 文字列-long", "#COMMENT 😀"));
     return !result && history.document.revision == revision &&
            retained_bms_bytes(history.document) == original_bytes &&
@@ -623,7 +623,7 @@ TEST_CASE("inactive BMS statement replacement is one revision-checked undoable c
     const auto request = replace_request(history, "#00011:0200", "#00011:0300");
 
     const auto applied =
-        apply_bms_branch_statement_edit_command(history, history.document.revision, request);
+        apply_bms_branch_statement_edit_command(history, request);
     REQUIRE(applied);
     CHECK(applied.payload.format_diagnostics.empty());
     CHECK(applied.command.diagnostics.empty());
@@ -670,27 +670,15 @@ TEST_CASE("BMS statement replacement preserves CRLF bytes and rejects unrepresen
     CHECK(reject_unrepresentable_cp932(history));
 }
 
-TEST_CASE("stale BMS branch actions reject without changing history or losing typed diagnostics",
+TEST_CASE("BMS source provenance mismatch rejects without changing history or losing typed diagnostics",
           "[unit][core][bms][branch][command][negative]") {
     auto history = make_history();
     const auto original_revision = history.document.revision;
     auto request = replace_request(history, "#00011:0200", "#00011:0300");
 
-    const auto stale_revision =
-        apply_bms_branch_statement_edit_command(history, original_revision + 1, request);
-    CHECK_FALSE(stale_revision);
-    CHECK(stale_revision.payload.format_diagnostics.empty());
-    REQUIRE(stale_revision.command.diagnostics.size() == 1);
-    CHECK(stale_revision.command.diagnostics.front().severity == diagnostic_severity_t::error);
-    CHECK(history.document.revision == original_revision);
-    CHECK(history.undo.empty());
-    CHECK(history.redo.empty());
-    CHECK(find_node(chart_tree(history), bms_control_kind_t::raw_statement, "#00011:0200") !=
-          nullptr);
-
     ++request.expected_source_span.byte_begin;
     const auto stale_source =
-        apply_bms_branch_statement_edit_command(history, original_revision, request);
+        apply_bms_branch_statement_edit_command(history, request);
     CHECK_FALSE(stale_source);
     CHECK(stale_source.command.diagnostics.empty());
     REQUIRE(stale_source.payload.format_diagnostics.size() == 1);
@@ -709,7 +697,7 @@ TEST_CASE("active BMS statements reject edits with a typed diagnostic",
     REQUIRE(statement != nullptr);
     const auto revision = history.document.revision;
     const auto applied = apply_bms_branch_statement_edit_command(
-        history, revision,
+        history,
         {.chart = history.document.charts.front().id,
          .statement = statement->id,
          .expected_source_order = statement->source_order,
@@ -731,7 +719,7 @@ TEST_CASE("inactive BMS statement edits reject ambiguous multi-chart source iden
     history.document.charts.push_back(std::move(second_chart));
     const auto revision = history.document.revision;
     const auto applied = apply_bms_branch_statement_insert_command(
-        history, revision, insert_request(history));
+        history, insert_request(history));
     CHECK_FALSE(applied);
     REQUIRE(applied.payload.format_diagnostics.size() == 1);
     CHECK(applied.payload.format_diagnostics.front().code ==
@@ -744,7 +732,7 @@ TEST_CASE("inactive BMS statement insertion enters history and replays retained 
     auto history = make_history();
     const auto request = insert_request(history);
     const auto inserted =
-        apply_bms_branch_statement_insert_command(history, history.document.revision, request);
+        apply_bms_branch_statement_insert_command(history, request);
     REQUIRE(inserted);
     CHECK(inserted.payload.format_diagnostics.empty());
     CHECK(inserted.command.diagnostics.empty());
@@ -764,7 +752,7 @@ TEST_CASE("inactive BMS insertion leaves the active chart projection unchanged",
     const auto active_sound_before = std::string(first_note_resource_name(history.document));
     const auto active_note_count_before = history.document.charts.front().measures.front().notes.size();
     const auto applied = apply_bms_branch_statement_insert_command(
-        history, history.document.revision, insert_request(history));
+        history, insert_request(history));
     REQUIRE(applied);
     CHECK(std::string(first_note_resource_name(history.document)) == active_sound_before);
     CHECK(history.document.charts.front().measures.front().notes.size() == active_note_count_before);
@@ -775,7 +763,7 @@ TEST_CASE("inactive BMS statement deletion enters history and replays retained s
     auto history = make_history();
     const auto request = delete_request(history);
     const auto deleted =
-        apply_bms_branch_statement_delete_command(history, history.document.revision, request);
+        apply_bms_branch_statement_delete_command(history, request);
     REQUIRE(deleted);
     CHECK(deleted.payload.format_diagnostics.empty());
     CHECK(deleted.command.diagnostics.empty());
@@ -879,7 +867,7 @@ TEST_CASE("BMS branch selection rematerializes semantics as one undoable command
     history.document.charts.front().measures.front().definition.meter = meter_t{8, 8};
     CHECK(first_note_resource_name(history.document) == "active.wav");
 
-    const auto changed = apply_bms_branch_selection_command(history, history.document.revision,
+    const auto changed = apply_bms_branch_selection_command(history,
                                                             selected_branch(history, 2));
     REQUIRE(changed);
     CHECK(changed.command.diagnostics.empty());
@@ -920,13 +908,13 @@ TEST_CASE("BMS branch selection retains serialized active edits when switching a
     REQUIRE(edit);
 
     const auto switched_away = apply_bms_branch_selection_command(
-        history, history.document.revision, selected_branch(history, 2));
+        history, selected_branch(history, 2));
     REQUIRE(switched_away);
     REQUIRE(history.document.charts.front().measures.front().notes.size() == 1);
     CHECK(history.document.charts.front().measures.front().notes.front().position.row == 0);
 
     const auto switched_back = apply_bms_branch_selection_command(
-        history, history.document.revision, selected_branch(history, 1));
+        history, selected_branch(history, 1));
     REQUIRE(switched_back);
     REQUIRE(history.document.charts.front().measures.front().notes.size() == 1);
     CHECK(history.document.charts.front().measures.front().notes.front().position.row == 480);
@@ -939,7 +927,7 @@ TEST_CASE("scalar BMS branch choice command derives set and clear proposals from
     const auto chart = history.document.charts.front().id;
     const auto branch = history.document.charts.front().active_branch_selection.front().branch;
     const auto selected =
-        apply_bms_branch_choice_command(history, history.document.revision,
+        apply_bms_branch_choice_command(history,
                                         {.chart = chart, .branch = branch, .selected_value = 2});
     REQUIRE(selected);
     CHECK(first_note_resource_name(history.document) == "inactive.wav");
@@ -947,7 +935,7 @@ TEST_CASE("scalar BMS branch choice command derives set and clear proposals from
     const auto selected_branch_id =
         history.document.charts.front().active_branch_selection.front().branch;
     const auto cleared = apply_bms_branch_choice_command(
-        history, history.document.revision,
+        history,
         {.chart = chart, .branch = selected_branch_id, .selected_value = std::nullopt});
     REQUIRE(cleared);
     CHECK(history.document.charts.front().active_branch_selection.empty());
@@ -967,7 +955,7 @@ TEST_CASE("BMS branch block creation preserves selected source statements and hi
     const auto statement_id = request.first_statement;
     const auto original_order = request.first_source_order;
     const auto created = apply_bms_branch_block_create_command(
-        history, history.document.revision, request);
+        history, request);
     REQUIRE(created.applied);
     check_created_block_nodes(history, statement_id, original_order);
     check_created_block_projection(history);
@@ -982,7 +970,7 @@ TEST_CASE("BMS branch block creation serializes current note and timing edits",
     const auto request = create_block_request(history, "#WAV03 replacement.wav",
                                               "#WAV03 replacement.wav", 2);
     const auto created = apply_bms_branch_block_create_command(
-        history, history.document.revision, request);
+        history, request);
     REQUIRE(created.applied);
     check_serialized_note_and_bpm(history);
 }
@@ -996,7 +984,7 @@ TEST_CASE("BMS branch block creation keeps IDs unique after serializing a new ro
     const auto request = create_block_request(history, "#WAV03 replacement.wav",
                                               "#WAV03 replacement.wav", 2);
     const auto created = apply_bms_branch_block_create_command(
-        history, history.document.revision, request);
+        history, request);
 
     REQUIRE(created.applied);
     check_root_note_survived(history);
@@ -1011,7 +999,7 @@ TEST_CASE("BMS branch block creation rejects an unroundtrippable unused resource
     const auto request = create_block_request(history, "#WAV03 replacement.wav",
                                               "#WAV03 replacement.wav", 2);
     const auto created = apply_bms_branch_block_create_command(
-        history, history.document.revision, request);
+        history, request);
     check_unreferenced_resource_rejected(created, history);
     check_unreferenced_resource_preserved(history);
 }
@@ -1023,7 +1011,7 @@ TEST_CASE("BMS branch block creation rejects a custom lane map it cannot reconci
     const auto request = create_block_request(history, "#WAV03 replacement.wav",
                                               "#WAV03 replacement.wav", 2);
     const auto revision = history.document.revision;
-    const auto created = apply_bms_branch_block_create_command(history, revision, request);
+    const auto created = apply_bms_branch_block_create_command(history, request);
     CHECK_FALSE(created.applied);
     CHECK_FALSE(created.diagnostics.empty());
     CHECK(history.document.revision == revision);
@@ -1035,7 +1023,7 @@ TEST_CASE("BMS branch block creation rejects a range crossing existing control f
     auto history = make_history();
     const auto request = create_block_request(history, "#WAV03 replacement.wav", "#00011:0200", 2);
     const auto revision = history.document.revision;
-    const auto created = apply_bms_branch_block_create_command(history, revision, request);
+    const auto created = apply_bms_branch_block_create_command(history, request);
     CHECK_FALSE(created.applied);
     CHECK_FALSE(created.diagnostics.empty());
     CHECK(history.document.revision == revision);
@@ -1050,7 +1038,7 @@ TEST_CASE("BMS branch block removal accepts only an exact empty block",
     const auto* block = find_node(chart_tree(history), bms_control_kind_t::random, "#RANDOM 2");
     REQUIRE(block != nullptr);
     const auto removed = apply_bms_branch_block_remove_command(
-        history, history.document.revision, remove_block_request(history, *block));
+        history, remove_block_request(history, *block));
     REQUIRE(removed.applied);
     check_empty_block_removal_history(history);
 }
@@ -1060,13 +1048,13 @@ TEST_CASE("BMS branch block removal rejects a nonempty selected leaf atomically"
     auto history = make_history();
     const auto create = create_block_request(history, "#WAV03 replacement.wav",
                                              "#WAV03 replacement.wav", 2);
-    REQUIRE(apply_bms_branch_block_create_command(history, history.document.revision, create)
+    REQUIRE(apply_bms_branch_block_create_command(history, create)
                 .applied);
     const auto* block = find_node(chart_tree(history), bms_control_kind_t::random, "#RANDOM 2");
     REQUIRE(block != nullptr);
     const auto revision = history.document.revision;
     const auto removed = apply_bms_branch_block_remove_command(
-        history, revision, remove_block_request(history, *block));
+        history, remove_block_request(history, *block));
     CHECK_FALSE(removed.applied);
     CHECK_FALSE(removed.diagnostics.empty());
     CHECK(history.document.revision == revision);
@@ -1114,27 +1102,20 @@ TEST_CASE("BMS branch selection maps nested controls across normalized source or
         .proposed = {{random->id, 2}, {switch_block->id, 1}},
     };
     const auto changed =
-        apply_bms_branch_selection_command(history, history.document.revision, std::move(request));
+        apply_bms_branch_selection_command(history, std::move(request));
     REQUIRE(changed);
     REQUIRE(history.document.charts.front().active_branch_selection.size() == 2);
     CHECK(first_note_resource_name(history.document) == "first.wav");
 }
 
-TEST_CASE("BMS branch selection rejects stale invalid and lossy proposals atomically",
+TEST_CASE("BMS branch selection rejects invalid and lossy proposals atomically",
           "[unit][core][bms][branch][selection][command][negative]") {
     auto history = make_history();
     const auto revision = history.document.revision;
 
-    const auto stale =
-        apply_bms_branch_selection_command(history, revision + 1, selected_branch(history, 2));
-    CHECK_FALSE(stale);
-    REQUIRE(stale.command.diagnostics.size() == 1);
-    CHECK(history.document.revision == revision);
-    CHECK(history.undo.empty());
-
     auto invalid_request = selected_branch(history, 3);
     const auto invalid =
-        apply_bms_branch_selection_command(history, revision, std::move(invalid_request));
+        apply_bms_branch_selection_command(history, std::move(invalid_request));
     CHECK_FALSE(invalid);
     REQUIRE(invalid.payload.format_diagnostics.size() == 1);
     CHECK(invalid.payload.format_diagnostics.front().code ==
@@ -1145,7 +1126,7 @@ TEST_CASE("BMS branch selection rejects stale invalid and lossy proposals atomic
     auto parse_limited_request = selected_branch(history, 2);
     parse_limited_request.max_line_bytes = 1;
     const auto parse_limited =
-        apply_bms_branch_selection_command(history, revision, std::move(parse_limited_request));
+        apply_bms_branch_selection_command(history, std::move(parse_limited_request));
     CHECK_FALSE(parse_limited);
     REQUIRE(parse_limited.payload.format_diagnostics.size() == 1);
     CHECK(parse_limited.payload.format_diagnostics.front().code ==
@@ -1160,7 +1141,7 @@ TEST_CASE("BMS branch selection rejects stale invalid and lossy proposals atomic
         .position = local_position_t{history.document.charts.front().measures.front().id, 0},
     });
     const auto lossy =
-        apply_bms_branch_selection_command(history, revision, selected_branch(history, 2));
+        apply_bms_branch_selection_command(history, selected_branch(history, 2));
     CHECK_FALSE(lossy);
     REQUIRE(lossy.payload.format_diagnostics.size() == 1);
     CHECK(lossy.payload.format_diagnostics.front().code ==
@@ -1172,7 +1153,7 @@ TEST_CASE("BMS branch selection rejects stale invalid and lossy proposals atomic
     auto unrepresentable = make_history();
     unrepresentable.document.charts.front().measures.front().notes.front().kind = note_kind_t::roll;
     const auto write_failed = apply_bms_branch_selection_command(
-        unrepresentable, unrepresentable.document.revision, selected_branch(unrepresentable, 2));
+        unrepresentable, selected_branch(unrepresentable, 2));
     CHECK_FALSE(write_failed);
     REQUIRE(write_failed.payload.format_diagnostics.size() == 1);
     CHECK(write_failed.payload.format_diagnostics.front().code ==
@@ -1218,7 +1199,7 @@ TEST_CASE("BMS branch leaf move swaps bodies and keeps the active leaf selected"
           "[unit][core][bms][branch][block][leaf-move]") {
     auto history = make_three_leaf_history(2);
     REQUIRE(first_note_resource_name(history.document) == "two.wav");
-    const auto moved = apply_bms_branch_leaf_move_command(history, history.document.revision,
+    const auto moved = apply_bms_branch_leaf_move_command(history,
         leaf_move_request(history, "#ELSEIF 2", bms_branch_leaf_move_direction_t::up));
     REQUIRE(moved.applied);
     CHECK(history.undo.size() == 1);
@@ -1227,7 +1208,7 @@ TEST_CASE("BMS branch leaf move swaps bodies and keeps the active leaf selected"
     const auto text = serialized_source(history);
     CHECK(text.find("#IF 1\n#00011:0200\n#ELSEIF 2\n#00011:0100\n#ELSEIF 3\n#00011:0300\n#ENDIF") !=
           std::string::npos);
-    const auto again = apply_bms_branch_leaf_move_command(history, history.document.revision,
+    const auto again = apply_bms_branch_leaf_move_command(history,
         leaf_move_request(history, "#ELSEIF 3", bms_branch_leaf_move_direction_t::up));
     REQUIRE(again.applied);
     CHECK(history.document.charts.front().active_branch_selection.front().selected_value == 1);
@@ -1242,7 +1223,7 @@ TEST_CASE("BMS branch leaf move swaps bodies and keeps the active leaf selected"
 TEST_CASE("BMS branch leaf move down renumbers the unselected side consistently",
           "[unit][core][bms][branch][block][leaf-move]") {
     auto history = make_three_leaf_history(3);
-    const auto moved = apply_bms_branch_leaf_move_command(history, history.document.revision,
+    const auto moved = apply_bms_branch_leaf_move_command(history,
         leaf_move_request(history, "#IF 1", bms_branch_leaf_move_direction_t::down));
     REQUIRE(moved.applied);
     CHECK(history.document.charts.front().active_branch_selection.front().selected_value == 3);
@@ -1263,22 +1244,20 @@ TEST_CASE("BMS branch leaf move rejects edges stale input and else leaves atomic
         CHECK(history.undo.empty());
         CHECK(serialized_source(history) == before);
     };
-    rejected(apply_bms_branch_leaf_move_command(history, revision,
+    rejected(apply_bms_branch_leaf_move_command(history,
         leaf_move_request(history, "#IF 1", bms_branch_leaf_move_direction_t::up)));
-    rejected(apply_bms_branch_leaf_move_command(history, revision,
+    rejected(apply_bms_branch_leaf_move_command(history,
         leaf_move_request(history, "#ELSEIF 3", bms_branch_leaf_move_direction_t::down)));
-    rejected(apply_bms_branch_leaf_move_command(history, revision + 1,
-        leaf_move_request(history, "#ELSEIF 2", bms_branch_leaf_move_direction_t::up)));
     auto stale = leaf_move_request(history, "#ELSEIF 2", bms_branch_leaf_move_direction_t::up);
     stale.expected_leaf_original_text = "#ELSEIF 9";
-    rejected(apply_bms_branch_leaf_move_command(history, revision, stale));
+    rejected(apply_bms_branch_leaf_move_command(history, stale));
     auto with_else = make_history();
     const auto else_revision = with_else.document.revision;
     const auto& tree = chart_tree(with_else);
     const auto* block = find_node(tree, bms_control_kind_t::random, "#RANDOM 2");
     const auto* leaf = find_node(tree, bms_control_kind_t::if_branch, "#IF 1");
     REQUIRE((block && leaf));
-    const auto result = apply_bms_branch_leaf_move_command(with_else, else_revision,
+    const auto result = apply_bms_branch_leaf_move_command(with_else,
         {.chart = with_else.document.charts.front().id, .random_block = block->id, .leaf = leaf->id,
          .expected_leaf_source_order = leaf->source_order,
          .expected_leaf_original_text = leaf->original_text,

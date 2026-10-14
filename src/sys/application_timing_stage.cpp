@@ -189,7 +189,7 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
         if (preview.status == timing_lane_pseudonote_status_t::editing &&
             action.timing_has_target_y) {
             const auto chart =
-                history.document.find_chart(preview.chart);
+                history.document.find_chart(preview.stamp.chart);
             const auto target =
                 chart == nullptr
                     ? std::optional<local_position_t>{}
@@ -197,7 +197,7 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
                           *chart, wormedit::sys::timing_target_fraction(action.timing_target),
                           active_snap_denominator);
             if (!target ||
-                !move_existing_timing_lane_pseudonote(history, preview, *target, timing_locked)) {
+                !revise_existing_timing_lane_pseudonote_position(history, preview, *target, timing_locked)) {
                 return rejected;
             }
         }

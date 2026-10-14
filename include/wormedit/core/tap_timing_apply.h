@@ -18,36 +18,21 @@ struct tap_timing_apply_proposal_t {
                                   bool timing_locked = false)
         -> diagnosed_t<std::optional<tap_timing_apply_proposal_t>>;
 
-    chart_id_t chart;
-    std::uint64_t document_revision{};
+    chart_stamp_t stamp;
     std::uint32_t sample_rate{};
     std::uint16_t beats_per_measure{};
     tap_tempo_estimate_t estimate;
     tap_bpm_choice_t choice{tap_bpm_choice_t::raw};
     signed_rational_t beats_per_minute;
     signed_rational_t beat_zero_audio_offset_seconds;
+
+    [[nodiscard]] auto is_valid() const noexcept -> bool {
+        return static_cast<bool>(stamp.chart);
+    }
 };
 
 using tap_timing_apply_proposal_outcome_t = diagnosed_t<std::optional<tap_timing_apply_proposal_t>>;
 
-struct tap_timing_apply_proposal_result_t {
-    [[nodiscard]] static auto from(tap_timing_apply_proposal_outcome_t&& outcome)
-        -> tap_timing_apply_proposal_result_t;
-    std::optional<tap_timing_apply_proposal_t> proposal;
-    diagnostic_list_t diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return proposal.has_value() && diagnostics.empty();
-    }
-};
-
-[[nodiscard]] auto propose_tap_timing_apply(const song_document_t& document, chart_id_t chart,
-                                            const tap_tempo_estimate_t& estimate,
-                                            std::uint32_t sample_rate,
-                                            std::uint16_t beats_per_measure,
-                                            tap_bpm_choice_t choice,
-                                            bool timing_locked = false)
-    -> tap_timing_apply_proposal_result_t;
 
 // Builds the same BPM/offset edit used by the commit path for read-only grid preview.
 [[nodiscard]] auto make_tap_timing_preview(
@@ -55,7 +40,6 @@ struct tap_timing_apply_proposal_result_t {
     -> std::optional<chart_document_t>;
 
 [[nodiscard]] auto apply_tap_timing_proposal(document_history_t& history,
-                                             std::uint64_t expected_revision,
                                              const tap_timing_apply_proposal_t& proposal,
                                              bool timing_locked = false)
     -> document_command_result_t;

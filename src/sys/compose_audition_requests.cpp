@@ -10,17 +10,6 @@
 namespace wormedit::sys {
 namespace {
 
-auto audition_diagnostic_severity(diagnostic_severity_t severity) -> notification_severity_t {
-    switch (severity) {
-    case diagnostic_severity_t::info:
-        return notification_severity_t::info;
-    case diagnostic_severity_t::warning:
-        return notification_severity_t::warning;
-    case diagnostic_severity_t::error:
-        return notification_severity_t::error;
-    }
-    return notification_severity_t::error;
-}
 void post_audition_started(const notification_sink_t& notifications, bool started,
                            std::string_view diagnostic, std::string_view success,
                            std::string_view failure) {
@@ -89,12 +78,12 @@ void process_object_request(const editor_object_audition_request_t& request,
                    audio::audition_resolve_code_t::missing_resource) {
         // A silent note or BGM event has nothing to play; clicking or placing it is not an error.
     } else if (!prepared.diagnostics.empty()) {
-        inputs.notifications.post(
-            audition_diagnostic_severity(prepared.diagnostics.front().severity),
-            notification_source_t::audio, prepared.diagnostics.front().message);
+        inputs.notifications.post(to_notification_severity(prepared.diagnostics.front().severity),
+                                  notification_source_t::audio,
+                                  prepared.diagnostics.front().message);
     } else if (prepared.status == audio::object_audition_status_t::stale_document) {
         inputs.notifications.post(notification_severity_t::warning, notification_source_t::audio,
-                                  "Audio preview request expired after the document changed.");
+                                  stale_action_message("Audio preview request"));
     } else {
         inputs.notifications.post(notification_severity_t::error, notification_source_t::audio,
                                   "Audio preview could not be prepared.");
@@ -120,9 +109,9 @@ void process_draft_request(const bmson_draft_audition_request_t& request,
                               "Staged BMSON region audition started.",
                               "Staged BMSON region audition could not start.");
     } else if (!resolved.diagnostics.empty()) {
-        inputs.notifications.post(
-            audition_diagnostic_severity(resolved.diagnostics.front().severity),
-            notification_source_t::audio, resolved.diagnostics.front().message);
+        inputs.notifications.post(to_notification_severity(resolved.diagnostics.front().severity),
+                                  notification_source_t::audio,
+                                  resolved.diagnostics.front().message);
     } else {
         inputs.notifications.post(notification_severity_t::error, notification_source_t::audio,
                                   "Staged BMSON region audition could not be prepared.");

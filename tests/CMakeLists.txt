@@ -24,6 +24,7 @@ add_executable(wormedit_core_tests
     sys/stem_window_tests.cpp
     ../src/sys/compose_resource_presenter.cpp
     ../src/sys/compose_area_actions.cpp
+    ../src/sys/compose_action_outcome.cpp
     ../src/sys/application_commands.cpp
     ../src/sys/project_view.cpp
     ../src/sys/tap_timing_runtime.cpp
@@ -632,6 +633,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/bookmark_chooser_view.cpp
         ../src/sys/bookmark_navigation.cpp
         ../src/sys/compose_area_actions.cpp
+        ../src/sys/compose_action_outcome.cpp
         ../src/sys/compose_bgm_bar.cpp
         ../src/sys/bookmark_commands.cpp
         ../src/sys/compose_navigation.cpp
@@ -698,6 +700,7 @@ endif()
 if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     if(TARGET wormedit_visual_decoder)
         add_executable(wormedit_bga_actions_tests sys/bga_actions_tests.cpp
+            ../src/sys/compose_action_outcome.cpp
             ../src/sys/compose_bga_actions.cpp ../src/sys/bga_list_view.cpp)
         target_include_directories(wormedit_bga_actions_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
         target_compile_definitions(wormedit_bga_actions_tests PRIVATE WORMEDIT_HAS_IMAGE_DECODER=1)
@@ -723,6 +726,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/ui/nuklear/theme.cpp
         ../src/sys/frame_timing.cpp
         ../src/sys/compose_area_actions.cpp
+        ../src/sys/compose_action_outcome.cpp
         ../src/sys/compose_view.cpp
         ../src/sys/compose_scene_view.cpp
         ../src/sys/compose_marker_view.cpp
@@ -762,6 +766,10 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/compose_actions.cpp
             ../src/sys/compose_resource_actions.cpp
             ../src/sys/compose_marker_actions.cpp
+            ../src/sys/compose_bookmark_actions.cpp
+            ../src/sys/compose_measure_actions.cpp
+            ../src/sys/compose_recipe_actions.cpp
+            ../src/sys/compose_transform_actions.cpp
             ../src/sys/compose_bga_actions.cpp
             ../src/sys/compose_measure_commands.cpp
             ../src/sys/compose_selection_transform.cpp

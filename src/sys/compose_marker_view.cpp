@@ -536,8 +536,7 @@ void populate_compose_timing_markers(
     view.timing_marker_count = flattened.compose.timing_marker.size();
     if (timing_stage &&
         timing_stage->status == wormedit::timing_lane_pseudonote_status_t::editing &&
-        timing_stage->chart == chart.id &&
-        timing_stage->document_revision == view.document_revision) {
+        timing_stage->stamp.is_current(chart.id, view.document_revision)) {
         const auto stage_row =
             (cache.scene.index->measures).row_of(timing_stage->position);
         if (stage_row) {
@@ -546,7 +545,7 @@ void populate_compose_timing_markers(
                                              view.viewport_height_pixels, downscroll);
             if (std::isfinite(y) && y >= 0.0 && y <= view.viewport_height_pixels) {
                 view.timing_stage_active = true;
-                view.timing_stage_valid = timing_stage->valid;
+                view.timing_stage_valid = timing_stage->is_valid();
                 view.timing_stage_lane = timing_lane_kind_to_ui(timing_stage->kind);
                 view.timing_stage_y_pixels = y;
             }
@@ -806,7 +805,7 @@ void drop_stale_recipe_preview(application_command_state_t& application_state,
     auto& preview = application_state.project.timing_recipe.recipe_preview;
     if (!preview)
         return;
-    const bool current = preview->chart == chart.id && preview->revision == revision &&
+    const bool current = preview->stamp.is_current(chart.id, revision) &&
                          preview->candidate.id.value == application_state.project.timing_recipe.recipe_selected &&
                          std::ranges::any_of(chart.sv_recipes, [&](const auto& recipe) {
                              return recipe.id == preview->candidate.id;
@@ -830,7 +829,7 @@ void populate_compose_recipe_form(flattened_workspace_t& flattened,
     const auto& name = flattened.compose.recipe_form_text.emplace_back(recipe->name);
     const auto& source = flattened.compose.recipe_form_text.emplace_back(recipe->expression_source);
     const auto& status = flattened.compose.recipe_form_text.emplace_back(
-        application_state.project.timing_recipe.recipe_preview ? application_state.project.timing_recipe.recipe_preview->error : std::string{});
+        application_state.project.timing_recipe.recipe_preview ? std::string{application_state.project.timing_recipe.recipe_preview->message()} : std::string{});
     view.recipe_form.visible = true;
     view.recipe_form.recipe_id = recipe->id.value;
     view.recipe_form.enabled = recipe->enabled;

@@ -82,8 +82,8 @@ struct project_chart_ui_result_t {
     bool applied{};
     notification_severity_t severity{notification_severity_t::warning};
 };
-void project_chart_view(project_chart_runtime_t& runtime, const song_document_t& document,
-    WormUiSetupView& view);
+void build_project_chart_view(project_chart_runtime_t& runtime, const song_document_t& document,
+                              WormUiSetupView& view);
 [[nodiscard]] auto apply_project_chart_ui_action(project_chart_runtime_t& runtime,
     document_history_t& history, const WormUiProjectChartAction& action,
     std::optional<chart_id_t> active_chart = std::nullopt) -> project_chart_ui_result_t;
@@ -94,7 +94,9 @@ void project_chart_view(project_chart_runtime_t& runtime, const song_document_t&
 
 [[nodiscard]] auto build_project_chart_table(const song_document_t& document) -> project_chart_table_t;
 // Caller-owned session generation distinguishes reopened documents with identical IDs/revisions.
-[[nodiscard]] auto project_chart_table_for(project_chart_table_cache_t& cache,
-    const song_document_t& document, std::uint64_t session_generation) -> const project_chart_table_t&;
+[[nodiscard]] auto build_project_chart_table_view(project_chart_table_cache_t& cache,
+                                                  const song_document_t& document,
+                                                  std::uint64_t session_generation)
+    -> const project_chart_table_t&;
 
 } // namespace wormedit::sys

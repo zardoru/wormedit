@@ -1,3 +1,4 @@
+#include "../support/stale_action_assertions.h"
 #include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/measure_editor.h>
 #include <wormedit/core/timing.h>
@@ -26,8 +27,12 @@ TEST_CASE("BPM edits extend native music charts through the audio end atomically
     REQUIRE(extend_native_charts_to_audio_end(song));
     REQUIRE(song.charts.front().measures.size() == 7);
     auto history = document_history_t::from(song);
-    REQUIRE(apply_bpm_edit(history, 1, update_bpm_event_action_t{
-        chart_id_t{2}, object_id_t{10}, {measure_id_t{3}, 0}, {240, 1}}));
+    REQUIRE(apply_bpm_edit(history,
+                           wormedit::update_edit_t<wormedit::bpm_edit_value_t>{
+                               .chart = chart_id_t{2},
+                               .id = object_id_t{10},
+                               .value = wormedit::bpm_edit_value_t::from(
+                                   {measure_id_t{3}, 0}, wormedit::timing_bpm_value_t{{240, 1}})}));
     check_music_extent(history.document.charts.front().measures.size() == 13);
     check_music_extent(history.undo.size() == 1);
     REQUIRE(undo_document_command(history));
@@ -66,20 +71,20 @@ auto has_error(const document_command_result_t& result) -> bool {
 
 auto commit_snapped_fit(signed_rational_t step) -> std::optional<signed_rational_t> {
     auto history = document_history_t::from(bpm_song());
-    const auto begun = begin_beat_interval_drag(history.document, chart_id_t{2},
+    const auto begun = beat_interval_drag_t::from(history.document, chart_id_t{2},
                                                 object_id_t{10},
                                                 local_position_t{measure_id_t{3}, 480}, 48'000);
-    if (!begun) return std::nullopt;
-    const auto frame = update_beat_interval_drag(history.document, *begun.drag, 49'000);
-    if (!frame) return std::nullopt;
-    const auto snapped = quantize_bpm(frame.drag->proposed_bpm, step);
+    if (!begun.value.has_value()) return std::nullopt;
+    const auto frame = begun.value->revise(history.document, 49'000);
+    if (!frame.value.has_value()) return std::nullopt;
+    const auto snapped = quantize_bpm(frame.value->proposed_bpm, step);
     if (!snapped) return std::nullopt;
-    const auto update = update_beat_interval_drag_to_bpm(history.document, *frame.drag, *snapped);
-    if (!update) return std::nullopt;
-    auto snapped_drag = *update.drag;
+    const auto update = frame.value->revise(history.document, *snapped);
+    if (!update.value.has_value()) return std::nullopt;
+    auto snapped_drag = *update.value;
     snapped_drag.snap_active = true;
     snapped_drag.snap_step = step;
-    if (!commit_beat_interval_drag(history, snapped_drag)) return std::nullopt;
+    if (!apply_beat_interval_drag(history, snapped_drag)) return std::nullopt;
     return history.document.charts.front().bpms.front().beats_per_minute;
 }
 
@@ -89,21 +94,21 @@ auto rejects_locked_anchor_snap() -> bool {
         .position = {measure_id_t{3}, 720}, .source_sample_frame = 72'000, .locked = true});
     if (!validate_document(song).empty()) return false;
     auto history = document_history_t::from(std::move(song));
-    const auto begun = begin_beat_interval_drag(history.document, chart_id_t{2}, object_id_t{10},
+    const auto begun = beat_interval_drag_t::from(history.document, chart_id_t{2}, object_id_t{10},
         {measure_id_t{3}, 240}, 48'000);
-    if (!begun) return false;
-    const auto frame_fit = update_beat_interval_drag(history.document, *begun.drag, 24'000);
-    if (!frame_fit) return false;
-    if (update_beat_interval_drag_to_bpm(history.document, *frame_fit.drag, {100, 1}))
+    if (!begun.value.has_value()) return false;
+    const auto frame_fit = begun.value->revise(history.document, 24'000);
+    if (!frame_fit.value.has_value()) return false;
+    if (frame_fit.value->revise(history.document, {100, 1}).value.has_value())
         return false;
-    auto unsafe = *frame_fit.drag;
+    auto unsafe = *frame_fit.value;
     unsafe.proposed_bpm = {100, 1};
     unsafe.proposed_sample_frame = 28'800;
     unsafe.snap_active = true;
     unsafe.snap_step = {50, 1};
     const auto revision = history.document.revision;
     const auto original_bpm = history.document.charts.front().bpms.front().beats_per_minute;
-    const auto committed = commit_beat_interval_drag(history, unsafe);
+    const auto committed = apply_beat_interval_drag(history, unsafe);
     return !committed && history.document.revision == revision &&
            history.document.charts.front().bpms.front().beats_per_minute == original_bpm;
 }
@@ -153,17 +158,17 @@ TEST_CASE("interval beat drag previews by source frame and commits one undoable 
     auto history = document_history_t::from(bpm_song());
     const auto beat = local_position_t{measure_id_t{3}, 480};
     const auto begun =
-        begin_beat_interval_drag(history.document, chart_id_t{2}, object_id_t{10}, beat, 48'000);
-    REQUIRE(begun);
-    CHECK(begun.drag->original_sample_frame == 48'000);
-    const auto proposed = update_beat_interval_drag(history.document, *begun.drag, 96'000);
-    REQUIRE(proposed);
-    CHECK(proposed.drag->proposed_bpm == signed_rational_t{60, 1});
+        beat_interval_drag_t::from(history.document, chart_id_t{2}, object_id_t{10}, beat, 48'000);
+    REQUIRE(begun.value.has_value());
+    CHECK(begun.value->original_sample_frame == 48'000);
+    const auto proposed = begun.value->revise(history.document, 96'000);
+    REQUIRE(proposed.value.has_value());
+    CHECK(proposed.value->proposed_bpm == signed_rational_t{60, 1});
     CHECK(history.document.revision == 4);
     CHECK(history.document.charts.front().bpms.front().beats_per_minute ==
           signed_rational_t{120, 1});
 
-    const auto committed = commit_beat_interval_drag(history, *proposed.drag);
+    const auto committed = apply_beat_interval_drag(history, *proposed.value);
     REQUIRE(committed);
     CHECK(history.document.revision == 5);
     CHECK(history.document.charts.front().bpms.front().id == object_id_t{10});
@@ -176,7 +181,8 @@ TEST_CASE("interval beat drag previews by source frame and commits one undoable 
     CHECK(history.document.charts.front().bpms.front().beats_per_minute ==
           signed_rational_t{60, 1});
 
-    const auto stale = commit_beat_interval_drag(history, *proposed.drag);
+    const auto stale = apply_beat_interval_drag(history, *proposed.value);
+    test::check_stale_action_message(stale.diagnostics, "Beat fit");
     CHECK_FALSE(stale);
     CHECK(has_code(stale, diagnostic_code_t::invalid_id));
 }
@@ -210,7 +216,10 @@ TEST_CASE("BPM insert update and delete are undoable and retain exact identity a
     song.charts.front().source_family = format_family_t::bms;
     auto history = document_history_t::from(std::move(song));
     const auto insert = apply_bpm_edit(
-        history, 4, insert_bpm_event_action_t{chart_id_t{2}, {measure_id_t{3}, 0}, {90, 2}});
+        history, wormedit::insert_edit_t<wormedit::bpm_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .value = wormedit::bpm_edit_value_t::from(
+                         {measure_id_t{3}, 0}, wormedit::timing_bpm_value_t{{90, 2}})});
     REQUIRE(insert);
     REQUIRE(history.document.charts.front().bpms.size() == 2);
     const auto inserted = history.document.charts.front().bpms.back();
@@ -230,8 +239,11 @@ TEST_CASE("BPM insert update and delete are undoable and retain exact identity a
     CHECK(history.document.charts.front().bpms.back().id == inserted.id);
 
     const auto update = apply_bpm_edit(
-        history, 5,
-        update_bpm_event_action_t{chart_id_t{2}, inserted.id, {measure_id_t{3}, 0}, {180, 2}});
+        history, wormedit::update_edit_t<wormedit::bpm_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .id = inserted.id,
+                     .value = wormedit::bpm_edit_value_t::from(
+                         {measure_id_t{3}, 0}, wormedit::timing_bpm_value_t{{180, 2}})});
     REQUIRE(update);
     const auto& updated = history.document.charts.front().bpms.back();
     CHECK(updated.id == inserted.id);
@@ -245,15 +257,19 @@ TEST_CASE("BPM insert update and delete are undoable and retain exact identity a
     REQUIRE(after_one_beat);
     CHECK(after_one_beat.seconds == signed_rational_t{2, 3});
 
-    const auto no_op =
-        apply_bpm_edit(history, 6,
-                       update_bpm_event_action_t{chart_id_t{2}, inserted.id, updated.position,
-                                                 updated.beats_per_minute});
+    const auto no_op = apply_bpm_edit(
+        history,
+        wormedit::update_edit_t<wormedit::bpm_edit_value_t>{
+            .chart = chart_id_t{2},
+            .id = inserted.id,
+            .value = wormedit::bpm_edit_value_t::from(
+                updated.position, wormedit::timing_bpm_value_t{updated.beats_per_minute})});
     CHECK_FALSE(no_op.applied);
     CHECK(no_op.diagnostics.empty());
     CHECK(history.document.revision == 6);
 
-    REQUIRE(apply_bpm_edit(history, 6, delete_bpm_event_action_t{chart_id_t{2}, inserted.id}));
+    REQUIRE(apply_bpm_edit(history, wormedit::delete_edit_t<wormedit::bpm_edit_value_t>{
+                                        .chart = chart_id_t{2}, .id = inserted.id}));
     CHECK(history.document.charts.front().bpms.size() == 1);
     REQUIRE(undo_document_command(history));
     REQUIRE(history.document.charts.front().bpms.size() == 2);
@@ -274,7 +290,10 @@ TEST_CASE("BPM same-row events use source order and remain valid for the timing 
     auto history = document_history_t::from(std::move(song));
 
     const auto inserted = apply_bpm_edit(
-        history, 4, insert_bpm_event_action_t{chart_id_t{2}, {measure_id_t{3}, 0}, {90, 1}});
+        history, wormedit::insert_edit_t<wormedit::bpm_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .value = wormedit::bpm_edit_value_t::from(
+                         {measure_id_t{3}, 0}, wormedit::timing_bpm_value_t{{90, 1}})});
     REQUIRE(inserted);
     const auto& chart = history.document.charts.front();
     REQUIRE(chart.bpms.size() == 3);
@@ -287,10 +306,12 @@ TEST_CASE("BPM same-row events use source order and remain valid for the timing 
     REQUIRE(one_beat);
     CHECK(one_beat.seconds == signed_rational_t{2, 3});
 
-    const auto updated =
-        apply_bpm_edit(history, 5,
-                       update_bpm_event_action_t{
-                           chart_id_t{2}, chart.bpms.back().id, {measure_id_t{3}, 0}, {75, 1}});
+    const auto updated = apply_bpm_edit(
+        history, wormedit::update_edit_t<wormedit::bpm_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .id = chart.bpms.back().id,
+                     .value = wormedit::bpm_edit_value_t::from(
+                         {measure_id_t{3}, 0}, wormedit::timing_bpm_value_t{{75, 1}})});
     REQUIRE(updated);
     CHECK(history.document.charts.front().bpms.back().provenance.source_order == 13);
     const auto updated_timing = build_timing_index(history.document.charts.front());
@@ -300,37 +321,42 @@ TEST_CASE("BPM same-row events use source order and remain valid for the timing 
     CHECK(updated_one_beat.seconds == signed_rational_t{4, 5});
 }
 
-TEST_CASE("BPM editor rejects stale IDs positions and invalid exact values atomically",
+TEST_CASE("BPM editor rejects invalid IDs positions and invalid exact values atomically",
           "[unit][core][bpm-editor][negative]") {
     auto history = document_history_t::from(bpm_song());
     const auto unchanged_revision = history.document.revision;
     const auto unchanged_bpm_count = history.document.charts.front().bpms.size();
 
-    const auto stale = apply_bpm_edit(
-        history, 3, insert_bpm_event_action_t{chart_id_t{2}, {measure_id_t{3}, 240}, {100, 1}});
-    CHECK_FALSE(stale.applied);
-    CHECK(has_code(stale, diagnostic_code_t::invalid_id));
-
     const auto unknown_chart = apply_bpm_edit(
-        history, 4, insert_bpm_event_action_t{chart_id_t{99}, {measure_id_t{3}, 240}, {100, 1}});
+        history, wormedit::insert_edit_t<wormedit::bpm_edit_value_t>{
+                     .chart = chart_id_t{99},
+                     .value = wormedit::bpm_edit_value_t::from(
+                         {measure_id_t{3}, 240}, wormedit::timing_bpm_value_t{{100, 1}})});
     CHECK_FALSE(unknown_chart.applied);
     CHECK(has_code(unknown_chart, diagnostic_code_t::invalid_id));
 
     const auto unknown_event = apply_bpm_edit(
-        history, 4,
-        update_bpm_event_action_t{chart_id_t{2}, object_id_t{99}, {measure_id_t{3}, 0}, {100, 1}});
+        history, wormedit::update_edit_t<wormedit::bpm_edit_value_t>{
+                     .chart = chart_id_t{2},
+                     .id = object_id_t{99},
+                     .value = wormedit::bpm_edit_value_t::from(
+                         {measure_id_t{3}, 0}, wormedit::timing_bpm_value_t{{100, 1}})});
     CHECK_FALSE(unknown_event.applied);
     CHECK(has_code(unknown_event, diagnostic_code_t::invalid_id));
 
     const auto unknown_delete =
-        apply_bpm_edit(history, 4, delete_bpm_event_action_t{chart_id_t{2}, object_id_t{99}});
+        apply_bpm_edit(history, wormedit::delete_edit_t<wormedit::bpm_edit_value_t>{
+                                    .chart = chart_id_t{2}, .id = object_id_t{99}});
     CHECK_FALSE(unknown_delete.applied);
     CHECK(has_code(unknown_delete, diagnostic_code_t::invalid_id));
 
     for (const auto position :
          {local_position_t{measure_id_t{99}, 0}, local_position_t{measure_id_t{3}, 960}}) {
-        const auto invalid_position = apply_bpm_edit(
-            history, 4, insert_bpm_event_action_t{chart_id_t{2}, position, {100, 1}});
+        const auto invalid_position =
+            apply_bpm_edit(history, wormedit::insert_edit_t<wormedit::bpm_edit_value_t>{
+                                        .chart = chart_id_t{2},
+                                        .value = wormedit::bpm_edit_value_t::from(
+                                            position, wormedit::timing_bpm_value_t{{100, 1}})});
         CHECK_FALSE(invalid_position.applied);
         CHECK(has_code(invalid_position, diagnostic_code_t::row_out_of_range));
     }
@@ -338,7 +364,10 @@ TEST_CASE("BPM editor rejects stale IDs positions and invalid exact values atomi
     for (const auto value :
          {signed_rational_t{0, 1}, signed_rational_t{-1, 1}, signed_rational_t{120, 0}}) {
         const auto invalid_bpm = apply_bpm_edit(
-            history, 4, insert_bpm_event_action_t{chart_id_t{2}, {measure_id_t{3}, 240}, value});
+            history, wormedit::insert_edit_t<wormedit::bpm_edit_value_t>{
+                         .chart = chart_id_t{2},
+                         .value = wormedit::bpm_edit_value_t::from(
+                             {measure_id_t{3}, 240}, wormedit::timing_bpm_value_t{value})});
         CHECK_FALSE(invalid_bpm.applied);
         CHECK(has_code(invalid_bpm, diagnostic_code_t::invalid_rational));
     }
@@ -358,24 +387,35 @@ TEST_CASE("BPM editor rejects ambiguous stable IDs and event caps",
                                                   .provenance = {.source_order = 5}});
     auto duplicate_history = document_history_t::from(duplicate_song);
     const auto duplicate =
-        apply_bpm_edit(duplicate_history, 4,
-                       update_bpm_event_action_t{
-                           chart_id_t{2}, object_id_t{10}, {measure_id_t{3}, 480}, {100, 1}});
+        apply_bpm_edit(duplicate_history,
+                       wormedit::update_edit_t<wormedit::bpm_edit_value_t>{
+                           .chart = chart_id_t{2},
+                           .id = object_id_t{10},
+                           .value = wormedit::bpm_edit_value_t::from(
+                               {measure_id_t{3}, 480}, wormedit::timing_bpm_value_t{{100, 1}})});
     CHECK_FALSE(duplicate.applied);
     CHECK(has_code(duplicate, diagnostic_code_t::duplicate_id));
     CHECK(duplicate_history.document.charts.front().bpms.size() == 2);
     CHECK(duplicate_history.undo.empty());
 
     auto history = document_history_t::from(bpm_song());
-    const auto event_capped = apply_bpm_edit(
-        history, 4, insert_bpm_event_action_t{chart_id_t{2}, {measure_id_t{3}, 240}, {100, 1}},
-        {.maximum_bpm_events = 1});
+    const auto event_capped =
+        apply_bpm_edit(history,
+                       wormedit::insert_edit_t<wormedit::bpm_edit_value_t>{
+                           .chart = chart_id_t{2},
+                           .value = wormedit::bpm_edit_value_t::from(
+                               {measure_id_t{3}, 240}, wormedit::timing_bpm_value_t{{100, 1}})},
+                       {.maximum_bpm_events = 1});
     CHECK_FALSE(event_capped.applied);
     CHECK(has_code(event_capped, diagnostic_code_t::invalid_resolution));
 
-    const auto objects_capped = apply_bpm_edit(
-        history, 4, insert_bpm_event_action_t{chart_id_t{2}, {measure_id_t{3}, 240}, {100, 1}},
-        {.maximum_chart_objects = 1});
+    const auto objects_capped =
+        apply_bpm_edit(history,
+                       wormedit::insert_edit_t<wormedit::bpm_edit_value_t>{
+                           .chart = chart_id_t{2},
+                           .value = wormedit::bpm_edit_value_t::from(
+                               {measure_id_t{3}, 240}, wormedit::timing_bpm_value_t{{100, 1}})},
+                       {.maximum_chart_objects = 1});
     CHECK_FALSE(objects_capped.applied);
     CHECK(has_code(objects_capped, diagnostic_code_t::invalid_resolution));
     CHECK(history.document.charts.front().bpms.size() == 1);
@@ -387,20 +427,20 @@ TEST_CASE("beat fit without a BPM change at the anchor inserts one exact BPM as 
     auto history = document_history_t::from(bpm_song());
     const auto anchor = local_position_t{measure_id_t{3}, 240};
     const auto beat = local_position_t{measure_id_t{3}, 480};
-    const auto begun = begin_beat_interval_anchor_drag(history.document, chart_id_t{2}, anchor,
+    const auto begun = beat_interval_drag_t::from(history.document, chart_id_t{2}, anchor,
                                                        beat, 48'000);
-    REQUIRE(begun);
-    CHECK(begun.drag->insert_bpm);
-    CHECK(begun.drag->original_bpm == signed_rational_t{120, 1});
-    CHECK(begun.drag->original_sample_frame == 48'000);
+    REQUIRE(begun.value.has_value());
+    CHECK(begun.value->insert_bpm);
+    CHECK(begun.value->original_bpm == signed_rational_t{120, 1});
+    CHECK(begun.value->original_sample_frame == 48'000);
 
-    const auto proposed = update_beat_interval_drag(history.document, *begun.drag, 96'000);
-    REQUIRE(proposed);
-    CHECK(proposed.drag->proposed_bpm == signed_rational_t{40, 1});
+    const auto proposed = begun.value->revise(history.document, 96'000);
+    REQUIRE(proposed.value.has_value());
+    CHECK(proposed.value->proposed_bpm == signed_rational_t{40, 1});
     CHECK(history.document.charts.front().bpms.size() == 1);
 
     const auto undo_depth = history.undo.size();
-    const auto committed = commit_beat_interval_drag(history, *proposed.drag);
+    const auto committed = apply_beat_interval_drag(history, *proposed.value);
     REQUIRE(committed);
     const auto& bpms = history.document.charts.front().bpms;
     REQUIRE(bpms.size() == 2);
@@ -409,11 +449,11 @@ TEST_CASE("beat fit without a BPM change at the anchor inserts one exact BPM as 
     CHECK(inserted->beats_per_minute == signed_rational_t{40, 1});
     CHECK(history.undo.size() == undo_depth + 1);
 
-    const auto refit = begin_beat_interval_anchor_drag(history.document, chart_id_t{2}, anchor,
+    const auto refit = beat_interval_drag_t::from(history.document, chart_id_t{2}, anchor,
                                                        beat, 48'000);
-    REQUIRE(refit);
-    CHECK_FALSE(refit.drag->insert_bpm);
-    CHECK(refit.drag->original_sample_frame == 96'000);
+    REQUIRE(refit.value.has_value());
+    CHECK_FALSE(refit.value->insert_bpm);
+    CHECK(refit.value->original_sample_frame == 96'000);
 
     REQUIRE(undo_document_command(history));
     CHECK(history.document.charts.front().bpms.size() == 1);
@@ -425,14 +465,14 @@ TEST_CASE("beat fit anchor reuses an existing BPM change and rejects impossible 
           "[unit][core][bpm-editor][beat-fit]") {
     auto history = document_history_t::from(bpm_song());
     const auto beat = local_position_t{measure_id_t{3}, 480};
-    const auto begun = begin_beat_interval_anchor_drag(history.document, chart_id_t{2},
+    const auto begun = beat_interval_drag_t::from(history.document, chart_id_t{2},
                                                        {measure_id_t{3}, 0}, beat, 48'000);
-    REQUIRE(begun);
-    CHECK_FALSE(begun.drag->insert_bpm);
-    CHECK(begun.drag->bpm_event == object_id_t{10});
+    REQUIRE(begun.value.has_value());
+    CHECK_FALSE(begun.value->insert_bpm);
+    CHECK(begun.value->bpm_event == object_id_t{10});
 
-    const auto impossible = update_beat_interval_drag(history.document, *begun.drag, 0);
-    CHECK_FALSE(impossible);
+    const auto impossible = begun.value->revise(history.document, 0);
+    CHECK_FALSE(impossible.value.has_value());
     CHECK_FALSE(impossible.diagnostics.empty());
 }
 
@@ -443,19 +483,98 @@ TEST_CASE("beat fit insert blocks when a locked anchor after the beat would move
         .position = {measure_id_t{3}, 720}, .source_sample_frame = 72'000, .locked = true});
     REQUIRE(validate_document(song).empty());
     auto history = document_history_t::from(std::move(song));
-    const auto begun = begin_beat_interval_anchor_drag(history.document, chart_id_t{2},
+    const auto begun = beat_interval_drag_t::from(history.document, chart_id_t{2},
                                                        {measure_id_t{3}, 240},
                                                        {measure_id_t{3}, 480}, 48'000);
-    REQUIRE(begun);
-    CHECK(begun.drag->insert_bpm);
-    CHECK_FALSE(update_beat_interval_drag(history.document, *begun.drag, 96'000));
+    REQUIRE(begun.value.has_value());
+    CHECK(begun.value->insert_bpm);
+    CHECK_FALSE(begun.value->revise(history.document, 96'000).value.has_value());
 
-    auto unsafe = *begun.drag;
+    auto unsafe = *begun.value;
     unsafe.proposed_sample_frame = 96'000;
     unsafe.proposed_bpm = {40, 1};
     const auto revision = history.document.revision;
-    const auto committed = commit_beat_interval_drag(history, unsafe);
+    const auto committed = apply_beat_interval_drag(history, unsafe);
     CHECK_FALSE(committed);
     CHECK(history.document.revision == revision);
     CHECK(history.document.charts.front().bpms.size() == 1);
+}
+
+TEST_CASE("beat fit keeps revision-only identity and rejects expired proposals",
+          "[core][bpm-editor][beat-fit][stamp]") {
+    auto history = document_history_t::from(bpm_song());
+    const auto begun = beat_interval_drag_t::from(history.document, chart_id_t{2}, object_id_t{10},
+                                               {measure_id_t{3}, 480}, 48'000);
+    REQUIRE(begun.value.has_value());
+    const auto proposed = begun.value->revise(history.document, 96'000);
+    REQUIRE(proposed.value.has_value());
+    history.document.id = song_id_t{99};
+    REQUIRE(apply_beat_interval_drag(history, *proposed.value));
+    CHECK(history.undo.size() == 1);
+    const auto stale = apply_beat_interval_drag(history, *proposed.value);
+    CHECK_FALSE(stale);
+    test::check_stale_action_message(stale.diagnostics, "Beat fit");
+    CHECK(history.undo.size() == 1);
+}
+
+TEST_CASE("beat fit preserves snap lock and provenance rejection priority",
+          "[core][bpm-editor][beat-fit][stamp]") {
+    auto history = document_history_t::from(bpm_song());
+    auto drag = beat_interval_drag_t::from(history.document, chart_id_t{2}, object_id_t{10},
+                                        {measure_id_t{3}, 480}, 48'000);
+    REQUIRE(drag.value.has_value());
+    ++history.document.revision;
+    const auto locked = apply_beat_interval_drag(history, *drag.value, true);
+    REQUIRE_FALSE(locked.diagnostics.empty());
+    CHECK(locked.diagnostics.front().message == "beat fitting is disabled while timing is locked");
+    drag.value->snap_active = true;
+    drag.value->proposed_bpm = {0, 1};
+    const auto invalid = apply_beat_interval_drag(history, *drag.value, true);
+    REQUIRE_FALSE(invalid.diagnostics.empty());
+    CHECK(invalid.diagnostics.front().message == "BPM snap must produce a positive exact value");
+    CHECK(history.undo.empty());
+}
+
+namespace {
+void check_beat_fit_no_op(const document_command_result_t& result, const document_history_t& history) {
+    CHECK_FALSE(result.applied);
+    CHECK(result.diagnostics.empty());
+    CHECK(history.undo.empty());
+}
+} // namespace
+
+TEST_CASE("beat fit unchanged frame does not add a sample rate precondition",
+          "[core][bpm-editor][beat-fit][stamp]") {
+    auto history = document_history_t::from(bpm_song());
+    auto drag = beat_interval_drag_t::from(history.document, chart_id_t{2}, object_id_t{10},
+                                        {measure_id_t{3}, 480}, 48'000);
+    REQUIRE(drag.value.has_value());
+    drag.value->sample_rate = 0;
+    const auto unchanged = drag.value->revise(history.document, drag.value->original_sample_frame);
+    REQUIRE(unchanged.value.has_value());
+    const auto no_op = apply_beat_interval_drag(history, *unchanged.value);
+    check_beat_fit_no_op(no_op, history);
+    history.document.charts.front().bpms.front().beats_per_minute = {100, 1};
+    const auto drift = apply_beat_interval_drag(history, *unchanged.value);
+    REQUIRE_FALSE(drift.diagnostics.empty());
+    CHECK(drift.diagnostics.front().message == "beat fit BPM event changed during drag");
+}
+
+namespace {
+void check_failed_beat_fit_diagnostics(const diagnostic_list_t& diagnostics) {
+    REQUIRE(diagnostics.size() == 1);
+    CHECK(diagnostics.front().code == diagnostic_code_t::invalid_rational);
+    CHECK(diagnostics.front().message == "beat fitting requires a sample rate");
+}
+} // namespace
+
+TEST_CASE("failed beat fit outcome owns diagnostics without an apply payload",
+          "[core][bpm-editor][beat-fit][stamp]") {
+    auto history = document_history_t::from(bpm_song());
+    const auto failed = beat_interval_drag_t::from(history.document, chart_id_t{2}, object_id_t{10},
+                                                {measure_id_t{3}, 480}, 0);
+    REQUIRE_FALSE(failed.value.has_value());
+    check_failed_beat_fit_diagnostics(failed.diagnostics);
+    CHECK(history.document.revision == 4);
+    CHECK(history.undo.empty());
 }

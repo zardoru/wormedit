@@ -565,10 +565,16 @@ auto resolve_bmson_draft_audition(const song_document_t& song,
     audition_resolve_result_t result{
         .document_revision = song.revision, .chart = chart_id, .object = {},
         .clips = {}, .diagnostics = {}};
-    if (request.expected_revision != song.revision || marker_index >= markers.size()) {
+    if (marker_index >= markers.size()) {
         result.diagnostics.push_back(error(
             audition_resolve_code_t::invalid_link,
             "BMSON draft audition has a stale revision or unknown marker"));
+        return result;
+    }
+    if (!document_stamp_t{.project = song.id, .revision = request.expected_revision}
+             .is_current(song)) {
+        result.diagnostics.push_back(error(audition_resolve_code_t::invalid_link,
+                                           stale_action_message("BMSON draft audition")));
         return result;
     }
     const auto* original = song.find_chart(chart_id);
@@ -601,7 +607,7 @@ auto resolve_bmson_draft_audition(const song_document_t& song,
         static_cast<std::size_t>(source_channel - original->sound_channels.begin());
 
     auto temporary = document_history_t::from(song, 1);
-    const auto inserted = insert_bmson_sound_markers(temporary, temporary.document.revision,
+    const auto inserted = insert_bmson_sound_markers(temporary,
                                                      chart_id, reference_bgm_event, markers);
     if (!inserted) {
         const auto message = inserted.diagnostics.empty()

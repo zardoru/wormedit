@@ -1,20 +1,22 @@
-#include "sys/compose_view_internal.h"
-#include "sys/compose_input_internal.h"
-#include "sys/options_runtime.h"
-#include "sys/chart_preview_state.h"
-#include "project_audio_sources_fixture.h"
+#include "../support/stale_action_assertions.h"
 #include "../sys/application_dispatch_fixture.h"
+#include "compose_area_dispatch_fixture.h"
+#include "project_audio_sources_fixture.h"
 #include "sys/application_command_dispatch.h"
 #include "sys/application_defaults.h"
 #include "sys/bmson_waveform_view.h"
+#include "sys/chart_preview_state.h"
 #include "sys/compare_view.h"
 #include "sys/compose_actions.h"
 #include "sys/compose_area_actions.h"
 #include "sys/compose_input.h"
+#include "sys/compose_input_internal.h"
 #include "sys/compose_minimap_navigation.h"
 #include "sys/compose_playhead_cursor.h"
 #include "sys/compose_view.h"
+#include "sys/compose_view_internal.h"
 #include "sys/frame_timing.h"
+#include "sys/options_runtime.h"
 #include "sys/recipe_form.h"
 #include "sys/timing_view.h"
 #include "sys/waveform_analysis_runtime.h"
@@ -415,8 +417,7 @@ TEST_CASE("Quantize ghost geometry projects promoted absolute rows into native l
     fixture.interaction->selected_notes = {id, hold_id};
     fixture.interaction->viewport_scroll_pixels = -20.0;
     fixture.application.project.quantize.quantize_editor = application_command_state_t::quantize_editor_t{
-        .song = fixture.history.document.id,
-        .chart = fixture.history.document.charts.front().id,
+        .stamp = chart_stamp_t::from(fixture.history.document, fixture.history.document.charts.front().id),
         .request = {.divisions = 7, .space = quantization_space_t::authored_measure,
                     .tie = quantization_tie_t::later, .holds = quantization_hold_t::start_only,
                     .allow_resolution_promotion = true}, .preview_enabled = true};
@@ -563,8 +564,7 @@ TEST_CASE("Quantize ghosts retain collision visibility and hide blocked halfway 
     fixture.interaction->selected_notes = {selected};
     fixture.interaction->viewport_scroll_pixels = -20.0;
     fixture.application.project.quantize.quantize_editor = application_command_state_t::quantize_editor_t{
-        .song = fixture.history.document.id,
-        .chart = fixture.history.document.charts.front().id,
+        .stamp = chart_stamp_t::from(fixture.history.document, fixture.history.document.charts.front().id),
         .request = {.divisions = 4, .tie = quantization_tie_t::earlier,
                     .collisions = quantization_collision_t::reject}, .preview_enabled = true};
     fixture.project();
@@ -696,7 +696,7 @@ auto commit_authored_bga_move(compose_test_fixture_t& fixture,
     const auto position = authored_release_position(history, *fixture.interaction,
                                                     raw_row, denominator);
     REQUIRE(position);
-    const auto moved = apply_bga_event_move(history, history.document.revision,
+    const auto moved = apply_bga_event_move(history,
         {.chart = chart_id_t{1}, .event = object_id_t{500}, .position = *position,
          .snap_denominator = denominator});
     REQUIRE(moved);
@@ -707,7 +707,7 @@ auto commit_virtual_bga_move(compose_test_fixture_t& fixture,
                              std::uint64_t raw_row) -> std::uint64_t {
     auto history = fixture.history;
     const auto& chart = history.document.charts.front();
-    const auto moved = apply_virtual_bms_bga_event_move(history, history.document.revision,
+    const auto moved = apply_virtual_bms_bga_event_move(history,
         {.chart = chart_id_t{1}, .event = object_id_t{500}, .canvas_row = raw_row,
          .snap_denominator = edit_snap_denominator(chart, *fixture.interaction)});
     REQUIRE(moved);
@@ -839,10 +839,8 @@ TEST_CASE("Compose timing projection skips whole-chart geometry and preserves in
     grid.active_denominator = 4;
     timing_lane_pseudonote_preview_t stage;
     stage.status = timing_lane_pseudonote_status_t::editing;
-    stage.chart = chart_id_t{1};
-    stage.document_revision = history.document.revision;
+    stage.stamp = chart_stamp_t::from(history.document, chart_id_t{1});
     stage.position = {measure_id_t{1}, 0};
-    stage.valid = true;
     populate_timing_view_for_compose(flattened, history, workspace, cache, 1280, 980,
                                     grid, &stage);
     const auto& view = flattened.view.timing;
@@ -2194,10 +2192,10 @@ auto paste_preview_song() -> song_document_t {
 void copy_preview_note(compose_test_fixture_t& fixture) {
     fixture.project();
     fixture.interaction->selected_notes = {fixture.history.document.charts.front().measures.front().notes.front().id};
-    auto copied = copy_chart_selection(fixture.history.document, *fixture.interaction,
+    auto copied = chart_clipboard_t::from(fixture.history.document, *fixture.interaction,
                                       fixture.history.document.revision);
-    expect_compose_test(static_cast<bool>(copied));
-    fixture.application.project.clipboard.chart_clipboard = std::move(copied.clipboard);
+    REQUIRE(copied);
+    fixture.application.project.clipboard.chart_clipboard = std::move(*copied);
 }
 }
 TEST_CASE("Paste preview owns geometry across frames and publishes one undoable command",
@@ -2218,7 +2216,7 @@ TEST_CASE("Paste preview owns geometry across frames and publishes one undoable 
     fixture.flattened = {};
     fixture.project();
     expect_compose_test(static_cast<bool>(fixture.flattened.view.compose.paste_ghosts[0].bounds.top == first.top));
-    expect_compose_test(static_cast<bool>(commit_compose_paste(fixture.application, fixture.history,
+    expect_compose_test(static_cast<bool>(apply_compose_paste(fixture.application, fixture.history,
                                  *fixture.interaction, status)));
     expect_compose_test(!static_cast<bool>(fixture.application.project.clipboard.paste_session));
     expect_compose_test(static_cast<bool>(fixture.application.project.clipboard.chart_clipboard.has_value()));
@@ -2241,17 +2239,18 @@ TEST_CASE("Paste collision remains visible and stale previews cannot publish",
     fixture.project();
     expect_compose_test(!static_cast<bool>(fixture.flattened.view.compose.paste_valid));
     expect_compose_test(static_cast<bool>(fixture.flattened.view.compose.paste_ghost_count == 1));
-    expect_compose_test(!static_cast<bool>(commit_compose_paste(fixture.application, fixture.history,
+    expect_compose_test(!static_cast<bool>(apply_compose_paste(fixture.application, fixture.history,
                                      *fixture.interaction, status)));
     expect_compose_test(!static_cast<bool>(status.empty()));
     expect_compose_test(static_cast<bool>(fixture.history.undo.empty()));
     fixture.interaction->cursor.row = 240;
-    expect_compose_test(static_cast<bool>(update_compose_paste(fixture.application, fixture.history.document,
+    expect_compose_test(static_cast<bool>(revise_compose_paste(fixture.application, fixture.history.document,
                                 fixture.interaction->chart, fixture.interaction->cursor)));
-    expect_compose_test(static_cast<bool>(fixture.application.project.clipboard.paste_session->proposal.valid));
+    expect_compose_test(static_cast<bool>(fixture.application.project.clipboard.paste_session->proposal.is_valid()));
     ++fixture.history.document.revision;
-    expect_compose_test(!static_cast<bool>(commit_compose_paste(fixture.application, fixture.history,
+    expect_compose_test(!static_cast<bool>(apply_compose_paste(fixture.application, fixture.history,
                                      *fixture.interaction, status)));
+    wormedit::test::check_stale_action_message(status, "Paste preview");
     expect_compose_test(!static_cast<bool>(fixture.application.project.clipboard.paste_session));
     expect_compose_test(static_cast<bool>(fixture.history.undo.empty()));
 }
@@ -2358,6 +2357,41 @@ auto kiai_areas(compose_test_fixture_t& fixture) -> std::vector<kiai_span_t> {
     return kiai_spans_of(chart, std::get<measure_index_t>(built));
 }
 }
+TEST_CASE("Captured BMSON draft edits and auditions reject stale revisions independently of outer input",
+          "[sys][bmson-draft-stamp]") {
+    const auto request = GENERATE(
+        std::pair{WORM_UI_COMPOSE_INPUT_BMSON_REMOVE_DRAFT, std::string_view{"BMSON region edit"}},
+        std::pair{WORM_UI_COMPOSE_INPUT_BMSON_AUDITION_DRAFT, std::string_view{"BMSON region audition"}});
+    compose_test_fixture_t fixture{kiai_test_song()};
+    fixture.project();
+    fixture.application.project.compose_gesture.bmson_marker_draft = application_command_state_t::bmson_marker_draft_t{
+        .stamp = chart_stamp_t::from(fixture.history.document, fixture.interaction->chart),
+        .reference = object_id_t{42}, .markers = {bmson_sound_marker_insertion_t{}}};
+    ++fixture.application.project.compose_gesture.bmson_marker_draft->stamp.document.revision;
+    auto action = kiai_input(fixture, request.first, 1);
+    test::check_stale_action_message(dispatch_paste_action(fixture, action), request.second);
+    expect_compose_test(fixture.history.undo.empty());
+    expect_compose_test(fixture.application.project.compose_gesture.bmson_marker_draft.has_value());
+}
+
+TEST_CASE("Compose inner timing stamps reject stale selection and move requests",
+          "[sys][timing-input-stamp]") {
+    const auto request = GENERATE(
+        std::pair{WORM_UI_COMPOSE_INPUT_TIMING_MARKER_SELECT, std::string_view{"Timing marker selection"}},
+        std::pair{WORM_UI_COMPOSE_INPUT_TIMING_GROUP_MOVE, std::string_view{"Timing marker move"}},
+        std::pair{WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT, std::string_view{"Speed edit"}},
+        std::pair{WORM_UI_COMPOSE_INPUT_BGA_EVENT_CLICK, std::string_view{"BGA event selection"}},
+        std::pair{WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE, std::string_view{"BGA event move"}},
+        std::pair{WORM_UI_COMPOSE_INPUT_BOOKMARK_MOVE, std::string_view{"Bookmark move"}});
+    compose_test_fixture_t fixture{kiai_test_song()};
+    fixture.project();
+    fixture.interaction->selected_objects = {{editor_selection_object_kind_t::bga_event, object_id_t{9001}}};
+    auto action = kiai_input(fixture, request.first, 9001);
+    ++action.compose_inputs[0].timing_document_revision;
+    test::check_stale_action_message(dispatch_paste_action(fixture, action), request.second);
+    expect_compose_test(fixture.history.undo.empty());
+}
+
 TEST_CASE("Kiai edge drags edit the area, Delete removes the selected area and stale input is rejected",
           "[sys][kiai-spans]") {
     compose_test_fixture_t fixture{kiai_test_song()};
@@ -2369,7 +2403,7 @@ TEST_CASE("Kiai edge drags edit the area, Delete removes the selected area and s
     auto stale = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT, 9001, 1,
                             kiai_screen_y(fixture, 480));
     stale.compose_inputs[0].timing_document_revision += 1;
-    CHECK(dispatch_paste_action(fixture, stale) == "Kiai edit is stale or invalid.");
+    test::check_stale_action_message(dispatch_paste_action(fixture, stale), "Kiai edit");
     CHECK(fixture.history.undo.empty());
 
     fixture.application.project.timing_recipe.timing_locked = true;
@@ -2461,7 +2495,7 @@ TEST_CASE("SV recipe inputs select, resize and move the span, run commands and r
     auto stale = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT, 7001, 1,
                             kiai_screen_y(fixture, 480));
     stale.compose_inputs[0].timing_document_revision += 1;
-    CHECK(dispatch_paste_action(fixture, stale) == "SV recipe edit is stale or invalid.");
+    test::check_stale_action_message(dispatch_paste_action(fixture, stale), "SV recipe edit");
 
     // End edge dragged to row 480; the span stays ordered when an edge crosses the other.
     auto end_drag = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT, 7001, 1,
@@ -2605,16 +2639,16 @@ TEST_CASE("the selected recipe's form and its unapplied preview reach the Compos
     const auto& chart = fixture.history.document.charts.front();
     auto form = wormedit::sys::recipe_form_from_recipe(chart.sv_recipes.front());
     std::snprintf(form.value_to.numerator, sizeof(form.value_to.numerator), "9");
-    fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::preview_recipe_form(
-        chart, fixture.history.document.revision, chart.sv_recipes.front(), form);
+    fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::propose_recipe_form(
+        fixture.history.document, chart, chart.sv_recipes.front(), form);
     fixture.project();
     CHECK(fixture.flattened.view.compose.recipe_areas[0].previewing);
     CHECK(fixture.flattened.view.compose.recipe_areas[0].graph_count >= 2);
 
     form.curve = WORM_UI_TIMING_RECIPE_CURVE_EXPONENTIAL;
     std::snprintf(form.shape.numerator, sizeof(form.shape.numerator), "99");
-    fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::preview_recipe_form(
-        chart, fixture.history.document.revision, chart.sv_recipes.front(), form);
+    fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::propose_recipe_form(
+        fixture.history.document, chart, chart.sv_recipes.front(), form);
     fixture.project();
     REQUIRE(fixture.flattened.view.compose.recipe_form.status_text != nullptr);
     CHECK_FALSE(std::string(fixture.flattened.view.compose.recipe_form.status_text).empty());
@@ -2625,8 +2659,9 @@ TEST_CASE("the selected recipe's form and its unapplied preview reach the Compos
     CHECK_FALSE(fixture.flattened.view.compose.recipe_form.visible);
 
     fixture.application.project.timing_recipe.recipe_selected = 7001;
-    fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::preview_recipe_form(
-        chart, fixture.history.document.revision + 5, chart.sv_recipes.front(), form);
+    fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::propose_recipe_form(
+        fixture.history.document, chart, chart.sv_recipes.front(), form);
+    fixture.application.project.timing_recipe.recipe_preview->stamp.document.revision += 5;
     fixture.project();
     CHECK_FALSE(fixture.application.project.timing_recipe.recipe_preview.has_value());
 }
@@ -2667,7 +2702,7 @@ TEST_CASE("Paste cached anchor keeps collision diagnostics across an outside poi
     std::string status;
     expect_compose_test(begin_compose_paste(fixture.application, fixture.history.document,
                                    *fixture.interaction, status));
-    const auto collision = fixture.application.project.clipboard.paste_session->proposal.error;
+    const std::string collision{fixture.application.project.clipboard.paste_session->proposal.message()};
     expect_compose_test(!collision.empty());
     auto outside = paste_pointer_action(fixture, false);
     outside.compose_inputs[0].y_pixels = 10000;
@@ -2692,6 +2727,43 @@ TEST_CASE("Paste cached anchor keeps collision diagnostics across an outside poi
     expect_compose_test(fixture.history.undo.empty());
 }
 #endif
+
+TEST_CASE("Offset lock action rejects stale binding without clearing captured edits",
+          "[sys][offset-stamp]") {
+    compose_test_fixture_t fixture;
+    fixture.project();
+    WormUiWorkspaceAction action{};
+    action.compose_input_chart_id = fixture.interaction->chart.value;
+    action.compose_input_document_revision = fixture.history.document.revision + 1;
+    std::optional<audio_offset_drag_t> drag{audio_offset_drag_t{}};
+    std::optional<workspace_tab_t> tab{workspace_tab_t::compose};
+    const auto message = toggle_compose_audio_offset_lock(action, fixture.history, *fixture.binding.workspace,
+        fixture.application, fixture.cache, drag, tab);
+    test::check_stale_action_message(message, "Audio offset lock");
+    expect_compose_test(!fixture.application.project.timing_recipe.audio_offset_locked);
+    expect_compose_test(drag.has_value() && tab.has_value());
+    expect_compose_test(fixture.history.undo.empty());
+}
+
+TEST_CASE("Offset fit capture expiry remains separate from an absent drag",
+          "[sys][offset-stamp]") {
+    const auto missing = GENERATE(false, true);
+    compose_test_fixture_t fixture;
+    fixture.project();
+    fixture.binding.workspace->transport.audio_asset = asset_id_t{42};
+    if (!missing) {
+        fixture.cache.timing.offset_fit_drag = compose_scene_cache_t::offset_fit_drag_t{};
+        fixture.cache.timing.offset_fit_drag->asset = asset_id_t{42};
+        fixture.cache.timing.offset_fit_drag->beat.stamp.document.revision = fixture.history.document.revision + 1;
+    }
+    auto action = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_OFFSET_FIT_UPDATE, 2);
+    const auto message = dispatch_paste_action(fixture, action);
+    if (missing) CHECK(message == "Offset fit expired after its chart or waveform changed.");
+    else test::check_stale_action_message(message, "Offset fit");
+    expect_compose_test(!fixture.cache.timing.offset_fit_drag.has_value());
+    expect_compose_test(action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_CANCEL);
+    expect_compose_test(fixture.history.undo.empty());
+}
 
 TEST_CASE("Offset padlock disables exact offset controls independently of BPM timing",
           "[sys][offset-lock]") {
@@ -2743,11 +2815,11 @@ TEST_CASE("Offset locking takes precedence over a captured release and never rep
           "[sys][offset-lock]") {
     compose_test_fixture_t fixture;
     fixture.project();
-    auto begun = begin_audio_offset_drag(fixture.history.document, chart_id_t{1}, 48000);
-    expect_compose_test(begun.drag.has_value());
-    auto updated = update_audio_offset_drag(fixture.history.document, *begun.drag, 4800);
-    expect_compose_test(updated.drag.has_value());
-    auto drag = updated.drag;
+    auto begun = audio_offset_drag_t::from(fixture.history.document, chart_id_t{1}, 48000);
+    REQUIRE(begun.value);
+    auto updated = begun.value->revise(fixture.history.document, 4800);
+    REQUIRE(updated.value);
+    std::optional<audio_offset_drag_t> drag{updated.value};
     std::optional<workspace_tab_t> tab = workspace_tab_t::compose;
     fixture.cache.timing.offset_fit_drag = compose_scene_cache_t::offset_fit_drag_t{};
     fixture.cache.timing.beat_fit_drag = beat_interval_drag_t{};
@@ -4424,7 +4496,8 @@ void check_wheel_displacement(bool downscroll, double delta,
     std::size_t seeks = 0;
     fixture.application.services.transport_seek = [&seeks](std::uint64_t) {
         ++seeks;
-        return std::string{"Seeked."};
+        return compose_action_outcome_t::from(std::string{"Seeked."}, notification_severity_t::hint,
+                                              notification_source_t::input);
     };
     auto action = cursor_placement_action(fixture);
     action.compose_viewport_input_count = 1;
@@ -4447,6 +4520,48 @@ void check_wheel_displacement(bool downscroll, double delta,
     expect_compose_test(fixture.history.undo.empty());
 }
 } // namespace
+
+TEST_CASE("Compose batches reject later object or viewport input after an earlier edit",
+          "[sys][batch-stamp]") {
+    const auto viewport_later = GENERATE(false, true);
+    compose_test_fixture_t fixture{cursor_placement_song()};
+    fixture.binding.workspace->selected_chart = fixture.history.document.charts.front().id;
+    fixture.project();
+    auto& state = *fixture.interaction;
+    const auto& chart = fixture.history.document.charts.front();
+    const auto count = chart.measures.front().notes.size();
+    const auto inspected = inspect_editor_interaction(fixture.history, state);
+    const auto y = editor_position_y_pixels(chart, std::get<editor_interaction_view_model_t>(inspected),
+        {chart.measures.front().id, 240});
+    expect_compose_test(y.has_value());
+    auto action = cursor_placement_action(fixture);
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
+    action.compose_input_count = 1;
+    action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
+        .object_id = fixture.history.document.resources.front().id.value,
+        .resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE,
+        .x_pixels = fixture.flattened.view.compose.playable_field_left_pixels + 20,
+        .y_pixels = compose_source_y(*y, state.viewport_height_pixels,
+            compose_field_downscroll(chart, fixture.application.preferences.editor_preferences))};
+    if (viewport_later) {
+        action.compose_viewport_input_count = 1;
+        action.compose_viewport_inputs[0] = {.kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL,
+            .delta_y = -1, .cursor_x_pixels = 200, .cursor_y_pixels = 300};
+    } else {
+        action.compose_input_count = 2;
+        action.compose_inputs[1] = {.kind = WORM_UI_COMPOSE_INPUT_DRAW_SOURCE, .resource_role = 2, .resource_id = 999};
+    }
+    const auto scroll = state.viewport_scroll_pixels;
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    const auto status = dispatch_compose_input_action(action, fixture.history, *fixture.binding.workspace,
+        state, viewport, navigation, fixture.application, fixture.cache, 0);
+    test::check_stale_action_message(status, viewport_later ? "Remaining Compose viewport input" : "Remaining Compose input");
+    expect_compose_test(fixture.history.undo.size() == 1);
+    expect_compose_test(fixture.history.document.charts.front().measures.front().notes.size() == count + 1);
+    expect_compose_test(fixture.application.project.compose_gesture.draw_source_id != 999);
+    expect_compose_test(state.viewport_scroll_pixels == scroll);
+}
 
 TEST_CASE("Compose 10K lane presses commit Tap notes in every number row lane",
           "[sys][compose][lane-keys][regression]") {
@@ -4615,9 +4730,10 @@ TEST_CASE("Stopped BMS transport seek moves cursor and viewport without editing"
     fixture.binding.workspace->selected_chart = fixture.history.document.charts.front().id;
     fixture.project();
     const auto before = fixture.interaction->cursor;
-    const auto status = seek_stopped_compose_transport(fixture.history, *fixture.interaction,
-        fixture.cache, 20 * 44'100, sink);
-    expect_compose_test(status == "Compose cursor moved to the seek position.");
+    auto status = finish_compose_action(
+        sink, seek_stopped_compose_transport(fixture.history, *fixture.interaction, fixture.cache,
+                                             20 * 44'100));
+    expect_compose_test(status.message == "Compose cursor moved to the seek position.");
     expect_compose_test(fixture.interaction->cursor != before);
     expect_compose_test(fixture.interaction->viewport_scroll_pixels > 0);
     expect_compose_test(!fixture.interaction->virtual_bms_cursor_row);
@@ -4629,7 +4745,8 @@ TEST_CASE("Stopped BMS transport seek moves cursor and viewport without editing"
     expect_compose_test(messages[0].source == notification_source_t::input);
     const auto sought = fixture.interaction->cursor;
     ++fixture.history.document.revision;
-    (void)seek_stopped_compose_transport(fixture.history, *fixture.interaction, fixture.cache, 0, sink);
+    (void)finish_compose_action(sink, seek_stopped_compose_transport(
+                                          fixture.history, *fixture.interaction, fixture.cache, 0));
     expect_compose_test(fixture.interaction->cursor == sought);
     center.drain_inbox(notification_time_t{1});
     messages = center.snapshot(notification_capacity);
@@ -5357,8 +5474,8 @@ TEST_CASE("Dense inspector locations invalidate after label edit delete and undo
     compose_test_fixture_t fixture{t475_inspector_song()};
     t475_project(fixture);
     t475_select_note(fixture, object_id_t{600});
-    t475_require(apply_note_label_edit(fixture.history, fixture.history.document.revision,
-        {.chart = chart_id_t{1}, .notes = {object_id_t{600}}, .label = "edited"}));
+    t475_require(apply_note_label_edit(
+        fixture.history, {.chart = chart_id_t{1}, .notes = {object_id_t{600}}, .label = "edited"}));
     t475_project(fixture);
     t475_check(std::string_view(fixture.flattened.view.compose.selected_note_label) == "edited");
     t475_compare_fresh(fixture);
@@ -5442,7 +5559,7 @@ TEST_CASE("Dense inspector missing locations recover on insertion and read curre
     t475_require(commit_document_command(fixture.history, std::move(inserted), "Insert memo target"));
     t475_project(fixture);
     t475_check(std::string_view(fixture.flattened.view.compose.selected_note_label) == "inserted");
-    t475_require(apply_resource_assignment(fixture.history, fixture.history.document.revision,
+    t475_require(apply_resource_assignment(fixture.history,
         {.chart = chart_id_t{1}, .resource = resource_id_t{901},
          .objects = {{editor_selection_object_kind_t::note, object_id_t{999}}}}));
     t475_project(fixture);
@@ -6230,7 +6347,7 @@ TEST_CASE("BMSON lane_mode projects current channel ownership in Compose and Sou
     const auto builds = fixture.cache.stems.draw_stem_sources.build_count;
     t475_project(fixture);
     t475_check(fixture.cache.stems.draw_stem_sources.build_count == builds);
-    t475_require(set_bmson_channel_lane_mode(fixture.history, fixture.history.document.revision,
+    t475_require(set_bmson_channel_lane_mode(fixture.history,
         chart_id_t{1}, object_id_t{302}, bmson_channel_lane_mode_t::stem));
     fixture.binding.workspace->active_tab = workspace_tab_t::audio_slices;
     t475_require(rebind_workspace(*fixture.binding.workspace, fixture.history));
@@ -6309,17 +6426,21 @@ TEST_CASE("Quantize ghost preview defaults off and toggles without editing the c
     const auto revision = fixture.history.document.revision;
     expect_compose_test(!fixture.flattened.view.compose.quantize_preview_enabled);
     expect_compose_test(fixture.flattened.view.compose.quantize_ghost_count == 0);
-    expect_compose_test(invoke_compose_quantize_command(true, fixture.history, *fixture.interaction, fixture.application));
+    expect_compose_test(invoke_compose_quantize_command(true, fixture.history, *fixture.interaction,
+                                                        fixture.application)
+                            .accepted);
     fixture.project();
     expect_compose_test(fixture.flattened.view.compose.quantize_preview_enabled);
     expect_compose_test(fixture.flattened.view.compose.quantize_ghost_count == 1);
-    expect_compose_test(invoke_compose_quantize_command(true, fixture.history, *fixture.interaction, fixture.application));
+    expect_compose_test(invoke_compose_quantize_command(true, fixture.history, *fixture.interaction,
+                                                        fixture.application)
+                            .accepted);
     fixture.project();
     expect_compose_test(!fixture.flattened.view.compose.quantize_preview_enabled);
     expect_compose_test(fixture.flattened.view.compose.quantize_ghost_count == 0);
     expect_compose_test(fixture.history.document.revision == revision && fixture.history.undo.empty());
     fixture.application.project.quantize.quantize_editor->preview_enabled = true;
-    fixture.application.project.quantize.quantize_editor->chart = chart_id_t{999};
+    fixture.application.project.quantize.quantize_editor->stamp.chart = chart_id_t{999};
     fixture.project();
     expect_compose_test(!fixture.flattened.view.compose.quantize_preview_enabled);
     expect_compose_test(fixture.flattened.view.compose.quantize_ghost_count == 0);
@@ -6556,7 +6677,7 @@ TEST_CASE("Lane-key dispatcher uses revision-bound decoded geometry for linked B
         .source_lane = object_id_t{74000}, .sound = resource_id_t{7}, .sound_channel_event = object_id_t{73000}}};
     compose_test_fixture_t f{std::move(song)};
     if (converted) {
-        const auto result = set_bmson_channel_lane_mode(f.history, f.history.document.revision,
+        const auto result = set_bmson_channel_lane_mode(f.history,
             chart_id_t{1}, object_id_t{71000}, bmson_channel_lane_mode_t::stem);
         expect_compose_test(result.applied);
         expect_compose_test(f.history.document.resources.front().sound_kind == sound_kind_t::stem);
@@ -6658,9 +6779,9 @@ TEST_CASE("Existing 16K charts offer distinctly named SpecialStyle layouts and p
     expect_compose_test(view.lane_profile_choice_count == 2);
     expect_compose_test(std::string_view(view.lane_profile_names[1]) == "osu!mania 16K (SpecialStyle)");
     const auto& active = fixture.history.document.charts.front().lane_layouts.front();
-    expect_compose_test(static_cast<bool>(apply_lane_profile_switch(fixture.history,
-        fixture.history.document.revision, chart_id_t{1}, active.position,
-        make_osu_mania_profile(16, true)->layout)));
+    expect_compose_test(
+        static_cast<bool>(apply_lane_profile_switch(fixture.history, chart_id_t{1}, active.position,
+                                                    make_osu_mania_profile(16, true)->layout)));
     fixture.application.project.compose_view.compose_editor_right_pixels = 820;
     fixture.application.scratch_on_right = {false, false};
     fixture.project();
@@ -7010,10 +7131,10 @@ TEST_CASE("Timing stage converts transition fractions through the shared careful
     timing_scene_cache_t cache;
     timing_lane_pseudonote_preview_t stage{
         .status = timing_lane_pseudonote_status_t::editing,
-        .chart = chart_id_t{1}, .kind = timing_lane_kind_t::speed,
+        .stamp = chart_stamp_t::from(history.document, chart_id_t{1}),
+        .kind = timing_lane_kind_t::speed,
         .position = {measure_id_t{1}, 0},
-        .value = timing_speed_value_t{.transition_beats = {9'007'199'254'740'993ULL, 3}},
-        .document_revision = history.document.revision, .valid = true};
+        .value = timing_speed_value_t{.transition_beats = {9'007'199'254'740'993ULL, 3}}};
     populate_timing_view_for_compose(flattened, history, *binding.workspace, cache, 1280, 980, {}, &stage);
     CHECK(flattened.view.timing.stage_secondary_value == 3'002'399'751'580'331.0);
 }

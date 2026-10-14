@@ -47,7 +47,7 @@ struct renumber_bms_identifiers_action_t {
 };
 
 [[nodiscard]] auto apply_bms_identifier_renumber(
-    document_history_t& history, std::uint64_t expected_revision,
+    document_history_t& history,
     const renumber_bms_identifiers_action_t& action) -> document_command_result_t;
 
 struct resource_assignment_limits_t {
@@ -90,14 +90,13 @@ struct import_resource_asset_action_t {
 
 // Returns the ID the next imported asset will receive, subject to the catalog
 // limit. A background copy can use it as a reservation; the import command
-// checks it again against the expected document revision before committing.
+// checks it again before committing; delayed callers also validate their captured stamp.
 [[nodiscard]] auto next_resource_asset_id(const song_document_t& document)
     -> std::optional<asset_id_t>;
 
 // Registers one externally validated absolute source file and its first
 // catalog entry in one history command. File probing belongs to the caller.
 [[nodiscard]] auto apply_resource_asset_import(document_history_t& history,
-                                               std::uint64_t expected_revision,
                                                const import_resource_asset_action_t& action)
     -> document_command_result_t;
 
@@ -116,20 +115,19 @@ struct assign_bms_wav_slot_batch_action_t {
 // Imports one externally validated audio file and binds it to the exact BMS WAV
 // identifier. Replacing an occupied slot requires explicit confirmation.
 [[nodiscard]] auto apply_bms_wav_slot_assignment(
-    document_history_t& history, std::uint64_t expected_revision,
+    document_history_t& history,
     const assign_bms_wav_slot_action_t& action) -> document_command_result_t;
 
 // Assigns naturally ordered audio files to successive exact WAV slots in one
 // command. The batch never skips occupied slots or wraps past ZZ.
 [[nodiscard]] auto apply_bms_wav_slot_batch_assignment(
-    document_history_t& history, std::uint64_t expected_revision,
+    document_history_t& history,
     const assign_bms_wav_slot_batch_action_t& action) -> document_command_result_t;
 
 // Sets the song's main audio from an externally probed file. The first Music
 // resource has its asset repointed (keeping every reference); without one, the
 // file is imported as a new Music+BGM resource. Native charts grow to fit.
 [[nodiscard]] auto apply_primary_music_set(document_history_t& history,
-                                           std::uint64_t expected_revision,
                                            import_resource_asset_action_t action)
     -> document_command_result_t;
 
@@ -142,7 +140,6 @@ struct relink_resource_asset_action_t {
 // ID and every resource/event reference. Relative paths stay inside the
 // project directory; the caller verifies or copies the destination file.
 [[nodiscard]] auto apply_resource_asset_relink(document_history_t& history,
-                                               std::uint64_t expected_revision,
                                                const relink_resource_asset_action_t& action)
     -> document_command_result_t;
 
@@ -160,7 +157,6 @@ struct set_resource_sound_metadata_action_t {
 // nonempty, at most 256 bytes and contains no control characters; nullopt leaves
 // the name unchanged. All fields validate atomically. A no-op creates no history entry.
 [[nodiscard]] auto apply_resource_sound_metadata(document_history_t& history,
-                                                 std::uint64_t expected_revision,
                                                  const set_resource_sound_metadata_action_t& action)
     -> document_command_result_t;
 
@@ -178,7 +174,6 @@ using resource_reference_counts_t = std::unordered_map<std::uint64_t, std::uint6
 // note/BGM and retained channel event are distinct stored references. Assets
 // and their files are never removed.
 [[nodiscard]] auto apply_resource_deletion(document_history_t& history,
-                                           std::uint64_t expected_revision,
                                            resource_id_t resource) -> document_command_result_t;
 
 inline constexpr std::size_t maximum_resource_deletions = 100'000;
@@ -188,7 +183,6 @@ inline constexpr std::size_t maximum_resource_deletions = 100'000;
 // diagnostic names the first referenced sound. Chart sound-layer defaults of
 // the removed sounds go with them. Assets and their files are never removed.
 [[nodiscard]] auto apply_resource_deletions(document_history_t& history,
-                                            std::uint64_t expected_revision,
                                             std::span<const resource_id_t> resources)
     -> document_command_result_t;
 
@@ -231,8 +225,13 @@ struct bga_stroke_target_t {
 
 // Applies one atomic BGA draw/erase stroke. Draw preserves occupied cells;
 // erase removes events in the visited BGA lanes without requiring a resource.
+[[nodiscard]] auto apply_bga_stroke(document_command_transaction_t& transaction,
+                                    chart_id_t chart,
+                                    std::optional<resource_id_t> resource,
+                                    std::span<const bga_stroke_target_t> targets,
+                                    bool erase = false) -> document_command_result_t;
+
 [[nodiscard]] auto apply_bga_stroke(document_history_t& history,
-                                    std::uint64_t expected_revision,
                                     chart_id_t chart,
                                     std::optional<resource_id_t> resource,
                                     std::span<const bga_stroke_target_t> targets,
@@ -242,8 +241,14 @@ struct bga_stroke_target_t {
 // already hold the same sound and rejects the whole stroke when a different sound
 // occupies a cell; erase removes the lane's ordinary events at the visited rows.
 // BMSON charts delegate to apply_bmson_packed_stroke; their stem lanes are not drawable.
+[[nodiscard]] auto apply_bgm_stroke(document_command_transaction_t& transaction,
+                                    chart_id_t chart,
+                                    object_id_t source_lane,
+                                    std::optional<resource_id_t> resource,
+                                    std::span<const local_position_t> targets,
+                                    bool erase = false) -> document_command_result_t;
+
 [[nodiscard]] auto apply_bgm_stroke(document_history_t& history,
-                                    std::uint64_t expected_revision,
                                     chart_id_t chart,
                                     object_id_t source_lane,
                                     std::optional<resource_id_t> resource,
@@ -255,8 +260,14 @@ struct bga_stroke_target_t {
 // their BGM projections and skips rows that already show the sound; erase removes the
 // column's channel-linked events at the visited rows. Stem lanes are rejected.
 // Defined in bmson_sound_channel_editor.cpp.
+[[nodiscard]] auto apply_bmson_packed_stroke(document_command_transaction_t& transaction,
+                                             chart_id_t chart,
+                                             object_id_t source_lane,
+                                             std::optional<resource_id_t> resource,
+                                             std::span<const local_position_t> targets,
+                                             bool erase = false) -> document_command_result_t;
+
 [[nodiscard]] auto apply_bmson_packed_stroke(document_history_t& history,
-                                             std::uint64_t expected_revision,
                                              chart_id_t chart,
                                              object_id_t source_lane,
                                              std::optional<resource_id_t> resource,
@@ -292,14 +303,13 @@ struct move_virtual_bms_bga_event_action_t {
 // Moves one background image/video event, preserving its stable identity,
 // resource, kind, and source provenance.
 [[nodiscard]] auto apply_bga_event_move(document_history_t& history,
-                                        std::uint64_t expected_revision,
                                         const move_bga_event_action_t& action)
     -> document_command_result_t;
 
 // Materializes the virtual destination measure and moves one BGA event in a
 // single undo command, preserving the event's identity and source metadata.
 [[nodiscard]] auto apply_virtual_bms_bga_event_move(
-    document_history_t& history, std::uint64_t expected_revision,
+    document_history_t& history,
     const move_virtual_bms_bga_event_action_t& action) -> document_command_result_t;
 
 struct move_virtual_bms_bgm_event_action_t {
@@ -313,14 +323,13 @@ struct move_virtual_bms_bgm_event_action_t {
 // Moves one ordinary BGM event, preserving its ID and sound. Linked BMSON
 // markers and BMS branch-owned events use their source-aware editors.
 [[nodiscard]] auto apply_bgm_event_move(document_history_t& history,
-                                        std::uint64_t expected_revision,
                                         const move_bgm_event_action_t& action)
     -> document_command_result_t;
 
 // Materializes a virtual BMS destination and moves the BGM event in one undo
 // command. Rejections leave both the chart and its authored extent untouched.
 [[nodiscard]] auto apply_virtual_bms_bgm_event_move(
-    document_history_t& history, std::uint64_t expected_revision,
+    document_history_t& history,
     const move_virtual_bms_bgm_event_action_t& action) -> document_command_result_t;
 
 [[nodiscard]] auto resolve_resource_placement_position(const chart_document_t& chart,
@@ -331,19 +340,17 @@ struct move_virtual_bms_bgm_event_action_t {
 // Inserts one resource-backed event at an exact chart row. BGM placement
 // reuses the first unoccupied source lane or appends one in the same command.
 [[nodiscard]] auto apply_resource_placement(document_history_t& history,
-                                            std::uint64_t expected_revision,
                                             const place_resource_action_t& action)
     -> document_command_result_t;
 
 // Commits required default BMS geometry and a resource-backed event together.
 [[nodiscard]] auto apply_virtual_bms_resource_placement(
-    document_history_t& history, std::uint64_t expected_revision,
+    document_history_t& history,
     const place_virtual_bms_resource_action_t& action) -> document_command_result_t;
 
 // Creates a catalog entry for an already registered asset. Optional BMS
 // allocation uses the first free nonzero two-digit ID in its WAV/BMP namespace.
 [[nodiscard]] auto apply_resource_creation(document_history_t& history,
-                                           std::uint64_t expected_revision,
                                            const create_resource_action_t& action)
     -> document_command_result_t;
 
@@ -356,7 +363,6 @@ struct move_virtual_bms_bgm_event_action_t {
 // BMSON objects linked to retained sound-channel events cannot be rebound to
 // another resource without editing their source channel. A no-op adds no history.
 [[nodiscard]] auto apply_resource_assignment(document_history_t& history,
-                                             std::uint64_t expected_revision,
                                              const assign_resource_action_t& action,
                                              resource_assignment_limits_t limits = {})
     -> document_command_result_t;

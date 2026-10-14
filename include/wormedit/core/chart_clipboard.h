@@ -5,6 +5,8 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -48,21 +50,6 @@ struct chart_clipboard_t {
 
 using chart_clipboard_outcome_t = result_t<chart_clipboard_t, std::string>;
 
-struct chart_clipboard_result_t {
-    [[nodiscard]] static auto from(chart_clipboard_outcome_t&& outcome) -> chart_clipboard_result_t;
-
-    std::optional<chart_clipboard_t> clipboard;
-    std::string error;
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return clipboard.has_value();
-    }
-};
-
-[[nodiscard]] auto copy_chart_selection(const song_document_t& document,
-                                        const editor_interaction_state_t& state,
-                                        std::uint64_t expected_revision, object_id_t kiai_head = {})
-    -> chart_clipboard_result_t;
-
 struct selection_delete_options_t {
     object_id_t kiai_head;
     recipe_id_t recipe;
@@ -72,20 +59,12 @@ struct selection_delete_options_t {
 
 // Stage all selected families, then publish once. Failure preserves history and selection.
 [[nodiscard]] auto delete_selection_all(document_history_t& history,
-                                        editor_interaction_state_t& state,
-                                        std::uint64_t expected_revision,
-                                        const selection_delete_options_t& options = {})
-    -> editor_interaction_result_t;
+    editor_interaction_state_t& state,
+    const selection_delete_options_t& options = {}) -> editor_interaction_result_t;
 
-[[nodiscard]] auto
-create_cut_chart_clipboard(document_history_t& history, editor_interaction_state_t& state,
-                           std::uint64_t expected_revision, selection_delete_options_t options = {})
-    -> chart_clipboard_outcome_t;
-
-[[nodiscard]] auto
-cut_chart_selection(document_history_t& history, editor_interaction_state_t& state,
-                    std::uint64_t expected_revision, selection_delete_options_t options = {})
-    -> chart_clipboard_result_t;
+[[nodiscard]] auto create_cut_chart_clipboard(document_history_t& history,
+    editor_interaction_state_t& state,
+    selection_delete_options_t options = {}) -> chart_clipboard_outcome_t;
 
 struct chart_paste_stem_event_t {
     object_id_t channel;
@@ -93,23 +72,38 @@ struct chart_paste_stem_event_t {
 };
 
 struct chart_paste_proposal_t {
-    chart_id_t chart;
-    std::uint64_t revision{};
+    chart_stamp_t stamp;
     std::vector<chart_clipboard_payload_t> objects;
     // New retained BMSON events the stem points above are linked to.
     std::vector<chart_paste_stem_event_t> stem_events;
-    bool valid{};
     std::size_t missing_lane_count{};
-    std::string error;
+    diagnostic_list_t diagnostics;
+
+    [[nodiscard]] auto is_valid() const noexcept -> bool {
+        return static_cast<bool>(stamp.chart) && !objects.empty() && diagnostics.empty();
+    }
+    [[nodiscard]] auto message() const noexcept -> std::string_view {
+        return diagnostics.empty() ? std::string_view{""} : std::string_view{diagnostics.front().message};
+    }
+    void reject(std::string message) & {
+        diagnostics.clear();
+        diagnostics.push_back(wormedit::error(diagnostic_code_t::collision, std::move(message)));
+    }
+    [[nodiscard]] auto reject(std::string message) && -> chart_paste_proposal_t {
+        this->reject(std::move(message));
+        return std::move(*this);
+    }
 };
 
 [[nodiscard]] auto propose_chart_paste(const song_document_t& document, chart_id_t chart,
                                        const chart_clipboard_t& clipboard, local_position_t anchor,
                                        std::uint64_t expected_revision) -> chart_paste_proposal_t;
 
-[[nodiscard]] auto paste_chart_clipboard(document_history_t& history, chart_id_t chart,
-                                         const chart_clipboard_t& clipboard,
-                                         local_position_t anchor, std::uint64_t expected_revision)
+// Consumes a revision-bound object batch and publishes it once.
+[[nodiscard]] auto apply_chart_paste(document_history_t& history, chart_paste_proposal_t&& proposal)
     -> document_command_result_t;
+
+[[nodiscard]] auto paste_chart_clipboard(document_history_t& history,
+    chart_id_t chart, const chart_clipboard_t& clipboard, local_position_t anchor) -> document_command_result_t;
 
 } // namespace wormedit

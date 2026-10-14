@@ -9,6 +9,7 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace wormedit {
@@ -49,15 +50,17 @@ struct channel_map_conflict_t {
 
 struct channel_map_proposal_t {
     channel_map_issue_t issue{channel_map_issue_t::none};
-    std::string message;
-    song_id_t song;
-    chart_id_t chart;
+    chart_stamp_t stamp;
+    diagnostic_list_t diagnostics;
     object_id_t layout_segment;
-    std::uint64_t revision{};
     std::vector<channel_map_replacement_t> replacements;
     std::vector<channel_map_conflict_t> conflicts;
     std::size_t conflict_count{};
     std::size_t affected_note_count{};
+
+    [[nodiscard]] auto message() const noexcept -> std::string_view {
+        return diagnostics.empty() ? std::string_view{} : std::string_view{diagnostics.front().message};
+    }
 
     [[nodiscard]] explicit operator bool() const noexcept {
         return issue == channel_map_issue_t::none && static_cast<bool>(canonical_);

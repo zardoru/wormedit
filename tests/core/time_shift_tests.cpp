@@ -82,7 +82,7 @@ TEST_CASE("shifting a selection moves notes and holds exactly and undoes",
           "[unit][core][time-shift]") {
     auto history = document_history_t::from(shift_song());
     const auto result = apply_shift_selection(
-        history, 4,
+        history,
         {.chart = chart_id_t{2}, .notes = {object_id_t{10}, object_id_t{12}}, .rows = 100});
     REQUIRE(result);
     CHECK(result.payload.moved_objects == 2);
@@ -100,7 +100,7 @@ TEST_CASE("a shift across a measure-length change lands on the exact row",
     auto history = document_history_t::from(shift_song());
     // Row 300 + 400 = absolute 700 stays in measure 3; 600 + 800 = 1400 is row 440 of measure 4.
     const auto result = apply_shift_selection(
-        history, 4, {.chart = chart_id_t{2}, .notes = {object_id_t{11}}, .rows = 800});
+        history, {.chart = chart_id_t{2}, .notes = {object_id_t{11}}, .rows = 800});
     REQUIRE(result);
     const auto moved = find_note(history, 11);
     REQUIRE(moved);
@@ -109,7 +109,7 @@ TEST_CASE("a shift across a measure-length change lands on the exact row",
 
     // Backward across the boundary: measure 4 row 60 minus 100 is measure 3 row 920.
     const auto back = apply_shift_selection(
-        history, history.document.revision,
+        history,
         {.chart = chart_id_t{2}, .notes = {object_id_t{13}}, .rows = -100});
     REQUIRE(back);
     CHECK(find_note(history, 13)->first == first_measure);
@@ -119,27 +119,24 @@ TEST_CASE("a shift across a measure-length change lands on the exact row",
 TEST_CASE("shifts past either end, collisions and zero shifts", "[unit][core][time-shift]") {
     auto history = document_history_t::from(shift_song());
     const auto before_start = apply_shift_selection(
-        history, 4, {.chart = chart_id_t{2}, .notes = {object_id_t{10}}, .rows = -121});
+        history, {.chart = chart_id_t{2}, .notes = {object_id_t{10}}, .rows = -121});
     CHECK_FALSE(before_start.command.applied);
     CHECK(has_code(before_start, diagnostic_code_t::row_out_of_range));
     const auto past_end = apply_shift_selection(
-        history, 4, {.chart = chart_id_t{2}, .notes = {object_id_t{13}}, .rows = 420});
+        history, {.chart = chart_id_t{2}, .notes = {object_id_t{13}}, .rows = 420});
     CHECK(has_code(past_end, diagnostic_code_t::row_out_of_range));
     const auto stacked = apply_shift_selection(
-        history, 4, {.chart = chart_id_t{2}, .notes = {object_id_t{10}}, .rows = 180});
+        history, {.chart = chart_id_t{2}, .notes = {object_id_t{10}}, .rows = 180});
     CHECK_FALSE(stacked.command.applied);
     CHECK(has_code(stacked, diagnostic_code_t::collision));
     const auto zero = apply_shift_selection(
-        history, 4, {.chart = chart_id_t{2}, .notes = {object_id_t{10}}, .rows = 0});
+        history, {.chart = chart_id_t{2}, .notes = {object_id_t{10}}, .rows = 0});
     CHECK_FALSE(zero.command.applied);
     CHECK(zero.command.diagnostics.empty());
     CHECK(history.document.revision == 4);
     CHECK(history.undo.empty());
-    const auto stale = apply_shift_selection(
-        history, 3, {.chart = chart_id_t{2}, .notes = {object_id_t{10}}, .rows = 10});
-    CHECK_FALSE(stale.command.applied);
     const auto unknown = apply_shift_selection(
-        history, 4, {.chart = chart_id_t{2}, .notes = {object_id_t{99}}, .rows = 10});
+        history, {.chart = chart_id_t{2}, .notes = {object_id_t{99}}, .rows = 10});
     CHECK(has_code(unknown, diagnostic_code_t::invalid_id));
 }
 
@@ -148,7 +145,7 @@ TEST_CASE("shifting from the cursor moves later content and optionally timing",
     auto content_only = document_history_t::from(shift_song());
     const auto cursor = local_position_t{first_measure, 300};
     const auto result = apply_shift_from_cursor(
-        content_only, 4, {.chart = chart_id_t{2}, .cursor = cursor, .rows = 40});
+        content_only, {.chart = chart_id_t{2}, .cursor = cursor, .rows = 40});
     REQUIRE(result);
     CHECK(find_note(content_only, 10)->second.position.row == 120);
     CHECK(find_note(content_only, 11)->second.position.row == 340);
@@ -161,7 +158,7 @@ TEST_CASE("shifting from the cursor moves later content and optionally timing",
 
     auto with_timing = document_history_t::from(shift_song());
     const auto timed = apply_shift_from_cursor(
-        with_timing, 4,
+        with_timing,
         {.chart = chart_id_t{2}, .cursor = cursor, .rows = 40, .include_timing = true});
     REQUIRE(timed);
     CHECK(chart_of(with_timing).bpms[0].position.row == 0);
@@ -175,7 +172,7 @@ TEST_CASE("time shift refuses charts that retain BMS control flow",
     song.charts.front().bms_measure_length_projections.push_back({.measure_index = 0});
     auto history = document_history_t::from(std::move(song));
     const auto result = apply_shift_selection(
-        history, 4, {.chart = chart_id_t{2}, .notes = {object_id_t{10}}, .rows = 10});
+        history, {.chart = chart_id_t{2}, .notes = {object_id_t{10}}, .rows = 10});
     CHECK_FALSE(result.command.applied);
     CHECK(has_code(result, diagnostic_code_t::unsupported_feature));
 }

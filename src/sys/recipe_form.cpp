@@ -177,23 +177,33 @@ auto recipe_from_form(const WormUiTimingRecipeForm& form, const sv_recipe_t& cur
     return candidate;
 }
 
-auto preview_recipe_form(const chart_document_t& chart, std::uint64_t revision,
+auto propose_recipe_form(const song_document_t& document, const chart_document_t& chart,
                          const sv_recipe_t& recipe, const WormUiTimingRecipeForm& form)
     -> recipe_form_preview_t {
-    recipe_form_preview_t preview{.chart = chart.id, .revision = revision, .candidate = recipe};
+    recipe_form_preview_t preview{.stamp = chart_stamp_t::from(document, chart.id), .candidate = recipe};
     const auto candidate = recipe_from_form(form, recipe);
     if (!candidate) {
-        preview.error = "Values must be exact fractions and counts must be whole numbers.";
-        preview.severity = notification_severity_t::warning;
+        preview.diagnostics.push_back({.severity = diagnostic_severity_t::warning,
+            .code = diagnostic_code_t::invalid_rational,
+            .message = "Values must be exact fractions and counts must be whole numbers."});
         return preview;
     }
     preview.candidate = *candidate;
-    const auto diagnostics = validate_sv_recipe(chart, *candidate);
-    if (!diagnostics.empty()) {
-        preview.error = diagnostics.front().message;
-        preview.severity = projection_diagnostic_severity(diagnostics.front().severity);
-    }
+    preview.diagnostics = validate_sv_recipe(chart, *candidate);
     return preview;
+}
+
+auto apply_recipe_form(document_history_t& history, const recipe_form_preview_t& proposal)
+    -> document_command_result_t {
+    if (!proposal.diagnostics.empty())
+        return document_command_transaction_t::rejection(history.document.revision, proposal.diagnostics);
+    auto transaction = document_command_transaction_t::from(history, proposal.stamp,
+        "SV recipe form", document_identity_policy_t::revision_only);
+    if (!transaction.is_ready()) return transaction.finish_without_commit();
+    return apply_sv_recipe_edit(
+        transaction, wormedit::update_edit_t<wormedit::sv_recipe_t>{.chart = proposal.stamp.chart,
+                                                                    .id = proposal.candidate.id,
+                                                                    .value = proposal.candidate});
 }
 
 auto apply_recipe_form(document_history_t& history, chart_id_t chart_id, recipe_id_t recipe_id,
@@ -205,17 +215,20 @@ auto apply_recipe_form(document_history_t& history, chart_id_t chart_id, recipe_
     if (chart == nullptr) return "The chart is no longer available.";
     const auto recipe = std::ranges::find(chart->sv_recipes, recipe_id, &sv_recipe_t::id);
     if (recipe == chart->sv_recipes.end()) return "The SV recipe no longer exists.";
-    const auto candidate = recipe_from_form(form, *recipe);
+    auto candidate = recipe_from_form(form, *recipe);
     if (!candidate) return "Values must be exact fractions and counts must be whole numbers.";
-    const auto result = apply_sv_recipe_edit(history, history.document.revision,
-                                             update_sv_recipe_action_t{chart_id, recipe_id, *candidate});
+    const recipe_form_preview_t proposal{.stamp = chart_stamp_t::from(history.document, chart_id),
+                                         .candidate = std::move(*candidate)};
+    const auto result = apply_recipe_form(history, proposal);
     applied = result.applied;
     if (result.applied) {
         set_feedback_severity(severity, notification_severity_t::success);
         return "SV recipe updated.";
     }
-    set_feedback_severity(severity, result.diagnostics.empty() ? notification_severity_t::info
-        : projection_diagnostic_severity(result.diagnostics.front().severity));
+    set_feedback_severity(severity,
+                          result.diagnostics.empty()
+                              ? notification_severity_t::info
+                              : to_notification_severity(result.diagnostics.front().severity));
     return result.diagnostics.empty() ? "SV recipe is unchanged." : result.diagnostics.front().message;
 }
 

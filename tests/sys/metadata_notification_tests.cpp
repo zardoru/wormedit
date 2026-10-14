@@ -23,15 +23,15 @@ struct metadata_notification_fixture_t {
 
     metadata_notification_fixture_t() {
         history = document_history_t::from(song_document_t{.id = song_id_t{1}, .revision = 4});
-        REQUIRE(apply_new_chart_command(history, 4));
+        REQUIRE(apply_new_chart_command(history));
         history = document_history_t::from(std::move(history.document));
         const auto binding = workspace_controller_t::from(history);
         REQUIRE(binding);
         workspace = *binding.workspace;
     }
 
-    auto dispatch(const WormUiWorkspaceAction& action) -> std::optional<std::string> {
-        return dispatch_metadata_action(action, history, workspace, false, drop, assets,
+    auto dispatch(const WormUiWorkspaceAction& action, bool timing_locked = false) -> std::optional<std::string> {
+        return dispatch_metadata_action(action, history, workspace, timing_locked, drop, assets,
                                         {}, scheduler, false, false, sink);
     }
 
@@ -200,6 +200,7 @@ TEST_CASE("metadata malformed and stale edits post once without mutation", "[uni
     action.metadata_document_revision = revision - 1;
     const auto stale = fixture.dispatch(action);
     require_metadata_notification(static_cast<bool>(stale));
+    check_metadata_notification(*stale == stale_action_message("Metadata edit"));
     entries = fixture.entries();
     require_metadata_notification(entries.size() == 2);
     expect_edit_entry(entries[0], notification_severity_t::error, *stale);
@@ -328,7 +329,7 @@ TEST_CASE("stale channel-map preview rejects apply without touching the document
 TEST_CASE("batch metadata edit writes every selected difficulty in one undo step",
           "[unit][sys][metadata-notification][batch]") {
     metadata_notification_fixture_t fixture;
-    REQUIRE(apply_new_chart_command(fixture.history, fixture.history.document.revision));
+    REQUIRE(apply_new_chart_command(fixture.history));
     REQUIRE(fixture.history.document.charts.size() == 2);
     const std::array<std::uint64_t, 2> ids{fixture.history.document.charts[0].id.value,
                                            fixture.history.document.charts[1].id.value};
@@ -506,4 +507,60 @@ TEST_CASE("key-count preview refuses Custom and indices outside the chart's fami
     require_metadata_notification(refused.has_value());
     check_metadata_notification(!fixture.drop.lane_profile_preview.has_value());
     check_metadata_notification(fixture.history.undo.empty());
+}
+
+TEST_CASE("Malformed metadata payload keeps precedence over its stale stamp",
+          "[unit][sys][metadata-notification][metadata-stamp-order]") {
+    metadata_notification_fixture_t fixture;
+    auto action = song_edit(fixture);
+    action.metadata_title = nullptr;
+    --action.metadata_document_revision;
+    const auto revision = fixture.history.document.revision;
+    const auto response = fixture.dispatch(action);
+    require_metadata_notification(response.has_value());
+    check_metadata_notification(*response ==
+        "Metadata edit payload is incomplete or exceeds the tag-count cap.");
+    const auto entries = fixture.entries();
+    require_metadata_notification(entries.size() == 1);
+    expect_edit_entry(entries.front(), notification_severity_t::warning, *response);
+    check_metadata_notification(fixture.history.document.revision == revision);
+    check_metadata_notification(fixture.history.undo.empty());
+}
+
+namespace {
+void check_metadata_timing_boundary(WormUiMetadataEditKind kind, bool timing_locked) {
+    metadata_notification_fixture_t fixture;
+    auto action = redivision_action(fixture, 192);
+    action.metadata_edit = kind;
+    action.metadata_audio_offset_numerator_text = "1";
+    action.metadata_audio_offset_denominator_text = "4";
+    --action.metadata_document_revision;
+    const auto revision = fixture.history.document.revision;
+    const auto response = fixture.dispatch(action, timing_locked);
+    require_metadata_notification(response.has_value());
+    const auto expected = timing_locked
+        ? std::string{"audio offset editing is disabled while timing is locked"}
+        : kind == WORM_UI_METADATA_EDIT_REDIVIDE_CHART
+            ? "Resolution change rejected: " + stale_action_message("Resolution change")
+            : stale_action_message("Audio offset edit");
+    check_metadata_notification(*response == expected);
+    const auto entries = fixture.entries();
+    require_metadata_notification(entries.size() == 1);
+    expect_edit_entry(entries.front(), notification_severity_t::error, *response);
+    check_metadata_notification(fixture.history.document.revision == revision);
+    check_metadata_notification(fixture.history.undo.empty());
+}
+} // namespace
+
+TEST_CASE("Metadata audio offset stale rejection uses the shared formatter",
+          "[unit][sys][metadata-notification][metadata-timing-stamp]") {
+    check_metadata_timing_boundary(WORM_UI_METADATA_EDIT_AUDIO_OFFSET, false);
+}
+TEST_CASE("Metadata resolution stale rejection uses the shared formatter",
+          "[unit][sys][metadata-notification][metadata-timing-stamp]") {
+    check_metadata_timing_boundary(WORM_UI_METADATA_EDIT_REDIVIDE_CHART, false);
+}
+TEST_CASE("Metadata audio offset keeps lock priority over a stale stamp",
+          "[unit][sys][metadata-notification][metadata-timing-stamp]") {
+    check_metadata_timing_boundary(WORM_UI_METADATA_EDIT_AUDIO_OFFSET, true);
 }

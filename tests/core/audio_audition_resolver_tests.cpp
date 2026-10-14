@@ -1,3 +1,5 @@
+#include "../support/stale_action_assertions.h"
+#include <catch2/generators/catch_generators.hpp>
 #include <wormedit/audio/audition_resolver.h>
 #include <wormedit/formats/bmson.h>
 
@@ -192,6 +194,23 @@ TEST_CASE("audition resolver isolates BGM slices and falls back to whole unlinke
     REQUIRE(invalid_length.diagnostics.size() == 1);
     CHECK(invalid_length.diagnostics.front().code ==
           wormedit::audio::audition_resolve_code_t::invalid_source_geometry);
+}
+
+TEST_CASE("BMSON draft audition separates stale revision from unknown marker rejection",
+          "[unit][audio][audition-resolver][draft-stamp]") {
+    const auto missing_marker = GENERATE(false, true);
+    const wormedit::song_document_t song{.revision = 10};
+    const std::array markers{wormedit::bmson_sound_marker_insertion_t{}};
+    const auto result = wormedit::audio::resolve_bmson_draft_audition(song,
+        {.expected_revision = 9, .chart = wormedit::chart_id_t{2},
+         .markers = markers, .marker_index = missing_marker ? 1u : 0u}, {});
+    REQUIRE_FALSE(result);
+    REQUIRE_FALSE(result.diagnostics.empty());
+    if (missing_marker)
+        CHECK(result.diagnostics.front().message == "BMSON draft audition has a stale revision or unknown marker");
+    else
+        wormedit::test::check_stale_action_message(result.diagnostics.front().message, "BMSON draft audition");
+    CHECK(song.revision == 10);
 }
 
 TEST_CASE("BMSON draft audition resolves a staged region without editing the song",

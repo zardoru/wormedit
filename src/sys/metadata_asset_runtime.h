@@ -30,37 +30,36 @@ namespace runtime {
 
 class metadata_asset_t {
 public:
-    explicit metadata_asset_t(std::optional<notification_sink_t> notifications = {});
-    ~metadata_asset_t();
+  explicit metadata_asset_t(notification_sink_t notifications = notification_sink_t::muted());
+  ~metadata_asset_t();
 
-    metadata_asset_t(const metadata_asset_t&) = delete;
-    auto operator=(const metadata_asset_t&) -> metadata_asset_t& = delete;
-    metadata_asset_t(metadata_asset_t&&) = delete;
-    auto operator=(metadata_asset_t&&) -> metadata_asset_t& = delete;
+  metadata_asset_t(const metadata_asset_t&) = delete;
+  auto operator=(const metadata_asset_t&) -> metadata_asset_t& = delete;
+  metadata_asset_t(metadata_asset_t&&) = delete;
+  auto operator=(metadata_asset_t&&) -> metadata_asset_t& = delete;
 
-    auto start_copy_preview(const WormUiWorkspaceAction& action,
-                            const wormedit::document_history_t& history,
-                            const wormedit::workspace_controller_t& workspace,
-                            const std::filesystem::path& asset_base) -> std::string;
-    auto start_import_copy(
-        const WormUiWorkspaceAction& action, const wormedit::document_history_t& history,
-        const wormedit::workspace_controller_t& workspace,
-        const std::filesystem::path& asset_base, wormedit::task_scheduler_t& scheduler,
-        bool resource_copy_busy, bool export_busy) -> std::string;
+  auto start_copy_preview(const WormUiWorkspaceAction& action,
+                          const wormedit::document_history_t& history,
+                          const wormedit::workspace_controller_t& workspace,
+                          const std::filesystem::path& asset_base) -> std::string;
+  auto start_import_copy(const WormUiWorkspaceAction& action,
+                         const wormedit::document_history_t& history,
+                         const wormedit::workspace_controller_t& workspace,
+                         const std::filesystem::path& asset_base,
+                         wormedit::task_scheduler_t& scheduler, bool resource_copy_busy,
+                         bool export_busy) -> std::string;
 
-    auto poll(wormedit::document_history_t& history,
-              wormedit::workspace_controller_t& workspace,
-              const std::filesystem::path& asset_base) -> std::optional<std::string>;
-    void cancel();
-    // Call after the scheduler passed to start_import_copy() has shut down.
-    void cleanup(const std::filesystem::path& asset_base);
+  auto poll(wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace,
+            const std::filesystem::path& asset_base) -> std::optional<std::string>;
+  void cancel();
+  // Call after the scheduler passed to start_import_copy() has shut down.
+  void cleanup(const std::filesystem::path& asset_base);
 
-    [[nodiscard]] auto import_pending() const -> bool;
-    [[nodiscard]] auto copy_preview_pending() const -> bool;
-    [[nodiscard]] auto copy_preview_key() const
-        -> const std::optional<metadata_copy_preview_key_t>&;
-    [[nodiscard]] auto copy_preview_message() const -> const std::string&;
-    void clear_copy_preview_key();
+  [[nodiscard]] auto import_pending() const -> bool;
+  [[nodiscard]] auto copy_preview_pending() const -> bool;
+  [[nodiscard]] auto copy_preview_key() const -> const std::optional<metadata_copy_preview_key_t>&;
+  [[nodiscard]] auto copy_preview_message() const -> const std::string&;
+  void clear_copy_preview_key();
 
 private:
     struct impl_t;

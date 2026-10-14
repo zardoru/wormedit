@@ -1,3 +1,5 @@
+#include "../support/stale_action_assertions.h"
+#include <catch2/generators/catch_generators.hpp>
 #include "sys/metadata_asset_runtime.h"
 #include "sys/resource_job_state.h"
 #include "ui/frontend.h"
@@ -61,6 +63,14 @@ struct resource_notification_fixture_t {
         std::snprintf(action.compose_import_path, sizeof(action.compose_import_path), "%s",
                       source.c_str());
         return action;
+    }
+    auto wait_for_import() -> std::optional<std::string> {
+        std::optional<std::string> completed;
+        for (int attempt = 0; attempt < 1000 && !completed; ++attempt) {
+            completed = assets.poll(history, workspace, project);
+            std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        }
+        return completed;
     }
     void wait_for_preview() {
         for (int attempt = 0; attempt < 200 && assets.copy_preview_pending(); ++attempt) {
@@ -156,7 +166,7 @@ TEST_CASE("metadata copy inspection rejection is explicit and does not mutate do
     const auto revision = fixture.history.document.revision;
     const auto message = fixture.assets.start_copy_preview(action, fixture.history,
                                                            fixture.workspace, fixture.project);
-    CHECK(message == "Metadata copy inspection expired after the chart or document changed.");
+    test::check_stale_action_message(message, "Metadata copy inspection");
     const auto entries = fixture.entries();
     REQUIRE(entries.size() == 1);
     expect_notification(entries[0], notification_severity_t::warning,
@@ -164,6 +174,44 @@ TEST_CASE("metadata copy inspection rejection is explicit and does not mutate do
     CHECK(fixture.history.document.revision == revision);
     CHECK(fixture.history.undo.empty());
 }
+
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+TEST_CASE("metadata import completion rejects its captured project and revision",
+          "[unit][sys][resource-notification][metadata-completion-stamp]") {
+    const auto replace_project = GENERATE(false, true);
+    resource_notification_fixture_t fixture;
+    fixture.source = fixture.root / "source.ogg";
+    std::filesystem::copy_file(std::filesystem::path{__FILE__}.parent_path().parent_path() / "fixtures" / "audio" / "keysound-c4.ogg",
+                               fixture.source);
+    auto action = fixture.inspect_action();
+    action.metadata_import_copy_project = true;
+    (void)fixture.assets.start_import_copy(action, fixture.history, fixture.workspace,
+        fixture.project, fixture.scheduler, false, false);
+    require_resource_notification(fixture.assets.import_pending());
+    if (replace_project) fixture.history.document.id = song_id_t{2};
+    else ++fixture.history.document.revision;
+    const auto message = fixture.wait_for_import();
+    require_resource_notification(message.has_value());
+    test::check_stale_action_message(*message, "Metadata audio copy linking");
+    check_resource_notification(!std::filesystem::exists(fixture.project / "assets" / "1-source.ogg"));
+    check_resource_notification(std::filesystem::exists(fixture.source));
+    check_resource_notification(fixture.history.document.audio_assets.empty());
+    check_resource_notification(fixture.history.undo.empty());
+}
+
+TEST_CASE("metadata import-copy rejects stale start before inspecting audio",
+          "[unit][sys][resource-notification][metadata-copy-stamp]") {
+    resource_notification_fixture_t fixture;
+    auto action = fixture.inspect_action();
+    action.metadata_import_copy_project = true;
+    ++action.compose_input_document_revision;
+    const auto message = fixture.assets.start_import_copy(action, fixture.history, fixture.workspace,
+        fixture.project, fixture.scheduler, false, false);
+    test::check_stale_action_message(message, "Metadata import-copy");
+    check_resource_notification(!fixture.assets.import_pending());
+    check_resource_notification(fixture.history.undo.empty());
+}
+#endif
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 TEST_CASE("metadata import decode failure posts once and never links invalid audio",
@@ -178,11 +226,7 @@ TEST_CASE("metadata import decode failure posts once and never links invalid aud
     auto entries = fixture.entries();
     require_resource_notification(entries.size() == 1);
     expect_notification(entries[0], notification_severity_t::info, notification_source_t::import_, started);
-    std::optional<std::string> completed;
-    for (int attempt = 0; attempt < 1000 && !completed; ++attempt) {
-        completed = fixture.assets.poll(fixture.history, fixture.workspace, fixture.project);
-        std::this_thread::sleep_for(std::chrono::milliseconds{1});
-    }
+    const auto completed = fixture.wait_for_import();
     require_resource_notification(static_cast<bool>(completed));
     entries = fixture.entries();
     require_resource_notification(entries.size() == 2);
@@ -239,7 +283,8 @@ TEST_CASE("resource copy stale completion warns once without changing document",
         .asset = asset_id_t{1}, .song = fixture.history.document.id, .revision = revision - 1,
         .source_path = fixture.source, .export_copy = false}));
     const auto completed = wait_for_resource_result(fixture);
-    require_resource_notification(completed == "Resource copy finished, but the document changed; source was not relinked.");
+    require_resource_notification(completed.has_value());
+    test::check_stale_action_message(*completed, "Resource copy relink");
     const auto entries = fixture.entries();
     require_resource_notification(entries.size() == 2);
     expect_notification(entries[0], notification_severity_t::warning,

@@ -645,27 +645,27 @@ TEST_CASE("input collisions are scoped by focused stage", "[unit][core][input]")
 
 TEST_CASE("exact redivision previews every moved position", "[unit][core][document]") {
     const auto song = make_valid_song();
-    const auto result = redivide_chart_exact(song.charts.front(), 192);
-    REQUIRE(result);
-    REQUIRE(result.chart.has_value());
-    CHECK(result.chart->divisions_per_standard_measure == 192);
-    CHECK(result.chart->measures[0].notes[0].position.row == 48);
-    CHECK(result.chart->measures[0].notes[0].end->row == 24);
-    CHECK(result.chart->pauses[0].position.row == 96);
-    CHECK(result.chart->warps[0].span.begin.row == 144);
-    CHECK(result.chart->kiai[0].position.row == 48);
-    CHECK(result.chart->scrolls[0].position.row == 48);
-    CHECK(result.chart->speeds[0].position.row == 96);
-    CHECK(result.chart->timing_anchors[0].position.row == 144);
-    CHECK(result.chart->bookmarks[0].position->row == 48);
-    CHECK(result.chart->sections[0].beat_span->begin.row == 48);
-    CHECK(result.chart->sections[0].beat_span->end.row == 96);
-    CHECK(result.chart->bga_events[0].position.row == 48);
-    CHECK(result.chart->sound_channels[0].events[0].position.row == 48);
-    CHECK(result.chart->sound_channels[0].events[0].end->row == 96);
-    CHECK(result.moves.size() == 14);
+    const auto result = redivision_plan_t::from(song.charts.front(), 192);
+    REQUIRE(result.value.chart.has_value());
+    REQUIRE(result.value.chart.has_value());
+    CHECK(result.value.chart->divisions_per_standard_measure == 192);
+    CHECK(result.value.chart->measures[0].notes[0].position.row == 48);
+    CHECK(result.value.chart->measures[0].notes[0].end->row == 24);
+    CHECK(result.value.chart->pauses[0].position.row == 96);
+    CHECK(result.value.chart->warps[0].span.begin.row == 144);
+    CHECK(result.value.chart->kiai[0].position.row == 48);
+    CHECK(result.value.chart->scrolls[0].position.row == 48);
+    CHECK(result.value.chart->speeds[0].position.row == 96);
+    CHECK(result.value.chart->timing_anchors[0].position.row == 144);
+    CHECK(result.value.chart->bookmarks[0].position->row == 48);
+    CHECK(result.value.chart->sections[0].beat_span->begin.row == 48);
+    CHECK(result.value.chart->sections[0].beat_span->end.row == 96);
+    CHECK(result.value.chart->bga_events[0].position.row == 48);
+    CHECK(result.value.chart->sound_channels[0].events[0].position.row == 48);
+    CHECK(result.value.chart->sound_channels[0].events[0].end->row == 96);
+    CHECK(result.value.moves.size() == 14);
 
-    const auto index = build_measure_index(*result.chart);
+    const auto index = build_measure_index(*result.value.chart);
     REQUIRE(std::holds_alternative<measure_index_t>(index));
     CHECK(std::get<measure_index_t>(index).total_rows == 336);
 }
@@ -675,17 +675,17 @@ TEST_CASE("inexact redivision rejects atomically", "[unit][core][document][negat
     auto& original = song.charts.front();
     original.bookmarks.front().position->row = 241;
 
-    const auto result = redivide_chart_exact(original, 192);
-    CHECK_FALSE(result);
-    CHECK_FALSE(result.chart.has_value());
-    CHECK(result.moves.empty());
+    const auto result = redivision_plan_t::from(original, 192);
+    CHECK_FALSE(result.value.chart.has_value());
+    CHECK_FALSE(result.value.chart.has_value());
+    CHECK(result.value.moves.empty());
     CHECK(has_code(result.diagnostics, diagnostic_code_t::row_out_of_range));
     CHECK(original.divisions_per_standard_measure == 960);
     CHECK(original.bookmarks.front().position->row == 241);
 
     original.bookmarks.front().position = local_position_t{measure_id_t{99}, 0};
-    const auto unknown_measure = redivide_chart_exact(original, 1920);
-    CHECK_FALSE(unknown_measure);
+    const auto unknown_measure = redivision_plan_t::from(original, 1920);
+    CHECK_FALSE(unknown_measure.value.chart.has_value());
     CHECK(has_code(unknown_measure.diagnostics, diagnostic_code_t::row_out_of_range));
 }
 
@@ -802,7 +802,6 @@ TEST_CASE("Document owner queries preserve first matches and mutable access", "[
     chart.measures.front().bgm_events = {{.id = object_id_t{11}}};
     chart.measures.back().bgm_events = {{.id = object_id_t{11}}};
     check_owner_query(song.find_chart(chart_id_t{7}) == &song.charts.front());
-    check_owner_query(find_chart(song, chart_id_t{7}) == song.find_chart(chart_id_t{7}));
     check_owner_query(song.find_audio_asset(asset_id_t{9}) == &song.audio_assets.front());
     check_owner_query(chart.find_measure(measure_id_t{4}) == &chart.measures.back());
     check_owner_query(chart.find_note(object_id_t{10}) == &chart.measures.front().notes.front());

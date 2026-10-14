@@ -1,4 +1,5 @@
 #include "../sys/application_dispatch_fixture.h"
+#include "../sys/compose_area_dispatch_fixture.h"
 #include "nuklear_event_harness.h"
 #include "sys/application_command_dispatch.h"
 #include "sys/compose_area_actions.h"
@@ -7138,9 +7139,9 @@ TEST_CASE("Production pointer paste and note drag use the valid Stop event row",
     f.interaction->selected_notes = {object_id_t{101}};
     f.interaction->selected_objects = {{editor_selection_object_kind_t::note, object_id_t{101}}};
     if (paste) {
-        auto copied = copy_chart_selection(f.history.document, *f.interaction, f.history.document.revision);
+        auto copied = chart_clipboard_t::from(f.history.document, *f.interaction, f.history.document.revision);
         expect_t422(static_cast<bool>(copied));
-        f.application.project.clipboard.chart_clipboard = std::move(copied.clipboard);
+        f.application.project.clipboard.chart_clipboard = std::move(*copied);
         std::string status;
         expect_t422(begin_compose_paste(f.application, f.history.document, *f.interaction, status));
         f.project();
@@ -7297,7 +7298,6 @@ TEST_CASE("Context replacement shares pointer resource-role rejection",
         emitted = true;
         const auto& emitted_action = frame.get();
         const auto applied = apply_resource_assignment(f.history,
-            emitted_action.compose_input_document_revision,
             {.chart = chart_id_t{emitted_action.compose_input_chart_id},
              .resource = resource_id_t{emitted_action.compose_resource_id},
              .objects = f.interaction->selected_objects});
@@ -7569,7 +7569,11 @@ TEST_CASE("Production arrow and Alt wheel share stopped paused and playing step 
     f.application.services.transport_preview_playing = [=] { return mode == 2; };
     f.application.services.transport_preview_paused = [=] { return mode == 1; };
     int seeks = 0;
-    f.application.services.transport_seek = [&](std::uint64_t) { ++seeks; return std::string{}; };
+    f.application.services.transport_seek = [&](std::uint64_t) {
+        ++seeks;
+        return compose_action_outcome_t::from(std::string{}, notification_severity_t::hint,
+                                              notification_source_t::input);
+    };
     f.application.project.transport.preview_playhead_absolute_row = 480;
     f.application.project.compose_view.edit_snap_enabled = true;
     f.application.project.compose_view.requested_snap_denominators[1] = 16;
@@ -7667,7 +7671,12 @@ TEST_CASE("Production Go to measure modal shares playing position navigation",
     int seeks = 0;
     f.application.services.transport_preview_playing = [=] { return mode >= 2; };
     f.application.services.transport_preview_paused = [=] { return mode == 1; };
-    if (mode != 3) f.application.services.transport_seek = [&](std::uint64_t) { ++seeks; return std::string{}; };
+    if (mode != 3)
+        f.application.services.transport_seek = [&](std::uint64_t) {
+            ++seeks;
+            return compose_action_outcome_t::from(std::string{}, notification_severity_t::hint,
+                                                  notification_source_t::input);
+        };
     f.project(); (void)f.harness.frame();
     const auto previous = f.interaction->cursor;
     const auto go = key_event(SDL_EVENT_KEY_DOWN, SDLK_G, SDL_SCANCODE_G);
@@ -7722,7 +7731,10 @@ TEST_CASE("Production overview clicks preserve playing paused and stopped prefer
     f.application.services.transport_preview_playing = [=] { return mode == 3; };
     f.application.services.transport_preview_paused = [&] { return paused; };
     f.application.services.transport_seek = [&](std::uint64_t frame) {
-        sought_frame = frame; ++seeks; return std::string{};
+        sought_frame = frame;
+        ++seeks;
+        return compose_action_outcome_t::from(std::string{}, notification_severity_t::hint,
+                                              notification_source_t::input);
     };
     f.application.services.transport_stop = [&] { ++stops; paused = false; };
     f.application.preferences.minimap_click_moves_paused_playhead = mode == 2;
@@ -7999,7 +8011,7 @@ TEST_CASE("WAV single and reviewed batch replacements share naming and case-inse
     });
     expect_t422(emitted != frames.end());
     if (stale) {
-        expect_t422(static_cast<bool>(apply_resource_sound_metadata(f.history, f.history.document.revision,
+        expect_t422(static_cast<bool>(apply_resource_sound_metadata(f.history,
             {.resource = resource_id_t{1}, .kind = sound_kind_t::keysound, .name = "Concurrent change"})));
         const auto revision = f.history.document.revision;
         expect_t422(dispatch_compose_sound_action(emitted->get(), f.history, *f.binding.workspace,

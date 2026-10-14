@@ -1,3 +1,4 @@
+#include "../support/stale_action_assertions.h"
 #include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/editor_scene.h>
@@ -120,6 +121,47 @@ void check_fractional_snap_cursor(std::uint64_t row, double subrow,
     expect_cursor_gesture(history.undo.empty());
 }
 } // namespace
+
+TEST_CASE("Space range cache expiry remains separate from absent geometry",
+          "[unit][core][interaction][captured-geometry-stamp]") {
+    const auto missing = GENERATE(false, true);
+    auto history = document_history_t::from(make_song());
+    auto state = make_state(history);
+    REQUIRE(dispatch_editor_action(history, state, space_range_selection_action_t{}));
+    REQUIRE(state.pending_space_range_selection.has_value());
+    if (missing) state.pending_space_range_selection->hit_index.reset();
+    else {
+        auto cache = std::make_shared<editor_hit_test_index_t>(*state.pending_space_range_selection->hit_index);
+        ++cache->document_revision;
+        state.pending_space_range_selection->hit_index = std::move(cache);
+    }
+    const auto inspected = inspect_editor_interaction(history, state);
+    const auto* diagnostics = std::get_if<diagnostic_list_t>(&inspected);
+    REQUIRE(diagnostics != nullptr);
+    if (missing)
+        CHECK(diagnostics->front().message == "Space range selection is stale after a document edit");
+    else
+        test::check_stale_action_message(*diagnostics, "Editor gesture");
+    expect_cursor_gesture(history.undo.empty());
+}
+
+TEST_CASE("Playhead following rejects captured chart and revision expiry without movement",
+          "[unit][core][interaction][captured-geometry-stamp]") {
+    const auto different_chart = GENERATE(false, true);
+    auto history = document_history_t::from(make_song());
+    auto state = make_state(history);
+    const auto cursor = state.cursor;
+    const auto& chart = history.document.charts.front();
+    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    editor_measure_geometry_t geometry{chart.id, history.document.revision, &index};
+    if (different_chart) geometry.chart = chart_id_t{99};
+    else ++geometry.document_revision;
+    const auto result = follow_editor_playhead(history, state, geometry, state.cursor, 0.0);
+    test::check_stale_action_message(result.diagnostics, "Playhead geometry");
+    expect_cursor_gesture(!result.accepted);
+    expect_cursor_gesture(state.cursor == cursor);
+    expect_cursor_gesture(history.undo.empty());
+}
 
 TEST_CASE("Snap cursor navigation uses strict ceil floor of the fractional cursor",
           "[unit][core][interaction][alt-wheel]") {
@@ -1970,6 +2012,7 @@ TEST_CASE("Space range selection supports add and toggle and cancels safely",
         history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace});
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
+    test::check_stale_action_message(stale.diagnostics, "Editor gesture");
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
     CHECK_FALSE(state.pending_space_range_selection.has_value());
     REQUIRE(dispatch_editor_action(
@@ -2141,6 +2184,7 @@ TEST_CASE("area selection capture loss cancels and stale revisions preserve comm
                                               .phase = wormedit::editor_gesture_phase_t::commit});
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
+    test::check_stale_action_message(stale.diagnostics, "Editor gesture");
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
     CHECK_FALSE(state.pending_editor_area_selection.has_value());
     REQUIRE(dispatch_editor_action(history, state, cancel_editor_area_selection_action_t{}));
@@ -2575,6 +2619,7 @@ TEST_CASE("paint gestures cancel on capture loss and leave previews intact on ca
         end_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 240}, true});
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
+    test::check_stale_action_message(stale.diagnostics, "Editor gesture");
     CHECK(history.document.revision == 2);
     CHECK(note_count(history) == 0);
     CHECK(history.undo.size() == 1);
@@ -2793,6 +2838,7 @@ TEST_CASE("exact cursor jumps reject stale and out-of-chart targets without chan
         history, state, jump_edit_cursor_action_t{{measure_id_t{1}, 120}, queried_revision});
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_id));
+    test::check_stale_action_message(stale.diagnostics, "Cursor jump");
     CHECK(state.cursor == original.cursor);
     CHECK(state.active_lane == original.active_lane);
 
@@ -3621,6 +3667,7 @@ TEST_CASE("hold input gestures retire stale previews and can cancel after focus 
         history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
+    test::check_stale_action_message(stale.diagnostics, "Editor gesture");
     CHECK_FALSE(state.pending_hold.has_value());
     CHECK(note_count(history) == 0);
 
@@ -3735,6 +3782,7 @@ TEST_CASE("duration gestures reject collisions and stale revisions without parti
         history, state, update_note_duration_gesture_action_t{{measure_id_t{1}, 480}});
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
+    test::check_stale_action_message(stale.diagnostics, "Editor gesture");
     CHECK(find_note(history, object_id_t{101})->end == local_position_t{measure_id_t{1}, 240});
     CHECK_FALSE(state.pending_note_duration_gesture.has_value());
     REQUIRE(dispatch_editor_action(
@@ -3815,6 +3863,7 @@ TEST_CASE("note move gestures reject collisions and stale revisions without part
         history, state, update_note_move_gesture_action_t{{measure_id_t{1}, 480}});
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
+    test::check_stale_action_message(stale.diagnostics, "Editor gesture");
     CHECK_FALSE(state.pending_note_move_gesture.has_value());
     REQUIRE(dispatch_editor_action(
         history, state,
@@ -4010,6 +4059,7 @@ TEST_CASE("hold previews reject stale document revisions and retire captures",
         dispatch_editor_action(history, state, commit_hold_action_t{{measure_id_t{1}, 720}});
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
+    test::check_stale_action_message(stale.diagnostics, "Editor gesture");
     CHECK_FALSE(state.pending_hold.has_value());
     CHECK(note_count(history) == 0);
 
@@ -4629,7 +4679,9 @@ TEST_CASE("stale global marquee geometry cannot alter the committed selection",
     auto stale = std::make_shared<editor_area_geometry_snapshot_t>(*action.object_geometry);
     stale->document_revision += 1;
     action.object_geometry = std::move(stale);
-    CHECK_FALSE(dispatch_editor_action(fixture.history, fixture.state, action));
+    const auto rejected = dispatch_editor_action(fixture.history, fixture.state, action);
+    CHECK_FALSE(rejected);
+    test::check_stale_action_message(rejected.diagnostics, "Projected selection geometry");
     CHECK(fixture.state.selected_notes == std::vector<object_id_t>{object_id_t{102}});
     CHECK_FALSE(fixture.state.pending_editor_area_selection);
     CHECK(fixture.history.undo.empty());
@@ -7260,4 +7312,36 @@ TEST_CASE("Timing lane catalog maps every selection kind explicitly", "[core][ca
     for (const auto kind : non_timing) check_timing_catalog(!timing_lane_for_selection(kind));
     check_timing_catalog(!timing_lane_for_selection(static_cast<editor_selection_object_kind_t>(100)));
     check_timing_catalog(!selection_kind_for_timing_lane(static_cast<timing_lane_kind_t>(100)));
+}
+
+namespace {
+void check_replaced_project_duration(const editor_interaction_result_t& result,
+                                     const document_history_t& history) {
+    CHECK(result.accepted);
+    CHECK(history.undo.size() == 1);
+    CHECK(history.document.charts.front().measures.front().notes.front().end ==
+          local_position_t{measure_id_t{1}, 480});
+}
+} // namespace
+
+TEST_CASE("pointer gesture clocks preserve equal-revision project replacement and equality",
+          "[core][interaction][gesture-stamp]") {
+    auto song = make_song();
+    song.charts.front().measures.front().notes = {{.id = object_id_t{101},
+        .position = {measure_id_t{1}, 0}, .lane = lane_id_t{1}, .kind = note_kind_t::hold,
+        .end = local_position_t{measure_id_t{1}, 240}}};
+    auto history = document_history_t::from(std::move(song));
+    auto original = make_state(history);
+    REQUIRE(dispatch_editor_action(history, original,
+                                   begin_note_duration_gesture_action_t{object_id_t{101}}));
+    REQUIRE(original.pending_note_duration_gesture);
+    history.document.id = song_id_t{99};
+    auto replacement = make_state(history);
+    REQUIRE(dispatch_editor_action(history, replacement,
+                                   begin_note_duration_gesture_action_t{object_id_t{101}}));
+    CHECK(original.pending_note_duration_gesture == replacement.pending_note_duration_gesture);
+    const auto applied = dispatch_editor_action(history, original,
+        update_note_duration_gesture_action_t{.reference_end = {measure_id_t{1}, 480},
+                                              .phase = editor_gesture_phase_t::commit});
+    check_replaced_project_duration(applied, history);
 }

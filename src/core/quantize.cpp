@@ -624,18 +624,4 @@ auto quantization_plan_t::from(const chart_document_t& chart, const quantize_req
     return result;
 }
 
-auto quantization_result_t::from(quantization_outcome_t&& outcome) -> quantization_result_t {
-    return {.chart = std::move(outcome.value.chart),
-            .resolution_moves = std::move(outcome.value.resolution_moves),
-            .quantized_moves = std::move(outcome.value.quantized_moves),
-            .diagnostics = std::move(outcome.diagnostics),
-            .promoted_from = outcome.value.promoted_from,
-            .promoted_to = outcome.value.promoted_to};
-}
-
-auto quantize_chart_exact(const chart_document_t& chart, const quantize_request_t& request)
-    -> quantization_result_t {
-    return quantization_result_t::from(quantization_plan_t::from(chart, request));
-}
-
 } // namespace wormedit

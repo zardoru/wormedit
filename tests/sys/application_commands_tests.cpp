@@ -1,6 +1,10 @@
+#include "../support/stale_action_assertions.h"
 #include "../sys/application_dispatch_fixture.h"
+#include "compose_area_dispatch_fixture.h"
 #include "sys/application_command_dispatch.h"
 #include "sys/application_commands.h"
+#include "sys/application_timing_stage.h"
+#include "sys/audio_offset_actions.h"
 #include "sys/compose_minimap_navigation.h"
 #include "sys/compose_semantic_layer_commands.h"
 #include "sys/compose_sound_actions.h"
@@ -25,6 +29,67 @@
 using namespace wormedit::sys;
 
 #ifndef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+TEST_CASE("Application binding validation accepts current inputs and preserves missing targets",
+          "[unit][sys][application-stamp]") {
+    const wormedit::document_history_t history{.document = {.id = wormedit::song_id_t{1}, .revision = 7}};
+    wormedit::workspace_controller_t workspace{.active_tab = wormedit::workspace_tab_t::compose,
+        .selected_chart = wormedit::chart_id_t{2}};
+    const wormedit::timing_lane_pseudonote_preview_t stage{.stamp = wormedit::chart_stamp_t::from(history.document, wormedit::chart_id_t{2})};
+    WormUiWorkspaceAction action{};
+    action.timing_chart_id = 2;
+    action.timing_document_revision = 7;
+    action.audio_offset_drag_chart_id = 2;
+    action.audio_offset_drag_document_revision = 7;
+    action.audio_offset_drag_sample_rate = 48'000;
+    CHECK_FALSE(wormedit::sys::validate_timing_stage_binding(action, history, workspace, stage));
+    CHECK_FALSE(wormedit::sys::validate_audio_offset_drag_binding(action, history.document, workspace, 48'000));
+    workspace.selected_chart.reset();
+    const auto timing = wormedit::sys::validate_timing_stage_binding(action, history, workspace, stage);
+    REQUIRE(timing.has_value());
+    CHECK(*timing == "Timing event staging expired because its chart or revision changed.");
+    const auto audio = wormedit::sys::validate_audio_offset_drag_binding(action, history.document, workspace, 48'000);
+    REQUIRE(audio.has_value());
+    CHECK(*audio == "Audio offset drag expired after its chart or waveform changed.");
+}
+
+TEST_CASE("Application timing stage validation keeps captured identity and request stamps",
+          "[unit][sys][application-stamp]") {
+    const auto source = GENERATE(0, 1, 2);
+    wormedit::document_history_t history{.document = {.id = wormedit::song_id_t{1}, .revision = 7}};
+    wormedit::workspace_controller_t workspace{.active_tab = wormedit::workspace_tab_t::compose,
+        .selected_chart = wormedit::chart_id_t{2}};
+    wormedit::timing_lane_pseudonote_preview_t stage{.stamp = wormedit::chart_stamp_t::from(history.document, wormedit::chart_id_t{2}),
+        .existing_event = wormedit::object_id_t{3}};
+    WormUiWorkspaceAction action{};
+    action.timing_chart_id = 2;
+    action.timing_object_id = 3;
+    action.timing_document_revision = 7;
+    if (source == 0) --action.timing_document_revision;
+    else if (source == 1) --stage.stamp.document.revision;
+    else stage.stamp.chart = wormedit::chart_id_t{4};
+    const auto failure = wormedit::sys::validate_timing_stage_binding(action, history, workspace, stage);
+    REQUIRE(failure.has_value());
+    wormedit::test::check_stale_action_message(*failure, "Timing event staging");
+}
+
+TEST_CASE("Application audio offset validation separates stamp expiry from missing waveform",
+          "[unit][sys][application-stamp]") {
+    const auto source = GENERATE(0, 1);
+    const wormedit::song_document_t document{.id = wormedit::song_id_t{1}, .revision = 7};
+    const wormedit::workspace_controller_t workspace{.active_tab = wormedit::workspace_tab_t::metadata,
+        .selected_chart = wormedit::chart_id_t{2}};
+    WormUiWorkspaceAction action{};
+    action.audio_offset_drag_chart_id = source == 0 ? 2 : 3;
+    action.audio_offset_drag_document_revision = source == 0 ? 6 : 7;
+    action.audio_offset_drag_sample_rate = 48'000;
+    const auto failure = wormedit::sys::validate_audio_offset_drag_binding(action, document, workspace, 48'000);
+    REQUIRE(failure.has_value());
+    wormedit::test::check_stale_action_message(*failure, "Audio offset drag");
+    const auto missing = wormedit::sys::validate_audio_offset_drag_binding(action, document, workspace, std::nullopt);
+    REQUIRE(missing.has_value());
+    CHECK(*missing == "Audio offset drag expired after its chart or waveform changed.");
+}
+
 TEST_CASE("Compose navigation cleanup preserves command results", "[unit][sys][commands]") {
     std::string status = "Semantic layer added.";
     // Focus loss can emit cleanup alongside a widget action or on later frames.
@@ -571,6 +636,22 @@ TEST_CASE("confirmed direct WAV slot batch dispatches natural order atomically",
     CHECK(sound_slot_batch_dispatch_commits_natural_order_once());
 }
 
+TEST_CASE("Direct sound slot actions reject stale chart stamps before payload preparation",
+          "[unit][sys][sounds][slot-stamp]") {
+    const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT,
+                              WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH);
+    SoundSlotBatchDispatchFixture fixture;
+    WormUiWorkspaceAction action{};
+    action.compose_action = kind;
+    action.compose_input_chart_id = fixture.chart.value;
+    action.compose_input_document_revision = fixture.history.document.revision + 1;
+    const auto response = dispatch_compose_sound_action(action, fixture.history, fixture.workspace,
+        fixture.chart, fixture.application_state);
+    REQUIRE(response.has_value());
+    wormedit::test::check_stale_action_message(*response, "Sound slot assignment");
+    CHECK(fixture.history.undo.empty());
+}
+
 TEST_CASE("direct WAV slot batch rejection preserves history",
           "[unit][sys][sounds][bms-identifiers]") {
     CHECK(rejected_sound_slot_batches_leave_history_unchanged());
@@ -745,7 +826,7 @@ auto bpm_stage_ready(const TimingInsertFixture& fixture,
 
 auto confirm_bpm_once(TimingInsertFixture& fixture, std::uint64_t revision) -> bool {
     if (!fixture.preview) return false;
-    const auto committed = wormedit::confirm_timing_lane_pseudonote(
+    const auto committed = wormedit::apply_timing_lane_pseudonote(
         fixture.fixture.history, *fixture.preview, false);
     return committed.applied && fixture.fixture.history.document.revision == revision + 1 &&
            fixture.fixture.history.undo.size() == 1;
@@ -1002,10 +1083,10 @@ TEST_CASE("bookmark dispatcher preserves one typed seek producer warning", "[uni
         .anchor = marker_anchor_t::beat, .position = local_position_t{measure_id_t{1}, 900}});
     fixture.application_state.services.transport_preview_playing = [] { return true; };
     fixture.application_state.project.transport.preview_playhead_absolute_row = 0.0;
-    fixture.application_state.preferences.transport_seek_posts_feedback = true;
     fixture.application_state.services.transport_seek = [&](std::uint64_t) {
-        fixture.sink.post(notification_severity_t::warning, notification_source_t::audio, "Opaque seek failure.");
-        return std::string{"Opaque seek failure."};
+        return compose_action_outcome_t::from(
+            std::string{"Opaque seek failure."}, wormedit::notification_severity_t::warning,
+            wormedit::notification_source_t::audio, compose_feedback_delivery_t::notification);
     };
     check_layer_command(fixture.invoke(application_command_kind_t::navigation_previous_bookmark).accepted);
     fixture.center.drain_inbox(notification_time_t{0});
@@ -1303,7 +1384,12 @@ TEST_CASE("Minimap transport gestures preserve playing paused and stopped polici
     int seeks = 0, stops = 0;
     state.services.transport_preview_playing = [&] { return playing; };
     state.services.transport_preview_paused = [&] { return paused; };
-    state.services.transport_seek = [&](std::uint64_t frame) { ++seeks; resume = frame; return "seek"; };
+    state.services.transport_seek = [&](std::uint64_t frame) {
+        ++seeks;
+        resume = frame;
+        return compose_action_outcome_t::from("seek", wormedit::notification_severity_t::hint,
+                                              wormedit::notification_source_t::input);
+    };
     state.services.transport_stop = [&] { ++stops; paused = false; resume = 0; };
     CHECK(navigate_compose_minimap_transport(state, 100, false, false) == "seek");
     CHECK(seeks == 1);
@@ -1328,7 +1414,10 @@ TEST_CASE("Minimap transport gestures preserve playing paused and stopped polici
     CHECK(navigate_compose_minimap_transport(state, 600, false, false).empty());
     CHECK(seeks == before);
     playing = true;
-    state.services.transport_seek = [](std::uint64_t) { return "seek failed"; };
+    state.services.transport_seek = [](std::uint64_t) {
+        return compose_action_outcome_t::from("seek failed", wormedit::notification_severity_t::hint,
+                                              wormedit::notification_source_t::input);
+    };
     CHECK(navigate_compose_minimap_transport(state, 600, false, false) == "seek failed");
     CHECK(playing);
 }
@@ -1613,9 +1702,14 @@ TEST_CASE("Layer row lock commands round trip through shared history and undo",
         {.id = layer_id_t{7}, .name = "Layer", .color = {32, 64, 128, 255}},
         {.id = layer_id_t{9}, .name = "Other", .color = {64, 128, 32, 255}}};
     const auto update = [&](bool locked) {
-        return apply_semantic_layer_edit(fixture.history, fixture.history.document.revision,
-            update_semantic_layer_action_t{chart_id_t{7}, layer_id_t{9}, "Other",
-                                           {64.0 / 255, 128.0 / 255, 32.0 / 255, 1}, true, locked});
+        return apply_semantic_layer_edit(
+            fixture.history, wormedit::update_edit_t<wormedit::semantic_layer_edit_value_t>{
+                                 .chart = chart_id_t{7},
+                                 .id = layer_id_t{9},
+                                 .value = {.name = "Other",
+                                           .color = {64.0 / 255, 128.0 / 255, 32.0 / 255, 1},
+                                           .visible = true,
+                                           .locked = locked}});
     };
     require_layer_lock(update(true).applied);
     check_layer_lock(!fixture.history.document.charts.front().semantic_layers.front().locked);
@@ -1836,7 +1930,9 @@ TEST_CASE("Note context rejects stale and unknown hits without replacing selecti
     AreaFixture fixture;
     seed_membership_fixture(fixture);
     const auto selection = fixture.state.selected_notes;
-    check_membership(!select_compose_note_context(fixture.history, fixture.state, 8, object_id_t{3}));
+    const auto stale = select_compose_note_context(fixture.history, fixture.state, 8, object_id_t{3});
+    check_membership(!stale);
+    test::check_stale_action_message(stale.diagnostics, "Note context");
     check_membership(!select_compose_note_context(fixture.history, fixture.state, 9, object_id_t{999}));
     check_membership(fixture.state.selected_notes == selection);
     check_membership(fixture.history.undo.empty());
@@ -2617,7 +2713,7 @@ TEST_CASE("Registered Quantize uses panel settings rather than the active snap f
     auto& history = f.fixture.history;
     f.compose_state->active_snap_denominator = 4;
     f.application_state.project.quantize.quantize_editor = application_command_state_t::quantize_editor_t{
-        .song = history.document.id, .chart = f.compose_state->chart, .request = {.divisions = 8}};
+        .stamp = wormedit::chart_stamp_t::from(history.document, f.compose_state->chart), .request = {.divisions = 8}};
     selection_require(static_cast<bool>(invoke_selection_command(f, "edit.apply_quantize")));
     selection_check(history.document.charts.front().measures.front().notes.front().position.row == 120);
     selection_check(history.undo.size() == 1);
@@ -2719,7 +2815,6 @@ TEST_CASE("Project reset retains exactly the session preference allowlist", "[sy
     state.preferences.transport_rate_index = 3;
     state.preferences.transport_keep_pitch = true;
     state.preferences.transport_keep_pitch_available = true;
-    state.preferences.transport_seek_posts_feedback = true;
     wormedit::sys::metronome_t metronome;
     state.metronome = &metronome;
     metronome.settings.enabled = true;
@@ -2734,7 +2829,6 @@ TEST_CASE("Project reset retains exactly the session preference allowlist", "[sy
     check_transient_transport(state.preferences.transport_rate_index == 3);
     check_transient_transport(state.preferences.transport_keep_pitch);
     check_transient_transport(state.preferences.transport_keep_pitch_available);
-    check_transient_transport(state.preferences.transport_seek_posts_feedback);
     check_transient_transport(state.metronome_settings().enabled);
     check_transient_transport(state.metronome_settings().available);
     check_transient_transport(state.preferences.timing_settings_visible);
@@ -2784,7 +2878,8 @@ void check_catalog_rate_dispatch(const wormedit::audio::playback_rate_descriptor
     action.transport_rate_index = 255; // A contradictory legacy position must not control dispatch.
     action.transport_rate_id = static_cast<std::uint32_t>(entry.id);
     wormedit::stepmania_export_policy_t policy;
-    const auto status = dispatch_transport_player_action(action, state, policy, std::nullopt);
+    const auto status = dispatch_transport_player_action(action, state, policy,
+                                                         wormedit::notification_sink_t::muted());
     CHECK((status && *status == "Playback rate changed."));
     CHECK(catalog_requested_rate == entry.rate);
     CHECK(state.preferences.transport_rate_index == static_cast<std::size_t>(entry.id));
@@ -2804,7 +2899,8 @@ TEST_CASE("Transport UI dispatch rejects unknown playback catalog ids", "[sys][c
     action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE;
     action.transport_rate_id = 255;
     wormedit::stepmania_export_policy_t policy;
-    const auto status = dispatch_transport_player_action(action, state, policy, std::nullopt);
+    const auto status = dispatch_transport_player_action(action, state, policy,
+                                                         wormedit::notification_sink_t::muted());
     CHECK((status && *status == "Playback rate unchanged."));
     CHECK(catalog_requested_rate == wormedit::rational_t{});
 }

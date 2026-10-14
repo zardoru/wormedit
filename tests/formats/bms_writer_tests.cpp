@@ -209,7 +209,7 @@ TEST_CASE("virtual BMS BGM and BGA resources export at #999",
         REQUIRE(resource != imported.song->resources.end());
         auto history = wormedit::document_history_t::from(*imported.song);
         const auto placed = wormedit::apply_virtual_bms_resource_placement(
-            history, history.document.revision,
+            history,
             {.chart = history.document.charts.front().id,
              .resource = resource->id,
              .canvas_row = 959'040,
@@ -247,7 +247,7 @@ TEST_CASE("moved BGM event exports in virtual BMS measure #999",
     const auto event = source_chart.measures.front().bgm_events.front().id;
     auto history = wormedit::document_history_t::from(*imported.song);
     REQUIRE(wormedit::apply_virtual_bms_bgm_event_move(
-        history, history.document.revision,
+        history,
         {.chart = source_chart.id, .event = event, .canvas_row = 959'040}));
     const auto written = wormedit::write_bms(history.document);
     REQUIRE(written.bytes);
@@ -2744,7 +2744,7 @@ TEST_CASE("Converted BMS taps and holds export in their original conditional sco
     auto history = wormedit::document_history_t::from(*imported.song);
     const auto chart = history.document.charts.front().id;
     const std::array ids{history.document.charts.front().measures.front().notes.front().id};
-    require_bgm_export(wormedit::move_notes_to_bgm(history, history.document.revision,
+    require_bgm_export(wormedit::move_notes_to_bgm(history,
                                                  chart, ids, std::nullopt));
     const auto native = wormedit::write_native_project(history.document);
     require_bgm_export(native.bytes);
@@ -2777,7 +2777,7 @@ TEST_CASE("BGM hold export loss respects strict and warning conversion policies"
     auto history = wormedit::document_history_t::from(*imported.song);
     const auto chart = history.document.charts.front().id;
     const std::array ids{history.document.charts.front().measures.front().notes.front().id};
-    require_bgm_export(wormedit::move_notes_to_bgm(history, history.document.revision,
+    require_bgm_export(wormedit::move_notes_to_bgm(history,
                                                  chart, ids, std::nullopt));
     wormedit::conversion_request_t request;
     request.target = wormedit::format_family_t::bms;

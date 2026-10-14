@@ -39,14 +39,16 @@ struct stem_waveform_cache_stats_t {
 // Owns the analysis caches and jobs used by the audio and Compose waveform views.
 class waveform_analysis_t {
 public:
-    explicit waveform_analysis_t(audio::decoded_source_registry_t& sources,
-        audio::decoded_block_cache_t* preview_blocks = nullptr,
-        std::optional<notification_sink_t> sink = std::nullopt,
-        std::size_t stem_budget_bytes = 64U * 1024U * 1024U);
+  explicit waveform_analysis_t(audio::decoded_source_registry_t& sources,
+                               audio::decoded_block_cache_t* preview_blocks = nullptr,
+                               notification_sink_t sink = notification_sink_t::muted(),
+                               std::size_t stem_budget_bytes = 64U * 1024U * 1024U);
 
-    ~waveform_analysis_t();
-    void shutdown() noexcept;
-    [[nodiscard]] auto worker_scheduler() noexcept -> task_scheduler_t& { return scheduler_; }
+  ~waveform_analysis_t();
+  void shutdown() noexcept;
+  [[nodiscard]] auto worker_scheduler() noexcept -> task_scheduler_t& {
+      return scheduler_;
+  }
 
     // Drop job results and cached decoded data after the registered source set changes.
     void reset_sources();
@@ -150,7 +152,7 @@ private:
 
     audio::decoded_source_registry_t& sources_;
     audio::decoded_block_cache_t* preview_blocks_{};
-    std::optional<notification_sink_t> sink_;
+    notification_sink_t sink_{notification_sink_t::muted()};
     std::optional<asset_id_t> attempted_waveform_asset_;
     std::optional<asset_id_t> attempted_channel_asset_;
     audio::decoded_block_cache_t coarse_blocks_;

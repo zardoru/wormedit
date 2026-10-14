@@ -143,13 +143,13 @@ auto resolve_bga_stroke_resource(const song_document_t& document,
     return asset->kind;
 }
 
-auto commit_bga_stroke_targets(document_history_t& history, std::size_t chart_offset,
+auto commit_bga_stroke_targets(document_command_transaction_t& transaction, std::size_t chart_offset,
                                const measure_index_t& index,
                                std::span<const resolved_bga_stroke_target_t> targets,
                                std::optional<resource_id_t> resource, bool erase)
     -> document_command_result_t {
+    auto& history = transaction.history;
     document_command_result_t unchanged{.revision = history.document.revision, .diagnostics = {}};
-    auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
     auto& chart = proposed.charts[chart_offset];
     std::set<std::pair<std::uint64_t, std::size_t>> cells;
@@ -390,14 +390,10 @@ auto bms_identifier_capacity(const song_document_t& document, std::string_view n
     return result;
 }
 
-auto apply_bms_identifier_renumber(document_history_t& history, std::uint64_t expected_revision,
+auto apply_bms_identifier_renumber(document_history_t& history,
                                    const renumber_bms_identifiers_action_t& action)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id, "BMS identifier renumber revision is stale");
-        return result;
-    }
     const auto& ns = action.name_space;
     if (ns != "WAV" && ns != "BMP") {
         reject(result, diagnostic_code_t::invalid_id, "BMS identifier namespace must be WAV or BMP");
@@ -667,14 +663,9 @@ auto place_bga_background(resource_placement_context_t& context) -> bool {
     return true;
 }
 
-auto apply_resource_placement(document_history_t& history, std::uint64_t expected_revision,
+auto apply_resource_placement(document_history_t& history,
                               const place_resource_action_t& action) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "resource placement document revision is stale");
-        return result;
-    }
     if (!validate_placement_resource(history.document, action, result)) return result;
     auto resolved_action = action;
     if (action.kind == resource_placement_kind_t::bga_background) {
@@ -704,15 +695,13 @@ auto apply_resource_placement(document_history_t& history, std::uint64_t expecte
     return transaction.commit("Place resource");
 }
 
-auto apply_bga_stroke(document_history_t& history, std::uint64_t expected_revision,
+namespace {
+auto run_apply_bga_stroke(document_command_transaction_t& transaction,
                       chart_id_t chart_id, std::optional<resource_id_t> resource,
                       std::span<const bga_stroke_target_t> targets, bool erase)
     -> document_command_result_t {
+    auto& history = transaction.history;
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id, "BGA stroke document revision is stale");
-        return result;
-    }
     if (targets.size() > 50'000) {
         reject(result, diagnostic_code_t::invalid_resolution,
                "BGA stroke exceeds the per-gesture target cap");
@@ -736,7 +725,25 @@ auto apply_bga_stroke(document_history_t& history, std::uint64_t expected_revisi
     if (!resolved) return result;
     if (resolved->empty()) return result;
     const auto chart_offset = static_cast<std::size_t>(source_chart - history.document.charts.data());
-    return commit_bga_stroke_targets(history, chart_offset, *index, *resolved, resource, erase);
+    return commit_bga_stroke_targets(transaction, chart_offset, *index, *resolved, resource, erase);
+}
+
+} // namespace
+
+auto apply_bga_stroke(document_command_transaction_t& transaction,
+                      chart_id_t chart_id, std::optional<resource_id_t> resource,
+                      std::span<const bga_stroke_target_t> targets, bool erase)
+    -> document_command_result_t {
+    if (!transaction.is_ready()) return transaction.finish_without_commit();
+    return transaction.finish_with(run_apply_bga_stroke(transaction, chart_id, resource, targets, erase));
+}
+
+auto apply_bga_stroke(document_history_t& history,
+                      chart_id_t chart_id, std::optional<resource_id_t> resource,
+                      std::span<const bga_stroke_target_t> targets, bool erase)
+    -> document_command_result_t {
+    auto transaction = document_command_transaction_t::from(history);
+    return apply_bga_stroke(transaction, chart_id, resource, targets, erase);
 }
 
 namespace {
@@ -824,14 +831,14 @@ auto bgm_stroke_lane_events(const chart_document_t& chart, const measure_index_t
     return occupied;
 }
 
-auto commit_bgm_stroke_erase(document_history_t& history, std::size_t chart_offset,
+auto commit_bgm_stroke_erase(document_command_transaction_t& transaction, std::size_t chart_offset,
                              const measure_index_t& index, object_id_t lane,
                              std::span<const bgm_stroke_cell_t> cells)
     -> document_command_result_t {
+    auto& history = transaction.history;
     document_command_result_t unchanged{.revision = history.document.revision, .diagnostics = {}};
     std::set<std::uint64_t> rows;
     for (const auto& cell : cells) rows.insert(cell.row);
-    auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
     std::size_t removed{};
     for (auto& measure : proposed.charts[chart_offset].measures)
@@ -844,10 +851,11 @@ auto commit_bgm_stroke_erase(document_history_t& history, std::size_t chart_offs
     return transaction.commit("Erase BGM events");
 }
 
-auto commit_bgm_stroke_draw(document_history_t& history, std::size_t chart_offset,
+auto commit_bgm_stroke_draw(document_command_transaction_t& transaction, std::size_t chart_offset,
                             const measure_index_t& index, object_id_t lane, resource_id_t sound,
                             std::span<const bgm_stroke_cell_t> cells)
     -> document_command_result_t {
+    auto& history = transaction.history;
     document_command_result_t unchanged{.revision = history.document.revision, .diagnostics = {}};
     const auto& source = history.document.charts[chart_offset];
     const auto occupied = bgm_stroke_lane_events(source, index, lane);
@@ -869,7 +877,6 @@ auto commit_bgm_stroke_draw(document_history_t& history, std::size_t chart_offse
                "BGM stroke chart object limit or ID space is exhausted");
         return unchanged;
     }
-    auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
     auto& chart = proposed.charts[chart_offset];
     const auto layers = resolve_placement_layers(chart, std::nullopt, sound);
@@ -891,16 +898,14 @@ auto commit_bgm_stroke_draw(document_history_t& history, std::size_t chart_offse
 
 } // namespace
 
-auto apply_bgm_stroke(document_history_t& history, std::uint64_t expected_revision,
+namespace {
+auto run_apply_bgm_stroke(document_command_transaction_t& transaction,
                       chart_id_t chart_id, object_id_t source_lane,
                       std::optional<resource_id_t> resource,
                       std::span<const local_position_t> targets, bool erase)
     -> document_command_result_t {
+    auto& history = transaction.history;
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id, "BGM stroke document revision is stale");
-        return result;
-    }
     if (targets.size() > 50'000) {
         reject(result, diagnostic_code_t::invalid_resolution,
                "BGM stroke exceeds the per-gesture target cap");
@@ -912,7 +917,7 @@ auto apply_bgm_stroke(document_history_t& history, std::uint64_t expected_revisi
         return result;
     }
     if (source_chart->source_family == format_family_t::bmson)
-        return apply_bmson_packed_stroke(history, expected_revision, chart_id, source_lane,
+        return apply_bmson_packed_stroke(transaction, chart_id, source_lane,
                                          resource, targets, erase);
     if (!validate_bgm_stroke_lane(*source_chart, source_lane, result)) return result;
     if (!erase && !validate_bgm_stroke_resource(history.document, *source_chart, resource, result))
@@ -926,12 +931,32 @@ auto apply_bgm_stroke(document_history_t& history, std::uint64_t expected_revisi
     const auto cells = resolve_bgm_stroke_cells(*index, targets, result);
     if (!cells || cells->empty()) return result;
     const auto chart_offset = static_cast<std::size_t>(source_chart - history.document.charts.data());
-    return erase ? commit_bgm_stroke_erase(history, chart_offset, *index, source_lane, *cells)
-                 : commit_bgm_stroke_draw(history, chart_offset, *index, source_lane, *resource,
+    return erase ? commit_bgm_stroke_erase(transaction, chart_offset, *index, source_lane, *cells)
+                 : commit_bgm_stroke_draw(transaction, chart_offset, *index, source_lane, *resource,
                                           *cells);
 }
 
 
+
+} // namespace
+
+auto apply_bgm_stroke(document_command_transaction_t& transaction,
+                      chart_id_t chart_id, object_id_t source_lane,
+                      std::optional<resource_id_t> resource,
+                      std::span<const local_position_t> targets, bool erase)
+    -> document_command_result_t {
+    if (!transaction.is_ready()) return transaction.finish_without_commit();
+    return transaction.finish_with(run_apply_bgm_stroke(transaction, chart_id, source_lane, resource, targets, erase));
+}
+
+auto apply_bgm_stroke(document_history_t& history,
+                      chart_id_t chart_id, object_id_t source_lane,
+                      std::optional<resource_id_t> resource,
+                      std::span<const local_position_t> targets, bool erase)
+    -> document_command_result_t {
+    auto transaction = document_command_transaction_t::from(history);
+    return apply_bgm_stroke(transaction, chart_id, source_lane, resource, targets, erase);
+}
 
 auto is_branch_bgm_event(const chart_document_t& chart, const bgm_event_t& event) -> bool {
     return event.sound_channel_event || event.branch ||
@@ -973,13 +998,9 @@ auto create_bgm_source_lane(chart_document_t& chart, document_command_result_t& 
     return id;
 }
 
-auto apply_bgm_event_move(document_history_t& history, std::uint64_t expected_revision,
+auto apply_bgm_event_move(document_history_t& history,
                           const move_bgm_event_action_t& action) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id, "BGM move document revision is stale");
-        return result;
-    }
     const auto source_chart = history.document.find_chart(action.chart);
     if (!action.chart || source_chart == nullptr || !action.event) {
         reject(result, diagnostic_code_t::invalid_id, "BGM move chart or event is missing");
@@ -1068,13 +1089,9 @@ auto apply_bgm_event_move(document_history_t& history, std::uint64_t expected_re
     return transaction.commit("Move BGM event");
 }
 
-auto apply_bga_event_move(document_history_t& history, std::uint64_t expected_revision,
+auto apply_bga_event_move(document_history_t& history,
                           const move_bga_event_action_t& action) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id, "BGA move document revision is stale");
-        return result;
-    }
     const auto source_chart = history.document.find_chart(action.chart);
     if (!action.chart || source_chart == nullptr || !action.event) {
         reject(result, diagnostic_code_t::invalid_id, "BGA move chart or event is missing");
@@ -1121,14 +1138,9 @@ auto apply_bga_event_move(document_history_t& history, std::uint64_t expected_re
 }
 
 auto apply_virtual_bms_resource_placement(
-    document_history_t& history, std::uint64_t expected_revision,
+    document_history_t& history,
     const place_virtual_bms_resource_action_t& action) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "virtual resource placement document revision is stale");
-        return result;
-    }
     const auto source_chart = history.document.find_chart(action.chart);
     if (source_chart == nullptr ||
         source_chart->source_family != format_family_t::bms) {
@@ -1190,7 +1202,7 @@ auto apply_virtual_bms_resource_placement(
                                     snapped_row - destination->begin_row};
     auto staged = document_history_t::from(std::move(proposed));
     const auto placed = apply_resource_placement(
-        staged, staged.document.revision,
+        staged,
         {.chart = action.chart,
          .resource = action.resource,
          .position = position,
@@ -1208,14 +1220,9 @@ auto apply_virtual_bms_resource_placement(
 }
 
 auto apply_virtual_bms_bgm_event_move(
-    document_history_t& history, std::uint64_t expected_revision,
+    document_history_t& history,
     const move_virtual_bms_bgm_event_action_t& action) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "virtual BGM move document revision is stale");
-        return result;
-    }
     const auto source_chart = history.document.find_chart(action.chart);
     if (!action.chart || source_chart == nullptr ||
         source_chart->source_family != format_family_t::bms) {
@@ -1277,7 +1284,7 @@ auto apply_virtual_bms_bgm_event_move(
                                     snapped_row - destination->begin_row};
     auto staged = document_history_t::from(std::move(proposed));
     const auto moved = apply_bgm_event_move(
-        staged, staged.document.revision,
+        staged,
         {.chart = action.chart, .event = action.event, .position = position,
          .source_lane = action.source_lane});
     if (!moved) {
@@ -1289,13 +1296,9 @@ auto apply_virtual_bms_bgm_event_move(
 }
 
 auto apply_virtual_bms_bga_event_move(
-    document_history_t& history, std::uint64_t expected_revision,
+    document_history_t& history,
     const move_virtual_bms_bga_event_action_t& action) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id, "virtual BGA move document revision is stale");
-        return result;
-    }
     const auto source_chart = history.document.find_chart(action.chart);
     if (!action.chart || source_chart == nullptr ||
         source_chart->source_family != format_family_t::bms || !action.event) {
@@ -1351,7 +1354,7 @@ auto apply_virtual_bms_bga_event_move(
     const local_position_t position{chart.measures[destination->number].id,
                                     snapped_row - destination->begin_row};
     auto staged = document_history_t::from(std::move(proposed));
-    const auto moved = apply_bga_event_move(staged, staged.document.revision,
+    const auto moved = apply_bga_event_move(staged,
         {.chart = action.chart, .event = action.event, .position = position, .bga_kind = action.bga_kind});
     if (!moved) {
         result.diagnostics = moved.diagnostics;
@@ -1391,13 +1394,9 @@ auto next_eligible_placement_resource(const song_document_t& document,
     return std::nullopt;
 }
 
-auto apply_resource_creation(document_history_t& history, std::uint64_t expected_revision,
+auto apply_resource_creation(document_history_t& history,
                              const create_resource_action_t& action) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id, "resource creation document revision is stale");
-        return result;
-    }
     if (history.document.resources.size() >= 100'000 || !text_util::is_valid_bounded_text(action.name, 255)) {
         reject(result, diagnostic_code_t::invalid_resolution,
                "resource catalog is full or the resource name is invalid");
@@ -1617,7 +1616,7 @@ auto import_primary_music(document_history_t& history,
                           const import_resource_asset_action_t& action)
     -> document_command_result_t {
     auto draft = document_history_t::from(history.document, 1, false);
-    auto imported = apply_resource_asset_import(draft, draft.document.revision, action);
+    auto imported = apply_resource_asset_import(draft, action);
     if (!imported.applied) {
         imported.revision = history.document.revision;
         return imported;
@@ -1652,14 +1651,10 @@ auto relink_primary_music(document_history_t& history, const resource_entry_t& m
     return transaction.commit("Replace song audio");
 }
 
-auto apply_resource_asset_import(document_history_t& history, std::uint64_t expected_revision,
+auto apply_resource_asset_import(document_history_t& history,
                                  const import_resource_asset_action_t& action)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id, "resource import document revision is stale");
-        return result;
-    }
     const auto paths = validate_import_source_paths(action, result);
     if (!paths || !validate_import_source_geometry(action, result)) return result;
     const auto& path = paths->first;
@@ -1681,7 +1676,7 @@ auto apply_resource_asset_import(document_history_t& history, std::uint64_t expe
     }
     auto draft = document_history_t::from(std::move(proposed), 1, false);
     const auto created =
-        apply_resource_creation(draft, draft.document.revision,
+        apply_resource_creation(draft,
                                 {.asset = asset,
                                  .role = action.role,
                                  .name = action.name,
@@ -1816,7 +1811,7 @@ auto import_slot_batch_entry(document_history_t& draft, import_resource_asset_ac
                              std::size_t slot, resource_id_t owner,
                              document_command_result_t& result) -> bool {
     file.allocate_bms_identifier = false;
-    const auto imported = apply_resource_asset_import(draft, draft.document.revision, file);
+    const auto imported = apply_resource_asset_import(draft, file);
     if (!imported) {
         result.diagnostics.insert(result.diagnostics.end(), imported.diagnostics.begin(),
                                   imported.diagnostics.end());
@@ -1853,14 +1848,9 @@ auto bms_wav_slot_owner(const song_document_t& document, std::size_t slot) -> bm
 }
 
 auto apply_bms_wav_slot_assignment(document_history_t& history,
-                                   std::uint64_t expected_revision,
                                    const assign_bms_wav_slot_action_t& action)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id, "BMS WAV slot assignment revision is stale");
-        return result;
-    }
     const auto value = decode_supported_wav_identifier(action.identifier);
     if (!value) {
         reject(result, diagnostic_code_t::invalid_id,
@@ -1892,15 +1882,9 @@ auto apply_bms_wav_slot_assignment(document_history_t& history,
 }
 
 auto apply_bms_wav_slot_batch_assignment(document_history_t& history,
-                                         std::uint64_t expected_revision,
                                          const assign_bms_wav_slot_batch_action_t& action)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "BMS WAV slot batch revision is stale");
-        return result;
-    }
     const auto first_slot = decode_supported_wav_identifier(action.first_identifier);
     if (!first_slot) {
         reject(result, diagnostic_code_t::invalid_id,
@@ -1922,14 +1906,10 @@ auto apply_bms_wav_slot_batch_assignment(document_history_t& history,
     return transaction.commit("Assign BMS WAV slot batch");
 }
 
-auto apply_primary_music_set(document_history_t& history, std::uint64_t expected_revision,
+auto apply_primary_music_set(document_history_t& history,
                              import_resource_asset_action_t action)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id, "song audio document revision is stale");
-        return result;
-    }
     if (!action.audio_stream) {
         reject(result, diagnostic_code_t::invalid_id, "song audio requires probed stream geometry");
         return result;
@@ -1942,15 +1922,10 @@ auto apply_primary_music_set(document_history_t& history, std::uint64_t expected
     return relink_primary_music(history, *music, paths->second.value_or(paths->first), action);
 }
 
-auto apply_resource_asset_relink(document_history_t& history, std::uint64_t expected_revision,
+auto apply_resource_asset_relink(document_history_t& history,
                                  const relink_resource_asset_action_t& action)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "resource asset relink document revision is stale");
-        return result;
-    }
     const auto path = action.source_path.lexically_normal();
     const auto path_text = path.generic_string();
     if (path.empty() || path.filename().empty() || !text_util::is_valid_bounded_text(path_text, 4096) ||
@@ -2063,15 +2038,10 @@ auto count_resource_references(const song_document_t& document) -> resource_refe
     return counts;
 }
 
-auto apply_resource_sound_metadata(document_history_t& history, std::uint64_t expected_revision,
+auto apply_resource_sound_metadata(document_history_t& history,
                                    const set_resource_sound_metadata_action_t& action)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "resource sound metadata document revision is stale");
-        return result;
-    }
     const auto resource = std::ranges::find(history.document.resources, action.resource,
                                             &resource_entry_t::id);
     if (!action.resource || resource == history.document.resources.end()) {
@@ -2108,14 +2078,10 @@ auto apply_resource_sound_metadata(document_history_t& history, std::uint64_t ex
     return transaction.commit("Edit sound metadata");
 }
 
-auto apply_resource_deletions(document_history_t& history, std::uint64_t expected_revision,
+auto apply_resource_deletions(document_history_t& history,
                               std::span<const resource_id_t> resources)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id, "resource deletion document revision is stale");
-        return result;
-    }
     if (resources.empty() || resources.size() > maximum_resource_deletions) {
         reject(result, diagnostic_code_t::invalid_resolution,
                "resource deletion needs a bounded nonempty selection");
@@ -2159,9 +2125,9 @@ auto apply_resource_deletions(document_history_t& history, std::uint64_t expecte
     return transaction.commit(resources.size() == 1 ? "Delete resource" : "Delete resources");
 }
 
-auto apply_resource_deletion(document_history_t& history, std::uint64_t expected_revision,
+auto apply_resource_deletion(document_history_t& history,
                              resource_id_t resource_id) -> document_command_result_t {
-    return apply_resource_deletions(history, expected_revision,
+    return apply_resource_deletions(history,
                                     std::span<const resource_id_t>{&resource_id, 1});
 }
 
@@ -2275,15 +2241,10 @@ auto scan_resource_assignment_targets(chart_document_t& chart, resource_assignme
     return false;
 }
 
-auto apply_resource_assignment(document_history_t& history, std::uint64_t expected_revision,
+auto apply_resource_assignment(document_history_t& history,
                                const assign_resource_action_t& action,
                                resource_assignment_limits_t limits) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "resource assignment document revision is stale");
-        return result;
-    }
     auto selected = validate_resource_assignment_selection(history.document, action, limits, result);
     if (!selected) return result;
     auto transaction = document_command_transaction_t::from(history);

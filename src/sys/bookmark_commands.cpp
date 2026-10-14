@@ -15,10 +15,6 @@
 namespace wormedit::sys {
 namespace {
 
-auto fail(std::string status) -> bookmark_command_outcome_t {
-    return {.status = std::move(status)};
-}
-
 auto is_playing(const application_command_state_t& application) -> bool {
     return application.services.transport_preview_playing && application.services.transport_preview_playing();
 }
@@ -108,50 +104,72 @@ void record_playing_seek(const chart_document_t& chart, chart_id_t chart_id,
 
 } // namespace
 
-auto bookmark_navigation_t::navigate_beat_bookmark(document_history_t& history, editor_interaction_state_t& state,
-                            application_command_state_t& application,
-                            marker_navigation_direction_t direction) -> bookmark_command_outcome_t {
+auto bookmark_navigation_t::navigate_beat_bookmark(document_history_t& history,
+                                                   editor_interaction_state_t& state,
+                                                   application_command_state_t& application,
+                                                   marker_navigation_direction_t direction)
+    -> compose_action_outcome_t {
     const bool previous = direction == marker_navigation_direction_t::previous;
     const auto* chart = history.document.find_chart(state.chart);
-    if (!chart) return fail("Bookmark navigation requires the active Compose chart.");
+    if (!chart)
+        return compose_action_outcome_t::blocked(
+            "Bookmark navigation requires the active Compose chart.", notification_source_t::input);
     const bool playing = is_playing(application);
     if (!playing) application.bookmarks.clear_seek_record();
     const auto origin = playing ? playing_bookmark_origin(*chart, state.chart, application, direction)
                                 : std::optional<local_position_t>{state.cursor};
-    if (!origin) return fail("The playhead row is not available yet.");
-    const auto marker = navigate_markers(history.document, history.document.revision, state.chart,
-        *origin, direction, {.include_bookmarks = true, .include_section_begins = false,
-                                  .include_section_ends = false});
-    if (marker.status == marker_navigation_status_t::no_result)
-        return {.accepted = true,
-                .status = previous ? "No previous bookmark." : "No next bookmark."};
-    if (!marker || !marker.item->beat_position)
-        return {.status = marker.diagnostics.empty()
-                              ? "Bookmark navigation could not resolve an exact beat row."
-                              : marker.diagnostics.front().message,
-                .diagnostics = marker.diagnostics};
-    const auto target = *marker.item->beat_position;
+    if (!origin)
+        return compose_action_outcome_t::blocked("The playhead row is not available yet.",
+                                                 notification_source_t::input);
+    auto marker = marker_navigation_match_t::from(history.document, history.document.revision,
+                                                  state.chart, *origin, direction,
+                                                  {.include_bookmarks = true,
+                                                   .include_section_begins = false,
+                                                   .include_section_ends = false});
+    if (marker.value.status == marker_navigation_status_t::no_result)
+        return compose_action_outcome_t::from(
+            previous ? "No previous bookmark." : "No next bookmark.", notification_severity_t::hint,
+            notification_source_t::input, false, true);
+    if (!marker.value.is_found() || !marker.diagnostics.empty() ||
+        !marker.value.item->beat_position) {
+        auto outcome = compose_action_outcome_t::from(
+            marker.diagnostics.empty() ? "Bookmark navigation could not resolve an exact beat row."
+                                       : marker.diagnostics.front().message,
+            to_notification_severity(marker.diagnostics, notification_severity_t::warning),
+            notification_source_t::input, false, false);
+        outcome.diagnostics = std::move(marker.diagnostics);
+        return outcome;
+    }
+    const auto target = *marker.value.item->beat_position;
     auto outcome = navigate_compose_position(history, state, application,
-        {.position = target}, marker.document_revision);
+        {.position = target}, marker.value.document_revision);
     if (playing) record_playing_seek(*chart, state.chart, application, target, outcome.accepted);
-    else if (outcome.accepted) outcome.status = previous
-        ? "Moved to the previous bookmark." : "Moved to the next bookmark.";
+    else if (outcome.accepted)
+        outcome.message =
+            previous ? "Moved to the previous bookmark." : "Moved to the next bookmark.";
     return outcome;
 }
 
-auto bookmark_navigation_t::navigate_to_bookmark(document_history_t& history, editor_interaction_state_t& state,
-                          application_command_state_t& application,
-                          std::uint64_t expected_revision, chart_id_t chart_id,
-                          object_id_t bookmark_id) -> bookmark_command_outcome_t {
-    if (history.document.revision != expected_revision || state.chart != chart_id)
-        return fail("Bookmark chooser entry is stale.");
+auto bookmark_navigation_t::navigate_to_bookmark(document_history_t& history,
+                                                 editor_interaction_state_t& state,
+                                                 application_command_state_t& application,
+                                                 std::uint64_t expected_revision,
+                                                 chart_id_t chart_id, object_id_t bookmark_id)
+    -> compose_action_outcome_t {
+    if (!chart_stamp_t{.document = {.project = history.document.id, .revision = expected_revision},
+                       .chart = chart_id}.is_current(history.document, state.chart))
+        return compose_action_outcome_t::blocked(stale_action_message("Bookmark chooser"),
+                                                 notification_source_t::input);
     // A chooser jump is a seek of its own: it ends any repeat sequence in progress.
     application.invalidate_playing_seek_records();
     const auto* chart = history.document.find_chart(chart_id);
-    if (!chart) return fail("Bookmark chooser chart is unavailable.");
+    if (!chart)
+        return compose_action_outcome_t::blocked("Bookmark chooser chart is unavailable.",
+                                                 notification_source_t::input);
     const auto bookmark = std::ranges::find(chart->bookmarks, bookmark_id, &bookmark_t::id);
     if (bookmark == chart->bookmarks.end())
-        return fail("Bookmark is no longer available.");
+        return compose_action_outcome_t::blocked("Bookmark is no longer available.",
+                                                 notification_source_t::input);
     compose_navigation_target_t target;
     if (bookmark->anchor == marker_anchor_t::beat && bookmark->position) {
         target.position = *bookmark->position;
@@ -159,49 +177,79 @@ auto bookmark_navigation_t::navigate_to_bookmark(document_history_t& history, ed
         target.audio_milliseconds = bookmark->audio_milliseconds;
         if (!is_playing(application)) {
             const auto position = beat_position_for_audio_milliseconds(*chart, *bookmark->audio_milliseconds);
-            if (!position) return fail("Audio-time bookmark has no musical position in this chart.");
+            if (!position)
+                return compose_action_outcome_t::blocked(
+                    "Audio-time bookmark has no musical position in this chart.",
+                    notification_source_t::input);
             target.position = *position;
         }
-    } else return fail("Bookmark has no navigable position.");
+    } else
+        return compose_action_outcome_t::blocked("Bookmark has no navigable position.",
+                                                 notification_source_t::input);
     auto outcome = navigate_compose_position(history, state, application, target, expected_revision);
-    if (outcome.accepted && !is_playing(application)) outcome.status = "Moved to the selected bookmark.";
+    if (outcome.accepted && !is_playing(application))
+        outcome.message = "Moved to the selected bookmark.";
     return outcome;
 }
 
-auto bookmark_navigation_t::add_beat_bookmark_here(document_history_t& history, editor_interaction_state_t& state,
-                            application_command_state_t& application)
-    -> bookmark_command_outcome_t {
+auto bookmark_navigation_t::add_beat_bookmark_here(document_history_t& history,
+                                                   editor_interaction_state_t& state,
+                                                   application_command_state_t& application)
+    -> compose_action_outcome_t {
     const auto* chart = history.document.find_chart(state.chart);
-    if (!chart) return fail("Choose a chart before editing bookmarks.");
+    if (!chart)
+        return compose_action_outcome_t::blocked("Choose a chart before editing bookmarks.",
+                                                 notification_source_t::edit);
     auto position = state.cursor;
     if (is_playing(application)) {
         const auto built = build_measure_index(*chart);
         if (!application.project.transport.preview_playhead_absolute_row ||
             !std::holds_alternative<measure_index_t>(built))
-            return fail("The playhead row is not available yet.");
+            return compose_action_outcome_t::blocked("The playhead row is not available yet.",
+                                                     notification_source_t::edit);
         const auto& index = std::get<measure_index_t>(built);
         const auto row = nearest_snap_row(*chart, index, *application.project.transport.preview_playhead_absolute_row,
                                           state.active_snap_denominator);
         const auto snapped = row ? (index).position_at(*row) : std::nullopt;
-        if (!snapped) return fail("The playhead is not on an editable row.");
+        if (!snapped)
+            return compose_action_outcome_t::blocked("The playhead is not on an editable row.",
+                                                     notification_source_t::edit);
         position = *snapped;
     } else if (state.virtual_bms_cursor_row) {
-        return fail("Bookmarks can only go inside existing measures. Add measures up to the cursor first.");
+        return compose_action_outcome_t::blocked(
+            "Bookmarks can only go inside existing measures. Add measures up to the cursor first.",
+            notification_source_t::edit);
     }
     const auto exists = std::ranges::any_of(chart->bookmarks, [&](const bookmark_t& bookmark) {
         return bookmark.anchor == marker_anchor_t::beat && bookmark.position == position;
     });
-    if (exists) return fail("A bookmark already exists on this row.");
-    const auto applied = apply_marker_edit(history, history.document.revision,
-        marker_edit_action_t{insert_bookmark_action_t{state.chart, {}, marker_anchor_t::beat,
-                                                      position, std::nullopt}});
-    if (!applied.applied)
-        return {.status = applied.diagnostics.empty() ? "Bookmark edit made no changes."
-                                                      : applied.diagnostics.front().message,
-                .diagnostics = applied.diagnostics};
-    return {.accepted = true, .document_changed = true,
-            .status = is_playing(application) ? "Bookmark added at the playhead."
-                                              : "Bookmark added at the Compose cursor."};
+    if (exists)
+        return compose_action_outcome_t::blocked("A bookmark already exists on this row.",
+                                                 notification_source_t::edit);
+    auto applied = apply_marker_edit(
+        history, marker_edit_action_t{wormedit::insert_edit_t<wormedit::bookmark_edit_value_t>{
+                     .chart = state.chart,
+                     .value = {.label = {},
+                               .anchor = marker_anchor_t::beat,
+                               .position = position,
+                               .audio_milliseconds = std::nullopt}}});
+    if (!applied.applied) {
+        auto outcome = compose_action_outcome_t::from(
+            applied.diagnostics.empty() ? "Bookmark edit made no changes."
+                                        : applied.diagnostics.front().message,
+            to_notification_severity(applied.diagnostics, notification_severity_t::warning),
+            notification_source_t::edit, false, false);
+        outcome.diagnostics = std::move(applied.diagnostics);
+        return outcome;
+    }
+    auto outcome = compose_action_outcome_t::from(
+        is_playing(application) ? "Bookmark added at the playhead."
+                                : "Bookmark added at the Compose cursor.",
+        notification_severity_t::success, notification_source_t::edit, true, true);
+    outcome.rebind_failure =
+        "Command applied, but environment.document.workspace rebinding failed.";
+    outcome.is_rebind_severity_diagnostic = false;
+    return outcome;
 }
 
 } // namespace wormedit::sys

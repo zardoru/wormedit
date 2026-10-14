@@ -1,4 +1,5 @@
 #include "sys/chart_import_session.h"
+#include "sys/metadata_commands.h"
 
 #include "sys/project_open.h"
 
@@ -111,8 +112,12 @@ auto chart_import_confirm(chart_import_session_t& session, document_history_t& h
     if (!session.source) return {.command = {.revision = history.document.revision, .diagnostics = {{
         .severity = diagnostic_severity_t::error, .code = diagnostic_code_t::invalid_id,
         .message = "Read a chart file before importing."}}}, .payload = {}};
-    auto result = apply_chart_import(history, expected_revision, *session.source,
-                                     {session.source_base, target_base}, session.selected);
+    auto rejected = metadata_command_detail::stale_rejection(
+        history, expected_revision, "Chart import");
+    auto result = rejected
+        ? chart_import_result_t{.command = std::move(*rejected), .payload = {}}
+        : apply_chart_import(history, *session.source,
+                             {session.source_base, target_base}, session.selected);
     if (result.command.applied) chart_import_cancel(session);
     else {
         session.error = result.command.diagnostics.empty() ? std::string{"The import was rejected."}

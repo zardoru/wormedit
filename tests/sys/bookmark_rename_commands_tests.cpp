@@ -1,3 +1,4 @@
+#include "../support/stale_action_assertions.h"
 #include "sys/bookmark_navigation.h"
 
 #include <wormedit/core/marker_editor.h>
@@ -82,6 +83,7 @@ TEST_CASE("bookmark rename rejects stale revision and missing bookmark without m
     document_history_t history{document_history_t::from(rename_song())};
     const auto stale = bookmark_navigation_t{}.rename_bookmark(history, 6, chart_id_t{2}, object_id_t{4}, "Stale");
     check_rename(!stale.accepted);
+    test::check_stale_action_message(stale.message, "Bookmark rename");
     check_rename(history.document.revision == 7);
     check_rename(history.document.charts.front().bookmarks.front().label == "Beat");
 

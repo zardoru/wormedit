@@ -242,21 +242,17 @@ auto target_vectors_equal(const std::vector<resource_entry_t>& left,
 
 } // namespace
 
-auto apply_sound_group_edit(document_history_t& history, std::uint64_t expected_revision,
+auto apply_sound_group_edit(document_history_t& history,
                             const sound_group_edit_action_t& action,
                             bool keep_bms_ids_together)
     -> document_command_result_t {
-    return apply_sound_group_edits(history, expected_revision, {action}, keep_bms_ids_together);
+    return apply_sound_group_edits(history, {action}, keep_bms_ids_together);
 }
 
-auto apply_sound_group_edits(document_history_t& history, std::uint64_t expected_revision,
+auto apply_sound_group_edits(document_history_t& history,
                              const std::vector<sound_group_edit_action_t>& actions,
                              bool keep_bms_ids_together) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
-    if (expected_revision != history.document.revision) {
-        reject(result, diagnostic_code_t::invalid_id, "sound group edit document revision is stale");
-        return result;
-    }
     if (actions.empty()) {
         reject(result, diagnostic_code_t::invalid_id, "sound group edit needs at least one change");
         return result;

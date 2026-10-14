@@ -131,7 +131,7 @@ auto bms_song_without_stems() -> song_document_t {
 auto bms_stem_adds_catalog_only() -> bool {
     auto history = document_history_t::from(bms_song_without_stems());
     const auto before = history.document;
-    const auto result = apply_bulk_sound_import(history, history.document.revision,
+    const auto result = apply_bulk_sound_import(history,
         reserved({.chart = chart_id_t{1}, .entries = {entry("bms-stem", sound_kind_t::stem)}},
                  history.document));
     if (!result || history.document.resources.size() != before.resources.size() + 1 ||
@@ -151,7 +151,7 @@ auto keysound_adds_resource_only() -> bool {
     const auto channels = chart_before.sound_channels.size();
     const auto lanes = chart_before.bgm_source_lanes.size();
     const auto markers = bgm_marker_count(chart_before);
-    const auto result = apply_bulk_sound_import(history, history.document.revision,
+    const auto result = apply_bulk_sound_import(history,
         reserved({.chart = chart_before.id,
                   .entries = {entry("key-only", sound_kind_t::keysound)}}, history.document));
     if (!result) return false;
@@ -172,7 +172,7 @@ auto failed_later_stem_entry_is_atomic() -> bool {
     const auto revision = history.document.revision;
     auto invalid = entry("invalid-later", sound_kind_t::stem);
     invalid.tags = {"bad\ntag"};
-    const auto result = apply_bulk_sound_import(history, revision,
+    const auto result = apply_bulk_sound_import(history,
         reserved({.chart = history.document.charts.front().id,
                   .entries = {entry("valid-first", sound_kind_t::stem), invalid}}, history.document));
     return !result && history.document.revision == revision &&
@@ -189,7 +189,7 @@ auto stem_uses_exactly_two_object_ids() -> bool {
     const auto lane_count = chart.bgm_source_lanes.size();
     chart.bgm_source_lanes.push_back({.id = object_id_t{
         std::numeric_limits<std::uint64_t>::max() - 2}, .name = "ID boundary"});
-    const auto result = apply_bulk_sound_import(history, history.document.revision,
+    const auto result = apply_bulk_sound_import(history,
         reserved({.chart = chart.id, .entries = {entry("last-two-ids", sound_kind_t::stem)}},
                  history.document));
     if (!result) return false;
@@ -216,7 +216,7 @@ TEST_CASE("bulk import adds linked empty BMSON stem channels and lanes atomicall
     const auto lanes = history.document.charts.front().bgm_source_lanes.size();
 
     const auto result = apply_bulk_sound_import(
-        history, revision,
+        history,
         reserved({.chart = chart_id,
                   .entries = {entry("drums", sound_kind_t::stem), entry("bass", sound_kind_t::stem),
                               entry("click", sound_kind_t::sample)}},
@@ -249,7 +249,7 @@ TEST_CASE("bulk import keeps list order and tags, and skips channels without a B
     auto first = entry("a", sound_kind_t::stem);
     first.tags = {"loop", "Loop", "drums"};
     const auto result = apply_bulk_sound_import(
-        history, history.document.revision,
+        history,
         reserved({.entries = {first, entry("b", sound_kind_t::keysound)}}, history.document));
     REQUIRE(result);
     CHECK(history.document.resources[resources].name == "a");
@@ -290,7 +290,7 @@ TEST_CASE("BMS bulk import allocates one contiguous run in entry order",
     first.asset.allocate_bms_identifier = true;
     second.asset.allocate_bms_identifier = true;
     const auto action = reserved({.entries = {first, second}}, history.document);
-    REQUIRE(apply_bulk_sound_import(history, history.document.revision, action));
+    REQUIRE(apply_bulk_sound_import(history, action));
     const auto start = history.document.resources.size() - 2;
     CHECK(history.document.resources[start].target_identities.back().identifier == "04");
     CHECK(history.document.resources[start + 1].target_identities.back().identifier == "05");
@@ -310,7 +310,7 @@ TEST_CASE("BMS bulk import rejects beyond namespace capacity before changing the
     auto item = entry("over-capacity", sound_kind_t::keysound);
     item.asset.allocate_bms_identifier = true;
     const auto result = apply_bulk_sound_import(
-        history, before_revision, reserved({.entries = {item}}, history.document));
+        history, reserved({.entries = {item}}, history.document));
     CHECK_FALSE(result);
     REQUIRE_FALSE(result.diagnostics.empty());
     CHECK(result.diagnostics.front().message.find("0 IDs left") != std::string::npos);
@@ -336,7 +336,7 @@ TEST_CASE("fragmented BMS capacity splits an import across the largest gaps in o
         entries.push_back(std::move(item));
     }
     const auto result = apply_bulk_sound_import(
-        history, history.document.revision,
+        history,
         reserved({.entries = std::move(entries)}, history.document));
     REQUIRE(result);
     const auto start = history.document.resources.size() - 5;
@@ -366,7 +366,7 @@ TEST_CASE("grouped bulk import creates and joins groups with independent contigu
                    {.name = "Loops", .existing_group = existing_group,
                     .entry_indexes = {2}}}};
 
-    REQUIRE(apply_bulk_sound_import(history, history.document.revision,
+    REQUIRE(apply_bulk_sound_import(history,
                                     reserved(std::move(action), history.document)));
     const auto start = before.resources.size();
     REQUIRE(history.document.sound_groups.size() == 2);
@@ -396,7 +396,7 @@ TEST_CASE("grouped import rejects name collisions and fragmented group ID runs a
         .groups = {{.name = "Same", .entry_indexes = {0}},
                    {.name = "same", .entry_indexes = {1}}}};
     const auto before = history.document;
-    auto result = apply_bulk_sound_import(history, before.revision,
+    auto result = apply_bulk_sound_import(history,
                                           reserved(action, history.document));
     CHECK_FALSE(result);
     CHECK(same_resource_group_links(history.document.resources, before.resources));
@@ -412,7 +412,7 @@ TEST_CASE("grouped import rejects name collisions and fragmented group ID runs a
     }
     const auto fragmented_before = history.document;
     action.groups = {{.name = "Two", .entry_indexes = {0, 1}}};
-    result = apply_bulk_sound_import(history, fragmented_before.revision,
+    result = apply_bulk_sound_import(history,
                                      reserved(action, history.document));
     CHECK_FALSE(result);
     CHECK_FALSE(result.diagnostics.empty());
@@ -444,7 +444,7 @@ TEST_CASE("group ID runs pack larger groups first while preserving entry order",
                    {.name = "Large", .entry_indexes = {2, 3, 4, 5}}}};
     const auto before = history.document;
 
-    REQUIRE(apply_bulk_sound_import(history, before.revision,
+    REQUIRE(apply_bulk_sound_import(history,
                                     reserved(std::move(action), before)));
     const auto start = before.resources.size();
     CHECK(history.document.resources[start].target_identities.back().identifier == "01");
@@ -463,7 +463,7 @@ TEST_CASE("bulk import handles fifty files in one step", "[unit][core][sounds][i
     bulk_sound_import_action_t action{.chart = chart_id};
     for (int index = 0; index < 50; ++index)
         action.entries.push_back(entry("stem" + std::to_string(index), sound_kind_t::stem));
-    REQUIRE(apply_bulk_sound_import(history, history.document.revision,
+    REQUIRE(apply_bulk_sound_import(history,
                                     reserved(action, history.document)));
     CHECK(history.document.resources.size() == resources + 50);
     CHECK(validate_document(history.document).empty());
@@ -473,29 +473,27 @@ TEST_CASE("bulk import handles fifty files in one step", "[unit][core][sounds][i
 TEST_CASE("an invalid entry rejects the whole bulk import", "[unit][core][sounds][import]") {
     auto history = document_history_t::from(bmson_song());
     const auto before = history.document;
-    const auto rejects = [&](bulk_sound_import_action_t action, std::uint64_t revision) {
-        const auto result = apply_bulk_sound_import(history, revision, action);
+    const auto rejects = [&](bulk_sound_import_action_t action) {
+        const auto result = apply_bulk_sound_import(history, action);
         CHECK_FALSE(result);
         CHECK_FALSE(result.diagnostics.empty());
         CHECK(history.document.revision == before.revision);
         CHECK(history.document.resources.size() == before.resources.size());
         CHECK(history.undo.empty());
     };
-    const auto revision = history.document.revision;
-    rejects({}, revision);
-    rejects({.entries = {entry("a", sound_kind_t::stem)}}, revision + 1);
-    rejects({.entries = {entry("a", sound_kind_t::stem), entry("a", sound_kind_t::stem)}}, revision);
+    rejects({});
+    rejects({.entries = {entry("a", sound_kind_t::stem), entry("a", sound_kind_t::stem)}});
     auto relative = entry("bad", sound_kind_t::stem);
     relative.asset.source_path = "relative/bad.ogg";
-    rejects({.entries = {entry("ok", sound_kind_t::stem), relative}}, revision);
+    rejects({.entries = {entry("ok", sound_kind_t::stem), relative}});
     auto bad_tag = entry("tagged", sound_kind_t::stem);
     bad_tag.tags = {"bad\ntag"};
-    rejects({.entries = {bad_tag}}, revision);
-    rejects({.chart = chart_id_t{999'999}, .entries = {entry("a", sound_kind_t::stem)}}, revision);
+    rejects({.entries = {bad_tag}});
+    rejects({.chart = chart_id_t{999'999}, .entries = {entry("a", sound_kind_t::stem)}});
     bulk_sound_import_action_t too_many;
     for (std::size_t index = 0; index <= maximum_bulk_sound_import; ++index)
         too_many.entries.push_back(entry("n" + std::to_string(index), sound_kind_t::sample));
-    rejects(too_many, revision);
+    rejects(too_many);
 }
 
 TEST_CASE("group import takes the first fitting BMS ID gap",
@@ -517,7 +515,7 @@ TEST_CASE("group import takes the first fitting BMS ID gap",
         .entries = {first, second},
         .groups = {{.name = "Drums", .entry_indexes = {0, 1}}}};
     const auto start = history.document.resources.size();
-    REQUIRE(apply_bulk_sound_import(history, history.document.revision,
+    REQUIRE(apply_bulk_sound_import(history,
                                    reserved(std::move(action), history.document)));
     CHECK(history.document.resources[start].target_identities.back().identifier == "01");
     CHECK(history.document.resources[start + 1].target_identities.back().identifier == "02");
@@ -528,7 +526,7 @@ TEST_CASE("bulk import group names reject malformed UTF-8", "[unit][core][helper
     auto action = bulk_sound_import_action_t{
         .entries = {entry("kick_01", sound_kind_t::keysound)},
         .groups = {{.name = "bad\xc0\x80", .entry_indexes = {0}}}};
-    const auto result = apply_bulk_sound_import(history, history.document.revision,
+    const auto result = apply_bulk_sound_import(history,
         reserved(std::move(action), history.document));
     CHECK_FALSE(result);
     CHECK(history.document.sound_groups.empty());

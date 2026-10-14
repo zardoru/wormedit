@@ -12,17 +12,17 @@ namespace {
 
 auto rejection(const document_command_result_t& result, const char* fallback, notification_severity_t* severity) -> std::string {
     if (!result.diagnostics.empty())
-        set_feedback_severity(severity, projection_diagnostic_severity(result.diagnostics.front().severity));
+        set_feedback_severity(severity,
+                              to_notification_severity(result.diagnostics.front().severity));
     return result.diagnostics.empty() ? fallback : result.diagnostics.front().message;
 }
 
 auto insert_measure(document_history_t& history, const chart_document_t& chart, std::size_t cursor_index,
                     bool after, notification_severity_t* severity) -> std::string {
     const auto result = apply_measure_edit(
-        history, history.document.revision,
-        insert_measure_action_t{.chart = chart.id,
-                                .before_index = cursor_index + (after ? 1 : 0),
-                                .definition = chart.measures[cursor_index].definition});
+        history, insert_measure_action_t{.chart = chart.id,
+                                         .before_index = cursor_index + (after ? 1 : 0),
+                                         .definition = chart.measures[cursor_index].definition});
     if (result) {
         set_feedback_severity(severity, notification_severity_t::success);
         return "Measure inserted.";
@@ -37,8 +37,8 @@ auto remove_measure(document_history_t& history, editor_interaction_state_t& sta
     if (neighbor >= chart.measures.size()) return "A chart needs at least one measure.";
     const auto target = local_position_t{chart.measures[neighbor].id, 0};
     const auto removed = chart.measures[cursor_index].id;
-    const auto result = apply_measure_edit(history, history.document.revision,
-                                           delete_measure_action_t{.chart = chart.id, .measure = removed});
+    const auto result =
+        apply_measure_edit(history, delete_measure_action_t{.chart = chart.id, .measure = removed});
     if (!result) return rejection(result, "The measure could not be removed.", severity);
     place_cursor_at(state, target);
     set_feedback_severity(severity, notification_severity_t::success);
@@ -63,8 +63,8 @@ auto remove_measure_with_contents(document_history_t& history, editor_interactio
     const auto neighbor = cursor_index + 1 < chart.measures.size() ? cursor_index + 1 : cursor_index - 1;
     const auto target = local_position_t{chart.measures[neighbor].id, 0};
     const auto result = apply_measure_edit(
-        history, history.document.revision,
-        remove_measure_with_contents_action_t{.chart = chart.id, .measure = chart.measures[cursor_index].id});
+        history, remove_measure_with_contents_action_t{.chart = chart.id,
+                                                       .measure = chart.measures[cursor_index].id});
     if (!result) return rejection(result, "The measure could not be removed.", severity);
     place_cursor_at(state, target);
     clear_selection_after_removal(state);
@@ -100,8 +100,8 @@ auto apply_cursor_measure_split(document_history_t& history, editor_interaction_
     const auto* before = std::get_if<measure_index_t>(&index);
     const auto row = before ? (*before).row_of(state.cursor) : std::nullopt;
     if (!row) return "The cursor is outside the authored chart.";
-    const auto result = apply_measure_edit(history, history.document.revision,
-        split_measure_action_t{state.chart, state.cursor});
+    const auto result =
+        apply_measure_edit(history, split_measure_action_t{state.chart, state.cursor});
     if (!result) return rejection(result, "The measure could not be split.", severity);
     const auto current = history.document.find_chart(state.chart);
     const auto after = build_measure_index(*current);
@@ -127,7 +127,7 @@ auto apply_cursor_measure_meter(document_history_t& history, editor_interaction_
     const auto measure = found->find_measure(state.cursor.measure);
     if (measure == nullptr) return "The cursor is not inside a materialized measure.";
     const auto result = apply_measure_edit(
-        history, history.document.revision,
+        history,
         resize_measure_keep_rows_action_t{
             .chart = found->id,
             .measure_indices = {static_cast<std::size_t>(measure - found->measures.data())},
@@ -136,8 +136,10 @@ auto apply_cursor_measure_meter(document_history_t& history, editor_interaction_
         set_feedback_severity(severity, notification_severity_t::success);
         return "Meter updated.";
     }
-    set_feedback_severity(severity, result.diagnostics.empty() ? notification_severity_t::info
-        : projection_diagnostic_severity(result.diagnostics.front().severity));
+    set_feedback_severity(severity,
+                          result.diagnostics.empty()
+                              ? notification_severity_t::info
+                              : to_notification_severity(result.diagnostics.front().severity));
     return result.diagnostics.empty() ? "Meter was unchanged." : result.diagnostics.front().message;
 }
 
@@ -155,14 +157,16 @@ auto apply_measures_meter(document_history_t& history, editor_interaction_state_
         .chart = state.chart,
         .definition = {.length = {*top, *bottom}, .meter = meter_t{*top, *bottom}}};
     for (const auto index : measure_ids) action.measure_indices.push_back(static_cast<std::size_t>(index));
-    const auto result = apply_measure_edit(history, history.document.revision, action);
+    const auto result = apply_measure_edit(history, action);
     if (result) {
         set_feedback_severity(severity, notification_severity_t::success);
         return measure_ids.size() == 1 ? "Meter updated."
                                        : "Meter updated on " + std::to_string(measure_ids.size()) + " measures.";
     }
-    set_feedback_severity(severity, result.diagnostics.empty() ? notification_severity_t::info
-        : projection_diagnostic_severity(result.diagnostics.front().severity));
+    set_feedback_severity(severity,
+                          result.diagnostics.empty()
+                              ? notification_severity_t::info
+                              : to_notification_severity(result.diagnostics.front().severity));
     return result.diagnostics.empty() ? "Meter was unchanged." : result.diagnostics.front().message;
 }
 
@@ -173,18 +177,19 @@ auto apply_bar_line_move(document_history_t& history, editor_interaction_state_t
     if (first.numerator == 0 || first.denominator == 0 || second.numerator == 0 || second.denominator == 0)
         return "A meter needs a non-zero numerator and denominator.";
     const auto result = apply_measure_edit(
-        history, history.document.revision,
-        move_bar_line_action_t{
-            .chart = state.chart,
-            .measure_index = static_cast<std::size_t>(measure_index),
-            .before = {.length = {first.numerator, first.denominator}, .meter = first},
-            .after = {.length = {second.numerator, second.denominator}, .meter = second}});
+        history, move_bar_line_action_t{
+                     .chart = state.chart,
+                     .measure_index = static_cast<std::size_t>(measure_index),
+                     .before = {.length = {first.numerator, first.denominator}, .meter = first},
+                     .after = {.length = {second.numerator, second.denominator}, .meter = second}});
     if (result) {
         set_feedback_severity(severity, notification_severity_t::success);
         return "Bar line moved.";
     }
-    set_feedback_severity(severity, result.diagnostics.empty() ? notification_severity_t::info
-        : projection_diagnostic_severity(result.diagnostics.front().severity));
+    set_feedback_severity(severity,
+                          result.diagnostics.empty()
+                              ? notification_severity_t::info
+                              : to_notification_severity(result.diagnostics.front().severity));
     return result.diagnostics.empty() ? "Bar line was unchanged." : result.diagnostics.front().message;
 }
 

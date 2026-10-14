@@ -1,3 +1,6 @@
+#include "../support/stale_action_assertions.h"
+#include <catch2/generators/catch_generators.hpp>
+#include <wormedit/core/command.h>
 #include <wormedit/core/metadata_editor.h>
 #include <wormedit/core/workspace.h>
 
@@ -169,13 +172,31 @@ auto has_code(const diagnostic_list_t& diagnostics, diagnostic_code_t code) -> b
                                [code](const auto& diagnostic) { return diagnostic.code == code; });
 }
 
+void check_workspace_stale_feedback(const workspace_action_result_t& result) {
+    REQUIRE(result.diagnostics.size() == 1);
+    CHECK(result.diagnostics.front().message == stale_action_message("Workspace action"));
+}
+
 auto apply(workspace_controller_t& workspace, const song_document_t& song,
-           const workspace_action_t& action, std::uint64_t revision = 7)
+           const workspace_action_t& action)
     -> workspace_action_result_t {
-    return apply_workspace_action(workspace, song, revision, action);
+    return apply_workspace_action(workspace, song, action);
 }
 
 } // namespace
+
+TEST_CASE("Workspace view binding rejects captured project and revision expiry",
+          "[unit][core][workspace][view-stamp]") {
+    const auto different_project = GENERATE(false, true);
+    auto song = workspace_song();
+    const auto binding = workspace_controller_t::from(song);
+    REQUIRE(binding.workspace.has_value());
+    if (different_project) ++song.id.value;
+    else ++song.revision;
+    const auto result = workspace_view_t::from(*binding.workspace, song);
+    REQUIRE_FALSE(result);
+    test::check_stale_action_message(result.diagnostics, "Workspace view");
+}
 
 TEST_CASE("workspace tabs retain chart, transport, and isolated logical focus",
           "[unit][core][workspace]") {
@@ -271,8 +292,9 @@ TEST_CASE("workspace rejects stale revisions and rebinds stable context atomical
     auto changed = song;
     changed.revision = 8;
     const auto stale_action = apply_workspace_action(
-        workspace, changed, 7, workspace_switch_tab_action_t{workspace_tab_t::compose});
+        workspace, changed, workspace_switch_tab_action_t{workspace_tab_t::compose});
     CHECK_FALSE(stale_action);
+    check_workspace_stale_feedback(stale_action);
     CHECK(has_code(stale_action.diagnostics, diagnostic_code_t::invalid_id));
     CHECK(workspace.active_tab == workspace_tab_t::setup);
     CHECK_FALSE(workspace_view_t::from(workspace, changed));
@@ -317,7 +339,7 @@ TEST_CASE("workspace exposes one shared document-history context across tabs",
     CHECK(workspace.history.undo_depth == 1);
     CHECK(workspace.history.redo_depth == 0);
 
-    REQUIRE(apply_workspace_action(workspace, history.document, history.document.revision,
+    REQUIRE(apply_workspace_action(workspace, history.document,
                                    workspace_switch_tab_action_t{workspace_tab_t::metadata}));
     const auto metadata = workspace_view_t::from(workspace, history.document);
     REQUIRE(metadata);
@@ -361,13 +383,13 @@ TEST_CASE("metadata workspace exposes bounded ordered song and difficulty format
     CHECK(metadata.format_fields[4].family == format_family_t::stepmania);
 
     auto history = document_history_t::from(song);
-    REQUIRE(apply_metadata_edit(history, history.document.revision,
-                                edit_format_metadata_field_action_t{
-                                    .target = {std::nullopt, format_family_t::bms},
-                                    .index = 1,
-                                    .name = "SUBARTIST",
-                                    .value = "edited primary group",
-                                    .mode = wormedit::format_metadata_field_mode_t::replace}));
+    REQUIRE(
+        apply_metadata_edit(history, edit_format_metadata_field_action_t{
+                                         .target = {std::nullopt, format_family_t::bms},
+                                         .index = 1,
+                                         .name = "SUBARTIST",
+                                         .value = "edited primary group",
+                                         .mode = wormedit::format_metadata_field_mode_t::replace}));
     CHECK(history.document.metadata.format_groups[1].ordered_fields[1].second ==
           "edited primary group");
     CHECK(history.document.metadata.format_groups[2].ordered_fields.front().second ==

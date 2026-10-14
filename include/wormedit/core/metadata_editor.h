@@ -47,7 +47,7 @@ struct batch_chart_metadata_action_t {
 
 // One undoable transaction for 1..256 selected charts; every ID must exist and occur exactly once.
 [[nodiscard]] auto apply_batch_chart_metadata_edit(document_history_t& history,
-    std::uint64_t expected_revision, const batch_chart_metadata_action_t& action,
+    const batch_chart_metadata_action_t& action,
     metadata_edit_limits_t limits = {}) -> document_command_result_t;
 
 struct set_output_group_path_action_t {
@@ -63,6 +63,8 @@ struct set_output_group_path_action_t {
                                          metadata_edit_limits_t limits = {})
     -> std::optional<std::filesystem::path>;
 
+// Builds a rating-only edit. `unset` is the explicit clear operation; when
+// false, both numeric components must parse without truncation or overflow.
 struct chart_rating_edit_t {
     [[nodiscard]] static auto from(chart_id_t chart, bool unset, std::string_view numerator,
                                    std::string_view denominator)
@@ -80,12 +82,6 @@ inline constexpr std::size_t metadata_rating_component_max_bytes = 21;
 [[nodiscard]] auto parse_metadata_rating(std::string_view numerator, std::string_view denominator)
     -> std::optional<signed_rational_t>;
 
-// Builds a rating-only edit. `unset` is the explicit clear operation; when
-// false, both numeric components must parse without truncation or overflow.
-[[nodiscard]] auto make_chart_rating_metadata_edit(chart_id_t chart, bool unset,
-                                                   std::string_view numerator,
-                                                   std::string_view denominator)
-    -> std::optional<chart_rating_edit_t>;
 
 // A null chart selects song-scoped metadata; otherwise the field belongs to
 // that difficulty. Indexes address exact occurrences, preserving duplicates.
@@ -117,7 +113,7 @@ using metadata_edit_action_t =
 // Applies one mutation through document history. New fields may be inserted in
 // the authored suffix, not ahead of retained source identities. A semantic
 // no-op returns applied=false without a diagnostic or revision change.
-[[nodiscard]] auto apply_metadata_edit(document_history_t& history, std::uint64_t expected_revision,
+[[nodiscard]] auto apply_metadata_edit(document_history_t& history,
                                        const metadata_edit_action_t& action,
                                        metadata_edit_limits_t limits = {})
     -> document_command_result_t;

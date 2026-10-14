@@ -24,14 +24,9 @@ struct bmson_restart_target_t {
     local_position_t position;
 };
 
-auto resolve_bmson_restart_target(document_history_t& history,
-                                   std::uint64_t expected_revision, chart_id_t chart,
+auto resolve_bmson_restart_target(document_history_t& history, chart_id_t chart,
                                    object_id_t sound_channel_event)
     -> std::variant<bmson_restart_target_t, document_command_result_t> {
-    if (expected_revision != history.document.revision) {
-        return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id,
-                        "BMSON restart edit has a stale document revision");
-    }
     const auto found_chart = history.document.find_chart(chart);
     if (!chart || found_chart == nullptr ||
         found_chart->source_family != format_family_t::bmson || !sound_channel_event) {
@@ -153,12 +148,11 @@ auto interpolate_bmson_razor_path(const chart_document_t& chart,
     return result;
 }
 
-auto toggle_bmson_sound_channel_restart(document_history_t& history,
-                                        std::uint64_t expected_revision, chart_id_t chart,
+auto toggle_bmson_sound_channel_restart(document_history_t& history, chart_id_t chart,
                                         object_id_t sound_channel_event)
     -> document_command_result_t {
     const auto resolved =
-        resolve_bmson_restart_target(history, expected_revision, chart, sound_channel_event);
+        resolve_bmson_restart_target(history, chart, sound_channel_event);
     if (const auto* failure = std::get_if<document_command_result_t>(&resolved)) return *failure;
     const auto& target = std::get<bmson_restart_target_t>(resolved);
     const auto& events =
@@ -170,12 +164,11 @@ auto toggle_bmson_sound_channel_restart(document_history_t& history,
                                      "Toggle BMSON sound-channel restart");
 }
 
-auto set_bmson_sound_channel_restart(document_history_t& history,
-                                     std::uint64_t expected_revision, chart_id_t chart,
+auto set_bmson_sound_channel_restart(document_history_t& history, chart_id_t chart,
                                      object_id_t sound_channel_event, bool restart)
     -> document_command_result_t {
     const auto resolved =
-        resolve_bmson_restart_target(history, expected_revision, chart, sound_channel_event);
+        resolve_bmson_restart_target(history, chart, sound_channel_event);
     if (const auto* failure = std::get_if<document_command_result_t>(&resolved)) return *failure;
     return apply_bmson_restart_state(history, std::get<bmson_restart_target_t>(resolved), restart,
         restart ? "Set BMSON sound-channel restart" : "Set BMSON sound-channel continuation");
@@ -207,13 +200,9 @@ auto translate_hold_end(const measure_index_t& index, local_position_t start,
 
 } // namespace
 
-auto move_bmson_bgm_marker(document_history_t& history, std::uint64_t expected_revision,
+auto move_bmson_bgm_marker(document_history_t& history,
                            chart_id_t chart, object_id_t bgm_event, local_position_t target)
     -> document_command_result_t {
-    if (expected_revision != history.document.revision) {
-        return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id,
-                        "BMSON marker move has a stale document revision");
-    }
     const auto found_chart = history.document.find_chart(chart);
     if (!chart || found_chart == nullptr ||
         found_chart->source_family != format_family_t::bmson || !bgm_event) {
@@ -299,12 +288,12 @@ auto move_bmson_bgm_marker(document_history_t& history, std::uint64_t expected_r
     return transaction.commit("Move BMSON BGM marker");
 }
 
-auto insert_bmson_bgm_marker(document_history_t& history, std::uint64_t expected_revision,
+auto insert_bmson_bgm_marker(document_history_t& history,
                              chart_id_t chart, object_id_t reference_bgm_event,
                              local_position_t target, bool restart)
     -> document_command_result_t {
     const std::array markers{bmson_sound_marker_insertion_t{target, restart}};
-    return insert_bmson_sound_markers(history, expected_revision, chart, reference_bgm_event,
+    return insert_bmson_sound_markers(history, chart, reference_bgm_event,
                                       markers);
 }
 
@@ -501,14 +490,13 @@ auto validate_channel_slices(const song_document_t& document, const chart_docume
 
 } // namespace
 
-auto insert_bmson_sound_markers(document_history_t& history, std::uint64_t expected_revision,
+namespace {
+auto run_insert_bmson_sound_markers(document_command_transaction_t& transaction,
                                 chart_id_t chart, object_id_t reference_bgm_event,
                                 std::span<const bmson_sound_marker_insertion_t> markers)
     -> document_command_result_t {
+    auto& history = transaction.history;
     const auto revision = history.document.revision;
-    if (expected_revision != revision)
-        return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id,
-                        "BMSON marker insertion has a stale document revision");
     if (markers.empty() || markers.size() > 256)
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id,
                         "BMSON marker insertion requires 1 to 256 markers");
@@ -540,7 +528,6 @@ auto insert_bmson_sound_markers(document_history_t& history, std::uint64_t expec
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id,
                         "BMSON chart object ID space is exhausted");
 
-    auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
     const auto chart_offset = static_cast<std::size_t>(found_chart - history.document.charts.data());
     auto& changed_chart = proposed.charts[chart_offset];
@@ -557,13 +544,26 @@ auto insert_bmson_sound_markers(document_history_t& history, std::uint64_t expec
     return transaction.commit(markers.size() == 1 ? "Insert BMSON sound marker" : "Insert BMSON sound markers");
 }
 
-auto delete_bmson_bgm_marker(document_history_t& history,
-                             std::uint64_t expected_revision, chart_id_t chart,
+} // namespace
+
+auto insert_bmson_sound_markers(document_command_transaction_t& transaction,
+                                chart_id_t chart, object_id_t reference_bgm_event,
+                                std::span<const bmson_sound_marker_insertion_t> markers)
+    -> document_command_result_t {
+    if (!transaction.is_ready()) return transaction.finish_without_commit();
+    return transaction.finish_with(run_insert_bmson_sound_markers(transaction, chart, reference_bgm_event, markers));
+}
+
+auto insert_bmson_sound_markers(document_history_t& history,
+                                chart_id_t chart, object_id_t reference_bgm_event,
+                                std::span<const bmson_sound_marker_insertion_t> markers)
+    -> document_command_result_t {
+    auto transaction = document_command_transaction_t::from(history);
+    return insert_bmson_sound_markers(transaction, chart, reference_bgm_event, markers);
+}
+
+auto delete_bmson_bgm_marker(document_history_t& history, chart_id_t chart,
                              object_id_t bgm_event) -> document_command_result_t {
-    if (expected_revision != history.document.revision) {
-        return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id,
-                        "BMSON marker deletion has a stale document revision");
-    }
     const auto found_chart = history.document.find_chart(chart);
     if (!chart || found_chart == nullptr ||
         found_chart->source_family != format_family_t::bmson || !bgm_event) {
@@ -832,13 +832,10 @@ auto update_semantic_assignment(chart_document_t& chart, measure_chunk_t& measur
 
 } // namespace
 
-auto assign_bmson_sound_event(document_history_t& history, std::uint64_t expected_revision,
+auto assign_bmson_sound_event(document_history_t& history,
                               chart_id_t chart, object_id_t semantic_event,
                               std::optional<lane_id_t> playable_lane) -> document_command_result_t {
     const auto revision = history.document.revision;
-    if (expected_revision != revision)
-        return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id,
-                        "BMSON sound assignment has a stale document revision");
     const auto found_chart =
         history.document.find_chart(chart);
     if (!chart || found_chart == nullptr ||
@@ -910,12 +907,9 @@ auto assign_bmson_sound_event(document_history_t& history, std::uint64_t expecte
 
 namespace {
 
-auto find_chart_at_revision(document_history_t& history, std::uint64_t expected_revision,
+auto resolve_bmson_source_chart(document_history_t& history,
                             chart_id_t chart_id)
     -> std::variant<std::pair<std::size_t, chart_document_t*>, document_command_result_t> {
-    if (history.document.revision != expected_revision)
-        return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id,
-                        "BMSON source insertion has a stale document revision");
     const auto chart = history.document.find_chart(chart_id);
     if (chart == nullptr || !chart_id ||
         chart->source_family != format_family_t::bmson)
@@ -1227,12 +1221,12 @@ auto bmson_channel_resource_bindings(const song_document_t& document, chart_id_t
     return result;
 }
 
-auto insert_bmson_stem_point(document_history_t& history, std::uint64_t expected_revision,
+auto insert_bmson_stem_point(document_history_t& history,
                              chart_id_t chart_id, object_id_t channel_id,
                              local_position_t target, bool prefer_restart,
                              std::optional<bmson_source_geometry_t> geometry)
     -> document_command_result_t {
-    const auto resolved = find_chart_at_revision(history, expected_revision, chart_id);
+    const auto resolved = resolve_bmson_source_chart(history, chart_id);
     if (const auto* failure = std::get_if<document_command_result_t>(&resolved)) return *failure;
     const auto [chart_offset, chart] =
         std::get<std::pair<std::size_t, chart_document_t*>>(resolved);
@@ -1307,30 +1301,26 @@ auto reuse_playable_stem_pulse(document_history_t& history, chart_id_t chart_id,
         const auto bgm = std::ranges::find(measure.bgm_events, std::optional{source_id},
                                          &bgm_event_t::sound_channel_event);
         if (bgm != measure.bgm_events.end())
-            return assign_bmson_sound_event(history, history.document.revision, chart_id, bgm->id, lane);
+            return assign_bmson_sound_event(history, chart_id, bgm->id, lane);
     }
     for (const auto& measure : chart->measures) {
         const auto note = std::ranges::find(measure.notes, std::optional{source_id},
                                           &note_t::sound_channel_event);
         if (note != measure.notes.end())
-            return assign_bmson_sound_event(history, history.document.revision, chart_id, note->id, lane);
+            return assign_bmson_sound_event(history, chart_id, note->id, lane);
     }
     return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id,
                     "BMSON stem pulse has no semantic projection");
 }
 }
 
-auto insert_bmson_playable_stem_point(document_history_t& history,
-    std::uint64_t expected_revision, chart_id_t chart_id, object_id_t channel_id,
+auto insert_bmson_playable_stem_point(document_history_t& history, chart_id_t chart_id, object_id_t channel_id,
     local_position_t target, lane_id_t lane, std::optional<bmson_source_geometry_t> geometry)
     -> document_command_result_t {
-    if (history.document.revision != expected_revision)
-        return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id,
-                        "BMSON stem entry expired after the document changed");
     if (const auto reused = reuse_playable_stem_pulse(history, chart_id, channel_id, target, lane))
         return *reused;
     auto scratch = document_history_t::from(history.document);
-    const auto inserted = insert_bmson_stem_point(scratch, scratch.document.revision,
+    const auto inserted = insert_bmson_stem_point(scratch,
         chart_id, channel_id, target, false, geometry);
     if (!inserted) return inserted;
     const auto& chart = *scratch.document.find_chart(chart_id);
@@ -1339,7 +1329,7 @@ auto insert_bmson_playable_stem_point(document_history_t& history,
     for (const auto& measure : chart.measures)
         for (const auto& event : measure.bgm_events) {
             if (event.sound_channel_event != source->id) continue;
-            const auto assigned = assign_bmson_sound_event(scratch, scratch.document.revision,
+            const auto assigned = assign_bmson_sound_event(scratch,
                 chart_id, event.id, lane);
             if (!assigned) return assigned;
             auto transaction = document_command_transaction_t::from(history);
@@ -1356,11 +1346,10 @@ auto append_packed_sound_channel(song_document_t& document, chart_document_t& ch
     -> source_provenance_t;
 } // namespace
 
-auto insert_bmson_packed_one_shot(document_history_t& history,
-                                  std::uint64_t expected_revision, chart_id_t chart_id,
+auto insert_bmson_packed_one_shot(document_history_t& history, chart_id_t chart_id,
                                   object_id_t source_lane_id, resource_id_t resource_id,
                                   local_position_t target) -> document_command_result_t {
-    const auto resolved = find_chart_at_revision(history, expected_revision, chart_id);
+    const auto resolved = resolve_bmson_source_chart(history, chart_id);
     if (const auto* failure = std::get_if<document_command_result_t>(&resolved)) return *failure;
     const auto [chart_offset, original_chart] =
         std::get<std::pair<std::size_t, chart_document_t*>>(resolved);
@@ -1455,11 +1444,11 @@ auto packed_stroke_unchanged(const document_history_t& history) -> document_comm
     return {.revision = history.document.revision, .diagnostics = {}};
 }
 
-auto resolve_packed_stroke_context(document_history_t& history, std::uint64_t revision,
+auto resolve_packed_stroke_context(document_history_t& history,
                                    chart_id_t chart_id, object_id_t lane_id,
                                    std::span<const local_position_t> targets)
     -> std::variant<packed_stroke_context_t, document_command_result_t> {
-    const auto resolved = find_chart_at_revision(history, revision, chart_id);
+    const auto resolved = resolve_bmson_source_chart(history, chart_id);
     if (const auto* failure = std::get_if<document_command_result_t>(&resolved)) return *failure;
     const auto [chart_offset, chart] =
         std::get<std::pair<std::size_t, chart_document_t*>>(resolved);
@@ -1599,9 +1588,10 @@ auto append_packed_sound_channel(song_document_t& document, chart_document_t& ch
             .source_field = "$.sound_channels[" + std::to_string(source_index) + "]"};
 }
 
-auto commit_packed_stroke_draw(document_history_t& history, const packed_stroke_context_t& context,
+auto commit_packed_stroke_draw(document_command_transaction_t& transaction, const packed_stroke_context_t& context,
                                object_id_t lane_id, const resource_entry_t& resource)
     -> document_command_result_t {
+    auto& history = transaction.history;
     const auto channel_id = packed_stroke_channel(history, *context.chart, resource.id);
     const auto* channel = channel_id ? &*std::ranges::find(context.chart->sound_channels,
         *channel_id, &sound_channel_t::id) : nullptr;
@@ -1611,7 +1601,6 @@ auto commit_packed_stroke_draw(document_history_t& history, const packed_stroke_
         return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::collision, *message);
     const auto& cells = std::get<std::vector<packed_stroke_cell_t>>(additions);
     if (cells.empty()) return packed_stroke_unchanged(history);
-    auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
     auto& changed = proposed.charts[context.chart_offset];
     std::uint64_t largest{};
@@ -1640,11 +1629,11 @@ auto commit_packed_stroke_draw(document_history_t& history, const packed_stroke_
     return transaction.commit("Draw packed BMSON events");
 }
 
-auto commit_packed_stroke_erase(document_history_t& history, const packed_stroke_context_t& context,
+auto commit_packed_stroke_erase(document_command_transaction_t& transaction, const packed_stroke_context_t& context,
                                 object_id_t lane_id) -> document_command_result_t {
+    auto& history = transaction.history;
     std::unordered_set<std::uint64_t> rows;
     for (const auto& cell : context.cells) rows.insert(cell.row);
-    auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
     auto& changed = proposed.charts[context.chart_offset];
     std::unordered_set<std::uint64_t> removed_events;
@@ -1670,27 +1659,51 @@ auto commit_packed_stroke_erase(document_history_t& history, const packed_stroke
 
 } // namespace
 
-auto apply_bmson_packed_stroke(document_history_t& history, std::uint64_t expected_revision,
+namespace {
+auto run_apply_bmson_packed_stroke(document_command_transaction_t& transaction,
                                chart_id_t chart_id, object_id_t source_lane,
                                std::optional<resource_id_t> resource,
                                std::span<const local_position_t> targets, bool erase)
     -> document_command_result_t {
+    auto& history = transaction.history;
     if (targets.size() > 50'000)
         return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_resolution,
                         "BMSON stroke exceeds the per-gesture target cap");
-    const auto resolved = resolve_packed_stroke_context(history, expected_revision, chart_id,
+    const auto resolved = resolve_packed_stroke_context(history, chart_id,
                                                         source_lane, targets);
     if (const auto* failure = std::get_if<document_command_result_t>(&resolved)) return *failure;
     const auto& context = std::get<packed_stroke_context_t>(resolved);
     if (context.cells.empty()) return packed_stroke_unchanged(history);
-    if (erase) return commit_packed_stroke_erase(history, context, source_lane);
+    if (erase) return commit_packed_stroke_erase(transaction, context, source_lane);
     const auto entry = resource ? std::ranges::find(history.document.resources, *resource,
                                                     &resource_entry_t::id)
                                 : history.document.resources.end();
     const auto* found = entry == history.document.resources.end() ? nullptr : &*entry;
     if (auto failure = packed_stroke_resource_failure(history, *context.chart, found))
         return *failure;
-    return commit_packed_stroke_draw(history, context, source_lane, *found);
+    return commit_packed_stroke_draw(transaction, context, source_lane, *found);
+}
+
+
+
+} // namespace
+
+auto apply_bmson_packed_stroke(document_command_transaction_t& transaction,
+                               chart_id_t chart_id, object_id_t source_lane,
+                               std::optional<resource_id_t> resource,
+                               std::span<const local_position_t> targets, bool erase)
+    -> document_command_result_t {
+    if (!transaction.is_ready()) return transaction.finish_without_commit();
+    return transaction.finish_with(run_apply_bmson_packed_stroke(transaction, chart_id, source_lane, resource, targets, erase));
+}
+
+auto apply_bmson_packed_stroke(document_history_t& history,
+                               chart_id_t chart_id, object_id_t source_lane,
+                               std::optional<resource_id_t> resource,
+                               std::span<const local_position_t> targets, bool erase)
+    -> document_command_result_t {
+    auto transaction = document_command_transaction_t::from(history);
+    return apply_bmson_packed_stroke(transaction, chart_id, source_lane, resource, targets, erase);
 }
 
 } // namespace wormedit

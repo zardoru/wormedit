@@ -1,5 +1,6 @@
 #include "text_util.h"
 #include "checked_math.h"
+#include <wormedit/core/command.h>
 #include <wormedit/core/workspace.h>
 
 #include <algorithm>
@@ -1157,13 +1158,12 @@ struct workspace_action_visitor_t {
 };
 
 auto workspace_action_result_t::from(workspace_controller_t& workspace, const song_document_t& document,
-                            std::uint64_t expected_revision, const workspace_action_t& action)
-    -> workspace_action_outcome_t {
+                                     const workspace_action_t& action) -> workspace_action_outcome_t {
     workspace_action_outcome_t result{};
-    if (document.id != workspace.song || document.revision != workspace.document_revision ||
-        expected_revision != workspace.document_revision) {
+    const document_stamp_t binding{workspace.song, workspace.document_revision};
+    if (!binding.is_current(document)) {
         add_error(result.diagnostics, diagnostic_code_t::invalid_id,
-                  "workspace action refers to a stale or different document revision");
+                  stale_action_message("Workspace action"));
         return result;
     }
 
@@ -1180,10 +1180,9 @@ auto workspace_action_result_t::from(workspace_controller_t& workspace, const so
 }
 
 auto apply_workspace_action(workspace_controller_t& workspace, const song_document_t& document,
-                            std::uint64_t expected_revision, const workspace_action_t& action)
+                            const workspace_action_t& action)
     -> workspace_action_result_t {
-    return workspace_action_result_t::from(
-        workspace_action_result_t::from(workspace, document, expected_revision, action));
+    return workspace_action_result_t::from(workspace_action_result_t::from(workspace, document, action));
 }
 
 struct workspace_view_build_context_t {
@@ -1488,9 +1487,9 @@ auto workspace_view_result_t::from(const workspace_controller_t& workspace,
                             workspace_binding_validation_cache_t* binding_cache)
     -> workspace_view_outcome_t {
     workspace_view_outcome_t result{};
-    if (document.id != workspace.song || document.revision != workspace.document_revision) {
-        add_error(result.diagnostics, diagnostic_code_t::invalid_id,
-                  "workspace view cannot be built from a stale or different document revision");
+    if (!document_stamp_t{.project = workspace.song, .revision = workspace.document_revision}
+             .is_current(document)) {
+        add_error(result.diagnostics, diagnostic_code_t::invalid_id, stale_action_message("Workspace view"));
         return result;
     }
     result.diagnostics = binding_diagnostics(document, workspace.limits, binding_cache);

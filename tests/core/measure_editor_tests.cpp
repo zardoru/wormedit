@@ -101,7 +101,7 @@ TEST_CASE("measure insertion length editing and deletion preserve stable local i
     CHECK(absolute_note_row(history.document) == 1920);
 
     const auto inserted = apply_measure_edit(
-        history, 5, insert_measure_action_t{.chart = chart_id_t{2}, .before_index = 1});
+        history, insert_measure_action_t{.chart = chart_id_t{2}, .before_index = 1});
     REQUIRE(inserted);
     REQUIRE(history.document.charts.front().measures.size() == 4);
     const auto inserted_id = history.document.charts.front().measures[1].id;
@@ -113,11 +113,10 @@ TEST_CASE("measure insertion length editing and deletion preserve stable local i
     CHECK(is_document_dirty(history));
 
     const auto changed =
-        apply_measure_edit(history, 6,
-                           update_measure_definition_action_t{
-                               .chart = chart_id_t{2},
-                               .measure = inserted_id,
-                               .definition = {.length = {3, 4}, .meter = meter_t{6, 8}}});
+        apply_measure_edit(history, update_measure_definition_action_t{
+                                        .chart = chart_id_t{2},
+                                        .measure = inserted_id,
+                                        .definition = {.length = {3, 4}, .meter = meter_t{6, 8}}});
     REQUIRE(changed);
     const auto index = build_measure_index(history.document.charts.front());
     REQUIRE(std::holds_alternative<measure_index_t>(index));
@@ -125,7 +124,7 @@ TEST_CASE("measure insertion length editing and deletion preserve stable local i
     CHECK(absolute_note_row(history.document) == 2640);
 
     const auto removed = apply_measure_edit(
-        history, 7, delete_measure_action_t{.chart = chart_id_t{2}, .measure = inserted_id});
+        history, delete_measure_action_t{.chart = chart_id_t{2}, .measure = inserted_id});
     REQUIRE(removed);
     CHECK(history.document.charts.front().measures.size() == 3);
     CHECK(history.document.charts.front().bms_measure_length_projections.front().measure_index ==
@@ -147,11 +146,10 @@ TEST_CASE("measure definition edits reject positions that no longer fit",
     auto history = document_history_t::from(std::move(song));
 
     const auto rejected =
-        apply_measure_edit(history, 5,
-                           update_measure_definition_action_t{
-                               .chart = chart_id_t{2},
-                               .measure = measure_id_t{12},
-                               .definition = {.length = {3, 4}, .meter = meter_t{3, 4}}});
+        apply_measure_edit(history, update_measure_definition_action_t{
+                                        .chart = chart_id_t{2},
+                                        .measure = measure_id_t{12},
+                                        .definition = {.length = {3, 4}, .meter = meter_t{3, 4}}});
     CHECK_FALSE(rejected.applied);
     CHECK(has_code(rejected, diagnostic_code_t::row_out_of_range));
     CHECK(history.document.revision == 5);
@@ -165,7 +163,7 @@ TEST_CASE("measure deletion rejects every referenced or final measure atomically
     for (const auto id : {measure_id_t{10}, measure_id_t{12}}) {
         CAPTURE(id.value);
         const auto rejected = apply_measure_edit(
-            history, 5, delete_measure_action_t{.chart = chart_id_t{2}, .measure = id});
+            history, delete_measure_action_t{.chart = chart_id_t{2}, .measure = id});
         CHECK_FALSE(rejected.applied);
         CHECK_FALSE(rejected.diagnostics.empty());
         CHECK(history.document.charts.front().measures.size() == 3);
@@ -177,50 +175,46 @@ TEST_CASE("measure deletion rejects every referenced or final measure atomically
     chart.bms_measure_length_projections.clear();
     REQUIRE(validate_document(single).empty());
     auto single_history = document_history_t::from(std::move(single));
-    const auto final_measure = apply_measure_edit(
-        single_history, 5,
-        delete_measure_action_t{.chart = chart_id_t{2}, .measure = measure_id_t{10}});
+    const auto final_measure =
+        apply_measure_edit(single_history, delete_measure_action_t{.chart = chart_id_t{2},
+                                                                   .measure = measure_id_t{10}});
     CHECK_FALSE(final_measure.applied);
     CHECK(has_code(final_measure, diagnostic_code_t::invalid_measure));
     CHECK(single_history.document.charts.front().measures.size() == 1);
 }
 
-TEST_CASE("measure editor validates revisions IDs definitions indexes and caps",
+TEST_CASE("measure editor validates IDs definitions indexes and caps",
           "[unit][core][measure-editor][bounds]") {
     auto history = document_history_t::from(measure_song());
 
     CHECK_FALSE(apply_measure_edit(
-        history, 4, insert_measure_action_t{.chart = chart_id_t{2}, .before_index = 1}));
+        history, insert_measure_action_t{.chart = chart_id_t{99}, .before_index = 1}));
     CHECK_FALSE(apply_measure_edit(
-        history, 5, insert_measure_action_t{.chart = chart_id_t{99}, .before_index = 1}));
-    CHECK_FALSE(apply_measure_edit(
-        history, 5, insert_measure_action_t{.chart = chart_id_t{2}, .before_index = 4}));
+        history, insert_measure_action_t{.chart = chart_id_t{2}, .before_index = 4}));
 
     const auto inexact = apply_measure_edit(
-        history, 5,
-        insert_measure_action_t{.chart = chart_id_t{2},
-                                .before_index = 1,
-                                .definition = {.length = {1, 7}, .meter = std::nullopt}});
+        history, insert_measure_action_t{.chart = chart_id_t{2},
+                                         .before_index = 1,
+                                         .definition = {.length = {1, 7}, .meter = std::nullopt}});
     CHECK_FALSE(inexact.applied);
     CHECK(has_code(inexact, diagnostic_code_t::invalid_measure));
 
     const auto meter_mismatch =
-        apply_measure_edit(history, 5,
-                           update_measure_definition_action_t{
-                               .chart = chart_id_t{2},
-                               .measure = measure_id_t{11},
-                               .definition = {.length = {3, 4}, .meter = meter_t{4, 4}}});
+        apply_measure_edit(history, update_measure_definition_action_t{
+                                        .chart = chart_id_t{2},
+                                        .measure = measure_id_t{11},
+                                        .definition = {.length = {3, 4}, .meter = meter_t{4, 4}}});
     CHECK_FALSE(meter_mismatch.applied);
     CHECK(has_code(meter_mismatch, diagnostic_code_t::invalid_measure));
 
     const auto cap = apply_measure_edit(
-        history, 5, insert_measure_action_t{.chart = chart_id_t{2}, .before_index = 1},
+        history, insert_measure_action_t{.chart = chart_id_t{2}, .before_index = 1},
         {.maximum_measures = 3});
     CHECK_FALSE(cap.applied);
     CHECK(has_code(cap, diagnostic_code_t::invalid_resolution));
 
     const auto row_cap =
-        apply_measure_edit(history, 5,
+        apply_measure_edit(history,
                            update_measure_definition_action_t{
                                .chart = chart_id_t{2},
                                .measure = measure_id_t{11},
@@ -230,16 +224,15 @@ TEST_CASE("measure editor validates revisions IDs definitions indexes and caps",
     CHECK(has_code(row_cap, diagnostic_code_t::invalid_resolution));
 
     const auto no_op = apply_measure_edit(
-        history, 5,
-        update_measure_definition_action_t{
-            .chart = chart_id_t{2},
-            .measure = measure_id_t{11},
-            .definition = history.document.charts.front().measures[1].definition});
+        history, update_measure_definition_action_t{
+                     .chart = chart_id_t{2},
+                     .measure = measure_id_t{11},
+                     .definition = history.document.charts.front().measures[1].definition});
     CHECK_FALSE(no_op.applied);
     CHECK(no_op.diagnostics.empty());
 
     const auto unknown = apply_measure_edit(
-        history, 5, delete_measure_action_t{.chart = chart_id_t{2}, .measure = measure_id_t{999}});
+        history, delete_measure_action_t{.chart = chart_id_t{2}, .measure = measure_id_t{999}});
     CHECK_FALSE(unknown.applied);
     CHECK(has_code(unknown, diagnostic_code_t::invalid_id));
     CHECK(history.document.revision == 5);
@@ -286,8 +279,7 @@ TEST_CASE("removing a measure with contents is one undoable command",
           "[core][measure-editor][removal]") {
     auto history = document_history_t::from(removal_song());
     const auto applied = apply_measure_edit(
-        history, history.document.revision,
-        remove_measure_with_contents_action_t{chart_id_t{2}, measure_id_t{11}});
+        history, remove_measure_with_contents_action_t{chart_id_t{2}, measure_id_t{11}});
     REQUIRE(applied);
 
     const auto& chart = history.document.charts.front();
@@ -326,8 +318,7 @@ TEST_CASE("measure removal deletes contained BGA events and moves timing out of 
 
     auto history = document_history_t::from(std::move(song));
     REQUIRE(apply_measure_edit(
-        history, history.document.revision,
-        remove_measure_with_contents_action_t{chart_id_t{2}, measure_id_t{11}}));
+        history, remove_measure_with_contents_action_t{chart_id_t{2}, measure_id_t{11}}));
     const auto& edited = history.document.charts.front();
     REQUIRE(edited.bga_events.size() == 1);
     CHECK(edited.bga_events.front().id == object_id_t{44});
@@ -336,15 +327,11 @@ TEST_CASE("measure removal deletes contained BGA events and moves timing out of 
     CHECK(moved->position == local_position_t{measure_id_t{12}, 0});
 }
 
-TEST_CASE("measure removal rejects stale, last-measure timing and sole measures",
+TEST_CASE("measure removal rejects unknown targets, last-measure timing and sole measures",
           "[core][measure-editor][removal][negative]") {
     auto history = document_history_t::from(removal_song());
-    const auto revision = history.document.revision;
-    const remove_measure_with_contents_action_t remove_middle{chart_id_t{2}, measure_id_t{11}};
-    CHECK_FALSE(apply_measure_edit(history, revision + 1, remove_middle));
-    CHECK_FALSE(apply_measure_edit(history, revision,
-                                   remove_measure_with_contents_action_t{chart_id_t{2},
-                                                                         measure_id_t{99}}));
+    CHECK_FALSE(apply_measure_edit(
+        history, remove_measure_with_contents_action_t{chart_id_t{2}, measure_id_t{99}}));
 
     auto proposed = history.document;
     proposed.charts.front().bpms.push_back({.id = object_id_t{50},
@@ -352,8 +339,7 @@ TEST_CASE("measure removal rejects stale, last-measure timing and sole measures"
                                             .beats_per_minute = {90, 1}});
     REQUIRE(commit_document_command(history, std::move(proposed), "Add BPM"));
     const auto last = apply_measure_edit(
-        history, history.document.revision,
-        remove_measure_with_contents_action_t{chart_id_t{2}, measure_id_t{12}});
+        history, remove_measure_with_contents_action_t{chart_id_t{2}, measure_id_t{12}});
     CHECK_FALSE(last);
     CHECK(has_code(last, diagnostic_code_t::invalid_measure));
     CHECK(history.document.charts.front().measures.size() == 3);
@@ -363,8 +349,7 @@ TEST_CASE("measure removal rejects stale, last-measure timing and sole measures"
     sole.charts.front().bms_measure_length_projections.clear();
     auto sole_history = document_history_t::from(std::move(sole));
     CHECK_FALSE(apply_measure_edit(
-        sole_history, sole_history.document.revision,
-        remove_measure_with_contents_action_t{chart_id_t{2}, measure_id_t{10}}));
+        sole_history, remove_measure_with_contents_action_t{chart_id_t{2}, measure_id_t{10}}));
 }
 
 TEST_CASE("mass measure definition update is one atomic undo step",
@@ -372,15 +357,8 @@ TEST_CASE("mass measure definition update is one atomic undo step",
     auto history = document_history_t::from(measure_song());
     const auto definition = measure_definition_t{.length = {3, 4}, .meter = meter_t{3, 4}};
 
-    const auto stale = apply_measure_edit(
-        history, 4,
-        update_measures_definition_action_t{.chart = chart_id_t{2},
-                                            .measures = {measure_id_t{10}},
-                                            .definition = definition});
-    CHECK_FALSE(stale.applied);
-
     const auto unknown = apply_measure_edit(
-        history, 5,
+        history,
         update_measures_definition_action_t{.chart = chart_id_t{2},
                                             .measures = {measure_id_t{10}, measure_id_t{999}},
                                             .definition = definition});
@@ -389,23 +367,22 @@ TEST_CASE("mass measure definition update is one atomic undo step",
     CHECK(history.document.charts.front().measures[0].definition.length == rational_t{1, 1});
 
     const auto duplicate = apply_measure_edit(
-        history, 5,
+        history,
         update_measures_definition_action_t{.chart = chart_id_t{2},
                                             .measures = {measure_id_t{10}, measure_id_t{10}},
                                             .definition = definition});
     CHECK_FALSE(duplicate.applied);
 
-    const auto bad = apply_measure_edit(
-        history, 5,
-        update_measures_definition_action_t{
-            .chart = chart_id_t{2},
-            .measures = {measure_id_t{10}},
-            .definition = {.length = {3, 4}, .meter = meter_t{4, 4}}});
+    const auto bad =
+        apply_measure_edit(history, update_measures_definition_action_t{
+                                        .chart = chart_id_t{2},
+                                        .measures = {measure_id_t{10}},
+                                        .definition = {.length = {3, 4}, .meter = meter_t{4, 4}}});
     CHECK_FALSE(bad.applied);
     CHECK(history.undo.empty());
 
     const auto ok = apply_measure_edit(
-        history, 5,
+        history,
         update_measures_definition_action_t{.chart = chart_id_t{2},
                                             .measures = {measure_id_t{10}, measure_id_t{12}},
                                             .definition = definition});
@@ -430,11 +407,11 @@ TEST_CASE("resizing a measure keeps every object on its row from the start of th
     REQUIRE(validate_document(song).empty());
     auto history = document_history_t::from(song);
 
-    const auto shrunk = apply_measure_edit(
-        history, 5,
-        resize_measure_keep_rows_action_t{.chart = chart_id_t{2},
-                                          .measure_indices = {0},
-                                          .definition = {.length = {3, 4}, .meter = meter_t{3, 4}}});
+    const auto shrunk =
+        apply_measure_edit(history, resize_measure_keep_rows_action_t{
+                                        .chart = chart_id_t{2},
+                                        .measure_indices = {0},
+                                        .definition = {.length = {3, 4}, .meter = meter_t{3, 4}}});
     REQUIRE(shrunk);
     const auto& chart = history.document.charts.front();
     CHECK(chart.measures[0].definition.length == rational_t{3, 4});
@@ -454,22 +431,22 @@ TEST_CASE("resizing materializes virtual tail measures and keeps coverage",
           "[unit][core][measure-editor][keep-rows]") {
     auto history = document_history_t::from(measure_song());
     REQUIRE(has_chart_virtual_tail(history.document.charts.front()));
-    const auto grown = apply_measure_edit(
-        history, 5,
-        resize_measure_keep_rows_action_t{.chart = chart_id_t{2},
-                                          .measure_indices = {5},
-                                          .definition = {.length = {3, 4}, .meter = meter_t{3, 4}}});
+    const auto grown =
+        apply_measure_edit(history, resize_measure_keep_rows_action_t{
+                                        .chart = chart_id_t{2},
+                                        .measure_indices = {5},
+                                        .definition = {.length = {3, 4}, .meter = meter_t{3, 4}}});
     REQUIRE(grown);
     const auto& chart = history.document.charts.front();
     REQUIRE(chart.measures.size() == 6);
     CHECK(chart.measures[5].definition.length == rational_t{3, 4});
     CHECK(chart.measures[4].definition.length == rational_t{1, 1});
 
-    const auto beyond = apply_measure_edit(
-        history, history.document.revision,
-        resize_measure_keep_rows_action_t{.chart = chart_id_t{2},
-                                          .measure_indices = {100000},
-                                          .definition = {.length = {3, 4}, .meter = meter_t{3, 4}}});
+    const auto beyond =
+        apply_measure_edit(history, resize_measure_keep_rows_action_t{
+                                        .chart = chart_id_t{2},
+                                        .measure_indices = {100000},
+                                        .definition = {.length = {3, 4}, .meter = meter_t{3, 4}}});
     CHECK_FALSE(beyond.applied);
     CHECK(has_code(beyond, diagnostic_code_t::invalid_measure));
 }
@@ -483,11 +460,11 @@ TEST_CASE("shortening measures extends a native chart back over its audio",
     song.charts.front().source_family = format_family_t::native_project;
     auto history = document_history_t::from(song);
     const auto before = history.document.charts.front().measures.size();
-    const auto resized = apply_measure_edit(
-        history, history.document.revision,
-        resize_measure_keep_rows_action_t{.chart = chart_id_t{2},
-                                          .measure_indices = {0, 1, 2},
-                                          .definition = {.length = {1, 4}, .meter = meter_t{1, 4}}});
+    const auto resized =
+        apply_measure_edit(history, resize_measure_keep_rows_action_t{
+                                        .chart = chart_id_t{2},
+                                        .measure_indices = {0, 1, 2},
+                                        .definition = {.length = {1, 4}, .meter = meter_t{1, 4}}});
     REQUIRE(resized);
     CHECK(history.document.charts.front().measures.size() > before);
 }
@@ -500,11 +477,10 @@ TEST_CASE("moving a bar line changes only the two neighboring measures",
     REQUIRE(validate_document(song).empty());
     auto history = document_history_t::from(song);
     const auto moved = apply_measure_edit(
-        history, 5,
-        move_bar_line_action_t{.chart = chart_id_t{2},
-                               .measure_index = 0,
-                               .before = {.length = {3, 4}, .meter = meter_t{3, 4}},
-                               .after = {.length = {5, 4}, .meter = meter_t{5, 4}}});
+        history, move_bar_line_action_t{.chart = chart_id_t{2},
+                                        .measure_index = 0,
+                                        .before = {.length = {3, 4}, .meter = meter_t{3, 4}},
+                                        .after = {.length = {5, 4}, .meter = meter_t{5, 4}}});
     REQUIRE(moved);
     const auto& chart = history.document.charts.front();
     CHECK(chart.measures[0].definition.length == rational_t{3, 4});
@@ -516,11 +492,10 @@ TEST_CASE("moving a bar line changes only the two neighboring measures",
     CHECK(history.undo.size() == 1);
 
     const auto uneven = apply_measure_edit(
-        history, history.document.revision,
-        move_bar_line_action_t{.chart = chart_id_t{2},
-                               .measure_index = 0,
-                               .before = {.length = {1, 2}, .meter = meter_t{2, 4}},
-                               .after = {.length = {1, 1}, .meter = meter_t{4, 4}}});
+        history, move_bar_line_action_t{.chart = chart_id_t{2},
+                                        .measure_index = 0,
+                                        .before = {.length = {1, 2}, .meter = meter_t{2, 4}},
+                                        .after = {.length = {1, 1}, .meter = meter_t{4, 4}}});
     CHECK_FALSE(uneven.applied);
     CHECK(has_code(uneven, diagnostic_code_t::invalid_measure));
 }
@@ -536,8 +511,7 @@ TEST_CASE("removing the first measure keeps layout, BPM and a validating documen
     REQUIRE(validate_document(song).empty());
     auto history = document_history_t::from(std::move(song));
     REQUIRE(apply_measure_edit(
-        history, history.document.revision,
-        remove_measure_with_contents_action_t{chart_id_t{2}, measure_id_t{10}}));
+        history, remove_measure_with_contents_action_t{chart_id_t{2}, measure_id_t{10}}));
     CHECK(validate_document(history.document).empty());
     const auto& edited = history.document.charts.front();
     CHECK(edited.lane_layouts.front().position == local_position_t{measure_id_t{11}, 0});
@@ -563,8 +537,8 @@ TEST_CASE("an empty leading measure that anchors BPM and layout cannot be delete
     CHECK_FALSE(has_measure_positioned_objects(base, measure_id_t{11}));
     CHECK_FALSE(propose_measure_removal(base, measure_id_t{10}));
     auto history = document_history_t::from(std::move(song));
-    const auto plain = apply_measure_edit(history, history.document.revision,
-                                          delete_measure_action_t{chart_id_t{2}, measure_id_t{10}});
+    const auto plain =
+        apply_measure_edit(history, delete_measure_action_t{chart_id_t{2}, measure_id_t{10}});
     CHECK_FALSE(plain);
     CHECK(history.document.charts.front().measures.size() == 3);
 }
@@ -582,7 +556,8 @@ TEST_CASE("Measure split preserves all existing heads absolute rows and duration
     auto history = document_history_t::from(document);
     const auto before = build_measure_index(chart);
     const auto before_timing = build_timing_index(chart);
-    const auto result = apply_measure_edit(history, 5, split_measure_action_t{chart.id,{measure_id_t{10},480}});
+    const auto result =
+        apply_measure_edit(history, split_measure_action_t{chart.id, {measure_id_t{10}, 480}});
     for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
     REQUIRE(result.applied);
     const auto& split = history.document.charts.front();
@@ -611,12 +586,18 @@ TEST_CASE("Measure split preserves all existing heads absolute rows and duration
     check_audio_extent(history.document.charts.front().measures.size() == 4);
 }
 
-TEST_CASE("Measure split head stale invalid and limit boundaries leave history unchanged", "[core][measure-editor][measure-split]") {
+TEST_CASE("Measure split head invalid and limit boundaries leave history unchanged", "[core][measure-editor][measure-split]") {
     auto history = document_history_t::from(measure_song());
-    check_audio_extent(!apply_measure_edit(history,5,split_measure_action_t{chart_id_t{2},{measure_id_t{10},0}}).applied);
-    check_audio_extent(!apply_measure_edit(history,4,split_measure_action_t{chart_id_t{2},{measure_id_t{10},480}}).applied);
-    check_audio_extent(!apply_measure_edit(history,5,split_measure_action_t{chart_id_t{2},{measure_id_t{10},960}}).applied);
-    check_audio_extent(!apply_measure_edit(history,5,split_measure_action_t{chart_id_t{2},{measure_id_t{10},480}}, {.maximum_measures=3}).applied);
+    check_audio_extent(
+        !apply_measure_edit(history, split_measure_action_t{chart_id_t{2}, {measure_id_t{10}, 0}})
+             .applied);
+    check_audio_extent(
+        !apply_measure_edit(history, split_measure_action_t{chart_id_t{2}, {measure_id_t{10}, 960}})
+             .applied);
+    check_audio_extent(
+        !apply_measure_edit(history, split_measure_action_t{chart_id_t{2}, {measure_id_t{10}, 480}},
+                            {.maximum_measures = 3})
+             .applied);
     check_audio_extent(history.undo.empty());
     check_audio_extent(history.document.revision == 5);
 }
@@ -630,7 +611,7 @@ TEST_CASE("Measure split supports imported BMS without moving exported later hea
     const auto id = chart.id;
     const auto measure = chart.measures.front().id;
     const auto half = chart.divisions_per_standard_measure/2;
-    REQUIRE(apply_measure_edit(history,history.document.revision,split_measure_action_t{id,{measure,half}}).applied);
+    REQUIRE(apply_measure_edit(history, split_measure_action_t{id, {measure, half}}).applied);
     const auto written = write_bms(history.document);
     for (const auto& diagnostic : written.diagnostics) UNSCOPED_INFO(diagnostic.message);
     REQUIRE(written.bytes);
@@ -649,7 +630,10 @@ TEST_CASE("Measure split preserves retained BMSON source heads and tails", "[cor
     auto history = document_history_t::from(*parsed.song);
     const auto& chart = history.document.charts.front();
     const auto id = chart.id; const auto measure = chart.measures.front().id;
-    REQUIRE(apply_measure_edit(history,history.document.revision,split_measure_action_t{id,{measure,chart.divisions_per_standard_measure/2}}).applied);
+    REQUIRE(apply_measure_edit(
+                history,
+                split_measure_action_t{id, {measure, chart.divisions_per_standard_measure / 2}})
+                .applied);
     const auto& split = history.document.charts.front();
     const auto index = build_measure_index(split);
     const auto& rows = std::get<measure_index_t>(index);
@@ -684,8 +668,9 @@ auto pause_conversion_preserves_times(bool resize, pause_kind_t kind) -> bool {
     auto history = document_history_t::from(pause_conversion_song());
     const auto original = history.document;
     const auto old_timing = build_timing_index(original.charts.front());
-    const auto result = apply_measure_edit(history, history.document.revision,
-        convert_range_to_pause_action_t{chart_id_t{2}, {{measure_id_t{11}, 0}, {measure_id_t{11}, 48}}, kind, resize});
+    const auto result = apply_measure_edit(
+        history, convert_range_to_pause_action_t{
+                     chart_id_t{2}, {{measure_id_t{11}, 0}, {measure_id_t{11}, 48}}, kind, resize});
     for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
     if (!result.applied || history.undo.size() != 1 || !old_timing) return false;
     const auto& chart = history.document.charts.front();
@@ -712,11 +697,15 @@ auto pause_conversion_boundaries() -> bool {
         .position = {measure_id_t{11}, 48}, .lane = lane_id_t{20}});
     auto history = document_history_t::from(song);
     const position_span_t range{{measure_id_t{11}, 0}, {measure_id_t{11}, 48}};
-    if (apply_measure_edit(history, history.document.revision,
-            convert_range_to_pause_action_t{chart_id_t{2}, range, pause_kind_t::stop}).applied) return false;
+    if (apply_measure_edit(
+            history, convert_range_to_pause_action_t{chart_id_t{2}, range, pause_kind_t::stop})
+            .applied)
+        return false;
     if (!history.undo.empty()) return false;
-    if (!apply_measure_edit(history, history.document.revision,
-            convert_range_to_pause_action_t{chart_id_t{2}, range, pause_kind_t::delay}).applied) return false;
+    if (!apply_measure_edit(
+             history, convert_range_to_pause_action_t{chart_id_t{2}, range, pause_kind_t::delay})
+             .applied)
+        return false;
     const auto& chart = history.document.charts.front();
     return chart.measures[1].notes.front().position.row == 0 && chart.pauses.front().kind == pause_kind_t::delay;
 }
@@ -729,8 +718,12 @@ auto pause_conversion_bms_round_trip(bool resize) -> bool {
     const auto id = source.id;
     const auto resolution = source.divisions_per_standard_measure;
     const auto measure = source.measures.front().id;
-    const auto result = apply_measure_edit(history, history.document.revision,
-        convert_range_to_pause_action_t{id, {{measure, resolution / 4}, {measure, resolution / 2}}, pause_kind_t::stop, resize});
+    const auto result = apply_measure_edit(
+        history,
+        convert_range_to_pause_action_t{id,
+                                        {{measure, resolution / 4}, {measure, resolution / 2}},
+                                        pause_kind_t::stop,
+                                        resize});
     for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
     if (!result.applied) return false;
     const auto written = write_bms(history.document, {.branch_policy = bms_branch_policy_t::flatten_active});
@@ -784,12 +777,14 @@ auto pause_conversion_rejects_atomically(unsigned scenario) -> bool {
     case 5: chart.measures.front().notes.front().end = middle; break;
     case 6: chart.speeds.front().transition_beats = {11, 10}; break; // row 984, inside the removed interval
     case 7: chart.scrolls.front().id = object_id_t{std::numeric_limits<std::uint64_t>::max()}; break;
-    default: break; // stale revision
+    default: break;
     }
     auto history = document_history_t::from(song);
     const auto before = write_native_project(history.document).bytes;
-    const auto result = apply_measure_edit(history, history.document.revision + (scenario == 8 ? 1 : 0),
-        convert_range_to_pause_action_t{chart.id, {{measure_id_t{11}, 0}, {measure_id_t{11}, 48}}, pause_kind_t::stop, true});
+    const auto result = apply_measure_edit(
+        history,
+        convert_range_to_pause_action_t{
+            chart.id, {{measure_id_t{11}, 0}, {measure_id_t{11}, 48}}, pause_kind_t::stop, true});
     return !result.applied && !result.diagnostics.empty() && history.undo.empty() &&
         write_native_project(history.document).bytes == before;
 }
@@ -801,8 +796,12 @@ auto pause_conversion_bmson_aliases() -> bool {
     const auto& source = history.document.charts.front();
     const auto measure = source.measures.front().id;
     const auto resolution = source.divisions_per_standard_measure;
-    const auto result = apply_measure_edit(history, history.document.revision,
-        convert_range_to_pause_action_t{source.id, {{measure, resolution / 20}, {measure, resolution / 10}}, pause_kind_t::stop, true});
+    const auto result = apply_measure_edit(
+        history,
+        convert_range_to_pause_action_t{source.id,
+                                        {{measure, resolution / 20}, {measure, resolution / 10}},
+                                        pause_kind_t::stop,
+                                        true});
     if (!result.applied || !validate_document(history.document).empty()) return false;
     const auto& chart = history.document.charts.front();
     const auto built = build_measure_index(chart);
@@ -816,8 +815,8 @@ auto pause_conversion_bmson_aliases() -> bool {
 }
 } // namespace
 
-TEST_CASE("Range pause conversion rejects unsafe intervals and stale edits without changing history", "[core][range-pause][T560]") {
-    for (unsigned scenario = 0; scenario < 9; ++scenario)
+TEST_CASE("Range pause conversion rejects unsafe intervals without changing history", "[core][range-pause][T560]") {
+    for (unsigned scenario = 0; scenario < 8; ++scenario)
         check_audio_extent(pause_conversion_rejects_atomically(scenario));
 }
 TEST_CASE("Range pause conversion keeps BMSON semantic and retained heads and tails coherent", "[core][range-pause][T560]") {
@@ -828,8 +827,11 @@ namespace {
 auto pause_conversion_whole_measure() -> bool {
     auto history = document_history_t::from(pause_conversion_song());
     const auto old = build_timing_index(history.document.charts.front());
-    const auto result = apply_measure_edit(history, history.document.revision,
-        convert_range_to_pause_action_t{chart_id_t{2}, {{measure_id_t{11}, 0}, {measure_id_t{12}, 0}}, pause_kind_t::delay, true});
+    const auto result = apply_measure_edit(
+        history, convert_range_to_pause_action_t{chart_id_t{2},
+                                                 {{measure_id_t{11}, 0}, {measure_id_t{12}, 0}},
+                                                 pause_kind_t::delay,
+                                                 true});
     for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
     if (!result.applied || !old) return false;
     const auto& chart = history.document.charts.front();

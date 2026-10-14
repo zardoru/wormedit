@@ -32,15 +32,15 @@ TEST_CASE("A selected Kiai area and speed marker are copied and cut together",
     state.selected_objects = {{editor_selection_object_kind_t::speed_event, object_id_t{2}}};
     std::uint64_t kiai_head = 3;
 
-    const auto copied = copy_chart_selection(history.document, state, history.document.revision,
+    const auto copied = chart_clipboard_t::from(history.document, state, history.document.revision,
                                               object_id_t{kiai_head});
     REQUIRE(static_cast<bool>(copied));
-    CHECK(copied.clipboard->objects.size() == 3);
+    CHECK(copied->objects.size() == 3);
 
     const auto undo_before = history.undo.size();
-    const auto cut = cut_chart_selection(history, state, history.document.revision,
+    const auto cut = create_cut_chart_clipboard(history, state,
                                           {.kiai_head = object_id_t{kiai_head}});
-    CHECK(cut.error.empty());
+    CHECK(cut.has_value());
     CHECK(history.undo.size() == undo_before + 1);
     const auto& chart = history.document.charts.front();
     CHECK(chart.speeds.empty());
@@ -52,8 +52,8 @@ TEST_CASE("A selected Kiai area and speed marker are copied and cut together",
     CHECK(history.document.charts.front().kiai.size() == 2);
     REQUIRE(redo_document_command(history));
 
-    const auto pasted = paste_chart_clipboard(history, chart_id_t{1}, *copied.clipboard,
-                                              {measure_id_t{2}, 0}, history.document.revision);
+    const auto pasted = paste_chart_clipboard(history, chart_id_t{1}, *copied,
+                                              {measure_id_t{2}, 0});
     CHECK(pasted.diagnostics.empty());
     const auto& after = history.document.charts.front();
     CHECK(after.speeds.size() == 1);

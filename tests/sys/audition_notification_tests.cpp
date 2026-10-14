@@ -1,3 +1,4 @@
+#include "../support/stale_action_assertions.h"
 #include "project_audio_sources_fixture.h"
 #include "sys/compose_audition_requests.h"
 #include "sys/audio_transport_frame.h"
@@ -69,6 +70,22 @@ TEST_CASE("Catalog audition rejects missing sources once and idle stays quiet", 
     expect_audition(entries[0].severity == notification_severity_t::warning);
     expect_audition(!request);
 }
+TEST_CASE("Stale object audition feedback is typed and consumes its request once",
+          "[audio][audition-notification][stale-object-audition]") {
+    audition_fixture_t fixture;
+    fixture.cache.frame.audition_request = editor_object_audition_request_t{
+        .document_revision = 1, .chart = chart_id_t{2},
+        .object = {editor_selection_object_kind_t::note, object_id_t{1}}};
+    fixture.compose();
+    const auto entries = fixture.entries();
+    expect_audition(entries.size() == 1);
+    test::check_stale_action_message(entries.front().message, "Audio preview request");
+    expect_audition(entries.front().severity == notification_severity_t::warning);
+    expect_audition(!fixture.cache.frame.audition_request);
+    fixture.compose();
+    expect_audition(fixture.center.statistics().posted == 1);
+}
+
 TEST_CASE("Object then draft audition preserve producer diagnostics and consumption order", "[audio][audition-notification]") {
     audition_fixture_t fixture;
     fixture.cache.frame.audition_request = editor_object_audition_request_t{

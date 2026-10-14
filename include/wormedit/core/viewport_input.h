@@ -113,12 +113,9 @@ class viewport_input_controller_t {
     // Call before dispatching an ordinary edit press. Returns true if a latched
     // autoscroll was canceled and the press can then be handled normally.
     [[nodiscard]] auto is_normal_edit_press() noexcept -> bool;
-    // Compatibility for the coordinated sys/UI migration.
-    inline auto normal_edit_press() noexcept -> bool { return is_normal_edit_press(); }
 
     [[nodiscard]] auto is_autoscroll_active() const noexcept -> bool;
-    // Compatibility for the coordinated sys/UI migration.
-    inline auto autoscroll_active() const noexcept -> bool { return is_autoscroll_active(); }
+
     [[nodiscard]] auto is_momentum_active() const noexcept -> bool;
     [[nodiscard]] auto is_trackpad_active() const noexcept -> bool;
 

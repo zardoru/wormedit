@@ -79,7 +79,8 @@ auto run_label_search(document_history_t& history, editor_interaction_state_t& s
         const auto selected = dispatch_editor_action(history, state, select_editor_notes_action_t{hit->matches});
         if (!selected.accepted) {
             if (!selected.diagnostics.empty())
-                set_feedback_severity(severity, projection_diagnostic_severity(selected.diagnostics.front().severity));
+                set_feedback_severity(
+                    severity, to_notification_severity(selected.diagnostics.front().severity));
             return "The matching notes could not be selected.";
         }
     }
@@ -87,7 +88,8 @@ auto run_label_search(document_history_t& history, editor_interaction_state_t& s
         history, state, jump_edit_cursor_action_t{hit->target, history.document.revision});
     if (!jumped.accepted) {
         if (!jumped.diagnostics.empty())
-            set_feedback_severity(severity, projection_diagnostic_severity(jumped.diagnostics.front().severity));
+            set_feedback_severity(severity,
+                                  to_notification_severity(jumped.diagnostics.front().severity));
         return "The cursor could not move to the matching note.";
     }
     set_feedback_severity(severity, notification_severity_t::hint);

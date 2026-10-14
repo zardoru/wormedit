@@ -2,6 +2,7 @@
 #include "sys/application_edit_inputs.h"
 #include "sys/external_player_runtime.h"
 #include "sys/application_timing_stage.h"
+#include "sys/audio_offset_actions.h"
 #include "sys/compose_note_to_bgm.h"
 #include "sys/compose_sound_selection.h"
 #if defined(WORMEDIT_HAS_MACOS_MENU)
@@ -1016,18 +1017,6 @@ auto command_menu_invoker(wormedit::command_invoker_t invoke) -> wormedit::comma
 
 
 
-auto timing_stage_binding_matches(const WormUiWorkspaceAction& action,
-                                 const wormedit::document_history_t& history,
-                                 const wormedit::workspace_controller_t& workspace,
-                                 const wormedit::timing_lane_pseudonote_preview_t& stage) -> bool {
-    return workspace.active_tab == wormedit::workspace_tab_t::compose &&
-           workspace.selected_chart && workspace.selected_chart->value == action.timing_chart_id &&
-           stage.chart.value == action.timing_chart_id &&
-           (stage.existing_event.has_value() ? stage.existing_event->value : std::uint64_t{}) ==
-               action.timing_object_id &&
-           stage.document_revision == action.timing_document_revision &&
-           history.document.revision == action.timing_document_revision;
-}
 
 void delete_staged_timing_event(const WormUiWorkspaceAction& action,
                                 wormedit::document_history_t& history, bool timing_locked,
@@ -2870,19 +2859,10 @@ struct application_t::implementation_t {
             (void)finish_confirmed_close(pending);
     }
 
-    auto is_audio_offset_drag_context_current(const AudioOffsetDragContext& context) -> bool {
-        using namespace wormedit;
-        const auto supported_tab = session.workspace.active_tab == workspace_tab_t::audio_slices ||
-                                   session.workspace.active_tab == workspace_tab_t::metadata ||
-                                   session.workspace.active_tab == workspace_tab_t::compose;
-        const auto context_matches =
-            supported_tab && session.workspace.selected_chart &&
-            session.workspace.selected_chart->value == context.action.audio_offset_drag_chart_id &&
-            session.history.document.revision ==
-                context.action.audio_offset_drag_document_revision &&
-            context.selected_sample_rate &&
-            *context.selected_sample_rate == context.action.audio_offset_drag_sample_rate;
-        return context_matches;
+    auto validate_audio_offset_drag_context(const AudioOffsetDragContext& context)
+        -> std::optional<std::string> {
+        return wormedit::sys::validate_audio_offset_drag_binding(
+            context.action, session.history.document, session.workspace, context.selected_sample_rate);
     }
 
     auto replace_project_session(wormedit::song_document_t document, bool loaded, bool saved,
@@ -2954,9 +2934,8 @@ struct application_t::implementation_t {
         if (action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_CANCEL)
             return clear_audio_offset_drag(context, "Audio offset drag cancelled.",
                                            wormedit::notification_severity_t::hint);
-        if (!is_audio_offset_drag_context_current(context))
-            return clear_audio_offset_drag(
-                context, "Audio offset drag expired after its chart or waveform changed.");
+        if (auto failure = validate_audio_offset_drag_context(context))
+            return clear_audio_offset_drag(context, std::move(*failure));
         if (action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_NUDGE)
             return nudge_audio_offset_drag(context);
         if (action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_BEGIN)
@@ -3952,12 +3931,13 @@ struct application_t::implementation_t {
         auto& stage = views.timing_edit.stage;
         if (!stage)
             return;
-        if (!timing_stage_binding_matches(action, session.history, session.workspace, *stage)) {
+        if (auto failure = wormedit::sys::validate_timing_stage_binding(
+                action, session.history, session.workspace, *stage)) {
             wormedit::cancel_timing_lane_pseudonote(*stage);
             stage.reset();
             post_edit_rejection(
                 platform.notification_sink, {},
-                "Timing event staging expired because its chart or revision changed.");
+                *failure);
             return;
         }
         const auto chart = std::ranges::find(session.history.document.charts, stage->chart,

@@ -1,3 +1,5 @@
+#include "sys/audio_offset_actions.h"
+#include "sys/application_timing_stage.h"
 #include "../support/stale_action_assertions.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "sys/application_command_dispatch.h"
@@ -26,6 +28,67 @@
 using namespace wormedit::sys;
 
 #ifndef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+TEST_CASE("Application binding validation accepts current inputs and preserves missing targets",
+          "[unit][sys][application-stamp]") {
+    const wormedit::document_history_t history{.document = {.id = wormedit::song_id_t{1}, .revision = 7}};
+    wormedit::workspace_controller_t workspace{.active_tab = wormedit::workspace_tab_t::compose,
+        .selected_chart = wormedit::chart_id_t{2}};
+    const wormedit::timing_lane_pseudonote_preview_t stage{.chart = wormedit::chart_id_t{2}, .document_revision = 7};
+    WormUiWorkspaceAction action{};
+    action.timing_chart_id = 2;
+    action.timing_document_revision = 7;
+    action.audio_offset_drag_chart_id = 2;
+    action.audio_offset_drag_document_revision = 7;
+    action.audio_offset_drag_sample_rate = 48'000;
+    CHECK_FALSE(wormedit::sys::validate_timing_stage_binding(action, history, workspace, stage));
+    CHECK_FALSE(wormedit::sys::validate_audio_offset_drag_binding(action, history.document, workspace, 48'000));
+    workspace.selected_chart.reset();
+    const auto timing = wormedit::sys::validate_timing_stage_binding(action, history, workspace, stage);
+    REQUIRE(timing.has_value());
+    CHECK(*timing == "Timing event staging expired because its chart or revision changed.");
+    const auto audio = wormedit::sys::validate_audio_offset_drag_binding(action, history.document, workspace, 48'000);
+    REQUIRE(audio.has_value());
+    CHECK(*audio == "Audio offset drag expired after its chart or waveform changed.");
+}
+
+TEST_CASE("Application timing stage validation keeps captured identity and request stamps",
+          "[unit][sys][application-stamp]") {
+    const auto source = GENERATE(0, 1, 2);
+    wormedit::document_history_t history{.document = {.id = wormedit::song_id_t{1}, .revision = 7}};
+    wormedit::workspace_controller_t workspace{.active_tab = wormedit::workspace_tab_t::compose,
+        .selected_chart = wormedit::chart_id_t{2}};
+    wormedit::timing_lane_pseudonote_preview_t stage{.chart = wormedit::chart_id_t{2},
+        .existing_event = wormedit::object_id_t{3}, .document_revision = 7};
+    WormUiWorkspaceAction action{};
+    action.timing_chart_id = 2;
+    action.timing_object_id = 3;
+    action.timing_document_revision = 7;
+    if (source == 0) --action.timing_document_revision;
+    else if (source == 1) --stage.document_revision;
+    else stage.chart = wormedit::chart_id_t{4};
+    const auto failure = wormedit::sys::validate_timing_stage_binding(action, history, workspace, stage);
+    REQUIRE(failure.has_value());
+    wormedit::test::check_stale_action_message(*failure, "Timing event staging");
+}
+
+TEST_CASE("Application audio offset validation separates stamp expiry from missing waveform",
+          "[unit][sys][application-stamp]") {
+    const auto source = GENERATE(0, 1);
+    const wormedit::song_document_t document{.id = wormedit::song_id_t{1}, .revision = 7};
+    const wormedit::workspace_controller_t workspace{.active_tab = wormedit::workspace_tab_t::metadata,
+        .selected_chart = wormedit::chart_id_t{2}};
+    WormUiWorkspaceAction action{};
+    action.audio_offset_drag_chart_id = source == 0 ? 2 : 3;
+    action.audio_offset_drag_document_revision = source == 0 ? 6 : 7;
+    action.audio_offset_drag_sample_rate = 48'000;
+    const auto failure = wormedit::sys::validate_audio_offset_drag_binding(action, document, workspace, 48'000);
+    REQUIRE(failure.has_value());
+    wormedit::test::check_stale_action_message(*failure, "Audio offset drag");
+    const auto missing = wormedit::sys::validate_audio_offset_drag_binding(action, document, workspace, std::nullopt);
+    REQUIRE(missing.has_value());
+    CHECK(*missing == "Audio offset drag expired after its chart or waveform changed.");
+}
+
 TEST_CASE("Compose navigation cleanup preserves command results", "[unit][sys][commands]") {
     std::string status = "Semantic layer added.";
     // Focus loss can emit cleanup alongside a widget action or on later frames.

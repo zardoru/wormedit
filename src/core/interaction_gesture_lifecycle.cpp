@@ -56,7 +56,7 @@ auto update_note_duration_gesture(editor_edit_context_t& context, local_position
     if (pending.document_revision != context.history.document.revision)
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
-                                        "duration gesture is stale after a document edit")});
+                                        stale_action_message("Editor gesture"))});
     const auto* reference = context.scope.chart.find_note(pending.reference_note);
     if (!reference)
         return diagnostic_result(
@@ -277,7 +277,7 @@ auto update_note_move_gesture(editor_edit_context_t& context, local_position_t r
         state.pending_note_move_gesture.reset();
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
-                                        "note move gesture is stale after a document edit")});
+                                        stale_action_message("Editor gesture"))});
     }
     auto planned = make_move_plan(context, pending.notes, pending.reference_note,
                                   requested_position, to_bgm ? lane_id_t{} : requested_lane, false,
@@ -446,7 +446,7 @@ auto append_note_paint_target(editor_edit_context_t& context, lane_id_t lane,
         cancel_stale_explicit_paint(state);
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
-                                        "note paint gesture is stale after a document edit")});
+                                        stale_action_message("Editor gesture"))});
     }
     const auto target = snapped_position(context.scope.chart, context.scope.measures, position,
                                          edit_snap_denominator(context.scope.chart, state));
@@ -744,7 +744,7 @@ auto end_note_paint_gesture(editor_edit_context_t& context, lane_id_t lane,
     if (pending.document_revision != context.history.document.revision) {
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
-                                        "note paint gesture is stale after a document edit")});
+                                        stale_action_message("Editor gesture"))});
     }
     auto planned = plan_note_paint(context.scope.chart, context.scope.measures, *pending.targets,
                                    pending.kind, pending.intent);
@@ -863,7 +863,7 @@ auto update_hold_gesture(editor_edit_context_t& context, hold_gesture_source_t s
     if (pending.document_revision != context.history.document.revision)
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
-                                        "pending hold gesture is stale after a document edit")});
+                                        stale_action_message("Editor gesture"))});
     const auto target = snapped_position(context.scope.chart, context.scope.measures, position,
                                          edit_snap_denominator(context.scope.chart, state));
     state.pending_hold->gesture_source.reset();

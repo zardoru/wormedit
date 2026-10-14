@@ -1,3 +1,4 @@
+#include "../support/stale_action_assertions.h"
 #include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/editor_scene.h>
@@ -1970,6 +1971,7 @@ TEST_CASE("Space range selection supports add and toggle and cancels safely",
         history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace});
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
+    test::check_stale_action_message(stale.diagnostics, "Editor gesture");
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
     CHECK_FALSE(state.pending_space_range_selection.has_value());
     REQUIRE(dispatch_editor_action(
@@ -2141,6 +2143,7 @@ TEST_CASE("area selection capture loss cancels and stale revisions preserve comm
                                               .phase = wormedit::editor_gesture_phase_t::commit});
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
+    test::check_stale_action_message(stale.diagnostics, "Editor gesture");
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
     CHECK_FALSE(state.pending_editor_area_selection.has_value());
     REQUIRE(dispatch_editor_action(history, state, cancel_editor_area_selection_action_t{}));
@@ -2575,6 +2578,7 @@ TEST_CASE("paint gestures cancel on capture loss and leave previews intact on ca
         end_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 240}, true});
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
+    test::check_stale_action_message(stale.diagnostics, "Editor gesture");
     CHECK(history.document.revision == 2);
     CHECK(note_count(history) == 0);
     CHECK(history.undo.size() == 1);
@@ -2793,6 +2797,7 @@ TEST_CASE("exact cursor jumps reject stale and out-of-chart targets without chan
         history, state, jump_edit_cursor_action_t{{measure_id_t{1}, 120}, queried_revision});
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_id));
+    test::check_stale_action_message(stale.diagnostics, "Cursor jump");
     CHECK(state.cursor == original.cursor);
     CHECK(state.active_lane == original.active_lane);
 
@@ -3621,6 +3626,7 @@ TEST_CASE("hold input gestures retire stale previews and can cancel after focus 
         history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
+    test::check_stale_action_message(stale.diagnostics, "Editor gesture");
     CHECK_FALSE(state.pending_hold.has_value());
     CHECK(note_count(history) == 0);
 
@@ -3735,6 +3741,7 @@ TEST_CASE("duration gestures reject collisions and stale revisions without parti
         history, state, update_note_duration_gesture_action_t{{measure_id_t{1}, 480}});
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
+    test::check_stale_action_message(stale.diagnostics, "Editor gesture");
     CHECK(find_note(history, object_id_t{101})->end == local_position_t{measure_id_t{1}, 240});
     CHECK_FALSE(state.pending_note_duration_gesture.has_value());
     REQUIRE(dispatch_editor_action(
@@ -3815,6 +3822,7 @@ TEST_CASE("note move gestures reject collisions and stale revisions without part
         history, state, update_note_move_gesture_action_t{{measure_id_t{1}, 480}});
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
+    test::check_stale_action_message(stale.diagnostics, "Editor gesture");
     CHECK_FALSE(state.pending_note_move_gesture.has_value());
     REQUIRE(dispatch_editor_action(
         history, state,
@@ -4010,6 +4018,7 @@ TEST_CASE("hold previews reject stale document revisions and retire captures",
         dispatch_editor_action(history, state, commit_hold_action_t{{measure_id_t{1}, 720}});
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
+    test::check_stale_action_message(stale.diagnostics, "Editor gesture");
     CHECK_FALSE(state.pending_hold.has_value());
     CHECK(note_count(history) == 0);
 

@@ -169,8 +169,9 @@ auto navigate_to_bookmark(document_history_t& history, editor_interaction_state_
                           application_command_state_t& application,
                           std::uint64_t expected_revision, chart_id_t chart_id,
                           object_id_t bookmark_id) -> bookmark_command_outcome_t {
-    if (history.document.revision != expected_revision || state.chart != chart_id)
-        return fail("Bookmark chooser entry is stale.");
+    if (!chart_stamp_t{.document = {.project = history.document.id, .revision = expected_revision},
+                       .chart = chart_id}.is_current(history.document, state.chart))
+        return fail(stale_action_message("Bookmark chooser"));
     // A chooser jump is a seek of its own: it ends any repeat sequence in progress.
     application.invalidate_playing_seek_records();
     const auto* chart = find_chart(history.document, chart_id);

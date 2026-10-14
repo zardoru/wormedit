@@ -1,4 +1,6 @@
+#include "../support/stale_action_assertions.h"
 #include "sys/compose_bookmark_commands.h"
+#include "sys/compose_navigation.h"
 #include "sys/application_commands.h"
 #include "sys/compose_playhead_skip.h"
 #include "sys/compose_playhead_cursor.h"
@@ -61,6 +63,13 @@ struct fixture_t {
         state = std::move(*setup.state);
     }
 };
+
+void check_stale_compose_navigation(fixture_t& fixture) {
+    const auto navigation = navigate_compose_position(fixture.history, fixture.state,
+        fixture.application, {.position = fixture.state.cursor}, fixture.history.document.revision + 1);
+    wormedit::test::check_stale_action_message(navigation.status, "Compose navigation");
+    CHECK_FALSE(navigation.accepted);
+}
 
 } // namespace
 
@@ -199,9 +208,11 @@ TEST_CASE("bookmark chooser selection jumps to a stable beat ID and rejects stal
     CHECK((fixture.state.cursor == local_position_t{measure_id_t{4}, 480}));
 
     const auto cursor = fixture.state.cursor;
+    check_stale_compose_navigation(fixture);
     const auto stale = navigate_to_bookmark(fixture.history, fixture.state,
         fixture.application, fixture.history.document.revision + 1, chart_id_t{2}, object_id_t{30});
     CHECK_FALSE(stale.accepted);
+    wormedit::test::check_stale_action_message(stale.status, "Bookmark chooser");
     CHECK(fixture.state.cursor == cursor);
     const auto missing = navigate_to_bookmark(fixture.history, fixture.state,
         fixture.application, fixture.history.document.revision, chart_id_t{2}, object_id_t{999});

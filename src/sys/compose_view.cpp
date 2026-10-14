@@ -192,16 +192,26 @@ auto paste_geometry(const wormedit::chart_document_t& source,
 
 auto update_compose_paste(application_command_state_t& application_state,
     const wormedit::song_document_t& document, wormedit::chart_id_t chart,
-    wormedit::local_position_t anchor) -> bool {
+    wormedit::local_position_t anchor, std::string* failure) -> bool {
     auto& session = application_state.project.clipboard.paste_session;
-    if (!session) return false;
-    if (session->proposal.chart != chart || session->proposal.revision != document.revision) {
+    if (!session) {
+        if (failure) *failure = "The paste preview is stale.";
+        return false;
+    }
+    if (!wormedit::chart_stamp_t{
+            .document = {.project = document.id, .revision = session->proposal.revision},
+            .chart = session->proposal.chart}.is_current(document, chart)) {
+        if (failure) *failure = wormedit::stale_action_message("Paste preview");
         session.reset();
         return false;
     }
     if (session->anchor == anchor && session->index) return true;
     const auto source = std::ranges::find(document.charts, chart, &wormedit::chart_document_t::id);
-    if (source == document.charts.end()) { session.reset(); return false; }
+    if (source == document.charts.end()) {
+        if (failure) *failure = "The paste preview is stale.";
+        session.reset();
+        return false;
+    }
     session->anchor = anchor;
     session->anchor_available = true;
     session->proposal = wormedit::propose_chart_paste(document, chart, session->clipboard,
@@ -240,10 +250,8 @@ auto commit_compose_paste(application_command_state_t& application_state,
     if (severity) *severity = wormedit::notification_severity_t::warning;
     const auto anchor = application_state.project.clipboard.paste_session
         ? paste_anchor(*application_state.project.clipboard.paste_session, state.cursor) : state.cursor;
-    if (!update_compose_paste(application_state, history.document, state.chart, anchor)) {
-        status = "The paste preview is stale.";
+    if (!update_compose_paste(application_state, history.document, state.chart, anchor, &status))
         return false;
-    }
     auto& session = *application_state.project.clipboard.paste_session;
     if (!session.anchor_available) { status = session.anchor_error; return false; }
     if (!session.proposal.valid) { status = session.proposal.error; return false; }

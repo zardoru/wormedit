@@ -113,8 +113,9 @@ auto seek_compose_navigation_position(const chart_document_t& chart,
 auto navigate_compose_position(document_history_t& history, editor_interaction_state_t& state,
     application_command_state_t& application, const compose_navigation_target_t& target,
     std::uint64_t expected_revision) -> bookmark_command_outcome_t {
-    if (expected_revision != history.document.revision)
-        return {.status = "The navigation request is stale."};
+    if (!document_stamp_t{.project = history.document.id, .revision = expected_revision}
+             .is_current(history.document))
+        return {.status = stale_action_message("Compose navigation")};
     if (has_pending_editor_gesture(state))
         return {.status = "Finish or cancel the active Compose gesture before navigating."};
     const auto* chart = navigation_chart(history, state.chart);

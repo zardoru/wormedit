@@ -208,10 +208,12 @@ auto keep_cursor_visible(const chart_document_t& chart, const measure_index_t& i
 auto jump_edit_cursor(cursor_navigation_context_t& context,
                       const jump_edit_cursor_action_t& action) -> editor_interaction_result_t {
     auto& state = context.edit.state;
-    if (action.expected_document_revision != context.edit.history.document.revision)
+    if (!document_stamp_t{.project = context.edit.history.document.id,
+                          .revision = action.expected_document_revision}
+             .is_current(context.edit.history.document))
         return cursor_diagnostic_result(context.edit.history, state,
             {error(diagnostic_code_t::invalid_id,
-                   "cursor jump refers to a stale document revision")});
+                   stale_action_message("Cursor jump"))});
     if (!absolute_row(context.edit.scope.measures, action.position))
         return cursor_diagnostic_result(context.edit.history, state,
             {error(diagnostic_code_t::row_out_of_range,

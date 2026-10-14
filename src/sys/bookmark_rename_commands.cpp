@@ -35,8 +35,9 @@ auto find_bookmark(document_history_t& history, chart_id_t chart_id, object_id_t
 auto rename_bookmark(document_history_t& history, std::uint64_t expected_revision,
                      chart_id_t chart_id, object_id_t bookmark_id, std::string_view label)
     -> bookmark_rename_outcome_t {
-    if (history.document.revision != expected_revision)
-        return reject("The chart changed before the bookmark rename was applied.");
+    if (!document_stamp_t{.project = history.document.id, .revision = expected_revision}
+             .is_current(history.document))
+        return reject(stale_action_message("Bookmark rename"));
     if (!chart_id || !bookmark_id) return reject("Choose a bookmark to rename.");
     const auto* bookmark = find_bookmark(history, chart_id, bookmark_id);
     if (!bookmark) return reject("That bookmark is no longer available.");

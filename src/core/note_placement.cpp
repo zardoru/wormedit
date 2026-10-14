@@ -723,7 +723,7 @@ auto append_semantic_paint_note(editor_edit_context_t& context, object_id_t note
         return diagnostic_result(
             history, state,
             {error(diagnostic_code_t::invalid_hold,
-                   "semantic-layer paint gesture is stale after a document edit")});
+                   stale_action_message("Editor gesture"))});
     if (!context.scope.chart.find_note(note_id))
         return diagnostic_result(
             history, state,
@@ -762,7 +762,7 @@ auto append_semantic_paint_bgm_event(editor_edit_context_t& context, object_id_t
         return diagnostic_result(
             history, state,
             {error(diagnostic_code_t::invalid_hold,
-                   "semantic-layer paint gesture is stale after a document edit")});
+                   stale_action_message("Editor gesture"))});
     if (!context.scope.chart.find_bgm_event(event_id))
         return diagnostic_result(
             history, state,

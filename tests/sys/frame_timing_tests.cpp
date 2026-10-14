@@ -1,3 +1,4 @@
+#include "../support/stale_action_assertions.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "sys/application_command_dispatch.h"
 #include "sys/application_defaults.h"
@@ -2245,6 +2246,7 @@ TEST_CASE("Paste collision remains visible and stale previews cannot publish",
     ++fixture.history.document.revision;
     expect_compose_test(!static_cast<bool>(commit_compose_paste(fixture.application, fixture.history,
                                      *fixture.interaction, status)));
+    wormedit::test::check_stale_action_message(status, "Paste preview");
     expect_compose_test(!static_cast<bool>(fixture.application.project.clipboard.paste_session));
     expect_compose_test(static_cast<bool>(fixture.history.undo.empty()));
 }

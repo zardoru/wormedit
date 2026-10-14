@@ -1856,7 +1856,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         clear_editor_gestures(state);
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_hold,
-                                        "Editor gesture is stale after a document edit.")});
+                                        stale_action_message("Editor gesture"))});
     }
     auto result = dispatch_editor_action_impl(history, state, action);
     if (!result && is_terminal_editor_gesture_action(state, action)) {

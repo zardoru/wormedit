@@ -2353,6 +2353,22 @@ auto kiai_areas(compose_test_fixture_t& fixture) -> std::vector<kiai_span_t> {
     return kiai_spans_of(chart, std::get<measure_index_t>(built));
 }
 }
+TEST_CASE("Captured BMSON draft edits and auditions reject stale revisions independently of outer input",
+          "[sys][bmson-draft-stamp]") {
+    const auto request = GENERATE(
+        std::pair{WORM_UI_COMPOSE_INPUT_BMSON_REMOVE_DRAFT, std::string_view{"BMSON region edit"}},
+        std::pair{WORM_UI_COMPOSE_INPUT_BMSON_AUDITION_DRAFT, std::string_view{"BMSON region audition"}});
+    compose_test_fixture_t fixture{kiai_test_song()};
+    fixture.project();
+    fixture.application.project.compose_gesture.bmson_marker_draft = application_command_state_t::bmson_marker_draft_t{
+        .chart = fixture.interaction->chart, .revision = fixture.history.document.revision + 1,
+        .reference = object_id_t{42}, .markers = {bmson_sound_marker_insertion_t{}}};
+    auto action = kiai_input(fixture, request.first, 1);
+    test::check_stale_action_message(dispatch_paste_action(fixture, action), request.second);
+    expect_compose_test(fixture.history.undo.empty());
+    expect_compose_test(fixture.application.project.compose_gesture.bmson_marker_draft.has_value());
+}
+
 TEST_CASE("Compose inner timing stamps reject stale selection and move requests",
           "[sys][timing-input-stamp]") {
     const auto request = GENERATE(

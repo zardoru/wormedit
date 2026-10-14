@@ -523,9 +523,12 @@ auto dispatch_bmson_compose_input(const WormUiWorkspaceAction& ui_action,
     }
     case WORM_UI_COMPOSE_INPUT_BMSON_AUDITION_DRAFT: {
         const auto& draft = application_state.project.compose_gesture.bmson_marker_draft;
-        if (!draft || draft->chart != state.chart || draft->revision != history.document.revision ||
-            input.object_id == 0 || input.object_id > draft->markers.size())
+        if (!draft || input.object_id == 0 || input.object_id > draft->markers.size())
             return "The BMSON region audition request expired.";
+        if (!wormedit::chart_stamp_t{
+                .document = {.project = history.document.id, .revision = draft->revision},
+                .chart = draft->chart}.is_current(history.document, state.chart))
+            return wormedit::stale_action_message("BMSON region audition");
         scene_cache.frame.draft_audition_request = bmson_draft_audition_request_t{
             draft->chart, draft->revision, draft->reference, draft->markers,
             static_cast<std::size_t>(input.object_id - 1)};

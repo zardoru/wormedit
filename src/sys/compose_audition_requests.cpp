@@ -93,7 +93,7 @@ void process_object_request(const editor_object_audition_request_t& request,
             notification_source_t::audio, prepared.diagnostics.front().message);
     } else if (prepared.status == audio::object_audition_status_t::stale_document) {
         inputs.notifications.post(notification_severity_t::warning, notification_source_t::audio,
-                                  "Audio preview request expired after the document changed.");
+                                  stale_action_message("Audio preview request"));
     } else {
         inputs.notifications.post(notification_severity_t::error, notification_source_t::audio,
                                   "Audio preview could not be prepared.");

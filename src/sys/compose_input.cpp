@@ -508,9 +508,11 @@ auto edit_bmson_draft_marker(const WormUiComposeInputAction& input,
     if (gesture_active)
         return "Finish or cancel the active Compose gesture before editing a staged BMSON region.";
     auto& draft = application_state.project.compose_gesture.bmson_marker_draft;
-    if (!draft || draft->chart != state.chart || draft->revision != history.document.revision ||
-        input.object_id == 0 || input.object_id > draft->markers.size())
+    if (!draft || input.object_id == 0 || input.object_id > draft->markers.size())
         return "The staged BMSON region edit expired.";
+    if (!chart_stamp_t{.document = {.project = history.document.id, .revision = draft->revision},
+                       .chart = draft->chart}.is_current(history.document, state.chart))
+        return stale_action_message("BMSON region edit");
     auto proposed = draft->markers;
     const auto index = static_cast<std::size_t>(input.object_id - 1);
     if (input.kind == WORM_UI_COMPOSE_INPUT_BMSON_REMOVE_DRAFT) {

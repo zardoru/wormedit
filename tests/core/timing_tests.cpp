@@ -1,3 +1,5 @@
+#include "../support/stale_action_assertions.h"
+#include <catch2/generators/catch_generators.hpp>
 #include <wormedit/core/rational.h>
 #include <wormedit/core/timing.h>
 
@@ -957,6 +959,21 @@ TEST_CASE("preview queue seek is binary-searchable and advancement is allocation
         advance_preview_queue(std::span<const preview_audio_event_t>{events}, head, 40);
     REQUIRE(second.size() == 1);
     CHECK(second[0].sample_frame == 30);
+}
+
+TEST_CASE("Preview schedules reject stale geometry and source fingerprints distinctly from capacities",
+          "[unit][core][timing][stale-preview]") {
+    const auto geometry_changed = GENERATE(false, true);
+    const auto chart = base_chart();
+    const auto built = build_timing_index(chart);
+    REQUIRE(built.index.has_value());
+    auto timing = *built.index;
+    if (geometry_changed) ++timing.total_rows;
+    else ++timing.source_fingerprint;
+    const auto result = build_preview_schedule(chart, timing, {.include_metronome = false});
+    REQUIRE_FALSE(result);
+    REQUIRE_FALSE(result.diagnostics.empty());
+    test::check_stale_action_message(result.diagnostics.front().message, "Preview timing index");
 }
 
 TEST_CASE("timing and preview capacities reject atomically", "[unit][core][timing][bounds]") {

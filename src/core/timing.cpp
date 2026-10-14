@@ -1,6 +1,7 @@
 #include <wormedit/core/rational.h>
 #include "../core/checked_math.h"
 #include <wormedit/core/timing.h>
+#include <wormedit/core/command.h>
 
 #include "timing_arithmetic.h"
 #include "wide_math.h"
@@ -2988,12 +2989,12 @@ auto build_preview_schedule(const chart_document_t& chart, const timing_index_t&
     const auto& measures = std::get<measure_index_t>(built_measures);
     if (measures.total_rows != timing.total_rows) {
         result.diagnostics.push_back(error(timing_error_code_t::invalid_document,
-                                           "preview timing index is stale for this chart"));
+                                           stale_action_message("Preview timing index")));
         return result;
     }
     if (timing.source_fingerprint != timing_fingerprint(chart)) {
         result.diagnostics.push_back(error(timing_error_code_t::invalid_document,
-                                           "preview timing index is stale for this chart"));
+                                           stale_action_message("Preview timing index")));
         return result;
     }
     preview_schedule_t schedule{.sample_rate = options.sample_rate,

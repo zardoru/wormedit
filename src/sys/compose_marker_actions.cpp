@@ -458,9 +458,6 @@ std::string transform_selected_notes(compose_action_context_t& context,
     if (editor_interaction_has_pending_gesture(context.state))
         return compose_action_warning(
             context, "Finish or cancel the active Compose gesture before transforming notes.");
-    if (context.environment.document.history.document.revision !=
-        context.action.compose_input_document_revision)
-        return compose_action_warning(context, wormedit::stale_action_message("Transform"));
     auto severity = notification_severity_t::warning;
     auto status = apply_selection_transform(context.environment.document.history, context.state,
                                             transform, &severity);
@@ -481,9 +478,8 @@ std::string transform_selected_notes(compose_action_context_t& context,
 std::string edit_cursor_measure(compose_action_context_t& context,
                                 cursor_measure_command_t command) {
     if (const auto error = compose_measure_edit_rejection(
-            context.environment.document.history, context.state,
-            context.environment.editor.commands.project.clipboard.paste_session.has_value(),
-            context.action.compose_input_document_revision))
+            context.state,
+            context.environment.editor.commands.project.clipboard.paste_session.has_value()))
         return compose_action_warning(context, *error);
     auto severity = notification_severity_t::warning;
     auto status = apply_cursor_measure_command(context.environment.document.history, context.state,
@@ -503,9 +499,6 @@ std::string edit_cursor_measure(compose_action_context_t& context,
 }
 
 auto recipe_form_target(compose_action_context_t& context) -> std::optional<recipe_form_target_t> {
-    if (context.environment.document.history.document.revision !=
-        context.action.compose_input_document_revision)
-        return std::nullopt;
     const auto chart = std::ranges::find(context.environment.document.history.document.charts,
                                          context.state.chart, &chart_document_t::id);
     if (chart == context.environment.document.history.document.charts.end() ||
@@ -609,9 +602,7 @@ std::string move_bar_line(compose_action_context_t& context) {
     if (editor_interaction_has_pending_gesture(context.state))
         return compose_action_warning(
             context, "Finish or cancel the active Compose gesture before editing measures.");
-    if (context.environment.document.history.document.revision !=
-            context.action.compose_input_document_revision ||
-        context.action.compose_measure_id_count != 1 || !context.action.compose_measure_ids)
+    if (context.action.compose_measure_id_count != 1 || !context.action.compose_measure_ids)
         return compose_action_warning(context,
                                       "Bar line move ignored because the document changed.");
     auto severity = notification_severity_t::warning;

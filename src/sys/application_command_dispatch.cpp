@@ -250,9 +250,7 @@ auto measure_command(command_context_t& context) -> std::optional<command_result
                                           notification_severity_t::warning,
                                           notification_source_t::edit);
     if (const auto error = compose_measure_edit_rejection(
-            context.environment.document.history, *state,
-            context.environment.editor.commands.project.clipboard.paste_session.has_value(),
-            context.environment.document.history.document.revision))
+            *state, context.environment.editor.commands.project.clipboard.paste_session.has_value()))
         return reject_application_command(context.environment.document.notifications, *error,
                                           notification_severity_t::warning,
                                           notification_source_t::edit);

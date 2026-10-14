@@ -244,9 +244,10 @@ std::string convert_compose_area_to_pause(area_action_context_t& context) {
                        kind == WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_DELAY_RESIZE;
     const bool resize = kind == WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP_RESIZE ||
                         kind == WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_DELAY_RESIZE;
-    const auto result = apply_measure_edit(context.history, context.history.document.revision,
-        convert_range_to_pause_action_t{context.state.chart, *context.state.retained_selection_range,
-                                        delay ? pause_kind_t::delay : pause_kind_t::stop, resize});
+    const auto result = apply_measure_edit(
+        context.history, convert_range_to_pause_action_t{
+                             context.state.chart, *context.state.retained_selection_range,
+                             delay ? pause_kind_t::delay : pause_kind_t::stop, resize});
     if (!result.applied)
         return result.diagnostics.empty() ? area_rejection(context, "Area conversion rejected.")
             : area_diagnostic(context, result.diagnostics.front());

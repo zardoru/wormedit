@@ -46,8 +46,8 @@ auto materialize_initial_profile_target(document_history_t& scratch, chart_id_t 
     if (found->measures.empty()) {
         if (!has_chart_virtual_tail(*found) || virtual_tail_measure_limit(*found) == 0)
             return std::nullopt;
-        const auto materialized = apply_measure_edit(
-            scratch, scratch.document.revision, materialize_measures_action_t{chart, 1});
+        const auto materialized =
+            apply_measure_edit(scratch, materialize_measures_action_t{chart, 1});
         if (!materialized.applied) return std::nullopt;
         found = scratch.document.find_chart(chart);
         return local_position_t{found->measures.front().id, 0};

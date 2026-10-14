@@ -292,11 +292,18 @@ TEST_CASE("Compose NONE remains quiet even with an absent chart", "[compose-acti
     check_action(fixture.history.undo.empty());
 }
 
-TEST_CASE("Meter edits reject a stale boundary before reaching synchronous handlers",
+TEST_CASE("Compose edits reject a stale boundary before reaching synchronous handlers",
           "[compose-action-notifications]") {
     action_notification_fixture_t fixture;
     const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER,
-                               WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER);
+                               WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER,
+                               WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS,
+                               WORM_UI_COMPOSE_ACTION_MOVE_BAR_LINE,
+                               WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE,
+                               WORM_UI_COMPOSE_ACTION_TRANSFORM_MIRROR,
+                               WORM_UI_COMPOSE_ACTION_PREVIEW_SV_RECIPE_FORM,
+                               WORM_UI_COMPOSE_ACTION_APPLY_SV_RECIPE_FORM,
+                               WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP);
     auto action = fixture.action(kind);
     std::snprintf(action.timing_meter_numerator_text, sizeof(action.timing_meter_numerator_text), "3");
     std::snprintf(action.timing_meter_denominator_text, sizeof(action.timing_meter_denominator_text), "4");

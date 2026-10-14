@@ -153,9 +153,7 @@ auto dispatch_compose_bookmark_action(compose_action_context_t& context) -> std:
     const auto& action = context.action;
     const bool rename = action.compose_action == WORM_UI_COMPOSE_ACTION_RENAME_BOOKMARK;
     if (!rename && action.compose_action != WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK) return std::nullopt;
-    if (action.compose_input_project_id != context.environment.document.history.document.id.value ||
-        action.compose_input_chart_id != context.state.chart.value ||
-        action.compose_input_document_revision != context.environment.document.history.document.revision)
+    if (action.compose_input_project_id != context.environment.document.history.document.id.value)
         return compose_action_warning(context,
                                       wormedit::stale_action_message("Bookmark action"));
     if (editor_interaction_has_pending_gesture(context.state))
@@ -336,7 +334,7 @@ std::optional<std::string> materialize_layout_measure(compose_action_context_t& 
                                                       bool& materialized) {
     if (context.action.compose_measure_number <= chart->measures.size()) return std::nullopt;
     const auto created = wormedit::apply_measure_edit(
-        context.environment.document.history, context.action.compose_input_document_revision,
+        context.environment.document.history,
         wormedit::materialize_measures_action_t{
             chart->id, static_cast<std::size_t>(context.action.compose_measure_number)});
     if (!created.applied)
@@ -355,9 +353,6 @@ std::optional<std::string> dispatch_compose_lane_layout_profile(compose_action_c
     if (editor_interaction_has_pending_gesture(context.state))
         return compose_action_warning(context,
             "Finish or cancel the active Compose gesture before editing a lane layout.");
-    if (context.environment.document.history.document.revision !=
-        context.action.compose_input_document_revision)
-        return compose_action_warning(context, wormedit::stale_action_message("Lane layout change"));
     const auto* chart =
         selected_chart(context.environment.document.history, context.environment.document.workspace);
     if (!chart || chart->id.value != context.action.compose_input_chart_id ||

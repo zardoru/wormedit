@@ -30,34 +30,40 @@ auto compose_action_outcome_t::from(std::string message, notification_severity_t
     return outcome;
 }
 
-auto compose_action_outcome_t::from(const diagnostic_t& diagnostic, notification_source_t source,
-                                    notification_severity_t unknown_severity)
-    -> compose_action_outcome_t {
-    return from(diagnostic.message,
-                wormedit::to_notification_severity(diagnostic.severity, unknown_severity), source,
-                false, false);
-}
-
 auto compose_action_outcome_t::from(document_command_result_t&& command,
                                     const compose_action_description_t& description)
     -> compose_action_outcome_t {
-    auto outcome = from(
-        {}, command.applied ? notification_severity_t::success : description.unchanged_severity,
-        description.source, command.applied,
-        command.applied || (description.is_unchanged_accepted && command.diagnostics.empty()));
+    const auto is_success = command.applied;
+    return from(std::move(command), is_success, description);
+}
+
+void compose_action_outcome_t::apply_description(compose_action_outcome_t& outcome,
+                                                 const compose_action_description_t& description) {
+    outcome.source = !outcome.accepted && description.rejected_source ? *description.rejected_source
+                                                                      : description.source;
     outcome.rebind_failure = description.rebind_failure;
     outcome.rebind_failure_policy = description.rebind_failure_policy;
     outcome.rebind_feedback_policy = description.rebind_feedback_policy;
     outcome.unknown_severity = description.unknown_severity;
+}
+
+auto compose_action_outcome_t::from(document_command_result_t&& command, bool is_success,
+                                    const compose_action_description_t& description)
+    -> compose_action_outcome_t {
+    auto outcome =
+        from({}, is_success ? notification_severity_t::success : description.unchanged_severity,
+             description.source, command.applied,
+             is_success || (description.is_unchanged_accepted && command.diagnostics.empty()));
+    apply_description(outcome, description);
     outcome.diagnostics = std::move(command.diagnostics);
     if (!outcome.diagnostics.empty() &&
         (description.diagnostic_policy == compose_diagnostic_feedback_policy_t::first ||
-         !command.applied)) {
+         !is_success)) {
         outcome.message = outcome.diagnostics.front().message;
         outcome.severity = to_notification_severity(outcome.diagnostics.front().severity,
                                                     description.unknown_severity);
     } else {
-        outcome.message = command.applied ? description.success : description.unchanged;
+        outcome.message = is_success ? description.success : description.unchanged;
     }
     return outcome;
 }
@@ -201,11 +207,27 @@ auto compose_action_context_t::require_no_gesture(std::string_view message) cons
     return std::nullopt;
 }
 
+void retain_bms_statement_feedback(application_command_state_t& application,
+                                   std::optional<wormedit::chart_id_t> chart,
+                                   std::uint64_t revision, const std::string& message) {
+    if (chart) {
+        application.project.feedback.bms_branch_statement_feedback =
+            application_command_state_t::bms_branch_statement_feedback_t{*chart, revision, message};
+    } else {
+        application.project.feedback.bms_branch_statement_feedback.reset();
+    }
+}
+
 auto finish_compose_action(compose_action_context_t& context, compose_action_outcome_t outcome)
     -> std::string {
     auto finished =
         finish_compose_outcome(context.environment.document, context.notifications,
                                std::move(outcome), &context.environment.editor.commands);
+    if (finished.has_bms_statement_feedback)
+        retain_bms_statement_feedback(context.environment.editor.commands,
+                                      context.environment.document.workspace.selected_chart,
+                                      context.environment.document.history.document.revision,
+                                      finished.message);
     return std::move(finished.message);
 }
 } // namespace compose_action_detail

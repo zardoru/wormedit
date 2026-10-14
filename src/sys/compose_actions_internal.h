@@ -428,53 +428,20 @@ auto toggle_layer_assist_tick(compose_action_context_t& context) -> compose_acti
 std::optional<compose_action_outcome_t>
 dispatch_compose_semantic_layer_state_action(compose_action_context_t& context);
 
-std::string dispatch_bms_branch_choice_action(
-    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
-    wormedit::workspace_controller_t& workspace,
-    const std::optional<wormedit::editor_interaction_state_t>& interaction_state,
-    notification_sink_t notifications);
+auto dispatch_bms_branch_choice_action(compose_action_context_t& context)
+    -> compose_action_outcome_t;
 
 struct bms_statement_target_t {
     const wormedit::bms_control_node_t* statement{};
     const wormedit::bms_control_node_t* leaf{};
 };
 
-auto bms_statement_leaf(wormedit::bms_control_kind_t kind) -> bool;
-
-template <typename diagnostic_t_>
-auto publish_bms_diagnostic(notification_sink_t notifications, const diagnostic_t_& diagnostic,
-                            notification_source_t source = notification_source_t::format)
-    -> std::string {
-    notifications.post(to_notification_severity(diagnostic.severity), source, diagnostic.message);
-    return diagnostic.message;
-}
-
-template <typename result_t_>
-auto publish_bms_statement_diagnostic(notification_sink_t notifications, const result_t_& result)
-    -> std::string {
-    if (!result.command.diagnostics.empty())
-        return publish_bms_diagnostic(notifications, result.command.diagnostics.front());
-    if (!result.payload.format_diagnostics.empty())
-        return publish_bms_diagnostic(notifications, result.payload.format_diagnostics.front());
-    const std::string message{
-        "BMS branch statement edit was rejected without changing the document."};
-    notifications.post(notification_severity_t::warning, notification_source_t::format, message);
-    return message;
-}
-
 void find_bms_statement_target(const wormedit::bms_control_node_t& node, std::uint64_t id,
                                const wormedit::bms_control_node_t* enclosing_leaf,
                                bms_statement_target_t& result);
 
-void retain_bms_statement_feedback(application_command_state_t& application,
-                                   std::optional<wormedit::chart_id_t> chart,
-                                   std::uint64_t revision, const std::string& message);
-
-std::string dispatch_bms_branch_statement_action(
-    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
-    wormedit::workspace_controller_t& workspace,
-    const std::optional<wormedit::editor_interaction_state_t>& interaction_state,
-    notification_sink_t notifications);
+auto dispatch_bms_branch_statement_action(compose_action_context_t& context)
+    -> compose_action_outcome_t;
 
 struct bms_leaf_target_t {
     const wormedit::bms_control_node_t* block{};
@@ -487,22 +454,16 @@ void find_bms_leaf_target(const wormedit::bms_control_node_t& node, std::uint64_
 auto find_bms_control_node(const wormedit::bms_control_node_t& node, std::uint64_t id)
     -> const wormedit::bms_control_node_t*;
 
-struct bms_block_outcome_t {
-    wormedit::document_command_result_t result;
-    std::string message; // success text, or the reason nothing was attempted
-    bool attempted{true};
-};
-
 auto run_bms_block_command(const WormUiWorkspaceAction& action,
                            wormedit::document_history_t& history,
                            const wormedit::chart_document_t& chart, wormedit::chart_id_t chart_id)
-    -> bms_block_outcome_t;
+    -> compose_action_outcome_t;
 
-std::string dispatch_bms_branch_block_action(
-    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
-    wormedit::workspace_controller_t& workspace,
-    const std::optional<wormedit::editor_interaction_state_t>& interaction_state,
-    notification_sink_t notifications);
+auto dispatch_bms_branch_block_action(compose_action_context_t& context)
+    -> compose_action_outcome_t;
+
+auto dispatch_compose_bms_action(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t>;
 
 auto quantize_settings_valid(const wormedit::quantize_request_t& request) -> bool;
 

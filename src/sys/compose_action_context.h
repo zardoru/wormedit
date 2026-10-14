@@ -18,6 +18,10 @@ struct compose_action_context_t {
         -> std::optional<compose_action_outcome_t>;
 };
 
+void retain_bms_statement_feedback(application_command_state_t& application,
+                                   std::optional<chart_id_t> chart, std::uint64_t revision,
+                                   const std::string& message);
+
 auto finish_compose_action(compose_action_context_t& context, compose_action_outcome_t outcome)
     -> std::string;
 

@@ -252,6 +252,7 @@ auto inspect_imported_resource(const std::filesystem::path& path, wormedit::reso
 std::optional<compose_action_outcome_t>
 commit_primary_music(compose_action_context_t& context, const std::filesystem::path& path,
                      const imported_resource_metadata_t& metadata) {
+    constexpr std::string_view rebind_failure = "Song audio set, but workspace rebinding failed.";
     using namespace wormedit;
     const auto chart = std::ranges::find(context.environment.document.history.document.charts,
                                          context.state.chart, &chart_document_t::id);
@@ -267,9 +268,10 @@ commit_primary_music(compose_action_context_t& context, const std::filesystem::p
              chart->source_family == format_family_t::bms,
          .audio_stream = metadata.audio});
     if (!applied.diagnostics.empty())
-        return compose_action_outcome_t::from(std::move(applied.diagnostics),
-                                              notification_source_t::import_,
-                                              compose_feedback_delivery_t::message);
+        return compose_action_outcome_t::from(
+            std::move(applied),
+            compose_action_description_t{.rebind_failure = rebind_failure,
+                                         .source = notification_source_t::import_});
     if (!applied.applied)
         return compose_action_outcome_t::from("That file is already the song audio.",
                                               notification_severity_t::info,
@@ -283,7 +285,7 @@ commit_primary_music(compose_action_context_t& context, const std::filesystem::p
     auto outcome = compose_action_outcome_t::from(
         "Song audio set to " + path.filename().string() + ".", notification_severity_t::success,
         notification_source_t::import_, applied.applied);
-    outcome.rebind_failure = "Song audio set, but workspace rebinding failed.";
+    outcome.rebind_failure = rebind_failure;
     if (music != context.environment.document.history.document.resources.end())
         outcome.asset_selection = workspace_select_asset_action_t{
             .asset = music->asset, .slot = workspace_asset_slot_t::audio};
@@ -294,6 +296,8 @@ commit_primary_music(compose_action_context_t& context, const std::filesystem::p
 std::optional<compose_action_outcome_t>
 commit_resource_import(compose_action_context_t& context, wormedit::resource_role_t role,
                        const std::filesystem::path& path, imported_resource_metadata_t metadata) {
+    constexpr std::string_view rebind_failure =
+        "Resource imported, but workspace rebinding failed.";
     using namespace wormedit;
     if (role == resource_role_t::music)
         return commit_primary_music(context, path, metadata);
@@ -313,9 +317,10 @@ commit_resource_import(compose_action_context_t& context, wormedit::resource_rol
          .audio_stream = metadata.audio,
          .image_geometry = metadata.image});
     if (!applied.diagnostics.empty())
-        return compose_action_outcome_t::from(std::move(applied.diagnostics),
-                                              notification_source_t::import_,
-                                              compose_feedback_delivery_t::message);
+        return compose_action_outcome_t::from(
+            std::move(applied),
+            compose_action_description_t{.rebind_failure = rebind_failure,
+                                         .source = notification_source_t::import_});
     if (!applied.applied)
         return compose_action_outcome_t::from("Resource import made no document change.",
                                               notification_severity_t::info,
@@ -325,7 +330,7 @@ commit_resource_import(compose_action_context_t& context, wormedit::resource_rol
     auto outcome = compose_action_outcome_t::from("External file linked as a resource.",
                                                   notification_severity_t::success,
                                                   notification_source_t::import_, applied.applied);
-    outcome.rebind_failure = "Resource imported, but workspace rebinding failed.";
+    outcome.rebind_failure = rebind_failure;
     outcome.asset_selection = workspace_select_asset_action_t{
         .asset = imported,
         .slot = role == resource_role_t::bga ? workspace_asset_slot_t::visual
@@ -709,6 +714,8 @@ std::optional<compose_action_outcome_t> select_resource_uses(compose_action_cont
 
 std::optional<compose_action_outcome_t>
 assign_resource_to_selection(compose_action_context_t& context) {
+    constexpr std::string_view rebind_failure =
+        "Resource assigned, but workspace rebinding failed.";
     using namespace wormedit;
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before assigning a resource.")) {
@@ -721,9 +728,10 @@ assign_resource_to_selection(compose_action_context_t& context) {
                                    .resource = resource_id_t{context.action.compose_resource_id},
                                    .objects = context.state.selected_objects});
     if (!applied.diagnostics.empty())
-        return compose_action_outcome_t::from(std::move(applied.diagnostics),
-                                              notification_source_t::edit,
-                                              compose_feedback_delivery_t::message);
+        return compose_action_outcome_t::from(
+            std::move(applied),
+            compose_action_description_t{.rebind_failure = rebind_failure,
+                                         .source = notification_source_t::edit});
     if (!applied.applied)
         return compose_action_outcome_t::from("Selected objects already use that resource.",
                                               notification_severity_t::info,
@@ -732,13 +740,14 @@ assign_resource_to_selection(compose_action_context_t& context) {
     auto outcome = compose_action_outcome_t::from("Resource assigned to selected objects.",
                                                   notification_severity_t::success,
                                                   notification_source_t::edit, applied.applied);
-    outcome.rebind_failure = "Resource assigned, but workspace rebinding failed.";
+    outcome.rebind_failure = rebind_failure;
     outcome.diagnostics = std::move(applied.diagnostics);
     return outcome;
 }
 
 std::optional<compose_action_outcome_t>
 create_resource_from_asset(compose_action_context_t& context) {
+    constexpr std::string_view rebind_failure = "Resource created, but workspace rebinding failed.";
     using namespace wormedit;
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before creating a resource.")) {
@@ -756,15 +765,16 @@ create_resource_from_asset(compose_action_context_t& context) {
              chart != context.environment.document.history.document.charts.end() &&
              chart->source_family == format_family_t::bms});
     if (!applied.diagnostics.empty())
-        return compose_action_outcome_t::from(std::move(applied.diagnostics),
-                                              notification_source_t::import_,
-                                              compose_feedback_delivery_t::message);
+        return compose_action_outcome_t::from(
+            std::move(applied),
+            compose_action_description_t{.rebind_failure = rebind_failure,
+                                         .source = notification_source_t::import_});
 
     auto outcome = compose_action_outcome_t::from(
         role == resource_role_t::bga ? "BGA resource created from the selected image."
                                      : "Resource created from the selected audio asset.",
         notification_severity_t::success, notification_source_t::import_, applied.applied);
-    outcome.rebind_failure = "Resource created, but workspace rebinding failed.";
+    outcome.rebind_failure = rebind_failure;
     outcome.diagnostics = std::move(applied.diagnostics);
     return outcome;
 }

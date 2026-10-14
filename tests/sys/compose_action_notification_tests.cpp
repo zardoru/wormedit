@@ -2573,3 +2573,21 @@ TEST_CASE("Quantization preset mutations bind the workspace to the edited histor
     require_action(entries.size() == 1);
     check_action(entries.front().severity == notification_severity_t::success);
 }
+
+TEST_CASE("Late lane-layout rejection rebinds an already materialized virtual measure",
+          "[compose-action-notifications][compose-outcome]") {
+    action_notification_fixture_t fixture;
+    fixture.history.document.charts.front().source_family = format_family_t::bms;
+    fixture.history = document_history_t::from(fixture.history.document);
+    require_action(static_cast<bool>(rebind_workspace(fixture.workspace, fixture.history)));
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE);
+    action.compose_measure_number = 2;
+    check_action(fixture.dispatch(action) == "Choose a lane layout profile first.");
+    check_action(fixture.history.document.charts.front().measures.size() == 2);
+    check_action(fixture.history.undo.size() == 1);
+    check_action(fixture.workspace.document_revision == fixture.history.document.revision);
+    check_action(fixture.workspace.history.undo_depth == 1);
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::warning);
+}

@@ -7,6 +7,7 @@
 
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace wormedit::sys {
 struct document_edit_inputs_t;
@@ -32,6 +33,7 @@ struct compose_action_description_t {
     std::string_view unchanged;
     std::string_view rebind_failure;
     notification_source_t source{notification_source_t::edit};
+    std::optional<notification_source_t> rejected_source;
     compose_diagnostic_feedback_policy_t diagnostic_policy{
         compose_diagnostic_feedback_policy_t::first};
     notification_severity_t unchanged_severity{notification_severity_t::info};
@@ -64,6 +66,7 @@ struct compose_action_outcome_t {
     bool clear_semantic_layer_paint_after_rebind{};
     std::optional<workspace_select_asset_action_t> asset_selection;
     bool is_rebind_severity_diagnostic{true};
+    bool has_bms_statement_feedback{};
 
     [[nodiscard]] static auto
     blocked(std::string message, notification_source_t source = notification_source_t::edit,
@@ -77,10 +80,19 @@ struct compose_action_outcome_t {
                                    notification_source_t source = notification_source_t::edit,
                                    bool mutated = false, bool accepted = true)
         -> compose_action_outcome_t;
+    template <typename Diagnostic>
+        requires requires(const Diagnostic& diagnostic) {
+            std::string{diagnostic.message};
+            to_notification_severity(diagnostic.severity);
+        }
     [[nodiscard]] static auto
-    from(const diagnostic_t& diagnostic, notification_source_t source = notification_source_t::edit,
+    from(const Diagnostic& diagnostic, notification_source_t source = notification_source_t::edit,
          notification_severity_t unknown_severity = notification_severity_t::error)
-        -> compose_action_outcome_t;
+        -> compose_action_outcome_t {
+        return from(std::string{diagnostic.message},
+                    to_notification_severity(diagnostic.severity, unknown_severity), source, false,
+                    false);
+    }
     [[nodiscard]] static auto from(diagnostic_list_t&& diagnostics, notification_source_t source,
                                    compose_feedback_delivery_t delivery)
         -> compose_action_outcome_t;
@@ -93,9 +105,54 @@ struct compose_action_outcome_t {
     [[nodiscard]] static auto from(document_command_result_t&& command,
                                    const compose_action_description_t& description)
         -> compose_action_outcome_t;
+    [[nodiscard]] static auto from(document_command_result_t&& command, bool is_success,
+                                   const compose_action_description_t& description)
+        -> compose_action_outcome_t;
     [[nodiscard]] static auto from(document_command_result_t&& command,
                                    const compose_action_description_t& description,
                                    std::string&& success) -> compose_action_outcome_t;
+
+    template <typename Diagnostic>
+        requires requires(const Diagnostic& diagnostic) {
+            std::string{diagnostic.message};
+            to_notification_severity(diagnostic.severity);
+        }
+    [[nodiscard]] static auto from(const Diagnostic& diagnostic,
+                                   const compose_action_description_t& description,
+                                   bool mutated = false) -> compose_action_outcome_t {
+        auto outcome = from(diagnostic, description.source, description.unknown_severity);
+        outcome.mutated = mutated;
+        apply_description(outcome, description);
+        return outcome;
+    }
+
+    template <typename Payload>
+        requires requires(Payload& payload) { payload.format_diagnostics; }
+    [[nodiscard]] static auto from(command_result_with_t<Payload>&& result,
+                                   const compose_action_description_t& description)
+        -> compose_action_outcome_t {
+        const auto is_success = static_cast<bool>(result);
+        if (is_success || !result.command.diagnostics.empty())
+            return from(std::move(result.command), is_success, description);
+        if (!result.payload.format_diagnostics.empty())
+            return from(result.payload.format_diagnostics.front(), description,
+                        result.command.applied);
+        if constexpr (requires { result.payload.write_diagnostics; }) {
+            if (!result.payload.write_diagnostics.empty())
+                return from(result.payload.write_diagnostics.front(), description,
+                            result.command.applied);
+        }
+        if constexpr (requires { result.payload.parse_diagnostics; }) {
+            if (!result.payload.parse_diagnostics.empty())
+                return from(result.payload.parse_diagnostics.front(), description,
+                            result.command.applied);
+        }
+        return from(std::move(result.command), false, description);
+    }
+
+  private:
+    static void apply_description(compose_action_outcome_t& outcome,
+                                  const compose_action_description_t& description);
 };
 
 auto finish_compose_action(const document_edit_inputs_t& document,

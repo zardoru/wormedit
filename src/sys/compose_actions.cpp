@@ -87,6 +87,8 @@ dispatch_compose_measure_navigation(compose_action_context_t& context) {
 
 std::optional<compose_action_outcome_t>
 dispatch_compose_bgm_column_count(compose_action_context_t& context) {
+    constexpr std::string_view rebind_failure =
+        "BGM columns changed, but workspace rebinding failed.";
     if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT)
         return std::nullopt;
     if (auto blocked = context.require_no_gesture(
@@ -102,19 +104,23 @@ dispatch_compose_bgm_column_count(compose_action_context_t& context) {
                    ? std::optional<compose_action_outcome_t>{compose_action_outcome_t::from(
                          "BGM column count unchanged.", notification_severity_t::info,
                          notification_source_t::edit)}
-                   : std::optional<compose_action_outcome_t>{
-                         compose_action_outcome_t::from(std::move(applied.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message)};
+                   : std::optional<compose_action_outcome_t>{compose_action_outcome_t::from(
+                         std::move(applied),
+                         compose_action_description_t{.rebind_failure = rebind_failure,
+                                                      .source = notification_source_t::edit})};
     auto outcome = compose_action_outcome_t::from(
         std::string{"BGM column count set to " +
                     std::to_string(context.action.compose_bgm_column_count) + "."},
         notification_severity_t::success, notification_source_t::edit, applied.applied);
-    outcome.rebind_failure = "BGM columns changed, but workspace rebinding failed.";
+    outcome.rebind_failure = rebind_failure;
     outcome.diagnostics = std::move(applied.diagnostics);
     return outcome;
 }
 
 std::optional<compose_action_outcome_t>
 dispatch_compose_lane_profile(compose_action_context_t& context) {
+    constexpr std::string_view rebind_failure =
+        "Lane profile changed, but workspace rebinding failed.";
     if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE)
         return std::nullopt;
     if (auto blocked = context.require_no_gesture(
@@ -149,12 +155,14 @@ dispatch_compose_lane_profile(compose_action_context_t& context) {
                    ? std::optional<compose_action_outcome_t>{compose_action_outcome_t::from(
                          "Lane profile unchanged.", notification_severity_t::info,
                          notification_source_t::edit)}
-                   : std::optional<compose_action_outcome_t>{
-                         compose_action_outcome_t::from(std::move(applied.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message)};
+                   : std::optional<compose_action_outcome_t>{compose_action_outcome_t::from(
+                         std::move(applied),
+                         compose_action_description_t{.rebind_failure = rebind_failure,
+                                                      .source = notification_source_t::edit})};
     auto outcome = compose_action_outcome_t::from(
         std::string{"Lane profile set to " + target.display_name + "."},
         notification_severity_t::success, notification_source_t::edit, applied.applied);
-    outcome.rebind_failure = "Lane profile changed, but workspace rebinding failed.";
+    outcome.rebind_failure = rebind_failure;
     outcome.diagnostics = std::move(applied.diagnostics);
     return outcome;
 }
@@ -261,24 +269,9 @@ materialize_layout_measure(compose_action_context_t& context,
     return std::nullopt;
 }
 
-std::optional<compose_action_outcome_t>
-dispatch_compose_lane_layout_profile(compose_action_context_t& context) {
-    if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE)
-        return std::nullopt;
-    if (auto blocked = context.require_no_gesture(
-            "Finish or cancel the active Compose gesture before editing a lane layout.")) {
-        blocked->source = notification_source_t::edit;
-        return std::move(*blocked);
-    }
-    const auto* chart =
-        selected_chart(context.environment.document.history, context.environment.document.workspace);
-    if (!chart || chart->id.value != context.action.compose_input_chart_id ||
-        context.action.compose_measure_number == 0)
-        return compose_action_outcome_t::blocked(
-            "Lane layout change ignored because the selected difficulty changed.",
-            notification_source_t::edit);
-    auto materialized = false;
-    if (auto refusal = materialize_layout_measure(context, chart, materialized)) return refusal;
+auto apply_compose_lane_layout_profile(compose_action_context_t& context,
+                                       const chart_document_t* chart, bool materialized)
+    -> compose_action_outcome_t {
     const auto measure_index = static_cast<std::size_t>(context.action.compose_measure_number - 1);
     const auto target_position = wormedit::local_position_t{chart->measures[measure_index].id, 0};
     const auto target = layout_profile_from_id(
@@ -308,20 +301,47 @@ dispatch_compose_lane_layout_profile(compose_action_context_t& context) {
         static_cast<void>(wormedit::undo_document_command(context.environment.document.history));
     if (!applied.applied)
         return applied.diagnostics.empty()
-                   ? std::optional<compose_action_outcome_t>{compose_action_outcome_t::blocked(
-                         "Lane layout change was rejected.", notification_source_t::edit)}
-                   : std::optional<compose_action_outcome_t>{
-                         compose_action_outcome_t::from(std::move(applied.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message)};
+                   ? compose_action_outcome_t::blocked("Lane layout change was rejected.",
+                                                       notification_source_t::edit)
+                   : compose_action_outcome_t::from(std::move(applied.diagnostics),
+                                                    notification_source_t::edit,
+                                                    compose_feedback_delivery_t::message);
     auto outcome = compose_action_outcome_t::from(
         std::string{is_update ? "Lane layout updated." : "Lane layout inserted."},
         notification_severity_t::success, notification_source_t::edit, applied.applied);
-    outcome.rebind_failure = "Lane layout changed, but workspace rebinding failed.";
     outcome.diagnostics = std::move(applied.diagnostics);
     return outcome;
 }
 
 std::optional<compose_action_outcome_t>
+dispatch_compose_lane_layout_profile(compose_action_context_t& context) {
+    if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE)
+        return std::nullopt;
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before editing a lane layout.")) {
+        blocked->source = notification_source_t::edit;
+        return std::move(*blocked);
+    }
+    const auto* chart = selected_chart(context.environment.document.history,
+                                       context.environment.document.workspace);
+    if (!chart || chart->id.value != context.action.compose_input_chart_id ||
+        context.action.compose_measure_number == 0)
+        return compose_action_outcome_t::blocked(
+            "Lane layout change ignored because the selected difficulty changed.",
+            notification_source_t::edit);
+    auto materialized = false;
+    if (auto refusal = materialize_layout_measure(context, chart, materialized))
+        return refusal;
+    auto outcome = apply_compose_lane_layout_profile(context, chart, materialized);
+    outcome.mutated = outcome.mutated || materialized;
+    outcome.rebind_failure = "Lane layout changed, but workspace rebinding failed.";
+    return outcome;
+}
+
+std::optional<compose_action_outcome_t>
 dispatch_compose_audio_offset(compose_action_context_t& context) {
+    constexpr std::string_view rebind_failure =
+        "Audio offset changed, but workspace rebinding failed.";
     if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_APPLY_AUDIO_OFFSET)
         return std::nullopt;
     if (auto blocked = context.require_no_gesture(
@@ -339,11 +359,14 @@ dispatch_compose_audio_offset(compose_action_context_t& context) {
                    ? std::optional<compose_action_outcome_t>{compose_action_outcome_t::from(
                          "Audio offset unchanged.", notification_severity_t::info,
                          notification_source_t::edit)}
-                   : std::optional<compose_action_outcome_t>{compose_action_outcome_t::from(std::move(applied.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message)};
+                   : std::optional<compose_action_outcome_t>{compose_action_outcome_t::from(
+                         std::move(applied),
+                         compose_action_description_t{.rebind_failure = rebind_failure,
+                                                      .source = notification_source_t::edit})};
     auto outcome = compose_action_outcome_t::from(std::string{"Audio offset changed."},
                                                   notification_severity_t::success,
                                                   notification_source_t::edit, applied.applied);
-    outcome.rebind_failure = "Audio offset changed, but workspace rebinding failed.";
+    outcome.rebind_failure = rebind_failure;
     outcome.diagnostics = std::move(applied.diagnostics);
     return outcome;
 }
@@ -540,6 +563,8 @@ dispatch_compose_view_action_group(compose_action_context_t& context) {
 // authored token and every reference stay as they are.
 
 std::optional<compose_action_outcome_t> assign_bmson_selection(compose_action_context_t& context) {
+    constexpr std::string_view rebind_failure =
+        "BMSON sound assigned, but workspace rebinding failed.";
     using namespace wormedit;
     auto& state = context.state;
     const bool to_lane = context.action.compose_action ==
@@ -561,7 +586,10 @@ std::optional<compose_action_outcome_t> assign_bmson_selection(compose_action_co
         context.environment.document.history,
         state.chart, event, to_lane ? std::optional<lane_id_t>{state.active_lane} : std::nullopt);
     if (!assigned.diagnostics.empty())
-        return compose_action_outcome_t::from(std::move(assigned.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
+        return compose_action_outcome_t::from(
+            std::move(assigned),
+            compose_action_description_t{.rebind_failure = rebind_failure,
+                                         .source = notification_source_t::edit});
     if (!assigned.applied)
         return compose_action_outcome_t::from(
             "BMSON sound is already assigned to that destination.", notification_severity_t::info,
@@ -573,7 +601,7 @@ std::optional<compose_action_outcome_t> assign_bmson_selection(compose_action_co
         std::string{to_lane ? "BMSON BGM assigned to the active playable lane."
                             : "BMSON tap assigned to BGM."},
         notification_severity_t::success, notification_source_t::edit, assigned.applied);
-    outcome.rebind_failure = "BMSON sound assigned, but workspace rebinding failed.";
+    outcome.rebind_failure = rebind_failure;
     outcome.diagnostics = std::move(assigned.diagnostics);
     return outcome;
 }
@@ -596,6 +624,8 @@ auto selected_bmson_source_event(const compose_action_context_t& context,
 
 std::optional<compose_action_outcome_t>
 set_bmson_selection_restart(compose_action_context_t& context) {
+    constexpr std::string_view rebind_failure =
+        "BMSON slice changed, but workspace rebinding failed.";
     using namespace wormedit;
     const object_id_t event{context.action.compose_bmson_bgm_event_id};
     if (auto blocked = context.require_no_gesture(
@@ -619,7 +649,10 @@ set_bmson_selection_restart(compose_action_context_t& context) {
         context.environment.document.history,
         context.state.chart, *source_event, restart);
     if (!applied.diagnostics.empty())
-        return compose_action_outcome_t::from(std::move(applied.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
+        return compose_action_outcome_t::from(
+            std::move(applied),
+            compose_action_description_t{.rebind_failure = rebind_failure,
+                                         .source = notification_source_t::edit});
     if (!applied.applied)
         return compose_action_outcome_t::from(
             restart ? "BMSON slice already restarts." : "BMSON slice already continues.",
@@ -627,13 +660,15 @@ set_bmson_selection_restart(compose_action_context_t& context) {
     auto outcome = compose_action_outcome_t::from(
         std::string{restart ? "BMSON slice set to restart." : "BMSON slice set to continue."},
         notification_severity_t::success, notification_source_t::edit, applied.applied);
-    outcome.rebind_failure = "BMSON slice changed, but workspace rebinding failed.";
+    outcome.rebind_failure = rebind_failure;
     outcome.diagnostics = std::move(applied.diagnostics);
     return outcome;
 }
 
 std::optional<compose_action_outcome_t>
 move_bmson_selection_to_cursor(compose_action_context_t& context) {
+    constexpr std::string_view rebind_failure =
+        "BMSON marker moved, but workspace rebinding failed.";
     using namespace wormedit;
     const object_id_t event{context.action.compose_bmson_bgm_event_id};
     if (auto blocked = context.require_no_gesture(
@@ -649,7 +684,9 @@ move_bmson_selection_to_cursor(compose_action_context_t& context) {
     auto moved = move_bmson_bgm_marker(context.environment.document.history,
                                              context.state.chart, event, context.state.cursor);
     if (!moved.diagnostics.empty())
-        return compose_action_outcome_t::from(std::move(moved.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
+        return compose_action_outcome_t::from(
+            std::move(moved), compose_action_description_t{.rebind_failure = rebind_failure,
+                                                           .source = notification_source_t::edit});
     if (!moved.applied)
         return compose_action_outcome_t::from("BMSON BGM marker is already at the cursor.",
                                               notification_severity_t::info,
@@ -657,13 +694,15 @@ move_bmson_selection_to_cursor(compose_action_context_t& context) {
     auto outcome = compose_action_outcome_t::from(
         std::string{"BMSON BGM marker moved to the edit cursor."}, notification_severity_t::success,
         notification_source_t::edit, moved.applied);
-    outcome.rebind_failure = "BMSON marker moved, but workspace rebinding failed.";
+    outcome.rebind_failure = rebind_failure;
     outcome.diagnostics = std::move(moved.diagnostics);
     return outcome;
 }
 
 std::optional<compose_action_outcome_t>
 insert_bmson_marker_at_cursor(compose_action_context_t& context) {
+    constexpr std::string_view rebind_failure =
+        "BMSON marker inserted, but workspace rebinding failed.";
     using namespace wormedit;
     const auto event = object_id_t{context.action.compose_bmson_bgm_event_id};
     if (auto blocked = context.require_no_gesture(
@@ -682,11 +721,14 @@ insert_bmson_marker_at_cursor(compose_action_context_t& context) {
         context.state.chart, event, context.state.cursor,
         context.action.compose_action == WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_RESTART_AT_CURSOR);
     if (!inserted.diagnostics.empty())
-        return compose_action_outcome_t::from(std::move(inserted.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
+        return compose_action_outcome_t::from(
+            std::move(inserted),
+            compose_action_description_t{.rebind_failure = rebind_failure,
+                                         .source = notification_source_t::edit});
     auto outcome = compose_action_outcome_t::from(
         std::string{"BMSON BGM marker inserted at the edit cursor."},
         notification_severity_t::success, notification_source_t::edit, inserted.applied);
-    outcome.rebind_failure = "BMSON marker inserted, but workspace rebinding failed.";
+    outcome.rebind_failure = rebind_failure;
     outcome.diagnostics = std::move(inserted.diagnostics);
     return outcome;
 }
@@ -711,6 +753,8 @@ stage_bmson_marker_at_cursor(compose_action_context_t& context) {
 
 std::optional<compose_action_outcome_t>
 apply_bmson_marker_batch(compose_action_context_t& context) {
+    constexpr std::string_view rebind_failure =
+        "BMSON markers inserted, but workspace rebinding failed.";
     using namespace wormedit;
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before committing BMSON markers.")) {
@@ -740,18 +784,23 @@ apply_bmson_marker_batch(compose_action_context_t& context) {
     auto inserted = insert_bmson_sound_markers(transaction, draft->stamp.chart,
                                                     draft->reference, draft->markers);
     if (!inserted.diagnostics.empty())
-        return compose_action_outcome_t::from(std::move(inserted.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
+        return compose_action_outcome_t::from(
+            std::move(inserted),
+            compose_action_description_t{.rebind_failure = rebind_failure,
+                                         .source = notification_source_t::edit});
     draft.reset();
     auto outcome = compose_action_outcome_t::from(
         std::string{"BMSON markers inserted in one undoable edit."},
         notification_severity_t::success, notification_source_t::edit, inserted.applied);
-    outcome.rebind_failure = "BMSON markers inserted, but workspace rebinding failed.";
+    outcome.rebind_failure = rebind_failure;
     outcome.diagnostics = std::move(inserted.diagnostics);
     return outcome;
 }
 
 std::optional<compose_action_outcome_t>
 delete_bmson_selected_marker(compose_action_context_t& context) {
+    constexpr std::string_view rebind_failure =
+        "BMSON marker deleted, but workspace rebinding failed.";
     using namespace wormedit;
     const object_id_t event{context.action.compose_bmson_bgm_event_id};
     if (auto blocked = context.require_no_gesture(
@@ -767,7 +816,10 @@ delete_bmson_selected_marker(compose_action_context_t& context) {
     auto deleted = delete_bmson_bgm_marker(context.environment.document.history,
                                                  context.state.chart, event);
     if (!deleted.diagnostics.empty())
-        return compose_action_outcome_t::from(std::move(deleted.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
+        return compose_action_outcome_t::from(
+            std::move(deleted),
+            compose_action_description_t{.rebind_failure = rebind_failure,
+                                         .source = notification_source_t::edit});
     if (!deleted.applied)
         return compose_action_outcome_t::from("BMSON marker deletion made no document change.",
                                               notification_severity_t::info,
@@ -777,7 +829,7 @@ delete_bmson_selected_marker(compose_action_context_t& context) {
     auto outcome = compose_action_outcome_t::from(std::string{"BMSON BGM marker deleted."},
                                                   notification_severity_t::success,
                                                   notification_source_t::edit, deleted.applied);
-    outcome.rebind_failure = "BMSON marker deleted, but workspace rebinding failed.";
+    outcome.rebind_failure = rebind_failure;
     outcome.diagnostics = std::move(deleted.diagnostics);
     return outcome;
 }
@@ -795,6 +847,7 @@ auto lane_mode_channel(const compose_action_context_t& context) -> wormedit::obj
 }
 
 std::optional<compose_action_outcome_t> change_bmson_lane_mode(compose_action_context_t& context) {
+    constexpr std::string_view rebind_failure = "Channel changed, but workspace rebinding failed.";
     using namespace wormedit;
     if (context.action.compose_input_project_id !=
         context.environment.document.history.document.id.value)
@@ -813,7 +866,9 @@ std::optional<compose_action_outcome_t> change_bmson_lane_mode(compose_action_co
                                                        : bmson_channel_lane_mode_t::packed,
         kind == WORM_UI_COMPOSE_ACTION_RESTART_AND_PACK_BMSON_CHANNEL);
     if (!result.diagnostics.empty())
-        return compose_action_outcome_t::from(std::move(result.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
+        return compose_action_outcome_t::from(
+            std::move(result), compose_action_description_t{.rebind_failure = rebind_failure,
+                                                            .source = notification_source_t::edit});
     if (!result.applied)
         return compose_action_outcome_t::from("Channel already uses that lane mode.",
                                               notification_severity_t::info,
@@ -821,7 +876,7 @@ std::optional<compose_action_outcome_t> change_bmson_lane_mode(compose_action_co
     auto outcome = compose_action_outcome_t::from(std::string{"BMSON channel lane mode changed."},
                                                   notification_severity_t::success,
                                                   notification_source_t::edit, result.applied);
-    outcome.rebind_failure = "Channel changed, but workspace rebinding failed.";
+    outcome.rebind_failure = rebind_failure;
     outcome.diagnostics = std::move(result.diagnostics);
     return outcome;
 }
@@ -878,6 +933,8 @@ auto catalog_semantic_layer_by_id(const wormedit::chart_document_t& chart,
 std::optional<compose_action_outcome_t>
 assign_compose_layer_target(compose_action_context_t& context, bool none,
                             wormedit::layer_id_t target) {
+    constexpr std::string_view rebind_failure =
+        "Semantic-layer membership changed, but workspace rebinding failed.";
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before editing semantic layers.")) {
         blocked->source = notification_source_t::edit;
@@ -889,7 +946,10 @@ assign_compose_layer_target(compose_action_context_t& context, bool none,
         context.action.compose_input_document_revision, none, target,
         app.project.semantic_layer.semantic_layer_target_none, app.project.semantic_layer.semantic_layer_target);
     if (!applied.applied && !applied.diagnostics.empty())
-        return compose_action_outcome_t::from(std::move(applied.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
+        return compose_action_outcome_t::from(
+            std::move(applied),
+            compose_action_description_t{.rebind_failure = rebind_failure,
+                                         .source = notification_source_t::edit});
     if (none) app.project.semantic_layer.semantic_layer_solo_active = false;
     if (!applied.applied)
         return compose_action_outcome_t::from("Semantic-layer membership was unchanged.",
@@ -899,7 +959,7 @@ assign_compose_layer_target(compose_action_context_t& context, bool none,
         std::string{none ? "Selected objects assigned to No layer."
                          : "Semantic-layer membership updated."},
         notification_severity_t::success, notification_source_t::edit, applied.applied);
-    outcome.rebind_failure = "Semantic-layer membership changed, but workspace rebinding failed.";
+    outcome.rebind_failure = rebind_failure;
     outcome.rebind_failure_policy = compose_rebind_failure_policy_t::message_only;
     outcome.diagnostics = std::move(applied.diagnostics);
     return outcome;
@@ -907,6 +967,8 @@ assign_compose_layer_target(compose_action_context_t& context, bool none,
 
 std::optional<compose_action_outcome_t>
 add_selected_compose_sounds_to_layer(compose_action_context_t& context) {
+    constexpr std::string_view rebind_failure =
+        "Sound layers changed, but workspace rebinding failed.";
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active gesture before assigning sound layers.")) {
         blocked->source = notification_source_t::edit;
@@ -926,7 +988,10 @@ add_selected_compose_sounds_to_layer(compose_action_context_t& context) {
         layer_id_t{context.action.compose_semantic_layer_id});
     if (!applied.applied) {
         if (!applied.diagnostics.empty())
-            return compose_action_outcome_t::from(std::move(applied.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
+            return compose_action_outcome_t::from(
+                std::move(applied),
+                compose_action_description_t{.rebind_failure = rebind_failure,
+                                             .source = notification_source_t::edit});
         return compose_action_outcome_t::from(
             "Selected sound layers were unchanged; silent objects are ignored.",
             notification_severity_t::info, notification_source_t::edit);
@@ -935,7 +1000,7 @@ add_selected_compose_sounds_to_layer(compose_action_context_t& context) {
         std::string{
             "Selected sounds added to the layer; unassigned matching objects inherited it."},
         notification_severity_t::success, notification_source_t::edit, applied.applied);
-    outcome.rebind_failure = "Sound layers changed, but workspace rebinding failed.";
+    outcome.rebind_failure = rebind_failure;
     outcome.rebind_success_message = "Selected sounds added to the layer.";
     outcome.diagnostics = std::move(applied.diagnostics);
     return outcome;
@@ -1216,6 +1281,8 @@ update_semantic_layer_catalog_entry(compose_action_context_t& context) {
 
 std::optional<compose_action_outcome_t>
 delete_semantic_layer_catalog_entry(compose_action_context_t& context) {
+    constexpr std::string_view rebind_failure =
+        "Semantic layer deleted, but workspace rebinding failed.";
     using namespace wormedit;
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before deleting a semantic layer.")) {
@@ -1241,7 +1308,10 @@ delete_semantic_layer_catalog_entry(compose_action_context_t& context) {
                    ? compose_action_outcome_t::from("Semantic layer was not deleted.",
                                                     notification_severity_t::info,
                                                     notification_source_t::edit)
-                   : compose_action_outcome_t::from(std::move(applied.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
+                   : compose_action_outcome_t::from(
+                         std::move(applied),
+                         compose_action_description_t{.rebind_failure = rebind_failure,
+                                                      .source = notification_source_t::edit});
     auto& state = context.environment.editor.commands;
     std::erase(state.project.semantic_layer.required_semantic_layer_filters, id);
     std::erase(state.project.semantic_layer.excluded_semantic_layer_filters, id);
@@ -1252,7 +1322,7 @@ delete_semantic_layer_catalog_entry(compose_action_context_t& context) {
     auto outcome = compose_action_outcome_t::from(std::string{"Semantic layer deleted."},
                                                   notification_severity_t::success,
                                                   notification_source_t::edit, applied.applied);
-    outcome.rebind_failure = "Semantic layer deleted, but workspace rebinding failed.";
+    outcome.rebind_failure = rebind_failure;
     outcome.diagnostics = std::move(applied.diagnostics);
     return outcome;
 }
@@ -1417,6 +1487,8 @@ auto semantic_layer_toggle_status(bool toggle_lock, bool previous) -> std::strin
 
 std::optional<compose_action_outcome_t>
 toggle_semantic_layer_visibility_or_lock(compose_action_context_t& context, bool toggle_lock) {
+    constexpr std::string_view rebind_failure =
+        "Semantic-layer state changed, but workspace rebinding failed.";
     using namespace wormedit;
     auto& app = context.environment.editor.commands;
     if (auto blocked = context.require_no_gesture(
@@ -1449,7 +1521,10 @@ toggle_semantic_layer_visibility_or_lock(compose_action_context_t& context, bool
                    ? compose_action_outcome_t::from("Semantic-layer state was unchanged.",
                                                     notification_severity_t::info,
                                                     notification_source_t::edit)
-                   : compose_action_outcome_t::from(std::move(applied.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
+                   : compose_action_outcome_t::from(
+                         std::move(applied),
+                         compose_action_description_t{.rebind_failure = rebind_failure,
+                                                      .source = notification_source_t::edit});
     if (!toggle_lock && previous) {
         app.project.compose_gesture.semantic_layer_paint_mode_active = false;
         app.project.semantic_layer.semantic_layer_solo_active = false;
@@ -1457,7 +1532,7 @@ toggle_semantic_layer_visibility_or_lock(compose_action_context_t& context, bool
     auto outcome = compose_action_outcome_t::from(
         std::string{semantic_layer_toggle_status(toggle_lock, previous)},
         notification_severity_t::info, notification_source_t::edit, applied.applied);
-    outcome.rebind_failure = "Semantic-layer state changed, but workspace rebinding failed.";
+    outcome.rebind_failure = rebind_failure;
     outcome.clear_semantic_layer_paint_after_rebind = toggle_lock && !previous;
     outcome.diagnostics = std::move(applied.diagnostics);
     return outcome;
@@ -1680,88 +1755,53 @@ dispatch_compose_semantic_layer_state_action(compose_action_context_t& context) 
     }
 }
 
-std::string dispatch_bms_branch_choice_action(
-    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
-    wormedit::workspace_controller_t& workspace,
-    const std::optional<wormedit::editor_interaction_state_t>& interaction_state,
-    notification_sink_t notifications) {
+auto dispatch_bms_branch_choice_action(compose_action_context_t& context)
+    -> compose_action_outcome_t {
     using namespace wormedit;
-    const auto warning = [&](std::string message) {
-        notifications.post(notification_severity_t::warning, notification_source_t::format, message);
-        return message;
-    };
-    const auto diagnostic = [&](const auto& value) {
-        notifications.post(to_notification_severity(value.severity), notification_source_t::format,
-                           value.message);
-        return value.message;
-    };
+    const auto& action = context.action;
+    auto& history = context.environment.document.history;
+    auto& workspace = context.environment.document.workspace;
+
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
         workspace.selected_chart->value != action.compose_input_chart_id ||
         history.document.revision != action.compose_input_document_revision) {
-        return warning(wormedit::stale_action_message("BMS branch action"));
+        return compose_action_outcome_t::blocked(
+            wormedit::stale_action_message("BMS branch action"), notification_source_t::format);
     }
-    if (interaction_state && editor_interaction_has_pending_gesture(*interaction_state)) {
-        return warning("Finish or cancel the active Compose gesture before changing a BMS branch.");
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before changing a BMS branch.")) {
+        blocked->source = notification_source_t::format;
+        return std::move(*blocked);
     }
     if (action.compose_branch_id == 0) {
-        return warning("Choose a current BMS RANDOM or SWITCH control first.");
+        return compose_action_outcome_t::blocked(
+            "Choose a current BMS RANDOM or SWITCH control first.", notification_source_t::format);
     }
-    const auto applied = apply_bms_branch_choice_command(
+    auto applied = apply_bms_branch_choice_command(
         history,
         {.chart = *workspace.selected_chart,
          .branch = branch_id_t{action.compose_branch_id},
          .selected_value = action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE
                                ? std::optional<std::int64_t>{action.compose_branch_value}
                                : std::nullopt});
-    if (!applied) {
-        if (!applied.command.diagnostics.empty()) {
-            return diagnostic(applied.command.diagnostics.front());
-        }
-        if (!applied.payload.format_diagnostics.empty()) {
-            return diagnostic(applied.payload.format_diagnostics.front());
-        }
-        if (!applied.payload.write_diagnostics.empty()) {
-            return diagnostic(applied.payload.write_diagnostics.front());
-        }
-        if (!applied.payload.parse_diagnostics.empty()) {
-            return diagnostic(applied.payload.parse_diagnostics.front());
-        }
-        return warning("BMS branch choice was rejected without changing the document.");
-    }
-    const auto success = action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE
-               ? "BMS branch choice changed and its semantics were rematerialized."
-               : "BMS branch choice cleared and its semantics were rematerialized.";
-    const auto rebound = rebind_workspace(workspace, history);
-    if (!rebound) {
-        notifications.post(notification_severity_t::success, notification_source_t::edit, success);
-        if (!rebound.diagnostics.empty()) {
-            const auto& diagnostic = rebound.diagnostics.front();
-            notifications.post(to_notification_severity(diagnostic.severity),
-                               notification_source_t::document, diagnostic.message);
-            return diagnostic.message;
-        }
-        auto message = std::string{"BMS branch changed, but workspace rebinding failed."};
-        notifications.post(notification_severity_t::error, notification_source_t::document, message);
-        return message;
-    }
-    auto message = success;
-    notifications.post(notification_severity_t::success, notification_source_t::edit, message);
-    return message;
+    return compose_action_outcome_t::from(
+        std::move(applied),
+        compose_action_description_t{
+            .success = action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE
+                           ? "BMS branch choice changed and its semantics were rematerialized."
+                           : "BMS branch choice cleared and its semantics were rematerialized.",
+            .unchanged = "BMS branch choice was rejected without changing the document.",
+            .rebind_failure = "BMS branch changed, but workspace rebinding failed.",
+            .rejected_source = notification_source_t::format,
+            .diagnostic_policy = compose_diagnostic_feedback_policy_t::rejected_only,
+            .unchanged_severity = notification_severity_t::warning,
+            .is_unchanged_accepted = false});
 }
-
-
-auto bms_statement_leaf(wormedit::bms_control_kind_t kind) -> bool {
-    using kind_t = wormedit::bms_control_kind_t;
-    return kind == kind_t::if_branch || kind == kind_t::else_if_branch ||
-           kind == kind_t::else_branch || kind == kind_t::case_branch ||
-           kind == kind_t::default_branch;
-}
-
 
 void find_bms_statement_target(const wormedit::bms_control_node_t& node, std::uint64_t id,
                                const wormedit::bms_control_node_t* enclosing_leaf,
                                bms_statement_target_t& result) {
-    const auto* leaf = bms_statement_leaf(node.kind) ? &node : enclosing_leaf;
+    const auto* leaf = wormedit::is_branch_body(node.kind) ? &node : enclosing_leaf;
     if (node.kind == wormedit::bms_control_kind_t::raw_statement && node.id.value == id) {
         result = {&node, leaf};
         return;
@@ -1772,59 +1812,57 @@ void find_bms_statement_target(const wormedit::bms_control_node_t& node, std::ui
     }
 }
 
-void retain_bms_statement_feedback(application_command_state_t& application,
-                                   std::optional<wormedit::chart_id_t> chart,
-                                   std::uint64_t revision, const std::string& message) {
-    if (chart) {
-        application.project.feedback.bms_branch_statement_feedback =
-            application_command_state_t::bms_branch_statement_feedback_t{
-                *chart, revision, message};
-    } else {
-        application.project.feedback.bms_branch_statement_feedback.reset();
-    }
-}
-
-std::string dispatch_bms_branch_statement_action(
-    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
-    wormedit::workspace_controller_t& workspace,
-    const std::optional<wormedit::editor_interaction_state_t>& interaction_state,
-    notification_sink_t notifications) {
+auto dispatch_bms_branch_statement_action(compose_action_context_t& context)
+    -> compose_action_outcome_t {
     using namespace wormedit;
-    const auto warning = [&](std::string message) {
-        notifications.post(notification_severity_t::warning, notification_source_t::format, message);
-        return message;
-    };
+    const auto& action = context.action;
+    auto& history = context.environment.document.history;
+    auto& workspace = context.environment.document.workspace;
+
+    constexpr compose_action_description_t description{
+        .success = "Inactive BMS branch statement updated.",
+        .unchanged = "BMS branch statement edit was rejected without changing the document.",
+        .rebind_failure = "BMS branch statement changed, but workspace rebinding failed.",
+        .rejected_source = notification_source_t::format,
+        .diagnostic_policy = compose_diagnostic_feedback_policy_t::rejected_only,
+        .unchanged_severity = notification_severity_t::warning,
+        .is_unchanged_accepted = false};
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
         workspace.selected_chart->value != action.compose_input_chart_id)
-        return warning(wormedit::stale_action_message("BMS branch statement action"));
-    if (interaction_state && editor_interaction_has_pending_gesture(*interaction_state))
-        return warning("Finish or cancel the active Compose gesture before editing a BMS branch.");
+        return compose_action_outcome_t::blocked(
+            wormedit::stale_action_message("BMS branch statement action"),
+            notification_source_t::format);
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before editing a BMS branch.")) {
+        blocked->source = notification_source_t::format;
+        return std::move(*blocked);
+    }
     if (action.compose_branch_statement_id == 0)
-        return warning("Select a raw BMS branch statement first.");
+        return compose_action_outcome_t::blocked("Select a raw BMS branch statement first.",
+                                                 notification_source_t::format);
     if (auto rejected = metadata_command_detail::stale_rejection(
             history, action.compose_input_document_revision, "BMS branch statement action"))
-        return publish_bms_statement_diagnostic(notifications,
-            bms_branch_statement_command_result_t{.command = std::move(*rejected)});
+        return compose_action_outcome_t::from(
+            bms_branch_statement_command_result_t{.command = std::move(*rejected)}, description);
     const auto chart = std::ranges::find(history.document.charts, *workspace.selected_chart,
                                          &chart_document_t::id);
     if (chart == history.document.charts.end())
-        return warning("The selected BMS chart is no longer available.");
+        return compose_action_outcome_t::blocked("The selected BMS chart is no longer available.",
+                                                 notification_source_t::format);
     if (!chart->bms_control_tree) {
-        const auto missing_tree = apply_bms_branch_statement_edit_command(
-            history,
-            {.chart = *workspace.selected_chart,
-             .statement = branch_id_t{action.compose_branch_statement_id}});
-        return publish_bms_statement_diagnostic(notifications, missing_tree);
+        auto missing_tree = apply_bms_branch_statement_edit_command(
+            history, {.chart = *workspace.selected_chart,
+                      .statement = branch_id_t{action.compose_branch_statement_id}});
+        return compose_action_outcome_t::from(std::move(missing_tree), description);
     }
     bms_statement_target_t target;
     find_bms_statement_target(*chart->bms_control_tree, action.compose_branch_statement_id,
                               nullptr, target);
     if (!target.statement) {
-        const auto missing_target = apply_bms_branch_statement_edit_command(
-            history,
-            {.chart = *workspace.selected_chart,
-             .statement = branch_id_t{action.compose_branch_statement_id}});
-        return publish_bms_statement_diagnostic(notifications, missing_target);
+        auto missing_target = apply_bms_branch_statement_edit_command(
+            history, {.chart = *workspace.selected_chart,
+                      .statement = branch_id_t{action.compose_branch_statement_id}});
+        return compose_action_outcome_t::from(std::move(missing_target), description);
     }
 
     constexpr std::size_t maximum_text_bytes = 4096;
@@ -1834,33 +1872,33 @@ std::string dispatch_bms_branch_statement_action(
     if (has_text_action && (!action.compose_branch_statement_text ||
                             action.compose_branch_statement_text_bytes == 0 ||
                             action.compose_branch_statement_text_bytes > maximum_text_bytes))
-        return warning("BMS branch statement text is empty or exceeds the editor's bounded capacity.");
+        return compose_action_outcome_t::blocked(
+            "BMS branch statement text is empty or exceeds the editor's bounded capacity.",
+            notification_source_t::format);
     const std::string text = has_text_action
         ? std::string(action.compose_branch_statement_text,
                       action.compose_branch_statement_text_bytes)
         : std::string{};
     if (!target.leaf && action.compose_action ==
                             WORM_UI_COMPOSE_ACTION_INSERT_BMS_BRANCH_STATEMENT) {
-        const auto invalid = apply_bms_branch_statement_insert_command(
-            history,
-            {.chart = *workspace.selected_chart,
-             .after_statement = target.statement->id,
-             .expected_statement_source_order = target.statement->source_order,
-             .expected_statement_source_span = target.statement->source_span,
-             .expected_statement_original_text = target.statement->original_text,
-             .statement_text = text});
-        return publish_bms_statement_diagnostic(notifications, invalid);
+        auto invalid = apply_bms_branch_statement_insert_command(
+            history, {.chart = *workspace.selected_chart,
+                      .after_statement = target.statement->id,
+                      .expected_statement_source_order = target.statement->source_order,
+                      .expected_statement_source_span = target.statement->source_span,
+                      .expected_statement_original_text = target.statement->original_text,
+                      .statement_text = text});
+        return compose_action_outcome_t::from(std::move(invalid), description);
     }
     if (!target.leaf && action.compose_action ==
                             WORM_UI_COMPOSE_ACTION_DELETE_BMS_BRANCH_STATEMENT) {
-        const auto invalid = apply_bms_branch_statement_delete_command(
-            history,
-            {.chart = *workspace.selected_chart,
-             .statement = target.statement->id,
-             .expected_source_order = target.statement->source_order,
-             .expected_source_span = target.statement->source_span,
-             .expected_original_text = target.statement->original_text});
-        return publish_bms_statement_diagnostic(notifications, invalid);
+        auto invalid = apply_bms_branch_statement_delete_command(
+            history, {.chart = *workspace.selected_chart,
+                      .statement = target.statement->id,
+                      .expected_source_order = target.statement->source_order,
+                      .expected_source_span = target.statement->source_span,
+                      .expected_original_text = target.statement->original_text});
+        return compose_action_outcome_t::from(std::move(invalid), description);
     }
     bms_branch_statement_command_result_t applied;
     switch (action.compose_action) {
@@ -1902,25 +1940,13 @@ std::string dispatch_bms_branch_statement_action(
              .expected_original_text = target.statement->original_text});
         break;
     default:
-        return warning("Unknown BMS branch statement action.");
+        return compose_action_outcome_t::blocked("Unknown BMS branch statement action.",
+                                                 notification_source_t::format);
     }
-    if (!applied) return publish_bms_statement_diagnostic(notifications, applied);
-    const auto rebound = rebind_workspace(workspace, history);
-    if (!rebound) {
-        notifications.post(notification_severity_t::success, notification_source_t::edit,
-                           "Inactive BMS branch statement updated.");
-        if (!rebound.diagnostics.empty())
-            return publish_bms_diagnostic(notifications, rebound.diagnostics.front(),
-                                          notification_source_t::document);
-        const auto message = std::string{"BMS branch statement changed, but workspace rebinding failed."};
-        notifications.post(notification_severity_t::error, notification_source_t::document, message);
-        return message;
-    }
-    const auto message = std::string{"Inactive BMS branch statement updated."};
-    notifications.post(notification_severity_t::success, notification_source_t::edit, message);
-    return message;
+    if (!applied)
+        return compose_action_outcome_t::from(std::move(applied), description);
+    return compose_action_outcome_t::from(std::move(applied), description);
 }
-
 
 // The #RANDOM block whose single if-group holds the leaf with this id.
 void find_bms_leaf_target(const wormedit::bms_control_node_t& node, std::uint64_t id,
@@ -1947,82 +1973,123 @@ auto find_bms_control_node(const wormedit::bms_control_node_t& node, std::uint64
     return nullptr;
 }
 
-
-auto run_bms_block_command(const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
+auto run_bms_block_command(const WormUiWorkspaceAction& action,
+                           wormedit::document_history_t& history,
                            const wormedit::chart_document_t& chart, wormedit::chart_id_t chart_id)
-    -> bms_block_outcome_t {
+    -> compose_action_outcome_t {
     using namespace wormedit;
+    constexpr compose_action_description_t description{
+        .unchanged = "BMS branch block edit was rejected without changing the document.",
+        .rebind_failure = "BMS branch changed, but workspace rebinding failed.",
+        .rejected_source = notification_source_t::format,
+        .diagnostic_policy = compose_diagnostic_feedback_policy_t::rejected_only,
+        .unchanged_severity = notification_severity_t::warning,
+        .is_unchanged_accepted = false,
+        .rebind_failure_policy = compose_rebind_failure_policy_t::message_only};
     const auto& tree = *chart.bms_control_tree;
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_CREATE_BMS_BRANCH_BLOCK) {
         const auto* statement = find_bms_control_node(tree, action.compose_branch_statement_id);
         if (!statement || statement->kind != bms_control_kind_t::raw_statement)
-            return {{}, "Select a raw BMS statement at the top level first.", false};
-        return {apply_bms_branch_block_create_command(history,
-            {.chart = chart_id, .first_statement = statement->id,
-             .first_source_order = statement->source_order, .first_source_span = statement->source_span,
-             .first_original_text = statement->original_text, .last_statement = statement->id,
-             .last_source_order = statement->source_order, .last_source_span = statement->source_span,
-             .last_original_text = statement->original_text}),
-                "BMS branch block created."};
+            return compose_action_outcome_t::blocked(
+                "Select a raw BMS statement at the top level first.",
+                notification_source_t::format);
+        return compose_action_outcome_t::from(
+            apply_bms_branch_block_create_command(history,
+                                                  {.chart = chart_id,
+                                                   .first_statement = statement->id,
+                                                   .first_source_order = statement->source_order,
+                                                   .first_source_span = statement->source_span,
+                                                   .first_original_text = statement->original_text,
+                                                   .last_statement = statement->id,
+                                                   .last_source_order = statement->source_order,
+                                                   .last_source_span = statement->source_span,
+                                                   .last_original_text = statement->original_text}),
+            description, "BMS branch block created.");
     }
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_REMOVE_BMS_BRANCH_BLOCK) {
         const auto* block = find_bms_control_node(tree, action.compose_branch_id);
-        if (!block) return {{}, "Select a BMS RANDOM block first.", false};
-        return {apply_bms_branch_block_remove_command(history,
-            {.chart = chart_id, .random_block = block->id, .expected_source_order = block->source_order,
-             .expected_source_span = block->source_span, .expected_original_text = block->original_text}),
-                "Empty BMS branch block removed."};
+        if (!block)
+            return compose_action_outcome_t::blocked("Select a BMS RANDOM block first.",
+                                                     notification_source_t::format);
+        return compose_action_outcome_t::from(
+            apply_bms_branch_block_remove_command(history,
+                                                  {.chart = chart_id,
+                                                   .random_block = block->id,
+                                                   .expected_source_order = block->source_order,
+                                                   .expected_source_span = block->source_span,
+                                                   .expected_original_text = block->original_text}),
+            description, "Empty BMS branch block removed.");
     }
     bms_leaf_target_t target;
     find_bms_leaf_target(tree, action.compose_branch_id, target);
-    if (!target.leaf) return {{}, "Select a BMS branch leaf first.", false};
-    return {apply_bms_branch_leaf_move_command(history,
-        {.chart = chart_id, .random_block = target.block->id, .leaf = target.leaf->id,
-         .expected_leaf_source_order = target.leaf->source_order,
-         .expected_leaf_original_text = target.leaf->original_text,
-         .direction = action.compose_branch_value < 0 ? bms_branch_leaf_move_direction_t::up
-                                                       : bms_branch_leaf_move_direction_t::down}),
-            "BMS branch leaf moved."};
+    if (!target.leaf)
+        return compose_action_outcome_t::blocked("Select a BMS branch leaf first.",
+                                                 notification_source_t::format);
+    return compose_action_outcome_t::from(
+        apply_bms_branch_leaf_move_command(
+            history, {.chart = chart_id,
+                      .random_block = target.block->id,
+                      .leaf = target.leaf->id,
+                      .expected_leaf_source_order = target.leaf->source_order,
+                      .expected_leaf_original_text = target.leaf->original_text,
+                      .direction = action.compose_branch_value < 0
+                                       ? bms_branch_leaf_move_direction_t::up
+                                       : bms_branch_leaf_move_direction_t::down}),
+        description, "BMS branch leaf moved.");
 }
 
-std::string dispatch_bms_branch_block_action(
-    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
-    wormedit::workspace_controller_t& workspace,
-    const std::optional<wormedit::editor_interaction_state_t>& interaction_state,
-    notification_sink_t notifications) {
+auto dispatch_bms_branch_block_action(compose_action_context_t& context)
+    -> compose_action_outcome_t {
     using namespace wormedit;
-    const auto warning = [&](std::string message) {
-        notifications.post(notification_severity_t::warning, notification_source_t::format, message);
-        return message;
-    };
+    const auto& action = context.action;
+    auto& history = context.environment.document.history;
+    auto& workspace = context.environment.document.workspace;
+
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
         workspace.selected_chart->value != action.compose_input_chart_id)
-        return warning(wormedit::stale_action_message("BMS branch block action"));
-    if (interaction_state && editor_interaction_has_pending_gesture(*interaction_state))
-        return warning("Finish or cancel the active Compose gesture before editing a BMS branch.");
+        return compose_action_outcome_t::blocked(
+            wormedit::stale_action_message("BMS branch block action"),
+            notification_source_t::format);
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before editing a BMS branch.")) {
+        blocked->source = notification_source_t::format;
+        return std::move(*blocked);
+    }
     const auto chart = std::ranges::find(history.document.charts, *workspace.selected_chart,
                                          &chart_document_t::id);
     if (chart == history.document.charts.end() || !chart->bms_control_tree)
-        return warning("The selected chart has no BMS branch outline.");
+        return compose_action_outcome_t::blocked("The selected chart has no BMS branch outline.",
+                                                 notification_source_t::format);
     if (history.document.revision != action.compose_input_document_revision)
-        return warning(wormedit::stale_action_message("BMS branch block action"));
-    const auto outcome = run_bms_block_command(action, history, *chart, *workspace.selected_chart);
-    const auto& applied = outcome.result;
-    const auto& success = outcome.message;
-    if (!outcome.attempted) return warning(success);
-    if (!applied.applied) {
-        if (applied.diagnostics.empty())
-            return warning("BMS branch block edit was rejected without changing the document.");
-        return publish_bms_diagnostic(notifications, applied.diagnostics.front());
+        return compose_action_outcome_t::blocked(
+            wormedit::stale_action_message("BMS branch block action"),
+            notification_source_t::format);
+    return run_bms_block_command(action, history, *chart, *workspace.selected_chart);
+}
+
+auto dispatch_compose_bms_action(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
+    switch (context.action.compose_action) {
+    case WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE:
+    case WORM_UI_COMPOSE_ACTION_CLEAR_BMS_BRANCH_CHOICE:
+        return dispatch_bms_branch_choice_action(context);
+    case WORM_UI_COMPOSE_ACTION_EDIT_BMS_BRANCH_STATEMENT:
+    case WORM_UI_COMPOSE_ACTION_INSERT_BMS_BRANCH_STATEMENT:
+    case WORM_UI_COMPOSE_ACTION_DELETE_BMS_BRANCH_STATEMENT: {
+        auto outcome = dispatch_bms_branch_statement_action(context);
+        outcome.has_bms_statement_feedback = true;
+        return outcome;
     }
-    const auto rebound = rebind_workspace(workspace, history);
-    notifications.post(notification_severity_t::success, notification_source_t::edit, success);
-    if (!rebound) {
-        const auto message = std::string{"BMS branch changed, but workspace rebinding failed."};
-        notifications.post(notification_severity_t::error, notification_source_t::document, message);
-        return message;
+    case WORM_UI_COMPOSE_ACTION_CREATE_BMS_BRANCH_BLOCK:
+    case WORM_UI_COMPOSE_ACTION_REMOVE_BMS_BRANCH_BLOCK:
+    case WORM_UI_COMPOSE_ACTION_MOVE_BMS_BRANCH_LEAF: {
+        auto outcome = dispatch_bms_branch_block_action(context);
+        outcome.has_bms_statement_feedback = true;
+        return outcome;
     }
-    return success;
+    default:
+        return std::nullopt;
+    }
 }
 
 auto quantize_settings_valid(const wormedit::quantize_request_t& request) -> bool {
@@ -2115,6 +2182,8 @@ auto validate_quantize_preset_save(const compose_action_context_t& context,
 }
 
 auto save_quantize_preset(compose_action_context_t& context) -> compose_action_outcome_t {
+    constexpr std::string_view rebind_failure =
+        "Quantization preset saved, but workspace rebinding failed.";
     using namespace wormedit;
     const auto length = strnlen(context.action.compose_quantize_preset_name,
                                 sizeof(context.action.compose_quantize_preset_name));
@@ -2133,19 +2202,24 @@ auto save_quantize_preset(compose_action_context_t& context) -> compose_action_o
         return committed.diagnostics.empty()
                    ? compose_action_outcome_t::blocked("Quantization preset could not be saved.",
                                                        notification_source_t::edit)
-                   : compose_action_outcome_t::from(std::move(committed.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
+                   : compose_action_outcome_t::from(
+                         std::move(committed),
+                         compose_action_description_t{.rebind_failure = rebind_failure,
+                                                      .source = notification_source_t::edit});
     auto& editor = quantize_editor_for(context);
     editor.request = *request;
     editor.preset_index = index;
     auto outcome = compose_action_outcome_t::from("Quantization preset saved.",
                                                   notification_severity_t::success,
                                                   notification_source_t::edit, committed.applied);
-    outcome.rebind_failure = "Quantization preset saved, but workspace rebinding failed.";
+    outcome.rebind_failure = rebind_failure;
     outcome.diagnostics = std::move(committed.diagnostics);
     return outcome;
 }
 
 auto delete_quantize_preset(compose_action_context_t& context) -> compose_action_outcome_t {
+    constexpr std::string_view rebind_failure =
+        "Quantization preset deleted, but workspace rebinding failed.";
     using namespace wormedit;
     const auto index = context.action.compose_quantize_preset_index;
     if (index >= context.environment.document.history.document.quantization_presets.size())
@@ -2161,7 +2235,10 @@ auto delete_quantize_preset(compose_action_context_t& context) -> compose_action
         return committed.diagnostics.empty()
                    ? compose_action_outcome_t::blocked("Quantization preset could not be deleted.",
                                                        notification_source_t::edit)
-                   : compose_action_outcome_t::from(std::move(committed.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
+                   : compose_action_outcome_t::from(
+                         std::move(committed),
+                         compose_action_description_t{.rebind_failure = rebind_failure,
+                                                      .source = notification_source_t::edit});
     auto& editor = quantize_editor_for(context);
     if (editor.preset_index) {
         if (*editor.preset_index == index) editor.preset_index.reset();
@@ -2170,12 +2247,14 @@ auto delete_quantize_preset(compose_action_context_t& context) -> compose_action
     auto outcome = compose_action_outcome_t::from("Quantization preset deleted.",
                                                   notification_severity_t::success,
                                                   notification_source_t::edit, committed.applied);
-    outcome.rebind_failure = "Quantization preset deleted, but workspace rebinding failed.";
+    outcome.rebind_failure = rebind_failure;
     outcome.diagnostics = std::move(committed.diagnostics);
     return outcome;
 }
 
 auto rename_quantize_preset(compose_action_context_t& context) -> compose_action_outcome_t {
+    constexpr std::string_view rebind_failure =
+        "Quantization preset renamed, but workspace rebinding failed.";
     using namespace wormedit;
     const auto index = context.action.compose_quantize_preset_index;
     const auto& presets = context.environment.document.history.document.quantization_presets;
@@ -2206,11 +2285,14 @@ auto rename_quantize_preset(compose_action_context_t& context) -> compose_action
         return committed.diagnostics.empty()
                    ? compose_action_outcome_t::blocked("Quantization preset could not be renamed.",
                                                        notification_source_t::edit)
-                   : compose_action_outcome_t::from(std::move(committed.diagnostics), notification_source_t::edit, compose_feedback_delivery_t::message);
+                   : compose_action_outcome_t::from(
+                         std::move(committed),
+                         compose_action_description_t{.rebind_failure = rebind_failure,
+                                                      .source = notification_source_t::edit});
     auto outcome = compose_action_outcome_t::from("Quantization preset renamed.",
                                                   notification_severity_t::success,
                                                   notification_source_t::edit, committed.applied);
-    outcome.rebind_failure = "Quantization preset renamed, but workspace rebinding failed.";
+    outcome.rebind_failure = rebind_failure;
     outcome.diagnostics = std::move(committed.diagnostics);
     return outcome;
 }
@@ -2607,28 +2689,17 @@ auto dispatch_compose_workspace_action_with_resources(const WormUiWorkspaceActio
 
     if (dispatch_project_export_action(action, environment, metadata_import_busy))
         return true;
-    if (action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE ||
-        action.compose_action == WORM_UI_COMPOSE_ACTION_CLEAR_BMS_BRANCH_CHOICE) {
-        static_cast<void>(dispatch_bms_branch_choice_action(action, history, workspace,
-                                                            interaction_state, notifications));
-        return true;
-    }
-    if (action.compose_action == WORM_UI_COMPOSE_ACTION_EDIT_BMS_BRANCH_STATEMENT ||
-        action.compose_action == WORM_UI_COMPOSE_ACTION_INSERT_BMS_BRANCH_STATEMENT ||
-        action.compose_action == WORM_UI_COMPOSE_ACTION_DELETE_BMS_BRANCH_STATEMENT) {
-        const auto status = dispatch_bms_branch_statement_action(action, history, workspace,
-                                                                 interaction_state, notifications);
-        retain_bms_statement_feedback(application_state, workspace.selected_chart,
-                                      history.document.revision, status);
-        return true;
-    }
-    if (action.compose_action == WORM_UI_COMPOSE_ACTION_CREATE_BMS_BRANCH_BLOCK ||
-        action.compose_action == WORM_UI_COMPOSE_ACTION_REMOVE_BMS_BRANCH_BLOCK ||
-        action.compose_action == WORM_UI_COMPOSE_ACTION_MOVE_BMS_BRANCH_LEAF) {
-        const auto status = dispatch_bms_branch_block_action(action, history, workspace,
-                                                             interaction_state, notifications);
-        retain_bms_statement_feedback(application_state, workspace.selected_chart,
-                                      history.document.revision, status);
+    editor_interaction_state_t no_interaction{};
+    auto& bms_state = interaction_state ? *interaction_state : no_interaction;
+    compose_action_context_t bms_context{environment,
+                                         action,
+                                         bms_state,
+                                         viewport_height,
+                                         metadata_import_busy,
+                                         editor_field_scroll_direction_t::up,
+                                         notifications};
+    if (auto outcome = dispatch_compose_bms_action(bms_context)) {
+        static_cast<void>(finish_compose_action(bms_context, std::move(*outcome)));
         return true;
     }
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_NONE &&

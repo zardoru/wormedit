@@ -101,7 +101,15 @@ struct program_preferences_t {
     layout_preferences_t layout;
     auto operator==(const program_preferences_t&) const -> bool = default;
 };
+struct preferences_parse_effect_t {
+    program_preferences_t preferences;
+    std::vector<std::string> warnings;
+    auto operator==(const preferences_parse_effect_t&) const -> bool = default;
+};
+using preferences_parse_outcome_t = result_t<preferences_parse_effect_t, preferences_parse_effect_t>;
 struct preferences_parse_result_t {
+    [[nodiscard]] static auto from(std::string_view bytes) -> preferences_parse_outcome_t;
+    [[nodiscard]] static auto from(preferences_parse_outcome_t&& outcome) -> preferences_parse_result_t;
     program_preferences_t preferences;
     std::vector<std::string> warnings;
     bool parsed{};

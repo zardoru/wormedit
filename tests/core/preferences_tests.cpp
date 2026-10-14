@@ -45,7 +45,7 @@ TEST_CASE("Program preferences defaults preserve existing player and minimap beh
     expect_preference(values.display.ui_scale_percent == 0 && values.display.theme.empty());
     expect_preference(values.players.players.size() == 3 && values.players.selected == 0);
     expect_preference(values.players.players[1].here_arguments == "-P -N<measure> \"<filename>\"");
-    const auto parsed = parse_program_preferences("{}");
+    const auto parsed = preferences_parse_result_t::from(preferences_parse_result_t::from("{}"));
     expect_preference(parsed.parsed && parsed.warnings.empty() && parsed.preferences == values);
 }
 
@@ -460,4 +460,13 @@ TEST_CASE("preference serialization rejects malformed UTF-8", "[unit][core][help
     auto preferences = program_preferences_t::with_defaults();
     preferences.display.theme = "bad\xc0\x80";
     CHECK_FALSE(serialize_program_preferences(preferences));
+}
+
+TEST_CASE("preference warnings travel with parsed success", "[core][preferences][results]") {
+    auto parsed = preferences_parse_result_t::from(R"({"unknown":true})");
+    REQUIRE(parsed);
+    REQUIRE(parsed->warnings.size() == 1);
+    const auto legacy = preferences_parse_result_t::from(std::move(parsed));
+    CHECK(legacy.parsed);
+    CHECK(legacy.warnings.front() == "Unknown preference keys were ignored.");
 }

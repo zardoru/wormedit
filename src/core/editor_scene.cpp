@@ -7,6 +7,7 @@
 #include <array>
 #include <bit>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <ranges>
 #include <unordered_map>
@@ -81,6 +82,12 @@ auto lane_bounds(const visible_band_t& band, lane_id_t lane) -> const lane_bound
 }
 
 } // namespace
+
+auto editor_field_scene_t::primitive_count() const noexcept -> std::size_t {
+    return layout_bands.size() + lanes.size() + comparison_differences.size() + grid_lines.size() +
+        hold_bodies.size() + note_endpoints.size() + bgm_lanes.size() + bgm_events.size() +
+        bga_lanes.size() + bga_events.size() + static_cast<std::size_t>(cursor.has_value());
+}
 
 auto editor_field_scene_result_t::has_errors() const -> bool {
     return diagnostic_queries::has_errors(diagnostics);
@@ -2371,11 +2378,35 @@ auto editor_bgm_content_width_pixels(const chart_document_t& chart,
         static_cast<long double>(std::numeric_limits<double>::max())));
 }
 
-auto make_editor_field_scene(const chart_document_t& chart, const editor_field_scene_index_t& index,
+namespace {
+auto scene_y_for_row(const chart_document_t& chart, const editor_interaction_view_model_t& view,
+                     editor_field_scroll_direction_t direction, long double row) -> double;
+struct scene_budget_t {
+    std::size_t capacity{};
+    std::size_t used{};
+    [[nodiscard]] static auto from(std::size_t capacity) -> scene_budget_t { return {.capacity = capacity}; }
+    auto operator()(std::size_t count = 1) -> bool {
+        if (count > capacity - used) return false;
+        used += count;
+        return true;
+    }
+};
+struct unbounded_scene_budget_t {
+    auto operator()(std::size_t = 1) const -> bool { return true; }
+};
+} // namespace
+
+auto editor_field_scene_result_t::from(editor_field_scene_outcome_t&& outcome) -> editor_field_scene_result_t {
+    return {.scene = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
+}
+auto editor_field_scene_result_t::into_outcome() && -> editor_field_scene_outcome_t {
+    return {.value = std::move(scene), .diagnostics = std::move(diagnostics)};
+}
+auto editor_field_scene_result_t::from(const chart_document_t& chart, const editor_field_scene_index_t& index,
                              const editor_interaction_view_model_t& view,
                              const editor_field_scene_request_t& request)
-    -> editor_field_scene_result_t {
-    editor_field_scene_result_t result;
+    -> editor_field_scene_outcome_t {
+    editor_field_scene_outcome_t result{};
     const auto visible =
         prepare_scene_visible_rows(chart, index, view, request, result.diagnostics);
     if (!visible) {
@@ -2384,31 +2415,9 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
 
     editor_field_scene_t scene{.visible_begin_row = visible->begin,
                                .visible_end_row = visible->end};
-    std::size_t primitive_count{};
-    std::size_t operations{};
-    const auto consume = [&](std::size_t count = 1) -> bool {
-        if (count > request.maximum_scene_primitives - primitive_count) {
-            return false;
-        }
-        primitive_count += count;
-        return true;
-    };
-    const auto operate = [&]() -> bool {
-        if (operations >= request.maximum_composition_operations) {
-            return false;
-        }
-        ++operations;
-        return true;
-    };
-    const auto y_for_row = [&](long double row) {
-        const auto offset = row * static_cast<long double>(view.pixels_per_standard_measure) /
-                                chart.divisions_per_standard_measure -
-                            static_cast<long double>(view.viewport_scroll_pixels);
-        return static_cast<double>(request.scroll_direction == editor_field_scroll_direction_t::down
-                                       ? static_cast<long double>(view.viewport_height_pixels) -
-                                             offset
-                                       : offset);
-    };
+    auto consume = scene_budget_t::from(request.maximum_scene_primitives);
+    auto operate = scene_budget_t::from(request.maximum_composition_operations);
+    const auto y_for_row = std::bind_front(scene_y_for_row, std::cref(chart), std::cref(view), request.scroll_direction);
 
     scene_geometry_context_t geometry{chart,
                                       index,
@@ -2423,9 +2432,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
     if (!compose_visible_layouts(geometry, operate, consume, y_for_row, visible_bands)) {
         return result;
     }
-    const auto visible_band_for_row = [&](std::uint64_t row) -> const visible_band_t* {
-        return visible_band_at_row(visible_bands, row);
-    };
+    const auto visible_band_for_row = std::bind_front(visible_band_at_row, std::cref(visible_bands));
 
     scene_paint_preview_t paint_preview;
     if (!collect_visible_paint_targets(geometry, paint_preview, operate, y_for_row,
@@ -2488,8 +2495,13 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
     }
 
     mark_scene_move_occupants(scene, view);
-    result.scene = std::move(scene);
+    result.value = std::move(scene);
     return result;
+}
+
+auto make_editor_field_scene(const chart_document_t& chart, const editor_field_scene_index_t& index,
+    const editor_interaction_view_model_t& view, const editor_field_scene_request_t& request) -> editor_field_scene_result_t {
+    return editor_field_scene_result_t::from(editor_field_scene_result_t::from(chart, index, view, request));
 }
 
 namespace {
@@ -2659,11 +2671,8 @@ auto build_scene_window_metadata_unchecked_view(const chart_document_t& chart,
                                       visible.query_low,
                                       visible.query_high,
                                       visible.canvas_rows};
-    const auto y_for_row = [&](long double row) {
-        return scene_y_for_row(chart, view, request.scroll_direction, row);
-    };
-    const auto consume = [](std::size_t = 1) { return true; };
-    const auto operate = [] { return true; };
+    const auto y_for_row = std::bind_front(scene_y_for_row, std::cref(chart), std::cref(view), request.scroll_direction);
+    const unbounded_scene_budget_t consume{}, operate{};
     std::vector<visible_band_t> bands;
     if (!compose_visible_layouts(geometry, operate, consume, y_for_row, bands))
         return metadata;
@@ -2677,7 +2686,7 @@ auto build_scene_window_metadata_unchecked_view(const chart_document_t& chart,
         return metadata;
     if (!compose_bga_lane(geometry, operate, consume, y_for_row))
         return metadata;
-    const auto band_for_row = [&](std::uint64_t row) { return visible_band_at_row(bands, row); };
+    const auto band_for_row = std::bind_front(visible_band_at_row, std::cref(bands));
     if (!compose_scene_cursor(geometry, consume, y_for_row, band_for_row))
         return metadata;
     result.scene = std::move(scene);
@@ -2687,12 +2696,12 @@ auto build_scene_window_view(const chart_document_t& chart, const editor_field_s
                           const editor_interaction_view_model_t& view,
                           const editor_field_scene_request_t& request,
                           const editor_field_scene_window_t& window)
-    -> editor_field_scene_result_t {
+    -> editor_field_scene_outcome_t {
     auto metadata = build_scene_window_metadata_unchecked_view(chart, index, view, request, window);
-    auto result = std::move(metadata.projection);
-    if (!result)
+    auto result = std::move(metadata.projection).into_outcome();
+    if (!result.value || !result.ok())
         return result;
-    auto& scene = *result.scene;
+    auto& scene = *result.value;
     // The metadata pass composes BGA events for metadata-only callers. The full
     // window path projects its cached event geometry below, so keep only that
     // shifted copy in the returned scene.
@@ -2712,19 +2721,18 @@ auto build_scene_window_view(const chart_document_t& chart, const editor_field_s
                          view.viewport_height_pixels);
     return result;
 }
+auto is_scene_within_limit(const std::optional<editor_field_scene_t>& scene,
+    const diagnostic_list_t& diagnostics, const editor_field_scene_request_t& request) -> bool {
+    return scene && !diagnostic_queries::has_errors(diagnostics) &&
+           scene->primitive_count() <= request.maximum_scene_primitives;
+}
 auto is_projected_window_within_limit(const editor_field_scene_result_t& result,
-                                 const editor_field_scene_request_t& request) -> bool {
-    if (!result)
-        return false;
-    const auto& scene = *result.scene;
-    const auto count = scene.layout_bands.size() + scene.lanes.size() +
-                       scene.comparison_differences.size() + scene.grid_lines.size() +
-                       scene.hold_bodies.size() + scene.note_endpoints.size() +
-                       scene.bgm_lanes.size() + scene.bgm_events.size() +
-                       scene.bga_lanes.size() +
-                       scene.bga_events.size() +
-                       static_cast<std::size_t>(scene.cursor.has_value());
-    return count <= request.maximum_scene_primitives;
+    const editor_field_scene_request_t& request) -> bool {
+    return is_scene_within_limit(result.scene, result.diagnostics, request);
+}
+auto is_projected_window_within_limit(const editor_field_scene_outcome_t& result,
+    const editor_field_scene_request_t& request) -> bool {
+    return is_scene_within_limit(result.value, result.diagnostics, request);
 }
 auto rebuild_scene_window(const chart_document_t& chart, const editor_field_scene_index_t& index,
                           const editor_interaction_view_model_t& view,
@@ -2747,10 +2755,10 @@ auto rebuild_scene_window(const chart_document_t& chart, const editor_field_scen
         std::min(expanded.viewport_scroll_pixels,
                  editor_maximum_viewport_scroll(content_height, expanded.viewport_height_pixels,
                                                 expanded.viewport_end_margin_fraction));
-    auto composed = make_editor_field_scene(chart, index, expanded, request);
-    if (!composed)
+    auto composed = editor_field_scene_result_t::from(chart, index, expanded, request);
+    if (!composed.value || !composed.ok())
         return false;
-    window.scene = std::move(composed.scene);
+    window.scene = std::move(composed.value);
     window.view = std::move(expanded);
     window.request = request;
     window.bgm_lane_widths_snapshot.assign(request.bgm_lane_widths_pixels.begin(),
@@ -2785,32 +2793,38 @@ auto build_editor_field_scene_window_metadata_view(const chart_document_t& chart
     return metadata;
 }
 
-auto make_editor_field_scene_reusing_window(const chart_document_t& chart,
+auto editor_field_scene_result_t::from(const chart_document_t& chart,
                                             const editor_field_scene_index_t& index,
                                             const editor_interaction_view_model_t& view,
                                             const editor_field_scene_request_t& request,
                                             editor_field_scene_window_t& window)
-    -> editor_field_scene_result_t {
+    -> editor_field_scene_outcome_t {
     // Complex transient previews and authored grouping/comparison overlays keep
     // their existing validation and composition path.
     if (!is_valid_window_request(chart, index, view, request)) {
         window.scene.reset();
-        return make_editor_field_scene(chart, index, view, request);
+        return editor_field_scene_result_t::from(chart, index, view, request);
     }
     const auto matched = is_reusable_window_current(window, view, request);
     if (!matched && !rebuild_scene_window(chart, index, view, request, window)) {
         window.scene.reset();
-        return make_editor_field_scene(chart, index, view, request);
+        return editor_field_scene_result_t::from(chart, index, view, request);
     }
     if (!is_window_scroll_valid(chart, view, window))
-        return make_editor_field_scene(chart, index, view, request);
+        return editor_field_scene_result_t::from(chart, index, view, request);
     auto result = build_scene_window_view(chart, index, view, request, window);
     if (!is_projected_window_within_limit(result, request)) {
         window.scene.reset();
-        return make_editor_field_scene(chart, index, view, request);
+        return editor_field_scene_result_t::from(chart, index, view, request);
     }
     if (matched) ++window.reuse_count;
     return result;
+}
+
+auto make_editor_field_scene_reusing_window(const chart_document_t& chart,
+    const editor_field_scene_index_t& index, const editor_interaction_view_model_t& view,
+    const editor_field_scene_request_t& request, editor_field_scene_window_t& window) -> editor_field_scene_result_t {
+    return editor_field_scene_result_t::from(editor_field_scene_result_t::from(chart, index, view, request, window));
 }
 
 } // namespace wormedit

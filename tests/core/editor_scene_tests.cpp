@@ -107,12 +107,12 @@ TEST_CASE("field scene composes split layout bands, exact grid, holds, selection
     CHECK(indexed.bgm_events.front().event == wormedit::object_id_t{12});
     CHECK(indexed.bgm_events.front().source_lane == wormedit::object_id_t{30});
     CHECK(indexed.bgm_events.front().row == 480);
-    const auto result = wormedit::make_editor_field_scene(
+    const auto result = wormedit::editor_field_scene_result_t::from(wormedit::editor_field_scene_result_t::from(
         chart, indexed, view(),
         {.field_left_pixels = 10.0,
          .field_width_pixels = 200.0,
          .split_stage_gutter_pixels = 12.0,
-         .comparison_difference_rows = {{wormedit::measure_id_t{2}, 0}}});
+         .comparison_difference_rows = {{wormedit::measure_id_t{2}, 0}}}));
     REQUIRE(result);
     const auto& scene = *result.scene;
     CHECK(scene.visible_begin_row == 480);
@@ -1349,8 +1349,8 @@ void check_bga_window_projection(const wormedit::chart_document_t& chart,
                                 const wormedit::editor_interaction_view_model_t& current,
                                 const wormedit::editor_field_scene_request_t& request) {
     wormedit::editor_field_scene_window_t window;
-    const auto initial = wormedit::make_editor_field_scene_reusing_window(
-        chart, index, current, request, window);
+    const auto initial = wormedit::editor_field_scene_result_t::from(wormedit::editor_field_scene_result_t::from(
+        chart, index, current, request, window));
     REQUIRE(initial);
     const auto metadata = wormedit::build_editor_field_scene_window_metadata_view(
         chart, index, current, request, window);
@@ -2296,4 +2296,21 @@ TEST_CASE("field-scene index expected errors retain validation diagnostics", "[u
     REQUIRE(built.error().size() == 1);
     CHECK(built.error().front().code == wormedit::diagnostic_code_t::invalid_resolution);
     CHECK(built.error().front().message == "field-scene index limits and chart identity must be valid");
+}
+
+namespace {
+auto has_warning_scene_adapter() -> bool {
+    wormedit::editor_field_scene_outcome_t outcome{.value = wormedit::editor_field_scene_t{},
+        .diagnostics = {{.severity = wormedit::diagnostic_severity_t::warning,
+            .code = wormedit::diagnostic_code_t::unsupported_feature, .message = "warning"}}};
+    if (!outcome.ok()) return false;
+    auto legacy = wormedit::editor_field_scene_result_t::from(std::move(outcome));
+    if (!legacy || legacy.has_errors()) return false;
+    auto restored = std::move(legacy).into_outcome();
+    return restored.value.has_value() && restored.ok() && restored.value->primitive_count() == 0 &&
+        restored.diagnostics.size() == 1 && restored.diagnostics.front().message == "warning";
+}
+} // namespace
+TEST_CASE("field-scene adapters preserve warning acceptance and scene presence", "[unit][core][editor-scene][results]") {
+    CHECK(has_warning_scene_adapter());
 }

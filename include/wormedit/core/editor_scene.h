@@ -200,6 +200,7 @@ struct editor_field_bga_event_geometry_t {
 };
 
 struct editor_field_scene_t {
+    [[nodiscard]] auto primitive_count() const noexcept -> std::size_t;
     std::uint64_t visible_begin_row{};
     std::uint64_t visible_end_row{};
     std::vector<editor_field_layout_band_t> layout_bands;
@@ -262,7 +263,20 @@ struct editor_field_scene_request_t {
     double retained_window_minimum_margin_pixels{};
 };
 
+struct editor_field_scene_window_t;
+
+using editor_field_scene_outcome_t = diagnosed_t<std::optional<editor_field_scene_t>>;
+
 struct editor_field_scene_result_t {
+    [[nodiscard]] static auto from(const chart_document_t& chart,
+        const editor_field_scene_index_t& index, const editor_interaction_view_model_t& view,
+        const editor_field_scene_request_t& request = {}) -> editor_field_scene_outcome_t;
+    [[nodiscard]] static auto from(editor_field_scene_outcome_t&& outcome) -> editor_field_scene_result_t;
+    [[nodiscard]] auto into_outcome() && -> editor_field_scene_outcome_t;
+    [[nodiscard]] static auto from(const chart_document_t& chart,
+        const editor_field_scene_index_t& index, const editor_interaction_view_model_t& view,
+        const editor_field_scene_request_t& request, editor_field_scene_window_t& window)
+        -> editor_field_scene_outcome_t;
     std::optional<editor_field_scene_t> scene;
     diagnostic_list_t diagnostics;
 

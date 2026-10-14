@@ -150,14 +150,20 @@ auto dispatch_compose_offset_fit_input(const WormUiComposeInputAction& input,
         input.kind != WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE)
         return std::nullopt;
     if (!cache.timing.offset_fit_drag ||
-        cache.timing.offset_fit_drag->beat.document_revision !=
-            context.environment.document.history.document.revision ||
         cache.timing.offset_fit_drag->asset != context.environment.document.workspace.transport.audio_asset ||
         context.environment.commands.audio_offset_edits_locked()) {
         cache.timing.offset_fit_drag.reset();
         action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
         return compose_input_family_result_t{
             "Offset fit expired after its chart or waveform changed."};
+    }
+    const auto& document = context.environment.document.history.document;
+    if (!document_stamp_t{.project = document.id,
+                          .revision = cache.timing.offset_fit_drag->beat.document_revision}
+             .is_current(document)) {
+        cache.timing.offset_fit_drag.reset();
+        action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
+        return compose_input_family_result_t{stale_action_message("Offset fit")};
     }
     const auto& drag = *cache.timing.offset_fit_drag;
     cache.timing.offset_fit_drag->target_y_pixels = input.y_pixels;

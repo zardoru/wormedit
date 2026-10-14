@@ -191,10 +191,18 @@ auto tap_timing_runtime_t::apply(document_history_t& history, const tap_timing_c
     const auto observed = observe(clock);
     const auto estimate = estimator_.estimate();
     if (!observed || !visible_ || !captured || !matching || !clock.playing ||
-        !clock.source_frame || !estimate || !estimate->stable ||
-        captured->document_revision != expected_revision) {
+        !clock.source_frame || !estimate || !estimate->stable) {
         proposal_.reset();
         status_ = "Tap result expired; play and tap again before Apply.";
+        return {.revision = history.document.revision};
+    }
+    const document_stamp_t captured_stamp{.project = history.document.id, .revision = captured->document_revision};
+    const document_stamp_t action_stamp{.project = history.document.id, .revision = expected_revision};
+    if (captured_stamp != action_stamp) {
+        proposal_.reset();
+        // Preserve the status pointer's static lifetime and avoid allocation on repeated rejection.
+        static const auto stale_result_status = stale_action_message("Tap timing result");
+        status_ = stale_result_status.c_str();
         return {.revision = history.document.revision};
     }
     auto result = apply_tap_timing_proposal(history, *captured, timing_locked);

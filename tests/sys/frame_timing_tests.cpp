@@ -2722,6 +2722,43 @@ TEST_CASE("Paste cached anchor keeps collision diagnostics across an outside poi
 }
 #endif
 
+TEST_CASE("Offset lock action rejects stale binding without clearing captured edits",
+          "[sys][offset-stamp]") {
+    compose_test_fixture_t fixture;
+    fixture.project();
+    WormUiWorkspaceAction action{};
+    action.compose_input_chart_id = fixture.interaction->chart.value;
+    action.compose_input_document_revision = fixture.history.document.revision + 1;
+    std::optional<audio_offset_drag_t> drag{audio_offset_drag_t{}};
+    std::optional<workspace_tab_t> tab{workspace_tab_t::compose};
+    const auto message = toggle_compose_audio_offset_lock(action, fixture.history, *fixture.binding.workspace,
+        fixture.application, fixture.cache, drag, tab);
+    test::check_stale_action_message(message, "Audio offset lock");
+    expect_compose_test(!fixture.application.project.timing_recipe.audio_offset_locked);
+    expect_compose_test(drag.has_value() && tab.has_value());
+    expect_compose_test(fixture.history.undo.empty());
+}
+
+TEST_CASE("Offset fit capture expiry remains separate from an absent drag",
+          "[sys][offset-stamp]") {
+    const auto missing = GENERATE(false, true);
+    compose_test_fixture_t fixture;
+    fixture.project();
+    fixture.binding.workspace->transport.audio_asset = asset_id_t{42};
+    if (!missing) {
+        fixture.cache.timing.offset_fit_drag = compose_scene_cache_t::offset_fit_drag_t{};
+        fixture.cache.timing.offset_fit_drag->asset = asset_id_t{42};
+        fixture.cache.timing.offset_fit_drag->beat.document_revision = fixture.history.document.revision + 1;
+    }
+    auto action = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_OFFSET_FIT_UPDATE, 2);
+    const auto message = dispatch_paste_action(fixture, action);
+    if (missing) CHECK(message == "Offset fit expired after its chart or waveform changed.");
+    else test::check_stale_action_message(message, "Offset fit");
+    expect_compose_test(!fixture.cache.timing.offset_fit_drag.has_value());
+    expect_compose_test(action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_CANCEL);
+    expect_compose_test(fixture.history.undo.empty());
+}
+
 TEST_CASE("Offset padlock disables exact offset controls independently of BPM timing",
           "[sys][offset-lock]") {
     compose_test_fixture_t fixture;

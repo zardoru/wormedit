@@ -2647,10 +2647,13 @@ auto toggle_compose_audio_offset_lock(const WormUiWorkspaceAction& action,
     application_command_state_t& application, compose_scene_cache_t& cache,
     std::optional<wormedit::audio_offset_drag_t>& drag,
     std::optional<wormedit::workspace_tab_t>& drag_tab) -> std::string {
-    if (workspace.active_tab != wormedit::workspace_tab_t::compose || !workspace.selected_chart ||
-        workspace.selected_chart->value != action.compose_input_chart_id ||
-        history.document.revision != action.compose_input_document_revision)
+    if (workspace.active_tab != wormedit::workspace_tab_t::compose || !workspace.selected_chart)
         return "Audio offset lock ignored because the chart or document revision changed.";
+    if (!wormedit::chart_stamp_t{
+            .document = {.project = history.document.id, .revision = action.compose_input_document_revision},
+            .chart = wormedit::chart_id_t{action.compose_input_chart_id}}
+             .is_current(history.document, *workspace.selected_chart))
+        return wormedit::stale_action_message("Audio offset lock");
     application.project.timing_recipe.audio_offset_locked = !application.project.timing_recipe.audio_offset_locked;
     if (application.project.timing_recipe.audio_offset_locked) {
         drag.reset();

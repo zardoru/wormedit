@@ -1083,10 +1083,10 @@ TEST_CASE("bookmark dispatcher preserves one typed seek producer warning", "[uni
         .anchor = marker_anchor_t::beat, .position = local_position_t{measure_id_t{1}, 900}});
     fixture.application_state.services.transport_preview_playing = [] { return true; };
     fixture.application_state.project.transport.preview_playhead_absolute_row = 0.0;
-    fixture.application_state.preferences.transport_seek_posts_feedback = true;
     fixture.application_state.services.transport_seek = [&](std::uint64_t) {
-        fixture.sink.post(notification_severity_t::warning, notification_source_t::audio, "Opaque seek failure.");
-        return std::string{"Opaque seek failure."};
+        return compose_action_outcome_t::from(
+            std::string{"Opaque seek failure."}, wormedit::notification_severity_t::warning,
+            wormedit::notification_source_t::audio, compose_feedback_delivery_t::notification);
     };
     check_layer_command(fixture.invoke(application_command_kind_t::navigation_previous_bookmark).accepted);
     fixture.center.drain_inbox(notification_time_t{0});
@@ -1384,7 +1384,12 @@ TEST_CASE("Minimap transport gestures preserve playing paused and stopped polici
     int seeks = 0, stops = 0;
     state.services.transport_preview_playing = [&] { return playing; };
     state.services.transport_preview_paused = [&] { return paused; };
-    state.services.transport_seek = [&](std::uint64_t frame) { ++seeks; resume = frame; return "seek"; };
+    state.services.transport_seek = [&](std::uint64_t frame) {
+        ++seeks;
+        resume = frame;
+        return compose_action_outcome_t::from("seek", wormedit::notification_severity_t::hint,
+                                              wormedit::notification_source_t::input);
+    };
     state.services.transport_stop = [&] { ++stops; paused = false; resume = 0; };
     CHECK(navigate_compose_minimap_transport(state, 100, false, false) == "seek");
     CHECK(seeks == 1);
@@ -1409,7 +1414,10 @@ TEST_CASE("Minimap transport gestures preserve playing paused and stopped polici
     CHECK(navigate_compose_minimap_transport(state, 600, false, false).empty());
     CHECK(seeks == before);
     playing = true;
-    state.services.transport_seek = [](std::uint64_t) { return "seek failed"; };
+    state.services.transport_seek = [](std::uint64_t) {
+        return compose_action_outcome_t::from("seek failed", wormedit::notification_severity_t::hint,
+                                              wormedit::notification_source_t::input);
+    };
     CHECK(navigate_compose_minimap_transport(state, 600, false, false) == "seek failed");
     CHECK(playing);
 }
@@ -2807,7 +2815,6 @@ TEST_CASE("Project reset retains exactly the session preference allowlist", "[sy
     state.preferences.transport_rate_index = 3;
     state.preferences.transport_keep_pitch = true;
     state.preferences.transport_keep_pitch_available = true;
-    state.preferences.transport_seek_posts_feedback = true;
     wormedit::sys::metronome_t metronome;
     state.metronome = &metronome;
     metronome.settings.enabled = true;
@@ -2822,7 +2829,6 @@ TEST_CASE("Project reset retains exactly the session preference allowlist", "[sy
     check_transient_transport(state.preferences.transport_rate_index == 3);
     check_transient_transport(state.preferences.transport_keep_pitch);
     check_transient_transport(state.preferences.transport_keep_pitch_available);
-    check_transient_transport(state.preferences.transport_seek_posts_feedback);
     check_transient_transport(state.metronome_settings().enabled);
     check_transient_transport(state.metronome_settings().available);
     check_transient_transport(state.preferences.timing_settings_visible);

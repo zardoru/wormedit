@@ -1,6 +1,5 @@
 #include "sys/compose_actions.h"
 #include "sys/application_edit_inputs.h"
-#include "sys/bookmark_rename_commands.h"
 #include "sys/compose_actions_internal.h"
 #include "sys/compose_area_actions.h"
 #include "sys/compose_bga_actions.h"
@@ -53,132 +52,37 @@ using namespace compose_action_detail;
 
 namespace compose_action_detail {
 
-void post_typed_compose_feedback(const notification_sink_t& notifications,
-    notification_severity_t severity, notification_source_t source, std::string_view message) {
-    notifications.post_feedback(severity, source, message);
-}
-
-auto publish_compose_feedback(compose_action_context_t& context, std::string message,
-                              notification_severity_t severity, notification_source_t source)
-    -> std::string {
-    context.notifications.post_feedback(severity, source, message);
-    return message;
-}
-
-auto publish_compose_diagnostic(compose_action_context_t& context, const diagnostic_t& diagnostic,
-                                notification_source_t source) -> std::string {
-    return publish_compose_feedback(context, diagnostic.message,
-                                    to_notification_severity(diagnostic.severity), source);
-}
-
-auto compose_action_success(compose_action_context_t& context, std::string message,
-                            notification_source_t source) -> std::string {
-    return publish_compose_feedback(context, std::move(message), notification_severity_t::success,
-                                    source);
-}
-
-auto compose_action_info(compose_action_context_t& context, std::string message,
-                         notification_source_t source) -> std::string {
-    return publish_compose_feedback(context, std::move(message), notification_severity_t::info,
-                                    source);
-}
-
-auto compose_action_hint(compose_action_context_t& context, std::string message,
-                         notification_source_t source) -> std::string {
-    return publish_compose_feedback(context, std::move(message), notification_severity_t::hint,
-                                    source);
-}
-
-auto compose_action_warning(compose_action_context_t& context, std::string message,
-                            notification_source_t source) -> std::string {
-    return publish_compose_feedback(context, std::move(message), notification_severity_t::warning,
-                                    source);
-}
-
-auto compose_action_error(compose_action_context_t& context, std::string message,
-                          notification_source_t source) -> std::string {
-    return publish_compose_feedback(context, std::move(message), notification_severity_t::error,
-                                    source);
-}
-
-auto compose_mutation_rebind_failure(compose_action_context_t& context,
-                                     const workspace_action_result_t& rebound, std::string success,
-                                     std::string failure, notification_source_t source,
-                                     notification_severity_t severity) -> std::string {
-    static_cast<void>(publish_compose_feedback(context, std::move(success), severity, source));
-    if (!rebound.diagnostics.empty())
-        return publish_compose_diagnostic(context, rebound.diagnostics.front(),
-                                          notification_source_t::document);
-    return compose_action_error(context, std::move(failure), notification_source_t::document);
-}
-
-auto compose_interaction_feedback(compose_action_context_t& context,
-                                  const editor_interaction_result_t& result,
-                                  std::string_view accepted, notification_source_t source)
-    -> std::string {
-    if (result.accepted) {
-        const auto status = compose_result_status(result, accepted);
-        return result.document_changed
-                   ? compose_action_success(context, status, notification_source_t::edit)
-                   : compose_action_hint(context, status, source);
-    }
-    if (!result.diagnostics.empty())
-        return publish_compose_diagnostic(context, result.diagnostics.front(), source);
-    return compose_action_warning(context, compose_result_status(result, accepted), source);
-}
-
-auto compose_bookmark_navigation_feedback(compose_action_context_t& context,
-                                          const bookmark_command_outcome_t& outcome) -> std::string {
-    if (outcome.feedback_posted) return outcome.status;
-    if (!outcome.diagnostics.empty())
-        return publish_compose_feedback(
-            context, outcome.status, to_notification_severity(outcome.diagnostics.front().severity),
-            notification_source_t::input);
-    return outcome.accepted ? compose_action_hint(context, outcome.status)
-                            : compose_action_warning(context, outcome.status, notification_source_t::input);
-}
-
-auto dispatch_compose_bookmark_action(compose_action_context_t& context) -> std::optional<std::string> {
+auto dispatch_compose_bookmark_action(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
     const auto& action = context.action;
     const bool rename = action.compose_action == WORM_UI_COMPOSE_ACTION_RENAME_BOOKMARK;
     if (!rename && action.compose_action != WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK) return std::nullopt;
     if (action.compose_input_project_id != context.environment.document.history.document.id.value)
-        return compose_action_warning(context,
-                                      wormedit::stale_action_message("Bookmark action"));
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(context, "Finish or cancel the active Compose gesture first.");
-    if (!rename) {
-        const auto outcome =
-            context.environment.editor.commands.bookmarks.navigate_to_bookmark(context.environment.document.history, context.state,
-                                 context.environment.editor.commands,
-                                 action.compose_input_document_revision, context.state.chart,
-                                 wormedit::object_id_t{action.compose_bookmark_id});
-        return compose_bookmark_navigation_feedback(context, outcome);
-    }
+        return compose_action_outcome_t::blocked(wormedit::stale_action_message("Bookmark action"));
+    if (auto blocked =
+            context.require_no_gesture("Finish or cancel the active Compose gesture first."))
+        return std::move(*blocked);
+    if (!rename)
+        return context.environment.editor.commands.bookmarks.navigate_to_bookmark(
+            context.environment.document.history, context.state,
+            context.environment.editor.commands, action.compose_input_document_revision,
+            context.state.chart, wormedit::object_id_t{action.compose_bookmark_id});
     const auto label_end = std::find(std::begin(action.compose_marker_label),
                                     std::end(action.compose_marker_label), '\0');
     if (label_end == std::end(action.compose_marker_label))
-        return compose_action_warning(context, "Bookmark name is too long.");
-    const auto outcome = context.environment.editor.commands.bookmarks.rename_bookmark(
+        return compose_action_outcome_t::blocked("Bookmark name is too long.");
+    return context.environment.editor.commands.bookmarks.rename_bookmark(
         context.environment.document.history, action.compose_input_document_revision,
         context.state.chart, wormedit::object_id_t{action.compose_bookmark_id},
         std::string_view(action.compose_marker_label, label_end - action.compose_marker_label));
-    if (outcome.document_changed) {
-        const auto rebound = wormedit::rebind_workspace(context.environment.document.workspace,
-                                                        context.environment.document.history);
-        if (!rebound)
-            return compose_mutation_rebind_failure(context, rebound, outcome.status,
-                "Bookmark renamed, but workspace rebinding failed.");
-    }
-    return publish_compose_feedback(context, outcome.status, outcome.severity, notification_source_t::edit);
 }
 
-std::optional<std::string> dispatch_compose_measure_navigation(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+dispatch_compose_measure_navigation(compose_action_context_t& context) {
     if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE) return std::nullopt;
-    const auto outcome = navigate_compose_measure(context.environment.document.history, context.state,
-                                                  context.environment.editor.commands,
-                                                  context.action.compose_measure_number);
-    return compose_bookmark_navigation_feedback(context, outcome);
+    return navigate_compose_measure(context.environment.document.history, context.state,
+                                    context.environment.editor.commands,
+                                    context.action.compose_measure_number);
 }
 
 std::optional<compose_action_outcome_t>
@@ -2516,7 +2420,8 @@ auto dispatch_compose_remaining_action(compose_action_context_t& context)
     if (auto response = dispatch_compose_resource_action(context)) return finish_compose_action(context, std::move(*response));
     if (auto response = dispatch_compose_bmson_action(context))
         return finish_compose_action(context, std::move(*response));
-    if (auto response = dispatch_compose_marker_action(context)) return *response;
+    if (auto response = dispatch_compose_marker_action(context))
+        return finish_compose_action(context, std::move(*response));
     if (auto response = target_captured_semantic_layer_action(context))
         return finish_compose_action(context, std::move(*response));
     if (auto response = dispatch_compose_semantic_layer_catalog_action(context))
@@ -2631,8 +2536,10 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         return finish_compose_action(context, std::move(*response));
     if (auto response = dispatch_compose_audio_offset(context))
         return finish_compose_action(context, std::move(*response));
-    if (auto response = dispatch_compose_bookmark_action(context)) return *response;
-    if (auto response = dispatch_compose_measure_navigation(context)) return *response;
+    if (auto response = dispatch_compose_bookmark_action(context))
+        return finish_compose_action(context, std::move(*response));
+    if (auto response = dispatch_compose_measure_navigation(context))
+        return finish_compose_action(context, std::move(*response));
     if (auto response = dispatch_compose_bgm_column_count(context))
         return finish_compose_action(context, std::move(*response));
     if (auto response = dispatch_compose_lane_profile(context))
@@ -2640,7 +2547,9 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
     if (auto response = dispatch_compose_lane_layout_profile(context))
         return finish_compose_action(context, std::move(*response));
     if (auto response = dispatch_compose_remaining_action(context)) return *response;
-    return compose_action_warning(context, compose_result_status(result, status), notification_source_t::input);
+    return finish_compose_action(
+        context, compose_action_outcome_t::blocked(compose_result_status(result, status),
+                                                   notification_source_t::input));
 }
 
 auto dispatch_project_export_action(const WormUiWorkspaceAction& action,

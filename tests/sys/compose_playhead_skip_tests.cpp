@@ -77,7 +77,8 @@ TEST_CASE("repeated playing skips within 300 ms continue from the last target",
     std::vector<std::uint64_t> seeks;
     application.services.transport_seek = [&](std::uint64_t frame) {
         seeks.push_back(frame);
-        return std::string{};
+        return compose_action_outcome_t::from(std::string{}, notification_severity_t::hint,
+                                              notification_source_t::input);
     };
     constexpr auto quarter = audio::output_sample_rate / 4;
     const auto notch = [&](double amount) {

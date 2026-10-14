@@ -2,7 +2,6 @@
 #include "sys/application_edit_helpers.h"
 #include "sys/application_edit_inputs.h"
 #include "sys/bookmark_commands.h"
-#include "sys/bookmark_rename_commands.h"
 #include "sys/compose_action_context.h"
 #include "sys/compose_action_outcome.h"
 #include "sys/compose_actions.h"
@@ -84,59 +83,11 @@
 
 namespace wormedit::sys::compose_action_detail {
 
-
-
-void post_typed_compose_feedback(const notification_sink_t& notifications,
-                                 notification_severity_t severity, notification_source_t source,
-                                 std::string_view message);
-
-auto publish_compose_feedback(compose_action_context_t& context, std::string message,
-                              notification_severity_t severity, notification_source_t source)
-    -> std::string;
-
-auto publish_compose_diagnostic(compose_action_context_t& context, const diagnostic_t& diagnostic,
-                                notification_source_t source = notification_source_t::edit)
-    -> std::string;
-
-auto compose_action_success(compose_action_context_t& context, std::string message,
-                            notification_source_t source = notification_source_t::edit)
-    -> std::string;
-
-auto compose_action_info(compose_action_context_t& context, std::string message,
-                         notification_source_t source = notification_source_t::input)
-    -> std::string;
-
-auto compose_action_hint(compose_action_context_t& context, std::string message,
-                         notification_source_t source = notification_source_t::input)
-    -> std::string;
-
-auto compose_action_warning(compose_action_context_t& context, std::string message,
-                            notification_source_t source = notification_source_t::edit)
-    -> std::string;
-
-auto compose_action_error(compose_action_context_t& context, std::string message,
-                          notification_source_t source = notification_source_t::document)
-    -> std::string;
-
-auto compose_mutation_rebind_failure(
-    compose_action_context_t& context, const workspace_action_result_t& rebound,
-    std::string success, std::string failure,
-    notification_source_t source = notification_source_t::edit,
-    notification_severity_t severity = notification_severity_t::success) -> std::string;
-
-auto compose_interaction_feedback(compose_action_context_t& context,
-                                  const editor_interaction_result_t& result,
-                                  std::string_view accepted,
-                                  notification_source_t source = notification_source_t::input)
-    -> std::string;
-
-auto compose_bookmark_navigation_feedback(compose_action_context_t& context,
-                                          const bookmark_command_outcome_t& outcome) -> std::string;
-
 auto dispatch_compose_bookmark_action(compose_action_context_t& context)
-    -> std::optional<std::string>;
+    -> std::optional<compose_action_outcome_t>;
 
-std::optional<std::string> dispatch_compose_measure_navigation(compose_action_context_t& context);
+std::optional<compose_action_outcome_t>
+dispatch_compose_measure_navigation(compose_action_context_t& context);
 
 std::optional<compose_action_outcome_t>
 dispatch_compose_bgm_column_count(compose_action_context_t& context);
@@ -334,7 +285,8 @@ std::string_view beat_section_success(const WormUiWorkspaceAction& action, bool 
 
 compose_action_outcome_t edit_beat_section(compose_action_context_t& context);
 
-std::optional<std::string> dispatch_compose_beat_section_action(compose_action_context_t& context);
+std::optional<compose_action_outcome_t>
+dispatch_compose_beat_section_action(compose_action_context_t& context);
 
 auto make_audio_bookmark_edit(compose_action_context_t& context,
                               const wormedit::chart_document_t& chart)
@@ -342,7 +294,7 @@ auto make_audio_bookmark_edit(compose_action_context_t& context,
 
 compose_action_outcome_t edit_audio_bookmark(compose_action_context_t& context);
 
-std::optional<std::string>
+std::optional<compose_action_outcome_t>
 dispatch_compose_audio_bookmark_action(compose_action_context_t& context);
 
 auto make_audio_section_edit(compose_action_context_t& context,
@@ -351,7 +303,8 @@ auto make_audio_section_edit(compose_action_context_t& context,
 
 compose_action_outcome_t edit_audio_section(compose_action_context_t& context);
 
-std::optional<std::string> dispatch_compose_audio_section_action(compose_action_context_t& context);
+std::optional<compose_action_outcome_t>
+dispatch_compose_audio_section_action(compose_action_context_t& context);
 
 auto make_beat_bookmark_edit(compose_action_context_t& context,
                              const wormedit::chart_document_t& chart)
@@ -359,11 +312,12 @@ auto make_beat_bookmark_edit(compose_action_context_t& context,
 
 compose_action_outcome_t edit_beat_bookmark(compose_action_context_t& context);
 
-std::optional<std::string> dispatch_compose_beat_bookmark_action(compose_action_context_t& context);
+std::optional<compose_action_outcome_t>
+dispatch_compose_beat_bookmark_action(compose_action_context_t& context);
 
 compose_action_outcome_t edit_selected_note_labels(compose_action_context_t& context);
 
-std::string navigate_audio_marker(compose_action_context_t& context);
+compose_action_outcome_t navigate_audio_marker(compose_action_context_t& context);
 
 compose_action_outcome_t search_selected_note_labels(compose_action_context_t& context);
 
@@ -392,7 +346,8 @@ compose_action_outcome_t set_measures_meter(compose_action_context_t& context);
 
 compose_action_outcome_t move_bar_line(compose_action_context_t& context);
 
-std::optional<std::string> dispatch_compose_marker_action(compose_action_context_t& context);
+std::optional<compose_action_outcome_t>
+dispatch_compose_marker_action(compose_action_context_t& context);
 
 auto catalog_semantic_layer_by_id(const wormedit::chart_document_t& chart, wormedit::layer_id_t id)
     -> const wormedit::semantic_layer_t*;

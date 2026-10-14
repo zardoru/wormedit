@@ -659,24 +659,6 @@ auto navigation_commands(command_context_t& context) -> std::optional<command_re
         notification_severity_t::hint, notification_source_t::input);
 }
 
-void post_bookmark_outcome(notification_sink_t& sink, command_kind_t kind,
-                           const bookmark_command_outcome_t& outcome) {
-    if (outcome.feedback_posted) return;
-    const bool adding = kind == command_kind_t::markers_add_bookmark;
-    const auto source = adding ? notification_source_t::edit : notification_source_t::input;
-    if (outcome.accepted) {
-        post_command_message(sink, adding ? (outcome.document_changed ? notification_severity_t::success
-                                                       : notification_severity_t::info)
-                                          : notification_severity_t::hint,
-                             source, outcome.status);
-    } else if (!outcome.diagnostics.empty()) {
-        post_command_message(sink, to_notification_severity(outcome.diagnostics.front().severity),
-                             source, outcome.diagnostics.front().message);
-    } else {
-        post_command_message(sink, notification_severity_t::warning, source, outcome.status);
-    }
-}
-
 auto open_bookmark_chooser_command(command_context_t& context) -> std::optional<command_result_t> {
     if (context.command.kind != command_kind_t::navigation_go_to_bookmark) return std::nullopt;
     auto* interaction = context.compose();
@@ -820,6 +802,22 @@ auto compose_auxiliary_command(command_context_t& context) -> std::optional<comm
     return command_result_t{.accepted = true};
 }
 
+auto run_bookmark_command(application_command_context_t& context, editor_interaction_state_t& state,
+                          const chart_document_t& chart, bool previous)
+    -> compose_action_outcome_t {
+    if (context.command.kind == command_kind_t::markers_add_bookmark)
+        return context.environment.editor.commands.bookmarks.add_beat_bookmark_here(
+            context.environment.document.history, state, context.environment.editor.commands);
+    const auto downscroll = compose_field_downscroll(
+        chart, context.environment.editor.commands.preferences.editor_preferences);
+    // Commands are bound to screen directions; a flipped field reverses the jump.
+    const auto direction = compose_visual_navigation_direction(downscroll, previous);
+    return context.environment.editor.commands.bookmarks.navigate_beat_bookmark(
+        context.environment.document.history, state, context.environment.editor.commands,
+        direction == interaction_direction_t::backward ? marker_navigation_direction_t::previous
+                                                       : marker_navigation_direction_t::next);
+}
+
 // Primary+Up/Down jump bookmarks in screen direction; Primary+B adds one here.
 auto bookmark_commands(command_context_t& context) -> std::optional<command_result_t> {
     using namespace wormedit;
@@ -845,31 +843,24 @@ auto bookmark_commands(command_context_t& context) -> std::optional<command_resu
             notification_severity_t::warning, notification_source_t::edit);
     const auto previous_revision = context.environment.document.history.document.revision;
     const auto bookmark_chart = state->chart;
-    auto outcome = [&] {
-        if (kind == command_kind_t::markers_add_bookmark)
-            return context.environment.editor.commands.bookmarks.add_beat_bookmark_here(context.environment.document.history, *state,
-                                          context.environment.editor.commands);
-        const auto downscroll = compose_field_downscroll(
-            *chart, context.environment.editor.commands.preferences.editor_preferences);
-        // The commands are bound to screen directions: Up is "previous" unless the field is flipped.
-        const auto direction = compose_visual_navigation_direction(downscroll, previous);
-        return context.environment.editor.commands.bookmarks.navigate_beat_bookmark(context.environment.document.history, *state,
-                                      context.environment.editor.commands,
-                                      direction == interaction_direction_t::backward
-                                          ? marker_navigation_direction_t::previous
-                                          : marker_navigation_direction_t::next);
-    }();
-    post_bookmark_outcome(context.environment.document.notifications, kind, outcome);
-    if (outcome.document_changed) {
-        const auto rebound = context.rebind();
-        if (!rebound.accepted) return rebound;
-        if (kind == command_kind_t::markers_add_bookmark && outcome.accepted) {
-            static_cast<void>(context.environment.editor.commands.bookmarks.preserve_preview_revision(
-                                      bookmark_chart, previous_revision,
-                                      context.environment.document.history.document.revision));
-        }
+    auto outcome = run_bookmark_command(context, *state, *chart, previous);
+    if (!outcome.accepted && !outcome.diagnostics.empty())
+        outcome.delivery = compose_feedback_delivery_t::diagnostic_message;
+    outcome = finish_compose_action(context.environment.document,
+                                    context.environment.document.notifications, std::move(outcome));
+    if (outcome.mutated && !outcome.accepted) {
+        // Registered commands retain the old rebind rejection code and one diagnostic.
+        outcome.diagnostics.resize(1);
+        outcome.diagnostics.front() = {.severity = diagnostic_severity_t::error,
+                                       .code = diagnostic_code_t::invalid_id,
+                                       .message = std::move(outcome.message)};
     }
-    return command_result_t{.accepted = outcome.accepted, .diagnostics = outcome.diagnostics};
+    if (outcome.mutated && outcome.accepted && kind == command_kind_t::markers_add_bookmark)
+        static_cast<void>(context.environment.editor.commands.bookmarks.preserve_preview_revision(
+            bookmark_chart, previous_revision,
+            context.environment.document.history.document.revision));
+    return command_result_t{.accepted = outcome.accepted,
+                            .diagnostics = std::move(outcome.diagnostics)};
 }
 
 auto workspace_tab_command(command_context_t& context) -> std::optional<command_result_t> {

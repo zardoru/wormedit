@@ -17,11 +17,6 @@ auto navigation_frame(const chart_document_t& chart, const application_command_s
         ? application.services.transport_preview_end_frame() : std::nullopt;
     return bookmark_preview_frame(*timing.index, std::get<measure_index_t>(built), target.position, end);
 }
-
-auto navigation_outcome(const editor_interaction_result_t& result, std::string status)
-    -> bookmark_command_outcome_t {
-    return {.accepted = result.accepted, .status = std::move(status), .diagnostics = result.diagnostics};
-}
 }
 
 auto compose_navigation_transport_policy(const application_command_state_t& application,
@@ -34,25 +29,33 @@ auto compose_navigation_transport_policy(const application_command_state_t& appl
 }
 
 auto apply_compose_navigation_transport(application_command_state_t& application,
-    compose_navigation_transport_t policy, std::optional<std::uint64_t> frame,
-    std::optional<std::int64_t> audio_milliseconds) -> bookmark_command_outcome_t {
+                                        compose_navigation_transport_t policy,
+                                        std::optional<std::uint64_t> frame,
+                                        std::optional<std::int64_t> audio_milliseconds)
+    -> compose_action_outcome_t {
     if (policy != compose_navigation_transport_t::seek) {
         if (policy == compose_navigation_transport_t::stop && application.services.transport_stop)
             application.services.transport_stop();
-        return {.accepted = true};
+        return compose_action_outcome_t::from({}, notification_severity_t::hint,
+                                              notification_source_t::input);
     }
     if (audio_milliseconds) {
         if (!application.services.transport_seek_audio_milliseconds)
-            return {.status = "Audio-time bookmark seek is unavailable."};
+            return compose_action_outcome_t::blocked("Audio-time bookmark seek is unavailable.",
+                                                     notification_source_t::input);
         application.invalidate_playing_seek_records();
-        return {.accepted = true,
-            .status = application.services.transport_seek_audio_milliseconds(*audio_milliseconds),
-            .feedback_posted = application.preferences.transport_seek_posts_feedback};
+        auto outcome = application.services.transport_seek_audio_milliseconds(*audio_milliseconds);
+        // Navigation has always accepted an available seek service, including opaque failures.
+        outcome.accepted = true;
+        return outcome;
     }
-    if (!frame || !application.services.transport_seek) return {.status = "Chart preview seek is unavailable."};
+    if (!frame || !application.services.transport_seek)
+        return compose_action_outcome_t::blocked("Chart preview seek is unavailable.",
+                                                 notification_source_t::input);
     application.invalidate_playing_seek_records();
-    return {.accepted = true, .status = application.services.transport_seek(*frame),
-        .feedback_posted = application.preferences.transport_seek_posts_feedback};
+    auto outcome = application.services.transport_seek(*frame);
+    outcome.accepted = true;
+    return outcome;
 }
 
 auto move_compose_navigation_cursor(document_history_t& history, editor_interaction_state_t& state,
@@ -98,50 +101,71 @@ auto reset_compose_navigation_view(document_history_t& history, editor_interacti
 }
 
 auto seek_compose_navigation_position(const chart_document_t& chart,
-    application_command_state_t& application, const compose_navigation_target_t& target)
-    -> bookmark_command_outcome_t {
+                                      application_command_state_t& application,
+                                      const compose_navigation_target_t& target)
+    -> compose_action_outcome_t {
     const auto frame = target.audio_milliseconds ? std::nullopt : navigation_frame(chart, application, target);
     return apply_compose_navigation_transport(application, compose_navigation_transport_t::seek,
                                                frame, target.audio_milliseconds);
 }
 
 auto navigate_compose_position(document_history_t& history, editor_interaction_state_t& state,
-    application_command_state_t& application, const compose_navigation_target_t& target,
-    std::uint64_t expected_revision) -> bookmark_command_outcome_t {
+                               application_command_state_t& application,
+                               const compose_navigation_target_t& target,
+                               std::uint64_t expected_revision) -> compose_action_outcome_t {
     if (!document_stamp_t{.project = history.document.id, .revision = expected_revision}
              .is_current(history.document))
-        return {.status = stale_action_message("Compose navigation")};
+        return compose_action_outcome_t::from(stale_action_message("Compose navigation"),
+                                              notification_severity_t::warning,
+                                              notification_source_t::input, false, false);
     if (has_pending_editor_gesture(state))
-        return {.status = "Finish or cancel the active Compose gesture before navigating."};
+        return compose_action_outcome_t::from(
+            "Finish or cancel the active Compose gesture before navigating.",
+            notification_severity_t::warning, notification_source_t::input, false, false);
     const auto* chart = history.document.find_chart(state.chart);
-    if (!chart) return {.status = "The selected difficulty is no longer available."};
+    if (!chart)
+        return compose_action_outcome_t::from("The selected difficulty is no longer available.",
+                                              notification_severity_t::warning,
+                                              notification_source_t::input, false, false);
     const auto playing = is_preview_playing(application);
     const auto policy = compose_navigation_transport_policy(application, target.minimap, target.primary);
     auto candidate = state;
     if (!playing || target.minimap) {
-        const auto moved = move_compose_navigation_cursor(history, candidate, target, expected_revision);
-        if (!moved.accepted) return navigation_outcome(moved, "The requested chart position could not be reached.");
+        auto moved = move_compose_navigation_cursor(history, candidate, target, expected_revision);
+        if (!moved.accepted)
+            return compose_action_outcome_t::from(
+                std::move(moved), "The requested chart position could not be reached.",
+                notification_source_t::input, compose_interaction_message_policy_t::supplied);
     }
     auto outcome = policy == compose_navigation_transport_t::seek
         ? seek_compose_navigation_position(*chart, application, target)
         : apply_compose_navigation_transport(application, policy, std::nullopt);
-    if (outcome.accepted && outcome.status.empty())
-        outcome.status = playing ? "Compose playhead moved." : "Compose cursor moved.";
+    if (outcome.accepted && outcome.message.empty())
+        outcome.message = playing ? "Compose playhead moved." : "Compose cursor moved.";
     if (outcome.accepted && (!playing || target.minimap)) state = std::move(candidate);
     return outcome;
 }
 
 auto navigate_compose_measure(document_history_t& history, editor_interaction_state_t& state,
-    application_command_state_t& application, std::uint64_t number) -> bookmark_command_outcome_t {
+                              application_command_state_t& application, std::uint64_t number)
+    -> compose_action_outcome_t {
     const auto* chart = history.document.find_chart(state.chart);
-    if (!chart) return {.status = "The selected difficulty is no longer available."};
+    if (!chart)
+        return compose_action_outcome_t::from("The selected difficulty is no longer available.",
+                                              notification_severity_t::warning,
+                                              notification_source_t::input, false, false);
     compose_navigation_target_t target;
     if (has_chart_virtual_tail(*chart)) {
         const auto bms = chart->source_family == format_family_t::bms;
-        if (!bms && number == 0) return {.status = "The requested measure is outside this chart."};
+        if (!bms && number == 0)
+            return compose_action_outcome_t::from("The requested measure is outside this chart.",
+                                                  notification_severity_t::warning,
+                                                  notification_source_t::input, false, false);
         const auto index = bms ? number : number - 1;
         if (index >= virtual_tail_measure_limit(*chart))
-            return {.status = "The requested measure is outside this chart."};
+            return compose_action_outcome_t::from("The requested measure is outside this chart.",
+                                                  notification_severity_t::warning,
+                                                  notification_source_t::input, false, false);
         target.canvas_measure = static_cast<std::size_t>(index);
         if (index < chart->measures.size()) {
             target.position = {chart->measures[static_cast<std::size_t>(index)].id, 0};
@@ -149,12 +173,14 @@ auto navigate_compose_measure(document_history_t& history, editor_interaction_st
         }
     } else {
         if (number == 0 || number > chart->measures.size())
-            return {.status = "The requested measure is outside this chart."};
+            return compose_action_outcome_t::from("The requested measure is outside this chart.",
+                                                  notification_severity_t::warning,
+                                                  notification_source_t::input, false, false);
         target.position = {chart->measures[static_cast<std::size_t>(number - 1)].id, 0};
     }
     auto outcome = navigate_compose_position(history, state, application, target, history.document.revision);
     if (outcome.accepted && !is_preview_playing(application))
-        outcome.status = "Compose cursor moved to the requested measure.";
+        outcome.message = "Compose cursor moved to the requested measure.";
     return outcome;
 }
 

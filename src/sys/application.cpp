@@ -182,6 +182,7 @@ bool open_bookmark_chooser_backend(void*, std::uint64_t project, std::uint64_t c
 }
 
 using wormedit::sys::begin_timing_stage;
+using wormedit::sys::compose_action_outcome_t;
 using wormedit::sys::timing_lane_kind_from_ui;
 using wormedit::sys::timing_position_from_fraction;
 using wormedit::sys::timing_stage_value;
@@ -4147,27 +4148,26 @@ struct application_t::implementation_t {
             wormedit::notification_source_t::audio, result);
     }
 
-    auto on_transport_seek(std::uint64_t frame) -> std::string {
+    auto on_transport_seek(std::uint64_t frame) -> compose_action_outcome_t {
         if (!audio_runtime.preview_output.playing() && !audio_runtime.preview_state.paused &&
             session.workspace.active_tab == wormedit::workspace_tab_t::compose &&
             views.compose_interaction_state && session.workspace.selected_chart &&
             views.compose_interaction_state->chart == *session.workspace.selected_chart) {
             if (wormedit::sys::editor_interaction_has_pending_gesture(
                     *views.compose_interaction_state))
-                return post_callback_feedback(
-                    platform.notification_sink, wormedit::notification_severity_t::warning,
-                    wormedit::notification_source_t::input,
-                    "Finish or cancel the active Compose gesture before seeking.");
-            return wormedit::sys::seek_stopped_compose_transport(
-                session.history, *views.compose_interaction_state, views.compose_scene_cache, frame,
-                platform.notification_sink);
+                return compose_action_outcome_t::blocked(
+                    "Finish or cancel the active Compose gesture before seeking.",
+                    wormedit::notification_source_t::input);
+            return wormedit::sys::seek_stopped_compose_transport(session.history,
+                                                                 *views.compose_interaction_state,
+                                                                 views.compose_scene_cache, frame);
         }
         const auto result = audio_runtime.preview_state.seek(
             frame, session.history.document, session.workspace, audio_runtime.audition_output,
             audio_runtime.preview_session, audio_runtime.preview_output);
-        return post_callback_feedback(platform.notification_sink,
-                                      audio_runtime.preview_state.feedback.severity,
-                                      wormedit::notification_source_t::audio, result);
+        return compose_action_outcome_t::from(result, audio_runtime.preview_state.feedback.severity,
+                                              wormedit::notification_source_t::audio, false,
+                                              audio_runtime.preview_state.feedback.accepted);
     }
 
     auto on_transport_audio_milliseconds() -> std::optional<std::int64_t> {
@@ -4175,14 +4175,15 @@ struct application_t::implementation_t {
             session.history.document, session.workspace, audio_runtime.preview_session);
     }
 
-    auto on_transport_seek_audio_milliseconds(std::int64_t milliseconds) -> std::string {
+    auto on_transport_seek_audio_milliseconds(std::int64_t milliseconds)
+        -> compose_action_outcome_t {
         const auto result = audio_runtime.preview_state.seek_audio_milliseconds(
             milliseconds, session.history.document, session.workspace,
             audio_runtime.audition_output, audio_runtime.preview_session,
             audio_runtime.preview_output);
-        return post_callback_feedback(platform.notification_sink,
-                                      audio_runtime.preview_state.feedback.severity,
-                                      wormedit::notification_source_t::audio, result);
+        return compose_action_outcome_t::from(result, audio_runtime.preview_state.feedback.severity,
+                                              wormedit::notification_source_t::audio, false,
+                                              audio_runtime.preview_state.feedback.accepted);
     }
 
     auto on_transport_set_bgm_mix(wormedit::chart_id_t chart, std::span<const std::uint64_t> muted)
@@ -4295,15 +4296,14 @@ struct application_t::implementation_t {
     }
 
     void configure_transport_seek_commands() {
-        commands.preferences.transport_seek_posts_feedback = true;
-        commands.services.transport_seek = [this](std::uint64_t frame) -> std::string {
+        commands.services.transport_seek = [this](std::uint64_t frame) -> compose_action_outcome_t {
             return on_transport_seek(frame);
         };
         commands.services.transport_audio_milliseconds = [this]() {
             return on_transport_audio_milliseconds();
         };
         commands.services.transport_seek_audio_milliseconds =
-            [this](std::int64_t milliseconds) -> std::string {
+            [this](std::int64_t milliseconds) -> compose_action_outcome_t {
             return on_transport_seek_audio_milliseconds(milliseconds);
         };
     }

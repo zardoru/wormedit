@@ -61,16 +61,11 @@ auto navigation_minimum_rows(const wormedit::document_history_t& history,
                              const wormedit::editor_interaction_state_t& state,
                              wormedit::editor_navigation_action_t action) -> std::uint64_t;
 auto navigation_page_message(wormedit::editor_navigation_action_t action) -> std::string_view;
-struct playhead_navigation_feedback_t {
-    std::string message;
-    wormedit::notification_severity_t severity{wormedit::notification_severity_t::warning};
-    bool posted_by_seek{};
-};
 auto skip_playhead_for_navigation(wormedit::editor_navigation_action_t action,
                                   const wormedit::document_history_t& history,
                                   const wormedit::editor_interaction_state_t& state,
                                   application_command_state_t& application)
-    -> playhead_navigation_feedback_t;
+    -> compose_action_outcome_t;
 } // namespace wormedit::sys::compose_navigation_input_detail
 namespace wormedit::sys {
 auto compose_result_status(const wormedit::editor_interaction_result_t& result,

@@ -427,26 +427,26 @@ auto click_compose_waveform(const WormUiComposeInputAction& input, compose_input
     const auto position = (cache.scene.index->measures).position_at(target->snapped_row);
     if (!position)
         return compose_input_family_result_t{"Waveform cursor position is unavailable."};
-    const auto outcome =
-        navigate_compose_position(context.environment.document.history, context.state,
-                                  context.environment.commands,
-                                  {.position = *position,
-                                   .preview_frame = target->frame,
-                                   .minimap = true,
-                                   .primary = input.overview_primary},
-                                  context.environment.document.history.document.revision);
+    auto outcome = navigate_compose_position(
+        context.environment.document.history, context.state, context.environment.commands,
+        {.position = *position,
+         .preview_frame = target->frame,
+         .minimap = true,
+         .primary = input.overview_primary},
+        context.environment.document.history.document.revision);
     result.accepted = outcome.accepted;
-    result.diagnostics = outcome.diagnostics;
+    result.diagnostics = std::move(outcome.diagnostics);
     if (outcome.accepted)
         retain_compose_minimap_start(context.environment.commands,
                                      context.environment.document.history, context.state, *target,
                                      *cache.timing.marker_timing_index);
     accepted = "Compose waveform position moved.";
+    auto finished = finish_compose_action(context.notifications ? *context.notifications
+                                                                : notification_sink_t::muted(),
+                                          std::move(outcome));
     auto feedback = compose_input_family_result_t::stop_with_feedback(
-        outcome.status,
-        outcome.accepted ? notification_severity_t::hint : notification_severity_t::warning,
-        notification_source_t::input);
-    feedback.notification_posted = outcome.feedback_posted;
+        std::move(finished.message), finished.severity, finished.source);
+    feedback.notification_posted = true;
     return feedback;
 }
 } // namespace wormedit::sys::compose_input_detail

@@ -111,14 +111,15 @@ compose_action_outcome_t edit_beat_section(compose_action_context_t& context) {
     return compose_action_outcome_t::from(std::move(applied), compose_action_description_t{.success = beat_section_success(context.action, from_selection), .unchanged = "Section edit made no changes.", .rebind_failure = "Section changed, but workspace rebinding failed."});
 }
 
-std::optional<std::string> dispatch_compose_beat_section_action(compose_action_context_t& context) {
+std::optional<compose_action_outcome_t>
+dispatch_compose_beat_section_action(compose_action_context_t& context) {
     switch (context.action.compose_action) {
     case WORM_UI_COMPOSE_ACTION_ADD_BEAT_SECTION:
     case WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_SECTION_LABEL:
     case WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_BEGIN:
     case WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_END:
     case WORM_UI_COMPOSE_ACTION_DELETE_BEAT_SECTION:
-        return finish_compose_action(context, edit_beat_section(context));
+        return edit_beat_section(context);
     default:
         return std::nullopt;
     }
@@ -177,13 +178,13 @@ compose_action_outcome_t edit_audio_bookmark(compose_action_context_t& context) 
     return compose_action_outcome_t::from(std::move(applied), compose_action_description_t{.success = success, .unchanged = "Audio bookmark edit made no changes.", .rebind_failure = "Audio bookmark changed, but workspace rebinding failed.", .source = notification_source_t::edit});
 }
 
-std::optional<std::string>
+std::optional<compose_action_outcome_t>
 dispatch_compose_audio_bookmark_action(compose_action_context_t& context) {
     switch (context.action.compose_action) {
     case WORM_UI_COMPOSE_ACTION_ADD_AUDIO_BOOKMARK:
     case WORM_UI_COMPOSE_ACTION_UPDATE_AUDIO_BOOKMARK:
     case WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_BOOKMARK:
-        return finish_compose_action(context, edit_audio_bookmark(context));
+        return edit_audio_bookmark(context);
     default:
         return std::nullopt;
     }
@@ -243,13 +244,13 @@ compose_action_outcome_t edit_audio_section(compose_action_context_t& context) {
     return compose_action_outcome_t::from(std::move(applied), compose_action_description_t{.success = success, .unchanged = "Audio section edit made no changes.", .rebind_failure = "Audio section changed, but workspace rebinding failed.", .source = notification_source_t::edit});
 }
 
-std::optional<std::string>
+std::optional<compose_action_outcome_t>
 dispatch_compose_audio_section_action(compose_action_context_t& context) {
     switch (context.action.compose_action) {
     case WORM_UI_COMPOSE_ACTION_ADD_AUDIO_SECTION:
     case WORM_UI_COMPOSE_ACTION_UPDATE_AUDIO_SECTION:
     case WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_SECTION:
-        return finish_compose_action(context, edit_audio_section(context));
+        return edit_audio_section(context);
     default:
         return std::nullopt;
     }
@@ -306,31 +307,31 @@ compose_action_outcome_t edit_beat_bookmark(compose_action_context_t& context) {
     return compose_action_outcome_t::from(std::move(applied), compose_action_description_t{.success = success, .unchanged = unchanged, .rebind_failure = "Bookmark changed, but workspace rebinding failed."});
 }
 
-std::optional<std::string>
+std::optional<compose_action_outcome_t>
 dispatch_compose_beat_bookmark_action(compose_action_context_t& context) {
     switch (context.action.compose_action) {
     case WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK:
     case WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION:
     case WORM_UI_COMPOSE_ACTION_DELETE_BEAT_BOOKMARK:
-        return finish_compose_action(context, edit_beat_bookmark(context));
+        return edit_beat_bookmark(context);
     default:
         return std::nullopt;
     }
 }
 
-std::string navigate_audio_marker(compose_action_context_t& context) {
+compose_action_outcome_t navigate_audio_marker(compose_action_context_t& context) {
     using namespace wormedit;
     auto& app = context.environment.editor.commands;
     if (!app.services.transport_audio_milliseconds ||
         !app.services.transport_seek_audio_milliseconds)
-        return compose_action_warning(
-            context, "Start chart preview once before navigating audio-time markers.",
+        return compose_action_outcome_t::blocked(
+            "Start chart preview once before navigating audio-time markers.",
             notification_source_t::audio);
     const auto cursor = app.services.transport_audio_milliseconds();
     if (!cursor)
-        return compose_action_warning(context,
-                                      "Start chart preview once to compile its seekable timeline.",
-                                      notification_source_t::audio);
+        return compose_action_outcome_t::blocked(
+            "Start chart preview once to compile its seekable timeline.",
+            notification_source_t::audio);
     const auto direction =
         context.action.compose_action == WORM_UI_COMPOSE_ACTION_NAVIGATE_PREVIOUS_AUDIO_MARKER
             ? marker_navigation_direction_t::previous
@@ -340,24 +341,19 @@ std::string navigate_audio_marker(compose_action_context_t& context) {
                                         context.environment.document.history.document.revision,
                                         context.state.chart, *cursor, direction);
     if (marker.value.status == marker_navigation_status_t::no_result)
-        return compose_action_hint(context,
-                                   direction == marker_navigation_direction_t::previous
-                                       ? "No previous audio-time bookmark or section boundary."
-                                       : "No next audio-time bookmark or section boundary.",
-                                   notification_source_t::audio);
+        return compose_action_outcome_t::from(
+            direction == marker_navigation_direction_t::previous
+                ? "No previous audio-time bookmark or section boundary."
+                : "No next audio-time bookmark or section boundary.",
+            notification_severity_t::hint, notification_source_t::audio);
     if (!marker.value.is_found() || !marker.diagnostics.empty() ||
         !marker.value.item->audio_milliseconds)
         return marker.diagnostics.empty()
-                   ? compose_action_warning(
-                         context,
+                   ? compose_action_outcome_t::blocked(
                          "Audio-time marker navigation could not resolve an exact millisecond.",
                          notification_source_t::audio)
-                   : publish_compose_diagnostic(context, marker.diagnostics.front(),
-                                                notification_source_t::audio);
-    const auto status =
-        app.services.transport_seek_audio_milliseconds(*marker.value.item->audio_milliseconds);
-    return app.preferences.transport_seek_posts_feedback
-               ? status
-               : compose_action_hint(context, status, notification_source_t::audio);
+                   : compose_action_outcome_t::from(marker.diagnostics.front(),
+                                                    notification_source_t::audio);
+    return app.services.transport_seek_audio_milliseconds(*marker.value.item->audio_milliseconds);
 }
 } // namespace wormedit::sys::compose_action_detail

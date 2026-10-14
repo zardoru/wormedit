@@ -65,29 +65,39 @@ auto move_compose_minimap_cursor(document_history_t& history, editor_interaction
         history.document.revision);
 }
 auto seek_stopped_compose_transport(document_history_t& history, editor_interaction_state_t& state,
-                                    const compose_scene_cache_t& cache, std::uint64_t frame,
-                                    notification_sink_t notifications) -> std::string {
-    const auto feedback = [&](notification_severity_t severity, const char* message) {
-        notifications.post(severity, notification_source_t::input, message);
-        return std::string{message};
-    };
+                                    const compose_scene_cache_t& cache, std::uint64_t frame)
+    -> compose_action_outcome_t {
     const auto chart = history.document.find_chart(state.chart);
     if (chart == nullptr) {
         if (cache.scene.chart != state.chart || cache.scene.revision != history.document.revision ||
             !cache.timing.marker_timing_index || !cache.scene.cached_measure_index)
-            return feedback(notification_severity_t::warning, "Compose seek is unavailable until the chart is ready.");
-        return feedback(notification_severity_t::warning, "The selected chart is unavailable.");
+            return compose_action_outcome_t::blocked(
+                "Compose seek is unavailable until the chart is ready.",
+                notification_source_t::input, compose_feedback_delivery_t::notification);
+        return compose_action_outcome_t::blocked("The selected chart is unavailable.",
+                                                 notification_source_t::input,
+                                                 compose_feedback_delivery_t::notification);
     }
     if (!cache.is_scene_key_current(history.document, *chart, compose_scene_key_policy_t::transport) ||
         !cache.timing.marker_timing_index || !cache.scene.cached_measure_index)
-        return feedback(notification_severity_t::warning, "Compose seek is unavailable until the chart is ready.");
+        return compose_action_outcome_t::blocked(
+            "Compose seek is unavailable until the chart is ready.", notification_source_t::input,
+            compose_feedback_delivery_t::notification);
     const auto target = target_at_frame(frame, audio::output_sample_rate,
         *cache.timing.marker_timing_index, *cache.scene.cached_measure_index, edit_snap_denominator(*chart, state));
-    if (!target) return feedback(notification_severity_t::warning, "The requested chart position is unavailable.");
+    if (!target)
+        return compose_action_outcome_t::blocked("The requested chart position is unavailable.",
+                                                 notification_source_t::input,
+                                                 compose_feedback_delivery_t::notification);
     const auto moved = move_compose_minimap_cursor(history, state, *cache.scene.cached_measure_index,
         *cache.timing.marker_timing_index, *target);
-    return moved.accepted ? feedback(notification_severity_t::hint, "Compose cursor moved to the seek position.")
-                          : feedback(notification_severity_t::warning, "The requested chart position could not be reached.");
+    return moved.accepted
+               ? compose_action_outcome_t::from(
+                     "Compose cursor moved to the seek position.", notification_severity_t::hint,
+                     notification_source_t::input, compose_feedback_delivery_t::notification)
+               : compose_action_outcome_t::blocked(
+                     "The requested chart position could not be reached.",
+                     notification_source_t::input, compose_feedback_delivery_t::notification);
 }
 
 void retain_compose_minimap_start(application_command_state_t& application,
@@ -119,7 +129,8 @@ auto compose_minimap_start_frame(application_command_state_t& application,
 auto navigate_compose_minimap_transport(application_command_state_t& state,
     std::uint64_t frame, bool shift, bool primary) -> std::string {
     if (shift) return {};
-    return apply_compose_navigation_transport(state,
-        compose_navigation_transport_policy(state, true, primary), frame).status;
+    return apply_compose_navigation_transport(
+               state, compose_navigation_transport_policy(state, true, primary), frame)
+        .message;
 }
 }

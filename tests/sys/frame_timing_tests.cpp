@@ -4496,7 +4496,8 @@ void check_wheel_displacement(bool downscroll, double delta,
     std::size_t seeks = 0;
     fixture.application.services.transport_seek = [&seeks](std::uint64_t) {
         ++seeks;
-        return std::string{"Seeked."};
+        return compose_action_outcome_t::from(std::string{"Seeked."}, notification_severity_t::hint,
+                                              notification_source_t::input);
     };
     auto action = cursor_placement_action(fixture);
     action.compose_viewport_input_count = 1;
@@ -4729,9 +4730,10 @@ TEST_CASE("Stopped BMS transport seek moves cursor and viewport without editing"
     fixture.binding.workspace->selected_chart = fixture.history.document.charts.front().id;
     fixture.project();
     const auto before = fixture.interaction->cursor;
-    const auto status = seek_stopped_compose_transport(fixture.history, *fixture.interaction,
-        fixture.cache, 20 * 44'100, sink);
-    expect_compose_test(status == "Compose cursor moved to the seek position.");
+    auto status = finish_compose_action(
+        sink, seek_stopped_compose_transport(fixture.history, *fixture.interaction, fixture.cache,
+                                             20 * 44'100));
+    expect_compose_test(status.message == "Compose cursor moved to the seek position.");
     expect_compose_test(fixture.interaction->cursor != before);
     expect_compose_test(fixture.interaction->viewport_scroll_pixels > 0);
     expect_compose_test(!fixture.interaction->virtual_bms_cursor_row);
@@ -4743,7 +4745,8 @@ TEST_CASE("Stopped BMS transport seek moves cursor and viewport without editing"
     expect_compose_test(messages[0].source == notification_source_t::input);
     const auto sought = fixture.interaction->cursor;
     ++fixture.history.document.revision;
-    (void)seek_stopped_compose_transport(fixture.history, *fixture.interaction, fixture.cache, 0, sink);
+    (void)finish_compose_action(sink, seek_stopped_compose_transport(
+                                          fixture.history, *fixture.interaction, fixture.cache, 0));
     expect_compose_test(fixture.interaction->cursor == sought);
     center.drain_inbox(notification_time_t{1});
     messages = center.snapshot(notification_capacity);

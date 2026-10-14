@@ -1,5 +1,5 @@
-#include "sys/compose_action_outcome.h"
 #pragma once
+#include "sys/compose_action_outcome.h"
 #include "ui/frontend.h"
 #include <optional>
 #include <span>

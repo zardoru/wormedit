@@ -67,7 +67,7 @@ struct fixture_t {
 void check_stale_compose_navigation(fixture_t& fixture) {
     const auto navigation = navigate_compose_position(fixture.history, fixture.state,
         fixture.application, {.position = fixture.state.cursor}, fixture.history.document.revision + 1);
-    wormedit::test::check_stale_action_message(navigation.status, "Compose navigation");
+    wormedit::test::check_stale_action_message(navigation.message, "Compose navigation");
     CHECK_FALSE(navigation.accepted);
 }
 
@@ -105,14 +105,14 @@ TEST_CASE("bookmark navigation moves the cursor over bookmarks only",
     const auto beyond = fixture.application.bookmarks.navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
                                                marker_navigation_direction_t::next);
     CHECK(beyond.accepted);
-    CHECK(beyond.status == "No next bookmark.");
+    CHECK(beyond.message == "No next bookmark.");
     CHECK((fixture.state.cursor == local_position_t{measure_id_t{4}, 480}));
 
     const auto previous = fixture.application.bookmarks.navigate_beat_bookmark(fixture.history, fixture.state,
                                                  fixture.application,
                                                  marker_navigation_direction_t::previous);
     CHECK(previous.accepted);
-    CHECK(previous.status == "No previous bookmark.");
+    CHECK(previous.message == "No previous bookmark.");
 }
 
 TEST_CASE("playing bookmark navigation seeks once instead of moving the cursor",
@@ -125,7 +125,8 @@ TEST_CASE("playing bookmark navigation seeks once instead of moving the cursor",
     fixture.application.services.transport_seek = [&](std::uint64_t target) {
         ++seeks;
         frame = target;
-        return std::string{};
+        return compose_action_outcome_t::from(std::string{}, notification_severity_t::hint,
+                                              notification_source_t::input);
     };
     const auto before = fixture.state.cursor;
     const auto result = fixture.application.bookmarks.navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
@@ -134,25 +135,30 @@ TEST_CASE("playing bookmark navigation seeks once instead of moving the cursor",
     CHECK(seeks == 1);
     CHECK(frame > 0);
     CHECK((fixture.state.cursor == before));
-    CHECK_FALSE(result.feedback_posted);
+    CHECK(result.source == notification_source_t::input);
 }
 
-TEST_CASE("playing bookmark navigation retains producer publication ownership", "[unit][sys][bookmark-commands][notification]") {
+TEST_CASE("playing bookmark navigation retains producer feedback metadata",
+          "[unit][sys][bookmark-commands][notification]") {
     fixture_t fixture{{measure_id_t{3}, 0}};
     fixture.application.services.transport_preview_playing = [] { return true; };
     fixture.application.project.transport.preview_playhead_absolute_row = 0.0;
-    fixture.application.preferences.transport_seek_posts_feedback = true;
-    fixture.application.services.transport_seek = [](std::uint64_t) { return std::string{"Opaque producer feedback."}; };
+    fixture.application.services.transport_seek = [](std::uint64_t) {
+        return compose_action_outcome_t::from(std::string{"Opaque producer feedback."},
+                                              notification_severity_t::hint,
+                                              notification_source_t::input);
+    };
     const auto result = fixture.application.bookmarks.navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
                                                marker_navigation_direction_t::next);
     CHECK(result.accepted);
-    CHECK(result.feedback_posted);
-    CHECK(result.status == "Opaque producer feedback.");
+    CHECK(result.severity == notification_severity_t::hint);
+    CHECK(result.source == notification_source_t::input);
+    CHECK(result.message == "Opaque producer feedback.");
     fixture.application.services.transport_seek = {};
     const auto rejected = fixture.application.bookmarks.navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
                                                  marker_navigation_direction_t::next);
     CHECK_FALSE(rejected.accepted);
-    CHECK_FALSE(rejected.feedback_posted);
+    CHECK(rejected.severity == notification_severity_t::warning);
 }
 
 TEST_CASE("add bookmark uses the cursor or the snapped playhead and refuses duplicates",
@@ -160,13 +166,13 @@ TEST_CASE("add bookmark uses the cursor or the snapped playhead and refuses dupl
     fixture_t fixture{{measure_id_t{3}, 240}};
     const auto added = fixture.application.bookmarks.add_beat_bookmark_here(fixture.history, fixture.state, fixture.application);
     REQUIRE(added.accepted);
-    CHECK(added.document_changed);
+    CHECK(added.mutated);
     CHECK(fixture.history.document.charts.front().bookmarks.size() == 2);
 
     const auto duplicate = fixture.application.bookmarks.add_beat_bookmark_here(fixture.history, fixture.state,
                                                   fixture.application);
     CHECK_FALSE(duplicate.accepted);
-    CHECK(duplicate.status == "A bookmark already exists on this row.");
+    CHECK(duplicate.message == "A bookmark already exists on this row.");
 
     REQUIRE(undo_document_command(fixture.history));
     CHECK(fixture.history.document.charts.front().bookmarks.size() == 1);
@@ -212,7 +218,7 @@ TEST_CASE("bookmark chooser selection jumps to a stable beat ID and rejects stal
     const auto stale = fixture.application.bookmarks.navigate_to_bookmark(fixture.history, fixture.state,
         fixture.application, fixture.history.document.revision + 1, chart_id_t{2}, object_id_t{30});
     CHECK_FALSE(stale.accepted);
-    wormedit::test::check_stale_action_message(stale.status, "Bookmark chooser");
+    wormedit::test::check_stale_action_message(stale.message, "Bookmark chooser");
     CHECK(fixture.state.cursor == cursor);
     const auto missing = fixture.application.bookmarks.navigate_to_bookmark(fixture.history, fixture.state,
         fixture.application, fixture.history.document.revision, chart_id_t{2}, object_id_t{999});
@@ -232,11 +238,13 @@ TEST_CASE("bookmark chooser selection preserves playback for beat and audio anch
     fixture.application.services.transport_preview_end_frame = [] { return std::optional<std::uint64_t>{}; };
     fixture.application.services.transport_seek = [&](std::uint64_t target) {
         frame = target;
-        return std::string{};
+        return compose_action_outcome_t::from(std::string{}, notification_severity_t::hint,
+                                              notification_source_t::input);
     };
     fixture.application.services.transport_seek_audio_milliseconds = [&](std::int64_t target) {
         audio_ms = target;
-        return std::string{};
+        return compose_action_outcome_t::from(std::string{}, notification_severity_t::hint,
+                                              notification_source_t::input);
     };
     const auto before = fixture.state.cursor;
     const auto beat = fixture.application.bookmarks.navigate_to_bookmark(fixture.history, fixture.state, fixture.application,
@@ -273,7 +281,8 @@ TEST_CASE("playing bookmark jumps advance from the live playhead and preserve th
     std::vector<std::uint64_t> seeks;
     fixture.application.services.transport_seek = [&](std::uint64_t frame) {
         seeks.push_back(frame);
-        return std::string{};
+        return compose_action_outcome_t::from(std::string{}, notification_severity_t::hint,
+                                              notification_source_t::input);
     };
     const auto cursor = fixture.state.cursor;
     fixture.application.project.transport.preview_playhead_absolute_row = 0.0;
@@ -298,7 +307,8 @@ TEST_CASE("previous playing bookmark includes the row below a fractional playhea
     std::uint64_t sought{};
     fixture.application.services.transport_seek = [&](std::uint64_t frame) {
         sought = frame;
-        return std::string{};
+        return compose_action_outcome_t::from(std::string{}, notification_severity_t::hint,
+                                              notification_source_t::input);
     };
     REQUIRE(fixture.application.bookmarks.navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
                                    marker_navigation_direction_t::previous).accepted);
@@ -320,7 +330,8 @@ TEST_CASE("repeated previous playing bookmark within 300 ms steps past the bookm
     std::vector<std::uint64_t> seeks;
     fixture.application.services.transport_seek = [&](std::uint64_t frame) {
         seeks.push_back(frame);
-        return std::string{};
+        return compose_action_outcome_t::from(std::string{}, notification_severity_t::hint,
+                                              notification_source_t::input);
     };
     const auto previous = [&] {
         return fixture.application.bookmarks.navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
@@ -351,9 +362,9 @@ TEST_CASE("adding a bookmark past the last measure explains it in plain words an
     const auto revision = fixture.history.document.revision;
     const auto outcome = fixture.application.bookmarks.add_beat_bookmark_here(fixture.history, fixture.state, fixture.application);
     CHECK_FALSE(outcome.accepted);
-    CHECK(outcome.status == "Bookmarks can only go inside existing measures. "
-                            "Add measures up to the cursor first.");
-    CHECK(outcome.status.find("materialized") == std::string::npos);
+    CHECK(outcome.message == "Bookmarks can only go inside existing measures. "
+                             "Add measures up to the cursor first.");
+    CHECK(outcome.message.find("materialized") == std::string::npos);
     CHECK(fixture.history.document.revision == revision);
     CHECK(fixture.history.document.charts.front().bookmarks.size() == 1);
 }
@@ -371,7 +382,8 @@ struct mixed_navigation_fixture_t {
         fixture.application.bookmarks.fixed_clock = &now;
         fixture.application.services.transport_seek = [this](std::uint64_t frame) {
             seeks.push_back(frame);
-            return std::string{};
+            return compose_action_outcome_t::from(std::string{}, notification_severity_t::hint,
+                                                  notification_source_t::input);
         };
     }
     auto skip(double live_row, double amount) -> bool {

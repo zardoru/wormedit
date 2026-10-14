@@ -95,7 +95,9 @@ void check_legacy_seek(compose_notification_fixture_t& fixture) {
     fixture.application.services.transport_preview_playing = [] { return true; };
     fixture.application.project.transport.preview_playhead_absolute_row = 120.0;
     fixture.application.services.transport_seek = [](std::uint64_t) {
-        return std::string{"Legacy seek performed."};
+        return compose_action_outcome_t::from(std::string{"Legacy seek performed."},
+                                              notification_severity_t::hint,
+                                              notification_source_t::input);
     };
     editor_navigation_action_batch_t actions;
     actions.actions[actions.count++] = editor_navigation_action_t::cursor_forward;
@@ -110,11 +112,10 @@ void check_legacy_seek(compose_notification_fixture_t& fixture) {
 }
 
 void check_producer_seek(compose_notification_fixture_t& fixture) {
-    fixture.application.preferences.transport_seek_posts_feedback = true;
     fixture.application.services.transport_seek = [&](std::uint64_t) {
-        fixture.sink.post(notification_severity_t::warning, notification_source_t::audio,
-                          "Audio seek was clamped.");
-        return std::string{"Audio seek was clamped."};
+        return compose_action_outcome_t::from(
+            std::string{"Audio seek was clamped."}, notification_severity_t::warning,
+            notification_source_t::audio, compose_feedback_delivery_t::notification);
     };
     editor_navigation_action_batch_t actions;
     actions.actions[actions.count++] = editor_navigation_action_t::cursor_forward;
@@ -215,7 +216,11 @@ TEST_CASE("Viewport wheel seek feedback keeps explicit callback ownership", "[un
     compose_notification_fixture_t fixture;
     fixture.application.services.transport_preview_playing = [] { return true; };
     fixture.application.project.transport.preview_playhead_absolute_row = 120.0;
-    fixture.application.services.transport_seek = [](std::uint64_t) { return std::string{"Legacy wheel seek."}; };
+    fixture.application.services.transport_seek = [](std::uint64_t) {
+        return compose_action_outcome_t::from(std::string{"Legacy wheel seek."},
+                                              notification_severity_t::hint,
+                                              notification_source_t::input);
+    };
     WormUiWorkspaceAction action{};
     action.compose_input_chart_id = fixture.state.chart.value;
     action.compose_input_document_revision = fixture.history.document.revision;
@@ -232,11 +237,10 @@ TEST_CASE("Viewport wheel seek feedback keeps explicit callback ownership", "[un
     REQUIRE(fixture.center.current_line() != nullptr);
     expect_entry(*fixture.center.current_line(), notification_severity_t::hint, notification_source_t::input,
         "Legacy wheel seek.");
-    fixture.application.preferences.transport_seek_posts_feedback = true;
     fixture.application.services.transport_seek = [&](std::uint64_t) {
-        fixture.sink.post(notification_severity_t::warning, notification_source_t::audio,
-            "Producer wheel seek clamped.");
-        return std::string{"Producer wheel seek clamped."};
+        return compose_action_outcome_t::from(
+            std::string{"Producer wheel seek clamped."}, notification_severity_t::warning,
+            notification_source_t::audio, compose_feedback_delivery_t::notification);
     };
     CHECK(dispatch() == "Producer wheel seek clamped.");
     entries = fixture.drain();

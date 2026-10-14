@@ -1,25 +1,17 @@
 #pragma once
 #include "sys/bookmark_chooser_view.h"
-#include "sys/bookmark_rename_commands.h"
+#include "sys/compose_action_outcome.h"
+#include <chrono>
+#include <optional>
 #include <wormedit/core/command.h>
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/marker_navigation.h>
 #include <wormedit/core/workspace.h>
-#include <chrono>
-#include <optional>
 namespace wormedit::sys {
 struct application_command_state_t;
 class sdl_preview_output_t;
 namespace runtime { struct chart_preview_t; }
 inline constexpr auto playing_seek_repeat_window = std::chrono::milliseconds{300};
-struct bookmark_command_outcome_t {
-    bool accepted{};
-    bool document_changed{};
-    std::string status;
-    diagnostic_list_t diagnostics;
-    bool feedback_posted{};
-};
-
 
 struct bookmark_chooser_backend_t {
     bool (*open)(void*, std::uint64_t project, std::uint64_t chart, std::uint64_t revision){};
@@ -62,13 +54,17 @@ struct bookmark_navigation_t {
     }
     [[nodiscard]] auto preserve_preview_revision(chart_id_t, std::uint64_t previous, std::uint64_t next) -> bool;
     [[nodiscard]] auto navigate_beat_bookmark(document_history_t&, editor_interaction_state_t&,
-        application_command_state_t&, marker_navigation_direction_t) -> bookmark_command_outcome_t;
+                                              application_command_state_t&,
+                                              marker_navigation_direction_t)
+        -> compose_action_outcome_t;
     [[nodiscard]] auto navigate_to_bookmark(document_history_t&, editor_interaction_state_t&,
-        application_command_state_t&, std::uint64_t, chart_id_t, object_id_t) -> bookmark_command_outcome_t;
+                                            application_command_state_t&, std::uint64_t, chart_id_t,
+                                            object_id_t) -> compose_action_outcome_t;
     [[nodiscard]] auto add_beat_bookmark_here(document_history_t&, editor_interaction_state_t&,
-        application_command_state_t&) -> bookmark_command_outcome_t;
-    [[nodiscard]] auto rename_bookmark(document_history_t&, std::uint64_t, chart_id_t,
-        object_id_t, std::string_view) -> bookmark_rename_outcome_t;
+                                              application_command_state_t&)
+        -> compose_action_outcome_t;
+    [[nodiscard]] auto rename_bookmark(document_history_t&, std::uint64_t, chart_id_t, object_id_t,
+                                       std::string_view) -> compose_action_outcome_t;
     [[nodiscard]] static auto build_bookmark_chooser_view(const song_document_t&, chart_id_t,
         std::size_t first_row, std::size_t row_limit, std::string_view query = {}) -> bookmark_chooser_projection_t;
 };

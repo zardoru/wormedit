@@ -7569,7 +7569,11 @@ TEST_CASE("Production arrow and Alt wheel share stopped paused and playing step 
     f.application.services.transport_preview_playing = [=] { return mode == 2; };
     f.application.services.transport_preview_paused = [=] { return mode == 1; };
     int seeks = 0;
-    f.application.services.transport_seek = [&](std::uint64_t) { ++seeks; return std::string{}; };
+    f.application.services.transport_seek = [&](std::uint64_t) {
+        ++seeks;
+        return compose_action_outcome_t::from(std::string{}, notification_severity_t::hint,
+                                              notification_source_t::input);
+    };
     f.application.project.transport.preview_playhead_absolute_row = 480;
     f.application.project.compose_view.edit_snap_enabled = true;
     f.application.project.compose_view.requested_snap_denominators[1] = 16;
@@ -7667,7 +7671,12 @@ TEST_CASE("Production Go to measure modal shares playing position navigation",
     int seeks = 0;
     f.application.services.transport_preview_playing = [=] { return mode >= 2; };
     f.application.services.transport_preview_paused = [=] { return mode == 1; };
-    if (mode != 3) f.application.services.transport_seek = [&](std::uint64_t) { ++seeks; return std::string{}; };
+    if (mode != 3)
+        f.application.services.transport_seek = [&](std::uint64_t) {
+            ++seeks;
+            return compose_action_outcome_t::from(std::string{}, notification_severity_t::hint,
+                                                  notification_source_t::input);
+        };
     f.project(); (void)f.harness.frame();
     const auto previous = f.interaction->cursor;
     const auto go = key_event(SDL_EVENT_KEY_DOWN, SDLK_G, SDL_SCANCODE_G);
@@ -7722,7 +7731,10 @@ TEST_CASE("Production overview clicks preserve playing paused and stopped prefer
     f.application.services.transport_preview_playing = [=] { return mode == 3; };
     f.application.services.transport_preview_paused = [&] { return paused; };
     f.application.services.transport_seek = [&](std::uint64_t frame) {
-        sought_frame = frame; ++seeks; return std::string{};
+        sought_frame = frame;
+        ++seeks;
+        return compose_action_outcome_t::from(std::string{}, notification_severity_t::hint,
+                                              notification_source_t::input);
     };
     f.application.services.transport_stop = [&] { ++stops; paused = false; };
     f.application.preferences.minimap_click_moves_paused_playhead = mode == 2;

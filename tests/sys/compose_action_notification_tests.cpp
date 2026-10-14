@@ -102,9 +102,11 @@ struct action_notification_fixture_t {
         value.compose_input_document_revision = history.document.revision;
         return value;
     }
-    auto dispatch(const WormUiWorkspaceAction& value) -> std::string {
+    auto dispatch(const WormUiWorkspaceAction& value, bool post_notifications = true)
+        -> std::string {
         return dispatch_compose_view_action(value, history, workspace, state, 800, application,
-            asset_base, scheduler, resource_copy, export_runtime, false, sink);
+                                            asset_base, scheduler, resource_copy, export_runtime,
+                                            false, sink, post_notifications);
     }
     auto dispatch_workspace(const WormUiWorkspaceAction& value,
                             std::optional<editor_interaction_state_t>& interaction) -> bool {
@@ -363,21 +365,25 @@ TEST_CASE("Compose BGA no-op remains producer-owned and posts info once", "[comp
     check_action(fixture.history.undo.empty());
 }
 
-TEST_CASE("Compose bookmark seek callback owns its feedback", "[compose-action-notifications]") {
+TEST_CASE("Compose bookmark seek feedback is finished once and respects muting",
+          "[compose-action-notifications]") {
     action_notification_fixture_t fixture;
     fixture.history.document.charts.front().bookmarks = {{.id = object_id_t{4},
         .anchor = marker_anchor_t::beat, .position = local_position_t{measure_id_t{1}, 480}}};
     fixture.application.services.transport_preview_playing = [] { return true; };
-    fixture.application.preferences.transport_seek_posts_feedback = true;
     fixture.application.services.transport_seek = [&](std::uint64_t) {
-        fixture.sink.post(notification_severity_t::hint, notification_source_t::audio, "Playback cursor moved.");
-        return std::string{"Playback cursor moved."};
+        return compose_action_outcome_t::from(
+            std::string{"Playback cursor moved."}, notification_severity_t::hint,
+            notification_source_t::audio, compose_feedback_delivery_t::notification);
     };
     auto action = fixture.action(WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK);
     action.compose_bookmark_id = 4;
-    check_action(fixture.dispatch(action) == "Playback cursor moved.");
+    const auto post_notifications = GENERATE(true, false);
+    check_action(fixture.dispatch(action, post_notifications) == "Playback cursor moved.");
     const auto entries = fixture.entries();
-    require_action(entries.size() == 1);
+    require_action(entries.size() == (post_notifications ? 1 : 0));
+    if (!post_notifications)
+        return;
     check_action(entries.front().count == 1);
     check_action(entries.front().source == notification_source_t::audio);
     check_action(fixture.history.undo.empty());
@@ -1620,7 +1626,11 @@ TEST_CASE("Playing Compose navigation uses beats while stopped editing retains i
     f.application.project.transport.preview_playhead_absolute_row = 240;
     f.application.services.transport_preview_playing = [] { return true; };
     std::uint64_t sought{};
-    f.application.services.transport_seek = [&](std::uint64_t frame) { sought = frame; return std::string{}; };
+    f.application.services.transport_seek = [&](std::uint64_t frame) {
+        sought = frame;
+        return compose_action_outcome_t::from(std::string{}, notification_severity_t::hint,
+                                              notification_source_t::input);
+    };
     auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0);
     action.compose_inputs[0].navigation_action = WORM_UI_COMPOSE_NAVIGATION_CURSOR_FORWARD;
     (void)f.dispatch_input(action);
@@ -1689,7 +1699,10 @@ TEST_CASE("Playback wheel skips one beat in chart direction independently of sna
     f.application.preferences.editor_preferences.scroll_directions.fill(downscroll ? 2 : 1);
     f.application.project.transport.preview_playhead_absolute_row = 480;
     f.application.services.transport_preview_playing = [] { return true; };
-    f.application.services.transport_seek = [](std::uint64_t) { return std::string{}; };
+    f.application.services.transport_seek = [](std::uint64_t) {
+        return compose_action_outcome_t::from(std::string{}, notification_severity_t::hint,
+                                              notification_source_t::input);
+    };
     auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE, 0);
     action.compose_input_count = 0;
     action.compose_viewport_input_count = 1;
@@ -1762,7 +1775,10 @@ TEST_CASE("Page navigation distance and minimum match while stopped and playing"
     place_cursor_at(f.state, {measure_id_t{1}, 959});
     f.application.services.transport_preview_playing = [=] { return playing; };
     f.application.project.transport.preview_playhead_absolute_row = 959;
-    f.application.services.transport_seek = [](std::uint64_t) { return std::string{}; };
+    f.application.services.transport_seek = [](std::uint64_t) {
+        return compose_action_outcome_t::from(std::string{}, notification_severity_t::hint,
+                                              notification_source_t::input);
+    };
     auto action = f.input(doubled ? WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP
                                   : WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0);
     action.compose_inputs[0].navigation_action = doubled

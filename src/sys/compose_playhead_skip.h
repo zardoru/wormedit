@@ -26,9 +26,8 @@ enum class playhead_skip_unit_t { snap, beat, measure, page, rows };
 // new point. A failed seek keeps playing from the prior position and reports the seek message.
 [[nodiscard]] auto skip_playing_playhead(application_command_state_t& application,
                                          const chart_document_t& chart,
-                                         std::uint64_t snap_denominator,
-                                         playhead_skip_unit_t unit, double amount)
-    -> bookmark_command_outcome_t;
+                                         std::uint64_t snap_denominator, playhead_skip_unit_t unit,
+                                         double amount) -> compose_action_outcome_t;
 
 [[nodiscard]] auto is_preview_playing(const application_command_state_t& application) -> bool;
 

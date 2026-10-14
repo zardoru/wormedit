@@ -99,7 +99,12 @@ auto dispatch_transport_player_action(const WormUiWorkspaceAction& action,
         return publish_transport_feedback(notifications, notification_severity_t::warning, "Audio preview is unavailable.");
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK:
         application_state.invalidate_playing_seek_records();
-        if (application_state.services.transport_seek) return application_state.services.transport_seek(action.transport_seek_frame);
+        if (application_state.services.transport_seek) {
+            auto outcome = finish_compose_action(
+                notifications,
+                application_state.services.transport_seek(action.transport_seek_frame));
+            return std::move(outcome.message);
+        }
         return publish_transport_feedback(notifications, notification_severity_t::warning, "Chart preview seek is unavailable.");
     case WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW:
         application_state.project.compose_view.player_preview_visible = !application_state.project.compose_view.player_preview_visible;

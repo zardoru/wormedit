@@ -58,8 +58,8 @@ inline auto dispatch_compose_view_action(
     const std::filesystem::path& asset_base, wormedit::task_scheduler_t& resource_copy_scheduler,
     runtime::resource_copy_t& resource_copy_runtime, runtime::output_group_export_t& export_runtime,
     bool metadata_import_busy,
-    wormedit::notification_sink_t notifications = wormedit::notification_sink_t::muted())
-    -> std::string {
+    wormedit::notification_sink_t notifications = wormedit::notification_sink_t::muted(),
+    bool post_notifications = true) -> std::string {
     test_dispatch::defaults_t defaults;
     defaults.project_identity.asset_base = asset_base;
     auto& sink = notifications;
@@ -70,7 +70,7 @@ inline auto dispatch_compose_view_action(
                                   {resource_copy_scheduler, resource_copy_runtime, export_runtime},
                                   {defaults.metadata_drop, defaults.metadata_asset_runtime}}};
     return dispatch_compose_view_action(action, environment, state, viewport_height,
-                                        metadata_import_busy, true);
+                                        metadata_import_busy, post_notifications);
 }
 
 inline auto dispatch_compose_workspace_action(

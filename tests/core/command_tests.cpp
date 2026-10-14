@@ -406,3 +406,15 @@ TEST_CASE("Finishing an unpublished transaction closes and discards its snapshot
     CHECK(history.document.metadata.title.empty());
     CHECK(history.undo.empty());
 }
+
+TEST_CASE("chart identity stamp query ignores revision for persistent configuration",
+          "[core][command][stamp]") {
+    song_document_t document{.id = song_id_t{1}, .revision = 4};
+    const auto stamp = chart_stamp_t::from(document, chart_id_t{2});
+    ++document.revision;
+    CHECK(stamp.is_identity_current(document, chart_id_t{2}));
+    CHECK_FALSE(stamp.is_current(document, chart_id_t{2}));
+    CHECK_FALSE(stamp.is_identity_current(document, chart_id_t{3}));
+    document.id = song_id_t{99};
+    CHECK_FALSE(stamp.is_identity_current(document, chart_id_t{2}));
+}

@@ -490,10 +490,12 @@ auto validate_channel_slices(const song_document_t& document, const chart_docume
 
 } // namespace
 
-auto insert_bmson_sound_markers(document_history_t& history,
+namespace {
+auto run_insert_bmson_sound_markers(document_command_transaction_t& transaction,
                                 chart_id_t chart, object_id_t reference_bgm_event,
                                 std::span<const bmson_sound_marker_insertion_t> markers)
     -> document_command_result_t {
+    auto& history = transaction.history;
     const auto revision = history.document.revision;
     if (markers.empty() || markers.size() > 256)
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id,
@@ -526,7 +528,6 @@ auto insert_bmson_sound_markers(document_history_t& history,
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id,
                         "BMSON chart object ID space is exhausted");
 
-    auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
     const auto chart_offset = static_cast<std::size_t>(found_chart - history.document.charts.data());
     auto& changed_chart = proposed.charts[chart_offset];
@@ -541,6 +542,24 @@ auto insert_bmson_sound_markers(document_history_t& history,
     if (auto failure = validate_channel_slices(proposed, changed_chart, changed_channel, revision))
         return *failure;
     return transaction.commit(markers.size() == 1 ? "Insert BMSON sound marker" : "Insert BMSON sound markers");
+}
+
+} // namespace
+
+auto insert_bmson_sound_markers(document_command_transaction_t& transaction,
+                                chart_id_t chart, object_id_t reference_bgm_event,
+                                std::span<const bmson_sound_marker_insertion_t> markers)
+    -> document_command_result_t {
+    if (!transaction.is_ready()) return transaction.finish_without_commit();
+    return transaction.finish_with(run_insert_bmson_sound_markers(transaction, chart, reference_bgm_event, markers));
+}
+
+auto insert_bmson_sound_markers(document_history_t& history,
+                                chart_id_t chart, object_id_t reference_bgm_event,
+                                std::span<const bmson_sound_marker_insertion_t> markers)
+    -> document_command_result_t {
+    auto transaction = document_command_transaction_t::from(history);
+    return insert_bmson_sound_markers(transaction, chart, reference_bgm_event, markers);
 }
 
 auto delete_bmson_bgm_marker(document_history_t& history, chart_id_t chart,
@@ -1574,9 +1593,10 @@ auto append_packed_sound_channel(song_document_t& document, chart_document_t& ch
             .source_field = "$.sound_channels[" + std::to_string(source_index) + "]"};
 }
 
-auto commit_packed_stroke_draw(document_history_t& history, const packed_stroke_context_t& context,
+auto commit_packed_stroke_draw(document_command_transaction_t& transaction, const packed_stroke_context_t& context,
                                object_id_t lane_id, const resource_entry_t& resource)
     -> document_command_result_t {
+    auto& history = transaction.history;
     const auto channel_id = packed_stroke_channel(history, *context.chart, resource.id);
     const auto* channel = channel_id ? &*std::ranges::find(context.chart->sound_channels,
         *channel_id, &sound_channel_t::id) : nullptr;
@@ -1586,7 +1606,6 @@ auto commit_packed_stroke_draw(document_history_t& history, const packed_stroke_
         return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::collision, *message);
     const auto& cells = std::get<std::vector<packed_stroke_cell_t>>(additions);
     if (cells.empty()) return packed_stroke_unchanged(history);
-    auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
     auto& changed = proposed.charts[context.chart_offset];
     std::uint64_t largest{};
@@ -1615,11 +1634,11 @@ auto commit_packed_stroke_draw(document_history_t& history, const packed_stroke_
     return transaction.commit("Draw packed BMSON events");
 }
 
-auto commit_packed_stroke_erase(document_history_t& history, const packed_stroke_context_t& context,
+auto commit_packed_stroke_erase(document_command_transaction_t& transaction, const packed_stroke_context_t& context,
                                 object_id_t lane_id) -> document_command_result_t {
+    auto& history = transaction.history;
     std::unordered_set<std::uint64_t> rows;
     for (const auto& cell : context.cells) rows.insert(cell.row);
-    auto transaction = document_command_transaction_t::from(history);
     auto& proposed = transaction.copy_document();
     auto& changed = proposed.charts[context.chart_offset];
     std::unordered_set<std::uint64_t> removed_events;
@@ -1645,11 +1664,13 @@ auto commit_packed_stroke_erase(document_history_t& history, const packed_stroke
 
 } // namespace
 
-auto apply_bmson_packed_stroke(document_history_t& history,
+namespace {
+auto run_apply_bmson_packed_stroke(document_command_transaction_t& transaction,
                                chart_id_t chart_id, object_id_t source_lane,
                                std::optional<resource_id_t> resource,
                                std::span<const local_position_t> targets, bool erase)
     -> document_command_result_t {
+    auto& history = transaction.history;
     if (targets.size() > 50'000)
         return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_resolution,
                         "BMSON stroke exceeds the per-gesture target cap");
@@ -1658,16 +1679,36 @@ auto apply_bmson_packed_stroke(document_history_t& history,
     if (const auto* failure = std::get_if<document_command_result_t>(&resolved)) return *failure;
     const auto& context = std::get<packed_stroke_context_t>(resolved);
     if (context.cells.empty()) return packed_stroke_unchanged(history);
-    if (erase) return commit_packed_stroke_erase(history, context, source_lane);
+    if (erase) return commit_packed_stroke_erase(transaction, context, source_lane);
     const auto entry = resource ? std::ranges::find(history.document.resources, *resource,
                                                     &resource_entry_t::id)
                                 : history.document.resources.end();
     const auto* found = entry == history.document.resources.end() ? nullptr : &*entry;
     if (auto failure = packed_stroke_resource_failure(history, *context.chart, found))
         return *failure;
-    return commit_packed_stroke_draw(history, context, source_lane, *found);
+    return commit_packed_stroke_draw(transaction, context, source_lane, *found);
 }
 
 
+
+} // namespace
+
+auto apply_bmson_packed_stroke(document_command_transaction_t& transaction,
+                               chart_id_t chart_id, object_id_t source_lane,
+                               std::optional<resource_id_t> resource,
+                               std::span<const local_position_t> targets, bool erase)
+    -> document_command_result_t {
+    if (!transaction.is_ready()) return transaction.finish_without_commit();
+    return transaction.finish_with(run_apply_bmson_packed_stroke(transaction, chart_id, source_lane, resource, targets, erase));
+}
+
+auto apply_bmson_packed_stroke(document_history_t& history,
+                               chart_id_t chart_id, object_id_t source_lane,
+                               std::optional<resource_id_t> resource,
+                               std::span<const local_position_t> targets, bool erase)
+    -> document_command_result_t {
+    auto transaction = document_command_transaction_t::from(history);
+    return apply_bmson_packed_stroke(transaction, chart_id, source_lane, resource, targets, erase);
+}
 
 } // namespace wormedit

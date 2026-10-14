@@ -99,6 +99,12 @@ struct bmson_razor_path_t {
 // Commits up to 256 BGM/playable markers in one history step after validating
 // every target and linked source-channel pulse.
 [[nodiscard]] auto
+insert_bmson_sound_markers(document_command_transaction_t& transaction,
+                           chart_id_t chart, object_id_t reference_bgm_event,
+                           std::span<const bmson_sound_marker_insertion_t> markers)
+    -> document_command_result_t;
+
+[[nodiscard]] auto
 insert_bmson_sound_markers(document_history_t& history,
                            chart_id_t chart, object_id_t reference_bgm_event,
                            std::span<const bmson_sound_marker_insertion_t> markers)

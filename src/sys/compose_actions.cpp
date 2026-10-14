@@ -703,7 +703,7 @@ std::optional<std::string> stage_bmson_marker_at_cursor(compose_action_context_t
     if (editor_interaction_has_pending_gesture(context.state))
         return compose_action_warning(context, "Finish or cancel the active Compose gesture before staging a BMSON marker.");
     auto severity = notification_severity_t::warning;
-    auto message = stage_bmson_bgm_marker(
+    auto message = propose_bmson_bgm_marker(
         context.environment.document.history, context.state,
         context.environment.editor.commands,
         wormedit::object_id_t{context.action.compose_bmson_bgm_event_id}, context.state.cursor,
@@ -712,7 +712,7 @@ std::optional<std::string> stage_bmson_marker_at_cursor(compose_action_context_t
     return publish_compose_feedback(context, std::move(message), severity, notification_source_t::input);
 }
 
-std::optional<std::string> commit_bmson_marker_batch(compose_action_context_t& context) {
+std::optional<std::string> apply_bmson_marker_batch(compose_action_context_t& context) {
     using namespace wormedit;
     if (editor_interaction_has_pending_gesture(context.state))
         return compose_action_warning(context, "Finish or cancel the active Compose gesture before committing BMSON markers.");
@@ -721,16 +721,19 @@ std::optional<std::string> commit_bmson_marker_batch(compose_action_context_t& c
         draft.reset();
         return compose_action_warning(context, "The BMSON marker batch is no longer available for this chart revision.");
     }
-    const chart_stamp_t stamp{.document = {.project = context.environment.document.history.document.id,
-                                          .revision = draft->revision},
-                              .chart = draft->chart};
-    if (!stamp.is_current(context.environment.document.history.document, context.state.chart)) {
+    if (draft->stamp.chart != context.state.chart) {
         draft.reset();
         return compose_action_warning(context, stale_action_message("BMSON marker batch"));
     }
-    const auto inserted =
-        insert_bmson_sound_markers(context.environment.document.history, draft->chart,
-                                   draft->reference, draft->markers);
+    auto transaction = document_command_transaction_t::from(
+        context.environment.document.history, draft->stamp, "BMSON marker batch",
+        document_identity_policy_t::revision_only);
+    if (!transaction.is_ready()) {
+        draft.reset();
+        return compose_action_warning(context, transaction.outcome.diagnostics.front().message);
+    }
+    const auto inserted = insert_bmson_sound_markers(transaction, draft->stamp.chart,
+                                                    draft->reference, draft->markers);
     if (!inserted.diagnostics.empty()) return publish_compose_diagnostic(context, inserted.diagnostics.front());
     draft.reset();
     const auto rebound =
@@ -818,7 +821,7 @@ std::optional<std::string> dispatch_compose_bmson_action(compose_action_context_
     case WORM_UI_COMPOSE_ACTION_STAGE_BMSON_BGM_RESTART_AT_CURSOR:
         return stage_bmson_marker_at_cursor(context);
     case WORM_UI_COMPOSE_ACTION_COMMIT_STAGED_BMSON_BGM:
-        return commit_bmson_marker_batch(context);
+        return apply_bmson_marker_batch(context);
     case WORM_UI_COMPOSE_ACTION_CANCEL_STAGED_BMSON_BGM:
         context.environment.editor.commands.project.compose_gesture.bmson_marker_draft.reset();
         return compose_action_hint(context, "BMSON marker batch canceled.");
@@ -1863,13 +1866,13 @@ auto quantize_settings_valid(const wormedit::quantize_request_t& request) -> boo
 auto quantize_editor_for(compose_action_context_t& context)
     -> application_command_state_t::quantize_editor_t& {
     auto& editor = context.environment.editor.commands.project.quantize.quantize_editor;
-    if (!editor || editor->song != context.environment.document.history.document.id ||
-        editor->chart != context.state.chart) {
+    if (!editor || !editor->stamp.is_identity_current(
+        context.environment.document.history.document, context.state.chart)) {
         const auto request = wormedit::quantize_request_t{
             .divisions = context.state.active_snap_denominator};
         editor = application_command_state_t::quantize_editor_t{
-            .song = context.environment.document.history.document.id,
-            .chart = context.state.chart,
+            .stamp = wormedit::chart_stamp_t::from(context.environment.document.history.document,
+                                                   context.state.chart),
             .request = request};
     }
     return *editor;
@@ -2153,9 +2156,9 @@ auto invoke_compose_quantize_command(bool toggle_preview, wormedit::document_his
     wormedit::editor_interaction_state_t& state, application_command_state_t& application,
     std::optional<wormedit::notification_sink_t> notifications) -> bool {
     auto& editor = application.project.quantize.quantize_editor;
-    if (!editor || editor->song != history.document.id || editor->chart != state.chart)
+    if (!editor || !editor->stamp.is_identity_current(history.document, state.chart))
         editor = application_command_state_t::quantize_editor_t{
-            .song = history.document.id, .chart = state.chart,
+            .stamp = wormedit::chart_stamp_t::from(history.document, state.chart),
             .request = {.divisions = state.active_snap_denominator}};
     if (toggle_preview) {
         editor->preview_enabled = !editor->preview_enabled;

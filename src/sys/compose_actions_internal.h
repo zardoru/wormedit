@@ -309,7 +309,7 @@ std::optional<std::string> insert_bmson_marker_at_cursor(compose_action_context_
 
 std::optional<std::string> stage_bmson_marker_at_cursor(compose_action_context_t& context);
 
-std::optional<std::string> commit_bmson_marker_batch(compose_action_context_t& context);
+std::optional<std::string> apply_bmson_marker_batch(compose_action_context_t& context);
 
 std::optional<std::string> delete_bmson_selected_marker(compose_action_context_t& context);
 

@@ -221,7 +221,6 @@ using wormedit::sys::compose_result_status;
 using wormedit::sys::dispatch_compose_input_action;
 using wormedit::sys::dispatch_compose_navigation_actions;
 using wormedit::sys::selected_bmson_waveform_source;
-using wormedit::sys::stage_bmson_bgm_marker;
 using wormedit::sys::selected_chart;
 using wormedit::sys::visible_semantic_layer_by_id;
 
@@ -782,8 +781,7 @@ void refresh_quantize_commands(wormedit::command_registry_t& registry, bool read
     const wormedit::document_history_t& history, const application_command_state_t& application) {
     const bool enabled = ready && !pending && !application.project.compose_view.compose_timing_focus && !application.project.clipboard.paste_session;
     const bool checked = enabled && application.project.quantize.quantize_editor &&
-        application.project.quantize.quantize_editor->song == history.document.id &&
-        application.project.quantize.quantize_editor->chart == state->chart && application.project.quantize.quantize_editor->preview_enabled;
+        application.project.quantize.quantize_editor->stamp.is_identity_current(history.document, state->chart) && application.project.quantize.quantize_editor->preview_enabled;
     (void)wormedit::update_command_state(registry, {"edit.toggle_quantize_preview"}, enabled, checked);
     const bool selected = enabled && (!state->selected_notes.empty() || !state->selected_objects.empty());
     (void)wormedit::update_command_state(registry, {"edit.apply_quantize"}, selected, std::nullopt);

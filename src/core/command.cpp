@@ -27,6 +27,11 @@ auto chart_stamp_t::from(const song_document_t& document, chart_id_t chart) noex
     return {.document = document_stamp_t::from(document), .chart = chart};
 }
 
+auto chart_stamp_t::is_identity_current(const song_document_t& current,
+                                          chart_id_t selected) const noexcept -> bool {
+    return document.project == current.id && chart == selected;
+}
+
 auto chart_stamp_t::is_current(chart_id_t current_chart,
                                 std::uint64_t current_revision) const noexcept -> bool {
     return chart == current_chart && document.is_revision_current(current_revision);
@@ -236,6 +241,13 @@ auto document_command_transaction_t::finish_without_commit() -> document_command
     finished = true;
     proposed.reset();
     return std::move(outcome);
+}
+
+auto document_command_transaction_t::finish_with(document_command_result_t result)
+    -> document_command_result_t {
+    if (finished) return result;
+    outcome = std::move(result);
+    return finish_without_commit();
 }
 
 auto document_command_transaction_t::reject(diagnostic_code_t code, std::string message,

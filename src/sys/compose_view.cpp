@@ -1054,8 +1054,8 @@ void populate_compose_selected_objects_and_drafts(
     const std::optional<wormedit::editor_interaction_state_t>& retained_state,
     WormUiComposeView& view, compose_scene_cache_t& cache) {
     if (application_state.project.compose_gesture.bmson_marker_draft &&
-        (application_state.project.compose_gesture.bmson_marker_draft->chart != chart.id ||
-         application_state.project.compose_gesture.bmson_marker_draft->revision != history.document.revision)) {
+        !application_state.project.compose_gesture.bmson_marker_draft->stamp.is_current(
+            history.document, chart.id, wormedit::document_identity_policy_t::revision_only)) {
         application_state.project.compose_gesture.bmson_marker_draft.reset();
         application_state.project.compose_gesture.bmson_razor_stroke.reset();
     }

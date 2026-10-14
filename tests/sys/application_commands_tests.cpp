@@ -2674,7 +2674,7 @@ TEST_CASE("Registered Quantize uses panel settings rather than the active snap f
     auto& history = f.fixture.history;
     f.compose_state->active_snap_denominator = 4;
     f.application_state.project.quantize.quantize_editor = application_command_state_t::quantize_editor_t{
-        .song = history.document.id, .chart = f.compose_state->chart, .request = {.divisions = 8}};
+        .stamp = wormedit::chart_stamp_t::from(history.document, f.compose_state->chart), .request = {.divisions = 8}};
     selection_require(static_cast<bool>(invoke_selection_command(f, "edit.apply_quantize")));
     selection_check(history.document.charts.front().measures.front().notes.front().position.row == 120);
     selection_check(history.undo.size() == 1);

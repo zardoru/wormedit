@@ -138,7 +138,7 @@ auto validate_bmson_marker_draft(
 
 } // namespace compose_input_detail
 
-auto stage_bmson_bgm_markers(const wormedit::document_history_t& history,
+auto propose_bmson_bgm_markers(const wormedit::document_history_t& history,
                              const wormedit::editor_interaction_state_t& state,
                              application_command_state_t& application_state,
                              wormedit::object_id_t reference,
@@ -177,8 +177,8 @@ auto stage_bmson_bgm_markers(const wormedit::document_history_t& history,
         return validation;
     }
     auto& draft = application_state.project.compose_gesture.bmson_marker_draft;
-    if (draft && (draft->chart != state.chart ||
-                  draft->revision != history.document.revision)) {
+    if (draft && !draft->stamp.is_current(history.document, state.chart,
+                                  document_identity_policy_t::revision_only)) {
         draft.reset();
     }
     if (draft && draft->reference != reference) {
@@ -190,7 +190,7 @@ auto stage_bmson_bgm_markers(const wormedit::document_history_t& history,
     }
     if (!draft) {
         draft = application_command_state_t::bmson_marker_draft_t{
-            .chart = state.chart, .revision = history.document.revision,
+            .stamp = chart_stamp_t::from(history.document, state.chart),
             .reference = reference, .markers = {}};
     }
     draft->markers.insert(draft->markers.end(), markers.begin(), markers.end());
@@ -199,13 +199,13 @@ auto stage_bmson_bgm_markers(const wormedit::document_history_t& history,
                                : "BMSON razor segment staged at exact snapped rows.";
 }
 
-auto stage_bmson_bgm_marker(const wormedit::document_history_t& history,
+auto propose_bmson_bgm_marker(const wormedit::document_history_t& history,
                             const wormedit::editor_interaction_state_t& state,
                             application_command_state_t& application_state,
                             wormedit::object_id_t reference, wormedit::local_position_t position,
                             bool restart, wormedit::notification_severity_t* severity) -> std::string {
     const std::array markers{wormedit::bmson_sound_marker_insertion_t{position, restart}};
-    return stage_bmson_bgm_markers(history, state, application_state, reference, markers, severity);
+    return propose_bmson_bgm_markers(history, state, application_state, reference, markers, severity);
 }
 
 
@@ -499,7 +499,7 @@ auto begin_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_c
 }
 
 
-auto edit_bmson_draft_marker(const WormUiComposeInputAction& input,
+auto revise_bmson_draft_marker(const WormUiComposeInputAction& input,
                              bmson_compose_context_t& context) -> compose_input_family_result_t {
     using namespace wormedit;
     auto& [environment, action, state, gesture_active] = context;
@@ -510,8 +510,8 @@ auto edit_bmson_draft_marker(const WormUiComposeInputAction& input,
     auto& draft = application_state.project.compose_gesture.bmson_marker_draft;
     if (!draft || input.object_id == 0 || input.object_id > draft->markers.size())
         return "The staged BMSON region edit expired.";
-    if (!chart_stamp_t{.document = {.project = history.document.id, .revision = draft->revision},
-                       .chart = draft->chart}.is_current(history.document, state.chart))
+    if (!draft->stamp.is_current(history.document, state.chart,
+                                  document_identity_policy_t::revision_only))
         return stale_action_message("BMSON region edit");
     auto proposed = draft->markers;
     const auto index = static_cast<std::size_t>(input.object_id - 1);
@@ -536,7 +536,7 @@ auto edit_bmson_draft_marker(const WormUiComposeInputAction& input,
     }
     auto temporary = make_document_history(history.document, 1);
     const auto checked = insert_bmson_sound_markers(temporary,
-                                                    draft->chart, draft->reference, proposed);
+                                                    draft->stamp.chart, draft->reference, proposed);
     if (!checked)
         return compose_input_family_result_t::stop_with_feedback(
             checked.diagnostics.empty() ? "Staged BMSON region edit could not be validated."
@@ -1718,7 +1718,7 @@ auto dispatch_compose_paste_input(const WormUiComposeInputAction& input,
     return compose_input_family_result_t::continue_batch({});
 }
 
-auto append_bga_draw_targets(application_command_state_t::bga_draw_stroke_t& stroke,
+auto revise_bga_draw_targets(application_command_state_t::bga_draw_stroke_t& stroke,
     const wormedit::chart_document_t& chart, const wormedit::measure_index_t& index,
     const wormedit::editor_interaction_state_t& state, uint64_t row, uint8_t kind) -> bool {
     const auto denominator = wormedit::edit_snap_denominator(chart, state);
@@ -1783,8 +1783,7 @@ auto begin_bga_draw(const WormUiComposeInputAction& input, compose_input_context
     auto* index = std::get_if<wormedit::measure_index_t>(&built);
     if (!index) return false;
     pending = application_command_state_t::bga_draw_stroke_t{
-        .chart = chart.id,
-        .revision = context.environment.document.history.document.revision,
+        .stamp = wormedit::chart_stamp_t::from(context.environment.document.history.document, chart.id),
         .resource = input.resource_id ? std::optional{wormedit::resource_id_t{input.resource_id}}
                                       : std::nullopt,
         .erase = input.paint_intent == 2,
@@ -1792,27 +1791,32 @@ auto begin_bga_draw(const WormUiComposeInputAction& input, compose_input_context
     return true;
 }
 
-auto apply_bgm_draw_stroke(compose_input_context_t& context,
+auto apply_bgm_draw_stroke(wormedit::document_command_transaction_t& transaction,
     const application_command_state_t::bga_draw_stroke_t& stroke, uint64_t lane)
     -> wormedit::document_command_result_t {
     std::vector<wormedit::local_position_t> positions;
     positions.reserve(stroke.targets.size());
     for (const auto& target : stroke.targets) positions.push_back(target.position);
-    return wormedit::apply_bgm_stroke(context.environment.document.history,
-                                      stroke.chart, wormedit::object_id_t{lane}, stroke.resource,
+    return wormedit::apply_bgm_stroke(transaction,
+                                      stroke.stamp.chart, wormedit::object_id_t{lane}, stroke.resource,
                                       positions, stroke.erase);
 }
 
-auto finish_bga_draw(const WormUiComposeInputAction& input, compose_input_context_t& context,
-    wormedit::editor_interaction_result_t& result) -> void {
+auto apply_bga_draw_stroke(wormedit::document_command_transaction_t& transaction,
+    const application_command_state_t::bga_draw_stroke_t& stroke)
+    -> wormedit::document_command_result_t {
+    return wormedit::apply_bga_stroke(transaction, stroke.stamp.chart,
+                                     stroke.resource, stroke.targets, stroke.erase);
+}
+
+auto apply_bga_draw(const WormUiComposeInputAction& input, compose_input_context_t& context,
+    wormedit::editor_interaction_result_t& result, wormedit::document_command_transaction_t& transaction) -> void {
     auto& pending = context.environment.commands.project.compose_gesture.bga_draw_stroke;
     auto stroke = std::move(*pending);
     pending.reset();
     const auto bgm = input.resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM;
-    const auto applied = bgm ? apply_bgm_draw_stroke(context, stroke, input.lane_id)
-                             : wormedit::apply_bga_stroke(
-                                   context.environment.document.history, stroke.chart,
-                                   stroke.resource, stroke.targets, stroke.erase);
+    const auto applied = bgm ? apply_bgm_draw_stroke(transaction, stroke, input.lane_id)
+                             : apply_bga_draw_stroke(transaction, stroke);
     result.accepted = applied.applied || applied.diagnostics.empty();
     result.document_changed = applied.applied;
     result.diagnostics = applied.diagnostics;
@@ -1840,6 +1844,16 @@ auto bga_draw_stop(std::string_view text)
         wormedit::notification_severity_t::warning, wormedit::notification_source_t::edit);
 }
 
+auto begin_bga_draw_transaction(compose_input_context_t& context,
+    const application_command_state_t::bga_draw_stroke_t& stroke, bool beginning, bool bgm)
+    -> wormedit::document_command_transaction_t {
+    if (beginning)
+        return wormedit::document_command_transaction_t::from(context.environment.document.history);
+    return wormedit::document_command_transaction_t::from(context.environment.document.history,
+        stroke.stamp, bgm ? "BGM Draw stroke" : "BGA Draw stroke",
+        wormedit::document_identity_policy_t::revision_only);
+}
+
 auto dispatch_bga_draw_input(const WormUiComposeInputAction& input,
     compose_input_context_t& context, wormedit::editor_interaction_result_t& result,
     std::string_view& accepted) -> std::optional<compose_input_family_result_t> {
@@ -1864,16 +1878,20 @@ auto dispatch_bga_draw_input(const WormUiComposeInputAction& input,
         return bga_draw_stop(bgm ? "BGM Draw source, chart or tool is unavailable."
                                           : "BGA Draw source, chart or tool is unavailable.");
     }
-    if (!pending || pending->chart != context.state.chart ||
-        pending->revision != context.environment.document.history.document.revision) {
+    if (!pending || pending->stamp.chart != context.state.chart) {
         pending.reset();
         return bga_draw_stop(bgm ? "Begin a new BGM Draw stroke."
                                           : "Begin a new BGA Draw stroke.");
     }
+    auto transaction = begin_bga_draw_transaction(context, *pending, beginning, bgm);
+    if (!transaction.is_ready()) {
+        pending.reset();
+        return bga_draw_stop(transaction.outcome.diagnostics.front().message);
+    }
     const auto row = bga_draw_row(input, context, *chart, pending->geometry);
     if (beginning && row) pending->last_row = *row;
     if (!row || !bga_draw_lane_valid(input) ||
-        !append_bga_draw_targets(*pending, *chart, pending->geometry, context.state, *row, input.bga_lane_kind)) {
+        !revise_bga_draw_targets(*pending, *chart, pending->geometry, context.state, *row, input.bga_lane_kind)) {
         pending.reset();
         return bga_draw_stop(bgm ? "BGM Draw requires a valid lane and at most 50,000 targets."
                                           : "BGA Draw requires a valid lane and at most 50,000 targets.");
@@ -1881,7 +1899,7 @@ auto dispatch_bga_draw_input(const WormUiComposeInputAction& input,
     result.accepted = true;
     accepted = bgm ? "BGM Draw stroke preview updated." : "BGA Draw stroke preview updated.";
     if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE) {
-        finish_bga_draw(input, context, result);
+        apply_bga_draw(input, context, result, transaction);
         accepted = bgm ? "BGM Draw stroke committed." : "BGA Draw stroke committed.";
     }
     return compose_input_family_result_t::continue_with_result();

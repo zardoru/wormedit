@@ -2185,3 +2185,35 @@ TEST_CASE("resource creation rejects malformed UTF-8 names atomically", "[unit][
     CHECK(history.document.revision == 4);
     CHECK(history.undo.empty());
 }
+
+TEST_CASE("BGA stroke reuses a captured transaction and publishes one undo entry",
+          "[core][resources][bga][stroke][transaction]") {
+    auto history = document_history_t::from(assignment_song());
+    const auto stamp = chart_stamp_t::from(history.document, chart_id_t{2});
+    auto transaction = document_command_transaction_t::from(history, stamp, "BGA Draw stroke");
+    const std::array targets{bga_stroke_target_t{{measure_id_t{3}, 600}, visual_event_kind_t::layer}};
+    const auto result = apply_bga_stroke(transaction, chart_id_t{2}, resource_id_t{3}, targets);
+    check_bga_stroke(result.applied);
+    check_bga_stroke(history.undo.size() == 1);
+    check_bga_stroke(!transaction.is_ready());
+    check_bga_stroke(history.document.charts.front().bga_events.size() == 2);
+    REQUIRE(undo_document_command(history));
+    check_bga_stroke(history.document.charts.front().bga_events.size() == 1);
+}
+
+TEST_CASE("rejected BGA stroke closes its supplied transaction and discards a working copy",
+          "[core][resources][bga][stroke][transaction]") {
+    auto history = document_history_t::from(assignment_song());
+    auto transaction = document_command_transaction_t::from(history);
+    const auto original = history.document.metadata.title;
+    transaction.copy_document().metadata.title = "Unpublished";
+    const std::array targets{bga_stroke_target_t{{measure_id_t{3}, 600}, visual_event_kind_t::layer}};
+    const auto rejected = apply_bga_stroke(transaction, chart_id_t{99}, resource_id_t{3}, targets);
+    check_bga_stroke(!rejected.applied);
+    check_bga_stroke(!rejected.diagnostics.empty());
+    check_bga_stroke(!transaction.is_ready());
+    check_bga_stroke(!transaction.has_copy());
+    check_bga_stroke(!transaction.commit("Must stay closed").applied);
+    check_bga_stroke(history.document.metadata.title == original);
+    check_bga_stroke(history.undo.empty());
+}

@@ -442,8 +442,7 @@ struct application_command_state_t {
         std::string message;
     };
     struct quantize_editor_t {
-        wormedit::song_id_t song;
-        wormedit::chart_id_t chart;
+        wormedit::chart_stamp_t stamp;
         wormedit::quantize_request_t request;
         std::optional<std::size_t> preset_index;
         bool preview_enabled{};
@@ -467,27 +466,27 @@ struct application_command_state_t {
         std::vector<WormUiComposePasteGhostView> ghosts;
     };
     struct bmson_marker_draft_t {
-        wormedit::chart_id_t chart;
-        std::uint64_t revision{};
+        wormedit::chart_stamp_t stamp;
         wormedit::object_id_t reference;
         std::vector<wormedit::bmson_sound_marker_insertion_t> markers;
+        wormedit::diagnostic_list_t diagnostics;
     };
     struct bmson_razor_stroke_t {
-        wormedit::chart_id_t chart;
-        std::uint64_t revision{};
+        wormedit::chart_stamp_t stamp;
         wormedit::object_id_t reference;
         std::uint64_t snap_denominator{};
         wormedit::local_position_t last_position;
+        wormedit::diagnostic_list_t diagnostics;
     };
     struct bga_draw_stroke_t {
-        wormedit::chart_id_t chart;
-        uint64_t revision{};
+        wormedit::chart_stamp_t stamp;
         std::optional<wormedit::resource_id_t> resource;
         bool erase{};
         uint64_t last_row{};
         wormedit::measure_index_t geometry;
         std::vector<wormedit::bga_stroke_target_t> targets;
         std::set<std::pair<uint64_t, uint8_t>> visited;
+        wormedit::diagnostic_list_t diagnostics;
     };
     struct minimap_start_frame_t {
         wormedit::chart_id_t chart;

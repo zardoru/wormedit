@@ -130,8 +130,7 @@ auto active_quantize_request(application_command_state_t& application,
                              const wormedit::chart_document_t& chart, std::uint64_t active_snap)
     -> wormedit::quantize_request_t {
     using namespace wormedit;
-    if (application.project.quantize.quantize_editor && application.project.quantize.quantize_editor->song == document.id &&
-        application.project.quantize.quantize_editor->chart == chart.id) {
+    if (application.project.quantize.quantize_editor && application.project.quantize.quantize_editor->stamp.is_identity_current(document, chart.id)) {
         auto request = application.project.quantize.quantize_editor->request;
         request.objects.clear();
         if (application.project.quantize.quantize_editor->preset_index &&
@@ -253,12 +252,10 @@ void populate_quantize_preview(compose_scene_cache_t& cache,
     view.quantize_tie = static_cast<std::uint8_t>(request.tie);
     view.quantize_holds = static_cast<std::uint8_t>(request.holds);
     view.quantize_preview_enabled = application.project.quantize.quantize_editor &&
-                                    application.project.quantize.quantize_editor->song == document.id &&
-                                    application.project.quantize.quantize_editor->chart == chart.id &&
+                                    application.project.quantize.quantize_editor->stamp.is_identity_current(document, chart.id) &&
                                     application.project.quantize.quantize_editor->preview_enabled;
     view.quantize_selected_preset_valid = application.project.quantize.quantize_editor &&
-                                          application.project.quantize.quantize_editor->song == document.id &&
-                                          application.project.quantize.quantize_editor->chart == chart.id &&
+                                          application.project.quantize.quantize_editor->stamp.is_identity_current(document, chart.id) &&
                                           application.project.quantize.quantize_editor->preset_index.has_value();
     view.quantize_selected_preset_index =
         view.quantize_selected_preset_valid ? *application.project.quantize.quantize_editor->preset_index : 0;

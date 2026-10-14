@@ -411,8 +411,7 @@ TEST_CASE("Quantize ghost geometry projects promoted absolute rows into native l
     fixture.interaction->selected_notes = {id, hold_id};
     fixture.interaction->viewport_scroll_pixels = -20.0;
     fixture.application.project.quantize.quantize_editor = application_command_state_t::quantize_editor_t{
-        .song = fixture.history.document.id,
-        .chart = fixture.history.document.charts.front().id,
+        .stamp = chart_stamp_t::from(fixture.history.document, fixture.history.document.charts.front().id),
         .request = {.divisions = 7, .space = quantization_space_t::authored_measure,
                     .tie = quantization_tie_t::later, .holds = quantization_hold_t::start_only,
                     .allow_resolution_promotion = true}, .preview_enabled = true};
@@ -559,8 +558,7 @@ TEST_CASE("Quantize ghosts retain collision visibility and hide blocked halfway 
     fixture.interaction->selected_notes = {selected};
     fixture.interaction->viewport_scroll_pixels = -20.0;
     fixture.application.project.quantize.quantize_editor = application_command_state_t::quantize_editor_t{
-        .song = fixture.history.document.id,
-        .chart = fixture.history.document.charts.front().id,
+        .stamp = chart_stamp_t::from(fixture.history.document, fixture.history.document.charts.front().id),
         .request = {.divisions = 4, .tie = quantization_tie_t::earlier,
                     .collisions = quantization_collision_t::reject}, .preview_enabled = true};
     fixture.project();
@@ -2359,8 +2357,9 @@ TEST_CASE("Captured BMSON draft edits and auditions reject stale revisions indep
     compose_test_fixture_t fixture{kiai_test_song()};
     fixture.project();
     fixture.application.project.compose_gesture.bmson_marker_draft = application_command_state_t::bmson_marker_draft_t{
-        .chart = fixture.interaction->chart, .revision = fixture.history.document.revision + 1,
+        .stamp = chart_stamp_t::from(fixture.history.document, fixture.interaction->chart),
         .reference = object_id_t{42}, .markers = {bmson_sound_marker_insertion_t{}}};
+    ++fixture.application.project.compose_gesture.bmson_marker_draft->stamp.document.revision;
     auto action = kiai_input(fixture, request.first, 1);
     test::check_stale_action_message(dispatch_paste_action(fixture, action), request.second);
     expect_compose_test(fixture.history.undo.empty());
@@ -6426,7 +6425,7 @@ TEST_CASE("Quantize ghost preview defaults off and toggles without editing the c
     expect_compose_test(fixture.flattened.view.compose.quantize_ghost_count == 0);
     expect_compose_test(fixture.history.document.revision == revision && fixture.history.undo.empty());
     fixture.application.project.quantize.quantize_editor->preview_enabled = true;
-    fixture.application.project.quantize.quantize_editor->chart = chart_id_t{999};
+    fixture.application.project.quantize.quantize_editor->stamp.chart = chart_id_t{999};
     fixture.project();
     expect_compose_test(!fixture.flattened.view.compose.quantize_preview_enabled);
     expect_compose_test(fixture.flattened.view.compose.quantize_ghost_count == 0);

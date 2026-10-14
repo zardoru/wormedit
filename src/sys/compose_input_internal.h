@@ -74,7 +74,7 @@ auto validate_bmson_marker_draft(const application_command_state_t::bmson_marker
 } // namespace wormedit::sys::compose_input_detail
 
 namespace wormedit::sys {
-auto stage_bmson_bgm_markers(const wormedit::document_history_t& history,
+auto propose_bmson_bgm_markers(const wormedit::document_history_t& history,
                              const wormedit::editor_interaction_state_t& state,
                              application_command_state_t& application_state,
                              wormedit::object_id_t reference,
@@ -117,8 +117,8 @@ auto dispatch_bmson_razor_input(const WormUiComposeInputAction& input,
     const object_id_t reference{input.object_id};
     if (input.razor_stroke_start) {
         stroke.reset();
-    } else if (!stroke || stroke->chart != state.chart ||
-               stroke->revision != history.document.revision || stroke->reference != reference) {
+    } else if (!stroke || !stroke->stamp.is_current(history.document, state.chart,
+                document_identity_policy_t::revision_only) || stroke->reference != reference) {
         stroke.reset();
         return "Begin a new BMSON razor stroke on the selected sound channel.";
     }
@@ -134,23 +134,23 @@ auto dispatch_bmson_razor_input(const WormUiComposeInputAction& input,
     if (input.razor_stroke_start) {
         const auto& draft = application_state.project.compose_gesture.bmson_marker_draft;
         const auto already_staged =
-            draft && draft->chart == state.chart && draft->revision == history.document.revision &&
+            draft && draft->stamp.is_current(history.document, state.chart,
+                wormedit::document_identity_policy_t::revision_only) &&
             draft->reference == reference &&
             std::ranges::any_of(draft->markers,
                                 [&](const auto& marker) { return marker.position == *position; });
         const auto status = already_staged
                                 ? std::string{"BMSON razor stroke started on a staged pulse."}
-                                : stage_bmson_bgm_marker(history, state, application_state,
+                                : propose_bmson_bgm_marker(history, state, application_state,
                                                          reference, *position, restart, &severity);
         severity = staged_input_severity(already_staged, severity);
         const auto& staged = application_state.project.compose_gesture.bmson_marker_draft;
-        if (staged && staged->chart == state.chart &&
-            staged->revision == history.document.revision && staged->reference == reference &&
+        if (staged && staged->stamp.is_current(history.document, state.chart,
+                document_identity_policy_t::revision_only) && staged->reference == reference &&
             std::ranges::any_of(staged->markers,
                                 [&](const auto& marker) { return marker.position == *position; })) {
             stroke = application_command_state_t::bmson_razor_stroke_t{
-                .chart = state.chart,
-                .revision = history.document.revision,
+                .stamp = chart_stamp_t::from(history.document, state.chart),
                 .reference = reference,
                 .snap_denominator = denominator,
                 .last_position = *position};
@@ -183,7 +183,7 @@ auto dispatch_bmson_razor_input(const WormUiComposeInputAction& input,
                             ? application_state.project.compose_gesture.bmson_marker_draft->markers.size()
                             : 0;
     const auto status =
-        stage_bmson_bgm_markers(history, state, application_state, reference, pending, &severity);
+        propose_bmson_bgm_markers(history, state, application_state, reference, pending, &severity);
     if (application_state.project.compose_gesture.bmson_marker_draft &&
         application_state.project.compose_gesture.bmson_marker_draft->markers.size() == before + pending.size()) {
         stroke->last_position = *position;
@@ -426,7 +426,7 @@ auto update_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_
     return compose_input_family_result_t::continue_batch("Selected-object move preview updated.");
 }
 
-auto edit_bmson_draft_marker(const WormUiComposeInputAction& input,
+auto revise_bmson_draft_marker(const WormUiComposeInputAction& input,
                              bmson_compose_context_t& context) -> compose_input_family_result_t;
 
 auto toggle_bmson_restart(const WormUiComposeInputAction& input, bmson_compose_context_t& context)
@@ -525,12 +525,11 @@ auto dispatch_bmson_compose_input(const WormUiWorkspaceAction& ui_action,
         const auto& draft = application_state.project.compose_gesture.bmson_marker_draft;
         if (!draft || input.object_id == 0 || input.object_id > draft->markers.size())
             return "The BMSON region audition request expired.";
-        if (!wormedit::chart_stamp_t{
-                .document = {.project = history.document.id, .revision = draft->revision},
-                .chart = draft->chart}.is_current(history.document, state.chart))
+        if (!draft->stamp.is_current(history.document, state.chart,
+                wormedit::document_identity_policy_t::revision_only))
             return wormedit::stale_action_message("BMSON region audition");
         scene_cache.frame.draft_audition_request = bmson_draft_audition_request_t{
-            draft->chart, draft->revision, draft->reference, draft->markers,
+            draft->stamp.chart, draft->stamp.document.revision, draft->reference, draft->markers,
             static_cast<std::size_t>(input.object_id - 1)};
         return compose_input_family_result_t::continue_batch(
             "Preparing staged BMSON region audition.");
@@ -539,7 +538,7 @@ auto dispatch_bmson_compose_input(const WormUiWorkspaceAction& ui_action,
     case WORM_UI_COMPOSE_INPUT_BMSON_ASSIGN_DRAFT_TO_BGM:
     case WORM_UI_COMPOSE_INPUT_BMSON_TOGGLE_DRAFT_RESTART:
     case WORM_UI_COMPOSE_INPUT_BMSON_REMOVE_DRAFT:
-        return edit_bmson_draft_marker(input, context);
+        return revise_bmson_draft_marker(input, context);
     case WORM_UI_COMPOSE_INPUT_BMSON_RESTART_TOGGLE:
         return toggle_bmson_restart(input, context);
     case WORM_UI_COMPOSE_INPUT_BMSON_EMPTY_SELECT:
@@ -1520,7 +1519,7 @@ auto dispatch_compose_paste_input(const WormUiComposeInputAction& input,
                                   compose_input_context_t& context)
     -> std::optional<compose_input_family_result_t>;
 
-auto append_bga_draw_targets(application_command_state_t::bga_draw_stroke_t& stroke,
+auto revise_bga_draw_targets(application_command_state_t::bga_draw_stroke_t& stroke,
                              const wormedit::chart_document_t& chart,
                              const wormedit::measure_index_t& index,
                              const wormedit::editor_interaction_state_t& state, uint64_t row,
@@ -1537,12 +1536,13 @@ auto bga_draw_row(const WormUiComposeInputAction& input, const compose_input_con
 auto begin_bga_draw(const WormUiComposeInputAction& input, compose_input_context_t& context,
                     const wormedit::chart_document_t& chart) -> bool;
 
-auto apply_bgm_draw_stroke(compose_input_context_t& context,
+auto apply_bgm_draw_stroke(wormedit::document_command_transaction_t& transaction,
                            const application_command_state_t::bga_draw_stroke_t& stroke,
                            uint64_t lane) -> wormedit::document_command_result_t;
 
-auto finish_bga_draw(const WormUiComposeInputAction& input, compose_input_context_t& context,
-                     wormedit::editor_interaction_result_t& result) -> void;
+auto apply_bga_draw(const WormUiComposeInputAction& input, compose_input_context_t& context,
+                     wormedit::editor_interaction_result_t& result,
+                     wormedit::document_command_transaction_t& transaction) -> void;
 
 auto bga_draw_lane_valid(const WormUiComposeInputAction& input) -> bool;
 

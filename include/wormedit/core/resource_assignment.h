@@ -225,6 +225,12 @@ struct bga_stroke_target_t {
 
 // Applies one atomic BGA draw/erase stroke. Draw preserves occupied cells;
 // erase removes events in the visited BGA lanes without requiring a resource.
+[[nodiscard]] auto apply_bga_stroke(document_command_transaction_t& transaction,
+                                    chart_id_t chart,
+                                    std::optional<resource_id_t> resource,
+                                    std::span<const bga_stroke_target_t> targets,
+                                    bool erase = false) -> document_command_result_t;
+
 [[nodiscard]] auto apply_bga_stroke(document_history_t& history,
                                     chart_id_t chart,
                                     std::optional<resource_id_t> resource,
@@ -235,6 +241,13 @@ struct bga_stroke_target_t {
 // already hold the same sound and rejects the whole stroke when a different sound
 // occupies a cell; erase removes the lane's ordinary events at the visited rows.
 // BMSON charts delegate to apply_bmson_packed_stroke; their stem lanes are not drawable.
+[[nodiscard]] auto apply_bgm_stroke(document_command_transaction_t& transaction,
+                                    chart_id_t chart,
+                                    object_id_t source_lane,
+                                    std::optional<resource_id_t> resource,
+                                    std::span<const local_position_t> targets,
+                                    bool erase = false) -> document_command_result_t;
+
 [[nodiscard]] auto apply_bgm_stroke(document_history_t& history,
                                     chart_id_t chart,
                                     object_id_t source_lane,
@@ -247,6 +260,13 @@ struct bga_stroke_target_t {
 // their BGM projections and skips rows that already show the sound; erase removes the
 // column's channel-linked events at the visited rows. Stem lanes are rejected.
 // Defined in bmson_sound_channel_editor.cpp.
+[[nodiscard]] auto apply_bmson_packed_stroke(document_command_transaction_t& transaction,
+                                             chart_id_t chart,
+                                             object_id_t source_lane,
+                                             std::optional<resource_id_t> resource,
+                                             std::span<const local_position_t> targets,
+                                             bool erase = false) -> document_command_result_t;
+
 [[nodiscard]] auto apply_bmson_packed_stroke(document_history_t& history,
                                              chart_id_t chart,
                                              object_id_t source_lane,

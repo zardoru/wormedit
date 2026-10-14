@@ -10,15 +10,6 @@
 namespace wormedit {
 namespace {
 
-auto reject(conversion_publication_plan_t plan, std::string message)
-    -> conversion_publication_plan_t {
-    plan.files.clear();
-    plan.assets.clear();
-    plan.generated_files.clear();
-    plan.errors.push_back(std::move(message));
-    return plan;
-}
-
 auto is_valid_relative(const std::filesystem::path& path) -> bool {
     if (path.empty() || path.is_absolute() || path.has_root_name() || path.has_root_directory() ||
         path != path.lexically_normal())
@@ -75,7 +66,7 @@ auto is_safe_existing_components(const std::filesystem::path& root,
 auto append_conversion_files(const std::filesystem::path& project_directory,
                             const output_group_t& group, const conversion_request_t& request,
                             const conversion_result_t& converted,
-                            conversion_publication_plan_t& plan,
+                            conversion_publication_plan_payload_t& plan,
                             std::set<std::filesystem::path>& destinations, bool destination_is_directory)
     -> std::optional<std::string> {
     namespace fs = std::filesystem;
@@ -111,7 +102,7 @@ auto append_conversion_files(const std::filesystem::path& project_directory,
 
 auto append_generated_file(const std::filesystem::path& name,
     const std::filesystem::path& project_directory, const std::filesystem::path& directory,
-    bool overwrite, conversion_publication_plan_t& plan,
+    bool overwrite, conversion_publication_plan_payload_t& plan,
     std::set<std::filesystem::path>& destinations) -> std::optional<std::string> {
     const auto relative = directory / name;
     std::string error;
@@ -129,7 +120,7 @@ auto append_generated_file(const std::filesystem::path& name,
 
 auto append_generated_files(const std::filesystem::path& project_directory,
     const output_group_t& group, const conversion_request_t& request,
-    const conversion_result_t& converted, conversion_publication_plan_t& plan,
+    const conversion_result_t& converted, conversion_publication_plan_payload_t& plan,
     std::set<std::filesystem::path>& destinations, bool destination_is_directory) -> std::optional<std::string> {
     const auto directory = (!destination_is_directory && group.relative_output_path.has_extension())
         ? group.relative_output_path.parent_path() : group.relative_output_path;
@@ -148,7 +139,7 @@ auto append_generated_files(const std::filesystem::path& project_directory,
 
 auto append_staged_assets(const std::filesystem::path& project_directory,
                           const output_group_t& group, const conversion_request_t& request,
-                          conversion_publication_plan_t& plan,
+                          conversion_publication_plan_payload_t& plan,
                           std::set<std::filesystem::path>& destinations, bool destination_is_directory)
     -> std::optional<std::string> {
     namespace fs = std::filesystem;
@@ -178,124 +169,124 @@ auto append_staged_assets(const std::filesystem::path& project_directory,
     return std::nullopt;
 }
 
-auto referenced_export_assets(const song_document_t& song, const output_group_t& group,
-                             staged_asset_discovery_t& result)
-    -> std::optional<std::set<asset_id_t>> {
+auto referenced_export_assets(const song_document_t& song, const output_group_t& group)
+    -> result_t<std::set<asset_id_t>, std::string> {
     std::set<asset_id_t> referenced;
     for (const auto& resource : song.resources) {
-        if (resource.asset) {
-            referenced.insert(resource.asset);
-        }
+        if (resource.asset) referenced.insert(resource.asset);
     }
     for (const auto chart_id : group.charts) {
         const auto chart = song.find_chart(chart_id);
-        if (chart == nullptr) {
-            result.errors.emplace_back("Output group refers to a missing chart.");
-            return std::nullopt;
-        }
+        if (chart == nullptr)
+            return std::unexpected(std::string{"Output group refers to a missing chart."});
         for (const auto& channel : chart->sound_channels) {
-            if (channel.source_clip.source) {
-                referenced.insert(channel.source_clip.source);
-            }
+            if (channel.source_clip.source) referenced.insert(channel.source_clip.source);
         }
     }
     return referenced;
 }
 
 auto append_discovered_asset(const song_document_t& song, const output_group_t& group,
-                             const std::filesystem::path& project_directory, asset_id_t asset,
-                             std::stop_token stop, staged_asset_discovery_t& result) -> bool {
+    const std::filesystem::path& project_directory, asset_id_t asset, std::stop_token stop,
+    std::vector<conversion_request_t::staged_asset_t>& mappings) -> result_t<void, std::string> {
     const auto audio = song.find_audio_asset(asset);
     const auto visual = std::ranges::find(song.visual_assets, asset, &visual_asset_t::id);
-    if ((audio == nullptr) == (visual == song.visual_assets.end())) {
-        result.errors.emplace_back("A resource has no unique source asset.");
-        return false;
-    }
+    if ((audio == nullptr) == (visual == song.visual_assets.end()))
+        return std::unexpected(std::string{"A resource has no unique source asset."});
     const auto& source = audio != nullptr ? audio->source_path : visual->source_path;
     const auto inspected = inspect_export_asset_copy({.project_directory = project_directory,
-                                                       .source_path = source,
-                                                       .relative_output_path = group.relative_output_path,
-                                                       .asset = asset},
-                                                      stop);
-    if (inspected.status == project_asset_copy_status_t::not_staged) {
-        return true;
-    }
-    if (inspected.status != project_asset_copy_status_t::reused) {
-        result.errors.push_back("Export asset #" + std::to_string(asset.value) + ": " +
-                                inspected.message);
-        return false;
-    }
-    const auto relative =
-        export_asset_reference_path(group.relative_output_path, inspected.relative_path);
-    if (!relative) {
-        result.errors.emplace_back("Verified export asset has an invalid chart-relative path.");
-        return false;
-    }
-    result.mappings.push_back({asset, *relative});
-    return true;
+        .source_path = source, .relative_output_path = group.relative_output_path, .asset = asset}, stop);
+    if (inspected.status == project_asset_copy_status_t::not_staged) return {};
+    if (inspected.status != project_asset_copy_status_t::reused)
+        return std::unexpected(std::string{"Export asset #" + std::to_string(asset.value) + ": " + inspected.message});
+    const auto relative = export_asset_reference_path(group.relative_output_path, inspected.relative_path);
+    if (!relative)
+        return std::unexpected(std::string{"Verified export asset has an invalid chart-relative path."});
+    mappings.push_back({asset, *relative});
+    return {};
 }
 
 } // namespace
 
-auto discover_staged_export_assets(const song_document_t& song, const output_group_t& group,
-                                   const std::filesystem::path& project_directory,
-                                   std::stop_token stop) -> staged_asset_discovery_t {
-    staged_asset_discovery_t result;
+auto staged_asset_discovery_t::from(const song_document_t& song, const output_group_t& group,
+    const std::filesystem::path& project_directory, std::stop_token stop) -> staged_asset_discovery_outcome_t {
+    std::vector<conversion_request_t::staged_asset_t> mappings;
     if (group.family != format_family_t::bms && group.family != format_family_t::bmson &&
-        group.family != format_family_t::osu_mania &&
-        group.family != format_family_t::stepmania) {
-        return result;
-    }
-    if (!project_directory.is_absolute() || !export_asset_directory(group.relative_output_path)) {
-        result.errors.emplace_back("Export asset directory is invalid.");
-        return result;
-    }
-    const auto referenced = referenced_export_assets(song, group, result);
-    if (!referenced.has_value()) {
-        return result;
-    }
+        group.family != format_family_t::osu_mania && group.family != format_family_t::stepmania)
+        return mappings;
+    if (!project_directory.is_absolute() || !export_asset_directory(group.relative_output_path))
+        return std::unexpected(staged_asset_discovery_error_t::from(std::move(mappings), "Export asset directory is invalid."));
+    auto referenced = referenced_export_assets(song, group);
+    if (!referenced) return std::unexpected(staged_asset_discovery_error_t::from(std::move(mappings), std::move(referenced.error())));
     for (const auto asset : *referenced) {
-        if (stop.stop_requested()) {
-            result.errors.emplace_back("Export asset discovery was cancelled.");
-            result.mappings.clear();
-            return result;
-        }
-        if (!append_discovered_asset(song, group, project_directory, asset, stop, result)) {
-            result.mappings.clear();
-            return result;
-        }
+        if (stop.stop_requested())
+            return std::unexpected(staged_asset_discovery_error_t::from(std::move(mappings), "Export asset discovery was cancelled."));
+        auto appended = append_discovered_asset(song, group, project_directory, asset, stop, mappings);
+        if (!appended) return std::unexpected(staged_asset_discovery_error_t::from(std::move(mappings), std::move(appended.error())));
     }
-    return result;
+    return mappings;
 }
 
-auto plan_conversion_publication(const std::filesystem::path& project_directory,
+auto conversion_publication_plan_t::from(const std::filesystem::path& project_directory,
                                  const output_group_t& group, const conversion_request_t& request,
                                  const conversion_result_t& converted, bool destination_is_directory)
-    -> conversion_publication_plan_t {
+    -> conversion_publication_plan_outcome_t {
     namespace fs = std::filesystem;
-    conversion_publication_plan_t plan;
+    conversion_publication_plan_payload_t plan{};
     if (!project_directory.is_absolute() || !is_valid_relative(group.relative_output_path) ||
         group.family != request.target || !converted || converted.outputs.empty()) {
-        return reject(std::move(plan), "Project, output group, or conversion result is invalid.");
+        return std::unexpected(conversion_publication_plan_error_t::from(std::move(plan), "Project, output group, or conversion result is invalid."));
     }
     if ((!destination_is_directory && group.relative_output_path.has_extension()) && converted.outputs.size() != 1) {
-        return reject(std::move(plan), "A single chart filename cannot hold multiple outputs.");
+        return std::unexpected(conversion_publication_plan_error_t::from(std::move(plan), "A single chart filename cannot hold multiple outputs."));
     }
     std::set<fs::path> destinations;
     if (auto error = append_conversion_files(project_directory, group, request, converted, plan,
                                              destinations, destination_is_directory);
         error.has_value()) {
-        return reject(std::move(plan), std::move(*error));
+        return std::unexpected(conversion_publication_plan_error_t::from(std::move(plan), std::move(*error)));
     }
     if (auto error = append_generated_files(project_directory, group, request, converted, plan, destinations, destination_is_directory);
         error.has_value()) {
-        return reject(std::move(plan), std::move(*error));
+        return std::unexpected(conversion_publication_plan_error_t::from(std::move(plan), std::move(*error)));
     }
     if (auto error = append_staged_assets(project_directory, group, request, plan, destinations, destination_is_directory);
         error.has_value()) {
-        return reject(std::move(plan), std::move(*error));
+        return std::unexpected(conversion_publication_plan_error_t::from(std::move(plan), std::move(*error)));
     }
     return plan;
+}
+
+auto staged_asset_discovery_t::from(staged_asset_discovery_outcome_t&& outcome) -> staged_asset_discovery_t {
+    if (!outcome) {
+        staged_asset_discovery_t result{.mappings = std::move(outcome.error().mappings), .errors = {}};
+        result.errors.push_back(std::move(outcome.error().message));
+        return result;
+    }
+    return {.mappings = std::move(*outcome), .errors = {}};
+}
+
+auto conversion_publication_plan_t::from(conversion_publication_plan_outcome_t&& outcome) -> conversion_publication_plan_t {
+    if (!outcome) {
+        conversion_publication_plan_t result{.files = std::move(outcome.error().plan.files),
+            .assets = std::move(outcome.error().plan.assets), .generated_files = std::move(outcome.error().plan.generated_files), .errors = {}};
+        result.errors.push_back(std::move(outcome.error().message));
+        return result;
+    }
+    return {.files = std::move(outcome->files), .assets = std::move(outcome->assets),
+        .generated_files = std::move(outcome->generated_files), .errors = {}};
+}
+
+auto discover_staged_export_assets(const song_document_t& song, const output_group_t& group,
+    const std::filesystem::path& project_directory, std::stop_token stop) -> staged_asset_discovery_t {
+    return staged_asset_discovery_t::from(staged_asset_discovery_t::from(song, group, project_directory, stop));
+}
+
+auto plan_conversion_publication(const std::filesystem::path& project_directory, const output_group_t& group,
+    const conversion_request_t& request, const conversion_result_t& converted, bool destination_is_directory)
+    -> conversion_publication_plan_t {
+    return conversion_publication_plan_t::from(conversion_publication_plan_t::from(
+        project_directory, group, request, converted, destination_is_directory));
 }
 
 } // namespace wormedit

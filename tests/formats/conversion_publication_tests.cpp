@@ -590,3 +590,43 @@ TEST_CASE("conversion publication distinguishes dotted directories from chart fi
     check_publication(read(temporary.path / "kick-v1.2/second.bmson") == "{}");
     check_publication(!std::filesystem::exists(temporary.path / "first.bmson"));
 }
+
+TEST_CASE("conversion publication expected failure preserves an empty error", "[unit][publication][results]") {
+    wormedit::conversion_publication_plan_payload_t payload{};
+    payload.files.reserve(2);
+    wormedit::conversion_publication_plan_outcome_t outcome = std::unexpected(wormedit::conversion_publication_plan_error_t::from(std::move(payload), {}));
+    const auto legacy = wormedit::conversion_publication_plan_t::from(std::move(outcome));
+    check_publication(!static_cast<bool>(legacy));
+    require_publication(legacy.errors.size() == 1);
+    check_publication(legacy.errors.front().empty());
+    check_publication(legacy.files.empty() && legacy.assets.empty() && legacy.generated_files.empty());
+    check_publication(legacy.files.capacity() >= 2);
+}
+
+TEST_CASE("staged discovery expected failure preserves an empty error", "[unit][publication][results]") {
+    std::vector<wormedit::conversion_request_t::staged_asset_t> mappings;
+    mappings.reserve(2);
+    wormedit::staged_asset_discovery_outcome_t outcome = std::unexpected(wormedit::staged_asset_discovery_error_t::from(std::move(mappings), {}));
+    const auto legacy = wormedit::staged_asset_discovery_t::from(std::move(outcome));
+    check_publication(!static_cast<bool>(legacy));
+    require_publication(legacy.errors.size() == 1);
+    check_publication(legacy.errors.front().empty() && legacy.mappings.empty());
+    check_publication(legacy.mappings.capacity() >= 2);
+}
+
+TEST_CASE("conversion primary publication preflight returns complete paths", "[unit][publication][results]") {
+    temporary_directory_t temporary;
+    const wormedit::output_group_t group{.family = wormedit::format_family_t::bmson, .relative_output_path = "exports"};
+    const auto outcome = wormedit::conversion_publication_plan_t::from(temporary.path, group,
+        {.target = wormedit::format_family_t::bmson}, converted());
+    require_publication(outcome.has_value());
+    require_publication(outcome->files.size() == 1);
+    check_publication(outcome->files.front().project_relative_path == "exports/song.bmson");
+    check_publication(!std::filesystem::exists(temporary.path / "exports"));
+}
+
+TEST_CASE("staged primary discovery accepts a quiet unsupported output family", "[unit][publication][results]") {
+    const auto outcome = wormedit::staged_asset_discovery_t::from({}, {.family = wormedit::format_family_t::native_project}, {});
+    require_publication(outcome.has_value());
+    check_publication(outcome->empty());
+}

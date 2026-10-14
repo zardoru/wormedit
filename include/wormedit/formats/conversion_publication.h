@@ -6,6 +6,7 @@
 #include <functional>
 #include <stop_token>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace wormedit {
@@ -13,14 +14,40 @@ namespace wormedit {
 struct conversion_publication_file_t {
     std::size_t output_index{};
     std::filesystem::path project_relative_path;
+    auto operator==(const conversion_publication_file_t&) const -> bool = default;
 };
 
 struct conversion_publication_asset_t {
     asset_id_t asset;
     std::filesystem::path project_relative_path;
+    auto operator==(const conversion_publication_asset_t&) const -> bool = default;
 };
 
+struct conversion_publication_plan_payload_t {
+    std::vector<conversion_publication_file_t> files;
+    std::vector<conversion_publication_asset_t> assets;
+    std::vector<std::filesystem::path> generated_files;
+    auto operator==(const conversion_publication_plan_payload_t&) const -> bool = default;
+};
+struct conversion_publication_plan_error_t {
+    conversion_publication_plan_payload_t plan;
+    std::string message;
+    [[nodiscard]] static auto from(conversion_publication_plan_payload_t&& plan,
+        std::string message) -> conversion_publication_plan_error_t {
+        plan.files.clear();
+        plan.assets.clear();
+        plan.generated_files.clear();
+        return {.plan = std::move(plan), .message = std::move(message)};
+    }
+    auto operator==(const conversion_publication_plan_error_t&) const -> bool = default;
+};
+using conversion_publication_plan_outcome_t =
+    result_t<conversion_publication_plan_payload_t, conversion_publication_plan_error_t>;
 struct conversion_publication_plan_t {
+    [[nodiscard]] static auto from(const std::filesystem::path& project_directory, const output_group_t& group,
+        const conversion_request_t& request, const conversion_result_t& converted,
+        bool destination_is_directory = false) -> conversion_publication_plan_outcome_t;
+    [[nodiscard]] static auto from(conversion_publication_plan_outcome_t&& outcome) -> conversion_publication_plan_t;
     std::vector<conversion_publication_file_t> files;
     std::vector<conversion_publication_asset_t> assets;
     std::vector<std::filesystem::path> generated_files;
@@ -31,7 +58,22 @@ struct conversion_publication_plan_t {
     }
 };
 
+struct staged_asset_discovery_error_t {
+    std::vector<conversion_request_t::staged_asset_t> mappings;
+    std::string message;
+    [[nodiscard]] static auto from(std::vector<conversion_request_t::staged_asset_t>&& mappings,
+        std::string message) -> staged_asset_discovery_error_t {
+        mappings.clear();
+        return {.mappings = std::move(mappings), .message = std::move(message)};
+    }
+    auto operator==(const staged_asset_discovery_error_t&) const -> bool = default;
+};
+using staged_asset_discovery_outcome_t =
+    result_t<std::vector<conversion_request_t::staged_asset_t>, staged_asset_discovery_error_t>;
 struct staged_asset_discovery_t {
+    [[nodiscard]] static auto from(const song_document_t& song, const output_group_t& group,
+        const std::filesystem::path& project_directory, std::stop_token stop = {}) -> staged_asset_discovery_outcome_t;
+    [[nodiscard]] static auto from(staged_asset_discovery_outcome_t&& outcome) -> staged_asset_discovery_t;
     std::vector<conversion_request_t::staged_asset_t> mappings;
     std::vector<std::string> errors;
 

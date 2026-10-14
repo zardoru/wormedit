@@ -119,12 +119,30 @@ struct conversion_publication_options_t {
     bool destination_is_directory{};
 };
 
+struct conversion_publication_diagnostics_t {
+    std::vector<std::string> errors;
+    std::vector<std::string> warnings;
+    [[nodiscard]] auto has_errors() const -> bool { return !errors.empty(); }
+    auto operator==(const conversion_publication_diagnostics_t&) const -> bool = default;
+};
+struct conversion_publication_payload_t {
+    bool published{};
+    std::size_t pruned_files{};
+    auto operator==(const conversion_publication_payload_t&) const -> bool = default;
+};
+using conversion_publication_outcome_t = diagnosed_t<conversion_publication_payload_t, conversion_publication_diagnostics_t>;
 struct conversion_publication_result_t {
+    [[nodiscard]] static auto from(conversion_publication_outcome_t&& outcome) -> conversion_publication_result_t;
     bool published{};
     std::size_t pruned_files{};
     std::vector<std::string> errors;
     std::vector<std::string> warnings;
 };
+
+[[nodiscard]] auto create_conversion_group(const std::filesystem::path& project_directory,
+    const output_group_t& group, const conversion_request_t& request,
+    const conversion_result_t& converted, conversion_publication_options_t options = {})
+    -> conversion_publication_outcome_t;
 
 // Replans at execution time, builds a complete sibling directory, then makes
 // it visible in one rename/exchange. A bounded in-directory ownership manifest

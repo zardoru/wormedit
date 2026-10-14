@@ -399,7 +399,7 @@ auto install_new_directory(const fs::path& staging, const fs::path& destination)
 #endif
 }
 
-auto collect_owned_chart_names(const conversion_publication_plan_t& plan,
+auto collect_owned_chart_names(const conversion_publication_plan_payload_t& plan,
                                const fs::path& relative_directory, std::string_view group_key,
                                const output_ownership_t& ownership,
                                std::set<std::string>& current_files) -> std::optional<std::string> {
@@ -470,7 +470,7 @@ auto prune_stale_chart_files(const fs::path& staging, const output_ownership_t& 
 }
 
 struct staged_chart_write_t {
-    const conversion_publication_plan_t& plan;
+    const conversion_publication_plan_payload_t& plan;
     const conversion_result_t& converted;
     const conversion_publication_options_t& options;
     const fs::path& relative_directory;
@@ -573,7 +573,7 @@ auto reserve_publication_staging(const fs::path& parent, const fs::path& destina
 }
 
 struct publication_commit_t {
-    const conversion_publication_plan_t& plan;
+    const conversion_publication_plan_payload_t& plan;
     const conversion_publication_options_t& options;
     temporary_directory_t& staging;
     const fs::path& relative_directory;
@@ -581,12 +581,12 @@ struct publication_commit_t {
     const fs::path& parent;
     const output_ownership_t& ownership;
     bool destination_exists{};
-    conversion_publication_result_t& result;
+    conversion_publication_outcome_t& result;
 };
 
 void install_staged_conversion(publication_commit_t context) {
     if (!is_allowed(context.options, conversion_publication_stage_t::validate_staging)) {
-        context.result.errors.emplace_back("Staging validation was interrupted.");
+        context.result.diagnostics.errors.emplace_back("Staging validation was interrupted.");
         return;
     }
     std::error_code error;
@@ -594,7 +594,7 @@ void install_staged_conversion(publication_commit_t context) {
         const auto relative =
             asset.project_relative_path.lexically_relative(context.relative_directory);
         if (!fs::is_regular_file(context.staging.path / relative, error) || error) {
-            context.result.errors.emplace_back(
+            context.result.diagnostics.errors.emplace_back(
                 "A staged asset was absent from the complete output set.");
             return;
         }
@@ -602,60 +602,61 @@ void install_staged_conversion(publication_commit_t context) {
     std::string failure;
     if (!is_allowed(context.options, conversion_publication_stage_t::update_manifest) ||
         !write_ownership(context.staging.path, context.ownership, failure)) {
-        context.result.errors.push_back(failure.empty() ? "Output ownership update was interrupted."
+        context.result.diagnostics.errors.push_back(failure.empty() ? "Output ownership update was interrupted."
                                                         : failure);
         return;
     }
     if (!sync_tree_directories(context.staging.path) ||
         !is_allowed(context.options, conversion_publication_stage_t::exchange_directory)) {
-        context.result.errors.emplace_back(
+        context.result.diagnostics.errors.emplace_back(
             "Output directory could not be flushed or publication was interrupted.");
         return;
     }
     if (context.destination_exists) {
         if (!exchange_directories(context.staging.path, context.destination)) {
-            context.result.errors.emplace_back(
+            context.result.diagnostics.errors.emplace_back(
                 "Atomic replacement of the output directory is unavailable.");
             return;
         }
     } else {
         if (!install_new_directory(context.staging.path, context.destination)) {
-            context.result.errors.emplace_back("Atomic creation of the output directory failed.");
+            context.result.diagnostics.errors.emplace_back("Atomic creation of the output directory failed.");
             return;
         }
         context.staging.path.clear();
     }
-    context.result.published = true;
+    context.result.value.published = true;
     if (context.destination_exists) {
         fs::remove_all(context.staging.path, error);
         if (error) {
-            context.result.warnings.emplace_back(
+            context.result.diagnostics.warnings.emplace_back(
                 "Output was published, but old files could not be removed.");
         } else {
             context.staging.path.clear();
         }
     }
     if (!sync_directory(context.parent)) {
-        context.result.warnings.emplace_back(
+        context.result.diagnostics.warnings.emplace_back(
             "Output was published, but parent directory sync failed.");
     }
 }
 
 } // namespace
 
-auto publish_conversion_group_atomic(const fs::path& project_directory, const output_group_t& group,
+auto create_conversion_group(const fs::path& project_directory, const output_group_t& group,
                                      const conversion_request_t& request,
                                      const conversion_result_t& converted,
                                      conversion_publication_options_t options)
-    -> conversion_publication_result_t {
-    conversion_publication_result_t result;
-    const auto plan = plan_conversion_publication(project_directory, group, request, converted, options.destination_is_directory);
-    if (!plan) {
-        result.errors = plan.errors;
+    -> conversion_publication_outcome_t {
+    conversion_publication_outcome_t result{};
+    auto planned = conversion_publication_plan_t::from(project_directory, group, request, converted, options.destination_is_directory);
+    if (!planned) {
+        result.diagnostics.errors.push_back(std::move(planned.error().message));
         return result;
     }
+    const auto& plan = *planned;
     if (!plan.generated_files.empty() && !options.stage_generated_files) {
-        result.errors.emplace_back("Generated audio staging callback is required.");
+        result.diagnostics.errors.emplace_back("Generated audio staging callback is required.");
         return result;
     }
     const auto relative_directory = (!options.destination_is_directory && group.relative_output_path.has_extension())
@@ -663,7 +664,7 @@ auto publish_conversion_group_atomic(const fs::path& project_directory, const ou
                                         : group.relative_output_path;
     if (relative_directory.empty() || options.maximum_existing_bytes == 0 ||
         options.maximum_existing_entries == 0) {
-        result.errors.emplace_back(
+        result.diagnostics.errors.emplace_back(
             "Output group needs a non-root directory and valid copy limits.");
         return result;
     }
@@ -673,51 +674,62 @@ auto publish_conversion_group_atomic(const fs::path& project_directory, const ou
     bool destination_exists{};
     if (auto staging_failure =
             reserve_publication_staging(parent, destination, staging, destination_exists)) {
-        result.errors.push_back(std::move(*staging_failure));
+        result.diagnostics.errors.push_back(std::move(*staging_failure));
         return result;
     }
     std::error_code error;
     std::string failure;
     if (destination_exists && (!is_allowed(options, conversion_publication_stage_t::copy_existing) ||
                                !copy_existing(destination, staging.path, options, failure))) {
-        result.errors.push_back(failure.empty() ? "Existing-output copy was interrupted."
+        result.diagnostics.errors.push_back(failure.empty() ? "Existing-output copy was interrupted."
                                                 : failure);
         return result;
     }
     output_ownership_t ownership;
     if (!read_ownership(staging.path, ownership, failure)) {
-        result.errors.push_back(std::move(failure));
+        result.diagnostics.errors.push_back(std::move(failure));
         return result;
     }
     const auto group_key = group.relative_output_path.generic_string();
     std::set<std::string> current_files;
     if (auto failure = collect_owned_chart_names(plan, relative_directory, group_key, ownership,
                                                  current_files)) {
-        result.errors.push_back(std::move(*failure));
+        result.diagnostics.errors.push_back(std::move(*failure));
         return result;
     }
     std::size_t pruned_files{};
     if (auto failure = prune_stale_chart_files(staging.path, ownership, group_key, current_files,
                                               pruned_files)) {
-        result.errors.push_back(std::move(*failure));
+        result.diagnostics.errors.push_back(std::move(*failure));
         return result;
     }
     if (auto write_failure = write_generated_charts(
             {plan, converted, options, relative_directory, staging.path, ownership, group_key})) {
-        result.errors.push_back(std::move(*write_failure));
+        result.diagnostics.errors.push_back(std::move(*write_failure));
         return result;
     }
     if (auto failure = write_generated_audio(
             {plan, converted, options, relative_directory, staging.path, ownership, group_key})) {
-        result.errors.push_back(std::move(*failure));
+        result.diagnostics.errors.push_back(std::move(*failure));
         return result;
     }
     install_staged_conversion({plan, options, staging, relative_directory, destination, parent,
                                ownership, destination_exists, result});
-    if (result.published) {
-        result.pruned_files = pruned_files;
+    if (result.value.published) {
+        result.value.pruned_files = pruned_files;
     }
     return result;
+}
+
+auto conversion_publication_result_t::from(conversion_publication_outcome_t&& outcome) -> conversion_publication_result_t {
+    return {.published = outcome.value.published, .pruned_files = outcome.value.pruned_files,
+        .errors = std::move(outcome.diagnostics.errors), .warnings = std::move(outcome.diagnostics.warnings)};
+}
+
+auto publish_conversion_group_atomic(const fs::path& project_directory, const output_group_t& group,
+    const conversion_request_t& request, const conversion_result_t& converted,
+    conversion_publication_options_t options) -> conversion_publication_result_t {
+    return conversion_publication_result_t::from(create_conversion_group(project_directory, group, request, converted, std::move(options)));
 }
 
 } // namespace wormedit

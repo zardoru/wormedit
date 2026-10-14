@@ -48,6 +48,7 @@ template <class Code, Code DefaultCode> struct path_diagnostic_t {
     Code code{DefaultCode};
     std::string message;
     std::string path;
+    auto operator==(const path_diagnostic_t&) const -> bool = default;
 };
 
 template <class Code, Code DefaultCode> struct text_parse_diagnostic_t {
@@ -56,6 +57,7 @@ template <class Code, Code DefaultCode> struct text_parse_diagnostic_t {
     std::string message;
     std::size_t source_order{};
     std::optional<std::size_t> byte_offset;
+    auto operator==(const text_parse_diagnostic_t&) const -> bool = default;
 };
 
 template <class Code, Code DefaultCode> struct text_write_diagnostic_t {
@@ -63,6 +65,7 @@ template <class Code, Code DefaultCode> struct text_write_diagnostic_t {
     Code code{DefaultCode};
     std::string message;
     std::string field;
+    auto operator==(const text_write_diagnostic_t&) const -> bool = default;
 };
 
 using diagnostic_t = object_diagnostic_t<diagnostic_code_t, diagnostic_code_t::invalid_id>;
@@ -82,6 +85,13 @@ template <class Diagnostic>
         }
     }
     return false;
+}
+
+// Phase-specific reports retain their original lists and own the aggregate query.
+template <class Report>
+[[nodiscard]] auto has_errors(const Report& report) -> bool
+    requires requires { report.has_errors(); } {
+    return report.has_errors();
 }
 
 } // namespace diagnostic_queries

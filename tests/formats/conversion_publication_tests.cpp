@@ -630,3 +630,36 @@ TEST_CASE("staged primary discovery accepts a quiet unsupported output family", 
     require_publication(outcome.has_value());
     check_publication(outcome->empty());
 }
+
+TEST_CASE("conversion publication diagnostics retain flags counts and warnings", "[unit][publication][results]") {
+    wormedit::conversion_publication_outcome_t outcome{.value = {.published = true, .pruned_files = 3}};
+    outcome.diagnostics.warnings.push_back("sync");
+    check_publication(outcome.ok());
+    const auto legacy = wormedit::conversion_publication_result_t::from(std::move(outcome));
+    check_publication(legacy.published && legacy.pruned_files == 3);
+    check_publication(legacy.errors.empty());
+    require_publication(legacy.warnings.size() == 1);
+    check_publication(legacy.warnings.front() == "sync");
+}
+
+TEST_CASE("conversion publication failed report retains warning metadata", "[unit][publication][results]") {
+    wormedit::conversion_publication_outcome_t outcome{};
+    outcome.diagnostics.errors.emplace_back();
+    outcome.diagnostics.warnings.push_back("warning");
+    check_publication(!outcome.ok());
+    const auto legacy = wormedit::conversion_publication_result_t::from(std::move(outcome));
+    check_publication(!legacy.published && legacy.pruned_files == 0);
+    require_publication(legacy.errors.size() == 1);
+    check_publication(legacy.errors.front().empty());
+    check_publication(legacy.warnings.front() == "warning");
+}
+
+TEST_CASE("conversion primary publication installs real output bytes", "[unit][publication][results]") {
+    temporary_directory_t temporary;
+    const wormedit::output_group_t group{.family = wormedit::format_family_t::bmson, .relative_output_path = "exports"};
+    const auto outcome = wormedit::create_conversion_group(temporary.path, group,
+        {.target = wormedit::format_family_t::bmson}, converted());
+    require_publication(outcome.ok());
+    check_publication(outcome.value.published && outcome.value.pruned_files == 0);
+    check_publication(read(temporary.path / "exports/song.bmson") == "{}");
+}

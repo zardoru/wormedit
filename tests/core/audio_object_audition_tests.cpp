@@ -46,6 +46,18 @@ void require_stem_preview(bool condition) { REQUIRE(condition); }
 void expect_stem_preview(bool condition) { CHECK(condition); }
 void reject_stem_preview(bool condition) { CHECK_FALSE(condition); }
 
+void check_rejected_object_audition(
+    const wormedit::audio::object_audition_outcome_t& rejected,
+    const wormedit::audio::prepared_object_audition_t& expected) {
+    using namespace wormedit::audio;
+    CHECK(rejected.error().value.status == object_audition_status_t::transport_failed);
+    REQUIRE(rejected.error().value.prepared.has_value());
+    CHECK(*rejected.error().value.prepared == expected);
+    REQUIRE(rejected.error().value.transport.has_value());
+    CHECK(rejected.error().value.transport->status == audition_start_status_t::invalid_clip);
+    CHECK(rejected.error().diagnostics.empty());
+}
+
 } // namespace
 
 TEST_CASE("object audition prepares before replacing transport and rejects stale requests",
@@ -111,6 +123,27 @@ TEST_CASE("object audition forwards exact BGM clips and Stop through the bridge"
     CHECK(started.prepared->clips.front().frame_count == 111'800);
     CHECK(controller.stop().scheduled_voices == 1);
     CHECK_FALSE(bridge.session_token().has_value());
+}
+
+TEST_CASE("object audition expected rejection retains prepared clips and transport details",
+          "[unit][audio][object-audition][result]") {
+    using namespace wormedit::audio;
+    decoded_block_cache_t cache;
+    transport_t transport{cache, 2};
+    audition_transport_bridge_t bridge{transport};
+    object_audition_controller_t controller{bridge};
+    prepared_object_audition_t prepared{
+        .request = {7, wormedit::chart_id_t{2}, wormedit::object_id_t{3}},
+        .clips = {{{"fixture:source", "decoded:v1"}, 12, 0, 0.5F}}};
+    const auto expected = prepared;
+    auto rejected = controller.start_prepared(std::move(prepared));
+    REQUIRE_FALSE(rejected.has_value());
+    check_rejected_object_audition(rejected, expected);
+    CHECK_FALSE(bridge.session_token().has_value());
+    const auto legacy = object_audition_result_t::from(std::move(rejected));
+    CHECK_FALSE(legacy);
+    CHECK(legacy.prepared == expected);
+    CHECK(legacy.transport->status == audition_start_status_t::invalid_clip);
 }
 
 TEST_CASE("Stem click audition bounds decoded frames without changing offsets or shorter clips",

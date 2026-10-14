@@ -16,6 +16,7 @@ struct audition_clip_t {
     std::uint64_t source_start_frame{};
     std::uint64_t frame_count{};
     float gain{1.0F};
+    auto operator==(const audition_clip_t&) const -> bool = default;
 };
 
 enum class audition_start_status_t : std::uint8_t {
@@ -32,6 +33,7 @@ struct audition_start_result_t {
     audition_start_status_t status{audition_start_status_t::transport_start_failed};
     std::optional<session_token_t> token;
     std::size_t scheduled_layers{};
+    auto operator==(const audition_start_result_t&) const -> bool = default;
 
     [[nodiscard]] explicit operator bool() const noexcept {
         return status == audition_start_status_t::started && token.has_value();

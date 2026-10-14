@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/audio/audition_resolver.h>
+#include <wormedit/core/result.h>
 
 namespace wormedit::audio {
 
@@ -14,6 +15,7 @@ struct object_audition_request_t {
     std::uint64_t document_revision{};
     chart_id_t chart;
     object_id_t object;
+    auto operator==(const object_audition_request_t&) const -> bool = default;
 };
 
 enum class object_audition_status_t {
@@ -27,9 +29,23 @@ enum class object_audition_status_t {
 struct prepared_object_audition_t {
     object_audition_request_t request;
     std::vector<audition_clip_t> clips;
+    auto operator==(const prepared_object_audition_t&) const -> bool = default;
 };
 
+struct object_audition_effect_t {
+    object_audition_status_t status{object_audition_status_t::resolve_failed};
+    std::optional<prepared_object_audition_t> prepared;
+    std::optional<audition_start_result_t> transport;
+    auto operator==(const object_audition_effect_t&) const -> bool = default;
+};
+// Rejected starts retain the prepared clips and transport failure details.
+using object_audition_outcome_t =
+    result_t<object_audition_effect_t,
+             diagnosed_t<object_audition_effect_t, std::vector<audition_resolve_diagnostic_t>>>;
+
 struct object_audition_result_t {
+    [[nodiscard]] static auto from(object_audition_outcome_t&& outcome) -> object_audition_result_t;
+
     object_audition_status_t status{object_audition_status_t::resolve_failed};
     std::optional<prepared_object_audition_t> prepared;
     std::optional<audition_start_result_t> transport;
@@ -47,6 +63,18 @@ struct object_audition_result_t {
 class object_audition_controller_t {
   public:
     explicit object_audition_controller_t(audition_transport_bridge_t& bridge) : bridge_(bridge) {}
+
+    [[nodiscard]] auto prepare_object(const song_document_t& song,
+                                      object_audition_request_t request,
+                                      std::span<const audition_source_binding_t> bindings,
+                                      audition_resolve_options_t options = {})
+        -> object_audition_outcome_t;
+    [[nodiscard]] auto start_prepared(prepared_object_audition_t prepared)
+        -> object_audition_outcome_t;
+    [[nodiscard]] auto start_object(const song_document_t& song, object_audition_request_t request,
+                                    std::span<const audition_source_binding_t> bindings,
+                                    audition_resolve_options_t options = {})
+        -> object_audition_outcome_t;
 
     [[nodiscard]] auto prepare(const song_document_t& song, object_audition_request_t request,
                                std::span<const audition_source_binding_t> bindings,

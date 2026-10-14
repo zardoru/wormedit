@@ -555,46 +555,40 @@ std::string apply_recipe_form_action(compose_action_context_t& context) {
                                     notification_source_t::edit);
 }
 
-std::string set_cursor_measure_meter(compose_action_context_t& context) {
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(
-            context, "Finish or cancel the active Compose gesture before editing measures.");
+auto set_cursor_measure_meter(compose_action_context_t& context) -> compose_action_outcome_t {
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before editing measures."))
+        return std::move(*blocked);
+    const auto revision = context.environment.document.history.document.revision;
     auto severity = notification_severity_t::warning;
     auto status = apply_cursor_measure_meter(
         context.environment.document.history, context.state, context.action.timing_meter_numerator_text,
         context.action.timing_meter_denominator_text, &severity);
-    const auto rebound =
-        rebind_workspace(context.environment.document.workspace, context.environment.document.history);
-    if (!rebound) {
-        static_cast<void>(
-            publish_compose_feedback(context, status, severity, notification_source_t::edit));
-        status = "Meter edited, but workspace rebinding failed.";
-        return compose_action_error(context, std::move(status), notification_source_t::document);
-    }
-    return publish_compose_feedback(context, std::move(status), severity,
-                                    notification_source_t::edit);
+    const auto mutated = revision != context.environment.document.history.document.revision;
+    auto outcome = compose_action_outcome_t::from(std::move(status), severity,
+        notification_source_t::edit, mutated, mutated || severity == notification_severity_t::info);
+    outcome.rebind_failure = "Meter edited, but workspace rebinding failed.";
+    outcome.rebind_failure_policy = compose_rebind_failure_policy_t::message_only;
+    return outcome;
 }
 
-std::string set_measures_meter(compose_action_context_t& context) {
-    if (editor_interaction_has_pending_gesture(context.state))
-        return compose_action_warning(
-            context, "Finish or cancel the active Compose gesture before editing measures.");
+auto set_measures_meter(compose_action_context_t& context) -> compose_action_outcome_t {
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before editing measures."))
+        return std::move(*blocked);
+    const auto revision = context.environment.document.history.document.revision;
     auto severity = notification_severity_t::warning;
     const auto ids = std::span<const std::uint64_t>{context.action.compose_measure_ids,
                                                     context.action.compose_measure_id_count};
     auto status = apply_measures_meter(context.environment.document.history, context.state, ids,
                                        context.action.timing_meter_numerator_text,
                                        context.action.timing_meter_denominator_text, &severity);
-    const auto rebound =
-        rebind_workspace(context.environment.document.workspace, context.environment.document.history);
-    if (!rebound) {
-        static_cast<void>(
-            publish_compose_feedback(context, status, severity, notification_source_t::edit));
-        status = "Meter edited, but workspace rebinding failed.";
-        return compose_action_error(context, std::move(status), notification_source_t::document);
-    }
-    return publish_compose_feedback(context, std::move(status), severity,
-                                    notification_source_t::edit);
+    const auto mutated = revision != context.environment.document.history.document.revision;
+    auto outcome = compose_action_outcome_t::from(std::move(status), severity,
+        notification_source_t::edit, mutated, mutated || severity == notification_severity_t::info);
+    outcome.rebind_failure = "Meter edited, but workspace rebinding failed.";
+    outcome.rebind_failure_policy = compose_rebind_failure_policy_t::message_only;
+    return outcome;
 }
 
 std::string move_bar_line(compose_action_context_t& context) {
@@ -630,9 +624,9 @@ std::optional<std::string> dispatch_compose_marker_action(compose_action_context
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_MOVE_BAR_LINE)
         return move_bar_line(context);
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER)
-        return set_measures_meter(context);
+        return finish_compose_action(context, set_measures_meter(context));
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER)
-        return set_cursor_measure_meter(context);
+        return finish_compose_action(context, set_cursor_measure_meter(context));
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_PREVIEW_SV_RECIPE_FORM)
         return propose_recipe_form_action(context);
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_SV_RECIPE_FORM)

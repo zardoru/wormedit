@@ -49,9 +49,64 @@
 #include <vector>
 
 namespace wormedit::sys {
+auto compose_action_outcome_t::blocked(std::string message, notification_source_t source)
+    -> compose_action_outcome_t {
+    return from(std::move(message), notification_severity_t::warning, source, false, false);
+}
+
+auto compose_action_outcome_t::from(std::string message, notification_severity_t severity,
+    notification_source_t source, bool mutated, bool accepted) -> compose_action_outcome_t {
+    return {.message = std::move(message), .severity = severity, .source = source,
+            .mutated = mutated, .accepted = accepted};
+}
+
+auto compose_action_outcome_t::from(document_command_result_t&& command, std::string success,
+    std::string unchanged, std::string_view rebind_failure, notification_source_t source)
+    -> compose_action_outcome_t {
+    auto outcome = from(command.applied ? std::move(success) : std::move(unchanged),
+        command.applied ? notification_severity_t::success : notification_severity_t::info,
+        source, command.applied, command.applied || command.diagnostics.empty());
+    if (!command.diagnostics.empty()) {
+        outcome.message = command.diagnostics.front().message;
+        outcome.severity = compose_action_detail::compose_notification_severity(
+            command.diagnostics.front().severity);
+        outcome.diagnostics = std::move(command.diagnostics);
+    }
+    outcome.rebind_failure = rebind_failure;
+    return outcome;
+}
+
 using namespace compose_action_detail;
 
 namespace compose_action_detail {
+
+auto compose_action_context_t::require_no_gesture(std::string_view message) const
+    -> std::optional<compose_action_outcome_t> {
+    if (editor_interaction_has_pending_gesture(state))
+        return compose_action_outcome_t::blocked(std::string{message});
+    return std::nullopt;
+}
+
+auto finish_compose_action(compose_action_context_t& context, compose_action_outcome_t outcome)
+    -> std::string {
+    if (outcome.mutated) {
+        const auto rebound = rebind_workspace(context.environment.document.workspace,
+                                               context.environment.document.history);
+        if (!rebound) {
+            static_cast<void>(publish_compose_feedback(context, std::move(outcome.message),
+                                                       outcome.severity, outcome.source));
+            if (outcome.rebind_failure_policy ==
+                    compose_rebind_failure_policy_t::diagnostic_or_message &&
+                !rebound.diagnostics.empty())
+                return publish_compose_diagnostic(context, rebound.diagnostics.front(),
+                                                   notification_source_t::document);
+            return compose_action_error(context, std::string{outcome.rebind_failure},
+                                         notification_source_t::document);
+        }
+    }
+    return publish_compose_feedback(context, std::move(outcome.message), outcome.severity,
+                                     outcome.source);
+}
 
 auto compose_notification_severity(diagnostic_severity_t severity) -> notification_severity_t {
     switch (severity) {

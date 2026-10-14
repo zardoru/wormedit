@@ -3,6 +3,7 @@
 #include "sys/application_edit_helpers.h"
 #include "sys/bookmark_rename_commands.h"
 #include "sys/compose_actions.h"
+#include "sys/compose_action_outcome.h"
 #include "sys/compose_area_actions.h"
 #include "sys/compose_bga_actions.h"
 #include "sys/bookmark_commands.h"
@@ -89,7 +90,13 @@ struct compose_action_context_t {
     bool metadata_import_busy;
     wormedit::editor_field_scroll_direction_t scroll_direction;
     std::optional<notification_sink_t> notifications;
+
+    [[nodiscard]] auto require_no_gesture(std::string_view message) const
+        -> std::optional<compose_action_outcome_t>;
 };
+
+auto finish_compose_action(compose_action_context_t& context, compose_action_outcome_t outcome)
+    -> std::string;
 
 struct compose_feedback_t {
     std::string message;
@@ -395,9 +402,9 @@ std::string propose_recipe_form_action(compose_action_context_t& context);
 
 std::string apply_recipe_form_action(compose_action_context_t& context);
 
-std::string set_cursor_measure_meter(compose_action_context_t& context);
+compose_action_outcome_t set_cursor_measure_meter(compose_action_context_t& context);
 
-std::string set_measures_meter(compose_action_context_t& context);
+compose_action_outcome_t set_measures_meter(compose_action_context_t& context);
 
 std::string move_bar_line(compose_action_context_t& context);
 

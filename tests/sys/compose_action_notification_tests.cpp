@@ -2404,3 +2404,22 @@ TEST_CASE("Captured BMSON razor expiry is distinct from starting a new stroke",
     require_action(entries.size() == 1);
     check_action(entries.front().severity == notification_severity_t::warning);
 }
+
+TEST_CASE("Rejected Compose meter edits keep their validation feedback without rebinding",
+          "[compose-action-notifications][compose-outcome]") {
+    action_notification_fixture_t fixture;
+    fixture.workspace.song = song_id_t{99};
+    const auto selected = GENERATE(false, true);
+    auto action = fixture.action(selected ? WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER
+                                         : WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER);
+    const std::array<std::uint64_t, 1> ids{0};
+    action.compose_measure_ids = ids.data();
+    action.compose_measure_id_count = ids.size();
+    std::snprintf(action.timing_meter_numerator_text, sizeof(action.timing_meter_numerator_text), "0");
+    std::snprintf(action.timing_meter_denominator_text, sizeof(action.timing_meter_denominator_text), "4");
+    check_action(fixture.dispatch(action) == "A meter needs a non-zero numerator and denominator.");
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::warning);
+    check_action(fixture.history.undo.empty());
+}

@@ -195,3 +195,23 @@ TEST_CASE("default preview cache rejects a pump plan larger than its capacity",
     CHECK(pumped.requested_blocks == overlapping_source_count);
     CHECK(cache.stats().entries == 0);
 }
+
+TEST_CASE("preview pump expected capacity errors retain voice and block counts",
+          "[unit][audio][preview-pump][result][capacity]") {
+    using namespace wormedit::audio;
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    decoded_source_registry_t sources;
+    const auto token = transport.start();
+    REQUIRE(token.has_value());
+    REQUIRE(transport.schedule_voice(*token,
+        {.id = 1, .source = {"fixture:source", "decoded:v1"},
+         .source_start_frame = 1, .frame_count = maximum_read_frames}) ==
+        voice_schedule_status_t::scheduled);
+    const auto rejected = pump_preview_blocks(sources, transport, *token, 0,
+        {.lookahead_frames = maximum_read_frames, .maximum_voices = 1, .maximum_blocks = 1});
+    REQUIRE_FALSE(rejected.has_value());
+    CHECK(rejected.error().status == preview_pump_status_t::capacity_exceeded);
+    CHECK(rejected.error().active_voices == 1);
+    CHECK(rejected.error().requested_blocks == 2);
+}

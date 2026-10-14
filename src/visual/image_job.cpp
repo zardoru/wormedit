@@ -172,7 +172,7 @@ image_job_t::~image_job_t() {
 
 void image_job_t::discard_terminal_jobs() {
     std::erase_if(workers_,
-                  [](const auto& worker) { return worker.graph.result(worker.task).has_value(); });
+                  [](const auto& worker) { return worker.graph.outcome(worker.task).has_value(); });
 }
 
 auto image_job_t::request(song_id_t project, std::uint64_t document_revision,
@@ -231,28 +231,40 @@ auto image_job_t::begin(song_id_t project, std::uint64_t document_revision,
     return generation;
 }
 
+auto image_job_completion_t::from(image_job_completion_outcome_t&& outcome) -> image_job_completion_t {
+    if (outcome) return {.generation = outcome->generation, .project = outcome->identity.project,
+                          .document_revision = outcome->identity.document_revision,
+                          .result = std::move(outcome->payload), .task_error = std::nullopt};
+    return {.generation = outcome.error().generation, .project = outcome.error().identity.project,
+            .document_revision = outcome.error().identity.document_revision, .result = {},
+            .task_error = task_error_t{.code = outcome.error().cause.code,
+                                      .message = std::move(outcome.error().cause.message)}};
+}
+
 auto image_job_t::poll() -> std::optional<image_job_completion_t> {
-    std::optional<image_job_completion_t> completion;
+    auto completion = poll_completion();
+    if (!completion) return std::nullopt;
+    return image_job_completion_t::from(std::move(*completion));
+}
+
+auto image_job_t::wait() -> std::optional<image_job_completion_t> {
+    auto completion = wait_completion();
+    if (!completion) return std::nullopt;
+    return image_job_completion_t::from(std::move(*completion));
+}
+
+auto image_job_t::poll_completion() -> std::optional<image_job_completion_outcome_t> {
+    std::optional<image_job_completion_outcome_t> completion;
     for (auto worker = workers_.begin(); worker != workers_.end();) {
-        auto result = worker->graph.result(worker->task);
-        if (!result.has_value()) {
+        auto result = worker->graph.outcome(worker->task);
+        if (!result) {
             ++worker;
             continue;
         }
         if (worker->generation == current_generation_) {
-            completion = {.generation = worker->generation,
-                          .project = worker->project,
-                          .document_revision = worker->document_revision,
-                          .result = {},
-                          .task_error = std::nullopt};
-            if (auto images = task_value_cast<image_job_result_t>(*result)) {
-                completion->result = std::move(images);
-            } else {
-                completion->task_error = result->error.value_or(task_error_t{
-                    .code = task_error_code_t::task_failed,
-                    .message = "image decode worker returned no typed result",
-                });
-            }
+            completion = async_job_completion_value_t<async_job_project_identity_t, image_job_result_t>::from(
+                worker->generation, async_job_project_identity_t{worker->project, worker->document_revision}, std::move(*result),
+                "image decode worker returned no typed result");
             current_generation_ = 0;
         }
         worker = workers_.erase(worker);
@@ -260,12 +272,12 @@ auto image_job_t::poll() -> std::optional<image_job_completion_t> {
     return completion;
 }
 
-auto image_job_t::wait() -> std::optional<image_job_completion_t> {
+auto image_job_t::wait_completion() -> std::optional<image_job_completion_outcome_t> {
     const auto current = std::ranges::find(workers_, current_generation_, &worker_t::generation);
     if (current == workers_.end() || !current->graph.wait()) {
         return std::nullopt;
     }
-    return poll();
+    return poll_completion();
 }
 
 void image_job_t::cancel() noexcept {

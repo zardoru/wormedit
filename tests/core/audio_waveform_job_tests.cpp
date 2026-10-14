@@ -24,6 +24,27 @@ auto register_fixture(wormedit::audio::decoded_source_registry_t& registry,
     });
 }
 
+auto has_failed_analysis_in_completed_job() -> bool {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    decoded_source_registry_t sources;
+    decoded_block_cache_t blocks;
+    waveform_cache_t waveforms;
+    task_scheduler_t scheduler{1, 1};
+    waveform_job_t job{sources, blocks, waveforms, scheduler};
+    const auto started = job.begin(asset_id_t{7}, 32);
+    if (!started) return false;
+    auto completion = job.wait_completion();
+    if (!completion || !*completion) return false;
+    const auto& completed = completion->value();
+    if (!completed.payload || completed.payload->status != waveform_analysis_status_t::decoder_unavailable)
+        return false;
+    const auto legacy = waveform_job_completion_t::from(std::move(*completion));
+    return legacy.generation == *started && legacy.asset == asset_id_t{7} &&
+           legacy.analysis != nullptr && !legacy.task_error && !job.is_busy() &&
+           !job.poll_completion();
+}
+
 } // namespace
 
 TEST_CASE("waveform job publishes the newest bounded scheduler request",
@@ -101,4 +122,9 @@ TEST_CASE("waveform job preserves scheduler capacity rejection",
     CHECK(rejected.status == waveform_job_start_status_t::capacity_exceeded);
     CHECK(rejected.message == "scheduler outstanding-task capacity exceeded");
     CHECK_FALSE(job.is_busy());
+}
+
+TEST_CASE("completed waveform worker retains an unavailable analysis payload",
+          "[unit][audio][waveform-job][negative]") {
+    CHECK(has_failed_analysis_in_completed_job());
 }

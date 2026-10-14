@@ -67,7 +67,11 @@ struct video_job_result_t {
     }
 };
 
+using video_job_completion_outcome_t =
+    async_job_completion_outcome_t<async_job_project_identity_t, video_job_result_t>;
+
 struct video_job_completion_t {
+    [[nodiscard]] static auto from(video_job_completion_outcome_t&& outcome) -> video_job_completion_t;
     std::uint64_t generation{};
     song_id_t project;
     std::uint64_t document_revision{};
@@ -99,6 +103,8 @@ class video_frame_job_t {
                                video_frame_decode_limits_t limits = {}) -> video_job_start_result_t;
     [[nodiscard]] auto poll() -> std::optional<video_job_completion_t>;
     [[nodiscard]] auto wait() -> std::optional<video_job_completion_t>;
+    [[nodiscard]] auto poll_completion() -> std::optional<video_job_completion_outcome_t>;
+    [[nodiscard]] auto wait_completion() -> std::optional<video_job_completion_outcome_t>;
     void cancel() noexcept;
     [[nodiscard]] auto is_busy() const noexcept -> bool;
 

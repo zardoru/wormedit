@@ -75,7 +75,11 @@ struct image_job_result_t {
     std::vector<image_job_item_t> items;
 };
 
+using image_job_completion_outcome_t =
+    async_job_completion_outcome_t<async_job_project_identity_t, image_job_result_t>;
+
 struct image_job_completion_t {
+    [[nodiscard]] static auto from(image_job_completion_outcome_t&& outcome) -> image_job_completion_t;
     std::uint64_t generation{};
     song_id_t project;
     std::uint64_t document_revision{};
@@ -109,6 +113,8 @@ class image_job_t {
                                image_job_options_t options = {}) -> image_job_start_result_t;
     [[nodiscard]] auto poll() -> std::optional<image_job_completion_t>;
     [[nodiscard]] auto wait() -> std::optional<image_job_completion_t>;
+    [[nodiscard]] auto poll_completion() -> std::optional<image_job_completion_outcome_t>;
+    [[nodiscard]] auto wait_completion() -> std::optional<image_job_completion_outcome_t>;
     void cancel() noexcept;
     [[nodiscard]] auto is_busy() const noexcept -> bool;
 

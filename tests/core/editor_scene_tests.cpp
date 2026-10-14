@@ -1,3 +1,5 @@
+#include "../support/stale_action_assertions.h"
+#include <catch2/generators/catch_generators.hpp>
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/lane_profiles.h>
 
@@ -93,6 +95,57 @@ auto has_code(const wormedit::diagnostic_list_t& diagnostics, wormedit::diagnost
 }
 
 } // namespace
+
+namespace {
+auto make_stale_scene_preview(int kind) -> wormedit::editor_interaction_view_model_t {
+    using namespace wormedit;
+    auto result = view();
+    switch (kind) {
+    case 0:
+        result.pending_note_duration_gesture = pending_note_duration_gesture_t{
+            .reference_note = object_id_t{11}, .document_revision = 8, .notes = {object_id_t{11}},
+            .preview_end = {measure_id_t{2}, 0},
+            .preview = {{object_id_t{11}, note_kind_t::hold, local_position_t{measure_id_t{2}, 0}}}};
+        break;
+    case 1:
+        result.pending_hold = pending_hold_t{.position = {measure_id_t{2}, 0}, .lane = lane_id_t{1},
+            .document_revision = 8, .preview_end = local_position_t{measure_id_t{2}, 240}};
+        break;
+    case 2:
+        result.pending_virtual_hold = editor_interaction_view_model_t::virtual_hold_preview_t{
+            .anchor_row = 0, .end_row = 240, .head_row = 0, .tail_row = 240,
+            .lane = lane_id_t{1}, .document_revision = 8, .adds_note = true};
+        break;
+    case 3:
+        result.pending_note_move_gesture = pending_note_move_gesture_t{
+            .reference_note = object_id_t{11}, .document_revision = 8, .notes = {object_id_t{11}},
+            .preview_position = {measure_id_t{2}, 240},
+            .preview = {{object_id_t{11}, lane_id_t{2}, local_position_t{measure_id_t{2}, 240},
+                         local_position_t{measure_id_t{2}, 720}}}};
+        break;
+    case 4:
+        result.pending_note_paint_gesture = note_paint_gesture_preview_t{
+            .document_revision = 8, .targets = std::make_shared<const std::vector<note_paint_target_t>>(
+                std::vector<note_paint_target_t>{{lane_id_t{1}, {measure_id_t{1}, 720}}})};
+        break;
+    }
+    return result;
+}
+}
+
+TEST_CASE("Field scene preview expiry keeps hold duration move and paint guards",
+          "[unit][core][editor-scene][captured-preview-stamp]") {
+    const auto kind = GENERATE(0, 1, 2, 3, 4);
+    auto chart = scene_chart();
+    chart.source_family = wormedit::format_family_t::bms;
+    const auto built = wormedit::build_editor_field_scene_index(chart, 7);
+    REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
+    const auto result = wormedit::make_editor_field_scene(chart,
+        std::get<wormedit::editor_field_scene_index_t>(built), make_stale_scene_preview(kind),
+        {.field_left_pixels = 10, .field_width_pixels = 200, .include_virtual_bms_tail = true});
+    REQUIRE_FALSE(result);
+    wormedit::test::check_stale_action_message(result.diagnostics, "Field scene preview");
+}
 
 TEST_CASE("field scene composes split layout bands, exact grid, holds, selection, and cursor",
           "[unit][core][editor-scene]") {

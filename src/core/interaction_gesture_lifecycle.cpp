@@ -966,8 +966,10 @@ using namespace interaction_detail;
 auto validate_pending_hold_start(const editor_edit_context_t& context,
                                  const pending_hold_t& pending)
     -> std::optional<editor_interaction_result_t> {
-    if (pending.document_revision == context.history.document.revision &&
-        snapped_position(context.scope.chart, context.scope.measures, pending.position,
+    if (pending.document_revision != context.history.document.revision)
+        return diagnostic_result(context.history, context.state,
+            {error(diagnostic_code_t::invalid_hold, stale_action_message("Editor gesture"))});
+    if (snapped_position(context.scope.chart, context.scope.measures, pending.position,
                          edit_snap_denominator(context.scope.chart, context.state)) ==
             pending.position)
         return std::nullopt;

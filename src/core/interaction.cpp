@@ -315,11 +315,14 @@ auto make_space_range_preview(const document_history_t& history,
     if (!state.pending_space_range_selection)
         return std::optional<space_range_selection_preview_t>{};
     const auto& pending = *state.pending_space_range_selection;
-    if (pending.document_revision != history.document.revision || !pending.hit_index ||
+    if (!pending.hit_index)
+        return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
+                                       "Space range selection is stale after a document edit")};
+    if (pending.document_revision != history.document.revision ||
         pending.hit_index->document_revision != history.document.revision ||
         pending.hit_index->chart != geometry.chart->id)
         return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
-                                       "Space range selection is stale after a document edit")};
+                                       stale_action_message("Editor gesture"))};
     if (pending.anchor_canvas_row >= geometry.canvas_rows)
         return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                        "Space range anchor lies outside chart geometry")};
@@ -573,13 +576,14 @@ auto follow_editor_playhead(document_history_t& history, editor_interaction_stat
                             double target_scroll, double following_anchor_fraction,
                             double cursor_subrow) -> editor_interaction_result_t {
     const auto* chart = history.document.find_chart(state.chart);
-    if (!chart || !geometry.index || geometry.chart != state.chart ||
-        geometry.document_revision != history.document.revision ||
-        !std::isfinite(target_scroll) || !std::isfinite(following_anchor_fraction) ||
-        !std::isfinite(cursor_subrow) ||
+    if (!chart || !geometry.index || !std::isfinite(target_scroll) ||
+        !std::isfinite(following_anchor_fraction) || !std::isfinite(cursor_subrow) ||
         following_anchor_fraction < 0.0 || following_anchor_fraction > 1.0 || is_playhead_gesture_active(state))
         return {.diagnostics = {error(diagnostic_code_t::invalid_id,
                                      "playhead geometry is stale or playback editing is blocked")}};
+    if (geometry.chart != state.chart || geometry.document_revision != history.document.revision)
+        return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                                     stale_action_message("Playhead geometry"))}};
     const auto& index = *geometry.index;
     if (!absolute_row(index, position))
         return {.diagnostics = {error(diagnostic_code_t::row_out_of_range,
@@ -1639,11 +1643,14 @@ auto end_semantic_paint(editor_edit_context_t& context, object_id_t note_id,
             {error(diagnostic_code_t::invalid_hold,
                    "semantic-layer paint gesture was cancelled before commit")});
     const auto pending = *state.pending_semantic_layer_paint_gesture;
-    if (pending.document_revision != history.document.revision || !pending.notes ||
-        !pending.bgm_events || (pending.notes->empty() && pending.bgm_events->empty()))
+    if (!pending.notes || !pending.bgm_events || (pending.notes->empty() && pending.bgm_events->empty()))
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "semantic-layer paint gesture is malformed or stale")});
+    if (pending.document_revision != history.document.revision)
+        return diagnostic_result(history, state,
+                                 {error(diagnostic_code_t::invalid_hold,
+                                        stale_action_message("Editor gesture"))});
     const auto layer = std::ranges::find(context.scope.chart.semantic_layers, pending.layer,
                                         &semantic_layer_t::id);
     if (!pending.clear_memberships &&

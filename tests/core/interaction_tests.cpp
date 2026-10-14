@@ -122,6 +122,47 @@ void check_fractional_snap_cursor(std::uint64_t row, double subrow,
 }
 } // namespace
 
+TEST_CASE("Space range cache expiry remains separate from absent geometry",
+          "[unit][core][interaction][captured-geometry-stamp]") {
+    const auto missing = GENERATE(false, true);
+    auto history = document_history_t::from(make_song());
+    auto state = make_state(history);
+    REQUIRE(dispatch_editor_action(history, state, space_range_selection_action_t{}));
+    REQUIRE(state.pending_space_range_selection.has_value());
+    if (missing) state.pending_space_range_selection->hit_index.reset();
+    else {
+        auto cache = std::make_shared<editor_hit_test_index_t>(*state.pending_space_range_selection->hit_index);
+        ++cache->document_revision;
+        state.pending_space_range_selection->hit_index = std::move(cache);
+    }
+    const auto inspected = inspect_editor_interaction(history, state);
+    const auto* diagnostics = std::get_if<diagnostic_list_t>(&inspected);
+    REQUIRE(diagnostics != nullptr);
+    if (missing)
+        CHECK(diagnostics->front().message == "Space range selection is stale after a document edit");
+    else
+        test::check_stale_action_message(*diagnostics, "Editor gesture");
+    expect_cursor_gesture(history.undo.empty());
+}
+
+TEST_CASE("Playhead following rejects captured chart and revision expiry without movement",
+          "[unit][core][interaction][captured-geometry-stamp]") {
+    const auto different_chart = GENERATE(false, true);
+    auto history = document_history_t::from(make_song());
+    auto state = make_state(history);
+    const auto cursor = state.cursor;
+    const auto& chart = history.document.charts.front();
+    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    editor_measure_geometry_t geometry{chart.id, history.document.revision, &index};
+    if (different_chart) geometry.chart = chart_id_t{99};
+    else ++geometry.document_revision;
+    const auto result = follow_editor_playhead(history, state, geometry, state.cursor, 0.0);
+    test::check_stale_action_message(result.diagnostics, "Playhead geometry");
+    expect_cursor_gesture(!result.accepted);
+    expect_cursor_gesture(state.cursor == cursor);
+    expect_cursor_gesture(history.undo.empty());
+}
+
 TEST_CASE("Snap cursor navigation uses strict ceil floor of the fractional cursor",
           "[unit][core][interaction][alt-wheel]") {
     check_fractional_snap_cursor(480, 7.0, interaction_direction_t::backward, 480);
@@ -4638,7 +4679,9 @@ TEST_CASE("stale global marquee geometry cannot alter the committed selection",
     auto stale = std::make_shared<editor_area_geometry_snapshot_t>(*action.object_geometry);
     stale->document_revision += 1;
     action.object_geometry = std::move(stale);
-    CHECK_FALSE(dispatch_editor_action(fixture.history, fixture.state, action));
+    const auto rejected = dispatch_editor_action(fixture.history, fixture.state, action);
+    CHECK_FALSE(rejected);
+    test::check_stale_action_message(rejected.diagnostics, "Projected selection geometry");
     CHECK(fixture.state.selected_notes == std::vector<object_id_t>{object_id_t{102}});
     CHECK_FALSE(fixture.state.pending_editor_area_selection);
     CHECK(fixture.history.undo.empty());

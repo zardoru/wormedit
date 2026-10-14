@@ -497,7 +497,7 @@ auto beat_fit_drag_matches(const compose_scene_cache_t& cache,
     return workspace.transport.audio_asset && cache.timing.beat_fit_drag &&
            cache.timing.beat_fit_asset == workspace.transport.audio_asset &&
            cache.timing.beat_fit_drag->sample_rate == waveform.waveform->sample_rate &&
-           cache.timing.beat_fit_drag->document_revision == history.document.revision;
+           cache.timing.beat_fit_drag->stamp.document.is_current(history.document, document_identity_policy_t::revision_only);
 }
 
 void populate_beat_fit_fields(WormUiComposeView& compose, const beat_interval_drag_t& drag) {
@@ -570,7 +570,7 @@ void populate_beat_fit_overlay(flattened_workspace_t& flattened,
     auto& compose = flattened.view.compose;
     populate_beat_fit_fields(compose, drag);
     compose.beat_fit_onset_snap_active = cache.timing.beat_fit_onset_snapped;
-    const auto chart = std::ranges::find(history.document.charts, drag.chart,
+    const auto chart = std::ranges::find(history.document.charts, drag.stamp.chart,
                                          &chart_document_t::id);
     if (chart == history.document.charts.end() || !cache.scene.index || !interaction ||
         !cache.timing.marker_timing_index) return;
@@ -643,7 +643,7 @@ void populate_compose_waveform_overlays(
                                     waveform_analysis);
     if (cache.timing.offset_fit_drag && workspace.transport.audio_asset &&
         cache.timing.offset_fit_drag->asset == workspace.transport.audio_asset &&
-        cache.timing.offset_fit_drag->beat.document_revision == history.document.revision) {
+        cache.timing.offset_fit_drag->beat.stamp.document.is_current(history.document, document_identity_policy_t::revision_only)) {
         flattened.view.compose.offset_fit_drag_active = true;
         flattened.view.compose.offset_fit_target_y_pixels =
             cache.timing.offset_fit_drag->target_y_pixels;

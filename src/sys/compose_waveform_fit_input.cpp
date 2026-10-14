@@ -90,7 +90,7 @@ auto dispatch_compose_beat_fit_input(
         source_input.y_pixels =
             compose_source_y(input.y_pixels, state.viewport_height_pixels,
                              input_chart && compose_field_downscroll(*input_chart));
-        return update_compose_beat_fit(source_input, history, workspace, state, application_state,
+        return revise_compose_beat_fit(source_input, history, workspace, state, application_state,
                                        scene_cache);
     }
     case WORM_UI_COMPOSE_INPUT_BEAT_FIT_CANCEL:
@@ -158,9 +158,8 @@ auto dispatch_compose_offset_fit_input(const WormUiComposeInputAction& input,
             "Offset fit expired after its chart or waveform changed."};
     }
     const auto& document = context.environment.document.history.document;
-    if (!document_stamp_t{.project = document.id,
-                          .revision = cache.timing.offset_fit_drag->beat.document_revision}
-             .is_current(document)) {
+    if (!cache.timing.offset_fit_drag->beat.stamp.document.is_current(
+            document, document_identity_policy_t::revision_only)) {
         cache.timing.offset_fit_drag.reset();
         action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
         return compose_input_family_result_t{stale_action_message("Offset fit")};
@@ -189,8 +188,8 @@ auto dispatch_compose_offset_fit_input(const WormUiComposeInputAction& input,
     action.audio_offset_drag_action = input.kind == WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE
                                           ? WORM_UI_AUDIO_OFFSET_DRAG_COMMIT
                                           : WORM_UI_AUDIO_OFFSET_DRAG_UPDATE;
-    action.audio_offset_drag_chart_id = drag.beat.chart.value;
-    action.audio_offset_drag_document_revision = drag.beat.document_revision;
+    action.audio_offset_drag_chart_id = drag.beat.stamp.chart.value;
+    action.audio_offset_drag_document_revision = drag.beat.stamp.document.revision;
     action.audio_offset_drag_sample_rate = drag.beat.sample_rate;
     action.audio_offset_drag_delta_frames = delta;
     if (input.kind == WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE)
@@ -254,15 +253,15 @@ auto begin_compose_beat_fit(
     const auto begun = begin_beat_interval_anchor_drag(
         history.document, input_chart->id, *anchor, beat, scene_cache.waveform.waveform_overview_sample_rate,
         application_state.project.timing_recipe.timing_locked);
-    if (!begun) {
+    if (!begun.is_valid()) {
         return input_diagnostic_feedback(begun.diagnostics, "Beat fit could not start.",
                                          notification_severity_t::warning,
                                          notification_source_t::edit);
     }
-    if (begun.drag->original_sample_frame >= scene_cache.waveform.waveform_overview_total_frames) {
+    if (begun.original_sample_frame >= scene_cache.waveform.waveform_overview_total_frames) {
         return compose_input_family_result_t{"Selected beat lies after the source audio ends."};
     }
-    scene_cache.timing.beat_fit_drag = begun.drag;
+    scene_cache.timing.beat_fit_drag = begun;
     scene_cache.timing.beat_fit_asset = workspace.transport.audio_asset;
     scene_cache.timing.beat_fit_onset_snapped = false;
     capture_fit_onsets(scene_cache, state, workspace);
@@ -271,26 +270,26 @@ auto begin_compose_beat_fit(
         notification_severity_t::hint, notification_source_t::input);
 }
 
-auto update_beat_fit_proposal(const WormUiComposeInputAction& input,
+auto revise_beat_fit_proposal(const WormUiComposeInputAction& input,
                               const wormedit::document_history_t& history,
                               const wormedit::beat_interval_drag_t& drag,
                               std::uint64_t target_frame, bool timing_locked)
-    -> wormedit::beat_interval_drag_result_t {
+    -> wormedit::beat_interval_drag_t {
     using namespace wormedit;
     const auto frame_update =
-        update_beat_interval_drag(history.document, drag, target_frame, timing_locked);
-    if (!frame_update || !input.beat_fit_ctrl_held || input.beat_fit_onset_snap_held)
+        revise_beat_interval_drag(history.document, drag, target_frame, timing_locked);
+    if (!frame_update.is_valid() || !input.beat_fit_ctrl_held || input.beat_fit_onset_snap_held)
         return frame_update;
     const auto snapped_bpm =
-        quantize_bpm(frame_update.drag->proposed_bpm,
+        quantize_bpm(frame_update.proposed_bpm,
                      {input.beat_fit_snap_step_numerator, input.beat_fit_snap_step_denominator});
     if (!snapped_bpm)
         return {};
-    return update_beat_interval_drag_to_bpm(history.document, *frame_update.drag, *snapped_bpm,
+    return revise_beat_interval_drag_to_bpm(history.document, frame_update, *snapped_bpm,
                                             timing_locked);
 }
 
-auto update_compose_beat_fit(const WormUiComposeInputAction& input,
+auto revise_compose_beat_fit(const WormUiComposeInputAction& input,
                              wormedit::document_history_t& history,
                              wormedit::workspace_controller_t& workspace,
                              wormedit::editor_interaction_state_t& state,
@@ -298,7 +297,7 @@ auto update_compose_beat_fit(const WormUiComposeInputAction& input,
                              compose_scene_cache_t& scene_cache) -> compose_input_family_result_t {
     using namespace wormedit;
     if (!scene_cache.timing.beat_fit_drag || !scene_cache.timing.marker_timing_index ||
-        scene_cache.timing.beat_fit_drag->document_revision != history.document.revision ||
+        !scene_cache.timing.beat_fit_drag->stamp.document.is_current(history.document, document_identity_policy_t::revision_only) ||
         scene_cache.timing.beat_fit_asset != workspace.transport.audio_asset ||
         scene_cache.waveform.waveform_overview_sample_rate != scene_cache.timing.beat_fit_drag->sample_rate) {
         scene_cache.clear_beat_fit_capture();
@@ -315,17 +314,17 @@ auto update_compose_beat_fit(const WormUiComposeInputAction& input,
         return compose_input_family_result_t{"Beat target is outside the source audio range."};
     }
     const auto target_frame = fit_onset_target(scene_cache, input, *frame);
-    const auto updated = update_beat_fit_proposal(input, history, *scene_cache.timing.beat_fit_drag,
+    const auto updated = revise_beat_fit_proposal(input, history, *scene_cache.timing.beat_fit_drag,
                                                   target_frame, application_state.project.timing_recipe.timing_locked);
-    if (updated &&
-        updated.drag->proposed_sample_frame >= scene_cache.waveform.waveform_overview_total_frames) {
+    if (updated.is_valid() &&
+        updated.proposed_sample_frame >= scene_cache.waveform.waveform_overview_total_frames) {
         if (input.kind == WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE) {
             scene_cache.clear_beat_fit_capture();
         }
         return compose_input_family_result_t{
             "Snapped beat target is outside the source audio range."};
     }
-    if (!updated) {
+    if (!updated.is_valid()) {
         if (input.kind == WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE) {
             scene_cache.clear_beat_fit_capture();
         }
@@ -333,7 +332,7 @@ auto update_compose_beat_fit(const WormUiComposeInputAction& input,
                                          notification_severity_t::warning,
                                          notification_source_t::edit);
     }
-    scene_cache.timing.beat_fit_drag = updated.drag;
+    scene_cache.timing.beat_fit_drag = updated;
     scene_cache.timing.beat_fit_drag->snap_active =
         input.beat_fit_ctrl_held && !input.beat_fit_onset_snap_held;
     if (scene_cache.timing.beat_fit_drag->snap_active) {
@@ -345,7 +344,7 @@ auto update_compose_beat_fit(const WormUiComposeInputAction& input,
             "Previewing exact sample-frame beat fit.", notification_severity_t::hint,
             notification_source_t::input);
     }
-    const auto committed = commit_beat_interval_drag(history, *scene_cache.timing.beat_fit_drag,
+    const auto committed = apply_beat_interval_drag(history, *scene_cache.timing.beat_fit_drag,
                                                      application_state.project.timing_recipe.timing_locked);
     scene_cache.clear_beat_fit_capture();
     if (!committed.applied) {

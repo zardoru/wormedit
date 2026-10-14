@@ -64,8 +64,7 @@ using bpm_edit_action_t =
     -> document_command_result_t;
 
 struct beat_interval_drag_t {
-    chart_id_t chart;
-    std::uint64_t document_revision{};
+    chart_stamp_t stamp;
     // Existing BPM event being updated, or a placeholder id when insert_bpm is set.
     object_id_t bpm_event;
     // Anchor row: the existing BPM event's position, or where a new BPM event is inserted.
@@ -79,21 +78,17 @@ struct beat_interval_drag_t {
     signed_rational_t proposed_bpm;
     bool snap_active{};
     signed_rational_t snap_step{1, 1};
-};
-
-struct beat_interval_drag_result_t {
-    std::optional<beat_interval_drag_t> drag;
     diagnostic_list_t diagnostics;
 
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return drag.has_value() && diagnostics.empty();
+    [[nodiscard]] auto is_valid() const noexcept -> bool {
+        return static_cast<bool>(stamp.chart) && diagnostics.empty();
     }
 };
 
 [[nodiscard]] auto begin_beat_interval_drag(const song_document_t& document, chart_id_t chart,
                                             object_id_t bpm_event, local_position_t beat,
                                             std::uint32_t sample_rate, bool timing_locked = false)
-    -> beat_interval_drag_result_t;
+    -> beat_interval_drag_t;
 // Begins a fit anchored at a timing row. Updates the BPM event already at that
 // row, or inserts one there when none exists (committed as one undoable edit).
 [[nodiscard]] auto begin_beat_interval_anchor_drag(const song_document_t& document,
@@ -101,17 +96,17 @@ struct beat_interval_drag_result_t {
                                                    local_position_t beat,
                                                    std::uint32_t sample_rate,
                                                    bool timing_locked = false)
-    -> beat_interval_drag_result_t;
+    -> beat_interval_drag_t;
 [[nodiscard]] auto
-update_beat_interval_drag(const song_document_t& document, const beat_interval_drag_t& drag,
+revise_beat_interval_drag(const song_document_t& document, const beat_interval_drag_t& drag,
                           std::uint64_t target_sample_frame, bool timing_locked = false)
-    -> beat_interval_drag_result_t;
-[[nodiscard]] auto update_beat_interval_drag_to_bpm(
+    -> beat_interval_drag_t;
+[[nodiscard]] auto revise_beat_interval_drag_to_bpm(
     const song_document_t& document, const beat_interval_drag_t& drag,
-    signed_rational_t target_bpm, bool timing_locked = false) -> beat_interval_drag_result_t;
+    signed_rational_t target_bpm, bool timing_locked = false) -> beat_interval_drag_t;
 [[nodiscard]] auto quantize_bpm(signed_rational_t bpm, signed_rational_t step)
     -> std::optional<signed_rational_t>;
-[[nodiscard]] auto commit_beat_interval_drag(document_history_t& history,
+[[nodiscard]] auto apply_beat_interval_drag(document_history_t& history,
                                              const beat_interval_drag_t& drag,
                                              bool timing_locked = false)
     -> document_command_result_t;

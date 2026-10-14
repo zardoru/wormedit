@@ -2746,7 +2746,7 @@ TEST_CASE("Offset fit capture expiry remains separate from an absent drag",
     if (!missing) {
         fixture.cache.timing.offset_fit_drag = compose_scene_cache_t::offset_fit_drag_t{};
         fixture.cache.timing.offset_fit_drag->asset = asset_id_t{42};
-        fixture.cache.timing.offset_fit_drag->beat.document_revision = fixture.history.document.revision + 1;
+        fixture.cache.timing.offset_fit_drag->beat.stamp.document.revision = fixture.history.document.revision + 1;
     }
     auto action = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_OFFSET_FIT_UPDATE, 2);
     const auto message = dispatch_paste_action(fixture, action);

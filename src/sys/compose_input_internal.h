@@ -1194,7 +1194,7 @@ auto begin_compose_beat_fit(const WormUiComposeInputAction&, wormedit::document_
 auto fit_onset_target(compose_scene_cache_t& cache, const WormUiComposeInputAction& input,
                       std::uint64_t frame) -> std::uint64_t;
 
-auto update_compose_beat_fit(const WormUiComposeInputAction&, wormedit::document_history_t&,
+auto revise_compose_beat_fit(const WormUiComposeInputAction&, wormedit::document_history_t&,
                              wormedit::workspace_controller_t&,
                              wormedit::editor_interaction_state_t&, application_command_state_t&,
                              compose_scene_cache_t&) -> compose_input_family_result_t;
@@ -1219,13 +1219,13 @@ auto begin_compose_beat_fit(
     application_command_state_t& application_state, compose_scene_cache_t& scene_cache,
     const wormedit::chart_document_t* input_chart) -> compose_input_family_result_t;
 
-auto update_beat_fit_proposal(const WormUiComposeInputAction& input,
+auto revise_beat_fit_proposal(const WormUiComposeInputAction& input,
                               const wormedit::document_history_t& history,
                               const wormedit::beat_interval_drag_t& drag,
                               std::uint64_t target_frame, bool timing_locked)
-    -> wormedit::beat_interval_drag_result_t;
+    -> wormedit::beat_interval_drag_t;
 
-auto update_compose_beat_fit(const WormUiComposeInputAction& input,
+auto revise_compose_beat_fit(const WormUiComposeInputAction& input,
                              wormedit::document_history_t& history,
                              wormedit::workspace_controller_t& workspace,
                              wormedit::editor_interaction_state_t& state,

@@ -3498,10 +3498,9 @@ struct application_t::implementation_t {
         if (views.compose_scene_cache.timing.beat_fit_drag &&
             (session.workspace.active_tab != wormedit::workspace_tab_t::compose ||
              !session.workspace.selected_chart ||
-             *session.workspace.selected_chart !=
-                 views.compose_scene_cache.timing.beat_fit_drag->chart ||
-             session.history.document.revision !=
-                 views.compose_scene_cache.timing.beat_fit_drag->document_revision ||
+             !views.compose_scene_cache.timing.beat_fit_drag->stamp.is_current(
+                 session.history.document, *session.workspace.selected_chart,
+                 document_identity_policy_t::revision_only) ||
              session.workspace.transport.audio_asset !=
                  views.compose_scene_cache.timing.beat_fit_asset ||
              commands.project.timing_recipe.timing_locked)) {
@@ -3510,10 +3509,9 @@ struct application_t::implementation_t {
         if (views.compose_scene_cache.timing.offset_fit_drag &&
             (session.workspace.active_tab != wormedit::workspace_tab_t::compose ||
              !session.workspace.selected_chart ||
-             *session.workspace.selected_chart !=
-                 views.compose_scene_cache.timing.offset_fit_drag->beat.chart ||
-             session.history.document.revision !=
-                 views.compose_scene_cache.timing.offset_fit_drag->beat.document_revision ||
+             !views.compose_scene_cache.timing.offset_fit_drag->beat.stamp.is_current(
+                 session.history.document, *session.workspace.selected_chart,
+                 document_identity_policy_t::revision_only) ||
              session.workspace.transport.audio_asset !=
                  views.compose_scene_cache.timing.offset_fit_drag->asset ||
              commands.audio_offset_edits_locked())) {

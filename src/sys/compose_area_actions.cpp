@@ -53,10 +53,7 @@ auto apply_compose_quantize_selection(document_history_t& history,
             .rows = std::move(report.report_rows),
             .total_rows = report.report_total_rows,
             .truncated = report.report_truncated};
-    return compose_action_outcome_t::from(
-        std::move(result.command), "Selected objects quantized.", {},
-        "Selected objects quantized, but workspace rebinding failed.", notification_source_t::edit,
-        compose_diagnostic_feedback_policy_t::rejected_only);
+    return compose_action_outcome_t::from(std::move(result.command), compose_action_description_t{.success = "Selected objects quantized.", .unchanged = {}, .rebind_failure = "Selected objects quantized, but workspace rebinding failed.", .source = notification_source_t::edit, .diagnostic_policy = compose_diagnostic_feedback_policy_t::rejected_only});
 }
 
 namespace {
@@ -88,10 +85,7 @@ compose_action_outcome_t add_sv_recipe_over_area(compose_action_context_t& conte
     auto inserted = apply_sv_recipe_edit(context.environment.document.history,
                                          insert_sv_recipe_action_t{chart.id, std::move(recipe)});
     if (inserted.applied)
-        return compose_action_outcome_t::from(
-            std::move(inserted), "SV recipe added over the selected area.", {},
-            "Area action applied, but workspace rebinding failed.", notification_source_t::edit,
-            compose_diagnostic_feedback_policy_t::rejected_only);
+        return compose_action_outcome_t::from(std::move(inserted), compose_action_description_t{.success = "SV recipe added over the selected area.", .unchanged = {}, .rebind_failure = "Area action applied, but workspace rebinding failed.", .source = notification_source_t::edit, .diagnostic_policy = compose_diagnostic_feedback_policy_t::rejected_only});
     return inserted.diagnostics.empty()
                ? compose_action_outcome_t::blocked("SV recipe rejected.")
                : compose_action_outcome_t::from(std::move(inserted.diagnostics),
@@ -121,10 +115,7 @@ compose_action_outcome_t add_speed_span_over_area(compose_action_context_t& cont
                                                                         .multiplier = {1, 1},
                                                                         .transition_beats = beats});
     if (inserted.applied)
-        return compose_action_outcome_t::from(
-            std::move(inserted), "SPEEDS span added over the selected area.", {},
-            "Area action applied, but workspace rebinding failed.", notification_source_t::edit,
-            compose_diagnostic_feedback_policy_t::rejected_only);
+        return compose_action_outcome_t::from(std::move(inserted), compose_action_description_t{.success = "SPEEDS span added over the selected area.", .unchanged = {}, .rebind_failure = "Area action applied, but workspace rebinding failed.", .source = notification_source_t::edit, .diagnostic_policy = compose_diagnostic_feedback_policy_t::rejected_only});
     return inserted.diagnostics.empty()
                ? compose_action_outcome_t::blocked("SPEEDS span rejected.")
                : compose_action_outcome_t::from(std::move(inserted.diagnostics),
@@ -281,11 +272,7 @@ compose_action_outcome_t convert_compose_area_to_pause(compose_action_context_t&
     context.state.retained_selection_range.reset();
     context.state.retained_canvas_selection_range.reset();
     context.state.selected_canvas_measure.reset();
-    return compose_action_outcome_t::from(
-        std::move(result),
-        delay ? "Selected rows converted to Delay." : "Selected rows converted to Stop.", {},
-        "Area conversion applied, but workspace rebinding failed.", notification_source_t::edit,
-        compose_diagnostic_feedback_policy_t::rejected_only);
+    return compose_action_outcome_t::from(std::move(result), compose_action_description_t{.success = delay ? "Selected rows converted to Delay." : "Selected rows converted to Stop.", .unchanged = {}, .rebind_failure = "Area conversion applied, but workspace rebinding failed.", .source = notification_source_t::edit, .diagnostic_policy = compose_diagnostic_feedback_policy_t::rejected_only});
 }
 
 } // namespace

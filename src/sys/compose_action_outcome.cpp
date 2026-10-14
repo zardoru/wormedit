@@ -17,29 +17,46 @@ auto compose_action_outcome_t::from(std::string message, notification_severity_t
             .accepted = accepted};
 }
 
-auto compose_action_outcome_t::from(const diagnostic_t& diagnostic, notification_source_t source)
+auto compose_action_outcome_t::from(const diagnostic_t& diagnostic, notification_source_t source,
+                                    notification_severity_t unknown_severity)
     -> compose_action_outcome_t {
-    return from(diagnostic.message, wormedit::to_notification_severity(diagnostic.severity), source,
+    return from(diagnostic.message,
+                wormedit::to_notification_severity(diagnostic.severity, unknown_severity), source,
                 false, false);
 }
 
-auto compose_action_outcome_t::from(document_command_result_t&& command, std::string_view success,
-                                    std::string_view unchanged, std::string_view rebind_failure,
-                                    notification_source_t source,
-                                    compose_diagnostic_feedback_policy_t diagnostic_policy)
+auto compose_action_outcome_t::from(document_command_result_t&& command,
+                                    const compose_action_description_t& description)
     -> compose_action_outcome_t {
-    auto outcome =
-        from({}, command.applied ? notification_severity_t::success : notification_severity_t::info,
-             source, command.applied, command.applied || command.diagnostics.empty());
-    outcome.rebind_failure = rebind_failure;
+    auto outcome = from(
+        {}, command.applied ? notification_severity_t::success : description.unchanged_severity,
+        description.source, command.applied,
+        command.applied || (description.is_unchanged_accepted && command.diagnostics.empty()));
+    outcome.rebind_failure = description.rebind_failure;
+    outcome.rebind_failure_policy = description.rebind_failure_policy;
+    outcome.rebind_feedback_policy = description.rebind_feedback_policy;
+    outcome.unknown_severity = description.unknown_severity;
     outcome.diagnostics = std::move(command.diagnostics);
     if (!outcome.diagnostics.empty() &&
-        (diagnostic_policy == compose_diagnostic_feedback_policy_t::first || !command.applied)) {
+        (description.diagnostic_policy == compose_diagnostic_feedback_policy_t::first ||
+         !command.applied)) {
         outcome.message = outcome.diagnostics.front().message;
-        outcome.severity = to_notification_severity(outcome.diagnostics.front().severity);
+        outcome.severity = to_notification_severity(outcome.diagnostics.front().severity,
+                                                    description.unknown_severity);
     } else {
-        outcome.message = command.applied ? success : unchanged;
+        outcome.message = command.applied ? description.success : description.unchanged;
     }
+    return outcome;
+}
+
+auto compose_action_outcome_t::from(document_command_result_t&& command,
+                                    const compose_action_description_t& description,
+                                    std::string&& success) -> compose_action_outcome_t {
+    auto outcome = from(std::move(command), description);
+    if (outcome.mutated &&
+        (outcome.diagnostics.empty() ||
+         description.diagnostic_policy == compose_diagnostic_feedback_policy_t::rejected_only))
+        outcome.message = std::move(success);
     return outcome;
 }
 
@@ -69,16 +86,19 @@ auto finish_compose_action(const document_edit_inputs_t& document,
     if (outcome.mutated) {
         auto rebound = rebind_workspace(document.workspace, document.history);
         if (!rebound) {
-            if (outcome.publish_before_rebind_failure)
+            if (outcome.rebind_feedback_policy ==
+                compose_rebind_feedback_policy_t::edit_then_document)
                 post_compose_outcome(feedback, outcome);
             outcome.accepted = false;
-            outcome.source = notification_source_t::document;
+            if (outcome.rebind_feedback_policy != compose_rebind_feedback_policy_t::action_only)
+                outcome.source = notification_source_t::document;
             outcome.delivery = compose_feedback_delivery_t::message;
             if (outcome.rebind_failure_policy ==
                     compose_rebind_failure_policy_t::diagnostic_or_message &&
                 !rebound.diagnostics.empty()) {
                 outcome.message = rebound.diagnostics.front().message;
-                outcome.severity = to_notification_severity(rebound.diagnostics.front().severity);
+                outcome.severity = to_notification_severity(rebound.diagnostics.front().severity,
+                                                            outcome.unknown_severity);
             } else {
                 outcome.message = outcome.rebind_failure;
                 outcome.severity = notification_severity_t::error;

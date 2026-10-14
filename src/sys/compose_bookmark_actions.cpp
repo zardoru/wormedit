@@ -108,9 +108,7 @@ compose_action_outcome_t edit_beat_section(compose_action_context_t& context) {
         edit = std::get<marker_edit_action_t>(std::move(made));
     }
     auto applied = apply_marker_edit(context.environment.document.history, std::move(edit));
-    return compose_action_outcome_t::from(
-        std::move(applied), beat_section_success(context.action, from_selection),
-        "Section edit made no changes.", "Section changed, but workspace rebinding failed.");
+    return compose_action_outcome_t::from(std::move(applied), compose_action_description_t{.success = beat_section_success(context.action, from_selection), .unchanged = "Section edit made no changes.", .rebind_failure = "Section changed, but workspace rebinding failed."});
 }
 
 std::optional<std::string> dispatch_compose_beat_section_action(compose_action_context_t& context) {
@@ -176,9 +174,7 @@ compose_action_outcome_t edit_audio_bookmark(compose_action_context_t& context) 
         : context.action.compose_action == WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_BOOKMARK
             ? "Audio-time bookmark deleted."
             : "Audio-time bookmark updated.";
-    return compose_action_outcome_t::from(
-        std::move(applied), success, "Audio bookmark edit made no changes.",
-        "Audio bookmark changed, but workspace rebinding failed.", notification_source_t::edit);
+    return compose_action_outcome_t::from(std::move(applied), compose_action_description_t{.success = success, .unchanged = "Audio bookmark edit made no changes.", .rebind_failure = "Audio bookmark changed, but workspace rebinding failed.", .source = notification_source_t::edit});
 }
 
 std::optional<std::string>
@@ -244,9 +240,7 @@ compose_action_outcome_t edit_audio_section(compose_action_context_t& context) {
         : context.action.compose_action == WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_SECTION
             ? "Audio-time section deleted."
             : "Audio-time section updated.";
-    return compose_action_outcome_t::from(
-        std::move(applied), success, "Audio section edit made no changes.",
-        "Audio section changed, but workspace rebinding failed.", notification_source_t::edit);
+    return compose_action_outcome_t::from(std::move(applied), compose_action_description_t{.success = success, .unchanged = "Audio section edit made no changes.", .rebind_failure = "Audio section changed, but workspace rebinding failed.", .source = notification_source_t::edit});
 }
 
 std::optional<std::string>
@@ -309,8 +303,7 @@ compose_action_outcome_t edit_beat_bookmark(compose_action_context_t& context) {
     const auto unchanged = operation == WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK
                                ? "Bookmark label was unchanged."
                                : "Bookmark edit made no changes.";
-    return compose_action_outcome_t::from(std::move(applied), success, unchanged,
-                                          "Bookmark changed, but workspace rebinding failed.");
+    return compose_action_outcome_t::from(std::move(applied), compose_action_description_t{.success = success, .unchanged = unchanged, .rebind_failure = "Bookmark changed, but workspace rebinding failed."});
 }
 
 std::optional<std::string>

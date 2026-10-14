@@ -2484,3 +2484,52 @@ TEST_CASE("Registered quantize rebind failure posts the edit and one error while
     check_action(entries.back().severity == notification_severity_t::success);
     check_action(entries.back().source == notification_source_t::edit);
 }
+
+TEST_CASE("Sound and BGA rebind failures keep one edit-sourced error and their distinct text",
+          "[compose-action-notifications][compose-outcome]") {
+    action_notification_fixture_t fixture;
+    const auto bga = GENERATE(false, true);
+    if (bga)
+        fixture.history.document.visual_assets = {{.id = asset_id_t{61}, .kind = asset_kind_t::image}};
+    else
+        fixture.history.document.audio_assets = {{.id = asset_id_t{61}, .source_path = "unused.wav"}};
+    fixture.history.document.resources = {{.id = resource_id_t{31}, .name = "Unused",
+        .asset = asset_id_t{61}, .roles = {bga ? resource_role_t::bga : resource_role_t::sample}}};
+    fixture.workspace.song = song_id_t{99};
+    auto action = fixture.action(bga ? WORM_UI_COMPOSE_ACTION_REMOVE_UNUSED_BGA
+                                    : WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS);
+    const std::array<std::uint64_t, 1> ids{31};
+    action.compose_sound_resource_ids = ids.data();
+    action.compose_sound_resource_count = ids.size();
+    check_action(fixture.dispatch(action) == (bga ? "BGA changed, but workspace rebinding failed."
+        : "workspace cannot be rebound to a different song identity"));
+    check_action(fixture.history.undo.size() == 1);
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::error);
+    check_action(entries.front().source == notification_source_t::edit);
+    check_action(entries.front().count == 1);
+}
+
+TEST_CASE("Sound import rebind failure retains one import-sourced diagnostic", "[compose-action-notifications][compose-outcome]") {
+    action_notification_fixture_t fixture;
+    const auto directory = std::filesystem::temp_directory_path() /
+        ("wormedit-feedback-import-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::filesystem::create_directories(directory);
+    const auto path = directory / "sound.wav";
+    const std::vector<float> pcm(882, 0.125F);
+    const auto wav = audio::encode_wav_pcm16(pcm, 44'100);
+    std::ofstream(path, std::ios::binary).write(wav.data(), wav.size());
+    fixture.workspace.song = song_id_t{99};
+    const std::array<std::string, 1> paths{path.string()};
+    const auto message = import_keysound_files(fixture.history, fixture.workspace, fixture.state.chart,
+                                               paths, fixture.sink);
+    std::filesystem::remove_all(directory);
+    check_action(message == "workspace cannot be rebound to a different song identity");
+    check_action(fixture.history.undo.size() == 1);
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::error);
+    check_action(entries.front().source == notification_source_t::import_);
+    check_action(entries.front().count == 1);
+}

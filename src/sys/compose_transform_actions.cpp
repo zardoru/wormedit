@@ -15,10 +15,7 @@ compose_action_outcome_t edit_selected_note_labels(compose_action_context_t& con
     auto applied = apply_note_label_edit(
         context.environment.document.history,
         {.chart = context.state.chart, .notes = context.state.selected_notes, .label = label});
-    return compose_action_outcome_t::from(
-        std::move(applied), label ? "Note label applied." : "Note labels cleared.",
-        label ? "Selected notes already have that label." : "Selected notes already have no label.",
-        "Note label changed, but workspace rebinding failed.");
+    return compose_action_outcome_t::from(std::move(applied), compose_action_description_t{.success = label ? "Note label applied." : "Note labels cleared.", .unchanged = label ? "Selected notes already have that label." : "Selected notes already have no label.", .rebind_failure = "Note label changed, but workspace rebinding failed."});
 }
 
 compose_action_outcome_t search_selected_note_labels(compose_action_context_t& context) {

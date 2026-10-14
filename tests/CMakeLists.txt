@@ -700,6 +700,7 @@ endif()
 if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     if(TARGET wormedit_visual_decoder)
         add_executable(wormedit_bga_actions_tests sys/bga_actions_tests.cpp
+            ../src/sys/compose_action_outcome.cpp
             ../src/sys/compose_bga_actions.cpp ../src/sys/bga_list_view.cpp)
         target_include_directories(wormedit_bga_actions_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
         target_compile_definitions(wormedit_bga_actions_tests PRIVATE WORMEDIT_HAS_IMAGE_DECODER=1)

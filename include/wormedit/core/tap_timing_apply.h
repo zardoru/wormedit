@@ -11,22 +11,17 @@ namespace wormedit {
 enum class tap_bpm_choice_t { raw, nearest_one, nearest_half };
 
 struct tap_timing_apply_proposal_t {
-    chart_id_t chart;
-    std::uint64_t document_revision{};
+    chart_stamp_t stamp;
     std::uint32_t sample_rate{};
     std::uint16_t beats_per_measure{};
     tap_tempo_estimate_t estimate;
     tap_bpm_choice_t choice{tap_bpm_choice_t::raw};
     signed_rational_t beats_per_minute;
     signed_rational_t beat_zero_audio_offset_seconds;
-};
-
-struct tap_timing_apply_proposal_result_t {
-    std::optional<tap_timing_apply_proposal_t> proposal;
     diagnostic_list_t diagnostics;
 
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return proposal.has_value() && diagnostics.empty();
+    [[nodiscard]] auto is_valid() const noexcept -> bool {
+        return static_cast<bool>(stamp.chart) && diagnostics.empty();
     }
 };
 
@@ -36,7 +31,7 @@ struct tap_timing_apply_proposal_result_t {
                                             std::uint16_t beats_per_measure,
                                             tap_bpm_choice_t choice,
                                             bool timing_locked = false)
-    -> tap_timing_apply_proposal_result_t;
+    -> tap_timing_apply_proposal_t;
 
 // Builds the same BPM/offset edit used by the commit path for read-only grid preview.
 [[nodiscard]] auto build_tap_timing_preview(

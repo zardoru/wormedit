@@ -595,12 +595,12 @@ void populate_tap_apply_overlay(flattened_workspace_t& flattened,
     if (!workspace.selected_chart || !interaction ||
         !analysis || !analysis->waveform || !cache.timing.marker_timing_index) return;
     const auto& proposal = *cache.timing.tap_apply_proposal;
-    if (proposal.chart != *workspace.selected_chart ||
-        proposal.document_revision != history.document.revision) return;
+    if (!proposal.stamp.is_current(history.document, *workspace.selected_chart,
+            document_identity_policy_t::revision_only)) return;
     const auto& bound = cache.timing.tap_preview_binding;
-    if (!bound || std::tie(bound->chart, bound->document_revision, bound->beats_per_minute,
+    if (!bound || std::tie(bound->stamp.chart, bound->stamp.document.revision, bound->beats_per_minute,
                            bound->beat_zero_audio_offset_seconds) !=
-                  std::tie(proposal.chart, proposal.document_revision, proposal.beats_per_minute,
+                  std::tie(proposal.stamp.chart, proposal.stamp.document.revision, proposal.beats_per_minute,
                            proposal.beat_zero_audio_offset_seconds)) {
         cache.timing.tap_preview_binding = proposal;
         cache.timing.tap_preview_timing.reset();
@@ -610,13 +610,13 @@ void populate_tap_apply_overlay(flattened_workspace_t& flattened,
         if (timing) cache.timing.tap_preview_timing = std::move(timing.index);
     }
     if (!cache.timing.tap_preview_timing) return;
-    const auto chart = std::ranges::find(history.document.charts, proposal.chart,
+    const auto chart = std::ranges::find(history.document.charts, proposal.stamp.chart,
                                        &chart_document_t::id);
     if (chart == history.document.charts.end()) return;
     project_compose_proposed_grid(flattened, cache, *chart, *cache.timing.marker_timing_index,
                                   *cache.timing.tap_preview_timing, *interaction);
-    const audio_offset_drag_t offset{.chart = proposal.chart,
-        .document_revision = proposal.document_revision, .sample_rate = proposal.sample_rate,
+    const audio_offset_drag_t offset{.chart = proposal.stamp.chart,
+        .document_revision = proposal.stamp.document.revision, .sample_rate = proposal.sample_rate,
         .proposed_offset_seconds = proposal.beat_zero_audio_offset_seconds};
     update_proposed_beat_zero(flattened, offset, analysis);
     flattened.view.compose.waveform_offset_drag_active = true;

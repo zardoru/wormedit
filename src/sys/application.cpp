@@ -1825,7 +1825,7 @@ void project_tap_timing(wormedit::sys::tap_timing_runtime_t& runtime,
     const auto& proposal = runtime.apply_proposal();
     target.apply_available = proposal.has_value();
     if (proposal) {
-        target.apply_revision = proposal->document_revision;
+        target.apply_revision = proposal->stamp.document.revision;
         target.proposed_bpm = static_cast<double>(proposal->beats_per_minute.numerator) /
                              proposal->beats_per_minute.denominator;
         target.proposed_offset_ms = 1000.0 * proposal->beat_zero_audio_offset_seconds.numerator /

@@ -177,8 +177,8 @@ void tap_timing_runtime_t::prepare_apply(const song_document_t& document, bool t
     proposal_clock_.reset();
     auto proposed = propose_tap_timing_apply(document, {clock_->chart}, *estimate,
         clock_->sample_rate, clock_->beats_per_measure, choice_, timing_locked);
-    if (!proposed || !build_tap_timing_preview(document, *proposed.proposal)) return;
-    proposal_ = std::move(proposed.proposal);
+    if (!proposed.is_valid() || !build_tap_timing_preview(document, proposed)) return;
+    proposal_ = std::move(proposed);
     proposal_clock_ = clock_;
     proposal_estimate_ = estimate;
 }
@@ -196,9 +196,7 @@ auto tap_timing_runtime_t::apply(document_history_t& history, const tap_timing_c
         status_ = "Tap result expired; play and tap again before Apply.";
         return {.revision = history.document.revision};
     }
-    const document_stamp_t captured_stamp{.project = history.document.id, .revision = captured->document_revision};
-    const document_stamp_t action_stamp{.project = history.document.id, .revision = expected_revision};
-    if (captured_stamp != action_stamp) {
+    if (!captured->stamp.document.is_revision_current(expected_revision)) {
         proposal_.reset();
         // Preserve the status pointer's static lifetime and avoid allocation on repeated rejection.
         static const auto stale_result_status = stale_action_message("Tap timing result");

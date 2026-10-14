@@ -28,8 +28,10 @@ it in new code even before the card lands.
 - **Construction and basic queries live on the type.** Aggregates stay mostly public, built with
   designated initializers. A type with a single way to build it gets a static `T::from(...)` or
   `T::with_defaults()`, returning `std::optional<T>` or a result when it can fail. Never add a
-  user-declared constructor to an aggregate; keep real constructors for classes with private
-  invariants. Types with many factories (lane profiles) belong in a catalog instead.
+  user-declared constructor to an aggregate. Classes with private invariants: a public constructor
+  when construction cannot fail; a static `T::from` returning a result over a private constructor
+  only when it can fail (core code does not throw). A class never needs a `from` that always succeeds.
+  Types with many factories (lane profiles) belong in a catalog instead.
 - **Members with rules are private.** When reaching a member has a rule (created lazily, finished once,
   resets something), the type is a class: the storage is private with a trailing `_` (`document_`) and
   the accessor that enforces the rule takes the plain name (`document()`), so code outside the type

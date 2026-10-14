@@ -788,7 +788,7 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 - **Files owned:** `include/wormedit/core/result.h`, `include/wormedit/core/diagnostic.h`, `docs/chart-editor-plan/decisions/code-style.md` (the alias rule), `tests/core/result_tests.cpp`. Each family's headers, sources and callers are supporting files recorded per part (one family per checkpoint).
 - **Runs after/before:** After T-620's sys/UI wave and T-630 (both move callers onto these types). Before or alongside T-631/T-632 on disjoint files; before the shrink-wrap audit, which then reviews what is left.
 - **Decisions applied:**
-  - Owner (2026-10-14): cut down the outcome types, and the status enums too. Defaults chosen by Claude and open to the owner: the template is named `attempt_t`; the diagnostic location is a per-format template parameter.
+  - Owner (2026-10-14): cut down the outcome types, and the status enums too. Owner (2026-10-14): the template is named `attempt_t`. Default chosen by Claude: the diagnostic location is a per-format template parameter.
 - **Steps:**
   1. Inventory (`.agent/T-633-inventory.txt`): every outcome, diagnostic, status and error type with its shape, use count and proposed target; group duplicates.
   2. Add `attempt_t` and `format_diagnostic_t` with tests; migrate the format codecs one format per checkpoint.

@@ -421,8 +421,9 @@ auto audio_offset_drag_matches(const std::optional<audio_offset_drag_t>& drag,
                                const workspace_controller_t& workspace,
                                const document_history_t& history) -> bool {
     return drag && drag_tab && workspace.selected_chart &&
-           *drag_tab == workspace_tab_t::compose && drag->chart == *workspace.selected_chart &&
-           drag->document_revision == history.document.revision;
+           *drag_tab == workspace_tab_t::compose &&
+           drag->stamp.is_current(history.document, *workspace.selected_chart,
+                                  document_identity_policy_t::revision_only);
 }
 
 void rebuild_offset_timing_index(compose_scene_cache_t& cache,
@@ -615,8 +616,7 @@ void populate_tap_apply_overlay(flattened_workspace_t& flattened,
     if (chart == history.document.charts.end()) return;
     project_compose_proposed_grid(flattened, cache, *chart, *cache.timing.marker_timing_index,
                                   *cache.timing.tap_preview_timing, *interaction);
-    const audio_offset_drag_t offset{.chart = proposal.stamp.chart,
-        .document_revision = proposal.stamp.document.revision, .sample_rate = proposal.sample_rate,
+    const audio_offset_drag_t offset{.stamp = proposal.stamp, .sample_rate = proposal.sample_rate,
         .proposed_offset_seconds = proposal.beat_zero_audio_offset_seconds};
     update_proposed_beat_zero(flattened, offset, analysis);
     flattened.view.compose.waveform_offset_drag_active = true;

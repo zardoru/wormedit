@@ -2808,10 +2808,10 @@ TEST_CASE("Offset locking takes precedence over a captured release and never rep
     compose_test_fixture_t fixture;
     fixture.project();
     auto begun = begin_audio_offset_drag(fixture.history.document, chart_id_t{1}, 48000);
-    expect_compose_test(begun.drag.has_value());
-    auto updated = update_audio_offset_drag(fixture.history.document, *begun.drag, 4800);
-    expect_compose_test(updated.drag.has_value());
-    auto drag = updated.drag;
+    expect_compose_test(begun.is_valid());
+    auto updated = revise_audio_offset_drag(fixture.history.document, begun, 4800);
+    expect_compose_test(updated.is_valid());
+    std::optional<audio_offset_drag_t> drag{updated};
     std::optional<workspace_tab_t> tab = workspace_tab_t::compose;
     fixture.cache.timing.offset_fit_drag = compose_scene_cache_t::offset_fit_drag_t{};
     fixture.cache.timing.beat_fit_drag = beat_interval_drag_t{};

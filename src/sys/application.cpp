@@ -2640,22 +2640,21 @@ struct application_t::implementation_t {
         auto& drag_tab = views.audio_offset_drag_tab;
         const auto timing_locked = context.timing_locked;
         if (!drag || !drag_tab || *drag_tab != workspace.active_tab ||
-            drag->chart != *workspace.selected_chart ||
-            drag->document_revision != action.audio_offset_drag_document_revision ||
+            !drag->stamp.is_current(*workspace.selected_chart, action.audio_offset_drag_document_revision) ||
             drag->sample_rate != *context.selected_sample_rate) {
             return clear_audio_offset_drag(
                 context, "Audio offset drag has no matching captured transaction.");
         }
-        const auto updated = update_audio_offset_drag(
+        const auto updated = revise_audio_offset_drag(
             history.document, *drag, action.audio_offset_drag_delta_frames, timing_locked);
-        if (!updated) {
+        if (!updated.is_valid()) {
             drag.reset();
             drag_tab.reset();
             return post_audio_offset_diagnostic(context, updated.diagnostics,
                                                 "Audio offset preview was rejected.",
                                                 notification_severity_t::warning);
         }
-        drag = updated.drag;
+        drag = updated;
         if (action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_UPDATE)
             return post_audio_offset_feedback(context, notification_severity_t::hint,
                                               "Previewing exact waveform offset.");
@@ -2665,7 +2664,7 @@ struct application_t::implementation_t {
             return post_audio_offset_feedback(context, notification_severity_t::warning,
                                               "Invalid audio offset drag action.");
         }
-        const auto committed = commit_audio_offset_drag(history, *drag, timing_locked);
+        const auto committed = apply_audio_offset_drag(history, *drag, timing_locked);
         drag.reset();
         drag_tab.reset();
         if (!committed.applied) {
@@ -2827,10 +2826,10 @@ struct application_t::implementation_t {
         const auto begun =
             begin_audio_offset_drag(session.history.document, *session.workspace.selected_chart,
                                     *context.selected_sample_rate, context.timing_locked);
-        views.audio_offset_drag = begun.drag;
+        views.audio_offset_drag = begun.is_valid() ? std::optional{begun} : std::nullopt;
         views.audio_offset_drag_tab =
-            begun ? std::optional{session.workspace.active_tab} : std::nullopt;
-        if (begun)
+            begun.is_valid() ? std::optional{session.workspace.active_tab} : std::nullopt;
+        if (begun.is_valid())
             return post_audio_offset_feedback(context, notification_severity_t::hint,
                                               "Dragging waveform offset; release to apply.");
         return post_audio_offset_diagnostic(context, begun.diagnostics,
@@ -3418,21 +3417,21 @@ struct application_t::implementation_t {
         const auto begun =
             begin_audio_offset_drag(session.history.document, *session.workspace.selected_chart,
                                     *context.selected_sample_rate, context.timing_locked);
-        if (!begun) {
+        if (!begun.is_valid()) {
             return post_audio_offset_diagnostic(context, begun.diagnostics,
                                                 "Audio offset nudge could not start.",
                                                 notification_severity_t::warning);
         }
-        const auto updated = update_audio_offset_drag(session.history.document, *begun.drag,
+        const auto updated = revise_audio_offset_drag(session.history.document, begun,
                                                       context.action.audio_offset_drag_delta_frames,
                                                       context.timing_locked);
-        if (!updated) {
+        if (!updated.is_valid()) {
             return post_audio_offset_diagnostic(context, updated.diagnostics,
                                                 "Audio offset nudge was rejected.",
                                                 notification_severity_t::warning);
         }
         const auto committed =
-            commit_audio_offset_drag(session.history, *updated.drag, context.timing_locked);
+            apply_audio_offset_drag(session.history, updated, context.timing_locked);
         if (!committed.applied) {
             return post_audio_offset_diagnostic(context, committed.diagnostics,
                                                 "Audio offset was unchanged.",
@@ -3490,8 +3489,8 @@ struct application_t::implementation_t {
             (!views.audio_offset_drag_tab ||
              session.workspace.active_tab != *views.audio_offset_drag_tab ||
              !session.workspace.selected_chart ||
-             *session.workspace.selected_chart != views.audio_offset_drag->chart ||
-             session.history.document.revision != views.audio_offset_drag->document_revision ||
+             !views.audio_offset_drag->stamp.is_current(session.history.document,
+                 *session.workspace.selected_chart, document_identity_policy_t::revision_only) ||
              commands.audio_offset_edits_locked())) {
             views.audio_offset_drag.reset();
             views.audio_offset_drag_tab.reset();

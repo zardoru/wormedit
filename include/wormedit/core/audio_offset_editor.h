@@ -8,20 +8,15 @@
 namespace wormedit {
 
 struct audio_offset_drag_t {
-    chart_id_t chart;
-    std::uint64_t document_revision{};
+    chart_stamp_t stamp;
     std::uint32_t sample_rate{};
     signed_rational_t original_offset_seconds;
     signed_rational_t proposed_offset_seconds;
     std::int64_t delta_frames{};
-};
-
-struct audio_offset_drag_result_t {
-    std::optional<audio_offset_drag_t> drag;
     diagnostic_list_t diagnostics;
 
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return drag.has_value() && diagnostics.empty();
+    [[nodiscard]] auto is_valid() const noexcept -> bool {
+        return static_cast<bool>(stamp.chart) && sample_rate != 0 && diagnostics.empty();
     }
 };
 
@@ -30,14 +25,14 @@ struct audio_offset_drag_result_t {
 // cannot accumulate rounding error.
 [[nodiscard]] auto begin_audio_offset_drag(const song_document_t& document, chart_id_t chart,
                                            std::uint32_t sample_rate, bool timing_locked = false)
-    -> audio_offset_drag_result_t;
+    -> audio_offset_drag_t;
 
-[[nodiscard]] auto update_audio_offset_drag(const song_document_t& document,
+[[nodiscard]] auto revise_audio_offset_drag(const song_document_t& document,
                                             const audio_offset_drag_t& drag,
                                             std::int64_t delta_frames, bool timing_locked = false)
-    -> audio_offset_drag_result_t;
+    -> audio_offset_drag_t;
 
-[[nodiscard]] auto commit_audio_offset_drag(document_history_t& history,
+[[nodiscard]] auto apply_audio_offset_drag(document_history_t& history,
                                             const audio_offset_drag_t& drag,
                                             bool timing_locked = false)
     -> document_command_result_t;
@@ -46,5 +41,10 @@ struct audio_offset_drag_result_t {
 [[nodiscard]] auto apply_audio_offset_edit(document_history_t& history, chart_id_t chart,
                                            signed_rational_t offset_seconds,
                                            bool timing_locked = false) -> document_command_result_t;
+
+// Uses the ready transaction supplied by a captured offset proposal.
+[[nodiscard]] auto apply_audio_offset_edit(document_command_transaction_t& transaction,
+    chart_id_t chart, signed_rational_t offset_seconds, bool timing_locked = false)
+    -> document_command_result_t;
 
 } // namespace wormedit

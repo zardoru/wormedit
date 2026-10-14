@@ -97,9 +97,9 @@ auto has_code(const wormedit::diagnostic_list_t& diagnostics, wormedit::diagnost
 TEST_CASE("field scene composes split layout bands, exact grid, holds, selection, and cursor",
           "[unit][core][editor-scene]") {
     const auto chart = scene_chart();
-    const auto built = wormedit::build_editor_field_scene_index(chart, 7);
-    REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
-    const auto& indexed = std::get<wormedit::editor_field_scene_index_t>(built);
+    const auto built = wormedit::editor_field_scene_index_t::from(chart, 7);
+    REQUIRE(built);
+    const auto& indexed = *built;
     REQUIRE(indexed.notes.size() == 2);
     CHECK_FALSE(indexed.notes[0].sound);
     CHECK(indexed.notes[1].sound == wormedit::resource_id_t{40});
@@ -172,7 +172,7 @@ TEST_CASE("field scene composes split layout bands, exact grid, holds, selection
     zoomed_view.viewport_scroll_pixels = 192.0;
     zoomed_view.viewport_height_pixels = 384.0;
     const auto zoomed = wormedit::make_editor_field_scene(
-        chart, std::get<wormedit::editor_field_scene_index_t>(built), zoomed_view,
+        chart, *built, zoomed_view,
         {.field_left_pixels = 10.0,
          .field_width_pixels = 200.0,
          .split_stage_gutter_pixels = 12.0});
@@ -2286,4 +2286,14 @@ TEST_CASE("Scratch presentation moves both DP5 scratches to each side's left and
     check_scratch_lane(*result.scene, 0, wormedit::stage_group_t::left);
     check_scratch_lane(*result.scene, 6, wormedit::stage_group_t::right);
     CHECK(window.rebuild_count == rebuilds + 1);
+}
+
+TEST_CASE("field-scene index expected errors retain validation diagnostics", "[unit][core][editor-scene][results]") {
+    auto chart = scene_chart();
+    chart.id = {};
+    const auto built = wormedit::editor_field_scene_index_t::from(chart, 7);
+    REQUIRE_FALSE(built);
+    REQUIRE(built.error().size() == 1);
+    CHECK(built.error().front().code == wormedit::diagnostic_code_t::invalid_resolution);
+    CHECK(built.error().front().message == "field-scene index limits and chart identity must be valid");
 }

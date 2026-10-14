@@ -2,6 +2,7 @@
 #include <wormedit/core/geometry.h>
 
 #include <wormedit/core/grid.h>
+#include <wormedit/core/result.h>
 #include <wormedit/core/interaction.h>
 
 #include <cstddef>
@@ -9,6 +10,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -26,6 +28,7 @@ struct editor_field_scene_index_options_t {
 };
 
 struct editor_field_scene_bgm_source_t {
+    [[nodiscard]] auto sort_key() const { return std::tie(row, source_lane.value, event.value); }
     object_id_t event;
     object_id_t source_lane;
     std::uint64_t row{};
@@ -44,6 +47,7 @@ struct editor_field_scene_bga_source_t {
 };
 
 struct editor_field_scene_note_source_t {
+    [[nodiscard]] auto sort_key() const { return std::tie(begin_row, end_row, note.value); }
     object_id_t note;
     lane_id_t lane;
     std::optional<resource_id_t> sound;
@@ -70,6 +74,9 @@ struct editor_field_scene_layout_source_t {
 // sorted by their head row, while the max-end tree narrows holds that begin
 // before the visible interval without scanning every earlier note.
 struct editor_field_scene_index_t {
+    [[nodiscard]] static auto from(const chart_document_t& chart, std::uint64_t document_revision,
+        editor_field_scene_index_options_t options = {})
+        -> result_t<editor_field_scene_index_t, diagnostic_list_t>;
     chart_id_t chart;
     std::uint64_t document_revision{};
     measure_index_t measures;

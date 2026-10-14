@@ -318,14 +318,14 @@ auto build_player_preview_index(const chart_document_t& chart, std::uint64_t doc
                   "player-preview index requires a chart, revision, and positive bounded limits"));
         return result;
     }
-    auto field = build_editor_field_scene_index(
+    auto field = editor_field_scene_index_t::from(
         chart, document_revision,
         {.maximum_notes = options.maximum_notes,
          .maximum_bgm_events = options.maximum_bgm_events,
          .maximum_layout_segments = options.maximum_layout_segments,
          .maximum_lane_definitions = options.maximum_lane_definitions});
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&field)) {
-        result.diagnostics = *diagnostics;
+    if (!field) {
+        result.diagnostics = std::move(field.error());
         return result;
     }
     auto timing = build_timing_index(chart, {.allow_bounded_clock = true});
@@ -341,7 +341,7 @@ auto build_player_preview_index(const chart_document_t& chart, std::uint64_t doc
         return result;
     }
 
-    auto& field_index = std::get<editor_field_scene_index_t>(field);
+    auto& field_index = *field;
     player_preview_index_t index{
         .chart = chart.id,
         .document_revision = document_revision,

@@ -418,9 +418,9 @@ auto append_scene_bga_events(const chart_document_t& chart, editor_field_scene_i
 
 } // namespace
 
-auto build_editor_field_scene_index(const chart_document_t& chart, std::uint64_t document_revision,
+auto editor_field_scene_index_t::from(const chart_document_t& chart, std::uint64_t document_revision,
                                     editor_field_scene_index_options_t options)
-    -> std::variant<editor_field_scene_index_t, diagnostic_list_t> {
+    -> result_t<editor_field_scene_index_t, diagnostic_list_t> {
     diagnostic_list_t diagnostics;
     if (!chart.id || chart.divisions_per_standard_measure == 0 || options.maximum_notes == 0 ||
         options.maximum_bgm_events == 0 || options.maximum_bga_events == 0 ||
@@ -428,11 +428,11 @@ auto build_editor_field_scene_index(const chart_document_t& chart, std::uint64_t
         options.maximum_lane_definitions == 0) {
         diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                                     "field-scene index limits and chart identity must be valid"));
-        return diagnostics;
+        return std::unexpected(std::move(diagnostics));
     }
     const auto built_measures = build_measure_index(chart);
     if (const auto* failures = std::get_if<diagnostic_list_t>(&built_measures)) {
-        return *failures;
+        return std::unexpected(*failures);
     }
 
     editor_field_scene_index_t index{
@@ -441,29 +441,23 @@ auto build_editor_field_scene_index(const chart_document_t& chart, std::uint64_t
         .measures = std::get<measure_index_t>(built_measures),
     };
     if (!append_scene_layouts(chart, index, options, diagnostics)) {
-        return diagnostics;
+        return std::unexpected(std::move(diagnostics));
     }
     if (!append_scene_notes(chart, index, options, diagnostics)) {
-        return diagnostics;
+        return std::unexpected(std::move(diagnostics));
     }
     if (!append_scene_bgm_events(chart, index, options, diagnostics)) {
-        return diagnostics;
+        return std::unexpected(std::move(diagnostics));
     }
     if (!append_scene_bga_events(chart, index, options, diagnostics)) {
-        return diagnostics;
+        return std::unexpected(std::move(diagnostics));
     }
     if (!diagnostics.empty()) {
-        return diagnostics;
+        return std::unexpected(std::move(diagnostics));
     }
 
-    std::ranges::sort(index.notes, [](const auto& left, const auto& right) {
-        return std::tie(left.begin_row, left.end_row, left.note.value) <
-               std::tie(right.begin_row, right.end_row, right.note.value);
-    });
-    std::ranges::sort(index.bgm_events, [](const auto& left, const auto& right) {
-        return std::tie(left.row, left.source_lane.value, left.event.value) <
-               std::tie(right.row, right.source_lane.value, right.event.value);
-    });
+    std::ranges::sort(index.notes, {}, &editor_field_scene_note_source_t::sort_key);
+    std::ranges::sort(index.bgm_events, {}, &editor_field_scene_bgm_source_t::sort_key);
     build_bgm_end_tree(index);
     index.note_indices_by_id.reserve(index.notes.size());
     for (std::size_t note = 0; note < index.notes.size(); ++note) {
@@ -471,14 +465,14 @@ auto build_editor_field_scene_index(const chart_document_t& chart, std::uint64_t
             diagnostics.push_back(error(diagnostic_code_t::duplicate_id,
                                         "field-scene note index has duplicate identities",
                                         index.notes[note].note));
-            return diagnostics;
+            return std::unexpected(std::move(diagnostics));
         }
     }
     while (index.note_tree_leaf_base < index.notes.size()) {
         if (index.note_tree_leaf_base > std::numeric_limits<std::size_t>::max() / 2) {
             diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                                         "field-scene note tree exceeds addressable storage"));
-            return diagnostics;
+            return std::unexpected(std::move(diagnostics));
         }
         index.note_tree_leaf_base *= 2;
     }
@@ -491,6 +485,13 @@ auto build_editor_field_scene_index(const chart_document_t& chart, std::uint64_t
             std::max(index.note_tree_max_end[node * 2], index.note_tree_max_end[node * 2 + 1]);
     }
     return index;
+}
+
+auto build_editor_field_scene_index(const chart_document_t& chart, std::uint64_t document_revision,
+    editor_field_scene_index_options_t options) -> std::variant<editor_field_scene_index_t, diagnostic_list_t> {
+    auto outcome = editor_field_scene_index_t::from(chart, document_revision, options);
+    if (!outcome) return std::move(outcome.error());
+    return std::move(*outcome);
 }
 
 namespace {

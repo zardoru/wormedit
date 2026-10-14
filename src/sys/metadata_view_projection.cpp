@@ -122,7 +122,7 @@ void populate_metadata_channel_map_lanes(flattened_workspace_t& flattened,
 }
 
 auto channel_map_preview_summary(const wormedit::channel_map_proposal_t& preview) -> std::string {
-    if (preview.issue != wormedit::channel_map_issue_t::none) return preview.message;
+    if (preview.issue != wormedit::channel_map_issue_t::none) return std::string{preview.message()};
     if (!preview.conflicts.empty()) {
         const auto& first = preview.conflicts.front();
         return "Channel " + first.channel + " would be shared by " + first.first_lane_name +

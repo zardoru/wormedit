@@ -32,13 +32,12 @@ void metadata_drop_state_t::discard_if_stale(std::uint64_t current_project, std:
     if ((!music_path.empty() || !output_path.empty()) &&
         (project_id != current_project || music_revision != current_revision || chart_id != current_chart_id))
         clear_paths();
-    if (channel_map_preview && (channel_map_preview->song.value != current_project ||
-                                channel_map_preview->revision != current_revision ||
-                                channel_map_preview->chart.value != current_chart_id))
+    const chart_stamp_t current_stamp{
+        .document = {.project = song_id_t{current_project}, .revision = current_revision},
+        .chart = chart_id_t{current_chart_id}};
+    if (channel_map_preview && channel_map_preview->stamp != current_stamp)
         clear_channel_map_preview();
-    if (lane_profile_preview && (lane_profile_preview->song.value != current_project ||
-                                 lane_profile_preview->revision != current_revision ||
-                                 lane_profile_preview->chart.value != current_chart_id))
+    if (lane_profile_preview && lane_profile_preview->stamp != current_stamp)
         clear_lane_profile_preview();
 }
 

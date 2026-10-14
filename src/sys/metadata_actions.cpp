@@ -247,7 +247,7 @@ auto dispatch_channel_map_preview(const WormUiWorkspaceAction& action, const doc
     auto preview = propose_bms_channel_map_edit(
         history.document, action.metadata_document_revision, chart_id_t{action.metadata_chart_id},
         object_id_t{action.metadata_channel_map_layout_segment_id}, *replacements);
-    auto feedback = metadata_edit_feedback_t{notification_severity_t::info, preview.message};
+    auto feedback = metadata_edit_feedback_t{notification_severity_t::info, std::string{preview.message()}};
     if (!preview) {
         feedback.severity = notification_severity_t::error;
     } else if (preview.conflict_count != 0) {
@@ -298,7 +298,7 @@ auto dispatch_lane_profile_preview(const WormUiWorkspaceAction& action, const do
                                            chart->id, targets[action.metadata_lane_profile_index]);
     if (proposal.issue != lane_migration_issue_t::none) {
         metadata_drop.clear_lane_profile_preview();
-        return {notification_severity_t::error, proposal.message};
+        return {notification_severity_t::error, std::string{proposal.message()}};
     }
     const auto message = "Key-count preview: " + std::to_string(proposal.mapped_note_count) + " notes map, " +
                          std::to_string(proposal.dropped_notes.size()) + " dropped, " +

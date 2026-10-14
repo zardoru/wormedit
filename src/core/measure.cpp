@@ -157,37 +157,37 @@ auto parse_measure_length(std::string_view text) -> measure_parse_result_t {
     return rational_t::from(text);
 }
 
-auto validate_measure(
+auto measure_capacity_t::from(
     std::uint64_t divisions_per_standard_measure,
-    const measure_definition_t& measure) -> measure_validation_t
+    const measure_definition_t& measure) -> measure_capacity_outcome_t
 {
     if (divisions_per_standard_measure == 0) {
-        return {.error = measure_error_t::zero_resolution};
+        return std::unexpected(measure_error_t::zero_resolution);
     }
     if (measure.length.numerator == 0) {
-        return {.error = measure_error_t::non_positive};
+        return std::unexpected(measure_error_t::non_positive);
     }
     if (measure.length.denominator == 0) {
-        return {.error = measure_error_t::zero_denominator};
+        return std::unexpected(measure_error_t::zero_denominator);
     }
 
     const auto length = reduce_fraction_parts(measure.length.numerator, measure.length.denominator);
     if (measure.meter.has_value()) {
         if (measure.meter->denominator == 0) {
-            return {.error = measure_error_t::zero_denominator};
+            return std::unexpected(measure_error_t::zero_denominator);
         }
         if (measure.meter->numerator == 0) {
-            return {.error = measure_error_t::non_positive};
+            return std::unexpected(measure_error_t::non_positive);
         }
         const auto meter = reduce_fraction_parts(measure.meter->numerator, measure.meter->denominator);
         if (meter != length) {
-            return {.error = measure_error_t::meter_mismatch};
+            return std::unexpected(measure_error_t::meter_mismatch);
         }
     }
 
     const auto common = std::gcd(divisions_per_standard_measure, length.denominator);
     if (length.denominator / common != 1) {
-        return {.error = measure_error_t::non_integral_capacity};
+        return std::unexpected(measure_error_t::non_integral_capacity);
     }
 
     std::uint64_t capacity{};
@@ -195,9 +195,19 @@ auto validate_measure(
             divisions_per_standard_measure / common,
             length.numerator,
             capacity)) {
-        return {.error = measure_error_t::overflow};
+        return std::unexpected(measure_error_t::overflow);
     }
-    return {.row_capacity = capacity};
+    return measure_capacity_t{.row_capacity = capacity};
+}
+
+auto measure_validation_t::from(measure_capacity_outcome_t&& outcome) -> measure_validation_t {
+    if (outcome) return {.row_capacity = outcome->row_capacity, .error = measure_error_t::none};
+    return {.row_capacity = std::nullopt, .error = outcome.error()};
+}
+
+auto validate_measure(std::uint64_t divisions_per_standard_measure,
+                       const measure_definition_t& measure) -> measure_validation_t {
+    return measure_validation_t::from(measure_capacity_t::from(divisions_per_standard_measure, measure));
 }
 
 auto bmson_grid_t::from(std::uint64_t divisions_per_standard_measure)

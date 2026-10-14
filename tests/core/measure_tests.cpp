@@ -35,7 +35,8 @@ TEST_CASE("measure capacity is exact and authored meter spelling survives", "[un
         .length = {3, 4},
         .meter = meter_t{6, 8},
     };
-    const auto result = validate_measure(default_divisions_per_standard_measure, compound);
+    auto capacity = measure_capacity_t::from(default_divisions_per_standard_measure, compound);
+    const auto result = measure_validation_t::from(std::move(capacity));
 
     REQUIRE(result);
     CHECK(result.row_capacity == 720);
@@ -44,19 +45,18 @@ TEST_CASE("measure capacity is exact and authored meter spelling survives", "[un
 
 TEST_CASE("measure validation rejects incompatible geometry", "[unit][core][measure][negative]")
 {
-    CHECK(validate_measure(0, {{1, 1}, std::nullopt}).error
-        == measure_error_t::zero_resolution);
-    CHECK(validate_measure(960, {{1, 7}, std::nullopt}).error
-        == measure_error_t::non_integral_capacity);
-    CHECK(validate_measure(960, {{3, 4}, meter_t{4, 4}}).error
-        == measure_error_t::meter_mismatch);
-    CHECK(validate_measure(960, {{1, 0}, std::nullopt}).error
-        == measure_error_t::zero_denominator);
-    CHECK(validate_measure(
+    CHECK(measure_capacity_t::from(0, {{1, 1}, std::nullopt})
+        == std::unexpected(measure_error_t::zero_resolution));
+    CHECK(measure_capacity_t::from(960, {{1, 7}, std::nullopt})
+        == std::unexpected(measure_error_t::non_integral_capacity));
+    CHECK(measure_capacity_t::from(960, {{3, 4}, meter_t{4, 4}})
+        == std::unexpected(measure_error_t::meter_mismatch));
+    CHECK(measure_capacity_t::from(960, {{1, 0}, std::nullopt})
+        == std::unexpected(measure_error_t::zero_denominator));
+    CHECK(measure_capacity_t::from(
               std::numeric_limits<std::uint64_t>::max(),
               {{2, 1}, std::nullopt})
-              .error
-        == measure_error_t::overflow);
+        == std::unexpected(measure_error_t::overflow));
 }
 
 TEST_CASE("default BMSON grid preserves editor rows exactly", "[unit][core][bmson]")

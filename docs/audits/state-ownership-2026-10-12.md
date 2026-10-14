@@ -1148,7 +1148,7 @@ template <class Payload> struct command_result_with_t {
 | D10 | (a) libavformat | T-613. |
 | D11 | The ship preset requires FFmpeg | T-613 adds a release preset (Linux and Windows) that finds FFmpeg with `REQUIRED`; the dev, headless and test presets stay tolerant. Cross-building FFmpeg for Windows is a setup step for the owner: record it on the card, and do not attempt it in the sandbox. |
 | D12 | Test first, then reconcile on demand | T-614 adds a test for the same-frame window. If it reproduces, `project_audio_sources_t` queries reconcile when the document revision has moved since the last reconcile (a revision compare per query; the reconcile itself only in the same-frame case), shipped with that regression test. No STOP (owner, 2026-10-13). |
-| D13 | A | In T-612, projections become `build_<x>_view`. |
+| D13 | A, amended | In T-612, projections become `build_<x>_view`. Amended (owner, 2026-10-14): in T-631, views with their own C++ type become `<x>_view_t::from`; `build_<x>_view` stays for C ABI and container results. |
 | D14 | (a) C++23 | In T-620, raise the standard first, in its own commit; `result_t` is an alias of `std::expected`; the macOS Xcode 15+ check is left for the owner. |
 | D15 | "Project" and "Audio Slices" | In T-611, one tab table owns the label, id and enum. The labels are "Project" (not "Setup") and "Audio Slices" (no slash), used by both the tab strip and the commands. Command *ids* (`workspace.open_*`) keep their names. |
 | D16 | "Keysound" | In T-611, one sound-kind label table; the import dialog shows "Keysound". |
@@ -1202,6 +1202,10 @@ template <class Payload> struct command_result_with_t {
   only projections. After that, `project_` names the song project. The five noun uses keep their
   names. Add a row to the vocabulary table: "`build_<x>_view`: a read-only view of the document for
   the frontend".
+  **Amended by the owner (2026-10-14):** a view that is its own C++ type is built by
+  `<x>_view_t::from(...)` (diagnosed views by their result type's `from`, T-620's shape), and its type
+  is named `<x>_view_t` (no `*_projection_t`, `flattened_*`). `build_<x>_view` stays only for views
+  that are C ABI structs or plain containers. Done in T-631.
 - **D14 — decided by the owner: (a) C++23.** T-620 first raises the standard: `CMAKE_CXX_STANDARD 23` and
   every `cxx_std_20` → `cxx_std_23` (7 sites across `CMakeLists.txt`, `tests/CMakeLists.txt` and
   `cmake/`). `result_t<T, E>` becomes an alias of `std::expected<T, E>`. `diagnosed_t<T>` stays a

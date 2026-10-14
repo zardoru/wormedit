@@ -30,6 +30,10 @@ it in new code even before the card lands.
   `T::with_defaults()`, returning `std::optional<T>` or a result when it can fail. Never add a
   user-declared constructor to an aggregate; keep real constructors for classes with private
   invariants. Types with many factories (lane profiles) belong in a catalog instead.
+- **Members with rules are private.** When reaching a member has a rule (created lazily, finished once,
+  resets something), the type is a class: the storage is private with a trailing `_` (`document_`) and
+  the accessor that enforces the rule takes the plain name (`document()`), so code outside the type
+  cannot reach past it.
 - **Queries are members:** `measure_index_t::row_of`, `timing_index_t::seconds_at`,
   `chart_document_t::find_note`, `lane_definition_t::is_editable`. Find-or-add accessors are
   `owner.<x>_for(key)` members on the container's owner. *(T-617, T-623, T-626)*
@@ -55,13 +59,15 @@ it in new code even before the card lands.
 |---|---|
 | `make_` / `T::from` | builds a new value, no side effects |
 | `build_` | computes a derived index or cache from existing data |
-| `build_<x>_view` | a read-only view of the document for the frontend (never `project_`, which means the song project) |
+| `<x>_view_t::from` | a read-only view of the document for the frontend, when the view is its own C++ type (never `project_`, which means the song project) |
+| `build_<x>_view` | the same, only when the view is a C ABI struct or a plain container (`std::vector`, `std::array`), which cannot own a `from` |
 | `create_` / `open_` | has side effects (files, sessions, OS resources) |
 | `plan_` / `prepare_` | computes a proposal; changes nothing |
 | `validate_` | checks and returns diagnostics; changes nothing |
 | `apply_` | an undoable command, run through the document command transaction |
 | `propose_`/`begin_` → `revise_` → `apply_`/`cancel_` | the lifecycle of a staged proposal |
 | `is_` / `has_` / `can_` | yes/no checks (comparators keep `*_less`, `*_equal`) |
+| `scope.x()` | inside a scoped owner (a transaction, a staged editor), the unqualified accessor is that scope's own object: `transaction.document()` is the document of the transaction. Only the exception is qualified (`source_chart(id)` for the committed version) |
 | `owner.<x>_for(key)` | find-or-add accessor |
 
 - Names must not lie: `folded_name` must fold; `fold` is reserved for real Unicode case folding

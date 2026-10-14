@@ -30,73 +30,73 @@ auto is_materialize_succeeded(preview_bridge_pump_status_t status) -> bool {
 
 } // namespace
 
-auto preview_session_t::start(const preview_schedule_t& schedule,
-                              std::span<const preview_object_source_binding_t> objects,
-                              std::span<const preview_metronome_source_binding_t> metronome,
-                              std::uint64_t seek_frame, preview_pump_options_t options,
-                              std::uint64_t minimum_end_frame)
-    -> preview_session_start_result_t {
+auto preview_session_t::start_session(const preview_schedule_t& schedule,
+                                      std::span<const preview_object_source_binding_t> objects,
+                                      std::span<const preview_metronome_source_binding_t> metronome,
+                                      std::uint64_t seek_frame, preview_pump_options_t options,
+                                      std::uint64_t minimum_end_frame)
+    -> preview_session_start_outcome_t {
     const std::scoped_lock lock(mutex_);
     const auto start_frame = loop_region_ ? loop_region_->begin_frame : seek_frame;
     auto started = bridge_.start(schedule, objects, metronome, start_frame);
     if (!started) {
-        auto result = preview_session_start_result_t{};
-        result.status = preview_session_start_status_t::bridge_failed;
-        result.bridge = started;
-        return result;
+        return std::unexpected(preview_session_start_error_t{
+            .code = preview_session_start_status_t::bridge_failed, .detail = {.bridge = started}});
     }
     minimum_end_frame_ = minimum_end_frame;
     return prime_started(started, start_frame, options);
 }
 
-auto preview_session_t::seek(std::uint64_t sample_frame, preview_pump_options_t options)
-    -> preview_session_start_result_t {
+auto preview_session_t::seek_session(std::uint64_t sample_frame, preview_pump_options_t options)
+    -> preview_session_start_outcome_t {
     const std::scoped_lock lock(mutex_);
     auto started = bridge_.seek(sample_frame);
     if (!started) {
-        auto result = preview_session_start_result_t{};
-        result.status = preview_session_start_status_t::bridge_failed;
-        result.bridge = started;
-        return result;
+        return std::unexpected(preview_session_start_error_t{
+            .code = preview_session_start_status_t::bridge_failed, .detail = {.bridge = started}});
     }
     return prime_started(started, sample_frame, options);
 }
 
-auto preview_session_t::restart_loop(std::uint64_t expected_generation)
-    -> preview_session_start_result_t {
+auto preview_session_t::restart_session_loop(std::uint64_t expected_generation)
+    -> preview_session_start_outcome_t {
     const std::scoped_lock lock(mutex_);
     if (generation_ != expected_generation || !token_ || !loop_region_ ||
         timeline_frame_ < loop_region_->end_frame || !transport_.is_current(*token_))
-        return {.status = preview_session_start_status_t::bridge_failed};
+        return std::unexpected(preview_session_start_error_t{});
     const loop_restart_scope_t restart_scope{loop_restart_generation_, generation_};
     const auto started = bridge_.seek(loop_region_->begin_frame);
-    if (!started) return {.status = preview_session_start_status_t::bridge_failed, .bridge = started};
+    if (!started)
+        return std::unexpected(preview_session_start_error_t{
+            .code = preview_session_start_status_t::bridge_failed, .detail = {.bridge = started}});
     return prime_started(started, loop_region_->begin_frame, {}, true);
 }
 
-void preview_session_t::set_output_playhead(std::uint64_t generation, std::uint64_t frame) noexcept {
+void preview_session_t::set_output_playhead(std::uint64_t generation,
+                                            std::uint64_t frame) noexcept {
     output_playhead_.publish({.active = true, .timeline_frame = frame, .generation = generation});
 }
 
 auto preview_session_t::prime_started(preview_bridge_start_result_t started,
-                                      std::uint64_t timeline_frame, preview_pump_options_t options, bool loop_restart)
-    -> preview_session_start_result_t {
-    auto result = preview_session_start_result_t{};
-    result.bridge = started;
+                                      std::uint64_t timeline_frame, preview_pump_options_t options,
+                                      bool loop_restart) -> preview_session_start_outcome_t {
+    preview_session_start_detail_t detail{.bridge = started};
     const auto window_end = checked_window_end(timeline_frame, options.lookahead_frames);
     if (!window_end.has_value()) {
         static_cast<void>(bridge_.stop());
         clear_state();
-        result.status = preview_session_start_status_t::materialize_failed;
-        return result;
+        return std::unexpected(preview_session_start_error_t{
+            .code = preview_session_start_status_t::materialize_failed,
+            .detail = std::move(detail)});
     }
     const auto materialized = bridge_.materialize_until(*window_end, timeline_frame);
-    result.materialize = materialized;
+    detail.materialize = materialized;
     if (!is_materialize_succeeded(materialized.status)) {
         static_cast<void>(bridge_.stop());
         clear_state();
-        result.status = preview_session_start_status_t::materialize_failed;
-        return result;
+        return std::unexpected(preview_session_start_error_t{
+            .code = preview_session_start_status_t::materialize_failed,
+            .detail = std::move(detail)});
     }
     prime_pending_ = true;
     prime_options_ = options;
@@ -108,51 +108,96 @@ auto preview_session_t::prime_started(preview_bridge_start_result_t started,
         ++generation_;
     }
     publish_playhead();
-    result.status = preview_session_start_status_t::started;
-    result.token = token_;
-    return result;
+    return started_preview_session_t{.token = *token_, .detail = std::move(detail)};
 }
 
-auto preview_session_t::pump(preview_pump_options_t options) -> preview_session_pump_result_t {
+auto preview_session_t::pump_session(preview_pump_options_t options)
+    -> preview_session_pump_outcome_t {
     std::optional<session_token_t> token;
     std::uint64_t timeline_frame{};
-    preview_session_pump_result_t result;
+    preview_session_pump_effect_t result;
     {
         const std::scoped_lock lock(mutex_);
         if (!token_.has_value())
-            return result;
+            return std::unexpected(std::move(result));
         if (loop_region_ && timeline_frame_ >= loop_region_->end_frame) {
             result.status = preview_session_pump_status_t::loop_boundary;
-            return result;
+            return std::unexpected(std::move(result));
         }
         token = token_;
         timeline_frame = timeline_frame_;
-        if (prime_pending_) options = prime_options_;
+        if (prime_pending_)
+            options = prime_options_;
         const auto window_end = checked_window_end(timeline_frame, options.lookahead_frames);
         if (!window_end.has_value()) {
             result.status = preview_session_pump_status_t::invalid_timeline;
-            return result;
+            return std::unexpected(std::move(result));
         }
         result.materialize = bridge_.materialize_until(*window_end, timeline_frame);
         if (!is_materialize_succeeded(result.materialize->status)) {
             result.status = preview_session_pump_status_t::materialize_failed;
-            return result;
+            return std::unexpected(std::move(result));
         }
     }
     result.decode = pump_preview_lookahead(sources_, transport_, *token, timeline_frame, options);
     {
         const std::scoped_lock lock(mutex_);
-        if (token_ != token) return {};
-        if (result.decode && static_cast<bool>(*result.decode)) prime_pending_ = false;
+        if (token_ != token)
+            return std::unexpected(preview_session_pump_effect_t{});
+        if (result.has_ready_decode())
+            prime_pending_ = false;
     }
-    result.status = result.decode && static_cast<bool>(*result.decode)
-                        ? preview_session_pump_status_t::ready
-                        : preview_session_pump_status_t::decode_failed;
+    if (!result.has_ready_decode()) {
+        result.status = preview_session_pump_status_t::decode_failed;
+        return std::unexpected(std::move(result));
+    }
+    result.status = preview_session_pump_status_t::ready;
     return result;
 }
 
+auto preview_session_start_result_t::from(preview_session_start_outcome_t&& outcome)
+    -> preview_session_start_result_t {
+    auto& detail = outcome ? outcome->detail : outcome.error().detail;
+    return {.status = outcome ? preview_session_start_status_t::started : outcome.error().code,
+            .token = outcome ? std::optional{outcome->token} : std::nullopt,
+            .bridge = std::move(detail.bridge),
+            .materialize = std::move(detail.materialize),
+            .prime = std::move(detail.prime)};
+}
+
+auto preview_session_pump_result_t::from(preview_session_pump_outcome_t&& outcome)
+    -> preview_session_pump_result_t {
+    auto& effect = outcome ? *outcome : outcome.error();
+    return {.status = effect.status,
+            .materialize = std::move(effect.materialize),
+            .decode = std::move(effect.decode)};
+}
+
+auto preview_session_t::start(const preview_schedule_t& schedule,
+                              std::span<const preview_object_source_binding_t> objects,
+                              std::span<const preview_metronome_source_binding_t> metronome,
+                              std::uint64_t seek_frame, preview_pump_options_t options,
+                              std::uint64_t minimum_end_frame) -> preview_session_start_result_t {
+    return preview_session_start_result_t::from(
+        start_session(schedule, objects, metronome, seek_frame, options, minimum_end_frame));
+}
+
+auto preview_session_t::seek(std::uint64_t sample_frame, preview_pump_options_t options)
+    -> preview_session_start_result_t {
+    return preview_session_start_result_t::from(seek_session(sample_frame, options));
+}
+
+auto preview_session_t::restart_loop(std::uint64_t expected_generation)
+    -> preview_session_start_result_t {
+    return preview_session_start_result_t::from(restart_session_loop(expected_generation));
+}
+
+auto preview_session_t::pump(preview_pump_options_t options) -> preview_session_pump_result_t {
+    return preview_session_pump_result_t::from(pump_session(options));
+}
+
 auto preview_session_t::render(std::span<float> interleaved_stereo,
-    std::optional<std::uint64_t> expected_generation)
+                               std::optional<std::uint64_t> expected_generation)
     -> preview_session_render_result_t {
     std::ranges::fill(interleaved_stereo, 0.0F);
     const auto samples_per_frame = static_cast<std::size_t>(output_channel_count);

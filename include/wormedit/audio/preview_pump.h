@@ -60,6 +60,7 @@ struct preview_pump_result_t {
     std::size_t decoded_blocks{};
     std::size_t cached_blocks{};
     std::optional<block_decode_result_t> failure;
+    auto operator==(const preview_pump_result_t&) const -> bool = default;
 
     [[nodiscard]] explicit operator bool() const noexcept {
         return status == preview_pump_status_t::ready;

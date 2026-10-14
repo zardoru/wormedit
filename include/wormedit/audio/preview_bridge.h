@@ -65,6 +65,7 @@ struct preview_bridge_start_result_t {
         -> preview_bridge_start_result_t;
     preview_bridge_start_status_t status{preview_bridge_start_status_t::transport_start_failed};
     std::optional<session_token_t> token;
+    auto operator==(const preview_bridge_start_result_t&) const -> bool = default;
 
     [[nodiscard]] explicit operator bool() const noexcept {
         return status == preview_bridge_start_status_t::started && token.has_value();
@@ -96,6 +97,7 @@ struct preview_bridge_pump_result_t {
     preview_bridge_pump_status_t status{preview_bridge_pump_status_t::not_started};
     std::size_t scheduled_events{};
     std::size_t missing_sources{};
+    auto operator==(const preview_bridge_pump_result_t&) const -> bool = default;
 };
 
 // Control-thread bridge from immutable core preview queues to the bounded

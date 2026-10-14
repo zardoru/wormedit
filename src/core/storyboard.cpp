@@ -777,7 +777,7 @@ class osb_parser_t {
   public:
     explicit osb_parser_t(storyboard_parse_options_t options) : options_(options) {}
 
-    auto parse(std::string_view text) -> storyboard_parse_result_t {
+    auto parse(std::string_view text) -> storyboard_parse_outcome_t {
         if (text.size() > options_.maximum_input_bytes) {
             fail(storyboard_diagnostic_code_t::input_too_large,
                  "OSB input exceeds the configured byte limit");
@@ -797,9 +797,9 @@ class osb_parser_t {
                     return std::move(result_);
                 }
             }
-            result_.document = std::move(document_);
+            result_.value = std::move(document_);
         } catch (const std::bad_alloc&) {
-            result_.document.reset();
+            result_.value.reset();
             try {
                 fail(storyboard_diagnostic_code_t::capacity_exceeded,
                      "OSB parser allocation failed");
@@ -1099,7 +1099,7 @@ class osb_parser_t {
     }
 
     storyboard_parse_options_t options_;
-    storyboard_parse_result_t result_;
+    storyboard_parse_outcome_t result_;
     storyboard_document_model_t document_;
     std::vector<std::size_t> loop_path_;
     std::vector<std::size_t> loop_indentation_;
@@ -1111,9 +1111,15 @@ class osb_parser_t {
 
 } // namespace
 
-auto parse_osb(std::string_view text, storyboard_parse_options_t options)
-    -> storyboard_parse_result_t {
+auto storyboard_parse_result_t::from(storyboard_parse_outcome_t&& outcome) -> storyboard_parse_result_t {
+    return {.document = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
+}
+auto storyboard_parse_result_t::from(std::string_view text, storyboard_parse_options_t options)
+    -> storyboard_parse_outcome_t {
     return osb_parser_t{options}.parse(text);
+}
+auto parse_osb(std::string_view text, storyboard_parse_options_t options) -> storyboard_parse_result_t {
+    return storyboard_parse_result_t::from(storyboard_parse_result_t::from(text, options));
 }
 
 namespace {
@@ -1125,7 +1131,7 @@ struct osb_top_item_t {
 };
 
 auto make_osb_top_items(const storyboard_document_model_t& document,
-                        storyboard_emit_result_t& result) -> std::optional<std::vector<osb_top_item_t>> {
+                        storyboard_emit_outcome_t& result) -> std::optional<std::vector<osb_top_item_t>> {
     if (document.sprites.size() > std::numeric_limits<std::size_t>::max() -
                                       document.retained_top_level_lines.size()) {
         result.diagnostics.push_back({storyboard_diagnostic_code_t::capacity_exceeded, 0,
@@ -1161,7 +1167,7 @@ auto make_osb_top_items(const storyboard_document_model_t& document,
 
 auto append_osb_sprite_header(std::string& output, const storyboard_sprite_t& sprite,
                               std::size_t maximum_bytes,
-                              storyboard_emit_result_t& result) -> bool {
+                              storyboard_emit_outcome_t& result) -> bool {
     if (sprite.layer.empty() || sprite.origin.empty() || sprite.path.empty() ||
         sprite.path.size() > storyboard_default_maximum_path_bytes ||
         !is_valid_header_token(sprite.layer) || !is_valid_header_token(sprite.origin) ||
@@ -1191,7 +1197,7 @@ auto append_osb_sprite_header(std::string& output, const storyboard_sprite_t& sp
 
 auto emit_osb_top_item(std::string& output, const storyboard_document_model_t& document,
                        const osb_top_item_t& item, std::size_t maximum_bytes,
-                       std::size_t& node_count, storyboard_emit_result_t& result) -> bool {
+                       std::size_t& node_count, storyboard_emit_outcome_t& result) -> bool {
     if (!item.sprite) {
         const auto& line = document.retained_top_level_lines[item.index].text;
         if (is_valid_single_line(line) && append_bounded(output, line, maximum_bytes) &&
@@ -1223,9 +1229,12 @@ auto emit_osb_top_item(std::string& output, const storyboard_document_model_t& d
 
 } // namespace
 
-auto emit_osb(const storyboard_document_model_t& document, std::size_t maximum_output_bytes)
-    -> storyboard_emit_result_t {
-    storyboard_emit_result_t result;
+auto storyboard_emit_result_t::from(storyboard_emit_outcome_t&& outcome) -> storyboard_emit_result_t {
+    return {.text = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
+}
+auto storyboard_emit_result_t::from(const storyboard_document_model_t& document, std::size_t maximum_output_bytes)
+    -> storyboard_emit_outcome_t {
+    storyboard_emit_outcome_t result{};
     const auto items = make_osb_top_items(document, result);
     if (!items.has_value()) {
         return result;
@@ -1245,15 +1254,19 @@ auto emit_osb(const storyboard_document_model_t& document, std::size_t maximum_o
                                       "OSB output allocation failed"});
         return result;
     }
-    result.text = std::move(output);
+    result.value = std::move(output);
     return result;
+}
+
+auto emit_osb(const storyboard_document_model_t& document, std::size_t maximum_output_bytes) -> storyboard_emit_result_t {
+    return storyboard_emit_result_t::from(storyboard_emit_result_t::from(document, maximum_output_bytes));
 }
 
 namespace {
 
 auto reserve_schedule_events(const storyboard_document_model_t& document,
                              storyboard_schedule_options_t options,
-                             storyboard_schedule_result_t& result)
+                             storyboard_schedule_outcome_t& result)
     -> std::optional<std::size_t> {
     std::size_t count{};
     for (const auto& sprite : document.sprites) {
@@ -1273,7 +1286,7 @@ auto reserve_schedule_events(const storyboard_document_model_t& document,
 }
 
 auto schedule_node_times(const storyboard_node_t& node, storyboard_schedule_options_t options,
-                         storyboard_schedule_result_t& result)
+                         storyboard_schedule_outcome_t& result)
     -> std::optional<std::pair<std::int64_t, std::int64_t>> {
     if (node.kind == storyboard_node_kind_t::command) {
         if (!is_valid_opcode(node.command.opcode) ||
@@ -1305,7 +1318,7 @@ auto schedule_node_times(const storyboard_node_t& node, storyboard_schedule_opti
 auto append_schedule_node(const storyboard_sprite_t& sprite, const storyboard_node_t& node,
                           storyboard_schedule_options_t options, storyboard_schedule_t& schedule,
                           std::size_t& node_count, std::uint64_t& stable_order,
-                          storyboard_schedule_result_t& result) -> bool {
+                          storyboard_schedule_outcome_t& result) -> bool {
     if (node_count >= options.maximum_nodes) {
         result.diagnostics.push_back({storyboard_diagnostic_code_t::node_limit, 0,
                                       "storyboard schedule exceeds its node limit"});
@@ -1354,10 +1367,13 @@ auto schedule_event_less(const storyboard_event_t& left, const storyboard_event_
 
 } // namespace
 
-auto compile_storyboard_schedule(const storyboard_document_model_t& document,
+auto storyboard_schedule_result_t::from(storyboard_schedule_outcome_t&& outcome) -> storyboard_schedule_result_t {
+    return {.schedule = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
+}
+auto storyboard_schedule_result_t::from(const storyboard_document_model_t& document,
                                  storyboard_schedule_options_t options)
-    -> storyboard_schedule_result_t {
-    storyboard_schedule_result_t result;
+    -> storyboard_schedule_outcome_t {
+    storyboard_schedule_outcome_t result{};
     storyboard_schedule_t candidate;
     const auto expected_events = reserve_schedule_events(document, options, result);
     if (!expected_events.has_value()) {
@@ -1382,8 +1398,13 @@ auto compile_storyboard_schedule(const storyboard_document_model_t& document,
         }
     }
     std::ranges::sort(candidate.events, schedule_event_less);
-    result.schedule = std::move(candidate);
+    result.value = std::move(candidate);
     return result;
+}
+
+auto compile_storyboard_schedule(const storyboard_document_model_t& document,
+    storyboard_schedule_options_t options) -> storyboard_schedule_result_t {
+    return storyboard_schedule_result_t::from(storyboard_schedule_result_t::from(document, options));
 }
 
 auto storyboard_event_cursor_t::start(const storyboard_schedule_t& schedule, std::int64_t time_ms)

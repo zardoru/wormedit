@@ -1,5 +1,7 @@
 #pragma once
 
+#include <wormedit/core/result.h>
+
 #include <wormedit/core/arena.h>
 
 #include <array>
@@ -110,6 +112,8 @@ enum class storyboard_diagnostic_code_t : std::uint8_t {
 inline constexpr std::size_t storyboard_default_maximum_path_bytes = 4 * 1024;
 
 struct storyboard_diagnostic_t {
+    [[nodiscard]] constexpr auto is_error() const noexcept -> bool { return true; }
+    auto operator==(const storyboard_diagnostic_t&) const -> bool = default;
     storyboard_diagnostic_code_t code{storyboard_diagnostic_code_t::malformed_line};
     std::size_t line{};
     std::string message;
@@ -123,7 +127,10 @@ struct storyboard_parse_options_t {
     std::size_t maximum_path_bytes{storyboard_default_maximum_path_bytes};
 };
 
+using storyboard_parse_outcome_t = diagnosed_t<std::optional<storyboard_document_model_t>, std::vector<storyboard_diagnostic_t>>;
 struct storyboard_parse_result_t {
+    [[nodiscard]] static auto from(std::string_view text, storyboard_parse_options_t options = {}) -> storyboard_parse_outcome_t;
+    [[nodiscard]] static auto from(storyboard_parse_outcome_t&& outcome) -> storyboard_parse_result_t;
     std::optional<storyboard_document_model_t> document;
     std::vector<storyboard_diagnostic_t> diagnostics;
 
@@ -132,7 +139,10 @@ struct storyboard_parse_result_t {
     }
 };
 
+using storyboard_emit_outcome_t = diagnosed_t<std::optional<std::string>, std::vector<storyboard_diagnostic_t>>;
 struct storyboard_emit_result_t {
+    [[nodiscard]] static auto from(const storyboard_document_model_t& document, std::size_t maximum_output_bytes = 16 * 1024 * 1024) -> storyboard_emit_outcome_t;
+    [[nodiscard]] static auto from(storyboard_emit_outcome_t&& outcome) -> storyboard_emit_result_t;
     std::optional<std::string> text;
     std::vector<storyboard_diagnostic_t> diagnostics;
 
@@ -168,7 +178,10 @@ struct storyboard_schedule_t {
     std::vector<storyboard_event_t> events;
 };
 
+using storyboard_schedule_outcome_t = diagnosed_t<std::optional<storyboard_schedule_t>, std::vector<storyboard_diagnostic_t>>;
 struct storyboard_schedule_result_t {
+    [[nodiscard]] static auto from(const storyboard_document_model_t& document, storyboard_schedule_options_t options = {}) -> storyboard_schedule_outcome_t;
+    [[nodiscard]] static auto from(storyboard_schedule_outcome_t&& outcome) -> storyboard_schedule_result_t;
     std::optional<storyboard_schedule_t> schedule;
     std::vector<storyboard_diagnostic_t> diagnostics;
 

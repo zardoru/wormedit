@@ -94,9 +94,9 @@ void check_preview_stage_order(const player_preview_scene_t& scene) {
 TEST_CASE("player preview composes lanes receptors notes and holds from one transport frame",
           "[unit][core][player-preview]") {
     const auto chart = preview_chart();
-    const auto built = build_player_preview_index(chart, 9);
+    const auto built = player_preview_index_result_t::from(player_preview_index_t::from(chart, 9));
     REQUIRE(built);
-    const auto scene = player_preview_scene_t::from(*built.index, request());
+    const auto scene = player_preview_scene_result_t::from(player_preview_scene_result_t::from(*built.index, request()));
     REQUIRE(scene);
     CHECK(scene.scene->chart == chart_id_t{7});
     CHECK(scene.scene->document_revision == 9);
@@ -367,4 +367,23 @@ TEST_CASE("player preview interval tree narrows a dense immutable visual schedul
     REQUIRE(scene);
     CHECK(scene.scene->composition_operations < 256);
     CHECK(scene.scene->visible_note_count < 16);
+}
+
+namespace {
+auto has_warning_player_adapters() -> bool {
+    const diagnostic_t warning{.severity = diagnostic_severity_t::warning,
+        .code = diagnostic_code_t::unsupported_feature, .message = "warning"};
+    player_preview_index_outcome_t index{.value = player_preview_index_t{}, .diagnostics = {warning}};
+    if (!index.ok()) return false;
+    const auto raw_index = player_preview_index_result_t::from(std::move(index));
+    player_preview_scene_outcome_t scene{.value = player_preview_scene_t{}, .diagnostics = {warning}};
+    if (!scene.ok()) return false;
+    const auto raw_scene = player_preview_scene_result_t::from(std::move(scene));
+    return raw_index.index.has_value() && !raw_index && raw_scene.scene.has_value() && !raw_scene &&
+        raw_index.diagnostics.size() == 1 && raw_scene.diagnostics.size() == 1 &&
+        raw_index.diagnostics.front().message == "warning" && raw_scene.diagnostics.front().message == "warning";
+}
+} // namespace
+TEST_CASE("player-preview adapters preserve warning-bearing values and strict rejection", "[core][player-preview][results]") {
+    CHECK(has_warning_player_adapters());
 }

@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <iterator>
 #include <limits>
 #include <tuple>
@@ -306,10 +307,20 @@ auto build_player_video_clock(const player_preview_scene_request_t& request)
 
 } // namespace
 
-auto build_player_preview_index(const chart_document_t& chart, std::uint64_t document_revision,
+auto player_preview_note_source_t::displacement_less(const player_preview_note_source_t& left,
+    const player_preview_note_source_t& right) -> bool {
+    if (left.minimum_displacement_beats != right.minimum_displacement_beats)
+        return left.minimum_displacement_beats < right.minimum_displacement_beats;
+    return left.note.value < right.note.value;
+}
+
+auto player_preview_index_result_t::from(player_preview_index_outcome_t&& outcome) -> player_preview_index_result_t {
+    return {.index = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
+}
+auto player_preview_index_t::from(const chart_document_t& chart, std::uint64_t document_revision,
                                 player_preview_index_options_t options)
-    -> player_preview_index_result_t {
-    player_preview_index_result_t result;
+    -> player_preview_index_outcome_t {
+    player_preview_index_outcome_t result{};
     if (!chart.id || document_revision == 0 || options.maximum_notes == 0 ||
         options.maximum_bgm_events == 0 || options.maximum_layout_segments == 0 ||
         options.maximum_lane_definitions == 0) {
@@ -328,14 +339,14 @@ auto build_player_preview_index(const chart_document_t& chart, std::uint64_t doc
         result.diagnostics = std::move(field.error());
         return result;
     }
-    auto timing = build_timing_index(chart, {.allow_bounded_clock = true});
-    if (!timing) {
+    auto timing = timing_index_t::from(chart, {.allow_bounded_clock = true});
+    if (!timing.value) {
         std::ranges::transform(timing.diagnostics, std::back_inserter(result.diagnostics),
                                timing_error);
         return result;
     }
-    auto scroll_speed = build_scroll_speed_index(chart, *timing.index);
-    if (!scroll_speed) {
+    auto scroll_speed = scroll_speed_index_t::from(chart, *timing.value);
+    if (!scroll_speed.value) {
         std::ranges::transform(scroll_speed.diagnostics, std::back_inserter(result.diagnostics),
                                timing_error);
         return result;
@@ -345,8 +356,8 @@ auto build_player_preview_index(const chart_document_t& chart, std::uint64_t doc
     player_preview_index_t index{
         .chart = chart.id,
         .document_revision = document_revision,
-        .timing = std::move(*timing.index),
-        .scroll_speed = std::move(*scroll_speed.index),
+        .timing = std::move(*timing.value),
+        .scroll_speed = std::move(*scroll_speed.value),
         .layouts = std::move(field_index.layouts),
         .notes = {},
         .note_tree_leaf_base = 1,
@@ -359,12 +370,7 @@ auto build_player_preview_index(const chart_document_t& chart, std::uint64_t doc
     if (!result.diagnostics.empty()) {
         return result;
     }
-    std::ranges::sort(index.notes, [](const auto& left, const auto& right) {
-        if (left.minimum_displacement_beats != right.minimum_displacement_beats) {
-            return left.minimum_displacement_beats < right.minimum_displacement_beats;
-        }
-        return left.note.value < right.note.value;
-    });
+    std::ranges::sort(index.notes, player_preview_note_source_t::displacement_less);
     while (index.note_tree_leaf_base < index.notes.size()) {
         if (index.note_tree_leaf_base > std::numeric_limits<std::size_t>::max() / 2) {
             result.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
@@ -374,14 +380,22 @@ auto build_player_preview_index(const chart_document_t& chart, std::uint64_t doc
         index.note_tree_leaf_base *= 2;
     }
     index.note_tree_max_end = append_tree(index.notes, index.note_tree_leaf_base);
-    result.index = std::move(index);
+    result.value = std::move(index);
     return result;
 }
 
-auto player_preview_scene_t::from(const player_preview_index_t& index,
+auto build_player_preview_index(const chart_document_t& chart, std::uint64_t document_revision,
+    player_preview_index_options_t options) -> player_preview_index_result_t {
+    return player_preview_index_result_t::from(player_preview_index_t::from(chart, document_revision, options));
+}
+
+auto player_preview_scene_result_t::from(player_preview_scene_outcome_t&& outcome) -> player_preview_scene_result_t {
+    return {.scene = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
+}
+auto player_preview_scene_result_t::from(const player_preview_index_t& index,
                                   const player_preview_scene_request_t& request)
-    -> player_preview_scene_result_t {
-    player_preview_scene_result_t result;
+    -> player_preview_scene_outcome_t {
+    player_preview_scene_outcome_t result{};
     if (!is_valid_scene_request(index, request)) {
         result.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                                            "player-preview scene request or index is invalid"));
@@ -504,7 +518,7 @@ auto player_preview_scene_t::from(const player_preview_index_t& index,
                                          current.state->render_displacement_beats};
     const auto query_ok = query_notes(
         index, visible_low, visible_high, operations, request.maximum_composition_operations,
-        [&](const player_preview_note_source_t& note) { append_preview_note(render_context, note); });
+        std::bind_front(append_preview_note, std::ref(render_context)));
     if (!query_ok) {
         result.diagnostics.push_back(
             error(diagnostic_code_t::invalid_resolution,
@@ -518,8 +532,13 @@ auto player_preview_scene_t::from(const player_preview_index_t& index,
     }
     scene.composition_operations = operations;
     scene.visible_note_count = render_context.visible_notes;
-    result.scene = std::move(scene);
+    result.value = std::move(scene);
     return result;
+}
+
+auto player_preview_scene_t::from(const player_preview_index_t& index,
+    const player_preview_scene_request_t& request) -> player_preview_scene_result_t {
+    return player_preview_scene_result_t::from(player_preview_scene_result_t::from(index, request));
 }
 
 } // namespace wormedit

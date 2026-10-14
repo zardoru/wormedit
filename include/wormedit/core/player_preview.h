@@ -38,6 +38,8 @@ struct player_preview_index_options_t {
 };
 
 struct player_preview_note_source_t {
+    [[nodiscard]] static auto displacement_less(const player_preview_note_source_t& left,
+        const player_preview_note_source_t& right) -> bool;
     object_id_t note;
     lane_id_t lane;
     note_kind_t kind{note_kind_t::tap};
@@ -52,6 +54,9 @@ struct player_preview_note_source_t {
 // each note's minimum visual displacement and stores subtree maximum ends, so
 // a frame only visits notes intersecting its visible displacement window.
 struct player_preview_index_t {
+    [[nodiscard]] static auto from(const chart_document_t& chart, std::uint64_t document_revision,
+        player_preview_index_options_t options = {})
+        -> diagnosed_t<std::optional<player_preview_index_t>>;
     chart_id_t chart;
     std::uint64_t document_revision{};
     timing_index_t timing;
@@ -62,7 +67,9 @@ struct player_preview_index_t {
     std::vector<double> note_tree_max_end;
 };
 
+using player_preview_index_outcome_t = diagnosed_t<std::optional<player_preview_index_t>>;
 struct player_preview_index_result_t {
+    [[nodiscard]] static auto from(player_preview_index_outcome_t&& outcome) -> player_preview_index_result_t;
     std::optional<player_preview_index_t> index;
     diagnostic_list_t diagnostics;
 
@@ -166,7 +173,11 @@ struct player_preview_scene_t {
     auto operator==(const player_preview_scene_t&) const -> bool = default;
 };
 
+using player_preview_scene_outcome_t = diagnosed_t<std::optional<player_preview_scene_t>>;
 struct player_preview_scene_result_t {
+    [[nodiscard]] static auto from(const player_preview_index_t& index,
+        const player_preview_scene_request_t& request = {}) -> player_preview_scene_outcome_t;
+    [[nodiscard]] static auto from(player_preview_scene_outcome_t&& outcome) -> player_preview_scene_result_t;
     std::optional<player_preview_scene_t> scene;
     diagnostic_list_t diagnostics;
 

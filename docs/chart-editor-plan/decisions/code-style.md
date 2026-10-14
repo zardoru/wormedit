@@ -63,6 +63,7 @@ it in new code even before the card lands.
 | `apply_` | an undoable command, run through the document command transaction |
 | `propose_`/`begin_` → `revise_` → `apply_`/`cancel_` | the lifecycle of a staged proposal |
 | `is_` / `has_` / `can_` | yes/no checks (comparators keep `*_less`, `*_equal`) |
+| `scope.x()` | inside a scoped owner (a transaction, a staged editor), the unqualified accessor is that scope's own object: `transaction.document()` is the document of the transaction. Only the exception is qualified (`source_chart(id)` for the committed version) |
 | `owner.<x>_for(key)` | find-or-add accessor |
 
 - Names must not lie: `folded_name` must fold; `fold` is reserved for real Unicode case folding

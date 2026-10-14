@@ -326,14 +326,14 @@ auto edit_compose_recipe_range(const WormUiComposeInputAction& input,
         return drag.diagnostics.empty() ? "SV recipe edit was rejected."
                                         : drag.diagnostics.front().message;
     }
-    if (!update_sv_recipe_range_drag(
+    if (!revise_sv_recipe_range_drag(
             context.environment.document.history, drag, *release,
             context.environment.commands.project.timing_recipe.timing_locked)) {
         result.diagnostics = drag.diagnostics;
         return drag.diagnostics.empty() ? "SV recipe edit was rejected."
                                         : drag.diagnostics.front().message;
     }
-    const auto committed = commit_sv_recipe_range_drag(
+    const auto committed = apply_sv_recipe_range_drag(
         context.environment.document.history, drag,
         context.environment.commands.project.timing_recipe.timing_locked);
     result.accepted = committed.applied;

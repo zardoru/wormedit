@@ -375,3 +375,21 @@ TEST_CASE("shared transaction rejections preserve diagnostic lists", "[unit][cor
     REQUIRE(rejected.diagnostics.size() == 2);
     CHECK(rejected.diagnostics[1].message == "Second");
 }
+
+TEST_CASE("Stamped transactions preserve a proposal's stale diagnostic code",
+          "[core][command][stamped-transaction]") {
+    const auto chart_capture = GENERATE(false, true);
+    auto history = document_history_t::from(make_song());
+    const auto stamp = chart_stamp_t::from(history.document, chart_id_t{1});
+    ++history.document.revision;
+    auto transaction = chart_capture
+        ? document_command_transaction_t::from(history, stamp, "Binding proposal",
+              document_identity_policy_t::revision_only, diagnostic_code_t::invalid_binding)
+        : document_command_transaction_t::from(history, stamp.document, "Binding proposal",
+              document_identity_policy_t::revision_only, diagnostic_code_t::invalid_binding);
+    CHECK_FALSE(transaction.is_ready());
+    CHECK_FALSE(transaction.has_copy());
+    REQUIRE(transaction.outcome.diagnostics.size() == 1);
+    CHECK(transaction.outcome.diagnostics.front().code == diagnostic_code_t::invalid_binding);
+    test::check_stale_action_message(transaction.outcome.diagnostics, "Binding proposal");
+}

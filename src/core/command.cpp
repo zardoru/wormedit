@@ -167,17 +167,19 @@ auto document_command_transaction_t::from(document_history_t& history)
 }
 
 auto document_command_transaction_t::from(document_history_t& history, const document_stamp_t& stamp,
-    std::string_view label, document_identity_policy_t policy) -> document_command_transaction_t {
+    std::string_view label, document_identity_policy_t policy, diagnostic_code_t stale_code)
+    -> document_command_transaction_t {
     if (stamp.is_current(history.document, policy)) return from(history);
     return {.history = history,
-            .outcome = rejection(history.document.revision, diagnostic_code_t::invalid_id, stale_action_message(label)),
+            .outcome = rejection(history.document.revision, stale_code, stale_action_message(label)),
             .finished = true};
 }
 
 auto document_command_transaction_t::from(document_history_t& history, const chart_stamp_t& stamp,
-    std::string_view label, document_identity_policy_t policy) -> document_command_transaction_t {
+    std::string_view label, document_identity_policy_t policy, diagnostic_code_t stale_code)
+    -> document_command_transaction_t {
     // The proposal owns its target chart; its existing missing-target validation follows this guard.
-    return from(history, stamp.document, label, policy);
+    return from(history, stamp.document, label, policy, stale_code);
 }
 
 auto document_command_transaction_t::is_ready() const noexcept -> bool {

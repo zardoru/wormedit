@@ -62,10 +62,9 @@ enum class sv_recipe_draft_status_t {
 // until Apply; replacement drafts retain the selected recipe's stable ID.
 struct sv_recipe_draft_t {
     sv_recipe_draft_status_t status{sv_recipe_draft_status_t::inactive};
-    chart_id_t chart;
+    chart_stamp_t stamp;
     std::optional<recipe_id_t> existing_recipe;
     sv_recipe_t candidate;
-    std::uint64_t document_revision{};
     diagnostic_list_t diagnostics;
 };
 
@@ -106,12 +105,12 @@ struct sv_recipe_draft_preview_t {
                                                   bool timing_locked = false) -> sv_recipe_draft_t;
 // Replaces only transient candidate data; invalid parameter combinations stay
 // editable and are reported by preview/apply validation.
-[[nodiscard]] auto update_sv_recipe_draft(const document_history_t& history,
+[[nodiscard]] auto revise_sv_recipe_draft(const document_history_t& history,
                                           sv_recipe_draft_t& draft, sv_recipe_t candidate,
                                           bool timing_locked = false) -> bool;
 // Snaps both unsnapped interval endpoints to an exact grid, normalizes drag
 // direction, and updates only the transient candidate range.
-[[nodiscard]] auto set_sv_recipe_draft_range(const document_history_t& history,
+[[nodiscard]] auto revise_sv_recipe_draft_range(const document_history_t& history,
                                              sv_recipe_draft_t& draft, local_position_t begin_hit,
                                              local_position_t end_hit,
                                              std::uint64_t active_snap_denominator,
@@ -179,17 +178,16 @@ enum class sv_recipe_range_drag_status_t {
 
 // Renderer-neutral state for clicking and dragging a recipe's start, end, or
 // whole interval. Only preview_range changes during the gesture; the document
-// is published once by commit_sv_recipe_range_drag.
+// is published once by apply_sv_recipe_range_drag.
 struct sv_recipe_range_drag_t {
     sv_recipe_range_drag_status_t status{sv_recipe_range_drag_status_t::inactive};
-    chart_id_t chart;
+    chart_stamp_t stamp;
     recipe_id_t recipe;
     sv_recipe_range_handle_t handle{sv_recipe_range_handle_t::begin};
     position_span_t original_range;
     position_span_t preview_range;
     local_position_t snapped_pointer_anchor;
     std::uint64_t active_snap_denominator{};
-    std::uint64_t document_revision{};
     diagnostic_list_t diagnostics;
 };
 
@@ -204,13 +202,13 @@ struct sv_recipe_range_drag_t {
 // Updates only preview_range. Crossing an endpoint normalizes the interval;
 // invalid or zero-width positions are diagnosed without replacing the last
 // valid preview.
-[[nodiscard]] auto update_sv_recipe_range_drag(const document_history_t& history,
+[[nodiscard]] auto revise_sv_recipe_range_drag(const document_history_t& history,
                                                sv_recipe_range_drag_t& drag,
                                                local_position_t pointer_position,
                                                bool timing_locked) -> bool;
 
 // Publishes the previewed interval as one revision-checked history command.
-[[nodiscard]] auto commit_sv_recipe_range_drag(document_history_t& history,
+[[nodiscard]] auto apply_sv_recipe_range_drag(document_history_t& history,
                                                sv_recipe_range_drag_t& drag, bool timing_locked)
     -> document_command_result_t;
 

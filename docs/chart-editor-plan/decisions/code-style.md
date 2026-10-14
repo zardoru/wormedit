@@ -30,6 +30,10 @@ it in new code even before the card lands.
   `T::with_defaults()`, returning `std::optional<T>` or a result when it can fail. Never add a
   user-declared constructor to an aggregate; keep real constructors for classes with private
   invariants. Types with many factories (lane profiles) belong in a catalog instead.
+- **Members with rules are private.** When reaching a member has a rule (created lazily, finished once,
+  resets something), the type is a class: the storage is private with a trailing `_` (`document_`) and
+  the accessor that enforces the rule takes the plain name (`document()`), so code outside the type
+  cannot reach past it.
 - **Queries are members:** `measure_index_t::row_of`, `timing_index_t::seconds_at`,
   `chart_document_t::find_note`, `lane_definition_t::is_editable`. Find-or-add accessors are
   `owner.<x>_for(key)` members on the container's owner. *(T-617, T-623, T-626)*

@@ -53,7 +53,10 @@ struct bmson_parse_options_t {
     std::optional<std::filesystem::path> asset_base_directory;
 };
 
+using bmson_parse_outcome_t = diagnosed_t<std::optional<song_document_t>, std::vector<bmson_parse_diagnostic_t>>;
 struct bmson_parse_result_t {
+    [[nodiscard]] static auto from(std::span<const std::byte> bytes, bmson_parse_options_t options = {}) -> bmson_parse_outcome_t;
+    [[nodiscard]] static auto from(bmson_parse_outcome_t&& outcome) -> bmson_parse_result_t;
     std::optional<song_document_t> song;
     std::vector<bmson_parse_diagnostic_t> diagnostics;
 
@@ -80,7 +83,10 @@ struct bmson_write_options_t {
     bool preserve_source_fields{true};
 };
 
+using bmson_write_outcome_t = diagnosed_t<std::optional<std::string>, std::vector<bmson_write_diagnostic_t>>;
 struct bmson_write_result_t {
+    [[nodiscard]] static auto from(const song_document_t& song, bmson_write_options_t options = {}) -> bmson_write_outcome_t;
+    [[nodiscard]] static auto from(bmson_write_outcome_t&& outcome) -> bmson_write_result_t;
     std::optional<std::string> json;
     std::vector<bmson_write_diagnostic_t> diagnostics;
 

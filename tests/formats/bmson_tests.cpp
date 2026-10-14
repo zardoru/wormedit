@@ -791,3 +791,24 @@ TEST_CASE("BGM packing rejection exposes no partial assignments or reserved lane
     CHECK(result.lanes.empty());
     CHECK(result.lanes.capacity() == 0);
 }
+
+TEST_CASE("BMSON shared parse warnings remain independent of document presence", "[unit][bmson][results]") {
+    wormedit::bmson_parse_outcome_t parsed{.diagnostics = {{.severity = wormedit::diagnostic_severity_t::warning,
+        .code = wormedit::bmson_parse_diagnostic_code_t::unresolved_resource, .message = "warning", .json_path = "$.info"}}};
+    CHECK(parsed.ok());
+    const auto legacy = wormedit::bmson_parse_result_t::from(std::move(parsed));
+    CHECK_FALSE(legacy.has_errors());
+    CHECK_FALSE(legacy.song);
+    CHECK(legacy.diagnostics.front().json_path == "$.info");
+}
+
+TEST_CASE("BMSON shared write warnings retain serialized bytes", "[unit][bmson][results]") {
+    wormedit::bmson_write_outcome_t written{.value = std::string{"{}"},
+        .diagnostics = {{.severity = wormedit::diagnostic_severity_t::warning,
+            .code = wormedit::bmson_write_diagnostic_code_t::invalid_document, .message = "warning", .json_path = "$"}}};
+    CHECK(written.ok());
+    const auto legacy = wormedit::bmson_write_result_t::from(std::move(written));
+    CHECK_FALSE(legacy.has_errors());
+    CHECK(legacy.json == "{}");
+    CHECK(legacy.diagnostics.front().message == "warning");
+}

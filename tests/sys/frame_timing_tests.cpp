@@ -2353,6 +2353,24 @@ auto kiai_areas(compose_test_fixture_t& fixture) -> std::vector<kiai_span_t> {
     return kiai_spans_of(chart, std::get<measure_index_t>(built));
 }
 }
+TEST_CASE("Compose inner timing stamps reject stale selection and move requests",
+          "[sys][timing-input-stamp]") {
+    const auto request = GENERATE(
+        std::pair{WORM_UI_COMPOSE_INPUT_TIMING_MARKER_SELECT, std::string_view{"Timing marker selection"}},
+        std::pair{WORM_UI_COMPOSE_INPUT_TIMING_GROUP_MOVE, std::string_view{"Timing marker move"}},
+        std::pair{WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT, std::string_view{"Speed edit"}},
+        std::pair{WORM_UI_COMPOSE_INPUT_BGA_EVENT_CLICK, std::string_view{"BGA event selection"}},
+        std::pair{WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE, std::string_view{"BGA event move"}},
+        std::pair{WORM_UI_COMPOSE_INPUT_BOOKMARK_MOVE, std::string_view{"Bookmark move"}});
+    compose_test_fixture_t fixture{kiai_test_song()};
+    fixture.project();
+    fixture.interaction->selected_objects = {{editor_selection_object_kind_t::bga_event, object_id_t{9001}}};
+    auto action = kiai_input(fixture, request.first, 9001);
+    ++action.compose_inputs[0].timing_document_revision;
+    test::check_stale_action_message(dispatch_paste_action(fixture, action), request.second);
+    expect_compose_test(fixture.history.undo.empty());
+}
+
 TEST_CASE("Kiai edge drags edit the area, Delete removes the selected area and stale input is rejected",
           "[sys][kiai-spans]") {
     compose_test_fixture_t fixture{kiai_test_song()};
@@ -2364,7 +2382,7 @@ TEST_CASE("Kiai edge drags edit the area, Delete removes the selected area and s
     auto stale = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT, 9001, 1,
                             kiai_screen_y(fixture, 480));
     stale.compose_inputs[0].timing_document_revision += 1;
-    CHECK(dispatch_paste_action(fixture, stale) == "Kiai edit is stale or invalid.");
+    test::check_stale_action_message(dispatch_paste_action(fixture, stale), "Kiai edit");
     CHECK(fixture.history.undo.empty());
 
     fixture.application.project.timing_recipe.timing_locked = true;
@@ -2456,7 +2474,7 @@ TEST_CASE("SV recipe inputs select, resize and move the span, run commands and r
     auto stale = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT, 7001, 1,
                             kiai_screen_y(fixture, 480));
     stale.compose_inputs[0].timing_document_revision += 1;
-    CHECK(dispatch_paste_action(fixture, stale) == "SV recipe edit is stale or invalid.");
+    test::check_stale_action_message(dispatch_paste_action(fixture, stale), "SV recipe edit");
 
     // End edge dragged to row 480; the span stays ordered when an edge crosses the other.
     auto end_drag = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT, 7001, 1,

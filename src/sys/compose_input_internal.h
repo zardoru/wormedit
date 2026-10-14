@@ -592,6 +592,14 @@ struct compose_input_context_t {
                    ui_action.compose_input_chart_id;
     }
 
+    auto is_timing_input_current(const WormUiComposeInputAction& input) const -> bool {
+        const wormedit::chart_stamp_t stamp{
+            .document = {.project = environment.document.history.document.id,
+                         .revision = input.timing_document_revision},
+            .chart = wormedit::chart_id_t{input.timing_chart_id}};
+        return stamp.is_current(environment.document.history.document, state.chart);
+    }
+
     auto chart() const -> const wormedit::chart_document_t* {
         const auto found = std::ranges::find(environment.document.history.document.charts, state.chart,
                                              &wormedit::chart_document_t::id);

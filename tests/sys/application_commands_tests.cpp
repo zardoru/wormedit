@@ -1,3 +1,4 @@
+#include "../support/stale_action_assertions.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "sys/application_command_dispatch.h"
 #include "sys/application_commands.h"
@@ -569,6 +570,22 @@ TEST_CASE("confirmed ungrouped BMS import reports fragmented WAV ranges",
 TEST_CASE("confirmed direct WAV slot batch dispatches natural order atomically",
           "[unit][sys][sounds][bms-identifiers]") {
     CHECK(sound_slot_batch_dispatch_commits_natural_order_once());
+}
+
+TEST_CASE("Direct sound slot actions reject stale chart stamps before payload preparation",
+          "[unit][sys][sounds][slot-stamp]") {
+    const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT,
+                              WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH);
+    SoundSlotBatchDispatchFixture fixture;
+    WormUiWorkspaceAction action{};
+    action.compose_action = kind;
+    action.compose_input_chart_id = fixture.chart.value;
+    action.compose_input_document_revision = fixture.history.document.revision + 1;
+    const auto response = dispatch_compose_sound_action(action, fixture.history, fixture.workspace,
+        fixture.chart, fixture.application_state);
+    REQUIRE(response.has_value());
+    wormedit::test::check_stale_action_message(*response, "Sound slot assignment");
+    CHECK(fixture.history.undo.empty());
 }
 
 TEST_CASE("direct WAV slot batch rejection preserves history",

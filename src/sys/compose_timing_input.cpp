@@ -44,10 +44,10 @@ auto select_compose_timing_marker(const WormUiComposeInputAction& input,
     using namespace wormedit;
     const auto identity = compose_timing_identity(input.timing_lane);
     const auto mode = context.selection_mode(input.selection_mode);
-    if (!identity || !mode || input.object_id == 0 ||
-        input.timing_chart_id != context.state.chart.value ||
-        input.timing_document_revision != context.environment.document.history.document.revision)
+    if (!identity || !mode || input.object_id == 0)
         return "Timing marker selection is stale or invalid.";
+    if (!context.is_timing_input_current(input))
+        return stale_action_message("Timing marker selection");
     result = dispatch_editor_action(
         context.environment.document.history, context.state,
         select_editor_objects_action_t{
@@ -80,10 +80,10 @@ auto move_compose_timing_selection(const WormUiComposeInputAction& input,
     const auto identity = compose_timing_identity(input.timing_lane);
     const auto* chart = context.chart();
     const auto view = compose_view_for_state(context.environment.document.history, context.state);
-    if (!identity || !chart || !view || !std::isfinite(input.y_pixels) ||
-        input.timing_chart_id != chart->id.value ||
-        input.timing_document_revision != context.environment.document.history.document.revision)
+    if (!identity || !chart || !view || !std::isfinite(input.y_pixels))
         return "Timing marker move is stale or invalid.";
+    if (!context.is_timing_input_current(input))
+        return stale_action_message("Timing marker move");
     const auto clicked =
         editor_selection_object_t{identity->selection, object_id_t{input.object_id}};
     if (std::ranges::find(context.state.selected_objects, clicked) ==
@@ -144,9 +144,9 @@ auto edit_compose_kiai_span(const WormUiComposeInputAction& input, compose_input
     using namespace wormedit;
     const auto* chart = context.chart();
     const auto view = compose_view_for_state(context.environment.document.history, context.state);
-    if (!chart || !view || input.timing_chart_id != chart->id.value ||
-        input.timing_document_revision != context.environment.document.history.document.revision)
-        return "Kiai edit is stale or invalid.";
+    if (!chart || !view) return "Kiai edit is stale or invalid.";
+    if (!context.is_timing_input_current(input))
+        return stale_action_message("Kiai edit");
     if (context.environment.commands.project.timing_recipe.timing_locked)
         return "Timing is locked.";
     const auto measures = build_measure_index(*chart);
@@ -228,9 +228,9 @@ auto edit_compose_speed_span(const WormUiComposeInputAction& input,
     using namespace wormedit;
     const auto* chart = context.chart();
     const auto view = compose_view_for_state(context.environment.document.history, context.state);
-    if (!chart || !view || input.timing_chart_id != chart->id.value ||
-        input.timing_document_revision != context.environment.document.history.document.revision)
-        return "Speed edit is stale or invalid.";
+    if (!chart || !view) return "Speed edit is stale or invalid.";
+    if (!context.is_timing_input_current(input))
+        return stale_action_message("Speed edit");
     const auto measures = build_measure_index(*chart);
     const auto* index = std::get_if<measure_index_t>(&measures);
     const auto speed =
@@ -301,9 +301,9 @@ auto edit_compose_recipe_range(const WormUiComposeInputAction& input,
     using namespace wormedit;
     const auto* chart = context.chart();
     const auto view = compose_view_for_state(context.environment.document.history, context.state);
-    if (!chart || !view || input.timing_chart_id != chart->id.value ||
-        input.timing_document_revision != context.environment.document.history.document.revision)
-        return "SV recipe edit is stale or invalid.";
+    if (!chart || !view) return "SV recipe edit is stale or invalid.";
+    if (!context.is_timing_input_current(input))
+        return stale_action_message("SV recipe edit");
     if (!find_input_recipe(*chart, input.object_id))
         return "The SV recipe no longer exists.";
     const auto press = context.position_at_compose_y_unrestricted(

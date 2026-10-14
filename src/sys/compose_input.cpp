@@ -1091,9 +1091,10 @@ auto select_compose_bga_event(const WormUiComposeInputAction& input,
     using namespace wormedit;
     const auto* chart = context.chart();
     const auto mode = context.selection_mode(input.selection_mode);
-    if (!chart || !mode || input.object_id == 0 || input.timing_chart_id != chart->id.value ||
-        input.timing_document_revision != context.environment.document.history.document.revision)
+    if (!chart || !mode || input.object_id == 0)
         return "BGA event selection is stale or invalid.";
+    if (!context.is_timing_input_current(input))
+        return stale_action_message("BGA event selection");
     const auto event = std::ranges::find(chart->bga_events, object_id_t{input.object_id},
                                          &bga_event_t::id);
     if (event == chart->bga_events.end() ||
@@ -1116,12 +1117,12 @@ auto move_compose_bga_event(const WormUiComposeInputAction& input,
     const auto view = compose_view_for_state(context.environment.document.history, context.state);
     const auto object = editor_selection_object_t{editor_selection_object_kind_t::bga_event,
                                                    object_id_t{input.object_id}};
-    if (!chart || !view || input.object_id == 0 || input.timing_chart_id != chart->id.value ||
-        input.timing_document_revision != context.environment.document.history.document.revision ||
+    if (!chart || !view || input.object_id == 0 ||
         std::ranges::find(context.state.selected_objects, object) ==
-            context.state.selected_objects.end() ||
-        !std::isfinite(input.y_pixels))
+            context.state.selected_objects.end() || !std::isfinite(input.y_pixels))
         return "Select the current BGA event before moving it.";
+    if (!context.is_timing_input_current(input))
+        return stale_action_message("BGA event move");
     const auto y = std::clamp(input.y_pixels, 0.0,
                               std::max(0.0, view->viewport_height_pixels - 0.001));
     const auto revision = context.ui_action.compose_input_document_revision;
@@ -1163,9 +1164,9 @@ auto move_compose_bookmark(const WormUiComposeInputAction& input,
     using namespace wormedit;
     const auto* chart = context.chart();
     const auto view = compose_view_for_state(context.environment.document.history, context.state);
-    if (!chart || !view || input.object_id == 0 || input.timing_chart_id != chart->id.value ||
-        input.timing_document_revision != context.environment.document.history.document.revision)
-        return "The bookmark move is stale.";
+    if (!chart || !view || input.object_id == 0) return "The bookmark move is stale.";
+    if (!context.is_timing_input_current(input))
+        return stale_action_message("Bookmark move");
     const auto found = std::ranges::find(chart->bookmarks, object_id_t{input.object_id},
                                          &bookmark_t::id);
     if (found == chart->bookmarks.end() || found->anchor != marker_anchor_t::beat || !found->position)

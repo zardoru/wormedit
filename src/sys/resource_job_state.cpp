@@ -63,8 +63,9 @@ auto complete_project_resource_copy(const pending_project_resource_copy_t& reque
                                     wormedit::workspace_controller_t& workspace)
     -> resource_copy_feedback_t {
     using namespace wormedit;
-    if (history.document.id != request.song || history.document.revision != request.revision)
-        return {"Resource copy finished, but the document changed; source was not relinked.",
+    if (!document_stamp_t{.project = request.song, .revision = request.revision}
+             .is_current(history.document))
+        return {stale_action_message("Resource copy relink"),
                 notification_severity_t::warning};
     const auto audio = std::ranges::find(history.document.audio_assets, request.asset,
                                          &audio_asset_t::id);

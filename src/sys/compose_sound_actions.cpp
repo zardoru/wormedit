@@ -303,9 +303,11 @@ auto assign_picked_slot(const WormUiWorkspaceAction& action, document_history_t&
     const auto chart = std::ranges::find(history.document.charts, chart_id, &chart_document_t::id);
     if (chart == history.document.charts.end() || chart->source_family != format_family_t::bms)
         return {notification_severity_t::warning, "Direct sound slots are available only for a BMS chart."};
-    if (action.compose_input_chart_id != chart_id.value ||
-        action.compose_input_document_revision != history.document.revision)
-        return {notification_severity_t::warning, "The chosen sound slot is stale. Select it again."};
+    if (!chart_stamp_t{.document = {.project = history.document.id,
+                                   .revision = action.compose_input_document_revision},
+                       .chart = chart_id_t{action.compose_input_chart_id}}
+             .is_current(history.document, chart_id))
+        return {notification_severity_t::warning, stale_action_message("Sound slot assignment")};
     if (action.compose_sound_slot == 0 || action.compose_sound_slot >= 1296)
         return {notification_severity_t::warning, "Choose a sound slot from 01 through ZZ."};
     if (action.compose_import_path_count != 1 || !action.compose_import_paths ||
@@ -337,9 +339,11 @@ auto assign_picked_slot_batch(const WormUiWorkspaceAction& action, document_hist
                                          &chart_document_t::id);
     if (chart == history.document.charts.end() || chart->source_family != format_family_t::bms)
         return {notification_severity_t::warning, "Direct sound slots are available only for a BMS chart."};
-    if (action.compose_input_chart_id != chart_id.value ||
-        action.compose_input_document_revision != history.document.revision)
-        return {notification_severity_t::warning, "The chosen sound slot is stale. Review the files again."};
+    if (!chart_stamp_t{.document = {.project = history.document.id,
+                                   .revision = action.compose_input_document_revision},
+                       .chart = chart_id_t{action.compose_input_chart_id}}
+             .is_current(history.document, chart_id))
+        return {notification_severity_t::warning, stale_action_message("Sound slot assignment")};
     if (action.compose_sound_slot == 0 || action.compose_sound_slot >= 1296)
         return {notification_severity_t::warning, "Choose a sound slot from 01 through ZZ."};
     if (!action.sound_import_items || action.sound_import_item_count == 0 ||

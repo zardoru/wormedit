@@ -189,9 +189,14 @@ auto complete_import_feedback(
         failure->source = result.source;
         return *failure;
     }
-    if (history.document.id != request.song || history.document.revision != request.revision ||
-        !workspace.selected_chart || *workspace.selected_chart != request.chart) {
+    if (!workspace.selected_chart) {
         result.message = "Document changed before copied audio could be linked.";
+        result.severity = notification_severity_t::warning;
+        return result;
+    }
+    if (!chart_stamp_t{.document = {.project = request.song, .revision = request.revision},
+                       .chart = request.chart}.is_current(history.document, *workspace.selected_chart)) {
+        result.message = stale_action_message("Metadata audio copy linking");
         result.severity = notification_severity_t::warning;
         return result;
     }
@@ -411,11 +416,14 @@ auto metadata_asset_t::start_copy_preview(
     const auto finish = [&](std::string message, notification_severity_t severity) {
         return post_start_result(impl_->notifications, severity, source, std::move(message));
     };
-    if (workspace.active_tab != workspace_tab_t::metadata || !workspace.selected_chart ||
-        workspace.selected_chart->value != action.compose_input_chart_id ||
-        history.document.revision != action.compose_input_document_revision)
-        return finish("Metadata copy inspection expired after the chart or document changed.",
-                      notification_severity_t::warning);
+    if (!workspace.selected_chart)
+        return finish("Metadata copy inspection expired after the chart or document changed.", notification_severity_t::warning);
+    if (workspace.active_tab != workspace_tab_t::metadata ||
+        !chart_stamp_t{.document = {.project = history.document.id,
+                                   .revision = action.compose_input_document_revision},
+                       .chart = chart_id_t{action.compose_input_chart_id}}
+             .is_current(history.document, *workspace.selected_chart))
+        return finish(stale_action_message("Metadata copy inspection"), notification_severity_t::warning);
     if (asset_base.empty())
         return finish("Open a saved native project before inspecting asset copies.",
                       notification_severity_t::warning);
@@ -496,11 +504,14 @@ auto metadata_asset_t::start_import_copy(
     return finish("Audio import is unavailable in this build.", notification_severity_t::warning);
 #else
     auto& pending_import = impl_->pending_import;
-    if (workspace.active_tab != workspace_tab_t::metadata || !workspace.selected_chart ||
-        workspace.selected_chart->value != action.compose_input_chart_id ||
-        history.document.revision != action.compose_input_document_revision)
-        return finish("Metadata import-copy expired after the chart or document changed.",
-                      notification_severity_t::warning);
+    if (!workspace.selected_chart)
+        return finish("Metadata import-copy expired after the chart or document changed.", notification_severity_t::warning);
+    if (workspace.active_tab != workspace_tab_t::metadata ||
+        !chart_stamp_t{.document = {.project = history.document.id,
+                                   .revision = action.compose_input_document_revision},
+                       .chart = chart_id_t{action.compose_input_chart_id}}
+             .is_current(history.document, *workspace.selected_chart))
+        return finish(stale_action_message("Metadata import-copy"), notification_severity_t::warning);
     if (asset_base.empty())
         return finish("Open a saved native project before importing an asset copy.",
                       notification_severity_t::warning);

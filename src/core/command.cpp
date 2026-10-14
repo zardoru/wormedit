@@ -13,17 +13,23 @@ auto document_stamp_t::from(const song_document_t& document) noexcept -> documen
     return {.project = document.id, .revision = document.revision};
 }
 
-auto document_stamp_t::is_current(const song_document_t& document) const noexcept -> bool {
-    return project == document.id && revision == document.revision;
+auto document_stamp_t::is_revision_current(std::uint64_t current_revision) const noexcept -> bool {
+    return revision == current_revision;
+}
+
+auto document_stamp_t::is_current(const song_document_t& document,
+    document_identity_policy_t policy) const noexcept -> bool {
+    return is_revision_current(document.revision) &&
+           (policy == document_identity_policy_t::revision_only || project == document.id);
 }
 
 auto chart_stamp_t::from(const song_document_t& document, chart_id_t chart) noexcept -> chart_stamp_t {
     return {.document = document_stamp_t::from(document), .chart = chart};
 }
 
-auto chart_stamp_t::is_current(const song_document_t& current, chart_id_t selected) const noexcept
-    -> bool {
-    return document.is_current(current) && chart == selected;
+auto chart_stamp_t::is_current(const song_document_t& current, chart_id_t selected,
+    document_identity_policy_t policy) const noexcept -> bool {
+    return document.is_current(current, policy) && chart == selected;
 }
 
 auto stale_action_message(std::string_view label) -> std::string {
@@ -158,6 +164,20 @@ auto commit_document_command(document_history_t& history, song_document_t propos
 auto document_command_transaction_t::from(document_history_t& history)
     -> document_command_transaction_t {
     return {.history = history, .outcome = {.revision = history.document.revision}};
+}
+
+auto document_command_transaction_t::from(document_history_t& history, const document_stamp_t& stamp,
+    std::string_view label, document_identity_policy_t policy) -> document_command_transaction_t {
+    if (stamp.is_current(history.document, policy)) return from(history);
+    return {.history = history,
+            .outcome = rejection(history.document.revision, diagnostic_code_t::invalid_id, stale_action_message(label)),
+            .finished = true};
+}
+
+auto document_command_transaction_t::from(document_history_t& history, const chart_stamp_t& stamp,
+    std::string_view label, document_identity_policy_t policy) -> document_command_transaction_t {
+    // The proposal owns its target chart; its existing missing-target validation follows this guard.
+    return from(history, stamp.document, label, policy);
 }
 
 auto document_command_transaction_t::is_ready() const noexcept -> bool {

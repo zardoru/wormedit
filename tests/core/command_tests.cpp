@@ -1,3 +1,5 @@
+#include "../support/stale_action_assertions.h"
+#include <catch2/generators/catch_generators.hpp>
 #include <wormedit/core/proposal_apply_result.h>
 #include <type_traits>
 #include <wormedit/core/command.h>
@@ -54,6 +56,38 @@ auto note_row(const document_history_t& history) -> std::uint64_t {
 }
 
 } // namespace
+
+TEST_CASE("Stamped command transactions reject stale captures before copying",
+          "[core][command][stamped-transaction]") {
+    const auto different_project = GENERATE(false, true);
+    auto history = document_history_t::from(make_song());
+    auto stamp = chart_stamp_t::from(history.document, chart_id_t{1});
+    if (different_project) ++stamp.document.project.value;
+    else ++stamp.document.revision;
+    auto transaction = document_command_transaction_t::from(history, stamp, "Staged command");
+    CHECK_FALSE(transaction.is_ready());
+    CHECK_FALSE(transaction.has_copy());
+    test::check_stale_action_message(transaction.outcome.diagnostics, "Staged command");
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Revision-only stamp policy preserves older capture identity coverage",
+          "[core][command][stamped-transaction]") {
+    auto history = document_history_t::from(make_song());
+    const auto stamp = document_stamp_t::from(history.document);
+    ++history.document.id.value;
+    CHECK_FALSE(stamp.is_current(history.document));
+    CHECK(stamp.is_current(history.document, document_identity_policy_t::revision_only));
+    auto transaction = document_command_transaction_t::from(history, stamp, "Legacy capture",
+        document_identity_policy_t::revision_only);
+    CHECK(transaction.is_ready());
+    CHECK_FALSE(transaction.has_copy());
+    ++history.document.revision;
+    CHECK_FALSE(stamp.is_revision_current(history.document.revision));
+    auto stale = document_command_transaction_t::from(history, stamp, "Legacy capture",
+        document_identity_policy_t::revision_only);
+    test::check_stale_action_message(stale.outcome.diagnostics, "Legacy capture");
+}
 
 TEST_CASE("document stamps reject replaced projects and changed revisions", "[unit][core][command]") {
     auto document = make_song();

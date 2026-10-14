@@ -11,12 +11,17 @@
 
 namespace wormedit {
 
+// Older revision-only captures keep that contract when adopting a shared stamp.
+enum class document_identity_policy_t { project_and_revision, revision_only };
+
 struct document_stamp_t {
     song_id_t project;
     std::uint64_t revision{};
 
     [[nodiscard]] static auto from(const song_document_t& document) noexcept -> document_stamp_t;
-    [[nodiscard]] auto is_current(const song_document_t& document) const noexcept -> bool;
+    [[nodiscard]] auto is_revision_current(std::uint64_t current_revision) const noexcept -> bool;
+    [[nodiscard]] auto is_current(const song_document_t& document,
+        document_identity_policy_t policy = document_identity_policy_t::project_and_revision) const noexcept -> bool;
     auto operator==(const document_stamp_t&) const -> bool = default;
 };
 
@@ -26,8 +31,8 @@ struct chart_stamp_t {
 
     [[nodiscard]] static auto from(const song_document_t& document, chart_id_t chart) noexcept
         -> chart_stamp_t;
-    [[nodiscard]] auto is_current(const song_document_t& current, chart_id_t selected) const noexcept
-        -> bool;
+    [[nodiscard]] auto is_current(const song_document_t& current, chart_id_t selected,
+        document_identity_policy_t policy = document_identity_policy_t::project_and_revision) const noexcept -> bool;
     auto operator==(const chart_stamp_t&) const -> bool = default;
 };
 
@@ -111,7 +116,7 @@ struct document_command_options_t {
 };
 
 // A synchronous command owns its working document only after the first edit.
-// Keep revision checks at apply entry points until command stamps are introduced.
+// Captured proposals use the stamped factory; synchronous commands use from(history).
 struct document_command_transaction_t {
     document_history_t& history;
     document_command_result_t outcome;
@@ -119,6 +124,14 @@ struct document_command_transaction_t {
     bool finished{};
 
     [[nodiscard]] static auto from(document_history_t& history)
+        -> document_command_transaction_t;
+    [[nodiscard]] static auto from(document_history_t& history, const document_stamp_t& stamp,
+        std::string_view label,
+        document_identity_policy_t policy = document_identity_policy_t::project_and_revision)
+        -> document_command_transaction_t;
+    [[nodiscard]] static auto from(document_history_t& history, const chart_stamp_t& stamp,
+        std::string_view label,
+        document_identity_policy_t policy = document_identity_policy_t::project_and_revision)
         -> document_command_transaction_t;
     [[nodiscard]] auto is_ready() const noexcept -> bool;
     [[nodiscard]] auto has_copy() const noexcept -> bool;

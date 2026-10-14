@@ -13,6 +13,7 @@ inline constexpr std::size_t maximum_sv_recipes_per_chart = 256;
 inline constexpr std::uint32_t maximum_sv_recipe_sample_points = 4096;
 
 struct sv_recipe_point_t {
+    auto operator==(const sv_recipe_point_t&) const -> bool = default;
     std::uint64_t absolute_row{};
     local_position_t position;
     double value{};
@@ -20,7 +21,16 @@ struct sv_recipe_point_t {
     bool transition_is_seconds{false};
 };
 
+struct sv_recipe_samples_t {
+    [[nodiscard]] static auto from(const chart_document_t& chart, const sv_recipe_t& recipe)
+        -> diagnosed_t<sv_recipe_samples_t>;
+    std::vector<sv_recipe_point_t> points;
+    bool tolerance_met{true};
+    auto operator==(const sv_recipe_samples_t&) const -> bool = default;
+};
+using sv_recipe_sample_outcome_t = diagnosed_t<sv_recipe_samples_t>;
 struct sv_recipe_sample_result_t {
+    [[nodiscard]] static auto from(sv_recipe_sample_outcome_t&& outcome) -> sv_recipe_sample_result_t;
     std::vector<sv_recipe_point_t> points;
     diagnostic_list_t diagnostics;
     // True means adaptive sampling reached max_points before meeting tolerance.
@@ -31,7 +41,17 @@ struct sv_recipe_sample_result_t {
     }
 };
 
+struct sv_recipe_compiled_output_t {
+    [[nodiscard]] static auto from(const chart_document_t& chart, sv_recipe_output_t output)
+        -> diagnosed_t<sv_recipe_compiled_output_t>;
+    sv_recipe_output_t output{sv_recipe_output_t::sv};
+    std::vector<sv_recipe_point_t> points;
+    auto operator==(const sv_recipe_compiled_output_t&) const -> bool = default;
+};
+using sv_recipe_compilation_outcome_t = diagnosed_t<sv_recipe_compiled_output_t>;
 struct sv_recipe_compilation_t {
+    [[nodiscard]] static auto from(sv_recipe_compilation_outcome_t&& outcome) -> sv_recipe_compilation_t;
+    [[nodiscard]] auto into_outcome() && -> sv_recipe_compilation_outcome_t;
     sv_recipe_output_t output{sv_recipe_output_t::sv};
     std::vector<sv_recipe_point_t> points;
     diagnostic_list_t diagnostics;
@@ -41,7 +61,10 @@ struct sv_recipe_compilation_t {
     }
 };
 
+using sv_recipe_export_bake_outcome_t = diagnosed_t<std::optional<chart_document_t>>;
 struct sv_recipe_export_bake_result_t {
+    [[nodiscard]] static auto from(const chart_document_t& chart) -> sv_recipe_export_bake_outcome_t;
+    [[nodiscard]] static auto from(sv_recipe_export_bake_outcome_t&& outcome) -> sv_recipe_export_bake_result_t;
     std::optional<chart_document_t> chart;
     diagnostic_list_t diagnostics;
 

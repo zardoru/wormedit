@@ -593,7 +593,7 @@ auto refine_adaptive_interval(adaptive_sampling_context_t& context, std::uint64_
 auto add_adaptive_sample_points(std::map<std::uint64_t, long double>& sampled,
                                 const sv_recipe_t& recipe,
                                 const std::pair<std::uint64_t, std::uint64_t>& range,
-                                sv_recipe_sample_result_t& result) -> bool {
+                                sv_recipe_sample_outcome_t& result) -> bool {
     if (!ensure_sample_point(sampled, range.first, recipe, range, result.diagnostics) ||
         !ensure_sample_point(sampled, range.second, recipe, range, result.diagnostics)) {
         return false;
@@ -610,7 +610,7 @@ auto add_adaptive_sample_points(std::map<std::uint64_t, long double>& sampled,
                                         .tolerance = to_long_double(recipe.sampling.tolerance),
                                         .sampled = sampled,
                                         .diagnostics = result.diagnostics,
-                                        .tolerance_met = result.tolerance_met};
+                                        .tolerance_met = result.value.tolerance_met};
     std::vector<std::uint64_t> mandatory;
     mandatory.reserve(sampled.size());
     for (const auto& [row, value] : sampled) {
@@ -627,7 +627,7 @@ auto materialize_sample_points(const chart_document_t&, const sv_recipe_t& recip
                                const measure_index_t& index,
                                const std::pair<std::uint64_t, std::uint64_t>& range,
                                std::map<std::uint64_t, long double>& sampled,
-                               sv_recipe_sample_result_t& result) -> bool {
+                               sv_recipe_sample_outcome_t& result) -> bool {
     if (sampled.size() > maximum_sv_recipe_sample_points) {
         reject(result.diagnostics, diagnostic_code_t::invalid_resolution,
                "SV recipe structural and sampled points exceed the point cap");
@@ -641,16 +641,16 @@ auto materialize_sample_points(const chart_document_t&, const sv_recipe_t& recip
             return false;
         }
     }
-    result.points.reserve(sampled.size());
+    result.value.points.reserve(sampled.size());
     for (const auto& [row, value] : sampled) {
         const auto position = position_at_row(index, row);
         if (!position) {
             reject(result.diagnostics, diagnostic_code_t::row_out_of_range,
                    "sampled SV recipe point is outside chart geometry");
-            result.points.clear();
+            result.value.points.clear();
             return false;
         }
-        result.points.push_back({.absolute_row = row,
+        result.value.points.push_back({.absolute_row = row,
                                  .position = *position,
                                  .value = static_cast<double>(value),
                                  .transition_duration =
@@ -663,9 +663,9 @@ auto materialize_sample_points(const chart_document_t&, const sv_recipe_t& recip
 
 } // namespace
 
-auto sample_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe)
-    -> sv_recipe_sample_result_t {
-    sv_recipe_sample_result_t result;
+auto sv_recipe_samples_t::from(const chart_document_t& chart, const sv_recipe_t& recipe)
+    -> sv_recipe_sample_outcome_t {
+    sv_recipe_sample_outcome_t result{};
     result.diagnostics = validate_sv_recipe(chart, recipe);
     if (!result.diagnostics.empty()) {
         return result;
@@ -691,6 +691,14 @@ auto sample_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe)
     }
     (void)materialize_sample_points(chart, recipe, index, range, sampled, result);
     return result;
+}
+
+auto sv_recipe_sample_result_t::from(sv_recipe_sample_outcome_t&& outcome) -> sv_recipe_sample_result_t {
+    return {.points = std::move(outcome.value.points), .diagnostics = std::move(outcome.diagnostics),
+        .tolerance_met = outcome.value.tolerance_met};
+}
+auto sample_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe) -> sv_recipe_sample_result_t {
+    return sv_recipe_sample_result_t::from(sv_recipe_samples_t::from(chart, recipe));
 }
 
 namespace {
@@ -878,9 +886,20 @@ auto compile_sv_recipes_impl(const chart_document_t& chart, sv_recipe_output_t o
 
 } // namespace
 
-auto compile_sv_recipes(const chart_document_t& chart, sv_recipe_output_t output)
-    -> sv_recipe_compilation_t {
-    return compile_sv_recipes_impl(chart, output, nullptr, std::nullopt);
+auto sv_recipe_compilation_t::from(sv_recipe_compilation_outcome_t&& outcome) -> sv_recipe_compilation_t {
+    return {.output = outcome.value.output, .points = std::move(outcome.value.points),
+        .diagnostics = std::move(outcome.diagnostics)};
+}
+auto sv_recipe_compilation_t::into_outcome() && -> sv_recipe_compilation_outcome_t {
+    return {.value = {.output = output, .points = std::move(points)}, .diagnostics = std::move(diagnostics)};
+}
+auto sv_recipe_compiled_output_t::from(const chart_document_t& chart, sv_recipe_output_t output)
+    -> sv_recipe_compilation_outcome_t {
+    // The pure shared implementation still feeds unchanged staged preview callers.
+    return compile_sv_recipes_impl(chart, output, nullptr, std::nullopt).into_outcome();
+}
+auto compile_sv_recipes(const chart_document_t& chart, sv_recipe_output_t output) -> sv_recipe_compilation_t {
+    return sv_recipe_compilation_t::from(sv_recipe_compiled_output_t::from(chart, output));
 }
 
 namespace {
@@ -1258,12 +1277,15 @@ auto bake_speed_events(chart_document_t& chart, const measure_index_t& index,
 
 } // namespace
 
-auto bake_sv_recipes_for_export(const chart_document_t& chart) -> sv_recipe_export_bake_result_t {
-    sv_recipe_export_bake_result_t result;
+auto sv_recipe_export_bake_result_t::from(sv_recipe_export_bake_outcome_t&& outcome) -> sv_recipe_export_bake_result_t {
+    return {.chart = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
+}
+auto sv_recipe_export_bake_result_t::from(const chart_document_t& chart) -> sv_recipe_export_bake_outcome_t {
+    sv_recipe_export_bake_outcome_t result{};
     auto baked = chart;
-    if (std::ranges::none_of(baked.sv_recipes, [](const auto& recipe) { return recipe.enabled; })) {
+    if (std::ranges::none_of(baked.sv_recipes, &sv_recipe_t::enabled)) {
         baked.sv_recipes.clear();
-        result.chart = std::move(baked);
+        result.value = std::move(baked);
         return result;
     }
     for (auto& recipe : baked.sv_recipes) {
@@ -1300,8 +1322,12 @@ auto bake_sv_recipes_for_export(const chart_document_t& chart) -> sv_recipe_expo
         return result;
     }
     baked.sv_recipes.clear();
-    result.chart = std::move(baked);
+    result.value = std::move(baked);
     return result;
+}
+
+auto bake_sv_recipes_for_export(const chart_document_t& chart) -> sv_recipe_export_bake_result_t {
+    return sv_recipe_export_bake_result_t::from(sv_recipe_export_bake_result_t::from(chart));
 }
 
 auto begin_sv_recipe_range_drag(const document_history_t& history, chart_id_t chart_id,

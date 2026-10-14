@@ -18,22 +18,22 @@ auto is_valid_clip(const audition_clip_t& clip) -> bool {
 
 } // namespace
 
-auto audition_transport_bridge_t::start(std::span<const audition_clip_t> clips)
-    -> audition_start_result_t {
+auto audition_transport_bridge_t::start_clips(std::span<const audition_clip_t> clips)
+    -> audition_start_outcome_t {
     if (clips.empty()) {
-        return {.status = audition_start_status_t::empty, .token = std::nullopt};
+        return std::unexpected(audition_start_status_t::empty);
     }
     if (clips.size() > maximum_layers_) {
-        return {.status = audition_start_status_t::too_many_layers, .token = std::nullopt};
+        return std::unexpected(audition_start_status_t::too_many_layers);
     }
     if (!std::ranges::all_of(clips, is_valid_clip)) {
-        return {.status = audition_start_status_t::invalid_clip, .token = std::nullopt};
+        return std::unexpected(audition_start_status_t::invalid_clip);
     }
 
     const auto token = transport_.start();
     if (!token.has_value()) {
         token_.reset();
-        return {.status = audition_start_status_t::transport_start_failed, .token = std::nullopt};
+        return std::unexpected(audition_start_status_t::transport_start_failed);
     }
     token_ = token;
     std::vector<transport_voice_t> voices;
@@ -51,17 +51,25 @@ auto audition_transport_bridge_t::start(std::span<const audition_clip_t> clips)
     if (status != voice_schedule_status_t::scheduled) {
         static_cast<void>(transport_.stop());
         token_.reset();
-        return {
-            .status = status == voice_schedule_status_t::capacity_exceeded
-                          ? audition_start_status_t::transport_capacity_exceeded
-                          : audition_start_status_t::transport_rejected_clip,
-            .token = std::nullopt,
-            .scheduled_layers = 0,
-        };
+        return std::unexpected(status == voice_schedule_status_t::capacity_exceeded
+                                   ? audition_start_status_t::transport_capacity_exceeded
+                                   : audition_start_status_t::transport_rejected_clip);
     }
+    return started_audition_t{.token = *token, .scheduled_layers = clips.size()};
+}
+
+auto audition_start_result_t::from(audition_start_outcome_t&& outcome)
+    -> audition_start_result_t {
+    if (!outcome)
+        return {.status = outcome.error(), .token = std::nullopt, .scheduled_layers = 0};
     return {.status = audition_start_status_t::started,
-            .token = token,
-            .scheduled_layers = clips.size()};
+            .token = outcome->token,
+            .scheduled_layers = outcome->scheduled_layers};
+}
+
+auto audition_transport_bridge_t::start(std::span<const audition_clip_t> clips)
+    -> audition_start_result_t {
+    return audition_start_result_t::from(start_clips(clips));
 }
 
 auto audition_transport_bridge_t::stop() noexcept -> transport_stop_result_t {

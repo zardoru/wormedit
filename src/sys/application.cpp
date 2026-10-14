@@ -4597,8 +4597,8 @@ struct application_t::implementation_t {
             views.pending_close, session.project_identity.native_project_loaded &&
                                      !session.project_identity.active_project_path.empty());
         build_external_player_view(preferences.external_player_runtime, flattened.view);
-        wormedit::sys::project_chart_view(views.project_chart_runtime, session.history.document,
-                                          flattened.view.setup);
+        wormedit::sys::build_project_chart_view(views.project_chart_runtime,
+                                                session.history.document, flattened.view.setup);
         flattened.view.setup.selected_chart_id = flattened.view.selected_chart_id;
         build_tap_timing_view(views.tap_runtime, session.history.document, views.tap_clock,
                            command_registry, flattened.view);

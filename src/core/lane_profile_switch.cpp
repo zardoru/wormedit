@@ -11,6 +11,34 @@
 #include <utility>
 
 namespace wormedit {
+
+// Key bindings for a built-in BMS layout whose lane IDs were just assigned, for a chart that has
+// none; the built-in lanes and the layout's lanes pair up by display order.
+auto input_profile_t::with_defaults(const chart_document_t& chart, const lane_layout_t& layout)
+    -> std::optional<input_profile_t> {
+    if (!chart.input_profile.bindings.empty())
+        return std::nullopt;
+    for (const auto& builtin : wormedit::built_in_bms_lane_profiles()) {
+        if (builtin.profile.layout.profile_id != layout.profile_id)
+            continue;
+        lane_layout_t source{.lanes = builtin.profile.layout.lanes};
+        auto target = layout.lanes;
+        std::ranges::stable_sort(source.lanes, {}, &lane_definition_t::display_order);
+        std::ranges::stable_sort(target, {}, &lane_definition_t::display_order);
+        if (source.lanes.size() != target.size())
+            return std::nullopt;
+        auto input = builtin.profile.input;
+        for (auto& binding : input.bindings) {
+            const auto found = source.find(binding.lane);
+            if (found == nullptr)
+                return std::nullopt;
+            binding.lane = target[static_cast<std::size_t>(found - source.lanes.data())].id;
+        }
+        return input;
+    }
+    return std::nullopt;
+}
+
 namespace {
 
 constexpr std::array<std::string_view, 3> step_types{"pump-single", "pump-double", "dance-solo"};

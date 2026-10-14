@@ -28,12 +28,16 @@ template<class Rational>
     zero_denominator_policy_t policy = rational_zero_denominator_policy) noexcept -> double {
     return static_cast<double>(to_long_double(value, policy));
 }
-enum class row_clamp_policy_t { both_ends, upper_only };
+enum class row_clamp_policy_t { both_ends, upper_only, reject_outside };
 [[nodiscard]] inline auto nearest_row(long double row, std::uint64_t total_rows,
     row_clamp_policy_t policy) -> std::optional<std::uint64_t> {
     if (!std::isfinite(row) || total_rows == 0 ||
-        (policy == row_clamp_policy_t::upper_only && row < 0)) return std::nullopt;
+        (policy != row_clamp_policy_t::both_ends && row < 0))
+        return std::nullopt;
     const auto nearest = std::floor(row + 0.5L);
+    if (policy == row_clamp_policy_t::reject_outside &&
+        nearest >= static_cast<long double>(total_rows))
+        return std::nullopt;
     if (nearest <= 0) return 0;
     if (nearest >= static_cast<long double>(total_rows)) return total_rows - 1;
     return static_cast<std::uint64_t>(nearest);

@@ -107,10 +107,9 @@ auto dispatch_bmson_razor_input(const WormUiComposeInputAction& input,
     if (gesture_active) {
         return "Finish or cancel the active Compose gesture before using the BMSON razor.";
     }
-    const auto chart =
-        std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+    const auto* chart = history.document.find_chart(state.chart);
     const auto current_view = compose_view_for_state(history, state);
-    if (chart == history.document.charts.end() || !current_view || !std::isfinite(input.y_pixels)) {
+    if (chart == nullptr || !current_view || !std::isfinite(input.y_pixels)) {
         return "The BMSON chart field is no longer available.";
     }
     auto& stroke = application_state.project.compose_gesture.bmson_razor_stroke;
@@ -389,16 +388,14 @@ auto update_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_
     if (!state.pending_note_move_gesture ||
         state.pending_note_move_gesture->reference_note != object_id_t{input.object_id})
         return compose_input_family_result_t::from("BGM event drag expired before release.");
-    const auto chart =
-        std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+    const auto* chart = history.document.find_chart(state.chart);
     const auto view = compose_view_for_state(history, state);
-    auto position = chart != history.document.charts.end() && view
-                        ? position_at_compose_y(*chart, *view, input.y_pixels)
-                        : std::nullopt;
+    auto position = chart != nullptr && view ? position_at_compose_y(*chart, *view, input.y_pixels)
+                                             : std::nullopt;
     std::optional<std::uint64_t> virtual_row;
     if (state.y_lock)
         position = state.pending_note_move_gesture->preview_position;
-    else if (!position && chart != history.document.charts.end() && view)
+    else if (!position && chart != nullptr && view)
         virtual_row =
             virtual_bms_move_target(*chart, *view, input.y_pixels,
                                     edit_snap_denominator(*chart, state), virtual_bms_row_at);
@@ -474,10 +471,9 @@ auto insert_bmson_stem_point(const WormUiComposeInputAction& input,
         !wormedit::ui::compose_notes_editable(compose_mode_of(application_state)))
         return compose_input_family_result_t::from(
             "Draw requires an editable chart without an active gesture.");
-    const auto chart =
-        std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+    const auto* chart = history.document.find_chart(state.chart);
     const auto view = compose_view_for_state(history, state);
-    if (chart == history.document.charts.end() || !view || !std::isfinite(input.y_pixels))
+    if (chart == nullptr || !view || !std::isfinite(input.y_pixels))
         return compose_input_family_result_t::from("The BMSON chart field is no longer available.");
     const auto raw = position_at_compose_y(*chart, *view, input.y_pixels);
     const auto position = raw ? resolve_resource_placement_position(
@@ -620,9 +616,8 @@ struct compose_input_context_t {
     }
 
     auto chart() const -> const wormedit::chart_document_t* {
-        const auto found = std::ranges::find(environment.document.history.document.charts, state.chart,
-                                             &wormedit::chart_document_t::id);
-        return found == environment.document.history.document.charts.end() ? nullptr : &*found;
+        const auto* found = environment.document.history.document.find_chart(state.chart);
+        return found;
     }
     auto selection_mode(WormUiComposeSelectionMode mode) const
         -> std::optional<wormedit::editor_area_selection_mode_t> {
@@ -720,7 +715,7 @@ struct compose_input_context_t {
                             const wormedit::editor_interaction_view_model_t& view,
                             double y_pixels) const -> std::optional<std::uint64_t> {
         using namespace wormedit;
-        if (!chart_has_virtual_tail(chart) || !std::isfinite(y_pixels) || y_pixels < 0.0 ||
+        if (!has_chart_virtual_tail(chart) || !std::isfinite(y_pixels) || y_pixels < 0.0 ||
             y_pixels >= view.viewport_height_pixels)
             return std::nullopt;
         const auto built = build_virtual_canvas(chart);
@@ -736,9 +731,12 @@ struct compose_input_context_t {
         if (!std::isfinite(row) || row < 0.0L ||
             row >= static_cast<long double>(canvas->total_rows))
             return std::nullopt;
-        const auto canvas_row = static_cast<std::uint64_t>(std::floor(row + 0.5L));
-        const auto measure = canvas->measure_containing(canvas_row);
-        return measure && !measure->authored ? std::optional{canvas_row} : std::nullopt;
+        const auto canvas_row =
+            nearest_row(row, canvas->total_rows, row_clamp_policy_t::reject_outside);
+        if (!canvas_row)
+            return std::nullopt;
+        const auto measure = canvas->measure_containing(*canvas_row);
+        return measure && !measure->authored ? canvas_row : std::nullopt;
     }
     auto virtual_bms_hit_at(const wormedit::chart_document_t& chart,
                             const wormedit::editor_interaction_view_model_t& view, double x_pixels,
@@ -779,10 +777,9 @@ auto begin_alt_pointer_gesture(const WormUiComposeInputAction& input,
     using namespace wormedit;
     auto& [environment, state, result, accepted] = context;
     auto& history = environment.document.history;
-    const auto chart =
-        std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+    const auto* chart = history.document.find_chart(state.chart);
     const auto view = compose_view_for_state(history, state);
-    if (chart == history.document.charts.end() || !view) {
+    if (chart == nullptr || !view) {
         return compose_input_family_result_t::from(
             "The selected chart field is no longer available.");
     }
@@ -824,10 +821,9 @@ auto update_alt_pointer_gesture(const WormUiComposeInputAction& input,
     auto& [environment, state, result, accepted] = context;
     auto& history = environment.document.history;
     auto& application_state = environment.commands;
-    const auto chart =
-        std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+    const auto* chart = history.document.find_chart(state.chart);
     const auto view = compose_view_for_state(history, state);
-    if (chart == history.document.charts.end() || !view) {
+    if (chart == nullptr || !view) {
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
         return compose_input_family_result_t::from(
             "The selected chart field is no longer available.");
@@ -905,10 +901,9 @@ auto dispatch_note_paint_gesture(const WormUiComposeInputAction& input,
         }
         return compose_input_family_result_t::continue_with_result();
     }
-    const auto chart =
-        std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+    const auto* chart = history.document.find_chart(state.chart);
     const auto view = compose_view_for_state(history, state);
-    if (chart == history.document.charts.end() || !view) {
+    if (chart == nullptr || !view) {
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
         return compose_input_family_result_t::from(
             "The selected chart field is no longer available.");
@@ -1010,10 +1005,9 @@ auto dispatch_semantic_layer_paint_gesture(const WormUiComposeInputAction& input
     auto& application_state = context.environment.commands;
     if (!semantic_layer_paint_armed(application_state))
         return handle_inactive_semantic_layer_paint(context);
-    const auto chart =
-        std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+    const auto* chart = history.document.find_chart(state.chart);
     const auto view = compose_view_for_state(history, state);
-    if (chart == history.document.charts.end() || !view) {
+    if (chart == nullptr || !view) {
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
         return compose_input_family_result_t::from(
             "The selected chart field is no longer available.");
@@ -1045,10 +1039,9 @@ auto dispatch_note_move_gesture(const WormUiComposeInputAction& input,
     auto& [environment, state, result, accepted] = context;
     auto& history = environment.document.history;
     auto& application_state = environment.commands;
-    const auto chart =
-        std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+    const auto* chart = history.document.find_chart(state.chart);
     const auto view = compose_view_for_state(history, state);
-    if (chart == history.document.charts.end() || !view) {
+    if (chart == nullptr || !view) {
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
         return compose_input_family_result_t::from(
             "The selected chart field is no longer available.");

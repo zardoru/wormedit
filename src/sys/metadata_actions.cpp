@@ -84,12 +84,13 @@ auto dispatch_chart_edit(const WormUiWorkspaceAction& action, document_history_t
           !action.metadata_chart_rating_denominator_text))) {
         return {notification_severity_t::warning, "Chart metadata edit payload is incomplete."};
     }
-    const auto rating = make_chart_rating_metadata_edit(
+    const auto rating = wormedit::chart_rating_edit_t::from(
         chart_id_t{action.metadata_chart_id}, !action.metadata_has_chart_rating,
         action.metadata_chart_rating_numerator_text ? action.metadata_chart_rating_numerator_text
                                                     : "",
-        action.metadata_chart_rating_denominator_text ? action.metadata_chart_rating_denominator_text
-                                                      : "");
+        action.metadata_chart_rating_denominator_text
+            ? action.metadata_chart_rating_denominator_text
+            : "");
     if (!rating)
         return {notification_severity_t::warning, "Rating must use a signed 64-bit numerator and positive 64-bit denominator."};
     return publish_metadata_edit(
@@ -117,10 +118,14 @@ auto dispatch_batch_chart_edit(const WormUiWorkspaceAction& action, document_his
     if (action.metadata_batch_edit_author) batch.author = action.metadata_chart_author;
     batch.edit_rating = action.metadata_batch_edit_rating;
     if (batch.edit_rating) {
-        const auto rating = make_chart_rating_metadata_edit(
+        const auto rating = wormedit::chart_rating_edit_t::from(
             batch.charts.front(), !action.metadata_has_chart_rating,
-            action.metadata_chart_rating_numerator_text ? action.metadata_chart_rating_numerator_text : "",
-            action.metadata_chart_rating_denominator_text ? action.metadata_chart_rating_denominator_text : "");
+            action.metadata_chart_rating_numerator_text
+                ? action.metadata_chart_rating_numerator_text
+                : "",
+            action.metadata_chart_rating_denominator_text
+                ? action.metadata_chart_rating_denominator_text
+                : "");
         if (!rating)
             return {notification_severity_t::warning, "Rating must use a signed 64-bit numerator and positive 64-bit denominator."};
         batch.rating = rating->rating;

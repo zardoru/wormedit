@@ -26,9 +26,5 @@ namespace wormedit {
 [[nodiscard]] auto is_head_blocked_by_warp(const chart_document_t& chart,
                                         const measure_index_t& index, std::uint64_t absolute,
                                         note_kind_t kind) -> bool;
-// Compatibility for the coordinated sys/UI migration.
-inline auto head_blocked_by_warp(const chart_document_t& chart,
-                                        const measure_index_t& index, std::uint64_t absolute,
-                                        note_kind_t kind) -> bool { return is_head_blocked_by_warp(chart, index, absolute, kind); }
 
 } // namespace wormedit

@@ -20,6 +20,8 @@
 
 namespace wormedit {
 
+struct chart_document_t;
+
 inline constexpr std::size_t default_maximum_chart_objects = 1'000'000;
 
 struct signed_rational_t {
@@ -238,6 +240,10 @@ struct lane_binding_t {
 };
 
 struct input_profile_t {
+    [[nodiscard]] static auto with_defaults(const chart_document_t& chart,
+                                            const lane_layout_t& layout)
+        -> std::optional<input_profile_t>;
+
     std::string profile_id;
     std::vector<lane_binding_t> bindings;
     std::uint32_t stage_count{1};
@@ -971,8 +977,6 @@ struct quantize_request_t {
 
 [[nodiscard]] auto error(diagnostic_code_t code, std::string message,
                          std::optional<object_id_t> object = std::nullopt) -> diagnostic_t;
-[[nodiscard]] auto find_chart(const song_document_t& document, chart_id_t id) -> const chart_document_t*;
-[[nodiscard]] auto find_chart(song_document_t& document, chart_id_t id) -> chart_document_t*;
 
 struct conversion_report_t {
     diagnostic_list_t diagnostics;

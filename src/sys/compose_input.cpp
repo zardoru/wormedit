@@ -155,10 +155,8 @@ auto propose_bmson_bgm_markers(const wormedit::document_history_t& history,
         state.selected_objects.front().id != reference) {
         return "Select one BMSON BGM marker to choose its sound channel.";
     }
-    const auto chart = std::ranges::find(history.document.charts, state.chart,
-                                         &chart_document_t::id);
-    if (chart == history.document.charts.end() ||
-        chart->source_family != format_family_t::bmson) {
+    const auto* chart = history.document.find_chart(state.chart);
+    if (chart == nullptr || chart->source_family != format_family_t::bmson) {
         return "The selected chart is not a BMSON chart.";
     }
     if (const auto validation = validate_bmson_marker_positions(*chart, markers);
@@ -416,9 +414,9 @@ auto compose_stem_geometry(const wormedit::document_history_t& history,
     std::optional<wormedit::resource_id_t> sound) -> std::optional<wormedit::bmson_source_geometry_t> {
     using namespace wormedit;
     if (!sound) return std::nullopt;
-    const auto chart = std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+    const auto* chart = history.document.find_chart(state.chart);
     const auto resource = std::ranges::find(history.document.resources, *sound, &resource_entry_t::id);
-    if (chart == history.document.charts.end() || resource == history.document.resources.end())
+    if (chart == nullptr || resource == history.document.resources.end())
         return std::nullopt;
     return retained_bmson_source_geometry(history, cache, *chart, resource->asset);
 }
@@ -543,7 +541,7 @@ auto revise_bmson_draft_marker(const WormUiComposeInputAction& input,
                 notification_source_t::edit);
         proposed[index].playable_lane = lane;
     }
-    auto temporary = make_document_history(history.document, 1);
+    auto temporary = wormedit::document_history_t::from(history.document, 1);
     const auto checked = insert_bmson_sound_markers(temporary,
                                                     draft->stamp.chart, draft->reference, proposed);
     if (!checked)
@@ -573,9 +571,8 @@ auto toggle_bmson_restart(const WormUiComposeInputAction& input, bmson_compose_c
     if (gesture_active)
         return compose_input_family_result_t::from(
             "Finish or cancel the active Compose gesture before editing a BMSON reset.");
-    const auto chart =
-        std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
-    if (chart == history.document.charts.end())
+    const auto* chart = history.document.find_chart(state.chart);
+    if (chart == nullptr)
         return compose_input_family_result_t::from(
             "The selected BMSON chart is no longer available.");
     std::optional<object_id_t> source_event;
@@ -687,7 +684,7 @@ void update_compose_viewport_pointer_input(const WormUiWorkspaceAction& ui_actio
             viewport_input.middle_click(middle_click_pane,
                                         ui_action.compose_viewport_middle_click_x_pixels,
                                         ui_action.compose_viewport_middle_click_y_pixels);
-            scene_cache.frame.viewport_autoscroll_active = viewport_input.autoscroll_active();
+            scene_cache.frame.viewport_autoscroll_active = viewport_input.is_autoscroll_active();
             if (scene_cache.frame.viewport_autoscroll_active) {
                 scene_cache.frame.viewport_autoscroll_anchor_x_pixels =
                     ui_action.compose_viewport_middle_click_x_pixels;
@@ -705,7 +702,7 @@ void update_compose_viewport_pointer_input(const WormUiWorkspaceAction& ui_actio
         }
     }
     if (ui_action.compose_input_count != 0 && !ui_action.compose_viewport_middle_click) {
-        if (viewport_input.normal_edit_press()) {
+        if (viewport_input.is_normal_edit_press()) {
             scene_cache.frame.viewport_autoscroll_active = false;
         }
     }
@@ -1237,9 +1234,10 @@ auto select_compose_bms_measure(const WormUiComposeInputAction& input,
     if (!std::isfinite(exact_row) || exact_row < 0.0L ||
         exact_row >= static_cast<long double>(canvas->total_rows))
         return "The measure number is outside #000-#999.";
-    const auto row =
-        std::min(static_cast<std::uint64_t>(std::floor(exact_row + 0.5L)), canvas->total_rows - 1);
-    const auto measure = canvas->measure_containing(row);
+    const auto row = nearest_row(exact_row, canvas->total_rows, row_clamp_policy_t::upper_only);
+    if (!row)
+        return "The selected BMS measure is unavailable.";
+    const auto measure = canvas->measure_containing(*row);
     if (!measure)
         return "The selected BMS measure is unavailable.";
     result = dispatch_editor_action(context.environment.document.history, context.state,
@@ -1581,7 +1579,8 @@ auto lane_key_places_inside_warp(const WormUiComposeInputAction& input,
     const auto built = wormedit::build_measure_index(*context.input_chart);
     const auto* index = std::get_if<wormedit::measure_index_t>(&built);
     const auto row = index ? wormedit::absolute_row(*index, state.cursor) : std::nullopt;
-    return row && wormedit::head_blocked_by_warp(*context.input_chart, *index, *row, state.armed_note_kind);
+    return row && wormedit::is_head_blocked_by_warp(*context.input_chart, *index, *row,
+                                                    state.armed_note_kind);
 }
 
 auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
@@ -2161,7 +2160,7 @@ void apply_compose_pinch_zoom(const WormUiComposeViewportInput& input,
                            wormedit::notification_source_t::input, status);
         return;
     }
-    (void)context.environment.controls.viewport.normal_edit_press();
+    (void)context.environment.controls.viewport.is_normal_edit_press();
     const auto result = wormedit::dispatch_editor_action(
         context.environment.document.history, context.state,
         wormedit::adjust_editor_zoom_action_t{.factor = input.zoom_factor,
@@ -2224,7 +2223,7 @@ auto dispatch_compose_viewport_batch(compose_input_context_t& context,
 
 void reset_compose_autoscroll_if_idle(compose_input_context_t& context) {
     context.environment.controls.cache.frame.viewport_autoscroll_active =
-        context.environment.controls.viewport.autoscroll_active();
+        context.environment.controls.viewport.is_autoscroll_active();
     if (context.environment.controls.cache.frame.viewport_autoscroll_active)
         return;
     context.environment.controls.cache.frame.viewport_autoscroll_anchor_x_pixels = 0.0;
@@ -2281,7 +2280,7 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
         ui_action.compose_input_viewport_width_pixels <= 0.0) {
         scene_cache.navigation_travel.cancel();
         if (workspace.active_tab != workspace_tab_t::compose ||
-            editor_gestures_stale(state, history.document.revision))
+            is_editor_gestures_stale(state, history.document.revision))
             retire_interrupted_compose_input(history, state, viewport_input, navigation_input,
                                              application_state, scene_cache);
         const auto message = stale_action_message("Compose input");
@@ -2305,44 +2304,44 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
             .post_feedback(notification_severity_t::warning, notification_source_t::input, message);
         return message;
     }
-    const auto input_chart =
-        std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
-    if (input_chart != history.document.charts.end())
+    const auto* input_chart = history.document.find_chart(state.chart);
+    if (input_chart != nullptr)
         arm_compose_note_layers(state, application_state, *input_chart);
-    const auto bgm_lane_count = input_chart == history.document.charts.end()
-                                    ? std::size_t{}
-                                    : input_chart->bgm_source_lanes.size();
+    const auto bgm_lane_count =
+        input_chart == nullptr ? std::size_t{} : input_chart->bgm_source_lanes.size();
     const auto horizontal_layout = compose_horizontal_layout(
-        compose_editor_layout_width(ui_action.compose_input_viewport_width_pixels,
-                                    application_state.project.compose_view.compose_editor_right_pixels),
-        input_chart == history.document.charts.end() ? 0 : maximum_layout_lane_count(*input_chart),
-        bgm_lane_count != 0, state.bga_lane_visible && input_chart != history.document.charts.end()
-            ? std::popcount(editor_bga_visible_lane_mask(*input_chart, state.bga_revealed_lane_mask)) : 0,
+        compose_editor_layout_width(
+            ui_action.compose_input_viewport_width_pixels,
+            application_state.project.compose_view.compose_editor_right_pixels),
+        input_chart == nullptr ? 0 : maximum_layout_lane_count(*input_chart), bgm_lane_count != 0,
+        state.bga_lane_visible && input_chart != nullptr
+            ? std::popcount(
+                  editor_bga_visible_lane_mask(*input_chart, state.bga_revealed_lane_mask))
+            : 0,
         effective_compose_timing_lane_mask(application_state));
     const auto bgm_pane_width = horizontal_layout.bgm_pane_width_pixels;
     const auto bgm_pane_left_pixels = horizontal_layout.bgm_pane_left_pixels;
     const auto field_left_pixels = horizontal_layout.field_left_pixels;
     const auto field_width_pixels = horizontal_layout.playable_field_width_pixels;
-    const auto chart =
-        std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+    const auto* chart = history.document.find_chart(state.chart);
     const auto gesture_active = has_pending_editor_gesture(state);
-    auto input_context = compose_input_context_t{
-        .environment = environment,
-        .ui_action = ui_action,
-        .state = state,
-        .notifications = notifications,
-        .input_chart = input_chart == history.document.charts.end() ? nullptr : &*input_chart,
-        .gesture_active = gesture_active,
-        .bgm_lane_count = bgm_lane_count,
-        .bgm_pane_width = bgm_pane_width,
-        .bgm_pane_left_pixels = bgm_pane_left_pixels,
-        .field_left_pixels = field_left_pixels,
-        .field_width_pixels = field_width_pixels};
+    auto input_context =
+        compose_input_context_t{.environment = environment,
+                                .ui_action = ui_action,
+                                .state = state,
+                                .notifications = notifications,
+                                .input_chart = input_chart == nullptr ? nullptr : &*input_chart,
+                                .gesture_active = gesture_active,
+                                .bgm_lane_count = bgm_lane_count,
+                                .bgm_pane_width = bgm_pane_width,
+                                .bgm_pane_left_pixels = bgm_pane_left_pixels,
+                                .field_left_pixels = field_left_pixels,
+                                .field_width_pixels = field_width_pixels};
     update_compose_viewport_pointer_input(ui_action, viewport_input, scene_cache, bgm_pane_width,
                                           bgm_pane_left_pixels,
                                           ui_action.compose_input_viewport_width_pixels);
     update_compose_pointer_hover(
-        ui_action, gesture_active, chart == history.document.charts.end() ? nullptr : &*chart,
+        ui_action, gesture_active, chart == nullptr ? nullptr : &*chart,
         scene_cache.frame.interaction_view ? &*scene_cache.frame.interaction_view : nullptr,
         history.document.revision, field_left_pixels, field_width_pixels, scene_cache,
         application_state.preferences.editor_preferences);
@@ -2479,7 +2478,7 @@ auto selected_chart(const wormedit::document_history_t& history,
     if (!workspace.selected_chart) {
         return nullptr;
     }
-    return wormedit::find_chart(history.document, *workspace.selected_chart);
+    return history.document.find_chart(*workspace.selected_chart);
 }
 
 auto visible_semantic_layer_by_id(const wormedit::chart_document_t& chart, wormedit::layer_id_t id)

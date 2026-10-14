@@ -1,8 +1,8 @@
 #include "sys/compose_area_actions.h"
+#include "core/timing_arithmetic.h"
 #include "sys/compose_action_context.h"
 #include "sys/compose_quantize_request.h"
 #include <algorithm>
-#include <numeric>
 #include <ranges>
 #include <utility>
 #include <wormedit/core/chart_clipboard.h>
@@ -107,16 +107,17 @@ compose_action_outcome_t add_speed_span_over_area(compose_action_context_t& cont
     const auto end = absolute_row(measures, span.end);
     if (!begin || !end || *begin >= *end || chart.divisions_per_standard_measure == 0)
         return compose_action_outcome_t::blocked("The area must cover at least one row.");
-    const auto numerator = (*end - *begin) * 4;
-    const auto divisor = std::gcd(numerator, chart.divisions_per_standard_measure);
-    const rational_t beats{numerator / divisor, chart.divisions_per_standard_measure / divisor};
+    const auto beats = timing_arithmetic::rows_to_beat_fraction<rational_t>(
+        *end - *begin, chart.divisions_per_standard_measure);
+    if (!beats)
+        return compose_action_outcome_t::blocked("The area duration is too large.");
     auto inserted =
         apply_scroll_speed_edit(context.environment.document.history,
                                 wormedit::insert_edit_t<wormedit::speed_edit_value_t>{
                                     .chart = chart.id,
                                     .value = {.position = span.begin,
                                               .settings = {.multiplier = {1, 1},
-                                                           .transition_beats = beats,
+                                                           .transition_beats = *beats,
                                                            .transition_is_seconds = false}}});
     if (inserted.applied)
         return compose_action_outcome_t::from(std::move(inserted), compose_action_description_t{.success = "SPEEDS span added over the selected area.", .unchanged = {}, .rebind_failure = "Area action applied, but workspace rebinding failed.", .source = notification_source_t::edit, .diagnostic_policy = compose_diagnostic_feedback_policy_t::rejected_only});
@@ -270,8 +271,8 @@ compose_action_outcome_t convert_compose_area_to_pause(compose_action_context_t&
                    : compose_action_outcome_t::from(std::move(result.diagnostics),
                                                     notification_source_t::edit,
                                                     compose_feedback_delivery_t::first_diagnostic);
-    const auto chart = std::ranges::find(context.environment.document.history.document.charts,
-                                         context.state.chart, &chart_document_t::id);
+    const auto* chart =
+        context.environment.document.history.document.find_chart(context.state.chart);
     place_cursor_at(context.state, chart->pauses.back().position);
     context.state.retained_selection_range.reset();
     context.state.retained_canvas_selection_range.reset();
@@ -320,9 +321,8 @@ auto compose_area_delete_supported(const wormedit::chart_document_t& chart,
 
 auto compose_area_delete_supported(wormedit::document_history_t& history,
                                    const wormedit::editor_interaction_state_t& state) -> bool {
-    const auto chart =
-        std::ranges::find(history.document.charts, state.chart, &wormedit::chart_document_t::id);
-    if (chart == history.document.charts.end())
+    const auto* chart = history.document.find_chart(state.chart);
+    if (chart == nullptr)
         return false;
     const auto built = wormedit::build_measure_index(*chart);
     const auto* index = std::get_if<wormedit::measure_index_t>(&built);
@@ -362,9 +362,9 @@ dispatch_compose_area_action(compose_action_context_t& context) {
         return apply_compose_quantize_selection(context.environment.document.history, context.state,
                                                 context.environment.editor.commands,
                                                 context.action);
-    const auto chart = std::ranges::find(context.environment.document.history.document.charts,
-                                         context.state.chart, &chart_document_t::id);
-    if (chart == context.environment.document.history.document.charts.end())
+    const auto* chart =
+        context.environment.document.history.document.find_chart(context.state.chart);
+    if (chart == nullptr)
         return compose_action_outcome_t::blocked("The chart is no longer available.");
     const auto built = build_measure_index(*chart);
     const auto* measures = std::get_if<measure_index_t>(&built);

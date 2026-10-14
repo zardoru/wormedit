@@ -17,8 +17,8 @@ auto stage_output_music(const wormedit::song_document_t& snapshot,
     }
     if (!music)
         return std::nullopt;
-    const auto asset = std::ranges::find(snapshot.audio_assets, music->asset, &audio_asset_t::id);
-    if (asset == snapshot.audio_assets.end())
+    const auto* asset = snapshot.find_audio_asset(music->asset);
+    if (asset == nullptr)
         return "The music resource has no audio asset.";
     const auto copied =
         copy_resource_file_into_export({.project_directory = asset_base,
@@ -71,7 +71,7 @@ auto sliced_bms_destination_error(const wormedit::song_document_t& snapshot,
                                   const wormedit::conversion_result_t& converted)
     -> std::optional<std::string> {
     if (group.family != wormedit::format_family_t::bms ||
-        !wormedit::conversion_needs_slice_spans(snapshot, request) ||
+        !wormedit::is_conversion_needs_slice_spans(snapshot, request) ||
         !group.relative_output_path.has_extension())
         return std::nullopt;
     const auto requested = group.relative_output_path.extension();
@@ -115,7 +115,7 @@ void complete_output_group_conversion(const wormedit::song_document_t& snapshot,
     }
     conversion_publication_options_t publication;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-    if (conversion_needs_slice_spans(snapshot, request)) {
+    if (is_conversion_needs_slice_spans(snapshot, request)) {
         publication.stage_generated_files = [&](const auto& staging) {
             return render_conversion_slice_plans(snapshot, converted, {asset_base, staging, stop});
         };
@@ -176,7 +176,7 @@ task_result_t run_output_group_export_task(const wormedit::song_document_t& snap
     if (stop.stop_requested()) {
         completed->message = "Export cancelled before conversion.";
         completed->severity = notification_severity_t::info;
-    } else if (conversion_needs_slice_spans(snapshot, request)) {
+    } else if (is_conversion_needs_slice_spans(snapshot, request)) {
         complete_sliced_output_group_conversion(snapshot, group, request, asset_base, stop,
                                                 *completed);
     } else if (auto staging_error = stage_output_music(snapshot, group, asset_base, stop)) {
@@ -195,7 +195,7 @@ task_result_t run_output_group_export_task(const wormedit::song_document_t& snap
                                              *completed);
         }
     }
-    return task_result_t::success(make_task_value(
+    return task_result_t::success(wormedit::task_value_t::from(
         std::shared_ptr<const output_group_export_task_result_t>{std::move(completed)}));
 }
 
@@ -254,8 +254,8 @@ commit_primary_music(compose_action_context_t& context, const std::filesystem::p
                      const imported_resource_metadata_t& metadata) {
     constexpr std::string_view rebind_failure = "Song audio set, but workspace rebinding failed.";
     using namespace wormedit;
-    const auto chart = std::ranges::find(context.environment.document.history.document.charts,
-                                         context.state.chart, &chart_document_t::id);
+    const auto* chart =
+        context.environment.document.history.document.find_chart(context.state.chart);
     auto name = path.filename().generic_string();
     if (name.size() > 255)
         name.clear();
@@ -264,8 +264,7 @@ commit_primary_music(compose_action_context_t& context, const std::filesystem::p
         {.source_path = path,
          .name = std::move(name),
          .allocate_bms_identifier =
-             chart != context.environment.document.history.document.charts.end() &&
-             chart->source_family == format_family_t::bms,
+             chart != nullptr && chart->source_family == format_family_t::bms,
          .audio_stream = metadata.audio});
     if (!applied.diagnostics.empty())
         return compose_action_outcome_t::from(
@@ -301,8 +300,8 @@ commit_resource_import(compose_action_context_t& context, wormedit::resource_rol
     using namespace wormedit;
     if (role == resource_role_t::music)
         return commit_primary_music(context, path, metadata);
-    const auto chart = std::ranges::find(context.environment.document.history.document.charts,
-                                         context.state.chart, &chart_document_t::id);
+    const auto* chart =
+        context.environment.document.history.document.find_chart(context.state.chart);
     auto name = path.filename().generic_string();
     if (name.size() > 255)
         name.clear();
@@ -312,8 +311,7 @@ commit_resource_import(compose_action_context_t& context, wormedit::resource_rol
          .role = role,
          .name = std::move(name),
          .allocate_bms_identifier =
-             chart != context.environment.document.history.document.charts.end() &&
-             chart->source_family == format_family_t::bms,
+             chart != nullptr && chart->source_family == format_family_t::bms,
          .audio_stream = metadata.audio,
          .image_geometry = metadata.image});
     if (!applied.diagnostics.empty())
@@ -376,8 +374,8 @@ auto prepare_resource_copy(compose_action_context_t& context)
     using namespace wormedit;
     auto& action = context.action;
     auto& history = context.environment.document.history;
-    if (context.environment.resources->jobs.copy.busy() ||
-        context.environment.resources->jobs.exporter.busy() || context.metadata_import_busy)
+    if (context.environment.resources->jobs.copy.is_busy() ||
+        context.environment.resources->jobs.exporter.is_busy() || context.metadata_import_busy)
         return compose_action_outcome_t::blocked(
             "Wait for the current resource copy, import, or export to finish.",
             notification_source_t::import_);
@@ -391,14 +389,12 @@ auto prepare_resource_copy(compose_action_context_t& context)
         return std::move(*blocked);
     }
     const asset_id_t id{action.compose_resource_asset_id};
-    const auto audio = std::ranges::find(history.document.audio_assets, id, &audio_asset_t::id);
+    const auto* audio = history.document.find_audio_asset(id);
     const auto visual = std::ranges::find(history.document.visual_assets, id, &visual_asset_t::id);
-    if (!id || (audio == history.document.audio_assets.end() &&
-                visual == history.document.visual_assets.end()))
+    if (!id || (audio == nullptr && visual == history.document.visual_assets.end()))
         return compose_action_outcome_t::blocked(
             "The selected resource asset is no longer available.", notification_source_t::import_);
-    const auto& source =
-        audio != history.document.audio_assets.end() ? audio->source_path : visual->source_path;
+    const auto& source = audio != nullptr ? audio->source_path : visual->source_path;
     const bool exporting = action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT;
     if (!exporting && !source.is_absolute() && source.parent_path() == "assets" &&
         source.filename().string().starts_with(std::to_string(id.value) + "-"))
@@ -440,7 +436,7 @@ std::optional<compose_action_outcome_t> start_resource_copy(compose_action_conte
                                                   .maximum_bytes = request.maximum_bytes},
                                                  stop)
                 : copy_resource_file_into_project(request, stop));
-        return task_result_t::success(make_task_value(std::move(copied)));
+        return task_result_t::success(wormedit::task_value_t::from(std::move(copied)));
     });
     if (!added)
         return compose_action_outcome_t::from(
@@ -500,8 +496,8 @@ auto prepare_output_export(compose_action_context_t& context)
         return compose_action_outcome_t::blocked(
             "Open a saved native project before exporting an output group.",
             notification_source_t::export_);
-    if (context.environment.resources->jobs.copy.busy() ||
-        context.environment.resources->jobs.exporter.busy() || context.metadata_import_busy)
+    if (context.environment.resources->jobs.copy.is_busy() ||
+        context.environment.resources->jobs.exporter.is_busy() || context.metadata_import_busy)
         return compose_action_outcome_t::blocked(
             "Wait for the current resource copy, import, or export to finish.",
             notification_source_t::export_);
@@ -533,7 +529,7 @@ auto prepare_output_export(compose_action_context_t& context)
     } else if (group.family == format_family_t::bms) {
         const auto extension = group.relative_output_path.extension().string();
         if ((extension == ".bme" || extension == ".bml" || extension == ".pms") &&
-            !conversion_needs_slice_spans(doc, request))
+            !is_conversion_needs_slice_spans(doc, request))
             request.target_profile = extension.substr(1);
     }
     return output_export_plan_t{std::move(group), std::move(request)};
@@ -694,9 +690,9 @@ std::optional<compose_action_outcome_t> select_resource_uses(compose_action_cont
                          context.environment.document.history.document.resources.end())
         return compose_action_outcome_t::blocked("The selected resource is no longer available.",
                                                  notification_source_t::edit);
-    const auto chart = std::ranges::find(context.environment.document.history.document.charts,
-                                         context.state.chart, &chart_document_t::id);
-    if (chart == context.environment.document.history.document.charts.end())
+    const auto* chart =
+        context.environment.document.history.document.find_chart(context.state.chart);
+    if (chart == nullptr)
         return compose_action_outcome_t::blocked("The selected chart is no longer available.",
                                                  notification_source_t::edit);
     auto uses = find_compose_resource_uses(*chart, resource);
@@ -755,15 +751,14 @@ create_resource_from_asset(compose_action_context_t& context) {
         return std::move(*blocked);
     }
     const auto role = import_resource_role(context.action).value_or(resource_role_t::music);
-    const auto chart = std::ranges::find(context.environment.document.history.document.charts,
-                                         context.state.chart, &chart_document_t::id);
+    const auto* chart =
+        context.environment.document.history.document.find_chart(context.state.chart);
     auto applied = apply_resource_creation(
         context.environment.document.history,
         {.asset = asset_id_t{context.action.compose_resource_asset_id},
          .role = role,
          .allocate_bms_identifier =
-             chart != context.environment.document.history.document.charts.end() &&
-             chart->source_family == format_family_t::bms});
+             chart != nullptr && chart->source_family == format_family_t::bms});
     if (!applied.diagnostics.empty())
         return compose_action_outcome_t::from(
             std::move(applied),
@@ -791,11 +786,9 @@ compose_action_outcome_t relink_sound_fallback(compose_action_context_t& context
     const auto& document = context.environment.document.history.document;
     const auto resource = std::ranges::find(
         document.resources, resource_id_t{action.compose_resource_id}, &resource_entry_t::id);
-    const auto asset =
-        resource == document.resources.end()
-            ? document.audio_assets.end()
-            : std::ranges::find(document.audio_assets, resource->asset, &audio_asset_t::id);
-    if (asset == document.audio_assets.end())
+    const auto* asset =
+        resource == document.resources.end() ? nullptr : document.find_audio_asset(resource->asset);
+    if (!asset)
         return compose_action_outcome_t::blocked("That sound is no longer in the project.",
                                                  notification_source_t::edit);
     const auto fallback =

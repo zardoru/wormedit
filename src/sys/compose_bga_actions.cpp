@@ -43,12 +43,12 @@ auto referenced_bga_resources(const song_document_t& document)
 auto import_bga_feedback(document_history_t& history, workspace_controller_t& workspace,
                          chart_id_t chart_id, std::span<const std::string> paths)
     -> compose_action_outcome_t {
-    const auto chart = std::ranges::find(history.document.charts, chart_id, &chart_document_t::id);
-    if (chart == history.document.charts.end())
+    const auto* chart = history.document.find_chart(chart_id);
+    if (chart == nullptr)
         return compose_action_outcome_t::blocked("Select a difficulty before adding images.");
     if (paths.empty() || paths.size() > WORM_UI_SOUND_DROP_CAPACITY)
         return compose_action_outcome_t::blocked("Invalid image import batch size.");
-    auto candidate = make_document_history(history.document, 1);
+    auto candidate = wormedit::document_history_t::from(history.document, 1);
     std::unordered_set<std::string> known;
     for (const auto& asset : history.document.visual_assets)
         known.insert(asset.source_path.lexically_normal().generic_string());

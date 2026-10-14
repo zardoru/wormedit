@@ -46,8 +46,6 @@ struct resource_copy_t {
         wormedit::notification_sink_t notifications = wormedit::notification_sink_t::muted());
 
     [[nodiscard]] auto is_busy() const noexcept -> bool { return pending_.has_value(); }
-    // Compatibility for the deferred hot action callers.
-    [[nodiscard]] auto busy() const noexcept -> bool { return is_busy(); }
 
     auto start(pending_project_resource_copy_t&& pending) -> bool;
     auto poll(wormedit::document_history_t& history,
@@ -75,8 +73,7 @@ public:
     std::optional<pending_output_group_export_t> pending;
 
     [[nodiscard]] auto is_busy() const noexcept -> bool { return pending.has_value(); }
-    // Compatibility for the deferred hot action callers.
-    [[nodiscard]] auto busy() const noexcept -> bool { return is_busy(); }
+
     auto start(pending_output_group_export_t&& pending) -> bool;
     auto poll(const wormedit::document_history_t& history) -> std::optional<std::string>;
     void cancel();

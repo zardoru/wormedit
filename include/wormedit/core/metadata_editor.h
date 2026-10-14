@@ -63,6 +63,8 @@ struct set_output_group_path_action_t {
                                          metadata_edit_limits_t limits = {})
     -> std::optional<std::filesystem::path>;
 
+// Builds a rating-only edit. `unset` is the explicit clear operation; when
+// false, both numeric components must parse without truncation or overflow.
 struct chart_rating_edit_t {
     [[nodiscard]] static auto from(chart_id_t chart, bool unset, std::string_view numerator,
                                    std::string_view denominator)
@@ -80,12 +82,6 @@ inline constexpr std::size_t metadata_rating_component_max_bytes = 21;
 [[nodiscard]] auto parse_metadata_rating(std::string_view numerator, std::string_view denominator)
     -> std::optional<signed_rational_t>;
 
-// Builds a rating-only edit. `unset` is the explicit clear operation; when
-// false, both numeric components must parse without truncation or overflow.
-[[nodiscard]] auto make_chart_rating_metadata_edit(chart_id_t chart, bool unset,
-                                                   std::string_view numerator,
-                                                   std::string_view denominator)
-    -> std::optional<chart_rating_edit_t>;
 
 // A null chart selects song-scoped metadata; otherwise the field belongs to
 // that difficulty. Indexes address exact occurrences, preserving duplicates.

@@ -446,11 +446,5 @@ auto apply_metadata_edit(document_history_t& history,
     return transaction.commit("Edit metadata");
 }
 
-// Compatibility for the sys/ui migration wave.
-auto make_chart_rating_metadata_edit(chart_id_t chart, bool unset, std::string_view numerator,
-                                     std::string_view denominator)
-    -> std::optional<chart_rating_edit_t> {
-    return chart_rating_edit_t::from(chart, unset, numerator, denominator);
-}
 
 } // namespace wormedit

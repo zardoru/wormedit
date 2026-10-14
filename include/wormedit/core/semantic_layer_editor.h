@@ -30,11 +30,17 @@ struct semantic_layer_rgba_t {
 };
 
 struct semantic_layer_palette_window_t {
+    // Projects one bounded palette page from visible layers plus an explicitly
+    // selected hidden layer. reveal_selected moves the window to that stable ID;
+    // otherwise requested_page is clamped after document edits.
     [[nodiscard]] static auto from(const chart_document_t& chart,
                                    std::optional<layer_id_t> selected_layer,
                                    std::size_t requested_page, bool reveal_selected,
                                    std::size_t page_size, std::size_t maximum_layers = 100'000)
         -> std::optional<semantic_layer_palette_window_t>;
+    // Projects a bounded scrolling window over every layer, including hidden
+    // layers, in chart order. The first row clamps after catalog edits. A zero
+    // row count or a chart exceeding maximum_layers rejects the request.
     [[nodiscard]] static auto from(const chart_document_t& chart, std::size_t first_row,
                                    std::size_t row_count, std::size_t maximum_layers = 100'000)
         -> std::optional<semantic_layer_palette_window_t>;
@@ -45,25 +51,6 @@ struct semantic_layer_palette_window_t {
     std::size_t total_count{};
     std::vector<std::size_t> layer_indices;
 };
-
-// Projects one bounded palette page from visible layers plus an explicitly
-// selected hidden layer. reveal_selected moves the window to that stable ID;
-// otherwise requested_page is clamped after document edits.
-[[nodiscard]] auto make_semantic_layer_palette_window(const chart_document_t& chart,
-                                                      std::optional<layer_id_t> selected_layer,
-                                                      std::size_t requested_page,
-                                                      bool reveal_selected, std::size_t page_size,
-                                                      std::size_t maximum_layers = 100'000)
-    -> std::optional<semantic_layer_palette_window_t>;
-
-// Projects a bounded scrolling window over every layer, including hidden
-// layers, in chart order. The first row clamps after catalog edits. A zero
-// row count or a chart exceeding maximum_layers rejects the request.
-[[nodiscard]] auto make_semantic_layer_palette_window(const chart_document_t& chart,
-                                                      std::size_t first_row,
-                                                      std::size_t row_count,
-                                                      std::size_t maximum_layers = 100'000)
-    -> std::optional<semantic_layer_palette_window_t>;
 
 struct semantic_layer_edit_value_t {
     std::string name;

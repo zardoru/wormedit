@@ -126,11 +126,6 @@ auto document_history_t::from(song_document_t document, std::size_t maximum_undo
     };
 }
 
-auto make_document_history(song_document_t document, std::size_t maximum_undo_entries,
-                           bool initially_saved) -> document_history_t {
-    return document_history_t::from(std::move(document), maximum_undo_entries, initially_saved);
-}
-
 auto is_document_dirty(const document_history_t& history) noexcept -> bool {
     return !history.saved_revision.has_value() ||
            *history.saved_revision != history.document.revision;

@@ -44,13 +44,13 @@ TEST_CASE("Project chart projection truncates rows without limiting the document
 TEST_CASE("Project chart table cache refreshes revisions and reopened sessions", "[unit][project-view]") {
     auto song = project_song();
     project_chart_table_cache_t cache;
-    expect_project(project_chart_table_for(cache, song, 1).rows[0].name == "Normal");
+    expect_project(build_project_chart_table_view(cache, song, 1).rows[0].name == "Normal");
     song.charts[0].metadata.name = "Unpublished";
-    expect_project(project_chart_table_for(cache, song, 1).rows[0].name == "Normal");
+    expect_project(build_project_chart_table_view(cache, song, 1).rows[0].name == "Normal");
     ++song.revision;
-    expect_project(project_chart_table_for(cache, song, 1).rows[0].name == "Unpublished");
+    expect_project(build_project_chart_table_view(cache, song, 1).rows[0].name == "Unpublished");
     song.charts[0].metadata.name = "Reopened";
-    expect_project(project_chart_table_for(cache, song, 2).rows[0].name == "Reopened");
+    expect_project(build_project_chart_table_view(cache, song, 2).rows[0].name == "Reopened");
 }
 
 TEST_CASE("Project chart commands preserve atomic rejection and open newly created charts", "[unit][project-view]") {
@@ -115,17 +115,17 @@ TEST_CASE("Project chart scalar projection exposes row rejection and refreshes a
     auto history = document_history_t::from(project_song());
     project_chart_runtime_t runtime;
     WormUiSetupView view{.visible = true};
-    project_chart_view(runtime, history.document, view);
+    build_project_chart_view(runtime, history.document, view);
     expect_project(view.chart_row_count == 1 && view.document_revision == history.document.revision);
     expect_project(view.song_id == history.document.id.value && view.session_generation == 1);
     runtime.row_errors[history.document.charts[0].id.value] = "Cannot delete the last chart";
-    project_chart_view(runtime, history.document, view);
+    build_project_chart_view(runtime, history.document, view);
     expect_project(std::string_view{view.charts[0].diagnostic} == "Cannot delete the last chart");
     const auto result = apply_project_chart_ui_action(runtime, history,
         {.kind = WORM_UI_PROJECT_CHART_DUPLICATE, .document_revision = history.document.revision,
          .session_generation = 1, .chart_id = history.document.charts[0].id.value});
     require_project(result.applied);
-    project_chart_view(runtime, history.document, view);
+    build_project_chart_view(runtime, history.document, view);
     expect_project(view.chart_row_count == 2 && std::string_view{view.charts[0].diagnostic}.empty());
 }
 
@@ -238,7 +238,7 @@ TEST_CASE("Project output group actions project complete editable membership and
     project_chart_runtime_t runtime;
     task_scheduler_t scheduler{1, 1};
     WormUiSetupView view{.visible = true};
-    project_chart_view(runtime, history.document, view);
+    build_project_chart_view(runtime, history.document, view);
     require_project(view.output_group_count == 1);
     expect_project(view.output_groups[0].chart_ids[0] == history.document.charts[0].id.value);
     WormUiProjectOutputGroupAction action{.kind = WORM_UI_PROJECT_OUTPUT_GROUP_CREATE,
@@ -252,7 +252,7 @@ TEST_CASE("Project output group actions project complete editable membership and
     expect_project(wrong_session.status == stale_action_message("Output group action"));
     --action.session_generation;
     require_project(apply_project_output_group_ui_action(runtime, history, action, scheduler).applied);
-    project_chart_view(runtime, history.document, view);
+    build_project_chart_view(runtime, history.document, view);
     require_project(view.output_group_count == 2);
     expect_project(std::string_view{view.output_groups[1].path} == "exports/chart.bmson");
     expect_project(view.output_groups[1].family == 4);
@@ -269,7 +269,7 @@ TEST_CASE("Project conversion preview runs through the worker service and retire
     project_chart_runtime_t runtime;
     task_scheduler_t scheduler{1, 1};
     WormUiSetupView view{.visible = true};
-    project_chart_view(runtime, history.document, view);
+    build_project_chart_view(runtime, history.document, view);
     WormUiProjectOutputGroupAction action{.kind = WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW,
         .project_id = history.document.id.value, .document_revision = history.document.revision,
         .session_generation = runtime.session_generation};
@@ -277,13 +277,13 @@ TEST_CASE("Project conversion preview runs through the worker service and retire
     (void)apply_project_output_group_ui_action(runtime, history, action, scheduler);
     require_project(static_cast<bool>(runtime.preview_graph));
     require_project(runtime.preview_graph.wait());
-    project_chart_view(runtime, history.document, view);
+    build_project_chart_view(runtime, history.document, view);
     expect_project(std::string_view{view.output_groups[0].preview_status}.starts_with("Preview: 1 file"));
     expect_project(history.document.revision == before);
     expect_project(history.undo.empty());
     (void)apply_project_output_group_ui_action(runtime, history, action, scheduler);
     ++history.document.revision;
-    project_chart_view(runtime, history.document, view);
+    build_project_chart_view(runtime, history.document, view);
     expect_project(!runtime.preview_graph);
     expect_project(std::string_view{view.output_groups[0].preview_status} == "Preview not run");
 }

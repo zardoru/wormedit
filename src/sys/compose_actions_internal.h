@@ -104,10 +104,6 @@ auto layout_with_preserved_lane_ids(const wormedit::chart_document_t& chart,
                                     wormedit::lane_layout_t target)
     -> std::optional<wormedit::lane_layout_t>;
 
-auto initial_input_profile(const wormedit::chart_document_t& chart,
-                           const wormedit::lane_layout_t& layout)
-    -> std::optional<wormedit::input_profile_t>;
-
 std::optional<compose_action_outcome_t>
 materialize_layout_measure(compose_action_context_t& context,
                            const wormedit::chart_document_t*& chart, bool& materialized);

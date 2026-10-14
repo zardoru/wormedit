@@ -62,8 +62,5 @@ inline auto is_editor_gestures_stale(const editor_interaction_state_t& state,
     });
     return stale;
 }
-// Compatibility for the coordinated sys/UI migration.
-inline auto editor_gestures_stale(const editor_interaction_state_t& state,
-                                  std::uint64_t revision) -> bool { return is_editor_gestures_stale(state, revision); }
 
 } // namespace wormedit

@@ -25,7 +25,7 @@
 namespace wormedit::sys {
 namespace {
 
-auto folded_name(const std::string& path) -> std::string {
+auto file_name_of(const std::string& path) -> std::string {
     return std::filesystem::path{path}.filename().string();
 }
 
@@ -55,9 +55,8 @@ auto sample_source_paths(const song_document_t& document) -> std::unordered_set<
     for (const auto& resource : document.resources) {
         if (std::ranges::find(resource.roles, resource_role_t::sample) == resource.roles.end())
             continue;
-        const auto asset =
-            std::ranges::find(document.audio_assets, resource.asset, &audio_asset_t::id);
-        if (asset != document.audio_assets.end())
+        const auto* asset = document.find_audio_asset(resource.asset);
+        if (asset != nullptr)
             paths.insert(asset->source_path.lexically_normal().generic_string());
     }
     return paths;
@@ -72,7 +71,7 @@ struct sound_import_plan_t {
 auto plan_sound_import(const song_document_t& document, bool allocate_bms_identifiers,
                        std::vector<std::string> paths) -> sound_import_plan_t {
     std::ranges::sort(paths, [](const auto& left, const auto& right) {
-        return natural_name_less(folded_name(left), folded_name(right));
+        return natural_name_less(file_name_of(left), file_name_of(right));
     });
     const auto known = sample_source_paths(document);
     std::unordered_set<std::string> planned;
@@ -239,8 +238,8 @@ auto import_keysound_feedback(document_history_t& history, workspace_controller_
                               chart_id_t chart, std::span<const std::string> paths,
                               sound_kind_t kind = sound_kind_t::keysound)
     -> compose_action_outcome_t {
-    const auto target = std::ranges::find(history.document.charts, chart, &chart_document_t::id);
-    if (target == history.document.charts.end())
+    const auto* target = history.document.find_chart(chart);
+    if (target == nullptr)
         return compose_action_outcome_t::blocked("Select a difficulty before adding sounds.");
     if (paths.empty())
         return compose_action_outcome_t::from("No files were dropped.",
@@ -318,8 +317,8 @@ auto sound_ids(const WormUiWorkspaceAction& action) -> std::vector<resource_id_t
 auto assign_picked_slot(const WormUiWorkspaceAction& action, document_history_t& history,
                         workspace_controller_t& workspace, chart_id_t chart_id)
     -> compose_action_outcome_t {
-    const auto chart = std::ranges::find(history.document.charts, chart_id, &chart_document_t::id);
-    if (chart == history.document.charts.end() || chart->source_family != format_family_t::bms)
+    const auto* chart = history.document.find_chart(chart_id);
+    if (chart == nullptr || chart->source_family != format_family_t::bms)
         return compose_action_outcome_t::blocked(
             "Direct sound slots are available only for a BMS chart.");
     if (!chart_stamp_t{.document = {.project = history.document.id,
@@ -366,8 +365,8 @@ auto assign_picked_slot(const WormUiWorkspaceAction& action, document_history_t&
 auto assign_picked_slot_batch(const WormUiWorkspaceAction& action, document_history_t& history,
                               workspace_controller_t& workspace, chart_id_t chart_id)
     -> compose_action_outcome_t {
-    const auto chart = std::ranges::find(history.document.charts, chart_id, &chart_document_t::id);
-    if (chart == history.document.charts.end() || chart->source_family != format_family_t::bms)
+    const auto* chart = history.document.find_chart(chart_id);
+    if (chart == nullptr || chart->source_family != format_family_t::bms)
         return compose_action_outcome_t::blocked(
             "Direct sound slots are available only for a BMS chart.");
     if (!chart_stamp_t{.document = {.project = history.document.id,
@@ -548,8 +547,8 @@ auto ungroup_sounds(const WormUiWorkspaceAction& action, document_history_t& his
 auto renumber_dock_ids(const WormUiWorkspaceAction& action, document_history_t& history,
                        workspace_controller_t& workspace, chart_id_t chart_id)
     -> compose_action_outcome_t {
-    const auto chart = std::ranges::find(history.document.charts, chart_id, &chart_document_t::id);
-    if (chart == history.document.charts.end() || chart->source_family != format_family_t::bms)
+    const auto* chart = history.document.find_chart(chart_id);
+    if (chart == nullptr || chart->source_family != format_family_t::bms)
         return compose_action_outcome_t::blocked(
             "BMS identifiers are available only for a BMS chart.");
     if (!action.compose_renumber_all && action.compose_sound_resource_count == 0)
@@ -693,8 +692,8 @@ auto confirm_import(const WormUiWorkspaceAction& action, document_history_t& his
                               .chart = chart_id_t{action.compose_input_chart_id}};
     if (!stamp.is_current(history.document, chart))
         return compose_action_outcome_t::blocked(stale_action_message("Sound import"));
-    const auto target = std::ranges::find(history.document.charts, chart, &chart_document_t::id);
-    if (target == history.document.charts.end())
+    const auto* target = history.document.find_chart(chart);
+    if (target == nullptr)
         return compose_action_outcome_t::blocked("Select a difficulty before adding sounds.");
     auto reason = std::string{};
     auto entries = confirmed_import_entries(action, history.document,
@@ -745,8 +744,8 @@ auto confirm_import(const WormUiWorkspaceAction& action, document_history_t& his
 auto prepare_keysound_import(const song_document_t& document, chart_id_t chart,
                              std::span<const std::string> paths, std::uint8_t fixed_kind)
     -> prepared_keysound_import_t {
-    const auto target = std::ranges::find(document.charts, chart, &chart_document_t::id);
-    if (target == document.charts.end())
+    const auto* target = document.find_chart(chart);
+    if (target == nullptr)
         return {.message = "Select a difficulty before adding sounds."};
     auto plan = plan_sound_import(document, target->source_family == format_family_t::bms,
                                   {paths.begin(), paths.end()});
@@ -766,8 +765,8 @@ auto prepare_sound_slot_batch(const song_document_t& document, chart_id_t chart,
                               std::uint16_t first_slot, std::span<const std::string> paths)
     -> prepared_sound_slot_batch_t {
     auto prepared = prepared_sound_slot_batch_t{};
-    const auto target = std::ranges::find(document.charts, chart, &chart_document_t::id);
-    if (target == document.charts.end() || target->source_family != format_family_t::bms)
+    const auto* target = document.find_chart(chart);
+    if (target == nullptr || target->source_family != format_family_t::bms)
         set_first_error(prepared.reason, "Direct sound slots are available only for a BMS chart.");
     if (first_slot == 0 || first_slot > 1295)
         set_first_error(prepared.reason, "Choose a sound slot from 01 through ZZ.");

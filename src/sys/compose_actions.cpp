@@ -134,7 +134,7 @@ dispatch_compose_lane_profile(compose_action_context_t& context) {
         return compose_action_outcome_t::blocked("The selected difficulty is no longer available.",
                                                  notification_source_t::edit);
     const auto* segment = wormedit::active_lane_layout_segment(*chart, context.state.cursor);
-    if (segment && !wormedit::lane_layout_supports_key_profiles(segment->layout))
+    if (segment && !wormedit::can_use_lane_key_profiles(segment->layout))
         return compose_action_outcome_t::blocked(
             "Key profiles require matching playable lanes without scratch or auxiliary roles.",
             notification_source_t::edit);
@@ -221,30 +221,6 @@ auto layout_with_preserved_lane_ids(const wormedit::chart_document_t& chart,
     return target;
 }
 
-// Key bindings for a built-in BMS layout whose lane IDs were just assigned, for a chart that has
-// none; the built-in lanes and the layout's lanes pair up by display order.
-auto initial_input_profile(const wormedit::chart_document_t& chart, const wormedit::lane_layout_t& layout)
-    -> std::optional<wormedit::input_profile_t> {
-    if (!chart.input_profile.bindings.empty()) return std::nullopt;
-    for (const auto& builtin : wormedit::built_in_bms_lane_profiles()) {
-        if (builtin.profile.layout.profile_id != layout.profile_id) continue;
-        auto source = builtin.profile.layout.lanes;
-        auto target = layout.lanes;
-        const auto by_order = [](const auto& left, const auto& right) { return left.display_order < right.display_order; };
-        std::ranges::stable_sort(source, by_order);
-        std::ranges::stable_sort(target, by_order);
-        if (source.size() != target.size()) return std::nullopt;
-        auto input = builtin.profile.input;
-        for (auto& binding : input.bindings) {
-            const auto found = std::ranges::find(source, binding.lane, &wormedit::lane_definition_t::id);
-            if (found == source.end()) return std::nullopt;
-            binding.lane = target[static_cast<std::size_t>(found - source.begin())].id;
-        }
-        return input;
-    }
-    return std::nullopt;
-}
-
 // A measure that so far exists only on the virtual canvas (an empty BMS, say) is created first.
 // Returns the notification when that fails; `chart` is refreshed after the history changed.
 std::optional<compose_action_outcome_t>
@@ -296,7 +272,7 @@ auto apply_compose_lane_layout_profile(compose_action_context_t& context,
             .chart = chart->id,
             .value = {.position = target_position,
                       .layout = *layout,
-                      .input = initial_input_profile(*chart, *layout)}};
+                      .input = wormedit::input_profile_t::with_defaults(*chart, *layout)}};
     if (is_update)
         edit = wormedit::update_edit_t<wormedit::lane_layout_edit_value_t>{
             .chart = chart->id, .id = exact_segment->id, .value = {.layout = *layout}};
@@ -409,9 +385,9 @@ auto toggle_compose_scroll_direction(compose_action_context_t& context)
         return compose_action_outcome_t::blocked(
             "Finish or cancel the active gesture before changing scroll direction.",
             notification_source_t::edit);
-    const auto chart = std::ranges::find(context.environment.document.history.document.charts,
-                                         context.state.chart, &chart_document_t::id);
-    if (chart == context.environment.document.history.document.charts.end())
+    const auto* chart =
+        context.environment.document.history.document.find_chart(context.state.chart);
+    if (chart == nullptr)
         return compose_action_outcome_t::blocked("The selected difficulty is no longer available.",
                                                  notification_source_t::edit);
     const auto family = chart->lane_layouts.empty() ? editor_mode_family_t::other
@@ -616,10 +592,9 @@ std::optional<compose_action_outcome_t> assign_bmson_selection(compose_action_co
 auto selected_bmson_source_event(const compose_action_context_t& context,
                                  wormedit::object_id_t bgm_event)
     -> std::optional<wormedit::object_id_t> {
-    const auto chart = std::ranges::find(context.environment.document.history.document.charts,
-                                         context.state.chart, &wormedit::chart_document_t::id);
-    if (chart == context.environment.document.history.document.charts.end() ||
-        chart->source_family != wormedit::format_family_t::bmson)
+    const auto* chart =
+        context.environment.document.history.document.find_chart(context.state.chart);
+    if (chart == nullptr || chart->source_family != wormedit::format_family_t::bmson)
         return std::nullopt;
     for (const auto& measure : chart->measures) {
         const auto event = std::ranges::find(measure.bgm_events, bgm_event,
@@ -1140,7 +1115,7 @@ dispatch_semantic_layer_palette_action(compose_action_context_t& context) {
             application_state.project.semantic_layer.semantic_layer_palette_chart = chart->id;
             application_state.project.semantic_layer.semantic_layer_palette_page = 0;
         }
-        const auto palette = make_semantic_layer_palette_window(
+        const auto palette = wormedit::semantic_layer_palette_window_t::from(
             *chart, application_state.project.semantic_layer.semantic_layer_target,
             application_state.project.semantic_layer.semantic_layer_palette_page, false,
             WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY);
@@ -1867,9 +1842,8 @@ auto dispatch_bms_branch_statement_action(compose_action_context_t& context)
             history, action.compose_input_document_revision, "BMS branch statement action"))
         return compose_action_outcome_t::from(
             bms_branch_statement_command_result_t{.command = std::move(*rejected)}, description);
-    const auto chart = std::ranges::find(history.document.charts, *workspace.selected_chart,
-                                         &chart_document_t::id);
-    if (chart == history.document.charts.end())
+    const auto* chart = history.document.find_chart(*workspace.selected_chart);
+    if (chart == nullptr)
         return compose_action_outcome_t::blocked("The selected BMS chart is no longer available.",
                                                  notification_source_t::format);
     if (!chart->bms_control_tree) {
@@ -2078,9 +2052,8 @@ auto dispatch_bms_branch_block_action(compose_action_context_t& context)
         blocked->source = notification_source_t::format;
         return std::move(*blocked);
     }
-    const auto chart = std::ranges::find(history.document.charts, *workspace.selected_chart,
-                                         &chart_document_t::id);
-    if (chart == history.document.charts.end() || !chart->bms_control_tree)
+    const auto* chart = history.document.find_chart(*workspace.selected_chart);
+    if (chart == nullptr || !chart->bms_control_tree)
         return compose_action_outcome_t::blocked("The selected chart has no BMS branch outline.",
                                                  notification_source_t::format);
     if (history.document.revision != action.compose_input_document_revision)
@@ -2611,11 +2584,11 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         notifications.post(notification_severity_t::warning, notification_source_t::edit, message);
         return message;
     }
-    const auto selected_chart_it = std::ranges::find(history.document.charts, state.chart,
-                                                     &chart_document_t::id);
+    const auto* selected_chart_it = history.document.find_chart(state.chart);
     const auto scroll_direction =
-        selected_chart_it != history.document.charts.end() &&
-                compose_field_downscroll(*selected_chart_it, application_state.preferences.editor_preferences)
+        selected_chart_it != nullptr &&
+                compose_field_downscroll(*selected_chart_it,
+                                         application_state.preferences.editor_preferences)
             ? editor_field_scroll_direction_t::down
             : editor_field_scroll_direction_t::up;
     editor_interaction_result_t result;

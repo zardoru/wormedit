@@ -94,11 +94,6 @@ struct task_result_t {
 };
 
 template <typename value_t>
-[[nodiscard]] auto make_task_value(std::shared_ptr<const value_t> value) -> task_value_t {
-    return task_value_t::from(std::move(value));
-}
-
-template <typename value_t>
 [[nodiscard]] auto task_value_cast(const task_result_t& result) -> std::shared_ptr<const value_t> {
     if (!result.is_successful())
         return {};

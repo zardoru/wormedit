@@ -1136,20 +1136,5 @@ auto add_selected_sounds_to_semantic_layer(document_history_t& history, const ad
                                                   .assign_unlayered_bgm = true});
 }
 
-// Compatibility for the sys/ui migration wave.
-auto make_semantic_layer_palette_window(const chart_document_t& chart,
-                                        std::optional<layer_id_t> selected_layer,
-                                        std::size_t requested_page, bool reveal_selected,
-                                        std::size_t page_size, std::size_t maximum_layers)
-    -> std::optional<semantic_layer_palette_window_t> {
-    return semantic_layer_palette_window_t::from(chart, selected_layer, requested_page,
-                                                 reveal_selected, page_size, maximum_layers);
-}
-
-auto make_semantic_layer_palette_window(const chart_document_t& chart, std::size_t first_row,
-                                        std::size_t row_count, std::size_t maximum_layers)
-    -> std::optional<semantic_layer_palette_window_t> {
-    return semantic_layer_palette_window_t::from(chart, first_row, row_count, maximum_layers);
-}
 
 } // namespace wormedit

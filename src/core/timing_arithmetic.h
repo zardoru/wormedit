@@ -147,16 +147,12 @@ inline auto rounded_factor_ratio(std::array<std::uint64_t, 4> numerators,
     return rounded_quotient(*numerator, *denominator);
 }
 
+template <class Result = signed_rational_t>
 inline auto rows_to_beat_fraction(std::uint64_t rows, std::uint64_t resolution,
-    std::uint64_t units = 4) -> std::optional<signed_rational_t> {
+                                  std::uint64_t units = 4) -> std::optional<Result> {
     if (resolution == 0 || units == 0) return std::nullopt;
-    const auto divisor = std::gcd(rows, resolution);
-    auto numerator = rows / divisor;
-    auto denominator = resolution / divisor;
-    const auto factor = units / std::gcd(denominator, units);
-    denominator /= units / factor;
-    if (numerator > positive_limit / factor) return std::nullopt;
-    return signed_rational_t{static_cast<std::int64_t>(numerator * factor), denominator};
+    return reduce_sum<Result>({wide_math::multiply(rows, units), false}, resolution, resolution,
+                              resolution);
 }
 inline auto frames_to_seconds(std::int64_t frame, std::uint32_t sample_rate)
     -> std::optional<signed_rational_t> { return try_normalize({frame, sample_rate}); }

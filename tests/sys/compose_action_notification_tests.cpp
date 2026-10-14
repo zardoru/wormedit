@@ -1861,6 +1861,21 @@ TEST_CASE("Add SPEEDS span from an area writes the length in beats as one undo s
     check_action(fixture.history.document.charts.front().speeds.empty());
 }
 
+TEST_CASE("Area SPEEDS duration reduces a wide row product",
+          "[compose-action-notifications][speeds][wide-area]") {
+    action_notification_fixture_t fixture;
+    fixture.history.document.charts.front().divisions_per_standard_measure = std::uint64_t{1} << 63;
+    fixture.state.retained_selection_range =
+        position_span_t{{measure_id_t{1}, 0}, {measure_id_t{1}, std::uint64_t{1} << 62}};
+    (void)fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN));
+    const auto& speeds = fixture.history.document.charts.front().speeds;
+    require_action(speeds.size() == 1);
+    check_action(speeds.front().transition_beats == rational_t{2, 1});
+    require_action(fixture.history.undo.size() == 1);
+    require_action(undo_document_command(fixture.history));
+    check_action(fixture.history.document.charts.front().speeds.empty());
+}
+
 TEST_CASE("Add SPEEDS span without an area changes nothing", "[compose-action-notifications][speeds]") {
     action_notification_fixture_t fixture;
     const auto revision = fixture.history.document.revision;

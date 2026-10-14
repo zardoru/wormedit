@@ -802,7 +802,6 @@ TEST_CASE("Document owner queries preserve first matches and mutable access", "[
     chart.measures.front().bgm_events = {{.id = object_id_t{11}}};
     chart.measures.back().bgm_events = {{.id = object_id_t{11}}};
     check_owner_query(song.find_chart(chart_id_t{7}) == &song.charts.front());
-    check_owner_query(find_chart(song, chart_id_t{7}) == song.find_chart(chart_id_t{7}));
     check_owner_query(song.find_audio_asset(asset_id_t{9}) == &song.audio_assets.front());
     check_owner_query(chart.find_measure(measure_id_t{4}) == &chart.measures.back());
     check_owner_query(chart.find_note(object_id_t{10}) == &chart.measures.front().notes.front());

@@ -181,10 +181,6 @@ struct redivision_command_payload_t {
 
 using redivision_command_result_t = command_result_with_t<redivision_command_payload_t>;
 
-// Compatibility for the sys/ui migration wave; new callers use document_history_t::from.
-[[nodiscard]] auto make_document_history(song_document_t document,
-                                         std::size_t maximum_undo_entries = 128,
-                                         bool initially_saved = true) -> document_history_t;
 
 [[nodiscard]] auto is_document_dirty(const document_history_t& history) noexcept -> bool;
 void mark_document_saved(document_history_t& history) noexcept;

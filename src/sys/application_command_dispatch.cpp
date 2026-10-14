@@ -269,11 +269,9 @@ auto loop_selection_command(command_context_t& context) -> std::optional<command
         context.environment.editor.commands.services.transport_loop_selection_active &&
         context.environment.editor.commands.services.transport_loop_selection_active();
     const auto* state = context.compose();
-    const auto chart =
-        std::ranges::find(context.environment.document.history.document.charts,
-                          state ? state->chart : chart_id_t{}, &chart_document_t::id);
-    if (!state || chart == context.environment.document.history.document.charts.end() ||
-        (!disable && !state->retained_selection_range) ||
+    const auto* chart = context.environment.document.history.document.find_chart(
+        state ? state->chart : chart_id_t{});
+    if (!state || chart == nullptr || (!disable && !state->retained_selection_range) ||
         editor_interaction_has_pending_gesture(*state) ||
         context.environment.editor.commands.project.clipboard.paste_session ||
         !context.environment.editor.commands.services.transport_set_loop_selection)
@@ -376,11 +374,9 @@ auto note_to_bgm_command(command_context_t& context) -> std::optional<command_re
     if (kind != command_kind_t::edit_move_to_bgm && kind != command_kind_t::edit_move_next_to_bgm)
         return std::nullopt;
     auto* state = context.compose();
-    const auto found =
-        std::ranges::find(context.environment.document.history.document.charts,
-                          state ? state->chart : chart_id_t{}, &chart_document_t::id);
-    const auto* chart =
-        found == context.environment.document.history.document.charts.end() ? nullptr : &*found;
+    const auto* found = context.environment.document.history.document.find_chart(
+        state ? state->chart : chart_id_t{});
+    const auto* chart = found == nullptr ? nullptr : &*found;
     if (!state || !chart ||
         !compose_move_to_bgm_available(*chart, *state,
                                        context.environment.editor.commands))
@@ -1107,8 +1103,9 @@ auto semantic_layer_slot_command(command_context_t& context) -> command_result_t
         app.project.semantic_layer.semantic_layer_palette_chart = chart->id;
         app.project.semantic_layer.semantic_layer_palette_page = 0;
     }
-    const auto palette = make_semantic_layer_palette_window(
-        *chart, app.project.semantic_layer.semantic_layer_target, app.project.semantic_layer.semantic_layer_palette_page, false,
+    const auto palette = wormedit::semantic_layer_palette_window_t::from(
+        *chart, app.project.semantic_layer.semantic_layer_target,
+        app.project.semantic_layer.semantic_layer_palette_page, false,
         WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY);
     if (!palette || slot > palette->layer_indices.size())
         return reject_application_command(

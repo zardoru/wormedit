@@ -154,6 +154,11 @@ void check_row_clamp_policies() {
     CHECK(nearest_row(12, 10, row_clamp_policy_t::upper_only) == 9);
     CHECK(nearest_row(4.5L, 10, row_clamp_policy_t::upper_only) == 5);
 }
+void check_row_end_policies() {
+    CHECK(nearest_row(9.5L, 10, row_clamp_policy_t::upper_only) == 9);
+    CHECK_FALSE(nearest_row(9.5L, 10, row_clamp_policy_t::reject_outside));
+    CHECK(nearest_row(9.4L, 10, row_clamp_policy_t::reject_outside) == 9);
+}
 void check_explicit_trim_policy() {
     CHECK(text_util::trim("\v\f value\r\n", text_util::ascii_whitespace) == "value");
     CHECK(text_util::trim("\v value\t", " \t") == "\v value");
@@ -175,6 +180,7 @@ void check_utf8_truncation_and_base36_policy() {
 TEST_CASE("shared helpers guard invalid rationals and preserve row clamp policies", "[unit][core][helpers]") {
     check_rational_conversions();
     check_row_clamp_policies();
+    check_row_end_policies();
 }
 
 TEST_CASE("exact subtraction reduces wide intermediates before rejecting overflow", "[unit][core][helpers]") {

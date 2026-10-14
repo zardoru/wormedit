@@ -2,10 +2,9 @@
 #include "sys/projection_notification_feedback.h"
 namespace wormedit::sys::compose_action_detail {
 auto recipe_form_target(compose_action_context_t& context) -> std::optional<recipe_form_target_t> {
-    const auto chart = std::ranges::find(context.environment.document.history.document.charts,
-                                         context.state.chart, &chart_document_t::id);
-    if (chart == context.environment.document.history.document.charts.end() ||
-        chart->id.value != context.action.compose_input_chart_id)
+    const auto* chart =
+        context.environment.document.history.document.find_chart(context.state.chart);
+    if (!chart || chart->id.value != context.action.compose_input_chart_id)
         return std::nullopt;
     const auto recipe = std::ranges::find(
         chart->sv_recipes, recipe_id_t{context.action.compose_recipe_id}, &sv_recipe_t::id);

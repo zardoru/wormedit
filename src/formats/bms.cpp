@@ -253,7 +253,7 @@ auto encode_line(std::string_view input, text_encoding_t encoding) -> decode_res
     return output;
 }
 
-auto decode_diagnostic(bms_parse_result_t& result, bms_parse_diagnostic_code_t code,
+auto decode_diagnostic(bms_parse_outcome_t& result, bms_parse_diagnostic_code_t code,
                        std::string message, std::size_t byte_offset, std::size_t byte_end) -> void {
     result.diagnostics.push_back({
         .severity = diagnostic_severity_t::error,
@@ -265,7 +265,7 @@ auto decode_diagnostic(bms_parse_result_t& result, bms_parse_diagnostic_code_t c
     });
 }
 
-auto add_line_diagnostic(bms_parse_result_t& result, diagnostic_severity_t severity,
+auto add_line_diagnostic(bms_parse_outcome_t& result, diagnostic_severity_t severity,
                          bms_parse_diagnostic_code_t code, std::string message,
                          const source_line_t& line, std::size_t column = 1) -> void {
     result.diagnostics.push_back({
@@ -279,7 +279,7 @@ auto add_line_diagnostic(bms_parse_result_t& result, diagnostic_severity_t sever
 }
 
 auto split_lines(std::span<const std::byte> bytes, std::size_t start, text_encoding_t encoding,
-                 const bms_parse_options_t& options, bms_parse_result_t& result)
+                 const bms_parse_options_t& options, bms_parse_outcome_t& result)
     -> std::optional<std::vector<source_line_t>> {
     const auto* data = reinterpret_cast<const char*>(bytes.data());
     std::vector<source_line_t> lines;
@@ -713,7 +713,7 @@ auto node_source_line(const bms_control_node_t& node) -> source_line_t {
 struct bms_channel_materializer_t {
     chart_document_t& chart;
     song_document_t& song;
-    bms_parse_result_t& result;
+    bms_parse_outcome_t& result;
     id_allocator_t& ids;
     std::map<std::string, resource_id_t, std::less<>>& resource_ids;
     const std::map<std::string, signed_rational_t, std::less<>>& extended_bpms;
@@ -1211,7 +1211,7 @@ struct branch_projection_context_t {
     std::map<std::size_t, bool>& visited_choices;
     std::vector<const bms_control_node_t*>& projected_statements;
     std::vector<branch_selection_t>& active_selections;
-    bms_parse_result_t& result;
+    bms_parse_outcome_t& result;
 };
 
 void project_control_node(const bms_control_node_t& node,
@@ -1389,7 +1389,7 @@ auto index_choice_nodes(const bms_control_node_t& root) -> choice_node_map_t {
     return choices;
 }
 
-void add_choice_diagnostic(bms_parse_result_t& result, const bms_control_node_t& node,
+void add_choice_diagnostic(bms_parse_outcome_t& result, const bms_control_node_t& node,
                            std::string message) {
     add_line_diagnostic(result, diagnostic_severity_t::warning,
                         bms_parse_diagnostic_code_t::invalid_branch_selection,
@@ -1410,7 +1410,7 @@ auto is_branch_choice_valid(const bms_control_node_t& node, std::int64_t value) 
 
 auto collect_branch_choices(const bms_parse_options_t& options,
                             const choice_node_map_t& choice_nodes,
-                            bms_parse_result_t& result) -> branch_choice_map_t {
+                            bms_parse_outcome_t& result) -> branch_choice_map_t {
     branch_choice_map_t choices;
     const auto count = std::min(options.branch_choices.size(), options.max_lines);
     if (options.branch_choices.size() > options.max_lines)
@@ -1437,7 +1437,7 @@ auto collect_branch_choices(const bms_parse_options_t& options,
 
 void validate_branch_choices(branch_choice_map_t& choices,
                              const choice_node_map_t& choice_nodes,
-                             bms_parse_result_t& result) {
+                             bms_parse_outcome_t& result) {
     for (auto choice = choices.begin(); choice != choices.end();) {
         const auto found = choice_nodes.find(choice->first);
         if (found == choice_nodes.end()) {
@@ -1462,7 +1462,7 @@ void validate_branch_choices(branch_choice_map_t& choices,
 
 auto collect_active_statements(const bms_control_node_t& root,
                                const bms_parse_options_t& options,
-                               chart_document_t& chart, bms_parse_result_t& result)
+                               chart_document_t& chart, bms_parse_outcome_t& result)
     -> std::vector<const bms_control_node_t*> {
     std::vector<const bms_control_node_t*> statements;
     for (const auto& node : root.children)
@@ -1564,9 +1564,9 @@ auto retained_line_text(const retained_source_t& source, const bms_control_node_
 }
 
 auto prepare_bms_source_lines(std::span<const std::byte> bytes, const bms_parse_options_t& options,
-                              bms_parse_result_t& result)
+                              bms_parse_outcome_t& result)
     -> std::optional<std::vector<source_line_t>> {
-    result.encoding.user_override = options.encoding_override;
+    result.value.encoding.user_override = options.encoding_override;
     if (bytes.size() > options.max_source_bytes) {
         result.diagnostics.push_back({
             .severity = diagnostic_severity_t::error,
@@ -1588,9 +1588,9 @@ auto prepare_bms_source_lines(std::span<const std::byte> bytes, const bms_parse_
         });
         return std::nullopt;
     }
-    result.encoding.original_bytes =
+    result.value.encoding.original_bytes =
         std::make_shared<const std::vector<std::byte>>(bytes.begin(), bytes.end());
-    result.encoding.unchanged_since_import = true;
+    result.value.encoding.unchanged_since_import = true;
 
     const auto* data = reinterpret_cast<const char*>(bytes.data());
     const auto has_bom = bytes.size() >= 3 && static_cast<unsigned char>(data[0]) == 0xefU &&
@@ -1632,7 +1632,7 @@ auto prepare_bms_source_lines(std::span<const std::byte> bytes, const bms_parse_
         }
         encoding = text_encoding_t::ascii;
     }
-    result.encoding.detected = encoding;
+    result.value.encoding.detected = encoding;
     return split_lines(bytes, content_start, encoding, options, result);
 }
 
@@ -1684,7 +1684,7 @@ template <typename EnsureMeasure>
 auto retain_measure_command(const source_line_t& line, const parsed_line_t& parsed,
                             std::string_view token, bms_control_node_t& root,
                             std::vector<std::size_t>& current_path, id_allocator_t& ids,
-                            bms_parse_result_t& result, EnsureMeasure&& ensure_measure) -> bool {
+                            bms_parse_outcome_t& result, EnsureMeasure&& ensure_measure) -> bool {
     const auto command = parse_measure_command(token);
     if (!command.has_value()) {
         return false;
@@ -1723,7 +1723,7 @@ struct control_tree_build_context_t {
     std::vector<std::size_t>& current_path;
     std::vector<open_frame_t>& frames;
     const bms_parse_options_t& options;
-    bms_parse_result_t& result;
+    bms_parse_outcome_t& result;
     id_allocator_t& ids;
 };
 
@@ -1927,7 +1927,7 @@ auto process_skip_directive(control_tree_build_context_t& context, const source_
 
 void report_unclosed_control_frames(bms_control_node_t& root,
                                    const std::vector<open_frame_t>& frames,
-                                   bms_parse_result_t& result) {
+                                   bms_parse_outcome_t& result) {
     for (const auto& frame : frames) {
         const auto& node = node_at(root, frame.path);
         result.diagnostics.push_back({.severity = diagnostic_severity_t::warning,
@@ -1948,7 +1948,7 @@ void ensure_initial_measure(chart_document_t& chart, EnsureMeasure&& ensure_meas
 struct active_statement_scan_context_t {
     song_document_t& song;
     chart_document_t& chart;
-    bms_parse_result_t& result;
+    bms_parse_outcome_t& result;
     id_allocator_t& ids;
     const bms_parse_options_t& options;
     std::map<std::string, resource_id_t, std::less<>>& resource_ids;
@@ -1971,7 +1971,7 @@ struct active_statement_scan_context_t {
 
 struct bms_resource_parse_context_t {
     song_document_t& song;
-    bms_parse_result_t& result;
+    bms_parse_outcome_t& result;
     id_allocator_t& ids;
     std::map<std::string, resource_id_t, std::less<>>& resource_ids;
 
@@ -2351,7 +2351,7 @@ void fallback_measure_length(chart_document_t& chart, std::size_t measure_index,
                              std::set<std::size_t>& inexact_measure_geometry,
                              const std::map<std::size_t, std::size_t>& source_orders,
                              const std::vector<const bms_control_node_t*>& statements,
-                             bms_parse_result_t& result) {
+                             bms_parse_outcome_t& result) {
     inexact_measure_geometry.insert(measure_index);
     chart.measures[measure_index].definition = {{1, 1}, meter_t{4, 4}};
     if (const auto* node = source_for_measure_length(measure_index, source_orders, statements);
@@ -2372,7 +2372,7 @@ void validate_measure_geometry(chart_document_t& chart, const bms_parse_options_
                                const std::map<std::size_t, std::size_t>& source_orders,
                                const std::vector<const bms_control_node_t*>& statements,
                                std::set<std::size_t>& inexact_measure_geometry,
-                               bms_parse_result_t& result) {
+                               bms_parse_outcome_t& result) {
     for (std::size_t index = 0; index < chart.measures.size(); ++index) {
         const auto required = checked_lcm(chart.divisions_per_standard_measure,
                                           chart.measures[index].definition.length.denominator);
@@ -2401,12 +2401,12 @@ void validate_measure_geometry(chart_document_t& chart, const bms_parse_options_
 
 void report_unavailable_lane_profile(const bms_parse_options_t& options,
                                      const std::vector<root_channel_line_t>& channel_lines,
-                                     bms_parse_result_t& result) {
+                                     bms_parse_outcome_t& result) {
     std::string message = "selected BMS lane profile is unknown or does not map every recognized "
                           "playable channel; channel payloads remain raw";
-    if (!result.lane_profile_detection->evidence.empty()) {
+    if (!result.value.lane_profile_detection->evidence.empty()) {
         message += ": ";
-        message += result.lane_profile_detection->evidence.front().message;
+        message += result.value.lane_profile_detection->evidence.front().message;
     }
     const auto first_playable = std::ranges::find_if(
         channel_lines, [](const auto& line) { return is_playable_channel(line.channel); });
@@ -2424,7 +2424,7 @@ void report_unavailable_lane_profile(const bms_parse_options_t& options,
     (void)options;
 }
 
-auto select_lane_profile(chart_document_t& chart, bms_parse_result_t& result,
+auto select_lane_profile(chart_document_t& chart, bms_parse_outcome_t& result,
                          const bms_parse_options_t& options, id_allocator_t& ids,
                          std::optional<unsigned int> player_header, bool octave_fp_header,
                          const std::vector<std::string>& used_playable_channels,
@@ -2433,14 +2433,14 @@ auto select_lane_profile(chart_document_t& chart, bms_parse_result_t& result,
     if (used_playable_channels.empty() && !options.lane_profile_id.has_value()) {
         return std::nullopt;
     }
-    result.lane_profile_detection = detect_bms_lane_profile({
+    result.value.lane_profile_detection = detect_bms_lane_profile({
         .file_extension = options.file_extension,
         .player_header = player_header,
         .octave_fp_header = octave_fp_header,
         .used_channels = used_playable_channels,
         .explicit_profile_id = options.lane_profile_id,
     });
-    auto selected = result.lane_profile_detection->selected_profile;
+    auto selected = result.value.lane_profile_detection->selected_profile;
     if (options.lane_profile_id.has_value() && !selected.has_value()) {
         report_unavailable_lane_profile(options, channel_lines, result);
     }
@@ -2511,9 +2511,15 @@ void prepare_channel_materialization(
     }
 }
 
-auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t options)
-    -> bms_parse_result_t {
-    bms_parse_result_t result;
+auto bms_parse_result_t::from(bms_parse_outcome_t&& outcome) -> bms_parse_result_t {
+    return {.song = std::move(outcome.value.song), .encoding = std::move(outcome.value.encoding),
+        .lane_profile_detection = std::move(outcome.value.lane_profile_detection),
+        .diagnostics = std::move(outcome.diagnostics)};
+}
+
+auto bms_parse_result_t::from(std::span<const std::byte> bytes, bms_parse_options_t options)
+    -> bms_parse_outcome_t {
+    bms_parse_outcome_t result{};
     auto lines = prepare_bms_source_lines(bytes, options, result);
     if (!lines.has_value()) {
         return result;
@@ -2660,10 +2666,14 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
 
     finalize_bms_document(song, chart, last_measure_length_order,
                          std::move(ordered_metadata_fields),
-                         std::move(ordered_metadata_source_orders), result.encoding);
+                         std::move(ordered_metadata_source_orders), result.value.encoding);
     song.charts.push_back(std::move(chart));
-    result.song = std::move(song);
+    result.value.song = std::move(song);
     return result;
+}
+
+auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t options) -> bms_parse_result_t {
+    return bms_parse_result_t::from(bms_parse_result_t::from(bytes, std::move(options)));
 }
 
 auto bms_branch_statement_edit_result_t::has_errors() const -> bool {

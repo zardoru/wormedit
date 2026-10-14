@@ -3264,13 +3264,15 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
 } // namespace
 
 auto bms_write_result_t::has_errors() const -> bool {
-    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-        return diagnostic.severity == diagnostic_severity_t::error;
-    });
+    return diagnostic_queries::has_errors(diagnostics);
 }
 
-auto write_bms(const song_document_t& song, bms_write_options_t options) -> bms_write_result_t {
-    bms_write_result_t result;
+auto bms_write_result_t::from(bms_write_outcome_t&& outcome) -> bms_write_result_t {
+    return {.bytes = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
+}
+
+auto bms_write_result_t::from(const song_document_t& song, bms_write_options_t options) -> bms_write_outcome_t {
+    bms_write_outcome_t result{};
     try {
         const chart_document_t* chart{};
         if (options.chart.has_value()) {
@@ -3303,14 +3305,14 @@ auto write_bms(const song_document_t& song, bms_write_options_t options) -> bms_
             chart->beat_zero_audio_offset_seconds.numerator == 0 &&
             options.branch_policy == bms_branch_policy_t::preserve_tree) {
             if (const auto source = retained_source_bytes(song, *chart); source) {
-                result.bytes =
+                result.value =
                     std::string(reinterpret_cast<const char*>(source->data()), source->size());
                 return result;
             }
         }
         auto normalized = normalized_write(song, *chart, options, result.diagnostics);
         if (!options.output_encoding.has_value()) {
-            result.bytes = std::move(normalized);
+            result.value = std::move(normalized);
             return result;
         }
         auto encoded = encode_normalized_bms(normalized, *options.output_encoding);
@@ -3327,12 +3329,16 @@ auto write_bms(const song_document_t& song, bms_write_options_t options) -> bms_
                      std::to_string(encoded.error().error_offset),
                  "$.output_encoding");
         }
-        result.bytes = std::move(*encoded);
+        result.value = std::move(*encoded);
     } catch (const write_failure_t& failure) {
         result.diagnostics.push_back(
             {diagnostic_severity_t::error, failure.code, failure.message, failure.path});
     }
     return result;
+}
+
+auto write_bms(const song_document_t& song, bms_write_options_t options) -> bms_write_result_t {
+    return bms_write_result_t::from(bms_write_result_t::from(song, std::move(options)));
 }
 
 } // namespace wormedit

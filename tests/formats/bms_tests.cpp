@@ -1449,3 +1449,53 @@ TEST_CASE("BMS decimal declarations keep the explicit exponent limit", "[unit][f
         return diagnostic.code == wormedit::bms_parse_diagnostic_code_t::invalid_number;
     }));
 }
+
+TEST_CASE("BMS shared parse warnings retain encoding and profile metadata without a song", "[unit][bms][results]") {
+    using namespace wormedit;
+    bms_parse_outcome_t parsed{};
+    parsed.value.encoding.detected = text_encoding_t::ascii;
+    parsed.value.lane_profile_detection.emplace();
+    parsed.diagnostics.push_back({.severity = diagnostic_severity_t::warning, .code = bms_parse_diagnostic_code_t::malformed_line, .message = "warning"});
+    CHECK(parsed.ok());
+    const auto legacy = bms_parse_result_t::from(std::move(parsed));
+    CHECK_FALSE(legacy.has_errors());
+    CHECK_FALSE(legacy.song);
+    CHECK(legacy.encoding.detected == text_encoding_t::ascii);
+    CHECK(legacy.lane_profile_detection.has_value());
+    CHECK(legacy.diagnostics.front().message == "warning");
+}
+
+TEST_CASE("BMS shared parse keeps partial documents beside errors", "[unit][bms][results]") {
+    using namespace wormedit;
+    bms_parse_outcome_t parsed{.value = {.song = song_document_t{.id = song_id_t{44}}},
+        .diagnostics = {{.severity = diagnostic_severity_t::error, .code = bms_parse_diagnostic_code_t::malformed_line, .message = "error"}}};
+    CHECK_FALSE(parsed.ok());
+    const auto legacy = bms_parse_result_t::from(std::move(parsed));
+    REQUIRE(legacy.song);
+    CHECK(legacy.song->id == song_id_t{44});
+    CHECK(legacy.has_errors());
+}
+
+TEST_CASE("BMS primary byte-limit rejection retains the requested encoding", "[unit][bms][results]") {
+    using namespace wormedit;
+    const std::string_view source = "a";
+    auto parsed = bms_parse_result_t::from(std::as_bytes(std::span{source.data(), source.size()}),
+        {.encoding_override = text_encoding_t::utf8, .max_source_bytes = 0});
+    REQUIRE_FALSE(parsed.ok());
+    CHECK(parsed.value.encoding.user_override == text_encoding_t::utf8);
+    const auto legacy = bms_parse_result_t::from(std::move(parsed));
+    CHECK(legacy.has_errors());
+    CHECK(legacy.encoding.user_override == text_encoding_t::utf8);
+    CHECK_FALSE(legacy.song);
+}
+
+TEST_CASE("BMS shared write warnings retain bytes and diagnostic paths", "[unit][bms][results]") {
+    using namespace wormedit;
+    bms_write_outcome_t written{.value = std::string{"bytes"},
+        .diagnostics = {{.severity = diagnostic_severity_t::warning, .message = "warning", .path = "$"}}};
+    CHECK(written.ok());
+    const auto legacy = bms_write_result_t::from(std::move(written));
+    CHECK_FALSE(legacy.has_errors());
+    CHECK(legacy.bytes == "bytes");
+    CHECK(legacy.diagnostics.front().path == "$");
+}

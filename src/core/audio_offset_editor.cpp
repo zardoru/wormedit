@@ -91,8 +91,11 @@ auto update_audio_offset_drag(const song_document_t& document, const audio_offse
         return reject_drag(diagnostic_code_t::unsupported_feature,
                            "audio offset dragging is disabled while timing is locked");
     }
+    const document_stamp_t stamp{.project = document.id, .revision = drag.document_revision};
+    if (!stamp.is_current(document))
+        return reject_drag(diagnostic_code_t::invalid_id, stale_action_message("Audio offset drag"));
     const auto* selected = document.find_chart(drag.chart);
-    if (document.revision != drag.document_revision || selected == nullptr ||
+    if (selected == nullptr ||
         selected->beat_zero_audio_offset_seconds != drag.original_offset_seconds) {
         return reject_drag(diagnostic_code_t::invalid_id,
                            "audio offset drag expired after the document changed");
@@ -149,7 +152,7 @@ auto commit_audio_offset_drag(document_history_t& history, const audio_offset_dr
         document_command_result_t result{.revision = history.document.revision};
         result.diagnostics.push_back(
             error(diagnostic_code_t::invalid_id,
-                  "audio offset drag expired before it could be committed"));
+                  stale_action_message("Audio offset drag")));
         return result;
     }
     const auto* selected = history.document.find_chart(drag.chart);

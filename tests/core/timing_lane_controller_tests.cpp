@@ -1,3 +1,4 @@
+#include "../support/stale_action_assertions.h"
 #include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/timing_lane_controller.h>
 
@@ -438,6 +439,7 @@ TEST_CASE("existing timing edit targets reject unknown, wrong-kind, locked, and 
     const auto revision_after_intervening = history.document.revision;
     CHECK_FALSE(update_timing_lane_pseudonote(history, stale, timing_bpm_value_t{{90, 1}}, false));
     CHECK(stale.status == timing_lane_pseudonote_status_t::cancelled);
+    test::check_stale_action_message(stale.diagnostics, "Timing pseudo-note");
     CHECK(has_code(stale, diagnostic_code_t::invalid_id));
     CHECK(history.document.revision == revision_after_intervening);
     CHECK(history.document.charts.front().bpms.front().beats_per_minute ==

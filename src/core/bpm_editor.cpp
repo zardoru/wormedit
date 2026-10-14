@@ -437,7 +437,7 @@ auto update_beat_interval_drag(const song_document_t& document, const beat_inter
         result.diagnostics.push_back(error(
             timing_locked ? diagnostic_code_t::unsupported_feature : diagnostic_code_t::invalid_id,
             timing_locked ? "beat fitting is disabled while timing is locked"
-                          : "beat fit expired after the document changed"));
+                          : stale_action_message("Beat fit")));
         return result;
     }
     const auto chart = document.find_chart(drag.chart);

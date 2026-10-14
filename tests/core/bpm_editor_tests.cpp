@@ -1,3 +1,4 @@
+#include "../support/stale_action_assertions.h"
 #include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/measure_editor.h>
 #include <wormedit/core/timing.h>
@@ -178,6 +179,7 @@ TEST_CASE("interval beat drag previews by source frame and commits one undoable 
           signed_rational_t{60, 1});
 
     const auto stale = commit_beat_interval_drag(history, *proposed.drag);
+    test::check_stale_action_message(stale.diagnostics, "Beat fit");
     CHECK_FALSE(stale);
     CHECK(has_code(stale, diagnostic_code_t::invalid_id));
 }

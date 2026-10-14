@@ -1,3 +1,4 @@
+#include "../support/stale_action_assertions.h"
 #include <wormedit/core/lane_migration.h>
 #include <wormedit/formats/bmson.h>
 #include <wormedit/formats/bms.h>
@@ -357,7 +358,9 @@ TEST_CASE("lane migration rejects modified previews and another song at matching
 
     auto other = song;
     other.id = song_id_t{9};
+    test::check_stale_action_message(propose_lane_migration(song, song.revision + 1, chart_id_t{2}, *target).message, "Lane migration");
     auto other_history = document_history_t::from(other);
+    test::check_stale_action_message(apply_lane_migration(other_history, preview, false).payload.message, "Lane migration");
     CHECK(apply_lane_migration(other_history, preview, false).payload.issue ==
           lane_migration_issue_t::stale_revision);
 

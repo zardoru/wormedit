@@ -902,7 +902,7 @@ auto draft_is_current(const document_history_t& history, sv_recipe_draft_t& draf
     if (timing_locked || history.document.revision != draft.document_revision) {
         reject_draft(draft, diagnostic_code_t::invalid_binding,
                      timing_locked ? "SV recipe draft was cancelled by timing lock"
-                                   : "SV recipe draft document revision is stale");
+                                   : stale_action_message("SV recipe draft"));
         draft.status = sv_recipe_draft_status_t::cancelled;
         return nullptr;
     }
@@ -1054,7 +1054,7 @@ auto preview_sv_recipe_draft(const document_history_t& history, const sv_recipe_
     }
     if (history.document.revision != draft.document_revision) {
         reject(preview.diagnostics, diagnostic_code_t::invalid_binding,
-               "SV recipe draft document revision is stale");
+               stale_action_message("SV recipe draft"));
         return preview;
     }
     const auto* chart = draft_chart_for(history, draft);
@@ -1330,7 +1330,7 @@ auto update_sv_recipe_range_drag(const document_history_t& history, sv_recipe_ra
     if (timing_locked || history.document.revision != drag.document_revision) {
         reject_drag(drag, diagnostic_code_t::invalid_binding,
                     timing_locked ? "SV recipe range drag was cancelled by timing lock"
-                                  : "SV recipe range drag document revision is stale",
+                                  : stale_action_message("SV recipe range drag"),
                     true);
         return false;
     }
@@ -1402,7 +1402,7 @@ auto commit_sv_recipe_range_drag(document_history_t& history, sv_recipe_range_dr
     if (timing_locked || history.document.revision != drag.document_revision) {
         reject(result.diagnostics, diagnostic_code_t::invalid_binding,
                timing_locked ? "SV recipe range drag was cancelled by timing lock"
-                             : "SV recipe range drag document revision is stale");
+                             : stale_action_message("SV recipe range drag"));
         drag.diagnostics = result.diagnostics;
         drag.status = sv_recipe_range_drag_status_t::rejected;
         return result;

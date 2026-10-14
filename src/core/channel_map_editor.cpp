@@ -271,8 +271,8 @@ auto overlay_replacements(lane_layout_t& layout,
 
 auto is_document_current(const document_history_t& history,
                             const channel_map_proposal_payload_t& canonical) -> bool {
-    return history.document.id == canonical.song &&
-           history.document.revision == canonical.revision;
+    return document_stamp_t{.project = canonical.song, .revision = canonical.revision}
+        .is_current(history.document);
 }
 
 } // namespace
@@ -287,9 +287,10 @@ auto propose_bms_channel_map_edit(const song_document_t& song,
     proposal.chart = chart_id;
     proposal.layout_segment = segment_id;
     proposal.revision = expected_revision;
-    if (song.revision != expected_revision) {
+    const document_stamp_t stamp{.project = song.id, .revision = expected_revision};
+    if (!stamp.is_current(song)) {
         fail(proposal, channel_map_issue_t::stale_revision,
-             "The document changed before channel-map preview.");
+             stale_action_message("Channel-map edit"));
         return proposal;
     }
     const auto chart = song.find_chart(chart_id);
@@ -380,7 +381,7 @@ auto apply_bms_channel_map_edit(document_history_t& history,
                           history.document.revision);
     if (!is_document_current(history, *canonical))
         return fail_apply(channel_map_issue_t::stale_revision,
-                          "The document changed after channel-map preview.",
+                          stale_action_message("Channel-map edit"),
                           history.document.revision);
     const auto verified = propose_bms_channel_map_edit(
         history.document, canonical->revision, canonical->chart, canonical->segment,
@@ -388,7 +389,7 @@ auto apply_bms_channel_map_edit(document_history_t& history,
     if (!verified || !is_proposal_current(verified, *canonical))
         return fail_apply(verified.issue == channel_map_issue_t::none
                               ? channel_map_issue_t::stale_revision : verified.issue,
-                          verified.message.empty() ? "The chart changed after preview."
+                          verified.message.empty() ? stale_action_message("Channel-map edit")
                                                    : verified.message,
                           history.document.revision);
     auto transaction = document_command_transaction_t::from(history);

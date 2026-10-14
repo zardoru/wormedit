@@ -1,3 +1,4 @@
+#include "../support/stale_action_assertions.h"
 #include <wormedit/core/chart_clipboard.h>
 #include <catch2/catch_test_macros.hpp>
 #include <source_location>
@@ -79,6 +80,7 @@ TEST_CASE("Chart clipboard rejects stale empty and mixed unsupported selections 
     const auto song = clipboard_song();
     auto state = clipboard_selection();
     expect(!copy_chart_selection(song, state, 6));
+    test::check_stale_action_message(copy_chart_selection(song, state, 6).error, "Chart selection copy");
     state.selected_objects.push_back({editor_selection_object_kind_t::bpm_event, object_id_t{1}});
     expect(!copy_chart_selection(song, state, 7));
     state.selected_objects.clear();
@@ -187,6 +189,7 @@ TEST_CASE("Chart clipboard paste rejects fractional rows stale revisions and for
     expect(!propose_chart_paste(song, chart_id_t{2}, clipboard,
         {measure_id_t{1}, 0}, 6).valid);
     clipboard.source_song = song_id_t{999};
+    test::check_stale_action_message(propose_chart_paste(song, chart_id_t{2}, clipboard, {measure_id_t{1}, 0}, 6).error, "Chart paste proposal");
     expect(!propose_chart_paste(song, chart_id_t{2}, clipboard,
         {measure_id_t{1}, 0}, 7).valid);
 }

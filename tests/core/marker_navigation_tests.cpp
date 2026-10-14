@@ -1,3 +1,4 @@
+#include "../support/stale_action_assertions.h"
 #include <wormedit/core/marker_navigation.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -229,6 +230,7 @@ TEST_CASE("section selection resolves beat spans and requires projection for aud
     CHECK(audio.diagnostics.empty());
 
     const auto stale = resolve_section_selection(song, 8, chart_id_t{2}, object_id_t{70});
+    test::check_stale_action_message(stale.diagnostics, "Marker navigation");
     CHECK(stale.status == section_selection_status_t::invalid_request);
     CHECK_FALSE(stale.diagnostics.empty());
 }

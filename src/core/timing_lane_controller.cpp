@@ -461,7 +461,7 @@ auto cancel_for_revision_or_lock(const document_history_t& history,
     -> bool {
     if (preview.document_revision != history.document.revision) {
         reject(preview, diagnostic_code_t::invalid_id,
-               "timing pseudo-note document revision is stale");
+               stale_action_message("Timing pseudo-note"));
         preview.status = timing_lane_pseudonote_status_t::cancelled;
         return true;
     }

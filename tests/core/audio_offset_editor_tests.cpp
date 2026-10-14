@@ -1,3 +1,4 @@
+#include "../support/stale_action_assertions.h"
 #include <wormedit/core/audio_offset_editor.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -123,6 +124,7 @@ TEST_CASE("audio offset drag rejects stale locked invalid and overflowing reques
 
     history.document.revision = 10;
     const auto stale = update_audio_offset_drag(history.document, *begun.drag, 1);
+    test::check_stale_action_message(stale.diagnostics, "Audio offset drag");
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_id));
     history.document.revision = 9;

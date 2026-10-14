@@ -554,9 +554,10 @@ auto propose_lane_migration(const song_document_t& song, std::uint64_t expected_
     proposal.chart = chart_id;
     proposal.revision = expected_revision;
     proposal.target = std::move(target);
-    if (song.revision != expected_revision) {
+    const document_stamp_t stamp{.project = song.id, .revision = expected_revision};
+    if (!stamp.is_current(song)) {
         fail(proposal, lane_migration_issue_t::stale_revision,
-             "The document changed before lane migration preview.");
+             stale_action_message("Lane migration"));
         return proposal;
     }
     const auto chart = song.find_chart(chart_id);
@@ -621,16 +622,17 @@ auto apply_lane_migration(document_history_t& history,
         return apply_failure(lane_migration_issue_t::invalid_mapping,
                              "Lane migration preview data was changed after proposal.",
                              history.document.revision);
-    if (history.document.id != canonical->song || history.document.revision != canonical->revision)
+    if (!document_stamp_t{.project = canonical->song, .revision = canonical->revision}
+             .is_current(history.document))
         return apply_failure(lane_migration_issue_t::stale_revision,
-                             "The document changed after lane migration preview.",
+                             stale_action_message("Lane migration"),
                              history.document.revision);
     const auto verified = propose_lane_migration(history.document, canonical->revision,
         canonical->chart, canonical->target, canonical->mapping);
     if (!verified || !is_preview_current(verified, *canonical))
         return apply_failure(verified.issue == lane_migration_issue_t::none
                                  ? lane_migration_issue_t::stale_revision : verified.issue,
-                             verified.message.empty() ? "The source chart changed after preview."
+                             verified.message.empty() ? stale_action_message("Lane migration")
                                                       : verified.message,
                              history.document.revision);
     if (!confirm_drop &&

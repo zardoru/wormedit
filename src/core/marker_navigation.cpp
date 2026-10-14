@@ -1,5 +1,6 @@
 #include "chart_object_ids.h"
 #include <wormedit/core/marker_navigation.h>
+#include <wormedit/core/command.h>
 
 #include <algorithm>
 #include <ranges>
@@ -32,9 +33,10 @@ struct chart_query_t {
 auto validate_chart_query(const song_document_t& song, std::uint64_t expected_revision,
                           chart_id_t chart_id, marker_navigation_limits_t limits) -> chart_query_t {
     chart_query_t query;
-    if (expected_revision != song.revision) {
+    const document_stamp_t stamp{.project = song.id, .revision = expected_revision};
+    if (!stamp.is_current(song)) {
         reject(query.diagnostics, diagnostic_code_t::invalid_id,
-               "marker navigation document revision is stale");
+               stale_action_message("Marker navigation"));
         return query;
     }
     const auto found = song.find_chart(chart_id);
@@ -374,14 +376,13 @@ auto validate_selected_marker(const chart_document_t& chart, const marker_naviga
 }
 
 template <typename coordinate_t>
-auto navigate_impl(const song_document_t& song, std::uint64_t expected_revision,
+auto navigate_impl(const song_document_t& song, chart_query_t&& query,
                    chart_id_t chart_id, coordinate_t cursor,
                    marker_navigation_direction_t direction, marker_navigation_filter_t filter,
-                   marker_navigation_limits_t limits, marker_anchor_t anchor,
+                   marker_anchor_t anchor,
                    const measure_lookup_t* measures, audio_projection_t* projection = nullptr)
     -> marker_navigation_result_t {
     marker_navigation_result_t result{.document_revision = song.revision, .chart = chart_id};
-    auto query = validate_chart_query(song, expected_revision, chart_id, limits);
     if (!query.diagnostics.empty()) {
         result.status = marker_navigation_status_t::invalid_request;
         result.diagnostics = std::move(query.diagnostics);
@@ -453,7 +454,7 @@ auto navigate_markers(const song_document_t& song, std::uint64_t expected_revisi
         return result;
     }
     audio_projection_t projection{.timing = timing, .measures = &measures};
-    return navigate_impl(song, expected_revision, chart, *cursor_row, direction, filter, limits,
+    return navigate_impl(song, std::move(query), chart, *cursor_row, direction, filter,
                          marker_anchor_t::beat, &measure_lookup, timing ? &projection : nullptr);
 }
 
@@ -461,8 +462,9 @@ auto navigate_markers(const song_document_t& song, std::uint64_t expected_revisi
                       chart_id_t chart, std::int64_t audio_millisecond_cursor,
                       marker_navigation_direction_t direction, marker_navigation_filter_t filter,
                       marker_navigation_limits_t limits) -> marker_navigation_result_t {
-    return navigate_impl(song, expected_revision, chart, audio_millisecond_cursor, direction,
-                         filter, limits, marker_anchor_t::audio_time, nullptr);
+    auto query = validate_chart_query(song, expected_revision, chart, limits);
+    return navigate_impl(song, std::move(query), chart, audio_millisecond_cursor, direction,
+                         filter, marker_anchor_t::audio_time, nullptr);
 }
 
 auto resolve_section_selection(const song_document_t& song, std::uint64_t expected_revision,

@@ -1,3 +1,4 @@
+#include "../support/stale_action_assertions.h"
 #include <wormedit/core/channel_map_editor.h>
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/formats/bms.h>
@@ -271,9 +272,11 @@ TEST_CASE("BMS channel-map proposals reject stale or altered state",
     REQUIRE(proposal);
     auto other = song;
     other.id = song_id_t{9};
+    test::check_stale_action_message(propose_bms_channel_map_edit(song, song.revision + 1, chart.id, chart.lane_layouts.front().id, std::span{&change, 1}).message, "Channel-map edit");
     auto history = document_history_t::from(other);
     CHECK(apply_bms_channel_map_edit(history, proposal).payload.issue ==
           channel_map_issue_t::stale_revision);
+    test::check_stale_action_message(apply_bms_channel_map_edit(history, proposal).payload.message, "Channel-map edit");
     CHECK(history.document.revision == other.revision);
     history = document_history_t::from(song);
     auto altered = proposal;

@@ -1,3 +1,4 @@
+#include "../support/stale_action_assertions.h"
 #include <wormedit/core/sv_recipe.h>
 #include <wormedit/core/workspace.h>
 
@@ -366,6 +367,7 @@ TEST_CASE("SV recipe range drag rejects zero spans, locks, and stale revisions a
     proposed.metadata.title = "revision change";
     REQUIRE(commit_document_command(history, std::move(proposed), "Unrelated edit"));
     CHECK_FALSE(update_sv_recipe_range_drag(history, stale, {measure_id_t{12}, 480}, false));
+    test::check_stale_action_message(stale.diagnostics, "SV recipe range drag");
     CHECK(stale.status == sv_recipe_range_drag_status_t::rejected);
     CHECK(history.document.charts.front().sv_recipes.front().range == original);
 }
@@ -571,6 +573,7 @@ TEST_CASE("SV recipe drafts reject invalid candidates and stale revisions withou
     const auto after_external_edit = history.document.revision;
     CHECK_FALSE(preview_sv_recipe_draft(history, stale));
     CHECK_FALSE(apply_sv_recipe_draft(history, stale));
+    test::check_stale_action_message(stale.diagnostics, "SV recipe draft");
     CHECK(stale.status == sv_recipe_draft_status_t::cancelled);
     CHECK(history.document.revision == after_external_edit);
     CHECK(history.document.charts.front().sv_recipes.size() == 1);

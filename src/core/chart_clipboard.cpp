@@ -176,7 +176,8 @@ auto collect(chart_clipboard_t& clipboard, const chart_document_t& chart,
 auto copy_chart_selection(const song_document_t& document,
                           const editor_interaction_state_t& state,
                           std::uint64_t expected_revision, object_id_t kiai_head) -> chart_clipboard_result_t {
-    if (document.revision != expected_revision) return {{}, "The document has changed."};
+    const document_stamp_t stamp{.project = document.id, .revision = expected_revision};
+    if (!stamp.is_current(document)) return {{}, stale_action_message("Chart selection copy")};
     const auto chart = document.find_chart(state.chart);
     if (chart == nullptr) return {{}, "The selected chart no longer exists."};
     auto selected = selected_objects(state);
@@ -669,7 +670,8 @@ auto propose_chart_paste(const song_document_t& document, chart_id_t chart_id,
         result.error = std::move(error);
         return result;
     };
-    if (document.revision != expected_revision) return reject("The document has changed.");
+    const document_stamp_t stamp{.project = document.id, .revision = expected_revision};
+    if (!stamp.is_current(document)) return reject(stale_action_message("Chart paste proposal"));
     if (document.id != clipboard.source_song) return reject("Clipboard resources belong to another project.");
     if (clipboard.objects.empty() || clipboard.objects.size() > maximum_objects)
         return reject("The clipboard is empty or exceeds its object limit.");

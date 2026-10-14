@@ -332,13 +332,6 @@ struct beat_section_edit_t {
     bool from_selection{};
 };
 
-auto finish_marker_edit_feedback(compose_action_context_t& context,
-                                 const wormedit::document_command_result_t& applied,
-                                 std::string success, std::string unchanged,
-                                 std::string rebind_failure,
-                                 notification_source_t source = notification_source_t::edit)
-    -> std::string;
-
 beat_section_edit_t make_beat_section_insertion(compose_action_context_t& context,
                                                 const wormedit::chart_document_t& chart);
 
@@ -348,7 +341,7 @@ auto make_existing_beat_section_edit(compose_action_context_t& context,
 
 std::string beat_section_success(const WormUiWorkspaceAction& action, bool from_selection);
 
-std::optional<std::string> edit_beat_section(compose_action_context_t& context);
+compose_action_outcome_t edit_beat_section(compose_action_context_t& context);
 
 std::optional<std::string> dispatch_compose_beat_section_action(compose_action_context_t& context);
 
@@ -356,7 +349,7 @@ auto make_audio_bookmark_edit(compose_action_context_t& context,
                               const wormedit::chart_document_t& chart)
     -> std::variant<wormedit::marker_edit_action_t, std::string>;
 
-std::optional<std::string> edit_audio_bookmark(compose_action_context_t& context);
+compose_action_outcome_t edit_audio_bookmark(compose_action_context_t& context);
 
 std::optional<std::string>
 dispatch_compose_audio_bookmark_action(compose_action_context_t& context);
@@ -365,7 +358,7 @@ auto make_audio_section_edit(compose_action_context_t& context,
                              const wormedit::chart_document_t& chart)
     -> std::variant<wormedit::marker_edit_action_t, std::string>;
 
-std::optional<std::string> edit_audio_section(compose_action_context_t& context);
+compose_action_outcome_t edit_audio_section(compose_action_context_t& context);
 
 std::optional<std::string> dispatch_compose_audio_section_action(compose_action_context_t& context);
 
@@ -373,22 +366,22 @@ auto make_beat_bookmark_edit(compose_action_context_t& context,
                              const wormedit::chart_document_t& chart)
     -> std::variant<wormedit::marker_edit_action_t, std::string>;
 
-std::optional<std::string> edit_beat_bookmark(compose_action_context_t& context);
+compose_action_outcome_t edit_beat_bookmark(compose_action_context_t& context);
 
 std::optional<std::string> dispatch_compose_beat_bookmark_action(compose_action_context_t& context);
 
-std::optional<std::string> edit_selected_note_labels(compose_action_context_t& context);
+compose_action_outcome_t edit_selected_note_labels(compose_action_context_t& context);
 
 std::string navigate_audio_marker(compose_action_context_t& context);
 
-std::string search_selected_note_labels(compose_action_context_t& context);
+compose_action_outcome_t search_selected_note_labels(compose_action_context_t& context);
 
 auto selection_transform_for(WormUiComposeActionKind kind) -> std::optional<selection_transform_t>;
 
-std::string transform_selected_notes(compose_action_context_t& context,
+compose_action_outcome_t transform_selected_notes(compose_action_context_t& context,
                                      selection_transform_t transform);
 
-std::string edit_cursor_measure(compose_action_context_t& context,
+compose_action_outcome_t edit_cursor_measure(compose_action_context_t& context,
                                 cursor_measure_command_t command);
 
 struct recipe_form_target_t {
@@ -398,15 +391,15 @@ struct recipe_form_target_t {
 
 auto recipe_form_target(compose_action_context_t& context) -> std::optional<recipe_form_target_t>;
 
-std::string propose_recipe_form_action(compose_action_context_t& context);
+compose_action_outcome_t propose_recipe_form_action(compose_action_context_t& context);
 
-std::string apply_recipe_form_action(compose_action_context_t& context);
+compose_action_outcome_t apply_recipe_form_action(compose_action_context_t& context);
 
 compose_action_outcome_t set_cursor_measure_meter(compose_action_context_t& context);
 
 compose_action_outcome_t set_measures_meter(compose_action_context_t& context);
 
-std::string move_bar_line(compose_action_context_t& context);
+compose_action_outcome_t move_bar_line(compose_action_context_t& context);
 
 std::optional<std::string> dispatch_compose_marker_action(compose_action_context_t& context);
 

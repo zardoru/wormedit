@@ -60,6 +60,12 @@ auto compose_action_outcome_t::from(std::string message, notification_severity_t
             .mutated = mutated, .accepted = accepted};
 }
 
+auto compose_action_outcome_t::from(const diagnostic_t& diagnostic, notification_source_t source)
+    -> compose_action_outcome_t {
+    return from(diagnostic.message,
+        compose_action_detail::compose_notification_severity(diagnostic.severity), source, false, false);
+}
+
 auto compose_action_outcome_t::from(document_command_result_t&& command, std::string success,
     std::string unchanged, std::string_view rebind_failure, notification_source_t source)
     -> compose_action_outcome_t {

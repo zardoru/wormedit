@@ -27,6 +27,8 @@ struct compose_action_outcome_t {
     [[nodiscard]] static auto from(std::string message, notification_severity_t severity,
         notification_source_t source = notification_source_t::edit, bool mutated = false,
         bool accepted = true) -> compose_action_outcome_t;
+    [[nodiscard]] static auto from(const diagnostic_t& diagnostic,
+        notification_source_t source = notification_source_t::edit) -> compose_action_outcome_t;
     [[nodiscard]] static auto from(document_command_result_t&& command, std::string success,
         std::string unchanged, std::string_view rebind_failure,
         notification_source_t source = notification_source_t::edit) -> compose_action_outcome_t;

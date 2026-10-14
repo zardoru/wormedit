@@ -2423,3 +2423,26 @@ TEST_CASE("Rejected Compose meter edits keep their validation feedback without r
     check_action(entries.front().severity == notification_severity_t::warning);
     check_action(fixture.history.undo.empty());
 }
+
+TEST_CASE("Rejected Compose transforms and measure edits retain validation feedback",
+          "[compose-action-notifications][compose-outcome]") {
+    action_notification_fixture_t fixture;
+    fixture.workspace.song = song_id_t{99};
+    const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_TRANSFORM_MIRROR,
+                              WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS,
+                              WORM_UI_COMPOSE_ACTION_MOVE_BAR_LINE);
+    auto action = fixture.action(kind);
+    const std::array<std::uint64_t, 1> ids{0};
+    action.compose_measure_ids = ids.data();
+    action.compose_measure_id_count = ids.size();
+    const auto expected = kind == WORM_UI_COMPOSE_ACTION_TRANSFORM_MIRROR
+        ? "Select notes before transforming them."
+        : kind == WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS
+        ? "A chart needs at least one measure."
+        : "A meter needs a non-zero numerator and denominator.";
+    check_action(fixture.dispatch(action) == expected);
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::warning);
+    check_action(fixture.history.undo.empty());
+}

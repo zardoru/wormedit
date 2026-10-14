@@ -267,7 +267,7 @@ auto render_conversion_slice_plans(const song_document_t& song, const conversion
         if (options.stop.stop_requested()) return "cancelled";
         const std::array<float, 2> samples{};
         const auto bytes = audio::encode_wav_float32(samples, slice_span_sample_rate);
-        const auto saved = save_file_atomic(options.output_directory / name, bytes, bytes.size());
+        const auto saved = create_file_atomic(options.output_directory / name, bytes, bytes.size());
         if (!saved) return "Could not stage silent gameplay sample";
     }
     for (const auto& copy : converted.asset_copies)

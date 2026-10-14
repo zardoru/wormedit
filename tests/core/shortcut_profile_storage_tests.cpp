@@ -43,6 +43,17 @@ auto valid_profile() -> wormedit::shortcut_profile_t {
                                              shortcut_modifier_t::control)}}}}};
 }
 
+void check_rejected_profile_preserves_file(const std::filesystem::path& path,
+                                          const wormedit::shortcut_profile_t& profile) {
+    const auto before = read_text(path);
+    auto invalid = profile;
+    invalid.id = "not a valid ID";
+    const auto rejected = wormedit::create_shortcut_profile_file(path, invalid);
+    REQUIRE_FALSE(rejected);
+    CHECK(rejected.error().code == wormedit::shortcut_profile_save_status_t::invalid_profile);
+    CHECK(read_text(path) == before);
+}
+
 } // namespace
 
 TEST_CASE("shortcut profile storage round trips user preferences atomically",
@@ -51,18 +62,15 @@ TEST_CASE("shortcut profile storage round trips user preferences atomically",
     temporary_directory_t directory;
     const auto path = directory.path / "shortcuts.json";
 
-    CHECK(load_shortcut_profile(path).status == shortcut_profile_load_status_t::missing);
+    const auto missing = open_shortcut_profile(path);
+    REQUIRE_FALSE(missing);
+    CHECK(missing.error().value.code == shortcut_profile_load_status_t::missing);
     const auto profile = valid_profile();
-    const auto saved = save_shortcut_profile_atomic(path, profile);
-    REQUIRE(saved.status == shortcut_profile_save_status_t::published);
-    CHECK(load_shortcut_profile(path).profile == profile);
+    const auto saved = create_shortcut_profile_file(path, profile);
+    REQUIRE(saved);
+    CHECK(open_shortcut_profile(path) == profile);
 
-    const auto before = read_text(path);
-    auto invalid = profile;
-    invalid.id = "not a valid ID";
-    const auto rejected = save_shortcut_profile_atomic(path, invalid);
-    CHECK(rejected.status == shortcut_profile_save_status_t::invalid_profile);
-    CHECK(read_text(path) == before);
+    check_rejected_profile_preserves_file(path, profile);
 }
 
 TEST_CASE("shortcut profile storage distinguishes malformed, oversized, and unreadable files",
@@ -75,13 +83,16 @@ TEST_CASE("shortcut profile storage distinguishes malformed, oversized, and unre
         std::ofstream stream(path, std::ios::binary);
         stream << "{bad json";
     }
-    CHECK(load_shortcut_profile(path).status == shortcut_profile_load_status_t::invalid);
+    const auto malformed = open_shortcut_profile(path);
+    REQUIRE_FALSE(malformed);
+    CHECK(malformed.error().value.code == shortcut_profile_load_status_t::invalid);
 
     std::filesystem::resize_file(path, maximum_shortcut_profile_bytes + 1);
-    const auto oversized = load_shortcut_profile(path);
-    CHECK(oversized.status == shortcut_profile_load_status_t::resource_limit);
-    CHECK_FALSE(oversized.profile.has_value());
+    const auto oversized = open_shortcut_profile(path);
+    REQUIRE_FALSE(oversized);
+    CHECK(oversized.error().value.code == shortcut_profile_load_status_t::resource_limit);
 
-    const auto directory_load = load_shortcut_profile(directory.path);
-    CHECK(directory_load.status == shortcut_profile_load_status_t::io_error);
+    const auto directory_load = open_shortcut_profile(directory.path);
+    REQUIRE_FALSE(directory_load);
+    CHECK(directory_load.error().value.code == shortcut_profile_load_status_t::io_error);
 }

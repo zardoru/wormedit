@@ -71,8 +71,7 @@ TEST_CASE("shortcut startup applies a valid user profile to the registry",
         .id = "custom-layout",
         .bindings = {
             {.command = {"edit.sample"}, .shortcuts = {sample_shortcut(shortcut_key_t::b)}}}};
-    REQUIRE(save_shortcut_profile_atomic(path, profile).status ==
-            shortcut_profile_save_status_t::published);
+    REQUIRE(create_shortcut_profile_file(path, profile));
     auto registry = sample_registry();
 
     const auto result = apply_startup_shortcut_profile(path, registry);
@@ -92,8 +91,7 @@ TEST_CASE("rejected startup profiles do not partially change the command registr
         .id = "custom-layout",
         .bindings = {
             {.command = {"edit.missing"}, .shortcuts = {sample_shortcut(shortcut_key_t::b)}}}};
-    REQUIRE(save_shortcut_profile_atomic(path, profile).status ==
-            shortcut_profile_save_status_t::published);
+    REQUIRE(create_shortcut_profile_file(path, profile));
     auto registry = sample_registry();
     const auto before = registry.commands;
 
@@ -110,8 +108,7 @@ TEST_CASE("startup diagnostics have bounded count and message size",
     using namespace wormedit;
     temporary_directory_t directory;
     const auto path = directory.path / "shortcuts.json";
-    REQUIRE(save_shortcut_profile_atomic(path, {.id = "empty-profile"}).status ==
-            shortcut_profile_save_status_t::published);
+    REQUIRE(create_shortcut_profile_file(path, {.id = "empty-profile"}));
 
     command_registry_t registry;
     const auto shared = sample_shortcut(shortcut_key_t::a);

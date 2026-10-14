@@ -36,8 +36,8 @@ auto apply_program_preferences(program_preferences_runtime_t& runtime,
     if (!serialized) return "Program preferences contain invalid or oversized values.";
     runtime.preferences = std::move(candidate);
     if (runtime.path.empty()) return "Program preferences changed, but their directory is unavailable.";
-    const auto saved = save_file_atomic(runtime.path, *serialized, maximum_preferences_bytes);
-    if (!saved) return "Program preferences changed, but saving failed: " + saved.error;
+    const auto saved = create_file_atomic(runtime.path, *serialized, maximum_preferences_bytes);
+    if (!saved) return "Program preferences changed, but saving failed: " + saved.error();
     return {};
 }
 namespace {
@@ -90,9 +90,9 @@ auto remember_recent_file(program_preferences_runtime_t& runtime,
     if (runtime.path.empty()) return "Recent files changed, but their directory is unavailable.";
     auto json = nlohmann::json::array();
     for (const auto& entry : runtime.recent_files) json.push_back(entry.path);
-    const auto saved = save_file_atomic(runtime.path.parent_path() / "recent-files.json",
+    const auto saved = create_file_atomic(runtime.path.parent_path() / "recent-files.json",
                                        json.dump(2), maximum_preferences_bytes);
-    return saved ? std::string{} : "Could not save recent files: " + saved.error;
+    return saved ? std::string{} : "Could not save recent files: " + saved.error();
 }
 
 void build_recent_files_view(const program_preferences_runtime_t& runtime, WormUiWorkspaceView& view) {

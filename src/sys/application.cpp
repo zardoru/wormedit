@@ -466,14 +466,14 @@ void remap_and_save_shortcut(wormedit::command_registry_t& registry, const worme
                                                         : remapped.diagnostics.front().message);
         return;
     }
-    const auto saved = wormedit::save_shortcut_profile_atomic(shortcut_profile_path(preferences),
+    const auto saved = wormedit::create_shortcut_profile_file(shortcut_profile_path(preferences),
                                                               wormedit::shortcut_profile_t::from(registry, "user"));
     if (saved)
         notifications.post(wormedit::notification_severity_t::success, wormedit::notification_source_t::input,
                            "Shortcut saved: " + id.value);
     else
         notifications.post(wormedit::notification_severity_t::error, wormedit::notification_source_t::system,
-                           "Shortcut kept for this session, but the profile was not saved: " + saved.error);
+                           "Shortcut kept for this session, but the profile was not saved: " + saved.error().message);
     if (!remapped.diagnostics.empty())
         notifications.post(wormedit::notification_severity_t::warning, wormedit::notification_source_t::input,
                            "Shortcut conflict: " + remapped.diagnostics.front().message);

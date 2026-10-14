@@ -748,11 +748,11 @@ const shortcut_chord_t remap_test_chord{.key = shortcut_key_t::k,
 
 void check_save_and_reload(const command_registry_t& registry, const std::shared_ptr<std::vector<command_id_t>>& calls,
                            const std::filesystem::path& path) {
-    REQUIRE(save_shortcut_profile_atomic(path, shortcut_profile_t::from(registry, "user")));
+    REQUIRE(create_shortcut_profile_file(path, shortcut_profile_t::from(registry, "user")));
     auto reloaded = remap_test_registry(calls);
-    const auto loaded = load_shortcut_profile(path);
+    const auto loaded = open_shortcut_profile(path);
     REQUIRE(loaded);
-    REQUIRE(apply_shortcut_profile(reloaded, *loaded.profile).applied);
+    REQUIRE(apply_shortcut_profile(reloaded, *loaded).applied);
     const auto* command = find_command(reloaded, {"test.remap"});
     REQUIRE(command != nullptr);
     CHECK(command->current_shortcuts == std::vector<shortcut_chord_t>{remap_test_chord});
@@ -780,7 +780,7 @@ TEST_CASE("failed remap save keeps the in-memory shortcut", "[core][command-regi
     std::filesystem::create_directories(directory);
 
     // A save into a missing directory fails, and the in-memory mapping stays in place.
-    CHECK_FALSE(save_shortcut_profile_atomic(directory / "missing" / "shortcuts.json",
+    CHECK_FALSE(create_shortcut_profile_file(directory / "missing" / "shortcuts.json",
                                              shortcut_profile_t::from(registry, "user")));
     CHECK(find_command(registry, {"test.remap"})->current_shortcuts ==
           std::vector<shortcut_chord_t>{remap_test_chord});

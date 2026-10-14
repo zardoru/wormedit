@@ -406,10 +406,10 @@ auto load_program_preferences(const std::filesystem::path& path) -> preferences_
 }
 
 auto save_program_preferences_atomic(const std::filesystem::path& path,
-    const program_preferences_t& value) -> atomic_file_save_result_t {
+    const program_preferences_t& value) -> atomic_file_save_outcome_t {
     const auto bytes = serialize_program_preferences(value);
-    if (!bytes) return {.error = "Preferences contain invalid or oversized values."};
-    return save_file_atomic(path, *bytes, maximum_preferences_bytes);
+    if (!bytes) return std::unexpected{"Preferences contain invalid or oversized values."};
+    return create_file_atomic(path, *bytes, maximum_preferences_bytes);
 }
 auto load_legacy_external_player_preferences(const std::filesystem::path& path,
     external_player_preferences_t& preferences) -> std::string {
@@ -450,7 +450,7 @@ auto load_program_preferences_for_startup(const std::filesystem::path& path,
         else result.migrated = true;
     }
     const auto saved = save_program_preferences_atomic(path, result.contents.preferences);
-    if (!saved) result.contents.warnings.push_back("Preferences could not be saved: " + saved.error);
+    if (!saved) result.contents.warnings.push_back("Preferences could not be saved: " + saved.error());
     return result;
 }
 

@@ -128,7 +128,7 @@ struct preferences_load_result_t {
 [[nodiscard]] auto load_program_preferences(const std::filesystem::path& path)
     -> preferences_load_result_t;
 [[nodiscard]] auto save_program_preferences_atomic(const std::filesystem::path& path,
-    const program_preferences_t& preferences) -> atomic_file_save_result_t;
+    const program_preferences_t& preferences) -> atomic_file_save_outcome_t;
 
 // Legacy quoted-text file is read only during first-run migration; failures retain values.
 [[nodiscard]] auto load_legacy_external_player_preferences(const std::filesystem::path& path,

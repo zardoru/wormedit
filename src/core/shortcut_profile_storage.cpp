@@ -178,36 +178,4 @@ auto create_shortcut_profile_file(const std::filesystem::path& path,
     return {};
 }
 
-auto shortcut_profile_load_result_t::from(shortcut_profile_load_outcome_t&& outcome)
-    -> shortcut_profile_load_result_t {
-    if (!outcome) {
-        return {.status = outcome.error().value.code,
-                .profile = std::nullopt,
-                .diagnostics = std::move(outcome.error().diagnostics),
-                .error = std::move(outcome.error().value.message)};
-    }
-    return {.status = shortcut_profile_load_status_t::loaded,
-            .profile = std::move(*outcome),
-            .diagnostics = {},
-            .error = {}};
-}
-
-auto shortcut_profile_save_result_t::from(shortcut_profile_save_outcome_t&& outcome)
-    -> shortcut_profile_save_result_t {
-    if (!outcome) {
-        return {.status = outcome.error().code, .error = std::move(outcome.error().message)};
-    }
-    return {.status = shortcut_profile_save_status_t::published, .error = {}};
-}
-
-auto load_shortcut_profile(const std::filesystem::path& path) -> shortcut_profile_load_result_t {
-    return shortcut_profile_load_result_t::from(open_shortcut_profile(path));
-}
-
-auto save_shortcut_profile_atomic(const std::filesystem::path& path,
-                                  const shortcut_profile_t& profile)
-    -> shortcut_profile_save_result_t {
-    return shortcut_profile_save_result_t::from(create_shortcut_profile_file(path, profile));
-}
-
 } // namespace wormedit

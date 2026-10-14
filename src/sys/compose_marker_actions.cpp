@@ -460,7 +460,7 @@ std::string transform_selected_notes(compose_action_context_t& context,
             context, "Finish or cancel the active Compose gesture before transforming notes.");
     if (context.environment.document.history.document.revision !=
         context.action.compose_input_document_revision)
-        return compose_action_warning(context, "Transform ignored because the document changed.");
+        return compose_action_warning(context, wormedit::stale_action_message("Transform"));
     auto severity = notification_severity_t::warning;
     auto status = apply_selection_transform(context.environment.document.history, context.state,
                                             transform, &severity);

@@ -95,7 +95,7 @@ auto dispatch_bga_feedback(const WormUiWorkspaceAction& action, document_history
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES &&
         action.compose_action != WORM_UI_COMPOSE_ACTION_REMOVE_UNUSED_BGA) return std::nullopt;
     if (history.document.revision != action.compose_input_document_revision)
-        return bga_feedback_t{notification_severity_t::warning, "BGA action ignored because the document changed."};
+        return bga_feedback_t{notification_severity_t::warning, wormedit::stale_action_message("BGA action")};
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES) {
         if (action.compose_import_path_count > WORM_UI_SOUND_DROP_CAPACITY) return bga_feedback_t{notification_severity_t::warning, "Image import batch is too large."};
         std::vector<std::string> paths;

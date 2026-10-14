@@ -679,7 +679,7 @@ auto dispatch_sound_properties_action(const WormUiWorkspaceAction& action,
         action.sound_properties_chart_id != workspace.selected_chart->value ||
         action.sound_properties_document_revision != history.document.revision) {
         publish({notification_severity_t::warning,
-                 "Sound properties ignored because the project, chart or revision changed."});
+                 wormedit::stale_action_message("Sound properties")});
         return true;
     }
     const auto resource = std::ranges::find(history.document.resources,

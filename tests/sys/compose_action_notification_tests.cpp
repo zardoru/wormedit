@@ -2184,7 +2184,7 @@ TEST_CASE("Project export rejects stale stamps and reports missing paths without
     if (stale) ++action.compose_input_project_id;
     require_action(fixture.dispatch_workspace(action, state));
     const auto entries = fixture.entries();
-    const std::string_view expected = stale ? "project, chart or revision changed" : "saved native project";
+    const std::string_view expected = stale ? "project, chart or document revision changed" : "saved native project";
     INFO("Expected export rejection: " << expected);
     check_action(std::ranges::any_of(entries, [&](const auto& entry) {
         return entry.message.find(expected) != std::string::npos;
@@ -2192,4 +2192,28 @@ TEST_CASE("Project export rejects stale stamps and reports missing paths without
     check_action(!state);
     check_action(fixture.history.undo.empty());
     check_action(!fixture.export_runtime.busy());
+}
+
+TEST_CASE("Workspace stale actions use the shared message without mutation",
+          "[compose-action-notifications][stale-message]") {
+    const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE,
+                              WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT,
+                              WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK,
+                              WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE);
+    action_notification_fixture_t fixture;
+    const auto revision = fixture.history.document.revision;
+    auto action = fixture.action(kind);
+    --action.compose_input_document_revision;
+    std::optional<editor_interaction_state_t> interaction;
+    require_action(fixture.dispatch_workspace(action, interaction));
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    const char* label = "BMS branch action";
+    if (kind == WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE) label = "Lane layout change";
+    if (kind == WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT) label = "BGM column count edit";
+    if (kind == WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK) label = "Sound relink";
+    check_action(entries.front().message == stale_action_message(label));
+    check_action(entries.front().severity == notification_severity_t::warning);
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
 }

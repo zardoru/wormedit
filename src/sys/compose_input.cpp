@@ -2367,7 +2367,7 @@ auto dispatch_bgm_mix_toggle(const WormUiComposeInputAction& input,
     if (!chart || workspace.active_tab != wormedit::workspace_tab_t::compose ||
         action.compose_input_chart_id != chart->id.value ||
         action.compose_input_document_revision != history.document.revision)
-        return "BGM mix input ignored because the chart or document revision changed.";
+        return wormedit::stale_action_message("BGM mix input");
     if (std::ranges::find(chart->bgm_source_lanes, wormedit::object_id_t{input.lane_id},
         &wormedit::bgm_source_lane_t::id) == chart->bgm_source_lanes.end())
         return "The BGM lane is no longer available.";

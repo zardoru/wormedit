@@ -362,10 +362,10 @@ auto dispatch_compose_area_action(const WormUiWorkspaceAction& action,
         kind != WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN && !compose_area_pause_conversion(kind))
         return std::nullopt;
     if (compose_area_pause_conversion(kind) && history.document.id.value != action.compose_input_project_id)
-        return area_rejection(context, "Area conversion ignored because the project changed.");
+        return area_rejection(context, wormedit::stale_action_message("Area conversion"));
     if (state.chart.value != action.compose_input_chart_id ||
         history.document.revision != action.compose_input_document_revision)
-        return area_rejection(context, "Area action ignored because the chart or document revision changed.");
+        return area_rejection(context, wormedit::stale_action_message("Area action"));
     if (action.compose_area_clear_requested) {
         state.retained_selection_range.reset();
         state.retained_canvas_selection_range.reset();

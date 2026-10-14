@@ -157,7 +157,7 @@ auto dispatch_compose_bookmark_action(compose_action_context_t& context) -> std:
         action.compose_input_chart_id != context.state.chart.value ||
         action.compose_input_document_revision != context.environment.document.history.document.revision)
         return compose_action_warning(context,
-                                      "Bookmark action is stale; reopen it in the active chart.");
+                                      wormedit::stale_action_message("Bookmark action"));
     if (editor_interaction_has_pending_gesture(context.state))
         return compose_action_warning(context, "Finish or cancel the active Compose gesture first.");
     if (!rename) {
@@ -357,7 +357,7 @@ std::optional<std::string> dispatch_compose_lane_layout_profile(compose_action_c
             "Finish or cancel the active Compose gesture before editing a lane layout.");
     if (context.environment.document.history.document.revision !=
         context.action.compose_input_document_revision)
-        return compose_action_warning(context, "Lane layout change ignored because the document changed.");
+        return compose_action_warning(context, wormedit::stale_action_message("Lane layout change"));
     const auto* chart =
         selected_chart(context.environment.document.history, context.environment.document.workspace);
     if (!chart || chart->id.value != context.action.compose_input_chart_id ||
@@ -780,7 +780,7 @@ std::optional<std::string> change_bmson_lane_mode(compose_action_context_t& cont
     using namespace wormedit;
     if (context.action.compose_input_project_id !=
         context.environment.document.history.document.id.value)
-        return compose_action_warning(context, "Channel lane action is stale; reopen it in the active project.");
+        return compose_action_warning(context, wormedit::stale_action_message("Channel lane action"));
     if (editor_interaction_has_pending_gesture(context.state))
         return compose_action_warning(context, "Finish or cancel the active Compose gesture before changing channel lanes.");
     const auto kind = context.action.compose_action;
@@ -877,7 +877,7 @@ std::optional<std::string> add_selected_compose_sounds_to_layer(compose_action_c
             context.environment.document.history.document.id.value ||
         app.project.semantic_layer.note_layer_menu_chart != context.state.chart ||
         app.project.semantic_layer.note_layer_menu_revision != context.action.compose_input_document_revision)
-        return compose_action_warning(context, "The selected sound layer menu is stale.");
+        return compose_action_warning(context, wormedit::stale_action_message("Sound layer menu"));
     app.project.semantic_layer.note_layer_menu_row_count = 0;
     const auto applied = apply_compose_selected_sound_layer_assignment(
         context.environment.document.history, context.state,
@@ -1528,7 +1528,7 @@ std::string dispatch_bms_branch_choice_action(
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
         workspace.selected_chart->value != action.compose_input_chart_id ||
         history.document.revision != action.compose_input_document_revision) {
-        return warning("BMS branch action ignored because the chart or document revision changed.");
+        return warning(wormedit::stale_action_message("BMS branch action"));
     }
     if (interaction_state && editor_interaction_has_pending_gesture(*interaction_state)) {
         return warning("Finish or cancel the active Compose gesture before changing a BMS branch.");
@@ -1626,7 +1626,7 @@ std::string dispatch_bms_branch_statement_action(
     };
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
         workspace.selected_chart->value != action.compose_input_chart_id)
-        return warning("BMS branch statement action ignored because the selected chart changed.");
+        return warning(wormedit::stale_action_message("BMS branch statement action"));
     if (interaction_state && editor_interaction_has_pending_gesture(*interaction_state))
         return warning("Finish or cancel the active Compose gesture before editing a BMS branch.");
     if (action.compose_branch_statement_id == 0)
@@ -1831,7 +1831,7 @@ std::string dispatch_bms_branch_block_action(
     };
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
         workspace.selected_chart->value != action.compose_input_chart_id)
-        return warning("BMS branch block action ignored because the selected chart changed.");
+        return warning(wormedit::stale_action_message("BMS branch block action"));
     if (interaction_state && editor_interaction_has_pending_gesture(*interaction_state))
         return warning("Finish or cancel the active Compose gesture before editing a BMS branch.");
     const auto chart = std::ranges::find(history.document.charts, *workspace.selected_chart,
@@ -1839,7 +1839,7 @@ std::string dispatch_bms_branch_block_action(
     if (chart == history.document.charts.end() || !chart->bms_control_tree)
         return warning("The selected chart has no BMS branch outline.");
     if (history.document.revision != action.compose_input_document_revision)
-        return warning("BMS branch block action ignored because the document revision changed.");
+        return warning(wormedit::stale_action_message("BMS branch block action"));
     const auto outcome = run_bms_block_command(action, history, *chart, *workspace.selected_chart);
     const auto& applied = outcome.result;
     const auto& success = outcome.message;
@@ -2247,11 +2247,11 @@ auto temporary_compose_interaction_is_current(
         (!initial_layout_action || selected->lane_layouts.empty());
 }
 
-auto temporary_compose_interaction_expired_message(bool initial_layout_action, bool sound_relink) -> const char* {
-    if (sound_relink) return "Sound relink ignored because the selected project, chart or document changed.";
+auto temporary_compose_interaction_expired_message(bool initial_layout_action, bool sound_relink) -> std::string {
+    if (sound_relink) return wormedit::stale_action_message("Sound relink");
     return initial_layout_action
-        ? "Lane layout change ignored because the selected difficulty or document changed."
-        : "BGM column count edit expired because the selected chart or document changed.";
+        ? wormedit::stale_action_message("Lane layout change")
+        : wormedit::stale_action_message("BGM column count edit");
 }
 
 auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
@@ -2339,7 +2339,7 @@ auto dispatch_project_export_action(const WormUiWorkspaceAction& action,
         action.compose_input_chart_id != chart->id.value ||
         action.compose_input_document_revision != history.document.revision) {
         notifications.post(notification_severity_t::warning, notification_source_t::export_,
-                           "Export ignored because the selected project, chart or revision changed.");
+                           wormedit::stale_action_message("Export"));
         return true;
     }
     if (application.project.clipboard.paste_session || (retained && editor_interaction_has_pending_gesture(*retained))) {

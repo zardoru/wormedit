@@ -14,7 +14,7 @@ Behavior is preserved except explicit owner decisions. Every approved behavior c
 
 Keep the audit's necessary complexity: ordered explicit cancellation/join/cleanup/output close, notifications last and probe scheduler after resident loader; generation bump first; stack frame projections and local tap timestamp/viewport delta; project-owned chart-keyed maps; decoder feature blocks; captured-state, cache/workspace and per-batch-item stamps; staged scratch histories/Undo merging and distinct plan/parse/query/storage/dispatch semantics. Do not pursue rejected claims or merge boundary calls with different triggers.
 
-Order after the current waves (owner, 2026-10-14): T-618 → T-624 → hot-file leftovers → T-630 (drake); T-620 core, then its sys/UI inventory (hydra); then a pattern-recognition audit of `src/ui/nuklear` in the style of this audit (ownership, repeated widget/panel/popup shapes, state lifetimes, helpers copied under other names), producing its own cards; T-621 (folders) stays last.
+Order after the current waves (owner, 2026-10-14): T-618 → T-624 → hot-file leftovers → T-630 (drake) → T-631 (views as `T::from`; drake, or any free lane once T-630 lands); T-620 core, then its sys/UI inventory (hydra); then a pattern-recognition audit of `src/ui/nuklear` in the style of this audit (ownership, repeated widget/panel/popup shapes, state lifetimes, helpers copied under other names), producing its own cards, after T-631 so it reads the final view names; T-621 (folders) stays last.
 
 Each implementation card runs the full Verify gate. After T-622 lands, add `cmake --preset linux-clang`, `cmake --build --preset linux-clang` and `ctest --preset linux-clang --output-on-failure` to each gate. libc++ is gated only after the owner installs it; record configured/not run until then. No Xvfb in implementer sandboxes. A failing gate is fixed within authorized scope or stops the card and is reported.
 
@@ -705,3 +705,23 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 - **Reject/failure behavior:** Stale or invalid proposals reject before any document copy; a failed build carries no applicable payload. A failed gate stops completion.
 - **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build <source-file>` for every touched .cpp, with no new/increased violations; the linux-clang preset. Skip Xvfb in the sandbox.
 - **Out of scope:** Core pointer gesture redesign; UI state split (D6); new behavior.
+
+## T-631 Build views with their type's `from`
+
+- **Status:** Ready (after T-630; owner request 2026-10-14)
+- **Findings closed:** NV follow-up (owner amendment of D13, 2026-10-14): views are values built from the document, so they follow the `T::from` rule like every other type.
+- **Stale-plan audit:** Search by behavior: every `build_<x>_view` declaration and its return type; view types not named `*_view_t` (`*_projection_t`, `flattened_workspace_t`, `bga_list_t`, `keysound_list_t`, …); views already wrapped in T-620 result types (`*_view_result_t`, `*_view_outcome_t`); cached variants (`build_keysound_list_cached_view`); existing `*_view_t::from`. On 2026-10-14 there were about 97 `build_*_view` names and one `workspace_view_t::from`; of 36 header declarations, 8 returned a result wrapper and the rest mixed owned C++ types, C ABI structs (`WormUi*View`) and `std::vector`/`std::array`.
+- **Outcome:** A view with its own C++ type is built by `<x>_view_t::from(document, …)`, and its type is named `<x>_view_t`; a diagnosed view by its result type's `from` (T-620's shape). `build_<x>_view` remains only where the result is a C ABI struct or a plain container. Cached builders become a `from` overload taking the cache, not a second name. `grep '_view_t::from'` lists every frontend view; the forwarders go in the same part as their callers.
+- **Read first:** `docs/audits/state-ownership-2026-10-12.md` (D13 and its amendment), `docs/chart-editor-plan/decisions/code-style.md` (naming table), the T-612 and T-620 completion notes on this page.
+- **Files owned:** Each view's header/source and its callers, recorded per part (one module per checkpoint: core, audio/visual, sys, `src/ui/frontend`). `src/ui/frontend` C ABI struct names and layouts do not change.
+- **Runs after/before:** After T-630 (shares its frontend callers). Before the Nuklear pattern audit and T-621.
+- **Decisions applied:**
+  - D13 as amended (owner, 2026-10-14): `<x>_view_t::from` for C++ view types; `build_<x>_view` for C ABI and container results.
+- **Steps:**
+  1. Inventory every view builder with its return type and class (owned type, result-wrapped, C ABI, container); list type renames.
+  2. Per module: rename the view type to `<x>_view_t` where needed, move the builder to `from` (AST-aware renames, see the refactor tools), migrate callers and delete the free function.
+  3. Run every Verify command; record search evidence, kept `build_<x>_view` names with their reason, actual output tails and supporting ownership in each commit body. Claude transfers evidence on merge.
+- **Invariants:** No behavior change: same diagnostics, allocations, cache keys and C ABI. No new copies (return by value as today). Follow Execution performance/type/ABI/complexity rules.
+- **Reject/failure behavior:** Stale views keep rejecting as today. A failed gate stops completion.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build <source-file>` for every touched .cpp, with no new/increased violations; the linux-clang preset. Skip Xvfb in the sandbox.
+- **Out of scope:** Changing what a view contains; derived index builders (`build_sv_graph`, `build_speed_graph`, `build_stem_index`) keep `build_`; the UI state split (D6).

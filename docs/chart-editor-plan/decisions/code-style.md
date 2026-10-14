@@ -55,7 +55,8 @@ it in new code even before the card lands.
 |---|---|
 | `make_` / `T::from` | builds a new value, no side effects |
 | `build_` | computes a derived index or cache from existing data |
-| `build_<x>_view` | a read-only view of the document for the frontend (never `project_`, which means the song project) |
+| `<x>_view_t::from` | a read-only view of the document for the frontend, when the view is its own C++ type (never `project_`, which means the song project) |
+| `build_<x>_view` | the same, only when the view is a C ABI struct or a plain container (`std::vector`, `std::array`), which cannot own a `from` |
 | `create_` / `open_` | has side effects (files, sessions, OS resources) |
 | `plan_` / `prepare_` | computes a proposal; changes nothing |
 | `validate_` | checks and returns diagnostics; changes nothing |

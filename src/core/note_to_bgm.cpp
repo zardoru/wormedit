@@ -343,7 +343,7 @@ auto reassign_bmson_notes(document_history_t& scratch, chart_id_t chart,
                           std::span<const object_id_t> ids, std::uint64_t live_revision)
     -> std::optional<document_command_result_t> {
     for (const auto id : ids) {
-        const auto step = assign_bmson_sound_event(scratch, scratch.document.revision, chart, id, std::nullopt);
+        const auto step = assign_bmson_sound_event(scratch, chart, id, std::nullopt);
         if (!step.applied) {
             if (step.diagnostics.empty())
                 return document_command_transaction_t::rejection(live_revision, diagnostic_code_t::invalid_id,
@@ -509,7 +509,7 @@ auto move_bgm_events_to_lane(document_history_t& history, chart_id_t chart_id,
         if (!located)
             return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "BGM move names an unknown event");
         if (located->event->sound_channel_event && chart.source_family == format_family_t::bmson) {
-            const auto step = assign_bmson_sound_event(scratch, scratch.document.revision, chart_id, id, lane);
+            const auto step = assign_bmson_sound_event(scratch, chart_id, id, lane);
             if (!step.applied)
                 return step.diagnostics.empty()
                     ? document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "the event could not move to that lane")

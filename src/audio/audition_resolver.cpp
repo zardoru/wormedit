@@ -558,7 +558,7 @@ auto resolve_bmson_draft_audition(const song_document_t& song,
         static_cast<std::size_t>(source_channel - original->sound_channels.begin());
 
     auto temporary = document_history_t::from(song, 1);
-    const auto inserted = insert_bmson_sound_markers(temporary, temporary.document.revision,
+    const auto inserted = insert_bmson_sound_markers(temporary,
                                                      chart_id, reference_bgm_event, markers);
     if (!inserted) {
         const auto message = inserted.diagnostics.empty()

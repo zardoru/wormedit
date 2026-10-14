@@ -905,7 +905,6 @@ auto delete_editor_selection(editor_edit_context_t& context) -> editor_interacti
     const auto linked_event = std::get<std::optional<object_id_t>>(inspected);
     if (linked_event) {
         auto command = delete_bmson_bgm_marker(context.history,
-                                              context.history.document.revision,
                                               context.state.chart, *linked_event);
         if (!command)
             return diagnostic_result(context.history, context.state,
@@ -1412,7 +1411,7 @@ auto place_keyboard_entry(document_history_t& scratch, editor_interaction_state_
                                        "Choose a non-hold note kind to replace an occupied head")};
     }
     const auto inserted = insert_bmson_playable_stem_point(
-        scratch, scratch.document.revision, state.chart, *stem, target, lane, geometry);
+        scratch, state.chart, *stem, target, lane, geometry);
     if (!inserted)
         return inserted.diagnostics;
     const auto* chart = scratch.document.find_chart(state.chart);

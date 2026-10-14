@@ -533,7 +533,7 @@ auto edit_bmson_draft_marker(const WormUiComposeInputAction& input,
         proposed[index].playable_lane = lane;
     }
     auto temporary = make_document_history(history.document, 1);
-    const auto checked = insert_bmson_sound_markers(temporary, temporary.document.revision,
+    const auto checked = insert_bmson_sound_markers(temporary,
                                                     draft->chart, draft->reference, proposed);
     if (!checked)
         return compose_input_family_result_t::stop_with_feedback(
@@ -577,7 +577,7 @@ auto toggle_bmson_restart(const WormUiComposeInputAction& input, bmson_compose_c
     if (!source_event)
         return "This BGM tile has no BMSON sound-channel slice to reset.";
     const auto applied = toggle_bmson_sound_channel_restart(
-        history, action.compose_input_document_revision, state.chart, *source_event);
+        history, state.chart, *source_event);
     if (!applied.diagnostics.empty())
         return compose_input_family_result_t::stop_with_feedback(
             applied.diagnostics.front().message,
@@ -618,9 +618,8 @@ auto apply_bmson_draw_point(const WormUiComposeInputAction& input,
     bmson_compose_context_t& context, const wormedit::chart_document_t& chart,
     wormedit::local_position_t position) -> wormedit::document_command_result_t {
     using namespace wormedit;
-    const auto revision = context.action.compose_input_document_revision;
     if (input.kind == WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW)
-        return insert_bmson_packed_one_shot(context.environment.document.history, revision, chart.id,
+        return insert_bmson_packed_one_shot(context.environment.document.history, chart.id,
                                             object_id_t{input.lane_id},
                                             resource_id_t{input.resource_id}, position);
     const auto lane = std::ranges::find(chart.bgm_source_lanes,
@@ -645,7 +644,7 @@ auto apply_bmson_draw_point(const WormUiComposeInputAction& input,
                                  .code = diagnostic_code_t::dangling_resource,
                                  .message = "Drop this stem source onto its own lane."}}};
     return wormedit::insert_bmson_stem_point(
-        context.environment.document.history, revision, chart.id, channel->id, position,
+        context.environment.document.history, chart.id, channel->id, position,
         input.kind == WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART,
         retained_bmson_source_geometry(context, chart, channel->source_clip.source));
 }

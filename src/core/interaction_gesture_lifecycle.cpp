@@ -634,7 +634,7 @@ auto prepare_stem_note_paint(const document_history_t& history, chart_id_t chart
     std::vector<object_id_t> notes;
     for (const auto& target : plan.additions) {
         const auto placed =
-            insert_bmson_playable_stem_point(scratch, scratch.document.revision, chart_id, channel,
+            insert_bmson_playable_stem_point(scratch, chart_id, channel,
                                              target.position, target.lane, geometry);
         if (!placed && !placed.diagnostics.empty())
             return placed.diagnostics;

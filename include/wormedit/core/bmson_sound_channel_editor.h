@@ -12,26 +12,24 @@ namespace wormedit {
 // Toggles continuation/restart for every retained event at one pulse in a
 // BMSON sound channel. The semantic BGM projection retains its stable IDs.
 [[nodiscard]] auto toggle_bmson_sound_channel_restart(
-    document_history_t& history, std::uint64_t expected_revision,
+    document_history_t& history,
     chart_id_t chart, object_id_t sound_channel_event) -> document_command_result_t;
 
 // Sets every retained event at the selected non-playable event's pulse to
 // restart or continue. An already matching pulse creates no history entry.
 [[nodiscard]] auto set_bmson_sound_channel_restart(
-    document_history_t& history, std::uint64_t expected_revision,
+    document_history_t& history,
     chart_id_t chart, object_id_t sound_channel_event, bool restart) -> document_command_result_t;
 
 // Moves one semantic BMSON BGM marker and its retained source event together.
 // The target must be an exact chart row free within that sound channel.
 [[nodiscard]] auto move_bmson_bgm_marker(document_history_t& history,
-                                         std::uint64_t expected_revision,
                                          chart_id_t chart, object_id_t bgm_event,
                                          local_position_t target) -> document_command_result_t;
 
 // Inserts a retained non-playable event and its semantic BGM projection in the
 // selected marker's sound channel. The new pulse either continues or restarts.
 [[nodiscard]] auto insert_bmson_bgm_marker(document_history_t& history,
-                                           std::uint64_t expected_revision,
                                            chart_id_t chart, object_id_t reference_bgm_event,
                                            local_position_t target, bool restart)
     -> document_command_result_t;
@@ -58,7 +56,7 @@ struct bmson_channel_resource_binding_t {
 // projection. Native geometry, when supplied, must identify that channel's
 // source asset; document metadata is never rewritten from decoded geometry.
 [[nodiscard]] auto insert_bmson_stem_point(
-    document_history_t& history, std::uint64_t expected_revision, chart_id_t chart,
+    document_history_t& history, chart_id_t chart,
     object_id_t channel, local_position_t target, bool prefer_restart,
     std::optional<bmson_source_geometry_t> geometry = {}) -> document_command_result_t;
 
@@ -66,14 +64,14 @@ struct bmson_channel_resource_binding_t {
 // semantic event to a playable lane in one atomic history entry. An existing
 // pulse is reassigned with its stable note/event identity rather than duplicated.
 [[nodiscard]] auto insert_bmson_playable_stem_point(
-    document_history_t& history, std::uint64_t expected_revision, chart_id_t chart,
+    document_history_t& history, chart_id_t chart,
     object_id_t channel, local_position_t target, lane_id_t lane,
     std::optional<bmson_source_geometry_t> geometry = {}) -> document_command_result_t;
 
 // Inserts an unlinked packed one-shot in the selected source lane, reusing a
 // non-stem channel for the asset or creating a full-source channel on demand.
 [[nodiscard]] auto insert_bmson_packed_one_shot(
-    document_history_t& history, std::uint64_t expected_revision, chart_id_t chart,
+    document_history_t& history, chart_id_t chart,
     object_id_t source_lane, resource_id_t resource, local_position_t target)
     -> document_command_result_t;
 
@@ -101,21 +99,19 @@ struct bmson_razor_path_t {
 // Commits up to 256 BGM/playable markers in one history step after validating
 // every target and linked source-channel pulse.
 [[nodiscard]] auto
-insert_bmson_sound_markers(document_history_t& history, std::uint64_t expected_revision,
+insert_bmson_sound_markers(document_history_t& history,
                            chart_id_t chart, object_id_t reference_bgm_event,
                            std::span<const bmson_sound_marker_insertion_t> markers)
     -> document_command_result_t;
 
 // Removes the linked semantic BGM marker and retained source event atomically.
 [[nodiscard]] auto delete_bmson_bgm_marker(document_history_t& history,
-                                           std::uint64_t expected_revision,
                                            chart_id_t chart, object_id_t bgm_event)
     -> document_command_result_t;
 
 // Reassigns one linked BMSON tap between autoplay and a playable lane while
 // retaining its semantic and source-event IDs. A null lane selects BGM.
-[[nodiscard]] auto assign_bmson_sound_event(document_history_t& history,
-                                            std::uint64_t expected_revision, chart_id_t chart,
+[[nodiscard]] auto assign_bmson_sound_event(document_history_t& history, chart_id_t chart,
                                             object_id_t semantic_event,
                                             std::optional<lane_id_t> playable_lane)
     -> document_command_result_t;

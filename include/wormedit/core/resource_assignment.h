@@ -248,7 +248,6 @@ struct bga_stroke_target_t {
 // column's channel-linked events at the visited rows. Stem lanes are rejected.
 // Defined in bmson_sound_channel_editor.cpp.
 [[nodiscard]] auto apply_bmson_packed_stroke(document_history_t& history,
-                                             std::uint64_t expected_revision,
                                              chart_id_t chart,
                                              object_id_t source_lane,
                                              std::optional<resource_id_t> resource,

@@ -58,7 +58,7 @@ auto export_json(const wormedit::document_history_t& history) -> std::string {
 
 void require_set_restart(reset_fixture_t& fixture, bool restart) {
     REQUIRE(wormedit::set_bmson_sound_channel_restart(
-        fixture.history, fixture.history.document.revision, fixture.chart, fixture.target, restart));
+        fixture.history, fixture.chart, fixture.target, restart));
 }
 
 void check_target_pulse(const reset_fixture_t& fixture, bool restart) {
@@ -84,18 +84,18 @@ void check_document_unchanged(const wormedit::document_history_t& history,
 void check_noop(reset_fixture_t& fixture, bool restart) {
     const auto before = fixture.history;
     const auto result = wormedit::set_bmson_sound_channel_restart(
-        fixture.history, before.document.revision, fixture.chart, fixture.target, restart);
+        fixture.history, fixture.chart, fixture.target, restart);
     CHECK_FALSE(result.applied);
     CHECK(result.diagnostics.empty());
     check_history_unchanged(fixture.history, before);
     check_document_unchanged(fixture.history, before);
 }
 
-void check_rejection(reset_fixture_t& fixture, std::uint64_t revision,
+void check_rejection(reset_fixture_t& fixture,
                      wormedit::object_id_t event, wormedit::chart_id_t chart) {
     const auto before = fixture.history;
     const auto result = wormedit::set_bmson_sound_channel_restart(
-        fixture.history, revision, chart, event, true);
+        fixture.history, chart, event, true);
     CHECK_FALSE(result.applied);
     CHECK_FALSE(result.diagnostics.empty());
     check_history_unchanged(fixture.history, before);
@@ -175,15 +175,13 @@ TEST_CASE("BMSON explicit restart normalizes a mixed pulse without toggling its 
     check_noop(fixture, true);
 }
 
-TEST_CASE("BMSON explicit restart rejects stale and missing selections without changing the chart",
+TEST_CASE("BMSON explicit restart rejects missing selections without changing the chart",
           "[unit][core][bmson][slice-reset]") {
     auto fixture = make_reset_fixture();
-    const auto revision = fixture.history.document.revision;
-    check_rejection(fixture, revision, {}, fixture.chart);
-    check_rejection(fixture, revision, wormedit::object_id_t{999'999}, fixture.chart);
-    check_rejection(fixture, revision, fixture.playable, fixture.chart);
-    check_rejection(fixture, revision, fixture.target, {});
-    check_rejection(fixture, revision + 1, fixture.target, fixture.chart);
+    check_rejection(fixture, {}, fixture.chart);
+    check_rejection(fixture, wormedit::object_id_t{999'999}, fixture.chart);
+    check_rejection(fixture, fixture.playable, fixture.chart);
+    check_rejection(fixture, fixture.target, {});
 }
 
 TEST_CASE("BMSON reset offsets continue from the last restart until the next restart pulse",

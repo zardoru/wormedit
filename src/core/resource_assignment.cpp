@@ -895,7 +895,7 @@ auto apply_bgm_stroke(document_history_t& history,
         return result;
     }
     if (source_chart->source_family == format_family_t::bmson)
-        return apply_bmson_packed_stroke(history, history.document.revision, chart_id, source_lane,
+        return apply_bmson_packed_stroke(history, chart_id, source_lane,
                                          resource, targets, erase);
     if (!validate_bgm_stroke_lane(*source_chart, source_lane, result)) return result;
     if (!erase && !validate_bgm_stroke_resource(history.document, *source_chart, resource, result))

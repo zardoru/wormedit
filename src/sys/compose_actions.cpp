@@ -600,7 +600,7 @@ std::optional<std::string> assign_bmson_selection(compose_action_context_t& cont
         state.selected_objects.front().id != event)
         return compose_action_warning(context, "Select one linked BMSON tap or BGM marker before assigning sound.");
     const auto assigned = assign_bmson_sound_event(
-        context.environment.document.history, context.action.compose_input_document_revision,
+        context.environment.document.history,
         state.chart, event, to_lane ? std::optional<lane_id_t>{state.active_lane} : std::nullopt);
     if (!assigned.diagnostics.empty()) return publish_compose_diagnostic(context, assigned.diagnostics.front());
     if (!assigned.applied) return compose_action_info(context, "BMSON sound is already assigned to that destination.", notification_source_t::edit);
@@ -645,7 +645,7 @@ std::optional<std::string> set_bmson_selection_restart(compose_action_context_t&
         return compose_action_warning(context, "The selected BGM marker has no BMSON sound-channel slice.");
     const bool restart = context.action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_RESTART;
     const auto applied = set_bmson_sound_channel_restart(
-        context.environment.document.history, context.action.compose_input_document_revision,
+        context.environment.document.history,
         context.state.chart, *source_event, restart);
     if (!applied.diagnostics.empty()) return publish_compose_diagnostic(context, applied.diagnostics.front());
     if (!applied.applied)
@@ -667,7 +667,6 @@ std::optional<std::string> move_bmson_selection_to_cursor(compose_action_context
         context.state.selected_objects.front().id != event)
         return compose_action_warning(context, "Select one BMSON BGM marker before moving it.");
     const auto moved = move_bmson_bgm_marker(context.environment.document.history,
-                                             context.action.compose_input_document_revision,
                                              context.state.chart, event, context.state.cursor);
     if (!moved.diagnostics.empty()) return publish_compose_diagnostic(context, moved.diagnostics.front());
     if (!moved.applied) return compose_action_info(context, "BMSON BGM marker is already at the cursor.", notification_source_t::edit);
@@ -688,7 +687,7 @@ std::optional<std::string> insert_bmson_marker_at_cursor(compose_action_context_
         context.state.selected_objects.front().id != event)
         return compose_action_warning(context, "Select one BMSON BGM marker to choose its sound channel.");
     const auto inserted = insert_bmson_bgm_marker(
-        context.environment.document.history, context.action.compose_input_document_revision,
+        context.environment.document.history,
         context.state.chart, event, context.state.cursor,
         context.action.compose_action == WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_RESTART_AT_CURSOR);
     if (!inserted.diagnostics.empty()) return publish_compose_diagnostic(context, inserted.diagnostics.front());
@@ -717,13 +716,19 @@ std::optional<std::string> commit_bmson_marker_batch(compose_action_context_t& c
     if (editor_interaction_has_pending_gesture(context.state))
         return compose_action_warning(context, "Finish or cancel the active Compose gesture before committing BMSON markers.");
     auto& draft = context.environment.editor.commands.project.compose_gesture.bmson_marker_draft;
-    if (!draft || draft->markers.empty() || draft->chart != context.state.chart ||
-        draft->revision != context.environment.document.history.document.revision) {
+    if (!draft || draft->markers.empty()) {
         draft.reset();
         return compose_action_warning(context, "The BMSON marker batch is no longer available for this chart revision.");
     }
+    const chart_stamp_t stamp{.document = {.project = context.environment.document.history.document.id,
+                                          .revision = draft->revision},
+                              .chart = draft->chart};
+    if (!stamp.is_current(context.environment.document.history.document, context.state.chart)) {
+        draft.reset();
+        return compose_action_warning(context, stale_action_message("BMSON marker batch"));
+    }
     const auto inserted =
-        insert_bmson_sound_markers(context.environment.document.history, draft->revision, draft->chart,
+        insert_bmson_sound_markers(context.environment.document.history, draft->chart,
                                    draft->reference, draft->markers);
     if (!inserted.diagnostics.empty()) return publish_compose_diagnostic(context, inserted.diagnostics.front());
     draft.reset();
@@ -744,7 +749,6 @@ std::optional<std::string> delete_bmson_selected_marker(compose_action_context_t
         context.state.selected_objects.front().id != event)
         return compose_action_warning(context, "Select one BMSON BGM marker before deleting it.");
     const auto deleted = delete_bmson_bgm_marker(context.environment.document.history,
-                                                 context.action.compose_input_document_revision,
                                                  context.state.chart, event);
     if (!deleted.diagnostics.empty()) return publish_compose_diagnostic(context, deleted.diagnostics.front());
     if (!deleted.applied) return compose_action_info(context, "BMSON marker deletion made no document change.", notification_source_t::edit);

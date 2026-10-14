@@ -620,7 +620,7 @@ TEST_CASE("a BMSON stem tap goes back to its stem's BGM lane and keeps its slice
     const auto measure_index = static_cast<std::size_t>(measure_it - chart.measures.begin());
     const auto bgm = measure_it->bgm_events.front();
     const auto lane = chart.lane_layouts.front().layout.lanes.front().id;
-    REQUIRE(assign_bmson_sound_event(history, history.document.revision, chart_id, bgm.id, lane).applied);
+    REQUIRE(assign_bmson_sound_event(history, chart_id, bgm.id, lane).applied);
     const auto undo_before = history.undo.size();
 
     const std::array note{bgm.id};
@@ -663,7 +663,7 @@ TEST_CASE("pure ordinary planning rejects linked BMSON notes while mixed command
     auto& chart = history.document.charts.front();
     const auto chart_id = chart.id;
     const auto stem_lane = chart.lane_layouts.front().layout.lanes.front().id;
-    require_move(assign_bmson_sound_event(history, history.document.revision,
+    require_move(assign_bmson_sound_event(history,
                                          chart_id, marker.id, stem_lane).applied);
     const std::array mixed{marker.id, ordinary_id};
     const auto& linked_chart = history.document.charts.front();

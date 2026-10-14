@@ -2278,3 +2278,27 @@ TEST_CASE("Standalone sound edits use shared stale feedback without mutation",
     check_action(fixture.history.document.revision == revision);
     check_action(fixture.history.undo.empty());
 }
+
+TEST_CASE("Captured BMSON marker batches share stale feedback and keep missing targets separate",
+          "[compose-action-notifications][bmson-marker-stamp]") {
+    action_notification_fixture_t fixture;
+    const auto kind = GENERATE(0, 1, 2, 3);
+    auto& draft = fixture.application.project.compose_gesture.bmson_marker_draft;
+    if (kind != 0) {
+        draft.emplace();
+        draft->chart = kind == 3 ? chart_id_t{99} : fixture.state.chart;
+        draft->revision = fixture.history.document.revision - (kind == 2 ? 1 : 0);
+        if (kind != 1) draft->markers.push_back({.position = {measure_id_t{1}, 120}});
+    }
+    const auto action = fixture.action(WORM_UI_COMPOSE_ACTION_COMMIT_STAGED_BMSON_BGM);
+    const auto response = fixture.dispatch(action);
+    check_action(response == (kind < 2
+        ? "The BMSON marker batch is no longer available for this chart revision."
+        : stale_action_message("BMSON marker batch")));
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::warning);
+    check_action(!draft.has_value());
+    check_action(fixture.history.document.revision == 1);
+    check_action(fixture.history.undo.empty());
+}

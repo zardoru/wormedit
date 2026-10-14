@@ -643,7 +643,7 @@ auto stage_single_bgm_move(document_history_t& scratch, chart_id_t chart, const 
             return {.revision = scratch.document.revision,
                     .diagnostics = {error(diagnostic_code_t::row_out_of_range,
                                           "Stem markers cannot move into virtual BMS rows")}};
-        return move_bmson_bgm_marker(scratch, scratch.document.revision, chart, source.id,
+        return move_bmson_bgm_marker(scratch, chart, source.id,
                                      position);
     }
     if (canvas_row)
@@ -740,7 +740,7 @@ auto relocate_selected_bgm(song_document_t& proposed, chart_id_t chart_id,
             return {error(diagnostic_code_t::invalid_id, "Selected BGM event is unavailable",
                           preview.note)};
         if (source->sound_channel_event) {
-            const auto moved = move_bmson_bgm_marker(scratch, scratch.document.revision, chart_id,
+            const auto moved = move_bmson_bgm_marker(scratch, chart_id,
                                                      preview.note, preview.position);
             if (!moved.diagnostics.empty())
                 return moved.diagnostics;

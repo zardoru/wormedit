@@ -181,7 +181,8 @@ TEST_CASE("workspace tabs retain chart, transport, and isolated logical focus",
           "[unit][core][workspace]") {
     const auto song = workspace_song();
     CHECK(validate_document(song).empty());
-    auto bound = workspace_controller_t::from(song);
+    auto shared_bound = workspace_bind_result_t::from(song);
+    auto bound = workspace_bind_result_t::from(std::move(shared_bound));
     REQUIRE(bound);
     auto& workspace = *bound.workspace;
     CHECK(workspace.selected_chart == chart_id_t{1});
@@ -210,7 +211,8 @@ TEST_CASE("workspace tabs retain chart, transport, and isolated logical focus",
         workspace_set_focus_action_t{workspace_tab_t::compose, "compose.field", chart_id_t{1}}));
 
     REQUIRE(apply(workspace, song, workspace_switch_tab_action_t{workspace_tab_t::compose}));
-    auto compose = workspace_view_t::from(workspace, song);
+    auto shared_compose = workspace_view_result_t::from(workspace, song);
+    auto compose = workspace_view_result_t::from(std::move(shared_compose));
     REQUIRE(compose);
     CHECK(compose.view->selected_difficulty->id == chart_id_t{2});
     CHECK(compose.view->selected_difficulty->difficulty_name == "Hard");
@@ -884,4 +886,19 @@ TEST_CASE("Workspace binding validation cache keeps per-frame workspace guards l
 TEST_CASE("Workspace binding validation cache revalidates invalid edits and repairs",
           "[workspace][cache][T558]") {
     CHECK(binding_cache_revalidates_invalid_id_edits());
+}
+
+TEST_CASE("workspace adapters preserve strict warning rejection for successful effects",
+          "[unit][core][workspace]") {
+    const diagnostic_t annotation{.severity = diagnostic_severity_t::warning,
+                                 .code = diagnostic_code_t::unsupported_feature, .message = "annotation"};
+    auto binding = workspace_bind_outcome_t{.value = workspace_controller_t{}, .diagnostics = {annotation}};
+    REQUIRE(binding.ok());
+    CHECK_FALSE(workspace_bind_result_t::from(std::move(binding)));
+    auto action = workspace_action_outcome_t{.value = true, .diagnostics = {annotation}};
+    REQUIRE(action.ok());
+    CHECK_FALSE(workspace_action_result_t::from(std::move(action)));
+    auto view = workspace_view_outcome_t{.value = workspace_view_t{}, .diagnostics = {annotation}};
+    REQUIRE(view.ok());
+    CHECK_FALSE(workspace_view_result_t::from(std::move(view)));
 }

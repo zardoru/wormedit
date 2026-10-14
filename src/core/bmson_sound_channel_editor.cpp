@@ -1098,7 +1098,7 @@ auto lookup_nested(const std::unordered_map<std::uint64_t,
 }
 
 auto has_resource_role(const resource_entry_t& resource, resource_role_t role) -> bool {
-    return std::ranges::find(resource.roles, role) != resource.roles.end();
+    return resource.has_role(role);
 }
 
 auto is_eligible_empty_stem_resource(const resource_entry_t& resource) -> bool {

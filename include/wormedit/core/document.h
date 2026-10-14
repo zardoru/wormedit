@@ -587,6 +587,7 @@ struct sound_group_t {
 };
 
 struct resource_entry_t {
+    [[nodiscard]] auto has_role(resource_role_t role) const -> bool;
     resource_id_t id;
     std::string name;
     asset_id_t asset;

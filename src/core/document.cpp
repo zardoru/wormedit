@@ -17,6 +17,11 @@
 
 namespace wormedit {
 
+auto resource_entry_t::has_role(resource_role_t role) const -> bool {
+    return std::ranges::find(roles, role) != roles.end();
+}
+
+
 auto error(diagnostic_code_t code, std::string message, std::optional<object_id_t> object) -> diagnostic_t {
     return {.severity = diagnostic_severity_t::error, .code = code,
             .message = std::move(message), .object = object};

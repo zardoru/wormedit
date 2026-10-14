@@ -936,6 +936,16 @@ auto compile_timing_with_policy(timing_build_context_t& source, signed_rational_
 
 } // namespace
 
+auto timing_query_result_t::into_outcome() && -> timing_coordinate_outcome_t {
+    return timing_query_value_t<signed_rational_t, timing_coordinate_metadata_t>::from(
+        std::move(seconds), {.inside_warp = inside_warp, .diagnostic = std::move(error)});
+}
+
+auto timing_position_query_result_t::into_outcome() && -> timing_coordinate_outcome_t {
+    return timing_query_value_t<signed_rational_t, timing_coordinate_metadata_t>::from(
+        std::move(absolute_row), {.inside_warp = inside_warp, .diagnostic = std::move(error)});
+}
+
 auto timing_index_t::from(const chart_document_t& chart, timing_build_options_t options)
     -> timing_build_outcome_t {
     timing_build_outcome_t result{};
@@ -1067,33 +1077,51 @@ auto timing_at_bounded_integer_row(const timing_index_t& index, std::uint64_t ab
 
 } // namespace
 
-auto timing_at(const timing_index_t& index, std::uint64_t absolute_row,
-               timing_boundary_side_t side) -> timing_query_result_t {
-    return index.bounded_clock ? timing_at_bounded_integer_row(index, absolute_row, side)
-                               : timing_at_exact_integer_row(index, absolute_row, side);
+auto timing_index_t::query_seconds(std::uint64_t absolute_row, timing_boundary_side_t side) const
+    -> timing_coordinate_outcome_t {
+    return (bounded_clock ? timing_at_bounded_integer_row(*this, absolute_row, side)
+                          : timing_at_exact_integer_row(*this, absolute_row, side)).into_outcome();
 }
 
-auto timing_at(const timing_index_t& index, exact_chart_row_t absolute_row,
-               timing_boundary_side_t side) -> timing_query_result_t {
+auto timing_index_t::query_seconds(exact_chart_row_t absolute_row, timing_boundary_side_t side) const
+    -> timing_coordinate_outcome_t {
+    const auto& index = *this;
     if (absolute_row.fractional_rows.numerator == 0 &&
         absolute_row.fractional_rows.denominator != 0) {
-        return index.seconds_at(absolute_row.whole_rows, side);
+        return query_seconds(absolute_row.whole_rows, side);
     }
     if (absolute_row.whole_rows > maximum_i64_magnitude ||
         absolute_row.fractional_rows.numerator > maximum_i64_magnitude ||
         absolute_row.fractional_rows.denominator == 0 ||
         absolute_row.fractional_rows.numerator >= absolute_row.fractional_rows.denominator) {
-        return {.error = error(timing_error_code_t::position_out_of_range,
-                               "fractional timing row lies outside chart geometry")};
+        return std::unexpected(timing_coordinate_metadata_t{.diagnostic = error(timing_error_code_t::position_out_of_range,
+                               "fractional timing row lies outside chart geometry")});
     }
     const auto row = add_exact({static_cast<std::int64_t>(absolute_row.whole_rows), 1},
                                {static_cast<std::int64_t>(absolute_row.fractional_rows.numerator),
                                 absolute_row.fractional_rows.denominator});
     if (!row) {
-        return {.error = error(timing_error_code_t::arithmetic_overflow,
-                               "fractional timing row exceeds exact arithmetic bounds")};
+        return std::unexpected(timing_coordinate_metadata_t{.diagnostic = error(timing_error_code_t::arithmetic_overflow,
+                               "fractional timing row exceeds exact arithmetic bounds")});
     }
-    return timing_seconds_at_row(index, *row, side);
+    return timing_seconds_at_row(index, *row, side).into_outcome();
+}
+
+auto timing_query_result_t::from(timing_coordinate_outcome_t&& outcome) -> timing_query_result_t {
+    if (outcome) return {.seconds = outcome->value, .inside_warp = outcome->metadata.inside_warp,
+                          .error = std::move(outcome->metadata.diagnostic)};
+    return {.seconds = std::nullopt, .inside_warp = outcome.error().inside_warp,
+            .error = std::move(outcome.error().diagnostic)};
+}
+
+auto timing_at(const timing_index_t& index, std::uint64_t row, timing_boundary_side_t side)
+    -> timing_query_result_t {
+    return timing_query_result_t::from(index.query_seconds(row, side));
+}
+
+auto timing_at(const timing_index_t& index, exact_chart_row_t row, timing_boundary_side_t side)
+    -> timing_query_result_t {
+    return timing_query_result_t::from(index.query_seconds(row, side));
 }
 
 auto sample_frame_at_chart_y(const timing_index_t& index, double viewport_scroll_pixels,
@@ -1160,14 +1188,19 @@ auto proposed_timing_y_on_fixed_waveform(const timing_index_t& original,
     return static_cast<double>(y);
 }
 
-auto timing_at(const timing_index_t& index, const measure_index_t& measures,
-               local_position_t position, timing_boundary_side_t side) -> timing_query_result_t {
+auto timing_index_t::query_seconds(const measure_index_t& measures, local_position_t position,
+                                    timing_boundary_side_t side) const -> timing_coordinate_outcome_t {
     const auto row = absolute_row(measures, position);
     if (!row) {
-        return {.error = error(timing_error_code_t::position_out_of_range,
-                               "timing query position is outside chart geometry")};
+        return std::unexpected(timing_coordinate_metadata_t{.diagnostic = error(timing_error_code_t::position_out_of_range,
+                               "timing query position is outside chart geometry")});
     }
-    return index.seconds_at(*row, side);
+    return query_seconds(*row, side);
+}
+
+auto timing_at(const timing_index_t& index, const measure_index_t& measures,
+               local_position_t position, timing_boundary_side_t side) -> timing_query_result_t {
+    return timing_query_result_t::from(index.query_seconds(measures, position, side));
 }
 
 namespace {
@@ -1528,56 +1561,72 @@ auto prepare_inverse_query(const timing_index_t& index, signed_rational_t query,
 
 } // namespace
 
-auto musical_position_at(const timing_index_t& index, signed_rational_t seconds,
-                         timing_inverse_options_t options) -> timing_position_query_result_t {
+auto timing_row_state_t::departure_less(const timing_row_state_t& boundary, signed_rational_t value)
+    -> bool {
+    const auto comparison = compare_exact(boundary.after_stops_seconds, value);
+    return comparison && *comparison < 0;
+}
+
+auto timing_index_t::query_position(signed_rational_t seconds, timing_inverse_options_t options) const
+    -> timing_coordinate_outcome_t {
+    const auto& index = *this;
     auto query = try_normalize(seconds);
     if (!query) {
-        return {.error = error(timing_error_code_t::invalid_document,
-                               "inverse timing query requires valid rational seconds")};
+        return std::unexpected(timing_coordinate_metadata_t{.diagnostic = error(timing_error_code_t::invalid_document,
+                               "inverse timing query requires valid rational seconds")});
     }
-    const auto prepared = prepare_inverse_query(index, *query, options);
-    if (prepared.result) return *prepared.result;
+    auto prepared = prepare_inverse_query(index, *query, options);
+    if (prepared.result) return std::move(*prepared.result).into_outcome();
     query = prepared.seconds;
 
     // A warp collapses every row in its half-open span to one audio time. Find
     // that plateau first so its endpoint choice is independent of neighboring
     // row pauses or segments.
-    if (const auto warp = warp_position_at(index, *query, options.warp_side)) {
-        return *warp;
+    if (auto warp = warp_position_at(index, *query, options.warp_side)) {
+        return std::move(*warp).into_outcome();
     }
 
     const auto row =
         std::lower_bound(index.rows.begin(), index.rows.end(), *query,
-                         [](const timing_row_state_t& boundary, signed_rational_t value) {
-                             const auto comparison =
-                                 compare_exact(boundary.after_stops_seconds, value);
-                             return comparison && *comparison < 0;
-                         });
+                         timing_row_state_t::departure_less);
     if (row == index.rows.end()) {
-        return {.error = error(timing_error_code_t::position_out_of_range,
-                               "audio time lies outside chart timing bounds")};
+        return std::unexpected(timing_coordinate_metadata_t{.diagnostic = error(timing_error_code_t::position_out_of_range,
+                               "audio time lies outside chart timing bounds")});
     }
     const auto arrival_comparison = compare_exact(*query, row->before_delays_seconds);
     const auto departure_comparison = compare_exact(*query, row->after_stops_seconds);
     if (!arrival_comparison || !departure_comparison) {
-        return {.error = error(timing_error_code_t::invalid_document,
-                               "timing index contains an invalid row time")};
+        return std::unexpected(timing_coordinate_metadata_t{.diagnostic = error(timing_error_code_t::invalid_document,
+                               "timing index contains an invalid row time")});
     }
     if (*arrival_comparison >= 0 && *departure_comparison <= 0) {
         if (row->absolute_row > maximum_i64_magnitude) {
-            return {.error = error(timing_error_code_t::arithmetic_overflow,
-                                   "inverse musical row exceeds exact position bounds")};
+            return std::unexpected(timing_coordinate_metadata_t{.diagnostic = error(timing_error_code_t::arithmetic_overflow,
+                                   "inverse musical row exceeds exact position bounds")});
         }
-        return {.absolute_row = signed_rational_t{static_cast<std::int64_t>(row->absolute_row), 1},
-                .inside_warp = row->inside_warp};
+        return timing_query_value_t<signed_rational_t, timing_coordinate_metadata_t>::from(
+            signed_rational_t{static_cast<std::int64_t>(row->absolute_row), 1}, {.inside_warp = row->inside_warp});
     }
 
     const auto row_index = static_cast<std::size_t>(row - index.rows.begin());
     if (*arrival_comparison < 0 && row_index > 0) {
-        return row_inside_segment(index, index.segments[row_index - 1], *query);
+        return row_inside_segment(index, index.segments[row_index - 1], *query).into_outcome();
     }
-    return {.error = error(timing_error_code_t::position_out_of_range,
-                           "audio time has no musical position in the timing index")};
+    return std::unexpected(timing_coordinate_metadata_t{.diagnostic = error(timing_error_code_t::position_out_of_range,
+                           "audio time has no musical position in the timing index")});
+}
+
+auto timing_position_query_result_t::from(timing_coordinate_outcome_t&& outcome)
+    -> timing_position_query_result_t {
+    if (outcome) return {.absolute_row = outcome->value, .inside_warp = outcome->metadata.inside_warp,
+                          .error = std::move(outcome->metadata.diagnostic)};
+    return {.absolute_row = std::nullopt, .inside_warp = outcome.error().inside_warp,
+            .error = std::move(outcome.error().diagnostic)};
+}
+
+auto musical_position_at(const timing_index_t& index, signed_rational_t seconds,
+                         timing_inverse_options_t options) -> timing_position_query_result_t {
+    return timing_position_query_result_t::from(index.query_position(seconds, options));
 }
 
 auto sample_frame_t::from(signed_rational_t seconds, std::uint32_t sample_rate,
@@ -2196,6 +2245,25 @@ auto scroll_displacement_at(const scroll_speed_index_t& index, signed_rational_t
     return *accumulated;
 }
 
+struct scroll_speed_begin_less_t {
+    [[nodiscard]] static auto from(bool before_event_side) -> scroll_speed_begin_less_t {
+        return {.before_event_side = before_event_side};
+    }
+    template <class Segment>
+    [[nodiscard]] auto operator()(signed_rational_t query, const Segment& segment) const -> bool {
+        const auto comparison = compare_row_to_integer(query, segment.begin_row);
+        return comparison && (*comparison < 0 || (*comparison == 0 && before_event_side));
+    }
+    bool before_event_side{};
+};
+
+template <class Segment>
+auto find_scroll_speed_segment(const std::vector<Segment>& segments, signed_rational_t row,
+                                bool before_event_side) -> typename std::vector<Segment>::const_iterator {
+    return std::upper_bound(segments.begin(), segments.end(), row,
+                            scroll_speed_begin_less_t::from(before_event_side));
+}
+
 auto extrapolated_scroll_speed_before_chart(const scroll_speed_index_t& index,
                                             const timing_index_t& timing, signed_rational_t row)
     -> scroll_speed_query_result_t {
@@ -2226,63 +2294,55 @@ auto extrapolated_scroll_speed_before_chart(const scroll_speed_index_t& index,
 
 } // namespace
 
-auto scroll_speed_at(const scroll_speed_index_t& index, const timing_index_t& timing,
+auto scroll_speed_state_t::from(const scroll_speed_index_t& index, const timing_index_t& timing,
                      signed_rational_t absolute_row, timing_boundary_side_t side,
-                     bool extrapolate_before_chart) -> scroll_speed_query_result_t {
+                     bool extrapolate_before_chart) -> scroll_speed_query_outcome_t {
     if (index.divisions_per_standard_measure != timing.divisions_per_standard_measure ||
         index.total_rows != timing.total_rows ||
         index.timing_source_fingerprint != timing.source_fingerprint) {
-        return {.error = error(timing_error_code_t::invalid_document,
-                               "scroll/speed index does not match the timing index")};
+        return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::invalid_document,
+                               "scroll/speed index does not match the timing index")});
     }
     const auto row = try_normalize(absolute_row);
     if (!row) {
-        return {.error = error(timing_error_code_t::invalid_document,
-                               "scroll/speed query requires a valid rational row")};
+        return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::invalid_document,
+                               "scroll/speed query requires a valid rational row")});
     }
     if (row->numerator < 0 && extrapolate_before_chart) {
-        return extrapolated_scroll_speed_before_chart(index, timing, *row);
+        auto report = extrapolated_scroll_speed_before_chart(index, timing, *row);
+        return timing_query_value_t<scroll_speed_state_t>::from(std::move(report.state), std::move(report.error));
     }
     const auto query_time = timing_seconds_at_row(timing, *row, side);
     if (!query_time) {
-        return {.error = *query_time.error};
+        return std::unexpected(std::optional<timing_diagnostic_t>{*query_time.error});
     }
     const auto before_event_side = side == timing_boundary_side_t::before_delays;
-    const auto find_segment = [&](const auto& segments) {
-        return std::upper_bound(
-            segments.begin(), segments.end(), *row,
-            [&](signed_rational_t query, const auto& segment) {
-                const auto comparison = compare_row_to_integer(query, segment.begin_row);
-                return comparison && (*comparison < 0 || (*comparison == 0 && before_event_side));
-            });
-    };
-
     auto scroll_multiplier = signed_rational_t{1, 1};
-    const auto scroll_after = find_segment(index.scroll_segments);
+    const auto scroll_after = find_scroll_speed_segment(index.scroll_segments, *row, before_event_side);
     if (scroll_after != index.scroll_segments.begin()) {
         scroll_multiplier = std::prev(scroll_after)->multiplier;
     }
     auto speed_multiplier = signed_rational_t{1, 1};
-    const auto speed_after = find_segment(index.speed_segments);
+    const auto speed_after = find_scroll_speed_segment(index.speed_segments, *row, before_event_side);
     if (speed_after != index.speed_segments.begin()) {
         const auto& segment = *std::prev(speed_after);
         const auto value = speed_segment_value(segment, *row, *query_time.seconds,
                                                index.divisions_per_standard_measure);
         if (!value) {
-            return {.error = error(timing_error_code_t::arithmetic_overflow,
+            return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::arithmetic_overflow,
                                    "speed curve evaluation exceeds exact arithmetic bounds",
-                                   segment.source_event)};
+                                   segment.source_event)});
         }
         speed_multiplier = *value;
     }
     const auto effective = multiply_exact(scroll_multiplier, speed_multiplier);
     if (!effective) {
-        return {.error = error(timing_error_code_t::arithmetic_overflow,
-                               "effective scroll multiplier exceeds exact arithmetic bounds")};
+        return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::arithmetic_overflow,
+                               "effective scroll multiplier exceeds exact arithmetic bounds")});
     }
     const auto displacement_result = scroll_displacement_at(index, *row, speed_multiplier);
     if (const auto* failure = std::get_if<timing_diagnostic_t>(&displacement_result)) {
-        return {.error = *failure};
+        return std::unexpected(std::optional<timing_diagnostic_t>{*failure});
     }
     const auto displacement = std::get<signed_rational_t>(displacement_result);
     const auto render_multiplier =
@@ -2290,15 +2350,27 @@ auto scroll_speed_at(const scroll_speed_index_t& index, const timing_index_t& ti
     const auto render_displacement =
         to_double(displacement);
     if (!std::isfinite(render_multiplier) || !std::isfinite(render_displacement)) {
-        return {.error = error(timing_error_code_t::arithmetic_overflow,
-                               "scroll multiplier or displacement is not finite for rendering")};
+        return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::arithmetic_overflow,
+                               "scroll multiplier or displacement is not finite for rendering")});
     }
-    return {.state = scroll_speed_state_t{.scroll_multiplier = scroll_multiplier,
+    return timing_query_value_t<scroll_speed_state_t>::from(scroll_speed_state_t{.scroll_multiplier = scroll_multiplier,
                                           .speed_multiplier = speed_multiplier,
                                           .effective_multiplier = *effective,
                                           .displacement_beats = displacement,
                                           .render_multiplier = render_multiplier,
-                                          .render_displacement_beats = render_displacement}};
+                                          .render_displacement_beats = render_displacement});
+}
+
+auto scroll_speed_query_result_t::from(scroll_speed_query_outcome_t&& outcome) -> scroll_speed_query_result_t {
+    if (outcome) return {.state = std::move(outcome->value), .error = std::move(outcome->metadata)};
+    return {.state = std::nullopt, .error = std::move(outcome.error())};
+}
+
+auto scroll_speed_at(const scroll_speed_index_t& index, const timing_index_t& timing,
+                     signed_rational_t row, timing_boundary_side_t side, bool extrapolate_before_chart)
+    -> scroll_speed_query_result_t {
+    return scroll_speed_query_result_t::from(
+        scroll_speed_state_t::from(index, timing, row, side, extrapolate_before_chart));
 }
 
 namespace {

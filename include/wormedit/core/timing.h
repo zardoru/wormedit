@@ -49,6 +49,13 @@ struct timing_query_value_t {
 template <class Value, class Metadata = std::optional<timing_diagnostic_t>>
 using timing_query_outcome_t = result_t<timing_query_value_t<Value, Metadata>, Metadata>;
 
+struct timing_coordinate_metadata_t {
+    bool inside_warp{};
+    std::optional<timing_diagnostic_t> diagnostic;
+};
+using timing_coordinate_outcome_t =
+    timing_query_outcome_t<signed_rational_t, timing_coordinate_metadata_t>;
+
 enum class timing_boundary_side_t {
     // Arrival at the musical row, before a delay at that row.
     before_delays,
@@ -59,6 +66,8 @@ enum class timing_boundary_side_t {
 };
 
 struct timing_row_state_t {
+    [[nodiscard]] static auto departure_less(const timing_row_state_t& boundary, signed_rational_t value)
+        -> bool;
     std::uint64_t absolute_row{};
     signed_rational_t before_delays_seconds;
     signed_rational_t event_seconds;
@@ -87,6 +96,8 @@ struct timing_build_options_t {
 };
 
 struct timing_query_result_t {
+    [[nodiscard]] auto into_outcome() && -> timing_coordinate_outcome_t;
+    [[nodiscard]] static auto from(timing_coordinate_outcome_t&& outcome) -> timing_query_result_t;
     std::optional<signed_rational_t> seconds;
     bool inside_warp{};
     std::optional<timing_diagnostic_t> error;
@@ -111,6 +122,8 @@ struct timing_inverse_options_t {
 };
 
 struct timing_position_query_result_t {
+    [[nodiscard]] auto into_outcome() && -> timing_coordinate_outcome_t;
+    [[nodiscard]] static auto from(timing_coordinate_outcome_t&& outcome) -> timing_position_query_result_t;
     // Exact absolute row on ordinary clocks; bounded clocks return a nanorow
     // coordinate for interior segments. Fractional rows are retained either way.
     std::optional<signed_rational_t> absolute_row;
@@ -126,6 +139,15 @@ struct timing_position_query_result_t {
 enum class chart_end_policy_t { reject, clamp_to_end, clamp_to_last_row, extrapolate_tail };
 
 struct timing_index_t {
+    [[nodiscard]] auto query_seconds(std::uint64_t row,
+        timing_boundary_side_t side = timing_boundary_side_t::event) const -> timing_coordinate_outcome_t;
+    [[nodiscard]] auto query_seconds(exact_chart_row_t row,
+        timing_boundary_side_t side = timing_boundary_side_t::event) const -> timing_coordinate_outcome_t;
+    [[nodiscard]] auto query_seconds(const measure_index_t& measures, local_position_t position,
+        timing_boundary_side_t side = timing_boundary_side_t::event) const -> timing_coordinate_outcome_t;
+    [[nodiscard]] auto query_position(signed_rational_t seconds,
+        timing_inverse_options_t options = {}) const -> timing_coordinate_outcome_t;
+
     [[nodiscard]] static auto from(const chart_document_t& chart, timing_build_options_t options = {})
         -> diagnosed_t<std::optional<timing_index_t>, std::vector<timing_diagnostic_t>>;
 
@@ -334,6 +356,9 @@ struct scroll_speed_build_result_t {
 };
 
 struct scroll_speed_state_t {
+    [[nodiscard]] static auto from(const scroll_speed_index_t& index, const timing_index_t& timing,
+        signed_rational_t row, timing_boundary_side_t side = timing_boundary_side_t::event,
+        bool extrapolate_before_chart = false) -> timing_query_outcome_t<scroll_speed_state_t>;
     signed_rational_t scroll_multiplier{1, 1};
     signed_rational_t speed_multiplier{1, 1};
     signed_rational_t effective_multiplier{1, 1};
@@ -344,7 +369,10 @@ struct scroll_speed_state_t {
     double render_displacement_beats{};
 };
 
+using scroll_speed_query_outcome_t = timing_query_outcome_t<scroll_speed_state_t>;
+
 struct scroll_speed_query_result_t {
+    [[nodiscard]] static auto from(scroll_speed_query_outcome_t&& outcome) -> scroll_speed_query_result_t;
     std::optional<scroll_speed_state_t> state;
     std::optional<timing_diagnostic_t> error;
 

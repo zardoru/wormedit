@@ -1064,7 +1064,8 @@ TEST_CASE("scroll and speed evaluation is exact, composable, and seekable",
     REQUIRE(built);
     CHECK(is_scroll_speed_index_current(*built.index, chart, *timing.index));
 
-    const auto midpoint = scroll_speed_at(*built.index, *timing.index, {120, 1});
+    auto shared_midpoint = scroll_speed_state_t::from(*built.index, *timing.index, {120, 1});
+    const auto midpoint = scroll_speed_query_result_t::from(std::move(shared_midpoint));
     REQUIRE(midpoint);
     CHECK(midpoint.state->speed_multiplier == signed_rational_t{3, 2});
     CHECK(midpoint.state->displacement_beats == signed_rational_t{5, 8});
@@ -1796,7 +1797,8 @@ TEST_CASE("Timing owner queries retain exact boundary sides and inverse options"
     const auto& index = *built.index;
     for (const auto side : {timing_boundary_side_t::before_delays,
                             timing_boundary_side_t::event, timing_boundary_side_t::after_stops}) {
-        const auto member = index.seconds_at(240, side);
+        auto shared = index.query_seconds(240, side);
+        const auto member = timing_query_result_t::from(std::move(shared));
         const auto original = timing_at(index, 240, side);
         require_timing_query(static_cast<bool>(member.seconds));
         check_timing_query(static_cast<bool>(member.seconds == original.seconds));
@@ -1804,7 +1806,8 @@ TEST_CASE("Timing owner queries retain exact boundary sides and inverse options"
     }
     const auto fractional = exact_chart_row_t{120, {1, 2}};
     check_timing_query(static_cast<bool>(index.seconds_at(fractional).seconds == timing_at(index, fractional).seconds));
-    const auto inverse = index.row_at({0, 1}, {.extrapolate_before_chart = true});
+    auto shared_inverse = index.query_position({0, 1}, {.extrapolate_before_chart = true});
+    const auto inverse = timing_position_query_result_t::from(std::move(shared_inverse));
     check_timing_query(static_cast<bool>(inverse.absolute_row == musical_position_at(index, {0, 1},
         {.extrapolate_before_chart = true}).absolute_row));
     check_timing_query(static_cast<bool>(index.row_at({0, 1}).error->code == timing_error_code_t::position_out_of_range));
@@ -1891,4 +1894,16 @@ TEST_CASE("timing query value presence retains its diagnostic annotation",
     CHECK(legacy.frame == 7);
     REQUIRE(legacy.error);
     CHECK(legacy.error->message == "retained annotation");
+}
+
+TEST_CASE("coordinate errors retain warp metadata even without a diagnostic",
+          "[unit][core][timing]") {
+    auto original = timing_position_query_result_t{.absolute_row = std::nullopt, .inside_warp = true,
+                                                  .error = std::nullopt};
+    auto outcome = std::move(original).into_outcome();
+    REQUIRE_FALSE(outcome);
+    CHECK(outcome.error().inside_warp);
+    const auto legacy = timing_position_query_result_t::from(std::move(outcome));
+    CHECK(legacy.inside_warp);
+    CHECK_FALSE(legacy.error);
 }

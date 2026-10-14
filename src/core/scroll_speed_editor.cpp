@@ -163,12 +163,12 @@ auto insert_speed(scroll_speed_edit_context_t& context, chart_document_t& chart,
 auto update_scroll(scroll_speed_edit_context_t& context, chart_document_t& chart,
                    const update_scroll_event_action_t& edit) -> void {
     if (!check_scroll_cap(context, chart, false)) return;
-    if (!edit.event) {
+    if (!edit.id) {
         reject(context.result, diagnostic_code_t::invalid_id,
                "scroll update uses the reserved zero event ID");
         return;
     }
-    auto* event = unique_event(chart, chart.scrolls, edit.event, "scroll", context.result);
+    auto* event = unique_event(chart, chart.scrolls, edit.id, "scroll", context.result);
     const auto valid = validate_scroll_value(edit.multiplier, context.result);
     if (!event || !validate_position(chart, edit.position, context.result) || !valid) return;
     context.changed = event->position != edit.position || event->multiplier != edit.multiplier;
@@ -181,12 +181,12 @@ auto update_scroll(scroll_speed_edit_context_t& context, chart_document_t& chart
 auto update_speed(scroll_speed_edit_context_t& context, chart_document_t& chart,
                   const update_speed_event_action_t& edit) -> void {
     if (!check_speed_cap(context, chart, false)) return;
-    if (!edit.event) {
+    if (!edit.id) {
         reject(context.result, diagnostic_code_t::invalid_id,
                "speed update uses the reserved zero event ID");
         return;
     }
-    auto* event = unique_event(chart, chart.speeds, edit.event, "speed", context.result);
+    auto* event = unique_event(chart, chart.speeds, edit.id, "speed", context.result);
     const auto valid = validate_speed_values(edit.multiplier, edit.transition_beats,
                                               context.result);
     if (!event || !validate_position(chart, edit.position, context.result) || !valid) return;
@@ -204,13 +204,14 @@ auto update_speed(scroll_speed_edit_context_t& context, chart_document_t& chart,
 auto delete_scroll(scroll_speed_edit_context_t& context, chart_document_t& chart,
                    const delete_scroll_event_action_t& edit) -> void {
     if (!check_scroll_cap(context, chart, false)) return;
-    if (!edit.event) {
+    if (!edit.id) {
         reject(context.result, diagnostic_code_t::invalid_id,
                "scroll deletion uses the reserved zero event ID");
         return;
     }
-    if (!unique_event(chart, chart.scrolls, edit.event, "scroll", context.result)) return;
-    std::erase_if(chart.scrolls, [&](const auto& item) { return item.id == edit.event; });
+    if (!unique_event(chart, chart.scrolls, edit.id, "scroll", context.result))
+        return;
+    std::erase_if(chart.scrolls, [&](const auto& item) { return item.id == edit.id; });
     context.command_label = "Delete scroll event";
     context.changed = true;
 }
@@ -218,13 +219,14 @@ auto delete_scroll(scroll_speed_edit_context_t& context, chart_document_t& chart
 auto delete_speed(scroll_speed_edit_context_t& context, chart_document_t& chart,
                   const delete_speed_event_action_t& edit) -> void {
     if (!check_speed_cap(context, chart, false)) return;
-    if (!edit.event) {
+    if (!edit.id) {
         reject(context.result, diagnostic_code_t::invalid_id,
                "speed deletion uses the reserved zero event ID");
         return;
     }
-    if (!unique_event(chart, chart.speeds, edit.event, "speed", context.result)) return;
-    std::erase_if(chart.speeds, [&](const auto& item) { return item.id == edit.event; });
+    if (!unique_event(chart, chart.speeds, edit.id, "speed", context.result))
+        return;
+    std::erase_if(chart.speeds, [&](const auto& item) { return item.id == edit.id; });
     context.command_label = "Delete speed event";
     context.changed = true;
 }

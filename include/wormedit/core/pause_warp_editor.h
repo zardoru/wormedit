@@ -25,7 +25,7 @@ struct insert_pause_event_action_t {
 
 struct update_pause_event_action_t {
     chart_id_t chart;
-    object_id_t event;
+    object_id_t id;
     local_position_t position;
     pause_kind_t kind{pause_kind_t::stop};
     signed_rational_t duration;
@@ -34,7 +34,7 @@ struct update_pause_event_action_t {
 
 struct delete_pause_event_action_t {
     chart_id_t chart;
-    object_id_t event;
+    object_id_t id;
 };
 
 struct insert_warp_event_action_t {
@@ -45,14 +45,14 @@ struct insert_warp_event_action_t {
 
 struct update_warp_event_action_t {
     chart_id_t chart;
-    object_id_t event;
+    object_id_t id;
     position_span_t span;
     std::optional<warp_provenance_t> source_encoding;
 };
 
 struct delete_warp_event_action_t {
     chart_id_t chart;
-    object_id_t event;
+    object_id_t id;
 };
 
 using pause_warp_edit_action_t =

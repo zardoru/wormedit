@@ -1549,11 +1549,11 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
 void apply_recipe_operation(sv_recipe_edit_context_t& context,
                             chart_document_t& chart,
                             const update_sv_recipe_action_t& edit) {
-    auto* recipe = editable_recipe(context, chart, edit.recipe);
+    auto* recipe = editable_recipe(context, chart, edit.id);
     if (!recipe)
         return;
     auto replacement = edit.replacement;
-    replacement.id = edit.recipe;
+    replacement.id = edit.id;
     if (!append_recipe_validation(context, chart, replacement))
         return;
     context.changed = *recipe != replacement;
@@ -1566,10 +1566,9 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
 void apply_recipe_operation(sv_recipe_edit_context_t& context,
                             chart_document_t& chart,
                             const delete_sv_recipe_action_t& edit) {
-    if (!editable_recipe(context, chart, edit.recipe))
+    if (!editable_recipe(context, chart, edit.id))
         return;
-    std::erase_if(chart.sv_recipes,
-                  [&](const auto& item) { return item.id == edit.recipe; });
+    std::erase_if(chart.sv_recipes, [&](const auto& item) { return item.id == edit.id; });
     context.label = "Delete SV recipe";
     context.changed = true;
 }
@@ -1577,7 +1576,7 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
 void apply_recipe_operation(sv_recipe_edit_context_t& context,
                             chart_document_t& chart,
                             const reorder_sv_recipe_action_t& edit) {
-    auto* recipe = editable_recipe(context, chart, edit.recipe);
+    auto* recipe = editable_recipe(context, chart, edit.id);
     if (!recipe)
         return;
     if (edit.new_index >= chart.sv_recipes.size()) {
@@ -1600,7 +1599,7 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
 void apply_recipe_operation(sv_recipe_edit_context_t& context,
                             chart_document_t& chart,
                             const set_sv_recipe_enabled_action_t& edit) {
-    auto* recipe = editable_recipe(context, chart, edit.recipe);
+    auto* recipe = editable_recipe(context, chart, edit.id);
     if (!recipe)
         return;
     context.changed = recipe->enabled != edit.enabled;
@@ -1613,7 +1612,7 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
 void apply_recipe_operation(sv_recipe_edit_context_t& context,
                             chart_document_t& chart,
                             const move_sv_recipe_range_action_t& edit) {
-    auto* recipe = editable_recipe(context, chart, edit.recipe);
+    auto* recipe = editable_recipe(context, chart, edit.id);
     if (!recipe)
         return;
     auto replacement = *recipe;
@@ -1649,7 +1648,7 @@ auto next_event_source_order(const std::vector<Event>& events) -> std::size_t {
 void apply_recipe_operation(sv_recipe_edit_context_t& context,
                             chart_document_t& chart,
                             const materialize_sv_recipe_action_t& edit) {
-    const auto* recipe = editable_recipe(context, chart, edit.recipe);
+    const auto* recipe = editable_recipe(context, chart, edit.id);
     if (!recipe)
         return;
     // Bake a detached copy holding only this recipe, then adopt its events.
@@ -1669,7 +1668,7 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
     mark_materialized_events(baked.chart->speeds, next_event_source_order(chart.speeds));
     chart.scrolls = std::move(baked.chart->scrolls);
     chart.speeds = std::move(baked.chart->speeds);
-    std::erase_if(chart.sv_recipes, [&](const auto& item) { return item.id == edit.recipe; });
+    std::erase_if(chart.sv_recipes, [&](const auto& item) { return item.id == edit.id; });
     context.label = "Materialize SV recipe";
     context.changed = true;
 }

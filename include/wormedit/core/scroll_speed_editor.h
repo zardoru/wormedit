@@ -22,14 +22,14 @@ struct insert_scroll_event_action_t {
 
 struct update_scroll_event_action_t {
     chart_id_t chart;
-    object_id_t event;
+    object_id_t id;
     local_position_t position;
     signed_rational_t multiplier;
 };
 
 struct delete_scroll_event_action_t {
     chart_id_t chart;
-    object_id_t event;
+    object_id_t id;
 };
 
 struct insert_speed_event_action_t {
@@ -42,7 +42,7 @@ struct insert_speed_event_action_t {
 
 struct update_speed_event_action_t {
     chart_id_t chart;
-    object_id_t event;
+    object_id_t id;
     local_position_t position;
     signed_rational_t multiplier;
     rational_t transition_beats{};
@@ -51,7 +51,7 @@ struct update_speed_event_action_t {
 
 struct delete_speed_event_action_t {
     chart_id_t chart;
-    object_id_t event;
+    object_id_t id;
 };
 
 using scroll_speed_edit_action_t =

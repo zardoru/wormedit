@@ -74,7 +74,7 @@ struct insert_semantic_layer_action_t {
 
 struct update_semantic_layer_action_t {
     chart_id_t chart;
-    layer_id_t layer;
+    layer_id_t id;
     std::string name;
     semantic_layer_rgba_t color;
     bool visible{true};
@@ -83,7 +83,7 @@ struct update_semantic_layer_action_t {
 
 struct delete_semantic_layer_action_t {
     chart_id_t chart;
-    layer_id_t layer;
+    layer_id_t id;
     bool remove_from_notes{false};
 };
 

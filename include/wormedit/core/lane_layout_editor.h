@@ -26,13 +26,13 @@ struct insert_lane_layout_action_t {
 
 struct update_lane_layout_action_t {
     chart_id_t chart;
-    object_id_t segment;
+    object_id_t id;
     lane_layout_t layout;
 };
 
 struct delete_lane_layout_action_t {
     chart_id_t chart;
-    object_id_t segment;
+    object_id_t id;
 };
 
 using lane_layout_action_t = std::variant<insert_lane_layout_action_t, update_lane_layout_action_t,

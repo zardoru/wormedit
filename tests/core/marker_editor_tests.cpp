@@ -120,7 +120,7 @@ TEST_CASE("marker updates retain identity and kiai source data and no-op cleanly
     auto history = document_history_t::from(marker_song());
     const auto bookmark_update =
         apply_marker_edit(history, update_bookmark_action_t{.chart = chart_id_t{2},
-                                                            .bookmark = object_id_t{12},
+                                                            .id = object_id_t{12},
                                                             .label = "Audio marker",
                                                             .anchor = marker_anchor_t::audio_time,
                                                             .audio_milliseconds = 1'250});
@@ -135,7 +135,7 @@ TEST_CASE("marker updates retain identity and kiai source data and no-op cleanly
     const auto section_update = apply_marker_edit(
         history, update_section_action_t{
                      .chart = chart_id_t{2},
-                     .section = object_id_t{13},
+                     .id = object_id_t{13},
                      .label = "Chorus",
                      .anchor = marker_anchor_t::beat,
                      .beat_span = position_span_t{{measure_id_t{3}, 480}, {measure_id_t{3}, 720}}});
@@ -145,7 +145,7 @@ TEST_CASE("marker updates retain identity and kiai source data and no-op cleanly
 
     const auto kiai_update =
         apply_marker_edit(history, update_kiai_event_action_t{.chart = chart_id_t{2},
-                                                              .event = object_id_t{11},
+                                                              .id = object_id_t{11},
                                                               .position = {measure_id_t{3}, 360},
                                                               .enabled = false});
     REQUIRE(kiai_update);
@@ -159,7 +159,7 @@ TEST_CASE("marker updates retain identity and kiai source data and no-op cleanly
 
     const auto no_op =
         apply_marker_edit(history, update_kiai_event_action_t{.chart = chart_id_t{2},
-                                                              .event = object_id_t{11},
+                                                              .id = object_id_t{11},
                                                               .position = updated_kiai.position,
                                                               .enabled = updated_kiai.enabled});
     CHECK_FALSE(no_op.applied);
@@ -197,14 +197,14 @@ TEST_CASE("audio-time marker CRUD preserves exact signed millisecond bounds",
 
     REQUIRE(
         apply_marker_edit(history, update_bookmark_action_t{.chart = chart_id_t{2},
-                                                            .bookmark = bookmark_id,
+                                                            .id = bookmark_id,
                                                             .label = "Postroll",
                                                             .anchor = marker_anchor_t::audio_time,
                                                             .audio_milliseconds = INT64_MAX}));
     REQUIRE(apply_marker_edit(
         history,
         update_section_action_t{.chart = chart_id_t{2},
-                                .section = section_id,
+                                .id = section_id,
                                 .label = "Expanded audio span",
                                 .anchor = marker_anchor_t::audio_time,
                                 .audio_millisecond_span =
@@ -250,7 +250,7 @@ TEST_CASE("marker editor rejects invalid IDs anchors positions ranges labels and
 
     const auto unknown = apply_marker_edit(
         history, update_bookmark_action_t{.chart = chart_id_t{2},
-                                          .bookmark = object_id_t{99},
+                                          .id = object_id_t{99},
                                           .label = "missing",
                                           .position = local_position_t{measure_id_t{3}, 120}});
     CHECK_FALSE(unknown);
@@ -353,7 +353,7 @@ TEST_CASE("marker editor rejects ambiguous chart-wide IDs and object allocation 
     const auto duplicate = apply_marker_edit(
         duplicate_history,
         update_section_action_t{.chart = chart_id_t{2},
-                                .section = object_id_t{13},
+                                .id = object_id_t{13},
                                 .label = "Renamed",
                                 .beat_span =
                                     position_span_t{{measure_id_t{3}, 0}, {measure_id_t{3}, 120}}});

@@ -77,7 +77,7 @@ auto apply_anchor_edit(chart_document_t& chart, const insert_timing_anchor_actio
 auto apply_anchor_edit(chart_document_t& chart, const update_timing_anchor_action_t& edit,
                        timing_anchor_edit_limits_t, document_command_result_t& result)
     -> anchor_edit_result_t {
-    auto* anchor = unique_anchor(chart, edit.anchor, result);
+    auto* anchor = unique_anchor(chart, edit.id, result);
     if (anchor == nullptr || !validate_position(chart, edit.position, result)) {
         return {};
     }
@@ -96,7 +96,7 @@ auto apply_anchor_edit(chart_document_t& chart, const update_timing_anchor_actio
 auto apply_anchor_edit(chart_document_t& chart, const delete_timing_anchor_action_t& edit,
                        timing_anchor_edit_limits_t, document_command_result_t& result)
     -> anchor_edit_result_t {
-    auto* anchor = unique_anchor(chart, edit.anchor, result);
+    auto* anchor = unique_anchor(chart, edit.id, result);
     if (anchor == nullptr) {
         return {};
     }

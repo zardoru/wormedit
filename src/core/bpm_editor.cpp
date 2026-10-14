@@ -119,12 +119,12 @@ auto apply_insert(bpm_edit_context_t context, const insert_bpm_event_action_t& e
 
 auto apply_update(bpm_edit_context_t context, const update_bpm_event_action_t& edit)
     -> bpm_edit_outcome_t {
-    if (!edit.event) {
+    if (!edit.id) {
         reject(context.result, diagnostic_code_t::invalid_id,
                "BPM update uses the reserved zero event ID");
         return {false, false, {}};
     }
-    auto* event = unique_bpm_event(context.chart, edit.event, context.result);
+    auto* event = unique_bpm_event(context.chart, edit.id, context.result);
     if (event == nullptr || !validate_bpm_position(context.chart, edit.position, context.result) ||
         !validate_bpm_value(edit.beats_per_minute, context.result)) {
         return {false, false, {}};
@@ -139,12 +139,12 @@ auto apply_update(bpm_edit_context_t context, const update_bpm_event_action_t& e
 
 auto apply_delete(bpm_edit_context_t context, const delete_bpm_event_action_t& edit)
     -> bpm_edit_outcome_t {
-    if (!edit.event) {
+    if (!edit.id) {
         reject(context.result, diagnostic_code_t::invalid_id,
                "BPM deletion uses the reserved zero event ID");
         return {false, false, {}};
     }
-    auto* event = unique_bpm_event(context.chart, edit.event, context.result);
+    auto* event = unique_bpm_event(context.chart, edit.id, context.result);
     if (event == nullptr) {
         return {false, false, {}};
     }

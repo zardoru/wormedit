@@ -561,7 +561,7 @@ auto update_semantic_layer(chart_document_t& chart,
                            const update_semantic_layer_action_t& edit,
                            const semantic_layer_edit_limits_t& limits,
                            document_command_result_t& result) -> bool {
-    auto* layer = unique_layer(chart, edit.layer, result);
+    auto* layer = unique_layer(chart, edit.id, result);
     if (layer == nullptr) {
         return false;
     }
@@ -578,7 +578,7 @@ auto update_semantic_layer(chart_document_t& chart,
     const auto replacement_color = stored_color(edit.color);
     std::size_t total_names{};
     for (const auto& item : chart.semantic_layers) {
-        const auto& name = item.id == edit.layer ? edit.name : item.name;
+        const auto& name = item.id == edit.id ? edit.name : item.name;
         if (!add_size(total_names, name.size(), limits.maximum_total_name_bytes)) {
             reject(result, diagnostic_code_t::invalid_resolution,
                    "semantic layer names exceed the configured total byte cap");
@@ -600,7 +600,7 @@ auto delete_semantic_layer(chart_document_t& chart,
                            const delete_semantic_layer_action_t& edit,
                            const semantic_layer_edit_limits_t& limits,
                            document_command_result_t& result) -> bool {
-    auto* layer = unique_layer(chart, edit.layer, result);
+    auto* layer = unique_layer(chart, edit.id, result);
     if (layer == nullptr) {
         return false;
     }
@@ -609,7 +609,7 @@ auto delete_semantic_layer(chart_document_t& chart,
                "locked semantic layers cannot be deleted");
         return false;
     }
-    const auto assigned_count = layer_membership_note_count(chart, edit.layer);
+    const auto assigned_count = layer_membership_note_count(chart, edit.id);
     if (assigned_count != 0 && !edit.remove_from_notes) {
         reject(result, diagnostic_code_t::unsupported_feature,
                "semantic layer is assigned to notes; explicit removal was not requested");
@@ -623,16 +623,16 @@ auto delete_semantic_layer(chart_document_t& chart,
     if (edit.remove_from_notes) {
         for (auto& measure : chart.measures) {
             for (auto& note : measure.notes) {
-                std::erase(note.semantic_layers, edit.layer);
+                std::erase(note.semantic_layers, edit.id);
             }
             for (auto& event : measure.bgm_events)
-                std::erase(event.semantic_layers, edit.layer);
+                std::erase(event.semantic_layers, edit.id);
         }
     }
-    for (auto& entry : chart.sound_layer_defaults) std::erase(entry.layers, edit.layer);
+    for (auto& entry : chart.sound_layer_defaults)
+        std::erase(entry.layers, edit.id);
     std::erase_if(chart.sound_layer_defaults, [](const auto& entry) { return entry.layers.empty(); });
-    std::erase_if(chart.semantic_layers,
-                  [&edit](const auto& item) { return item.id == edit.layer; });
+    std::erase_if(chart.semantic_layers, [&edit](const auto& item) { return item.id == edit.id; });
     return true;
 }
 

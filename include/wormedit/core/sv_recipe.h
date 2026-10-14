@@ -135,30 +135,30 @@ struct insert_sv_recipe_action_t {
 
 struct update_sv_recipe_action_t {
     chart_id_t chart;
-    recipe_id_t recipe;
+    recipe_id_t id;
     sv_recipe_t replacement;
 };
 
 struct delete_sv_recipe_action_t {
     chart_id_t chart;
-    recipe_id_t recipe;
+    recipe_id_t id;
 };
 
 struct reorder_sv_recipe_action_t {
     chart_id_t chart;
-    recipe_id_t recipe;
+    recipe_id_t id;
     std::size_t new_index{};
 };
 
 struct set_sv_recipe_enabled_action_t {
     chart_id_t chart;
-    recipe_id_t recipe;
+    recipe_id_t id;
     bool enabled{true};
 };
 
 struct move_sv_recipe_range_action_t {
     chart_id_t chart;
-    recipe_id_t recipe;
+    recipe_id_t id;
     position_span_t range;
 };
 
@@ -220,7 +220,7 @@ void cancel_sv_recipe_range_drag(sv_recipe_range_drag_t& drag) noexcept;
 // materialize too. A recipe that cannot be evaluated (a Lua expression curve, for now) rejects.
 struct materialize_sv_recipe_action_t {
     chart_id_t chart;
-    recipe_id_t recipe;
+    recipe_id_t id;
 };
 
 using sv_recipe_edit_action_t =

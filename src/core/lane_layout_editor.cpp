@@ -111,14 +111,14 @@ void apply_edit(layout_edit_context_t& context, const insert_lane_layout_action_
 }
 
 void apply_edit(layout_edit_context_t& context, const update_lane_layout_action_t& edit) {
-    const auto found = find_segment(context, edit.segment);
+    const auto found = find_segment(context, edit.id);
     if (found == context.chart.lane_layouts.end()) return;
     found->layout = edit.layout;
     context.label = "Update lane layout";
 }
 
 void apply_edit(layout_edit_context_t& context, const delete_lane_layout_action_t& edit) {
-    const auto found = find_segment(context, edit.segment);
+    const auto found = find_segment(context, edit.id);
     if (found == context.chart.lane_layouts.end()) return;
     const auto built = build_measure_index(context.chart);
     const auto* index = std::get_if<measure_index_t>(&built);

@@ -43,14 +43,14 @@ struct insert_bpm_event_action_t {
 
 struct update_bpm_event_action_t {
     chart_id_t chart;
-    object_id_t event;
+    object_id_t id;
     local_position_t position;
     signed_rational_t beats_per_minute;
 };
 
 struct delete_bpm_event_action_t {
     chart_id_t chart;
-    object_id_t event;
+    object_id_t id;
 };
 
 using bpm_edit_action_t =

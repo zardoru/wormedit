@@ -22,7 +22,7 @@ struct insert_timing_anchor_action_t {
 
 struct update_timing_anchor_action_t {
     chart_id_t chart;
-    object_id_t anchor;
+    object_id_t id;
     local_position_t position;
     std::uint64_t source_sample_frame{};
     bool locked{false};
@@ -30,7 +30,7 @@ struct update_timing_anchor_action_t {
 
 struct delete_timing_anchor_action_t {
     chart_id_t chart;
-    object_id_t anchor;
+    object_id_t id;
 };
 
 using timing_anchor_edit_action_t =

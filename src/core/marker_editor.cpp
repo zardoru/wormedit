@@ -244,11 +244,11 @@ void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart
                          const measure_index_t& index,
                          const update_bookmark_action_t& edit) {
     if (!validate_marker_label(context, edit.label, "bookmark") ||
-        !validate_bookmark_anchor(chart, edit.anchor, edit.position,
-                                  edit.audio_milliseconds, index, context.result) ||
-        !validate_chart_object_id(chart, edit.bookmark, context.result, "bookmark"))
+        !validate_bookmark_anchor(chart, edit.anchor, edit.position, edit.audio_milliseconds, index,
+                                  context.result) ||
+        !validate_chart_object_id(chart, edit.id, context.result, "bookmark"))
         return;
-    const auto found = std::ranges::find(chart.bookmarks, edit.bookmark, &bookmark_t::id);
+    const auto found = std::ranges::find(chart.bookmarks, edit.id, &bookmark_t::id);
     if (found == chart.bookmarks.end()) {
         reject(context.result, diagnostic_code_t::invalid_id,
                "bookmark update refers to an object that is not a bookmark");
@@ -269,15 +269,15 @@ void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart
 void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart,
                          const measure_index_t&,
                          const delete_bookmark_action_t& edit) {
-    if (!validate_chart_object_id(chart, edit.bookmark, context.result, "bookmark"))
+    if (!validate_chart_object_id(chart, edit.id, context.result, "bookmark"))
         return;
-    const auto found = std::ranges::find(chart.bookmarks, edit.bookmark, &bookmark_t::id);
+    const auto found = std::ranges::find(chart.bookmarks, edit.id, &bookmark_t::id);
     if (found == chart.bookmarks.end()) {
         reject(context.result, diagnostic_code_t::invalid_id,
                "bookmark deletion refers to an object that is not a bookmark");
         return;
     }
-    std::erase_if(chart.bookmarks, [&](const auto& value) { return value.id == edit.bookmark; });
+    std::erase_if(chart.bookmarks, [&](const auto& value) { return value.id == edit.id; });
     context.command_label = "Delete bookmark";
     context.changed = true;
 }
@@ -308,11 +308,11 @@ void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart
                          const measure_index_t& index,
                          const update_section_action_t& edit) {
     if (!validate_marker_label(context, edit.label, "section") ||
-        !validate_section_anchor(chart, edit.anchor, edit.beat_span,
-                                 edit.audio_millisecond_span, index, context.result) ||
-        !validate_chart_object_id(chart, edit.section, context.result, "section"))
+        !validate_section_anchor(chart, edit.anchor, edit.beat_span, edit.audio_millisecond_span,
+                                 index, context.result) ||
+        !validate_chart_object_id(chart, edit.id, context.result, "section"))
         return;
-    const auto found = std::ranges::find(chart.sections, edit.section, &section_t::id);
+    const auto found = std::ranges::find(chart.sections, edit.id, &section_t::id);
     if (found == chart.sections.end()) {
         reject(context.result, diagnostic_code_t::invalid_id,
                "section update refers to an object that is not a section");
@@ -333,15 +333,15 @@ void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart
 void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart,
                          const measure_index_t&,
                          const delete_section_action_t& edit) {
-    if (!validate_chart_object_id(chart, edit.section, context.result, "section"))
+    if (!validate_chart_object_id(chart, edit.id, context.result, "section"))
         return;
-    const auto found = std::ranges::find(chart.sections, edit.section, &section_t::id);
+    const auto found = std::ranges::find(chart.sections, edit.id, &section_t::id);
     if (found == chart.sections.end()) {
         reject(context.result, diagnostic_code_t::invalid_id,
                "section deletion refers to an object that is not a section");
         return;
     }
-    std::erase_if(chart.sections, [&](const auto& value) { return value.id == edit.section; });
+    std::erase_if(chart.sections, [&](const auto& value) { return value.id == edit.id; });
     context.command_label = "Delete section";
     context.changed = true;
 }
@@ -376,9 +376,9 @@ void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart
                          const measure_index_t& index,
                          const update_kiai_event_action_t& edit) {
     if (!validate_position(chart, edit.position, index, context.result, "kiai event") ||
-        !validate_chart_object_id(chart, edit.event, context.result, "kiai event"))
+        !validate_chart_object_id(chart, edit.id, context.result, "kiai event"))
         return;
-    const auto found = std::ranges::find(chart.kiai, edit.event, &kiai_event_t::id);
+    const auto found = std::ranges::find(chart.kiai, edit.id, &kiai_event_t::id);
     if (found == chart.kiai.end()) {
         reject(context.result, diagnostic_code_t::invalid_id,
                "kiai update refers to an object that is not a kiai event");
@@ -395,15 +395,15 @@ void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart
 void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart,
                          const measure_index_t&,
                          const delete_kiai_event_action_t& edit) {
-    if (!validate_chart_object_id(chart, edit.event, context.result, "kiai event"))
+    if (!validate_chart_object_id(chart, edit.id, context.result, "kiai event"))
         return;
-    const auto found = std::ranges::find(chart.kiai, edit.event, &kiai_event_t::id);
+    const auto found = std::ranges::find(chart.kiai, edit.id, &kiai_event_t::id);
     if (found == chart.kiai.end()) {
         reject(context.result, diagnostic_code_t::invalid_id,
                "kiai deletion refers to an object that is not a kiai event");
         return;
     }
-    std::erase_if(chart.kiai, [&](const auto& value) { return value.id == edit.event; });
+    std::erase_if(chart.kiai, [&](const auto& value) { return value.id == edit.id; });
     context.command_label = "Delete kiai event";
     context.changed = true;
 }

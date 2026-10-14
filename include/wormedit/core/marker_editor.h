@@ -31,7 +31,7 @@ struct insert_bookmark_action_t {
 
 struct update_bookmark_action_t {
     chart_id_t chart;
-    object_id_t bookmark;
+    object_id_t id;
     std::string label;
     marker_anchor_t anchor{marker_anchor_t::beat};
     std::optional<local_position_t> position;
@@ -40,7 +40,7 @@ struct update_bookmark_action_t {
 
 struct delete_bookmark_action_t {
     chart_id_t chart;
-    object_id_t bookmark;
+    object_id_t id;
 };
 
 struct insert_section_action_t {
@@ -53,7 +53,7 @@ struct insert_section_action_t {
 
 struct update_section_action_t {
     chart_id_t chart;
-    object_id_t section;
+    object_id_t id;
     std::string label;
     marker_anchor_t anchor{marker_anchor_t::beat};
     std::optional<position_span_t> beat_span;
@@ -62,7 +62,7 @@ struct update_section_action_t {
 
 struct delete_section_action_t {
     chart_id_t chart;
-    object_id_t section;
+    object_id_t id;
 };
 
 struct insert_kiai_event_action_t {
@@ -74,14 +74,14 @@ struct insert_kiai_event_action_t {
 
 struct update_kiai_event_action_t {
     chart_id_t chart;
-    object_id_t event;
+    object_id_t id;
     local_position_t position;
     bool enabled{};
 };
 
 struct delete_kiai_event_action_t {
     chart_id_t chart;
-    object_id_t event;
+    object_id_t id;
 };
 
 // Creates, resizes, moves or deletes one whole Kiai area, merging overlaps (see

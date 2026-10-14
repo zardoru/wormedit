@@ -6,15 +6,13 @@
 
 namespace wormedit::audio {
 
-auto audition_session_t::start(std::span<const audition_clip_t> clips)
-    -> audition_session_start_result_t {
+auto audition_session_t::start_session(std::span<const audition_clip_t> clips)
+    -> audition_session_start_outcome_t {
     const std::scoped_lock lock(mutex_);
     const auto transport = bridge_.start(clips);
     if (!transport) {
-        return {.status = audition_session_start_status_t::transport_failed,
-                .token = std::nullopt,
-                .transport = transport,
-                .prime = std::nullopt};
+        return std::unexpected(audition_session_start_error_t{
+            .code = audition_session_start_status_t::transport_failed, .transport = transport});
     }
     const auto prime = prime_resident_audition(transport_, *transport.token, clips);
     prime_pending_ = !prime.has_value();
@@ -25,10 +23,26 @@ auto audition_session_t::start(std::span<const audition_clip_t> clips)
     duration_frames_ = std::ranges::max(clips_, {}, &audition_clip_t::frame_count).frame_count;
     ++generation_;
     publish_playhead();
+    return started_audition_session_t{.token = *token_, .transport = transport, .prime = prime};
+}
+
+auto audition_session_start_result_t::from(audition_session_start_outcome_t&& outcome)
+    -> audition_session_start_result_t {
+    if (!outcome) {
+        return {.status = outcome.error().code,
+                .token = std::nullopt,
+                .transport = std::move(outcome.error().transport),
+                .prime = std::nullopt};
+    }
     return {.status = audition_session_start_status_t::started,
-            .token = token_,
-            .transport = transport,
-            .prime = prime};
+            .token = outcome->token,
+            .transport = std::move(outcome->transport),
+            .prime = std::move(outcome->prime)};
+}
+
+auto audition_session_t::start(std::span<const audition_clip_t> clips)
+    -> audition_session_start_result_t {
+    return audition_session_start_result_t::from(start_session(clips));
 }
 
 auto audition_session_t::snapshot_pump_state() const -> pump_state_t {

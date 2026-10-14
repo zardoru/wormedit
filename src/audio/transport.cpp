@@ -138,6 +138,86 @@ auto clip_mix_samples(transport_mix_context_t& context) -> void {
 
 } // namespace
 
+struct transport_t::mix_operation_t {
+    transport_t& owner;
+    std::uint64_t first_timeline_frame;
+    std::uint64_t callback_end;
+    std::span<float> interleaved_stereo;
+    transport_mix_result_t& result;
+
+    void operator()() {
+        const std::scoped_lock lock(owner.mutex_);
+        if (owner.next_timeline_frame_.has_value() &&
+            first_timeline_frame < *owner.next_timeline_frame_) {
+            result.status = transport_mix_status_t::non_monotonic_callback;
+            return;
+        }
+        result.status = transport_mix_status_t::mixed;
+        transport_mix_context_t context{owner.block_cache_,   owner.resident_.get(),
+                                        first_timeline_frame, callback_end,
+                                        interleaved_stereo,   result};
+        context.click_preview_gain =
+            static_cast<float>(owner.click_volume_percent_.load(std::memory_order_acquire)) /
+            100.0F;
+        const auto clicks_enabled = owner.clicks_enabled_.load(std::memory_order_acquire);
+        for (auto& entry : owner.scheduled_voices_) {
+            if (entry.active && !owner.muted_mix_groups_.contains(entry.voice.mix_group) &&
+                (entry.voice.kind != voice_kind_t::click_preview || clicks_enabled)) {
+                if (mix_voice(context, entry.voice)) {
+                    entry.active = false;
+                    --owner.active_scheduled_voices_;
+                }
+            }
+        }
+        clip_mix_samples(context);
+        for (auto& entry : owner.scheduled_voices_) {
+            if (entry.active &&
+                entry.voice.timeline_start_frame + entry.voice.frame_count <= callback_end) {
+                entry.active = false;
+                --owner.active_scheduled_voices_;
+            }
+        }
+        owner.next_timeline_frame_ = callback_end;
+    }
+};
+
+struct transport_t::snapshot_operation_t {
+    transport_t& owner;
+    std::size_t maximum_voices;
+    active_voice_snapshot_t& result;
+
+    void operator()() {
+        const std::scoped_lock lock(owner.mutex_);
+        if (owner.active_scheduled_voices_ > maximum_voices) {
+            result.status = active_voice_snapshot_status_t::capacity_exceeded;
+            return;
+        }
+        result.voices.reserve(owner.active_scheduled_voices_);
+        for (const auto& entry : owner.scheduled_voices_) {
+            if (entry.active)
+                result.voices.push_back(entry.voice);
+        }
+        result.status = active_voice_snapshot_status_t::ready;
+    }
+};
+
+auto transport_mix_result_t::from(transport_mix_result_t&& report) -> transport_mix_outcome_t {
+    if (report.status != transport_mix_status_t::mixed)
+        return std::unexpected(std::move(report));
+    return std::move(report);
+}
+
+auto transport_mix_result_t::from(transport_mix_outcome_t&& outcome) -> transport_mix_result_t {
+    return std::move(outcome ? *outcome : outcome.error());
+}
+
+auto active_voice_snapshot_t::from(active_voice_snapshot_outcome_t&& outcome)
+    -> active_voice_snapshot_t {
+    if (!outcome)
+        return {.status = outcome.error(), .voices = {}};
+    return {.status = active_voice_snapshot_status_t::ready, .voices = std::move(*outcome)};
+}
+
 transport_t::transport_t(decoded_block_cache_t& block_cache, std::size_t maximum_scheduled_voices)
     : block_cache_(block_cache),
       decode_session_(std::max<std::size_t>(maximum_scheduled_voices, 1)),
@@ -294,53 +374,29 @@ auto transport_t::schedule_voices(session_token_t token, std::span<const transpo
     return current ? status : voice_schedule_status_t::stale_generation;
 }
 
-auto transport_t::mix(session_token_t token, std::uint64_t first_timeline_frame,
-                      std::span<float> interleaved_stereo) -> transport_mix_result_t {
+auto transport_t::mix_frames(session_token_t token, std::uint64_t first_timeline_frame,
+                             std::span<float> interleaved_stereo) -> transport_mix_outcome_t {
     std::ranges::fill(interleaved_stereo, 0.0F);
     if (interleaved_stereo.size() % output_channel_count != 0) {
-        return {.status = transport_mix_status_t::invalid_buffer};
+        return std::unexpected(
+            transport_mix_result_t{.status = transport_mix_status_t::invalid_buffer});
     }
     const auto frame_count = interleaved_stereo.size() / output_channel_count;
     if (frame_count > std::numeric_limits<std::uint64_t>::max() - first_timeline_frame) {
-        return {.status = transport_mix_status_t::timeline_overflow};
+        return std::unexpected(
+            transport_mix_result_t{.status = transport_mix_status_t::timeline_overflow});
     }
     transport_mix_result_t result{
         .status = transport_mix_status_t::stale_generation,
         .frames = frame_count,
     };
     const auto callback_end = first_timeline_frame + frame_count;
-    const auto current = decode_session_.with_current(token, [&] {
-        const std::scoped_lock lock(mutex_);
-        if (next_timeline_frame_.has_value() && first_timeline_frame < *next_timeline_frame_) {
-            result.status = transport_mix_status_t::non_monotonic_callback;
-            return;
-        }
-        result.status = transport_mix_status_t::mixed;
-        transport_mix_context_t context{block_cache_, resident_.get(), first_timeline_frame, callback_end,
-                                        interleaved_stereo, result};
-        context.click_preview_gain =
-            static_cast<float>(click_volume_percent_.load(std::memory_order_acquire)) / 100.0F;
-        const auto clicks_enabled = clicks_enabled_.load(std::memory_order_acquire);
-        for (auto& entry : scheduled_voices_) {
-            if (entry.active && !muted_mix_groups_.contains(entry.voice.mix_group) &&
-                (entry.voice.kind != voice_kind_t::click_preview ||
-                                 clicks_enabled)) {
-                if (mix_voice(context, entry.voice)) {
-                    entry.active = false;
-                    --active_scheduled_voices_;
-                }
-            }
-        }
-        clip_mix_samples(context);
-        for (auto& entry : scheduled_voices_) {
-            if (entry.active &&
-                entry.voice.timeline_start_frame + entry.voice.frame_count <= callback_end) {
-                entry.active = false;
-                --active_scheduled_voices_;
-            }
-        }
-        next_timeline_frame_ = callback_end;
-    });
+    mix_operation_t operation{.owner = *this,
+                              .first_timeline_frame = first_timeline_frame,
+                              .callback_end = callback_end,
+                              .interleaved_stereo = interleaved_stereo,
+                              .result = result};
+    const auto current = decode_session_.with_current(token, operation);
     if (!current) {
         std::ranges::fill(interleaved_stereo, 0.0F);
         result.status = transport_mix_status_t::stale_generation;
@@ -350,7 +406,13 @@ auto transport_t::mix(session_token_t token, std::uint64_t first_timeline_frame,
         result.dropped_music_voices = 0;
         result.clipped_samples = 0;
     }
-    return result;
+    return transport_mix_result_t::from(std::move(result));
+}
+
+auto transport_t::mix(session_token_t token, std::uint64_t first_timeline_frame,
+                      std::span<float> interleaved_stereo) -> transport_mix_result_t {
+    return transport_mix_result_t::from(
+        mix_frames(token, first_timeline_frame, interleaved_stereo));
 }
 
 auto transport_t::scheduled_voice_count() const -> std::size_t {
@@ -362,28 +424,25 @@ auto transport_t::block_cache_limits() const noexcept -> block_cache_limits_t {
     return block_cache_.limits();
 }
 
-auto transport_t::snapshot_active_voices(session_token_t token, std::size_t maximum_voices)
-    -> active_voice_snapshot_t {
+auto transport_t::snapshot_voices(session_token_t token, std::size_t maximum_voices)
+    -> active_voice_snapshot_outcome_t {
     auto result = active_voice_snapshot_t{
         .status = active_voice_snapshot_status_t::stale_generation, .voices = {}};
-    const auto current = decode_session_.with_current(token, [&] {
-        const std::scoped_lock lock(mutex_);
-        if (active_scheduled_voices_ > maximum_voices) {
-            result.status = active_voice_snapshot_status_t::capacity_exceeded;
-            return;
-        }
-        result.voices.reserve(active_scheduled_voices_);
-        for (const auto& entry : scheduled_voices_) {
-            if (entry.active)
-                result.voices.push_back(entry.voice);
-        }
-        result.status = active_voice_snapshot_status_t::ready;
-    });
+    snapshot_operation_t operation{
+        .owner = *this, .maximum_voices = maximum_voices, .result = result};
+    const auto current = decode_session_.with_current(token, operation);
     if (!current) {
         result.status = active_voice_snapshot_status_t::stale_generation;
         result.voices.clear();
     }
-    return result;
+    if (result.status != active_voice_snapshot_status_t::ready)
+        return std::unexpected(result.status);
+    return std::move(result.voices);
+}
+
+auto transport_t::snapshot_active_voices(session_token_t token, std::size_t maximum_voices)
+    -> active_voice_snapshot_t {
+    return active_voice_snapshot_t::from(snapshot_voices(token, maximum_voices));
 }
 
 } // namespace wormedit::audio

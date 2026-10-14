@@ -370,3 +370,28 @@ TEST_CASE("BGM mix groups silence active and future voices without losing their 
     check_bgm_mix(transport.mix(*token, 24, tail).voices_mixed == 3);
     check_bgm_mix(transport.scheduled_voice_count() == 0);
 }
+
+namespace {
+auto stale_transport_outcomes_keep_frames_and_silence() -> bool {
+    using namespace wormedit::audio;
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    const auto token = transport.start();
+    if (!token) return false;
+    static_cast<void>(transport.stop());
+    std::array<float, 64> output;
+    output.fill(1.0F);
+    const auto mixed = transport.mix_frames(*token, 0, output);
+    if (mixed.has_value()) return false;
+    const auto snapshot = transport.snapshot_voices(*token, 4);
+    return mixed.error().status == transport_mix_status_t::stale_generation &&
+           mixed.error().frames == 32 &&
+           std::ranges::count(output, 0.0F) == static_cast<std::ptrdiff_t>(output.size()) &&
+           !snapshot.has_value() && snapshot.error() == active_voice_snapshot_status_t::stale_generation;
+}
+} // namespace
+
+TEST_CASE("transport expected stale outcomes retain requested frames and silence",
+          "[unit][audio][transport][result][generation]") {
+    CHECK(stale_transport_outcomes_keep_frames_and_silence());
+}

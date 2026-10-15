@@ -98,12 +98,17 @@ auto apply_anchor_edit(chart_document_t& chart,
 }
 
 struct anchor_operation_visitor_t {
-    document_command_transaction_t& transaction;
-    const timing_anchor_edit_limits_t& limits;
+    static constexpr std::string_view invalid_limits_message = "timing anchor cap must be positive";
+    static auto has_valid_limits(const timing_anchor_edit_limits_t& limits) -> bool {
+        return limits.maximum_timing_anchors != 0;
+    }
+
+    song_document_t& proposed;
+    document_command_result_t& result;
+    timing_anchor_edit_limits_t limits;
 
     template <typename Edit> auto operator()(const Edit& edit) const -> anchor_edit_result_t {
-        auto& result = transaction.outcome;
-        const auto chart = transaction.copy_document().find_chart(edit.chart);
+        const auto chart = proposed.find_chart(edit.chart);
         if (!edit.chart || chart == nullptr) {
             reject(result, diagnostic_code_t::invalid_id,
                    "timing anchor edit refers to an unknown chart");
@@ -122,27 +127,13 @@ struct anchor_operation_visitor_t {
 
 auto apply_timing_anchor_edit(document_history_t& history,
     const timing_anchor_edit_action_t& action, timing_anchor_edit_limits_t limits) -> document_command_result_t {
-    auto transaction = document_command_transaction_t::from(history);
-    return apply_timing_anchor_edit(transaction, action, limits);
+    return document_command_transaction_t::from(history).execute<anchor_operation_visitor_t>(action, limits);
 }
 
 auto apply_timing_anchor_edit(document_command_transaction_t& transaction,
                               const timing_anchor_edit_action_t& action,
                               timing_anchor_edit_limits_t limits) -> document_command_result_t {
-    if (!transaction.is_ready()) return transaction.commit({});
-    auto& result = transaction.outcome;
-    if (limits.maximum_timing_anchors == 0) {
-        reject(result, diagnostic_code_t::invalid_resolution, "timing anchor cap must be positive");
-        return transaction.finish_without_commit();
-    }
-
-    const auto edit_result =
-        std::visit(anchor_operation_visitor_t{transaction, limits}, action);
-
-    if (!result.diagnostics.empty() || !edit_result.changed) {
-        return transaction.finish_without_commit();
-    }
-    return transaction.commit(edit_result.command_label);
+    return transaction.execute<anchor_operation_visitor_t>(action, limits);
 }
 
 } // namespace wormedit

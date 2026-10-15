@@ -16,9 +16,8 @@
 #include <vector>
 
 namespace wormedit::sys {
-[[nodiscard]] auto dispatch_sound_edit_outcome(const WormUiWorkspaceAction& action,
-                                               document_history_t& history,
-                                               workspace_controller_t& workspace, chart_id_t chart,
+struct resource_action_context_t;
+[[nodiscard]] auto dispatch_sound_edit_outcome(const resource_action_context_t& context,
                                                application_command_state_t& application_state)
     -> std::optional<compose_action_outcome_t>;
 

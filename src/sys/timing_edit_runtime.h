@@ -14,10 +14,10 @@ struct application_command_state_t;
 namespace runtime {
 
 struct timing_edit_t {
-    std::optional<timing_lane_pseudonote_preview_t> stage;
+    std::optional<timing_lane_pseudonote_outcome_t> stage;
 
     [[nodiscard]] bool has_pending_edit() const { return stage.has_value(); }
-    [[nodiscard]] const timing_lane_pseudonote_preview_t* stage_view() const {
+    [[nodiscard]] const timing_lane_pseudonote_outcome_t* stage_view() const {
         return stage ? &*stage : nullptr;
     }
     void cancel_if_stale(const document_history_t& history,

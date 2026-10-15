@@ -102,10 +102,11 @@ auto make_stale_scene_preview(int kind) -> wormedit::editor_interaction_view_mod
     auto result = view();
     switch (kind) {
     case 0:
-        result.pending_note_duration_gesture = pending_note_duration_gesture_t{
-            .reference_note = object_id_t{11}, .stamp = wormedit::document_stamp_t::from(8), .notes = {object_id_t{11}},
+        result.active_gesture = proposal_t<pending_note_duration_gesture_t, document_stamp_t>{
+            .stamp = document_stamp_t::from(8), .payload = {
+            .reference_note = object_id_t{11}, .notes = {object_id_t{11}},
             .preview_end = {measure_id_t{2}, 0},
-            .preview = {{object_id_t{11}, note_kind_t::hold, local_position_t{measure_id_t{2}, 0}}}};
+            .preview = {{object_id_t{11}, note_kind_t::hold, local_position_t{measure_id_t{2}, 0}}}}};
         break;
     case 1:
         result.pending_hold = pending_hold_t{.position = {measure_id_t{2}, 0}, .lane = lane_id_t{1},
@@ -117,11 +118,12 @@ auto make_stale_scene_preview(int kind) -> wormedit::editor_interaction_view_mod
             .lane = lane_id_t{1}, .document_revision = 8, .adds_note = true};
         break;
     case 3:
-        result.pending_note_move_gesture = pending_note_move_gesture_t{
-            .reference_note = object_id_t{11}, .stamp = wormedit::document_stamp_t::from(8), .notes = {object_id_t{11}},
+        result.active_gesture = wormedit::proposal_t<wormedit::pending_note_move_gesture_t, wormedit::document_stamp_t>{
+        .stamp = wormedit::document_stamp_t::from(8), .payload = {
+            .reference_note = object_id_t{11}, .notes = {object_id_t{11}},
             .preview_position = {measure_id_t{2}, 240},
             .preview = {{object_id_t{11}, lane_id_t{2}, local_position_t{measure_id_t{2}, 240},
-                         local_position_t{measure_id_t{2}, 720}}}};
+                         local_position_t{measure_id_t{2}, 720}}}}};
         break;
     case 4:
         result.pending_note_paint_gesture = note_paint_gesture_preview_t{
@@ -143,8 +145,8 @@ TEST_CASE("Field scene index binding rejects captured chart and view revision ex
     auto projected = view();
     if (different_chart) index.chart = wormedit::chart_id_t{99};
     else ++projected.document_revision;
-    const auto result = wormedit::make_editor_field_scene(chart, index, projected,
-        {.field_left_pixels = 10, .field_width_pixels = 200});
+    const auto result = wormedit::editor_field_scene_view_t::from(
+        chart, index, projected, {.field_left_pixels = 10, .field_width_pixels = 200});
     REQUIRE_FALSE(result);
     wormedit::test::check_stale_action_message(result.diagnostics, "Field scene index");
 }
@@ -156,8 +158,9 @@ TEST_CASE("Field scene preview expiry keeps hold duration move and paint guards"
     chart.source_family = wormedit::format_family_t::bms;
     const auto built = wormedit::build_editor_field_scene_index(chart, 7);
     REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
-    const auto result = wormedit::make_editor_field_scene(chart,
-        std::get<wormedit::editor_field_scene_index_t>(built), make_stale_scene_preview(kind),
+    const auto result = wormedit::editor_field_scene_view_t::from(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built),
+        make_stale_scene_preview(kind),
         {.field_left_pixels = 10, .field_width_pixels = 200, .include_virtual_bms_tail = true});
     REQUIRE_FALSE(result);
     wormedit::test::check_stale_action_message(result.diagnostics, "Field scene preview");
@@ -176,12 +179,13 @@ TEST_CASE("field scene composes split layout bands, exact grid, holds, selection
     CHECK(indexed.bgm_events.front().event == wormedit::object_id_t{12});
     CHECK(indexed.bgm_events.front().source_lane == wormedit::object_id_t{30});
     CHECK(indexed.bgm_events.front().row == 480);
-    const auto result = wormedit::editor_field_scene_result_t::from(wormedit::editor_field_scene_result_t::from(
-        chart, indexed, view(),
-        {.field_left_pixels = 10.0,
-         .field_width_pixels = 200.0,
-         .split_stage_gutter_pixels = 12.0,
-         .comparison_difference_rows = {{wormedit::measure_id_t{2}, 0}}}));
+    const auto result = wormedit::editor_field_scene_view_result_t::from(
+        wormedit::editor_field_scene_view_result_t::from(
+            chart, indexed, view(),
+            {.field_left_pixels = 10.0,
+             .field_width_pixels = 200.0,
+             .split_stage_gutter_pixels = 12.0,
+             .comparison_difference_rows = {{wormedit::measure_id_t{2}, 0}}}));
     REQUIRE(result);
     const auto& scene = *result.scene;
     CHECK(scene.visible_begin_row == 480);
@@ -240,11 +244,11 @@ TEST_CASE("field scene composes split layout bands, exact grid, holds, selection
     zoomed_view.pixels_per_standard_measure = 384.0;
     zoomed_view.viewport_scroll_pixels = 192.0;
     zoomed_view.viewport_height_pixels = 384.0;
-    const auto zoomed = wormedit::make_editor_field_scene(
-        chart, *built, zoomed_view,
-        {.field_left_pixels = 10.0,
-         .field_width_pixels = 200.0,
-         .split_stage_gutter_pixels = 12.0});
+    const auto zoomed =
+        wormedit::editor_field_scene_view_t::from(chart, *built, zoomed_view,
+                                                  {.field_left_pixels = 10.0,
+                                                   .field_width_pixels = 200.0,
+                                                   .split_stage_gutter_pixels = 12.0});
     REQUIRE(zoomed);
     REQUIRE(zoomed.scene->hold_bodies.size() == 2);
     CHECK(zoomed.scene->visible_begin_row == scene.visible_begin_row);
@@ -261,7 +265,7 @@ TEST_CASE("field scene leaves a blank margin before chart row zero",
     auto visible = view();
     visible.cursor = {wormedit::measure_id_t{1}, 0};
     visible.viewport_scroll_pixels = -visible.viewport_height_pixels * 0.2;
-    const auto scene = wormedit::make_editor_field_scene(
+    const auto scene = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), visible,
         {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
     REQUIRE(scene);
@@ -284,7 +288,7 @@ TEST_CASE("field cursor stays at its screen anchor when scroll reaches the first
     visible.viewport_scroll_pixels = -visible.viewport_height_pixels * 0.2;
     for (const auto direction : {wormedit::editor_field_scroll_direction_t::up,
                                  wormedit::editor_field_scroll_direction_t::down}) {
-        const auto result = wormedit::make_editor_field_scene(
+        const auto result = wormedit::editor_field_scene_view_t::from(
             chart, std::get<wormedit::editor_field_scene_index_t>(built), visible,
             {.field_left_pixels = 10.0,
              .field_width_pixels = 200.0,
@@ -306,15 +310,14 @@ TEST_CASE("field scene scroll direction anchors rectangular heads and keeps arro
     auto visible = view();
     visible.viewport_scroll_pixels = 0.0;
     const auto compose = [&](wormedit::editor_field_scroll_direction_t direction) {
-        return wormedit::make_editor_field_scene(
-            chart, index, visible,
-            {.field_left_pixels = 10.0,
-             .field_width_pixels = 200.0,
-             .note_head_height_pixels = 16.0,
-             .scroll_direction = direction,
-             .fixed_cursor_screen_y_pixels = 72.0,
-             .bgm_pane_left_pixels = 210.0,
-             .bgm_pane_width_pixels = 36.0});
+        return wormedit::editor_field_scene_view_t::from(chart, index, visible,
+                                                         {.field_left_pixels = 10.0,
+                                                          .field_width_pixels = 200.0,
+                                                          .note_head_height_pixels = 16.0,
+                                                          .scroll_direction = direction,
+                                                          .fixed_cursor_screen_y_pixels = 72.0,
+                                                          .bgm_pane_left_pixels = 210.0,
+                                                          .bgm_pane_width_pixels = 36.0});
     };
     const auto up = compose(wormedit::editor_field_scroll_direction_t::up);
     const auto down = compose(wormedit::editor_field_scroll_direction_t::down);
@@ -368,7 +371,8 @@ TEST_CASE("field scene can project the last sparse BMS measure with its active l
     visible.virtual_bms_cursor_row = 959'040;
     const wormedit::editor_field_scene_request_t request{
         .field_left_pixels = 10.0, .field_width_pixels = 200.0, .include_virtual_bms_tail = true};
-    const auto projected = wormedit::make_editor_field_scene(chart, indexed, visible, request);
+    const auto projected =
+        wormedit::editor_field_scene_view_t::from(chart, indexed, visible, request);
     REQUIRE(projected);
     const auto& scene = *projected.scene;
     CHECK(scene.visible_begin_row == 959'040);
@@ -395,7 +399,8 @@ TEST_CASE("field scene can project the last sparse BMS measure with its active l
             .document_revision = 7,
             .removals = std::make_shared<const std::vector<wormedit::object_id_t>>(),
             .adds_note = true};
-    const auto with_hold = wormedit::make_editor_field_scene(chart, indexed, visible, request);
+    const auto with_hold =
+        wormedit::editor_field_scene_view_t::from(chart, indexed, visible, request);
     REQUIRE(with_hold);
     CHECK(std::ranges::any_of(with_hold.scene->hold_bodies, [](const auto& body) {
         return body.proposal_ghost && body.bounds.top == Catch::Approx(0.0) &&
@@ -403,7 +408,7 @@ TEST_CASE("field scene can project the last sparse BMS measure with its active l
     }));
     auto authored_only = request;
     authored_only.include_virtual_bms_tail = false;
-    CHECK_FALSE(wormedit::make_editor_field_scene(chart, indexed, visible, authored_only));
+    CHECK_FALSE(wormedit::editor_field_scene_view_t::from(chart, indexed, visible, authored_only));
 }
 
 TEST_CASE("virtual BMS hold preview draws its normalized union and subdued origins",
@@ -439,11 +444,9 @@ TEST_CASE("virtual BMS hold preview draws its normalized union and subdued origi
                 std::vector<wormedit::object_id_t>{wormedit::object_id_t{200},
                                                    wormedit::object_id_t{201}}),
             .adds_note = true};
-    const auto projected = wormedit::make_editor_field_scene(
+    const auto projected = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), visible,
-        {.field_left_pixels = 10.0,
-         .field_width_pixels = 200.0,
-         .include_virtual_bms_tail = true});
+        {.field_left_pixels = 10.0, .field_width_pixels = 200.0, .include_virtual_bms_tail = true});
     REQUIRE(projected);
     CHECK(std::ranges::any_of(projected.scene->hold_bodies, [](const auto& body) {
         return body.proposal_ghost && body.bounds.top == Catch::Approx(0.0) &&
@@ -479,11 +482,9 @@ TEST_CASE("keyboard hold previews cross from authored rows into virtual BMS meas
             .removals = std::make_shared<const std::vector<wormedit::object_id_t>>(),
             .adds_note = true});
     }
-    const auto projected = wormedit::make_editor_field_scene(
+    const auto projected = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), visible,
-        {.field_left_pixels = 10.0,
-         .field_width_pixels = 200.0,
-         .include_virtual_bms_tail = true});
+        {.field_left_pixels = 10.0, .field_width_pixels = 200.0, .include_virtual_bms_tail = true});
     REQUIRE(projected);
     CHECK(std::ranges::count_if(projected.scene->hold_bodies, [](const auto& body) {
               return body.proposal_ghost;
@@ -506,7 +507,7 @@ TEST_CASE("field scene resolves semantic layer colors by visible palette order",
 
     const auto built = wormedit::build_editor_field_scene_index(chart, 7);
     REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
-    const auto result = wormedit::make_editor_field_scene(
+    const auto result = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), view(),
         {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
     REQUIRE(result);
@@ -521,7 +522,7 @@ TEST_CASE("field scene resolves semantic layer colors by visible palette order",
         CHECK(*body.semantic_color == wormedit::color_rgba_t{31, 32, 33, 210});
     }
 
-    const auto solo = wormedit::make_editor_field_scene(
+    const auto solo = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), view(),
         {.field_left_pixels = 10.0,
          .field_width_pixels = 200.0,
@@ -534,7 +535,7 @@ TEST_CASE("field scene resolves semantic layer colors by visible palette order",
         return body.note == wormedit::object_id_t{11};
     }));
 
-    const auto unknown_solo = wormedit::make_editor_field_scene(
+    const auto unknown_solo = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), view(),
         {.field_left_pixels = 10.0,
          .field_width_pixels = 200.0,
@@ -545,7 +546,7 @@ TEST_CASE("field scene resolves semantic layer colors by visible palette order",
     auto filter_view = view();
     filter_view.viewport_scroll_pixels = 0.0;
     filter_view.viewport_height_pixels = 384.0;
-    const auto required = wormedit::make_editor_field_scene(
+    const auto required = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), filter_view,
         {.field_left_pixels = 10.0,
          .field_width_pixels = 200.0,
@@ -559,7 +560,7 @@ TEST_CASE("field scene resolves semantic layer colors by visible palette order",
         return body.note == wormedit::object_id_t{11};
     }));
 
-    const auto excluded = wormedit::make_editor_field_scene(
+    const auto excluded = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), filter_view,
         {.field_left_pixels = 10.0,
          .field_width_pixels = 200.0,
@@ -569,7 +570,7 @@ TEST_CASE("field scene resolves semantic layer colors by visible palette order",
     CHECK(excluded.scene->note_endpoints.front().note == wormedit::object_id_t{10});
     CHECK(excluded.scene->hold_bodies.empty());
 
-    const auto filtered = wormedit::make_editor_field_scene(
+    const auto filtered = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), view(),
         {.field_left_pixels = 10.0,
          .field_width_pixels = 200.0,
@@ -579,7 +580,7 @@ TEST_CASE("field scene resolves semantic layer colors by visible palette order",
     CHECK(filtered.scene->note_endpoints.empty());
     CHECK(filtered.scene->hold_bodies.empty());
 
-    const auto contradictory = wormedit::make_editor_field_scene(
+    const auto contradictory = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), view(),
         {.field_left_pixels = 10.0,
          .field_width_pixels = 200.0,
@@ -589,16 +590,16 @@ TEST_CASE("field scene resolves semantic layer colors by visible palette order",
     CHECK(has_code(contradictory.diagnostics, wormedit::diagnostic_code_t::invalid_id));
 
     auto move_view = view();
-    move_view.pending_note_move_gesture = wormedit::pending_note_move_gesture_t{
+    move_view.active_gesture = wormedit::proposal_t<wormedit::pending_note_move_gesture_t, wormedit::document_stamp_t>{
+        .stamp = wormedit::document_stamp_t::from(7), .payload = {
         .reference_note = wormedit::object_id_t{11},
-        .stamp = wormedit::document_stamp_t::from(7),
         .notes = {wormedit::object_id_t{11}},
         .preview_position = {wormedit::measure_id_t{2}, 240},
         .preview = {{wormedit::object_id_t{11}, wormedit::lane_id_t{2},
                      wormedit::local_position_t{wormedit::measure_id_t{2}, 240},
                      wormedit::local_position_t{wormedit::measure_id_t{2}, 720}}},
-    };
-    const auto moved = wormedit::make_editor_field_scene(
+    }};
+    const auto moved = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), move_view,
         {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
     REQUIRE(moved);
@@ -613,7 +614,7 @@ TEST_CASE("field scene resolves semantic layer colors by visible palette order",
     const auto secondary_index = wormedit::build_editor_field_scene_index(chart, 8);
     REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(secondary_index));
     const auto secondary_view = view(8);
-    const auto secondary = wormedit::make_editor_field_scene(
+    const auto secondary = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(secondary_index), secondary_view,
         {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
     REQUIRE(secondary);
@@ -650,7 +651,7 @@ TEST_CASE("field scene composes an independently scrolled BGM pane",
     const auto built = wormedit::build_editor_field_scene_index(chart, 7);
     REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
 
-    const auto result = wormedit::make_editor_field_scene(
+    const auto result = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), scene_view,
         {.field_left_pixels = 10.0,
          .field_width_pixels = 200.0,
@@ -678,7 +679,7 @@ TEST_CASE("field scene composes an independently scrolled BGM pane",
     CHECK(result.scene->bgm_events[0].bounds.top == Catch::Approx(0.0));
     CHECK(result.scene->bgm_events[0].bounds.bottom == Catch::Approx(10.0));
 
-    const auto disabled = wormedit::make_editor_field_scene(
+    const auto disabled = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), scene_view,
         {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
     REQUIRE(disabled);
@@ -691,7 +692,7 @@ TEST_CASE("field scene composes an independently scrolled BGM pane",
         result.scene->hold_bodies.size() + result.scene->note_endpoints.size() +
         result.scene->bgm_lanes.size() + result.scene->bgm_events.size() +
         static_cast<std::size_t>(result.scene->cursor.has_value());
-    const auto capped = wormedit::make_editor_field_scene(
+    const auto capped = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), scene_view,
         {.field_left_pixels = 10.0,
          .field_width_pixels = 200.0,
@@ -703,7 +704,7 @@ TEST_CASE("field scene composes an independently scrolled BGM pane",
     CHECK_FALSE(capped);
     CHECK_FALSE(capped.scene.has_value());
 
-    const auto invalid_geometry = wormedit::make_editor_field_scene(
+    const auto invalid_geometry = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), scene_view,
         {.field_left_pixels = 10.0,
          .field_width_pixels = 200.0,
@@ -712,7 +713,7 @@ TEST_CASE("field scene composes an independently scrolled BGM pane",
     CHECK_FALSE(invalid_geometry);
     CHECK_FALSE(invalid_geometry.scene.has_value());
 
-    const auto excessive_scroll = wormedit::make_editor_field_scene(
+    const auto excessive_scroll = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), scene_view,
         {.field_left_pixels = 10.0,
          .field_width_pixels = 200.0,
@@ -756,7 +757,7 @@ TEST_CASE("field scene composes selectable BGA events in a dedicated lane",
         .bga_pane_left_pixels = 290.0,
         .bga_pane_width_pixels = 48.0,
     };
-    const auto result = wormedit::make_editor_field_scene(
+    const auto result = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), scene_view, request);
     REQUIRE(result);
     REQUIRE(result.scene->bga_lane.has_value());
@@ -777,7 +778,7 @@ TEST_CASE("field scene composes selectable BGA events in a dedicated lane",
 
     auto downscroll_request = request;
     downscroll_request.scroll_direction = wormedit::editor_field_scroll_direction_t::down;
-    const auto downscroll = wormedit::make_editor_field_scene(
+    const auto downscroll = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), scene_view,
         downscroll_request);
     REQUIRE(downscroll);
@@ -789,14 +790,14 @@ TEST_CASE("field scene composes selectable BGA events in a dedicated lane",
 
     auto hidden_view = scene_view;
     hidden_view.bga_lane_visible = false;
-    const auto hidden = wormedit::make_editor_field_scene(
+    const auto hidden = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), hidden_view, request);
     REQUIRE(hidden);
     CHECK_FALSE(hidden.scene->bga_lane.has_value());
     CHECK(hidden.scene->bga_events.empty());
 }
 
-void check_lane_less_bga_result(const wormedit::editor_field_scene_t& scene);
+void check_lane_less_bga_result(const wormedit::editor_field_scene_view_t& scene);
 
 TEST_CASE("BGA lane stays available on lane-less BMS virtual canvas",
           "[unit][core][editor-scene][bga][bms]") {
@@ -815,7 +816,7 @@ TEST_CASE("BGA lane stays available on lane-less BMS virtual canvas",
     scene_view.bga_lane_visible = true;
     scene_view.viewport_scroll_pixels = 0.0;
     scene_view.viewport_height_pixels = 240.0;
-    const auto result = wormedit::make_editor_field_scene(
+    const auto result = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), scene_view,
         {.field_left_pixels = 10.0,
          .field_width_pixels = 100.0,
@@ -827,14 +828,14 @@ TEST_CASE("BGA lane stays available on lane-less BMS virtual canvas",
     check_lane_less_bga_result(*result.scene);
 }
 
-void check_lane_less_bga_result(const wormedit::editor_field_scene_t& scene) {
+void check_lane_less_bga_result(const wormedit::editor_field_scene_view_t& scene) {
     CHECK(scene.lanes.empty());
     REQUIRE(scene.bga_lane.has_value());
     REQUIRE(scene.bga_events.size() == 1);
     CHECK(scene.bga_events.front().event == wormedit::object_id_t{80});
 }
 
-void check_dense_bga_stack(const wormedit::editor_field_scene_t& scene) {
+void check_dense_bga_stack(const wormedit::editor_field_scene_view_t& scene) {
     REQUIRE(scene.bga_events.size() == 50);
     for (const auto& event : scene.bga_events) {
         CHECK(event.overlap_count == 50);
@@ -856,7 +857,7 @@ TEST_CASE("dense BGA rows use one bounded overlap stack target", "[unit][core][e
         .field_width_pixels = 200.0, .note_head_height_pixels = 10.0,
         .scroll_direction = wormedit::editor_field_scroll_direction_t::up,
         .bga_pane_left_pixels = 210.0, .bga_pane_width_pixels = 48.0};
-    const auto result = wormedit::make_editor_field_scene(
+    const auto result = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), view(), request);
     REQUIRE(result);
     check_dense_bga_stack(*result.scene);
@@ -889,25 +890,25 @@ TEST_CASE("field scene rejects stale indexes and returns no partial geometry at 
     const auto built = wormedit::build_editor_field_scene_index(chart, 7);
     REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
     const auto& index = std::get<wormedit::editor_field_scene_index_t>(built);
-    const auto stale = wormedit::make_editor_field_scene(
+    const auto stale = wormedit::editor_field_scene_view_t::from(
         chart, index, view(8), {.field_left_pixels = 0, .field_width_pixels = 200});
     CHECK_FALSE(stale);
     CHECK_FALSE(stale.scene.has_value());
 
-    const auto capped = wormedit::make_editor_field_scene(
+    const auto capped = wormedit::editor_field_scene_view_t::from(
         chart, index, view(),
         {.field_left_pixels = 0, .field_width_pixels = 200, .maximum_scene_primitives = 1});
     CHECK_FALSE(capped);
     CHECK_FALSE(capped.scene.has_value());
     CHECK(has_code(capped.diagnostics, wormedit::diagnostic_code_t::invalid_resolution));
 
-    const auto work_capped = wormedit::make_editor_field_scene(
+    const auto work_capped = wormedit::editor_field_scene_view_t::from(
         chart, index, view(),
         {.field_left_pixels = 0, .field_width_pixels = 200, .maximum_composition_operations = 1});
     CHECK_FALSE(work_capped);
     CHECK_FALSE(work_capped.scene.has_value());
 
-    const auto bad_comparison = wormedit::make_editor_field_scene(
+    const auto bad_comparison = wormedit::editor_field_scene_view_t::from(
         chart, index, view(),
         {.field_left_pixels = 0,
          .field_width_pixels = 200,
@@ -915,7 +916,7 @@ TEST_CASE("field scene rejects stale indexes and returns no partial geometry at 
     CHECK_FALSE(bad_comparison);
     CHECK_FALSE(bad_comparison.scene.has_value());
 
-    const auto duplicate_comparison = wormedit::make_editor_field_scene(
+    const auto duplicate_comparison = wormedit::editor_field_scene_view_t::from(
         chart, index, view(),
         {.field_left_pixels = 0,
          .field_width_pixels = 200,
@@ -924,7 +925,7 @@ TEST_CASE("field scene rejects stale indexes and returns no partial geometry at 
     CHECK_FALSE(duplicate_comparison);
     CHECK(has_code(duplicate_comparison.diagnostics, wormedit::diagnostic_code_t::collision));
 
-    const auto comparison_capped = wormedit::make_editor_field_scene(
+    const auto comparison_capped = wormedit::editor_field_scene_view_t::from(
         chart, index, view(),
         {.field_left_pixels = 0,
          .field_width_pixels = 200,
@@ -950,7 +951,7 @@ TEST_CASE("field scene composes visible paint previews across measure and layout
             }),
     };
 
-    const auto result = wormedit::make_editor_field_scene(
+    const auto result = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), scene_view,
         {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
     REQUIRE(result);
@@ -975,7 +976,7 @@ TEST_CASE("field scene composes visible paint previews across measure and layout
 
     auto stale_view = scene_view;
     stale_view.pending_note_paint_gesture->stamp = wormedit::document_stamp_t::from(8);
-    const auto stale = wormedit::make_editor_field_scene(
+    const auto stale = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), stale_view,
         {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
     CHECK_FALSE(stale);
@@ -991,15 +992,15 @@ TEST_CASE("field scene renders exact hold and duration proposal ghosts",
     const auto& index = std::get<wormedit::editor_field_scene_index_t>(built);
 
     auto duration_view = view();
-    duration_view.pending_note_duration_gesture = wormedit::pending_note_duration_gesture_t{
+    duration_view.active_gesture = wormedit::proposal_t<wormedit::pending_note_duration_gesture_t, wormedit::document_stamp_t>{
+        .stamp = wormedit::document_stamp_t::from(7), .payload = {
         .reference_note = wormedit::object_id_t{11},
-        .stamp = wormedit::document_stamp_t::from(7),
         .notes = {wormedit::object_id_t{11}},
         .preview_end = {wormedit::measure_id_t{2}, 0},
         .preview = {{wormedit::object_id_t{11}, wormedit::note_kind_t::hold,
                      wormedit::local_position_t{wormedit::measure_id_t{2}, 0}}},
-    };
-    const auto duration = wormedit::make_editor_field_scene(
+    }};
+    const auto duration = wormedit::editor_field_scene_view_t::from(
         chart, index, duration_view, {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
     REQUIRE(duration);
     CHECK(std::ranges::count_if(duration.scene->note_endpoints, [](const auto& endpoint) {
@@ -1023,16 +1024,16 @@ TEST_CASE("field scene renders exact hold and duration proposal ghosts",
           }) == 1);
 
     auto move_view = view();
-    move_view.pending_note_move_gesture = wormedit::pending_note_move_gesture_t{
+    move_view.active_gesture = wormedit::proposal_t<wormedit::pending_note_move_gesture_t, wormedit::document_stamp_t>{
+        .stamp = wormedit::document_stamp_t::from(7), .payload = {
         .reference_note = wormedit::object_id_t{11},
-        .stamp = wormedit::document_stamp_t::from(7),
         .notes = {wormedit::object_id_t{11}},
         .preview_position = {wormedit::measure_id_t{2}, 240},
         .preview = {{wormedit::object_id_t{11}, wormedit::lane_id_t{2},
                      wormedit::local_position_t{wormedit::measure_id_t{2}, 240},
                      wormedit::local_position_t{wormedit::measure_id_t{2}, 720}}},
-    };
-    const auto moved = wormedit::make_editor_field_scene(
+    }};
+    const auto moved = wormedit::editor_field_scene_view_t::from(
         chart, index, move_view, {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
     REQUIRE(moved);
     CHECK(std::ranges::count_if(moved.scene->note_endpoints, [](const auto& endpoint) {
@@ -1056,7 +1057,7 @@ TEST_CASE("field scene renders exact hold and duration proposal ghosts",
         .stamp = wormedit::document_stamp_t::from(7),
         .preview_end = wormedit::local_position_t{wormedit::measure_id_t{2}, 240},
     };
-    const auto hold = wormedit::make_editor_field_scene(
+    const auto hold = wormedit::editor_field_scene_view_t::from(
         chart, index, hold_view, {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
     REQUIRE(hold);
     CHECK(std::ranges::count_if(hold.scene->note_endpoints, [](const auto& endpoint) {
@@ -1069,7 +1070,7 @@ TEST_CASE("field scene renders exact hold and duration proposal ghosts",
     auto reverse_hold_view = hold_view;
     reverse_hold_view.pending_hold->preview_end =
         wormedit::local_position_t{wormedit::measure_id_t{1}, 720};
-    const auto reverse_hold = wormedit::make_editor_field_scene(
+    const auto reverse_hold = wormedit::editor_field_scene_view_t::from(
         chart, index, reverse_hold_view, {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
     REQUIRE(reverse_hold);
     CHECK(std::ranges::count_if(reverse_hold.scene->note_endpoints, [](const auto& endpoint) {
@@ -1094,7 +1095,7 @@ TEST_CASE("field scene renders exact hold and duration proposal ghosts",
                 .adds_note = true,
             },
     };
-    const auto merged_hold = wormedit::make_editor_field_scene(
+    const auto merged_hold = wormedit::editor_field_scene_view_t::from(
         chart, index, merged_hold_view, {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
     REQUIRE(merged_hold);
     CHECK(std::ranges::count_if(merged_hold.scene->note_endpoints, [](const auto& endpoint) {
@@ -1111,14 +1112,14 @@ TEST_CASE("field scene renders exact hold and duration proposal ghosts",
           }) == 2);
 
     auto stale_view = duration_view;
-    stale_view.pending_note_duration_gesture->stamp = wormedit::document_stamp_t::from(8);
-    const auto stale = wormedit::make_editor_field_scene(
+    std::get<wormedit::proposal_t<wormedit::pending_note_duration_gesture_t, wormedit::document_stamp_t>>(*stale_view.active_gesture).stamp = wormedit::document_stamp_t::from(8);
+    const auto stale = wormedit::editor_field_scene_view_t::from(
         chart, index, stale_view, {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
     CHECK_FALSE(stale);
     CHECK_FALSE(stale.scene.has_value());
     CHECK(has_code(stale.diagnostics, wormedit::diagnostic_code_t::invalid_hold));
 
-    const auto baseline = wormedit::make_editor_field_scene(
+    const auto baseline = wormedit::editor_field_scene_view_t::from(
         chart, index, view(), {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
     REQUIRE(baseline);
     const auto baseline_primitives =
@@ -1132,11 +1133,11 @@ TEST_CASE("field scene renders exact hold and duration proposal ghosts",
         .lane = wormedit::lane_id_t{1},
         .stamp = wormedit::document_stamp_t::from(7),
     };
-    const auto capped =
-        wormedit::make_editor_field_scene(chart, index, capped_view,
-                                          {.field_left_pixels = 10.0,
-                                           .field_width_pixels = 200.0,
-                                           .maximum_scene_primitives = baseline_primitives});
+    const auto capped = wormedit::editor_field_scene_view_t::from(
+        chart, index, capped_view,
+        {.field_left_pixels = 10.0,
+         .field_width_pixels = 200.0,
+         .maximum_scene_primitives = baseline_primitives});
     CHECK_FALSE(capped);
     CHECK_FALSE(capped.scene.has_value());
     CHECK(has_code(capped.diagnostics, wormedit::diagnostic_code_t::invalid_resolution));
@@ -1160,7 +1161,7 @@ TEST_CASE("field scene shows simultaneous keyboard hold previews",
         .stamp = wormedit::document_stamp_t::from(7),
         .preview_end = wormedit::local_position_t{wormedit::measure_id_t{2}, 240},
     });
-    const auto scene = wormedit::make_editor_field_scene(
+    const auto scene = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), preview,
         {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
     REQUIRE(scene);
@@ -1187,7 +1188,7 @@ TEST_CASE("field scene marks painted taps for erasure and enforces paint scene c
                 {wormedit::lane_id_t{1}, {wormedit::measure_id_t{1}, 240}},
             }),
     };
-    const auto occupied = wormedit::make_editor_field_scene(
+    const auto occupied = wormedit::editor_field_scene_view_t::from(
         chart, index, occupied_view, {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
     REQUIRE(occupied);
     const auto erased =
@@ -1211,7 +1212,7 @@ TEST_CASE("field scene marks painted taps for erasure and enforces paint scene c
                 {wormedit::lane_id_t{2}, {wormedit::measure_id_t{1}, 840}},
             }),
     };
-    const auto collision = wormedit::make_editor_field_scene(
+    const auto collision = wormedit::editor_field_scene_view_t::from(
         chart, index, collision_view, {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
     REQUIRE(collision);
     const auto invalid =
@@ -1224,7 +1225,7 @@ TEST_CASE("field scene marks painted taps for erasure and enforces paint scene c
     CHECK(invalid->bounds.top == Catch::Approx(163.0));
 
     auto base_view = view();
-    const auto baseline = wormedit::make_editor_field_scene(
+    const auto baseline = wormedit::editor_field_scene_view_t::from(
         chart, index, base_view, {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
     REQUIRE(baseline);
     const auto base_primitives =
@@ -1241,10 +1242,10 @@ TEST_CASE("field scene marks painted taps for erasure and enforces paint scene c
             }),
     };
     const auto primitive_capped =
-        wormedit::make_editor_field_scene(chart, index, empty_cell_view,
-                                          {.field_left_pixels = 10.0,
-                                           .field_width_pixels = 200.0,
-                                           .maximum_scene_primitives = base_primitives});
+        wormedit::editor_field_scene_view_t::from(chart, index, empty_cell_view,
+                                                  {.field_left_pixels = 10.0,
+                                                   .field_width_pixels = 200.0,
+                                                   .maximum_scene_primitives = base_primitives});
     CHECK_FALSE(primitive_capped);
     CHECK_FALSE(primitive_capped.scene.has_value());
     CHECK(has_code(primitive_capped.diagnostics, wormedit::diagnostic_code_t::invalid_resolution));
@@ -1259,10 +1260,10 @@ TEST_CASE("field scene marks painted taps for erasure and enforces paint scene c
             }),
     };
     const auto operation_capped =
-        wormedit::make_editor_field_scene(chart, index, operation_view,
-                                          {.field_left_pixels = 10.0,
-                                           .field_width_pixels = 200.0,
-                                           .maximum_composition_operations = 3});
+        wormedit::editor_field_scene_view_t::from(chart, index, operation_view,
+                                                  {.field_left_pixels = 10.0,
+                                                   .field_width_pixels = 200.0,
+                                                   .maximum_composition_operations = 3});
     CHECK_FALSE(operation_capped);
     CHECK_FALSE(operation_capped.scene.has_value());
     CHECK(has_code(operation_capped.diagnostics, wormedit::diagnostic_code_t::invalid_resolution));
@@ -1291,7 +1292,7 @@ TEST_CASE("field scene interval tree narrows a sparse 50k-note viewport",
 
     const auto built = wormedit::build_editor_field_scene_index(chart, 7);
     REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
-    const auto result = wormedit::make_editor_field_scene(
+    const auto result = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), scene_view,
         {.field_left_pixels = 0,
          .field_width_pixels = 100,
@@ -1367,16 +1368,16 @@ void check_window_grid_line(const wormedit::editor_field_grid_geometry_t& a,
     CHECK(std::tie(a.chart_row, a.kind, a.emphasis) == std::tie(e.chart_row, e.kind, e.emphasis));
     CHECK(a.y_pixels == Catch::Approx(e.y_pixels).margin(1e-9));
 }
-void check_window_cursor(const wormedit::editor_field_scene_t& actual,
-                         const wormedit::editor_field_scene_t& expected) {
+void check_window_cursor(const wormedit::editor_field_scene_view_t& actual,
+                         const wormedit::editor_field_scene_view_t& expected) {
     REQUIRE(actual.cursor.has_value() == expected.cursor.has_value());
     if (actual.cursor) {
         CHECK(actual.cursor->lane == expected.cursor->lane);
         check_window_bounds(actual.cursor->bounds, expected.cursor->bounds);
     }
 }
-void check_window_scene(const wormedit::editor_field_scene_t& actual,
-                        const wormedit::editor_field_scene_t& expected) {
+void check_window_scene(const wormedit::editor_field_scene_view_t& actual,
+                        const wormedit::editor_field_scene_view_t& expected) {
     CHECK(actual.visible_begin_row == expected.visible_begin_row);
     CHECK(actual.visible_end_row == expected.visible_end_row);
     check_window_geometry(actual.layout_bands, expected.layout_bands, check_window_band);
@@ -1401,7 +1402,7 @@ auto window_chart() -> wormedit::chart_document_t {
     chart.measures[0].notes[1].end = wormedit::local_position_t{wormedit::measure_id_t{8}, 240};
     return chart;
 }
-void require_two_bga_events(const wormedit::editor_field_scene_result_t& result,
+void require_two_bga_events(const wormedit::editor_field_scene_view_result_t& result,
                             wormedit::object_id_t first, wormedit::object_id_t second) {
     REQUIRE(result);
     REQUIRE(result.scene->bga_events.size() == 2);
@@ -1409,7 +1410,7 @@ void require_two_bga_events(const wormedit::editor_field_scene_result_t& result,
     CHECK(result.scene->bga_events[1].event == second);
 }
 void require_metadata_bga_events(
-    const wormedit::editor_field_scene_window_metadata_t& metadata) {
+    const wormedit::editor_field_scene_window_metadata_view_t& metadata) {
     REQUIRE(metadata.projection);
     REQUIRE(metadata.projection.scene->bga_events.size() == 2);
 }
@@ -1418,15 +1419,15 @@ void check_bga_window_projection(const wormedit::chart_document_t& chart,
                                 const wormedit::editor_interaction_view_model_t& current,
                                 const wormedit::editor_field_scene_request_t& request) {
     wormedit::editor_field_scene_window_t window;
-    const auto initial = wormedit::editor_field_scene_result_t::from(wormedit::editor_field_scene_result_t::from(
-        chart, index, current, request, window));
+    const auto initial = wormedit::editor_field_scene_view_result_t::from(
+        wormedit::editor_field_scene_view_result_t::from(chart, index, current, request, window));
     REQUIRE(initial);
-    const auto metadata = wormedit::build_editor_field_scene_window_metadata_view(
+    const auto metadata = wormedit::editor_field_scene_window_metadata_view_t::from(
         chart, index, current, request, window);
     require_metadata_bga_events(metadata);
-    const auto cached = wormedit::make_editor_field_scene_reusing_window(
-        chart, index, current, request, window);
-    const auto fresh = wormedit::make_editor_field_scene(chart, index, current, request);
+    const auto cached =
+        wormedit::editor_field_scene_view_t::from(chart, index, current, request, window);
+    const auto fresh = wormedit::editor_field_scene_view_t::from(chart, index, current, request);
     require_two_bga_events(cached, wormedit::object_id_t{900}, wormedit::object_id_t{901});
     require_two_bga_events(fresh, wormedit::object_id_t{900}, wormedit::object_id_t{901});
     check_window_scene(*cached.scene, *fresh.scene);
@@ -1436,8 +1437,9 @@ void check_reused_frame(const wormedit::chart_document_t& chart,
                         const wormedit::editor_interaction_view_model_t& current,
                         const wormedit::editor_field_scene_request_t& request,
                         wormedit::editor_field_scene_window_t& window) {
-    const auto reused = wormedit::make_editor_field_scene_reusing_window(chart, index, current, request, window);
-    const auto fresh = wormedit::make_editor_field_scene(chart, index, current, request);
+    const auto reused =
+        wormedit::editor_field_scene_view_t::from(chart, index, current, request, window);
+    const auto fresh = wormedit::editor_field_scene_view_t::from(chart, index, current, request);
     REQUIRE(reused); REQUIRE(fresh);
     check_window_scene(*reused.scene, *fresh.scene);
 }
@@ -1495,7 +1497,8 @@ TEST_CASE("Compose scene window rebuilds for stable input changes and falls back
 }
 
 namespace {
-void check_bga_kind_geometry(const wormedit::editor_field_scene_t& scene, std::size_t index, wormedit::visual_event_kind_t kind) {
+void check_bga_kind_geometry(const wormedit::editor_field_scene_view_t& scene, std::size_t index,
+                             wormedit::visual_event_kind_t kind) {
     CHECK(scene.bga_lanes[index].kind == kind);
     CHECK(scene.bga_events[index].bounds.left == 210 + 48 * index);
     CHECK(scene.bga_events[index].overlap_count == 1);
@@ -1512,8 +1515,9 @@ TEST_CASE("BGA scene separates four kinds and overlaps only within each lane", "
             .position = {measure_id_t{1}, 720}, .resource = resource_id_t{90 + index}, .kind = kinds[index]});
     const auto built = build_editor_field_scene_index(chart, 7);
     REQUIRE(std::holds_alternative<editor_field_scene_index_t>(built));
-    const auto projected = make_editor_field_scene(chart, std::get<editor_field_scene_index_t>(built),
-        view(), {.field_width_pixels = 200, .bga_pane_left_pixels = 210, .bga_pane_width_pixels = 192});
+    const auto projected = editor_field_scene_view_t::from(
+        chart, std::get<editor_field_scene_index_t>(built), view(),
+        {.field_width_pixels = 200, .bga_pane_left_pixels = 210, .bga_pane_width_pixels = 192});
     REQUIRE(projected);
     REQUIRE(projected.scene->bga_lanes.size() == 4);
     REQUIRE(projected.scene->bga_events.size() == 4);
@@ -1564,8 +1568,8 @@ TEST_CASE("cached BGA projection returns each event once with fresh geometry par
 }
 
 namespace {
-void check_window_rejection(const wormedit::editor_field_scene_result_t& reused,
-                            const wormedit::editor_field_scene_result_t& fresh) {
+void check_window_rejection(const wormedit::editor_field_scene_view_result_t& reused,
+                            const wormedit::editor_field_scene_view_result_t& fresh) {
     REQUIRE_FALSE(reused);
     REQUIRE_FALSE(fresh);
     REQUIRE_FALSE(reused.diagnostics.empty());
@@ -1589,17 +1593,18 @@ TEST_CASE("Compose scene window preserves primitive rejection when cursor enters
     current.viewport_scroll_pixels = 0;
     current.viewport_height_pixels = 384;
     wormedit::editor_field_scene_request_t request{.field_width_pixels = 200};
-    const auto initial = wormedit::make_editor_field_scene(chart, index, current, request);
+    const auto initial = wormedit::editor_field_scene_view_t::from(chart, index, current, request);
     REQUIRE(initial);
     const auto& scene = *initial.scene;
     request.maximum_scene_primitives = scene.layout_bands.size() + scene.lanes.size() +
         scene.grid_lines.size() + scene.note_endpoints.size();
     wormedit::editor_field_scene_window_t window;
-    REQUIRE(wormedit::make_editor_field_scene_reusing_window(chart, index, current, request, window));
+    REQUIRE(wormedit::editor_field_scene_view_t::from(chart, index, current, request, window));
     REQUIRE(window.scene);
     current.active_lane = wormedit::lane_id_t{1};
-    const auto reused = wormedit::make_editor_field_scene_reusing_window(chart, index, current, request, window);
-    const auto fresh = wormedit::make_editor_field_scene(chart, index, current, request);
+    const auto reused =
+        wormedit::editor_field_scene_view_t::from(chart, index, current, request, window);
+    const auto fresh = wormedit::editor_field_scene_view_t::from(chart, index, current, request);
     check_window_rejection(reused, fresh);
     CHECK_FALSE(window.scene);
     CHECK(window.reuse_count == 0);
@@ -1638,9 +1643,8 @@ TEST_CASE("Read-only window metadata matches fresh current layout and cursor",
                                                        .bgm_pane_width_pixels = 36};
         wormedit::editor_field_scene_window_t window;
         require_metadata(
-            wormedit::make_editor_field_scene_reusing_window(chart, index, current, request,
-                                                             window),
-            "wormedit::make_editor_field_scene_reusing_window(chart, index, current, request,      "
+            wormedit::editor_field_scene_view_t::from(chart, index, current, request, window),
+            "wormedit::editor_field_scene_view_t::from(chart, index, current, request,      "
             "                                                            window)");
         const auto counters = std::pair{window.rebuild_count, window.reuse_count};
         for (const double scroll : {0.0, 19.75, 64.25, 19.75, 0.0}) {
@@ -1652,9 +1656,10 @@ TEST_CASE("Read-only window metadata matches fresh current layout and cursor",
                                                               window),
                 "wormedit::can_reuse_editor_field_scene_window(chart, index, current, request,     "
                 "                                                              window)");
-            const auto metadata = wormedit::build_editor_field_scene_window_metadata_view(
+            const auto metadata = wormedit::editor_field_scene_window_metadata_view_t::from(
                 chart, index, current, request, window);
-            const auto fresh = wormedit::make_editor_field_scene(chart, index, current, request);
+            const auto fresh =
+                wormedit::editor_field_scene_view_t::from(chart, index, current, request);
             require_metadata(metadata.projection, "metadata.projection");
             require_metadata(fresh, "fresh");
             const auto& actual = *metadata.projection.scene;
@@ -1690,8 +1695,8 @@ TEST_CASE("Read-only metadata rejects stale window keys and transient compositio
     wormedit::editor_field_scene_request_t request{.field_width_pixels = 200};
     wormedit::editor_field_scene_window_t window;
     require_metadata(
-        wormedit::make_editor_field_scene_reusing_window(chart, index, current, request, window),
-        "         wormedit::make_editor_field_scene_reusing_window(chart, index, current, request, "
+        wormedit::editor_field_scene_view_t::from(chart, index, current, request, window),
+        "         wormedit::editor_field_scene_view_t::from(chart, index, current, request, "
         "window)");
     current.selected_notes.clear();
     check_metadata_false(
@@ -1699,9 +1704,10 @@ TEST_CASE("Read-only metadata rejects stale window keys and transient compositio
         "         wormedit::can_reuse_editor_field_scene_window(chart, index, current, request, "
         "window)");
     check_metadata_false(
-        wormedit::build_editor_field_scene_window_metadata_view(chart, index, current, request, window)
+        wormedit::editor_field_scene_window_metadata_view_t::from(chart, index, current, request,
+                                                                  window)
             .projection,
-        "         wormedit::build_editor_field_scene_window_metadata_view(chart, index, current, "
+        "         wormedit::editor_field_scene_window_metadata_view_t::from(chart, index, current, "
         "request, window)             .projection");
     current = view();
     request.comparison_difference_rows = {{wormedit::measure_id_t{1}, 240}};
@@ -1710,12 +1716,13 @@ TEST_CASE("Read-only metadata rejects stale window keys and transient compositio
         "         wormedit::can_reuse_editor_field_scene_window(chart, index, current, request, "
         "window)");
     check_metadata_false(
-        wormedit::build_editor_field_scene_window_metadata_view(chart, index, current, request, window)
+        wormedit::editor_field_scene_window_metadata_view_t::from(chart, index, current, request,
+                                                                  window)
             .projection,
-        "         wormedit::build_editor_field_scene_window_metadata_view(chart, index, current, "
+        "         wormedit::editor_field_scene_window_metadata_view_t::from(chart, index, current, "
         "request, window)             .projection");
-    check_metadata(wormedit::make_editor_field_scene(chart, index, current, request),
-                   "wormedit::make_editor_field_scene(chart, index, current, request)");
+    check_metadata(wormedit::editor_field_scene_view_t::from(chart, index, current, request),
+                   "wormedit::editor_field_scene_view_t::from(chart, index, current, request)");
 }
 
 TEST_CASE("Window metadata preserves invalid geometry and primitive limit fallback",
@@ -1727,8 +1734,8 @@ TEST_CASE("Window metadata preserves invalid geometry and primitive limit fallba
     wormedit::editor_field_scene_request_t request{.field_width_pixels = 200};
     wormedit::editor_field_scene_window_t window;
     require_metadata(
-        wormedit::make_editor_field_scene_reusing_window(chart, index, current, request, window),
-        "         wormedit::make_editor_field_scene_reusing_window(chart, index, current, request, "
+        wormedit::editor_field_scene_view_t::from(chart, index, current, request, window),
+        "         wormedit::editor_field_scene_view_t::from(chart, index, current, request, "
         "window)");
     current.viewport_height_pixels = -1;
     check_metadata_false(
@@ -1736,20 +1743,22 @@ TEST_CASE("Window metadata preserves invalid geometry and primitive limit fallba
         "         wormedit::can_reuse_editor_field_scene_window(chart, index, current, request, "
         "window)");
     check_metadata_false(
-        wormedit::build_editor_field_scene_window_metadata_view(chart, index, current, request, window)
+        wormedit::editor_field_scene_window_metadata_view_t::from(chart, index, current, request,
+                                                                  window)
             .projection,
-        "         wormedit::build_editor_field_scene_window_metadata_view(chart, index, current, "
+        "         wormedit::editor_field_scene_window_metadata_view_t::from(chart, index, current, "
         "request, window)             .projection");
     current = view();
     request.maximum_scene_primitives = 1;
     check_metadata_false(
-        wormedit::build_editor_field_scene_window_metadata_view(chart, index, current, request, window)
+        wormedit::editor_field_scene_window_metadata_view_t::from(chart, index, current, request,
+                                                                  window)
             .projection,
-        "         wormedit::build_editor_field_scene_window_metadata_view(chart, index, current, "
+        "         wormedit::editor_field_scene_window_metadata_view_t::from(chart, index, current, "
         "request, window)             .projection");
     check_metadata_false(
-        wormedit::make_editor_field_scene_reusing_window(chart, index, current, request, window),
-        "         wormedit::make_editor_field_scene_reusing_window(chart, index, current, request, "
+        wormedit::editor_field_scene_view_t::from(chart, index, current, request, window),
+        "         wormedit::editor_field_scene_view_t::from(chart, index, current, request, "
         "window)");
     check_metadata_false(window.scene, "window.scene");
 }
@@ -1760,8 +1769,8 @@ void expect_rejected_anchor_scene(const wormedit::chart_document_t& chart,
     const wormedit::editor_interaction_view_model_t& current,
     const wormedit::editor_field_scene_request_t& request,
     wormedit::editor_field_scene_window_t& window) {
-    CHECK_FALSE(wormedit::make_editor_field_scene(chart, index, current, request));
-    CHECK_FALSE(wormedit::make_editor_field_scene_reusing_window(chart, index, current, request, window));
+    CHECK_FALSE(wormedit::editor_field_scene_view_t::from(chart, index, current, request));
+    CHECK_FALSE(wormedit::editor_field_scene_view_t::from(chart, index, current, request, window));
 }
 void check_configured_scene_window(const wormedit::chart_document_t& chart,
     const wormedit::editor_field_scene_index_t& index,
@@ -1806,10 +1815,10 @@ TEST_CASE("scene margin validation rejects invalid values and retains default tw
     auto current = view();
     const wormedit::editor_field_scene_request_t request{.field_left_pixels = 10, .field_width_pixels = 200};
     wormedit::editor_field_scene_window_t window;
-    REQUIRE(wormedit::make_editor_field_scene_reusing_window(chart, index, current, request, window));
+    REQUIRE(wormedit::editor_field_scene_view_t::from(chart, index, current, request, window));
     current.viewport_scroll_pixels = -current.viewport_height_pixels * 0.35;
-    CHECK_FALSE(wormedit::make_editor_field_scene(chart, index, current, request));
-    CHECK_FALSE(wormedit::make_editor_field_scene_reusing_window(chart, index, current, request, window));
+    CHECK_FALSE(wormedit::editor_field_scene_view_t::from(chart, index, current, request));
+    CHECK_FALSE(wormedit::editor_field_scene_view_t::from(chart, index, current, request, window));
     current.viewport_scroll_pixels = 0;
     const double nan = std::numeric_limits<double>::quiet_NaN();
     const double infinity = std::numeric_limits<double>::infinity();
@@ -1818,8 +1827,9 @@ TEST_CASE("scene margin validation rejects invalid values and retains default tw
                                     std::pair{nan, 0.2}, std::pair{0.2, nan}, std::pair{infinity, 0.2}}) {
         current.viewport_minimum_margin_fraction = minimum;
         current.viewport_end_margin_fraction = end;
-        CHECK_FALSE(wormedit::make_editor_field_scene(chart, index, current, request));
-        CHECK_FALSE(wormedit::make_editor_field_scene_reusing_window(chart, index, current, request, window));
+        CHECK_FALSE(wormedit::editor_field_scene_view_t::from(chart, index, current, request));
+        CHECK_FALSE(
+            wormedit::editor_field_scene_view_t::from(chart, index, current, request, window));
     }
 }
 
@@ -1959,10 +1969,11 @@ void check_dp_field_layout(const wormedit::lane_layout_t& layout) {
     dp_view.active_lane = layout.lanes.front().id;
     dp_view.selected_notes.clear();
     dp_view.selected_objects.clear();
-    const auto result = make_editor_field_scene(
-        chart, std::get<editor_field_scene_index_t>(built), dp_view,
-        {.field_left_pixels = 10.0, .field_width_pixels = 400.0,
-         .split_stage_gutter_pixels = 12.0});
+    const auto result =
+        editor_field_scene_view_t::from(chart, std::get<editor_field_scene_index_t>(built), dp_view,
+                                        {.field_left_pixels = 10.0,
+                                         .field_width_pixels = 400.0,
+                                         .split_stage_gutter_pixels = 12.0});
     REQUIRE(result);
     REQUIRE(result.scene->lanes.size() == layout.lanes.size());
     const auto split = *layout.split_after_column;
@@ -1997,29 +2008,28 @@ auto bgm_width_window_snapshots_owned_values() -> bool {
         .bgm_pane_width_pixels = 300};
     request.bgm_lane_widths_pixels = widths;
     wormedit::editor_field_scene_window_t window;
-    auto initial = wormedit::make_editor_field_scene_reusing_window(
-        chart, index, current, request, window);
+    auto initial =
+        wormedit::editor_field_scene_view_t::from(chart, index, current, request, window);
     if (!initial || window.bgm_lane_widths_snapshot != std::vector<double>{120.0} ||
         !window.request.bgm_lane_widths_pixels.empty()) return false;
     const auto first_rebuild = window.rebuild_count;
     widths[0] = 150.0;
     if (window.bgm_lane_widths_snapshot.front() != 120.0) return false;
     request.bgm_lane_widths_pixels = widths;
-    auto changed = wormedit::make_editor_field_scene_reusing_window(
-        chart, index, current, request, window);
+    auto changed =
+        wormedit::editor_field_scene_view_t::from(chart, index, current, request, window);
     if (!changed || window.rebuild_count != first_rebuild + 1 ||
         window.bgm_lane_widths_snapshot != std::vector<double>{150.0}) return false;
     const auto second_rebuild = window.rebuild_count;
-    auto reused = wormedit::make_editor_field_scene_reusing_window(
-        chart, index, current, request, window);
+    auto reused = wormedit::editor_field_scene_view_t::from(chart, index, current, request, window);
     if (!reused || window.rebuild_count != second_rebuild || window.reuse_count == 0) return false;
 
     widths.reserve(64);
     widths[0] = 180.0;
     request.bgm_lane_widths_pixels = widths;
     if (window.bgm_lane_widths_snapshot.front() != 150.0) return false;
-    const auto reallocated = wormedit::make_editor_field_scene_reusing_window(
-        chart, index, current, request, window);
+    const auto reallocated =
+        wormedit::editor_field_scene_view_t::from(chart, index, current, request, window);
     return reallocated && window.rebuild_count == second_rebuild + 1 &&
         window.bgm_lane_widths_snapshot == std::vector<double>{180.0} &&
         window.request.bgm_lane_widths_pixels.empty();
@@ -2032,7 +2042,7 @@ TEST_CASE("BGM scene window snapshots lane widths and invalidates on in-place ch
 }
 
 namespace {
-void check_move_feedback_bodies(const wormedit::editor_field_scene_t& scene) {
+void check_move_feedback_bodies(const wormedit::editor_field_scene_view_t& scene) {
     for (const auto& body : scene.hold_bodies) {
         if (body.proposal_ghost)
             CHECK(body.move_conflict == wormedit::note_move_conflict_t::occupied);
@@ -2043,7 +2053,7 @@ void check_move_feedback_bodies(const wormedit::editor_field_scene_t& scene) {
 auto move_feedback_scene(const wormedit::chart_document_t& chart,
                          std::vector<wormedit::note_move_preview_t> proposals,
                          std::vector<wormedit::object_id_t> occupants = {}, double scroll = 0,
-                         double gutter = 0) -> wormedit::editor_field_scene_result_t {
+                         double gutter = 0) -> wormedit::editor_field_scene_view_result_t {
     auto projected = view();
     projected.viewport_height_pixels = 480;
     projected.viewport_scroll_pixels = scroll;
@@ -2054,19 +2064,20 @@ auto move_feedback_scene(const wormedit::chart_document_t& chart,
         projected.selected_objects.push_back(
             {wormedit::editor_selection_object_kind_t::note, proposal.note});
     }
-    projected.pending_note_move_gesture = wormedit::pending_note_move_gesture_t{
+    projected.active_gesture = wormedit::proposal_t<wormedit::pending_note_move_gesture_t, wormedit::document_stamp_t>{
+        .stamp = wormedit::document_stamp_t::from(7), .payload = {
         .reference_note = proposals.front().note,
-        .stamp = wormedit::document_stamp_t::from(7),
         .notes = projected.selected_notes,
         .preview_position = proposals.front().position,
         .preview = std::move(proposals),
         .occupants = std::move(occupants),
-    };
+    }};
     const auto built = wormedit::build_editor_field_scene_index(chart, 7);
     REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
-    return wormedit::make_editor_field_scene(
+    return wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), projected,
-        {.field_left_pixels = 10.0, .field_width_pixels = 200.0,
+        {.field_left_pixels = 10.0,
+         .field_width_pixels = 200.0,
          .split_stage_gutter_pixels = gutter});
 }
 } // namespace
@@ -2281,7 +2292,7 @@ TEST_CASE("field scene skips selected IDs that no longer exist instead of reject
     auto stale = view();
     stale.selected_notes = {wormedit::object_id_t{11}, wormedit::object_id_t{900},
                             wormedit::object_id_t{901}};
-    const auto result = wormedit::make_editor_field_scene(
+    const auto result = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), stale,
         {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
     REQUIRE(result);
@@ -2314,7 +2325,7 @@ auto scratch_geometry_index(const wormedit::chart_document_t& chart)
     REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
     return std::get<wormedit::editor_field_scene_index_t>(std::move(built));
 }
-void check_scratch_lane(const wormedit::editor_field_scene_t& scene, std::size_t slot,
+void check_scratch_lane(const wormedit::editor_field_scene_view_t& scene, std::size_t slot,
                         wormedit::stage_group_t stage) {
     REQUIRE(scene.lanes.size() > slot);
     CHECK(scene.lanes[slot].role == wormedit::lane_role_t::scratch);
@@ -2330,8 +2341,8 @@ TEST_CASE("Scratch presentation previews SP7 from the right without changing aut
     const wormedit::editor_scratch_presentation_t sides{true, std::nullopt};
     const auto current = scratch_geometry_view(chart, sides);
     const auto index = scratch_geometry_index(chart);
-    const auto result = wormedit::make_editor_field_scene(chart, index, current,
-        {.field_width_pixels = 800, .scratch_on_right = sides});
+    const auto result = wormedit::editor_field_scene_view_t::from(
+        chart, index, current, {.field_width_pixels = 800, .scratch_on_right = sides});
     REQUIRE(result);
     check_scratch_lane(*result.scene, 7, wormedit::stage_group_t::left);
     CHECK(result.scene->lanes.front().role == wormedit::lane_role_t::playable);
@@ -2346,11 +2357,12 @@ TEST_CASE("Scratch presentation moves both DP5 scratches to each side's left and
     auto current = scratch_geometry_view(chart, {});
     wormedit::editor_field_scene_request_t request{.field_width_pixels = 1212};
     wormedit::editor_field_scene_window_t window;
-    REQUIRE(wormedit::make_editor_field_scene_reusing_window(chart, index, current, request, window));
+    REQUIRE(wormedit::editor_field_scene_view_t::from(chart, index, current, request, window));
     const auto rebuilds = window.rebuild_count;
     current.scratch_on_right = request.scratch_on_right = {false, false};
     CHECK_FALSE(wormedit::can_reuse_editor_field_scene_window(chart, index, current, request, window));
-    const auto result = wormedit::make_editor_field_scene_reusing_window(chart, index, current, request, window);
+    const auto result =
+        wormedit::editor_field_scene_view_t::from(chart, index, current, request, window);
     REQUIRE(result);
     check_scratch_lane(*result.scene, 0, wormedit::stage_group_t::left);
     check_scratch_lane(*result.scene, 6, wormedit::stage_group_t::right);
@@ -2369,11 +2381,13 @@ TEST_CASE("field-scene index expected errors retain validation diagnostics", "[u
 
 namespace {
 auto has_warning_scene_adapter() -> bool {
-    wormedit::editor_field_scene_outcome_t outcome{.value = wormedit::editor_field_scene_t{},
+    wormedit::editor_field_scene_view_outcome_t outcome{
+        .value = wormedit::editor_field_scene_view_t{},
         .diagnostics = {{.severity = wormedit::diagnostic_severity_t::warning,
-            .code = wormedit::diagnostic_code_t::unsupported_feature, .message = "warning"}}};
+                         .code = wormedit::diagnostic_code_t::unsupported_feature,
+                         .message = "warning"}}};
     if (!outcome.ok()) return false;
-    auto legacy = wormedit::editor_field_scene_result_t::from(std::move(outcome));
+    auto legacy = wormedit::editor_field_scene_view_result_t::from(std::move(outcome));
     if (!legacy || legacy.has_errors()) return false;
     auto restored = std::move(legacy).into_outcome();
     return restored.value.has_value() && restored.ok() && restored.value->primitive_count() == 0 &&

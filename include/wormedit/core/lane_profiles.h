@@ -21,6 +21,7 @@ enum class scratch_placement_t {
 struct lane_input_profile_t {
     lane_layout_t layout;
     input_profile_t input;
+    auto operator==(const lane_input_profile_t&) const -> bool = default;
 };
 
 enum class bms_lane_profile_family_t {

@@ -368,8 +368,8 @@ auto rematerialize_bms_branch_selection(const song_document_t& song,
     }
 
     result.value.preview =
-        preview_bms_branch_projection(*chart->bms_control_tree, chart->active_branch_selection,
-                                      request.proposed, request.projection_limits);
+        bms_branch_preview_view_t::from(*chart->bms_control_tree, chart->active_branch_selection,
+                                        request.proposed, request.projection_limits);
     if (!result.value.preview) {
         add_error(result, bms_branch_selection_diagnostic_code_t::invalid_selection,
                   "the current or proposed branch selection does not resolve exactly",

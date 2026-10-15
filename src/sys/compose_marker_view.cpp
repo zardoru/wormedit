@@ -465,7 +465,7 @@ void populate_compose_timing_markers(
     const wormedit::chart_document_t& chart, const compose_scene_cache_t& cache,
     const wormedit::editor_interaction_view_model_t& interaction_view, WormUiComposeView& view,
     bool downscroll, double pixels_per_row, std::uint64_t canvas_rows,
-    const wormedit::timing_lane_pseudonote_preview_t* timing_stage) {
+    const wormedit::timing_lane_pseudonote_outcome_t* timing_stage) {
     flattened.compose.timing_marker.clear();
     flattened.compose.timing_marker_labels.clear();
     const auto marker_total = chart.bpms.size() + chart.scrolls.size() + chart.speeds.size() +
@@ -534,19 +534,20 @@ void populate_compose_timing_markers(
     assign_compose_timing_marker_fractions(flattened);
     view.timing_markers = flattened.compose.timing_marker.data();
     view.timing_marker_count = flattened.compose.timing_marker.size();
-    if (timing_stage &&
-        timing_stage->status == wormedit::timing_lane_pseudonote_status_t::editing &&
-        timing_stage->stamp.is_current(chart.id, view.document_revision)) {
+    const auto* stage_report = timing_stage ? timing_stage->report() : nullptr;
+    if (stage_report &&
+        stage_report->status == wormedit::timing_lane_pseudonote_status_t::editing &&
+        timing_stage->captured_stamp().is_current(chart.id, view.document_revision)) {
         const auto stage_row =
-            (cache.scene.index->measures).row_of(timing_stage->position);
+            (cache.scene.index->measures).row_of(stage_report->position);
         if (stage_row) {
             const auto y = compose_project_y(*stage_row, pixels_per_row,
                                              interaction_view.viewport_scroll_pixels,
                                              view.viewport_height_pixels, downscroll);
             if (std::isfinite(y) && y >= 0.0 && y <= view.viewport_height_pixels) {
                 view.timing_stage_active = true;
-                view.timing_stage_valid = timing_stage->is_valid();
-                view.timing_stage_lane = timing_lane_kind_to_ui(timing_stage->kind);
+                view.timing_stage_valid = timing_stage->value.has_value();
+                view.timing_stage_lane = timing_lane_kind_to_ui(stage_report->kind);
                 view.timing_stage_y_pixels = y;
             }
         }
@@ -673,7 +674,7 @@ void populate_compose_recipe_areas(
     const compose_scene_cache_t& cache,
     const wormedit::editor_interaction_view_model_t& interaction_view, WormUiComposeView& view,
     bool downscroll, double pixels_per_row, std::uint64_t total_rows, std::uint64_t selected_recipe,
-    const recipe_form_preview_t* preview) {
+    const recipe_form_outcome_t* preview) {
     flattened.compose.recipe_area.clear();
     flattened.compose.recipe_graph_point.clear();
     flattened.compose.recipe_area_labels.clear();
@@ -683,6 +684,7 @@ void populate_compose_recipe_areas(
     view.recipe_graph_point_count = 0;
     if (!cache.timing.recipe_areas || !(pixels_per_row > 0.0))
         return;
+    const auto* report = preview ? preview->report() : nullptr;
     const auto scroll = interaction_view.viewport_scroll_pixels;
     const auto height = view.viewport_height_pixels;
     const auto row_to_y = [&](std::uint64_t row) {
@@ -697,11 +699,11 @@ void populate_compose_recipe_areas(
     for (const auto& stored_area : cache.timing.recipe_areas->areas) {
         const auto* shown = &stored_area;
         wormedit::sys::recipe_area_t previewed;
-        const bool previewing = preview && preview->candidate.id == stored_area.recipe;
+        const bool previewing = report && report->candidate.id == stored_area.recipe;
         if (previewing) {
             // The unapplied candidate replaces the stored values in this area's graph.
             previewed = stored_area;
-            const auto sampled = wormedit::sv_recipe_samples_t::from(chart, preview->candidate);
+            const auto sampled = wormedit::sv_recipe_samples_t::from(chart, report->candidate);
             previewed.evaluable = sampled.diagnostics.empty() && !sampled.value.points.empty();
             previewed.points.clear();
             for (const auto& point : sampled.value.points)
@@ -805,10 +807,11 @@ void drop_stale_recipe_preview(application_command_state_t& application_state,
     auto& preview = application_state.project.timing_recipe.recipe_preview;
     if (!preview)
         return;
-    const bool current = preview->stamp.is_current(chart.id, revision) &&
-                         preview->candidate.id.value == application_state.project.timing_recipe.recipe_selected &&
+    const auto* report = preview->report();
+    const bool current = report && preview->captured_stamp().is_current(chart.id, revision) &&
+                         report->candidate.id.value == application_state.project.timing_recipe.recipe_selected &&
                          std::ranges::any_of(chart.sv_recipes, [&](const auto& recipe) {
-                             return recipe.id == preview->candidate.id;
+                             return recipe.id == report->candidate.id;
                          });
     if (!current)
         preview.reset();
@@ -829,7 +832,8 @@ void populate_compose_recipe_form(flattened_workspace_t& flattened,
     const auto& name = flattened.compose.recipe_form_text.emplace_back(recipe->name);
     const auto& source = flattened.compose.recipe_form_text.emplace_back(recipe->expression_source);
     const auto& status = flattened.compose.recipe_form_text.emplace_back(
-        application_state.project.timing_recipe.recipe_preview ? std::string{application_state.project.timing_recipe.recipe_preview->message()} : std::string{});
+        application_state.project.timing_recipe.recipe_preview ? std::string{application_state.project.timing_recipe.recipe_preview->diagnostics.empty()
+            ? std::string_view{} : application_state.project.timing_recipe.recipe_preview->diagnostics.front().message} : std::string{});
     view.recipe_form.visible = true;
     view.recipe_form.recipe_id = recipe->id.value;
     view.recipe_form.enabled = recipe->enabled;

@@ -1,10 +1,12 @@
 #pragma once
+#include <wormedit/core/proposal.h>
 #include "sys/application_edit_inputs.h"
 #include "sys/compose_action_outcome.h"
 #include "ui/frontend.h"
 
 namespace wormedit::sys::compose_action_detail {
 struct compose_action_context_t {
+    using outcome_type = compose_action_outcome_t;
     const compose_action_inputs_t& environment;
     const WormUiWorkspaceAction& action;
     wormedit::editor_interaction_state_t& state;

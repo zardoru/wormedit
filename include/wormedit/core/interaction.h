@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/command.h>
+#include <wormedit/core/proposal.h>
 #include <wormedit/core/bmson_sound_channel_editor.h>
 #include <wormedit/core/snap.h>
 #include <wormedit/core/lane_presentation.h>
@@ -20,6 +21,12 @@
 namespace wormedit {
 
 struct editor_interaction_setup_t;
+struct editor_edit_context_t;
+struct editor_interaction_result_t;
+
+enum class editor_gesture_kind_t {
+    hold, keyboard_holds, duration, move, paint, semantic_paint, area, range
+};
 
 // Four editor lanes: background (including video), layer, layer 2, poor.
 inline constexpr std::uint8_t editor_bga_lane_mask_all = 15;
@@ -516,14 +523,20 @@ struct note_duration_preview_t {
 };
 
 struct pending_note_duration_gesture_t {
+    static constexpr auto kind = editor_gesture_kind_t::duration;
+    static constexpr std::string_view update_message = "duration gesture update requires an active gesture";
     object_id_t reference_note;
-    document_stamp_t stamp;
     std::vector<object_id_t> notes;
     local_position_t preview_end;
     std::vector<note_duration_preview_t> preview;
 
+    [[nodiscard]] static auto begin(editor_edit_context_t&, object_id_t)
+        -> diagnosed_t<std::optional<pending_note_duration_gesture_t>>;
+    [[nodiscard]] auto update(editor_edit_context_t&, local_position_t) -> diagnostic_list_t;
+    [[nodiscard]] auto apply(editor_edit_context_t&) const -> editor_interaction_result_t;
     auto operator==(const pending_note_duration_gesture_t&) const -> bool = default;
 };
+
 
 enum class note_move_conflict_t { none, occupied, out_of_lane, out_of_chart, other };
 
@@ -561,10 +574,12 @@ struct note_move_bgm_lane_preview_t {
 };
 
 struct pending_note_move_gesture_t {
+    static constexpr auto kind = editor_gesture_kind_t::move;
+    static constexpr auto update_message = "note move update requires an active gesture";
     object_id_t reference_note;
-    document_stamp_t stamp;
     std::vector<object_id_t> notes;
     local_position_t preview_position;
+    lane_id_t preview_lane;
     std::vector<note_move_preview_t> preview;
     std::vector<object_id_t> occupants;
     std::size_t conflicting_notes{};
@@ -576,8 +591,28 @@ struct pending_note_move_gesture_t {
     std::vector<std::string> bgm_diagnostics;
     std::optional<std::uint64_t> virtual_bgm_row;
 
+    [[nodiscard]] static auto begin(editor_edit_context_t&, object_id_t, bool displace_to_bgm = false)
+        -> diagnosed_t<std::optional<pending_note_move_gesture_t>>;
+    [[nodiscard]] auto update(editor_edit_context_t&, local_position_t, lane_id_t, bool,
+                              std::optional<object_id_t>, std::optional<std::uint64_t>) -> diagnostic_list_t;
+    [[nodiscard]] auto apply(editor_edit_context_t&) const -> editor_interaction_result_t;
     auto operator==(const pending_note_move_gesture_t&) const -> bool = default;
 };
+
+// Temporary: remaining alternatives migrate here and legacy fields are removed by T-634.
+using active_gesture_t = std::variant<proposal_t<pending_note_duration_gesture_t, document_stamp_t>,
+                                      proposal_t<pending_note_move_gesture_t, document_stamp_t>>;
+
+template<class Gesture>
+[[nodiscard]] auto gesture_payload(active_gesture_t* active) -> Gesture* {
+    const auto proposal = active ? std::get_if<proposal_t<Gesture, document_stamp_t>>(active) : nullptr;
+    return proposal ? &proposal->payload : nullptr;
+}
+template<class Gesture>
+[[nodiscard]] auto gesture_payload(const active_gesture_t* active) -> const Gesture* {
+    const auto proposal = active ? std::get_if<proposal_t<Gesture, document_stamp_t>>(active) : nullptr;
+    return proposal ? &proposal->payload : nullptr;
+}
 
 struct pending_note_paint_gesture_t {
     document_stamp_t stamp;
@@ -699,8 +734,14 @@ struct editor_interaction_state_t {
     editor_field_scroll_direction_t scroll_direction{editor_field_scroll_direction_t::up};
     std::optional<pending_hold_t> pending_hold;
     std::vector<pending_hold_t> additional_keyboard_holds;
-    std::optional<pending_note_duration_gesture_t> pending_note_duration_gesture;
-    std::optional<pending_note_move_gesture_t> pending_note_move_gesture;
+    std::optional<active_gesture_t> active_gesture;
+
+    template<class Gesture> [[nodiscard]] auto gesture() -> Gesture* {
+        return gesture_payload<Gesture>(active_gesture ? &*active_gesture : nullptr);
+    }
+    template<class Gesture> [[nodiscard]] auto gesture() const -> const Gesture* {
+        return gesture_payload<Gesture>(active_gesture ? &*active_gesture : nullptr);
+    }
     std::optional<pending_note_paint_gesture_t> pending_note_paint_gesture;
     std::optional<pending_semantic_layer_paint_gesture_t> pending_semantic_layer_paint_gesture;
     std::optional<pending_editor_area_selection_t> pending_editor_area_selection;
@@ -768,8 +809,14 @@ struct editor_interaction_view_model_t {
     };
     std::optional<virtual_hold_preview_t> pending_virtual_hold;
     std::vector<virtual_hold_preview_t> pending_canvas_keyboard_holds;
-    std::optional<pending_note_duration_gesture_t> pending_note_duration_gesture;
-    std::optional<pending_note_move_gesture_t> pending_note_move_gesture;
+    std::optional<active_gesture_t> active_gesture;
+
+    template<class Gesture> [[nodiscard]] auto gesture() -> Gesture* {
+        return gesture_payload<Gesture>(active_gesture ? &*active_gesture : nullptr);
+    }
+    template<class Gesture> [[nodiscard]] auto gesture() const -> const Gesture* {
+        return gesture_payload<Gesture>(active_gesture ? &*active_gesture : nullptr);
+    }
     std::optional<note_paint_gesture_preview_t> pending_note_paint_gesture;
     std::optional<editor_area_selection_preview_t> pending_editor_area_selection;
     std::optional<space_range_selection_preview_t> pending_space_range_selection;
@@ -793,6 +840,13 @@ struct editor_interaction_setup_t {
 };
 
 struct editor_interaction_result_t {
+    [[nodiscard]] static auto from(const document_history_t& history,
+        const editor_interaction_state_t& state, bool document_changed = false)
+        -> editor_interaction_result_t;
+    [[nodiscard]] static auto from(
+        std::variant<editor_interaction_view_model_t, diagnostic_list_t> view,
+        bool document_changed = false) -> editor_interaction_result_t;
+
     bool accepted{};
     bool document_changed{};
     std::optional<editor_interaction_view_model_t> view;

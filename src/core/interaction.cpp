@@ -1,6 +1,6 @@
 #include "interaction_context.h"
 #include "interaction_geometry.h"
-#include "interaction_internal.h"
+#include "interaction_gesture_runner.h"
 #include <wormedit/core/dead_span_rules.h>
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/interaction_gestures.h>
@@ -32,6 +32,20 @@
 
 namespace wormedit {
 using namespace interaction_detail;
+auto editor_interaction_result_t::from(const document_history_t& history,
+    const editor_interaction_state_t& state, bool changed) -> editor_interaction_result_t {
+    return from(make_view(history, state), changed);
+}
+
+auto editor_interaction_result_t::from(
+    std::variant<editor_interaction_view_model_t, diagnostic_list_t> view,
+    bool changed) -> editor_interaction_result_t {
+    if (auto* model = std::get_if<editor_interaction_view_model_t>(&view))
+        return {.accepted = true, .document_changed = changed, .view = std::move(*model)};
+    return {.document_changed = changed,
+            .diagnostics = std::get<diagnostic_list_t>(std::move(view))};
+}
+
 auto editor_bga_lane_index(visual_event_kind_t kind) -> std::optional<std::size_t> {
     switch (kind) {
     case visual_event_kind_t::background:
@@ -63,9 +77,6 @@ auto editor_selection_targets(const editor_interaction_state_t& state)
     return objects;
 }
 
-auto interaction_view_result(const document_history_t& history,
-                             const editor_interaction_state_t& state,
-                             bool changed) -> editor_interaction_result_t;
 auto combine_editor_area_selection(const editor_interaction_state_t& state,
     const std::vector<editor_selection_object_t>& hits, editor_area_selection_mode_t mode,
     const editor_hit_test_index_t& hit_index)
@@ -416,8 +427,7 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         .pending_canvas_keyboard_holds =
             std::get<std::vector<editor_interaction_view_model_t::virtual_hold_preview_t>>(
                 std::move(keyboard_previews)),
-        .pending_note_duration_gesture = state.pending_note_duration_gesture,
-        .pending_note_move_gesture = state.pending_note_move_gesture,
+        .active_gesture = state.active_gesture,
         .pending_note_paint_gesture =
             state.pending_note_paint_gesture
                 ? std::optional{note_paint_gesture_preview_t{
@@ -485,8 +495,8 @@ auto diagnostic_result(const document_history_t& history, const editor_interacti
         .diagnostics = std::move(diagnostics),
     };
     const auto view = make_view(history, state);
-    if (std::holds_alternative<editor_interaction_view_model_t>(view)) {
-        result.view = std::get<editor_interaction_view_model_t>(view);
+    if (const auto* model = std::get_if<editor_interaction_view_model_t>(&view)) {
+        result.view = *model;
     }
     return result;
 }
@@ -664,8 +674,8 @@ auto editor_interaction_state_t::from(const document_history_t& history, chart_i
         .viewport_height_pixels = viewport_height_pixels,
     };
     const auto view = make_view(history, *result.state);
-    if (std::holds_alternative<editor_interaction_view_model_t>(view)) {
-        result.view = std::get<editor_interaction_view_model_t>(view);
+    if (const auto* model = std::get_if<editor_interaction_view_model_t>(&view)) {
+        result.view = *model;
     } else {
         result.diagnostics = std::get<diagnostic_list_t>(view);
         result.state.reset();
@@ -779,10 +789,7 @@ auto apply_duration_plan(editor_edit_context_t& context, const duration_resize_p
     -> editor_interaction_result_t {
     return apply_duration_resize_plan(context.history, context.state, plan);
 }
-auto apply_move_plan(editor_edit_context_t& context, const note_move_plan_t& plan)
-    -> editor_interaction_result_t {
-    return apply_note_move_plan(context.history, context.state, plan);
-}
+
 
 
 auto collect_delete_object_ids(const std::vector<editor_selection_object_t>& objects)
@@ -862,17 +869,9 @@ auto complete_editor_delete(editor_edit_context_t& context, bool changed)
         context.state.selected_notes.clear();
         context.state.selected_objects.clear();
     }
-    const auto view = make_view(context.history, context.state);
-    return {
-        .accepted = true,
-        .document_changed = changed,
-        .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                    ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                    : std::nullopt,
-        .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                           ? std::get<diagnostic_list_t>(view)
-                           : diagnostic_list_t{},
-    };
+    auto result = editor_interaction_result_t::from(context.history, context.state, changed);
+    result.accepted = true;
+    return result;
 }
 
 // Delete removes playable stem points from the keys without cutting them out of the audio stem.
@@ -1151,18 +1150,9 @@ auto assign_selected_notes_to_lane(editor_edit_context_t& context,
         });
     }
     context.state.active_lane = action.lane;
-    const auto view = make_view(context.history, context.state);
-    return {
-        .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
-        .document_changed = changed,
-        .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                    ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                    : std::nullopt,
-        .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                           ? std::get<diagnostic_list_t>(view)
-                           : diagnostic_list_t{},
-        .audition = audition,
-    };
+    auto result = editor_interaction_result_t::from(context.history, context.state, changed);
+    result.audition = audition;
+    return result;
 }
 
 
@@ -1240,7 +1230,7 @@ auto assign_selected_objects_to_lane(editor_edit_context_t& context,
         }
     }
     context.state.active_lane = action.lane;
-    auto result = interaction_view_result(context.history, context.state,
+    auto result = editor_interaction_result_t::from(context.history, context.state,
                                           revision != context.history.document.revision);
     if (action.successive && first)
         result.audition = editor_object_audition_request_t{
@@ -1335,18 +1325,10 @@ auto scroll_editor_view(editor_edit_context_t& context, const scroll_editor_view
         return diagnostic_result(context.history, context.state, *diagnostics);
     if (auto updated = preserve_keyboard_hold_after_scroll(context, proposed))
         return *updated;
-    const auto view = make_view(context.history, proposed);
-    if (std::holds_alternative<editor_interaction_view_model_t>(view))
+    auto result = editor_interaction_result_t::from(context.history, proposed);
+    if (result.accepted)
         context.state = std::move(proposed);
-    return {
-        .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
-        .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                    ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                    : std::nullopt,
-        .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                           ? std::get<diagnostic_list_t>(view)
-                           : diagnostic_list_t{},
-    };
+    return result;
 }
 
 auto is_keyboard_entry_editable(const chart_document_t& chart, const note_t& note) -> bool {
@@ -1485,14 +1467,11 @@ auto apply_keyboard_entry(editor_edit_context_t& context, lane_id_t lane, local_
         return diagnostic_result(context.history, state, command.diagnostics);
     place_cursor_at(state, *target);
     state.active_lane = lane;
-    auto result = interaction_view_result(context.history, state, true);
+    auto result = editor_interaction_result_t::from(context.history, state, true);
     result.created_note = prepared.created;
     return result;
 }
 
-auto space_selection_view_result(
-    const std::variant<editor_interaction_view_model_t, diagnostic_list_t>& view)
-    -> editor_interaction_result_t;
 
 auto interaction_detail::update_keyboard_holds(editor_edit_context_t& context,
                                                local_position_t position)
@@ -1500,7 +1479,7 @@ auto interaction_detail::update_keyboard_holds(editor_edit_context_t& context,
     const auto before = context.state;
     place_cursor_at(context.state, context.state.cursor);
     if (!context.state.pending_hold)
-        return interaction_view_result(context.history, context.state, false);
+        return editor_interaction_result_t::from(context.history, context.state, false);
     for (auto& pending : context.state.additional_keyboard_holds) {
         std::swap(*context.state.pending_hold, pending);
         auto result = update_hold_gesture(context, hold_gesture_source_t::keyboard_lane, position);
@@ -1558,8 +1537,8 @@ auto begin_semantic_paint(editor_edit_context_t& context, layer_id_t layer_id,
             history, state,
             {error(diagnostic_code_t::invalid_hold,
                    "pointer capture is required to begin semantic-layer painting")});
-    if (state.pending_hold || state.pending_note_duration_gesture ||
-        state.pending_note_move_gesture || state.pending_note_paint_gesture ||
+    if (state.pending_hold || state.gesture<pending_note_duration_gesture_t>() ||
+        state.gesture<pending_note_move_gesture_t>() || state.pending_note_paint_gesture ||
         state.pending_semantic_layer_paint_gesture || state.pending_editor_area_selection ||
         state.pending_space_range_selection)
         return diagnostic_result(history, state,
@@ -1602,7 +1581,7 @@ auto begin_semantic_paint(editor_edit_context_t& context, layer_id_t layer_id,
     pending.visited.reserve(64);
     pending.visited.insert(note_id ? note_id.value : bgm_event->value);
     state.pending_semantic_layer_paint_gesture = std::move(pending);
-    return semantic_paint_view(history, state);
+    return editor_interaction_result_t::from(history, state);
 }
 
 auto semantic_paint_edit(chart_id_t chart, const pending_semantic_layer_paint_gesture_t& pending)
@@ -1663,7 +1642,7 @@ auto end_semantic_paint(editor_edit_context_t& context, object_id_t note_id,
     if (!applied && !applied.diagnostics.empty())
         return diagnostic_result(history, state, applied.diagnostics);
     state.pending_semantic_layer_paint_gesture.reset();
-    auto result = semantic_paint_view(history, state);
+    auto result = editor_interaction_result_t::from(history, state);
     result.document_changed = applied.applied;
     return result;
 }
@@ -1714,18 +1693,10 @@ auto select_editor_objects(editor_edit_context_t& context,
         return diagnostic_result(history, state, *diagnostics);
     set_selected_objects(
         state, std::move(std::get<std::vector<editor_selection_object_t>>(combined)));
-    const auto view = make_view(history, state);
-    return {
-        .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
-        .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                    ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                    : std::nullopt,
-        .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                           ? std::get<diagnostic_list_t>(view)
-                           : diagnostic_list_t{},
-        .audition = audition_selected_object(action.request_audition, selected, state,
-                                              history.document.revision),
-    };
+    auto result = editor_interaction_result_t::from(history, state);
+    result.audition = audition_selected_object(action.request_audition, selected, state,
+                                              history.document.revision);
+    return result;
 }
 
 
@@ -1753,19 +1724,7 @@ auto is_virtual_cursor_action_allowed(const editor_interaction_state_t& state,
         std::holds_alternative<scroll_editor_view_action_t>(action);
 }
 
-auto interaction_view_result(const document_history_t& history,
-                             const editor_interaction_state_t& state,
-                             bool changed) -> editor_interaction_result_t {
-    const auto view = make_view(history, state);
-    return {.accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
-            .document_changed = changed,
-            .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                        ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                        : std::nullopt,
-            .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                               ? std::get<diagnostic_list_t>(view)
-                               : diagnostic_list_t{}};
-}
+
 
 
 auto select_editor_notes(editor_edit_context_t& context,
@@ -1786,7 +1745,7 @@ auto select_editor_lane(document_history_t& history, editor_interaction_state_t&
             {error(diagnostic_code_t::unknown_lane,
                    "selected editor lane is unavailable at the cursor")});
     state.active_lane = lane;
-    return interaction_view_result(history, state, false);
+    return editor_interaction_result_t::from(history, state, false);
 }
 
 auto validate_virtual_cursor_action(const document_history_t& history,
@@ -1827,7 +1786,7 @@ auto arm_note_kind(const document_history_t& history, editor_interaction_state_t
         return diagnostic_result(history, state,
             {error(diagnostic_code_t::invalid_hold, "Finish or cancel note placement before changing kind.")});
     state.armed_note_kind = kind;
-    return space_selection_view_result(make_view(history, state));
+    return editor_interaction_result_t::from(history, state);
 }
 
 namespace {
@@ -2114,30 +2073,30 @@ auto handle(editor_edit_context_t& context, const scroll_editor_view_action_t& t
 
 auto handle(editor_edit_context_t& context, const begin_note_duration_gesture_action_t& action)
     -> editor_interaction_result_t {
-    return begin_note_duration_gesture(context, action.reference_note);
+    return begin_gesture<pending_note_duration_gesture_t>(context, action.reference_note);
 }
 
 auto handle(editor_edit_context_t& context, const update_note_duration_gesture_action_t& action)
     -> editor_interaction_result_t {
     if (action.phase == editor_gesture_phase_t::commit) {
-        return release_note_duration_gesture(context, action.reference_end);
+        return commit_gesture<pending_note_duration_gesture_t>(context, action.reference_end);
     }
-    return update_note_duration_gesture(context, action.reference_end);
+    return update_gesture<pending_note_duration_gesture_t>(context, action.reference_end);
 }
 
 auto handle(editor_edit_context_t& context, const begin_note_move_gesture_action_t& action)
     -> editor_interaction_result_t {
-    return begin_note_move_gesture(context, action.reference_note, action.displace_to_bgm);
+    return begin_gesture<pending_note_move_gesture_t>(context, action.reference_note, action.displace_to_bgm);
 }
 
 auto handle(editor_edit_context_t& context, const update_note_move_gesture_action_t& action)
     -> editor_interaction_result_t {
     if (action.phase == editor_gesture_phase_t::commit) {
-        return release_note_move_gesture(context, action.reference_position, action.reference_lane,
+        return commit_gesture<pending_note_move_gesture_t>(context, action.reference_position, action.reference_lane,
                                          action.to_bgm, action.preferred_bgm_lane,
                                          action.virtual_bgm_row);
     }
-    return update_note_move_gesture(context, action.reference_position, action.reference_lane,
+    return update_gesture<pending_note_move_gesture_t>(context, action.reference_position, action.reference_lane,
                                     action.to_bgm, action.preferred_bgm_lane,
                                     action.virtual_bgm_row);
 }

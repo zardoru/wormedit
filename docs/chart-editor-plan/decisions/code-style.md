@@ -79,6 +79,15 @@ it in new code even before the card lands.
 
 ## Commands, revisions and results
 
+- **A chart edit is only its data change** (owner, 2026-10-15): the [edit pipeline](../../architecture.md)
+  is the one model to learn. Two paths come in, direct commands and gesture dispatch, and one
+  transaction changes the document. Adding a chart edit means writing its validation, the data it
+  changes and its effect, plus one route entry or gesture kind. The stamp, copy, ready/no-op checks,
+  commit, Undo record, stale message, exclusivity and result construction belong to the shared
+  runners, which keep every one of these safeguards. The goal is that the right way is also the
+  least work, not a restriction; when an edit needs a safeguard the runner lacks, add it to the
+  runner so every edit gets it. Keep `docs/architecture.md` true
+  when a runner changes. No scripting layer or reified command objects: undo is snapshots.
 - **Document commands run through `document_command_transaction_t`:** build it with
   `::from(history)`, reject through it, copy the document lazily and only once, commit through it.
   Never hand-write the stamp/copy/commit sequence. Staged edits are orchestration around it.
@@ -92,6 +101,13 @@ it in new code even before the card lands.
 - **Expected failures are values:** `result_t<T, E>` (an alias of `std::expected` under C++23) and
   `diagnosed_t<T>` for results that carry warnings. One success rule per type, no per-file
   `fail()`/`reject()`/`rejected()` builders, and no new bespoke `operator bool`. *(T-620)*
+
+- **Background work runs through one async shell** (owner, 2026-10-15): every job that leaves
+  the UI thread is an `async_job_t` instance over the shared `task_scheduler_t`, with one
+  `request` (a new request supersedes and cancels older generations), `poll`, `wait`, `cancel`,
+  in-flight bound, generation and captured identity/stamp. An owner supplies only its request
+  type, its work function and its payload; it never re-implements generations, in-flight lists or
+  poll/wait plumbing. Real-time threads (audio callback, preview refill) are not jobs. *(T-635)*
 
 ## Shared helpers, facts and policies
 
@@ -109,6 +125,25 @@ it in new code even before the card lands.
 - **Use the dependency instead of hand-rolling:** FFmpeg, miniaudio, iconv, nlohmann::json,
   stb_image and SDL3 already cover their formats and utilities. A new hand-written binary or
   file-format parser needs a stated reason in this file.
+
+## Repetition and scaffolding (owner, 2026-10-15)
+
+- **Rule of three, by shape:** before adding a type, handler, job or action, find its siblings by
+  what they do, not by name. If yours would be the third with the same skeleton (guards, stamp
+  checks, unwraps, lifecycle status, poll/wait plumbing, preamble), extract the shared runner,
+  shell or trait first and write only the part that differs; if that is out of your scope, stop
+  and report it. A reader should reach the work (how it works, what it proposes, when it is valid,
+  the commit) without unwrapping ceremony.
+- **Every scaffold has a removal owner:** a temporary adapter, forwarder or compatibility alias
+  is allowed only with the card that deletes it, named in a comment beside it
+  (`// Temporary: removed by T-NNN`). Unowned scaffolds are bugs.
+- **Complexity is not a reason to fragment:** when a function exceeds the cognitive-complexity
+  limit because of boilerplate, move the boilerplate into the shared owner instead of splitting
+  the function into single-use fragments.
+- **Ratchets:** `cmake/ceremony_ratchet.txt` lists known ceremony patterns with a maximum count;
+  the `documentation.ceremony_ratchet` test fails when a count grows. Lower the maximum in the same
+  commit that lowers a count; raising one needs the owner's approval. When an audit finds a new
+  ceremony pattern, add a row.
 
 ## Files and folders
 
@@ -132,4 +167,4 @@ it in new code even before the card lands.
 vocabularies translated by hand? 4. A query that should be a member? 5. A local outcome or result
 type, or a failure builder? 6. State with no owner? 7. A fact written in two places, or a list
 position crossing the ABI? 8. A context unpacked and rebuilt? 9. A name breaking the table above?
-10. Hand-rolled code a dependency provides?
+10. Hand-rolled code a dependency provides? 11. Background work with its own generation, in-flight or poll/wait plumbing instead of the async shell? 12. A third copy of a skeleton instead of a shared runner? 13. A scaffold without a removal card? 14. A ratchet count raised? 15. A core edit or command surrounded by lifecycle, stamp, transaction or result plumbing that a shared runner should own, or a change to a runner without updating `docs/architecture.md`?

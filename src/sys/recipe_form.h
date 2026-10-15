@@ -4,7 +4,7 @@
 
 #include "ui/frontend.h"
 
-#include <wormedit/core/command.h>
+#include <wormedit/core/proposal.h>
 #include <wormedit/core/document.h>
 
 #include <cstdint>
@@ -26,30 +26,84 @@ namespace wormedit::sys {
 [[nodiscard]] auto recipe_from_form(const WormUiTimingRecipeForm& form, const sv_recipe_t& current)
     -> std::optional<sv_recipe_t>;
 
-// The unapplied form candidate of a stored recipe, with the message a malformed or invalid
-// candidate produced (empty when it is valid). It belongs to one chart at one document revision.
-struct recipe_form_preview_t {
-    chart_stamp_t stamp;
+// A rejected form keeps its display candidate outside the applicable proposal.
+struct recipe_form_report_t {
     sv_recipe_t candidate;
-    diagnostic_list_t diagnostics;
+    auto operator==(const recipe_form_report_t&) const -> bool = default;
+};
+struct recipe_form_preview_t;
+class recipe_form_outcome_t;
+using recipe_form_proposal_t = proposal_t<recipe_form_preview_t>;
+struct recipe_form_preview_t {
+    recipe_form_report_t report;
+    auto operator==(const recipe_form_preview_t&) const -> bool = default;
 
-    [[nodiscard]] auto message() const noexcept -> std::string_view {
-        return diagnostics.empty() ? std::string_view{} : diagnostics.front().message;
-    }
-    [[nodiscard]] auto is_valid() const noexcept -> bool {
-        return static_cast<bool>(stamp.chart) && diagnostics.empty();
-    }
+    // Syntax failures retain the stored recipe; semantic failures retain the edited candidate.
+    [[nodiscard]] static auto propose(const song_document_t& document, const chart_document_t& chart,
+        const sv_recipe_t& recipe, const WormUiTimingRecipeForm& form) -> recipe_form_outcome_t;
+    // Always starts from the current stored recipe; syntax errors reuse the diagnostic buffer.
+    [[nodiscard]] static auto revise(recipe_form_outcome_t previous,
+        const song_document_t& document, const chart_document_t& chart,
+        const sv_recipe_t& recipe, const WormUiTimingRecipeForm& form) -> recipe_form_outcome_t;
 };
 
-// Builds the preview of `form` applied to the stored recipe `recipe` of `chart`. Nothing is
-// written. A malformed form keeps the stored recipe as candidate with an error; a candidate the
-// core validator rejects keeps its first message.
-[[nodiscard]] auto propose_recipe_form(const song_document_t& document, const chart_document_t& chart,
-                                       const sv_recipe_t& recipe, const WormUiTimingRecipeForm& form)
-    -> recipe_form_preview_t;
+// This editor retains rejected display state beside its plain proposal outcome.
+// Diagnostics remain an ordinary list; retained reports stay in their payload.
+class recipe_form_outcome_t : public proposal_outcome_t<recipe_form_preview_t> {
+    using outcome_type = proposal_outcome_t<recipe_form_preview_t>;
+
+  public:
+    recipe_form_outcome_t() = default;
+    explicit recipe_form_outcome_t(recipe_form_proposal_t editor)
+        : outcome_type{.value = std::move(editor), .diagnostics = {}} {}
+
+    [[nodiscard]] auto editor() noexcept -> recipe_form_proposal_t* {
+        return value ? &*value : rejected_ ? &*rejected_ : nullptr;
+    }
+    [[nodiscard]] auto editor() const noexcept -> const recipe_form_proposal_t* {
+        return value ? &*value : rejected_ ? &*rejected_ : nullptr;
+    }
+    [[nodiscard]] auto report() noexcept -> recipe_form_report_t* {
+        auto* captured = editor();
+        return captured ? &captured->payload.report : nullptr;
+    }
+    [[nodiscard]] auto report() const noexcept -> const recipe_form_report_t* {
+        const auto* captured = editor();
+        return captured ? &captured->payload.report : nullptr;
+    }
+    [[nodiscard]] auto captured_stamp() const noexcept -> const chart_stamp_t& {
+        const auto* captured = editor();
+        static constexpr chart_stamp_t empty{};
+        return captured ? captured->stamp : empty;
+    }
+    void complete(bool is_accepted) {
+        if (is_accepted) {
+            if (!value && rejected_) value = std::move(rejected_);
+            rejected_.reset();
+        } else if (value) {
+            rejected_ = std::move(value);
+            value.reset();
+        }
+    }
+
+
+  private:
+    std::optional<recipe_form_proposal_t> rejected_;
+};
+
+static_assert(std::is_nothrow_move_constructible_v<recipe_form_outcome_t>);
+static_assert(std::is_nothrow_move_assignable_v<recipe_form_outcome_t>);
+static_assert(!std::is_polymorphic_v<recipe_form_outcome_t>);
+
+static_assert(staged_proposal<recipe_form_preview_t,
+    std::tuple<const song_document_t&, const chart_document_t&, const sv_recipe_t&,
+               const WormUiTimingRecipeForm&>,
+    std::tuple<recipe_form_outcome_t, const song_document_t&, const chart_document_t&,
+               const sv_recipe_t&, const WormUiTimingRecipeForm&>,
+    chart_stamp_t, diagnostic_list_t>);
 
 [[nodiscard]] auto apply_recipe_form(document_history_t& history,
-                                     const recipe_form_preview_t& proposal)
+                                     const recipe_form_outcome_t& proposal)
     -> document_command_result_t;
 
 // Stores `form` as the recipe's new curve, values and sampling in one history command. Returns the

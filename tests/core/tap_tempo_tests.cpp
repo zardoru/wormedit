@@ -1,4 +1,5 @@
 #include <wormedit/core/tap_tempo.h>
+#include <wormedit/core/sv_recipe.h>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -180,4 +181,35 @@ TEST_CASE("Tap tempo uses source frame differences without losing long source of
     const auto result = required_estimate(estimator);
     CHECK(result.bpm == 120.0);
     CHECK(result.phase_frame == phase);
+}
+
+namespace {
+// Reuse this TU's existing allocation probe rather than installing a second global new.
+auto rejected_sv_edit_allocations(wormedit::song_document_t song) -> std::size_t {
+    using namespace wormedit;
+    auto history = document_history_t::from(std::move(song));
+    const auto edit = sv_recipe_edit_action_t{insert_edit_t<sv_recipe_t>{
+        .chart = chart_id_t{10},
+        .value = {.name = "invalid", .range = {{measure_id_t{11}, 0}, {measure_id_t{11}, 0}}}}};
+    tap_allocations = 0;
+    track_tap_allocations = true;
+    const auto result = apply_sv_recipe_edit(history, edit);
+    track_tap_allocations = false;
+    CHECK_FALSE(result.applied);
+    REQUIRE(result.diagnostics.size() == 1);
+    CHECK(result.diagnostics.front().code == diagnostic_code_t::invalid_hold);
+    CHECK(history.undo.empty());
+    return tap_allocations;
+}
+} // namespace
+
+TEST_CASE("Rejected SV edits do not copy unrelated document data", "[core][sv-recipe][allocation]") {
+    using namespace wormedit;
+    song_document_t song{.id = song_id_t{1}};
+    song.charts.push_back({.id = chart_id_t{10},
+        .measures = {{.id = measure_id_t{11}}, {.id = measure_id_t{12}}}});
+    const auto small = rejected_sv_edit_allocations(song);
+    song.metadata.title.assign(1024 * 1024, 'x');
+    const auto large = rejected_sv_edit_allocations(std::move(song));
+    CHECK(large == small);
 }

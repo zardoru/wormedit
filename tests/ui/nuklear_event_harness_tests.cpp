@@ -6700,7 +6700,7 @@ TEST_CASE("Rejected Alt duration release retires the production gesture and pres
     const std::array press{motion_event(head->first, head->second),
         button_event(true, head->first, head->second)};
     (void)f.dispatch(f.harness.frame(press, SDL_KMOD_ALT));
-    section_import_require(f.interaction->pending_note_duration_gesture.has_value());
+    section_import_require(f.interaction->gesture<wormedit::pending_note_duration_gesture_t>() != nullptr);
     f.project();
     const auto move = motion_event(target->first, target->second);
     (void)f.dispatch(f.harness.frame(std::span{&move, 1}, SDL_KMOD_ALT));
@@ -7358,7 +7358,7 @@ TEST_CASE("Production Alt mine begin does not retain a rejected hold", "[fronten
     const std::array press{motion_event(p->first, p->second), button_event(true, p->first, p->second)};
     const auto begin = f.harness.frame(press, SDL_KMOD_ALT);
     (void)f.dispatch(begin);
-    expect_t422(!f.interaction->pending_hold && !f.interaction->pending_note_duration_gesture);
+    expect_t422(!f.interaction->pending_hold && !f.interaction->gesture<wormedit::pending_note_duration_gesture_t>());
     expect_t422(!worm_ui_nuklear_compose_state().pointer_capture.pointer_hold_active);
     expect_t422(worm_ui_nuklear_compose_state().pointer_capture.pointer_hold_begin_pending);
     f.project();
@@ -7846,12 +7846,12 @@ TEST_CASE("Production off grid note drag commits its preview position and lane",
     const auto moved = f.harness.frame(std::span{&motion, 1});
     expect_t422(find_compose_input(std::vector{moved}, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE) != nullptr);
     (void)f.dispatch(moved);
-    expect_t422(f.interaction->pending_note_move_gesture.has_value());
-    const auto preview = f.interaction->pending_note_move_gesture->preview;
+    expect_t422(f.interaction->gesture<wormedit::pending_note_move_gesture_t>() != nullptr);
+    const auto preview = f.interaction->gesture<wormedit::pending_note_move_gesture_t>()->preview;
     expect_t422(preview.size() == 1);
     const auto up = button_event(false, target.first, target.second);
     (void)f.dispatch(f.harness.frame(std::span{&up, 1}));
-    expect_t422(!f.interaction->pending_note_move_gesture);
+    expect_t422(!f.interaction->gesture<wormedit::pending_note_move_gesture_t>());
     const auto* changed = t422_note(f.history, 101);
     expect_t422(changed != nullptr);
     expect_t422(changed->position == preview.front().position);

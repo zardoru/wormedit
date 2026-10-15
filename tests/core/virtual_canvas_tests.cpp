@@ -166,8 +166,8 @@ auto make_virtual_scene_boundary_fixture() -> virtual_scene_boundary_fixture_t {
 }
 
 void require_virtual_scene_boundary_visible(const virtual_scene_boundary_fixture_t& fixture) {
-    const auto projected = wormedit::make_editor_field_scene(
-        fixture.chart, fixture.index, fixture.view, fixture.request);
+    const auto projected = wormedit::editor_field_scene_view_t::from(fixture.chart, fixture.index,
+                                                                     fixture.view, fixture.request);
     REQUIRE(projected);
     const auto last_measure = fixture.canvas.measure_at(999);
     REQUIRE(last_measure);
@@ -182,8 +182,8 @@ void check_virtual_scene_boundary_rejected(const virtual_scene_boundary_fixture_
     auto view = fixture.view;
     view.viewport_scroll_pixels = std::nextafter(
         view.viewport_scroll_pixels, std::numeric_limits<double>::infinity());
-    const auto rejected = wormedit::make_editor_field_scene(
-        fixture.chart, fixture.index, view, fixture.request);
+    const auto rejected = wormedit::editor_field_scene_view_t::from(fixture.chart, fixture.index,
+                                                                    view, fixture.request);
     CHECK_FALSE(rejected);
     CHECK(std::ranges::any_of(rejected.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == wormedit::diagnostic_code_t::row_out_of_range;

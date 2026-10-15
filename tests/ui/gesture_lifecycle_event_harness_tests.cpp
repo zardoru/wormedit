@@ -422,3 +422,37 @@ TEST_CASE("Go-to-measure drains queued production wheel middle-click and pinch i
     lifecycle_check(!quiet.get().compose_viewport_middle_click);
     lifecycle_check(!worm_ui_nuklear_compose_state().pinch.pinch.active);
 }
+
+TEST_CASE("Bookmark drag capture cannot continue in another project with equal chart and revision",
+          "[frontend-state][event-harness][gesture-registry][markers]") {
+    const auto switches_project = GENERATE(false, true);
+    const auto releases_on_switch = GENERATE(false, true);
+    lifecycle_fixture_t f{lifecycle_family::bookmark};
+    (void)f.begin();
+    lifecycle_require(f.active());
+    lifecycle_require(worm_ui_nuklear_compose_state().bookmark_ui.bookmark_move_candidate_active);
+    auto& view = f.harness.view().compose;
+    const auto captured_chart = view.chart_id;
+    const auto captured_revision = view.document_revision;
+    const auto captured_project = view.project_id;
+    if (switches_project) ++view.project_id;
+    const auto event = releases_on_switch ? lifecycle_button(f.x, f.y + 50, false)
+                                         : lifecycle_motion(f.x, f.y + 50);
+    auto released = f.harness.frame(std::span{&event, 1});
+    lifecycle_check(view.chart_id == captured_chart);
+    lifecycle_check(view.document_revision == captured_revision);
+    lifecycle_check(view.project_id == captured_project + (switches_project ? 1 : 0));
+    if (switches_project) {
+        lifecycle_check(!f.active());
+        lifecycle_check(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_move_candidate_active);
+        lifecycle_check(lifecycle_has(released.get(), WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE));
+        lifecycle_check(!lifecycle_has(released.get(), WORM_UI_COMPOSE_INPUT_BOOKMARK_MOVE));
+    }
+    if (!releases_on_switch) {
+        const auto release = lifecycle_button(f.x, f.y + 50, false);
+        released = f.harness.frame(std::span{&release, 1});
+    }
+    lifecycle_check(lifecycle_has(released.get(), WORM_UI_COMPOSE_INPUT_BOOKMARK_MOVE) == !switches_project);
+    lifecycle_check(!f.active());
+    lifecycle_check(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_move_candidate_active);
+}

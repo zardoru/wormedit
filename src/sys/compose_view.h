@@ -57,6 +57,7 @@
 #include <vector>
 
 namespace wormedit::sys {
+namespace compose_input_detail { struct compose_input_context_t; }
 
 struct compose_bga_move_preview_input_t {
     std::uint64_t project_id{};
@@ -192,7 +193,7 @@ struct compose_scene_cache_t {
         std::optional<std::pair<std::size_t, std::size_t>> location;
     };
     struct offset_fit_drag_t {
-        wormedit::beat_interval_drag_t beat;
+        wormedit::proposal_t<wormedit::beat_interval_drag_t> beat;
         wormedit::timing_index_t timing;
         wormedit::asset_id_t asset;
         double target_y_pixels{};
@@ -293,8 +294,8 @@ struct compose_scene_cache_t {
     } measures;
 
     struct timing_state_t {
-        std::optional<tap_timing_apply_proposal_t> tap_apply_proposal;
-        std::optional<tap_timing_apply_proposal_t> tap_preview_binding;
+        std::optional<proposal_t<tap_timing_apply_proposal_t>> tap_apply_proposal;
+        std::optional<proposal_t<tap_timing_apply_proposal_t>> tap_preview_binding;
         std::optional<timing_index_t> tap_preview_timing;
         std::optional<wormedit::timing_index_t> marker_timing_index;
         std::optional<dead_span_projection_t> dead_spans;
@@ -304,7 +305,7 @@ struct compose_scene_cache_t {
         std::optional<speed_spans_t> speed_spans;
         std::optional<wormedit::timing_index_t> proposed_offset_timing_index;
         std::optional<wormedit::signed_rational_t> proposed_offset_seconds;
-        std::optional<wormedit::beat_interval_drag_t> beat_fit_drag;
+        std::optional<wormedit::proposal_t<wormedit::beat_interval_drag_t>> beat_fit_drag;
         std::optional<wormedit::asset_id_t> beat_fit_asset;
         bool beat_fit_onset_snapped{};
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
@@ -479,34 +480,94 @@ struct application_command_state_t {
         bool anchor_available{true};
         std::string anchor_error;
         std::optional<wormedit::local_position_t> pointer_cursor;
-        wormedit::chart_paste_proposal_t proposal;
+        wormedit::chart_paste_outcome_t proposal;
         wormedit::chart_document_t geometry;
         std::optional<wormedit::editor_field_scene_index_t> index;
         std::vector<WormUiComposePasteGhostView> ghosts;
     };
+    struct bmson_marker_draft_t;
+    using bmson_marker_draft_proposal_t = wormedit::proposal_t<bmson_marker_draft_t>;
+    using bmson_marker_draft_outcome_t = wormedit::proposal_outcome_t<bmson_marker_draft_t,
+        wormedit::chart_stamp_t, std::optional<wormedit::diagnostic_t>>;
     struct bmson_marker_draft_t {
-        wormedit::chart_stamp_t stamp;
         wormedit::object_id_t reference;
         std::vector<wormedit::bmson_sound_marker_insertion_t> markers;
-        wormedit::diagnostic_list_t diagnostics;
+        [[nodiscard]] auto has_position(wormedit::local_position_t position) const -> bool;
+
+        [[nodiscard]] static auto propose(const wormedit::document_history_t& history,
+            const wormedit::editor_interaction_state_t& state, wormedit::object_id_t reference,
+            std::span<const wormedit::bmson_sound_marker_insertion_t> markers)
+            -> bmson_marker_draft_outcome_t;
+        [[nodiscard]] static auto revise(const wormedit::document_history_t& history,
+            const wormedit::editor_interaction_state_t& state,
+            std::optional<bmson_marker_draft_proposal_t>& previous, wormedit::object_id_t reference,
+            std::span<const wormedit::bmson_sound_marker_insertion_t> markers)
+            -> bmson_marker_draft_outcome_t;
+        // Input routing checked the capture and native scratch validation prepared these markers.
+        [[nodiscard]] auto revise(wormedit::chart_stamp_t captured,
+            std::vector<wormedit::bmson_sound_marker_insertion_t> prepared)
+            -> bmson_marker_draft_outcome_t;
     };
+    static_assert(wormedit::staged_proposal<bmson_marker_draft_t,
+        std::tuple<const wormedit::document_history_t&, const wormedit::editor_interaction_state_t&,
+            wormedit::object_id_t, std::span<const wormedit::bmson_sound_marker_insertion_t>>,
+        std::tuple<const wormedit::document_history_t&, const wormedit::editor_interaction_state_t&,
+            std::optional<bmson_marker_draft_proposal_t>&, wormedit::object_id_t,
+            std::span<const wormedit::bmson_sound_marker_insertion_t>>,
+        wormedit::chart_stamp_t, std::optional<wormedit::diagnostic_t>>);
+    static_assert(wormedit::staged_proposal<bmson_marker_draft_t,
+        std::tuple<const wormedit::document_history_t&, const wormedit::editor_interaction_state_t&,
+            wormedit::object_id_t, std::span<const wormedit::bmson_sound_marker_insertion_t>>,
+        std::tuple<wormedit::chart_stamp_t, std::vector<wormedit::bmson_sound_marker_insertion_t>>,
+        wormedit::chart_stamp_t, std::optional<wormedit::diagnostic_t>>);
+    struct bmson_razor_stroke_t;
+    using bmson_razor_stroke_proposal_t = wormedit::proposal_t<bmson_razor_stroke_t>;
+    using bmson_razor_stroke_outcome_t = wormedit::proposal_outcome_t<bmson_razor_stroke_t>;
     struct bmson_razor_stroke_t {
-        wormedit::chart_stamp_t stamp;
         wormedit::object_id_t reference;
         std::uint64_t snap_denominator{};
         wormedit::local_position_t last_position;
-        wormedit::diagnostic_list_t diagnostics;
+
+        // A token exists only after its marker owner staged this exact pulse.
+        [[nodiscard]] static auto propose(const wormedit::document_history_t& history,
+            wormedit::chart_id_t chart, const bmson_marker_draft_proposal_t* markers,
+            wormedit::object_id_t reference, std::uint64_t snap_denominator,
+            wormedit::local_position_t position) -> bmson_razor_stroke_outcome_t;
+        // The input controller already validated the path and acknowledged its marker segment.
+        [[nodiscard]] auto revise(wormedit::chart_stamp_t captured,
+            wormedit::local_position_t prepared_position) -> bmson_razor_stroke_outcome_t;
     };
+    static_assert(wormedit::staged_proposal<bmson_razor_stroke_t,
+        std::tuple<const wormedit::document_history_t&, wormedit::chart_id_t,
+            const bmson_marker_draft_proposal_t*, wormedit::object_id_t, std::uint64_t,
+            wormedit::local_position_t>,
+        std::tuple<wormedit::chart_stamp_t, wormedit::local_position_t>>);
+    struct bga_draw_stroke_t;
+    using bga_draw_stroke_proposal_t = wormedit::proposal_t<bga_draw_stroke_t>;
+    using bga_draw_stroke_outcome_t = wormedit::proposal_outcome_t<bga_draw_stroke_t>;
     struct bga_draw_stroke_t {
-        wormedit::chart_stamp_t stamp;
         std::optional<wormedit::resource_id_t> resource;
         bool erase{};
         uint64_t last_row{};
         wormedit::measure_index_t geometry;
         std::vector<wormedit::bga_stroke_target_t> targets;
         std::set<std::pair<uint64_t, uint8_t>> visited;
-        wormedit::diagnostic_list_t diagnostics;
+
+        [[nodiscard]] static auto propose(const WormUiComposeInputAction& input,
+            const compose_input_detail::compose_input_context_t& context,
+            const wormedit::chart_document_t& chart) -> bga_draw_stroke_outcome_t;
+        [[nodiscard]] static auto is_lane_valid(const WormUiComposeInputAction& input) -> bool;
+        [[nodiscard]] auto revise(wormedit::chart_stamp_t captured,
+            const WormUiComposeInputAction& input, const wormedit::chart_document_t& chart,
+            const wormedit::editor_interaction_state_t& state, std::optional<uint64_t> row,
+            bool is_beginning) -> bga_draw_stroke_outcome_t;
     };
+    static_assert(wormedit::staged_proposal<bga_draw_stroke_t,
+        std::tuple<const WormUiComposeInputAction&,
+            const compose_input_detail::compose_input_context_t&, const wormedit::chart_document_t&>,
+        std::tuple<wormedit::chart_stamp_t, const WormUiComposeInputAction&,
+            const wormedit::chart_document_t&, const wormedit::editor_interaction_state_t&,
+            std::optional<uint64_t>, bool>>);
     struct minimap_start_frame_t {
         wormedit::chart_id_t chart;
         std::uint64_t revision{};
@@ -567,9 +628,9 @@ struct application_command_state_t {
         } quantize;
 
         struct compose_gesture_state_t {
-            std::optional<bmson_marker_draft_t> bmson_marker_draft;
-            std::optional<bmson_razor_stroke_t> bmson_razor_stroke;
-            std::optional<bga_draw_stroke_t> bga_draw_stroke;
+            std::optional<bmson_marker_draft_proposal_t> bmson_marker_draft;
+            std::optional<bmson_razor_stroke_proposal_t> bmson_razor_stroke;
+            std::optional<bga_draw_stroke_proposal_t> bga_draw_stroke;
             uint8_t draw_source_kind{};
             uint64_t draw_source_id{};
             bool note_paint_mode_active{};
@@ -622,7 +683,7 @@ struct application_command_state_t {
             bool timing_locked{};
             std::uint64_t kiai_selected_head{};
             std::uint64_t recipe_selected{};
-            std::optional<recipe_form_preview_t> recipe_preview;
+            std::optional<recipe_form_outcome_t> recipe_preview;
             bool audio_offset_locked{};
         } timing_recipe;
 
@@ -717,7 +778,7 @@ auto apply_compose_paste(application_command_state_t& application_state,
 auto toggle_compose_audio_offset_lock(const WormUiWorkspaceAction& action,
     const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
     application_command_state_t& application, compose_scene_cache_t& cache,
-    std::optional<wormedit::audio_offset_drag_t>& drag,
+    std::optional<wormedit::proposal_t<wormedit::audio_offset_drag_t>>& drag,
     std::optional<wormedit::workspace_tab_t>& drag_tab) -> std::string;
 
 // Projects the audio fallback outcome of missing sounds into the compose view (arena-backed).
@@ -732,7 +793,7 @@ struct compose_frame_inputs_t {
     compose_scene_cache_t& cache;
     std::optional<wormedit::editor_interaction_state_t>& retained_state;
     application_command_state_t& application_state;
-    const wormedit::timing_lane_pseudonote_preview_t* const& timing_stage;
+    const wormedit::timing_lane_pseudonote_outcome_t* const& timing_stage;
     const std::span<const wormedit::local_position_t>& comparison_rows;
     const compose_bga_move_preview_input_t* const& bga_move_preview;
 
@@ -797,7 +858,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
                            compose_scene_cache_t& cache, int window_width, int window_height,
                            std::optional<wormedit::editor_interaction_state_t>& retained_state,
                            application_command_state_t& application_state,
-                           const wormedit::timing_lane_pseudonote_preview_t* timing_stage,
+                           const wormedit::timing_lane_pseudonote_outcome_t* timing_stage,
                            std::span<const wormedit::local_position_t> comparison_rows = {},
                            const compose_bga_move_preview_input_t* bga_move_preview = nullptr);
 

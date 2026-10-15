@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/command.h>
+#include <wormedit/core/proposal.h>
 #include <wormedit/core/result.h>
 
 #include <cstddef>
@@ -65,22 +66,23 @@ using bpm_edit_action_t = chart_edit_t<bpm_edit_value_t>;
 // Begins a fit anchored at a timing row. Updates the BPM event already at that
 // row, or inserts one there when none exists (committed as one undoable edit).
 struct beat_interval_drag_t {
-    [[nodiscard]] static auto from(const song_document_t& document, chart_id_t chart,
+    [[nodiscard]] static auto propose(const song_document_t& document, chart_id_t chart,
                                   object_id_t bpm_event, local_position_t beat,
                                   std::uint32_t sample_rate, bool timing_locked = false)
-        -> diagnosed_t<std::optional<beat_interval_drag_t>>;
-    [[nodiscard]] static auto from(const song_document_t& document, chart_id_t chart,
+        -> proposal_outcome_t<beat_interval_drag_t>;
+    [[nodiscard]] static auto propose(const song_document_t& document, chart_id_t chart,
                                   local_position_t anchor, local_position_t beat,
                                   std::uint32_t sample_rate, bool timing_locked = false)
-        -> diagnosed_t<std::optional<beat_interval_drag_t>>;
-    [[nodiscard]] auto revise(const song_document_t& document, std::uint64_t target_sample_frame,
+        -> proposal_outcome_t<beat_interval_drag_t>;
+    [[nodiscard]] auto revise(const chart_stamp_t& stamp, const song_document_t& document,
+                              std::uint64_t target_sample_frame,
                               bool timing_locked = false) const
-        -> diagnosed_t<std::optional<beat_interval_drag_t>>;
-    [[nodiscard]] auto revise(const song_document_t& document, signed_rational_t target_bpm,
+        -> proposal_outcome_t<beat_interval_drag_t>;
+    [[nodiscard]] auto revise(const chart_stamp_t& stamp, const song_document_t& document,
+                              signed_rational_t target_bpm,
                               bool timing_locked = false) const
-        -> diagnosed_t<std::optional<beat_interval_drag_t>>;
+        -> proposal_outcome_t<beat_interval_drag_t>;
 
-    chart_stamp_t stamp;
     // Existing BPM event being updated, or a placeholder id when insert_bpm is set.
     object_id_t bpm_event;
     // Anchor row: the existing BPM event's position, or where a new BPM event is inserted.
@@ -95,17 +97,22 @@ struct beat_interval_drag_t {
     bool snap_active{};
     signed_rational_t snap_step{1, 1};
 
-    [[nodiscard]] auto is_valid() const noexcept -> bool {
-        return static_cast<bool>(stamp.chart);
-    }
+    auto operator==(const beat_interval_drag_t&) const -> bool = default;
 };
 
-using beat_interval_drag_outcome_t = diagnosed_t<std::optional<beat_interval_drag_t>>;
+static_assert(staged_proposal<beat_interval_drag_t,
+    std::tuple<const song_document_t&, chart_id_t, object_id_t, local_position_t, std::uint32_t, bool>,
+    std::tuple<const chart_stamp_t&, const song_document_t&, std::uint64_t, bool>>);
+static_assert(staged_proposal<beat_interval_drag_t,
+    std::tuple<const song_document_t&, chart_id_t, local_position_t, local_position_t, std::uint32_t, bool>,
+    std::tuple<const chart_stamp_t&, const song_document_t&, signed_rational_t, bool>>);
+
+using beat_interval_drag_outcome_t = proposal_outcome_t<beat_interval_drag_t>;
 
 [[nodiscard]] auto quantize_bpm(signed_rational_t bpm, signed_rational_t step)
     -> std::optional<signed_rational_t>;
 [[nodiscard]] auto apply_beat_interval_drag(document_history_t& history,
-                                             const beat_interval_drag_t& drag,
+                                             const proposal_t<beat_interval_drag_t>& proposal,
                                              bool timing_locked = false)
     -> document_command_result_t;
 

@@ -4,6 +4,8 @@
 
 #include <cstddef>
 #include <optional>
+#include <ranges>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -41,6 +43,7 @@ template <class Code, Code DefaultCode> struct object_diagnostic_t {
     Code code{DefaultCode};
     std::string message;
     std::optional<object_id_t> object;
+    auto operator==(const object_diagnostic_t&) const -> bool = default;
 };
 
 template <class Code, Code DefaultCode> struct path_diagnostic_t {
@@ -74,8 +77,9 @@ using diagnostic_list_t = std::vector<diagnostic_t>;
 
 namespace diagnostic_queries {
 
-template <class Diagnostic>
-[[nodiscard]] auto has_errors(const std::vector<Diagnostic>& diagnostics) -> bool {
+[[nodiscard]] auto has_errors(const auto& diagnostics) -> bool
+    requires std::ranges::input_range<decltype(diagnostics)>
+{
     for (const auto& diagnostic : diagnostics) {
         if constexpr (requires { diagnostic.severity; }) {
             if (diagnostic.severity == diagnostic_severity_t::error) return true;
@@ -85,6 +89,12 @@ template <class Diagnostic>
         }
     }
     return false;
+}
+
+// A single failure can stay inline on an event path; use the same severity rule.
+template <class Diagnostic>
+[[nodiscard]] auto has_errors(const std::optional<Diagnostic>& diagnostic) -> bool {
+    return diagnostic && has_errors(std::span<const Diagnostic>{&*diagnostic, 1});
 }
 
 // Phase-specific reports retain their original lists and own the aggregate query.

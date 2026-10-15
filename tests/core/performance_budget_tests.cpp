@@ -78,7 +78,7 @@ void verify_timing_index(const timing_build_result_t& result) {
     CHECK(*end.seconds == (signed_rational_t{600, 1}));
 }
 
-void verify_scene(const editor_field_scene_result_t& result) {
+void verify_scene(const editor_field_scene_view_result_t& result) {
     REQUIRE(result);
     CHECK(result.scene->note_endpoints.size() >= 500);
     CHECK(result.scene->note_endpoints.size() <= 625);
@@ -99,9 +99,12 @@ void check_chart_budgets(const chart_document_t& chart) {
         .cursor = {measure_id_t{201}, 0}, .active_snap_denominator = 4,
         .document_revision = 1, .pixels_per_standard_measure = 192.0,
         .viewport_scroll_pixels = 200.0 * 192.0, .viewport_height_pixels = 768.0};
-    check_budget("scene composition", 4.0 * 0.099119,
-        [&] { return make_editor_field_scene(chart, index, view,
-                    {.field_width_pixels = 640.0}); },
+    check_budget(
+        "scene composition", 4.0 * 0.099119,
+        [&] {
+            return editor_field_scene_view_t::from(chart, index, view,
+                                                   {.field_width_pixels = 640.0});
+        },
         verify_scene);
 }
 

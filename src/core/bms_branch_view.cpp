@@ -215,12 +215,12 @@ auto validate_selections(const std::unordered_map<std::uint64_t, const bms_contr
     return std::nullopt;
 }
 
-auto make_projection_result(branch_projection_context_t& context) -> bms_branch_projection_t {
+auto make_projection_result(branch_projection_context_t& context) -> bms_branch_view_t {
     std::ranges::sort(context.active_statements, [](const auto& left, const auto& right) {
         return std::tie(left.source_order, left.id.value) <
                std::tie(right.source_order, right.id.value);
     });
-    bms_branch_projection_t result;
+    bms_branch_view_t result;
     result.active_statement_ids.reserve(context.active_statements.size());
     result.active_statement_source_orders.reserve(context.active_statements.size());
     for (const auto& statement : context.active_statements) {
@@ -235,11 +235,10 @@ auto make_projection_result(branch_projection_context_t& context) -> bms_branch_
 
 } // namespace
 
-auto bms_branch_projection_t::from(const bms_control_node_t& root,
-                                   const std::vector<branch_selection_t>& selections,
-                                   bms_branch_projection_limits_t limits)
-    -> bms_branch_projection_outcome_t {
-    bms_branch_projection_outcome_t result;
+auto bms_branch_view_t::from(const bms_control_node_t& root,
+                             const std::vector<branch_selection_t>& selections,
+                             bms_branch_projection_limits_t limits) -> bms_branch_view_outcome_t {
+    bms_branch_view_outcome_t result;
     if (root.kind != bms_control_kind_t::root) {
         result.diagnostics.push_back(bms_branch_projection_diagnostic_t{
             bms_branch_projection_status_t::invalid_tree,
@@ -291,8 +290,8 @@ auto bms_branch_projection_t::from(const bms_control_node_t& root,
     return result;
 }
 
-auto bms_branch_projection_result_t::from(bms_branch_projection_outcome_t&& outcome)
-    -> bms_branch_projection_result_t {
+auto bms_branch_view_result_t::from(bms_branch_view_outcome_t&& outcome)
+    -> bms_branch_view_result_t {
     const auto status = outcome.diagnostics.empty() ? bms_branch_projection_status_t::projected
                                                     : outcome.diagnostics.front().code;
     return {.status = status,
@@ -303,22 +302,21 @@ auto bms_branch_projection_result_t::from(bms_branch_projection_outcome_t&& outc
             .diagnostics = std::move(outcome.diagnostics)};
 }
 
-auto build_bms_branch_tree_view(const bms_control_node_t& root,
-                             const std::vector<branch_selection_t>& selections,
-                             bms_branch_projection_limits_t limits)
-    -> bms_branch_projection_result_t {
-    return bms_branch_projection_result_t::from(
-        bms_branch_projection_t::from(root, selections, limits));
+auto bms_branch_view_result_t::from(const bms_control_node_t& root,
+                                    const std::vector<branch_selection_t>& selections,
+                                    bms_branch_projection_limits_t limits)
+    -> bms_branch_view_result_t {
+    return bms_branch_view_result_t::from(bms_branch_view_t::from(root, selections, limits));
 }
 
-auto preview_bms_branch_projection(const bms_control_node_t& root,
-                                   const std::vector<branch_selection_t>& current,
-                                   const std::vector<branch_selection_t>& proposed,
-                                   bms_branch_projection_limits_t limits)
-    -> bms_branch_projection_preview_t {
-    bms_branch_projection_preview_t result;
-    result.current = build_bms_branch_tree_view(root, current, limits);
-    result.proposed = build_bms_branch_tree_view(root, proposed, limits);
+auto bms_branch_preview_view_t::from(const bms_control_node_t& root,
+                                     const std::vector<branch_selection_t>& current,
+                                     const std::vector<branch_selection_t>& proposed,
+                                     bms_branch_projection_limits_t limits)
+    -> bms_branch_preview_view_t {
+    bms_branch_preview_view_t result;
+    result.current = bms_branch_view_result_t::from(root, current, limits);
+    result.proposed = bms_branch_view_result_t::from(root, proposed, limits);
     if (!result) {
         return result;
     }

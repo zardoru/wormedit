@@ -48,8 +48,8 @@ TEST_CASE("Tap Apply binds a stable proposal and records both values once", "[sy
     CHECK(*ghost != Catch::Approx(120.0));
     REQUIRE(runtime.apply(history, clock, 2, false));
     CHECK(history.undo.size() == 1);
-    CHECK(history.document.charts.front().bpms.front().beats_per_minute == proposal.beats_per_minute);
-    CHECK(history.document.charts.front().beat_zero_audio_offset_seconds == proposal.beat_zero_audio_offset_seconds);
+    CHECK(history.document.charts.front().bpms.front().beats_per_minute == proposal.payload.beats_per_minute);
+    CHECK(history.document.charts.front().beat_zero_audio_offset_seconds == proposal.payload.beat_zero_audio_offset_seconds);
     CHECK(history.document.charts.front().bpms.back().position == local_position_t{{1}, 480});
     CHECK(history.document.charts.front().bpms.back().beats_per_minute == signed_rational_t{135, 1});
     CHECK(history.document.charts.front().measures.front().notes.front().position == local_position_t{{1}, 120});

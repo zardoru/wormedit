@@ -35,9 +35,15 @@ void metadata_drop_state_t::discard_if_stale(std::uint64_t current_project, std:
     const chart_stamp_t current_stamp{
         .document = {.project = song_id_t{current_project}, .revision = current_revision},
         .chart = chart_id_t{current_chart_id}};
-    if (channel_map_preview && channel_map_preview->stamp != current_stamp)
+    const auto channel_preview = channel_map_preview
+        ? channel_map_preview_view_t::from(*channel_map_preview) : channel_map_preview_view_t{};
+    if (channel_map_preview &&
+        (channel_preview.stamp ? *channel_preview.stamp : chart_stamp_t{}) != current_stamp)
         clear_channel_map_preview();
-    if (lane_profile_preview && lane_profile_preview->stamp != current_stamp)
+    const auto lane_preview = lane_profile_preview
+        ? lane_migration_preview_view_t::from(*lane_profile_preview) : lane_migration_preview_view_t{};
+    if (lane_profile_preview &&
+        (lane_preview.stamp ? *lane_preview.stamp : chart_stamp_t{}) != current_stamp)
         clear_lane_profile_preview();
 }
 

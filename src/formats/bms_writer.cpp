@@ -836,8 +836,8 @@ auto active_branch_orders_for_write(const branch_tree_analysis_t& tree,
     if (!tree.has_branches || options.branch_policy != bms_branch_policy_t::preserve_tree) {
         return std::nullopt;
     }
-    const auto projection = build_bms_branch_tree_view(*chart.bms_control_tree,
-                                                    chart.active_branch_selection);
+    const auto projection =
+        bms_branch_view_result_t::from(*chart.bms_control_tree, chart.active_branch_selection);
     if (!projection) {
         return std::nullopt;
     }

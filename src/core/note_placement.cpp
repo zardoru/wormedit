@@ -1,3 +1,4 @@
+#include "chart_object_ids.h"
 #include "interaction_internal.h"
 namespace wormedit::interaction_detail {
 auto is_plain_editable_note(const note_t& note) -> bool {
@@ -66,7 +67,7 @@ auto canvas_keyboard_hold_previews(const chart_document_t& chart, const measure_
         if (!hold.anchor_canvas_row && !hold.preview_canvas_row)
             continue;
         const auto anchor =
-            hold.anchor_canvas_row ? hold.anchor_canvas_row : absolute_row(index, hold.position);
+            hold.anchor_canvas_row ? hold.anchor_canvas_row : index.row_of(hold.position);
         const auto end = hold.preview_canvas_row ? hold.preview_canvas_row : anchor;
         if (!has_chart_virtual_tail(chart) || !anchor || !end || *anchor >= canvas_rows || *end >= canvas_rows) {
             return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
@@ -96,36 +97,8 @@ auto canvas_keyboard_hold_previews(const chart_document_t& chart, const measure_
 
 namespace wormedit::interaction_detail {
 auto next_object_id(const chart_document_t& chart) -> std::optional<object_id_t> {
-    auto maximum = std::uint64_t{};
-    const auto scan = [&maximum](const auto& values) {
-        for (const auto& value : values) {
-            maximum = std::max(maximum, value.id.value);
-        }
-    };
-    scan(chart.bgm_source_lanes);
-    scan(chart.lane_layouts);
-    scan(chart.bpms);
-    scan(chart.pauses);
-    scan(chart.warps);
-    scan(chart.scrolls);
-    scan(chart.speeds);
-    scan(chart.kiai);
-    scan(chart.timing_anchors);
-    scan(chart.bookmarks);
-    scan(chart.sections);
-    scan(chart.bga_events);
-    scan(chart.sound_channels);
-    for (const auto& channel : chart.sound_channels) {
-        scan(channel.events);
-    }
-    for (const auto& measure : chart.measures) {
-        scan(measure.notes);
-        scan(measure.bgm_events);
-    }
-    if (maximum == std::numeric_limits<std::uint64_t>::max()) {
-        return std::nullopt;
-    }
-    return object_id_t{maximum + 1};
+    // Temporary: removed by T-642 when interaction callers use the shared allocation query.
+    return next_chart_object_id(chart).id;
 }
 } // namespace wormedit::interaction_detail
 
@@ -197,8 +170,8 @@ auto paint_note_intervals(const chart_document_t& chart, const measure_index_t& 
     intervals.reserve(count);
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes) {
-            const auto begin = absolute_row(index, note.position);
-            const auto end = note.end ? absolute_row(index, *note.end) : begin;
+            const auto begin = index.row_of(note.position);
+            const auto end = note.end ? index.row_of(*note.end) : begin;
             if (begin && end)
                 intervals.push_back(
                     {note.lane, *begin, *end, note.id, note.kind, note.end.has_value()});
@@ -223,7 +196,7 @@ auto paint_rows(const measure_index_t& index, std::span<const note_paint_target_
     std::vector<paint_row_t> rows;
     rows.reserve(targets.size());
     for (const auto& target : targets) {
-        const auto row = absolute_row(index, target.position);
+        const auto row = index.row_of(target.position);
         if (!row)
             return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                            "paint target lies outside chart geometry")};
@@ -291,7 +264,7 @@ auto plan_note_paint(const chart_document_t& chart, const measure_index_t& index
             return diagnostic_list_t{*failure};
     }
     for (const auto& addition : plan.additions) {
-        const auto row = absolute_row(index, addition.position);
+        const auto row = index.row_of(addition.position);
         if (row && is_head_blocked_by_warp(chart, index, *row, kind))
             return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
                                            "playable note heads cannot sit inside a warp")};
@@ -410,7 +383,7 @@ auto publish_row_placement(editor_edit_context_t& context, document_history_t& s
         pending.stamp = document_stamp_t::from(context.history.document.revision);
     restore_cursor_pose(context.state, capture_cursor_pose(staged));
     context.state.active_lane = staged.active_lane;
-    auto published = interaction_view_result(context.history, context.state, true);
+    auto published = editor_interaction_result_t::from(context.history, context.state, true);
     published.created_note = result.created_note;
     return published;
 }
@@ -425,10 +398,10 @@ auto commit_virtual_hold(editor_edit_context_t& context,
     auto* chart = scratch.document.find_chart(context.state.chart);
     if (const auto failure = extend_virtual_chart(*chart, rows.measure_count))
         return diagnostic_result(context.history, context.state, *failure);
-    const auto built = build_measure_index(*chart);
-    if (const auto* failure = std::get_if<diagnostic_list_t>(&built))
-        return diagnostic_result(context.history, context.state, *failure);
-    const auto& index = std::get<measure_index_t>(built);
+    const auto built = measure_index_t::from(*chart);
+    if (!built)
+        return diagnostic_result(context.history, context.state, built.error());
+    const auto& index = *built;
     const auto anchor = position_at(index, rows.anchor);
     const auto end = position_at(index, rows.end);
     if (!anchor || !end)
@@ -553,7 +526,7 @@ auto place_virtual_bms_tap(editor_edit_context_t& context,
         pending.preview_canvas_row = resolved.row;
         context.state.pending_hold = std::move(pending);
         context.state.active_lane = action.lane;
-        return interaction_view_result(context.history, context.state, false);
+        return editor_interaction_result_t::from(context.history, context.state, false);
     }
     return publish_row_placement(context, scratch, staged, result);
 }
@@ -584,7 +557,7 @@ auto cycle_editor_snap(document_history_t& history, editor_interaction_state_t& 
             state.active_snap_was_fallback = false;
         }
     }
-    return interaction_view_result(history, state, false);
+    return editor_interaction_result_t::from(history, state, false);
 }
 } // namespace wormedit
 
@@ -598,7 +571,7 @@ auto set_editor_snap(document_history_t& history, editor_interaction_state_t& st
         state.active_snap_denominator = action.denominator;
         state.active_snap_was_fallback = false;
     }
-    return interaction_view_result(history, state, false);
+    return editor_interaction_result_t::from(history, state, false);
 }
 } // namespace wormedit
 
@@ -650,7 +623,7 @@ auto adjust_editor_zoom(document_history_t& history, editor_interaction_state_t&
             history, state,
             {error(diagnostic_code_t::invalid_resolution, "zoom cannot resolve the fixed cursor")});
     state = std::move(proposed);
-    return interaction_view_result(history, state, false);
+    return editor_interaction_result_t::from(history, state, false);
 }
 } // namespace wormedit
 
@@ -685,26 +658,9 @@ auto place_tap(editor_edit_context_t& context, const place_tap_action_t& action)
     if (!command)
         return diagnostic_result(context.history, state, command.diagnostics);
     place_cursor_at(state, *target);
-    auto result = interaction_view_result(context.history, state, true);
+    auto result = editor_interaction_result_t::from(context.history, state, true);
     result.created_note = created;
     return result;
-}
-} // namespace wormedit
-
-namespace wormedit {
-using namespace interaction_detail;
-auto semantic_paint_view(document_history_t& history, editor_interaction_state_t& state)
-    -> editor_interaction_result_t {
-    const auto view = make_view(history, state);
-    return {
-        .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
-        .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                    ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                    : std::nullopt,
-        .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                           ? std::get<diagnostic_list_t>(view)
-                           : diagnostic_list_t{},
-    };
 }
 } // namespace wormedit
 
@@ -732,7 +688,7 @@ auto append_semantic_paint_note(editor_edit_context_t& context, object_id_t note
             {error(diagnostic_code_t::invalid_id,
                    "semantic-layer paint target does not identify a chart note", note_id)});
     if (pending.visited.contains(note_id.value))
-        return semantic_paint_view(history, state);
+        return editor_interaction_result_t::from(history, state);
     if (!pending.notes || !pending.bgm_events ||
         pending.notes->size() + pending.bgm_events->size() >= maximum_note_paint_targets)
         return diagnostic_result(
@@ -743,7 +699,7 @@ auto append_semantic_paint_note(editor_edit_context_t& context, object_id_t note
     expanded->push_back(note_id);
     pending.notes = std::move(expanded);
     pending.visited.insert(note_id.value);
-    return semantic_paint_view(history, state);
+    return editor_interaction_result_t::from(history, state);
 }
 } // namespace wormedit
 
@@ -771,7 +727,7 @@ auto append_semantic_paint_bgm_event(editor_edit_context_t& context, object_id_t
             {error(diagnostic_code_t::invalid_id,
                    "semantic-layer paint target does not identify a BGM event", event_id)});
     if (pending.visited.contains(event_id.value))
-        return semantic_paint_view(history, state);
+        return editor_interaction_result_t::from(history, state);
     if (!pending.bgm_events || !pending.notes ||
         pending.bgm_events->size() + pending.notes->size() >= maximum_note_paint_targets)
         return diagnostic_result(
@@ -782,6 +738,6 @@ auto append_semantic_paint_bgm_event(editor_edit_context_t& context, object_id_t
     expanded->push_back(event_id);
     pending.bgm_events = std::move(expanded);
     pending.visited.insert(event_id.value);
-    return semantic_paint_view(history, state);
+    return editor_interaction_result_t::from(history, state);
 }
 } // namespace wormedit

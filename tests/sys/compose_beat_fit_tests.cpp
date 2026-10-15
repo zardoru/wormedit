@@ -86,8 +86,8 @@ void check_fit_proposal(fit_fixture_t& fixture, double world_pixel,
                        std::uint64_t frame, signed_rational_t bpm) {
     fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE, world_pixel);
     expect_fit(fixture.cache.timing.beat_fit_drag.has_value());
-    expect_fit(fixture.cache.timing.beat_fit_drag->proposed_sample_frame == frame);
-    expect_fit(fixture.cache.timing.beat_fit_drag->proposed_bpm == bpm);
+    expect_fit(fixture.cache.timing.beat_fit_drag->payload.proposed_sample_frame == frame);
+    expect_fit(fixture.cache.timing.beat_fit_drag->payload.proposed_bpm == bpm);
     expect_fit(fixture.history.document.charts.front().bpms.front().beats_per_minute ==
                signed_rational_t{120, 1});
     expect_fit(fixture.history.undo.empty());
@@ -152,14 +152,14 @@ TEST_CASE("Compose onset fit preserves exact frame while plain Ctrl rounds BPM",
         fixture.cache.timing.beat_fit_onsets.frames = {44'000};
         fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE, 90, true, true);
         expect_fit(fixture.cache.timing.beat_fit_drag.has_value());
-        expect_fit(fixture.cache.timing.beat_fit_drag->proposed_sample_frame == 44'000);
+        expect_fit(fixture.cache.timing.beat_fit_drag->payload.proposed_sample_frame == 44'000);
         expect_fit(fixture.cache.timing.beat_fit_onset_snapped);
-        expect_fit(!(fixture.cache.timing.beat_fit_drag->snap_active));
+        expect_fit(!(fixture.cache.timing.beat_fit_drag->payload.snap_active));
         expect_fit(fixture.history.undo.empty());
         fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE, 90, true, false);
         expect_fit(!(fixture.cache.timing.beat_fit_onset_snapped));
-        expect_fit(fixture.cache.timing.beat_fit_drag->snap_active);
-        expect_fit(fixture.cache.timing.beat_fit_drag->proposed_bpm == signed_rational_t{160, 1});
+        expect_fit(fixture.cache.timing.beat_fit_drag->payload.snap_active);
+        expect_fit(fixture.cache.timing.beat_fit_drag->payload.proposed_bpm == signed_rational_t{160, 1});
         fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE, 90, true, true);
         expect_fit(fixture.history.undo.size() == 1);
         expect_fit(undo_document_command(fixture.history));
@@ -173,9 +173,9 @@ TEST_CASE("Compose onset fit missing candidates remains unsnapped and source cha
     fit_fixture_t fixture(false);
     fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_BEGIN, 120);
     fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE, 90, true, true);
-    expect_fit(fixture.cache.timing.beat_fit_drag->proposed_sample_frame == 44'100);
+    expect_fit(fixture.cache.timing.beat_fit_drag->payload.proposed_sample_frame == 44'100);
     expect_fit(!(fixture.cache.timing.beat_fit_onset_snapped));
-    expect_fit(!(fixture.cache.timing.beat_fit_drag->snap_active));
+    expect_fit(!(fixture.cache.timing.beat_fit_drag->payload.snap_active));
     fixture.workspace.transport.audio_asset = asset_id_t{99};
     fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE, 90, true, true);
     expect_fit(!(fixture.cache.timing.beat_fit_drag));
@@ -201,12 +201,12 @@ TEST_CASE("Compose fit captures visible cached onsets once and rejects a replace
     refreshed->waveform->bins[100].rms[1] = 0;
     fixture.cache.timing.fit_waveform = refreshed;
     fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE, 90.2, true, true);
-    expect_fit(fixture.cache.timing.beat_fit_drag->proposed_sample_frame == 44'100);
+    expect_fit(fixture.cache.timing.beat_fit_drag->payload.proposed_sample_frame == 44'100);
     expect_fit(fixture.cache.timing.beat_fit_onset_snapped);
     refreshed->waveform->key.begin_frame = 441;
     fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE, 90.2, true, true);
     expect_fit(!(fixture.cache.timing.beat_fit_onset_snapped));
-    expect_fit(fixture.cache.timing.beat_fit_drag->proposed_sample_frame != 44'100);
+    expect_fit(fixture.cache.timing.beat_fit_drag->payload.proposed_sample_frame != 44'100);
     expect_fit(fixture.history.undo.empty());
 }
 

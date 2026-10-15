@@ -71,16 +71,6 @@ auto validate_position(const chart_document_t& chart, local_position_t position,
     return validate_chart_position(index, position, result.diagnostics, description);
 }
 
-auto build_index(const chart_document_t& chart, document_command_result_t& result)
-    -> std::optional<measure_index_t> {
-    auto built = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(built)) {
-        result.diagnostics = std::get<diagnostic_list_t>(std::move(built));
-        return std::nullopt;
-    }
-    return std::get<measure_index_t>(std::move(built));
-}
-
 auto validate_bookmark_anchor(const chart_document_t& chart, marker_anchor_t anchor,
                               const std::optional<local_position_t>& position,
                               const std::optional<std::int64_t>& audio_milliseconds,
@@ -121,8 +111,8 @@ auto validate_section_anchor(const chart_document_t& chart, marker_anchor_t anch
             !validate_position(chart, beat_span->end, index, result, "section")) {
             return false;
         }
-        const auto begin = absolute_row(index, beat_span->begin);
-        const auto end = absolute_row(index, beat_span->end);
+        const auto begin = index.row_of(beat_span->begin);
+        const auto end = index.row_of(beat_span->end);
         if (!begin.has_value() || !end.has_value() || *end <= *begin) {
             reject(result, diagnostic_code_t::invalid_hold,
                    "beat-anchored section end must be after its start");
@@ -190,9 +180,11 @@ auto prepare_marker_target(marker_edit_context_t& context, chart_id_t id)
                "selected chart exceeds a marker or kiai event cap");
         return std::nullopt;
     }
-    auto index = build_index(*found, context.result);
-    if (!index)
+    auto index = measure_index_t::from(*found);
+    if (!index) {
+        context.result.diagnostics = std::move(index.error());
         return std::nullopt;
+    }
     context.edited_chart = id;
     return marker_edit_target_t{.chart = &*found, .index = std::move(*index)};
 }

@@ -170,9 +170,9 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
                         const wormedit::document_history_t& history,
                         const wormedit::workspace_controller_t& workspace, bool timing_locked,
                         std::uint64_t active_snap_denominator)
-    -> wormedit::timing_lane_pseudonote_preview_t {
+    -> wormedit::timing_lane_pseudonote_outcome_t {
     using namespace wormedit;
-    timing_lane_pseudonote_preview_t rejected{};
+    timing_lane_pseudonote_outcome_t rejected{};
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
         action.timing_chart_id == 0 || workspace.selected_chart->value != action.timing_chart_id ||
         history.document.revision != action.timing_document_revision) {
@@ -183,13 +183,11 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
         return rejected;
     }
     if (action.timing_object_id != 0) {
-        auto preview = begin_existing_timing_lane_pseudonote(
-            history, chart_id_t{action.timing_chart_id}, *requested_kind,
-            object_id_t{action.timing_object_id}, timing_locked);
-        if (preview.status == timing_lane_pseudonote_status_t::editing &&
+        auto preview = timing_lane_pseudonote_preview_t::propose(history, chart_id_t{action.timing_chart_id}, wormedit::timing_lane_event_ref_t{*requested_kind, object_id_t{action.timing_object_id}}, timing_locked);
+        if (preview.report()->status == timing_lane_pseudonote_status_t::editing &&
             action.timing_has_target_y) {
             const auto chart =
-                history.document.find_chart(preview.stamp.chart);
+                history.document.find_chart(preview.captured_stamp().chart);
             const auto target =
                 chart == nullptr
                     ? std::optional<local_position_t>{}
@@ -197,7 +195,7 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
                           *chart, wormedit::sys::timing_target_fraction(action.timing_target),
                           active_snap_denominator);
             if (!target ||
-                !revise_existing_timing_lane_pseudonote_position(history, preview, *target, timing_locked)) {
+                !(preview = timing_lane_pseudonote_preview_t::revise(std::move(preview), history, *target, timing_locked)).value.has_value()) {
                 return rejected;
             }
         }
@@ -222,9 +220,7 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
     if (!initial) {
         return rejected;
     }
-    return begin_timing_lane_pseudonote(
-        history, chart_id_t{action.timing_chart_id}, kind, *position, std::move(*initial),
-        timing_lane_initial_value_source_t::explicit_default, timing_locked);
+    return timing_lane_pseudonote_preview_t::propose(history, chart_id_t{action.timing_chart_id}, wormedit::timing_lane_pseudonote_state_t{.kind = kind, .position = *position, .value = std::move(*initial), .initial_value_source = timing_lane_initial_value_source_t::explicit_default}, timing_locked);
 }
 
 auto parse_timing_unsigned(const char* text) -> std::optional<std::uint64_t> {
@@ -255,7 +251,7 @@ auto timing_unsigned_ratio_in_bounds(std::uint64_t numerator, std::uint64_t deno
 }
 
 struct TimingStageInput {
-    const wormedit::timing_lane_pseudonote_preview_t& preview;
+    const wormedit::timing_lane_pseudonote_state_t& preview;
     const WormUiWorkspaceAction& action;
     std::optional<std::int64_t> primary_numerator;
     std::optional<std::uint64_t> primary_unsigned;
@@ -414,7 +410,7 @@ auto timing_stage_anchor_value(const TimingStageInput& input)
         timing_anchor_value_t{*input.primary_unsigned, input.action.timing_toggle_primary}};
 }
 
-auto timing_stage_value(const wormedit::timing_lane_pseudonote_preview_t& preview,
+auto timing_stage_value(const wormedit::timing_lane_pseudonote_state_t& preview,
                         const wormedit::chart_document_t& chart,
                         const WormUiWorkspaceAction& action, std::uint64_t active_snap_denominator)
     -> std::optional<wormedit::timing_lane_value_t> {

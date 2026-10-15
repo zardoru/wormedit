@@ -658,12 +658,12 @@ auto thin_grid_candidates(editor_grid_build_context_t& context) -> void {
 auto editor_grid_t::from(const chart_document_t& chart, const editor_grid_request_t& request)
     -> editor_grid_result_t {
     editor_grid_result_t result;
-    const auto built_index = build_measure_index(chart);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built_index)) {
-        result.diagnostics = *diagnostics;
+    const auto built_index = measure_index_t::from(chart);
+    if (!built_index) {
+        result.diagnostics = built_index.error();
         return result;
     }
-    const auto& measure_index = std::get<measure_index_t>(built_index);
+    const auto& measure_index = *built_index;
     std::optional<virtual_canvas_t> virtual_canvas;
     if (request.include_virtual_bms_tail && has_chart_virtual_tail(chart)) {
         auto built_canvas = build_virtual_canvas(chart);

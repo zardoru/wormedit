@@ -354,12 +354,12 @@ TEST_CASE("bms_clipboard decoded holds enter the native exact paste proposal", "
         "iBMSC Clipboard Data xNT\r\n7 0 40000 96 0 0", song, chart,
         chart.lane_layouts.front().layout);
     REQUIRE(decoded);
-    const auto proposal = wormedit::propose_chart_paste(song, chart.id, *decoded,
+    const auto proposal = wormedit::chart_paste_proposal_t::propose(song, chart.id, *decoded,
         {wormedit::measure_id_t{10}, 0}, song.revision);
-    INFO(std::string{proposal.message()});
-    REQUIRE(proposal.is_valid());
-    REQUIRE(proposal.objects.size() == 1);
-    const auto& hold = std::get<wormedit::note_t>(proposal.objects.front());
+    INFO((proposal.diagnostics.empty() ? "" : proposal.diagnostics.front().message));
+    REQUIRE(proposal.value.has_value());
+    REQUIRE(proposal.value->payload.report.objects.size() == 1);
+    const auto& hold = std::get<wormedit::note_t>(proposal.value->payload.report.objects.front());
     CHECK((hold.end == wormedit::local_position_t{wormedit::measure_id_t{10}, 672}));
     CHECK(hold.lane == wormedit::lane_id_t{102});
     CHECK(hold.sound == wormedit::resource_id_t{204});

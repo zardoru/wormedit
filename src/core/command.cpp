@@ -1,10 +1,12 @@
 #include <wormedit/core/command.h>
+#include <wormedit/core/timing.h>
 
 #include <wormedit/core/virtual_canvas.h>
 #include <wormedit/core/sound_slice.h>
 
 #include <algorithm>
 #include <limits>
+#include <memory>
 #include <ranges>
 #include <utility>
 
@@ -112,6 +114,7 @@ auto document_history_t::from(song_document_t document, std::size_t maximum_undo
     if (document.revision == 0) {
         document.revision = 1;
     }
+    document.reset_chart_indices();
     sync_virtual_tails(document);
     const auto current_revision = document.revision;
     const auto next_revision = current_revision == std::numeric_limits<std::uint64_t>::max()
@@ -124,6 +127,14 @@ auto document_history_t::from(song_document_t document, std::size_t maximum_undo
             initially_saved ? std::optional<std::uint64_t>{current_revision} : std::nullopt,
         .maximum_undo_entries = maximum_undo_entries,
     };
+}
+
+auto document_history_t::indices(chart_id_t id) const -> const chart_indices_t* {
+    const auto* chart = document.find_chart(id);
+    if (!chart) return nullptr;
+    auto& slot = chart->indices_slot.value_;
+    if (!slot) slot = std::make_shared<const chart_indices_t>(chart_indices_t::from(*chart));
+    return slot.get();
 }
 
 auto is_document_dirty(const document_history_t& history) noexcept -> bool {
@@ -145,6 +156,8 @@ static auto commit_validated_document(document_history_t& history, song_document
         return result;
     }
 
+    // Direct publication and chart replacement can carry slots from an older snapshot.
+    proposed.reset_chart_indices();
     proposed.revision = history.next_revision;
     if (!options.preserve_retained_source_flags) mark_retained_sources_changed(proposed);
     sync_virtual_tails(proposed);
@@ -211,18 +224,26 @@ auto document_command_transaction_t::has_copy() const noexcept -> bool {
     return proposed.has_value();
 }
 
+auto document_command_transaction_t::document() const noexcept -> const song_document_t& {
+    return proposed ? *proposed : history.document;
+}
+
 auto document_command_transaction_t::source_chart(chart_id_t id) const -> const chart_document_t* {
     const auto found = history.document.find_chart(id);
     return found == nullptr ? nullptr : &*found;
 }
 
 auto document_command_transaction_t::copy_document() -> song_document_t& {
-    if (!proposed) proposed.emplace(history.document);
+    if (!proposed) {
+        proposed.emplace(history.document);
+        proposed->reset_chart_indices();
+    }
     return *proposed;
 }
 
 void document_command_transaction_t::adopt_document(song_document_t&& document) {
     proposed.emplace(std::move(document));
+    proposed->reset_chart_indices();
 }
 
 auto document_command_transaction_t::chart(chart_id_t id) -> chart_document_t* {

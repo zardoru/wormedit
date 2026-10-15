@@ -792,8 +792,8 @@ TEST_CASE("BMS branch projection previews exact entering and leaving retained st
 
     auto proposed = chart.active_branch_selection;
     proposed.front().selected_value = 2;
-    const auto preview = preview_bms_branch_projection(*chart.bms_control_tree,
-                                                       chart.active_branch_selection, proposed);
+    const auto preview = bms_branch_preview_view_t::from(*chart.bms_control_tree,
+                                                         chart.active_branch_selection, proposed);
     REQUIRE(preview);
     CHECK(preview.current.active_statement_ids == std::vector{active->id});
     CHECK(preview.current.active_statement_source_orders == std::vector{active->source_order});
@@ -813,30 +813,30 @@ TEST_CASE("BMS branch projection rejects invalid stale and unbounded proposals w
 
     auto out_of_range = chart.active_branch_selection;
     out_of_range.front().selected_value = 3;
-    const auto invalid = build_bms_branch_tree_view(*chart.bms_control_tree, out_of_range);
+    const auto invalid = bms_branch_view_result_t::from(*chart.bms_control_tree, out_of_range);
     CHECK_FALSE(invalid);
     CHECK(invalid.status == bms_branch_projection_status_t::invalid_selection);
     CHECK(invalid.active_statement_ids.empty());
 
     auto duplicate = chart.active_branch_selection;
     duplicate.push_back(duplicate.front());
-    const auto duplicated = build_bms_branch_tree_view(*chart.bms_control_tree, duplicate);
+    const auto duplicated = bms_branch_view_result_t::from(*chart.bms_control_tree, duplicate);
     CHECK_FALSE(duplicated);
     CHECK(duplicated.status == bms_branch_projection_status_t::duplicate_selection);
 
     auto unknown = chart.active_branch_selection;
     unknown.front().branch = branch_id_t{999'999};
-    const auto stale = build_bms_branch_tree_view(*chart.bms_control_tree, unknown);
+    const auto stale = bms_branch_view_result_t::from(*chart.bms_control_tree, unknown);
     CHECK_FALSE(stale);
     CHECK(stale.status == bms_branch_projection_status_t::invalid_selection);
 
-    const auto capped = build_bms_branch_tree_view(
+    const auto capped = bms_branch_view_result_t::from(
         *chart.bms_control_tree, chart.active_branch_selection,
         {.maximum_nodes = 1, .maximum_depth = 256, .maximum_active_statements = 1});
     CHECK_FALSE(capped);
     CHECK(capped.status == bms_branch_projection_status_t::capacity_exceeded);
 
-    const auto failed_preview = preview_bms_branch_projection(
+    const auto failed_preview = bms_branch_preview_view_t::from(
         *chart.bms_control_tree, chart.active_branch_selection, out_of_range);
     CHECK_FALSE(failed_preview);
     CHECK(failed_preview.entering_statement_ids.empty());

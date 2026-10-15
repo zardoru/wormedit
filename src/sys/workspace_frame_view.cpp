@@ -28,7 +28,7 @@ void populate_workspace_frame_view(flattened_workspace_t& flattened,
         }
     }
     if (args.audio_offset_drag) {
-        const auto& drag = *args.audio_offset_drag;
+        const auto& drag = args.audio_offset_drag->payload;
         audio_view.offset_drag_active = true;
         audio_view.offset_drag_delta_frames = drag.delta_frames;
         audio_view.proposed_offset_numerator = drag.proposed_offset_seconds.numerator;

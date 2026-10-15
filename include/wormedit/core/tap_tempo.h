@@ -32,6 +32,7 @@ struct tap_tempo_estimate_t {
     // Coverage up to eight taps times a linear residual score (zero at 24 ms).
     double confidence{};
     bool stable{};
+    auto operator==(const tap_tempo_estimate_t&) const -> bool = default;
 };
 
 class tap_tempo_estimator_t {

@@ -27,9 +27,9 @@ struct metadata_drop_state_t {
     std::uint64_t music_revision{};
     std::uint64_t chart_id{};
     // Sealed channel-map preview from the last Preview action. Apply consumes exactly this proposal.
-    std::optional<channel_map_proposal_t> channel_map_preview;
+    std::optional<channel_map_proposal_outcome_t> channel_map_preview;
     // Sealed key-count preview from the last Preview action; Apply consumes exactly this proposal.
-    std::optional<lane_migration_proposal_t> lane_profile_preview;
+    std::optional<lane_migration_proposal_outcome_t> lane_profile_preview;
 
     void clear_paths();
     void clear_channel_map_preview();

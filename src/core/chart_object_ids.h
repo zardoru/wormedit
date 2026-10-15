@@ -29,9 +29,16 @@ struct object_id_allocation_t {
     bool exhausted{};
 };
 struct object_id_ceiling_t {
-    std::size_t limit;
+    std::size_t limit{std::numeric_limits<std::size_t>::max()};
     std::size_t count{};
     std::uint64_t maximum{};
+    static auto from(const chart_document_t& chart,
+                     std::size_t limit = std::numeric_limits<std::size_t>::max())
+        -> object_id_ceiling_t {
+        object_id_ceiling_t scan{limit};
+        (void)visit_chart_object_ids(chart, scan);
+        return scan;
+    }
     auto operator()(object_id_t id) -> bool {
         if (count >= limit) return false;
         ++count;
@@ -41,8 +48,8 @@ struct object_id_ceiling_t {
 };
 inline auto next_chart_object_id(const chart_document_t& chart,
     std::size_t limit = std::numeric_limits<std::size_t>::max()) -> object_id_allocation_t {
-    object_id_ceiling_t scan{limit};
-    if (!visit_chart_object_ids(chart, scan) || scan.count >= limit) return {.over_limit = true};
+    const auto scan = object_id_ceiling_t::from(chart, limit);
+    if (scan.count >= limit) return {.over_limit = true};
     if (scan.maximum == std::numeric_limits<std::uint64_t>::max()) return {.exhausted = true};
     return {.id = object_id_t{scan.maximum + 1}};
 }

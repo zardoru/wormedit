@@ -27,7 +27,7 @@ struct defaults_t {
     project_identity_t project_identity;
     application_command_state_t application_command_state{};
     stepmania_export_policy_t stepmania_export_policy{};
-    std::optional<audio_offset_drag_t> audio_offset_drag{};
+    std::optional<proposal_t<audio_offset_drag_t>> audio_offset_drag{};
     std::optional<workspace_tab_t> audio_offset_drag_tab{};
     command_registry_t command_registry{};
     std::optional<editor_interaction_state_t> compose_interaction_state{};
@@ -38,7 +38,7 @@ struct defaults_t {
     runtime::output_group_export_t export_runtime{};
     timing_grid_state_t timing_grid{};
     runtime::timing_edit_t timing_edit{};
-    std::optional<timing_lane_pseudonote_preview_t> timing_stage{};
+    std::optional<timing_lane_pseudonote_outcome_t> timing_stage{};
     timing_scene_cache_t timing_scene_cache{};
     compose_scene_cache_t compose_scene_cache{};
     viewport_input_controller_t compose_viewport_input{};
@@ -116,7 +116,7 @@ inline auto
 invoke_application_command(application_command_t command, wormedit::document_history_t& history,
                            wormedit::workspace_controller_t& workspace,
                            std::optional<wormedit::editor_interaction_state_t>& compose_state,
-                           std::optional<wormedit::timing_lane_pseudonote_preview_t>& timing_stage,
+                           std::optional<wormedit::timing_lane_pseudonote_outcome_t>& timing_stage,
                            application_command_state_t& application_state,
                            notification_sink_t& sink) -> wormedit::command_invocation_outcome_t {
     test_dispatch::defaults_t defaults;

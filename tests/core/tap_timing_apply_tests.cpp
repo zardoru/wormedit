@@ -10,7 +10,7 @@ using namespace wormedit;
 
 TEST_CASE("tap proposal canonical construction retains timing-lock rejection priority",
           "[unit][core][tap-timing][result]") {
-    const auto outcome = tap_timing_apply_proposal_t::from({}, chart_id_t{99}, {}, 0, 0,
+    const auto outcome = tap_timing_apply_proposal_t::propose({}, chart_id_t{99}, {}, 0, 0,
         tap_bpm_choice_t::raw, true);
     CHECK_FALSE(outcome.ok());
     CHECK_FALSE(outcome.value.has_value());
@@ -21,7 +21,7 @@ TEST_CASE("tap proposal canonical construction retains timing-lock rejection pri
 TEST_CASE("tap proposal diagnosed outcome retains warning and payload",
           "[unit][core][tap-timing][result]") {
     tap_timing_apply_proposal_outcome_t outcome{
-        .value = tap_timing_apply_proposal_t{},
+        .value = proposal_t<tap_timing_apply_proposal_t>{},
         .diagnostics = {{.severity = diagnostic_severity_t::warning,
                         .code = diagnostic_code_t::approximated_feature, .message = "warning"}}};
     CHECK(outcome.ok());
@@ -69,7 +69,7 @@ auto stable_estimate(double phase = 0.0, rational_t bpm = {120, 1}) -> tap_tempo
 auto proposal(const song_document_t& song, tap_tempo_estimate_t estimate = stable_estimate(),
               tap_bpm_choice_t choice = tap_bpm_choice_t::raw, std::uint32_t rate = 44'100,
               std::uint16_t meter = 4) -> tap_timing_apply_proposal_outcome_t {
-    return tap_timing_apply_proposal_t::from(song, chart_id_t{2}, estimate, rate, meter, choice);
+    return tap_timing_apply_proposal_t::propose(song, chart_id_t{2}, estimate, rate, meter, choice);
 }
 
 TEST_CASE("Tap timing proposal computes raw and rounded BPM and signed exact phase offset",
@@ -83,15 +83,15 @@ TEST_CASE("Tap timing proposal computes raw and rounded BPM and signed exact pha
     REQUIRE(raw.value.has_value());
     REQUIRE(one.value.has_value());
     REQUIRE(half.value.has_value());
-    CHECK(raw.value->beats_per_minute == signed_rational_t{247, 2});
-    CHECK(one.value->beats_per_minute == signed_rational_t{124, 1});
-    CHECK(half.value->beats_per_minute == signed_rational_t{247, 2});
-    CHECK(raw.value->beat_zero_audio_offset_seconds == signed_rational_t{-1, 2});
+    CHECK(raw.value->payload.beats_per_minute == signed_rational_t{247, 2});
+    CHECK(one.value->payload.beats_per_minute == signed_rational_t{124, 1});
+    CHECK(half.value->payload.beats_per_minute == signed_rational_t{247, 2});
+    CHECK(raw.value->payload.beat_zero_audio_offset_seconds == signed_rational_t{-1, 2});
 
     song.charts.front().beat_zero_audio_offset_seconds = {0, 1};
     const auto even = proposal(song, stable_estimate(-2.5));
     REQUIRE(even.value.has_value());
-    CHECK(even.value->beat_zero_audio_offset_seconds == signed_rational_t{-1, 22'050});
+    CHECK(even.value->payload.beat_zero_audio_offset_seconds == signed_rational_t{-1, 22'050});
 }
 
 TEST_CASE("Tap timing proposal chooses the nearest measure downbeat and earlier on a tie",
@@ -102,7 +102,7 @@ TEST_CASE("Tap timing proposal chooses the nearest measure downbeat and earlier 
     song.charts.front().beat_zero_audio_offset_seconds = {45'100, 44'100};
     const auto result = proposal(song, stable_estimate(1'000.0));
     REQUIRE(result.value.has_value());
-    CHECK(result.value->beat_zero_audio_offset_seconds ==
+    CHECK(result.value->payload.beat_zero_audio_offset_seconds ==
           signed_rational_t{10, 441});
 }
 
@@ -195,7 +195,7 @@ TEST_CASE("Tap timing lock, stale, unstable, invalid and overflowing proposals r
     CHECK_FALSE(proposal(history.document, unstable).value.has_value());
     CHECK_FALSE(proposal(history.document, stable_estimate(), tap_bpm_choice_t::raw, 0).value.has_value());
     CHECK_FALSE(proposal(history.document, stable_estimate(), tap_bpm_choice_t::raw, 44'100, 0).value.has_value());
-    CHECK_FALSE(tap_timing_apply_proposal_t::from(history.document, chart_id_t{99}, stable_estimate(),
+    CHECK_FALSE(tap_timing_apply_proposal_t::propose(history.document, chart_id_t{99}, stable_estimate(),
                                           44'100, 4, tap_bpm_choice_t::raw).value.has_value());
     auto nan = stable_estimate(std::numeric_limits<double>::quiet_NaN());
     CHECK_FALSE(proposal(history.document, nan).value.has_value());
@@ -232,7 +232,7 @@ TEST_CASE("Tap timing signed frame limits reject positive exclusive bound and al
     song.charts.front().beat_zero_audio_offset_seconds = {std::numeric_limits<std::int64_t>::min(), 1};
     const auto minimum = proposal(song, stable_estimate(-upper), tap_bpm_choice_t::raw, 1);
     REQUIRE(minimum.value.has_value());
-    CHECK(minimum.value->beat_zero_audio_offset_seconds ==
+    CHECK(minimum.value->payload.beat_zero_audio_offset_seconds ==
           signed_rational_t{std::numeric_limits<std::int64_t>::min(), 1});
 }
 
@@ -244,16 +244,16 @@ TEST_CASE("Tap Apply chooses chart-start bars from exact measure length includin
     chart.measures.front().definition = {{3, 8}, meter_t{3, 8}};
     const auto eighth = proposal(song, stable_estimate(), tap_bpm_choice_t::raw, 120, 3);
     REQUIRE(eighth.value.has_value());
-    CHECK(eighth.value->beat_zero_audio_offset_seconds == signed_rational_t{3, 4});
+    CHECK(eighth.value->payload.beat_zero_audio_offset_seconds == signed_rational_t{3, 4});
     chart.measures.front().definition = {{3, 4}, meter_t{3, 4}};
     const auto quarter = proposal(song, stable_estimate(), tap_bpm_choice_t::raw, 120, 3);
     REQUIRE(quarter.value.has_value());
-    CHECK(quarter.value->beat_zero_audio_offset_seconds == signed_rational_t{0, 1});
+    CHECK(quarter.value->payload.beat_zero_audio_offset_seconds == signed_rational_t{0, 1});
     chart.measures.front().definition = {{5, 4}, std::nullopt};
     chart.beat_zero_audio_offset_seconds = {7, 6}; // frame 140, nearest 300-frame bar is zero
     const auto unusual = proposal(song, stable_estimate(), tap_bpm_choice_t::raw, 120, 4);
     REQUIRE(unusual.value.has_value());
-    CHECK(unusual.value->beat_zero_audio_offset_seconds == signed_rational_t{0, 1});
+    CHECK(unusual.value->payload.beat_zero_audio_offset_seconds == signed_rational_t{0, 1});
 }
 
 } // namespace
@@ -288,7 +288,7 @@ TEST_CASE("Captured tap timing uses shared stale feedback after timing lock",
 
 namespace {
 void check_tap_project_replacement(document_history_t& history,
-                                    const tap_timing_apply_proposal_t& proposed) {
+                                    const proposal_t<tap_timing_apply_proposal_t>& proposed) {
     history.document.id = song_id_t{99};
     CHECK(make_tap_timing_preview(history.document, proposed).has_value());
     CHECK(apply_tap_timing_proposal(history, proposed).applied);
@@ -296,11 +296,26 @@ void check_tap_project_replacement(document_history_t& history,
 }
 
 void check_tap_missing_target(document_history_t& history,
-                              const tap_timing_apply_proposal_t& proposed) {
+                              const proposal_t<tap_timing_apply_proposal_t>& proposed) {
     history.document.charts.clear();
     const auto result = apply_tap_timing_proposal(history, proposed);
     check_tap_timing_rejection(result, "tap timing proposal no longer matches a valid chart");
     CHECK(history.undo.empty());
+}
+
+void check_tap_revision_capture(const proposal_t<tap_timing_apply_proposal_t>& original,
+                                const tap_timing_apply_proposal_outcome_t& revised) {
+    REQUIRE(revised.value.has_value());
+    CHECK(revised.value->stamp == original.stamp);
+    CHECK(revised.value->payload.beats_per_minute == signed_rational_t{124, 1});
+}
+
+void check_tap_revision_failure(const tap_timing_apply_proposal_outcome_t& rejected,
+                                diagnostic_code_t code, std::string_view message) {
+    CHECK_FALSE(rejected.value.has_value());
+    REQUIRE(rejected.diagnostics.size() == 1);
+    CHECK(rejected.diagnostics.front().code == code);
+    CHECK(rejected.diagnostics.front().message == message);
 }
 } // namespace
 
@@ -318,15 +333,45 @@ TEST_CASE("Tap proposal stamps preserve revision-only identity and missing-chart
     }
 }
 
-TEST_CASE("Tap outcome owns failure diagnostics and payload default validity",
+TEST_CASE("Tap outcome owns failure diagnostics and default capture rejects preview",
           "[core][tap-timing-apply][proposal-stamp]") {
-    const tap_timing_apply_proposal_t empty;
-    CHECK_FALSE(empty.is_valid());
+    const proposal_t<tap_timing_apply_proposal_t> empty;
     auto history = document_history_t::from(apply_song());
-    const auto rejected = tap_timing_apply_proposal_t::from(history.document, chart_id_t{2},
+    CHECK_FALSE(make_tap_timing_preview(history.document, empty).has_value());
+    const auto rejected = tap_timing_apply_proposal_t::propose(history.document, chart_id_t{2},
         stable_estimate(), 44'100, 4, tap_bpm_choice_t::raw, true);
     CHECK_FALSE(rejected.value.has_value());
     REQUIRE(rejected.diagnostics.size() == 1);
     CHECK(rejected.diagnostics.front().message == "tap timing apply is disabled while timing is locked");
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Tap proposal revision preserves its capture and leaves publication to Apply",
+          "[core][tap-timing-apply][proposal-revision]") {
+    auto history = document_history_t::from(apply_song());
+    const auto original = proposal(history.document, stable_estimate(0.0, {247, 2}));
+    REQUIRE(original.value.has_value());
+    history.document.id = song_id_t{99};
+    const auto revised = original.value->revise(history.document,
+                                                         tap_bpm_choice_t::nearest_one);
+    check_tap_revision_capture(*original.value, revised);
+    CHECK(history.document.charts.front().bpms.empty());
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Tap proposal revision has no stale payload and keeps timing lock priority",
+          "[core][tap-timing-apply][proposal-revision]") {
+    auto history = document_history_t::from(apply_song());
+    const auto original = proposal(history.document);
+    REQUIRE(original.value.has_value());
+    ++history.document.revision;
+    const auto stale = original.value->revise(history.document,
+                                                       tap_bpm_choice_t::nearest_one);
+    check_tap_revision_failure(stale, diagnostic_code_t::invalid_id,
+                                stale_action_message("Tap timing proposal"));
+    const auto locked = original.value->revise(history.document,
+                                                        tap_bpm_choice_t::nearest_one, true);
+    check_tap_revision_failure(locked, diagnostic_code_t::unsupported_feature,
+                                "tap timing apply is disabled while timing is locked");
     CHECK(history.undo.empty());
 }

@@ -1,3 +1,4 @@
+#include "chart_object_ids.h"
 #include <wormedit/core/note_to_bgm.h>
 
 #include <wormedit/core/bmson_sound_channel_editor.h>
@@ -15,20 +16,6 @@
 namespace wormedit {
 namespace {
 
-
-auto largest_object_id(const chart_document_t& chart) -> std::uint64_t {
-    std::uint64_t largest{};
-    const auto scan = [&](const auto& values) {
-        for (const auto& value : values) largest = std::max(largest, value.id.value);
-    };
-    scan(chart.bgm_source_lanes); scan(chart.lane_layouts); scan(chart.bpms); scan(chart.pauses);
-    scan(chart.warps); scan(chart.scrolls); scan(chart.speeds); scan(chart.kiai);
-    scan(chart.timing_anchors); scan(chart.bookmarks); scan(chart.sections); scan(chart.bga_events);
-    scan(chart.sound_channels);
-    for (const auto& channel : chart.sound_channels) scan(channel.events);
-    for (const auto& measure : chart.measures) { scan(measure.notes); scan(measure.bgm_events); }
-    return largest;
-}
 
 struct group_key_t {
     bool is_group{};
@@ -198,7 +185,7 @@ auto prepare_allocation_state(const chart_document_t& chart, const resource_keys
     for (std::size_t i = 0; i < state.lanes.size(); ++i)
         state.lane_index.emplace(state.lanes[i].id, i);
     rank_group_preferences(state, counts);
-    state.largest_id = largest_object_id(chart);
+    state.largest_id = object_id_ceiling_t::from(chart).maximum;
     for (const auto& lane : state.lanes) {
         if (lane.order == std::numeric_limits<std::size_t>::max())
             state.order_exhausted = true;
@@ -284,13 +271,13 @@ auto plan_allocation(const chart_document_t& chart, std::span<const resource_ent
             error(diagnostic_code_t::invalid_id, "note move to BGM needs 1 to 1000000 notes"));
         return result;
     }
-    const auto built = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(built)) {
+    const auto built = measure_index_t::from(chart);
+    if (!built) {
         result.diagnostics.push_back(error(diagnostic_code_t::invalid_measure,
                                            "BGM allocation requires valid measure geometry"));
         return result;
     }
-    const auto& geometry = std::get<measure_index_t>(built);
+    const auto& geometry = *built;
     const auto measure_entries = measure_lookup_t::from(geometry);
     const auto resource_keys = make_resource_keys(resources);
     auto collected = collect_candidates(chart, ids, resource_keys, measure_entries);
@@ -479,8 +466,8 @@ auto is_blocked_by_note(const chart_document_t& chart, const measure_index_t& in
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes) {
             if (note.lane != lane) continue;
-            const auto other_begin = absolute_row(index, note.position);
-            const auto other_end = note.end ? absolute_row(index, *note.end) : other_begin;
+            const auto other_begin = index.row_of(note.position);
+            const auto other_end = note.end ? index.row_of(*note.end) : other_begin;
             if (!other_begin || !other_end || (*other_begin <= finish && begin <= *other_end))
                 return true;
         }
@@ -503,7 +490,7 @@ auto is_layout_covering_hold(const chart_document_t& chart, const measure_index_
     if (!event.end || !is_editable_lane_at(chart, event.position, lane) ||
         !is_editable_lane_at(chart, *event.end, lane)) return false;
     for (const auto& segment : chart.lane_layouts) {
-        const auto row = absolute_row(index, segment.position);
+        const auto row = index.row_of(segment.position);
         if (row && *row > begin && *row <= finish && !is_editable_lane_at(chart, segment.position, lane))
             return false;
     }
@@ -520,11 +507,11 @@ auto is_valid_restore_span(const chart_document_t& chart, const bgm_event_t& eve
             });
         });
     }
-    const auto built = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(built)) return false;
-    const auto& index = std::get<measure_index_t>(built);
-    const auto begin = absolute_row(index, event.position);
-    const auto finish = absolute_row(index, *event.end);
+    const auto built = measure_index_t::from(chart);
+    if (!built) return false;
+    const auto& index = *built;
+    const auto begin = index.row_of(event.position);
+    const auto finish = index.row_of(*event.end);
     return begin && finish && *finish > *begin &&
            !is_blocked_by_note(chart, index, lane, *begin, *finish) &&
            is_layout_covering_hold(chart, index, event, lane, *begin, *finish);

@@ -1,3 +1,4 @@
+#include <wormedit/core/interaction_gestures.h>
 #include "core/text_util.h"
 #include "sys/catalog_view.h"
 #include "sys/application.h"
@@ -1015,14 +1016,14 @@ auto command_menu_invoker(wormedit::command_invoker_t invoke) -> wormedit::comma
 
 void delete_staged_timing_event(const WormUiWorkspaceAction& action,
                                 wormedit::document_history_t& history, bool timing_locked,
-                                wormedit::timing_lane_pseudonote_preview_t& stage,
+                                wormedit::timing_lane_pseudonote_outcome_t& stage,
                                 wormedit::notification_sink_t& notifications) {
     const auto kind = timing_lane_kind_from_ui(action.timing_lane);
-    if (!stage.existing_event || !kind || *kind != stage.kind) {
+    if (!stage.report()->existing_event || !kind || *kind != stage.report()->kind) {
         post_edit_rejection(notifications, {}, "The selected timing event cannot be deleted.");
     } else {
         const auto result = wormedit::delete_existing_timing_lane_event(
-            history, stage.stamp.chart, *kind, *stage.existing_event, timing_locked);
+            history, stage.captured_stamp().chart, *kind, *stage.report()->existing_event, timing_locked);
         if (result)
             notifications.post(wormedit::notification_severity_t::success,
                                wormedit::notification_source_t::edit, "Timing event deleted.");
@@ -1044,7 +1045,7 @@ void quick_insert_timing_event(const WormUiWorkspaceAction& action,
                                wormedit::notification_sink_t& notifications) {
     auto candidate = begin_timing_stage(action, history, workspace, timing_locked,
                                         active_snap_denominator);
-    if (candidate.status != wormedit::timing_lane_pseudonote_status_t::editing) {
+    if (!candidate.value) {
         post_edit_rejection(notifications, candidate.diagnostics, "Timing event could not be inserted at that row.");
         return;
     }
@@ -1165,10 +1166,8 @@ void cancel_stale_compose_interaction(
         const bool pending_is_stale =
             (state.pending_hold &&
              !state.pending_hold->stamp.is_revision_current(history.document.revision)) ||
-            (state.pending_note_duration_gesture &&
-             !state.pending_note_duration_gesture->stamp.is_revision_current(history.document.revision)) ||
-            (state.pending_note_move_gesture &&
-             !state.pending_note_move_gesture->stamp.is_revision_current(history.document.revision)) ||
+            (state.active_gesture &&
+             wormedit::is_editor_gesture_stale(state.active_gesture, history.document.revision)) ||
             (state.pending_note_paint_gesture &&
              !state.pending_note_paint_gesture->stamp.is_revision_current(history.document.revision)) ||
             (state.pending_semantic_layer_paint_gesture &&
@@ -1805,9 +1804,9 @@ void build_tap_timing_view(wormedit::sys::tap_timing_runtime_t& runtime,
     target.apply_available = proposal.has_value();
     if (proposal) {
         target.apply_revision = proposal->stamp.document.revision;
-        target.proposed_bpm = wormedit::to_double(proposal->beats_per_minute);
-        target.proposed_offset_ms = 1000.0 * proposal->beat_zero_audio_offset_seconds.numerator /
-                                   proposal->beat_zero_audio_offset_seconds.denominator;
+        target.proposed_bpm = wormedit::to_double(proposal->payload.beats_per_minute);
+        target.proposed_offset_ms = 1000.0 * proposal->payload.beat_zero_audio_offset_seconds.numerator /
+                                   proposal->payload.beat_zero_audio_offset_seconds.denominator;
     }
     if (!state.estimate) return;
     target.estimate_available = true;
@@ -2168,7 +2167,7 @@ struct application_t::implementation_t {
         sound_drop_transaction_t sound_drop_transaction{};
         std::vector<sound_drop_outcome_t> pending_resource_batches{};
         bga_dock_runtime_t bga_dock_runtime{};
-        std::optional<audio_offset_drag_t> audio_offset_drag{};
+        std::optional<proposal_t<audio_offset_drag_t>> audio_offset_drag{};
         std::optional<workspace_tab_t> audio_offset_drag_tab{};
         timing_scene_cache_t timing_scene_cache{};
         runtime::timing_edit_t timing_edit{};
@@ -2337,15 +2336,14 @@ struct application_t::implementation_t {
     void move_staged_timing_event(const WormUiWorkspaceAction& action, bool timing_locked,
                                   std::uint64_t active_snap_denominator,
                                   wormedit::chart_document_t* chart,
-                                  wormedit::timing_lane_pseudonote_preview_t& stage) {
+                                  wormedit::timing_lane_pseudonote_outcome_t& stage) {
         const auto target =
-            chart == nullptr || !stage.existing_event || !action.timing_has_target_y
+            chart == nullptr || !stage.report()->existing_event || !action.timing_has_target_y
                 ? std::optional<wormedit::local_position_t>{}
                 : timing_position_from_fraction(
                       *chart, wormedit::sys::timing_target_fraction(action.timing_target),
                       active_snap_denominator);
-        if (!target || !wormedit::revise_existing_timing_lane_pseudonote_position(session.history, stage,
-                                                                       *target, timing_locked)) {
+        if (!target || !(stage = wormedit::timing_lane_pseudonote_preview_t::revise(std::move(stage), session.history, *target, timing_locked)).value.has_value()) {
             post_edit_rejection(platform.notification_sink, stage.diagnostics,
                                 "The timing marker cannot move to that row.");
         } else {
@@ -2628,7 +2626,7 @@ struct application_t::implementation_t {
         const auto timing_locked = context.timing_locked;
         if (!drag || !drag_tab || *drag_tab != workspace.active_tab ||
             !drag->stamp.is_current(*workspace.selected_chart, action.audio_offset_drag_document_revision) ||
-            drag->sample_rate != *context.selected_sample_rate) {
+            drag->payload.sample_rate != *context.selected_sample_rate) {
             return clear_audio_offset_drag(
                 context, "Audio offset drag has no matching captured transaction.");
         }
@@ -2813,7 +2811,7 @@ struct application_t::implementation_t {
     auto begin_audio_offset_drag_action(AudioOffsetDragContext& context) -> std::string {
         using namespace wormedit;
         const auto begun =
-            audio_offset_drag_t::from(session.history.document, *session.workspace.selected_chart,
+            audio_offset_drag_t::propose(session.history.document, *session.workspace.selected_chart,
                                     *context.selected_sample_rate, context.timing_locked);
         views.audio_offset_drag = begun.ok() ? begun.value : std::nullopt;
         views.audio_offset_drag_tab =
@@ -3403,7 +3401,7 @@ struct application_t::implementation_t {
                 "Finish or cancel the active audio offset drag before nudging.");
         }
         const auto begun =
-            audio_offset_drag_t::from(session.history.document, *session.workspace.selected_chart,
+            audio_offset_drag_t::propose(session.history.document, *session.workspace.selected_chart,
                                     *context.selected_sample_rate, context.timing_locked);
         if (!begun.ok() || !begun.value) {
             return post_audio_offset_diagnostic(context, begun.diagnostics,
@@ -3736,9 +3734,9 @@ struct application_t::implementation_t {
     void dispatch_timing_stage_value_action(
         const WormUiWorkspaceAction& action, bool timing_locked,
         std::uint64_t active_snap_denominator, wormedit::chart_document_t* chart,
-        std::optional<wormedit::timing_lane_pseudonote_preview_t>& timing_stage) {
+        std::optional<wormedit::timing_lane_pseudonote_outcome_t>& timing_stage) {
         const auto value = chart == nullptr ? std::optional<wormedit::timing_lane_value_t>{}
-                                            : timing_stage_value(*timing_stage, *chart, action,
+                                            : timing_stage_value(*timing_stage->report(), *chart, action,
                                                                  active_snap_denominator);
         if (!value) {
             timing_stage->diagnostics = {{
@@ -3746,18 +3744,18 @@ struct application_t::implementation_t {
                 .code = wormedit::diagnostic_code_t::invalid_rational,
                 .message = "Enter a bounded exact rational for this timing value.",
             }};
+            timing_stage->complete(false);
             platform.notification_sink.post(wormedit::notification_severity_t::warning,
                                             wormedit::notification_source_t::edit,
                                             "Timing value is outside its supported bounds.");
             return;
         }
 
-        const bool valid = wormedit::revise_timing_lane_pseudonote(session.history, *timing_stage,
-                                                                   *value, timing_locked);
+        const bool valid = (*timing_stage = wormedit::timing_lane_pseudonote_preview_t::revise(std::move(*timing_stage), session.history, *value, timing_locked)).value.has_value();
         if (action.timing_stage_action == WORM_UI_TIMING_STAGE_CONFIRM && valid) {
             const auto result = wormedit::apply_timing_lane_pseudonote(
                 session.history, *timing_stage, timing_locked);
-            const auto edited_existing = timing_stage->existing_event.has_value();
+            const auto edited_existing = timing_stage->report()->existing_event.has_value();
             if (result)
                 platform.notification_sink.post(wormedit::notification_severity_t::success,
                                                 wormedit::notification_source_t::edit,
@@ -3779,17 +3777,16 @@ struct application_t::implementation_t {
 
     void dispatch_timing_stage_action(const WormUiWorkspaceAction& action, bool timing_locked,
                                       std::uint64_t active_snap_denominator) {
-        using status_t = wormedit::timing_lane_pseudonote_status_t;
         auto& timing_stage = views.timing_edit.stage;
         if (action.timing_stage_action == WORM_UI_TIMING_STAGE_BEGIN) {
             if (!timing_stage) {
                 auto candidate = begin_timing_stage(action, session.history, session.workspace,
                                                     timing_locked, active_snap_denominator);
-                if (candidate.status == status_t::editing) {
+                if (candidate.value) {
                     timing_stage = std::move(candidate);
                     platform.notification_sink.post_transient_hint(
                         wormedit::notification_source_t::edit,
-                        timing_stage->existing_event.has_value()
+                        timing_stage->report()->existing_event.has_value()
                             ? "Timing event loaded; apply to update it."
                             : "Timing event staged; confirm to insert it.");
                 } else {
@@ -3922,7 +3919,7 @@ struct application_t::implementation_t {
                 *failure);
             return;
         }
-        auto* chart_ptr = session.history.document.find_chart(stage->stamp.chart);
+        auto* chart_ptr = session.history.document.find_chart(stage->captured_stamp().chart);
         if (action.timing_stage_action == WORM_UI_TIMING_STAGE_DELETE) {
             delete_staged_timing_event(action, session.history, timing_locked, *stage,
                                        platform.notification_sink);

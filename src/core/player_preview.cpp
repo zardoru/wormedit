@@ -125,12 +125,11 @@ auto preview_y(double displacement, double current_displacement,
                : request.receptor_y_pixels - distance;
 }
 
-auto append_preview_endpoint(player_preview_scene_t& scene,
+auto append_preview_endpoint(player_preview_scene_view_t& scene,
                              const player_preview_scene_request_t& request,
                              const player_preview_note_source_t& note,
                              const player_preview_lane_geometry_t& lane_geometry, double y,
-                             bool tail)
-    -> void {
+                             bool tail) -> void {
     if (y + request.note_head_height_pixels / 2.0 < 0.0 ||
         y - request.note_head_height_pixels / 2.0 > request.viewport_height_pixels) {
         return;
@@ -150,7 +149,7 @@ auto append_preview_endpoint(player_preview_scene_t& scene,
 }
 
 struct note_render_context_t {
-    player_preview_scene_t& scene;
+    player_preview_scene_view_t& scene;
     const player_preview_scene_request_t& request;
     const std::unordered_map<std::uint64_t, std::size_t>& lane_indices;
     double current_displacement;
@@ -389,10 +388,10 @@ auto build_player_preview_index(const chart_document_t& chart, std::uint64_t doc
     return player_preview_index_result_t::from(player_preview_index_t::from(chart, document_revision, options));
 }
 
-auto player_preview_scene_t::from(const player_preview_index_t& index,
-                                  const player_preview_scene_request_t& request)
-    -> player_preview_scene_outcome_t {
-    player_preview_scene_outcome_t result{};
+auto player_preview_scene_view_t::from(const player_preview_index_t& index,
+                                      const player_preview_scene_request_t& request)
+    -> player_preview_scene_view_outcome_t {
+    player_preview_scene_view_outcome_t result{};
     if (!is_valid_scene_request(index, request)) {
         result.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                                            "player-preview scene request or index is invalid"));
@@ -444,25 +443,25 @@ auto player_preview_scene_t::from(const player_preview_index_t& index,
         return result;
     }
 
-    player_preview_scene_t scene{.chart = index.chart,
-                                 .document_revision = index.document_revision,
-                                 .sample_frame = request.sample_frame,
-                                 .absolute_row = *position.absolute_row,
-                                 .skin = request.skin,
-                                 .direction = request.direction,
-                                 .visual_fit = request.visual_fit,
-                                 .pre_zero = pre_zero,
-                                 .split_stage = active_layout->layout.split_stage,
-                                 .visual_layers = request.visual_layers,
-                                 .video_clock = *video_clock,
-                                 .storyboard_instances = {request.storyboard_instances.begin(),
-                                                          request.storyboard_instances.end()},
-                                 .composition_operations = 0,
-                                 .visible_note_count = 0,
-                                 .lanes = {},
-                                 .receptors = {},
-                                 .hold_bodies = {},
-                                 .note_endpoints = {}};
+    player_preview_scene_view_t scene{.chart = index.chart,
+                                      .document_revision = index.document_revision,
+                                      .sample_frame = request.sample_frame,
+                                      .absolute_row = *position.absolute_row,
+                                      .skin = request.skin,
+                                      .direction = request.direction,
+                                      .visual_fit = request.visual_fit,
+                                      .pre_zero = pre_zero,
+                                      .split_stage = active_layout->layout.split_stage,
+                                      .visual_layers = request.visual_layers,
+                                      .video_clock = *video_clock,
+                                      .storyboard_instances = {request.storyboard_instances.begin(),
+                                                               request.storyboard_instances.end()},
+                                      .composition_operations = 0,
+                                      .visible_note_count = 0,
+                                      .lanes = {},
+                                      .receptors = {},
+                                      .hold_bodies = {},
+                                      .note_endpoints = {}};
     const auto gutter = active_layout->layout.split_stage ? request.split_stage_gutter_pixels : 0.0;
     const auto lane_width =
         (request.viewport_width_pixels - gutter) / static_cast<double>(lanes.size());

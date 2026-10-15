@@ -67,6 +67,7 @@ add_executable(wormedit_core_tests
     core/chart_compare_tests.cpp
     core/natural_order_tests.cpp
     core/command_tests.cpp
+    core/proposal_tests.cpp
     core/compose_resource_presenter_tests.cpp
     core/command_registry_tests.cpp
     sys/application_commands_tests.cpp
@@ -99,6 +100,8 @@ add_executable(wormedit_core_tests
     sys/project_open_tests.cpp
     sys/project_save_paths_tests.cpp
     core/document_tests.cpp
+    core/chart_indices_tests.cpp
+    core/keyed_cache_tests.cpp
     core/editor_navigation_input_tests.cpp
     core/editor_scene_tests.cpp
     core/editor_scene_bgm_layers_tests.cpp
@@ -108,6 +111,7 @@ add_executable(wormedit_core_tests
     core/grid_tests.cpp
     core/snap_tests.cpp
     core/span_manipulation_tests.cpp
+    core/active_gesture_tests.cpp
     core/interaction_tests.cpp
     core/cursor_write_guard_tests.cpp
     core/chart_clipboard_tests.cpp
@@ -133,6 +137,7 @@ add_executable(wormedit_core_tests
     core/quantize_tests.cpp
     core/rational_tests.cpp
     core/recovery_controller_tests.cpp
+    core/chart_object_ids_tests.cpp
     core/bgm_columns_tests.cpp
     core/lane_profile_switch_tests.cpp
     core/lane_migration_tests.cpp

@@ -66,10 +66,10 @@ auto paste_anchor(application_command_state_t::paste_session_t& session,
                   wormedit::local_position_t cursor) -> wormedit::local_position_t;
 
 void block_paste_heads_in_warps(const wormedit::chart_document_t& chart,
-                                wormedit::chart_paste_proposal_t& proposal);
+                                wormedit::chart_paste_outcome_t& proposal);
 
 auto paste_geometry(const wormedit::chart_document_t& source,
-                    const wormedit::chart_paste_proposal_t& proposal) -> wormedit::chart_document_t;
+                    const wormedit::chart_paste_report_t& report) -> wormedit::chart_document_t;
 
 auto known_mania_key_profile(std::string_view id) -> bool;
 
@@ -141,7 +141,7 @@ namespace wormedit::sys::compose_projection_detail {
 struct compose_scene_projection_context_t {
     const compose_projection_context_t<>& inputs;
     const wormedit::editor_field_scene_index_t& index;
-    const wormedit::editor_field_scene_t& scene;
+    const wormedit::editor_field_scene_view_t& scene;
     double field_left_pixels;
     double playable_field_width;
     bool lane_key_bindings_truncated;
@@ -165,7 +165,7 @@ auto compose_measure_local_row(const wormedit::measure_index_t& measures, std::u
 
 void build_compose_grid_lines_view(const compose_scene_projection_context_t& projection);
 
-auto compose_note_display_lane_number(const wormedit::editor_field_scene_t& scene,
+auto compose_note_display_lane_number(const wormedit::editor_field_scene_view_t& scene,
                                       const auto& endpoint) -> std::uint32_t {
     const auto x = (endpoint.bounds.left + endpoint.bounds.right) * 0.5;
     const auto y = (endpoint.bounds.top + endpoint.bounds.bottom) * 0.5;
@@ -178,7 +178,7 @@ auto compose_note_display_lane_number(const wormedit::editor_field_scene_t& scen
     return 0;
 }
 
-auto compose_note_key_color(const wormedit::editor_field_scene_t& scene, const auto& endpoint)
+auto compose_note_key_color(const wormedit::editor_field_scene_view_t& scene, const auto& endpoint)
     -> std::uint8_t {
     for (const auto& lane : scene.lanes) {
         if (lane.lane == endpoint.lane)
@@ -588,7 +588,7 @@ void populate_compose_timing_markers(
     const wormedit::chart_document_t& chart, const compose_scene_cache_t& cache,
     const wormedit::editor_interaction_view_model_t& interaction_view, WormUiComposeView& view,
     bool downscroll, double pixels_per_row, std::uint64_t canvas_rows,
-    const wormedit::timing_lane_pseudonote_preview_t* timing_stage);
+    const wormedit::timing_lane_pseudonote_outcome_t* timing_stage);
 
 std::string dead_span_label(const wormedit::sys::dead_span_band_t& band);
 
@@ -610,7 +610,7 @@ void populate_compose_recipe_areas(
     const compose_scene_cache_t& cache,
     const wormedit::editor_interaction_view_model_t& interaction_view, WormUiComposeView& view,
     bool downscroll, double pixels_per_row, std::uint64_t total_rows, std::uint64_t selected_recipe,
-    const recipe_form_preview_t* preview);
+    const recipe_form_outcome_t* preview);
 
 void populate_compose_speed_spans(flattened_workspace_t& flattened,
                                   const compose_scene_cache_t& cache,
@@ -892,8 +892,8 @@ void refresh_scalar_projection_indices(compose_scene_cache_t& cache);
 auto scalar_projection_query(compose_scene_cache_t& cache, unsigned pass, double begin, double end)
     -> std::optional<std::span<const std::size_t>>;
 
-auto scalar_display_lane_number(const auto& record, const wormedit::editor_field_scene_t& scene)
-    -> std::uint32_t {
+auto scalar_display_lane_number(const auto& record,
+                                const wormedit::editor_field_scene_view_t& scene) -> std::uint32_t {
     const auto x = (record.bounds.left + record.bounds.right) * .5;
     const auto y = (record.bounds.top + record.bounds.bottom) * .5;
     for (const auto& lane : scene.lanes)
@@ -946,11 +946,12 @@ auto extract_scalar_rectangles(compose_scene_cache_t& cache, flattened_workspace
     return true;
 }
 
-auto extract_scalar_grid(compose_scene_cache_t& cache, const wormedit::editor_field_scene_t& scene,
+auto extract_scalar_grid(compose_scene_cache_t& cache,
+                         const wormedit::editor_field_scene_view_t& scene,
                          flattened_workspace_t& flattened, double shift) -> bool;
 
 auto extract_scalar_objects(compose_scene_cache_t& cache,
-                            const wormedit::editor_field_scene_window_metadata_t& metadata,
+                            const wormedit::editor_field_scene_window_metadata_view_t& metadata,
                             flattened_workspace_t& flattened,
                             const wormedit::editor_interaction_view_model_t& interaction,
                             double shift, double height) -> bool;
@@ -1019,7 +1020,7 @@ void populate_bgm_only_compose_projection(
     const wormedit::chart_document_t& chart, const wormedit::measure_index_t& measures,
     compose_scene_cache_t& cache, application_command_state_t& application_state,
     WormUiComposeView& view, bool downscroll,
-    const wormedit::timing_lane_pseudonote_preview_t* timing_stage);
+    const wormedit::timing_lane_pseudonote_outcome_t* timing_stage);
 
 void build_loop_selection_controls_view(WormUiComposeView& view,
                                      const application_command_state_t& application);

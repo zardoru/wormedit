@@ -17,26 +17,15 @@ struct lane_migration_proposal_payload_t {
     chart_stamp_t stamp;
     lane_input_profile_t target;
     std::vector<lane_migration_mapping_t> mapping;
-    std::vector<object_id_t> dropped_notes;
-    std::vector<object_id_t> dropped_sound_channel_events;
-    std::vector<lane_migration_collision_t> collisions;
-    std::size_t collision_count{};
-    std::size_t mapped_note_count{};
-    std::size_t remapped_note_count{};
-    std::size_t notes_in_merged_lanes{};
-    std::size_t changed_bindings{};
+    lane_migration_report_t report;
 };
 
 class lane_migration_proposal_access_t {
   public:
-    static void seal(lane_migration_proposal_t& proposal) {
+    static void seal(const chart_stamp_t& stamp, lane_migration_proposal_t& proposal) {
         proposal.canonical_ = std::make_shared<const lane_migration_proposal_payload_t>(
             lane_migration_proposal_payload_t{
-                proposal.stamp, proposal.target,
-                proposal.mapping, proposal.dropped_notes, proposal.dropped_sound_channel_events,
-                proposal.collisions, proposal.collision_count, proposal.mapped_note_count,
-                proposal.remapped_note_count,
-                proposal.notes_in_merged_lanes, proposal.changed_bindings});
+                stamp, proposal.target, proposal.mapping, proposal.report});
     }
     static auto canonical(const lane_migration_proposal_t& proposal)
         -> std::shared_ptr<const lane_migration_proposal_payload_t> {
@@ -52,13 +41,6 @@ struct source_lane_rank_t {
     bool initialized{};
     bool ambiguous{};
 };
-
-auto fail(lane_migration_proposal_t& proposal, lane_migration_issue_t issue,
-          std::string message) -> void {
-    proposal.issue = issue;
-    proposal.diagnostics.clear();
-    proposal.diagnostics.push_back(error(diagnostic_code_t::invalid_binding, std::move(message)));
-}
 
 auto ordered_lanes(const lane_layout_t& layout) -> std::vector<lane_definition_t> {
     auto lanes = layout.lanes;
@@ -98,27 +80,25 @@ auto collect_source_lanes(const chart_document_t& chart,
 
 auto build_mapping(const chart_document_t& chart, const lane_layout_t& target,
                    std::span<const lane_migration_mapping_t> requested,
-                   lane_migration_proposal_t& proposal)
-    -> std::unordered_map<std::uint64_t, std::optional<lane_id_t>> {
+                   proposal_t<lane_migration_proposal_t>& pending)
+    -> result_t<std::unordered_map<std::uint64_t, std::optional<lane_id_t>>, lane_migration_diagnostic_t> {
+    auto& proposal = pending.payload;
     std::unordered_map<std::uint64_t, source_lane_rank_t> source_lanes;
     if (!collect_source_lanes(chart, source_lanes)) {
-        fail(proposal, lane_migration_issue_t::missing_layout,
-             "The chart has no usable lane layout.");
-        return {};
+        return std::unexpected(lane_migration_diagnostic_t::from(lane_migration_issue_t::missing_layout,
+                "The chart has no usable lane layout.", pending.stamp, std::move(proposal.report)));
     }
     const auto targets = ordered_lanes(target);
     if (targets.empty()) {
-        fail(proposal, lane_migration_issue_t::invalid_target_profile,
-             "The target profile has no lanes.");
-        return {};
+        return std::unexpected(lane_migration_diagnostic_t::from(lane_migration_issue_t::invalid_target_profile,
+                "The target profile has no lanes.", pending.stamp, std::move(proposal.report)));
     }
     std::unordered_map<std::uint64_t, std::optional<lane_id_t>> mapping;
     if (requested.empty()) {
         for (const auto& [id, lane] : source_lanes) {
             if (lane.ambiguous) {
-                fail(proposal, lane_migration_issue_t::ambiguous_default_mapping,
-                     "A source lane changes display position or role; provide an explicit mapping.");
-                return {};
+                return std::unexpected(lane_migration_diagnostic_t::from(lane_migration_issue_t::ambiguous_default_mapping,
+                "A source lane changes display position or role; provide an explicit mapping.", pending.stamp, std::move(proposal.report)));
             }
             mapping.emplace(id, lane.rank < targets.size()
                                     ? std::optional{targets[lane.rank].id}
@@ -132,16 +112,14 @@ auto build_mapping(const chart_document_t& chart, const lane_layout_t& target,
                  !std::ranges::any_of(targets, [&](const auto& lane) {
                      return lane.id == *item.target_lane;
                  }))) {
-                fail(proposal, lane_migration_issue_t::invalid_mapping,
-                     "The explicit mapping contains an unknown or duplicate lane.");
-                return {};
+                return std::unexpected(lane_migration_diagnostic_t::from(lane_migration_issue_t::invalid_mapping,
+                "The explicit mapping contains an unknown or duplicate lane.", pending.stamp, std::move(proposal.report)));
             }
             mapping.emplace(item.source_lane.value, item.target_lane);
         }
         if (mapping.size() != source_lanes.size()) {
-            fail(proposal, lane_migration_issue_t::invalid_mapping,
-                 "The explicit mapping must name every source lane.");
-            return {};
+            return std::unexpected(lane_migration_diagnostic_t::from(lane_migration_issue_t::invalid_mapping,
+                "The explicit mapping must name every source lane.", pending.stamp, std::move(proposal.report)));
         }
     }
     proposal.mapping.reserve(mapping.size());
@@ -149,21 +127,16 @@ auto build_mapping(const chart_document_t& chart, const lane_layout_t& target,
         proposal.mapping.push_back({lane_id_t{id}, mapping.at(id)});
     }
     std::ranges::sort(proposal.mapping, {}, &lane_migration_mapping_t::source_lane);
-    return mapping;
+    return std::move(mapping);
 }
 
 auto absolute_range(const measure_index_t& index, local_position_t begin_position,
                     std::optional<local_position_t> end_position)
     -> std::optional<std::pair<std::uint64_t, std::uint64_t>> {
-    const auto begin = absolute_row(index, begin_position);
-    const auto end = end_position ? absolute_row(index, *end_position) : begin;
+    const auto begin = index.row_of(begin_position);
+    const auto end = end_position ? index.row_of(*end_position) : begin;
     if (!begin || !end) return std::nullopt;
     return std::pair{*begin, *end};
-}
-
-auto binding_equal(const lane_binding_t& left, const lane_binding_t& right) -> bool {
-    return left.key == right.key && left.lane == right.lane &&
-           left.focused_stage == right.focused_stage;
 }
 
 auto changed_binding_count(const input_profile_t& before, const input_profile_t& after)
@@ -171,7 +144,7 @@ auto changed_binding_count(const input_profile_t& before, const input_profile_t&
     const auto missing = [](const auto& left, const auto& right) {
         return static_cast<std::size_t>(std::ranges::count_if(left, [&](const auto& binding) {
             return std::ranges::none_of(right, [&](const auto& candidate) {
-                return binding_equal(binding, candidate);
+                return binding == candidate;
             });
         }));
     };
@@ -180,30 +153,10 @@ auto changed_binding_count(const input_profile_t& before, const input_profile_t&
 
 
 
-auto input_profile_equal(const input_profile_t& left, const input_profile_t& right) -> bool {
-    if (left.profile_id != right.profile_id || left.stage_count != right.stage_count ||
-        left.requires_focused_stage != right.requires_focused_stage ||
-        left.bindings.size() != right.bindings.size()) return false;
-    for (std::size_t i = 0; i < left.bindings.size(); ++i)
-        if (!binding_equal(left.bindings[i], right.bindings[i])) return false;
-    return true;
-}
-
-auto target_profile_equal(const lane_input_profile_t& left, const lane_input_profile_t& right) -> bool {
-    return (left.layout == right.layout) && input_profile_equal(left.input, right.input);
-}
-
-auto is_preview_current(const lane_migration_proposal_t& proposal,
-                  const lane_migration_proposal_payload_t& canonical) -> bool {
-    return proposal.stamp == canonical.stamp && target_profile_equal(proposal.target, canonical.target) &&
-           proposal.mapping == canonical.mapping && proposal.dropped_notes == canonical.dropped_notes &&
-           proposal.dropped_sound_channel_events == canonical.dropped_sound_channel_events &&
-           proposal.collisions == canonical.collisions &&
-           proposal.collision_count == canonical.collision_count &&
-           proposal.mapped_note_count == canonical.mapped_note_count &&
-           proposal.remapped_note_count == canonical.remapped_note_count &&
-           proposal.notes_in_merged_lanes == canonical.notes_in_merged_lanes &&
-           proposal.changed_bindings == canonical.changed_bindings;
+auto is_preview_current(const chart_stamp_t& stamp, const lane_migration_proposal_t& proposal,
+                         const lane_migration_proposal_payload_t& canonical) -> bool {
+    return stamp == canonical.stamp && proposal.target == canonical.target &&
+           proposal.mapping == canonical.mapping && proposal.report == canonical.report;
 }
 
 struct migration_item_t {
@@ -214,16 +167,16 @@ struct migration_item_t {
     std::pair<std::uint64_t, std::uint64_t> range;
 };
 
-auto chart_measure_index(const chart_document_t& chart, lane_migration_proposal_t& proposal)
-    -> std::optional<measure_index_t> {
-    auto built = build_measure_index(chart);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built)) {
-        fail(proposal, lane_migration_issue_t::invalid_mapping,
-             diagnostics->empty() ? "The chart measure geometry is invalid."
-                                  : diagnostics->front().message);
-        return std::nullopt;
+auto chart_measure_index(const chart_document_t& chart, proposal_t<lane_migration_proposal_t>& pending)
+    -> result_t<measure_index_t, lane_migration_diagnostic_t> {
+    auto& proposal = pending.payload;
+    auto built = measure_index_t::from(chart);
+    if (!built) {
+        return std::unexpected(lane_migration_diagnostic_t::from(lane_migration_issue_t::invalid_mapping,
+                built.error().empty() ? "The chart measure geometry is invalid."
+                                  : built.error().front().message, pending.stamp, std::move(proposal.report)));
     }
-    return std::get<measure_index_t>(std::move(built));
+    return std::move(*built);
 }
 
 auto append_mapped_note_items(const chart_document_t& chart, const measure_index_t& index,
@@ -231,36 +184,35 @@ auto append_mapped_note_items(const chart_document_t& chart, const measure_index
                                   std::optional<lane_id_t>>& mapping,
                               const std::unordered_map<std::uint64_t, std::size_t>&
                                   source_lanes_by_target,
-                              lane_migration_proposal_t& proposal,
-                              std::vector<migration_item_t>& items) -> bool {
+                              proposal_t<lane_migration_proposal_t>& pending,
+                              std::vector<migration_item_t>& items) -> result_t<void, lane_migration_diagnostic_t> {
+    auto& proposal = pending.payload;
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes) {
             const auto destination = mapping.find(note.lane.value);
             if (destination == mapping.end()) {
-                fail(proposal, lane_migration_issue_t::invalid_mapping,
-                     "A note refers to a lane missing from the chart layouts.");
-                return false;
+                return std::unexpected(lane_migration_diagnostic_t::from(lane_migration_issue_t::invalid_mapping,
+                "A note refers to a lane missing from the chart layouts.", pending.stamp, std::move(proposal.report)));
             }
             if (!destination->second) {
-                proposal.dropped_notes.push_back(note.id);
+                proposal.report.dropped_notes.push_back(note.id);
                 if (note.sound_channel_event)
-                    proposal.dropped_sound_channel_events.push_back(*note.sound_channel_event);
+                    proposal.report.dropped_sound_channel_events.push_back(*note.sound_channel_event);
                 continue;
             }
             const auto range = absolute_range(index, note.position, note.end);
             if (!range) {
-                fail(proposal, lane_migration_issue_t::invalid_mapping,
-                     "A note position cannot be resolved in the chart.");
-                return false;
+                return std::unexpected(lane_migration_diagnostic_t::from(lane_migration_issue_t::invalid_mapping,
+                "A note position cannot be resolved in the chart.", pending.stamp, std::move(proposal.report)));
             }
-            ++proposal.mapped_note_count;
-            proposal.remapped_note_count += note.lane != *destination->second ? 1U : 0U;
-            proposal.notes_in_merged_lanes +=
+            ++proposal.report.mapped_note_count;
+            proposal.report.remapped_note_count += note.lane != *destination->second ? 1U : 0U;
+            proposal.report.notes_in_merged_lanes +=
                 source_lanes_by_target.at(destination->second->value) > 1 ? 1U : 0U;
             items.push_back({note.id, false, note.lane, *destination->second, *range});
         }
     }
-    return true;
+    return {};
 }
 
 auto collect_linked_event_ids(const chart_document_t& chart)
@@ -275,7 +227,8 @@ auto collect_linked_event_ids(const chart_document_t& chart)
 auto is_linked_event_lane_match(const chart_document_t& chart,
                               const std::unordered_map<std::uint64_t,
                                   std::optional<lane_id_t>>& mapping,
-                              lane_migration_proposal_t& proposal) -> bool {
+                              proposal_t<lane_migration_proposal_t>& pending) -> result_t<void, lane_migration_diagnostic_t> {
+    auto& proposal = pending.payload;
     std::unordered_map<std::uint64_t, lane_id_t> notes_by_event;
     for (const auto& measure : chart.measures)
         for (const auto& note : measure.notes)
@@ -290,44 +243,42 @@ auto is_linked_event_lane_match(const chart_document_t& chart,
             const auto event_target = mapping.find(event.lane.value);
             if (event.lane != note->second || note_target == mapping.end() ||
                 event_target == mapping.end() || note_target->second != event_target->second) {
-                fail(proposal, lane_migration_issue_t::invalid_mapping,
-                     "A linked semantic note and retained sound event must migrate together.");
-                return false;
+                return std::unexpected(lane_migration_diagnostic_t::from(lane_migration_issue_t::invalid_mapping,
+                "A linked semantic note and retained sound event must migrate together.", pending.stamp, std::move(proposal.report)));
             }
         }
     }
-    return true;
+    return {};
 }
 
 auto append_unlinked_event_items(const chart_document_t& chart, const measure_index_t& index,
                                  const std::unordered_map<std::uint64_t,
                                      std::optional<lane_id_t>>& mapping,
                                  const std::unordered_set<std::uint64_t>& linked,
-                                 lane_migration_proposal_t& proposal,
-                                 std::vector<migration_item_t>& items) -> bool {
+                                 proposal_t<lane_migration_proposal_t>& pending,
+                                 std::vector<migration_item_t>& items) -> result_t<void, lane_migration_diagnostic_t> {
+    auto& proposal = pending.payload;
     for (const auto& channel : chart.sound_channels) {
         for (const auto& event : channel.events) {
             if (!event.playable || linked.contains(event.id.value)) continue;
             const auto destination = mapping.find(event.lane.value);
             if (destination == mapping.end()) {
-                fail(proposal, lane_migration_issue_t::invalid_mapping,
-                     "A retained sound event refers to a lane missing from the chart layouts.");
-                return false;
+                return std::unexpected(lane_migration_diagnostic_t::from(lane_migration_issue_t::invalid_mapping,
+                "A retained sound event refers to a lane missing from the chart layouts.", pending.stamp, std::move(proposal.report)));
             }
             if (!destination->second) {
-                proposal.dropped_sound_channel_events.push_back(event.id);
+                proposal.report.dropped_sound_channel_events.push_back(event.id);
                 continue;
             }
             const auto range = absolute_range(index, event.position, event.end);
             if (!range) {
-                fail(proposal, lane_migration_issue_t::invalid_mapping,
-                     "A retained sound event position cannot be resolved in the chart.");
-                return false;
+                return std::unexpected(lane_migration_diagnostic_t::from(lane_migration_issue_t::invalid_mapping,
+                "A retained sound event position cannot be resolved in the chart.", pending.stamp, std::move(proposal.report)));
             }
             items.push_back({event.id, true, event.lane, *destination->second, *range});
         }
     }
-    return true;
+    return {};
 }
 
 struct active_migration_item_t {
@@ -396,14 +347,14 @@ auto collect_merge_collisions(std::vector<migration_item_t>& items,
         const auto other = find_active_other_lane(lanes_by_max_end, item.source_lane.value,
                                                   item.range.first);
         if (other) {
-            ++proposal.collision_count;
-            if (proposal.collisions.size() < maximum_examples) {
+            ++proposal.report.collision_count;
+            if (proposal.report.collisions.size() < maximum_examples) {
                 const auto prior = active.find(*other);
                 const auto prior_id = prior->second.begin()->second;
                 const auto prior_event = std::ranges::find_if(expirations, [&](const auto& entry) {
                     return entry.second.source_lane == *other && entry.second.id.value == prior_id;
                 });
-                proposal.collisions.push_back({object_id_t{prior_id}, item.id, item.target_lane,
+                proposal.report.collisions.push_back({object_id_t{prior_id}, item.id, item.target_lane,
                     prior_event != expirations.end() && prior_event->second.sound_channel_event,
                     item.sound_channel_event});
             }
@@ -535,125 +486,149 @@ auto apply_mapping(const chart_document_t& source,
     return result;
 }
 
-auto apply_failure(lane_migration_issue_t issue, std::string message,
-                   std::uint64_t revision) -> lane_migration_apply_result_t {
-    return {.command = {.revision = revision, .diagnostics = {}},
-            .payload = {.issue = issue, .message = std::move(message)}};
-}
-
 } // namespace
 
-auto propose_lane_migration(const song_document_t& song, std::uint64_t expected_revision,
-                            chart_id_t chart_id, lane_input_profile_t target,
-                            std::span<const lane_migration_mapping_t> requested)
-    -> lane_migration_proposal_t {
-    lane_migration_proposal_t proposal;
-    proposal.stamp = chart_stamp_t::from(song, chart_id);
-    proposal.stamp.document.revision = expected_revision;
+auto lane_migration_proposal_t::propose(const song_document_t& song, std::uint64_t expected_revision,
+    chart_id_t chart_id, lane_input_profile_t target, std::span<const lane_migration_mapping_t> requested)
+    -> lane_migration_proposal_outcome_t {
+    lane_migration_proposal_outcome_t result;
+    proposal_t<lane_migration_proposal_t> pending{.stamp = chart_stamp_t::from(song, chart_id)};
+    pending.stamp.document.revision = expected_revision;
+    auto& proposal = pending.payload;
     proposal.target = std::move(target);
-    if (!proposal.stamp.document.is_current(song)) {
-        fail(proposal, lane_migration_issue_t::stale_revision,
-             stale_action_message("Lane migration"));
-        return proposal;
+    if (!pending.stamp.document.is_current(song)) {
+        result.diagnostics.push_back(lane_migration_diagnostic_t::from(lane_migration_issue_t::stale_revision,
+            stale_action_message("Lane migration"), pending.stamp, std::move(proposal.report)));
+        return result;
     }
     const auto chart = song.find_chart(chart_id);
     if (chart == nullptr) {
-        fail(proposal, lane_migration_issue_t::chart_not_found,
-             "The selected difficulty is no longer available.");
-        return proposal;
+        result.diagnostics.push_back(lane_migration_diagnostic_t::from(lane_migration_issue_t::chart_not_found,
+            "The selected difficulty is no longer available.", pending.stamp, std::move(proposal.report)));
+        return result;
     }
     if (!has_target_layout_unique_ids(proposal.target.layout)) {
-        fail(proposal, lane_migration_issue_t::invalid_target_profile,
-             "The target layout must contain nonzero unique lane identities.");
-        return proposal;
+        result.diagnostics.push_back(lane_migration_diagnostic_t::from(lane_migration_issue_t::invalid_target_profile,
+            "The target layout must contain nonzero unique lane identities.", pending.stamp, std::move(proposal.report)));
+        return result;
     }
-    const auto target_diagnostics = validate_input_profile(proposal.target.layout,
-                                                           proposal.target.input);
+    const auto target_diagnostics = validate_input_profile(proposal.target.layout, proposal.target.input);
     if (!target_diagnostics.empty()) {
-        fail(proposal, lane_migration_issue_t::invalid_target_profile,
-             target_diagnostics.front().message);
-        return proposal;
+        result.diagnostics.push_back(lane_migration_diagnostic_t::from(lane_migration_issue_t::invalid_target_profile,
+            target_diagnostics.front().message, pending.stamp, std::move(proposal.report)));
+        return result;
     }
-    const auto mapping = build_mapping(*chart, proposal.target.layout, requested, proposal);
-    if (proposal.issue != lane_migration_issue_t::none) return proposal;
-    const auto index = chart_measure_index(*chart, proposal);
-    if (!index) return proposal;
+    auto mapping = build_mapping(*chart, proposal.target.layout, requested, pending);
+    if (!mapping) {
+        result.diagnostics.push_back(std::move(mapping.error()));
+        return result;
+    }
+    auto index = chart_measure_index(*chart, pending);
+    if (!index) {
+        result.diagnostics.push_back(std::move(index.error()));
+        return result;
+    }
     std::unordered_map<std::uint64_t, std::size_t> source_lanes_by_target;
-    for (const auto& [source, lane] : mapping) {
+    for (const auto& [source, lane] : *mapping) {
         static_cast<void>(source);
         if (lane) ++source_lanes_by_target[lane->value];
     }
     std::vector<migration_item_t> items;
     items.reserve(std::accumulate(chart->measures.begin(), chart->measures.end(), std::size_t{},
         [](std::size_t count, const auto& measure) { return count + measure.notes.size(); }));
-    if (!append_mapped_note_items(*chart, *index, mapping, source_lanes_by_target,
-                                  proposal, items)) return proposal;
-    if (!is_linked_event_lane_match(*chart, mapping, proposal)) return proposal;
+    auto mapped = append_mapped_note_items(*chart, *index, *mapping, source_lanes_by_target, pending, items);
+    if (!mapped) {
+        result.diagnostics.push_back(std::move(mapped.error()));
+        return result;
+    }
+    auto linked = is_linked_event_lane_match(*chart, *mapping, pending);
+    if (!linked) {
+        result.diagnostics.push_back(std::move(linked.error()));
+        return result;
+    }
     const auto linked_events = collect_linked_event_ids(*chart);
-    if (!append_unlinked_event_items(*chart, *index, mapping, linked_events,
-                                     proposal, items)) return proposal;
+    auto unlinked = append_unlinked_event_items(*chart, *index, *mapping, linked_events, pending, items);
+    if (!unlinked) {
+        result.diagnostics.push_back(std::move(unlinked.error()));
+        return result;
+    }
     collect_merge_collisions(items, proposal);
-    std::ranges::sort(proposal.dropped_notes);
-    std::ranges::sort(proposal.dropped_sound_channel_events);
-    proposal.dropped_sound_channel_events.erase(
-        std::unique(proposal.dropped_sound_channel_events.begin(),
-                    proposal.dropped_sound_channel_events.end()),
-        proposal.dropped_sound_channel_events.end());
-    proposal.changed_bindings = changed_binding_count(chart->input_profile, proposal.target.input);
-    if (!is_branch_identity_preserved(*chart, mapping, proposal.target.layout))
-        fail(proposal, lane_migration_issue_t::unsupported_branch_identity,
-             "The migration cannot preserve a retained BMS branch channel identity.");
-    if (proposal.issue == lane_migration_issue_t::none)
-        lane_migration_proposal_access_t::seal(proposal);
-    return proposal;
+    std::ranges::sort(proposal.report.dropped_notes);
+    std::ranges::sort(proposal.report.dropped_sound_channel_events);
+    proposal.report.dropped_sound_channel_events.erase(
+        std::unique(proposal.report.dropped_sound_channel_events.begin(), proposal.report.dropped_sound_channel_events.end()),
+        proposal.report.dropped_sound_channel_events.end());
+    proposal.report.changed_bindings = changed_binding_count(chart->input_profile, proposal.target.input);
+    if (!is_branch_identity_preserved(*chart, *mapping, proposal.target.layout)) {
+        result.diagnostics.push_back(lane_migration_diagnostic_t::from(lane_migration_issue_t::unsupported_branch_identity,
+            "The migration cannot preserve a retained BMS branch channel identity.", pending.stamp, std::move(proposal.report)));
+        return result;
+    }
+    lane_migration_proposal_access_t::seal(pending.stamp, proposal);
+    result.value = std::move(pending);
+    return result;
+}
+
+auto lane_migration_proposal_t::revise(const chart_stamp_t& stamp, const song_document_t& song,
+    lane_input_profile_t target, std::span<const lane_migration_mapping_t> requested) const
+    -> lane_migration_proposal_outcome_t {
+    lane_migration_proposal_outcome_t result;
+    if (!canonical_ || !is_preview_current(stamp, *this, *canonical_)) {
+        result.diagnostics.push_back(lane_migration_diagnostic_t::from(lane_migration_issue_t::invalid_mapping,
+            "Lane migration preview data was changed after proposal.", stamp, {}));
+        return result;
+    }
+    if (!stamp.document.is_current(song)) {
+        result.diagnostics.push_back(lane_migration_diagnostic_t::from(lane_migration_issue_t::stale_revision,
+            stale_action_message("Lane migration"), stamp, {}));
+        return result;
+    }
+    return propose(song, stamp.document.revision, stamp.chart, std::move(target), requested);
 }
 
 auto apply_lane_migration(document_history_t& history,
-                          const lane_migration_proposal_t& proposal,
-                          bool confirm_drop) -> lane_migration_apply_result_t {
-    if (proposal.issue != lane_migration_issue_t::none)
-        return apply_failure(proposal.issue, std::string{proposal.message()}, history.document.revision);
+    const proposal_t<lane_migration_proposal_t>& pending, bool confirm_drop) -> lane_migration_apply_result_t {
+    const auto& proposal = pending.payload;
     const auto canonical = lane_migration_proposal_access_t::canonical(proposal);
-    if (!canonical || !is_preview_current(proposal, *canonical))
-        return apply_failure(lane_migration_issue_t::invalid_mapping,
-                             "Lane migration preview data was changed after proposal.",
-                             history.document.revision);
-    auto transaction = document_command_transaction_t::from(history, proposal.stamp, "Lane migration");
+    if (!canonical || !is_preview_current(pending.stamp, proposal, *canonical))
+        return lane_migration_apply_result_t::from(document_command_transaction_t::from(history).outcome,
+            {.issue = lane_migration_issue_t::invalid_mapping,
+             .message = "Lane migration preview data was changed after proposal."});
+    auto transaction = pending.transaction(history, "Lane migration");
     if (!transaction.is_ready()) {
         auto rejected = transaction.finish_without_commit();
-        return apply_failure(lane_migration_issue_t::stale_revision,
-                             std::move(rejected.diagnostics.front().message), rejected.revision);
+        return lane_migration_apply_result_t::from(document_command_transaction_t::from(history).outcome,
+            {.issue = lane_migration_issue_t::stale_revision,
+             .message = std::move(rejected.diagnostics.front().message)});
     }
-    const auto verified = propose_lane_migration(history.document, canonical->stamp.document.revision,
+    const auto verified = lane_migration_proposal_t::propose(history.document, canonical->stamp.document.revision,
         canonical->stamp.chart, canonical->target, canonical->mapping);
-    if (!verified || !is_preview_current(verified, *canonical))
-        return apply_failure(verified.issue == lane_migration_issue_t::none
-                                 ? lane_migration_issue_t::stale_revision : verified.issue,
-                             verified.message().empty() ? stale_action_message("Lane migration")
-                                                      : std::string{verified.message()},
-                             history.document.revision);
-    if (!confirm_drop &&
-        (!proposal.dropped_notes.empty() || !proposal.dropped_sound_channel_events.empty()))
-        return apply_failure(lane_migration_issue_t::drop_confirmation_required,
-                             "Confirm dropping the listed notes and retained sound events.",
-                             history.document.revision);
-    if (proposal.collision_count != 0)
-        return apply_failure(lane_migration_issue_t::lane_collision,
-                             "The mapping merges notes that overlap in the target lane.",
-                             history.document.revision);
+    if (!verified.value || !is_preview_current(verified.value->stamp, verified.value->payload, *canonical)) {
+        const auto view = lane_migration_preview_view_t::from(verified);
+        return lane_migration_apply_result_t::from(document_command_transaction_t::from(history).outcome,
+            {.issue = view.diagnostic ? view.diagnostic->issue : lane_migration_issue_t::stale_revision,
+             .message = view.diagnostic && !view.diagnostic->message.empty()
+                ? view.diagnostic->message : stale_action_message("Lane migration")});
+    }
+    if (!confirm_drop && (!proposal.report.dropped_notes.empty() || !proposal.report.dropped_sound_channel_events.empty()))
+        return lane_migration_apply_result_t::from(document_command_transaction_t::from(history).outcome,
+            {.issue = lane_migration_issue_t::drop_confirmation_required,
+             .message = "Confirm dropping the listed notes and retained sound events."});
+    if (proposal.report.collision_count != 0)
+        return lane_migration_apply_result_t::from(document_command_transaction_t::from(history).outcome,
+            {.issue = lane_migration_issue_t::lane_collision,
+             .message = "The mapping merges notes that overlap in the target lane."});
     const auto chart = history.document.find_chart(canonical->stamp.chart);
     std::unordered_map<std::uint64_t, std::optional<lane_id_t>> mapping;
-    for (const auto& item : canonical->mapping) mapping.emplace(item.source_lane.value,
-                                                              item.target_lane);
+    for (const auto& item : canonical->mapping) mapping.emplace(item.source_lane.value, item.target_lane);
     auto& proposed = transaction.copy_document();
     const auto updated = apply_mapping(*chart, mapping, canonical->target);
     *proposed.find_chart(canonical->stamp.chart) = updated;
     auto command = transaction.commit("Migrate chart lane profile");
     const auto applied = static_cast<bool>(command);
-    return {.command = std::move(command),
-            .payload = {.issue = applied ? lane_migration_issue_t::none
-                             : lane_migration_issue_t::invalid_mapping,
-                        .message = applied ? std::string{} : "The migrated chart failed document validation."}};
+    return lane_migration_apply_result_t::from(std::move(command),
+        {.issue = applied ? lane_migration_issue_t::none : lane_migration_issue_t::invalid_mapping,
+         .message = applied ? std::string{} : "The migrated chart failed document validation."});
 }
 
 } // namespace wormedit

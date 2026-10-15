@@ -1,74 +1,42 @@
-#include "interaction_internal.h"
+#include "interaction_gesture_runner.h"
 namespace wormedit {
 using namespace interaction_detail;
-auto begin_note_duration_gesture(editor_edit_context_t& context, object_id_t reference_id)
-    -> editor_interaction_result_t {
-    auto& state = context.state;
-    if (state.pending_hold || state.pending_note_duration_gesture ||
-        state.pending_note_move_gesture)
-        return diagnostic_result(
-            context.history, state,
-            {error(diagnostic_code_t::invalid_hold, "another editor gesture is already active")});
+
+auto pending_note_duration_gesture_t::begin(editor_edit_context_t& context, object_id_t reference_id)
+    -> diagnosed_t<std::optional<pending_note_duration_gesture_t>> {
+    const auto& state = context.state;
     const auto* reference = context.scope.chart.find_note(reference_id);
     if (!reference || (reference->kind != note_kind_t::tap && reference->kind != note_kind_t::hold))
-        return diagnostic_result(
-            context.history, state,
-            {error(diagnostic_code_t::invalid_id,
-                   "duration gesture requires a tap or hold reference note", reference_id)});
+        return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                   "duration gesture requires a tap or hold reference note", reference_id)}};
     auto targets = editor_quantize_selection(state).notes;
     if (std::ranges::find(targets, reference_id) == targets.end())
         targets = {reference_id};
     const auto initial_end = reference->end.value_or(reference->position);
     auto planned = make_duration_plan(context, targets, reference_id, initial_end, true);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
-        return diagnostic_result(context.history, state, *diagnostics);
-    const auto& plan = std::get<duration_resize_plan_t>(planned);
-    state.pending_note_duration_gesture = pending_note_duration_gesture_t{
+        return {.diagnostics = *diagnostics};
+    auto& plan = std::get<duration_resize_plan_t>(planned);
+    return {.value = pending_note_duration_gesture_t{
         .reference_note = reference_id,
-        .stamp = document_stamp_t::from(context.history.document.revision),
-        .notes = plan.notes,
+        .notes = std::move(plan.notes),
         .preview_end = plan.reference_end,
         .preview = duration_previews(plan),
-    };
-    const auto view = make_view(context.history, state);
-    return {
-        .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
-        .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                    ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                    : std::nullopt,
-        .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                           ? std::get<diagnostic_list_t>(view)
-                           : diagnostic_list_t{},
-    };
+    }};
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
-auto update_note_duration_gesture(editor_edit_context_t& context, local_position_t requested_end)
-    -> editor_interaction_result_t {
-    auto& state = context.state;
-    if (!state.pending_note_duration_gesture)
-        return diagnostic_result(context.history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        "duration gesture update requires an active gesture")});
-    const auto pending = *state.pending_note_duration_gesture;
-    if (!pending.stamp.is_revision_current(context.history.document.revision))
-        return diagnostic_result(context.history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        stale_action_message("Editor gesture"))});
-    const auto* reference = context.scope.chart.find_note(pending.reference_note);
+auto pending_note_duration_gesture_t::update(editor_edit_context_t& context, local_position_t requested_end)
+    -> diagnostic_list_t {
+    const auto& state = context.state;
+    const auto* reference = context.scope.chart.find_note(reference_note);
     if (!reference)
-        return diagnostic_result(
-            context.history, state,
-            {error(diagnostic_code_t::invalid_id,
-                   "duration gesture reference note no longer exists", pending.reference_note)});
+        return {error(diagnostic_code_t::invalid_id,
+                   "duration gesture reference note no longer exists", reference_note)};
     auto snapped_end = snapped_position(context.scope.chart, context.scope.measures, requested_end,
                                         edit_snap_denominator(context.scope.chart, state));
     if (!snapped_end)
-        return diagnostic_result(context.history, state,
-                                 {error(diagnostic_code_t::row_out_of_range,
-                                        "duration gesture end cannot be snapped inside chart")});
+        return {error(diagnostic_code_t::row_out_of_range,
+                      "duration gesture end cannot be snapped inside chart")};
     const auto head = absolute_row(context.scope.measures, reference->position);
     const auto target = absolute_row(context.scope.measures, *snapped_end);
     auto exact_head = false;
@@ -76,40 +44,23 @@ auto update_note_duration_gesture(editor_edit_context_t& context, local_position
         snapped_end = reference->position;
         exact_head = true;
     }
-    auto planned = make_duration_plan(context, pending.notes, pending.reference_note, *snapped_end,
-                                      exact_head);
+    auto planned = make_duration_plan(context, notes, reference_note, *snapped_end, exact_head);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
-        return diagnostic_result(context.history, state, *diagnostics);
+        return *diagnostics;
     const auto& plan = std::get<duration_resize_plan_t>(planned);
-    state.pending_note_duration_gesture->preview_end = plan.reference_end;
-    state.pending_note_duration_gesture->preview = duration_previews(plan);
-    const auto view = make_view(context.history, state);
-    return {
-        .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
-        .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                    ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                    : std::nullopt,
-        .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                           ? std::get<diagnostic_list_t>(view)
-                           : diagnostic_list_t{},
-    };
+    preview_end = plan.reference_end;
+    preview = duration_previews(plan);
+    return {};
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
-auto release_note_duration_gesture(editor_edit_context_t& context, local_position_t requested_end)
+auto pending_note_duration_gesture_t::apply(editor_edit_context_t& context) const
     -> editor_interaction_result_t {
-    const auto updated = update_note_duration_gesture(context, requested_end);
-    if (!updated)
-        return updated;
-    const auto pending = *context.state.pending_note_duration_gesture;
-    auto planned = make_duration_plan(context, pending.notes, pending.reference_note,
-                                      pending.preview_end, true);
+    auto planned = make_duration_plan(context, notes, reference_note, preview_end, true);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
         return diagnostic_result(context.history, context.state, *diagnostics);
     return apply_duration_plan(context, std::get<duration_resize_plan_t>(planned));
 }
+
 } // namespace wormedit
 
 namespace wormedit {
@@ -210,24 +161,15 @@ auto prepare_bgm_move_preview(editor_edit_context_t& context, const note_move_pl
 
 namespace wormedit {
 using namespace interaction_detail;
-auto begin_note_move_gesture(editor_edit_context_t& context, object_id_t reference_id,
-                             bool displace_to_bgm) -> editor_interaction_result_t {
+auto pending_note_move_gesture_t::begin(editor_edit_context_t& context, object_id_t reference_id,
+                             bool displace_to_bgm) -> diagnosed_t<std::optional<pending_note_move_gesture_t>> {
     auto& state = context.state;
-    if (state.pending_hold || state.pending_note_duration_gesture ||
-        state.pending_note_move_gesture || state.pending_note_paint_gesture ||
-        state.pending_semantic_layer_paint_gesture || state.pending_editor_area_selection ||
-        state.pending_space_range_selection)
-        return diagnostic_result(
-            context.history, state,
-            {error(diagnostic_code_t::invalid_hold, "another editor gesture is already active")});
     const auto* reference = context.scope.chart.find_note(reference_id);
     const auto* bgm_reference = context.scope.chart.find_bgm_event(reference_id);
     if ((!reference && !bgm_reference) ||
         (reference && reference->kind != note_kind_t::tap && reference->kind != note_kind_t::hold))
-        return diagnostic_result(
-            context.history, state,
-            {error(diagnostic_code_t::invalid_id, "Move requires a tap, hold or BGM reference",
-                   reference_id)});
+        return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                   "Move requires a tap, hold or BGM reference", reference_id)}};
     auto targets = editor_quantize_selection(state).notes;
     if (!bgm_reference && std::ranges::find(targets, reference_id) == targets.end())
         targets = {reference_id};
@@ -235,119 +177,66 @@ auto begin_note_move_gesture(editor_edit_context_t& context, object_id_t referen
                                   reference ? reference->position : bgm_reference->position,
                                   lane_id_t{}, true, std::nullopt, std::nullopt);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
-        return diagnostic_result(context.history, state, *diagnostics);
-    const auto& plan = std::get<note_move_plan_t>(planned);
-    state.pending_note_move_gesture = pending_note_move_gesture_t{
+        return {.diagnostics = *diagnostics};
+    auto& plan = std::get<note_move_plan_t>(planned);
+    return {.value = pending_note_move_gesture_t{
         .reference_note = reference_id,
-        .stamp = document_stamp_t::from(context.history.document.revision),
-        .notes = plan.notes,
+        .notes = std::move(plan.notes),
         .preview_position = plan.reference_position,
+        .preview_lane = reference ? reference->lane : lane_id_t{},
         .preview = move_previews(plan),
         .occupants = plan.occupants,
         .conflicting_notes = move_conflict_count(plan),
         .displace_to_bgm = displace_to_bgm,
-    };
-    const auto view = make_view(context.history, state);
-    return {
-        .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
-        .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                    ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                    : std::nullopt,
-        .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                           ? std::get<diagnostic_list_t>(view)
-                           : diagnostic_list_t{},
-    };
+    }};
 }
-} // namespace wormedit
-
-namespace wormedit {
-using namespace interaction_detail;
-auto update_note_move_gesture(editor_edit_context_t& context, local_position_t requested_position,
-                              lane_id_t requested_lane, bool to_bgm,
-                              std::optional<object_id_t> preferred_bgm_lane,
-                              std::optional<std::uint64_t> virtual_bgm_row)
-    -> editor_interaction_result_t {
-    auto& state = context.state;
-    if (!state.pending_note_move_gesture)
-        return diagnostic_result(context.history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        "note move update requires an active gesture")});
-    const auto pending = *state.pending_note_move_gesture;
-    if (!pending.stamp.is_revision_current(context.history.document.revision)) {
-        state.pending_note_move_gesture.reset();
-        return diagnostic_result(context.history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        stale_action_message("Editor gesture"))});
-    }
-    auto planned = make_move_plan(context, pending.notes, pending.reference_note,
-                                  requested_position, to_bgm ? lane_id_t{} : requested_lane, false,
-                                  preferred_bgm_lane, virtual_bgm_row);
+auto pending_note_move_gesture_t::update(editor_edit_context_t& context, local_position_t requested_position,
+                              lane_id_t requested_lane, bool requested_to_bgm,
+                              std::optional<object_id_t> requested_bgm_lane,
+                              std::optional<std::uint64_t> requested_bgm_row)
+    -> diagnostic_list_t {
+    auto planned = make_move_plan(context, notes, reference_note,
+                                  requested_position, requested_to_bgm ? lane_id_t{} : requested_lane, false,
+                                  requested_bgm_lane, requested_bgm_row);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned)) {
-        state.pending_note_move_gesture->bgm_preview.clear();
-        state.pending_note_move_gesture->new_bgm_lanes.clear();
-        state.pending_note_move_gesture->conflicting_notes = 1;
-        state.pending_note_move_gesture->bgm_diagnostics = {
+        bgm_preview.clear();
+        new_bgm_lanes.clear();
+        conflicting_notes = 1;
+        bgm_diagnostics = {
             diagnostics->empty() ? "Move target unavailable" : diagnostics->front().message};
-        return diagnostic_result(context.history, state, *diagnostics);
+        return *diagnostics;
     }
     const auto& plan = std::get<note_move_plan_t>(planned);
-    state.pending_note_move_gesture->virtual_bgm_row = virtual_bgm_row;
-    state.pending_note_move_gesture->preview_position = plan.reference_position;
-    state.pending_note_move_gesture->preview = move_previews(plan);
-    state.pending_note_move_gesture->occupants = plan.occupants;
-    state.pending_note_move_gesture->conflicting_notes = move_conflict_count(plan);
-    state.pending_note_move_gesture->to_bgm = to_bgm;
-    state.pending_note_move_gesture->preferred_bgm_lane = preferred_bgm_lane;
-    prepare_bgm_move_preview(context, plan, *state.pending_note_move_gesture);
-    const auto view = make_view(context.history, state);
-    return {
-        .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
-        .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                    ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                    : std::nullopt,
-        .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                           ? std::get<diagnostic_list_t>(view)
-                           : diagnostic_list_t{},
-    };
+    virtual_bgm_row = requested_bgm_row;
+    preview_position = plan.reference_position;
+    preview_lane = requested_lane;
+    preview = move_previews(plan);
+    occupants = plan.occupants;
+    conflicting_notes = move_conflict_count(plan);
+    to_bgm = requested_to_bgm;
+    preferred_bgm_lane = requested_bgm_lane;
+    prepare_bgm_move_preview(context, plan, *this);
+    return {};
 }
-} // namespace wormedit
-
-namespace wormedit {
-using namespace interaction_detail;
-auto release_note_move_gesture(editor_edit_context_t& context, local_position_t requested_position,
-                               lane_id_t requested_lane, bool to_bgm,
-                               std::optional<object_id_t> preferred_bgm_lane,
-                               std::optional<std::uint64_t> virtual_bgm_row)
+auto pending_note_move_gesture_t::apply(editor_edit_context_t& context) const
     -> editor_interaction_result_t {
-    // A release that cannot commit ends the gesture: leaving it pending would
-    // keep drawing the last valid preview as a ghost note.
-    const auto reject = [&](diagnostic_list_t diagnostics) {
-        context.state.pending_note_move_gesture.reset();
-        return diagnostic_result(context.history, context.state, std::move(diagnostics));
-    };
-    auto updated = update_note_move_gesture(context, requested_position, requested_lane, to_bgm,
-                                            preferred_bgm_lane, virtual_bgm_row);
-    if (!updated)
-        return context.state.pending_note_move_gesture ? reject(std::move(updated.diagnostics))
-                                                       : updated;
-    const auto pending = *context.state.pending_note_move_gesture;
+    const auto& pending = *this;
     auto planned =
         make_move_plan(context, pending.notes, pending.reference_note, pending.preview_position,
-                       to_bgm ? lane_id_t{} : requested_lane, !virtual_bgm_row.has_value(),
+                       to_bgm ? lane_id_t{} : pending.preview_lane, !virtual_bgm_row.has_value(),
                        preferred_bgm_lane, virtual_bgm_row);
     if (auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
-        return reject(std::move(*diagnostics));
+        return diagnostic_result(context.history, context.state, std::move(*diagnostics));
     const auto& plan = std::get<note_move_plan_t>(planned);
     if (pending.to_bgm || (pending.displace_to_bgm && !plan.occupants.empty())) {
         auto staged = stage_bgm_note_move(context.history, context.state, plan, pending);
         if (auto* failures = std::get_if<diagnostic_list_t>(&staged))
-            return reject(*failures);
+            return diagnostic_result(context.history, context.state, *failures);
         auto transaction = document_command_transaction_t::from(context.history);
         transaction.adopt_document(std::move(std::get<song_document_t>(staged)));
         auto committed = transaction.commit(pending.to_bgm ? "Move selected notes to BGM" : "Move notes and displace to BGM");
         if (!committed)
-            return reject(std::move(committed.diagnostics));
-        context.state.pending_note_move_gesture.reset();
+            return diagnostic_result(context.history, context.state, std::move(committed.diagnostics));
         set_selected_notes(context.state, pending.to_bgm ? std::vector<object_id_t>{} : plan.notes);
         for (const auto& moved : plan.bgm_moves)
             context.state.selected_objects.push_back(
@@ -358,7 +247,7 @@ auto release_note_move_gesture(editor_edit_context_t& context, local_position_t 
                     {editor_selection_object_kind_t::bgm_event, id});
         }
         place_cursor_at(context.state, plan.reference_position);
-        auto result = interaction_view_result(context.history, context.state, true);
+        auto result = editor_interaction_result_t::from(context.history, context.state, true);
         result.accepted = true;
         return result;
     }
@@ -367,9 +256,9 @@ auto release_note_move_gesture(editor_edit_context_t& context, local_position_t 
         auto warning =
             error(diagnostic_code_t::collision, std::to_string(conflicts) + " notes would overlap");
         warning.severity = diagnostic_severity_t::warning;
-        return reject({std::move(warning)});
+        return diagnostic_result(context.history, context.state, {std::move(warning)});
     }
-    return apply_move_plan(context, plan);
+    return apply_note_move_plan(context.history, context.state, plan);
 }
 } // namespace wormedit
 
@@ -484,16 +373,7 @@ auto append_note_paint_target(editor_edit_context_t& context, lane_id_t lane,
     pending.last_position = *target;
     state.active_lane = lane;
     place_cursor_at(state, *target);
-    const auto view = make_view(context.history, state);
-    return {
-        .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
-        .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                    ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                    : std::nullopt,
-        .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                           ? std::get<diagnostic_list_t>(view)
-                           : diagnostic_list_t{},
-    };
+    return editor_interaction_result_t::from(context.history, state);
 }
 } // namespace wormedit
 
@@ -535,8 +415,8 @@ auto begin_note_paint_gesture(editor_edit_context_t& context, lane_id_t lane,
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_id,
                                         "paint sound is not an existing sample resource")});
-    if (state.pending_hold || state.pending_note_duration_gesture ||
-        state.pending_note_move_gesture || state.pending_note_paint_gesture ||
+    if (state.pending_hold || state.gesture<pending_note_duration_gesture_t>() ||
+        state.gesture<pending_note_move_gesture_t>() || state.pending_note_paint_gesture ||
         state.pending_semantic_layer_paint_gesture || state.pending_editor_area_selection ||
         state.pending_space_range_selection)
         return diagnostic_result(
@@ -570,16 +450,7 @@ auto begin_note_paint_gesture(editor_edit_context_t& context, lane_id_t lane,
     state.pending_note_paint_gesture = std::move(pending);
     state.active_lane = lane;
     place_cursor_at(state, *target);
-    const auto view = make_view(context.history, state);
-    return {
-        .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
-        .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                    ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                    : std::nullopt,
-        .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                           ? std::get<diagnostic_list_t>(view)
-                           : diagnostic_list_t{},
-    };
+    return editor_interaction_result_t::from(context.history, state);
 }
 } // namespace wormedit
 
@@ -758,16 +629,7 @@ auto end_note_paint_gesture(editor_edit_context_t& context, lane_id_t lane,
             {error(diagnostic_code_t::invalid_id, "paint gesture contains no note changes")});
     if (plan.additions.empty() && plan.removals.empty()) {
         state.pending_note_paint_gesture.reset();
-        const auto view = make_view(context.history, state);
-        return {
-            .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
-            .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                        ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                        : std::nullopt,
-            .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                               ? std::get<diagnostic_list_t>(view)
-                               : diagnostic_list_t{},
-        };
+        return editor_interaction_result_t::from(context.history, state);
     }
     auto prepared = prepare_note_paint_document(
         context.history, state.chart, plan, pending.kind, pending.sound, pending.layers,
@@ -787,17 +649,7 @@ auto end_note_paint_gesture(editor_edit_context_t& context, lane_id_t lane,
     set_selected_notes(state, std::move(result.painted_notes));
     state.active_lane = lane;
     place_cursor_at(state, pending.last_position);
-    const auto view = make_view(context.history, state);
-    return {
-        .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
-        .document_changed = true,
-        .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                    ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                    : std::nullopt,
-        .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                           ? std::get<diagnostic_list_t>(view)
-                           : diagnostic_list_t{},
-    };
+    return editor_interaction_result_t::from(context.history, state, true);
 }
 } // namespace wormedit
 
@@ -808,8 +660,8 @@ auto begin_hold_gesture(editor_edit_context_t& context, lane_id_t lane, local_po
                         bool displace, std::optional<bmson_source_geometry_t> geometry)
     -> editor_interaction_result_t {
     auto& state = context.state;
-    if (state.pending_hold || state.pending_note_duration_gesture ||
-        state.pending_note_move_gesture)
+    if (state.pending_hold || state.gesture<pending_note_duration_gesture_t>() ||
+        state.gesture<pending_note_move_gesture_t>())
         return diagnostic_result(
             context.history, state,
             {error(diagnostic_code_t::invalid_hold, "another editor gesture is already active")});
@@ -825,10 +677,8 @@ auto begin_hold_gesture(editor_edit_context_t& context, lane_id_t lane, local_po
     auto result = dispatch_nested_action(context, begin_hold_action_t{position});
     if (!result) {
         state = before;
-        const auto view = make_view(context.history, state);
-        result.view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                          ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                          : std::nullopt;
+        auto refreshed = editor_interaction_result_t::from(context.history, state);
+        result.view = std::move(refreshed.view);
         return result;
     }
     if (state.pending_hold) {
@@ -838,13 +688,9 @@ auto begin_hold_gesture(editor_edit_context_t& context, lane_id_t lane, local_po
             state.pending_hold->source_geometry =
                 std::make_shared<const bmson_source_geometry_t>(*geometry);
     }
-    const auto view = make_view(context.history, state);
-    result.view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                      ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                      : std::nullopt;
-    result.diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                             ? std::get<diagnostic_list_t>(view)
-                             : diagnostic_list_t{};
+    auto refreshed = editor_interaction_result_t::from(context.history, state);
+    result.view = std::move(refreshed.view);
+    result.diagnostics = std::move(refreshed.diagnostics);
     return result;
 }
 } // namespace wormedit
@@ -882,13 +728,9 @@ auto update_hold_gesture(editor_edit_context_t& context, hold_gesture_source_t s
                                  {error(diagnostic_code_t::invalid_resolution,
                                         "hold movement cannot keep the cursor visible")});
     }
-    const auto view = make_view(context.history, state);
-    result.view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                      ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                      : std::nullopt;
-    result.diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                             ? std::get<diagnostic_list_t>(view)
-                             : diagnostic_list_t{};
+    auto refreshed = editor_interaction_result_t::from(context.history, state);
+    result.view = std::move(refreshed.view);
+    result.diagnostics = std::move(refreshed.diagnostics);
     return result;
 }
 } // namespace wormedit
@@ -912,13 +754,9 @@ auto release_hold_gesture(editor_edit_context_t& context, hold_gesture_source_t 
     if (state.pending_hold)
         state.pending_hold->gesture_source = source;
     if (result) {
-        const auto view = make_view(context.history, state);
-        result.view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                          ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                          : std::nullopt;
-        result.diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                                 ? std::get<diagnostic_list_t>(view)
-                                 : diagnostic_list_t{};
+        auto refreshed = editor_interaction_result_t::from(context.history, state);
+        result.view = std::move(refreshed.view);
+        result.diagnostics = std::move(refreshed.diagnostics);
     }
     return result;
 }
@@ -957,7 +795,7 @@ auto begin_hold_action(editor_edit_context_t& context, local_position_t position
             geometry ? std::make_shared<const bmson_source_geometry_t>(*geometry) : nullptr,
     };
     place_cursor_at(state, *snapped);
-    return space_selection_view_result(make_view(history, state));
+    return editor_interaction_result_t::from(history, state);
 }
 } // namespace wormedit
 
@@ -1008,7 +846,7 @@ auto update_hold_preview(editor_edit_context_t& context, local_position_t positi
     state.pending_hold->placement_preview = std::get<pending_hold_placement_preview_t>(plan);
     place_cursor_at(state, *snapped);
     state.active_lane = pending.lane;
-    return space_selection_view_result(make_view(history, state));
+    return editor_interaction_result_t::from(history, state);
 }
 } // namespace wormedit
 
@@ -1068,7 +906,7 @@ auto commit_stem_hold(editor_edit_context_t& context, const pending_hold_t& pend
         return diagnostic_result(context.history, context.state, committed.diagnostics);
     place_cursor_at(context.state, target);
     context.state.active_lane = pending.lane;
-    auto result = interaction_view_result(context.history, context.state, true);
+    auto result = editor_interaction_result_t::from(context.history, context.state, true);
     result.created_note = created;
     return result;
 }
@@ -1148,7 +986,7 @@ auto commit_hold(editor_edit_context_t& context, local_position_t position,
     state.pending_hold.reset();
     place_cursor_at(state, *snapped);
     state.active_lane = pending.lane;
-    auto result = space_selection_view_result(make_view(history, state));
+    auto result = editor_interaction_result_t::from(history, state);
     result.accepted = true;
     result.document_changed = true;
     result.created_note = id;
@@ -1239,7 +1077,7 @@ auto release_lane_key_hold_gesture(editor_edit_context_t& context, lane_id_t act
     auto& history = context.history;
     auto& state = context.state;
     if (!state.pending_hold)
-        return space_selection_view_result(make_view(history, state));
+        return editor_interaction_result_t::from(history, state);
     const auto before = state;
     const auto lane = action_lane.value == 0 ? state.pending_hold->lane : action_lane;
     const auto found =
@@ -1294,23 +1132,6 @@ auto release_lane_key_hold_gesture(editor_edit_context_t& context, lane_id_t act
 
 namespace wormedit {
 using namespace interaction_detail;
-auto recovered_editor_view(document_history_t& history, editor_interaction_state_t& state)
-    -> editor_interaction_result_t {
-    const auto view = make_view(history, state);
-    return {
-        .accepted = true,
-        .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                    ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                    : std::nullopt,
-        .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                           ? std::get<diagnostic_list_t>(view)
-                           : diagnostic_list_t{},
-    };
-}
-} // namespace wormedit
-
-namespace wormedit {
-using namespace interaction_detail;
 auto handle_editor_cancellation(document_history_t& history, editor_interaction_state_t& state,
                                 const editor_interaction_action_t& action)
     -> std::optional<editor_interaction_result_t> {
@@ -1326,15 +1147,16 @@ auto handle_editor_cancellation(document_history_t& history, editor_interaction_
                                      {error(diagnostic_code_t::invalid_id,
                                             "unknown editor gesture cancellation reason")});
         }
-        clear_editor_gestures(state);
-        return recovered_editor_view(history, state);
+        return cancel_gesture(history, state);
     }
     if (std::holds_alternative<cancel_editor_area_selection_action_t>(action)) {
         visit_editor_gestures(state, [](auto kind, auto& field) {
             if (kind == editor_gesture_kind_t::area)
                 clear_editor_gesture(field);
         });
-        return recovered_editor_view(history, state);
+        auto result = editor_interaction_result_t::from(history, state);
+        result.accepted = true;
+        return result;
     }
     return std::nullopt;
 }

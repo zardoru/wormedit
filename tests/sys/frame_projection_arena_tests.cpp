@@ -1011,7 +1011,8 @@ auto project_branch_arena(const wormedit::workspace_view_t& model, frame_arena_t
     -> flattened_workspace_t {
     return flatten_workspace(model, {}, "ready", {}, false, {}, arena);
 }
-auto branch_outline(wormedit::workspace_view_t& model) -> wormedit::workspace_bms_branch_outline_t& {
+auto branch_outline(wormedit::workspace_view_t& model)
+    -> wormedit::workspace_bms_branch_outline_view_t& {
     return std::get<wormedit::workspace_compose_view_t>(model.tab_view).bms_branch_outline;
 }
 void check_branch_choice(const WormUiComposeBranchChoiceView& view,
@@ -1040,7 +1041,7 @@ void check_branch_row(const WormUiComposeBranchRowView& view,
     check_frame_storage(view.display_text_truncated == source.display_text_truncated);
 }
 void check_branch_prefix(const WormUiComposeView& view,
-                         const wormedit::workspace_bms_branch_outline_t& source) {
+                         const wormedit::workspace_bms_branch_outline_view_t& source) {
     for (std::size_t index = 0; index < view.branch_row_count; ++index)
         check_branch_row(view.branch_rows[index], source.rows[index]);
     for (std::size_t index = 0; index < view.branch_choice_count; ++index)

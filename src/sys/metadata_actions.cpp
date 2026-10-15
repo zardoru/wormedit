@@ -246,17 +246,19 @@ auto dispatch_channel_map_preview(const WormUiWorkspaceAction& action, const doc
     const auto replacements = channel_map_replacements(action);
     if (action.metadata_chart_id == 0 || !replacements)
         return {notification_severity_t::warning, "Channel-map preview payload is incomplete."};
-    auto preview = propose_bms_channel_map_edit(
+    auto preview = channel_map_proposal_t::propose(
         history.document, action.metadata_document_revision, chart_id_t{action.metadata_chart_id},
         object_id_t{action.metadata_channel_map_layout_segment_id}, *replacements);
-    auto feedback = metadata_edit_feedback_t{notification_severity_t::info, std::string{preview.message()}};
-    if (!preview) {
+    const auto view = channel_map_preview_view_t::from(preview);
+    auto feedback = metadata_edit_feedback_t{notification_severity_t::info,
+        view.diagnostic ? view.diagnostic->message : std::string{}};
+    if (!view.proposal) {
         feedback.severity = notification_severity_t::error;
-    } else if (preview.conflict_count != 0) {
+    } else if (view.report->conflict_count != 0) {
         feedback = {notification_severity_t::warning, "Channel-map preview has " +
-                    std::to_string(preview.conflict_count) + " conflicts; Apply is disabled."};
+                    std::to_string(view.report->conflict_count) + " conflicts; Apply is disabled."};
     } else {
-        feedback.message = "Channel-map preview: " + std::to_string(preview.affected_note_count) +
+        feedback.message = "Channel-map preview: " + std::to_string(view.report->affected_note_count) +
                            " notes change channel.";
     }
     metadata_drop.channel_map_preview = std::move(preview);
@@ -268,9 +270,10 @@ auto dispatch_channel_map_apply(document_history_t& history, workspace_controlle
     if (!metadata_drop.channel_map_preview)
         return {notification_severity_t::warning, "Preview the channel map before applying it."};
     const auto& preview = *metadata_drop.channel_map_preview;
-    if (!preview || preview.conflict_count != 0)
+    const auto view = channel_map_preview_view_t::from(preview);
+    if (!view.proposal || view.report->conflict_count != 0)
         return {notification_severity_t::warning, "The channel-map preview is not applicable."};
-    auto result = apply_bms_channel_map_edit(history, preview);
+    auto result = apply_bms_channel_map_edit(history, *view.proposal);
     metadata_drop.clear_channel_map_preview();
     if (!result) return {notification_severity_t::error, result.payload.message};
     auto feedback = publish_metadata_edit(std::move(result.command), workspace, history);
@@ -296,15 +299,16 @@ auto dispatch_lane_profile_preview(const WormUiWorkspaceAction& action, const do
     if (action.metadata_lane_profile_index >= targets.size())
         return {notification_severity_t::warning,
                 "Choose a built-in key-count profile of this chart's family to preview."};
-    auto proposal = propose_lane_migration(history.document, action.metadata_document_revision,
+    auto proposal = lane_migration_proposal_t::propose(history.document, action.metadata_document_revision,
                                            chart->id, targets[action.metadata_lane_profile_index]);
-    if (proposal.issue != lane_migration_issue_t::none) {
+    if (!proposal.value) {
         metadata_drop.clear_lane_profile_preview();
-        return {notification_severity_t::error, std::string{proposal.message()}};
+        return {notification_severity_t::error, proposal.diagnostics.empty() ? std::string{} : proposal.diagnostics.front().message};
     }
-    const auto message = "Key-count preview: " + std::to_string(proposal.mapped_note_count) + " notes map, " +
-                         std::to_string(proposal.dropped_notes.size()) + " dropped, " +
-                         std::to_string(proposal.collision_count) + " collisions.";
+    const auto& report = proposal.value->payload.report;
+    const auto message = "Key-count preview: " + std::to_string(report.mapped_note_count) + " notes map, " +
+                         std::to_string(report.dropped_notes.size()) + " dropped, " +
+                         std::to_string(report.collision_count) + " collisions.";
     metadata_drop.lane_profile_preview = std::move(proposal);
     return {notification_severity_t::info, message};
 }
@@ -316,7 +320,9 @@ auto dispatch_lane_profile_apply(document_history_t& history, workspace_controll
         return {notification_severity_t::warning, "Preview the key-count change before applying it."};
     const auto proposal = std::move(*metadata_drop.lane_profile_preview);
     metadata_drop.clear_lane_profile_preview();
-    auto result = apply_lane_migration(history, proposal, true);
+    if (!proposal.value)
+        return {notification_severity_t::error, "Lane migration preview data was changed after proposal."};
+    auto result = apply_lane_migration(history, *proposal.value, true);
     if (!result) return {notification_severity_t::error, result.payload.message};
     auto feedback = publish_metadata_edit(std::move(result.command), workspace, history);
     if (feedback.severity == notification_severity_t::success)

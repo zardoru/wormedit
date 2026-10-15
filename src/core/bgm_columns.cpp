@@ -1,3 +1,4 @@
+#include "chart_object_ids.h"
 #include <wormedit/core/bgm_columns.h>
 
 #include <algorithm>
@@ -7,32 +8,6 @@
 
 namespace wormedit {
 namespace {
-
-auto largest_object_id(const chart_document_t& chart) -> std::uint64_t {
-    std::uint64_t largest{};
-    const auto scan = [&](const auto& values) {
-        for (const auto& value : values) largest = std::max(largest, value.id.value);
-    };
-    scan(chart.bgm_source_lanes);
-    scan(chart.lane_layouts);
-    scan(chart.bpms);
-    scan(chart.pauses);
-    scan(chart.warps);
-    scan(chart.scrolls);
-    scan(chart.speeds);
-    scan(chart.kiai);
-    scan(chart.timing_anchors);
-    scan(chart.bookmarks);
-    scan(chart.sections);
-    scan(chart.bga_events);
-    scan(chart.sound_channels);
-    for (const auto& channel : chart.sound_channels) scan(channel.events);
-    for (const auto& measure : chart.measures) {
-        scan(measure.notes);
-        scan(measure.bgm_events);
-    }
-    return largest;
-}
 
 auto events_in_column(const chart_document_t& chart, object_id_t column) -> std::size_t {
     std::size_t total{};
@@ -45,7 +20,7 @@ auto events_in_column(const chart_document_t& chart, object_id_t column) -> std:
 
 auto grow_columns(chart_document_t& chart, std::size_t count, document_command_result_t& result)
     -> bool {
-    auto next_id = largest_object_id(chart);
+    auto next_id = object_id_ceiling_t::from(chart).maximum;
     std::size_t order{};
     for (const auto& lane : chart.bgm_source_lanes) order = std::max(order, lane.source_order + 1);
     const auto missing = count - chart.bgm_source_lanes.size();

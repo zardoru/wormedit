@@ -142,13 +142,13 @@ struct player_preview_scene_request_t {
     std::size_t maximum_composition_operations{100'000};
 };
 
-struct player_preview_scene_t {
+struct player_preview_scene_view_t {
     // Composes one deterministic visual frame from the shared sample-frame clock.
     // This contract deliberately contains no gameplay input, judgement, score,
     // combo, life, replay, or failure state.
     [[nodiscard]] static auto from(const player_preview_index_t& index,
                                    const player_preview_scene_request_t& request = {})
-        -> diagnosed_t<std::optional<player_preview_scene_t>>;
+        -> diagnosed_t<std::optional<player_preview_scene_view_t>>;
 
     chart_id_t chart;
     std::uint64_t document_revision{};
@@ -169,10 +169,10 @@ struct player_preview_scene_t {
     std::vector<player_preview_hold_geometry_t> hold_bodies;
     std::vector<player_preview_note_geometry_t> note_endpoints;
 
-    auto operator==(const player_preview_scene_t&) const -> bool = default;
+    auto operator==(const player_preview_scene_view_t&) const -> bool = default;
 };
 
-using player_preview_scene_outcome_t = diagnosed_t<std::optional<player_preview_scene_t>>;
+using player_preview_scene_view_outcome_t = diagnosed_t<std::optional<player_preview_scene_view_t>>;
 [[nodiscard]] auto build_player_preview_index(const chart_document_t& chart,
                                               std::uint64_t document_revision,
                                               player_preview_index_options_t options = {})

@@ -707,8 +707,8 @@ TEST_CASE("BMS branch outline rejects a stale workspace revision and diagnoses s
 }
 
 namespace {
-auto branch_cache_rows_equal(const workspace_bms_branch_outline_t& left,
-                              const workspace_bms_branch_outline_t& right) -> bool {
+auto branch_cache_rows_equal(const workspace_bms_branch_outline_view_t& left,
+                             const workspace_bms_branch_outline_view_t& right) -> bool {
     return std::ranges::equal(left.rows, right.rows, [](const auto& a, const auto& b) {
         return std::tie(a.kind, a.id, a.depth, a.source_order, a.active, a.selected,
                         a.display_text, a.display_text_truncated) ==
@@ -716,8 +716,8 @@ auto branch_cache_rows_equal(const workspace_bms_branch_outline_t& left,
                         b.display_text, b.display_text_truncated);
     });
 }
-auto branch_cache_choices_equal(const workspace_bms_branch_outline_t& left,
-                                 const workspace_bms_branch_outline_t& right) -> bool {
+auto branch_cache_choices_equal(const workspace_bms_branch_outline_view_t& left,
+                                const workspace_bms_branch_outline_view_t& right) -> bool {
     return std::ranges::equal(left.choices, right.choices, [](const auto& a, const auto& b) {
         return std::tie(a.id, a.kind, a.source_order, a.active, a.editable, a.selected_value,
                         a.previous_value, a.next_value, a.can_clear) ==
@@ -725,8 +725,8 @@ auto branch_cache_choices_equal(const workspace_bms_branch_outline_t& left,
                         b.previous_value, b.next_value, b.can_clear);
     });
 }
-auto branch_cache_outlines_equal(const workspace_bms_branch_outline_t& left,
-                                 const workspace_bms_branch_outline_t& right) -> bool {
+auto branch_cache_outlines_equal(const workspace_bms_branch_outline_view_t& left,
+                                 const workspace_bms_branch_outline_view_t& right) -> bool {
     const bool diagnostics = std::ranges::equal(left.diagnostics, right.diagnostics,
         [](const auto& a, const auto& b) {
             return std::tie(a.severity, a.code, a.message, a.object) ==
@@ -768,12 +768,12 @@ auto branch_cache_tracks_choices_without_revision() -> bool {
     auto& workspace = *binding.value;
     workspace_bms_branch_outline_cache_t cache;
     if (!branch_cache_matches_reference(song, workspace, cache) ||
-        !branch_cache_matches_reference(song, workspace, cache) || cache.build_count != 1)
+        !branch_cache_matches_reference(song, workspace, cache) || cache.build_count() != 1)
         return false;
-    const auto before = cache.outline;
+    const auto before = cache.value();
     song.charts.front().active_branch_selection.front().selected_value = 1;
-    return branch_cache_matches_reference(song, workspace, cache) && cache.build_count == 2 &&
-        !branch_cache_outlines_equal(before, cache.outline);
+    return branch_cache_matches_reference(song, workspace, cache) && cache.build_count() == 2 &&
+        !branch_cache_outlines_equal(before, cache.value());
 }
 auto branch_cache_tracks_limits_revision_and_identity() -> bool {
     auto song = branch_cache_large_song();
@@ -783,22 +783,22 @@ auto branch_cache_tracks_limits_revision_and_identity() -> bool {
     workspace_bms_branch_outline_cache_t cache;
     if (!branch_cache_matches_reference(song, workspace, cache)) return false;
     workspace.limits.maximum_bms_branch_rows = 5;
-    if (!branch_cache_matches_reference(song, workspace, cache) || cache.build_count != 2 ||
-        !cache.outline.rows_truncated) return false;
+    if (!branch_cache_matches_reference(song, workspace, cache) || cache.build_count() != 2 ||
+        !cache.value().rows_truncated) return false;
     workspace.limits.maximum_bms_branch_display_bytes = 1;
-    if (!branch_cache_matches_reference(song, workspace, cache) || cache.build_count != 3 ||
-        !cache.outline.display_text_truncated) return false;
+    if (!branch_cache_matches_reference(song, workspace, cache) || cache.build_count() != 3 ||
+        !cache.value().display_text_truncated) return false;
     ++song.revision;
     workspace.document_revision = song.revision;
-    if (!branch_cache_matches_reference(song, workspace, cache) || cache.build_count != 4)
+    if (!branch_cache_matches_reference(song, workspace, cache) || cache.build_count() != 4)
         return false;
     auto replacement = song;
     replacement.charts.front().bms_control_tree->original_text = "different retained root";
-    if (!branch_cache_matches_reference(replacement, workspace, cache) || cache.build_count != 5)
+    if (!branch_cache_matches_reference(replacement, workspace, cache) || cache.build_count() != 5)
         return false;
     replacement.charts.back().bms_control_tree = replacement.charts.front().bms_control_tree;
     workspace.selected_chart = replacement.charts.back().id;
-    return branch_cache_matches_reference(replacement, workspace, cache) && cache.build_count == 6;
+    return branch_cache_matches_reference(replacement, workspace, cache) && cache.build_count() == 6;
 }
 auto branch_cache_preserves_plain_sidebar_and_skips_absent_tree() -> bool {
     auto song = workspace_song();
@@ -811,9 +811,9 @@ auto branch_cache_preserves_plain_sidebar_and_skips_absent_tree() -> bool {
     if (!binding.value || !binding.diagnostics.empty()) return false;
     workspace_bms_branch_outline_cache_t cache;
     if (!branch_cache_matches_reference(song, *binding.value, cache) ||
-        cache.outline.rows.size() != 2 || cache.build_count != 1) return false;
+        cache.value().rows.size() != 2 || cache.build_count() != 1) return false;
     chart.bms_control_tree.reset();
-    return branch_cache_matches_reference(song, *binding.value, cache) && cache.build_count == 1;
+    return branch_cache_matches_reference(song, *binding.value, cache) && cache.build_count() == 1;
 }
 } // namespace
 
@@ -846,19 +846,19 @@ auto binding_cache_tracks_document_and_limits() -> bool {
         if (const auto view = cached_binding_view(song, workspace, cache);
             !view.value || !view.diagnostics.empty()) return false;
     }
-    if (cache.build_count != 1) return false;
+    if (cache.build_count() != 1) return false;
     ++song.revision;
     workspace.document_revision = song.revision;
     if (const auto view = cached_binding_view(song, workspace, cache);
-        !view.value || !view.diagnostics.empty() || cache.build_count != 2) return false;
+        !view.value || !view.diagnostics.empty() || cache.build_count() != 2) return false;
     auto replacement = song;
     if (const auto view = cached_binding_view(replacement, workspace, cache);
-        !view.value || !view.diagnostics.empty() || cache.build_count != 3) return false;
+        !view.value || !view.diagnostics.empty() || cache.build_count() != 3) return false;
     workspace.limits.maximum_audio_assets = 0;
     const auto rejected = cached_binding_view(replacement, workspace, cache);
     const auto reference = workspace_view_t::from(workspace, replacement);
     return !(rejected.value && rejected.diagnostics.empty()) &&
-        !(reference.value && reference.diagnostics.empty()) && cache.build_count == 4 &&
+        !(reference.value && reference.diagnostics.empty()) && cache.build_count() == 4 &&
         rejected.diagnostics.front().code == reference.diagnostics.front().code &&
         rejected.diagnostics.front().message == reference.diagnostics.front().message;
 }
@@ -888,7 +888,7 @@ auto binding_cache_keeps_dynamic_guards() -> bool {
     workspace.active_tab = workspace_tab_t::setup;
     --workspace.document_revision;
     const auto stale = cached_binding_view(song, workspace, cache);
-    return !(stale.value && stale.diagnostics.empty()) && cache.build_count == 1;
+    return !(stale.value && stale.diagnostics.empty()) && cache.build_count() == 1;
 }
 auto binding_cache_revalidates_invalid_id_edits() -> bool {
     auto song = workspace_song();
@@ -901,13 +901,13 @@ auto binding_cache_revalidates_invalid_id_edits() -> bool {
     song.audio_assets.push_back(song.audio_assets.front());
     workspace.document_revision = ++song.revision;
     const auto rejected = cached_binding_view(song, workspace, cache);
-    if ((rejected.value && rejected.diagnostics.empty()) || rejected.diagnostics.empty() || cache.build_count != 2) return false;
+    if ((rejected.value && rejected.diagnostics.empty()) || rejected.diagnostics.empty() || cache.build_count() != 2) return false;
     if (const auto view = cached_binding_view(song, workspace, cache);
-        (view.value && view.diagnostics.empty()) || cache.build_count != 2) return false;
+        (view.value && view.diagnostics.empty()) || cache.build_count() != 2) return false;
     song.audio_assets.pop_back();
     workspace.document_revision = ++song.revision;
     const auto restored = cached_binding_view(song, workspace, cache);
-    return restored.value && restored.diagnostics.empty() && cache.build_count == 3;
+    return restored.value && restored.diagnostics.empty() && cache.build_count() == 3;
 }
 } // namespace
 

@@ -1,4 +1,5 @@
 #include "sys/compose_actions_internal.h"
+#include "sys/native_chart_edit_action.h"
 #include "sys/projection_notification_feedback.h"
 namespace wormedit::sys::compose_action_detail {
 beat_section_edit_t make_beat_section_insertion(compose_action_context_t& context,
@@ -89,19 +90,25 @@ std::string_view beat_section_success(const WormUiWorkspaceAction& action, bool 
     }
 }
 
-compose_action_outcome_t edit_beat_section(compose_action_context_t& context) {
-    using namespace wormedit;
-    const bool adding = context.action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_BEAT_SECTION;
+auto edit_beat_section_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
+    adding = context.action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_BEAT_SECTION;
     if (context.state.virtual_bms_cursor_row && adding)
         return compose_action_outcome_t::blocked(
             "Beat sections require a materialized cursor measure.");
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before editing sections."))
         return std::move(*blocked);
-    const auto* chart = selected_chart(context.environment.document.history,
-                                       context.environment.document.workspace);
+    chart = selected_chart(context.environment.document.history,
+                           context.environment.document.workspace);
     if (!chart)
         return compose_action_outcome_t::blocked("Choose a chart before editing sections.");
+    return std::nullopt;
+}
+
+auto edit_beat_section_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
     marker_edit_action_t edit;
     bool from_selection{};
     if (adding) {
@@ -116,8 +123,13 @@ compose_action_outcome_t edit_beat_section(compose_action_context_t& context) {
             return compose_action_outcome_t::blocked(*error);
         edit = std::get<marker_edit_action_t>(std::move(made));
     }
-    auto applied = apply_marker_edit(context.environment.document.history, std::move(edit));
-    return compose_action_outcome_t::from(std::move(applied), compose_action_description_t{.success = beat_section_success(context.action, from_selection), .unchanged = "Section edit made no changes.", .rebind_failure = "Section changed, but workspace rebinding failed."});
+
+    return run_native_chart_edit<marker_edit_action_t>(
+        context.environment.document.history, std::move(edit),
+        compose_action_description_t{
+            .success = beat_section_success(context.action, from_selection),
+            .unchanged = "Section edit made no changes.",
+            .rebind_failure = "Section changed, but workspace rebinding failed."});
 }
 
 std::optional<compose_action_outcome_t>
@@ -128,7 +140,7 @@ dispatch_compose_beat_section_action(compose_action_context_t& context) {
     case WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_BEGIN:
     case WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_END:
     case WORM_UI_COMPOSE_ACTION_DELETE_BEAT_SECTION:
-        return edit_beat_section(context);
+        return run_compose_action(edit_beat_section_action_t{}, context);
     default:
         return std::nullopt;
     }
@@ -171,28 +183,39 @@ auto make_audio_bookmark_edit(compose_action_context_t& context,
                   .audio_milliseconds = milliseconds}}};
 }
 
-compose_action_outcome_t edit_audio_bookmark(compose_action_context_t& context) {
-    using namespace wormedit;
+auto edit_audio_bookmark_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before editing bookmarks."))
         return std::move(*blocked);
-    const auto* chart = selected_chart(context.environment.document.history,
-                                       context.environment.document.workspace);
+    chart = selected_chart(context.environment.document.history,
+                           context.environment.document.workspace);
     if (!chart)
         return compose_action_outcome_t::blocked(
             "Choose a chart before editing audio-time bookmarks.", notification_source_t::edit);
+    return std::nullopt;
+}
+
+auto edit_audio_bookmark_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
     auto built = make_audio_bookmark_edit(context, *chart);
     if (const auto* error = std::get_if<std::string>(&built))
         return compose_action_outcome_t::blocked(*error, notification_source_t::edit);
-    auto applied = apply_marker_edit(context.environment.document.history,
-                                     std::get<marker_edit_action_t>(std::move(built)));
+
     const auto success =
         context.action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_AUDIO_BOOKMARK
             ? "Audio-time bookmark added."
         : context.action.compose_action == WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_BOOKMARK
             ? "Audio-time bookmark deleted."
             : "Audio-time bookmark updated.";
-    return compose_action_outcome_t::from(std::move(applied), compose_action_description_t{.success = success, .unchanged = "Audio bookmark edit made no changes.", .rebind_failure = "Audio bookmark changed, but workspace rebinding failed.", .source = notification_source_t::edit});
+    return run_native_chart_edit<marker_edit_action_t>(
+        context.environment.document.history, std::get<marker_edit_action_t>(std::move(built)),
+        compose_action_description_t{.success = success,
+                                     .unchanged = "Audio bookmark edit made no changes.",
+                                     .rebind_failure =
+                                         "Audio bookmark changed, but workspace rebinding failed.",
+                                     .source = notification_source_t::edit});
 }
 
 std::optional<compose_action_outcome_t>
@@ -201,7 +224,7 @@ dispatch_compose_audio_bookmark_action(compose_action_context_t& context) {
     case WORM_UI_COMPOSE_ACTION_ADD_AUDIO_BOOKMARK:
     case WORM_UI_COMPOSE_ACTION_UPDATE_AUDIO_BOOKMARK:
     case WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_BOOKMARK:
-        return edit_audio_bookmark(context);
+        return run_compose_action(edit_audio_bookmark_action_t{}, context);
     default:
         return std::nullopt;
     }
@@ -245,28 +268,39 @@ auto make_audio_section_edit(compose_action_context_t& context,
                   .audio_millisecond_span = std::pair{*begin, *end}}}};
 }
 
-compose_action_outcome_t edit_audio_section(compose_action_context_t& context) {
-    using namespace wormedit;
+auto edit_audio_section_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before editing sections."))
         return std::move(*blocked);
-    const auto* chart = selected_chart(context.environment.document.history,
-                                       context.environment.document.workspace);
+    chart = selected_chart(context.environment.document.history,
+                           context.environment.document.workspace);
     if (!chart)
         return compose_action_outcome_t::blocked(
             "Choose a chart before editing audio-time sections.", notification_source_t::edit);
+    return std::nullopt;
+}
+
+auto edit_audio_section_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
     auto built = make_audio_section_edit(context, *chart);
     if (const auto* error = std::get_if<std::string>(&built))
         return compose_action_outcome_t::blocked(*error, notification_source_t::edit);
-    auto applied = apply_marker_edit(context.environment.document.history,
-                                     std::get<marker_edit_action_t>(std::move(built)));
+
     const auto success =
         context.action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_AUDIO_SECTION
             ? "Audio-time section added."
         : context.action.compose_action == WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_SECTION
             ? "Audio-time section deleted."
             : "Audio-time section updated.";
-    return compose_action_outcome_t::from(std::move(applied), compose_action_description_t{.success = success, .unchanged = "Audio section edit made no changes.", .rebind_failure = "Audio section changed, but workspace rebinding failed.", .source = notification_source_t::edit});
+    return run_native_chart_edit<marker_edit_action_t>(
+        context.environment.document.history, std::get<marker_edit_action_t>(std::move(built)),
+        compose_action_description_t{.success = success,
+                                     .unchanged = "Audio section edit made no changes.",
+                                     .rebind_failure =
+                                         "Audio section changed, but workspace rebinding failed.",
+                                     .source = notification_source_t::edit});
 }
 
 std::optional<compose_action_outcome_t>
@@ -275,7 +309,7 @@ dispatch_compose_audio_section_action(compose_action_context_t& context) {
     case WORM_UI_COMPOSE_ACTION_ADD_AUDIO_SECTION:
     case WORM_UI_COMPOSE_ACTION_UPDATE_AUDIO_SECTION:
     case WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_SECTION:
-        return edit_audio_section(context);
+        return run_compose_action(edit_audio_section_action_t{}, context);
     default:
         return std::nullopt;
     }
@@ -306,9 +340,9 @@ auto make_beat_bookmark_edit(compose_action_context_t& context,
                   .audio_milliseconds = std::nullopt}}};
 }
 
-compose_action_outcome_t edit_beat_bookmark(compose_action_context_t& context) {
-    using namespace wormedit;
-    const auto operation = context.action.compose_action;
+auto edit_beat_bookmark_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
+    operation = context.action.compose_action;
     if (context.state.virtual_bms_cursor_row &&
         operation == WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION)
         return compose_action_outcome_t::blocked(
@@ -316,15 +350,20 @@ compose_action_outcome_t edit_beat_bookmark(compose_action_context_t& context) {
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before editing bookmarks."))
         return std::move(*blocked);
-    const auto* chart = selected_chart(context.environment.document.history,
-                                       context.environment.document.workspace);
+    chart = selected_chart(context.environment.document.history,
+                           context.environment.document.workspace);
     if (!chart)
         return compose_action_outcome_t::blocked("Choose a chart before editing bookmarks.");
+    return std::nullopt;
+}
+
+auto edit_beat_bookmark_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
     auto built = make_beat_bookmark_edit(context, *chart);
     if (const auto* error = std::get_if<std::string>(&built))
         return compose_action_outcome_t::blocked(*error);
-    auto applied = apply_marker_edit(context.environment.document.history,
-                                     std::get<marker_edit_action_t>(std::move(built)));
+
     const auto success = operation == WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK
                              ? "Bookmark renamed."
                          : operation == WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION
@@ -333,7 +372,12 @@ compose_action_outcome_t edit_beat_bookmark(compose_action_context_t& context) {
     const auto unchanged = operation == WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK
                                ? "Bookmark label was unchanged."
                                : "Bookmark edit made no changes.";
-    return compose_action_outcome_t::from(std::move(applied), compose_action_description_t{.success = success, .unchanged = unchanged, .rebind_failure = "Bookmark changed, but workspace rebinding failed."});
+    return run_native_chart_edit<marker_edit_action_t>(
+        context.environment.document.history, std::get<marker_edit_action_t>(std::move(built)),
+        compose_action_description_t{.success = success,
+                                     .unchanged = unchanged,
+                                     .rebind_failure =
+                                         "Bookmark changed, but workspace rebinding failed."});
 }
 
 std::optional<compose_action_outcome_t>
@@ -342,25 +386,32 @@ dispatch_compose_beat_bookmark_action(compose_action_context_t& context) {
     case WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK:
     case WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION:
     case WORM_UI_COMPOSE_ACTION_DELETE_BEAT_BOOKMARK:
-        return edit_beat_bookmark(context);
+        return run_compose_action(edit_beat_bookmark_action_t{}, context);
     default:
         return std::nullopt;
     }
 }
 
-compose_action_outcome_t navigate_audio_marker(compose_action_context_t& context) {
-    using namespace wormedit;
+auto navigate_audio_marker_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
     auto& app = context.environment.editor.commands;
     if (!app.services.transport_audio_milliseconds ||
         !app.services.transport_seek_audio_milliseconds)
         return compose_action_outcome_t::blocked(
             "Start chart preview once before navigating audio-time markers.",
             notification_source_t::audio);
-    const auto cursor = app.services.transport_audio_milliseconds();
+    cursor = app.services.transport_audio_milliseconds();
     if (!cursor)
         return compose_action_outcome_t::blocked(
             "Start chart preview once to compile its seekable timeline.",
             notification_source_t::audio);
+    return std::nullopt;
+}
+
+auto navigate_audio_marker_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
+    auto& app = context.environment.editor.commands;
     const auto direction =
         context.action.compose_action == WORM_UI_COMPOSE_ACTION_NAVIGATE_PREVIOUS_AUDIO_MARKER
             ? marker_navigation_direction_t::previous

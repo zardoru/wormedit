@@ -122,9 +122,9 @@ auto bgm_width_chart() -> chart_document_t {
 }
 
 auto bgm_width_scene(const chart_document_t& chart, const editor_field_scene_request_t& request)
-    -> editor_field_scene_result_t {
+    -> editor_field_scene_view_result_t {
     const auto index = scene_index(chart);
-    return make_editor_field_scene(chart, index, scene_view(), request);
+    return editor_field_scene_view_t::from(chart, index, scene_view(), request);
 }
 
 auto bgm_width_rules_are_consistent() -> bool {
@@ -195,7 +195,7 @@ TEST_CASE("BGM scene geometry obeys solo, required, excluded, and hidden-layer f
         .field_left_pixels = 0.0, .field_width_pixels = 192.0,
         .bgm_pane_left_pixels = 192.0, .bgm_pane_width_pixels = 36.0};
     const auto compose = [&](editor_field_scene_request_t request) {
-        return make_editor_field_scene(chart, index, scene_view(), request);
+        return editor_field_scene_view_t::from(chart, index, scene_view(), request);
     };
     auto request = base;
     request.solo_semantic_layer = layer_id_t{7};
@@ -214,7 +214,7 @@ TEST_CASE("BGM scene requires and excludes semantic membership consistently",
         .bgm_pane_left_pixels = 192.0, .bgm_pane_width_pixels = 36.0};
     request.required_semantic_layers = {layer_id_t{7}};
     request.excluded_semantic_layers = {layer_id_t{8}};
-    const auto result = make_editor_field_scene(chart, index, scene_view(), request);
+    const auto result = editor_field_scene_view_t::from(chart, index, scene_view(), request);
     REQUIRE(result);
     REQUIRE(result.scene->bgm_events.size() == 1);
     CHECK(result.scene->bgm_events.front().event == object_id_t{20});
@@ -317,7 +317,7 @@ TEST_CASE("BGM hold tails remain visible with offscreen heads through the bounde
     view.selected_objects = {{editor_selection_object_kind_t::bgm_event, object_id_t{20}}};
     editor_field_scene_request_t request{
         .field_width_pixels = 192, .bgm_pane_left_pixels = 192, .bgm_pane_width_pixels = 36};
-    const auto result = make_editor_field_scene(chart, index, view, request);
+    const auto result = editor_field_scene_view_t::from(chart, index, view, request);
     for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
     require_layer_brush(result);
     require_layer_brush(result.scene->bgm_events.size() == 1);
@@ -346,7 +346,7 @@ TEST_CASE("BGM interval queries skip large populations of expired heads",
     editor_field_scene_request_t request{
         .field_width_pixels = 192, .bgm_pane_left_pixels = 192, .bgm_pane_width_pixels = 36};
     request.maximum_composition_operations = 512;
-    const auto result = make_editor_field_scene(chart, index, view, request);
+    const auto result = editor_field_scene_view_t::from(chart, index, view, request);
     for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
     require_layer_brush(result);
     require_layer_brush(result.scene->bgm_events.size() == 1);

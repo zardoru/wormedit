@@ -156,27 +156,27 @@ TEST_CASE("a form preview carries the candidate and the validator's message with
     const auto& stored = chart.sv_recipes.front();
     auto form = recipe_form_from_recipe(stored);
     set(form.value_to, "5", "1");
-    const auto preview = propose_recipe_form(history.document, chart, stored, form);
+    const auto preview = recipe_form_preview_t::propose(history.document, chart, stored, form);
     CHECK(preview.diagnostics.empty());
-    CHECK(preview.stamp.chart == chart.id);
-    CHECK(preview.stamp.document.revision == history.document.revision);
-    CHECK(preview.candidate.parameters.value_to == signed_rational_t{5, 1});
+    CHECK(preview.captured_stamp().chart == chart.id);
+    CHECK(preview.captured_stamp().document.revision == history.document.revision);
+    CHECK(preview.report()->candidate.parameters.value_to == signed_rational_t{5, 1});
     CHECK(stored.parameters.value_to == signed_rational_t{3, 1});
     CHECK(history.undo.empty());
 
     // A malformed value keeps the stored recipe and says why.
     set(form.value_to, "x", "1");
-    const auto malformed = propose_recipe_form(history.document, chart, stored, form);
+    const auto malformed = recipe_form_preview_t::propose(history.document, chart, stored, form);
     CHECK_FALSE(malformed.diagnostics.empty());
-    CHECK(malformed.candidate == stored);
+    CHECK(malformed.report()->candidate == stored);
 
     // Well-formed but out of range: the core validator's message, the candidate kept for editing.
     auto out_of_range = recipe_form_from_recipe(stored);
     out_of_range.curve = WORM_UI_TIMING_RECIPE_CURVE_EXPONENTIAL;
     set(out_of_range.shape, "99", "1");
-    const auto invalid = propose_recipe_form(history.document, chart, stored, out_of_range);
+    const auto invalid = recipe_form_preview_t::propose(history.document, chart, stored, out_of_range);
     CHECK_FALSE(invalid.diagnostics.empty());
-    CHECK(invalid.candidate.curve == sv_recipe_curve_t::exponential);
+    CHECK(invalid.report()->candidate.curve == sv_recipe_curve_t::exponential);
 }
 
 TEST_CASE("applying a form updates the recipe in one undo step and rejects bad input unchanged",
@@ -223,8 +223,8 @@ TEST_CASE("captured recipe form applies once with revision-only identity",
     const auto& chart = history.document.charts.front();
     auto form = recipe_form_from_recipe(chart.sv_recipes.front());
     set(form.value_to, "7", "1");
-    const auto proposal = propose_recipe_form(history.document, chart, chart.sv_recipes.front(), form);
-    REQUIRE(proposal.is_valid());
+    const auto proposal = recipe_form_preview_t::propose(history.document, chart, chart.sv_recipes.front(), form);
+    REQUIRE(proposal.value.has_value());
     history.document.id = song_id_t{99};
     REQUIRE(apply_recipe_form(history, proposal));
     CHECK(history.undo.size() == 1);
@@ -235,9 +235,9 @@ TEST_CASE("captured recipe form applies once with revision-only identity",
 }
 
 namespace {
-void check_failed_recipe_candidate(const recipe_form_preview_t& proposal, const sv_recipe_t& stored) {
+void check_failed_recipe_candidate(const recipe_form_outcome_t& proposal, const sv_recipe_t& stored) {
     CHECK(proposal.diagnostics.front().severity == diagnostic_severity_t::warning);
-    CHECK(proposal.candidate == stored);
+    CHECK(proposal.report()->candidate == stored);
 }
 } // namespace
 
@@ -248,12 +248,89 @@ TEST_CASE("failed recipe form owns warning diagnostics and retains the stored ca
     const auto& stored = chart.sv_recipes.front();
     auto form = recipe_form_from_recipe(stored);
     set(form.value_to, "x", "1");
-    const auto proposal = propose_recipe_form(history.document, chart, stored, form);
-    REQUIRE_FALSE(proposal.is_valid());
+    const auto proposal = recipe_form_preview_t::propose(history.document, chart, stored, form);
+    REQUIRE_FALSE(proposal.value.has_value());
     REQUIRE_FALSE(proposal.diagnostics.empty());
     check_failed_recipe_candidate(proposal, stored);
     const auto result = apply_recipe_form(history, proposal);
     REQUIRE_FALSE(result.diagnostics.empty());
-    CHECK(result.diagnostics.front().message == proposal.message());
+    CHECK(result.diagnostics.front().message == proposal.diagnostics.front().message);
     CHECK(history.undo.empty());
+}
+
+TEST_CASE("Rejected recipe form revisions retain the stored candidate and reuse syntax feedback",
+          "[sys][recipe-form][proposal-shape]") {
+    auto history = form_history();
+    const auto& chart = history.document.charts.front();
+    const auto& stored = chart.sv_recipes.front();
+    auto form = recipe_form_from_recipe(stored);
+    set(form.value_to, "x", "1");
+    auto outcome = recipe_form_preview_t::propose(history.document, chart, stored, form);
+    const auto* feedback = outcome.diagnostics.data();
+    outcome = recipe_form_preview_t::revise(std::move(outcome), history.document, chart, stored, form);
+    CHECK_FALSE(outcome.value);
+    CHECK(outcome.diagnostics.data() == feedback);
+    CHECK(outcome.report()->candidate == stored);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("A repaired recipe form starts with the current stored recipe",
+          "[sys][recipe-form][proposal-shape]") {
+    auto history = form_history();
+    const auto& chart = history.document.charts.front();
+    const auto& stored = chart.sv_recipes.front();
+    auto form = recipe_form_from_recipe(stored);
+    set(form.value_to, "9", "1");
+    auto outcome = recipe_form_preview_t::propose(history.document, chart, stored, form);
+    set(form.value_to, "x", "1");
+    outcome = recipe_form_preview_t::revise(std::move(outcome), history.document, chart, stored, form);
+    CHECK_FALSE(outcome.value);
+    CHECK(outcome.report()->candidate == stored);
+    set(form.value_to, "7", "1");
+    outcome = recipe_form_preview_t::revise(std::move(outcome), history.document, chart, stored, form);
+    REQUIRE(outcome.value);
+    CHECK(outcome.value->payload.report.candidate.parameters.value_to == signed_rational_t{7, 1});
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Recipe form diagnostics still reject before a stale captured stamp",
+          "[sys][recipe-form][proposal-shape]") {
+    auto history = form_history();
+    const auto& chart = history.document.charts.front();
+    const auto& stored = chart.sv_recipes.front();
+    auto form = recipe_form_from_recipe(stored);
+    set(form.value_to, "x", "1");
+    const auto outcome = recipe_form_preview_t::propose(history.document, chart, stored, form);
+    ++history.document.revision;
+    const auto result = apply_recipe_form(history, outcome);
+    CHECK_FALSE(result.applied);
+    CHECK(result.diagnostics == outcome.diagnostics);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Recipe editor retention keeps payload storage independent of diagnostics",
+          "[sys][recipe-form][proposal-shape]") {
+    recipe_form_proposal_t captured{.stamp = {.chart = chart_id_t{2}},
+        .payload = {.report = {.candidate = {.name = std::string(512, 'r')}}}};
+    recipe_form_outcome_t outcome{std::move(captured)};
+    const auto* storage = outcome.report()->candidate.name.data();
+    const auto stamp = outcome.captured_stamp();
+    outcome.complete(false);
+    CHECK_FALSE(outcome.value);
+    outcome.diagnostics = {error(diagnostic_code_t::invalid_id, "Replacement feedback.")};
+    CHECK(outcome.report()->candidate.name.data() == storage);
+    CHECK(outcome.captured_stamp() == stamp);
+    outcome.complete(true);
+    REQUIRE(outcome.value);
+    CHECK(outcome.value->payload.report.candidate.name.data() == storage);
+    CHECK(outcome.report() == &outcome.value->payload.report);
+}
+
+TEST_CASE("An empty recipe editor cannot fabricate an applicable proposal",
+          "[sys][recipe-form][proposal-shape]") {
+    recipe_form_outcome_t outcome;
+    outcome.complete(true);
+    CHECK_FALSE(outcome.value);
+    CHECK(outcome.report() == nullptr);
+    CHECK(outcome.captured_stamp() == chart_stamp_t{});
 }

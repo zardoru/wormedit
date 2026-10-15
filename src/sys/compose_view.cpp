@@ -144,22 +144,25 @@ auto paste_anchor(application_command_state_t::paste_session_t& session,
 
 // Pasted playable heads obey the same Warp rule as placed ones; fakes, mines and tails may land.
 void block_paste_heads_in_warps(const wormedit::chart_document_t& chart,
-                                wormedit::chart_paste_proposal_t& proposal) {
-    if (!proposal.is_valid() || chart.warps.empty()) return;
+                                wormedit::chart_paste_outcome_t& proposal) {
+    if (!proposal.value || chart.warps.empty()) return;
     const auto indexed = wormedit::build_measure_index(chart);
     const auto* index = std::get_if<wormedit::measure_index_t>(&indexed);
     if (!index) return;
-    for (const auto& object : proposal.objects) {
+    for (const auto& object : proposal.value->payload.report.objects) {
         const auto* note = std::get_if<wormedit::note_t>(&object);
         const auto row = note ? index->row_of(note->position) : std::nullopt;
         if (!row || !wormedit::is_head_blocked_by_warp(chart, *index, *row, note->kind)) continue;
-        proposal.reject("Playable note heads cannot sit inside a warp.");
+        proposal.diagnostics.push_back(wormedit::chart_paste_diagnostic_t::from(
+            "Playable note heads cannot sit inside a warp.", proposal.value->stamp,
+            std::move(proposal.value->payload.report)));
+        proposal.value.reset();
         return;
     }
 }
 
 auto paste_geometry(const wormedit::chart_document_t& source,
-                    const wormedit::chart_paste_proposal_t& proposal) -> wormedit::chart_document_t {
+                    const wormedit::chart_paste_report_t& report) -> wormedit::chart_document_t {
     wormedit::chart_document_t chart;
     chart.id = source.id;
     chart.source_family = source.source_family;
@@ -171,7 +174,7 @@ auto paste_geometry(const wormedit::chart_document_t& source,
     chart.active_branch_selection = source.active_branch_selection;
     for (const auto& measure : source.measures)
         chart.measures.push_back({.id = measure.id, .definition = measure.definition});
-    for (const auto& object : proposal.objects) {
+    for (const auto& object : report.objects) {
         // Ghost previews draw notes and BGM events; pasted timing objects have no ghost.
         std::visit([&chart](const auto& value) {
             using value_t = std::decay_t<decltype(value)>;
@@ -187,6 +190,21 @@ auto paste_geometry(const wormedit::chart_document_t& source,
     }
     return chart;
 }
+void build_compose_paste_preview(application_command_state_t::paste_session_t& session,
+    const wormedit::song_document_t& document, const wormedit::chart_document_t& source,
+    wormedit::local_position_t anchor) {
+    session.anchor = anchor;
+    session.anchor_available = true;
+    session.proposal = wormedit::chart_paste_proposal_t::propose(document, source.id,
+        session.clipboard, anchor, document.revision);
+    block_paste_heads_in_warps(source, session.proposal);
+    const auto preview = wormedit::chart_paste_preview_view_t::from(session.proposal);
+    const wormedit::chart_paste_report_t empty;
+    session.geometry = paste_geometry(source, preview.report ? *preview.report : empty);
+    const auto indexed = wormedit::build_editor_field_scene_index(session.geometry, document.revision);
+    const auto* index = std::get_if<wormedit::editor_field_scene_index_t>(&indexed);
+    session.index = index ? std::optional{*index} : std::nullopt;
+}
 } // namespace compose_projection_detail
 
 auto revise_compose_paste(application_command_state_t& application_state,
@@ -197,7 +215,8 @@ auto revise_compose_paste(application_command_state_t& application_state,
         if (failure) *failure = "The paste preview is stale.";
         return false;
     }
-    if (!session->proposal.stamp.is_current(document, chart,
+    const auto preview = wormedit::chart_paste_preview_view_t::from(session->proposal);
+    if (!preview.stamp || !preview.stamp->is_current(document, chart,
             wormedit::document_identity_policy_t::revision_only)) {
         if (failure) *failure = wormedit::stale_action_message("Paste preview");
         session.reset();
@@ -210,15 +229,7 @@ auto revise_compose_paste(application_command_state_t& application_state,
         session.reset();
         return false;
     }
-    session->anchor = anchor;
-    session->anchor_available = true;
-    session->proposal = wormedit::propose_chart_paste(document, chart, session->clipboard,
-                                                    anchor, document.revision);
-    block_paste_heads_in_warps(*source, session->proposal);
-    session->geometry = paste_geometry(*source, session->proposal);
-    const auto indexed = wormedit::build_editor_field_scene_index(session->geometry, document.revision);
-    const auto* index = std::get_if<wormedit::editor_field_scene_index_t>(&indexed);
-    session->index = index ? std::optional{*index} : std::nullopt;
+    build_compose_paste_preview(*session, document, *source, anchor);
     return true;
 }
 
@@ -231,14 +242,18 @@ auto begin_compose_paste(application_command_state_t& application_state,
     }
     application_command_state_t::paste_session_t session;
     session.clipboard = *application_state.project.clipboard.chart_clipboard;
-    session.proposal.stamp = wormedit::chart_stamp_t::from(document, state.chart);
     application_state.project.compose_gesture.note_paint_mode_active = false;
     application_state.project.compose_gesture.semantic_layer_paint_mode_active = false;
+    const auto* source = document.find_chart(state.chart);
+    if (!source) {
+        application_state.project.clipboard.paste_session.reset();
+        status = "The paste chart is unavailable.";
+        return false;
+    }
+    build_compose_paste_preview(session, document, *source, state.cursor);
     application_state.project.clipboard.paste_session = std::move(session);
-    const bool accepted = revise_compose_paste(application_state, document, state.chart, state.cursor);
-    status = accepted ? "Paste preview: click or Enter to commit; Escape to cancel."
-                      : "The paste chart is unavailable.";
-    return accepted;
+    status = "Paste preview: click or Enter to commit; Escape to cancel.";
+    return true;
 }
 
 auto apply_compose_paste(application_command_state_t& application_state,
@@ -251,7 +266,11 @@ auto apply_compose_paste(application_command_state_t& application_state,
         return false;
     auto& session = *application_state.project.clipboard.paste_session;
     if (!session.anchor_available) { status = session.anchor_error; return false; }
-    if (!session.proposal.is_valid()) { status = session.proposal.message(); return false; }
+    if (!session.proposal.value) {
+        const auto preview = wormedit::chart_paste_preview_view_t::from(session.proposal);
+        status = preview.diagnostic ? preview.diagnostic->message : "";
+        return false;
+    }
     const auto applied = wormedit::paste_chart_clipboard(history, state.chart, session.clipboard,
                                                        session.anchor);
     if (!applied.applied) {
@@ -1058,12 +1077,12 @@ void populate_compose_staged_draft(flattened_workspace_t& flattened,
                                    application_command_state_t& application_state,
                                    WormUiComposeView& view) {
     if (!application_state.project.compose_gesture.bmson_marker_draft) return;
-    view.staged_bmson_marker_count = application_state.project.compose_gesture.bmson_marker_draft->markers.size();
+    view.staged_bmson_marker_count = application_state.project.compose_gesture.bmson_marker_draft->payload.markers.size();
     flattened.compose.bmson_draft_playable_lane.clear();
     flattened.compose.bmson_draft_restart.clear();
     flattened.compose.bmson_draft_playable_lane.reserve(view.staged_bmson_marker_count);
     flattened.compose.bmson_draft_restart.reserve(view.staged_bmson_marker_count);
-    for (const auto& marker : application_state.project.compose_gesture.bmson_marker_draft->markers) {
+    for (const auto& marker : application_state.project.compose_gesture.bmson_marker_draft->payload.markers) {
         flattened.compose.bmson_draft_playable_lane.push_back(
             marker.playable_lane.value_or(wormedit::lane_id_t{}).value);
         flattened.compose.bmson_draft_restart.push_back(marker.restart ? 1 : 0);
@@ -1429,8 +1448,8 @@ std::uint64_t prepare_compose_projection_state(const compose_projection_context_
     cache.frame.interaction_view = interaction_view;
     const auto hover_gesture_active =
         retained_state->pending_hold.has_value() ||
-        retained_state->pending_note_duration_gesture.has_value() ||
-        retained_state->pending_note_move_gesture.has_value() ||
+        retained_state->gesture<wormedit::pending_note_duration_gesture_t>() != nullptr ||
+        retained_state->gesture<wormedit::pending_note_move_gesture_t>() != nullptr ||
         retained_state->pending_note_paint_gesture.has_value() ||
         retained_state->pending_semantic_layer_paint_gesture.has_value() ||
         retained_state->pending_editor_area_selection.has_value() ||
@@ -1730,7 +1749,8 @@ auto scalar_projection_query(compose_scene_cache_t& cache, unsigned pass, double
     return std::span<const std::size_t>(cache.scene.static_projection_scratch).first(query.count);
 }
 
-auto extract_scalar_grid(compose_scene_cache_t& cache, const wormedit::editor_field_scene_t& scene,
+auto extract_scalar_grid(compose_scene_cache_t& cache,
+                         const wormedit::editor_field_scene_view_t& scene,
                          flattened_workspace_t& flattened, double shift) -> bool {
     const auto indices = scalar_projection_query(cache, 3, double(scene.visible_begin_row),
                                                  double(scene.visible_end_row));
@@ -1754,7 +1774,7 @@ auto extract_scalar_grid(compose_scene_cache_t& cache, const wormedit::editor_fi
     return true;
 }
 auto extract_scalar_objects(compose_scene_cache_t& cache,
-                            const wormedit::editor_field_scene_window_metadata_t& metadata,
+                            const wormedit::editor_field_scene_window_metadata_view_t& metadata,
                             flattened_workspace_t& flattened,
                             const wormedit::editor_interaction_view_model_t& interaction,
                             double shift, double height) -> bool {
@@ -1845,7 +1865,7 @@ auto build_reused_scalar_scene_view(const compose_projection_context_t<wormedit:
     cache.scene.static_projection_scanned = cache.scene.static_projection_extracted = 0;
     if (!reusable_scalar_source(cache, view))
         return false;
-    const auto metadata = wormedit::build_editor_field_scene_window_metadata_view(
+    const auto metadata = wormedit::editor_field_scene_window_metadata_view_t::from(
         input.scope.chart_scope.chart, *cache.scene.index, input.scope.interaction_view,
         cache.frame.preview_scene_request, cache.scene.scene_window);
     if (!metadata.projection)
@@ -1903,8 +1923,8 @@ void prepare_compose_bgm_widths(const wormedit::chart_document_t& chart,
 auto compose_has_bgm_pane(const chart_document_t& chart,
                            const editor_interaction_view_model_t& view) -> bool {
     return !chart.bgm_source_lanes.empty() || chart.source_family == format_family_t::bms ||
-        chart.source_family == format_family_t::bmson || (view.pending_note_move_gesture &&
-        !view.pending_note_move_gesture->new_bgm_lanes.empty());
+        chart.source_family == format_family_t::bmson || (view.gesture<wormedit::pending_note_move_gesture_t>() &&
+        !view.gesture<wormedit::pending_note_move_gesture_t>()->new_bgm_lanes.empty());
 }
 
 bool compose_project_scene(const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input,
@@ -2005,8 +2025,8 @@ bool compose_project_scene(const compose_projection_context_t<wormedit::editor_i
     prepare_compose_bgm_widths(chart, history.document.id.value, cache, application_state);
     const auto bgm_content = wormedit::editor_bgm_content_width_pixels(chart,
         {.bgm_lane_widths_pixels = cache.scene.bgm_lane_widths_pixels});
-    const auto preview_lane_count = interaction_view.pending_note_move_gesture
-        ? interaction_view.pending_note_move_gesture->new_bgm_lanes.size() : 0;
+    const auto preview_lane_count = interaction_view.gesture<wormedit::pending_note_move_gesture_t>()
+        ? interaction_view.gesture<wormedit::pending_note_move_gesture_t>()->new_bgm_lanes.size() : 0;
     const auto maximum_bgm_scroll = std::max(0.0,
         bgm_content + preview_lane_count * compose_bgm_lane_width_pixels - bgm_pane_width);
     auto& bgm_horizontal_scroll = application_state.project.compose_view.bgm_horizontal_scroll_pixels[chart.id.value];
@@ -2053,8 +2073,9 @@ bool compose_project_scene(const compose_projection_context_t<wormedit::editor_i
         return true;
     }
     const auto prior_window_work=cache.scene.scene_window.rebuild_count+cache.scene.scene_window.reuse_count;
-    const auto composed = wormedit::make_editor_field_scene_reusing_window(chart, *cache.scene.index, interaction_view,
-                                                            cache.frame.preview_scene_request, cache.scene.scene_window);
+    const auto composed = wormedit::editor_field_scene_view_t::from(
+        chart, *cache.scene.index, interaction_view, cache.frame.preview_scene_request,
+        cache.scene.scene_window);
     frame_timing().restore(frame_scene_previous);
     if (!composed.scene || composed.has_errors()) {
         report_compose_diagnostic(flattened, projection_feedback_kind_t::field_scene,
@@ -2220,7 +2241,9 @@ void append_paste_timing_ghosts(const compose_projection_context_t<wormedit::edi
                                  input.scope.interaction_view.viewport_scroll_pixels, height,
                                  input.scope.downscroll);
     };
-    for (const auto& object : session.proposal.objects) {
+    const auto preview = wormedit::chart_paste_preview_view_t::from(session.proposal);
+    if (!preview.report) return;
+    for (const auto& object : preview.report->objects) {
         const auto lane = paste_timing_ghost_lane(object);
         if (!lane) continue;
         const auto [begin, end] = paste_timing_ghost_span(object);
@@ -2246,12 +2269,14 @@ void populate_compose_paste_projection(const compose_projection_context_t<wormed
     auto& session = *application.project.clipboard.paste_session;
     auto& view = input.frame.view();
     view.paste_active = true;
-    view.paste_valid = session.anchor_available && session.proposal.is_valid();
-    view.paste_diagnostic = session.anchor_available ? session.proposal.message().data()
-                                                     : session.anchor_error.c_str();
+    const auto preview = wormedit::chart_paste_preview_view_t::from(session.proposal);
+    view.paste_valid = session.anchor_available && session.proposal.value.has_value();
+    view.paste_diagnostic = session.anchor_available
+        ? (preview.diagnostic ? preview.diagnostic->message.c_str() : "")
+        : session.anchor_error.c_str();
     session.ghosts.clear();
     if (!session.index) return;
-    const auto composed = wormedit::make_editor_field_scene(
+    const auto composed = wormedit::editor_field_scene_view_t::from(
         session.geometry, *session.index, input.scope.interaction_view,
         input.frame.cache.frame.preview_scene_request);
     if (!composed.scene) return;
@@ -2390,7 +2415,7 @@ void populate_bgm_only_compose_projection(
     const wormedit::chart_document_t& chart, const wormedit::measure_index_t& measures,
     compose_scene_cache_t& cache, application_command_state_t& application_state,
     WormUiComposeView& view, bool downscroll,
-    const wormedit::timing_lane_pseudonote_preview_t* timing_stage) {
+    const wormedit::timing_lane_pseudonote_outcome_t* timing_stage) {
     std::optional<wormedit::editor_interaction_state_t> projection_state{
         std::in_place};
     projection_state->chart = chart.id;
@@ -2526,7 +2551,7 @@ auto default_song_bar_hidden(const wormedit::song_document_t& document,
 
 auto projected_pointer_hold_active(const std::optional<wormedit::editor_interaction_state_t>& state)
     -> bool {
-    return state && (state->pending_note_duration_gesture ||
+    return state && (state->gesture<wormedit::pending_note_duration_gesture_t>() ||
         (state->pending_hold && state->pending_hold->gesture_source ==
             wormedit::hold_gesture_source_t::alt_pointer));
 }
@@ -2537,7 +2562,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
                            compose_scene_cache_t& cache, int window_width, int window_height,
                            std::optional<wormedit::editor_interaction_state_t>& retained_state,
                            application_command_state_t& application_state,
-                           const wormedit::timing_lane_pseudonote_preview_t* timing_stage,
+                           const wormedit::timing_lane_pseudonote_outcome_t* timing_stage,
                            std::span<const wormedit::local_position_t> comparison_rows,
                            const compose_bga_move_preview_input_t* bga_move_preview) {
     compose_frame_inputs_t frame{flattened,       history,           cache,
@@ -2616,7 +2641,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
 auto toggle_compose_audio_offset_lock(const WormUiWorkspaceAction& action,
     const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
     application_command_state_t& application, compose_scene_cache_t& cache,
-    std::optional<wormedit::audio_offset_drag_t>& drag,
+    std::optional<wormedit::proposal_t<wormedit::audio_offset_drag_t>>& drag,
     std::optional<wormedit::workspace_tab_t>& drag_tab) -> std::string {
     if (workspace.active_tab != wormedit::workspace_tab_t::compose || !workspace.selected_chart)
         return "Audio offset lock ignored because the chart or document revision changed.";

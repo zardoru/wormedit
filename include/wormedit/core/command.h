@@ -27,6 +27,24 @@ template <typename Value> struct insert_edit_t {
     chart_id_t chart;
     Value value;
     auto operator==(const insert_edit_t&) const -> bool = default;
+
+    template <class Context>
+        requires requires(Context& context, const insert_edit_t& edit) {
+            {
+                context.validate(edit)
+            } -> std::same_as<std::optional<typename Context::outcome_type>>;
+        }
+    [[nodiscard]] auto validate(Context& context) const
+        -> std::optional<typename Context::outcome_type> {
+        return context.validate(*this);
+    }
+    template <class Context>
+        requires requires(Context& context, const insert_edit_t& edit) {
+            { context.perform(edit) } -> std::same_as<typename Context::outcome_type>;
+        }
+    [[nodiscard]] auto perform(Context& context) const -> typename Context::outcome_type {
+        return context.perform(*this);
+    }
 };
 
 template <typename Value> struct update_edit_t {
@@ -34,6 +52,24 @@ template <typename Value> struct update_edit_t {
     typename chart_edit_value_traits_t<Value>::id_type id;
     Value value;
     auto operator==(const update_edit_t&) const -> bool = default;
+
+    template <class Context>
+        requires requires(Context& context, const update_edit_t& edit) {
+            {
+                context.validate(edit)
+            } -> std::same_as<std::optional<typename Context::outcome_type>>;
+        }
+    [[nodiscard]] auto validate(Context& context) const
+        -> std::optional<typename Context::outcome_type> {
+        return context.validate(*this);
+    }
+    template <class Context>
+        requires requires(Context& context, const update_edit_t& edit) {
+            { context.perform(edit) } -> std::same_as<typename Context::outcome_type>;
+        }
+    [[nodiscard]] auto perform(Context& context) const -> typename Context::outcome_type {
+        return context.perform(*this);
+    }
 };
 
 template <typename Value> struct delete_edit_t {
@@ -41,6 +77,24 @@ template <typename Value> struct delete_edit_t {
     typename chart_edit_value_traits_t<Value>::id_type id;
     [[no_unique_address]] typename chart_edit_value_traits_t<Value>::delete_options_type options{};
     auto operator==(const delete_edit_t&) const -> bool = default;
+
+    template <class Context>
+        requires requires(Context& context, const delete_edit_t& edit) {
+            {
+                context.validate(edit)
+            } -> std::same_as<std::optional<typename Context::outcome_type>>;
+        }
+    [[nodiscard]] auto validate(Context& context) const
+        -> std::optional<typename Context::outcome_type> {
+        return context.validate(*this);
+    }
+    template <class Context>
+        requires requires(Context& context, const delete_edit_t& edit) {
+            { context.perform(edit) } -> std::same_as<typename Context::outcome_type>;
+        }
+    [[nodiscard]] auto perform(Context& context) const -> typename Context::outcome_type {
+        return context.perform(*this);
+    }
 };
 
 template <typename Value>
@@ -133,6 +187,9 @@ struct document_history_t {
                                   std::size_t maximum_undo_entries = 128,
                                   bool initially_saved = true) -> document_history_t;
 
+    // Main-loop-only lazy read. The returned value belongs to the committed snapshot.
+    [[nodiscard]] auto indices(chart_id_t chart) const -> const chart_indices_t*;
+
     song_document_t document;
     std::vector<document_command_record_t> undo;
     std::vector<document_command_record_t> redo;
@@ -184,6 +241,11 @@ template <class Payload> struct command_result_with_t {
     }
     document_command_result_t command;
     Payload payload{};
+
+    [[nodiscard]] static auto from(document_command_result_t command, Payload payload)
+        -> command_result_with_t {
+        return {.command = std::move(command), .payload = std::move(payload)};
+    }
 
     [[nodiscard]] explicit operator bool() const noexcept {
         if constexpr (requires { payload.is_success(); })
@@ -239,6 +301,8 @@ struct document_command_transaction_t {
         -> document_command_transaction_t;
     [[nodiscard]] auto is_ready() const noexcept -> bool;
     [[nodiscard]] auto has_copy() const noexcept -> bool;
+    // The current transaction document, including an already prepared snapshot.
+    [[nodiscard]] auto document() const noexcept -> const song_document_t&;
     [[nodiscard]] auto source_chart(chart_id_t id) const -> const chart_document_t*;
     auto copy_document() -> song_document_t&;
     // Staged editors hand over their existing snapshot without copying the live document.

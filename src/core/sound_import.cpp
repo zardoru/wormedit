@@ -1,3 +1,4 @@
+#include "chart_object_ids.h"
 #include <wormedit/core/sound_groups.h>
 #include <wormedit/core/bms36.h>
 #include "text_util.h"
@@ -13,31 +14,6 @@
 namespace wormedit {
 namespace {
 
-
-struct object_id_scan_t {
-    std::uint64_t largest{};
-    std::size_t count{};
-};
-
-auto scan_chart_objects(const chart_document_t& chart) -> object_id_scan_t {
-    object_id_scan_t scan;
-    const auto visit = [&](const auto& values) {
-        for (const auto& value : values) {
-            scan.largest = std::max(scan.largest, value.id.value);
-            ++scan.count;
-        }
-    };
-    visit(chart.bgm_source_lanes); visit(chart.lane_layouts); visit(chart.bpms);
-    visit(chart.pauses); visit(chart.warps); visit(chart.scrolls); visit(chart.speeds);
-    visit(chart.kiai); visit(chart.timing_anchors); visit(chart.bookmarks);
-    visit(chart.sections); visit(chart.bga_events); visit(chart.sound_channels);
-    for (const auto& channel : chart.sound_channels) visit(channel.events);
-    for (const auto& measure : chart.measures) {
-        visit(measure.notes);
-        visit(measure.bgm_events);
-    }
-    return scan;
-}
 
 auto validate_batch(const bulk_sound_import_action_t& action, document_command_result_t& result)
     -> bool {
@@ -265,16 +241,16 @@ auto next_channel_source_index(const song_document_t& document, const chart_docu
 
 // Adds an empty BMSON channel and its explicitly linked presentation lane.
 auto append_stem(chart_document_t& chart, resource_entry_t& resource, std::size_t source_index,
-                 object_id_scan_t& ids, document_command_result_t& result) -> bool {
+                 object_id_ceiling_t& ids, document_command_result_t& result) -> bool {
     if (ids.count > default_maximum_chart_objects - 2 ||
-        ids.largest > std::numeric_limits<std::uint64_t>::max() - 2) {
+        ids.maximum > std::numeric_limits<std::uint64_t>::max() - 2) {
         reject(result, diagnostic_code_t::invalid_id, "chart cannot hold another stem (object IDs exhausted)");
         return false;
     }
     resource.target_identities.push_back(
         {format_family_t::bmson, std::to_string(source_index), "sound_channel"});
-    const object_id_t channel_id{++ids.largest};
-    const object_id_t lane_id{++ids.largest};
+    const object_id_t channel_id{++ids.maximum};
+    const object_id_t lane_id{++ids.maximum};
     ids.count += 2;
     std::size_t order = 0;
     for (const auto& lane : chart.bgm_source_lanes) order = std::max(order, lane.source_order + 1);
@@ -289,7 +265,7 @@ auto append_stem(chart_document_t& chart, resource_entry_t& resource, std::size_
 }
 
 auto import_entry(document_history_t& draft, const bulk_sound_import_entry_t& entry,
-                  chart_id_t stem_chart, object_id_scan_t& ids,
+                  chart_id_t stem_chart, object_id_ceiling_t& ids,
                   const std::optional<std::string>& bms_identifier,
                   document_command_result_t& result) -> bool {
     auto asset = entry.asset;
@@ -446,7 +422,7 @@ auto apply_bulk_sound_import(document_history_t& history,
     auto draft = document_history_t::from(history.document, 1, false);
     const auto first_imported_resource = draft.document.resources.size();
     chart_id_t stem_chart{};
-    object_id_scan_t ids;
+    object_id_ceiling_t ids;
     if (action.chart) {
         const auto found = draft.document.find_chart(action.chart);
         if (found == nullptr) {
@@ -455,7 +431,7 @@ auto apply_bulk_sound_import(document_history_t& history,
         }
         if (found->source_family == format_family_t::bmson) {
             stem_chart = found->id;
-            ids = scan_chart_objects(*found);
+            ids = object_id_ceiling_t::from(*found);
         }
     }
     for (std::size_t index = 0; index < action.entries.size(); ++index) {

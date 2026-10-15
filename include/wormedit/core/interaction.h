@@ -793,6 +793,13 @@ struct editor_interaction_setup_t {
 };
 
 struct editor_interaction_result_t {
+    [[nodiscard]] static auto from(const document_history_t& history,
+        const editor_interaction_state_t& state, bool document_changed = false)
+        -> editor_interaction_result_t;
+    [[nodiscard]] static auto from(
+        std::variant<editor_interaction_view_model_t, diagnostic_list_t> view,
+        bool document_changed = false) -> editor_interaction_result_t;
+
     bool accepted{};
     bool document_changed{};
     std::optional<editor_interaction_view_model_t> view;

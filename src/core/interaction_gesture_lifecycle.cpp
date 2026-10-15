@@ -30,16 +30,7 @@ auto begin_note_duration_gesture(editor_edit_context_t& context, object_id_t ref
         .preview_end = plan.reference_end,
         .preview = duration_previews(plan),
     };
-    const auto view = make_view(context.history, state);
-    return {
-        .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
-        .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                    ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                    : std::nullopt,
-        .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                           ? std::get<diagnostic_list_t>(view)
-                           : diagnostic_list_t{},
-    };
+    return editor_interaction_result_t::from(context.history, state);
 }
 } // namespace wormedit
 
@@ -83,16 +74,7 @@ auto update_note_duration_gesture(editor_edit_context_t& context, local_position
     const auto& plan = std::get<duration_resize_plan_t>(planned);
     state.pending_note_duration_gesture->preview_end = plan.reference_end;
     state.pending_note_duration_gesture->preview = duration_previews(plan);
-    const auto view = make_view(context.history, state);
-    return {
-        .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
-        .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                    ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                    : std::nullopt,
-        .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                           ? std::get<diagnostic_list_t>(view)
-                           : diagnostic_list_t{},
-    };
+    return editor_interaction_result_t::from(context.history, state);
 }
 } // namespace wormedit
 
@@ -247,16 +229,7 @@ auto begin_note_move_gesture(editor_edit_context_t& context, object_id_t referen
         .conflicting_notes = move_conflict_count(plan),
         .displace_to_bgm = displace_to_bgm,
     };
-    const auto view = make_view(context.history, state);
-    return {
-        .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
-        .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                    ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                    : std::nullopt,
-        .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                           ? std::get<diagnostic_list_t>(view)
-                           : diagnostic_list_t{},
-    };
+    return editor_interaction_result_t::from(context.history, state);
 }
 } // namespace wormedit
 
@@ -299,16 +272,7 @@ auto update_note_move_gesture(editor_edit_context_t& context, local_position_t r
     state.pending_note_move_gesture->to_bgm = to_bgm;
     state.pending_note_move_gesture->preferred_bgm_lane = preferred_bgm_lane;
     prepare_bgm_move_preview(context, plan, *state.pending_note_move_gesture);
-    const auto view = make_view(context.history, state);
-    return {
-        .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
-        .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                    ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                    : std::nullopt,
-        .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                           ? std::get<diagnostic_list_t>(view)
-                           : diagnostic_list_t{},
-    };
+    return editor_interaction_result_t::from(context.history, state);
 }
 } // namespace wormedit
 
@@ -358,7 +322,7 @@ auto release_note_move_gesture(editor_edit_context_t& context, local_position_t 
                     {editor_selection_object_kind_t::bgm_event, id});
         }
         place_cursor_at(context.state, plan.reference_position);
-        auto result = interaction_view_result(context.history, context.state, true);
+        auto result = editor_interaction_result_t::from(context.history, context.state, true);
         result.accepted = true;
         return result;
     }
@@ -484,16 +448,7 @@ auto append_note_paint_target(editor_edit_context_t& context, lane_id_t lane,
     pending.last_position = *target;
     state.active_lane = lane;
     place_cursor_at(state, *target);
-    const auto view = make_view(context.history, state);
-    return {
-        .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
-        .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                    ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                    : std::nullopt,
-        .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                           ? std::get<diagnostic_list_t>(view)
-                           : diagnostic_list_t{},
-    };
+    return editor_interaction_result_t::from(context.history, state);
 }
 } // namespace wormedit
 
@@ -570,16 +525,7 @@ auto begin_note_paint_gesture(editor_edit_context_t& context, lane_id_t lane,
     state.pending_note_paint_gesture = std::move(pending);
     state.active_lane = lane;
     place_cursor_at(state, *target);
-    const auto view = make_view(context.history, state);
-    return {
-        .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
-        .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                    ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                    : std::nullopt,
-        .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                           ? std::get<diagnostic_list_t>(view)
-                           : diagnostic_list_t{},
-    };
+    return editor_interaction_result_t::from(context.history, state);
 }
 } // namespace wormedit
 
@@ -758,16 +704,7 @@ auto end_note_paint_gesture(editor_edit_context_t& context, lane_id_t lane,
             {error(diagnostic_code_t::invalid_id, "paint gesture contains no note changes")});
     if (plan.additions.empty() && plan.removals.empty()) {
         state.pending_note_paint_gesture.reset();
-        const auto view = make_view(context.history, state);
-        return {
-            .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
-            .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                        ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                        : std::nullopt,
-            .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                               ? std::get<diagnostic_list_t>(view)
-                               : diagnostic_list_t{},
-        };
+        return editor_interaction_result_t::from(context.history, state);
     }
     auto prepared = prepare_note_paint_document(
         context.history, state.chart, plan, pending.kind, pending.sound, pending.layers,
@@ -787,17 +724,7 @@ auto end_note_paint_gesture(editor_edit_context_t& context, lane_id_t lane,
     set_selected_notes(state, std::move(result.painted_notes));
     state.active_lane = lane;
     place_cursor_at(state, pending.last_position);
-    const auto view = make_view(context.history, state);
-    return {
-        .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
-        .document_changed = true,
-        .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                    ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                    : std::nullopt,
-        .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                           ? std::get<diagnostic_list_t>(view)
-                           : diagnostic_list_t{},
-    };
+    return editor_interaction_result_t::from(context.history, state, true);
 }
 } // namespace wormedit
 
@@ -825,10 +752,8 @@ auto begin_hold_gesture(editor_edit_context_t& context, lane_id_t lane, local_po
     auto result = dispatch_nested_action(context, begin_hold_action_t{position});
     if (!result) {
         state = before;
-        const auto view = make_view(context.history, state);
-        result.view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                          ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                          : std::nullopt;
+        auto refreshed = editor_interaction_result_t::from(context.history, state);
+        result.view = std::move(refreshed.view);
         return result;
     }
     if (state.pending_hold) {
@@ -838,13 +763,9 @@ auto begin_hold_gesture(editor_edit_context_t& context, lane_id_t lane, local_po
             state.pending_hold->source_geometry =
                 std::make_shared<const bmson_source_geometry_t>(*geometry);
     }
-    const auto view = make_view(context.history, state);
-    result.view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                      ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                      : std::nullopt;
-    result.diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                             ? std::get<diagnostic_list_t>(view)
-                             : diagnostic_list_t{};
+    auto refreshed = editor_interaction_result_t::from(context.history, state);
+    result.view = std::move(refreshed.view);
+    result.diagnostics = std::move(refreshed.diagnostics);
     return result;
 }
 } // namespace wormedit
@@ -882,13 +803,9 @@ auto update_hold_gesture(editor_edit_context_t& context, hold_gesture_source_t s
                                  {error(diagnostic_code_t::invalid_resolution,
                                         "hold movement cannot keep the cursor visible")});
     }
-    const auto view = make_view(context.history, state);
-    result.view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                      ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                      : std::nullopt;
-    result.diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                             ? std::get<diagnostic_list_t>(view)
-                             : diagnostic_list_t{};
+    auto refreshed = editor_interaction_result_t::from(context.history, state);
+    result.view = std::move(refreshed.view);
+    result.diagnostics = std::move(refreshed.diagnostics);
     return result;
 }
 } // namespace wormedit
@@ -912,13 +829,9 @@ auto release_hold_gesture(editor_edit_context_t& context, hold_gesture_source_t 
     if (state.pending_hold)
         state.pending_hold->gesture_source = source;
     if (result) {
-        const auto view = make_view(context.history, state);
-        result.view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                          ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                          : std::nullopt;
-        result.diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                                 ? std::get<diagnostic_list_t>(view)
-                                 : diagnostic_list_t{};
+        auto refreshed = editor_interaction_result_t::from(context.history, state);
+        result.view = std::move(refreshed.view);
+        result.diagnostics = std::move(refreshed.diagnostics);
     }
     return result;
 }
@@ -957,7 +870,7 @@ auto begin_hold_action(editor_edit_context_t& context, local_position_t position
             geometry ? std::make_shared<const bmson_source_geometry_t>(*geometry) : nullptr,
     };
     place_cursor_at(state, *snapped);
-    return space_selection_view_result(make_view(history, state));
+    return editor_interaction_result_t::from(history, state);
 }
 } // namespace wormedit
 
@@ -1008,7 +921,7 @@ auto update_hold_preview(editor_edit_context_t& context, local_position_t positi
     state.pending_hold->placement_preview = std::get<pending_hold_placement_preview_t>(plan);
     place_cursor_at(state, *snapped);
     state.active_lane = pending.lane;
-    return space_selection_view_result(make_view(history, state));
+    return editor_interaction_result_t::from(history, state);
 }
 } // namespace wormedit
 
@@ -1068,7 +981,7 @@ auto commit_stem_hold(editor_edit_context_t& context, const pending_hold_t& pend
         return diagnostic_result(context.history, context.state, committed.diagnostics);
     place_cursor_at(context.state, target);
     context.state.active_lane = pending.lane;
-    auto result = interaction_view_result(context.history, context.state, true);
+    auto result = editor_interaction_result_t::from(context.history, context.state, true);
     result.created_note = created;
     return result;
 }
@@ -1148,7 +1061,7 @@ auto commit_hold(editor_edit_context_t& context, local_position_t position,
     state.pending_hold.reset();
     place_cursor_at(state, *snapped);
     state.active_lane = pending.lane;
-    auto result = space_selection_view_result(make_view(history, state));
+    auto result = editor_interaction_result_t::from(history, state);
     result.accepted = true;
     result.document_changed = true;
     result.created_note = id;
@@ -1239,7 +1152,7 @@ auto release_lane_key_hold_gesture(editor_edit_context_t& context, lane_id_t act
     auto& history = context.history;
     auto& state = context.state;
     if (!state.pending_hold)
-        return space_selection_view_result(make_view(history, state));
+        return editor_interaction_result_t::from(history, state);
     const auto before = state;
     const auto lane = action_lane.value == 0 ? state.pending_hold->lane : action_lane;
     const auto found =
@@ -1294,23 +1207,6 @@ auto release_lane_key_hold_gesture(editor_edit_context_t& context, lane_id_t act
 
 namespace wormedit {
 using namespace interaction_detail;
-auto recovered_editor_view(document_history_t& history, editor_interaction_state_t& state)
-    -> editor_interaction_result_t {
-    const auto view = make_view(history, state);
-    return {
-        .accepted = true,
-        .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                    ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                    : std::nullopt,
-        .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                           ? std::get<diagnostic_list_t>(view)
-                           : diagnostic_list_t{},
-    };
-}
-} // namespace wormedit
-
-namespace wormedit {
-using namespace interaction_detail;
 auto handle_editor_cancellation(document_history_t& history, editor_interaction_state_t& state,
                                 const editor_interaction_action_t& action)
     -> std::optional<editor_interaction_result_t> {
@@ -1327,14 +1223,18 @@ auto handle_editor_cancellation(document_history_t& history, editor_interaction_
                                             "unknown editor gesture cancellation reason")});
         }
         clear_editor_gestures(state);
-        return recovered_editor_view(history, state);
+        auto result = editor_interaction_result_t::from(history, state);
+        result.accepted = true;
+        return result;
     }
     if (std::holds_alternative<cancel_editor_area_selection_action_t>(action)) {
         visit_editor_gestures(state, [](auto kind, auto& field) {
             if (kind == editor_gesture_kind_t::area)
                 clear_editor_gesture(field);
         });
-        return recovered_editor_view(history, state);
+        auto result = editor_interaction_result_t::from(history, state);
+        result.accepted = true;
+        return result;
     }
     return std::nullopt;
 }

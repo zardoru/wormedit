@@ -383,7 +383,7 @@ auto publish_row_placement(editor_edit_context_t& context, document_history_t& s
         pending.stamp = document_stamp_t::from(context.history.document.revision);
     restore_cursor_pose(context.state, capture_cursor_pose(staged));
     context.state.active_lane = staged.active_lane;
-    auto published = interaction_view_result(context.history, context.state, true);
+    auto published = editor_interaction_result_t::from(context.history, context.state, true);
     published.created_note = result.created_note;
     return published;
 }
@@ -526,7 +526,7 @@ auto place_virtual_bms_tap(editor_edit_context_t& context,
         pending.preview_canvas_row = resolved.row;
         context.state.pending_hold = std::move(pending);
         context.state.active_lane = action.lane;
-        return interaction_view_result(context.history, context.state, false);
+        return editor_interaction_result_t::from(context.history, context.state, false);
     }
     return publish_row_placement(context, scratch, staged, result);
 }
@@ -557,7 +557,7 @@ auto cycle_editor_snap(document_history_t& history, editor_interaction_state_t& 
             state.active_snap_was_fallback = false;
         }
     }
-    return interaction_view_result(history, state, false);
+    return editor_interaction_result_t::from(history, state, false);
 }
 } // namespace wormedit
 
@@ -571,7 +571,7 @@ auto set_editor_snap(document_history_t& history, editor_interaction_state_t& st
         state.active_snap_denominator = action.denominator;
         state.active_snap_was_fallback = false;
     }
-    return interaction_view_result(history, state, false);
+    return editor_interaction_result_t::from(history, state, false);
 }
 } // namespace wormedit
 
@@ -623,7 +623,7 @@ auto adjust_editor_zoom(document_history_t& history, editor_interaction_state_t&
             history, state,
             {error(diagnostic_code_t::invalid_resolution, "zoom cannot resolve the fixed cursor")});
     state = std::move(proposed);
-    return interaction_view_result(history, state, false);
+    return editor_interaction_result_t::from(history, state, false);
 }
 } // namespace wormedit
 
@@ -658,26 +658,9 @@ auto place_tap(editor_edit_context_t& context, const place_tap_action_t& action)
     if (!command)
         return diagnostic_result(context.history, state, command.diagnostics);
     place_cursor_at(state, *target);
-    auto result = interaction_view_result(context.history, state, true);
+    auto result = editor_interaction_result_t::from(context.history, state, true);
     result.created_note = created;
     return result;
-}
-} // namespace wormedit
-
-namespace wormedit {
-using namespace interaction_detail;
-auto semantic_paint_view(document_history_t& history, editor_interaction_state_t& state)
-    -> editor_interaction_result_t {
-    const auto view = make_view(history, state);
-    return {
-        .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
-        .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                    ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                    : std::nullopt,
-        .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                           ? std::get<diagnostic_list_t>(view)
-                           : diagnostic_list_t{},
-    };
 }
 } // namespace wormedit
 
@@ -705,7 +688,7 @@ auto append_semantic_paint_note(editor_edit_context_t& context, object_id_t note
             {error(diagnostic_code_t::invalid_id,
                    "semantic-layer paint target does not identify a chart note", note_id)});
     if (pending.visited.contains(note_id.value))
-        return semantic_paint_view(history, state);
+        return editor_interaction_result_t::from(history, state);
     if (!pending.notes || !pending.bgm_events ||
         pending.notes->size() + pending.bgm_events->size() >= maximum_note_paint_targets)
         return diagnostic_result(
@@ -716,7 +699,7 @@ auto append_semantic_paint_note(editor_edit_context_t& context, object_id_t note
     expanded->push_back(note_id);
     pending.notes = std::move(expanded);
     pending.visited.insert(note_id.value);
-    return semantic_paint_view(history, state);
+    return editor_interaction_result_t::from(history, state);
 }
 } // namespace wormedit
 
@@ -744,7 +727,7 @@ auto append_semantic_paint_bgm_event(editor_edit_context_t& context, object_id_t
             {error(diagnostic_code_t::invalid_id,
                    "semantic-layer paint target does not identify a BGM event", event_id)});
     if (pending.visited.contains(event_id.value))
-        return semantic_paint_view(history, state);
+        return editor_interaction_result_t::from(history, state);
     if (!pending.bgm_events || !pending.notes ||
         pending.bgm_events->size() + pending.notes->size() >= maximum_note_paint_targets)
         return diagnostic_result(
@@ -755,6 +738,6 @@ auto append_semantic_paint_bgm_event(editor_edit_context_t& context, object_id_t
     expanded->push_back(event_id);
     pending.bgm_events = std::move(expanded);
     pending.visited.insert(event_id.value);
-    return semantic_paint_view(history, state);
+    return editor_interaction_result_t::from(history, state);
 }
 } // namespace wormedit

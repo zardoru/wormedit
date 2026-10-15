@@ -7345,3 +7345,21 @@ TEST_CASE("pointer gesture clocks preserve equal-revision project replacement an
                                               .phase = editor_gesture_phase_t::commit});
     check_replaced_project_duration(applied, history);
 }
+
+TEST_CASE("interaction results retain view failures and command effects", "[core][interaction][result]") {
+    auto history = document_history_t::from(make_song());
+    auto state = make_state(history);
+    const auto ready = editor_interaction_result_t::from(history, state, true);
+    CHECK((ready.accepted && ready.document_changed && ready.view && ready.diagnostics.empty()));
+
+    state.chart = chart_id_t{999};
+    const auto failed = editor_interaction_result_t::from(history, state, true);
+    REQUIRE_FALSE(failed.diagnostics.empty());
+    CHECK_FALSE((failed.accepted || failed.view || !failed.document_changed));
+
+    // Cancellation is accepted even when the previous view cannot be recovered.
+    const auto cancelled = dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
+    CHECK((cancelled.accepted && !cancelled.view &&
+           cancelled.diagnostics.size() == failed.diagnostics.size() &&
+           cancelled.diagnostics.front().message == failed.diagnostics.front().message));
+}

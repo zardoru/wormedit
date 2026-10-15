@@ -31,9 +31,6 @@
 #include <utility>
 
 namespace wormedit {
-auto interaction_view_result(const document_history_t& history,
-                             const editor_interaction_state_t& state, bool changed)
-    -> editor_interaction_result_t;
 auto combine_editor_area_selection(const editor_interaction_state_t& state,
                                    const std::vector<editor_selection_object_t>& hits,
                                    editor_area_selection_mode_t mode,
@@ -1134,9 +1131,6 @@ auto release_hold_gesture(editor_edit_context_t& context, hold_gesture_source_t 
                           local_position_t position,
                           std::optional<bmson_source_geometry_t> geometry = {})
     -> editor_interaction_result_t;
-auto space_selection_view_result(
-    const std::variant<editor_interaction_view_model_t, diagnostic_list_t>& view)
-    -> editor_interaction_result_t;
 auto begin_hold_action(editor_edit_context_t& context, local_position_t position,
                        std::optional<resource_id_t> sound = std::nullopt,
                        std::optional<bmson_source_geometry_t> geometry = {})
@@ -1173,9 +1167,6 @@ struct space_range_selection_context_t {
     const std::variant<editor_interaction_view_model_t, diagnostic_list_t>& initial_view;
     const std::uint64_t& absolute;
 };
-auto space_selection_view_result(
-    const std::variant<editor_interaction_view_model_t, diagnostic_list_t>& view)
-    -> editor_interaction_result_t;
 auto begin_space_range_selection(space_range_selection_context_t& context,
                                  const space_range_selection_action_t& action)
     -> editor_interaction_result_t;
@@ -1232,8 +1223,6 @@ auto adjust_editor_zoom(document_history_t& history, editor_interaction_state_t&
     -> editor_interaction_result_t;
 auto place_tap(editor_edit_context_t& context, const place_tap_action_t& action)
     -> editor_interaction_result_t;
-auto semantic_paint_view(document_history_t& history, editor_interaction_state_t& state)
-    -> editor_interaction_result_t;
 auto append_semantic_paint_note(editor_edit_context_t& context, object_id_t note_id,
                                 bool pointer_captured) -> editor_interaction_result_t;
 auto append_semantic_paint_bgm_event(editor_edit_context_t& context, object_id_t event_id,
@@ -1273,8 +1262,6 @@ auto retain_area_selection_range(area_selection_context_t& context,
 auto commit_area_selection_gesture(area_selection_context_t& context, double x_pixels,
                                    double y_pixels, bool pointer_captured)
     -> editor_interaction_result_t;
-auto recovered_editor_view(document_history_t& history, editor_interaction_state_t& state)
-    -> editor_interaction_result_t;
 auto handle_editor_cancellation(document_history_t& history, editor_interaction_state_t& state,
                                 const editor_interaction_action_t& action)
     -> std::optional<editor_interaction_result_t>;
@@ -1293,9 +1280,6 @@ auto validate_active_gesture_action(const document_history_t& history,
     -> std::optional<editor_interaction_result_t>;
 auto is_virtual_cursor_action_allowed(const editor_interaction_state_t& state,
                                    const editor_interaction_action_t& action) -> bool;
-auto interaction_view_result(const document_history_t& history,
-                             const editor_interaction_state_t& state, bool changed)
-    -> editor_interaction_result_t;
 auto apply_duration_resize_plan(document_history_t& history, editor_interaction_state_t& state,
                                 const duration_resize_plan_t& plan) -> editor_interaction_result_t;
 auto has_note_move_changes(const chart_document_t& chart, const note_move_plan_t& plan) -> bool;

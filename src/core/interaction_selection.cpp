@@ -561,23 +561,6 @@ auto combine_editor_area_selection(const editor_interaction_state_t& state,
 
 namespace wormedit {
 using namespace interaction_detail;
-auto space_selection_view_result(
-    const std::variant<editor_interaction_view_model_t, diagnostic_list_t>& view)
-    -> editor_interaction_result_t {
-    return {
-        .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
-        .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                    ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                    : std::nullopt,
-        .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                           ? std::get<diagnostic_list_t>(view)
-                           : diagnostic_list_t{},
-    };
-}
-} // namespace wormedit
-
-namespace wormedit {
-using namespace interaction_detail;
 auto begin_space_range_selection(space_range_selection_context_t& context,
                                  const space_range_selection_action_t& action)
     -> editor_interaction_result_t {
@@ -606,7 +589,7 @@ auto begin_space_range_selection(space_range_selection_context_t& context,
                                        state.active_snap_denominator
                                  : 0,
     };
-    return space_selection_view_result(make_view(history, state));
+    return editor_interaction_result_t::from(history, state);
 }
 } // namespace wormedit
 
@@ -647,7 +630,7 @@ auto commit_space_range_selection(space_range_selection_context_t& context)
                                        *cursor_position)
             : std::nullopt;
     state.pending_space_range_selection.reset();
-    return space_selection_view_result(make_view(history, state));
+    return editor_interaction_result_t::from(history, state);
 }
 } // namespace wormedit
 
@@ -744,7 +727,7 @@ auto begin_area_selection_gesture(area_selection_context_t& context,
             std::make_shared<const std::vector<editor_selection_object_t>>(std::move(objects)),
         .object_geometry = request.object_geometry,
     };
-    return space_selection_view_result(make_view(history, state));
+    return editor_interaction_result_t::from(history, state);
 }
 } // namespace wormedit
 
@@ -802,7 +785,7 @@ auto update_area_selection_gesture(area_selection_context_t& context, double x_p
     updated.notes = std::make_shared<const std::vector<object_id_t>>(notes_from_objects(objects));
     updated.objects =
         std::make_shared<const std::vector<editor_selection_object_t>>(std::move(objects));
-    return space_selection_view_result(make_view(history, state));
+    return editor_interaction_result_t::from(history, state);
 }
 } // namespace wormedit
 
@@ -872,7 +855,7 @@ auto commit_area_selection_gesture(area_selection_context_t& context, double x_p
     set_selected_objects(context.edit.state, *pending.objects);
     retain_area_selection_range(context, pending);
     context.edit.state.pending_editor_area_selection.reset();
-    return space_selection_view_result(make_view(context.edit.history, context.edit.state));
+    return editor_interaction_result_t::from(context.edit.history, context.edit.state);
 }
 
 } // namespace wormedit

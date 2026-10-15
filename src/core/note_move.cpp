@@ -836,7 +836,7 @@ auto apply_duration_resize_plan(document_history_t& history, editor_interaction_
     set_selected_notes(state, plan.notes);
     state.active_lane = plan.reference_lane;
     place_cursor_at(state, plan.reference_end);
-    auto result = interaction_view_result(history, state, changed);
+    auto result = editor_interaction_result_t::from(history, state, changed);
     result.accepted = true;
     return result;
 }
@@ -971,7 +971,7 @@ auto apply_note_move_plan(document_history_t& history, editor_interaction_state_
         state.selected_objects.push_back({editor_selection_object_kind_t::bgm_event, moved.note});
     state.active_lane = plan.reference_lane;
     place_cursor_at(state, plan.reference_position);
-    auto result = interaction_view_result(history, state, changed);
+    auto result = editor_interaction_result_t::from(history, state, changed);
     result.accepted = true;
     return result;
 }

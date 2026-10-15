@@ -453,11 +453,11 @@ auto validate_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe
         return diagnostics;
     }
 
-    const auto index_result = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(index_result)) {
-        return std::get<diagnostic_list_t>(index_result);
+    const auto index_result = measure_index_t::from(chart);
+    if (!index_result) {
+        return index_result.error();
     }
-    const auto& index = std::get<measure_index_t>(index_result);
+    const auto& index = *index_result;
     const auto range = recipe_range(chart, recipe, index);
     if (!range) {
         reject(diagnostics, diagnostic_code_t::invalid_hold,
@@ -654,8 +654,8 @@ auto sv_recipe_samples_t::from(const chart_document_t& chart, const sv_recipe_t&
                "Lua expression SV recipes are stored but not evaluated yet");
         return result;
     }
-    const auto index_result = build_measure_index(chart);
-    const auto& index = std::get<measure_index_t>(index_result);
+    const auto index_result = measure_index_t::from(chart);
+    const auto& index = *index_result;
     const auto range = *recipe_range(chart, recipe, index);
     std::map<std::uint64_t, long double> sampled;
     if (!add_bump_sample_points(sampled, recipe, range, result.diagnostics)) {
@@ -832,12 +832,12 @@ auto compile_sv_recipes_impl(const chart_document_t& chart, sv_recipe_output_t o
                "SV recipe replacement preview refers to a missing or ambiguous recipe");
         return result;
     }
-    const auto index_result = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(index_result)) {
-        result.diagnostics = std::get<diagnostic_list_t>(index_result);
+    const auto index_result = measure_index_t::from(chart);
+    if (!index_result) {
+        result.diagnostics = index_result.error();
         return result;
     }
-    const auto& index = std::get<measure_index_t>(index_result);
+    const auto& index = *index_result;
     auto samples = collect_recipe_samples(chart, output, candidate, replacing_recipe,
                                           result.diagnostics);
     if (!result.diagnostics.empty() || samples.recipes.empty()) {
@@ -1013,12 +1013,12 @@ auto sv_recipe_draft_t::revise(const chart_stamp_t& stamp, const document_histor
         return outcome;
     }
     const auto* chart = *bound;
-    auto built_index = build_measure_index(*chart);
-    if (!std::holds_alternative<measure_index_t>(built_index)) {
-        outcome.diagnostics = std::move(std::get<diagnostic_list_t>(built_index));
+    auto built_index = measure_index_t::from(*chart);
+    if (!built_index) {
+        outcome.diagnostics = std::move(built_index.error());
         return outcome;
     }
-    const auto& index = std::get<measure_index_t>(built_index);
+    const auto& index = *built_index;
     const auto snapped_begin = snapped_position(*chart, index, pointer_hits.begin, active_snap_denominator);
     const auto snapped_end = snapped_position(*chart, index, pointer_hits.end, active_snap_denominator);
     const auto begin_row = snapped_begin
@@ -1276,12 +1276,12 @@ auto sv_recipe_export_bake_result_t::from(const chart_document_t& chart) -> sv_r
     if (!result.diagnostics.empty()) {
         return result;
     }
-    const auto built_index = build_measure_index(baked);
-    if (!std::holds_alternative<measure_index_t>(built_index)) {
-        result.diagnostics = std::get<diagnostic_list_t>(built_index);
+    const auto built_index = measure_index_t::from(baked);
+    if (!built_index) {
+        result.diagnostics = built_index.error();
         return result;
     }
-    const auto& index = std::get<measure_index_t>(built_index);
+    const auto& index = *built_index;
     const auto first_id = next_chart_object_id(baked, std::numeric_limits<std::size_t>::max()).id;
     if (!first_id) {
         reject(result.diagnostics, diagnostic_code_t::invalid_id,
@@ -1331,12 +1331,12 @@ auto sv_recipe_range_drag_t::propose(const document_history_t& history, chart_id
             "SV recipe range drag refers to a missing or ambiguous recipe"));
         return outcome;
     }
-    auto built_index = build_measure_index(*chart);
-    if (!std::holds_alternative<measure_index_t>(built_index)) {
-        outcome.diagnostics = std::move(std::get<diagnostic_list_t>(built_index));
+    auto built_index = measure_index_t::from(*chart);
+    if (!built_index) {
+        outcome.diagnostics = std::move(built_index.error());
         return outcome;
     }
-    const auto& index = std::get<measure_index_t>(built_index);
+    const auto& index = *built_index;
     const auto snapped = snapped_position(*chart, index, pointer_position, active_snap_denominator);
     if (!snapped) {
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
@@ -1413,14 +1413,14 @@ auto sv_recipe_range_drag_t::revise(const chart_stamp_t& stamp,
         status = sv_recipe_range_drag_status_t::rejected;
         return outcome;
     }
-    auto built_index = build_measure_index(*chart);
-    if (!std::holds_alternative<measure_index_t>(built_index)) {
-        outcome.diagnostics = std::move(std::get<diagnostic_list_t>(built_index));
+    auto built_index = measure_index_t::from(*chart);
+    if (!built_index) {
+        outcome.diagnostics = std::move(built_index.error());
         status = sv_recipe_range_drag_status_t::rejected;
         return outcome;
     }
     auto prepared = prepare_sv_recipe_range(*chart, *target_recipe,
-        std::get<measure_index_t>(built_index), *this, pointer_position);
+        *built_index, *this, pointer_position);
     outcome.diagnostics = std::move(prepared.diagnostics);
     if (!prepared.value) return outcome;
     preview_range = *prepared.value;

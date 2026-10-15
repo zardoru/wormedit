@@ -476,13 +476,13 @@ auto marker_navigation_match_t::from(const song_document_t& song, std::uint64_t 
         result.diagnostics = std::move(query.diagnostics);
         return result;
     }
-    const auto built = build_measure_index(*query.value);
-    if (!std::holds_alternative<measure_index_t>(built)) {
+    const auto built = measure_index_t::from(*query.value);
+    if (!built) {
         result.value.status = marker_navigation_status_t::invalid_request;
-        result.diagnostics = std::get<diagnostic_list_t>(built);
+        result.diagnostics = built.error();
         return result;
     }
-    const auto& measures = std::get<measure_index_t>(built);
+    const auto& measures = *built;
     const auto measure_lookup = measure_lookup_t::from(measures);
     const auto cursor_row =
         resolve_marker_position_row(measure_lookup, beat_cursor, std::nullopt, result.diagnostics);
@@ -562,12 +562,12 @@ auto section_selection_t::from(const song_document_t& song, std::uint64_t expect
         return result;
     }
 
-    const auto built = build_measure_index(*query.value);
-    if (!std::holds_alternative<measure_index_t>(built)) {
-        result.diagnostics = std::get<diagnostic_list_t>(built);
+    const auto built = measure_index_t::from(*query.value);
+    if (!built) {
+        result.diagnostics = built.error();
         return result;
     }
-    const auto& measures = std::get<measure_index_t>(built);
+    const auto& measures = *built;
     const auto measure_lookup = measure_lookup_t::from(measures);
     const auto begin = resolve_marker_position_row(measure_lookup, found->beat_span->begin,
                                                    section_id, result.diagnostics);

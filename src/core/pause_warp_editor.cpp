@@ -54,12 +54,12 @@ auto validate_position(const chart_document_t& chart, local_position_t position,
 
 auto validate_span(const chart_document_t& chart, position_span_t span,
                    document_command_result_t& result) -> bool {
-    const auto measures = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(measures)) {
-        result.diagnostics = std::get<diagnostic_list_t>(measures);
+    const auto measures = measure_index_t::from(chart);
+    if (!measures) {
+        result.diagnostics = measures.error();
         return false;
     }
-    const auto& index = std::get<measure_index_t>(measures);
+    const auto& index = *measures;
     const auto begin = index.row_of(span.begin);
     const auto end = index.row_of(span.end);
     if (!begin.has_value() || !end.has_value()) {

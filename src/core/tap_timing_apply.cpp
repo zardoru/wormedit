@@ -181,7 +181,7 @@ auto proposed_document(const song_document_t& document,
     if (std::ranges::any_of(diagnostics, [](const auto& item) {
             return item.severity == diagnostic_severity_t::error;
         })) return std::nullopt;
-    if (!build_timing_index(*chart)) return std::nullopt;
+    if (!timing_index_t::from(*chart).value) return std::nullopt;
     return proposed;
 }
 

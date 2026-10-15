@@ -84,7 +84,7 @@ auto commit_snapped_fit(signed_rational_t step) -> std::optional<signed_rational
     auto snapped_drag = *update.value;
     snapped_drag.payload.snap_active = true;
     snapped_drag.payload.snap_step = step;
-    if (!apply_beat_interval_drag(history, snapped_drag)) return std::nullopt;
+    if (!apply_proposal(history, snapped_drag)) return std::nullopt;
     return history.document.charts.front().bpms.front().beats_per_minute;
 }
 
@@ -108,7 +108,7 @@ auto rejects_locked_anchor_snap() -> bool {
     unsafe.payload.snap_step = {50, 1};
     const auto revision = history.document.revision;
     const auto original_bpm = history.document.charts.front().bpms.front().beats_per_minute;
-    const auto committed = apply_beat_interval_drag(history, unsafe);
+    const auto committed = apply_proposal(history, unsafe);
     return !committed && history.document.revision == revision &&
            history.document.charts.front().bpms.front().beats_per_minute == original_bpm;
 }
@@ -168,7 +168,7 @@ TEST_CASE("interval beat drag previews by source frame and commits one undoable 
     CHECK(history.document.charts.front().bpms.front().beats_per_minute ==
           signed_rational_t{120, 1});
 
-    const auto committed = apply_beat_interval_drag(history, *proposed.value);
+    const auto committed = apply_proposal(history, *proposed.value);
     REQUIRE(committed);
     CHECK(history.document.revision == 5);
     CHECK(history.document.charts.front().bpms.front().id == object_id_t{10});
@@ -181,7 +181,7 @@ TEST_CASE("interval beat drag previews by source frame and commits one undoable 
     CHECK(history.document.charts.front().bpms.front().beats_per_minute ==
           signed_rational_t{60, 1});
 
-    const auto stale = apply_beat_interval_drag(history, *proposed.value);
+    const auto stale = apply_proposal(history, *proposed.value);
     test::check_stale_action_message(stale.diagnostics, "Beat fit");
     CHECK_FALSE(stale);
     CHECK(has_code(stale, diagnostic_code_t::invalid_id));
@@ -440,7 +440,7 @@ TEST_CASE("beat fit without a BPM change at the anchor inserts one exact BPM as 
     CHECK(history.document.charts.front().bpms.size() == 1);
 
     const auto undo_depth = history.undo.size();
-    const auto committed = apply_beat_interval_drag(history, *proposed.value);
+    const auto committed = apply_proposal(history, *proposed.value);
     REQUIRE(committed);
     const auto& bpms = history.document.charts.front().bpms;
     REQUIRE(bpms.size() == 2);
@@ -494,7 +494,7 @@ TEST_CASE("beat fit insert blocks when a locked anchor after the beat would move
     unsafe.payload.proposed_sample_frame = 96'000;
     unsafe.payload.proposed_bpm = {40, 1};
     const auto revision = history.document.revision;
-    const auto committed = apply_beat_interval_drag(history, unsafe);
+    const auto committed = apply_proposal(history, unsafe);
     CHECK_FALSE(committed);
     CHECK(history.document.revision == revision);
     CHECK(history.document.charts.front().bpms.size() == 1);
@@ -509,9 +509,9 @@ TEST_CASE("beat fit keeps revision-only identity and rejects expired proposals",
     const auto proposed = begun.value->revise(history.document, 96'000);
     REQUIRE(proposed.value.has_value());
     history.document.id = song_id_t{99};
-    REQUIRE(apply_beat_interval_drag(history, *proposed.value));
+    REQUIRE(apply_proposal(history, *proposed.value));
     CHECK(history.undo.size() == 1);
-    const auto stale = apply_beat_interval_drag(history, *proposed.value);
+    const auto stale = apply_proposal(history, *proposed.value);
     CHECK_FALSE(stale);
     test::check_stale_action_message(stale.diagnostics, "Beat fit");
     CHECK(history.undo.size() == 1);
@@ -524,12 +524,12 @@ TEST_CASE("beat fit preserves snap lock and provenance rejection priority",
                                         {measure_id_t{3}, 480}, 48'000);
     REQUIRE(drag.value.has_value());
     ++history.document.revision;
-    const auto locked = apply_beat_interval_drag(history, *drag.value, true);
+    const auto locked = apply_proposal(history, *drag.value, true);
     REQUIRE_FALSE(locked.diagnostics.empty());
     CHECK(locked.diagnostics.front().message == "beat fitting is disabled while timing is locked");
     drag.value->payload.snap_active = true;
     drag.value->payload.proposed_bpm = {0, 1};
-    const auto invalid = apply_beat_interval_drag(history, *drag.value, true);
+    const auto invalid = apply_proposal(history, *drag.value, true);
     REQUIRE_FALSE(invalid.diagnostics.empty());
     CHECK(invalid.diagnostics.front().message == "BPM snap must produce a positive exact value");
     CHECK(history.undo.empty());
@@ -552,10 +552,10 @@ TEST_CASE("beat fit unchanged frame does not add a sample rate precondition",
     drag.value->payload.sample_rate = 0;
     const auto unchanged = drag.value->revise(history.document, drag.value->payload.original_sample_frame);
     REQUIRE(unchanged.value.has_value());
-    const auto no_op = apply_beat_interval_drag(history, *unchanged.value);
+    const auto no_op = apply_proposal(history, *unchanged.value);
     check_beat_fit_no_op(no_op, history);
     history.document.charts.front().bpms.front().beats_per_minute = {100, 1};
-    const auto drift = apply_beat_interval_drag(history, *unchanged.value);
+    const auto drift = apply_proposal(history, *unchanged.value);
     REQUIRE_FALSE(drift.diagnostics.empty());
     CHECK(drift.diagnostics.front().message == "beat fit BPM event changed during drag");
 }

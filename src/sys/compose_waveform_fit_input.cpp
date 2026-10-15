@@ -348,7 +348,7 @@ auto revise_compose_beat_fit(const WormUiComposeInputAction& input,
             "Previewing exact sample-frame beat fit.", notification_severity_t::hint,
             notification_source_t::input);
     }
-    const auto committed = apply_beat_interval_drag(history, *scene_cache.timing.beat_fit_drag,
+    const auto committed = apply_proposal(history, *scene_cache.timing.beat_fit_drag,
                                                      application_state.project.timing_recipe.timing_locked);
     scene_cache.clear_beat_fit_capture();
     if (!committed.applied) {

@@ -4,6 +4,7 @@
 #include <wormedit/core/result.h>
 
 #include <concepts>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -12,6 +13,14 @@
 #include <utility>
 
 namespace wormedit {
+
+namespace proposal_detail {
+inline void append_diagnostics(diagnostic_list_t& target, diagnostic_list_t&& incoming) {
+    if (target.empty()) target = std::move(incoming);
+    else target.insert(target.end(), std::make_move_iterator(incoming.begin()),
+                        std::make_move_iterator(incoming.end()));
+}
+} // namespace proposal_detail
 
 struct proposal_apply_policy_t {
     std::string_view stale_label;
@@ -34,9 +43,10 @@ template<class Edit, class... Arguments> requires proposal_edit<Edit, Arguments.
     Edit&& edit, Arguments&&... arguments) -> document_command_result_t {
     if (!transaction.is_ready()) return transaction.finish_without_commit();
     auto prepared = std::forward<Edit>(edit).apply(transaction, std::forward<Arguments>(arguments)...);
-    const bool has_changes = prepared.ok() && prepared.value.has_value();
-    transaction.outcome.diagnostics = std::move(prepared.diagnostics);
-    if (!has_changes) return transaction.finish_without_commit();
+    proposal_detail::append_diagnostics(transaction.outcome.diagnostics, std::move(prepared.diagnostics));
+    const bool can_commit = prepared.value.has_value() &&
+        !diagnostic_queries::has_errors(transaction.outcome.diagnostics);
+    if (!can_commit) return transaction.finish_without_commit();
     return transaction.commit(std::move(*prepared.value));
 }
 
@@ -84,8 +94,18 @@ template<class Payload, class Stamp, class... Arguments>
     requires requires { Payload::apply_policy; }
 [[nodiscard]] auto apply_proposal(document_history_t& history,
     const proposal_t<Payload, Stamp>& pending, Arguments&&... arguments) -> document_command_result_t {
+    diagnostic_list_t preflight;
+    if constexpr (requires { pending.payload.validate_apply(arguments...); }) {
+        preflight = pending.payload.validate_apply(arguments...);
+        if (diagnostic_queries::has_errors(preflight))
+            return document_command_transaction_t::rejection(history.document.revision, std::move(preflight));
+    }
     const auto& policy = Payload::apply_policy;
     auto transaction = pending.transaction(history, policy.stale_label, policy.identity, policy.stale_code);
+    if constexpr (requires { pending.payload.validate_apply(arguments...); }) {
+        proposal_detail::append_diagnostics(preflight, std::move(transaction.outcome.diagnostics));
+        transaction.outcome.diagnostics = std::move(preflight);
+    }
     if constexpr (std::same_as<Stamp, chart_stamp_t>)
         return apply_proposal_edit(transaction, pending.payload,
                                    pending.stamp.chart, std::forward<Arguments>(arguments)...);

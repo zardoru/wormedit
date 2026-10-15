@@ -224,7 +224,7 @@ auto sm_source_orders_allow_history_and_native_roundtrip(std::string_view source
     if (!begun.value.has_value()) return false;
     const auto proposal = begun.value->revise(drag_history.document, 48'000);
     if (!proposal.value.has_value()) return false;
-    const auto committed = wormedit::apply_beat_interval_drag(drag_history, *proposal.value);
+    const auto committed = wormedit::apply_proposal(drag_history, *proposal.value);
     if (!committed || drag_history.document.revision != drag_revision + 1 ||
         !wormedit::undo_document_command(drag_history) ||
         drag_history.document.charts.front().bpms.front().beats_per_minute !=

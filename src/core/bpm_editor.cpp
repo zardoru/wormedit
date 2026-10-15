@@ -188,6 +188,31 @@ struct bpm_operation_visitor_t {
     }
 };
 
+struct bpm_transaction_edit_t {
+    const bpm_edit_action_t& action;
+    bpm_edit_limits_t limits;
+    [[nodiscard]] auto apply(document_command_transaction_t& transaction) const
+        -> diagnosed_t<std::optional<std::string>> {
+        auto& result = transaction.outcome;
+        if (limits.maximum_bpm_events == 0) {
+            reject(result, diagnostic_code_t::invalid_resolution, "BPM event cap must be positive");
+            return {};
+        }
+
+        auto& proposed = transaction.copy_document();
+        auto outcome = std::visit(bpm_operation_visitor_t{transaction, limits}, action);
+        if (!outcome || !result.diagnostics.empty() || !outcome->changed) {
+            return {};
+        }
+        if (!extend_native_charts_to_audio_end(proposed)) {
+            reject(result, diagnostic_code_t::invalid_measure,
+                   "BPM edit would exceed the audio chart measure limits");
+            return {};
+        }
+        return {.value = std::move(outcome->label)};
+    }
+};
+
 } // namespace
 
 auto parse_bpm_text(std::string_view text) -> std::optional<signed_rational_t> {
@@ -262,30 +287,14 @@ auto step_bpm_by_one(signed_rational_t bpm, bpm_step_direction_t direction)
 auto apply_bpm_edit(document_history_t& history,
     const bpm_edit_action_t& action, bpm_edit_limits_t limits) -> document_command_result_t {
     auto transaction = document_command_transaction_t::from(history);
-    return apply_bpm_edit(transaction, action, limits);
+    return apply_proposal_edit(transaction, bpm_transaction_edit_t{.action = action, .limits = limits});
 }
 
+// Temporary: removed by T-637; native_chart_edit_action.h still dispatches into existing transactions.
 auto apply_bpm_edit(document_command_transaction_t& transaction,
                     const bpm_edit_action_t& action, bpm_edit_limits_t limits)
     -> document_command_result_t {
-    if (!transaction.is_ready()) return transaction.commit({});
-    auto& result = transaction.outcome;
-    if (limits.maximum_bpm_events == 0) {
-        reject(result, diagnostic_code_t::invalid_resolution, "BPM event cap must be positive");
-        return transaction.finish_without_commit();
-    }
-
-    auto& proposed = transaction.copy_document();
-    auto outcome = std::visit(bpm_operation_visitor_t{transaction, limits}, action);
-    if (!outcome || !result.diagnostics.empty() || !outcome->changed) {
-        return transaction.finish_without_commit();
-    }
-    if (!extend_native_charts_to_audio_end(proposed)) {
-        reject(result, diagnostic_code_t::invalid_measure,
-               "BPM edit would exceed the audio chart measure limits");
-        return transaction.finish_without_commit();
-    }
-    return transaction.commit(std::move(outcome->label));
+    return apply_proposal_edit(transaction, bpm_transaction_edit_t{.action = action, .limits = limits});
 }
 
 namespace {
@@ -594,54 +603,40 @@ auto quantize_bpm(signed_rational_t bpm, signed_rational_t step)
                              step.denominator / divisor};
 }
 
-namespace {
 
-// Inserting the BPM that is already in effect would only add a no-op event.
-auto apply_inserted_beat_fit(document_command_transaction_t& transaction,
-                             const proposal_t<beat_interval_drag_t>& proposal)
-    -> document_command_result_t {
-    const auto& drag = proposal.payload;
-    if (drag.proposed_bpm == drag.original_bpm) return transaction.finish_without_commit();
-    return apply_bpm_edit(transaction, wormedit::insert_edit_t<wormedit::bpm_edit_value_t>{
-                                           .chart = proposal.stamp.chart,
-                                           .value = wormedit::bpm_edit_value_t::from(
-                                               drag.original_bpm_position,
-                                               wormedit::timing_bpm_value_t{drag.proposed_bpm})});
+auto beat_interval_drag_t::validate_apply(bool timing_locked) const -> diagnostic_list_t {
+    if (snap_active && (proposed_bpm.numerator <= 0 || proposed_bpm.denominator == 0))
+        return {error(diagnostic_code_t::invalid_rational, "BPM snap must produce a positive exact value")};
+    if (timing_locked)
+        return {error(diagnostic_code_t::unsupported_feature, "beat fitting is disabled while timing is locked")};
+    return {};
 }
 
-} // namespace
-
-auto apply_beat_interval_drag(document_history_t& history, const proposal_t<beat_interval_drag_t>& proposal,
-                               bool timing_locked) -> document_command_result_t {
-    const auto& drag = proposal.payload;
-    if (drag.snap_active && (drag.proposed_bpm.numerator <= 0 || drag.proposed_bpm.denominator == 0))
-        return document_command_transaction_t::rejection(history.document.revision,
-            diagnostic_code_t::invalid_rational, "BPM snap must produce a positive exact value");
-    if (timing_locked)
-        return document_command_transaction_t::rejection(history.document.revision,
-            diagnostic_code_t::unsupported_feature, "beat fitting is disabled while timing is locked");
-    auto transaction = proposal.transaction(history, "Beat fit",
-                                           document_identity_policy_t::revision_only);
-    if (!transaction.is_ready()) return transaction.finish_without_commit();
-    auto updated = revise_beat_interval_values(history.document, proposal.stamp, drag, drag.proposed_sample_frame);
-    if ((updated.value && updated.diagnostics.empty()) && drag.snap_active)
-        updated = revise_beat_interval_bpm_values(history.document, proposal.stamp, drag, drag.proposed_bpm,
+auto beat_interval_drag_t::apply(document_command_transaction_t& transaction, chart_id_t chart,
+                                bool) const -> diagnosed_t<std::optional<std::string>> {
+    const auto& drag = *this;
+    const auto& document = transaction.document();
+    const auto stamp = chart_stamp_t::from(document, chart);
+    auto updated = revise_beat_interval_values(document, stamp, drag, proposed_sample_frame);
+    if ((updated.value && updated.diagnostics.empty()) && snap_active)
+        updated = revise_beat_interval_bpm_values(document, stamp, drag, proposed_bpm,
                                                   std::move(*updated.value));
-    if (!(updated.value && updated.diagnostics.empty())) {
-        transaction.outcome.diagnostics = std::move(updated.diagnostics);
-        return transaction.finish_without_commit();
-    }
-    if (updated.value->payload.proposed_bpm != drag.proposed_bpm ||
-        updated.value->payload.proposed_sample_frame != drag.proposed_sample_frame)
-        return transaction.reject(diagnostic_code_t::invalid_id,
-                                  "beat fit proposal changed before commit");
-    if (drag.insert_bpm) return apply_inserted_beat_fit(transaction, proposal);
-    return apply_bpm_edit(transaction, wormedit::update_edit_t<wormedit::bpm_edit_value_t>{
-                                           .chart = proposal.stamp.chart,
-                                           .id = drag.bpm_event,
-                                           .value = wormedit::bpm_edit_value_t::from(
-                                               drag.original_bpm_position,
-                                               wormedit::timing_bpm_value_t{drag.proposed_bpm})});
+    if (!(updated.value && updated.diagnostics.empty()))
+        return {.diagnostics = std::move(updated.diagnostics)};
+    if (updated.value->payload.proposed_bpm != proposed_bpm ||
+        updated.value->payload.proposed_sample_frame != proposed_sample_frame)
+        return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+            "beat fit proposal changed before commit")}};
+    // Inserting the BPM already in effect would only add a no-op event.
+    if (insert_bpm && proposed_bpm == original_bpm) return {};
+    const bpm_edit_action_t action = insert_bpm
+        ? bpm_edit_action_t{wormedit::insert_edit_t<bpm_edit_value_t>{
+              .chart = chart,
+              .value = bpm_edit_value_t::from(original_bpm_position, timing_bpm_value_t{proposed_bpm})}}
+        : bpm_edit_action_t{wormedit::update_edit_t<bpm_edit_value_t>{
+              .chart = chart, .id = bpm_event,
+              .value = bpm_edit_value_t::from(original_bpm_position, timing_bpm_value_t{proposed_bpm})}};
+    return bpm_transaction_edit_t{.action = action, .limits = {}}.apply(transaction);
 }
 
 } // namespace wormedit

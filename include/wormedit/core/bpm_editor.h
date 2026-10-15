@@ -66,6 +66,13 @@ using bpm_edit_action_t = chart_edit_t<bpm_edit_value_t>;
 // Begins a fit anchored at a timing row. Updates the BPM event already at that
 // row, or inserts one there when none exists (committed as one undoable edit).
 struct beat_interval_drag_t {
+    static constexpr proposal_apply_policy_t apply_policy{
+        .stale_label = "Beat fit", .identity = document_identity_policy_t::revision_only};
+    [[nodiscard]] auto validate_apply(bool timing_locked = false) const -> diagnostic_list_t;
+    [[nodiscard]] auto apply(document_command_transaction_t&, chart_id_t,
+                             bool timing_locked = false) const
+        -> diagnosed_t<std::optional<std::string>>;
+
     [[nodiscard]] static auto propose(const song_document_t& document, chart_id_t chart,
                                   object_id_t bpm_event, local_position_t beat,
                                   std::uint32_t sample_rate, bool timing_locked = false)
@@ -111,12 +118,7 @@ using beat_interval_drag_outcome_t = proposal_outcome_t<beat_interval_drag_t>;
 
 [[nodiscard]] auto quantize_bpm(signed_rational_t bpm, signed_rational_t step)
     -> std::optional<signed_rational_t>;
-[[nodiscard]] auto apply_beat_interval_drag(document_history_t& history,
-                                             const proposal_t<beat_interval_drag_t>& proposal,
-                                             bool timing_locked = false)
-    -> document_command_result_t;
-
-// Uses a ready command transaction supplied by a captured edit proposal.
+// Temporary: removed by T-637; the Sys native edit dispatcher still supplies existing transactions.
 [[nodiscard]] auto apply_bpm_edit(document_command_transaction_t& transaction,
     const bpm_edit_action_t& action, bpm_edit_limits_t limits = {})
     -> document_command_result_t;

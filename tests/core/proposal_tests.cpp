@@ -14,7 +14,8 @@ struct metadata_payload_t {
         .stale_label = "Title proposal"};
     std::string title;
 
-    auto apply(document_command_transaction_t& transaction, bool is_rejected_after_edit = false) const
+    auto apply(document_command_transaction_t& transaction, bool is_rejected_after_edit = false,
+               bool is_rejected_by_transaction = false) const
         -> diagnosed_t<std::optional<std::string>> {
         if (title.empty())
             return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Title is empty.")}};
@@ -22,6 +23,9 @@ struct metadata_payload_t {
         transaction.copy_document().metadata.title = title;
         if (is_rejected_after_edit)
             return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Prepared title rejected.")}};
+        if (is_rejected_by_transaction)
+            transaction.outcome.diagnostics.push_back(
+                error(diagnostic_code_t::invalid_id, "Transaction rejected title."));
         return {.value = "Set title"};
     }
 
@@ -316,6 +320,20 @@ TEST_CASE("Proposal runner leaves no-op captures reusable without history", "[co
     CHECK_FALSE(result.applied);
     CHECK(result.diagnostics.empty());
     CHECK(built.value->is_current(history));
+    CHECK(history.document.revision == revision);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Proposal runner preserves transaction rejection", "[core][proposal]") {
+    auto history = make_history();
+    const auto revision = history.document.revision;
+    const auto built = metadata_payload_t::propose(history.document, "Proposed");
+    REQUIRE(built.value);
+    const auto result = apply_proposal(history, *built.value, false, true);
+    CHECK_FALSE(result.applied);
+    const diagnostic_list_t expected{error(diagnostic_code_t::invalid_id, "Transaction rejected title.")};
+    CHECK(result.diagnostics == expected);
+    CHECK(history.document.metadata.title.empty());
     CHECK(history.document.revision == revision);
     CHECK(history.undo.empty());
 }

@@ -239,12 +239,7 @@ void name_spans(plan_context_t& context) {
 
 } // namespace
 
-auto slice_span_plan_t::from(slice_span_plan_outcome_t&& outcome) -> slice_span_plan_t {
-    return {.spans = std::move(outcome.value.spans), .mappings = std::move(outcome.value.mappings),
-        .sources = std::move(outcome.value.sources), .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto slice_span_plan_t::from(const song_document_t& song, chart_id_t chart_id,
+auto slice_span_plan_payload_t::from(const song_document_t& song, chart_id_t chart_id,
     std::span<const slice_span_source_t> sources, const slice_span_options_t& options) -> slice_span_plan_outcome_t {
     slice_span_plan_outcome_t result{};
     plan_context_t context{song, options, result, {}, {}, {}, {}, {}, {}};
@@ -261,11 +256,6 @@ auto slice_span_plan_t::from(const song_document_t& song, chart_id_t chart_id,
     result.value.sources.assign(sources.begin(), sources.end());
     name_spans(context);
     return result;
-}
-
-auto plan_slice_spans(const song_document_t& song, chart_id_t chart,
-    std::span<const slice_span_source_t> sources, const slice_span_options_t& options) -> slice_span_plan_t {
-    return slice_span_plan_t::from(slice_span_plan_t::from(song, chart, sources, options));
 }
 
 } // namespace wormedit

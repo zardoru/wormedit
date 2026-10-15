@@ -122,7 +122,7 @@ struct conversion_asset_copy_t {
 struct conversion_payload_t {
     std::vector<conversion_output_t> outputs;
     // Render these detached plans only inside atomic publication staging.
-    std::vector<slice_span_plan_t> slice_plans;
+    std::vector<slice_span_plan_outcome_t> slice_plans;
     std::vector<conversion_asset_copy_t> asset_copies;
     // Synthetic zero samples for soundless BMS gameplay, not source spans.
     std::vector<std::filesystem::path> silent_files;
@@ -134,7 +134,7 @@ struct conversion_result_t {
     [[nodiscard]] static auto from(conversion_outcome_t&& outcome) -> conversion_result_t;
     std::vector<conversion_output_t> outputs;
     // Render these detached plans only inside atomic publication staging.
-    std::vector<slice_span_plan_t> slice_plans;
+    std::vector<slice_span_plan_outcome_t> slice_plans;
     std::vector<conversion_asset_copy_t> asset_copies;
     // Synthetic zero samples for soundless BMS gameplay, not source spans.
     std::vector<std::filesystem::path> silent_files;

@@ -649,7 +649,7 @@ auto create_conversion_group(const fs::path& project_directory, const output_gro
                                      conversion_publication_options_t options)
     -> conversion_publication_outcome_t {
     conversion_publication_outcome_t result{};
-    auto planned = conversion_publication_plan_t::from(project_directory, group, request, converted, options.destination_is_directory);
+    auto planned = conversion_publication_plan_payload_t::from(project_directory, group, request, converted, options.destination_is_directory);
     if (!planned) {
         result.diagnostics.errors.push_back(std::move(planned.error().message));
         return result;

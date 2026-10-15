@@ -315,17 +315,17 @@ auto append_slice_resource(song_document_t& song, const slice_span_t& span) -> r
     return id;
 }
 
-auto append_slice_resources(song_document_t& song, slice_span_plan_t& plan,
-    shared_slices_t& shared, slice_span_plan_t& render_plan) -> std::vector<resource_id_t> {
+auto append_slice_resources(song_document_t& song, slice_span_plan_outcome_t& plan,
+    shared_slices_t& shared, slice_span_plan_outcome_t& render_plan) -> std::vector<resource_id_t> {
     std::vector<resource_id_t> resources;
-    render_plan.sources = plan.sources;
-    for (auto& span : plan.spans) {
+    render_plan.value.sources = plan.value.sources;
+    for (auto& span : plan.value.spans) {
         const slice_identity_t identity{span.asset.value, span.begin_frame, span.end_frame};
         auto found = shared.find(identity);
         if (found == shared.end()) {
             const auto resource = append_slice_resource(song, span);
             found = shared.emplace(identity, shared_slice_resource_t{resource, span.filename}).first;
-            render_plan.spans.push_back(span);
+            render_plan.value.spans.push_back(span);
         }
         span.filename = found->second.filename;
         resources.push_back(found->second.resource);
@@ -334,10 +334,10 @@ auto append_slice_resources(song_document_t& song, slice_span_plan_t& plan,
 }
 
 using slice_bindings_t = std::unordered_map<std::uint64_t, std::optional<resource_id_t>>;
-auto slice_bindings(const slice_span_plan_t& plan, const std::vector<resource_id_t>& resources,
+auto slice_bindings(const slice_span_plan_outcome_t& plan, const std::vector<resource_id_t>& resources,
                     slice_span_event_kind_t kind) -> slice_bindings_t {
     slice_bindings_t result;
-    for (const auto& mapping : plan.mappings) {
+    for (const auto& mapping : plan.value.mappings) {
         if (mapping.kind != kind) continue;
         result.emplace(mapping.event.value, mapping.span_index
             ? std::optional{resources.at(*mapping.span_index)} : std::nullopt);
@@ -351,7 +351,7 @@ void bind_slice_event(Event& event, const slice_bindings_t& bindings) {
     event.sound_channel_event.reset();
 }
 
-void apply_slice_bindings(chart_document_t& chart, const slice_span_plan_t& plan,
+void apply_slice_bindings(chart_document_t& chart, const slice_span_plan_outcome_t& plan,
                          const std::vector<resource_id_t>& resources) {
     const auto notes = slice_bindings(plan, resources, slice_span_event_kind_t::note);
     const auto bgm = slice_bindings(plan, resources, slice_span_event_kind_t::bgm_event);
@@ -566,8 +566,8 @@ auto prepare_slice_exports(conversion_context_t& context, song_document_t& prepa
     for (const auto id : charts) {
         auto chart = prepared.find_chart(id);
         if (chart->source_family != format_family_t::bmson) continue;
-        auto plan = plan_slice_spans(prepared, id, context.request.slice_sources, options);
-        if (!plan) {
+        auto plan = slice_span_plan_payload_t::from(prepared, id, context.request.slice_sources, options);
+        if (!plan.ok()) {
             for (const auto& diagnostic : plan.diagnostics)
                 add_diagnostic(context.result, diagnostic_severity_t::error,
                                conversion_diagnostic_code_t::transform_failed,
@@ -577,14 +577,14 @@ auto prepare_slice_exports(conversion_context_t& context, song_document_t& prepa
         }
         const auto available = std::numeric_limits<std::uint64_t>::max() -
             std::max(next_slice_asset(prepared), next_slice_resource(prepared));
-        if (plan.spans.size() > available) {
+        if (plan.value.spans.size() > available) {
             add_diagnostic(context.result, diagnostic_severity_t::error,
                            conversion_diagnostic_code_t::transform_failed,
                            conversion_stage_t::transform, context.request.target, id,
                            "Generated slice asset/resource ID capacity exceeded");
             return false;
         }
-        slice_span_plan_t render_plan;
+        slice_span_plan_outcome_t render_plan;
         const auto resources = append_slice_resources(prepared, plan, shared, render_plan);
         apply_slice_bindings(*chart, plan, resources);
         if (context.request.target == format_family_t::osu_mania ||
@@ -593,8 +593,8 @@ auto prepare_slice_exports(conversion_context_t& context, song_document_t& prepa
         else if (!prepare_bms_slice_layout(context, *chart))
             return false;
         report_slice_timestamp_loss(context, *chart);
-        for (const auto& span : plan.spans) options.occupied_filenames.push_back(span.filename);
-        if (!render_plan.spans.empty())
+        for (const auto& span : plan.value.spans) options.occupied_filenames.push_back(span.filename);
+        if (!render_plan.value.spans.empty())
             context.result.value.slice_plans.push_back(std::move(render_plan));
     }
     if (std::ranges::any_of(charts, [&](const auto id) {
@@ -1009,11 +1009,6 @@ auto conversion_result_t::has_errors() const -> bool {
 
 conversion_result_t::operator bool() const noexcept {
     return !outputs.empty() && !has_errors();
-}
-
-auto plan_conversion_slice_spans(const song_document_t& song, chart_id_t chart,
-    std::span<const slice_span_source_t> sources, const slice_span_options_t& options) -> slice_span_plan_t {
-    return plan_slice_spans(song, chart, sources, options);
 }
 
 auto is_conversion_needs_slice_spans(const song_document_t& song, const conversion_request_t& request) -> bool {

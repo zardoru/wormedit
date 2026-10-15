@@ -56,12 +56,12 @@ TEST_CASE("conversion publication resolves chart and staged asset paths",
         .target = wormedit::format_family_t::bmson,
         .staged_assets = {{wormedit::asset_id_t{5}, "assets/5-tone.wav"}}};
     const auto plan =
-        wormedit::plan_conversion_publication(temporary.path, group, request, converted());
+        wormedit::conversion_publication_plan_payload_t::from(temporary.path, group, request, converted());
     REQUIRE(plan);
-    REQUIRE(plan.files.size() == 1);
-    CHECK(plan.files.front().project_relative_path == "exports/song.bmson");
-    REQUIRE(plan.assets.size() == 1);
-    CHECK(plan.assets.front().project_relative_path == "exports/assets/5-tone.wav");
+    REQUIRE(plan.value().files.size() == 1);
+    CHECK(plan.value().files.front().project_relative_path == "exports/song.bmson");
+    REQUIRE(plan.value().assets.size() == 1);
+    CHECK(plan.value().assets.front().project_relative_path == "exports/assets/5-tone.wav");
 }
 
 TEST_CASE("export asset discovery recovers verified resource copies after session state is lost",
@@ -188,15 +188,15 @@ TEST_CASE("conversion publication rejects collisions and unsafe destinations",
     wormedit::output_group_t group{.family = wormedit::format_family_t::bmson,
                                    .relative_output_path = "exports"};
     wormedit::conversion_request_t request{.target = wormedit::format_family_t::bmson};
-    CHECK_FALSE(wormedit::plan_conversion_publication(temporary.path, group, request, converted()));
+    CHECK_FALSE(wormedit::conversion_publication_plan_payload_t::from(temporary.path, group, request, converted()));
     request.overwrite = true;
-    CHECK(wormedit::plan_conversion_publication(temporary.path, group, request, converted()));
-    CHECK_FALSE(wormedit::plan_conversion_publication(temporary.path, group, request,
+    CHECK(wormedit::conversion_publication_plan_payload_t::from(temporary.path, group, request, converted()));
+    CHECK_FALSE(wormedit::conversion_publication_plan_payload_t::from(temporary.path, group, request,
                                                       converted("../escape.bmson")));
     group.relative_output_path = "exports/chart.bmson";
     auto multiple = converted();
     multiple.outputs.push_back(multiple.outputs.front());
-    CHECK_FALSE(wormedit::plan_conversion_publication(temporary.path, group, request, multiple));
+    CHECK_FALSE(wormedit::conversion_publication_plan_payload_t::from(temporary.path, group, request, multiple));
 }
 
 TEST_CASE("conversion publication rejects missing assets and symlink paths",
@@ -208,7 +208,7 @@ TEST_CASE("conversion publication rejects missing assets and symlink paths",
     wormedit::conversion_request_t request{
         .target = wormedit::format_family_t::bmson,
         .staged_assets = {{wormedit::asset_id_t{5}, "assets/5-tone.wav"}}};
-    CHECK_FALSE(wormedit::plan_conversion_publication(temporary.path, group, request, converted()));
+    CHECK_FALSE(wormedit::conversion_publication_plan_payload_t::from(temporary.path, group, request, converted()));
     request.staged_assets.clear();
     std::error_code error;
     std::filesystem::create_directory_symlink(temporary.path, temporary.path / "exports/link",
@@ -217,7 +217,7 @@ TEST_CASE("conversion publication rejects missing assets and symlink paths",
         auto linked = group;
         linked.relative_output_path = "exports/link";
         CHECK_FALSE(
-            wormedit::plan_conversion_publication(temporary.path, linked, request, converted()));
+            wormedit::conversion_publication_plan_payload_t::from(temporary.path, linked, request, converted()));
     }
 }
 
@@ -230,10 +230,10 @@ TEST_CASE("conversion publication returns no partial plan on a late failure",
         .target = wormedit::format_family_t::bmson,
         .staged_assets = {{wormedit::asset_id_t{5}, "assets/missing.wav"}}};
     const auto plan =
-        wormedit::plan_conversion_publication(temporary.path, group, request, converted());
-    CHECK_FALSE(plan);
-    CHECK(plan.files.empty());
-    CHECK(plan.assets.empty());
+        wormedit::conversion_publication_plan_payload_t::from(temporary.path, group, request, converted());
+    REQUIRE_FALSE(plan);
+    CHECK(plan.error().plan.files.empty());
+    CHECK(plan.error().plan.assets.empty());
 }
 
 TEST_CASE("conversion publication installs a new complete output directory",
@@ -453,8 +453,8 @@ void check_publication(bool value) { CHECK(value); }
 void require_publication(bool value) { REQUIRE(value); }
 auto sliced_publication() -> wormedit::conversion_result_t {
     auto result = converted();
-    wormedit::slice_span_plan_t plan;
-    plan.spans.push_back({wormedit::asset_id_t{5}, 0, 100, "slice.wav"});
+    wormedit::slice_span_plan_outcome_t plan;
+    plan.value.spans.push_back({wormedit::asset_id_t{5}, 0, 100, "slice.wav"});
     result.slice_plans.push_back(std::move(plan));
     return result;
 }
@@ -578,11 +578,11 @@ TEST_CASE("conversion publication distinguishes dotted directories from chart fi
     auto result = converted("first.bmson");
     result.outputs.push_back(result.outputs.front());
     result.outputs.back().suggested_filename = "second.bmson";
-    const auto file_plan = wormedit::plan_conversion_publication(temporary.path, group, request, result);
+    const auto file_plan = wormedit::conversion_publication_plan_payload_t::from(temporary.path, group, request, result);
     check_publication(!file_plan);
-    const auto directory_plan = wormedit::plan_conversion_publication(temporary.path, group, request, result, true);
+    const auto directory_plan = wormedit::conversion_publication_plan_payload_t::from(temporary.path, group, request, result, true);
     require_publication(static_cast<bool>(directory_plan));
-    check_publication(directory_plan.files.front().project_relative_path == "kick-v1.2/first.bmson");
+    check_publication(directory_plan.value().files.front().project_relative_path == "kick-v1.2/first.bmson");
     const auto published = wormedit::publish_conversion_group_atomic(temporary.path, group, request,
         result, {.destination_is_directory = true});
     require_publication(published.published);
@@ -595,12 +595,11 @@ TEST_CASE("conversion publication expected failure preserves an empty error", "[
     wormedit::conversion_publication_plan_payload_t payload{};
     payload.files.reserve(2);
     wormedit::conversion_publication_plan_outcome_t outcome = std::unexpected(wormedit::conversion_publication_plan_error_t::from(std::move(payload), {}));
-    const auto legacy = wormedit::conversion_publication_plan_t::from(std::move(outcome));
-    check_publication(!static_cast<bool>(legacy));
-    require_publication(legacy.errors.size() == 1);
-    check_publication(legacy.errors.front().empty());
-    check_publication(legacy.files.empty() && legacy.assets.empty() && legacy.generated_files.empty());
-    check_publication(legacy.files.capacity() >= 2);
+    require_publication(!outcome.has_value());
+    check_publication(outcome.error().message.empty());
+    const auto& retained = outcome.error().plan;
+    check_publication(retained.files.empty() && retained.assets.empty() && retained.generated_files.empty());
+    check_publication(retained.files.capacity() >= 2);
 }
 
 TEST_CASE("staged discovery expected failure preserves an empty error", "[unit][publication][results]") {
@@ -617,7 +616,7 @@ TEST_CASE("staged discovery expected failure preserves an empty error", "[unit][
 TEST_CASE("conversion primary publication preflight returns complete paths", "[unit][publication][results]") {
     temporary_directory_t temporary;
     const wormedit::output_group_t group{.family = wormedit::format_family_t::bmson, .relative_output_path = "exports"};
-    const auto outcome = wormedit::conversion_publication_plan_t::from(temporary.path, group,
+    const auto outcome = wormedit::conversion_publication_plan_payload_t::from(temporary.path, group,
         {.target = wormedit::format_family_t::bmson}, converted());
     require_publication(outcome.has_value());
     require_publication(outcome->files.size() == 1);

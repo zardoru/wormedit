@@ -101,7 +101,7 @@ auto has_transform_error(const wormedit::conversion_result_t& result,
 
 auto spans_are_written(const wormedit::conversion_result_t& result) -> bool {
     if (result.outputs.size() != 1 || result.slice_plans.size() != 1) return false;
-    for (const auto& span : result.slice_plans.front().spans)
+    for (const auto& span : result.slice_plans.front().value.spans)
         if (result.outputs.front().bytes.find(span.filename) == std::string::npos) return false;
     return true;
 }
@@ -118,7 +118,7 @@ auto sample_filenames_are_in_target_sections(const wormedit::song_document_t& so
     const auto stem_asset = song.charts.front().sound_channels.front().source_clip.source;
     bool stem_sample{};
     bool packed_sample{};
-    for (const auto& span : result.slice_plans.front().spans) {
+    for (const auto& span : result.slice_plans.front().value.spans) {
         if (span.asset == stem_asset)
             stem_sample = stem_sample || bytes.find(span.filename, hit_begin) != std::string::npos;
         else {
@@ -136,15 +136,15 @@ auto same_span_plans(const wormedit::conversion_result_t& lhs,
                      const wormedit::conversion_result_t& rhs) -> bool {
     if (lhs.slice_plans.size() != rhs.slice_plans.size()) return false;
     for (std::size_t index = 0; index < lhs.slice_plans.size(); ++index)
-        if (lhs.slice_plans[index].spans != rhs.slice_plans[index].spans) return false;
+        if (lhs.slice_plans[index].value.spans != rhs.slice_plans[index].value.spans) return false;
     return true;
 }
 
 auto has_silent_mapping(const wormedit::song_document_t& song,
                         const wormedit::conversion_request_t& request) -> bool {
-    const auto plan = wormedit::plan_conversion_slice_spans(
+    const auto plan = wormedit::slice_span_plan_payload_t::from(
         song, request.chart.value(), request.slice_sources, request.slice_options);
-    return std::ranges::any_of(plan.mappings, [](const auto& mapping) {
+    return std::ranges::any_of(plan.value.mappings, [](const auto& mapping) {
         return !mapping.span_index.has_value();
     });
 }
@@ -179,7 +179,7 @@ TEST_CASE("BMSON conversion exports deduplicated slice samples and preserves sil
     const auto converted = wormedit::convert_document(*song, request);
     REQUIRE(converted);
     REQUIRE(spans_are_written(converted));
-    check_conversion(converted.slice_plans.front().spans.size() == 4);
+    check_conversion(converted.slice_plans.front().value.spans.size() == 4);
     check_conversion(has_silent_mapping(*song, request));
     check_conversion(sample_filenames_are_in_target_sections(*song, converted));
     const auto parsed = wormedit::parse_osu_mania_bytes(std::as_bytes(std::span{
@@ -210,7 +210,7 @@ TEST_CASE("BMSON slice conversion is deterministic and shares spans across chart
     check_conversion(first.outputs.front().bytes == again.outputs.front().bytes);
     check_conversion(first.outputs.back().bytes == again.outputs.back().bytes);
     check_conversion(same_span_plans(first, again));
-    check_conversion(first.slice_plans.front().spans.size() == 4);
+    check_conversion(first.slice_plans.front().value.spans.size() == 4);
 }
 
 TEST_CASE("BMSON slice conversion rejects missing geometry without partial output",
@@ -553,7 +553,7 @@ TEST_CASE("BMSON BMS slicing preserves silent gameplay with one shared binding",
     for (const auto& diagnostic : result.diagnostics) INFO(diagnostic.message);
     require_conversion(static_cast<bool>(result));
     check_conversion(result.silent_files.size() == 1);
-    check_conversion(result.slice_plans.front().spans.size() == 4);
+    check_conversion(result.slice_plans.front().value.spans.size() == 4);
     check_conversion(occurrence_count(result.outputs.front().bytes, "#WAV") == 5);
     check_conversion(result.outputs.front().bytes.find("conversion-silence.wav") != std::string::npos);
     check_conversion(result.outputs.front().bytes.find("packed-one.wav") == std::string::npos);
@@ -670,7 +670,7 @@ TEST_CASE("BMSON slice conversion writes StepMania keysounds with one file per d
     require_conversion(static_cast<bool>(converted));
     require_conversion(converted.outputs.size() == 1 && converted.slice_plans.size() == 1);
     const auto& bytes = converted.outputs.front().bytes;
-    const auto& spans = converted.slice_plans.front().spans;
+    const auto& spans = converted.slice_plans.front().value.spans;
     check_conversion(spans.size() == 4);
     // The stem plays one span twice; every distinct span is listed exactly once.
     for (const auto& span : spans) check_conversion(occurrence_count(bytes, span.filename) == 1);

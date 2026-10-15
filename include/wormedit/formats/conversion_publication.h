@@ -23,7 +23,16 @@ struct conversion_publication_asset_t {
     auto operator==(const conversion_publication_asset_t&) const -> bool = default;
 };
 
+struct conversion_publication_plan_error_t;
+
+// Resolves the complete converted output set against one selected output group.
+// This is a read-only preflight: it checks the already-staged asset files and
+// destination paths, but it does not reserve names or publish chart bytes.
 struct conversion_publication_plan_payload_t {
+    [[nodiscard]] static auto from(const std::filesystem::path& project_directory,
+        const output_group_t& group, const conversion_request_t& request,
+        const conversion_result_t& converted, bool destination_is_directory = false)
+        -> result_t<conversion_publication_plan_payload_t, conversion_publication_plan_error_t>;
     std::vector<conversion_publication_file_t> files;
     std::vector<conversion_publication_asset_t> assets;
     std::vector<std::filesystem::path> generated_files;
@@ -43,20 +52,6 @@ struct conversion_publication_plan_error_t {
 };
 using conversion_publication_plan_outcome_t =
     result_t<conversion_publication_plan_payload_t, conversion_publication_plan_error_t>;
-struct conversion_publication_plan_t {
-    [[nodiscard]] static auto from(const std::filesystem::path& project_directory, const output_group_t& group,
-        const conversion_request_t& request, const conversion_result_t& converted,
-        bool destination_is_directory = false) -> conversion_publication_plan_outcome_t;
-    [[nodiscard]] static auto from(conversion_publication_plan_outcome_t&& outcome) -> conversion_publication_plan_t;
-    std::vector<conversion_publication_file_t> files;
-    std::vector<conversion_publication_asset_t> assets;
-    std::vector<std::filesystem::path> generated_files;
-    std::vector<std::string> errors;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return errors.empty();
-    }
-};
 
 struct staged_asset_discovery_error_t {
     std::vector<conversion_request_t::staged_asset_t> mappings;
@@ -91,15 +86,6 @@ struct staged_asset_discovery_t {
                                                  std::stop_token stop = {})
     -> staged_asset_discovery_t;
 
-// Resolves the complete converted output set against one selected output group.
-// This is a read-only preflight: it checks the already-staged asset files and
-// destination paths, but it does not reserve names or publish chart bytes.
-[[nodiscard]] auto plan_conversion_publication(const std::filesystem::path& project_directory,
-                                               const output_group_t& group,
-                                               const conversion_request_t& request,
-                                               const conversion_result_t& converted,
-                                               bool destination_is_directory = false)
-    -> conversion_publication_plan_t;
 
 enum class conversion_publication_stage_t {
     copy_existing,

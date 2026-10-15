@@ -162,13 +162,6 @@ auto publish(const slice_span_render_input_t& plan, const slice_span_render_opti
 
 } // namespace
 
-auto slice_span_render_result_t::from(slice_span_render_outcome_t&& outcome) -> slice_span_render_result_t {
-    const auto completed = outcome.has_value();
-    auto payload = completed ? std::move(*outcome) : std::move(outcome.error());
-    return {.completed = completed, .files = std::move(payload.files),
-        .error = std::move(payload.error), .asset = payload.asset};
-}
-
 auto create_slice_span_files(const song_document_t& song, const slice_span_render_input_t& plan,
     const slice_span_render_options_t& options) -> slice_span_render_outcome_t {
     decoders_t decoders;
@@ -184,11 +177,6 @@ auto create_slice_span_files(const song_document_t& song, const slice_span_rende
     auto rendered = render_staged(song, plan, options, decoders, publication, staged);
     if (!rendered) return std::unexpected(std::move(rendered.error()));
     return publish(plan, options, staged, publication);
-}
-
-auto render_slice_span_plan(const song_document_t& song, const slice_span_plan_t& plan,
-    const slice_span_render_options_t& options) -> slice_span_render_result_t {
-    return slice_span_render_result_t::from(create_slice_span_files(song, slice_span_render_input_t::from(plan), options));
 }
 
 namespace {
@@ -275,8 +263,9 @@ auto render_conversion_slice_plans(const song_document_t& song, const conversion
     auto rendering = options;
     rendering.preserve_float_samples = true;
     for (const auto& plan : converted.slice_plans) {
-        const auto rendered = render_slice_span_plan(song, plan, rendering);
-        if (!rendered) return rendered.error;
+        const auto rendered = create_slice_span_files(song, slice_span_render_input_t::from(plan),
+                                                       rendering);
+        if (!rendered) return rendered.error().error;
     }
     return std::nullopt;
 }

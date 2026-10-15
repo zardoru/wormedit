@@ -832,7 +832,6 @@ auto apply_duration_resize_plan(document_history_t& history, editor_interaction_
         if (!command)
             return diagnostic_result(history, state, std::move(command.diagnostics));
     }
-    state.pending_note_duration_gesture.reset();
     set_selected_notes(state, plan.notes);
     state.active_lane = plan.reference_lane;
     place_cursor_at(state, plan.reference_end);

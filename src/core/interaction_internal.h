@@ -1015,12 +1015,6 @@ auto selected_lane_assignment_ids(const editor_interaction_state_t& state)
 auto assign_selected_objects_to_lane(editor_edit_context_t& context,
                                      const assign_selected_objects_to_lane_action_t& action)
     -> editor_interaction_result_t;
-auto begin_note_duration_gesture(editor_edit_context_t& context, object_id_t reference_id)
-    -> editor_interaction_result_t;
-auto update_note_duration_gesture(editor_edit_context_t& context, local_position_t requested_end)
-    -> editor_interaction_result_t;
-auto release_note_duration_gesture(editor_edit_context_t& context, local_position_t requested_end)
-    -> editor_interaction_result_t;
 auto relocate_moved_notes(chart_document_t& chart, const note_move_plan_t& plan,
                           document_history_t& history, editor_interaction_state_t& state)
     -> std::optional<diagnostic_t>;

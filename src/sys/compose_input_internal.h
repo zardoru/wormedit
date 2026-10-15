@@ -829,7 +829,7 @@ auto update_alt_pointer_gesture(const WormUiComposeInputAction& input,
             "Pointer hold input fell outside chart geometry and was canceled.");
     }
     const auto releasing = input.kind == WORM_UI_COMPOSE_INPUT_ALT_POINTER_RELEASE;
-    if (state.pending_note_duration_gesture) {
+    if (state.gesture<wormedit::pending_note_duration_gesture_t>()) {
         result = dispatch_editor_action(history, state,
                                         update_note_duration_gesture_action_t{
                                             *position, releasing ? editor_gesture_phase_t::commit

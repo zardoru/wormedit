@@ -1448,7 +1448,7 @@ std::uint64_t prepare_compose_projection_state(const compose_projection_context_
     cache.frame.interaction_view = interaction_view;
     const auto hover_gesture_active =
         retained_state->pending_hold.has_value() ||
-        retained_state->pending_note_duration_gesture.has_value() ||
+        retained_state->gesture<wormedit::pending_note_duration_gesture_t>() != nullptr ||
         retained_state->pending_note_move_gesture.has_value() ||
         retained_state->pending_note_paint_gesture.has_value() ||
         retained_state->pending_semantic_layer_paint_gesture.has_value() ||
@@ -2551,7 +2551,7 @@ auto default_song_bar_hidden(const wormedit::song_document_t& document,
 
 auto projected_pointer_hold_active(const std::optional<wormedit::editor_interaction_state_t>& state)
     -> bool {
-    return state && (state->pending_note_duration_gesture ||
+    return state && (state->gesture<wormedit::pending_note_duration_gesture_t>() ||
         (state->pending_hold && state->pending_hold->gesture_source ==
             wormedit::hold_gesture_source_t::alt_pointer));
 }

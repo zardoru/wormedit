@@ -109,6 +109,7 @@ add_executable(wormedit_core_tests
     core/grid_tests.cpp
     core/snap_tests.cpp
     core/span_manipulation_tests.cpp
+    core/active_gesture_tests.cpp
     core/interaction_tests.cpp
     core/cursor_write_guard_tests.cpp
     core/chart_clipboard_tests.cpp

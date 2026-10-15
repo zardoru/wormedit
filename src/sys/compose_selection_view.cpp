@@ -17,7 +17,7 @@ void populate_compose_selection_preview(
     std::optional<wormedit::editor_interaction_state_t>& retained_state,
     wormedit::editor_interaction_view_model_t& interaction_view, WormUiComposeView& view) {
     interaction_view.pending_hold = retained_state->pending_hold;
-    interaction_view.pending_note_duration_gesture = retained_state->pending_note_duration_gesture;
+    interaction_view.active_gesture = retained_state->active_gesture;
     interaction_view.pending_note_move_gesture = retained_state->pending_note_move_gesture;
     interaction_view.pending_note_paint_gesture =
         retained_state->pending_note_paint_gesture

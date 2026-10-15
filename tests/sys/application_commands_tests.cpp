@@ -2179,9 +2179,9 @@ TEST_CASE("Dock commands use the active Compose context without editing history"
         fixture.workspace.active_tab = wormedit::workspace_tab_t::metadata;
         check_bookmark_callback(!fixture.invoke(kind).accepted);
         fixture.workspace.active_tab = wormedit::workspace_tab_t::compose;
-        fixture.compose_state->pending_note_duration_gesture.emplace();
+        fixture.compose_state->active_gesture.emplace();
         check_bookmark_callback(!fixture.invoke(kind).accepted);
-        fixture.compose_state->pending_note_duration_gesture.reset();
+        fixture.compose_state->active_gesture.reset();
         fixture.application_state.project.compose_view.compose_timing_focus = true;
         check_bookmark_callback(!fixture.invoke(kind).accepted);
         fixture.application_state.project.compose_view.compose_timing_focus = false;
@@ -2234,7 +2234,7 @@ TEST_CASE("Go to sound command rejects a missing or blocked chooser callback",
     fixture.application_state.services.open_sound_picker = [](auto, auto, auto) { return false; };
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_sound).accepted);
     fixture.application_state.services.open_sound_picker = [](auto, auto, auto) { return true; };
-    fixture.compose_state->pending_note_duration_gesture.emplace();
+    fixture.compose_state->active_gesture.emplace();
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_sound).accepted);
 }
 #endif
@@ -2654,9 +2654,9 @@ TEST_CASE("Project export command opens from every project tab without Compose d
         require_bookmark_callback(fixture.invoke(application_command_kind_t::document_export_output_group).accepted);
     }
     check_bookmark_callback(calls == 5);
-    fixture.compose_state->pending_note_duration_gesture.emplace();
+    fixture.compose_state->active_gesture.emplace();
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::document_export_output_group).accepted);
-    fixture.compose_state->pending_note_duration_gesture.reset();
+    fixture.compose_state->active_gesture.reset();
     fixture.application_state.services.open_project_export = {};
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::document_export_output_group).accepted);
 }
@@ -2850,7 +2850,7 @@ TEST_CASE("Registered menu verbs reject paste and pending gestures atomically", 
     unsigned calls{};
     f.application_state.services.transport_set_loop_selection = [&](auto, auto, auto, auto, bool) { ++calls; return true; };
     if (owner == 1) f.application_state.project.clipboard.paste_session = application_command_state_t::paste_session_t{};
-    else if (owner == 0) f.compose_state->pending_note_duration_gesture.emplace();
+    else if (owner == 0) f.compose_state->active_gesture.emplace();
     const auto original = write_native_project(f.fixture.history.document).bytes;
     const auto selected = f.compose_state->selected_notes;
     selection_check(!static_cast<bool>(invoke_selection_command(f, id, owner == 2)));

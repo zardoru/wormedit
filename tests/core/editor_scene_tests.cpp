@@ -102,10 +102,11 @@ auto make_stale_scene_preview(int kind) -> wormedit::editor_interaction_view_mod
     auto result = view();
     switch (kind) {
     case 0:
-        result.pending_note_duration_gesture = pending_note_duration_gesture_t{
-            .reference_note = object_id_t{11}, .stamp = wormedit::document_stamp_t::from(8), .notes = {object_id_t{11}},
+        result.active_gesture = proposal_t<pending_note_duration_gesture_t, document_stamp_t>{
+            .stamp = document_stamp_t::from(8), .payload = {
+            .reference_note = object_id_t{11}, .notes = {object_id_t{11}},
             .preview_end = {measure_id_t{2}, 0},
-            .preview = {{object_id_t{11}, note_kind_t::hold, local_position_t{measure_id_t{2}, 0}}}};
+            .preview = {{object_id_t{11}, note_kind_t::hold, local_position_t{measure_id_t{2}, 0}}}}};
         break;
     case 1:
         result.pending_hold = pending_hold_t{.position = {measure_id_t{2}, 0}, .lane = lane_id_t{1},
@@ -990,14 +991,14 @@ TEST_CASE("field scene renders exact hold and duration proposal ghosts",
     const auto& index = std::get<wormedit::editor_field_scene_index_t>(built);
 
     auto duration_view = view();
-    duration_view.pending_note_duration_gesture = wormedit::pending_note_duration_gesture_t{
+    duration_view.active_gesture = wormedit::proposal_t<wormedit::pending_note_duration_gesture_t, wormedit::document_stamp_t>{
+        .stamp = wormedit::document_stamp_t::from(7), .payload = {
         .reference_note = wormedit::object_id_t{11},
-        .stamp = wormedit::document_stamp_t::from(7),
         .notes = {wormedit::object_id_t{11}},
         .preview_end = {wormedit::measure_id_t{2}, 0},
         .preview = {{wormedit::object_id_t{11}, wormedit::note_kind_t::hold,
                      wormedit::local_position_t{wormedit::measure_id_t{2}, 0}}},
-    };
+    }};
     const auto duration = wormedit::editor_field_scene_view_t::from(
         chart, index, duration_view, {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
     REQUIRE(duration);
@@ -1110,7 +1111,7 @@ TEST_CASE("field scene renders exact hold and duration proposal ghosts",
           }) == 2);
 
     auto stale_view = duration_view;
-    stale_view.pending_note_duration_gesture->stamp = wormedit::document_stamp_t::from(8);
+    std::get<wormedit::proposal_t<wormedit::pending_note_duration_gesture_t, wormedit::document_stamp_t>>(*stale_view.active_gesture).stamp = wormedit::document_stamp_t::from(8);
     const auto stale = wormedit::editor_field_scene_view_t::from(
         chart, index, stale_view, {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
     CHECK_FALSE(stale);

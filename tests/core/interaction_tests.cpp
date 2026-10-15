@@ -3704,11 +3704,11 @@ TEST_CASE("tail drag previews and commits the same exact duration delta for a se
     const auto expanded = dispatch_editor_action(
         history, state, update_note_duration_gesture_action_t{{measure_id_t{1}, 480}});
     REQUIRE(expanded);
-    REQUIRE(expanded.view->pending_note_duration_gesture.has_value());
-    REQUIRE(expanded.view->pending_note_duration_gesture->preview.size() == 2);
-    CHECK(expanded.view->pending_note_duration_gesture->preview[0].end ==
+    REQUIRE(expanded.view->gesture<pending_note_duration_gesture_t>() != nullptr);
+    REQUIRE(expanded.view->gesture<pending_note_duration_gesture_t>()->preview.size() == 2);
+    CHECK(expanded.view->gesture<pending_note_duration_gesture_t>()->preview[0].end ==
           local_position_t{measure_id_t{1}, 480});
-    CHECK(expanded.view->pending_note_duration_gesture->preview[1].end ==
+    CHECK(expanded.view->gesture<pending_note_duration_gesture_t>()->preview[1].end ==
           local_position_t{measure_id_t{1}, 720});
     CHECK(history.document.revision == 1);
 
@@ -3718,7 +3718,7 @@ TEST_CASE("tail drag previews and commits the same exact duration delta for a se
                                               .phase = wormedit::editor_gesture_phase_t::commit});
     REQUIRE(committed);
     CHECK(committed.document_changed);
-    CHECK_FALSE(state.pending_note_duration_gesture.has_value());
+    CHECK_FALSE(state.gesture<pending_note_duration_gesture_t>() != nullptr);
     CHECK(find_note(history, object_id_t{101})->end == local_position_t{measure_id_t{1}, 480});
     CHECK(find_note(history, object_id_t{102})->end == local_position_t{measure_id_t{1}, 720});
     REQUIRE(undo_document_command(history));
@@ -3730,10 +3730,10 @@ TEST_CASE("tail drag previews and commits the same exact duration delta for a se
     const auto contracted = dispatch_editor_action(
         history, state, update_note_duration_gesture_action_t{{measure_id_t{1}, 0}});
     REQUIRE(contracted);
-    REQUIRE(contracted.view->pending_note_duration_gesture.has_value());
-    CHECK(contracted.view->pending_note_duration_gesture->preview[0].kind == note_kind_t::tap);
-    CHECK_FALSE(contracted.view->pending_note_duration_gesture->preview[0].end.has_value());
-    CHECK(contracted.view->pending_note_duration_gesture->preview[1].end ==
+    REQUIRE(contracted.view->gesture<pending_note_duration_gesture_t>() != nullptr);
+    CHECK(contracted.view->gesture<pending_note_duration_gesture_t>()->preview[0].kind == note_kind_t::tap);
+    CHECK_FALSE(contracted.view->gesture<pending_note_duration_gesture_t>()->preview[0].end.has_value());
+    CHECK(contracted.view->gesture<pending_note_duration_gesture_t>()->preview[1].end ==
           local_position_t{measure_id_t{1}, 240});
     const auto collapsed = dispatch_editor_action(
         history, state,
@@ -3766,12 +3766,12 @@ TEST_CASE("duration gestures reject collisions and stale revisions without parti
     CHECK(has_code(collision.diagnostics, diagnostic_code_t::collision));
     CHECK(history.document.revision == 1);
     CHECK(find_note(history, object_id_t{101})->end == local_position_t{measure_id_t{1}, 240});
-    CHECK(state.pending_note_duration_gesture.has_value());
+    CHECK(state.gesture<pending_note_duration_gesture_t>() != nullptr);
 
     const auto cancel = dispatch_editor_action(
         history, state, cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::escape});
     REQUIRE(cancel);
-    CHECK_FALSE(state.pending_note_duration_gesture.has_value());
+    CHECK_FALSE(state.gesture<pending_note_duration_gesture_t>() != nullptr);
 
     REQUIRE(dispatch_editor_action(history, state,
                                    begin_note_duration_gesture_action_t{object_id_t{101}}));
@@ -3784,11 +3784,11 @@ TEST_CASE("duration gestures reject collisions and stale revisions without parti
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
     test::check_stale_action_message(stale.diagnostics, "Editor gesture");
     CHECK(find_note(history, object_id_t{101})->end == local_position_t{measure_id_t{1}, 240});
-    CHECK_FALSE(state.pending_note_duration_gesture.has_value());
+    CHECK_FALSE(state.gesture<pending_note_duration_gesture_t>() != nullptr);
     REQUIRE(dispatch_editor_action(
         history, state,
         cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::focus_lost}));
-    CHECK_FALSE(state.pending_note_duration_gesture.has_value());
+    CHECK_FALSE(state.gesture<pending_note_duration_gesture_t>() != nullptr);
 }
 
 TEST_CASE("selected note moves preview and commit one snapped translation",
@@ -4010,11 +4010,11 @@ TEST_CASE("duration gesture previews scale to fifty thousand selected notes",
     const auto preview = dispatch_editor_action(
         history, state, update_note_duration_gesture_action_t{{measure_id_t{1}, 1}});
     REQUIRE(preview);
-    REQUIRE(preview.view->pending_note_duration_gesture.has_value());
-    REQUIRE(preview.view->pending_note_duration_gesture->preview.size() == 50'000);
-    CHECK(preview.view->pending_note_duration_gesture->preview.front().end ==
+    REQUIRE(preview.view->gesture<pending_note_duration_gesture_t>() != nullptr);
+    REQUIRE(preview.view->gesture<pending_note_duration_gesture_t>()->preview.size() == 50'000);
+    CHECK(preview.view->gesture<pending_note_duration_gesture_t>()->preview.front().end ==
           local_position_t{measure_id_t{1}, 1});
-    CHECK(preview.view->pending_note_duration_gesture->preview.back().end ==
+    CHECK(preview.view->gesture<pending_note_duration_gesture_t>()->preview.back().end ==
           local_position_t{measure_id_t{1}, 99'999});
     CHECK(history.document.revision == 1);
 }
@@ -5652,7 +5652,7 @@ auto t475_views_match(const editor_interaction_view_model_t& a,
         a.viewport_height_pixels == b.viewport_height_pixels &&
         a.fixed_cursor_screen_y_pixels == b.fixed_cursor_screen_y_pixels &&
         a.pending_hold == b.pending_hold && a.additional_keyboard_holds == b.additional_keyboard_holds &&
-        a.pending_note_duration_gesture == b.pending_note_duration_gesture &&
+        a.active_gesture == b.active_gesture &&
         a.pending_note_move_gesture == b.pending_note_move_gesture &&
         a.retained_selection_range == b.retained_selection_range &&
         a.retained_canvas_selection_range == b.retained_canvas_selection_range &&
@@ -7334,12 +7334,12 @@ TEST_CASE("pointer gesture clocks preserve equal-revision project replacement an
     auto original = make_state(history);
     REQUIRE(dispatch_editor_action(history, original,
                                    begin_note_duration_gesture_action_t{object_id_t{101}}));
-    REQUIRE(original.pending_note_duration_gesture);
+    REQUIRE(original.gesture<pending_note_duration_gesture_t>());
     history.document.id = song_id_t{99};
     auto replacement = make_state(history);
     REQUIRE(dispatch_editor_action(history, replacement,
                                    begin_note_duration_gesture_action_t{object_id_t{101}}));
-    CHECK(original.pending_note_duration_gesture == replacement.pending_note_duration_gesture);
+    CHECK(original.active_gesture == replacement.active_gesture);
     const auto applied = dispatch_editor_action(history, original,
         update_note_duration_gesture_action_t{.reference_end = {measure_id_t{1}, 480},
                                               .phase = editor_gesture_phase_t::commit});

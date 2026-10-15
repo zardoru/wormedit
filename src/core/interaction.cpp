@@ -1,6 +1,6 @@
 #include "interaction_context.h"
 #include "interaction_geometry.h"
-#include "interaction_internal.h"
+#include "interaction_gesture_runner.h"
 #include <wormedit/core/dead_span_rules.h>
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/interaction_gestures.h>
@@ -427,7 +427,7 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         .pending_canvas_keyboard_holds =
             std::get<std::vector<editor_interaction_view_model_t::virtual_hold_preview_t>>(
                 std::move(keyboard_previews)),
-        .pending_note_duration_gesture = state.pending_note_duration_gesture,
+        .active_gesture = state.active_gesture,
         .pending_note_move_gesture = state.pending_note_move_gesture,
         .pending_note_paint_gesture =
             state.pending_note_paint_gesture
@@ -1541,7 +1541,7 @@ auto begin_semantic_paint(editor_edit_context_t& context, layer_id_t layer_id,
             history, state,
             {error(diagnostic_code_t::invalid_hold,
                    "pointer capture is required to begin semantic-layer painting")});
-    if (state.pending_hold || state.pending_note_duration_gesture ||
+    if (state.pending_hold || state.gesture<pending_note_duration_gesture_t>() ||
         state.pending_note_move_gesture || state.pending_note_paint_gesture ||
         state.pending_semantic_layer_paint_gesture || state.pending_editor_area_selection ||
         state.pending_space_range_selection)
@@ -2077,15 +2077,15 @@ auto handle(editor_edit_context_t& context, const scroll_editor_view_action_t& t
 
 auto handle(editor_edit_context_t& context, const begin_note_duration_gesture_action_t& action)
     -> editor_interaction_result_t {
-    return begin_note_duration_gesture(context, action.reference_note);
+    return begin_gesture<pending_note_duration_gesture_t>(context, action.reference_note);
 }
 
 auto handle(editor_edit_context_t& context, const update_note_duration_gesture_action_t& action)
     -> editor_interaction_result_t {
     if (action.phase == editor_gesture_phase_t::commit) {
-        return release_note_duration_gesture(context, action.reference_end);
+        return commit_gesture<pending_note_duration_gesture_t>(context, action.reference_end);
     }
-    return update_note_duration_gesture(context, action.reference_end);
+    return update_gesture<pending_note_duration_gesture_t>(context, action.reference_end);
 }
 
 auto handle(editor_edit_context_t& context, const begin_note_move_gesture_action_t& action)

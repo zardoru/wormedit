@@ -1,65 +1,42 @@
-#include "interaction_internal.h"
+#include "interaction_gesture_runner.h"
 namespace wormedit {
 using namespace interaction_detail;
-auto begin_note_duration_gesture(editor_edit_context_t& context, object_id_t reference_id)
-    -> editor_interaction_result_t {
-    auto& state = context.state;
-    if (state.pending_hold || state.pending_note_duration_gesture ||
-        state.pending_note_move_gesture)
-        return diagnostic_result(
-            context.history, state,
-            {error(diagnostic_code_t::invalid_hold, "another editor gesture is already active")});
+
+auto pending_note_duration_gesture_t::begin(editor_edit_context_t& context, object_id_t reference_id)
+    -> diagnosed_t<std::optional<pending_note_duration_gesture_t>> {
+    const auto& state = context.state;
     const auto* reference = context.scope.chart.find_note(reference_id);
     if (!reference || (reference->kind != note_kind_t::tap && reference->kind != note_kind_t::hold))
-        return diagnostic_result(
-            context.history, state,
-            {error(diagnostic_code_t::invalid_id,
-                   "duration gesture requires a tap or hold reference note", reference_id)});
+        return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                   "duration gesture requires a tap or hold reference note", reference_id)}};
     auto targets = editor_quantize_selection(state).notes;
     if (std::ranges::find(targets, reference_id) == targets.end())
         targets = {reference_id};
     const auto initial_end = reference->end.value_or(reference->position);
     auto planned = make_duration_plan(context, targets, reference_id, initial_end, true);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
-        return diagnostic_result(context.history, state, *diagnostics);
-    const auto& plan = std::get<duration_resize_plan_t>(planned);
-    state.pending_note_duration_gesture = pending_note_duration_gesture_t{
+        return {.diagnostics = *diagnostics};
+    auto& plan = std::get<duration_resize_plan_t>(planned);
+    return {.value = pending_note_duration_gesture_t{
         .reference_note = reference_id,
-        .stamp = document_stamp_t::from(context.history.document.revision),
-        .notes = plan.notes,
+        .notes = std::move(plan.notes),
         .preview_end = plan.reference_end,
         .preview = duration_previews(plan),
-    };
-    return editor_interaction_result_t::from(context.history, state);
+    }};
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
-auto update_note_duration_gesture(editor_edit_context_t& context, local_position_t requested_end)
-    -> editor_interaction_result_t {
-    auto& state = context.state;
-    if (!state.pending_note_duration_gesture)
-        return diagnostic_result(context.history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        "duration gesture update requires an active gesture")});
-    const auto pending = *state.pending_note_duration_gesture;
-    if (!pending.stamp.is_revision_current(context.history.document.revision))
-        return diagnostic_result(context.history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        stale_action_message("Editor gesture"))});
-    const auto* reference = context.scope.chart.find_note(pending.reference_note);
+auto pending_note_duration_gesture_t::update(editor_edit_context_t& context, local_position_t requested_end)
+    -> diagnostic_list_t {
+    const auto& state = context.state;
+    const auto* reference = context.scope.chart.find_note(reference_note);
     if (!reference)
-        return diagnostic_result(
-            context.history, state,
-            {error(diagnostic_code_t::invalid_id,
-                   "duration gesture reference note no longer exists", pending.reference_note)});
+        return {error(diagnostic_code_t::invalid_id,
+                   "duration gesture reference note no longer exists", reference_note)};
     auto snapped_end = snapped_position(context.scope.chart, context.scope.measures, requested_end,
                                         edit_snap_denominator(context.scope.chart, state));
     if (!snapped_end)
-        return diagnostic_result(context.history, state,
-                                 {error(diagnostic_code_t::row_out_of_range,
-                                        "duration gesture end cannot be snapped inside chart")});
+        return {error(diagnostic_code_t::row_out_of_range,
+                      "duration gesture end cannot be snapped inside chart")};
     const auto head = absolute_row(context.scope.measures, reference->position);
     const auto target = absolute_row(context.scope.measures, *snapped_end);
     auto exact_head = false;
@@ -67,31 +44,23 @@ auto update_note_duration_gesture(editor_edit_context_t& context, local_position
         snapped_end = reference->position;
         exact_head = true;
     }
-    auto planned = make_duration_plan(context, pending.notes, pending.reference_note, *snapped_end,
-                                      exact_head);
+    auto planned = make_duration_plan(context, notes, reference_note, *snapped_end, exact_head);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
-        return diagnostic_result(context.history, state, *diagnostics);
+        return *diagnostics;
     const auto& plan = std::get<duration_resize_plan_t>(planned);
-    state.pending_note_duration_gesture->preview_end = plan.reference_end;
-    state.pending_note_duration_gesture->preview = duration_previews(plan);
-    return editor_interaction_result_t::from(context.history, state);
+    preview_end = plan.reference_end;
+    preview = duration_previews(plan);
+    return {};
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
-auto release_note_duration_gesture(editor_edit_context_t& context, local_position_t requested_end)
+auto pending_note_duration_gesture_t::apply(editor_edit_context_t& context) const
     -> editor_interaction_result_t {
-    const auto updated = update_note_duration_gesture(context, requested_end);
-    if (!updated)
-        return updated;
-    const auto pending = *context.state.pending_note_duration_gesture;
-    auto planned = make_duration_plan(context, pending.notes, pending.reference_note,
-                                      pending.preview_end, true);
+    auto planned = make_duration_plan(context, notes, reference_note, preview_end, true);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
         return diagnostic_result(context.history, context.state, *diagnostics);
     return apply_duration_plan(context, std::get<duration_resize_plan_t>(planned));
 }
+
 } // namespace wormedit
 
 namespace wormedit {
@@ -195,7 +164,7 @@ using namespace interaction_detail;
 auto begin_note_move_gesture(editor_edit_context_t& context, object_id_t reference_id,
                              bool displace_to_bgm) -> editor_interaction_result_t {
     auto& state = context.state;
-    if (state.pending_hold || state.pending_note_duration_gesture ||
+    if (state.pending_hold || state.gesture<pending_note_duration_gesture_t>() ||
         state.pending_note_move_gesture || state.pending_note_paint_gesture ||
         state.pending_semantic_layer_paint_gesture || state.pending_editor_area_selection ||
         state.pending_space_range_selection)
@@ -490,7 +459,7 @@ auto begin_note_paint_gesture(editor_edit_context_t& context, lane_id_t lane,
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_id,
                                         "paint sound is not an existing sample resource")});
-    if (state.pending_hold || state.pending_note_duration_gesture ||
+    if (state.pending_hold || state.gesture<pending_note_duration_gesture_t>() ||
         state.pending_note_move_gesture || state.pending_note_paint_gesture ||
         state.pending_semantic_layer_paint_gesture || state.pending_editor_area_selection ||
         state.pending_space_range_selection)
@@ -735,7 +704,7 @@ auto begin_hold_gesture(editor_edit_context_t& context, lane_id_t lane, local_po
                         bool displace, std::optional<bmson_source_geometry_t> geometry)
     -> editor_interaction_result_t {
     auto& state = context.state;
-    if (state.pending_hold || state.pending_note_duration_gesture ||
+    if (state.pending_hold || state.gesture<pending_note_duration_gesture_t>() ||
         state.pending_note_move_gesture)
         return diagnostic_result(
             context.history, state,
@@ -1222,10 +1191,7 @@ auto handle_editor_cancellation(document_history_t& history, editor_interaction_
                                      {error(diagnostic_code_t::invalid_id,
                                             "unknown editor gesture cancellation reason")});
         }
-        clear_editor_gestures(state);
-        auto result = editor_interaction_result_t::from(history, state);
-        result.accepted = true;
-        return result;
+        return cancel_gesture(history, state);
     }
     if (std::holds_alternative<cancel_editor_area_selection_action_t>(action)) {
         visit_editor_gestures(state, [](auto kind, auto& field) {

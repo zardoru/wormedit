@@ -389,10 +389,7 @@ auto build_player_preview_index(const chart_document_t& chart, std::uint64_t doc
     return player_preview_index_result_t::from(player_preview_index_t::from(chart, document_revision, options));
 }
 
-auto player_preview_scene_result_t::from(player_preview_scene_outcome_t&& outcome) -> player_preview_scene_result_t {
-    return {.scene = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
-auto player_preview_scene_result_t::from(const player_preview_index_t& index,
+auto player_preview_scene_t::from(const player_preview_index_t& index,
                                   const player_preview_scene_request_t& request)
     -> player_preview_scene_outcome_t {
     player_preview_scene_outcome_t result{};
@@ -534,11 +531,6 @@ auto player_preview_scene_result_t::from(const player_preview_index_t& index,
     scene.visible_note_count = render_context.visible_notes;
     result.value = std::move(scene);
     return result;
-}
-
-auto player_preview_scene_t::from(const player_preview_index_t& index,
-    const player_preview_scene_request_t& request) -> player_preview_scene_result_t {
-    return player_preview_scene_result_t::from(player_preview_scene_result_t::from(index, request));
 }
 
 } // namespace wormedit

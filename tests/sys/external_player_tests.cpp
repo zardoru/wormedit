@@ -161,7 +161,10 @@ TEST_CASE("external_player actual stub receives quoted filenames source measure 
     const auto log = directory.path / "arguments.txt";
     { std::ofstream script(stub); script <<
         "import sys,pathlib,time\n"
-        "pathlib.Path(sys.argv[1]).write_text('\\n'.join(sys.argv[2:]))\n"
+        "log = pathlib.Path(sys.argv[1])\n"
+        "staged = log.with_suffix('.staged')\n"
+        "staged.write_text('\\n'.join(sys.argv[2:]))\n"
+        "staged.replace(log)\n"
         "time.sleep(0.4)\n"; }
     const std::string template_text = "\"" + stub.string() + "\" \"" + log.string() +
         "\" -s <measure> \"<filename>\" \"<apppath>/player exe\"";

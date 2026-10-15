@@ -649,28 +649,28 @@ auto present_player_preview_frame(const Context& context, const player_preview_f
                        .storyboard_instances = frame.storyboard_instances,
                        .maximum_visible_notes = WORM_UI_PLAYER_PREVIEW_NOTE_CAPACITY,
                        .maximum_storyboard_instances = WORM_UI_PLAYER_PREVIEW_STORYBOARD_CAPACITY});
-    if (!scene) {
+    if (!scene.value || !scene.diagnostics.empty()) {
         fail_player_preview(context,
             scene.diagnostics.empty() ? "No player-preview frame is available at this time."
                                       : scene.diagnostics.front().message);
         return false;
     }
-    if (scene.scene->lanes.size() > WORM_UI_PLAYER_PREVIEW_LANE_CAPACITY ||
-        scene.scene->receptors.size() > WORM_UI_PLAYER_PREVIEW_LANE_CAPACITY ||
-        scene.scene->hold_bodies.size() > WORM_UI_PLAYER_PREVIEW_HOLD_CAPACITY ||
-        scene.scene->note_endpoints.size() > WORM_UI_PLAYER_PREVIEW_NOTE_CAPACITY ||
-        scene.scene->storyboard_instances.size() > WORM_UI_PLAYER_PREVIEW_STORYBOARD_CAPACITY) {
+    if (scene.value->lanes.size() > WORM_UI_PLAYER_PREVIEW_LANE_CAPACITY ||
+        scene.value->receptors.size() > WORM_UI_PLAYER_PREVIEW_LANE_CAPACITY ||
+        scene.value->hold_bodies.size() > WORM_UI_PLAYER_PREVIEW_HOLD_CAPACITY ||
+        scene.value->note_endpoints.size() > WORM_UI_PLAYER_PREVIEW_NOTE_CAPACITY ||
+        scene.value->storyboard_instances.size() > WORM_UI_PLAYER_PREVIEW_STORYBOARD_CAPACITY) {
         view.truncated = true;
         fail_player_preview(context, "The player-preview frame exceeds the frontend geometry cap.");
         return false;
     }
-    append_scene_geometry(*scene.scene, state.lanes, state.receptors, state.holds, state.notes);
-    append_player_preview_visual_layers(context, *scene.scene);
-    for (const auto& instance : scene.scene->storyboard_instances)
+    append_scene_geometry(*scene.value, state.lanes, state.receptors, state.holds, state.notes);
+    append_player_preview_visual_layers(context, *scene.value);
+    for (const auto& instance : scene.value->storyboard_instances)
         append_player_preview_storyboard_sprite(context, instance);
     request_player_preview_images(context);
     request_player_preview_video(context);
-    publish_player_preview_scene(context, *scene.scene);
+    publish_player_preview_scene(context, *scene.value);
     return true;
 }
 

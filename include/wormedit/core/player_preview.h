@@ -15,7 +15,6 @@
 
 namespace wormedit {
 
-struct player_preview_scene_result_t;
 
 enum class player_preview_skin_t : std::uint8_t {
     neutral,
@@ -149,7 +148,7 @@ struct player_preview_scene_t {
     // combo, life, replay, or failure state.
     [[nodiscard]] static auto from(const player_preview_index_t& index,
                                    const player_preview_scene_request_t& request = {})
-        -> player_preview_scene_result_t;
+        -> diagnosed_t<std::optional<player_preview_scene_t>>;
 
     chart_id_t chart;
     std::uint64_t document_revision{};
@@ -174,18 +173,6 @@ struct player_preview_scene_t {
 };
 
 using player_preview_scene_outcome_t = diagnosed_t<std::optional<player_preview_scene_t>>;
-struct player_preview_scene_result_t {
-    [[nodiscard]] static auto from(const player_preview_index_t& index,
-        const player_preview_scene_request_t& request = {}) -> player_preview_scene_outcome_t;
-    [[nodiscard]] static auto from(player_preview_scene_outcome_t&& outcome) -> player_preview_scene_result_t;
-    std::optional<player_preview_scene_t> scene;
-    diagnostic_list_t diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return scene.has_value() && diagnostics.empty();
-    }
-};
-
 [[nodiscard]] auto build_player_preview_index(const chart_document_t& chart,
                                               std::uint64_t document_revision,
                                               player_preview_index_options_t options = {})

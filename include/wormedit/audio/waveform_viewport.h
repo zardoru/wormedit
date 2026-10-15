@@ -52,6 +52,6 @@ inline constexpr double minimum_waveform_frames_per_pixel = 1.0 / 16.0;
 // viewport or waveform yields a non-projected result.
 [[nodiscard]] auto build_waveform_viewport_view(const waveform_t& waveform,
                                              const waveform_viewport_t& viewport)
-    -> waveform_projection_result_t;
+    -> waveform_projection_outcome_t;
 
 } // namespace wormedit::audio

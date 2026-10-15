@@ -29,12 +29,12 @@ auto click_track(std::uint64_t frame_count, std::span<const std::uint64_t> start
 }
 
 auto analyzed(std::span<const float> samples, std::uint32_t frames_per_bin = 64)
-    -> waveform_analysis_result_t {
+    -> waveform_analysis_outcome_t {
     decoder_t decoder;
-    if (!decoder.open_pcm(samples)) return {};
+    if (!decoder.open_pcm(samples)) return std::unexpected(waveform_analysis_error_t{});
     decoded_block_cache_t blocks;
     waveform_cache_t waveforms;
-    return analyze_waveform(decoder, blocks, waveforms, {"generated:compose-onset", "pcm:v1"},
+    return waveform_analysis_t::from(decoder, blocks, waveforms, {"generated:compose-onset", "pcm:v1"},
                             frames_per_bin);
 }
 
@@ -50,9 +50,9 @@ TEST_CASE("compose onset capture returns exact cached source frames in its visib
     const std::array<std::uint64_t, 1> clicks{expected_frame};
     const auto samples = click_track(window_frames * 6, clicks, 1);
     const auto waveform = analyzed(samples);
-    REQUIRE(waveform.waveform);
+    REQUIRE(waveform_analysis_t::find_waveform(waveform));
 
-    const auto captured = capture_compose_onsets(*waveform.waveform, window_frames, window_frames * 3);
+    const auto captured = capture_compose_onsets(*waveform_analysis_t::find_waveform(waveform), window_frames, window_frames * 3);
     CHECK((captured.frames == std::vector<std::uint64_t>{expected_frame}));
 }
 
@@ -60,11 +60,11 @@ TEST_CASE("compose onset capture returns empty for silence, invalid ranges, and 
           "[sys][compose-onset]") {
     const auto samples = click_track(2'048, {});
     const auto waveform = analyzed(samples);
-    REQUIRE(waveform.waveform);
-    CHECK(capture_compose_onsets(*waveform.waveform, 0, 2'048).frames.empty());
-    CHECK(capture_compose_onsets(*waveform.waveform, 512, 512).frames.empty());
+    REQUIRE(waveform_analysis_t::find_waveform(waveform));
+    CHECK(capture_compose_onsets(*waveform_analysis_t::find_waveform(waveform), 0, 2'048).frames.empty());
+    CHECK(capture_compose_onsets(*waveform_analysis_t::find_waveform(waveform), 512, 512).frames.empty());
 
-    auto unfinished = *waveform.waveform;
+    auto unfinished = *waveform_analysis_t::find_waveform(waveform);
     unfinished.key.end_frame = 512;
     unfinished.bins.resize(8);
     CHECK(capture_compose_onsets(unfinished, 0, 2'048).frames.empty());

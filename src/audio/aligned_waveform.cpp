@@ -594,13 +594,13 @@ auto aligned_waveform_result_t::from(const waveform_t& waveform, const timing_in
     const auto window = aligned_waveform_window(waveform, timing, request);
     if (!window)
         return from(std::move(result));
-    const auto projection = build_waveform_view(
+    const auto projection = waveform_projection_t::from(
         waveform, {.begin_frame = window->begin_frame,
                    .end_frame = window->end_frame,
                    .pixel_width = std::min(height * 2U, maximum_aligned_waveform_rows),
                    .maximum_columns = maximum_aligned_waveform_rows});
     if (!projection) {
-        result.status = projection.status == waveform_projection_status_t::capacity_exceeded
+        result.status = projection.error() == waveform_projection_status_t::capacity_exceeded
                             ? aligned_waveform_status_t::capacity_exceeded
                             : aligned_waveform_status_t::invalid_waveform;
         return from(std::move(result));
@@ -608,7 +608,7 @@ auto aligned_waveform_result_t::from(const waveform_t& waveform, const timing_in
     std::vector<aligned_waveform_row_t> pixels(height);
     std::vector<bool> occupied(height);
     const aligned_row_context_t row_context{waveform, timing, request, rows_per_pixel, height};
-    for (const auto& column : projection.columns) {
+    for (const auto& column : projection->columns) {
         const auto pixel = pixel_for_column(row_context, column);
         if (!pixel.has_value()) {
             continue;
@@ -803,18 +803,18 @@ auto waveform_overview_result_t::from(const waveform_t& waveform, const timing_i
         beat_zero_fraction <= 1.0L) {
         result.beat_zero_fraction = static_cast<double>(beat_zero_fraction);
     }
-    const auto projection = build_waveform_view(waveform, {.begin_frame = 0,
+    const auto projection = waveform_projection_t::from(waveform, {.begin_frame = 0,
                                                            .end_frame = waveform.total_frames,
                                                            .pixel_width = maximum_rows,
                                                            .maximum_columns = maximum_rows});
     if (!projection) {
-        result.status = projection.status == waveform_projection_status_t::capacity_exceeded
+        result.status = projection.error() == waveform_projection_status_t::capacity_exceeded
                             ? aligned_waveform_status_t::capacity_exceeded
                             : aligned_waveform_status_t::invalid_waveform;
         return from(std::move(result));
     }
-    result.rows.reserve(projection.columns.size());
-    for (const auto& column : projection.columns) {
+    result.rows.reserve(projection->columns.size());
+    for (const auto& column : projection->columns) {
         const auto midpoint = column.begin_frame + (column.end_frame - column.begin_frame) / 2U;
         result.rows.push_back({static_cast<double>(midpoint) / waveform.total_frames,
                                std::max(column.absolute_peak[0], column.absolute_peak[1])});
@@ -846,20 +846,20 @@ auto waveform_overview_result_t::from(const waveform_t& waveform, double begin_f
         result.status = aligned_waveform_status_t::invalid_waveform;
         return from(std::move(result));
     }
-    const auto projection = build_waveform_view(waveform, {.begin_frame = begin_frame,
+    const auto projection = waveform_projection_t::from(waveform, {.begin_frame = begin_frame,
                                                            .end_frame = end_frame,
                                                            .pixel_width = maximum_rows,
                                                            .maximum_columns = maximum_rows});
     if (!projection) {
-        result.status = projection.status == waveform_projection_status_t::capacity_exceeded
+        result.status = projection.error() == waveform_projection_status_t::capacity_exceeded
                             ? aligned_waveform_status_t::capacity_exceeded
                             : aligned_waveform_status_t::invalid_waveform;
         return from(std::move(result));
     }
     result.visible_begin_fraction = begin_fraction;
     result.visible_end_fraction = end_fraction;
-    result.rows.reserve(projection.columns.size());
-    for (const auto& column : projection.columns) {
+    result.rows.reserve(projection->columns.size());
+    for (const auto& column : projection->columns) {
         const auto midpoint = column.begin_frame + (column.end_frame - column.begin_frame) / 2U;
         result.rows.push_back({static_cast<double>(midpoint) / waveform.total_frames,
                                std::max(column.absolute_peak[0], column.absolute_peak[1])});

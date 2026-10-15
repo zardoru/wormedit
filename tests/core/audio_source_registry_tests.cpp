@@ -178,15 +178,15 @@ TEST_CASE("decoded source registry retains project decoders for waveform analysi
     waveform_cache_t waveforms;
 
     const auto analyzed = registry.analyze_waveform(asset_id_t{7}, blocks, waveforms, 128);
-    REQUIRE(analyzed.status == waveform_analysis_status_t::generated);
-    REQUIRE(analyzed.waveform.has_value());
-    CHECK(analyzed.waveform->key.source == added.binding->source);
-    CHECK(analyzed.waveform->total_frames == added.binding->output_frame_count);
-    CHECK(registry.analyze_waveform(asset_id_t{7}, blocks, waveforms, 128).status ==
+    REQUIRE(analyzed.value().status == waveform_analysis_status_t::generated);
+    REQUIRE(waveform_analysis_t::find_waveform(analyzed) != nullptr);
+    CHECK(waveform_analysis_t::find_waveform(analyzed)->key.source == added.binding->source);
+    CHECK(waveform_analysis_t::find_waveform(analyzed)->total_frames == added.binding->output_frame_count);
+    CHECK(registry.analyze_waveform(asset_id_t{7}, blocks, waveforms, 128).value().status ==
           waveform_analysis_status_t::cache_hit);
-    CHECK(registry.analyze_waveform(asset_id_t{99}, blocks, waveforms, 128).status ==
+    CHECK(registry.analyze_waveform(asset_id_t{99}, blocks, waveforms, 128).error().code ==
           waveform_analysis_status_t::decoder_unavailable);
-    CHECK(registry.analyze_waveform({}, blocks, waveforms, 128).status ==
+    CHECK(registry.analyze_waveform({}, blocks, waveforms, 128).error().code ==
           waveform_analysis_status_t::invalid_request);
 }
 

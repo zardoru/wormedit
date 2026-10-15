@@ -436,8 +436,8 @@ void populate_audio_waveform_views(
     if (!projection)
         return;
 
-    flattened.audio.waveform.reserve(projection.columns.size());
-    for (const auto& column : projection.columns) {
+    flattened.audio.waveform.reserve(projection->columns.size());
+    for (const auto& column : projection->columns) {
         flattened.audio.waveform.push_back({
             .minimum = {column.minimum[0], column.minimum[1]},
             .maximum = {column.maximum[0], column.maximum[1]},

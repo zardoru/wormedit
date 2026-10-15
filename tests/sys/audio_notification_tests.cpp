@@ -459,19 +459,22 @@ TEST_CASE("superseded waveform work is silent after the selected source clears",
 TEST_CASE("Waveform task failures use native metadata while cancellations stay quiet",
           "[sys][audio-notification]") {
     using namespace wormedit;
-    audio::waveform_job_completion_t completed{
-        .task_error = task_error_t{task_error_code_t::task_threw, "Decoder task exception."}};
+    audio::waveform_job_completion_outcome_t completed{
+        std::unexpected(async_job_completion_error_t<asset_id_t>{
+            .cause = {task_error_code_t::task_threw, "Decoder task exception."}})};
     const auto failure = sys::runtime::waveform_completion_notification(completed);
     check_audio_worker(failure.has_value());
     check_audio_worker(failure->severity == notification_severity_t::error);
     check_audio_worker(failure->source == notification_source_t::audio);
     check_audio_worker(failure->message == "Decoder task exception.");
-    completed.task_error->code = task_error_code_t::cancelled;
+    completed.error().cause.code = task_error_code_t::cancelled;
     check_audio_worker(!sys::runtime::waveform_completion_notification(completed));
-    completed.task_error.reset();
+    completed = async_job_completion_value_t<asset_id_t, audio::waveform_analysis_result_t>{};
+    check_audio_worker(!sys::runtime::waveform_completion_notification(completed));
     auto cancelled = std::make_shared<audio::waveform_analysis_result_t>();
     cancelled->status = audio::waveform_analysis_status_t::cancelled;
-    completed.analysis = cancelled;
+    completed = async_job_completion_value_t<asset_id_t, audio::waveform_analysis_result_t>{
+        .payload = std::move(cancelled)};
     check_audio_worker(!sys::runtime::waveform_completion_notification(completed));
 }
 

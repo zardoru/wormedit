@@ -17,19 +17,6 @@ using waveform_job_start_status_t = ::wormedit::async_job_start_status_t;
 using waveform_job_completion_outcome_t =
     async_job_completion_outcome_t<asset_id_t, waveform_analysis_result_t>;
 
-struct waveform_job_completion_t {
-    [[nodiscard]] static auto from(waveform_job_completion_outcome_t&& outcome)
-        -> waveform_job_completion_t;
-    std::uint64_t generation{};
-    asset_id_t asset;
-    std::shared_ptr<const waveform_analysis_result_t> analysis;
-    std::optional<task_error_t> task_error;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return analysis != nullptr && !task_error.has_value();
-    }
-};
-
 // Owns a bounded set of scheduler handles while exposing only the newest
 // request to the UI thread. Superseded tasks are cooperatively cancelled and
 // their terminal payloads are discarded. Referenced registry/caches/scheduler
@@ -48,10 +35,8 @@ class waveform_job_t {
                                waveform_analysis_options_t options = {})
         -> async_job_start_outcome_t;
 
-    [[nodiscard]] auto poll() -> std::optional<waveform_job_completion_t>;
     [[nodiscard]] auto poll_completion() -> std::optional<waveform_job_completion_outcome_t>;
     // Intended for tests and orderly shutdown paths, not the UI frame loop.
-    [[nodiscard]] auto wait() -> std::optional<waveform_job_completion_t>;
     [[nodiscard]] auto wait_completion() -> std::optional<waveform_job_completion_outcome_t>;
     void cancel() noexcept;
     [[nodiscard]] auto is_busy() const noexcept -> bool;

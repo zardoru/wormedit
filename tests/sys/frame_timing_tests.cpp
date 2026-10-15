@@ -1131,8 +1131,9 @@ void prepare_seven_key_mp3_project(envelope_projection_fixture_t& fixture) {
     fixture.flattened.view.compose.downscroll = compose_field_downscroll(chart);
     expect_gpu_work(fixture.flattened.view.compose.downscroll);
     audio::waveform_cache_t waveforms;
-    fixture.analysis = audio::analyze_waveform(decoder, fixture.blocks, waveforms,
-        {"fixture:7k-mp3", "immutable:v1"}, 256);
+    fixture.analysis = audio::waveform_analysis_result_t::from(
+        audio::waveform_analysis_t::from(decoder, fixture.blocks, waveforms,
+            {"fixture:7k-mp3", "immutable:v1"}, 256));
     expect_gpu_work(fixture.analysis.waveform.has_value());
 }
 }

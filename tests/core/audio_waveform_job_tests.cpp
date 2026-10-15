@@ -39,9 +39,8 @@ auto has_failed_analysis_in_completed_job() -> bool {
     const auto& completed = completion->value();
     if (!completed.payload || completed.payload->status != waveform_analysis_status_t::decoder_unavailable)
         return false;
-    const auto legacy = waveform_job_completion_t::from(std::move(*completion));
-    return legacy.generation == *started && legacy.asset == asset_id_t{7} &&
-           legacy.analysis != nullptr && !legacy.task_error && !job.is_busy() &&
+    return completed.generation == *started && completed.identity == asset_id_t{7} &&
+           completed.payload != nullptr && !job.is_busy() &&
            !job.poll_completion();
 }
 
@@ -66,12 +65,13 @@ TEST_CASE("waveform job publishes the newest bounded scheduler request",
     CHECK(*current != *superseded);
     CHECK(job.is_busy());
 
-    const auto completion = job.wait();
-    REQUIRE(*completion);
-    CHECK(completion->generation == *current);
-    CHECK(completion->asset == asset_id_t{2});
-    REQUIRE(completion->analysis->waveform.has_value());
-    CHECK(completion->analysis->waveform->key.source.asset_identity == "fixture:keysound-c4.ogg");
+    const auto completion = job.wait_completion();
+    const auto& completed = completion.value().value();
+    REQUIRE(completed.payload);
+    CHECK(completed.generation == *current);
+    CHECK(completed.identity == asset_id_t{2});
+    REQUIRE(completed.payload->waveform.has_value());
+    CHECK(completed.payload->waveform->key.source.asset_identity == "fixture:keysound-c4.ogg");
     CHECK_FALSE(job.is_busy());
 }
 
@@ -87,7 +87,7 @@ TEST_CASE("waveform job rejects invalid and zero-capacity requests",
 
     CHECK(job.begin(asset_id_t{1}, 32).error().code == waveform_job_start_status_t::invalid_request);
     CHECK(job.begin({}, 32).error().code == waveform_job_start_status_t::invalid_request);
-    CHECK_FALSE(job.poll().has_value());
+    CHECK_FALSE(job.poll_completion().has_value());
     CHECK_FALSE(job.is_busy());
 }
 

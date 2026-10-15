@@ -172,17 +172,17 @@ auto build_channel_slice_view(const channel_slice_context_t& context, const deri
     const auto begin = std::max(*first_frame, *slice_begin);
     const auto end = std::min(*last_frame, *slice_end);
     if (begin >= end) return aligned_waveform_status_t::projected;
-    const auto projection = build_waveform_view(
+    const auto projection = waveform_projection_t::from(
         context.waveform, {.begin_frame = begin, .end_frame = end,
                            .pixel_width = std::min(context.height * 2U, maximum_aligned_waveform_rows),
                            .maximum_columns = maximum_aligned_waveform_rows});
     if (!projection)
-        return projection.status == waveform_projection_status_t::capacity_exceeded
+        return projection.error() == waveform_projection_status_t::capacity_exceeded
                    ? aligned_waveform_status_t::capacity_exceeded
                    : aligned_waveform_status_t::invalid_waveform;
     const channel_row_context_t row_context{context.waveform, context.timing, context.request, *origin.seconds,
                                             *slice_begin, context.rows_per_pixel, context.height};
-    rasterize_channel_columns(row_context, projection.columns, pixels, occupied);
+    rasterize_channel_columns(row_context, projection->columns, pixels, occupied);
     return aligned_waveform_status_t::projected;
 }
 

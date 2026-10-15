@@ -566,19 +566,19 @@ auto decoded_source_registry_t::load_resident(asset_id_t asset, resident_sample_
 auto decoded_source_registry_t::analyze_waveform(
     asset_id_t asset, decoded_block_cache_t& block_cache, waveform_cache_t& waveform_cache,
     std::uint32_t frames_per_bin, waveform_analysis_options_t options, std::stop_token stop)
-    -> waveform_analysis_result_t {
+    -> waveform_analysis_outcome_t {
     if (!asset || frames_per_bin == 0) {
-        return {.status = waveform_analysis_status_t::invalid_request};
+        return std::unexpected(waveform_analysis_error_t{.code = waveform_analysis_status_t::invalid_request});
     }
     const auto entry = find_entry(asset);
     if (!entry) {
-        return {.status = waveform_analysis_status_t::decoder_unavailable};
+        return std::unexpected(waveform_analysis_error_t{});
     }
     const auto lease = acquire_lease(entry);
     if (!lease) {
-        return {.status = waveform_analysis_status_t::decoder_unavailable};
+        return std::unexpected(waveform_analysis_error_t{});
     }
-    return wormedit::audio::analyze_waveform(lease.decoder(), block_cache, waveform_cache,
+    return waveform_analysis_t::from(lease.decoder(), block_cache, waveform_cache,
                                              lease.source(), frames_per_bin, options, stop);
 }
 

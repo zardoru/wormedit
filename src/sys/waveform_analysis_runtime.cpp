@@ -92,7 +92,8 @@ auto waveform_analysis_t::request_detail_worker(asset_id_t asset, audio::wavefor
         auto analysis = sources_.analyze_waveform(asset, decoded_blocks_, waveform_cache_, 32,
             {.begin_frame = key.begin_frame, .end_frame = key.end_frame, .require_cached_pcm = samples}, stop);
         return task_result_t::success(task_value_t::from(
-            std::make_shared<const audio::waveform_analysis_result_t>(std::move(analysis))));
+            std::make_shared<const audio::waveform_analysis_result_t>(
+                audio::waveform_analysis_result_t::from(std::move(analysis)))));
     });
     if (!task) return false;
     auto submitted = scheduler_.submit(std::move(graph));
@@ -105,15 +106,17 @@ auto waveform_analysis_t::request_detail_worker(asset_id_t asset, audio::wavefor
     return true;
 }
 
-auto waveform_analysis_t::poll_detail_worker() -> std::optional<audio::waveform_job_completion_t> {
+auto waveform_analysis_t::poll_detail_worker() -> std::optional<audio::waveform_job_completion_outcome_t> {
     if (!detail_task_) return std::nullopt;
     const auto completed = detail_worker_.result(*detail_task_);
     if (!completed) return std::nullopt;
     detail_task_.reset();
     detail_worker_ = {};
     if (worker_generation_ != detail_generation_) return std::nullopt;
-    return audio::waveform_job_completion_t{.generation = worker_generation_, .asset = *worker_asset_,
-        .analysis = task_value_cast<audio::waveform_analysis_result_t>(*completed)};
+    return audio::waveform_job_completion_outcome_t{
+        async_job_completion_value_t<asset_id_t, audio::waveform_analysis_result_t>{
+            .generation = worker_generation_, .identity = *worker_asset_,
+            .payload = task_value_cast<audio::waveform_analysis_result_t>(*completed)}};
 }
 
 void waveform_analysis_t::reset_sources() {
@@ -181,21 +184,23 @@ void waveform_analysis_t::request_selected_waveform(std::optional<asset_id_t> as
                started.error().message.empty() ? failure_message : started.error().message);
 }
 
-auto waveform_completion_notification(const audio::waveform_job_completion_t& completed,
+auto waveform_completion_notification(const audio::waveform_job_completion_outcome_t& completed,
                                       const char* failure_message) -> std::optional<notification_post_t> {
-    if (completed.task_error) {
-        if (completed.task_error->code == task_error_code_t::cancelled) return std::nullopt;
+    if (!completed) {
+        const auto& failure = completed.error().cause;
+        if (failure.code == task_error_code_t::cancelled) return std::nullopt;
         return notification_post_t{notification_severity_t::error, notification_source_t::audio,
-                                   completed.task_error->message};
+                                   failure.message};
     }
-    if (!completed.analysis || completed.analysis->waveform ||
-        completed.analysis->status == audio::waveform_analysis_status_t::cancelled) return std::nullopt;
+    const auto& analysis = completed->payload;
+    if (!analysis || analysis->waveform ||
+        analysis->status == audio::waveform_analysis_status_t::cancelled) return std::nullopt;
     return notification_post_t{notification_severity_t::error, notification_source_t::audio,
-        failure_message ? failure_message : waveform_failure_message(completed.analysis->status)};
+        failure_message ? failure_message : waveform_failure_message(analysis->status)};
 }
 
 void waveform_analysis_t::report_waveform_completion(
-    const audio::waveform_job_completion_t& completed, const char* failure_message) {
+    const audio::waveform_job_completion_outcome_t& completed, const char* failure_message) {
     if (sink_.is_muted())
         return;
     if (const auto notification = waveform_completion_notification(completed, failure_message))
@@ -213,9 +218,10 @@ void waveform_analysis_t::service_workspace_waveform(const workspace_controller_
         request_selected_waveform(workspace.transport.audio_asset, waveform_job_,
             waveform_job_asset_, attempted_waveform_asset_, "Waveform analysis could not start.");
     }
-    if (const auto completed = waveform_job_.poll();
-        completed && waveform_job_asset_ == completed->asset) {
-        if (*completed) waveform_analysis_ = completed->analysis;
+    if (const auto completed = waveform_job_.poll_completion(); completed) {
+        const auto asset = *completed ? completed->value().identity : completed->error().identity;
+        if (waveform_job_asset_ != asset) return;
+        if (*completed && completed->value().payload) waveform_analysis_ = completed->value().payload;
         report_waveform_completion(*completed);
     }
 }
@@ -262,12 +268,12 @@ void waveform_analysis_t::service_compose_detail(std::optional<asset_id_t> asset
         detail_analysis_.reset();
         detail_asset_ = asset;
     }
-    if (completed && completed->asset == asset &&
-        completed->analysis && completed->analysis->waveform) {
-        const auto& key = completed->analysis->waveform->key;
+    if (completed && *completed && completed->value().identity == asset &&
+        completed->value().payload && completed->value().payload->waveform) {
+        const auto& key = completed->value().payload->waveform->key;
         if (key.source == binding->source &&
             audio::aligned_waveform_detail_range_t{key.begin_frame, key.end_frame}.is_covering_window(*window))
-            detail_analysis_ = completed->analysis;
+            detail_analysis_ = completed->value().payload;
     }
     audio::update_aligned_waveform_style(detail_style_, window->frames_per_pixel);
     if (!detail_style_.detail_level || detail_task_) return;
@@ -302,10 +308,10 @@ void waveform_analysis_t::service_idle_detail(
         detail_key_ = key;
         detail_asset_ = asset;
     }
-    if (const auto completed = detail_job_.poll(); completed && completed->asset == asset &&
-        completed->analysis && completed->analysis->waveform &&
-        completed->analysis->waveform->key == key) {
-        detail_analysis_ = completed->analysis;
+    if (const auto completed = detail_job_.poll_completion(); completed && *completed && completed->value().identity == asset &&
+        completed->value().payload && completed->value().payload->waveform &&
+        completed->value().payload->waveform->key == key) {
+        detail_analysis_ = completed->value().payload;
     }
     const bool pcm_missing = window->frames_per_pixel < 1.0 &&
         !audio::build_cached_waveform_samples_view(decoded_blocks_, key.source,
@@ -360,9 +366,10 @@ void waveform_analysis_t::service_channel_waveform(
             channel_waveform_job_asset_, attempted_channel_asset_,
             "Channel waveform analysis could not start.");
     }
-    if (const auto completed = channel_waveform_job_.poll();
-        completed && channel_waveform_job_asset_ == completed->asset) {
-        if (*completed) channel_waveform_analysis_ = completed->analysis;
+    if (const auto completed = channel_waveform_job_.poll_completion(); completed) {
+        const auto asset = *completed ? completed->value().identity : completed->error().identity;
+        if (channel_waveform_job_asset_ != asset) return;
+        if (*completed && completed->value().payload) channel_waveform_analysis_ = completed->value().payload;
         report_waveform_completion(*completed, "Selected BMSON channel waveform could not be analyzed.");
     }
 }
@@ -478,13 +485,14 @@ void waveform_analysis_t::collect_stem_waveforms(const std::vector<asset_id_t>& 
             slot->asset.reset();
             continue;
         }
-        const auto completed = slot->job.poll();
+        const auto completed = slot->job.poll_completion();
         if (!completed) continue;
         slot->asset.reset();
         // A failed analysis is kept so the stem shows a placeholder, and retried once its
         // source registers (the decoder-unavailable case); only a missing result is not.
-        if (completed->analysis) retain_stem_analysis(completed->asset, completed->analysis);
-        else stem_attempted_.insert(completed->asset);
+        const auto asset = *completed ? completed->value().identity : completed->error().identity;
+        if (*completed && completed->value().payload) retain_stem_analysis(asset, completed->value().payload);
+        else stem_attempted_.insert(asset);
         report_waveform_completion(*completed, "A BMSON stem waveform could not be analyzed.");
     }
 }

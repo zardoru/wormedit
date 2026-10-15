@@ -88,11 +88,10 @@ auto pan_waveform_viewport(const waveform_viewport_t& viewport, double delta_pix
 }
 
 auto build_waveform_viewport_view(const waveform_t& waveform, const waveform_viewport_t& viewport)
-    -> waveform_projection_result_t {
+    -> waveform_projection_outcome_t {
     if (!is_waveform_viewport_valid(viewport) || viewport.total_frames != waveform.total_frames)
-        return {.status = waveform_projection_status_t::invalid_window, .level_frames_per_bin = 0,
-                .columns = {}};
-    return build_waveform_view(waveform, {.begin_frame = viewport.begin_frame,
+        return std::unexpected(waveform_projection_status_t::invalid_window);
+    return waveform_projection_t::from(waveform, {.begin_frame = viewport.begin_frame,
                                        .end_frame = waveform_viewport_end_frame(viewport),
                                        .pixel_width = viewport.pixel_width});
 }

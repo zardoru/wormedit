@@ -33,7 +33,6 @@ void waveform_job_t::discard_terminal_jobs() {
                   [](const auto& worker) { return worker.graph.outcome(worker.task).has_value(); });
 }
 
-
 auto waveform_job_t::begin(asset_id_t asset, std::uint32_t frames_per_bin,
                              waveform_analysis_options_t options) -> async_job_start_outcome_t {
     if (!asset || frames_per_bin == 0 || maximum_in_flight_jobs_ == 0) {
@@ -52,7 +51,8 @@ auto waveform_job_t::begin(asset_id_t asset, std::uint32_t frames_per_bin,
                                              std::span<const task_result_t>, std::stop_token stop) {
         auto analysis =
             sources_.analyze_waveform(asset, blocks_, waveforms_, frames_per_bin, options, stop);
-        auto payload = std::make_shared<const waveform_analysis_result_t>(std::move(analysis));
+        auto payload = std::make_shared<const waveform_analysis_result_t>(
+            waveform_analysis_result_t::from(std::move(analysis)));
         return task_result_t::success(task_value_t::from(std::move(payload)));
     });
     if (!task) {
@@ -78,26 +78,6 @@ auto waveform_job_t::begin(asset_id_t asset, std::uint32_t frames_per_bin,
                         .graph = std::move(submitted.graph),
                         .task = *task.id});
     return generation;
-}
-
-auto waveform_job_completion_t::from(waveform_job_completion_outcome_t&& outcome) -> waveform_job_completion_t {
-    if (outcome) return {.generation = outcome->generation, .asset = outcome->identity,
-                          .analysis = std::move(outcome->payload), .task_error = std::nullopt};
-    return {.generation = outcome.error().generation, .asset = outcome.error().identity,
-            .analysis = {}, .task_error = task_error_t{.code = outcome.error().cause.code,
-                                                       .message = std::move(outcome.error().cause.message)}};
-}
-
-auto waveform_job_t::poll() -> std::optional<waveform_job_completion_t> {
-    auto completion = poll_completion();
-    if (!completion) return std::nullopt;
-    return waveform_job_completion_t::from(std::move(*completion));
-}
-
-auto waveform_job_t::wait() -> std::optional<waveform_job_completion_t> {
-    auto completion = wait_completion();
-    if (!completion) return std::nullopt;
-    return waveform_job_completion_t::from(std::move(*completion));
 }
 
 auto waveform_job_t::poll_completion() -> std::optional<waveform_job_completion_outcome_t> {

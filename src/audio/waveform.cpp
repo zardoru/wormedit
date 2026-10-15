@@ -683,19 +683,6 @@ auto waveform_projection_t::from(const waveform_t& waveform, waveform_projection
     return result;
 }
 
-auto waveform_projection_result_t::from(waveform_projection_outcome_t&& outcome)
-    -> waveform_projection_result_t {
-    if (!outcome)
-        return {.status = outcome.error()};
-    return {.status = waveform_projection_status_t::projected,
-            .level_frames_per_bin = outcome->level_frames_per_bin, .columns = std::move(outcome->columns)};
-}
-
-auto build_waveform_view(const waveform_t& waveform, waveform_projection_request_t request)
-    -> waveform_projection_result_t {
-    return waveform_projection_result_t::from(waveform_projection_t::from(waveform, request));
-}
-
 auto waveform_analysis_result_t::from(waveform_analysis_outcome_t&& outcome) -> waveform_analysis_result_t {
     if (!outcome) {
         auto& error = outcome.error();
@@ -705,12 +692,11 @@ auto waveform_analysis_result_t::from(waveform_analysis_outcome_t&& outcome) -> 
     return {.status = outcome->status, .waveform = std::move(outcome->waveform)};
 }
 
-auto analyze_waveform(decoder_t& decoder, decoded_block_cache_t& block_cache,
-                      waveform_cache_t& waveform_cache, audio_source_identity_t source,
-                      std::uint32_t frames_per_bin, waveform_analysis_options_t options,
-                      std::stop_token stop) -> waveform_analysis_result_t {
-    return waveform_analysis_result_t::from(waveform_analysis_t::from(
-        decoder, block_cache, waveform_cache, std::move(source), frames_per_bin, options, stop));
+auto waveform_analysis_t::find_waveform(const waveform_analysis_outcome_t& outcome) noexcept
+    -> const waveform_t* {
+    if (outcome) return &outcome->waveform;
+    const auto& retained = outcome.error().waveform;
+    return retained ? &*retained : nullptr;
 }
 
 } // namespace wormedit::audio

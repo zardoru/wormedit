@@ -157,7 +157,7 @@ class decoded_source_registry_t {
                                         waveform_cache_t& waveform_cache,
                                         std::uint32_t frames_per_bin,
                                         waveform_analysis_options_t options = {},
-                                        std::stop_token stop = {}) -> waveform_analysis_result_t;
+                                        std::stop_token stop = {}) -> waveform_analysis_outcome_t;
     [[nodiscard]] auto size() const -> std::size_t;
 
   private:

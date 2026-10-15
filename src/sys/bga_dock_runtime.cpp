@@ -55,29 +55,29 @@ struct bga_dock_runtime_t::state_t {
 void bga_dock_runtime_t::state_t::update_images(const song_document_t& document,
                                               const std::filesystem::path& base) {
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
-    if (auto completion = job.poll(); completion && *completion &&
-        completion->project == document.id && completion->document_revision == document.revision) {
-        for (const auto& item : completion->result->items) {
+    if (auto completion = job.poll_completion(); completion && *completion &&
+        completion->value().identity.project == document.id && completion->value().identity.document_revision == document.revision) {
+        for (const auto& item : completion->value().payload->items) {
             if (item) {
                 if (thumbnails.size() >= 512) thumbnails.erase(thumbnails.begin());
-                thumbnails[item.source.resource.value] = make_thumbnail(*item.image, next_content++);
+                thumbnails[item->context.resource.value] = make_thumbnail(*item->payload, next_content++);
             }
-            else failed.insert(item.source.resource.value);
+            else failed.insert(item.error().context.resource.value);
         }
     }
     std::vector<visual::resolved_visual_asset_t> request;
     for (const auto& row : list.rows) {
         if (row.video || row.missing || failed.contains(row.resource.value)) continue;
-        const auto source = visual::resolve_visual_asset(document, row.resource, base);
+        const auto source = visual::resolved_visual_asset_t::from(document, row.resource, base);
         if (!source) { failed.insert(row.resource.value); continue; }
         const auto cached = thumbnails.find(row.resource.value);
-        if (cached != thumbnails.end() && cached->second.asset == source.source->asset &&
-            cached->second.path == source.source->path) continue;
+        if (cached != thumbnails.end() && cached->second.asset == source->asset &&
+            cached->second.path == source->path) continue;
         thumbnails.erase(row.resource.value);
-        request.push_back(*source.source);
+        request.push_back(*source);
         if (request.size() == 4) break;
     }
-    if (!job.is_busy() && !request.empty()) (void)job.request(document.id, document.revision, request);
+    if (!job.is_busy() && !request.empty()) (void)job.begin(document.id, document.revision, request);
 #else
     (void)document; (void)base;
 #endif

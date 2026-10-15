@@ -26,14 +26,14 @@ auto append_within_result_limit(image_job_result_t& result, const resolved_visua
     -> void {
     const auto bytes = image->pixels.size();
     if (bytes > maximum_result_bytes || result_bytes > maximum_result_bytes - bytes) {
-        result.items.push_back(image_job_item_t::from(image_job_item_t::from(
+        result.items.push_back(image_job_item_value_t::from(
             source, image_status_t::byte_limit_exceeded, {},
-            "decoded image batch exceeds the configured byte limit")));
+            "decoded image batch exceeds the configured byte limit"));
         return;
     }
     result_bytes += bytes;
-    result.items.push_back(image_job_item_t::from(image_job_item_t::from(
-        source, image_status_t::ready, std::move(image))));
+    result.items.push_back(image_job_item_value_t::from(
+        source, image_status_t::ready, std::move(image)));
 }
 
 auto decode_images(image_cache_t& cache, song_id_t project, std::uint64_t document_revision,
@@ -55,8 +55,8 @@ auto decode_images(image_cache_t& cache, song_id_t project, std::uint64_t docume
         }
         auto decoded = open_image_rgba(source, options.decode_limits);
         if (!decoded) {
-            result.items.push_back(image_job_item_t::from(image_job_item_t::from(
-                source, decoded.error().code, {}, std::move(decoded.error().message))));
+            result.items.push_back(image_job_item_value_t::from(
+                source, decoded.error().code, {}, std::move(decoded.error().message)));
             continue;
         }
         if (stop.stop_requested()) {
@@ -76,17 +76,13 @@ auto decode_images(image_cache_t& cache, song_id_t project, std::uint64_t docume
 
 } // namespace
 
-auto image_job_item_t::from(resolved_visual_asset_t source, image_status_t status,
-                            std::shared_ptr<const rgba_image_t> image, std::string message)
-    -> image_job_item_outcome_t {
-    return image_job_item_value_t::from(std::move(source), status, std::move(image), std::move(message));
-}
-
-auto image_job_item_t::from(image_job_item_outcome_t&& outcome) -> image_job_item_t {
-    if (outcome) return {.source = std::move(outcome->context), .status = image_status_t::ready,
-                          .image = std::move(outcome->payload), .message = std::move(outcome->message)};
-    return {.source = std::move(outcome.error().context), .status = outcome.error().cause.code,
-            .image = std::move(outcome.error().payload), .message = std::move(outcome.error().cause.message)};
+auto image_job_result_t::find(resource_id_t resource) const noexcept -> const image_job_item_value_t* {
+    for (const auto& item : items) {
+        const auto& source = item ? item->context : item.error().context;
+        if (source.resource == resource)
+            return item && item->payload ? &*item : nullptr;
+    }
+    return nullptr;
 }
 
 image_cache_t::image_cache_t(std::size_t maximum_rgba_bytes, std::size_t maximum_entries)
@@ -182,11 +178,6 @@ void image_job_t::discard_terminal_jobs() {
                   [](const auto& worker) { return worker.graph.outcome(worker.task).has_value(); });
 }
 
-auto image_job_t::request(song_id_t project, std::uint64_t document_revision,
-                          std::span<const resolved_visual_asset_t> sources,
-                          image_job_options_t options) -> image_job_start_result_t {
-    return image_job_start_result_t::from(begin(project, document_revision, sources, options));
-}
 
 auto image_job_t::begin(song_id_t project, std::uint64_t document_revision,
                           std::span<const resolved_visual_asset_t> sources,
@@ -236,28 +227,6 @@ auto image_job_t::begin(song_id_t project, std::uint64_t document_revision,
                         .graph = std::move(submitted.graph),
                         .task = *task.id});
     return generation;
-}
-
-auto image_job_completion_t::from(image_job_completion_outcome_t&& outcome) -> image_job_completion_t {
-    if (outcome) return {.generation = outcome->generation, .project = outcome->identity.project,
-                          .document_revision = outcome->identity.document_revision,
-                          .result = std::move(outcome->payload), .task_error = std::nullopt};
-    return {.generation = outcome.error().generation, .project = outcome.error().identity.project,
-            .document_revision = outcome.error().identity.document_revision, .result = {},
-            .task_error = task_error_t{.code = outcome.error().cause.code,
-                                      .message = std::move(outcome.error().cause.message)}};
-}
-
-auto image_job_t::poll() -> std::optional<image_job_completion_t> {
-    auto completion = poll_completion();
-    if (!completion) return std::nullopt;
-    return image_job_completion_t::from(std::move(*completion));
-}
-
-auto image_job_t::wait() -> std::optional<image_job_completion_t> {
-    auto completion = wait_completion();
-    if (!completion) return std::nullopt;
-    return image_job_completion_t::from(std::move(*completion));
 }
 
 auto image_job_t::poll_completion() -> std::optional<image_job_completion_outcome_t> {

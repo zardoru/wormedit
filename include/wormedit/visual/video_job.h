@@ -52,7 +52,6 @@ class video_frame_cache_t {
 };
 
 using video_job_start_status_t = ::wormedit::async_job_start_status_t;
-using video_job_start_result_t = ::wormedit::async_job_start_result_t;
 
 struct video_job_context_t {
     async_job_project_identity_t identity;
@@ -63,37 +62,8 @@ using video_job_frame_t = visual_job_value_t<video_job_context_t, rgba_video_fra
 using video_job_outcome_t = result_t<video_job_frame_t,
     visual_job_error_t<video_job_context_t, rgba_video_frame_t, video_frame_status_t>>;
 
-struct video_job_result_t {
-    [[nodiscard]] static auto from(video_job_result_t&& report) -> video_job_outcome_t;
-    [[nodiscard]] static auto from(video_job_outcome_t&& outcome) -> video_job_result_t;
-    song_id_t project;
-    std::uint64_t document_revision{};
-    resolved_visual_asset_t source;
-    video_preview_clock_t clock;
-    video_frame_status_t status{video_frame_status_t::decode_failed};
-    std::shared_ptr<const rgba_video_frame_t> frame;
-    std::string message;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return video_job_frame_t::can_publish(status, frame);
-    }
-};
-
 using video_job_completion_outcome_t =
-    async_job_completion_outcome_t<async_job_project_identity_t, video_job_result_t>;
-
-struct video_job_completion_t {
-    [[nodiscard]] static auto from(video_job_completion_outcome_t&& outcome) -> video_job_completion_t;
-    std::uint64_t generation{};
-    song_id_t project;
-    std::uint64_t document_revision{};
-    std::shared_ptr<const video_job_result_t> result;
-    std::optional<task_error_t> task_error;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return result != nullptr && !task_error.has_value();
-    }
-};
+    async_job_completion_outcome_t<async_job_project_identity_t, video_job_outcome_t>;
 
 // Runs at most a bounded number of seek/decode requests off the UI thread.
 // Starting a request cancels older generations; only the newest generation is
@@ -110,11 +80,7 @@ class video_frame_job_t {
     [[nodiscard]] auto begin(song_id_t project, std::uint64_t document_revision,
                                resolved_visual_asset_t source, video_preview_clock_t clock,
                                video_frame_decode_limits_t limits = {}) -> async_job_start_outcome_t;
-    [[nodiscard]] auto request(song_id_t project, std::uint64_t document_revision,
-                               resolved_visual_asset_t source, video_preview_clock_t clock,
-                               video_frame_decode_limits_t limits = {}) -> video_job_start_result_t;
-    [[nodiscard]] auto poll() -> std::optional<video_job_completion_t>;
-    [[nodiscard]] auto wait() -> std::optional<video_job_completion_t>;
+
     [[nodiscard]] auto poll_completion() -> std::optional<video_job_completion_outcome_t>;
     [[nodiscard]] auto wait_completion() -> std::optional<video_job_completion_outcome_t>;
     void cancel() noexcept;

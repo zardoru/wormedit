@@ -170,15 +170,15 @@ void waveform_analysis_t::request_selected_waveform(std::optional<asset_id_t> as
     std::optional<asset_id_t>& attempted, const char* failure_message) {
     if (attempted != asset) attempted.reset();
     if (!asset || attempted == asset) return;
-    const auto started = job.request(*asset, 256);
+    const auto started = job.begin(*asset, 256);
     if (started) {
         accepted = asset;
         return;
     }
-    if (started.status == audio::waveform_job_start_status_t::capacity_exceeded) return;
+    if (started.error().code == audio::waveform_job_start_status_t::capacity_exceeded) return;
     attempted = asset;
     sink_.post(notification_severity_t::error, notification_source_t::audio,
-               started.message.empty() ? failure_message : started.message);
+               started.error().message.empty() ? failure_message : started.error().message);
 }
 
 auto waveform_completion_notification(const audio::waveform_job_completion_t& completed,
@@ -311,7 +311,7 @@ void waveform_analysis_t::service_idle_detail(
         !audio::build_cached_waveform_samples_view(decoded_blocks_, key.source,
             key.begin_frame, key.end_frame, audio::maximum_aligned_waveform_rows);
     if (detail_job_.is_busy() || (detail_analysis_ && !pcm_missing)) return;
-    const auto started = detail_job_.request(*asset, 32,
+    const auto started = detail_job_.begin(*asset, 32,
         {.begin_frame = key.begin_frame, .end_frame = key.end_frame,
          .require_cached_pcm = window->frames_per_pixel < 1.0});
     (void)started; // A busy bounded scheduler retries next frame and retains coarse rendering.
@@ -513,14 +513,14 @@ void waveform_analysis_t::start_stem_waveforms(const std::vector<asset_id_t>& wa
         if (!stem_needs_analysis(asset)) continue;
         const auto free_slot = std::ranges::find_if(stem_slots_, [](const auto& slot) { return !slot->asset; });
         if (free_slot == stem_slots_.end()) return;
-        const auto started = (*free_slot)->job.request(asset, 256);
+        const auto started = (*free_slot)->job.begin(asset, 256);
         if (started) {
             (*free_slot)->asset = asset;
-        } else if (started.status != audio::waveform_job_start_status_t::capacity_exceeded) {
+        } else if (started.error().code != audio::waveform_job_start_status_t::capacity_exceeded) {
             stem_attempted_.insert(asset);
             sink_.post(notification_severity_t::error, notification_source_t::audio,
-                       started.message.empty() ? "A BMSON stem waveform could not start."
-                                               : started.message);
+                       started.error().message.empty() ? "A BMSON stem waveform could not start."
+                                               : started.error().message);
         }
     }
 }

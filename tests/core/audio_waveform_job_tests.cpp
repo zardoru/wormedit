@@ -59,16 +59,16 @@ TEST_CASE("waveform job publishes the newest bounded scheduler request",
     task_scheduler_t scheduler{1, 4};
     waveform_job_t job{sources, blocks, waveforms, scheduler};
 
-    const auto superseded = job.request(asset_id_t{1}, 64);
+    const auto superseded = job.begin(asset_id_t{1}, 64);
     REQUIRE(superseded);
-    const auto current = job.request(asset_id_t{2}, 32);
+    const auto current = job.begin(asset_id_t{2}, 32);
     REQUIRE(current);
-    CHECK(current.generation != superseded.generation);
+    CHECK(*current != *superseded);
     CHECK(job.is_busy());
 
     const auto completion = job.wait();
     REQUIRE(*completion);
-    CHECK(completion->generation == current.generation);
+    CHECK(completion->generation == *current);
     CHECK(completion->asset == asset_id_t{2});
     REQUIRE(completion->analysis->waveform.has_value());
     CHECK(completion->analysis->waveform->key.source.asset_identity == "fixture:keysound-c4.ogg");
@@ -85,8 +85,8 @@ TEST_CASE("waveform job rejects invalid and zero-capacity requests",
     task_scheduler_t scheduler{1, 1};
     waveform_job_t job{sources, blocks, waveforms, scheduler, 0};
 
-    CHECK(job.request(asset_id_t{1}, 32).status == waveform_job_start_status_t::invalid_request);
-    CHECK(job.request({}, 32).status == waveform_job_start_status_t::invalid_request);
+    CHECK(job.begin(asset_id_t{1}, 32).error().code == waveform_job_start_status_t::invalid_request);
+    CHECK(job.begin({}, 32).error().code == waveform_job_start_status_t::invalid_request);
     CHECK_FALSE(job.poll().has_value());
     CHECK_FALSE(job.is_busy());
 }
@@ -114,13 +114,13 @@ TEST_CASE("waveform job preserves scheduler capacity rejection",
     worker_started.wait();
 
     waveform_job_t job{sources, blocks, waveforms, scheduler};
-    const auto rejected = job.request(asset_id_t{1}, 32);
+    const auto rejected = job.begin(asset_id_t{1}, 32);
     release_worker.count_down();
     REQUIRE(blocker_submission.graph.wait());
 
     CHECK_FALSE(rejected);
-    CHECK(rejected.status == waveform_job_start_status_t::capacity_exceeded);
-    CHECK(rejected.message == "scheduler outstanding-task capacity exceeded");
+    CHECK(rejected.error().code == waveform_job_start_status_t::capacity_exceeded);
+    CHECK(rejected.error().message == "scheduler outstanding-task capacity exceeded");
     CHECK_FALSE(job.is_busy());
 }
 

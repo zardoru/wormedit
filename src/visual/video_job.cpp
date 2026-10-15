@@ -151,53 +151,31 @@ auto video_frame_job_t::decode_uncached_frame(const decode_request_t& request,
     return decoded;
 }
 
-auto video_job_result_t::from(video_job_result_t&& report) -> video_job_outcome_t {
-    return video_job_frame_t::from(
-        {.identity = {report.project, report.document_revision},
-         .source = std::move(report.source), .clock = report.clock},
-        report.status, std::move(report.frame), std::move(report.message));
-}
-
-auto video_job_result_t::from(video_job_outcome_t&& outcome) -> video_job_result_t {
-    if (outcome) return {.project = outcome->context.identity.project,
-                          .document_revision = outcome->context.identity.document_revision,
-                          .source = std::move(outcome->context.source), .clock = outcome->context.clock,
-                          .status = video_frame_status_t::ready, .frame = std::move(outcome->payload),
-                          .message = std::move(outcome->message)};
-    return {.project = outcome.error().context.identity.project,
-            .document_revision = outcome.error().context.identity.document_revision,
-            .source = std::move(outcome.error().context.source), .clock = outcome.error().context.clock,
-            .status = outcome.error().cause.code, .frame = std::move(outcome.error().payload),
-            .message = std::move(outcome.error().cause.message)};
-}
-
 auto video_frame_job_t::run_decode(const decode_request_t& request, std::stop_token stop)
     -> task_result_t {
-    video_job_result_t result{.project = request.project,
-                              .document_revision = request.document_revision,
-                              .source = request.source,
-                              .clock = request.clock,
-                              .status = video_frame_status_t::decode_failed,
-                              .frame = {},
-                              .message = {}};
+    video_job_context_t context{.identity = {request.project, request.document_revision},
+                                .source = request.source, .clock = request.clock};
+    auto status = video_frame_status_t::decode_failed;
+    std::shared_ptr<const rgba_video_frame_t> result_frame;
+    std::string message;
     if (stop.stop_requested()) {
         return task_result_t::failure(task_error_code_t::cancelled,
                                       "video frame request was superseded");
     }
     if (auto cached = cache_.find(request.project, request.document_revision, request.source,
                                   request.clock)) {
-        result.status = video_frame_status_t::ready;
-        result.frame = std::move(cached);
+        status = video_frame_status_t::ready;
+        result_frame = std::move(cached);
     } else {
         auto decoded = decode_uncached_frame(request, stop);
         if (decoded) {
-            result.status = video_frame_status_t::ready;
+            status = video_frame_status_t::ready;
             auto frame = std::make_shared<const rgba_video_frame_t>(std::move(*decoded));
-            result.frame = cache_.insert(request.project, request.document_revision,
+            result_frame = cache_.insert(request.project, request.document_revision,
                                          request.source, request.clock, std::move(frame));
         } else {
-            result.status = decoded.error().code;
-            result.message = std::move(decoded.error().message);
+            status = decoded.error().code;
+            message = std::move(decoded.error().message);
         }
     }
     if (stop.stop_requested()) {
@@ -205,15 +183,11 @@ auto video_frame_job_t::run_decode(const decode_request_t& request, std::stop_to
                                       "video frame request was superseded");
     }
     return task_result_t::success(
-        task_value_t::from(std::make_shared<const video_job_result_t>(
-            video_job_result_t::from(video_job_result_t::from(std::move(result))))));
+        task_value_t::from(std::make_shared<const video_job_outcome_t>(
+            video_job_frame_t::from(std::move(context), status, std::move(result_frame),
+                                    std::move(message)))));
 }
 
-auto video_frame_job_t::request(song_id_t project, std::uint64_t document_revision,
-                                resolved_visual_asset_t source, video_preview_clock_t clock,
-                                video_frame_decode_limits_t limits) -> video_job_start_result_t {
-    return video_job_start_result_t::from(begin(project, document_revision, std::move(source), clock, limits));
-}
 
 auto video_frame_job_t::begin(song_id_t project, std::uint64_t document_revision,
                                 resolved_visual_asset_t source, video_preview_clock_t clock,
@@ -264,28 +238,6 @@ auto video_frame_job_t::begin(song_id_t project, std::uint64_t document_revision
     return generation;
 }
 
-auto video_job_completion_t::from(video_job_completion_outcome_t&& outcome) -> video_job_completion_t {
-    if (outcome) return {.generation = outcome->generation, .project = outcome->identity.project,
-                          .document_revision = outcome->identity.document_revision,
-                          .result = std::move(outcome->payload), .task_error = std::nullopt};
-    return {.generation = outcome.error().generation, .project = outcome.error().identity.project,
-            .document_revision = outcome.error().identity.document_revision, .result = {},
-            .task_error = task_error_t{.code = outcome.error().cause.code,
-                                      .message = std::move(outcome.error().cause.message)}};
-}
-
-auto video_frame_job_t::poll() -> std::optional<video_job_completion_t> {
-    auto completion = poll_completion();
-    if (!completion) return std::nullopt;
-    return video_job_completion_t::from(std::move(*completion));
-}
-
-auto video_frame_job_t::wait() -> std::optional<video_job_completion_t> {
-    auto completion = wait_completion();
-    if (!completion) return std::nullopt;
-    return video_job_completion_t::from(std::move(*completion));
-}
-
 auto video_frame_job_t::poll_completion() -> std::optional<video_job_completion_outcome_t> {
     std::optional<video_job_completion_outcome_t> completion;
     for (auto worker = workers_.begin(); worker != workers_.end();) {
@@ -295,7 +247,7 @@ auto video_frame_job_t::poll_completion() -> std::optional<video_job_completion_
             continue;
         }
         if (worker->generation == current_generation_) {
-            completion = async_job_completion_value_t<async_job_project_identity_t, video_job_result_t>::from(
+            completion = async_job_completion_value_t<async_job_project_identity_t, video_job_outcome_t>::from(
                 worker->generation, async_job_project_identity_t{worker->project, worker->document_revision}, std::move(*result),
                 "video frame worker returned no typed result");
             current_generation_ = 0;

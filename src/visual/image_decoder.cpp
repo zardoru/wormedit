@@ -163,10 +163,6 @@ auto image_decode_result_t::from(image_decode_outcome_t&& outcome) -> image_deco
     return {.status = image_status_t::ready, .image = std::move(*outcome), .message = {}};
 }
 
-auto decode_image_rgba(const resolved_visual_asset_t& source, std::span<const std::byte> encoded,
-                       image_decode_limits_t limits) -> image_decode_result_t {
-    return image_decode_result_t::from(rgba_image_t::from(source, encoded, limits));
-}
 
 auto load_image_rgba(const resolved_visual_asset_t& source, image_decode_limits_t limits)
     -> image_decode_result_t {

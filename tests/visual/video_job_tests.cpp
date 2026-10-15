@@ -52,8 +52,7 @@ auto has_bounded_decode_error() -> bool {
         return false;
     const auto completion = job.wait_completion();
     if (!completion || !*completion || !completion->value().payload) return false;
-    auto report = *completion->value().payload;
-    auto outcome = video_job_result_t::from(std::move(report));
+    const auto& outcome = *completion->value().payload;
     if (outcome) return false;
     const auto& error = outcome.error();
     const auto is_expected = error.context.identity.project == song_id_t{9} &&
@@ -61,8 +60,7 @@ auto has_bounded_decode_error() -> bool {
                              error.context.source.resource == item.resource && error.context.clock.event == object_id_t{30} &&
                              error.cause.code == video_frame_status_t::byte_limit_exceeded && !error.payload &&
                              !error.cause.message.empty();
-    const auto legacy = video_job_result_t::from(std::move(outcome));
-    return is_expected && !legacy && cache.size() == 0;
+    return is_expected && cache.size() == 0;
 }
 
 } // namespace
@@ -96,24 +94,24 @@ TEST_CASE("video frame job publishes only the newest revision-bound request",
     task_scheduler_t scheduler{1, 2};
     video_frame_job_t job{cache, scheduler};
 
-    const auto superseded = job.request(song_id_t{1}, 2, item, clock(item.resource, 0));
+    const auto superseded = job.begin(song_id_t{1}, 2, item, clock(item.resource, 0));
     REQUIRE(superseded);
-    const auto current = job.request(song_id_t{1}, 3, item, clock(item.resource, 3, 2));
+    const auto current = job.begin(song_id_t{1}, 3, item, clock(item.resource, 3, 2));
     REQUIRE(current);
-    CHECK(current.generation != superseded.generation);
+    CHECK(*current != *superseded);
     CHECK(job.is_busy());
 
-    const auto completion = job.wait();
+    const auto completion = job.wait_completion();
     REQUIRE(completion);
     REQUIRE(*completion);
-    CHECK(completion->generation == current.generation);
-    CHECK(completion->project == song_id_t{1});
-    CHECK(completion->document_revision == 3);
-    REQUIRE(completion->result);
-    REQUIRE(*completion->result);
-    CHECK(completion->result->clock.media_time_numerator == 3);
-    CHECK(completion->result->clock.media_time_denominator == 2);
-    CHECK(completion->result->frame->pixels.size() == 1024);
+    CHECK(completion->value().generation == *current);
+    CHECK(completion->value().identity.project == song_id_t{1});
+    CHECK(completion->value().identity.document_revision == 3);
+    REQUIRE(completion->value().payload);
+    REQUIRE(*completion->value().payload);
+    CHECK(completion->value().payload->value().context.clock.media_time_numerator == 3);
+    CHECK(completion->value().payload->value().context.clock.media_time_denominator == 2);
+    CHECK(completion->value().payload->value().payload->pixels.size() == 1024);
     CHECK_FALSE(job.is_busy());
     CHECK(cache.size() >= 1);
 }
@@ -125,12 +123,12 @@ TEST_CASE("video jobs and decoder reject invalid bounded or cancelled requests",
     task_scheduler_t scheduler{1, 1};
     video_frame_job_t job{cache, scheduler};
 
-    CHECK(job.request(song_id_t{}, 2, item, clock(item.resource, 0)).status ==
+    CHECK(job.begin(song_id_t{}, 2, item, clock(item.resource, 0)).error().code ==
           video_job_start_status_t::invalid_request);
-    CHECK(job.request(song_id_t{1}, 0, item, clock(item.resource, 0)).status ==
+    CHECK(job.begin(song_id_t{1}, 0, item, clock(item.resource, 0)).error().code ==
           video_job_start_status_t::invalid_request);
     video_frame_job_t disabled{cache, scheduler, 0};
-    CHECK(disabled.request(song_id_t{1}, 2, item, clock(item.resource, 0)).status ==
+    CHECK(disabled.begin(song_id_t{1}, 2, item, clock(item.resource, 0)).error().code ==
           video_job_start_status_t::invalid_request);
 
     std::stop_source cancelled;

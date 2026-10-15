@@ -111,7 +111,8 @@ struct player_preview_presenter_t::impl_t {
     std::optional<video_preview_clock_t> requested_video_clock;
     std::optional<object_id_t> failed_video_event;
     std::string video_diagnostic_message;
-    std::shared_ptr<const visual::video_job_result_t> decoded_video;
+    std::shared_ptr<const visual::video_job_frame_t> decoded_video;
+    void consume_video_completion(visual::video_frame_job_t& job, song_id_t current_project);
     std::uint64_t decoded_video_content_id{};
 #endif
     std::string status;
@@ -123,6 +124,38 @@ struct player_preview_presenter_t::impl_t {
     std::vector<WormUiPlayerPreviewVisualLayerView> visual_layers;
     std::vector<WormUiPlayerPreviewStoryboardSpriteView> storyboard_sprites;
 };
+
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+void player_preview_presenter_t::impl_t::consume_video_completion(
+    visual::video_frame_job_t& job, song_id_t current_project) {
+    auto completion = job.poll_completion();
+    if (!completion) return;
+    const auto& identity = *completion ? completion->value().identity : completion->error().identity;
+    if (identity.project != current_project || identity.document_revision != revision) return;
+    if (*completion && completion->value().payload) {
+        const auto& decoded = *completion->value().payload;
+        if (decoded) {
+            // The outcome control block keeps its immutable success value alive.
+            decoded_video = std::shared_ptr<const visual::video_job_frame_t>{
+                std::move(completion->value().payload), &*decoded};
+            decoded_video_content_id = completion->value().generation;
+            failed_video_event.reset();
+            video_diagnostic_message.clear();
+        } else {
+            failed_video_event = decoded.error().context.clock.event;
+            video_diagnostic_message = decoded.error().cause.message.empty()
+                                           ? "Video frame decoding failed."
+                                           : decoded.error().cause.message;
+        }
+        return;
+    }
+    if (!requested_video_clock) return;
+    failed_video_event = requested_video_clock->event;
+    video_diagnostic_message = !*completion && !completion->error().cause.message.empty()
+                                  ? completion->error().cause.message
+                                  : "The video frame task failed before producing a result.";
+}
+#endif
 
 namespace {
 
@@ -393,18 +426,17 @@ void append_player_preview_visual_layer(const Context& context, const auto& even
         layer.video_time_denominator = scene.video_clock->media_time_denominator;
     }
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
-    const auto resolved = visual::resolve_visual_asset(
+    const auto resolved = visual::resolved_visual_asset_t::from(
         context.history.document, event->resource, context.project_directory);
-    layer.static_image = resolved && resolved.source->kind == asset_kind_t::image;
+    layer.static_image = resolved && resolved->kind == asset_kind_t::image;
     if (layer.static_image && state.decoded_visuals) {
-        const auto decoded = std::ranges::find(state.decoded_visuals->items, event->resource,
-                                               [](const auto& item) { return item.source.resource; });
-        if (decoded != state.decoded_visuals->items.end() && *decoded) {
+        const auto* decoded = state.decoded_visuals->find(event->resource);
+        if (decoded) {
             layer.image_ready = true;
-            layer.image_width = decoded->image->width;
-            layer.image_height = decoded->image->height;
-            layer.rgba_pixels = decoded->image->pixels.data();
-            layer.rgba_byte_count = decoded->image->pixels.size();
+            layer.image_width = decoded->payload->width;
+            layer.image_height = decoded->payload->height;
+            layer.rgba_pixels = decoded->payload->pixels.data();
+            layer.rgba_byte_count = decoded->payload->pixels.size();
         }
     }
     layer.image_pending = layer.static_image && !layer.image_ready && context.image_job.is_busy();
@@ -412,15 +444,15 @@ void append_player_preview_visual_layer(const Context& context, const auto& even
 #if defined(WORMEDIT_HAS_VIDEO_DECODER)
     if (layer.video_clock_ready) {
         layer.video_frame = true;
-        if (state.decoded_video && state.decoded_video->source.resource == event->resource &&
-            state.decoded_video->clock.event == scene.video_clock->event &&
-            visual::is_video_frame_covering_clock(*state.decoded_video->frame, *scene.video_clock)) {
+        if (state.decoded_video && state.decoded_video->context.source.resource == event->resource &&
+            state.decoded_video->context.clock.event == scene.video_clock->event &&
+            visual::is_video_frame_covering_clock(*state.decoded_video->payload, *scene.video_clock)) {
             layer.image_ready = true;
             layer.image_content_id = state.decoded_video_content_id;
-            layer.image_width = state.decoded_video->frame->width;
-            layer.image_height = state.decoded_video->frame->height;
-            layer.rgba_pixels = state.decoded_video->frame->pixels.data();
-            layer.rgba_byte_count = state.decoded_video->frame->pixels.size();
+            layer.image_width = state.decoded_video->payload->width;
+            layer.image_height = state.decoded_video->payload->height;
+            layer.rgba_pixels = state.decoded_video->payload->pixels.data();
+            layer.rgba_byte_count = state.decoded_video->payload->pixels.size();
         }
         layer.image_pending = !layer.image_ready && context.video_job.is_busy();
         if (layer.image_pending) {
@@ -468,15 +500,13 @@ void append_player_preview_storyboard_sprite(const Context& context, const auto&
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
     auto& state = context.state;
     if (sprite.resource_id != 0 && state.decoded_visuals) {
-        const auto decoded = std::ranges::find(
-            state.decoded_visuals->items, resource_id_t{sprite.resource_id},
-            [](const auto& item) { return item.source.resource; });
-        if (decoded != state.decoded_visuals->items.end() && *decoded) {
+        const auto* decoded = state.decoded_visuals->find(resource_id_t{sprite.resource_id});
+        if (decoded) {
             sprite.image_ready = true;
-            sprite.image_width = decoded->image->width;
-            sprite.image_height = decoded->image->height;
-            sprite.rgba_pixels = decoded->image->pixels.data();
-            sprite.rgba_byte_count = decoded->image->pixels.size();
+            sprite.image_width = decoded->payload->width;
+            sprite.image_height = decoded->payload->height;
+            sprite.rgba_pixels = decoded->payload->pixels.data();
+            sprite.rgba_byte_count = decoded->payload->pixels.size();
         }
     }
     sprite.image_pending = sprite.resource_id != 0 && !sprite.image_ready && context.image_job.is_busy();
@@ -495,11 +525,11 @@ void request_player_preview_images(const Context& context) {
     const auto append_resource = [&](resource_id_t resource) {
         if (!resource || std::ranges::find(requested_resources, resource) != requested_resources.end())
             return;
-        const auto resolved = visual::resolve_visual_asset(
+        const auto resolved = visual::resolved_visual_asset_t::from(
             context.history.document, resource, context.project_directory);
-        if (resolved && resolved.source->kind == asset_kind_t::image) {
+        if (resolved && resolved->kind == asset_kind_t::image) {
             requested_resources.push_back(resource);
-            requested_sources.push_back(*resolved.source);
+            requested_sources.push_back(*resolved);
         }
     };
     for (const auto& layer : state.visual_layers) append_resource(resource_id_t{layer.resource_id});
@@ -510,7 +540,7 @@ void request_player_preview_images(const Context& context) {
             context.image_job.cancel();
             state.requested_visual_resources.clear();
             state.decoded_visuals.reset();
-        } else if (context.image_job.request(context.history.document.id,
+        } else if (context.image_job.begin(context.history.document.id,
                                              context.history.document.revision,
                                              requested_sources)) {
             state.requested_visual_resources = std::move(requested_resources);
@@ -558,23 +588,23 @@ void request_player_preview_video(const Context& context) {
         state.video_diagnostic_message.clear();
     }
     const auto decoded_covers_clock = state.decoded_video &&
-        state.decoded_video->source.resource == clock.resource &&
-        state.decoded_video->clock.event == clock.event &&
-        visual::is_video_frame_covering_clock(*state.decoded_video->frame, clock);
+        state.decoded_video->context.source.resource == clock.resource &&
+        state.decoded_video->context.clock.event == clock.event &&
+        visual::is_video_frame_covering_clock(*state.decoded_video->payload, clock);
     if (video_job.is_busy() || state.failed_video_event == clock.event || decoded_covers_clock ||
         (state.requested_video_clock && *state.requested_video_clock == clock)) return;
-    const auto resolved = visual::resolve_visual_asset(
+    const auto resolved = visual::resolved_visual_asset_t::from(
         context.history.document, clock.resource, context.project_directory);
-    if (!resolved || resolved.source->kind != asset_kind_t::video) return;
-    const auto started = video_job.request(context.history.document.id,
-        context.history.document.revision, *resolved.source, clock);
+    if (!resolved || resolved->kind != asset_kind_t::video) return;
+    const auto started = video_job.begin(context.history.document.id,
+        context.history.document.revision, *resolved, clock);
     if (started) {
         state.requested_video_clock = clock;
-    } else if (started.status != async_job_start_status_t::capacity_exceeded) {
+    } else if (started.error().code != async_job_start_status_t::capacity_exceeded) {
         state.failed_video_event = clock.event;
-        state.video_diagnostic_message = started.message.empty()
+        state.video_diagnostic_message = started.error().message.empty()
                                             ? "The video frame task could not start."
-                                            : started.message;
+                                            : started.error().message;
     }
 #else
     static_cast<void>(context);
@@ -692,34 +722,14 @@ void player_preview_presenter_t::populate(WormUiPlayerPreviewView& view,
     view.visual_layers = state.visual_layers.data();
     view.storyboard_sprites = state.storyboard_sprites.data();
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
-    if (auto completion = image_job.poll(); completion && *completion &&
-                                            completion->project == history.document.id &&
-                                            completion->document_revision == state.revision) {
-        state.decoded_visuals = std::move(completion->result);
+    if (auto completion = image_job.poll_completion(); completion && *completion &&
+                                            completion->value().identity.project == history.document.id &&
+                                            completion->value().identity.document_revision == state.revision) {
+        state.decoded_visuals = std::move(completion->value().payload);
     }
 #endif
 #if defined(WORMEDIT_HAS_VIDEO_DECODER)
-    if (auto completion = video_job.poll(); completion &&
-                                            completion->project == history.document.id &&
-                                            completion->document_revision == state.revision) {
-        if (*completion && completion->result && *completion->result) {
-            state.decoded_video = std::move(completion->result);
-            state.decoded_video_content_id = completion->generation;
-            state.failed_video_event.reset();
-            state.video_diagnostic_message.clear();
-        } else if (completion->result) {
-            state.failed_video_event = completion->result->clock.event;
-            state.video_diagnostic_message = completion->result->message.empty()
-                                                 ? "Video frame decoding failed."
-                                                 : completion->result->message;
-        } else if (state.requested_video_clock) {
-            state.failed_video_event = state.requested_video_clock->event;
-            state.video_diagnostic_message =
-                completion->task_error && !completion->task_error->message.empty()
-                    ? completion->task_error->message
-                    : "The video frame task failed before producing a result.";
-        }
-    }
+    state.consume_video_completion(video_job, history.document.id);
 #endif
     if (!visible) {
         return;

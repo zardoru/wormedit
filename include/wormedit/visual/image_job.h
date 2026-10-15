@@ -57,48 +57,22 @@ struct image_job_options_t {
     std::size_t maximum_result_rgba_bytes{256U * 1024U * 1024U};
 };
 
-using image_job_start_result_t = ::wormedit::async_job_start_result_t;
 
 using image_job_item_value_t = visual_job_value_t<resolved_visual_asset_t, rgba_image_t, image_status_t>;
 using image_job_item_outcome_t = result_t<image_job_item_value_t,
     visual_job_error_t<resolved_visual_asset_t, rgba_image_t, image_status_t>>;
 
-struct image_job_item_t {
-    [[nodiscard]] static auto from(resolved_visual_asset_t source, image_status_t status,
-                                   std::shared_ptr<const rgba_image_t> image = {}, std::string message = {})
-        -> image_job_item_outcome_t;
-    [[nodiscard]] static auto from(image_job_item_outcome_t&& outcome) -> image_job_item_t;
-    resolved_visual_asset_t source;
-    image_status_t status{image_status_t::decode_failed};
-    std::shared_ptr<const rgba_image_t> image;
-    std::string message;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return image_job_item_value_t::can_publish(status, image);
-    }
-};
-
 struct image_job_result_t {
+    // A failed first match has no publishable image, even if a later item repeats its resource.
+    [[nodiscard]] auto find(resource_id_t resource) const noexcept -> const image_job_item_value_t*;
+
     song_id_t project;
     std::uint64_t document_revision{};
-    std::vector<image_job_item_t> items;
+    std::vector<image_job_item_outcome_t> items;
 };
 
 using image_job_completion_outcome_t =
     async_job_completion_outcome_t<async_job_project_identity_t, image_job_result_t>;
-
-struct image_job_completion_t {
-    [[nodiscard]] static auto from(image_job_completion_outcome_t&& outcome) -> image_job_completion_t;
-    std::uint64_t generation{};
-    song_id_t project;
-    std::uint64_t document_revision{};
-    std::shared_ptr<const image_job_result_t> result;
-    std::optional<task_error_t> task_error;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return result != nullptr && !task_error.has_value();
-    }
-};
 
 // Decodes a bounded batch off the UI thread. Only the newest request can be
 // observed through poll()/wait(); superseded work is cancelled and discarded.
@@ -117,11 +91,7 @@ class image_job_t {
     [[nodiscard]] auto begin(song_id_t project, std::uint64_t document_revision,
                                std::span<const resolved_visual_asset_t> sources,
                                image_job_options_t options = {}) -> async_job_start_outcome_t;
-    [[nodiscard]] auto request(song_id_t project, std::uint64_t document_revision,
-                               std::span<const resolved_visual_asset_t> sources,
-                               image_job_options_t options = {}) -> image_job_start_result_t;
-    [[nodiscard]] auto poll() -> std::optional<image_job_completion_t>;
-    [[nodiscard]] auto wait() -> std::optional<image_job_completion_t>;
+
     [[nodiscard]] auto poll_completion() -> std::optional<image_job_completion_outcome_t>;
     [[nodiscard]] auto wait_completion() -> std::optional<image_job_completion_outcome_t>;
     void cancel() noexcept;

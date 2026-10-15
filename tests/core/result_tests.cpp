@@ -39,18 +39,16 @@ TEST_CASE("diagnosed results accept warnings and reject errors", "[unit][core][r
     CHECK(value.diagnostics.size() == 3);
 }
 
-TEST_CASE("async compatibility preserves generation and failure feedback",
+TEST_CASE("async start outcomes preserve generation and failure feedback",
           "[unit][core][result][async]") {
-    const auto ready = async_job_start_result_t::from(async_job_start_outcome_t{17});
+    const async_job_start_outcome_t ready{17};
     REQUIRE(ready);
-    CHECK(ready.generation == 17);
-    const auto failed = async_job_start_result_t::from(async_job_start_outcome_t{
-        std::unexpected(wormedit::error_t<async_job_start_status_t>{
-            async_job_start_status_t::capacity_exceeded, "full"})});
+    CHECK(*ready == 17);
+    const async_job_start_outcome_t failed{std::unexpected(wormedit::error_t<async_job_start_status_t>{
+        async_job_start_status_t::capacity_exceeded, "full"})};
     REQUIRE_FALSE(failed);
-    CHECK(failed.status == async_job_start_status_t::capacity_exceeded);
-    CHECK(failed.generation == 0);
-    CHECK(failed.message == "full");
+    CHECK(failed.error().code == async_job_start_status_t::capacity_exceeded);
+    CHECK(failed.error().message == "full");
 }
 
 namespace {

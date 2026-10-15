@@ -14,7 +14,6 @@
 namespace wormedit::audio {
 
 using waveform_job_start_status_t = ::wormedit::async_job_start_status_t;
-using waveform_job_start_result_t = ::wormedit::async_job_start_result_t;
 using waveform_job_completion_outcome_t =
     async_job_completion_outcome_t<asset_id_t, waveform_analysis_result_t>;
 
@@ -48,9 +47,7 @@ class waveform_job_t {
     [[nodiscard]] auto begin(asset_id_t asset, std::uint32_t frames_per_bin,
                                waveform_analysis_options_t options = {})
         -> async_job_start_outcome_t;
-    [[nodiscard]] auto request(asset_id_t asset, std::uint32_t frames_per_bin,
-                               waveform_analysis_options_t options = {})
-        -> waveform_job_start_result_t;
+
     [[nodiscard]] auto poll() -> std::optional<waveform_job_completion_t>;
     [[nodiscard]] auto poll_completion() -> std::optional<waveform_job_completion_outcome_t>;
     // Intended for tests and orderly shutdown paths, not the UI frame loop.

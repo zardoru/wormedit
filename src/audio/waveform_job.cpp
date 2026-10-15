@@ -33,10 +33,6 @@ void waveform_job_t::discard_terminal_jobs() {
                   [](const auto& worker) { return worker.graph.outcome(worker.task).has_value(); });
 }
 
-auto waveform_job_t::request(asset_id_t asset, std::uint32_t frames_per_bin,
-                             waveform_analysis_options_t options) -> waveform_job_start_result_t {
-    return waveform_job_start_result_t::from(begin(asset, frames_per_bin, options));
-}
 
 auto waveform_job_t::begin(asset_id_t asset, std::uint32_t frames_per_bin,
                              waveform_analysis_options_t options) -> async_job_start_outcome_t {

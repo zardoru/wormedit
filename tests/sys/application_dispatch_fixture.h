@@ -34,7 +34,7 @@ struct defaults_t {
     metadata_drop_state_t metadata_drop{};
     runtime::metadata_asset_t metadata_asset_runtime{};
     task_scheduler_t resource_copy_scheduler{1, 1};
-    runtime::resource_copy_t resource_copy_runtime{};
+    runtime::resource_copy_t resource_copy_runtime{resource_copy_scheduler};
     runtime::output_group_export_t export_runtime{};
     timing_grid_state_t timing_grid{};
     runtime::timing_edit_t timing_edit{};

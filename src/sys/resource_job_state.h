@@ -1,7 +1,9 @@
 #pragma once
 
-#include <wormedit/core/task_graph.h>
+#include <wormedit/core/async_job.h>
+#include <wormedit/core/command.h>
 #include <wormedit/core/notifications.h>
+#include <wormedit/core/resource_file_copy.h>
 #include <wormedit/core/workspace.h>
 
 #include "sys/thread_priority.h"
@@ -13,17 +15,22 @@
 
 namespace wormedit::sys {
 
-struct pending_project_resource_copy_t {
-    wormedit::task_graph_handle_t graph;
-    wormedit::task_id_t task;
+struct resource_copy_identity_t {
     wormedit::asset_id_t asset;
-    wormedit::song_id_t song;
-    std::uint64_t revision{};
+    wormedit::document_stamp_t document;
     std::filesystem::path source_path;
     std::filesystem::path output_path;
     bool export_copy{};
+    auto operator==(const resource_copy_identity_t&) const -> bool = default;
 };
-
+struct resource_copy_request_t {
+    resource_copy_identity_t target;
+    std::filesystem::path project_directory;
+    auto operator==(const resource_copy_request_t&) const -> bool = default;
+};
+using resource_copy_job_t =
+    wormedit::async_job_t<resource_copy_request_t, wormedit::project_asset_copy_outcome_t,
+                          resource_copy_identity_t>;
 
 struct output_group_export_task_result_t {
     bool published{};
@@ -43,18 +50,25 @@ namespace runtime {
 
 struct resource_copy_t {
     explicit resource_copy_t(
+        wormedit::task_scheduler_t& scheduler,
         wormedit::notification_sink_t notifications = wormedit::notification_sink_t::muted());
 
-    [[nodiscard]] auto is_busy() const noexcept -> bool { return pending_.has_value(); }
+    [[nodiscard]] auto is_busy() const noexcept -> bool {
+        return job_.is_busy();
+    }
 
-    auto start(pending_project_resource_copy_t&& pending) -> bool;
+    auto start(resource_copy_request_t request,
+               resource_copy_job_t::work_function_t work = copy_file)
+        -> wormedit::async_job_start_outcome_t;
     auto poll(wormedit::document_history_t& history,
               wormedit::workspace_controller_t& workspace) -> std::optional<std::string>;
     void cancel();
 
 private:
   wormedit::notification_sink_t notifications_{wormedit::notification_sink_t::muted()};
-  std::optional<pending_project_resource_copy_t> pending_;
+  [[nodiscard]] static auto copy_file(const resource_copy_request_t& request, std::stop_token stop)
+      -> resource_copy_job_t::work_outcome_t;
+  resource_copy_job_t job_;
 };
 
 struct output_group_export_t {

@@ -49,8 +49,8 @@ auto decode_images(const image_request_t& request, std::stop_token stop)
     std::size_t result_bytes{};
     for (const auto& source : sources) {
         if (stop.stop_requested()) {
-            return std::unexpected(error_t<task_error_code_t>{task_error_code_t::cancelled,
-                                          "image decode request was superseded"});
+            return std::unexpected(error_t<task_error_code_t>{
+                task_error_code_t::cancelled, "image decode request was superseded"});
         }
         if (auto cached = cache.find(project, document_revision, source)) {
             append_within_result_limit(result, source, std::move(cached), result_bytes,
@@ -64,8 +64,8 @@ auto decode_images(const image_request_t& request, std::stop_token stop)
             continue;
         }
         if (stop.stop_requested()) {
-            return std::unexpected(error_t<task_error_code_t>{task_error_code_t::cancelled,
-                                          "image decode request was superseded"});
+            return std::unexpected(error_t<task_error_code_t>{
+                task_error_code_t::cancelled, "image decode request was superseded"});
         }
         auto image = std::make_shared<const rgba_image_t>(std::move(*decoded));
         append_within_result_limit(result, source, image, result_bytes,
@@ -167,21 +167,25 @@ image_job_t::image_job_t(image_cache_t& cache, task_scheduler_t& scheduler,
                   "image decode jobs have not reached cancellation checkpoints",
                   "image decode worker returned no typed result"),
       cache_(cache), maximum_sources_per_request_(
-          std::min(maximum_sources_per_request, hard_maximum_sources_per_request)) {}
+                         std::min(maximum_sources_per_request, hard_maximum_sources_per_request)) {}
 
 auto image_job_t::request(song_id_t project, std::uint64_t document_revision,
                           std::span<const resolved_visual_asset_t> sources,
                           image_job_options_t options) -> async_job_start_outcome_t {
     if (!project || document_revision == 0 || sources.empty() ||
-        maximum_sources_per_request_ == 0 ||
-        sources.size() > maximum_sources_per_request_ || options.maximum_result_rgba_bytes == 0) {
+        maximum_sources_per_request_ == 0 || sources.size() > maximum_sources_per_request_ ||
+        options.maximum_result_rgba_bytes == 0) {
         return std::unexpected(error_t<async_job_start_status_t>{image_job_start_status_t::invalid_request, "image decode request is empty or exceeds its configured bounds"});
     }
     return async_job_t::request(
         [this, project, document_revision, sources, options] {
-            return image_request_t{cache_, project, document_revision,
-                                   {sources.begin(), sources.end()}, options};
-        }, {project, document_revision}, decode_images);
+            return image_request_t{.cache = cache_,
+                                   .project = project,
+                                   .document_revision = document_revision,
+                                   .sources = {sources.begin(), sources.end()},
+                                   .options = options};
+        },
+        {.project = project, .document_revision = document_revision}, decode_images);
 }
 
 } // namespace wormedit::visual

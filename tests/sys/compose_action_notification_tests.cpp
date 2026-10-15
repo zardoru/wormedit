@@ -83,7 +83,7 @@ struct action_notification_fixture_t {
     application_command_state_t application;
     std::filesystem::path asset_base;
     task_scheduler_t scheduler{1, 1};
-    runtime::resource_copy_t resource_copy{sink};
+    runtime::resource_copy_t resource_copy{scheduler, sink};
     runtime::output_group_export_t export_runtime{sink};
 
     action_notification_fixture_t() {

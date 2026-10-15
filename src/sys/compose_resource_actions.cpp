@@ -443,57 +443,26 @@ auto copy_compose_resource_action_t::perform(compose_action_context_t& context)
 compose_action_outcome_t start_resource_copy(compose_action_context_t& context,
                                              resource_copy_plan_t plan) {
     using namespace wormedit;
-    task_graph_t graph{1};
-    const project_asset_copy_request_t request{.project_directory =
-                                                   context.environment.resources->asset_base,
-                                               .source_path = plan.source,
-                                               .asset = plan.asset};
-    const auto added = graph.add_task({}, [request, plan](std::span<const task_result_t>,
-                                                          std::stop_token stop) {
-        auto copied = std::make_shared<const project_asset_copy_result_t>(
-            plan.export_copy
-                ? copy_resource_file_into_export({.project_directory = request.project_directory,
-                                                  .source_path = request.source_path,
-                                                  .relative_output_path = plan.output,
-                                                  .asset = request.asset,
-                                                  .maximum_bytes = request.maximum_bytes},
-                                                 stop)
-                : copy_resource_file_into_project(request, stop));
-        return task_result_t::success(wormedit::task_value_t::from(std::move(copied)));
-    });
-    if (!added)
-        return compose_action_outcome_t::from(
-            added.error ? added.error->message : "Resource copy could not start.",
-            notification_severity_t::error,
-            plan.export_copy ? notification_source_t::export_ : notification_source_t::import_,
-            false, false);
-    auto submitted = context.environment.resources->jobs.scheduler.submit(std::move(graph));
-    if (!submitted)
-        return compose_action_outcome_t::from(
-            submitted.error ? submitted.error->message : "Resource copy could not start.",
-            notification_severity_t::error,
-            plan.export_copy ? notification_source_t::export_ : notification_source_t::import_,
-            false, false);
-    auto pending = pending_project_resource_copy_t{
-        .graph = std::move(submitted.graph),
-        .task = *added.id,
-        .asset = plan.asset,
-        .song = context.environment.document.history.document.id,
-        .revision = context.environment.document.history.document.revision,
-        .source_path = plan.source,
-        .output_path = plan.output,
-        .export_copy = plan.export_copy};
-    if (!context.environment.resources->jobs.copy.start(std::move(pending))) {
-        pending.graph.cancel();
-        return compose_action_outcome_t::blocked(
-            "Wait for the current resource copy, import, or export to finish.",
-            plan.export_copy ? notification_source_t::export_ : notification_source_t::import_);
+    const auto source =
+        plan.export_copy ? notification_source_t::export_ : notification_source_t::import_;
+    auto started = context.environment.resources->jobs.copy.start(
+        {.target = {.asset = plan.asset,
+                    .document =
+                        document_stamp_t::from(context.environment.document.history.document),
+                    .source_path = plan.source,
+                    .output_path = plan.output,
+                    .export_copy = plan.export_copy},
+         .project_directory = context.environment.resources->asset_base});
+    if (!started) {
+        if (started.error().code == async_job_start_status_t::invalid_request)
+            return compose_action_outcome_t::blocked(started.error().message, source);
+        return compose_action_outcome_t::from(started.error().message,
+                                              notification_severity_t::error, source, false, false);
     }
-    auto outcome = compose_action_outcome_t::from(
-        plan.export_copy ? "Export copy started in the background."
-                         : "Resource copy started in the background.",
-        notification_severity_t::info,
-        plan.export_copy ? notification_source_t::export_ : notification_source_t::import_);
+    auto outcome = compose_action_outcome_t::from(plan.export_copy
+                                                      ? "Export copy started in the background."
+                                                      : "Resource copy started in the background.",
+                                                  notification_severity_t::info, source);
     outcome.delivery = compose_feedback_delivery_t::none;
     return outcome;
 }

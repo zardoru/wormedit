@@ -26,34 +26,32 @@ struct resource_copy_feedback_t {
     std::optional<wormedit::notification_source_t> source;
 };
 
-auto copy_task_failure(const wormedit::task_outcome_t& completed,
-                       const std::shared_ptr<const wormedit::project_asset_copy_result_t>& copied)
+auto copy_task_failure(const resource_copy_job_t::completion_t& completed)
     -> std::optional<resource_copy_feedback_t> {
     using namespace wormedit;
-    if (!completed.has_value() || !copied) {
-        const auto cancelled = !completed.has_value() &&
-                               completed.error().cause.code == task_error_code_t::cancelled;
-        return resource_copy_feedback_t{
-            .message = !completed.has_value() ? completed.error().cause.message
-                                       : "Resource copy returned no result.",
-            .severity = cancelled ? notification_severity_t::info
-                                  : notification_severity_t::error};
+    if (!completed) {
+        return resource_copy_feedback_t{.message = completed.error().cause.message,
+                                        .severity = completed.error().cause.code ==
+                                                            task_error_code_t::cancelled
+                                                        ? notification_severity_t::info
+                                                        : notification_severity_t::error};
     }
-    if (*copied)
+    const auto& copied = *completed->payload;
+    if (copied)
         return std::nullopt;
-    return resource_copy_feedback_t{
-        .message = copied->message.empty() ? "Resource copy failed." : copied->message,
-        .severity = copy_failure_severity(copied->status)};
+    return resource_copy_feedback_t{.message = copied.error().message.empty()
+                                                   ? "Resource copy failed."
+                                                   : copied.error().message,
+                                    .severity = copy_failure_severity(copied.error().code)};
 }
 
-auto complete_project_resource_copy(const pending_project_resource_copy_t& request,
-                                    const wormedit::project_asset_copy_result_t& copied,
+auto complete_project_resource_copy(const resource_copy_identity_t& request,
+                                    const wormedit::project_asset_copy_receipt_t& copied,
                                     wormedit::document_history_t& history,
                                     wormedit::workspace_controller_t& workspace)
     -> resource_copy_feedback_t {
     using namespace wormedit;
-    if (!document_stamp_t{.project = request.song, .revision = request.revision}
-             .is_current(history.document))
+    if (!request.document.is_current(history.document))
         return {stale_action_message("Resource copy relink"),
                 notification_severity_t::warning};
     const auto audio = history.document.find_audio_asset(request.asset);
@@ -82,8 +80,8 @@ auto complete_project_resource_copy(const pending_project_resource_copy_t& reque
             notification_severity_t::success};
 }
 
-auto complete_resource_copy(const pending_project_resource_copy_t& request,
-                            const wormedit::project_asset_copy_result_t& copied,
+auto complete_resource_copy(const resource_copy_identity_t& request,
+                            const wormedit::project_asset_copy_receipt_t& copied,
                             wormedit::document_history_t& history,
                             wormedit::workspace_controller_t& workspace)
     -> resource_copy_feedback_t {
@@ -101,34 +99,59 @@ auto complete_resource_copy(const pending_project_resource_copy_t& request,
 }
 } // namespace
 
-runtime::resource_copy_t::resource_copy_t(wormedit::notification_sink_t notifications)
-    : notifications_(std::move(notifications)) {}
+runtime::resource_copy_t::resource_copy_t(wormedit::task_scheduler_t& scheduler,
+                                          wormedit::notification_sink_t notifications)
+    : notifications_(std::move(notifications)),
+      job_(scheduler, 1, "Resource copy could not start.",
+           "scheduler outstanding-task capacity exceeded", "Resource copy returned no result.",
+           wormedit::async_job_destruction_policy_t::release) {}
 
-auto runtime::resource_copy_t::start(pending_project_resource_copy_t&& pending) -> bool {
+auto runtime::resource_copy_t::copy_file(const resource_copy_request_t& request,
+                                         std::stop_token stop)
+    -> resource_copy_job_t::work_outcome_t {
+    using namespace wormedit;
+    auto copied =
+        request.target.export_copy
+            ? create_export_asset_copy({.project_directory = request.project_directory,
+                                        .source_path = request.target.source_path,
+                                        .relative_output_path = request.target.output_path,
+                                        .asset = request.target.asset},
+                                       stop)
+            : create_project_asset_copy({.project_directory = request.project_directory,
+                                         .source_path = request.target.source_path,
+                                         .asset = request.target.asset},
+                                        stop);
+    return resource_copy_job_t::work_outcome_t{std::in_place, std::move(copied)};
+}
+
+auto runtime::resource_copy_t::start(resource_copy_request_t request,
+                                     resource_copy_job_t::work_function_t work)
+    -> wormedit::async_job_start_outcome_t {
+    using namespace wormedit;
     if (is_busy())
-        return false;
-    const auto source = pending.export_copy ? wormedit::notification_source_t::export_
-                                            : wormedit::notification_source_t::import_;
-    pending_ = std::move(pending);
-    notifications_.post(wormedit::notification_severity_t::info, source,
-                        pending_->export_copy ? "Export copy started in the background."
-                                              : "Resource copy started in the background.");
-    return true;
+        return std::unexpected(error_t<async_job_start_status_t>{
+            async_job_start_status_t::invalid_request,
+            "Wait for the current resource copy, import, or export to finish."});
+    const auto source = request.target.export_copy ? notification_source_t::export_
+                                                   : notification_source_t::import_;
+    const auto exporting = request.target.export_copy;
+    auto started = job_.request([&request] { return std::move(request); }, request.target, work);
+    if (started)
+        notifications_.post(notification_severity_t::info, source,
+                            exporting ? "Export copy started in the background."
+                                      : "Resource copy started in the background.");
+    return started;
 }
 
 auto runtime::resource_copy_t::poll(wormedit::document_history_t& history,
                                   wormedit::workspace_controller_t& workspace)
     -> std::optional<std::string> {
     using namespace wormedit;
-    if (!pending_)
-        return std::nullopt;
-
-    const auto completed = pending_->graph.outcome(pending_->task);
+    const auto completed = job_.poll();
     if (!completed)
         return std::nullopt;
-
-    const auto request = std::move(*pending_);
-    pending_.reset();
+    const auto& request =
+        completed->has_value() ? completed->value().identity : completed->error().identity;
     const auto source = request.export_copy ? notification_source_t::export_
                                             : notification_source_t::import_;
     const auto finish = [&](std::string message, notification_severity_t severity,
@@ -139,19 +162,16 @@ auto runtime::resource_copy_t::poll(wormedit::document_history_t& history,
             notifications_.post(severity, source_override.value_or(source), message);
         return message;
     };
-    const auto copied = task_value_cast<project_asset_copy_result_t>(*completed);
-    auto feedback = copy_task_failure(*completed, copied);
+    auto feedback = copy_task_failure(*completed);
     if (!feedback)
-        feedback = complete_resource_copy(request, *copied, history, workspace);
+        feedback =
+            complete_resource_copy(request, **completed->value().payload, history, workspace);
     return finish(std::move(feedback->message), feedback->severity, feedback->publish,
                   feedback->source);
 }
 
 void runtime::resource_copy_t::cancel() {
-    if (!pending_)
-        return;
-    pending_->graph.cancel();
-    pending_.reset();
+    job_.cancel();
 }
 
 runtime::output_group_export_t::output_group_export_t(wormedit::notification_sink_t notifications)

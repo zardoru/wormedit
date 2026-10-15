@@ -2105,7 +2105,7 @@ struct application_t::implementation_t {
     struct background_jobs_t {
         notification_sink_t& notifications;
         task_scheduler_t resource_copy_scheduler{1, 1, background_scheduler_options()};
-        runtime::resource_copy_t resource_copy_runtime{notifications};
+        runtime::resource_copy_t resource_copy_runtime{resource_copy_scheduler, notifications};
         runtime::metadata_asset_t metadata_asset_runtime{notifications};
         runtime::output_group_export_t export_runtime{notifications};
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)

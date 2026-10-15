@@ -20,9 +20,9 @@ waveform_job_t::waveform_job_t(decoded_source_registry_t& sources, decoded_block
 
 auto waveform_job_t::analyze(const waveform_request_t& request, std::stop_token stop)
     -> work_outcome_t {
-    return waveform_analysis_result_t::from(request.sources.analyze_waveform(
-        request.asset, request.blocks, request.waveforms, request.frames_per_bin,
-        request.options, stop));
+    return waveform_analysis_result_t::from(
+        request.sources.analyze_waveform(request.asset, request.blocks, request.waveforms,
+                                         request.frames_per_bin, request.options, stop));
 }
 
 auto waveform_job_t::request(asset_id_t asset, std::uint32_t frames_per_bin,
@@ -33,8 +33,14 @@ auto waveform_job_t::request(asset_id_t asset, std::uint32_t frames_per_bin,
     }
     return async_job_t::request(
         [this, asset, frames_per_bin, options] {
-            return waveform_request_t{sources_, blocks_, waveforms_, asset, frames_per_bin, options};
-        }, asset, analyze);
+            return waveform_request_t{.sources = sources_,
+                                      .blocks = blocks_,
+                                      .waveforms = waveforms_,
+                                      .asset = asset,
+                                      .frames_per_bin = frames_per_bin,
+                                      .options = options};
+        },
+        asset, analyze);
 }
 
 } // namespace wormedit::audio

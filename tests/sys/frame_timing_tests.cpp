@@ -259,7 +259,7 @@ void dispatch_t437_quantize_settings(compose_test_fixture_t& fixture,
     notification_center_t center;
     notification_sink_t sink{center};
     task_scheduler_t scheduler{1, 1};
-    runtime::resource_copy_t resource_copy{sink};
+    runtime::resource_copy_t resource_copy{scheduler, sink};
     runtime::output_group_export_t export_runtime{sink};
     WormUiWorkspaceAction action{};
     action.compose_action = apply ? WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE
@@ -6533,7 +6533,7 @@ auto dispatch_range_pause(compose_test_fixture_t& fixture, const WormUiWorkspace
     notification_center_t center;
     notification_sink_t sink{center};
     task_scheduler_t scheduler{1, 1};
-    runtime::resource_copy_t resource_copy{sink};
+    runtime::resource_copy_t resource_copy{scheduler, sink};
     runtime::output_group_export_t export_runtime{sink};
     return dispatch_compose_view_action(action, fixture.history, *fixture.binding.value,
         *fixture.interaction, fixture.flattened.view.compose.viewport_height_pixels,

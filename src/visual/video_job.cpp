@@ -109,7 +109,8 @@ video_frame_job_t::video_frame_job_t(video_frame_cache_t& cache, task_scheduler_
     : async_job_t(scheduler, std::min(maximum_in_flight_jobs, hard_maximum_video_jobs),
                   "video frame request has invalid identity or timing",
                   "video frame jobs have not reached cancellation checkpoints",
-                  "video frame worker returned no typed result"), cache_(cache) {}
+                  "video frame worker returned no typed result"),
+      cache_(cache) {}
 
 video_frame_job_t::~video_frame_job_t() {
     // The decoder session and its mutex must outlive every worker using them.
@@ -117,8 +118,7 @@ video_frame_job_t::~video_frame_job_t() {
 }
 
 auto video_frame_job_t::decode_uncached_frame(const video_decode_request_t& request,
-                                               std::stop_token stop)
-    -> video_frame_decode_result_t {
+                                              std::stop_token stop) -> video_frame_decode_result_t {
     std::unique_lock session_lock(session_mutex_);
     if (!session_ || session_project_ != request.project ||
         session_document_revision_ != request.document_revision ||
@@ -153,10 +153,10 @@ auto video_frame_job_t::run_decode(const video_decode_request_t& request, std::s
     std::string message;
     if (stop.stop_requested()) {
         return std::unexpected(error_t<task_error_code_t>{task_error_code_t::cancelled,
-                                      "video frame request was superseded"});
+                                                          "video frame request was superseded"});
     }
-    if (auto cached = request.owner.cache_.find(request.project, request.document_revision, request.source,
-                                  request.clock)) {
+    if (auto cached = request.owner.cache_.find(request.project, request.document_revision,
+                                                request.source, request.clock)) {
         status = video_frame_status_t::ready;
         result_frame = std::move(cached);
     } else {
@@ -164,8 +164,9 @@ auto video_frame_job_t::run_decode(const video_decode_request_t& request, std::s
         if (decoded) {
             status = video_frame_status_t::ready;
             auto frame = std::make_shared<const rgba_video_frame_t>(std::move(*decoded));
-            result_frame = request.owner.cache_.insert(request.project, request.document_revision,
-                                         request.source, request.clock, std::move(frame));
+            result_frame =
+                request.owner.cache_.insert(request.project, request.document_revision,
+                                            request.source, request.clock, std::move(frame));
         } else {
             status = decoded.error().code;
             message = std::move(decoded.error().message);
@@ -173,12 +174,12 @@ auto video_frame_job_t::run_decode(const video_decode_request_t& request, std::s
     }
     if (stop.stop_requested()) {
         return std::unexpected(error_t<task_error_code_t>{task_error_code_t::cancelled,
-                                      "video frame request was superseded"});
+                                                          "video frame request was superseded"});
     }
-    return work_outcome_t{std::in_place, video_job_frame_t::from(std::move(context), status, std::move(result_frame),
-                                    std::move(message))};
+    return work_outcome_t{std::in_place,
+                          video_job_frame_t::from(std::move(context), status,
+                                                  std::move(result_frame), std::move(message))};
 }
-
 
 auto video_frame_job_t::request(song_id_t project, std::uint64_t document_revision,
                                 resolved_visual_asset_t source, video_preview_clock_t clock,
@@ -190,9 +191,14 @@ auto video_frame_job_t::request(song_id_t project, std::uint64_t document_revisi
     }
     return async_job_t::request(
         [this, project, document_revision, source = std::move(source), clock, limits]() mutable {
-            return video_decode_request_t{*this, project, document_revision,
-                                          std::move(source), clock, limits};
-        }, {project, document_revision}, run_decode);
+            return video_decode_request_t{.owner = *this,
+                                          .project = project,
+                                          .document_revision = document_revision,
+                                          .source = std::move(source),
+                                          .clock = clock,
+                                          .limits = limits};
+        },
+        {.project = project, .document_revision = document_revision}, run_decode);
 }
 
 } // namespace wormedit::visual

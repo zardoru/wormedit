@@ -2,26 +2,40 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <chrono>
 #include <latch>
+#include <memory>
+#include <semaphore>
 #include <stdexcept>
+#include <thread>
 
 namespace {
-void check_async(bool value) { CHECK(value); }
-void require_async(bool value) { REQUIRE(value); }
+void check_async(bool value) {
+    CHECK(value);
+}
+void require_async(bool value) {
+    REQUIRE(value);
+}
 struct request_t {
     int value{};
     std::latch* started{};
     std::latch* release{};
     bool* cancelled{};
+    std::latch* finished{};
 };
 auto capture(request_t request) {
     return [request] { return request; };
 }
 using job_t = wormedit::async_job_t<request_t, int, int>;
 auto work(const request_t& request, std::stop_token stop) -> job_t::work_outcome_t {
-    if (request.started) request.started->count_down();
-    if (request.release) request.release->wait();
-    if (request.cancelled) *request.cancelled = stop.stop_requested();
+    if (request.started)
+        request.started->count_down();
+    if (request.release)
+        request.release->wait();
+    if (request.cancelled)
+        *request.cancelled = stop.stop_requested();
+    if (request.finished)
+        request.finished->count_down();
     return request.value;
 }
 auto throwing_work(const request_t&, std::stop_token) -> job_t::work_outcome_t {
@@ -34,7 +48,7 @@ TEST_CASE("async job returns one completion with captured identity", "[unit][asy
     job_t job{scheduler, 2, "invalid", "capacity", "missing"};
     check_async(!(job.poll()));
     check_async(!(job.wait()));
-    const auto start = job.request(capture({42}), 17, work);
+    const auto start = job.request(capture({.value = 42}), 17, work);
     require_async(static_cast<bool>(start));
     const auto result = job.wait();
     require_async(static_cast<bool>(result));
@@ -48,14 +62,16 @@ TEST_CASE("async job returns one completion with captured identity", "[unit][asy
 
 TEST_CASE("async job supersedes only after successful submission", "[unit][async-job]") {
     wormedit::task_scheduler_t scheduler{1, 2};
-    job_t job{scheduler, 2, "invalid", "capacity", "missing"};
     std::latch started{1}, release{1};
     bool cancelled = false;
-    const auto first = job.request(capture({1, &started, &release, &cancelled}), 11, work);
+    job_t job{scheduler, 2, "invalid", "capacity", "missing"};
+    const auto first = job.request(
+        capture({.value = 1, .started = &started, .release = &release, .cancelled = &cancelled}),
+        11, work);
     require_async(static_cast<bool>(first));
     started.wait();
-    const auto second = job.request(capture({2}), 22, work);
-    const auto rejected = job.request(capture({3}), 33, work);
+    const auto second = job.request(capture({.value = 2}), 22, work);
+    const auto rejected = job.request(capture({.value = 3}), 33, work);
     release.count_down();
     const auto completion = job.wait();
     require_async(static_cast<bool>(second));
@@ -72,13 +88,15 @@ TEST_CASE("async job supersedes only after successful submission", "[unit][async
 
 TEST_CASE("async job scheduler rejection preserves current work", "[unit][async-job]") {
     wormedit::task_scheduler_t scheduler{1, 1};
-    job_t job{scheduler, 2, "invalid", "capacity", "missing"};
     std::latch started{1}, release{1};
     bool cancelled = true;
-    const auto first = job.request(capture({1, &started, &release, &cancelled}), 11, work);
+    job_t job{scheduler, 2, "invalid", "capacity", "missing"};
+    const auto first = job.request(
+        capture({.value = 1, .started = &started, .release = &release, .cancelled = &cancelled}),
+        11, work);
     require_async(static_cast<bool>(first));
     started.wait();
-    const auto rejected = job.request(capture({2}), 22, work);
+    const auto rejected = job.request(capture({.value = 2}), 22, work);
     release.count_down();
     const auto completion = job.wait();
     require_async(!(rejected));
@@ -91,15 +109,17 @@ TEST_CASE("async job scheduler rejection preserves current work", "[unit][async-
 
 TEST_CASE("async job cancel suppresses terminal publication", "[unit][async-job]") {
     wormedit::task_scheduler_t scheduler{1, 1};
-    job_t job{scheduler, 1, "invalid", "capacity", "missing"};
     std::latch started{1}, release{1};
     bool cancelled = false;
-    require_async(static_cast<bool>(job.request(capture({1, &started, &release, &cancelled}), 11, work)));
+    job_t job{scheduler, 1, "invalid", "capacity", "missing"};
+    require_async(static_cast<bool>(job.request(
+        capture({.value = 1, .started = &started, .release = &release, .cancelled = &cancelled}),
+        11, work)));
     started.wait();
     job.cancel();
     check_async(!(job.is_busy()));
     check_async(!(job.wait()));
-    const auto rejected = job.request(capture({2}), 22, work);
+    const auto rejected = job.request(capture({.value = 2}), 22, work);
     release.count_down();
     scheduler.shutdown();
     check_async(!(rejected));
@@ -123,12 +143,65 @@ TEST_CASE("async job zero bound disables submissions", "[unit][async-job]") {
     wormedit::task_scheduler_t scheduler{1, 1};
     job_t job{scheduler, 0, "invalid", "capacity", "missing"};
     int captures = 0;
-    const auto rejected = job.request([&captures] {
-        ++captures;
-        return request_t{};
-    }, 1, work);
+    const auto rejected = job.request(
+        [&captures] {
+            ++captures;
+            return request_t{};
+        },
+        1, work);
     check_async(captures == 0);
     require_async(!(rejected));
     check_async(rejected.error().code == wormedit::async_job_start_status_t::invalid_request);
     check_async(!(job.is_busy()));
+}
+
+TEST_CASE("async job can retain cancellation feedback for advisory owners", "[unit][async-job]") {
+    using namespace wormedit;
+    task_scheduler_t scheduler{1, 1};
+    std::latch started{1}, release{1};
+    bool cancelled = false;
+    job_t job{scheduler, 1, "invalid", "capacity", "missing"};
+    require_async(static_cast<bool>(job.request(
+        capture({.value = 1, .started = &started, .release = &release, .cancelled = &cancelled}),
+        11, work)));
+    started.wait();
+    job.cancel(async_job_cancel_policy_t::retain_completion);
+    check_async(job.is_busy());
+    release.count_down();
+    const auto completion = job.wait();
+    require_async(completion.has_value());
+    check_async(cancelled);
+    // The scheduler owns the final status if cancellation races the callback return.
+    check_async(completion->has_value() ? completion->value().identity == 11
+                                        : completion->error().identity == 11);
+    check_async(!job.is_busy());
+}
+
+TEST_CASE("async job may release owned-input work without waiting or cancelling",
+          "[unit][async-job]") {
+    using namespace wormedit;
+    task_scheduler_t scheduler{1, 1};
+    std::latch started{1}, release{1}, finished{1};
+    bool cancelled = true;
+    auto job = std::make_unique<job_t>(scheduler, 1, "invalid", "capacity", "missing",
+                                       async_job_destruction_policy_t::release);
+    require_async(static_cast<bool>(job->request(capture({.value = 1,
+                                                          .started = &started,
+                                                          .release = &release,
+                                                          .cancelled = &cancelled,
+                                                          .finished = &finished}),
+                                                 11, work)));
+    started.wait();
+    std::binary_semaphore destroyed{0};
+    std::jthread destroyer([&job, &destroyed] {
+        job.reset();
+        destroyed.release();
+    });
+    const auto released_without_waiting = destroyed.try_acquire_for(std::chrono::seconds{1});
+    release.count_down();
+    destroyer.join();
+    finished.wait();
+    scheduler.shutdown();
+    check_async(released_without_waiting);
+    check_async(!cancelled);
 }

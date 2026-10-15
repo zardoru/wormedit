@@ -622,7 +622,9 @@ auto sdl_preview_output_t::render_source(std::size_t frames) noexcept -> std::si
         return 0;
     }
     if (count == 0) return 0;
-    const auto rendered = session_.render(std::span{source_scratch_.data(), count * 2}, output_generation_);
+    const auto rendered_outcome = session_.render_frames(
+        std::span{source_scratch_.data(), count * 2}, output_generation_);
+    const auto& rendered = rendered_outcome ? *rendered_outcome : rendered_outcome.error();
     if (rendered.status == audio::preview_session_render_status_t::priming) return 0;
     if (rendered.status == audio::preview_session_render_status_t::underrun) {
         silenced_voices_.fetch_add(rendered.mix.dropped_voices, std::memory_order_relaxed);

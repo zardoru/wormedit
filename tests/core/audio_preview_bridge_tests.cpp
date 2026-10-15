@@ -89,8 +89,8 @@ TEST_CASE("preview bridge windows more than 256 sequential events through bounde
     for (std::uint64_t frame = 0; frame < event_count * 10; frame += 4) {
         pumped = bridge.materialize_until(event_count * 10);
         scheduled += pumped.scheduled_events;
-        const auto mixed = transport.mix(*started.token, frame, output);
-        REQUIRE(mixed.status == transport_mix_status_t::mixed);
+        const auto mixed = transport.mix_frames(*started.token, frame, output);
+        REQUIRE(mixed.value().status == transport_mix_status_t::mixed);
         CHECK((pumped.status == preview_bridge_pump_status_t::ready ||
                pumped.status == preview_bridge_pump_status_t::capacity_limited));
     }
@@ -130,10 +130,10 @@ TEST_CASE("preview bridge preserves playable, BGM, and metronome polyphony",
     CHECK(transport.scheduled_voice_count() == 6);
 
     std::array<float, 64 * output_channel_count> output{};
-    const auto mixed = transport.mix(*started.token, 0, output);
-    CHECK(mixed.status == transport_mix_status_t::mixed);
-    CHECK(mixed.voices_mixed == 6);
-    CHECK(mixed.missing_blocks == 0);
+    const auto mixed = transport.mix_frames(*started.token, 0, output);
+    CHECK(mixed.value().status == transport_mix_status_t::mixed);
+    CHECK(mixed.value().voices_mixed == 6);
+    CHECK(mixed.value().missing_blocks == 0);
     CHECK(transport.scheduled_voice_count() == 0);
     CHECK(output.front() == Catch::Approx(0.15F));
 }
@@ -222,7 +222,9 @@ TEST_CASE("preview bridge seeks and restarts with fresh session generations",
     check_audio_condition(has_scheduled_voice(at_second_seek, 20, 44, 30));
     check_audio_condition(has_scheduled_voice(at_second_seek, 10, 54, 30));
     std::array<float, 2> stale_output{1.0F, 1.0F};
-    check_audio_condition(transport.mix(*first.token, 20, stale_output).status ==
+    const auto stale_mix = transport.mix_frames(*first.token, 20, stale_output);
+    require_audio_condition(!stale_mix);
+    check_audio_condition(stale_mix.error().status ==
           transport_mix_status_t::stale_generation);
     check_audio_condition(stale_output[0] == 0.0F);
 
@@ -233,7 +235,9 @@ TEST_CASE("preview bridge seeks and restarts with fresh session generations",
     check_audio_condition(has_scheduled_voice(transport.snapshot_voices(*restarted.token), 0, 64, 10));
     check_audio_condition(bridge.stop().scheduled_voices == 1);
     std::array<float, 2> stopped_output{1.0F, 1.0F};
-    check_audio_condition(transport.mix(*restarted.token, 0, stopped_output).status ==
+    const auto stopped_mix = transport.mix_frames(*restarted.token, 0, stopped_output);
+    require_audio_condition(!stopped_mix);
+    check_audio_condition(stopped_mix.error().status ==
           transport_mix_status_t::stale_generation);
     check_audio_condition(std::ranges::all_of(stopped_output, [](float sample) { return sample == 0.0F; }));
 }
@@ -255,7 +259,9 @@ TEST_CASE("preview bridge Stop invalidates its generation and clears scheduled v
     CHECK(transport.scheduled_voice_count() == 0);
     CHECK(bridge.materialize_until(20).status == preview_bridge_pump_status_t::not_started);
     std::array<float, 8> output{1.0F, 1.0F, 1.0F, 1.0F, 1.0F, 1.0F, 1.0F, 1.0F};
-    CHECK(transport.mix(*started.token, 0, output).status ==
+    const auto stopped_mix = transport.mix_frames(*started.token, 0, output);
+    require_audio_condition(!stopped_mix);
+    CHECK(stopped_mix.error().status ==
           transport_mix_status_t::stale_generation);
     CHECK(std::ranges::all_of(output, [](float sample) { return sample == 0.0F; }));
 
@@ -311,7 +317,7 @@ TEST_CASE("preview bridge leaves an over-capacity same-frame event at the queue 
     CHECK(initial.error().scheduled_events == 2);
     CHECK(transport.scheduled_voice_count() == 2);
     std::array<float, 8> output{};
-    REQUIRE(transport.mix(*started.token, 0, output).status == transport_mix_status_t::mixed);
+    REQUIRE(transport.mix_frames(*started.token, 0, output).value().status == transport_mix_status_t::mixed);
     const auto resumed = bridge.materialize_until(11);
     CHECK(resumed.status == preview_bridge_pump_status_t::ready);
     CHECK(resumed.scheduled_events == 1);
@@ -424,13 +430,13 @@ TEST_CASE("preview bridge volume scales chart and assist clicks through one clic
     REQUIRE(started);
     REQUIRE(bridge.materialize_until(32).scheduled_events == 1);
     std::array<float, 16> chart_mix{};
-    REQUIRE(transport.mix(*started.token, 0, chart_mix).status == transport_mix_status_t::mixed);
+    REQUIRE(transport.mix_frames(*started.token, 0, chart_mix).value().status == transport_mix_status_t::mixed);
     CHECK(chart_mix.front() == 0.125F);
 
     REQUIRE(bridge.set_assist_grid(true, assist_grid(32.0), 32));
     REQUIRE(bridge.materialize_until(96, 32).scheduled_events == 1);
     std::array<float, 16> assist_mix{};
-    REQUIRE(transport.mix(*started.token, 32, assist_mix).status == transport_mix_status_t::mixed);
+    REQUIRE(transport.mix_frames(*started.token, 32, assist_mix).value().status == transport_mix_status_t::mixed);
     CHECK(assist_mix.front() == 0.125F);
 
     const auto sought = bridge.seek(0);
@@ -461,9 +467,9 @@ TEST_CASE("preview bridge disabling retires queued clicks while preserving music
     require_metronome(voices.value().size() == 1);
     require_metronome(voices.value().front().kind == voice_kind_t::music);
     std::array<float, 32 * output_channel_count> output{};
-    const auto mixed = transport.mix(*started.token, 0, output);
-    require_metronome(mixed.status == transport_mix_status_t::mixed);
-    require_metronome(mixed.voices_mixed == 1 && mixed.missing_blocks == 0);
+    const auto mixed = transport.mix_frames(*started.token, 0, output);
+    require_metronome(mixed.value().status == transport_mix_status_t::mixed);
+    require_metronome(mixed.value().voices_mixed == 1 && mixed.value().missing_blocks == 0);
     require_metronome(output.front() == 0.25F);
     bridge.set_metronome_enabled(true, 32);
     require_metronome(bridge.materialize_until(128).scheduled_events == 1);
@@ -548,7 +554,7 @@ TEST_CASE("preview bridge assist estimate updates keep handed voices and replace
     require_metronome(bridge.materialize_until(10'000, 0).status == preview_bridge_pump_status_t::capacity_limited);
     require_metronome(bridge.set_assist_grid(true, assist_grid(200), 0));
     std::array<float, 64 * output_channel_count> output{};
-    require_metronome(transport.mix(*started.token, 0, output).status == transport_mix_status_t::mixed);
+    require_metronome(transport.mix_frames(*started.token, 0, output).value().status == transport_mix_status_t::mixed);
     require_metronome(bridge.materialize_until(10'000, 64).scheduled_events == 1);
     const auto voices = transport.snapshot_voices(*started.token);
     require_metronome(voices.value().size() == 1 && voices.value().front().timeline_start_frame == 200);

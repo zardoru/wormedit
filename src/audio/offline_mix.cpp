@@ -76,7 +76,8 @@ auto pump_session(preview_session_t& session, preview_pump_options_t options,
 
 auto render_chunk(preview_session_t& session, std::span<float> samples,
                   std::size_t expected_frames) -> bool {
-    const auto rendered = session.render(samples);
+    const auto rendered_outcome = session.render_frames(samples);
+    const auto& rendered = rendered_outcome ? *rendered_outcome : rendered_outcome.error();
     const bool valid_status = rendered.status == preview_session_render_status_t::mixed ||
                               rendered.status == preview_session_render_status_t::complete;
     return valid_status && rendered.mix.frames == expected_frames &&

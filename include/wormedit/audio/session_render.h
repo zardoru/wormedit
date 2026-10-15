@@ -14,12 +14,6 @@ template <class Status> struct session_render_result_t {
             return std::unexpected(std::move(report));
         return report;
     }
-    [[nodiscard]] static auto
-    from(result_t<session_render_result_t, session_render_result_t>&& outcome)
-        -> session_render_result_t {
-        return std::move(outcome ? *outcome : outcome.error());
-    }
-
     Status status{Status::stopped};
     std::uint64_t first_timeline_frame{};
     transport_mix_result_t mix;

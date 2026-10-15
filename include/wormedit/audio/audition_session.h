@@ -62,7 +62,7 @@ using audition_session_render_outcome_t = session_render_outcome_t<audition_sess
 
 // Owns one active click-preview timeline above the transport bridge. start()
 // checks resident PCM before publishing; streamed priming remains pending until
-// pump() performs decoder work off the caller/realtime path. render() only
+// pump() performs decoder work off the caller/realtime path. render_frames() only
 // mixes cache-resident blocks and advances a monotonic output-frame cursor.
 class audition_session_t {
   public:
@@ -75,13 +75,11 @@ class audition_session_t {
     [[nodiscard]] auto start_session(std::span<const audition_clip_t> clips)
         -> audition_session_start_outcome_t;
     [[nodiscard]] auto pump(audition_pump_options_t options = {}) -> audition_pump_result_t;
-    [[nodiscard]] auto render(std::span<float> interleaved_stereo)
-        -> audition_session_render_result_t;
     [[nodiscard]] auto render_frames(std::span<float> interleaved_stereo)
         -> audition_session_render_outcome_t;
     [[nodiscard]] auto stop() noexcept -> transport_stop_result_t;
 
-    // Lock-free reads of a snapshot published by start/render/stop.
+    // Lock-free reads of a snapshot published by session operations.
     [[nodiscard]] auto playhead() const noexcept -> playhead_state_t;
     [[nodiscard]] auto is_active() const -> bool;
     [[nodiscard]] auto timeline_frame() const -> std::uint64_t;

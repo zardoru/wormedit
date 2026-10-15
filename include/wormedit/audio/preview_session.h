@@ -107,7 +107,7 @@ struct preview_loop_region_t {
 
 // Owns one chart-play generation and its normalized sample-frame timeline.
 // start()/seek() enqueue initial work without decoding; pump() runs on the decode
-// worker (or explicitly in headless owners). render() performs only the
+// worker (or explicitly in headless owners). render_frames() performs only the
 // cache-resident transport mix. The immutable schedule must outlive the active
 // session because preview_transport_bridge_t retains its queue storage.
 class preview_session_t {
@@ -138,9 +138,6 @@ class preview_session_t {
         -> preview_session_pump_outcome_t;
     // Output producers can require their owned generation; stale work emits
     // silence and leaves a replacement session untouched.
-    [[nodiscard]] auto render(std::span<float> interleaved_stereo,
-                              std::optional<std::uint64_t> expected_generation = {})
-        -> preview_session_render_result_t;
     [[nodiscard]] auto render_frames(std::span<float> interleaved_stereo,
         std::optional<std::uint64_t> expected_generation = {}) -> preview_session_render_outcome_t;
     [[nodiscard]] auto stop(std::optional<std::uint64_t> expected_generation = {}) noexcept
@@ -193,6 +190,9 @@ class preview_session_t {
     [[nodiscard]] auto prime_started(preview_bridge_start_result_t started,
                                      std::uint64_t timeline_frame, preview_pump_options_t options, bool loop_restart = false)
         -> preview_session_start_outcome_t;
+    [[nodiscard]] auto mix_render_frames(std::uint64_t first_frame,
+                                         std::span<float> interleaved_stereo)
+        -> transport_mix_outcome_t;
     void clear_state() noexcept;
     void publish_playhead() noexcept;
 

@@ -53,10 +53,10 @@ TEST_CASE("audition lookahead fills exact blocks before the headless mixer consu
     CHECK(pumped.cached_blocks == 0);
 
     std::vector<float> output(512 * output_channel_count);
-    const auto mixed = transport.mix(*started.token, 0, output);
-    CHECK(mixed.status == transport_mix_status_t::mixed);
-    CHECK(mixed.voices_mixed == 1);
-    CHECK(mixed.missing_blocks == 0);
+    const auto mixed = transport.mix_frames(*started.token, 0, output);
+    CHECK(mixed.value().status == transport_mix_status_t::mixed);
+    CHECK(mixed.value().voices_mixed == 1);
+    CHECK(mixed.value().missing_blocks == 0);
     CHECK_FALSE(all_zero(output));
 }
 

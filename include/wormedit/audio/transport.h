@@ -67,8 +67,6 @@ using active_voice_snapshot_outcome_t =
 struct transport_mix_result_t {
     [[nodiscard]] static auto from(transport_mix_result_t&& report)
         -> result_t<transport_mix_result_t, transport_mix_result_t>;
-    [[nodiscard]] static auto from(result_t<transport_mix_result_t, transport_mix_result_t>&& outcome)
-        -> transport_mix_result_t;
     transport_mix_status_t status{transport_mix_status_t::stale_generation};
     std::size_t frames{};
     std::size_t voices_mixed{};
@@ -129,8 +127,6 @@ class transport_t {
     [[nodiscard]] auto schedule_voices(session_token_t token,
                                        std::span<const transport_voice_t> voices)
         -> voice_schedule_status_t;
-    [[nodiscard]] auto mix(session_token_t token, std::uint64_t first_timeline_frame,
-                           std::span<float> interleaved_stereo) -> transport_mix_result_t;
     [[nodiscard]] auto mix_frames(session_token_t token, std::uint64_t first_timeline_frame,
                                  std::span<float> interleaved_stereo) -> transport_mix_outcome_t;
 

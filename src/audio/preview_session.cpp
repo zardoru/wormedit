@@ -196,6 +196,23 @@ auto preview_session_t::pump(preview_pump_options_t options) -> preview_session_
     return preview_session_pump_result_t::from(pump_session(options));
 }
 
+auto preview_session_t::mix_render_frames(std::uint64_t first_frame,
+                                           std::span<float> interleaved_stereo)
+    -> transport_mix_outcome_t {
+    if (loop_region_ && first_frame >= loop_region_->end_frame)
+        return transport_mix_result_t::from({.status = transport_mix_status_t::mixed});
+    auto render_samples = interleaved_stereo;
+    if (loop_region_) {
+        const auto remaining_frames = loop_region_->end_frame - first_frame;
+        const auto samples_per_frame = static_cast<std::size_t>(output_channel_count);
+        if (remaining_frames < interleaved_stereo.size() / samples_per_frame) {
+            const auto samples = static_cast<std::size_t>(remaining_frames) * samples_per_frame;
+            render_samples = interleaved_stereo.first(samples);
+        }
+    }
+    return transport_.mix_frames(*token_, first_frame, render_samples);
+}
+
 auto preview_session_t::render_frames(std::span<float> interleaved_stereo,
                                       std::optional<std::uint64_t> expected_generation)
     -> preview_session_render_outcome_t {
@@ -227,20 +244,8 @@ auto preview_session_t::render_frames(std::span<float> interleaved_stereo,
         return preview_session_render_result_t::from(preview_session_render_status_t::priming,
                                                      first_frame);
     }
-    transport_mix_result_t mixed;
-    if (loop_region_ && first_frame >= loop_region_->end_frame) {
-        mixed.status = transport_mix_status_t::mixed;
-    } else {
-        auto render_samples = interleaved_stereo;
-        if (loop_region_) {
-            const auto remaining_frames = loop_region_->end_frame - first_frame;
-            if (remaining_frames < interleaved_stereo.size() / samples_per_frame) {
-                const auto samples = static_cast<std::size_t>(remaining_frames) * samples_per_frame;
-                render_samples = interleaved_stereo.first(samples);
-            }
-        }
-        mixed = transport_.mix(*token_, first_frame, render_samples);
-    }
+    const auto mixed_outcome = mix_render_frames(first_frame, interleaved_stereo);
+    const auto& mixed = mixed_outcome ? *mixed_outcome : mixed_outcome.error();
     if (mixed.status == transport_mix_status_t::stale_generation) {
         clear_state();
         return preview_session_render_result_t::from(
@@ -270,13 +275,6 @@ auto preview_session_t::render_frames(std::span<float> interleaved_stereo,
                                                      ? preview_session_render_status_t::mixed
                                                      : preview_session_render_status_t::underrun,
                                                  first_frame, mixed);
-}
-
-auto preview_session_t::render(std::span<float> interleaved_stereo,
-                               std::optional<std::uint64_t> expected_generation)
-    -> preview_session_render_result_t {
-    return preview_session_render_result_t::from(
-        render_frames(interleaved_stereo, expected_generation));
 }
 
 auto preview_session_t::stop(std::optional<std::uint64_t> expected_generation) noexcept

@@ -207,10 +207,6 @@ auto transport_mix_result_t::from(transport_mix_result_t&& report) -> transport_
     return std::move(report);
 }
 
-auto transport_mix_result_t::from(transport_mix_outcome_t&& outcome) -> transport_mix_result_t {
-    return std::move(outcome ? *outcome : outcome.error());
-}
-
 transport_t::transport_t(decoded_block_cache_t& block_cache, std::size_t maximum_scheduled_voices)
     : block_cache_(block_cache),
       decode_session_(std::max<std::size_t>(maximum_scheduled_voices, 1)),
@@ -405,12 +401,6 @@ auto transport_t::mix_frames(session_token_t token, std::uint64_t first_timeline
         result.clipped_samples = 0;
     }
     return transport_mix_result_t::from(std::move(result));
-}
-
-auto transport_t::mix(session_token_t token, std::uint64_t first_timeline_frame,
-                      std::span<float> interleaved_stereo) -> transport_mix_result_t {
-    return transport_mix_result_t::from(
-        mix_frames(token, first_timeline_frame, interleaved_stereo));
 }
 
 auto transport_t::scheduled_voice_count() const -> std::size_t {

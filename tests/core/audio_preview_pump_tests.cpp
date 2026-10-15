@@ -171,10 +171,10 @@ TEST_CASE("preview pump retains many overlapping sources through chunked transpo
     static_assert(maximum_read_frames % render_chunk_frames == 0);
     std::vector<float> chunk(render_chunk_frames * output_channel_count);
     for (std::size_t frame = 0; frame < maximum_read_frames; frame += render_chunk_frames) {
-        const auto mixed = transport.mix(*token, frame, chunk);
+        const auto mixed = transport.mix_frames(*token, frame, chunk);
         INFO("render chunk starts at frame " << frame);
-        CHECK(mixed.status == transport_mix_status_t::mixed);
-        CHECK(mixed.missing_blocks == 0);
+        CHECK(mixed.value().status == transport_mix_status_t::mixed);
+        CHECK(mixed.value().missing_blocks == 0);
     }
 }
 

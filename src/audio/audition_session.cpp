@@ -92,7 +92,8 @@ auto audition_session_t::render_frames(std::span<float> interleaved_stereo)
     if (prime_pending_)
         return audition_session_render_result_t::from(audition_session_render_status_t::priming,
                                                       first_frame);
-    auto mixed = transport_.mix(*token_, first_frame, interleaved_stereo);
+    const auto mixed_outcome = transport_.mix_frames(*token_, first_frame, interleaved_stereo);
+    const auto& mixed = mixed_outcome ? *mixed_outcome : mixed_outcome.error();
     if (mixed.status == transport_mix_status_t::stale_generation) {
         clear_state();
         return audition_session_render_result_t::from(
@@ -121,11 +122,6 @@ auto audition_session_t::render_frames(std::span<float> interleaved_stereo)
                                                       ? audition_session_render_status_t::mixed
                                                       : audition_session_render_status_t::underrun,
                                                   first_frame, mixed);
-}
-
-auto audition_session_t::render(std::span<float> interleaved_stereo)
-    -> audition_session_render_result_t {
-    return audition_session_render_result_t::from(render_frames(interleaved_stereo));
 }
 
 auto audition_session_t::stop() noexcept -> transport_stop_result_t {

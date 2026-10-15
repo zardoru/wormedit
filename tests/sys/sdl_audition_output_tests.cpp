@@ -135,7 +135,7 @@ auto audition_lock_order_stress() -> bool {
     }
     std::array<float, 64> samples;
     samples.fill(1.0F);
-    static_cast<void>(session.render(samples));
+    static_cast<void>(session.render_frames(samples));
     return !session.is_active() && std::ranges::all_of(samples, [](float value) { return value == 0.0F; });
 }
 } // namespace

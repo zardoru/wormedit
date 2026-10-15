@@ -64,11 +64,11 @@ TEST_CASE("audio.playback_rate latency reports source frames without changing sc
     expect(static_cast<bool>(session.start(schedule,{}, {},100,{},10000)));
     expect(static_cast<bool>(session.pump()));
     std::array<float,200> samples{};
-    expect(session.render(samples).first_timeline_frame == 100);
+    expect(session.render_frames(samples).value().first_timeline_frame == 100);
     expect(session.timeline_frame() == 200);
     session.set_output_latency_frames(25);
     expect(session.timeline_frame() == 175);
-    expect(session.render(samples).first_timeline_frame == 200);
+    expect(session.render_frames(samples).value().first_timeline_frame == 200);
     expect(session.timeline_frame() == 275);
     session.set_output_latency_frames(500);
     expect(session.timeline_frame() == 100);
@@ -77,7 +77,7 @@ TEST_CASE("audio.playback_rate latency reports source frames without changing sc
     static_cast<void>(session.stop());
     expect(session.timeline_frame() == 0);
     samples.fill(1.0F);
-    expect(session.render(samples).status == preview_session_render_status_t::stopped);
+    expect(session.render_frames(samples).value().status == preview_session_render_status_t::stopped);
     for (const auto sample : samples) expect(sample == 0.0F);
 }
 

@@ -124,7 +124,8 @@ auto render_elapsed(preview_session_t& session, std::span<float> scratch,
         const auto frames = std::min<std::uint64_t>(frames_to_render, callback_frames);
         const auto before = session.timeline_frame();
         const auto samples = static_cast<std::size_t>(frames) * output_channel_count;
-        const auto rendered = session.render(scratch.first(samples));
+        const auto rendered_outcome = session.render_frames(scratch.first(samples));
+        const auto& rendered = rendered_outcome ? *rendered_outcome : rendered_outcome.error();
         if (rendered.status == preview_session_render_status_t::underrun) {
             const auto position = musical_position_at(
                 timing, {static_cast<std::int64_t>(before), output_sample_rate});

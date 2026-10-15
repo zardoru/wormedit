@@ -100,7 +100,7 @@ TEST_CASE("Options applies one page atomically preserving other applied sections
     expect_options(program.preferences.display.theme == "external-theme");
     expect_options(r.draft.general.autosave_minutes == 12);
     const auto loaded = load_program_preferences(program.path);
-    expect_options(loaded.contents.parsed && loaded.contents.preferences == program.preferences);
+    expect_options(loaded.contents.has_value() && loaded.contents.value().preferences == program.preferences);
     select(r, program, WORM_UI_OPTIONS_GENERAL);
     expect_options(apply_options_action(r, program, action(r, WORM_UI_OPTIONS_APPLY)));
     expect_options(program.preferences.general.autosave_minutes == 12);
@@ -214,7 +214,7 @@ TEST_CASE("Options registered page field actions update only the current draft",
     (void)apply_options_action(r, program, edit);
     expect_options(options_view(r).can_apply);
     expect_options(apply_options_action(r, program, action(r, WORM_UI_OPTIONS_APPLY)));
-    expect_options(load_program_preferences(program.path).contents.preferences.general.autosave_minutes == 15);
+    expect_options(load_program_preferences(program.path).contents.value().preferences.general.autosave_minutes == 15);
 }
 TEST_CASE("Options bounded text and player actions reject malformed payloads without mutation", "[options]") {
     program_preferences_runtime_t program;
@@ -287,7 +287,7 @@ TEST_CASE("Editor options save the note click audition toggle", "[options][audit
     expect_options(apply_options_action(runtime, program,
         action(runtime, WORM_UI_OPTIONS_APPLY, WORM_UI_OPTIONS_EDITOR)));
     expect_options(!program.preferences.editor.audition_on_click);
-    expect_options(!load_program_preferences(program.path).contents.preferences.editor.audition_on_click);
+    expect_options(!load_program_preferences(program.path).contents.value().preferences.editor.audition_on_click);
 }
 
 TEST_CASE("Options Audio clamps wide keysound actions and applies persisted budgets", "[options][budget]") {
@@ -303,7 +303,7 @@ TEST_CASE("Options Audio clamps wide keysound actions and applies persisted budg
     expect_options(options_view(runtime).keysound_budget_mib == 8192);
     expect_options(program.preferences.audio.keysound_budget_mib == 512);
     expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
-    expect_options(load_program_preferences(program.path).contents.preferences.audio.keysound_budget_mib == 8192);
+    expect_options(load_program_preferences(program.path).contents.value().preferences.audio.keysound_budget_mib == 8192);
     edit.revision = runtime.revision;
     edit.integer = 0;
     (void)apply_options_action(runtime, program, edit);
@@ -323,7 +323,7 @@ TEST_CASE("Editing collision policy applies to disk and Defaults restores Reject
     (void)apply_options_action(runtime, program, edit);
     expect_options(options_view(runtime).move_collision_policy == 1 && options_view(runtime).can_apply);
     expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
-    expect_options(load_program_preferences(program.path).contents.preferences.editor.move_collision_policy ==
+    expect_options(load_program_preferences(program.path).contents.value().preferences.editor.move_collision_policy ==
         move_collision_policy_t::displace_to_bgm);
     (void)apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_DEFAULTS));
     expect_options(options_view(runtime).move_collision_policy == 0);
@@ -345,8 +345,8 @@ TEST_CASE("Field theme Options edits stay draft until Apply and persist independ
     expect_options(program.preferences.display.field_scheme=="ibmsc-o2mania");
     expect_options(program.preferences.display.theme.empty());
     const auto loaded=load_program_preferences(program.path);
-    expect_options(loaded.contents.parsed);
-    expect_options(loaded.contents.preferences.display.field_scheme=="ibmsc-o2mania");
+    expect_options(loaded.contents.has_value());
+    expect_options(loaded.contents.value().preferences.display.field_scheme=="ibmsc-o2mania");
     expect_options(!(apply_options_action(runtime,program,action(runtime,WORM_UI_OPTIONS_DEFAULTS))));
     expect_options(runtime.draft.display.field_scheme=="wormedit");
     expect_options(program.preferences.display.field_scheme=="ibmsc-o2mania");
@@ -367,7 +367,7 @@ TEST_CASE("Appearance snap grid opt-out stays draft until Apply and supports Def
     expect_options(!options_view(runtime).snap_colored_grid);
     expect_options(program.preferences.display.snap_colored_grid);
     expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
-    expect_options(!load_program_preferences(program.path).contents.preferences.display.snap_colored_grid);
+    expect_options(!load_program_preferences(program.path).contents.value().preferences.display.snap_colored_grid);
     expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_DEFAULTS)));
     expect_options(options_view(runtime).snap_colored_grid);
     expect_options(!program.preferences.display.snap_colored_grid);
@@ -388,7 +388,7 @@ TEST_CASE("Grid opacity draft Apply Revert Defaults and wide values stay bounded
     expect_options(options_view(runtime).snap_grid_opacity_percent == 60);
     expect_options(program.preferences.display.snap_grid_opacity_percent == 35);
     expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
-    expect_options(load_program_preferences(program.path).contents.preferences.display.snap_grid_opacity_percent == 60);
+    expect_options(load_program_preferences(program.path).contents.value().preferences.display.snap_grid_opacity_percent == 60);
     edit.revision = runtime.revision;
     edit.integer = std::numeric_limits<std::uint64_t>::max();
     expect_options(!apply_options_action(runtime, program, edit));
@@ -413,7 +413,7 @@ TEST_CASE("Field waveform opacity previews as a draft and supports Apply Revert 
     expect_options(options_view(runtime).field_waveform_opacity_percent == 40);
     expect_options(program.preferences.display.field_waveform_opacity_percent == 75);
     expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
-    expect_options(load_program_preferences(program.path).contents.preferences.display.field_waveform_opacity_percent == 40);
+    expect_options(load_program_preferences(program.path).contents.value().preferences.display.field_waveform_opacity_percent == 40);
     edit.revision = runtime.revision;
     edit.integer = std::numeric_limits<std::uint64_t>::max();
     expect_options(!apply_options_action(runtime, program, edit));
@@ -437,7 +437,7 @@ TEST_CASE("Wheel inversion stays an Editor draft until applied", "[options][feed
     expect_options(options_view(runtime).invert_scroll_wheel);
     expect_options(!program.preferences.editor.invert_scroll_wheel);
     expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
-    expect_options(load_program_preferences(program.path).contents.preferences.editor.invert_scroll_wheel);
+    expect_options(load_program_preferences(program.path).contents.value().preferences.editor.invert_scroll_wheel);
     expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_DEFAULTS)));
     expect_options(!options_view(runtime).invert_scroll_wheel);
     expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_REVERT)));
@@ -481,7 +481,7 @@ TEST_CASE("Appearance scratch edits preview independently and Apply persists the
     expect_options(!apply_options_action(runtime, program, edit));
     expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
     expect_options(program.preferences.display.scratch_positions == std::array<std::uint32_t, 2>{3, 1});
-    expect_options(load_program_preferences(program.path).contents.preferences.display.scratch_positions ==
+    expect_options(load_program_preferences(program.path).contents.value().preferences.display.scratch_positions ==
                    program.preferences.display.scratch_positions);
     edit.revision = runtime.revision;
     edit.integer = std::numeric_limits<std::uint64_t>::max();
@@ -580,7 +580,7 @@ TEST_CASE("Options layout skin overrides apply revert and inherit without changi
     expect_options(std::string_view{view.current_layout_field_scheme} == "bmse");
     expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
     expect_options(program.preferences.display.field_scheme == "classic");
-    expect_options(load_program_preferences(program.path).contents.preferences.display.field_scheme_overrides.at("beat-7k") == "bmse");
+    expect_options(load_program_preferences(program.path).contents.value().preferences.display.field_scheme_overrides.at("beat-7k") == "bmse");
     (void)apply_options_action(runtime, program, layout_skin_action(runtime, ""));
     expect_options(runtime.draft.display.field_scheme_overrides.empty());
     expect_options(std::string_view{options_view(runtime).current_layout_field_scheme}.empty());

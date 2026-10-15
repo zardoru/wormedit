@@ -10,23 +10,23 @@ auto post_recovery_feedback(const wormedit::notification_sink_t& notifications,
     return message;
 }
 auto recovery_diagnostic_severity(
-    const wormedit::native_project_recovery_controller_dispatch_result_t& result,
+    const wormedit::native_project_recovery_controller_dispatch_outcome_t& result,
     wormedit::notification_severity_t fallback) -> wormedit::notification_severity_t {
     const auto* diagnostics = &result.diagnostics;
-    if (diagnostics->empty() && result.action_result) diagnostics = &result.action_result->diagnostics;
+    if (diagnostics->empty() && result.value.action_result) diagnostics = &result.value.action_result->diagnostics;
     if (diagnostics->empty()) return fallback;
     return wormedit::to_notification_severity(diagnostics->front().severity, fallback);
 }
 auto first_recovery_diagnostic(
-    const wormedit::native_project_recovery_controller_dispatch_result_t& result) -> std::string {
+    const wormedit::native_project_recovery_controller_dispatch_outcome_t& result) -> std::string {
     if (!result.diagnostics.empty()) {
         const auto& diagnostic = result.diagnostics.front();
         return diagnostic.path.empty()
                    ? diagnostic.message
                    : diagnostic.message + " (" + diagnostic.path.generic_string() + ")";
     }
-    if (result.action_result && !result.action_result->diagnostics.empty()) {
-        const auto& diagnostic = result.action_result->diagnostics.front();
+    if (result.value.action_result && !result.value.action_result->diagnostics.empty()) {
+        const auto& diagnostic = result.value.action_result->diagnostics.front();
         return diagnostic.path.empty()
                    ? diagnostic.message
                    : diagnostic.message + " (" + diagnostic.path.generic_string() + ")";
@@ -149,19 +149,19 @@ auto dispatch_recovery_ui_action(
                                                  target, request_error);
     if (!request_error.empty())
         return post_recovery_feedback(notifications, notification_severity_t::warning, request_error);
-    const auto dispatched = controller.dispatch(request);
+    const auto dispatched = controller.dispatch_action(request);
     const auto diagnostic = first_recovery_diagnostic(dispatched);
-    if (!dispatched.accepted) {
+    if (!dispatched.value.accepted) {
         return post_recovery_feedback(notifications,
             recovery_diagnostic_severity(dispatched, notification_severity_t::warning),
             diagnostic.empty() ? "Recovery action was rejected." : diagnostic);
     }
-    if (!dispatched.action_result) {
+    if (!dispatched.value.action_result) {
         return post_recovery_feedback(notifications,
             recovery_diagnostic_severity(dispatched, notification_severity_t::error),
             diagnostic.empty() ? "Recovery action did not produce a result." : diagnostic);
     }
-    const auto& result = *dispatched.action_result;
+    const auto& result = *dispatched.value.action_result;
     if (result.has_errors() || !result.applied) {
         return post_recovery_feedback(notifications,
             recovery_diagnostic_severity(dispatched, notification_severity_t::error),

@@ -93,18 +93,6 @@ using native_project_recovery_controller_dispatch_outcome_t =
     diagnosed_t<native_project_recovery_controller_effect_t,
                 std::vector<native_project_storage_diagnostic_t>>;
 
-struct native_project_recovery_controller_dispatch_result_t {
-    [[nodiscard]] static auto from(native_project_recovery_controller_dispatch_outcome_t&& outcome)
-        -> native_project_recovery_controller_dispatch_result_t;
-
-    bool accepted{};
-    bool diagnostics_truncated{};
-    std::optional<native_project_recovery_action_result_t> action_result;
-    std::vector<native_project_storage_diagnostic_t> diagnostics;
-
-    [[nodiscard]] auto has_errors() const -> bool;
-};
-
 // Headless state adapter for recovery UI. It owns one bounded scanner result at
 // a time; every row action carries the generation and indices from that view.
 class native_project_recovery_controller_t {
@@ -122,8 +110,6 @@ class native_project_recovery_controller_t {
     [[nodiscard]] auto dispatch_action(const native_project_recovery_controller_action_t& action)
         -> native_project_recovery_controller_dispatch_outcome_t;
 
-    [[nodiscard]] auto dispatch(const native_project_recovery_controller_action_t& action)
-        -> native_project_recovery_controller_dispatch_result_t;
 
   private:
     void append_dispatch_error(native_project_recovery_controller_dispatch_outcome_t& result,

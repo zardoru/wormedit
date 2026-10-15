@@ -17,13 +17,13 @@ auto base_request() -> audio_slicer_request_t {
 } // namespace
 
 TEST_CASE("slicer cuts 120 BPM sixteenths into exact frame ranges", "[unit][core][slicer]") {
-    const auto result = compute_audio_slices(base_request());
-    REQUIRE(result);
+    const auto result = audio_slice_plan_t::from(base_request());
+    REQUIRE(result.diagnostics.empty());
     // One sixteenth at 120 BPM is 0.125 s = 6000 frames; 10 s gives 80 slices.
-    REQUIRE(result.ranges.size() == 80);
-    CHECK(result.ranges.front() == audio_slice_range_t{0, 6000});
-    CHECK(result.ranges[1] == audio_slice_range_t{6000, 12000});
-    CHECK(result.ranges.back() == audio_slice_range_t{474'000, 480'000});
+    REQUIRE(result.value.ranges.size() == 80);
+    CHECK(result.value.ranges.front() == audio_slice_range_t{0, 6000});
+    CHECK(result.value.ranges[1] == audio_slice_range_t{6000, 12000});
+    CHECK(result.value.ranges.back() == audio_slice_range_t{474'000, 480'000});
 }
 
 TEST_CASE("slicer ranges are contiguous and cover the source", "[unit][core][slicer]") {
@@ -31,10 +31,10 @@ TEST_CASE("slicer ranges are contiguous and cover the source", "[unit][core][sli
     request.beats_per_minute = {174'123, 1'000};
     request.division = 3;
     request.offset_seconds = {-17, 1000};
-    const auto result = compute_audio_slices(request);
-    REQUIRE(result);
+    const auto result = audio_slice_plan_t::from(request);
+    REQUIRE(result.diagnostics.empty());
     std::uint64_t cursor = 0;
-    for (const auto& range : result.ranges) {
+    for (const auto& range : result.value.ranges) {
         CHECK(range.begin_frame == cursor);
         CHECK(range.end_frame > range.begin_frame);
         cursor = range.end_frame;
@@ -45,23 +45,23 @@ TEST_CASE("slicer ranges are contiguous and cover the source", "[unit][core][sli
 TEST_CASE("positive offset makes a lead-in slice unless disabled", "[unit][core][slicer]") {
     auto request = base_request();
     request.offset_seconds = {1, 4}; // 12000 frames
-    auto result = compute_audio_slices(request);
-    REQUIRE(result);
-    CHECK(result.ranges[0] == audio_slice_range_t{0, 12'000});
-    CHECK(result.ranges[1] == audio_slice_range_t{12'000, 18'000});
+    auto result = audio_slice_plan_t::from(request);
+    REQUIRE(result.diagnostics.empty());
+    CHECK(result.value.ranges[0] == audio_slice_range_t{0, 12'000});
+    CHECK(result.value.ranges[1] == audio_slice_range_t{12'000, 18'000});
     request.include_lead_in = false;
-    result = compute_audio_slices(request);
-    REQUIRE(result);
-    CHECK(result.ranges[0] == audio_slice_range_t{12'000, 18'000});
+    result = audio_slice_plan_t::from(request);
+    REQUIRE(result.diagnostics.empty());
+    CHECK(result.value.ranges[0] == audio_slice_range_t{12'000, 18'000});
 }
 
 TEST_CASE("negative offset moves the grid earlier", "[unit][core][slicer]") {
     auto request = base_request();
     request.offset_seconds = {-1, 16}; // -3000 frames: boundaries at 3000, 9000, ...
-    const auto result = compute_audio_slices(request);
-    REQUIRE(result);
-    CHECK(result.ranges[0] == audio_slice_range_t{0, 3000});
-    CHECK(result.ranges[1] == audio_slice_range_t{3000, 9000});
+    const auto result = audio_slice_plan_t::from(request);
+    REQUIRE(result.diagnostics.empty());
+    CHECK(result.value.ranges[0] == audio_slice_range_t{0, 3000});
+    CHECK(result.value.ranges[1] == audio_slice_range_t{3000, 9000});
 }
 
 TEST_CASE("slicer boundaries do not drift on an 80 minute source", "[unit][core][slicer]") {
@@ -70,14 +70,14 @@ TEST_CASE("slicer boundaries do not drift on an 80 minute source", "[unit][core]
     request.division = 1;
     request.source_frames = 80ULL * 60ULL * 48'000ULL;
     request.maximum_slices = 20'000;
-    const auto result = compute_audio_slices(request);
-    REQUIRE(result);
+    const auto result = audio_slice_plan_t::from(request);
+    REQUIRE(result.diagnostics.empty());
     // 80 min at 128.000001 BPM: 10240.0001 beats, so 10241 slices with a short tail.
-    REQUIRE(result.ranges.size() == 10'241);
+    REQUIRE(result.value.ranges.size() == 10'241);
     // Boundary 10240 = 10240 * 60/128.000001 s * 48000 frames, rounded to nearest.
     const auto expected = 10240ULL * 60ULL * 1'000'000ULL * 48'000ULL / 128'000'001ULL;
-    CHECK(result.ranges[10'240].begin_frame >= expected);
-    CHECK(result.ranges[10'240].begin_frame <= expected + 1);
+    CHECK(result.value.ranges[10'240].begin_frame >= expected);
+    CHECK(result.value.ranges[10'240].begin_frame <= expected + 1);
 }
 
 TEST_CASE("tiny tail and ties follow the rounding mode", "[unit][core][slicer]") {
@@ -86,33 +86,33 @@ TEST_CASE("tiny tail and ties follow the rounding mode", "[unit][core][slicer]")
     request.source_frames = 44'100;
     request.beats_per_minute = {90, 1};
     request.division = 1; // 2/3 s = 29400 frames
-    auto result = compute_audio_slices(request);
-    REQUIRE(result);
-    REQUIRE(result.ranges.size() == 2);
-    CHECK(result.ranges[0] == audio_slice_range_t{0, 29'400});
-    CHECK(result.ranges[1].end_frame == 44'100);
+    auto result = audio_slice_plan_t::from(request);
+    REQUIRE(result.diagnostics.empty());
+    REQUIRE(result.value.ranges.size() == 2);
+    CHECK(result.value.ranges[0] == audio_slice_range_t{0, 29'400});
+    CHECK(result.value.ranges[1].end_frame == 44'100);
 
     request.beats_per_minute = {1, 1};
     request.division = 7; // 60/7 s * 44100 = 378000 frames: exact
     request.source_frames = 1'000'000;
-    result = compute_audio_slices(request);
-    REQUIRE(result);
-    CHECK(result.ranges[0].end_frame == 378'000);
+    result = audio_slice_plan_t::from(request);
+    REQUIRE(result.diagnostics.empty());
+    CHECK(result.value.ranges[0].end_frame == 378'000);
     request.sample_rate = 44'101;
     request.rounding = sample_rounding_t::floor;
-    const auto floored = compute_audio_slices(request);
+    const auto floored = audio_slice_plan_t::from(request);
     request.rounding = sample_rounding_t::ceil;
-    const auto ceiled = compute_audio_slices(request);
-    REQUIRE(floored);
-    REQUIRE(ceiled);
-    CHECK(ceiled.ranges[0].end_frame == floored.ranges[0].end_frame + 1);
+    const auto ceiled = audio_slice_plan_t::from(request);
+    REQUIRE(floored.diagnostics.empty());
+    REQUIRE(ceiled.diagnostics.empty());
+    CHECK(ceiled.value.ranges[0].end_frame == floored.value.ranges[0].end_frame + 1);
 }
 
 TEST_CASE("invalid slicer inputs return diagnostics and no ranges", "[unit][core][slicer]") {
     const auto rejects = [](audio_slicer_request_t request, audio_slicer_error_code_t code) {
-        const auto result = compute_audio_slices(request);
-        CHECK_FALSE(result);
-        CHECK(result.ranges.empty());
+        const auto result = audio_slice_plan_t::from(request);
+        CHECK_FALSE(result.diagnostics.empty());
+        CHECK(result.value.ranges.empty());
         REQUIRE_FALSE(result.diagnostics.empty());
         CHECK(result.diagnostics.front().code == code);
     };

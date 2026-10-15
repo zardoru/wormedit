@@ -382,11 +382,11 @@ void parse_selected_file(std::string_view extension, const std::string& source,
         options.asset_base_directory = result.asset_base;
         take_parsed_document(parse_bmson_bytes(bytes, std::move(options)), "BMSON chart", result);
         if (result.document) {
-            const auto initialized = initialize_bmson_sound_channel_layers(
+            const auto initialized = create_bmson_sound_channel_layers(
                 result.document->charts.front());
-            if (!initialized.error.empty())
+            if (!initialized)
                 result.warnings.push_back("BMSON semantic layers were not initialized: " +
-                                          initialized.error);
+                                          initialized.error());
             resolve_audio_assets(*result.document, result.asset_base, result.warnings, "BMSON");
             resolve_visual_assets(*result.document, result.asset_base, result.warnings, "BMSON");
         }

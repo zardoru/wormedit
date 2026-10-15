@@ -69,7 +69,7 @@ struct slice_render_result_t {
 };
 
 // Cuts the decoder's 44.1 kHz stereo output at `ranges` (output frames, as
-// returned by compute_audio_slices with sample_rate output_sample_rate) and
+// returned by audio_slice_plan_t::from with sample_rate output_sample_rate) and
 // publishes one WAV per range. The source is never modified. Ranges must be
 // ascending, non-overlapping and inside the stream. A failed or cancelled run
 // removes every file it already published.

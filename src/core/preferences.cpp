@@ -330,12 +330,7 @@ struct preference_json_budget_t {
 };
 } // namespace
 
-auto preferences_parse_result_t::from(preferences_parse_outcome_t&& outcome) -> preferences_parse_result_t {
-    const auto parsed = outcome.has_value();
-    auto effect = parsed ? std::move(*outcome) : std::move(outcome.error());
-    return {.preferences = std::move(effect.preferences), .warnings = std::move(effect.warnings), .parsed = parsed};
-}
-auto preferences_parse_result_t::from(std::string_view bytes) -> preferences_parse_outcome_t {
+auto preferences_parse_effect_t::from(std::string_view bytes) -> preferences_parse_outcome_t {
     preferences_parse_effect_t result{.preferences = program_preferences_t::with_defaults()};
     if (bytes.size() > maximum_preferences_bytes) {
         result.warnings.push_back("Preferences exceed the 1 MiB limit; defaults retained."); return std::unexpected(std::move(result));
@@ -360,10 +355,6 @@ auto preferences_parse_result_t::from(std::string_view bytes) -> preferences_par
     return std::unexpected(std::move(result));
 }
 
-auto parse_program_preferences(std::string_view bytes) -> preferences_parse_result_t {
-    return preferences_parse_result_t::from(preferences_parse_result_t::from(bytes));
-}
-
 auto serialize_program_preferences(const program_preferences_t& value) -> std::optional<std::string> {
     if (!is_valid_preferences(value)) return std::nullopt;
     try {
@@ -374,7 +365,8 @@ auto serialize_program_preferences(const program_preferences_t& value) -> std::o
 }
 
 auto load_program_preferences(const std::filesystem::path& path) -> preferences_load_result_t {
-    preferences_load_result_t result{.contents = {.preferences = program_preferences_t::with_defaults()}};
+    preferences_load_result_t result;
+    auto& contents = result.contents.error();
     std::error_code error;
     const auto status = std::filesystem::status(path, error);
     if (error == std::errc::no_such_file_or_directory || status.type() == std::filesystem::file_type::not_found) {
@@ -382,26 +374,26 @@ auto load_program_preferences(const std::filesystem::path& path) -> preferences_
         return result;
     }
     if (error || !std::filesystem::is_regular_file(status)) {
-        result.contents.warnings = {"Preferences are not a readable regular file; defaults retained."};
+        contents.warnings = {"Preferences are not a readable regular file; defaults retained."};
         return result;
     }
     const auto size = std::filesystem::file_size(path, error);
     if (error || size > maximum_preferences_bytes) {
-        result.contents.warnings = {"Preferences are unreadable or exceed the 1 MiB limit; defaults retained."};
+        contents.warnings = {"Preferences are unreadable or exceed the 1 MiB limit; defaults retained."};
         return result;
     }
     std::ifstream stream(path, std::ios::binary);
     std::string bytes(static_cast<std::size_t>(size), '\0');
     if (!stream || (!bytes.empty() && !stream.read(bytes.data(), static_cast<std::streamsize>(bytes.size())))) {
-        result.contents.warnings = {"Preferences could not be read completely; defaults retained."};
+        contents.warnings = {"Preferences could not be read completely; defaults retained."};
         return result;
     }
     char extra{};
     if (stream.get(extra) || !stream.eof()) {
-        result.contents.warnings = {"Preferences changed while being read; defaults retained."};
+        contents.warnings = {"Preferences changed while being read; defaults retained."};
         return result;
     }
-    result.contents = parse_program_preferences(bytes);
+    result.contents = preferences_parse_effect_t::from(bytes);
     return result;
 }
 
@@ -441,16 +433,17 @@ auto load_program_preferences_for_startup(const std::filesystem::path& path,
     const std::filesystem::path& legacy_player_path) -> preferences_load_result_t {
     auto result = load_program_preferences(path);
     if (!result.missing) return result;
+    auto& contents = result.contents.error();
     std::error_code error;
     const bool legacy_exists = std::filesystem::exists(legacy_player_path, error);
-    if (error) result.contents.warnings.push_back("Cannot inspect legacy external-player preferences.");
+    if (error) contents.warnings.push_back("Cannot inspect legacy external-player preferences.");
     if (legacy_exists && !error) {
-        const auto failure = load_legacy_external_player_preferences(legacy_player_path, result.contents.preferences.players);
-        if (!failure.empty()) result.contents.warnings.push_back(failure);
+        const auto failure = load_legacy_external_player_preferences(legacy_player_path, contents.preferences.players);
+        if (!failure.empty()) contents.warnings.push_back(failure);
         else result.migrated = true;
     }
-    const auto saved = save_program_preferences_atomic(path, result.contents.preferences);
-    if (!saved) result.contents.warnings.push_back("Preferences could not be saved: " + saved.error());
+    const auto saved = save_program_preferences_atomic(path, contents.preferences);
+    if (!saved) contents.warnings.push_back("Preferences could not be saved: " + saved.error());
     return result;
 }
 

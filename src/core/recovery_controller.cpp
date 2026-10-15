@@ -141,10 +141,6 @@ auto bounded_actions(std::span<const native_project_recovery_action_t> actions)
 
 } // namespace
 
-auto native_project_recovery_controller_dispatch_result_t::has_errors() const -> bool {
-    return diagnostic_queries::has_errors(diagnostics);
-}
-
 native_project_recovery_controller_t::native_project_recovery_controller_t(
     native_project_recovery_controller_options_t options)
     : options_(options) {
@@ -358,21 +354,6 @@ auto native_project_recovery_controller_t::dispatch_action(
         view_.scan_generation = generation_;
     }
     return result;
-}
-
-auto native_project_recovery_controller_dispatch_result_t::from(
-    native_project_recovery_controller_dispatch_outcome_t&& outcome)
-    -> native_project_recovery_controller_dispatch_result_t {
-    return {.accepted = outcome.value.accepted,
-            .diagnostics_truncated = outcome.value.diagnostics_truncated,
-            .action_result = std::move(outcome.value.action_result),
-            .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto native_project_recovery_controller_t::dispatch(
-    const native_project_recovery_controller_action_t& action)
-    -> native_project_recovery_controller_dispatch_result_t {
-    return native_project_recovery_controller_dispatch_result_t::from(dispatch_action(action));
 }
 
 } // namespace wormedit

@@ -64,14 +64,14 @@ auto packing_preferences_are_deterministic() -> bool {
     const std::vector<bgm_packing_existing_t> existing{
         {key, 100, 0}, {key, 101, 0}, {key, 102, 1},
         {key, 103, 2}, {key, 104, 2}, {key, 105, 2}};
-    const auto result = allocate_bgm_columns(requests, existing, 3);
-    if (!result || result.lanes != std::vector<std::size_t>{2, 0, 2}) return false;
+    const auto result = bgm_column_assignment_t::from(requests, existing, 3);
+    if (!result || result->lanes != std::vector<std::size_t>{2, 0, 2}) return false;
 
     const std::vector<bgm_packing_existing_t> tied{
         {key, 100, 2}, {key, 101, 0}};
     const std::vector<bgm_packing_request_t> same_row{{key, 5}, {key, 5}};
-    const auto tie = allocate_bgm_columns(same_row, tied, 3);
-    return tie && tie.lanes == std::vector<std::size_t>{0, 2};
+    const auto tie = bgm_column_assignment_t::from(same_row, tied, 3);
+    return tie && tie->lanes == std::vector<std::size_t>{0, 2};
 }
 
 auto packing_groups_spills_and_silent_rows_are_stable() -> bool {
@@ -81,45 +81,45 @@ auto packing_groups_spills_and_silent_rows_are_stable() -> bool {
     const std::vector<bgm_packing_request_t> grouped{
         {plain, 5}, {plain, 5}, {plain, 6}, {plain, 6},
         {grouped_key, 8}, {plain, 9}};
-    const auto result = allocate_bgm_columns(grouped);
-    if (!result || result.lanes != std::vector<std::size_t>{0, 1, 0, 1, 0, 0}) return false;
+    const auto result = bgm_column_assignment_t::from(grouped);
+    if (!result || result->lanes != std::vector<std::size_t>{0, 1, 0, 1, 0, 0}) return false;
 
     const std::vector<bgm_packing_existing_t> namespaces{
         {plain, 100, 1}, {grouped_key, 101, 2}};
     const std::vector<bgm_packing_request_t> same_value{{plain, 4}, {grouped_key, 4}};
-    const auto separated = allocate_bgm_columns(same_value, namespaces, 3);
-    if (!separated || separated.lanes != std::vector<std::size_t>{1, 2}) return false;
+    const auto separated = bgm_column_assignment_t::from(same_value, namespaces, 3);
+    if (!separated || separated->lanes != std::vector<std::size_t>{1, 2}) return false;
 
     const std::vector<bgm_packing_request_t> silent{{std::nullopt, 5}};
     const std::vector<bgm_packing_existing_t> occupied{{bgm_packing_key_t{false, 3}, 5, 0},
                                                         {bgm_packing_key_t{true, 3}, 6, 1}};
-    const auto quiet = allocate_bgm_columns(silent, occupied, 2);
-    return quiet && quiet.lanes == std::vector<std::size_t>{1};
+    const auto quiet = bgm_column_assignment_t::from(silent, occupied, 2);
+    return quiet && quiet->lanes == std::vector<std::size_t>{1};
 }
 
 auto packing_rejections_are_atomic() -> bool {
     using namespace wormedit;
     const std::vector<bgm_packing_request_t> requests{{bgm_packing_key_t{false, 9}, 4}};
     const std::vector<bgm_packing_existing_t> outside{{std::nullopt, 2, 1}};
-    const auto out_of_range = allocate_bgm_columns(requests, outside, 1);
+    const auto out_of_range = bgm_column_assignment_t::from(requests, outside, 1);
     const std::vector<bgm_packing_existing_t> duplicate{{std::nullopt, 2, 0},
                                                          {std::nullopt, 2, 0}};
     const std::vector<bgm_packing_request_t> at_stacked_row{{requests.front().key, 2}};
-    const auto stacked = allocate_bgm_columns(at_stacked_row, duplicate, 1);
+    const auto stacked = bgm_column_assignment_t::from(at_stacked_row, duplicate, 1);
     const std::vector<bgm_packing_request_t> invalid{{bgm_packing_key_t{true, 0}, 4}};
-    const auto zero_key = allocate_bgm_columns(invalid);
-    const auto capped = allocate_bgm_columns(requests, {}, 0, 0);
-    const auto initial = allocate_bgm_columns({}, {}, 2, 1);
+    const auto zero_key = bgm_column_assignment_t::from(invalid);
+    const auto capped = bgm_column_assignment_t::from(requests, {}, 0, 0);
+    const auto initial = bgm_column_assignment_t::from({}, {}, 2, 1);
     const auto is_rejected = [](const auto& result) {
-        return !result && !result.error.empty() && result.lanes.empty();
+        return !result && !result.error().message.empty();
     };
     return is_rejected(out_of_range) && stacked &&
-        stacked.lanes == std::vector<std::size_t>{1} && is_rejected(zero_key) &&
+        stacked->lanes == std::vector<std::size_t>{1} && is_rejected(zero_key) &&
         is_rejected(capped) && is_rejected(initial) && requests.front().row == 4 &&
         requests.front().key->value == 9 && outside.front().lane == 1 &&
         duplicate.size() == 2 && invalid.front().key->value == 0 &&
         duplicate.front().row == 2 && duplicate.back().row == 2 &&
-        capped.lane_count == 0 && initial.lane_count == 2;
+        capped.error().initial_lane_count == 0 && initial.error().initial_lane_count == 2;
 }
 
 auto packing_handles_more_than_one_thousand_requests() -> bool {
@@ -128,10 +128,10 @@ auto packing_handles_more_than_one_thousand_requests() -> bool {
     requests.reserve(1003);
     for (std::uint64_t index = 0; index < 1003; ++index)
         requests.push_back({bgm_packing_key_t{false, index % 13 + 1}, index});
-    const auto result = allocate_bgm_columns(requests);
-    if (!result || result.lanes.size() != requests.size() || result.lane_count != 1) return false;
+    const auto result = bgm_column_assignment_t::from(requests);
+    if (!result || result->lanes.size() != requests.size() || result->lane_count != 1) return false;
     for (std::size_t index = 0; index < requests.size(); ++index)
-        if (result.lanes[index] != 0) return false;
+        if (result->lanes[index] != 0) return false;
     return true;
 }
 
@@ -780,16 +780,15 @@ TEST_CASE("BMSON exact decimals reduce before intermediate overflow", "[formats]
            wormedit::signed_rational_t{INT64_MAX, 1}));
 }
 
-TEST_CASE("BGM packing rejection exposes no partial assignments or reserved lane storage",
+TEST_CASE("BGM packing rejection retains initial lane count without assignments",
           "[core][bgm-packing][capacity]") {
     const std::array<wormedit::bgm_packing_request_t, 2> requests{{
         {.row = 0}, {.row = 0},
     }};
-    const auto result = wormedit::allocate_bgm_columns(requests, {}, 0, 1);
+    const auto result = wormedit::bgm_column_assignment_t::from(requests, {}, 0, 1);
     CHECK_FALSE(result);
-    CHECK(result.lane_count == 0);
-    CHECK(result.lanes.empty());
-    CHECK(result.lanes.capacity() == 0);
+    CHECK(result.error().initial_lane_count == 0);
+    CHECK_FALSE(result.error().message.empty());
 }
 
 TEST_CASE("BMSON shared parse warnings remain independent of document presence", "[unit][bmson][results]") {

@@ -183,13 +183,4 @@ auto audio_slice_plan_t::from(const audio_slicer_request_t& request) -> audio_sl
     return result;
 }
 
-auto audio_slicer_result_t::from(audio_slicer_outcome_t&& outcome) -> audio_slicer_result_t {
-    return {.ranges = std::move(outcome.value.ranges),
-            .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto compute_audio_slices(const audio_slicer_request_t& request) -> audio_slicer_result_t {
-    return audio_slicer_result_t::from(audio_slice_plan_t::from(request));
-}
-
 } // namespace wormedit

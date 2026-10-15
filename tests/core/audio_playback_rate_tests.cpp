@@ -61,8 +61,8 @@ TEST_CASE("audio.playback_rate latency reports source frames without changing sc
     preview_transport_bridge_t bridge{transport};
     preview_session_t session{sources,transport,bridge};
     preview_schedule_t schedule{.sample_rate=output_sample_rate};
-    expect(static_cast<bool>(session.start(schedule,{}, {},100,{},10000)));
-    expect(static_cast<bool>(session.pump()));
+    expect(static_cast<bool>(session.start_session(schedule,{}, {},100,{},10000)));
+    expect(static_cast<bool>(session.pump_session()));
     std::array<float,200> samples{};
     expect(session.render_frames(samples).value().first_timeline_frame == 100);
     expect(session.timeline_frame() == 200);
@@ -72,7 +72,7 @@ TEST_CASE("audio.playback_rate latency reports source frames without changing sc
     expect(session.timeline_frame() == 275);
     session.set_output_latency_frames(500);
     expect(session.timeline_frame() == 100);
-    expect(static_cast<bool>(session.seek(100)));
+    expect(static_cast<bool>(session.seek_session(100)));
     expect(session.timeline_frame() == 100);
     static_cast<void>(session.stop());
     expect(session.timeline_frame() == 0);

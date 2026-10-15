@@ -9,17 +9,6 @@
 
 namespace wormedit::audio {
 
-auto preview_pump_result_t::from(preview_pump_outcome_t&& outcome) -> preview_pump_result_t {
-    auto& effect = outcome ? *outcome : outcome.error();
-    return {.status = effect.status,
-            .active_voices = effect.active_voices,
-            .overlapping_voices = effect.overlapping_voices,
-            .requested_blocks = effect.requested_blocks,
-            .decoded_blocks = effect.decoded_blocks,
-            .cached_blocks = effect.cached_blocks,
-            .failure = std::move(effect.failure)};
-}
-
 namespace {
 
 auto checked_end(std::uint64_t begin, std::uint64_t count) -> std::optional<std::uint64_t> {
@@ -208,13 +197,6 @@ auto pump_preview_blocks(decoded_source_registry_t& sources, transport_t& transp
     result.active_voices = snapshot.value().size();
     result.overlapping_voices = plan.overlapping_voices;
     return decode_preview_plan(sources, transport, token, plan, std::move(result));
-}
-
-auto pump_preview_lookahead(decoded_source_registry_t& sources, transport_t& transport,
-                            session_token_t token, std::uint64_t timeline_frame,
-                            preview_pump_options_t options) -> preview_pump_result_t {
-    return preview_pump_result_t::from(
-        pump_preview_blocks(sources, transport, token, timeline_frame, options));
 }
 
 } // namespace wormedit::audio

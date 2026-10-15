@@ -60,14 +60,16 @@ TEST_CASE("Audio producer source and bounded failures preserve explicit error me
     notification_center_t center{[] { return notification_time_t{}; }};
     notification_sink_t sink{center};
     sdl_audition_service_result_t audition{.status = sdl_audition_service_status_t::pump_failed,
-        .pump = audio::audition_pump_result_t{.status = audio::audition_pump_status_t::source_unavailable}};
+        .pump = std::unexpected(audio::audition_pump_effect_t{
+            .status = audio::audition_pump_status_t::source_unavailable})};
     post_audition_service_notifications(audition, sink);
     auto rows = drained(center);
     check_audio_error(rows[0], "Audio preview stopped because its decoded source is unavailable.");
     sdl_preview_service_result_t preview{.status = sdl_preview_service_status_t::pump_failed,
-        .pump = audio::preview_session_pump_result_t{
+        .pump = std::unexpected(audio::preview_session_pump_effect_t{
             .status = audio::preview_session_pump_status_t::decode_failed,
-            .decode = audio::preview_pump_result_t{.status = audio::preview_pump_status_t::source_unavailable}}};
+            .decode = std::unexpected(audio::preview_pump_effect_t{
+                .status = audio::preview_pump_status_t::source_unavailable})})};
     post_preview_service_notifications(preview, sink);
     rows = drained(center);
     check_audio_error(rows[0], "Chart preview stopped because a decoded source is unavailable.");

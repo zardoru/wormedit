@@ -27,7 +27,7 @@ enum class sdl_preview_start_status_t {
 };
 
 using sdl_preview_start_result_t =
-    sdl_session_start_result_t<sdl_preview_start_status_t, audio::preview_session_start_result_t>;
+    sdl_session_start_result_t<sdl_preview_start_status_t, audio::preview_session_start_outcome_t>;
 
 enum class sdl_preview_service_status_t {
     ready,
@@ -38,7 +38,7 @@ enum class sdl_preview_service_status_t {
 
 struct sdl_preview_service_result_t {
     sdl_preview_service_status_t status{sdl_preview_service_status_t::ready};
-    std::optional<audio::preview_session_pump_result_t> pump;
+    std::optional<audio::preview_session_pump_outcome_t> pump;
     bool rate_unavailable{};
     std::uint64_t silenced_voices{};
     std::uint64_t silenced_music_voices{};
@@ -105,7 +105,7 @@ class sdl_preview_output_t {
     [[nodiscard]] auto resume_device() noexcept -> bool;
     [[nodiscard]] auto finish_start(sdl_preview_start_result_t result) -> sdl_preview_start_result_t;
     [[nodiscard]] auto service_refill_result(
-        std::optional<audio::preview_session_pump_result_t> pumped,
+        std::optional<audio::preview_session_pump_outcome_t> pumped,
         bool rate_unavailable, std::uint64_t silenced_voices,
         std::uint64_t silenced_music_voices)
         -> std::optional<sdl_preview_service_result_t>;
@@ -121,12 +121,12 @@ class sdl_preview_output_t {
 
     void refill_loop(std::stop_token stop);
     [[nodiscard]] auto refill_loop_output(std::uint64_t generation,
-        audio::preview_session_pump_result_t result) -> audio::preview_session_pump_result_t;
+        audio::preview_session_pump_outcome_t result) -> audio::preview_session_pump_outcome_t;
     [[nodiscard]] auto fill_loop_queue(std::uint64_t generation) -> bool;
     [[nodiscard]] auto loop_queue_target_bytes() const noexcept -> std::uint64_t;
     [[nodiscard]] auto set_loop_output_region(std::optional<audio::preview_loop_region_t> region) -> bool;
     void set_refill_enabled(bool enabled) noexcept;
-    [[nodiscard]] auto take_refill_result() -> std::optional<audio::preview_session_pump_result_t>;
+    [[nodiscard]] auto take_refill_result() -> std::optional<audio::preview_session_pump_outcome_t>;
 
     static constexpr std::size_t callback_frames = 4'096;
     enum class callback_failure_t {
@@ -146,7 +146,7 @@ class sdl_preview_output_t {
     std::atomic<std::uint64_t> refill_generation_{};
     std::atomic<bool> refill_requested_{};
     bool refill_enabled_{};
-    std::optional<audio::preview_session_pump_result_t> refill_result_;
+    std::optional<audio::preview_session_pump_outcome_t> refill_result_;
     SDL_AudioStream* stream_{};
     std::atomic<callback_failure_t> callback_failure_{callback_failure_t::none};
     std::atomic<std::uint64_t> silenced_voices_{};

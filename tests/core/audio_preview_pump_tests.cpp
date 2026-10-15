@@ -52,18 +52,18 @@ TEST_CASE("preview lookahead decodes only active timeline overlaps and reuses sh
     REQUIRE(transport.schedule_voices(*token, voices) == voice_schedule_status_t::scheduled);
 
     const auto first =
-        pump_preview_lookahead(sources, transport, *token, 0, {.lookahead_frames = 512});
+        pump_preview_blocks(sources, transport, *token, 0, {.lookahead_frames = 512});
     REQUIRE(first);
-    CHECK(first.active_voices == 3);
-    CHECK(first.overlapping_voices == 2);
-    CHECK(first.requested_blocks == 2);
-    CHECK(first.decoded_blocks == 2);
+    CHECK(first.value().active_voices == 3);
+    CHECK(first.value().overlapping_voices == 2);
+    CHECK(first.value().requested_blocks == 2);
+    CHECK(first.value().decoded_blocks == 2);
 
     const auto repeated =
-        pump_preview_lookahead(sources, transport, *token, 0, {.lookahead_frames = 512});
+        pump_preview_blocks(sources, transport, *token, 0, {.lookahead_frames = 512});
     REQUIRE(repeated);
-    CHECK(repeated.decoded_blocks == 0);
-    CHECK(repeated.cached_blocks == 2);
+    CHECK(repeated.value().decoded_blocks == 0);
+    CHECK(repeated.value().cached_blocks == 2);
 }
 
 TEST_CASE("preview lookahead rejects bounds and stale generations before cache publication",
@@ -85,23 +85,23 @@ TEST_CASE("preview lookahead rejects bounds and stale generations before cache p
     };
     REQUIRE(transport.schedule_voices(*token, voices) == voice_schedule_status_t::scheduled);
 
-    const auto voice_bound = pump_preview_lookahead(sources, transport, *token, 0,
+    const auto voice_bound = pump_preview_blocks(sources, transport, *token, 0,
                                                     {.lookahead_frames = 128, .maximum_voices = 1});
-    CHECK_FALSE(voice_bound);
-    CHECK(voice_bound.status == preview_pump_status_t::capacity_exceeded);
+    REQUIRE_FALSE(voice_bound);
+    CHECK(voice_bound.error().status == preview_pump_status_t::capacity_exceeded);
     CHECK(cache.stats().entries == 0);
 
     const auto block_bound =
-        pump_preview_lookahead(sources, transport, *token, 0,
+        pump_preview_blocks(sources, transport, *token, 0,
                                {.lookahead_frames = 128, .maximum_voices = 2, .maximum_blocks = 1});
-    CHECK_FALSE(block_bound);
-    CHECK(block_bound.status == preview_pump_status_t::capacity_exceeded);
+    REQUIRE_FALSE(block_bound);
+    CHECK(block_bound.error().status == preview_pump_status_t::capacity_exceeded);
     CHECK(cache.stats().entries == 0);
 
     static_cast<void>(transport.stop());
-    const auto stale = pump_preview_lookahead(sources, transport, *token, 0);
-    CHECK_FALSE(stale);
-    CHECK(stale.status == preview_pump_status_t::stale_generation);
+    const auto stale = pump_preview_blocks(sources, transport, *token, 0);
+    REQUIRE_FALSE(stale);
+    CHECK(stale.error().status == preview_pump_status_t::stale_generation);
 }
 
 namespace {
@@ -161,11 +161,11 @@ TEST_CASE("preview pump retains many overlapping sources through chunked transpo
     REQUIRE(schedule_overlapping_generated_sources(sources, transport, *token) ==
             voice_schedule_status_t::scheduled);
 
-    const auto pumped = pump_preview_lookahead(
+    const auto pumped = pump_preview_blocks(
         sources, transport, *token, 0, {.lookahead_frames = maximum_read_frames});
-    REQUIRE(pumped.status == preview_pump_status_t::ready);
-    CHECK(pumped.requested_blocks == overlapping_source_count);
-    CHECK(pumped.decoded_blocks == overlapping_source_count);
+    REQUIRE(pumped.value().status == preview_pump_status_t::ready);
+    CHECK(pumped.value().requested_blocks == overlapping_source_count);
+    CHECK(pumped.value().decoded_blocks == overlapping_source_count);
 
     constexpr std::size_t render_chunk_frames = 4'096;
     static_assert(maximum_read_frames % render_chunk_frames == 0);
@@ -189,10 +189,11 @@ TEST_CASE("default preview cache rejects a pump plan larger than its capacity",
     REQUIRE(schedule_overlapping_generated_sources(sources, transport, *token) ==
             voice_schedule_status_t::scheduled);
 
-    const auto pumped = pump_preview_lookahead(
+    const auto pumped = pump_preview_blocks(
         sources, transport, *token, 0, {.lookahead_frames = maximum_read_frames});
-    CHECK(pumped.status == preview_pump_status_t::capacity_exceeded);
-    CHECK(pumped.requested_blocks == overlapping_source_count);
+    REQUIRE_FALSE(pumped.has_value());
+    CHECK(pumped.error().status == preview_pump_status_t::capacity_exceeded);
+    CHECK(pumped.error().requested_blocks == overlapping_source_count);
     CHECK(cache.stats().entries == 0);
 }
 

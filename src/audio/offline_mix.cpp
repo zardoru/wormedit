@@ -26,34 +26,42 @@ auto validate_offline_interval(std::uint32_t sample_rate, std::uint64_t begin, s
     return offline_mix_status_t::mixed;
 }
 
-auto materialization_status(const preview_bridge_pump_result_t& result)
+auto materialization_status(const preview_bridge_pump_outcome_t& result)
     -> offline_mix_status_t {
-    if (result.missing_sources != 0) return offline_mix_status_t::missing_sources;
-    if (result.status == preview_bridge_pump_status_t::capacity_limited ||
-        result.status == preview_bridge_pump_status_t::voice_id_exhausted ||
-        result.status == preview_bridge_pump_status_t::transport_rejected_voice)
+    const auto& effect = result ? *result : result.error();
+    if (effect.missing_sources != 0) return offline_mix_status_t::missing_sources;
+    if (effect.status == preview_bridge_pump_status_t::capacity_limited ||
+        effect.status == preview_bridge_pump_status_t::voice_id_exhausted ||
+        effect.status == preview_bridge_pump_status_t::transport_rejected_voice)
         return offline_mix_status_t::capacity_exceeded;
-    return result.status == preview_bridge_pump_status_t::ready
+    return effect.status == preview_bridge_pump_status_t::ready
                ? offline_mix_status_t::mixed
                : offline_mix_status_t::incomplete_mix;
 }
 
-auto prime_offline_session(preview_session_t& session, preview_session_start_result_t started,
-                           preview_pump_options_t options) -> preview_session_start_result_t {
+auto prime_offline_session(preview_session_t& session, preview_session_start_outcome_t started,
+                           preview_pump_options_t options) -> preview_session_start_outcome_t {
     if (!started) return started;
-    const auto pumped = session.pump(options);
-    started.prime = pumped.decode;
-    if (!pumped) started.status = preview_session_start_status_t::prime_failed;
+    const auto pumped = session.pump_session(options);
+    const auto& effect = pumped ? *pumped : pumped.error();
+    started->detail.prime = effect.decode;
+    if (!pumped) {
+        return std::unexpected(preview_session_start_error_t{
+            .code = preview_session_start_status_t::prime_failed,
+            .detail = std::move(started->detail),
+            .token = started->token});
+    }
     return started;
 }
 
-auto prime_status(const preview_session_start_result_t& started) -> offline_mix_status_t {
-    if (started.materialize) {
-        const auto status = materialization_status(*started.materialize);
+auto prime_status(const preview_session_start_outcome_t& started) -> offline_mix_status_t {
+    const auto& detail = started ? started->detail : started.error().detail;
+    if (detail.materialize) {
+        const auto status = materialization_status(*detail.materialize);
         if (status != offline_mix_status_t::mixed) return status;
     }
-    if (started.prime && *started.prime) return offline_mix_status_t::mixed;
-    if (started.prime && started.prime->status == preview_pump_status_t::capacity_exceeded)
+    if (detail.prime && *detail.prime) return offline_mix_status_t::mixed;
+    if (detail.prime && detail.prime->error().status == preview_pump_status_t::capacity_exceeded)
         return offline_mix_status_t::capacity_exceeded;
     return offline_mix_status_t::decode_failed;
 }
@@ -63,14 +71,18 @@ auto pump_session(preview_session_t& session, preview_pump_options_t options,
     -> offline_mix_status_t {
     options.lookahead_frames = static_cast<std::size_t>(
         std::min<std::uint64_t>(chunk_frames, end - current));
-    const auto pumped = session.pump(options);
-    if (pumped.materialize) {
-        const auto status = materialization_status(*pumped.materialize);
+    const auto pumped = session.pump_session(options);
+    const auto& effect = pumped ? *pumped : pumped.error();
+    if (effect.materialize) {
+        const auto status = materialization_status(*effect.materialize);
         if (status != offline_mix_status_t::mixed) return status;
     }
     if (pumped) return offline_mix_status_t::mixed;
-    if (pumped.decode && pumped.decode->status == preview_pump_status_t::capacity_exceeded)
-        return offline_mix_status_t::capacity_exceeded;
+    if (effect.decode) {
+        const auto& decoded = *effect.decode ? effect.decode->value() : effect.decode->error();
+        if (decoded.status == preview_pump_status_t::capacity_exceeded)
+            return offline_mix_status_t::capacity_exceeded;
+    }
     return offline_mix_status_t::decode_failed;
 }
 
@@ -173,15 +185,15 @@ auto render_offline_interval(decoded_source_registry_t& sources, const preview_s
     pump_options.lookahead_frames = static_cast<std::size_t>(
         std::min<std::uint64_t>(options.maximum_read_frames, end_frame));
     const auto started = prime_offline_session(
-        session, session.start(schedule, objects, {}, 0, pump_options, end_frame), pump_options);
+        session, session.start_session(schedule, objects, {}, 0, pump_options, end_frame), pump_options);
     if (!started) {
         const auto failure = prime_status(started);
         static_cast<void>(session.stop());
         result.interleaved_stereo.clear();
         return std::unexpected(error_t{failure, std::string{"Could not start or prime offline preview session."}});
     }
-    if (started.materialize && materialization_status(*started.materialize) != offline_mix_status_t::mixed) {
-        const auto failure = materialization_status(*started.materialize);
+    if (started.value().detail.materialize && materialization_status(*started.value().detail.materialize) != offline_mix_status_t::mixed) {
+        const auto failure = materialization_status(*started.value().detail.materialize);
         static_cast<void>(session.stop());
         result.interleaved_stereo.clear();
         return std::unexpected(error_t{failure, std::string{"Preview schedule could not be fully materialized."}});

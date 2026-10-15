@@ -61,9 +61,9 @@ auto silent_preview_advances() -> bool {
     schedule.playable = {
         {.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
     const auto started = output.start(schedule, {}, {}, 0, output_sample_rate * 60U);
-    if (!started || !started.session || !started.session->materialize)
+    if (!started || !started.session || !started.session->value().detail.materialize)
         return false;
-    const bool advanced = started.session->materialize->missing_sources == 1 &&
+    const bool advanced = started.session->value().detail.materialize->value().missing_sources == 1 &&
                           wait_for_silent_preview_frame(session, output);
     static_cast<void>(output.stop());
     output.close();
@@ -107,7 +107,7 @@ TEST_CASE("SDL dummy output drives seeks and hard-stops a chart preview session"
     const auto started = output.start(schedule, std::span{&binding, 1});
     REQUIRE(started);
     REQUIRE(started.session.has_value());
-    const auto first_token = *started.session->token;
+    const auto first_token = started.session->value().token;
 
     const auto deadline = SDL_GetTicks() + 2'000;
     while (session.timeline_frame() == 0 && session.is_active() && SDL_GetTicks() < deadline) {
@@ -121,7 +121,7 @@ TEST_CASE("SDL dummy output drives seeks and hard-stops a chart preview session"
     const auto sought = output.seek(0);
     REQUIRE(sought);
     REQUIRE(sought.session.has_value());
-    CHECK(sought.session->token != first_token);
+    CHECK(sought.session->value().token != first_token);
     CHECK_FALSE(transport.is_current(first_token));
 
     const auto stopped = output.stop();
@@ -776,6 +776,30 @@ void exercise_background_refill() {
     expect_pitch(rendered.value().status == preview_session_render_status_t::stopped);
     expect_pitch(std::ranges::all_of(silence, [](float value) { return value == 0.0F; }));
 }
+void check_preview_seek_refill(wormedit::sys::sdl_preview_output_t& output, std::uint64_t seek) {
+    using namespace wormedit::audio;
+    const auto sought = output.seek((seek % 4) * 4096);
+    INFO("seek iteration " << seek << " status " << static_cast<int>(sought.status)
+         << " message " << sought.message);
+    const auto* detail = sought.session
+        ? (*sought.session ? &sought.session->value().detail : &sought.session->error().detail)
+        : nullptr;
+    const auto session_status = sought.session
+        ? static_cast<int>(*sought.session ? preview_session_start_status_t::started
+                                          : sought.session->error().code)
+        : -1;
+    const auto bridge_status = detail && detail->bridge
+        ? static_cast<int>(*detail->bridge ? preview_bridge_start_status_t::started
+                                          : detail->bridge->error())
+        : -1;
+    INFO("session status " << session_status);
+    INFO("bridge status " << bridge_status);
+    expect_pitch(static_cast<bool>(sought));
+    SDL_Delay(2);
+    const auto service = output.service();
+    expect_pitch(!service || static_cast<bool>(*service));
+}
+
 void exercise_refill_generations() {
     using namespace wormedit;
     using namespace wormedit::audio;
@@ -797,18 +821,8 @@ void exercise_refill_generations() {
         .object = object_id_t{std::numeric_limits<std::uint64_t>::max()},
         .voices = {{.source = registered->source, .frame_count = 44100}}};
     expect_pitch(static_cast<bool>(output.start(schedule, std::span{&binding, 1})));
-    for (std::uint64_t seek = 0; seek < 20; ++seek) {
-        const auto sought = output.seek((seek % 4) * 4096);
-        INFO("seek iteration " << seek << " status " << static_cast<int>(sought.status)
-             << " message " << sought.message);
-        INFO("session status " << (sought.session ? static_cast<int>(sought.session->status) : -1));
-        INFO("bridge status " << (sought.session && sought.session->bridge
-             ? static_cast<int>(sought.session->bridge->status) : -1));
-        expect_pitch(static_cast<bool>(sought));
-        SDL_Delay(2);
-        const auto service = output.service();
-        expect_pitch(!service || static_cast<bool>(*service));
-    }
+    for (std::uint64_t seek = 0; seek < 20; ++seek)
+        check_preview_seek_refill(output, seek);
     static_cast<void>(output.stop());
     expect_pitch(!session.is_active() && !output.playing());
     SDL_Delay(20);
@@ -850,7 +864,7 @@ void exercise_pending_refill_failure() {
     expect_pitch(!session.is_active());
     const auto failed = output.service();
     expect_pitch(failed && failed->status == sys::sdl_preview_service_status_t::pump_failed);
-    expect_pitch(failed->pump && failed->pump->status == preview_session_pump_status_t::decode_failed);
+    expect_pitch(failed->pump && !*failed->pump && failed->pump->error().status == preview_session_pump_status_t::decode_failed);
     static_cast<void>(output.stop());
 }
 
@@ -1307,12 +1321,12 @@ auto t276_seek_snapshot_matches(wormedit::sys::sdl_preview_output_t& output,
                                 std::uint64_t frame) -> bool {
     using access = wormedit::sys::sdl_preview_output_test_access_t;
     const auto sought = output.seek(frame);
-    if (!sought || !sought.session || !sought.session->token || !access::lock_stream(output))
+    if (!sought || !sought.session || !sought.session->has_value() || !access::lock_stream(output))
         return false;
     const auto state = access::snapshot(output);
     access::unlock_stream(output);
     return state.active && state.start_frame == frame && state.timeline_frame >= frame &&
-        state.transport_generation == sought.session->token->generation;
+        state.transport_generation == sought.session->value().token.generation;
 }
 
 auto t276_stop_snapshot_is_inactive_zero(wormedit::sys::sdl_preview_output_t& output,
@@ -1330,12 +1344,12 @@ auto t276_start_snapshot_is_coherent(t276_output_fixture_t& fixture) -> bool {
     using access = wormedit::sys::sdl_preview_output_test_access_t;
     const auto started = fixture.output.start(fixture.schedule,
         std::span{&fixture.binding, 1}, {}, 0, fixture.source_frames);
-    if (!started || !started.session || !started.session->token ||
+    if (!started || !started.session || !started.session->has_value() ||
         !access::lock_stream(fixture.output)) return false;
     const auto state = access::snapshot(fixture.output);
     access::unlock_stream(fixture.output);
     return state.active && state.timeline_frame >= state.start_frame &&
-        state.transport_generation == started.session->token->generation;
+        state.transport_generation == started.session->value().token.generation;
 }
 
 auto t276_mutate_seek_stop(t276_output_fixture_t& fixture, std::size_t iterations) -> bool {
@@ -1707,12 +1721,12 @@ auto stale_loop_work_preserves_replacement() -> bool {
     if (!fixture.ready || !fixture.output.set_loop_region(preview_loop_region_t{1024, 1152}) ||
         !fixture.output.seek(1024) || !access::lock_stream(fixture.output)) return false;
     const auto old = fixture.session.playhead().generation;
-    const auto replaced = fixture.session.seek(1040);
+    const auto replaced = fixture.session.seek_session(1040);
     std::array<float, 32> samples;
     samples.fill(1.0F);
     const auto rendered = fixture.session.render_frames(samples, old);
     static_cast<void>(fixture.session.stop(old));
-    const auto wrapped = fixture.session.restart_loop(old);
+    const auto wrapped = fixture.session.restart_session_loop(old);
     const auto hidden = access::snapshot(fixture.output);
     const bool protected_session = replaced && !wrapped && fixture.session.is_active() &&
         fixture.session.playhead().generation != old && !hidden.active && hidden.timeline_frame == 0 &&

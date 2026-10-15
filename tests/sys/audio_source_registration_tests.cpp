@@ -637,7 +637,7 @@ TEST_CASE("same-frame asset edit is visible to object audition", "[sys][audio-so
     audio::audition_transport_bridge_t bridge{transport};
     audio::object_audition_controller_t controller{bridge};
     sources.await_pending();
-    const auto prepared = controller.prepare(document, {document.revision, chart_id_t{1}, object_id_t{1}}, project_sources.bindings(document));
+    const auto prepared = controller.prepare_object(document, {document.revision, chart_id_t{1}, object_id_t{1}}, project_sources.bindings(document));
     REQUIRE(prepared);
-    REQUIRE(prepared.prepared->clips.size() == 1);
+    REQUIRE(prepared.value().prepared->clips.size() == 1);
 }

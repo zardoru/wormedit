@@ -224,10 +224,10 @@ auto sliced_preview_pcm(const song_document_t& song, const std::filesystem::path
     const auto schedule = build_preview_schedule(chart, *timing.index,
         {.include_metronome = false});
     require_span(static_cast<bool>(schedule));
-    const auto bindings = audio::resolve_preview_bindings(song, chart.id, *schedule.schedule,
+    const auto bindings = audio::preview_bindings_resolution_t::from(song, chart.id, *schedule.schedule,
         sources.bindings());
-    require_span(static_cast<bool>(bindings));
-    const auto mixed = audio::render_offline_interval(sources, *schedule.schedule, bindings.bindings,
+    require_span(bindings.diagnostics.empty());
+    const auto mixed = audio::render_offline_interval(sources, *schedule.schedule, bindings.value.bindings,
         0, 2 * slice_span_sample_rate);
     require_span(static_cast<bool>(mixed));
     return mixed->interleaved_stereo;

@@ -9,15 +9,15 @@ namespace wormedit::audio {
 auto audition_session_t::start_session(std::span<const audition_clip_t> clips)
     -> audition_session_start_outcome_t {
     const std::scoped_lock lock(mutex_);
-    const auto transport = bridge_.start(clips);
+    const auto transport = bridge_.start_clips(clips);
     if (!transport) {
         return std::unexpected(audition_session_start_error_t{
             .code = audition_session_start_status_t::transport_failed, .transport = transport});
     }
-    const auto prime = prime_resident_audition(transport_, *transport.token, clips);
+    const auto prime = prime_resident_audition_blocks(transport_, transport.value().token, clips);
     prime_pending_ = !prime.has_value();
 
-    token_ = transport.token;
+    token_ = transport.value().token;
     clips_.assign(clips.begin(), clips.end());
     timeline_frame_ = 0;
     duration_frames_ = std::ranges::max(clips_, {}, &audition_clip_t::frame_count).frame_count;
@@ -26,42 +26,27 @@ auto audition_session_t::start_session(std::span<const audition_clip_t> clips)
     return started_audition_session_t{.token = *token_, .transport = transport, .prime = prime};
 }
 
-auto audition_session_start_result_t::from(audition_session_start_outcome_t&& outcome)
-    -> audition_session_start_result_t {
-    if (!outcome) {
-        return {.status = outcome.error().code,
-                .token = std::nullopt,
-                .transport = std::move(outcome.error().transport),
-                .prime = std::nullopt};
-    }
-    return {.status = audition_session_start_status_t::started,
-            .token = outcome->token,
-            .transport = std::move(outcome->transport),
-            .prime = std::move(outcome->prime)};
-}
-
-auto audition_session_t::start(std::span<const audition_clip_t> clips)
-    -> audition_session_start_result_t {
-    return audition_session_start_result_t::from(start_session(clips));
-}
-
 auto audition_session_t::snapshot_pump_state() const -> pump_state_t {
     const std::scoped_lock lock(mutex_);
     return {token_, clips_, timeline_frame_};
 }
 
-auto audition_session_t::complete_pump(session_token_t token, audition_pump_result_t result)
-    -> audition_pump_result_t {
+auto audition_session_t::complete_pump(session_token_t token, audition_pump_outcome_t result)
+    -> audition_pump_outcome_t {
     const std::scoped_lock lock(mutex_);
-    if (token_ != token) return {.status = audition_pump_status_t::stale_generation};
+    if (token_ != token)
+        return std::unexpected(
+            audition_pump_effect_t{.status = audition_pump_status_t::stale_generation});
     if (result) prime_pending_ = false;
     return result;
 }
 
-auto audition_session_t::pump(audition_pump_options_t options) -> audition_pump_result_t {
+auto audition_session_t::pump(audition_pump_options_t options) -> audition_pump_outcome_t {
     const auto state = snapshot_pump_state();
-    if (!state.token) return {.status = audition_pump_status_t::stale_generation};
-    auto result = pump_audition_lookahead(sources_, transport_, *state.token, state.clips,
+    if (!state.token)
+        return std::unexpected(
+            audition_pump_effect_t{.status = audition_pump_status_t::stale_generation});
+    auto result = pump_audition_blocks(sources_, transport_, *state.token, state.clips,
                                           state.timeline_frame, options);
     return complete_pump(*state.token, std::move(result));
 }

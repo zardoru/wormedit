@@ -126,13 +126,13 @@ TEST_CASE("registered decoder bindings prepare a revision-bound semantic object 
     object_audition_controller_t controller{bridge};
     const auto bindings = registry.bindings();
     const auto prepared =
-        controller.prepare(song, {song.revision, chart_id_t{2}, object_id_t{9}}, bindings);
+        controller.prepare_object(song, {song.revision, chart_id_t{2}, object_id_t{9}}, bindings);
     REQUIRE(prepared);
-    REQUIRE(prepared.prepared.has_value());
-    REQUIRE(prepared.prepared->clips.size() == 1);
-    CHECK(prepared.prepared->clips.front().source == added->source);
-    CHECK(prepared.prepared->clips.front().source_start_frame == 0);
-    CHECK(prepared.prepared->clips.front().frame_count == added->output_frame_count);
+    REQUIRE(prepared.value().prepared.has_value());
+    REQUIRE(prepared.value().prepared->clips.size() == 1);
+    CHECK(prepared.value().prepared->clips.front().source == added->source);
+    CHECK(prepared.value().prepared->clips.front().source_start_frame == 0);
+    CHECK(prepared.value().prepared->clips.front().frame_count == added->output_frame_count);
     CHECK_FALSE(bridge.session_token().has_value());
 }
 

@@ -21,17 +21,25 @@ auto start_primed(wormedit::audio::preview_session_t& session,
                   std::span<const wormedit::audio::preview_object_source_binding_t> objects,
                   std::span<const wormedit::audio::preview_metronome_source_binding_t> metronome = {},
                   std::uint64_t frame = 0, wormedit::audio::preview_pump_options_t options = {},
-                  std::uint64_t end = 0) -> wormedit::audio::preview_session_start_result_t {
-    auto result = session.start(schedule, objects, metronome, frame, options, end);
-    if (result) result.prime = session.pump().decode;
+                  std::uint64_t end = 0) -> wormedit::audio::preview_session_start_outcome_t {
+    auto result = session.start_session(schedule, objects, metronome, frame, options, end);
+    if (result) {
+        auto pumped = session.pump_session();
+        auto& effect = pumped ? *pumped : pumped.error();
+        result->detail.prime = std::move(effect.decode);
+    }
     return result;
 }
 
 auto seek_primed(wormedit::audio::preview_session_t& session, std::uint64_t frame,
                  wormedit::audio::preview_pump_options_t options = {})
-    -> wormedit::audio::preview_session_start_result_t {
-    auto result = session.seek(frame, options);
-    if (result) result.prime = session.pump().decode;
+    -> wormedit::audio::preview_session_start_outcome_t {
+    auto result = session.seek_session(frame, options);
+    if (result) {
+        auto pumped = session.pump_session();
+        auto& effect = pumped ? *pumped : pumped.error();
+        result->detail.prime = std::move(effect.decode);
+    }
     return result;
 }
 
@@ -183,8 +191,8 @@ auto preview_loop_restarts_at_begin_and_stop_is_hard() -> bool {
         session.timeline_frame() != region.begin_frame + chunk_frames || first_block.front() != 0.0F)
         return false;
     while (session.timeline_frame() < region.end_frame) {
-        const auto pump = session.pump({.lookahead_frames = chunk_frames});
-        if (pump.status != preview_session_pump_status_t::ready) return false;
+        const auto pump = session.pump_session({.lookahead_frames = chunk_frames});
+        if (pump.value().status != preview_session_pump_status_t::ready) return false;
         const auto remaining = region.end_frame - session.timeline_frame();
         const auto frames = static_cast<std::size_t>(std::min<std::uint64_t>(remaining, chunk_frames));
         std::vector<float> block(frames * output_channel_count);
@@ -192,8 +200,9 @@ auto preview_loop_restarts_at_begin_and_stop_is_hard() -> bool {
         if (rendered.value().status != preview_session_render_status_t::mixed || rendered.value().mix.frames != frames)
             return false;
     }
-    const auto boundary = session.pump({.lookahead_frames = chunk_frames});
-    if (boundary.status != preview_session_pump_status_t::loop_boundary) return false;
+    const auto boundary = session.pump_session({.lookahead_frames = chunk_frames});
+    const auto& boundary_effect = boundary ? *boundary : boundary.error();
+    if (boundary_effect.status != preview_session_pump_status_t::loop_boundary) return false;
     const auto restarted = seek_primed(session, region.begin_frame, {.lookahead_frames = chunk_frames});
     if (!restarted || session.timeline_frame() != region.begin_frame) return false;
 
@@ -234,10 +243,10 @@ auto preview_music_seek_geometry_is_correct() -> bool {
     };
     const auto started = start_primed(session, schedule, std::span{&binding, 1}, {}, 0,
                                        {.lookahead_frames = maximum_read_frames});
-    if (!started || bridge.materialize_until(3 * maximum_read_frames).status !=
+    if (!started || bridge.materialize_preview(3 * maximum_read_frames).value().status !=
                         preview_bridge_pump_status_t::ready)
         return false;
-    const auto active = transport.snapshot_voices(*started.token);
+    const auto active = transport.snapshot_voices(started.value().token);
     const bool valid = contiguous_music_segments(active) &&
                        seek_music_segment_starts_at_source_frame(session, transport, bridge);
     return session.stop().scheduled_voices >= 1 && valid;
@@ -293,19 +302,19 @@ auto dropped_music_segment_does_not_stop_following_segment() -> bool {
     };
     const auto started = start_primed(session, schedule, std::span{&binding, 1}, {}, 0,
                                        {.lookahead_frames = maximum_read_frames});
-    if (!started || bridge.materialize_until(2 * maximum_read_frames).status !=
+    if (!started || bridge.materialize_preview(2 * maximum_read_frames).value().status !=
                         preview_bridge_pump_status_t::ready ||
         !dropped_music_segment_is_reported(session, cache, source.source))
         return false;
-    const auto pumped = pump_preview_lookahead(
-        sources, transport, *started.token, session.timeline_frame(),
+    const auto pumped = pump_preview_blocks(
+        sources, transport, started.value().token, session.timeline_frame(),
         {.lookahead_frames = maximum_read_frames});
-    const auto active = transport.snapshot_voices(*started.token);
+    const auto active = transport.snapshot_voices(started.value().token);
     const bool later_segment_scheduled = pumped && active && active.value().size() == 1 &&
                                          active.value().front().timeline_start_frame ==
                                              maximum_read_frames;
     const bool later_segment_played = next_music_segment_is_still_playing(
-        session, sources, transport, *started.token);
+        session, sources, transport, started.value().token);
     return session.stop().scheduled_voices >= 1 && later_segment_scheduled &&
            later_segment_played;
 }
@@ -335,10 +344,10 @@ TEST_CASE("preview session primes advances refills and completes one chart timel
     };
     const auto started = start_primed(session, schedule, bindings, {}, 0, {.lookahead_frames = 512});
     REQUIRE(started);
-    REQUIRE(started.materialize.has_value());
-    CHECK(started.materialize->scheduled_events == 2);
-    REQUIRE(started.prime.has_value());
-    CHECK(started.prime->overlapping_voices == 2);
+    REQUIRE(started.value().detail.materialize.has_value());
+    CHECK(started.value().detail.materialize->value().scheduled_events == 2);
+    REQUIRE(started.value().detail.prime.has_value());
+    CHECK(started.value().detail.prime->value().overlapping_voices == 2);
     CHECK(session.is_active());
 
     std::vector<float> first(512 * output_channel_count);
@@ -348,7 +357,7 @@ TEST_CASE("preview session primes advances refills and completes one chart timel
     CHECK(any_nonzero(first));
     CHECK(session.timeline_frame() == 512);
 
-    const auto refilled = session.pump({.lookahead_frames = 512});
+    const auto refilled = session.pump_session({.lookahead_frames = 512});
     REQUIRE(refilled);
     std::vector<float> tail(256 * output_channel_count);
     const auto completed = session.render_frames(tail);
@@ -392,14 +401,14 @@ TEST_CASE("preview session seek replaces generations and hard Stop silences late
     };
     const auto started = start_primed(session, schedule, std::span{&binding, 1});
     require_session_condition(static_cast<bool>(started));
-    const auto old_token = *started.token;
+    const auto old_token = started.value().token;
 
     const auto sought = seek_primed(session, 200);
     require_session_condition(static_cast<bool>(sought));
-    check_session_condition(sought.token != old_token);
+    check_session_condition(sought.value().token != old_token);
     check_session_condition(session.timeline_frame() == 200);
     check_session_condition(!transport.is_current(old_token));
-    check_session_condition(has_active_voice(transport.snapshot_voices(*sought.token), 100, 900));
+    check_session_condition(has_active_voice(transport.snapshot_voices(sought.value().token), 100, 900));
 
     const auto stopped = session.stop();
     check_session_condition(stopped.scheduled_voices == 1);
@@ -443,8 +452,8 @@ TEST_CASE("preview session mixes generated metronome sources on the chart timeli
     const auto started =
         start_primed(session, schedule, {}, std::span{&metronome, 1}, 0, {.lookahead_frames = 96});
     REQUIRE(started);
-    REQUIRE(started.materialize.has_value());
-    CHECK(started.materialize->scheduled_events == 1);
+    REQUIRE(started.value().detail.materialize.has_value());
+    CHECK(started.value().detail.materialize->value().scheduled_events == 1);
     CHECK(session.set_metronome_volume(50));
     CHECK(session.metronome_volume() == 50);
     CHECK_FALSE(session.set_metronome_volume(101));
@@ -473,7 +482,7 @@ TEST_CASE("preview session keeps the visual timeline moving through unavailable 
         {.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
     const auto started = start_primed(session, schedule, {}, {}, 0, {}, 64);
     REQUIRE(started);
-    REQUIRE(started.materialize.has_value());
+    REQUIRE(started.value().detail.materialize.has_value());
 
     std::vector<float> output(32 * output_channel_count, 1.0F);
     const auto first = session.render_frames(output);
@@ -483,7 +492,7 @@ TEST_CASE("preview session keeps the visual timeline moving through unavailable 
 
     const auto final = session.render_frames(output);
     const std::array checks{
-        started.materialize->missing_sources == 1,
+        started.value().detail.materialize->value().missing_sources == 1,
         first.value().status == preview_session_render_status_t::mixed,
         first_active, first_frame == 32, silent,
         final.value().status == preview_session_render_status_t::complete, !session.is_active(),
@@ -531,17 +540,17 @@ void verify_pending_silence(wormedit::audio::preview_session_t& session, std::ui
 TEST_CASE("preview start and rapid seeks defer decoding and prime only the latest generation",
           "[unit][audio][preview-session][async-seek]") {
     pending_preview_fixture_t fixture;
-    const auto started = fixture.session.start(fixture.schedule, std::span{&fixture.binding, 1});
+    const auto started = fixture.session.start_session(fixture.schedule, std::span{&fixture.binding, 1});
     expect_pending(started);
-    expect_pending(!started.prime);
+    expect_pending(!started.value().detail.prime);
     verify_pending_silence(fixture.session, 0);
     for (std::uint64_t frame = 10; frame <= 100; frame += 10) {
-        expect_pending(fixture.session.seek(frame));
+        expect_pending(fixture.session.seek_session(frame));
         expect_pending(fixture.cache.stats().entries == 0);
-        expect_pending(!fixture.transport.is_current(*started.token));
+        expect_pending(!fixture.transport.is_current(started.value().token));
     }
     verify_pending_silence(fixture.session, 100);
-    expect_pending(fixture.session.pump());
+    expect_pending(fixture.session.pump_session());
     std::array<float, 64> output;
     const auto rendered = fixture.session.render_frames(output);
     expect_pending(rendered.value().first_timeline_frame == 100);
@@ -552,11 +561,11 @@ TEST_CASE("preview start and rapid seeks defer decoding and prime only the lates
 TEST_CASE("Stop cancels pending preview work and external generation changes clear playheads",
           "[unit][audio][preview-session][async-seek]") {
     pending_preview_fixture_t fixture;
-    expect_pending(fixture.session.start(fixture.schedule, std::span{&fixture.binding, 1}));
+    expect_pending(fixture.session.start_session(fixture.schedule, std::span{&fixture.binding, 1}));
     static_cast<void>(fixture.session.stop());
-    expect_pending(!fixture.session.pump());
+    expect_pending(!fixture.session.pump_session());
     expect_pending(fixture.cache.stats().entries == 0);
-    expect_pending(fixture.session.start(fixture.schedule, std::span{&fixture.binding, 1}));
+    expect_pending(fixture.session.start_session(fixture.schedule, std::span{&fixture.binding, 1}));
     static_cast<void>(fixture.transport.stop());
     expect_pending(!fixture.session.is_active());
     expect_pending(fixture.session.timeline_frame() == 0);
@@ -589,8 +598,8 @@ struct in_flight_preview_fixture_t {
                      .voices = {{.source = source, .frame_count = 64}}},
                     {.object = wormedit::object_id_t{2},
                      .voices = {{.source = source, .source_start_frame = 500, .frame_count = 500}}}};
-        expect_pending(session.start(schedule, bindings, {}, 0, {.lookahead_frames = 64}));
-        expect_pending(session.pump());
+        expect_pending(session.start_session(schedule, bindings, {}, 0, {.lookahead_frames = 64}));
+        expect_pending(session.pump_session());
     }
 
     auto wait_for_old_materialization() -> bool {
@@ -605,19 +614,20 @@ struct in_flight_preview_fixture_t {
     auto perform_seeks(bool stop) -> bool {
         const auto begin = std::chrono::steady_clock::now();
         for (std::uint64_t frame = 200; frame < 210; ++frame) {
-            if (!session.seek(frame, {.lookahead_frames = 64})) return false;
+            if (!session.seek_session(frame, {.lookahead_frames = 64})) return false;
         }
         if (stop) static_cast<void>(session.stop());
         return std::chrono::steady_clock::now() - begin < std::chrono::milliseconds{100};
     }
 
     auto supersede_blocked_pump(bool stop) -> bool {
-        wormedit::audio::preview_session_pump_result_t old_result;
+        wormedit::audio::preview_session_pump_outcome_t old_result =
+            std::unexpected(wormedit::audio::preview_session_pump_effect_t{});
         std::jthread worker, controller;
         std::atomic<bool> finished{};
         bool materialized{}, completed_while_locked{}, control_result{};
         const auto gated = cache.with_block({source, 0}, [&](const auto&) {
-            worker = std::jthread([&] { old_result = session.pump({.lookahead_frames = 256}); });
+            worker = std::jthread([&] { old_result = session.pump_session({.lookahead_frames = 256}); });
             materialized = wait_for_old_materialization();
             if (!materialized) return;
             controller = std::jthread([&] {
@@ -632,7 +642,8 @@ struct in_flight_preview_fixture_t {
         if (worker.joinable()) worker.join();
         if (controller.joinable()) controller.join();
         return gated && materialized && completed_while_locked && control_result &&
-               old_result.status == wormedit::audio::preview_session_pump_status_t::not_started;
+               !old_result &&
+               old_result.error().status == wormedit::audio::preview_session_pump_status_t::not_started;
     }
 
 };
@@ -643,7 +654,7 @@ TEST_CASE("in-flight old preview pump cannot activate rapid-seek audio or undo S
     in_flight_preview_fixture_t latest;
     expect_pending(latest.supersede_blocked_pump(false));
     verify_pending_silence(latest.session, 209);
-    expect_pending(latest.session.pump());
+    expect_pending(latest.session.pump_session());
     std::array<float, 64> output;
     const auto mixed = latest.session.render_frames(output);
     expect_pending(mixed.value().first_timeline_frame == 209);
@@ -651,7 +662,7 @@ TEST_CASE("in-flight old preview pump cannot activate rapid-seek audio or undo S
     in_flight_preview_fixture_t stopped;
     expect_pending(stopped.supersede_blocked_pump(true));
     expect_pending(!stopped.session.is_active());
-    expect_pending(!stopped.session.pump());
+    expect_pending(!stopped.session.pump_session());
 }
 
 TEST_CASE("Loop region presence is readable without the session mutex and clears on Stop",
@@ -699,7 +710,7 @@ TEST_CASE("Layer assist clicks are audible with metronome off and cancel queued 
     check_session_condition(std::abs(output[32*output_channel_count] - 0.2F) < 0.00001F);
     check_session_condition(std::abs(output[40*output_channel_count] - 0.1F) < 0.00001F);
     require_session_condition(session.set_layer_tick_frames({}));
-    check_session_condition(transport.is_current(*started.token));
+    check_session_condition(transport.is_current(started.value().token));
     check_session_condition(session.render_frames(output).value().status == preview_session_render_status_t::mixed);
     check_session_condition(std::ranges::all_of(output, [](float x) { return std::abs(x - 0.1F) < 0.00001F; }));
     check_session_condition(session.timeline_frame() == 128);

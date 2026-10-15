@@ -62,18 +62,6 @@ enum class preview_bridge_start_status_t : std::uint8_t {
 
 using preview_bridge_start_outcome_t = result_t<session_token_t, preview_bridge_start_status_t>;
 
-struct preview_bridge_start_result_t {
-    [[nodiscard]] static auto from(preview_bridge_start_outcome_t&& outcome)
-        -> preview_bridge_start_result_t;
-    preview_bridge_start_status_t status{preview_bridge_start_status_t::transport_start_failed};
-    std::optional<session_token_t> token;
-    auto operator==(const preview_bridge_start_result_t&) const -> bool = default;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == preview_bridge_start_status_t::started && token.has_value();
-    }
-};
-
 enum class preview_bridge_pump_status_t : std::uint8_t {
     ready,
     not_started,
@@ -93,18 +81,9 @@ struct preview_bridge_pump_effect_t {
 using preview_bridge_pump_outcome_t =
     result_t<preview_bridge_pump_effect_t, preview_bridge_pump_effect_t>;
 
-struct preview_bridge_pump_result_t {
-    [[nodiscard]] static auto from(preview_bridge_pump_outcome_t&& outcome)
-        -> preview_bridge_pump_result_t;
-    preview_bridge_pump_status_t status{preview_bridge_pump_status_t::not_started};
-    std::size_t scheduled_events{};
-    std::size_t missing_sources{};
-    auto operator==(const preview_bridge_pump_result_t&) const -> bool = default;
-};
-
 // Control-thread bridge from immutable core preview queues to the bounded
 // transport. The schedule must outlive the active bridge session. Call
-// materialize_until() away from the audio callback and refill after callbacks
+// materialize_preview() away from the audio callback and refill after callbacks
 // retire voices; a capacity-limited result leaves the first unqueued event at
 // its queue head for the next refill.
 class preview_transport_bridge_t {
@@ -117,20 +96,12 @@ class preview_transport_bridge_t {
           maximum_total_voices_(maximum_total_voices),
           maximum_layers_per_object_(maximum_layers_per_object) {}
 
-    [[nodiscard]] auto start(const preview_schedule_t& schedule,
-                             std::span<const preview_object_source_binding_t> objects,
-                             std::span<const preview_metronome_source_binding_t> metronome = {},
-                             std::uint64_t seek_frame = 0) -> preview_bridge_start_result_t;
-    [[nodiscard]] auto seek(std::uint64_t sample_frame) -> preview_bridge_start_result_t;
     [[nodiscard]] auto
     start_preview(const preview_schedule_t& schedule,
                   std::span<const preview_object_source_binding_t> objects,
                   std::span<const preview_metronome_source_binding_t> metronome = {},
                   std::uint64_t seek_frame = 0) -> preview_bridge_start_outcome_t;
     [[nodiscard]] auto seek_preview(std::uint64_t sample_frame) -> preview_bridge_start_outcome_t;
-    [[nodiscard]] auto restart() -> preview_bridge_start_result_t {
-        return seek(0);
-    }
     [[nodiscard]] auto stop() noexcept -> transport_stop_result_t;
     // Control-thread setter: re-enable from the current scheduling cursor, never missed beats.
     void set_metronome_enabled(bool enabled, std::uint64_t current_frame);
@@ -153,9 +124,6 @@ class preview_transport_bridge_t {
 
     // Queues events with sample_frame < exclusive_end_frame. This method may
     // allocate while preparing voices, so it belongs on a control thread.
-    [[nodiscard]] auto materialize_until(std::uint64_t exclusive_end_frame,
-                                         std::uint64_t current_frame = 0)
-        -> preview_bridge_pump_result_t;
     [[nodiscard]] auto materialize_preview(std::uint64_t exclusive_end_frame,
                                          std::uint64_t current_frame = 0)
         -> preview_bridge_pump_outcome_t;

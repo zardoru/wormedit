@@ -47,8 +47,8 @@ auto object_audition_controller_t::prepare_object(
                           .transport = std::nullopt},
                 .diagnostics = {}});
     }
-    auto resolved = resolve_object_audition(song, request.chart, request.object, bindings, options);
-    if (!resolved) {
+    auto resolved = audition_resolution_t::from(song, request.chart, request.object, bindings, options);
+    if (resolved.value.clips.empty() || !resolved.diagnostics.empty()) {
         return std::unexpected(
             diagnosed_t<object_audition_effect_t, std::vector<audition_resolve_diagnostic_t>>{
                 .value = {.status = object_audition_status_t::resolve_failed,
@@ -58,13 +58,13 @@ auto object_audition_controller_t::prepare_object(
     }
     return object_audition_effect_t{
         .status = object_audition_status_t::prepared,
-        .prepared = prepared_object_audition_t{request, std::move(resolved.clips)},
+        .prepared = prepared_object_audition_t{request, std::move(resolved.value.clips)},
         .transport = std::nullopt};
 }
 
 auto object_audition_controller_t::start_prepared(prepared_object_audition_t prepared)
     -> object_audition_outcome_t {
-    const auto transport = bridge_.start(prepared.clips);
+    const auto transport = bridge_.start_clips(prepared.clips);
     if (!transport) {
         return std::unexpected(
             diagnosed_t<object_audition_effect_t, std::vector<audition_resolve_diagnostic_t>>{

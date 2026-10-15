@@ -87,17 +87,19 @@ auto percentile(std::vector<double> values, double fraction) -> double {
     return values[std::min(index, values.size() - 1)];
 }
 
-void print_pump(const preview_session_pump_result_t& pumped, double elapsed_ms) {
-    std::cout << "pump status=" << pump_status(pumped.status);
-    if (pumped.decode) {
-        std::cout << " decode=" << decode_status(pumped.decode->status)
-                  << " active_voices=" << pumped.decode->active_voices
-                  << " overlapping_voices=" << pumped.decode->overlapping_voices
-                  << " requested_blocks=" << pumped.decode->requested_blocks
-                  << " decoded_blocks=" << pumped.decode->decoded_blocks
-                  << " cached_blocks=" << pumped.decode->cached_blocks;
-        if (pumped.decode->failure)
-            std::cout << " failure=" << block_failure_status(pumped.decode->failure.value());
+void print_pump(const preview_session_pump_outcome_t& pumped, double elapsed_ms) {
+    const auto& effect = pumped ? *pumped : pumped.error();
+    std::cout << "pump status=" << pump_status(effect.status);
+    if (effect.decode) {
+        const auto& decoded = *effect.decode ? effect.decode->value() : effect.decode->error();
+        std::cout << " decode=" << decode_status(decoded.status)
+                  << " active_voices=" << decoded.active_voices
+                  << " overlapping_voices=" << decoded.overlapping_voices
+                  << " requested_blocks=" << decoded.requested_blocks
+                  << " decoded_blocks=" << decoded.decoded_blocks
+                  << " cached_blocks=" << decoded.cached_blocks;
+        if (decoded.failure)
+            std::cout << " failure=" << block_failure_status(decoded.failure.value());
     }
     std::cout << " wall_ms=" << elapsed_ms;
 }
@@ -116,10 +118,17 @@ struct render_result_t {
 
 auto render_elapsed(preview_session_t& session, std::span<float> scratch,
                     std::uint64_t frames_to_render, const timing_index_t& timing,
-                    const measure_index_t& measures, const preview_session_pump_result_t& pumped,
+                    const measure_index_t& measures, const preview_session_pump_outcome_t& pumped,
                     double wall_ms) -> render_result_t {
     constexpr std::size_t callback_frames = 4'096;
     render_result_t result;
+    const auto& pump_effect = pumped ? *pumped : pumped.error();
+    std::size_t active_voices{};
+    if (pump_effect.decode) {
+        const auto& decoded = *pump_effect.decode
+            ? pump_effect.decode->value() : pump_effect.decode->error();
+        active_voices = decoded.active_voices;
+    }
     while (frames_to_render > 0 && session.is_active()) {
         const auto frames = std::min<std::uint64_t>(frames_to_render, callback_frames);
         const auto before = session.timeline_frame();
@@ -133,7 +142,7 @@ auto render_elapsed(preview_session_t& session, std::span<float> scratch,
             std::cout << "UNDERRUN frame=" << before << " seconds=" << frame_time(before)
                       << " measure=" << measure_number(measures, row)
                       << " missing_blocks=" << rendered.mix.missing_blocks
-                      << " active_voices=" << (pumped.decode ? pumped.decode->active_voices : 0)
+                      << " active_voices=" << active_voices
                       << " ";
             print_pump(pumped, wall_ms);
             std::cout << '\n';
@@ -157,7 +166,7 @@ auto render_elapsed(preview_session_t& session, std::span<float> scratch,
     return result;
 }
 
-void report_pump_failure(const preview_session_pump_result_t& pumped, double wall_ms,
+void report_pump_failure(const preview_session_pump_outcome_t& pumped, double wall_ms,
                          std::size_t iteration) {
     if (pumped) return;
     std::cout << "PUMP_FAILURE iteration=" << iteration << " ";
@@ -190,7 +199,7 @@ auto run_mode(const char* label, bool charge_pump_time, const std::filesystem::p
     transport_t transport{cache};
     preview_transport_bridge_t bridge{transport};
     preview_session_t session{sources, transport, bridge};
-    const auto started = session.start(schedule, bindings, runtime_metronome.bindings(), 0, {}, end_frame);
+    const auto started = session.start_session(schedule, bindings, runtime_metronome.bindings(), 0, {}, end_frame);
     REQUIRE(started);
     constexpr double cadence_seconds = 0.0167;
     constexpr std::size_t callback_frames = 4'096;
@@ -205,7 +214,7 @@ auto run_mode(const char* label, bool charge_pump_time, const std::filesystem::p
 
     while (session.is_active()) {
         const auto pump_start = clock_t::now();
-        const auto pumped = session.pump();
+        const auto pumped = session.pump_session();
         const auto wall_ms = std::chrono::duration<double, std::milli>(
                                  clock_t::now() - pump_start).count();
         result.pump_ms.push_back(wall_ms);
@@ -263,11 +272,11 @@ void resolve_repro_bindings(repro_chart_t& chart) {
     static_cast<void>(sys::register_audition_sources(
         chart.document, chart.asset_base, 1, registry));
     chart.metronome.register_into(registry, 1);
-    const auto resolved = resolve_preview_bindings(
+    const auto resolved = preview_bindings_resolution_t::from(
         chart.document, chart.document.charts.front().id, chart.schedule, registry.bindings(),
         {.skip_unavailable_preview_sources = true});
-    REQUIRE(resolved);
-    chart.bindings = resolved.bindings;
+    REQUIRE(resolved.diagnostics.empty());
+    chart.bindings = resolved.value.bindings;
 }
 
 auto load_repro_chart(const std::filesystem::path& path) -> repro_chart_t {

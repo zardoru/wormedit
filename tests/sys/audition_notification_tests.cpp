@@ -158,7 +158,8 @@ TEST_CASE("Deferred audition source failure retains existing notification and is
     expect_audition(failed.has_value());
     expect_audition(failed->status == sdl_audition_service_status_t::pump_failed);
     expect_audition(failed->pump.has_value());
-    expect_audition(failed->pump->status == audio::audition_pump_status_t::source_unavailable);
+    expect_audition(!*failed->pump);
+    expect_audition(failed->pump->error().status == audio::audition_pump_status_t::source_unavailable);
     static_cast<void>(fixture.output.stop());
     post_audition_service_notifications(*failed, fixture.sink);
     const auto entries = fixture.entries();

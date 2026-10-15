@@ -102,7 +102,7 @@ void sdl_preview_output_t::set_refill_enabled(bool enabled) noexcept {
 }
 
 auto sdl_preview_output_t::take_refill_result()
-    -> std::optional<audio::preview_session_pump_result_t> {
+    -> std::optional<audio::preview_session_pump_outcome_t> {
     const std::scoped_lock lock(refill_mutex_);
     return std::exchange(refill_result_, std::nullopt);
 }
@@ -115,18 +115,22 @@ void sdl_preview_output_t::refill_loop(std::stop_token stop) {
         if (stop.stop_requested()) return;
         const auto generation = refill_generation_.load(std::memory_order_acquire);
         lock.unlock();
-        audio::preview_session_pump_result_t result;
+        audio::preview_session_pump_outcome_t result =
+            std::unexpected(audio::preview_session_pump_effect_t{});
         try {
-            result = session_.pump();
+            result = session_.pump_session();
             if (loop_enabled_.load(std::memory_order_acquire) && playing())
                 result = refill_loop_output(generation, std::move(result));
         } catch (...) {
-            result.status = audio::preview_session_pump_status_t::decode_failed;
+            auto failed = result ? std::move(*result) : std::move(result.error());
+            failed.status = audio::preview_session_pump_status_t::decode_failed;
+            result = std::unexpected(std::move(failed));
         }
         lock.lock();
         if (generation == refill_generation_ && refill_enabled_ &&
             (!refill_result_ || static_cast<bool>(*refill_result_))) {
-            if (result.status == audio::preview_session_pump_status_t::not_started)
+            const auto& effect = result ? *result : result.error();
+            if (effect.status == audio::preview_session_pump_status_t::not_started)
                 refill_enabled_ = false;
             refill_result_ = std::move(result);
         }
@@ -179,20 +183,23 @@ auto sdl_preview_output_t::fill_loop_queue(std::uint64_t generation) -> bool {
 }
 
 auto sdl_preview_output_t::refill_loop_output(std::uint64_t generation,
-    audio::preview_session_pump_result_t result) -> audio::preview_session_pump_result_t {
-    if (!result && result.status != audio::preview_session_pump_status_t::loop_boundary) return result;
+    audio::preview_session_pump_outcome_t result) -> audio::preview_session_pump_outcome_t {
+    if (!result && result.error().status != audio::preview_session_pump_status_t::loop_boundary) return result;
     const auto expected = output_playhead_.read().generation;
     while (fill_loop_queue(generation)) {
-        const auto restarted = session_.restart_loop(expected);
+        const auto restarted = session_.restart_session_loop(expected);
         if (!restarted) {
-            result.status = audio::preview_session_pump_status_t::materialize_failed;
-            return result;
+            auto failed = result ? std::move(*result) : std::move(result.error());
+            failed.status = audio::preview_session_pump_status_t::materialize_failed;
+            return std::unexpected(std::move(failed));
         }
-        result = session_.pump();
+        result = session_.pump_session();
         if (!result) return result;
     }
-    if (result.status == audio::preview_session_pump_status_t::loop_boundary)
-        result.status = audio::preview_session_pump_status_t::ready;
+    if (!result && result.error().status == audio::preview_session_pump_status_t::loop_boundary) {
+        result.error().status = audio::preview_session_pump_status_t::ready;
+        return std::move(result.error());
+    }
     return result;
 }
 
@@ -248,7 +255,7 @@ auto sdl_preview_output_t::start(
     silenced_music_voices_.store(0, std::memory_order_release);
     const auto loop = session_.loop_region();
     const auto start_frame = loop ? loop->begin_frame : seek_frame;
-    auto started = session_.start(schedule, objects, metronome, start_frame, {}, minimum_end_frame);
+    auto started = session_.start_session(schedule, objects, metronome, start_frame, {}, minimum_end_frame);
     if (started) {
         retained_schedule_ = &schedule;
         retained_objects_ = objects;
@@ -297,8 +304,8 @@ auto sdl_preview_output_t::seek(std::uint64_t sample_frame) -> sdl_preview_start
     silenced_music_voices_.store(0, std::memory_order_release);
     const bool preserved_tail = source_finished_ && playing() && !session_.is_active();
     auto started = !session_.is_active() && playing() && retained_schedule_
-        ? session_.start(*retained_schedule_, retained_objects_, retained_metronome_, sample_frame, {}, source_end_frame_)
-        : session_.seek(sample_frame);
+        ? session_.start_session(*retained_schedule_, retained_objects_, retained_metronome_, sample_frame, {}, source_end_frame_)
+        : session_.seek_session(sample_frame);
     auto result = sdl_preview_start_result_t{.session = started};
     if (!started) {
         result.status = sdl_preview_start_status_t::session_failed;
@@ -388,20 +395,27 @@ auto sdl_preview_output_t::service() -> std::optional<sdl_preview_service_result
 }
 
 auto sdl_preview_output_t::service_refill_result(
-    std::optional<audio::preview_session_pump_result_t> pumped,
+    std::optional<audio::preview_session_pump_outcome_t> pumped,
     bool rate_unavailable, std::uint64_t silenced_voices,
     std::uint64_t silenced_music_voices)
     -> std::optional<sdl_preview_service_result_t> {
-    if (pumped && pumped->status == audio::preview_session_pump_status_t::not_started)
-        pumped.reset();
+    if (pumped) {
+        const auto& effect = *pumped ? pumped->value() : pumped->error();
+        if (effect.status == audio::preview_session_pump_status_t::not_started)
+            pumped.reset();
+    }
     if (!pumped) {
         if (rate_unavailable || silenced_voices || silenced_music_voices)
             return sdl_preview_service_result_t{.rate_unavailable = rate_unavailable,
                 .silenced_voices = silenced_voices, .silenced_music_voices = silenced_music_voices};
         return std::nullopt;
     }
-    if (pumped->decode && pumped->decode->status == audio::preview_pump_status_t::stale_generation)
-        return std::nullopt;
+    const auto& effect = *pumped ? pumped->value() : pumped->error();
+    if (effect.decode) {
+        const auto& decoded = *effect.decode ? effect.decode->value() : effect.decode->error();
+        if (decoded.status == audio::preview_pump_status_t::stale_generation)
+            return std::nullopt;
+    }
     return sdl_preview_service_result_t{
         .status = *pumped ? sdl_preview_service_status_t::ready
                          : sdl_preview_service_status_t::pump_failed,

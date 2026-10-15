@@ -219,10 +219,10 @@ auto chart_preview_t::compile_if_needed(
          .include_metronome = true, .count_in_pulses = *count_in, .include_layer_ticks = true});
     if (!built_schedule)
         return preview_diagnostic_feedback(*this, built_schedule.diagnostics, "Chart preview could not be compiled.");
-    auto resolved = audio::resolve_preview_bindings(
+    auto resolved = audio::preview_bindings_resolution_t::from(
         document, selected_chart.id, *built_schedule.schedule, sources.bindings(document),
         {.skip_unavailable_preview_sources = true});
-    if (!resolved)
+    if (!resolved.diagnostics.empty())
         return preview_diagnostic_feedback(*this, resolved.diagnostics, "Chart audio could not be resolved.");
 
     if (selected_music) {
@@ -231,7 +231,7 @@ auto chart_preview_t::compile_if_needed(
             built_schedule.schedule->music = preview_schedule_t::music_event_t::from(
                 selected_music->first, source->output_frame_count);
             if (built_schedule.schedule->music) {
-                resolved.bindings.push_back({
+                resolved.value.bindings.push_back({
                     .object = preview_music_object,
                     .voices = {{.source = source->source,
                                 .source_start_frame = 0,
@@ -246,12 +246,12 @@ auto chart_preview_t::compile_if_needed(
     if (!visual_end_frame)
         return report(notification_severity_t::error, false, "Chart visual endpoint exceeds the preview clock.");
     const auto compiled_end_frame = std::max(
-        preview_end_frame(*built_schedule.schedule, resolved.bindings, metronome_bindings),
+        preview_end_frame(*built_schedule.schedule, resolved.value.bindings, metronome_bindings),
         *visual_end_frame);
 
     schedule = std::move(*built_schedule.schedule);
     timing = std::move(*built_timing.index);
-    bindings = std::move(resolved.bindings);
+    bindings = std::move(resolved.value.bindings);
     assign_preview_bgm_mix_groups(selected_chart, bindings);
     retained_metronome_bindings.assign(metronome_bindings.begin(), metronome_bindings.end());
     chart = selected_chart.id;
@@ -260,7 +260,7 @@ auto chart_preview_t::compile_if_needed(
     music_asset = selected_music_asset;
     resume_frame = std::min(retained_resume, compiled_end_frame);
     end_frame = compiled_end_frame;
-    skipped_unavailable_audio_objects = resolved.skipped_unavailable_objects;
+    skipped_unavailable_audio_objects = resolved.value.skipped_unavailable_objects;
     return std::nullopt;
 }
 

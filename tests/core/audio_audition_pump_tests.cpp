@@ -41,19 +41,19 @@ TEST_CASE("audition lookahead fills exact blocks before the headless mixer consu
     transport_t transport{cache};
     audition_transport_bridge_t bridge{transport};
     const audition_clip_t clip{binding.source, maximum_read_frames - 128, 640, 1.0F};
-    const auto started = bridge.start(std::span{&clip, 1});
+    const auto started = bridge.start_clips(std::span{&clip, 1});
     REQUIRE(started);
 
-    const auto pumped = pump_audition_lookahead(sources, transport, *started.token,
+    const auto pumped = pump_audition_blocks(sources, transport, started.value().token,
                                                 std::span{&clip, 1}, 0, {.lookahead_frames = 512});
     REQUIRE(pumped);
-    CHECK(pumped.status == audition_pump_status_t::ready);
-    CHECK(pumped.requested_blocks == 2);
-    CHECK(pumped.decoded_blocks == 2);
-    CHECK(pumped.cached_blocks == 0);
+    CHECK(pumped.value().status == audition_pump_status_t::ready);
+    CHECK(pumped.value().requested_blocks == 2);
+    CHECK(pumped.value().decoded_blocks == 2);
+    CHECK(pumped.value().cached_blocks == 0);
 
     std::vector<float> output(512 * output_channel_count);
-    const auto mixed = transport.mix_frames(*started.token, 0, output);
+    const auto mixed = transport.mix_frames(started.value().token, 0, output);
     CHECK(mixed.value().status == transport_mix_status_t::mixed);
     CHECK(mixed.value().voices_mixed == 1);
     CHECK(mixed.value().missing_blocks == 0);
@@ -70,25 +70,25 @@ TEST_CASE("audition lookahead plans capacity atomically and reuses cached blocks
     audition_transport_bridge_t bridge{transport};
     const audition_clip_t clip{binding.source, maximum_read_frames - 128, 640, 1.0F};
     const std::array layered{clip, clip};
-    const auto started = bridge.start(layered);
+    const auto started = bridge.start_clips(layered);
     REQUIRE(started);
 
-    const auto bounded = pump_audition_lookahead(sources, transport, *started.token, layered, 0,
+    const auto bounded = pump_audition_blocks(sources, transport, started.value().token, layered, 0,
                                                  {.lookahead_frames = 512, .maximum_blocks = 1});
-    CHECK_FALSE(bounded);
-    CHECK(bounded.status == audition_pump_status_t::capacity_exceeded);
+    REQUIRE_FALSE(bounded);
+    CHECK(bounded.error().status == audition_pump_status_t::capacity_exceeded);
     CHECK(cache.stats().entries == 0);
 
-    const auto first = pump_audition_lookahead(sources, transport, *started.token, layered, 0,
+    const auto first = pump_audition_blocks(sources, transport, started.value().token, layered, 0,
                                                {.lookahead_frames = 512, .maximum_blocks = 2});
     REQUIRE(first);
-    CHECK(first.requested_blocks == 2);
-    CHECK(first.decoded_blocks == 2);
-    const auto repeated = pump_audition_lookahead(sources, transport, *started.token, layered, 0,
+    CHECK(first.value().requested_blocks == 2);
+    CHECK(first.value().decoded_blocks == 2);
+    const auto repeated = pump_audition_blocks(sources, transport, started.value().token, layered, 0,
                                                   {.lookahead_frames = 512, .maximum_blocks = 2});
     REQUIRE(repeated);
-    CHECK(repeated.decoded_blocks == 0);
-    CHECK(repeated.cached_blocks == 2);
+    CHECK(repeated.value().decoded_blocks == 0);
+    CHECK(repeated.value().cached_blocks == 2);
 }
 
 TEST_CASE("audition lookahead rejects stale unknown and invalid requests without decoding",
@@ -100,38 +100,38 @@ TEST_CASE("audition lookahead rejects stale unknown and invalid requests without
     transport_t transport{cache};
     audition_transport_bridge_t bridge{transport};
     const audition_clip_t clip{binding.source, 0, binding.output_frame_count, 1.0F};
-    const auto started = bridge.start(std::span{&clip, 1});
+    const auto started = bridge.start_clips(std::span{&clip, 1});
     REQUIRE(started);
 
-    const auto complete = pump_audition_lookahead(sources, transport, *started.token,
+    const auto complete = pump_audition_blocks(sources, transport, started.value().token,
                                                   std::span{&clip, 1}, clip.frame_count);
     REQUIRE(complete);
-    CHECK(complete.status == audition_pump_status_t::complete);
-    CHECK(complete.requested_blocks == 0);
+    CHECK(complete.value().status == audition_pump_status_t::complete);
+    CHECK(complete.value().requested_blocks == 0);
 
     const audition_clip_t unknown{{"fixture:unknown", "missing:v1"}, 0, 512, 1.0F};
     const auto unavailable =
-        pump_audition_lookahead(sources, transport, *started.token, std::span{&unknown, 1}, 0);
-    CHECK_FALSE(unavailable);
-    CHECK(unavailable.status == audition_pump_status_t::source_unavailable);
-    REQUIRE(unavailable.failure.has_value());
-    CHECK(unavailable.failure->status == block_decode_status_t::invalid_key);
+        pump_audition_blocks(sources, transport, started.value().token, std::span{&unknown, 1}, 0);
+    REQUIRE_FALSE(unavailable);
+    CHECK(unavailable.error().status == audition_pump_status_t::source_unavailable);
+    REQUIRE(unavailable.error().failure.has_value());
+    CHECK(unavailable.error().failure->status == block_decode_status_t::invalid_key);
 
     const auto invalid =
-        pump_audition_lookahead(sources, transport, *started.token, std::span{&clip, 1}, 0,
+        pump_audition_blocks(sources, transport, started.value().token, std::span{&clip, 1}, 0,
                                 {.lookahead_frames = maximum_read_frames + 1});
-    CHECK_FALSE(invalid);
-    CHECK(invalid.status == audition_pump_status_t::invalid_request);
+    REQUIRE_FALSE(invalid);
+    CHECK(invalid.error().status == audition_pump_status_t::invalid_request);
     CHECK(cache.stats().entries == 0);
 
     const std::vector too_many(maximum_audition_pump_clips + 1, clip);
-    const auto excessive = pump_audition_lookahead(sources, transport, *started.token, too_many, 0);
-    CHECK_FALSE(excessive);
-    CHECK(excessive.status == audition_pump_status_t::invalid_request);
+    const auto excessive = pump_audition_blocks(sources, transport, started.value().token, too_many, 0);
+    REQUIRE_FALSE(excessive);
+    CHECK(excessive.error().status == audition_pump_status_t::invalid_request);
 
     static_cast<void>(bridge.stop());
     const auto stale =
-        pump_audition_lookahead(sources, transport, *started.token, std::span{&clip, 1}, 0);
-    CHECK_FALSE(stale);
-    CHECK(stale.status == audition_pump_status_t::stale_generation);
+        pump_audition_blocks(sources, transport, started.value().token, std::span{&clip, 1}, 0);
+    REQUIRE_FALSE(stale);
+    CHECK(stale.error().status == audition_pump_status_t::stale_generation);
 }

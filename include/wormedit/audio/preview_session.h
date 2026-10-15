@@ -20,9 +20,9 @@ enum class preview_session_start_status_t {
 };
 
 struct preview_session_start_detail_t {
-    std::optional<preview_bridge_start_result_t> bridge{};
-    std::optional<preview_bridge_pump_result_t> materialize{};
-    std::optional<preview_pump_result_t> prime{};
+    std::optional<preview_bridge_start_outcome_t> bridge{};
+    std::optional<preview_bridge_pump_outcome_t> materialize{};
+    std::optional<preview_pump_outcome_t> prime{};
     auto operator==(const preview_session_start_detail_t&) const -> bool = default;
 };
 struct started_preview_session_t {
@@ -33,24 +33,12 @@ struct started_preview_session_t {
 struct preview_session_start_error_t {
     preview_session_start_status_t code{preview_session_start_status_t::bridge_failed};
     preview_session_start_detail_t detail{};
+    // Synchronous priming can fail after the session has already started.
+    std::optional<session_token_t> token{};
     auto operator==(const preview_session_start_error_t&) const -> bool = default;
 };
 using preview_session_start_outcome_t =
     result_t<started_preview_session_t, preview_session_start_error_t>;
-
-struct preview_session_start_result_t {
-    [[nodiscard]] static auto from(preview_session_start_outcome_t&& outcome)
-        -> preview_session_start_result_t;
-    preview_session_start_status_t status{preview_session_start_status_t::bridge_failed};
-    std::optional<session_token_t> token;
-    std::optional<preview_bridge_start_result_t> bridge;
-    std::optional<preview_bridge_pump_result_t> materialize;
-    std::optional<preview_pump_result_t> prime;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == preview_session_start_status_t::started && token.has_value();
-    }
-};
 
 enum class preview_session_pump_status_t {
     ready,
@@ -63,8 +51,8 @@ enum class preview_session_pump_status_t {
 
 struct preview_session_pump_effect_t {
     preview_session_pump_status_t status{preview_session_pump_status_t::not_started};
-    std::optional<preview_bridge_pump_result_t> materialize{};
-    std::optional<preview_pump_result_t> decode{};
+    std::optional<preview_bridge_pump_outcome_t> materialize{};
+    std::optional<preview_pump_outcome_t> decode{};
     [[nodiscard]] auto has_ready_decode() const -> bool {
         return decode.has_value() && static_cast<bool>(*decode);
     }
@@ -72,18 +60,6 @@ struct preview_session_pump_effect_t {
 };
 using preview_session_pump_outcome_t =
     result_t<preview_session_pump_effect_t, preview_session_pump_effect_t>;
-
-struct preview_session_pump_result_t {
-    [[nodiscard]] static auto from(preview_session_pump_outcome_t&& outcome)
-        -> preview_session_pump_result_t;
-    preview_session_pump_status_t status{preview_session_pump_status_t::not_started};
-    std::optional<preview_bridge_pump_result_t> materialize;
-    std::optional<preview_pump_result_t> decode;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == preview_session_pump_status_t::ready;
-    }
-};
 
 enum class preview_session_render_status_t {
     mixed,
@@ -106,7 +82,7 @@ struct preview_loop_region_t {
 };
 
 // Owns one chart-play generation and its normalized sample-frame timeline.
-// start()/seek() enqueue initial work without decoding; pump() runs on the decode
+// start_session()/seek_session() enqueue initial work without decoding; pump_session() runs on the decode
 // worker (or explicitly in headless owners). render_frames() performs only the
 // cache-resident transport mix. The immutable schedule must outlive the active
 // session because preview_transport_bridge_t retains its queue storage.
@@ -116,14 +92,6 @@ class preview_session_t {
                       preview_transport_bridge_t& bridge)
         : sources_(sources), transport_(transport), bridge_(bridge) {}
 
-    [[nodiscard]] auto start(const preview_schedule_t& schedule,
-                             std::span<const preview_object_source_binding_t> objects,
-                             std::span<const preview_metronome_source_binding_t> metronome = {},
-                             std::uint64_t seek_frame = 0, preview_pump_options_t options = {},
-                             std::uint64_t minimum_end_frame = 0) -> preview_session_start_result_t;
-    [[nodiscard]] auto seek(std::uint64_t sample_frame, preview_pump_options_t options = {})
-        -> preview_session_start_result_t;
-    [[nodiscard]] auto pump(preview_pump_options_t options = {}) -> preview_session_pump_result_t;
     [[nodiscard]] auto
     start_session(const preview_schedule_t& schedule,
                   std::span<const preview_object_source_binding_t> objects,
@@ -146,8 +114,6 @@ class preview_session_t {
     // Rendering clamps at end_frame and never seeks. An output refill worker can
     // prepare the next iteration while already queued PCM continues playing.
     // The expected chart-play generation prevents a stale wrap after seek/Stop.
-    [[nodiscard]] auto restart_loop(std::uint64_t expected_generation)
-        -> preview_session_start_result_t;
     // An output owner publishes its audible clock independently of the producer
     // cursor. A replacement generation automatically invalidates this estimate.
     // The output owner serializes these publications.
@@ -187,7 +153,7 @@ class preview_session_t {
     }
 
   private:
-    [[nodiscard]] auto prime_started(preview_bridge_start_result_t started,
+    [[nodiscard]] auto prime_started(preview_bridge_start_outcome_t started,
                                      std::uint64_t timeline_frame, preview_pump_options_t options, bool loop_restart = false)
         -> preview_session_start_outcome_t;
     [[nodiscard]] auto mix_render_frames(std::uint64_t first_frame,

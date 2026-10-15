@@ -35,7 +35,7 @@ struct prepared_object_audition_t {
 struct object_audition_effect_t {
     object_audition_status_t status{object_audition_status_t::resolve_failed};
     std::optional<prepared_object_audition_t> prepared;
-    std::optional<audition_start_result_t> transport;
+    std::optional<audition_start_outcome_t> transport;
     auto operator==(const object_audition_effect_t&) const -> bool = default;
 };
 // Rejected starts retain the prepared clips and transport failure details.
@@ -48,7 +48,7 @@ struct object_audition_result_t {
 
     object_audition_status_t status{object_audition_status_t::resolve_failed};
     std::optional<prepared_object_audition_t> prepared;
-    std::optional<audition_start_result_t> transport;
+    std::optional<audition_start_outcome_t> transport;
     std::vector<audition_resolve_diagnostic_t> diagnostics;
 
     [[nodiscard]] explicit operator bool() const noexcept {

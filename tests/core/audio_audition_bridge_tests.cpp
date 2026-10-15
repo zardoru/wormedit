@@ -36,11 +36,11 @@ TEST_CASE("audition bridge mixes exact source ranges and simultaneous layers",
     audition_transport_bridge_t bridge{transport};
     const std::array clips{clip("first", 4, 4), clip("second", 4, 4)};
 
-    const auto started = bridge.start(clips);
+    const auto started = bridge.start_clips(clips);
     REQUIRE(started);
-    CHECK(started.scheduled_layers == 2);
+    CHECK(started.value().scheduled_layers == 2);
     std::array<float, 8> output{};
-    const auto mixed = transport.mix_frames(*started.token, 0, output);
+    const auto mixed = transport.mix_frames(started.value().token, 0, output);
     CHECK(mixed.value().status == transport_mix_status_t::mixed);
     CHECK(mixed.value().voices_mixed == 2);
     CHECK(mixed.value().missing_blocks == 0);
@@ -55,20 +55,20 @@ TEST_CASE("audition bridge replaces generations and rejects invalid input before
     transport_t transport{cache, 4};
     audition_transport_bridge_t bridge{transport};
     const std::array initial{clip("first")};
-    const auto first = bridge.start(initial);
+    const auto first = bridge.start_clips(initial);
     REQUIRE(first);
 
     const std::array invalid{clip("bad", std::numeric_limits<std::uint64_t>::max(), 2)};
-    CHECK(bridge.start(invalid).status == audition_start_status_t::invalid_clip);
-    CHECK(bridge.session_token() == first.token);
-    CHECK(transport.is_current(*first.token));
+    CHECK(bridge.start_clips(invalid) == std::unexpected(audition_start_status_t::invalid_clip));
+    CHECK(bridge.session_token() == first.value().token);
+    CHECK(transport.is_current(first.value().token));
 
     const std::array replacement{clip("second")};
-    const auto second = bridge.start(replacement);
+    const auto second = bridge.start_clips(replacement);
     REQUIRE(second);
-    CHECK(second.token != first.token);
-    CHECK_FALSE(transport.is_current(*first.token));
-    CHECK(transport.is_current(*second.token));
+    CHECK(second.value().token != first.value().token);
+    CHECK_FALSE(transport.is_current(first.value().token));
+    CHECK(transport.is_current(second.value().token));
 }
 
 TEST_CASE("audition bridge bounds layers and atomically rejects or stops sessions",
@@ -77,22 +77,22 @@ TEST_CASE("audition bridge bounds layers and atomically rejects or stops session
     transport_t transport{cache, 1};
     audition_transport_bridge_t bridge{transport, 2};
     const std::array too_many{clip("one"), clip("two"), clip("three")};
-    CHECK(bridge.start(too_many).status == audition_start_status_t::too_many_layers);
+    CHECK(bridge.start_clips(too_many) == std::unexpected(audition_start_status_t::too_many_layers));
     CHECK_FALSE(bridge.session_token().has_value());
 
     const std::array over_transport_capacity{clip("one"), clip("two")};
-    const auto rejected = bridge.start(over_transport_capacity);
-    CHECK(rejected.status == audition_start_status_t::transport_capacity_exceeded);
-    CHECK(rejected.scheduled_layers == 0);
+    const auto rejected = bridge.start_clips(over_transport_capacity);
+    CHECK(rejected == std::unexpected(audition_start_status_t::transport_capacity_exceeded));
+    CHECK_FALSE(rejected.has_value());
     CHECK_FALSE(bridge.session_token().has_value());
     CHECK(transport.scheduled_voice_count() == 0);
 
     const std::array accepted{clip("one")};
-    const auto started = bridge.start(accepted);
+    const auto started = bridge.start_clips(accepted);
     REQUIRE(started);
     const auto stopped = bridge.stop();
     CHECK(stopped.scheduled_voices == 1);
     CHECK(stopped.voices_by_kind[static_cast<std::size_t>(voice_kind_t::click_preview)] == 1);
     CHECK_FALSE(bridge.session_token().has_value());
-    CHECK_FALSE(transport.is_current(*started.token));
+    CHECK_FALSE(transport.is_current(started.value().token));
 }

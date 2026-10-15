@@ -24,7 +24,7 @@ enum class sdl_audition_start_status_t {
 };
 
 using sdl_audition_start_result_t =
-    sdl_session_start_result_t<sdl_audition_start_status_t, audio::audition_session_start_result_t>;
+    sdl_session_start_result_t<sdl_audition_start_status_t, audio::audition_session_start_outcome_t>;
 
 enum class sdl_audition_service_status_t {
     ready,
@@ -35,7 +35,7 @@ enum class sdl_audition_service_status_t {
 
 struct sdl_audition_service_result_t {
     sdl_audition_service_status_t status{sdl_audition_service_status_t::ready};
-    std::optional<audio::audition_pump_result_t> pump;
+    std::optional<audio::audition_pump_outcome_t> pump;
 
     [[nodiscard]] explicit operator bool() const noexcept {
         return status == sdl_audition_service_status_t::ready;
@@ -68,7 +68,7 @@ class sdl_audition_output_t {
     friend struct sdl_audition_output_test_access_t;
     void refill_loop(std::stop_token stop);
     void set_refill_enabled(bool enabled) noexcept;
-    [[nodiscard]] auto take_refill_result() -> std::optional<audio::audition_pump_result_t>;
+    [[nodiscard]] auto take_refill_result() -> std::optional<audio::audition_pump_outcome_t>;
     static void SDLCALL stream_callback(void* userdata, SDL_AudioStream* stream,
                                         int additional_amount, int total_amount);
     void render_requested(SDL_AudioStream* stream, int additional_amount) noexcept;
@@ -88,7 +88,7 @@ class sdl_audition_output_t {
     std::jthread refill_worker_;
     std::uint64_t refill_generation_{};
     bool refill_enabled_{};
-    std::optional<audio::audition_pump_result_t> refill_result_;
+    std::optional<audio::audition_pump_outcome_t> refill_result_;
     SDL_AudioStream* stream_{};
     std::atomic<callback_failure_t> callback_failure_{callback_failure_t::none};
     std::array<float, callback_frames * audio::output_channel_count> scratch_{};

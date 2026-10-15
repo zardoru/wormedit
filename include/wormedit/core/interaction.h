@@ -628,10 +628,29 @@ struct note_paint_gesture_preview_t {
     auto operator==(const note_paint_gesture_preview_t&) const -> bool = default;
 };
 
+struct pending_semantic_layer_paint_gesture_t {
+    static constexpr auto kind = editor_gesture_kind_t::semantic_paint;
+    static constexpr auto update_message = "semantic-layer paint update requires an active gesture";
+    layer_id_t layer;
+    std::shared_ptr<const std::vector<object_id_t>> notes;
+    std::shared_ptr<const std::vector<object_id_t>> bgm_events;
+    std::unordered_set<std::uint64_t> visited;
+    bool replace_memberships{};
+    bool clear_memberships{};
+    semantic_layer_paint_mode_t mode{semantic_layer_paint_mode_t::add};
+
+    [[nodiscard]] static auto begin(editor_edit_context_t&, const begin_semantic_layer_paint_gesture_action_t&)
+        -> diagnosed_t<std::optional<pending_semantic_layer_paint_gesture_t>>;
+    [[nodiscard]] auto update(editor_edit_context_t&, std::optional<editor_selection_object_t>) -> diagnostic_list_t;
+    [[nodiscard]] auto apply(editor_edit_context_t&) const -> editor_interaction_result_t;
+    auto operator==(const pending_semantic_layer_paint_gesture_t&) const -> bool = default;
+};
+
 // Temporary: remaining alternatives migrate here and legacy fields are removed by T-634.
 using active_gesture_t = std::variant<proposal_t<pending_note_duration_gesture_t, document_stamp_t>,
                                       proposal_t<pending_note_move_gesture_t, document_stamp_t>,
-                                      proposal_t<pending_note_paint_gesture_t, document_stamp_t>>;
+                                      proposal_t<pending_note_paint_gesture_t, document_stamp_t>,
+                                      proposal_t<pending_semantic_layer_paint_gesture_t, document_stamp_t>>;
 
 // A projection contains only render data; paint's visited cells stay in the capture.
 using active_gesture_preview_t = std::variant<
@@ -641,9 +660,11 @@ using active_gesture_preview_t = std::variant<
 [[nodiscard]] inline auto build_editor_gesture_preview(const std::optional<active_gesture_t>& active)
     -> std::optional<active_gesture_preview_t> {
     if (!active) return std::nullopt;
-    return std::visit([](const auto& proposal) -> active_gesture_preview_t {
+    return std::visit([](const auto& proposal) -> std::optional<active_gesture_preview_t> {
         if constexpr (std::same_as<std::remove_cvref_t<decltype(proposal.payload)>, pending_note_paint_gesture_t>)
             return note_paint_gesture_preview_t{.stamp = proposal.stamp, .targets = proposal.payload.targets};
+        else if constexpr (std::same_as<std::remove_cvref_t<decltype(proposal.payload)>, pending_semantic_layer_paint_gesture_t>)
+            return std::nullopt;
         else
             return proposal;
     }, *active);
@@ -659,17 +680,6 @@ template<class Gesture, class Variant>
         return proposal ? &proposal->payload : nullptr;
     }
 }
-
-struct pending_semantic_layer_paint_gesture_t {
-    layer_id_t layer;
-    document_stamp_t stamp;
-    std::shared_ptr<const std::vector<object_id_t>> notes;
-    std::shared_ptr<const std::vector<object_id_t>> bgm_events;
-    std::unordered_set<std::uint64_t> visited;
-    bool replace_memberships{};
-    bool clear_memberships{};
-    semantic_layer_paint_mode_t mode{semantic_layer_paint_mode_t::add};
-};
 
 struct editor_hit_test_index_t;
 
@@ -770,7 +780,6 @@ struct editor_interaction_state_t {
     template<class Gesture> [[nodiscard]] auto gesture() const -> const Gesture* {
         return gesture_payload<Gesture>(active_gesture ? &*active_gesture : nullptr);
     }
-    std::optional<pending_semantic_layer_paint_gesture_t> pending_semantic_layer_paint_gesture;
     std::optional<pending_editor_area_selection_t> pending_editor_area_selection;
     std::optional<pending_space_range_selection_t> pending_space_range_selection;
     // The most recently committed non-empty area/Space interval. This is

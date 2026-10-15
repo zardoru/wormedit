@@ -2410,12 +2410,12 @@ TEST_CASE("semantic-layer paint visits mixed notes once and commits one undoable
     require_layer_brush(dispatch_editor_action(
         history, state,
         begin_semantic_layer_paint_gesture_action_t{layer_id_t{7}, object_id_t{101}, true}));
-    require_layer_brush(state.pending_semantic_layer_paint_gesture.has_value());
+    require_layer_brush(state.gesture<wormedit::pending_semantic_layer_paint_gesture_t>() != nullptr);
     require_layer_brush(dispatch_editor_action(
         history, state, update_semantic_layer_paint_gesture_action_t{object_id_t{102}, true}));
     require_layer_brush(dispatch_editor_action(
         history, state, update_semantic_layer_paint_gesture_action_t{object_id_t{102}, true}));
-    check_layer_brush(state.pending_semantic_layer_paint_gesture->notes->size() == 2);
+    check_layer_brush(state.gesture<wormedit::pending_semantic_layer_paint_gesture_t>()->notes->size() == 2);
     check_layer_brush(history.document.revision == 1);
 
     const auto committed =
@@ -2426,7 +2426,7 @@ TEST_CASE("semantic-layer paint visits mixed notes once and commits one undoable
                                    .phase = wormedit::editor_gesture_phase_t::commit});
     require_layer_brush(committed);
     check_layer_brush(committed.document_changed);
-    check_no_layer_brush(state.pending_semantic_layer_paint_gesture.has_value());
+    check_no_layer_brush(state.gesture<wormedit::pending_semantic_layer_paint_gesture_t>() != nullptr);
     check_layer_brush(history.undo.size() == 1);
     check_layer_brush(find_note(history, object_id_t{101})->semantic_layers == std::vector{layer_id_t{7}});
     check_layer_brush(find_note(history, object_id_t{102})->semantic_layers == std::vector{layer_id_t{7}});
@@ -2508,7 +2508,7 @@ TEST_CASE("semantic-layer paint requires an editable visible layer and cancels o
     check_layer_brush(has_code(locked.diagnostics, diagnostic_code_t::invalid_id));
     check_layer_brush(history.document.revision == 1);
     check_layer_brush(history.undo.empty());
-    check_no_layer_brush(state.pending_semantic_layer_paint_gesture);
+    check_no_layer_brush(state.gesture<wormedit::pending_semantic_layer_paint_gesture_t>());
 
     require_layer_brush(dispatch_editor_action(
         history, state,
@@ -2516,7 +2516,7 @@ TEST_CASE("semantic-layer paint requires an editable visible layer and cancels o
     const auto capture_lost = dispatch_editor_action(
         history, state, update_semantic_layer_paint_gesture_action_t{object_id_t{101}, false});
     require_layer_brush(capture_lost);
-    check_no_layer_brush(state.pending_semantic_layer_paint_gesture.has_value());
+    check_no_layer_brush(state.gesture<wormedit::pending_semantic_layer_paint_gesture_t>() != nullptr);
     check_layer_brush(history.undo.empty());
     check_layer_brush(find_note(history, object_id_t{101})->semantic_layers.empty());
 }

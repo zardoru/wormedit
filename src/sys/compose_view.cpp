@@ -1451,7 +1451,7 @@ std::uint64_t prepare_compose_projection_state(const compose_projection_context_
         retained_state->gesture<wormedit::pending_note_duration_gesture_t>() != nullptr ||
         retained_state->gesture<wormedit::pending_note_move_gesture_t>() != nullptr ||
         retained_state->gesture<wormedit::pending_note_paint_gesture_t>() != nullptr ||
-        retained_state->pending_semantic_layer_paint_gesture.has_value() ||
+        retained_state->gesture<wormedit::pending_semantic_layer_paint_gesture_t>() != nullptr ||
         retained_state->pending_editor_area_selection.has_value() ||
         retained_state->pending_space_range_selection.has_value();
     if (!hover_gesture_active && cache.frame.hover &&

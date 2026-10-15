@@ -1979,7 +1979,7 @@ TEST_CASE("Compose No layer paint clears mixed memberships once and undo restore
         update_semantic_layer_paint_gesture_action_t{object_id_t{2}, true})));
     require_membership(static_cast<bool>(finish_compose_layer_paint(fixture.history, fixture.state, {})));
     check_membership(static_cast<bool>(fixture.history.undo.size() == 1));
-    check_membership(static_cast<bool>(!(fixture.state.pending_semantic_layer_paint_gesture)));
+    check_membership(static_cast<bool>(!(fixture.state.gesture<wormedit::pending_semantic_layer_paint_gesture_t>())));
     check_membership(static_cast<bool>(fixture.state.selected_notes.size() == 2));
     for (const auto& note : fixture.history.document.charts.front().measures.front().notes)
         check_membership(static_cast<bool>(note.semantic_layers.empty()));
@@ -2000,7 +2000,7 @@ TEST_CASE("Compose No layer paint rejects locked membership and exposes status d
     check_membership(static_cast<bool>(!(result)));
     require_membership(static_cast<bool>(!(result.diagnostics.empty())));
     check_membership(static_cast<bool>(result.diagnostics.front().message.find("locked") != std::string::npos));
-    check_membership(static_cast<bool>(!(fixture.state.pending_semantic_layer_paint_gesture)));
+    check_membership(static_cast<bool>(!(fixture.state.gesture<wormedit::pending_semantic_layer_paint_gesture_t>())));
     check_membership(static_cast<bool>(write_native_project(fixture.history.document).bytes == write_native_project(original).bytes));
     check_membership(static_cast<bool>(fixture.history.undo.empty()));
     check_membership(static_cast<bool>(fixture.state.selected_notes.size() == 2));
@@ -2031,7 +2031,7 @@ TEST_CASE("Compose No layer no-op still binds target and releases an unassigned 
     check_membership(none && !target);
     require_membership(static_cast<bool>(begin_compose_layer_paint(fixture.history, fixture.state, true, {}, object_id_t{1}, true)));
     require_membership(static_cast<bool>(finish_compose_layer_paint(fixture.history, fixture.state, {})));
-    check_membership(!fixture.state.pending_semantic_layer_paint_gesture);
+    check_membership(!fixture.state.gesture<wormedit::pending_semantic_layer_paint_gesture_t>());
     check_membership(fixture.history.undo.empty());
 }
 

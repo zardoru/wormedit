@@ -275,7 +275,7 @@ TEST_CASE("BGM paint rejects a locked layer and cancels on pointer capture loss"
         update_semantic_layer_paint_gesture_action_t{
             .note = object_id_t{}, .pointer_captured = false, .bgm_event = object_id_t{21}});
     REQUIRE(cancelled);
-    CHECK_FALSE(state.pending_semantic_layer_paint_gesture);
+    CHECK_FALSE(state.gesture<wormedit::pending_semantic_layer_paint_gesture_t>());
     CHECK(history.undo.empty());
 }
 

@@ -142,3 +142,21 @@ TEST_CASE("Paint projection retains targets without copying capture bookkeeping"
         local_position_t{measure_id_t{1}, 480}, std::nullopt));
     CHECK((paint.targets->size() == 1 && capture->targets->size() == 2));
 }
+
+static_assert(editor_gesture<pending_semantic_layer_paint_gesture_t,
+    begin_semantic_layer_paint_gesture_action_t, std::optional<editor_selection_object_t>>);
+
+TEST_CASE("Semantic paint commits without a final sampled target", "[core][active-gesture]") {
+    auto fixture = gesture_fixture_t::from();
+    fixture.history.document.charts.front().semantic_layers = {
+        {.id = layer_id_t{7}, .name = "Phrase", .color = {255, 96, 48, 255}}};
+    auto context = fixture.context();
+    REQUIRE(begin_gesture<pending_semantic_layer_paint_gesture_t>(context,
+        begin_semantic_layer_paint_gesture_action_t{.layer = layer_id_t{7}, .note = object_id_t{101}}));
+    CHECK_FALSE(build_editor_gesture_preview(fixture.state.active_gesture));
+    const auto committed = commit_gesture<pending_semantic_layer_paint_gesture_t>(context,
+        std::optional<editor_selection_object_t>{});
+    REQUIRE(committed);
+    CHECK(committed.document_changed);
+    fixture.check_capture_ended(1);
+}

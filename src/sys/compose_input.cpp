@@ -953,7 +953,7 @@ auto handle_inactive_semantic_layer_paint(compose_gesture_context_t& context)
     auto& state = context.state;
     auto& result = context.result;
     auto& accepted = context.accepted;
-    if (state.pending_semantic_layer_paint_gesture) {
+    if (state.gesture<wormedit::pending_semantic_layer_paint_gesture_t>()) {
         result = dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
         accepted = "Semantic-layer paint stroke canceled because paint mode is inactive.";
     } else {

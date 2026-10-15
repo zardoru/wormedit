@@ -1191,19 +1191,8 @@ auto adjust_editor_zoom(document_history_t& history, editor_interaction_state_t&
     -> editor_interaction_result_t;
 auto place_tap(editor_edit_context_t& context, const place_tap_action_t& action)
     -> editor_interaction_result_t;
-auto append_semantic_paint_note(editor_edit_context_t& context, object_id_t note_id,
-                                bool pointer_captured) -> editor_interaction_result_t;
-auto append_semantic_paint_bgm_event(editor_edit_context_t& context, object_id_t event_id,
-                                     bool pointer_captured) -> editor_interaction_result_t;
-auto begin_semantic_paint(editor_edit_context_t& context, layer_id_t layer_id, object_id_t note_id,
-                          std::optional<object_id_t> bgm_event, bool pointer_captured,
-                          bool replace_memberships, bool clear_memberships,
-                          semantic_layer_paint_mode_t mode) -> editor_interaction_result_t;
 auto semantic_paint_edit(chart_id_t chart, const pending_semantic_layer_paint_gesture_t& pending)
     -> semantic_layer_edit_action_t;
-auto end_semantic_paint(editor_edit_context_t& context, object_id_t note_id,
-                        std::optional<object_id_t> bgm_event, bool pointer_captured)
-    -> editor_interaction_result_t;
 auto audition_selected_object(bool requested, const std::vector<editor_selection_object_t>& hits,
                               const editor_interaction_state_t& state, std::uint64_t revision)
     -> std::optional<editor_object_audition_request_t>;

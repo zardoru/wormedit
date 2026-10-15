@@ -1518,54 +1518,60 @@ auto interaction_detail::update_canvas_keyboard_holds(editor_edit_context_t& con
 // Materialization is private preparation. Authored and virtual requests run the
 // same placement verb, then publish the prepared document as one history entry.
 
-auto begin_semantic_paint(editor_edit_context_t& context, layer_id_t layer_id,
-                          object_id_t note_id, std::optional<object_id_t> bgm_event,
-                          bool pointer_captured,
-                          bool replace_memberships, bool clear_memberships,
-                          semantic_layer_paint_mode_t mode)
-    -> editor_interaction_result_t {
-    auto& history = context.history;
-    auto& state = context.state;
+auto pending_semantic_layer_paint_gesture_t::update(editor_edit_context_t& context,
+    std::optional<editor_selection_object_t> target) -> diagnostic_list_t {
+    if (!target) return {};
+    if (target->kind != editor_selection_object_kind_t::note &&
+        target->kind != editor_selection_object_kind_t::bgm_event)
+        return {error(diagnostic_code_t::invalid_id,
+            "semantic-layer paint must target one note or BGM event", target->id)};
+    const bool is_bgm = target->kind == editor_selection_object_kind_t::bgm_event;
+    const auto id = target->id;
+    if (is_bgm ? !context.scope.chart.find_bgm_event(id) : !context.scope.chart.find_note(id))
+        return {error(diagnostic_code_t::invalid_id,
+            is_bgm ? "semantic-layer paint target does not identify a BGM event"
+                   : "semantic-layer paint target does not identify a chart note", id)};
+    if (visited.contains(id.value)) return {};
+    if (!notes || !bgm_events || notes->size() + bgm_events->size() >= maximum_note_paint_targets)
+        return {error(diagnostic_code_t::invalid_resolution,
+            is_bgm ? "semantic-layer paint exceeds the per-gesture target cap"
+                   : "semantic-layer paint exceeds the per-gesture note target cap")};
+    auto& targets = is_bgm ? bgm_events : notes;
+    auto expanded = std::make_shared<std::vector<object_id_t>>(*targets);
+    expanded->push_back(id);
+    targets = std::move(expanded);
+    visited.insert(id.value);
+    return {};
+}
+
+auto pending_semantic_layer_paint_gesture_t::begin(editor_edit_context_t& context,
+    const begin_semantic_layer_paint_gesture_action_t& request)
+    -> diagnosed_t<std::optional<pending_semantic_layer_paint_gesture_t>> {
+    const auto& [layer_id, note_id, pointer_captured, replace_memberships, clear_memberships, bgm_event, mode] = request;
     if (!pointer_captured)
-        return diagnostic_result(
-            history, state,
-            {error(diagnostic_code_t::invalid_hold,
-                   "pointer capture is required to begin semantic-layer painting")});
-    if (state.pending_hold || state.gesture<pending_note_duration_gesture_t>() ||
-        state.gesture<pending_note_move_gesture_t>() || state.gesture<wormedit::pending_note_paint_gesture_t>() ||
-        state.pending_semantic_layer_paint_gesture || state.pending_editor_area_selection ||
-        state.pending_space_range_selection)
-        return diagnostic_result(history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        "another editor gesture is already active")});
+        return {.diagnostics = {error(diagnostic_code_t::invalid_hold,
+                   "pointer capture is required to begin semantic-layer painting")}};
     const auto layer = std::ranges::find(context.scope.chart.semantic_layers, layer_id,
                                          &semantic_layer_t::id);
     if (!clear_memberships && (layer == context.scope.chart.semantic_layers.end() || !layer->visible))
-        return diagnostic_result(
-            history, state,
-            {error(diagnostic_code_t::invalid_id,
-                   "semantic-layer paint requires a visible chart layer")});
+        return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                   "semantic-layer paint requires a visible chart layer")}};
     if (!clear_memberships && layer->locked)
-        return diagnostic_result(history, state,
-                                 {error(diagnostic_code_t::invalid_id,
-                                        "semantic-layer paint cannot modify a locked layer")});
+        return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                                        "semantic-layer paint cannot modify a locked layer")}};
     if (static_cast<bool>(note_id) == bgm_event.has_value())
-        return diagnostic_result(
-            history, state,
-            {error(diagnostic_code_t::invalid_id,
-                   "semantic-layer paint must target one note or BGM event")});
+        return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                   "semantic-layer paint must target one note or BGM event")}};
     if ((note_id && !context.scope.chart.find_note(note_id)) ||
         (bgm_event && !context.scope.chart.find_bgm_event(*bgm_event)))
-        return diagnostic_result(history, state,
-            {error(diagnostic_code_t::invalid_id,
-                   "semantic-layer paint target is not in the chart", note_id ? note_id : *bgm_event)});
+        return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                   "semantic-layer paint target is not in the chart", note_id ? note_id : *bgm_event)}};
     auto notes = std::make_shared<std::vector<object_id_t>>();
     auto bgm_events = std::make_shared<std::vector<object_id_t>>();
     if (note_id) notes->push_back(note_id);
     if (bgm_event) bgm_events->push_back(*bgm_event);
     pending_semantic_layer_paint_gesture_t pending{
         .layer = layer_id,
-        .stamp = document_stamp_t::from(history.document.revision),
         .notes = std::move(notes),
         .bgm_events = std::move(bgm_events),
         .replace_memberships = replace_memberships,
@@ -1574,8 +1580,7 @@ auto begin_semantic_paint(editor_edit_context_t& context, layer_id_t layer_id,
     };
     pending.visited.reserve(64);
     pending.visited.insert(note_id ? note_id.value : bgm_event->value);
-    state.pending_semantic_layer_paint_gesture = std::move(pending);
-    return editor_interaction_result_t::from(history, state);
+    return {.value = std::move(pending)};
 }
 
 auto semantic_paint_edit(chart_id_t chart, const pending_semantic_layer_paint_gesture_t& pending)
@@ -1595,35 +1600,15 @@ auto semantic_paint_edit(chart_id_t chart, const pending_semantic_layer_paint_ge
                                                     : membership_operation_t::assign};
 }
 
-auto end_semantic_paint(editor_edit_context_t& context, object_id_t note_id,
-                        std::optional<object_id_t> bgm_event,
-                        bool pointer_captured) -> editor_interaction_result_t {
+auto pending_semantic_layer_paint_gesture_t::apply(editor_edit_context_t& context) const
+    -> editor_interaction_result_t {
     auto& history = context.history;
     auto& state = context.state;
-    if (!pointer_captured)
-        return cancel_pointer_gesture(context);
-    if (bgm_event) {
-        const auto updated = append_semantic_paint_bgm_event(context, *bgm_event, true);
-        if (!updated) return updated;
-    } else if (note_id) {
-        const auto updated = append_semantic_paint_note(context, note_id, true);
-        if (!updated)
-            return updated;
-    }
-    if (!state.pending_semantic_layer_paint_gesture)
-        return diagnostic_result(
-            history, state,
-            {error(diagnostic_code_t::invalid_hold,
-                   "semantic-layer paint gesture was cancelled before commit")});
-    const auto pending = *state.pending_semantic_layer_paint_gesture;
+    const auto& pending = *this;
     if (!pending.notes || !pending.bgm_events || (pending.notes->empty() && pending.bgm_events->empty()))
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "semantic-layer paint gesture is malformed or stale")});
-    if (!pending.stamp.is_revision_current(history.document.revision))
-        return diagnostic_result(history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        stale_action_message("Editor gesture"))});
     const auto layer = std::ranges::find(context.scope.chart.semantic_layers, pending.layer,
                                         &semantic_layer_t::id);
     if (!pending.clear_memberships &&
@@ -1635,7 +1620,6 @@ auto end_semantic_paint(editor_edit_context_t& context, object_id_t note_id,
     const auto applied = apply_semantic_layer_edit(history, edit);
     if (!applied && !applied.diagnostics.empty())
         return diagnostic_result(history, state, applied.diagnostics);
-    state.pending_semantic_layer_paint_gesture.reset();
     auto result = editor_interaction_result_t::from(history, state);
     result.document_changed = applied.applied;
     return result;
@@ -1827,13 +1811,6 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
 }
 
 namespace {
-auto append_semantic_paint_target(editor_edit_context_t& context, object_id_t note,
-                                  std::optional<object_id_t> bgm_event, bool captured)
-    -> editor_interaction_result_t {
-    return bgm_event ? append_semantic_paint_bgm_event(context, *bgm_event, captured)
-                     : append_semantic_paint_note(context, note, captured);
-}
-
 auto handle(editor_edit_context_t& context, const move_edit_cursor_action_t& typed_action,
             const std::uint64_t& absolute) -> editor_interaction_result_t {
     interaction_detail::cursor_navigation_context_t cursor_navigation{context, absolute};
@@ -1965,22 +1942,21 @@ auto handle(editor_edit_context_t& context,
             const begin_semantic_layer_paint_gesture_action_t& typed_action)
     -> editor_interaction_result_t {
 
-    return begin_semantic_paint(context, typed_action.layer, typed_action.note,
-                                typed_action.bgm_event, typed_action.pointer_captured,
-                                typed_action.replace_memberships, typed_action.clear_memberships,
-                                typed_action.mode);
+    return begin_gesture<pending_semantic_layer_paint_gesture_t>(context, typed_action);
 }
 
 auto handle(editor_edit_context_t& context,
-            const update_semantic_layer_paint_gesture_action_t& typed_action)
+            const update_semantic_layer_paint_gesture_action_t& request)
     -> editor_interaction_result_t {
-    if (typed_action.phase == editor_gesture_phase_t::commit) {
-        return end_semantic_paint(context, typed_action.note, typed_action.bgm_event,
-                                  typed_action.pointer_captured);
-    }
-
-    return append_semantic_paint_target(context, typed_action.note, typed_action.bgm_event,
-                                        typed_action.pointer_captured);
+    if (!request.pointer_captured) return cancel_pointer_gesture(context);
+    std::optional<editor_selection_object_t> target;
+    if (request.bgm_event)
+        target = editor_selection_object_t{editor_selection_object_kind_t::bgm_event, *request.bgm_event};
+    else if (request.note || request.phase != editor_gesture_phase_t::commit)
+        target = editor_selection_object_t{editor_selection_object_kind_t::note, request.note};
+    if (request.phase == editor_gesture_phase_t::commit)
+        return commit_gesture<pending_semantic_layer_paint_gesture_t>(context, target);
+    return update_gesture<pending_semantic_layer_paint_gesture_t>(context, target);
 }
 
 

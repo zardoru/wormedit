@@ -6540,7 +6540,7 @@ auto range_pause_routing(unsigned guard) -> bool {
     case 6: fixture.interaction->retained_selection_range.reset(); break;
     case 7: fixture.application.project.clipboard.paste_session = application_command_state_t::paste_session_t{}; break;
     case 8: fixture.application.project.compose_gesture.bga_draw_stroke = application_command_state_t::bga_draw_stroke_t{}; break;
-    case 9: fixture.application.project.compose_gesture.bmson_razor_stroke = application_command_state_t::bmson_razor_stroke_t{}; break;
+    case 9: fixture.application.project.compose_gesture.bmson_razor_stroke = application_command_state_t::bmson_razor_stroke_proposal_t{}; break;
     default: break;
     }
     const auto feedback = dispatch_range_pause(fixture, action);
@@ -7278,4 +7278,61 @@ TEST_CASE("BMSON proposal adoption moves markers prepared by the existing native
     CHECK(revised.value->payload.markers.data() == storage);
     CHECK(revised.value->payload.markers.front().restart);
     CHECK(fixture.history.undo.empty());
+}
+
+TEST_CASE("Razor capture quietly has no proposal when its marker prerequisite is absent",
+          "[sys][bmson-razor][proposal-shape]") {
+    document_history_t history;
+    allocations = 0;
+    count_allocations = true;
+    const auto proposed = application_command_state_t::bmson_razor_stroke_t::propose(
+        history, chart_id_t{1}, nullptr, object_id_t{42}, 8, {measure_id_t{1}, 120});
+    count_allocations = false;
+    const auto counted = allocations;
+    CHECK_FALSE(proposed.value);
+    CHECK(proposed.diagnostics.empty());
+    CHECK(counted == 0);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Razor capture keeps revision-only marker identity and captures the current document",
+          "[sys][bmson-razor][proposal-shape]") {
+    auto fixture = bmson_marker_fixture_t::from();
+    const local_position_t position{fixture.history.document.charts.front().measures.front().id, 120};
+    const std::array markers{bmson_sound_marker_insertion_t{position, false}};
+    auto proposed = application_command_state_t::bmson_marker_draft_t::propose(
+        fixture.history, fixture.state, fixture.reference, markers);
+    REQUIRE(proposed.value);
+    fixture.history.document.id = song_id_t{99};
+    const auto captured = application_command_state_t::bmson_razor_stroke_t::propose(
+        fixture.history, fixture.state.chart, &*proposed.value, fixture.reference, 8, position);
+    REQUIRE(captured.value);
+    CHECK(captured.value->stamp == chart_stamp_t::from(fixture.history.document, fixture.state.chart));
+    CHECK(captured.value->payload.reference == fixture.reference);
+    CHECK(captured.value->payload.snap_denominator == 8);
+    CHECK(captured.value->payload.last_position == position);
+}
+
+TEST_CASE("Razor revision adopts an acknowledged staged cell without allocating",
+          "[sys][bmson-razor][proposal-shape]") {
+    auto fixture = bmson_marker_fixture_t::from();
+    const auto measure = fixture.history.document.charts.front().measures.front().id;
+    const std::array markers{bmson_sound_marker_insertion_t{{measure, 120}, false},
+                             bmson_sound_marker_insertion_t{{measure, 240}, false}};
+    auto proposed = application_command_state_t::bmson_marker_draft_t::propose(
+        fixture.history, fixture.state, fixture.reference, markers);
+    REQUIRE(proposed.value);
+    auto captured = application_command_state_t::bmson_razor_stroke_t::propose(
+        fixture.history, fixture.state.chart, &*proposed.value, fixture.reference, 8, {measure, 120});
+    REQUIRE(captured.value);
+    const auto stamp = captured.value->stamp;
+    allocations = 0;
+    count_allocations = true;
+    const auto revised = captured.value->payload.revise(stamp, {measure, 240});
+    count_allocations = false;
+    const auto counted = allocations;
+    REQUIRE(revised.value);
+    CHECK(counted == 0);
+    CHECK(revised.value->stamp == stamp);
+    CHECK(revised.value->payload.last_position == local_position_t{measure, 240});
 }

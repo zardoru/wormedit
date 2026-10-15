@@ -491,6 +491,7 @@ struct application_command_state_t {
     struct bmson_marker_draft_t {
         wormedit::object_id_t reference;
         std::vector<wormedit::bmson_sound_marker_insertion_t> markers;
+        [[nodiscard]] auto has_position(wormedit::local_position_t position) const -> bool;
 
         [[nodiscard]] static auto propose(const wormedit::document_history_t& history,
             const wormedit::editor_interaction_state_t& state, wormedit::object_id_t reference,
@@ -518,13 +519,28 @@ struct application_command_state_t {
             wormedit::object_id_t, std::span<const wormedit::bmson_sound_marker_insertion_t>>,
         std::tuple<wormedit::chart_stamp_t, std::vector<wormedit::bmson_sound_marker_insertion_t>>,
         wormedit::chart_stamp_t, std::optional<wormedit::diagnostic_t>>);
+    struct bmson_razor_stroke_t;
+    using bmson_razor_stroke_proposal_t = wormedit::proposal_t<bmson_razor_stroke_t>;
+    using bmson_razor_stroke_outcome_t = wormedit::proposal_outcome_t<bmson_razor_stroke_t>;
     struct bmson_razor_stroke_t {
-        wormedit::chart_stamp_t stamp;
         wormedit::object_id_t reference;
         std::uint64_t snap_denominator{};
         wormedit::local_position_t last_position;
-        wormedit::diagnostic_list_t diagnostics;
+
+        // A token exists only after its marker owner staged this exact pulse.
+        [[nodiscard]] static auto propose(const wormedit::document_history_t& history,
+            wormedit::chart_id_t chart, const bmson_marker_draft_proposal_t* markers,
+            wormedit::object_id_t reference, std::uint64_t snap_denominator,
+            wormedit::local_position_t position) -> bmson_razor_stroke_outcome_t;
+        // The input controller already validated the path and acknowledged its marker segment.
+        [[nodiscard]] auto revise(wormedit::chart_stamp_t captured,
+            wormedit::local_position_t prepared_position) -> bmson_razor_stroke_outcome_t;
     };
+    static_assert(wormedit::staged_proposal<bmson_razor_stroke_t,
+        std::tuple<const wormedit::document_history_t&, wormedit::chart_id_t,
+            const bmson_marker_draft_proposal_t*, wormedit::object_id_t, std::uint64_t,
+            wormedit::local_position_t>,
+        std::tuple<wormedit::chart_stamp_t, wormedit::local_position_t>>);
     struct bga_draw_stroke_t {
         wormedit::chart_stamp_t stamp;
         std::optional<wormedit::resource_id_t> resource;
@@ -596,7 +612,7 @@ struct application_command_state_t {
 
         struct compose_gesture_state_t {
             std::optional<bmson_marker_draft_proposal_t> bmson_marker_draft;
-            std::optional<bmson_razor_stroke_t> bmson_razor_stroke;
+            std::optional<bmson_razor_stroke_proposal_t> bmson_razor_stroke;
             std::optional<bga_draw_stroke_t> bga_draw_stroke;
             uint8_t draw_source_kind{};
             uint64_t draw_source_id{};

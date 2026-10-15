@@ -116,7 +116,7 @@ auto dispatch_bmson_razor_input(const WormUiComposeInputAction& input,
     const object_id_t reference{input.object_id};
     if (input.razor_stroke_start) {
         stroke.reset();
-    } else if (!stroke || stroke->stamp.chart != state.chart || stroke->reference != reference) {
+    } else if (!stroke || stroke->stamp.chart != state.chart || stroke->payload.reference != reference) {
         stroke.reset();
         return "Begin a new BMSON razor stroke on the selected sound channel.";
     } else if (!stroke->stamp.document.is_current(history.document,
@@ -125,7 +125,7 @@ auto dispatch_bmson_razor_input(const WormUiComposeInputAction& input,
         return stale_action_message("BMSON razor stroke");
     }
     const auto denominator =
-        input.razor_stroke_start ? edit_snap_denominator(*chart, state) : stroke->snap_denominator;
+        input.razor_stroke_start ? edit_snap_denominator(*chart, state) : stroke->payload.snap_denominator;
     const auto raw = position_at_compose_y(*chart, *current_view, input.y_pixels);
     const auto position =
         raw ? resolve_resource_placement_position(*chart, *raw, denominator) : std::nullopt;
@@ -139,28 +139,20 @@ auto dispatch_bmson_razor_input(const WormUiComposeInputAction& input,
             draft && draft->stamp.is_current(history.document, state.chart,
                 wormedit::document_identity_policy_t::revision_only) &&
             draft->payload.reference == reference &&
-            std::ranges::any_of(draft->payload.markers,
-                                [&](const auto& marker) { return marker.position == *position; });
+            draft->payload.has_position(*position);
         const auto status = already_staged
                                 ? std::string{"BMSON razor stroke started on a staged pulse."}
                                 : propose_bmson_bgm_marker(history, state, application_state,
                                                          reference, *position, restart, &severity);
         severity = staged_input_severity(already_staged, severity);
         const auto& staged = application_state.project.compose_gesture.bmson_marker_draft;
-        if (staged && staged->stamp.is_current(history.document, state.chart,
-                document_identity_policy_t::revision_only) && staged->payload.reference == reference &&
-            std::ranges::any_of(staged->payload.markers,
-                                [&](const auto& marker) { return marker.position == *position; })) {
-            stroke = application_command_state_t::bmson_razor_stroke_t{
-                .stamp = chart_stamp_t::from(history.document, state.chart),
-                .reference = reference,
-                .snap_denominator = denominator,
-                .last_position = *position};
-        }
+        auto proposed = application_command_state_t::bmson_razor_stroke_t::propose(
+            history, state.chart, staged ? &*staged : nullptr, reference, denominator, *position);
+        stroke = std::move(proposed.value);
         return status;
     }
     const auto path =
-        interpolate_bmson_razor_path(*chart, stroke->last_position, *position, denominator);
+        interpolate_bmson_razor_path(*chart, stroke->payload.last_position, *position, denominator);
     if (!path) {
         severity = to_notification_severity(path.diagnostics.front().severity);
         return path.diagnostics.front().message;
@@ -169,15 +161,14 @@ auto dispatch_bmson_razor_input(const WormUiComposeInputAction& input,
     pending.reserve(path.positions.size());
     for (const auto candidate : path.positions) {
         const auto& draft = application_state.project.compose_gesture.bmson_marker_draft;
-        if (draft && std::ranges::any_of(draft->payload.markers, [&](const auto& marker) {
-                return marker.position == candidate;
-            })) {
+        if (draft && draft->payload.has_position(candidate)) {
             continue;
         }
         pending.push_back({.position = candidate, .restart = restart});
     }
     if (pending.empty()) {
-        stroke->last_position = *position;
+        auto revised = stroke->payload.revise(stroke->stamp, *position);
+        stroke = std::move(revised.value);
         severity = notification_severity_t::hint;
         return "BMSON razor remains on staged grid cells.";
     }
@@ -188,7 +179,8 @@ auto dispatch_bmson_razor_input(const WormUiComposeInputAction& input,
         propose_bmson_bgm_markers(history, state, application_state, reference, pending, &severity);
     if (application_state.project.compose_gesture.bmson_marker_draft &&
         application_state.project.compose_gesture.bmson_marker_draft->payload.markers.size() == before + pending.size()) {
-        stroke->last_position = *position;
+        auto revised = stroke->payload.revise(stroke->stamp, *position);
+        stroke = std::move(revised.value);
     }
     return status;
 }

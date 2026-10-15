@@ -126,9 +126,7 @@ auto validate_bmson_marker_draft(
         return {};
     }
     for (const auto& marker : markers) {
-        const auto repeated = std::ranges::any_of(draft->markers, [&](const auto& prior) {
-            return prior.position == marker.position;
-        });
+        const auto repeated = draft->has_position(marker.position);
         if (repeated) {
             return "That BMSON pulse is already staged.";
         }
@@ -137,6 +135,35 @@ auto validate_bmson_marker_draft(
 }
 
 } // namespace compose_input_detail
+
+auto application_command_state_t::bmson_marker_draft_t::has_position(
+    wormedit::local_position_t position) const -> bool {
+    return std::ranges::find(markers, position,
+        &wormedit::bmson_sound_marker_insertion_t::position) != markers.end();
+}
+
+auto application_command_state_t::bmson_razor_stroke_t::propose(
+    const wormedit::document_history_t& history, wormedit::chart_id_t chart,
+    const bmson_marker_draft_proposal_t* markers, wormedit::object_id_t reference,
+    std::uint64_t snap_denominator, wormedit::local_position_t position)
+    -> bmson_razor_stroke_outcome_t {
+    if (!markers || !markers->stamp.is_current(history.document, chart,
+            wormedit::document_identity_policy_t::revision_only) ||
+        markers->payload.reference != reference || !markers->payload.has_position(position))
+        return {};
+    return {.value = bmson_razor_stroke_proposal_t{
+        .stamp = wormedit::chart_stamp_t::from(history.document, chart),
+        .payload = {.reference = reference, .snap_denominator = snap_denominator,
+                    .last_position = position}}};
+}
+
+auto application_command_state_t::bmson_razor_stroke_t::revise(
+    wormedit::chart_stamp_t captured, wormedit::local_position_t prepared_position)
+    -> bmson_razor_stroke_outcome_t {
+    last_position = prepared_position;
+    return {.value = bmson_razor_stroke_proposal_t{
+        .stamp = captured, .payload = std::move(*this)}};
+}
 
 auto application_command_state_t::bmson_marker_draft_t::propose(
     const wormedit::document_history_t& history, const wormedit::editor_interaction_state_t& state,

@@ -2421,9 +2421,9 @@ TEST_CASE("Captured BMSON razor expiry is distinct from starting a new stroke",
     const auto kind = GENERATE(0, 1, 2, 3);
     auto& stroke = fixture.application.project.compose_gesture.bmson_razor_stroke;
     if (kind != 0) {
-        stroke.emplace();
-        stroke->stamp = chart_stamp_t::from(fixture.history.document, fixture.state.chart);
-        stroke->reference = object_id_t{kind == 2 ? 99u : 41u};
+        stroke = application_command_state_t::bmson_razor_stroke_proposal_t{
+            .stamp = chart_stamp_t::from(fixture.history.document, fixture.state.chart),
+            .payload = {.reference = object_id_t{kind == 2 ? 99u : 41u}}};
         if (kind == 1) --stroke->stamp.document.revision;
         if (kind == 3) stroke->stamp.chart = chart_id_t{99};
     }

@@ -280,7 +280,7 @@ auto revise_beat_fit_proposal(const WormUiComposeInputAction& input,
                               std::uint64_t target_frame, bool timing_locked)
     -> wormedit::beat_interval_drag_outcome_t {
     using namespace wormedit;
-    const auto frame_update = drag.revise(history.document, target_frame, timing_locked);
+    const auto frame_update = drag.revise(history.document, {.is_timing_locked = timing_locked}, target_frame);
     if (!frame_update.ok() || !frame_update.value || !input.beat_fit_ctrl_held || input.beat_fit_onset_snap_held)
         return frame_update;
     const auto snapped_bpm =
@@ -288,7 +288,7 @@ auto revise_beat_fit_proposal(const WormUiComposeInputAction& input,
                      {input.beat_fit_snap_step_numerator, input.beat_fit_snap_step_denominator});
     if (!snapped_bpm)
         return {};
-    return frame_update.value->revise(history.document, *snapped_bpm, timing_locked);
+    return frame_update.value->revise(history.document, {.is_timing_locked = timing_locked}, *snapped_bpm);
 }
 
 auto revise_compose_beat_fit(const WormUiComposeInputAction& input,

@@ -88,7 +88,7 @@ auto audio_offset_drag_t::revise(const proposal_read_scope_t<chart_stamp_t>& sco
     std::int64_t delta_frames) const -> audio_offset_drag_outcome_t {
     audio_offset_drag_outcome_t result;
     const auto& drag = *this;
-    const auto& document = scope.document();
+    const auto& document = scope.source_document();
     const auto& stamp = scope.captured_stamp();
     const auto* selected = document.find_chart(stamp.chart);
     if (selected == nullptr ||

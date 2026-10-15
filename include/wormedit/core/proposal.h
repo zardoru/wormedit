@@ -154,14 +154,15 @@ template<class Payload> requires stateful_proposal_payload<Payload>
     else return (payload.report.lifecycle);
 }
 
+// Canonical preparation borrows the input document before a mutable edit copies or adopts it.
 template<class Stamp> class proposal_read_scope_t {
 public:
     proposal_read_scope_t(const song_document_t& document, const Stamp& captured)
-        : document_(document), captured_stamp_(captured) {}
-    [[nodiscard]] auto document() const noexcept -> const song_document_t& { return document_; }
+        : source_document_(document), captured_stamp_(captured) {}
+    [[nodiscard]] auto source_document() const noexcept -> const song_document_t& { return source_document_; }
     [[nodiscard]] auto captured_stamp() const noexcept -> const Stamp& { return captured_stamp_; }
 private:
-    const song_document_t& document_;
+    const song_document_t& source_document_;
     const Stamp& captured_stamp_;
 };
 
@@ -199,18 +200,17 @@ private:
     document_command_transaction_t& transaction_;
 };
 
-template<class Stamp> class proposal_edit_scope_t : public document_edit_scope_t {
+template<class Stamp> class proposal_edit_scope_t : public document_edit_scope_t, public proposal_read_scope_t<Stamp> {
 public:
     proposal_edit_scope_t(document_command_transaction_t& transaction, const Stamp& captured,
                           const proposal_application_input_t& input)
-        : document_edit_scope_t(transaction), captured_stamp_(captured), input_(input) {}
-    [[nodiscard]] auto captured_stamp() const noexcept -> const Stamp& { return captured_stamp_; }
+        : document_edit_scope_t(transaction), proposal_read_scope_t<Stamp>(transaction.document(), captured),
+          input_(input) {}
     [[nodiscard]] auto input() const noexcept -> const proposal_application_input_t& { return input_; }
     [[nodiscard]] auto target() const noexcept -> const chart_document_t* { return target_; }
     [[nodiscard]] auto has_invalid_preparation() const noexcept -> bool { return has_invalid_preparation_; }
     void invalidate_preparation() noexcept { has_invalid_preparation_ = true; }
 private:
-    const Stamp& captured_stamp_;
     const proposal_application_input_t& input_;
     const chart_document_t* target_{};
     bool has_invalid_preparation_{};
@@ -436,6 +436,13 @@ template <class Payload, class Stamp = chart_stamp_t> struct proposal_t {
     [[nodiscard]] auto revise(const song_document_t& document,
         proposal_input_t<proposal_revision_diagnostics_t<RevisionPayload, Stamp, Arguments...>> input,
         Arguments&&... arguments) const -> proposal_revision_outcome_t<RevisionPayload, Stamp, Arguments...> {
+        if constexpr (requires { payload.validate_candidate(arguments...); }) {
+            if (auto invalid = payload.validate_candidate(arguments...)) {
+                input.diagnostics.clear();
+                input.diagnostics.push_back(std::move(*invalid));
+                return {.diagnostics = std::move(input.diagnostics)};
+            }
+        }
         auto captured = RevisionPayload::revision_policy.validate(document_stamp(), document, input.is_timing_locked);
         if (!captured) {
             input.diagnostics.clear();

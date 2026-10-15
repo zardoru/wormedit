@@ -68,6 +68,12 @@ using bpm_edit_action_t = chart_edit_t<bpm_edit_value_t>;
 struct beat_interval_drag_t {
     static constexpr proposal_capture_policy_t apply_policy{
         .stale_label = "Beat fit", .identity = document_identity_policy_t::revision_only};
+    static constexpr proposal_capture_policy_t revision_policy{
+        .stale_label = apply_policy.stale_label, .identity = apply_policy.identity,
+        .stale_code = apply_policy.stale_code,
+        .locked_code = diagnostic_code_t::unsupported_feature,
+        .locked_message = "beat fitting is disabled while timing is locked"};
+    [[nodiscard]] static auto validate_candidate(signed_rational_t target_bpm) -> std::optional<diagnostic_t>;
     [[nodiscard]] auto validate_apply(const chart_stamp_t&, bool timing_locked = false) const -> diagnostic_list_t;
     [[nodiscard]] auto apply(proposal_edit_scope_t<chart_stamp_t>&,
                              bool timing_locked = false) const
@@ -81,13 +87,11 @@ struct beat_interval_drag_t {
                                   local_position_t anchor, local_position_t beat,
                                   std::uint32_t sample_rate, bool timing_locked = false)
         -> proposal_outcome_t<beat_interval_drag_t>;
-    [[nodiscard]] auto revise(const chart_stamp_t& stamp, const song_document_t& document,
-                              std::uint64_t target_sample_frame,
-                              bool timing_locked = false) const
+    [[nodiscard]] auto revise(const proposal_read_scope_t<chart_stamp_t>& scope,
+                              std::uint64_t target_sample_frame) const
         -> proposal_outcome_t<beat_interval_drag_t>;
-    [[nodiscard]] auto revise(const chart_stamp_t& stamp, const song_document_t& document,
-                              signed_rational_t target_bpm,
-                              bool timing_locked = false) const
+    [[nodiscard]] auto revise(const proposal_read_scope_t<chart_stamp_t>& scope,
+                              signed_rational_t target_bpm) const
         -> proposal_outcome_t<beat_interval_drag_t>;
 
     // Existing BPM event being updated, or a placeholder id when insert_bpm is set.
@@ -105,14 +109,23 @@ struct beat_interval_drag_t {
     signed_rational_t snap_step{1, 1};
 
     auto operator==(const beat_interval_drag_t&) const -> bool = default;
+private:
+    [[nodiscard]] static auto validate_initial_input(bool timing_locked, std::uint32_t sample_rate)
+        -> std::optional<diagnostic_t>;
+    [[nodiscard]] static auto from(const song_document_t&, const chart_document_t&,
+        const bpm_event_t* existing, local_position_t anchor, local_position_t beat, std::uint32_t sample_rate)
+        -> proposal_outcome_t<beat_interval_drag_t>;
+    [[nodiscard]] auto prepare_snapped_revision(const proposal_read_scope_t<chart_stamp_t>&,
+        signed_rational_t target_bpm, proposal_t<beat_interval_drag_t>&& updated) const
+        -> proposal_outcome_t<beat_interval_drag_t>;
 };
 
 static_assert(staged_proposal<beat_interval_drag_t,
     std::tuple<const song_document_t&, chart_id_t, object_id_t, local_position_t, std::uint32_t, bool>,
-    std::tuple<const chart_stamp_t&, const song_document_t&, std::uint64_t, bool>>);
+    std::tuple<const proposal_read_scope_t<chart_stamp_t>&, std::uint64_t>>);
 static_assert(staged_proposal<beat_interval_drag_t,
     std::tuple<const song_document_t&, chart_id_t, local_position_t, local_position_t, std::uint32_t, bool>,
-    std::tuple<const chart_stamp_t&, const song_document_t&, signed_rational_t, bool>>);
+    std::tuple<const proposal_read_scope_t<chart_stamp_t>&, signed_rational_t>>);
 
 using beat_interval_drag_outcome_t = proposal_outcome_t<beat_interval_drag_t>;
 

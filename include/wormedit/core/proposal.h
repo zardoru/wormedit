@@ -32,7 +32,7 @@ struct proposal_apply_policy_t {
 };
 
 enum class proposal_status_t { inactive, active, applied, cancelled, rejected };
-enum class proposal_application_stage_t { inactive, preflight, locked, expired, binding, prepared, published };
+enum class proposal_application_stage_t { inactive, preflight, locked, expired, binding, unchanged, prepared, published };
 enum class proposal_operation_t { apply, revise, inspect };
 enum class proposal_lock_order_t { before_stamp, after_stamp };
 enum class proposal_completion_policy_t { no_diagnostics, applied, applied_or_no_diagnostics };
@@ -84,15 +84,17 @@ public:
         case proposal_application_stage_t::binding: status_ = policy.binding_status; break;
         case proposal_application_stage_t::preflight: status_ = policy.preparation_failure_status; break;
         case proposal_application_stage_t::inactive:
+        case proposal_application_stage_t::unchanged:
         case proposal_application_stage_t::prepared:
         case proposal_application_stage_t::published: break;
         }
     }
     void finish(const proposal_lifecycle_policy_t& policy, const document_command_result_t& result,
                 proposal_application_stage_t stage) noexcept {
-        if (stage == proposal_application_stage_t::prepared) {
-            status_ = result.diagnostics.empty() ? policy.unchanged_status : policy.preparation_failure_status;
-        } else if (stage == proposal_application_stage_t::published) {
+        if (stage == proposal_application_stage_t::unchanged) {
+            status_ = policy.unchanged_status;
+        } else if (stage == proposal_application_stage_t::prepared ||
+                   stage == proposal_application_stage_t::published) {
             bool is_complete{};
             switch (policy.completion) {
             case proposal_completion_policy_t::no_diagnostics:
@@ -134,10 +136,7 @@ public:
     [[nodiscard]] auto diagnostics() const noexcept -> diagnostic_list_t& { return diagnostics_; }
     [[nodiscard]] auto target() const noexcept -> const chart_document_t* { return target_; }
     [[nodiscard]] auto has_invalid_target() const noexcept -> bool { return has_invalid_target_; }
-    [[nodiscard]] auto reject_binding(diagnostic_list_t diagnostics) -> diagnostic_list_t {
-        has_invalid_target_ = true;
-        return diagnostics;
-    }
+    void invalidate_target() noexcept { has_invalid_target_ = true; }
 private:
     const document_history_t& history_;
     const Stamp& captured_stamp_;
@@ -203,7 +202,7 @@ public:
             return proposal_application_stage_t::locked;
         }
         if constexpr (requires { edit.is_unchanged(); }) {
-            if (edit.is_unchanged()) return proposal_application_stage_t::prepared;
+            if (edit.is_unchanged()) return proposal_application_stage_t::unchanged;
         }
         auto target = edit.validate_target(scope.transaction().document(), scope.captured_stamp().chart,
                                            proposal_operation_t::apply);

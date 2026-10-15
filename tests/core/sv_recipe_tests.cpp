@@ -12,6 +12,7 @@
 using namespace wormedit;
 
 static_assert(std::is_aggregate_v<sv_recipe_draft_t>);
+static_assert(std::is_aggregate_v<sv_recipe_range_drag_t>);
 static_assert(std::is_aggregate_v<proposal_t<sv_recipe_draft_t>>);
 
 namespace {
@@ -71,7 +72,7 @@ void check_retained_range(const document_history_t& history,
     CHECK_FALSE(rejected.value);
     REQUIRE_FALSE(rejected.diagnostics.empty());
     CHECK(previous.payload.preview_range == retained);
-    CHECK(previous.payload.status == sv_recipe_range_drag_status_t::previewing);
+    CHECK(previous.payload.lifecycle.status() == proposal_status_t::active);
     CHECK(history.undo.empty());
 }
 
@@ -341,17 +342,17 @@ TEST_CASE("SV recipe range drag snaps, previews without mutation, and commits on
     const auto revision = history.document.revision;
 
     auto drag = make_range_proposal(history, sv_recipe_range_handle_t::begin, {measure_id_t{11}, 17});
-    REQUIRE(drag.value->payload.status == sv_recipe_range_drag_status_t::previewing);
-    const auto drag_revised = drag.value->revise(history, local_position_t{measure_id_t{11}, 370}, false);
+    REQUIRE(drag.value->payload.lifecycle.status() == proposal_status_t::active);
+    const auto drag_revised = drag.value->revise(history, {}, local_position_t{measure_id_t{11}, 370});
     REQUIRE(drag_revised.value);
     CHECK((drag.value->payload.preview_range.begin == local_position_t{measure_id_t{11}, 480}));
     CHECK((history.document.charts.front().sv_recipes.front().range.begin ==
            local_position_t{measure_id_t{11}, 0}));
     CHECK(history.document.revision == revision);
 
-    const auto committed = apply_sv_recipe_range_drag(history, *drag.value, false);
+    const auto committed = apply_proposal(history, *drag.value);
     REQUIRE(committed);
-    CHECK(drag.value->payload.status == sv_recipe_range_drag_status_t::committed);
+    CHECK(drag.value->payload.lifecycle.status() == proposal_status_t::applied);
     CHECK((history.document.charts.front().sv_recipes.front().range.begin ==
            local_position_t{measure_id_t{11}, 480}));
     CHECK(history.undo.size() == 1);
@@ -365,22 +366,22 @@ TEST_CASE("SV recipe endpoint crossing normalizes while whole-span drag preserve
     auto history = document_history_t::from(std::move(song));
 
     auto endpoint = make_range_proposal(history, sv_recipe_range_handle_t::begin, {measure_id_t{11}, 0});
-    const auto endpoint_revised = endpoint.value->revise(history, local_position_t{measure_id_t{12}, 481}, false);
+    const auto endpoint_revised = endpoint.value->revise(history, {}, local_position_t{measure_id_t{12}, 481});
     REQUIRE(endpoint_revised.value);
     CHECK((endpoint.value->payload.preview_range.begin == local_position_t{measure_id_t{12}, 0}));
     CHECK((endpoint.value->payload.preview_range.end == local_position_t{measure_id_t{12}, 480}));
-    cancel_sv_recipe_range_drag(*endpoint.value);
-    CHECK(endpoint.value->payload.status == sv_recipe_range_drag_status_t::cancelled);
+    endpoint.value->payload.lifecycle.cancel();
+    CHECK(endpoint.value->payload.lifecycle.status() == proposal_status_t::cancelled);
 
     auto chart_end =
         make_range_proposal(history, sv_recipe_range_handle_t::end, {measure_id_t{12}, 0});
-    const auto chart_end_revised = chart_end.value->revise(history, local_position_t{measure_id_t{12}, 959}, false);
+    const auto chart_end_revised = chart_end.value->revise(history, {}, local_position_t{measure_id_t{12}, 959});
     REQUIRE(chart_end_revised.value);
     CHECK((chart_end.value->payload.preview_range.end == local_position_t{measure_id_t{12}, 960}));
-    cancel_sv_recipe_range_drag(*chart_end.value);
+    chart_end.value->payload.lifecycle.cancel();
 
     auto whole = make_range_proposal(history, sv_recipe_range_handle_t::whole_span, {measure_id_t{11}, 0});
-    const auto whole_revised = whole.value->revise(history, local_position_t{measure_id_t{11}, 370}, false);
+    const auto whole_revised = whole.value->revise(history, {}, local_position_t{measure_id_t{11}, 370});
     REQUIRE(whole_revised.value);
     CHECK((whole.value->payload.preview_range.begin == local_position_t{measure_id_t{11}, 480}));
     CHECK((whole.value->payload.preview_range.end == local_position_t{measure_id_t{12}, 480}));
@@ -396,10 +397,10 @@ TEST_CASE("SV recipe range drag rejects zero spans, locks, and stale revisions a
     const auto original = history.document.charts.front().sv_recipes.front().range;
 
     auto zero = make_range_proposal(history, sv_recipe_range_handle_t::begin, {measure_id_t{11}, 0});
-    const auto zero_revised = zero.value->revise(history, local_position_t{measure_id_t{12}, 0}, false);
+    const auto zero_revised = zero.value->revise(history, {}, local_position_t{measure_id_t{12}, 0});
     CHECK_FALSE(zero_revised.value);
     CHECK(zero.value->payload.preview_range == original);
-    CHECK(zero.value->payload.status == sv_recipe_range_drag_status_t::previewing);
+    CHECK(zero.value->payload.lifecycle.status() == proposal_status_t::active);
 
     auto locked =
         sv_recipe_range_drag_t::propose(history, chart_id_t{10}, recipe_id_t{20},
@@ -411,10 +412,10 @@ TEST_CASE("SV recipe range drag rejects zero spans, locks, and stale revisions a
     auto proposed = history.document;
     proposed.metadata.title = "revision change";
     REQUIRE(commit_document_command(history, std::move(proposed), "Unrelated edit"));
-    const auto stale_revised = stale.value->revise(history, local_position_t{measure_id_t{12}, 480}, false);
+    const auto stale_revised = stale.value->revise(history, {}, local_position_t{measure_id_t{12}, 480});
     CHECK_FALSE(stale_revised.value);
     test::check_stale_action_message(stale_revised.diagnostics, "SV recipe range drag");
-    CHECK(stale.value->payload.status == sv_recipe_range_drag_status_t::rejected);
+    CHECK(stale.value->payload.lifecycle.status() == proposal_status_t::rejected);
     CHECK(history.document.charts.front().sv_recipes.front().range == original);
 }
 
@@ -743,10 +744,10 @@ TEST_CASE("SV range stamps keep equal-revision project replacement draggable",
     auto drag = make_range_proposal(history, sv_recipe_range_handle_t::begin, {measure_id_t{11}, 17});
     CHECK(drag.value->stamp == chart_stamp_t::from(history.document, chart_id_t{10}));
     history.document.id = song_id_t{99};
-    const auto drag_revised = drag.value->revise(history, local_position_t{measure_id_t{11}, 370}, false);
+    const auto drag_revised = drag.value->revise(history, {}, local_position_t{measure_id_t{11}, 370});
     REQUIRE(drag_revised.value);
-    CHECK(apply_sv_recipe_range_drag(history, *drag.value, false).applied);
-    CHECK(drag.value->payload.status == sv_recipe_range_drag_status_t::committed);
+    CHECK(apply_proposal(history, *drag.value).applied);
+    CHECK(drag.value->payload.lifecycle.status() == proposal_status_t::applied);
     CHECK(history.undo.size() == 1);
 }
 
@@ -772,11 +773,11 @@ TEST_CASE("SV range Apply keeps captured-stale binding diagnostics",
     auto history = document_history_t::from(std::move(song));
     auto drag = make_range_proposal(history, sv_recipe_range_handle_t::begin, {measure_id_t{11}, 17});
     ++history.document.revision;
-    const auto result = apply_sv_recipe_range_drag(history, *drag.value, false);
+    const auto result = apply_proposal(history, *drag.value);
     REQUIRE(result.diagnostics.size() == 1);
     CHECK(result.diagnostics.front().code == diagnostic_code_t::invalid_binding);
     test::check_stale_action_message(result.diagnostics, "SV recipe range drag");
-    CHECK(drag.value->payload.status == sv_recipe_range_drag_status_t::rejected);
+    CHECK(drag.value->payload.lifecycle.status() == proposal_status_t::rejected);
     CHECK(history.undo.empty());
 }
 
@@ -787,14 +788,12 @@ TEST_CASE("SV range failed revisions retain the last valid applicable range",
         make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {2, 1}));
     auto history = document_history_t::from(std::move(song));
     auto drag = make_range_proposal(history, sv_recipe_range_handle_t::begin, {measure_id_t{11}, 0});
-    const auto valid = drag.value->revise(history,
-        local_position_t{measure_id_t{11}, 370}, false);
+    const auto valid = drag.value->revise(history, {}, local_position_t{measure_id_t{11}, 370});
     REQUIRE(valid.value);
     const auto retained = drag.value->payload.preview_range;
-    const auto rejected = drag.value->revise(history,
-        local_position_t{measure_id_t{12}, 0}, false);
+    const auto rejected = drag.value->revise(history, {}, local_position_t{measure_id_t{12}, 0});
     check_retained_range(history, *drag.value, rejected, retained);
-    REQUIRE(apply_sv_recipe_range_drag(history, *drag.value, false));
+    REQUIRE(apply_proposal(history, *drag.value));
     CHECK(history.document.charts.front().sv_recipes.front().range == retained);
     REQUIRE(history.undo.size() == 1);
     CHECK(history.undo.front().label == "Move SV recipe range");
@@ -947,5 +946,36 @@ TEST_CASE("SV draft failed range revisions reuse diagnostics and keep the captur
     REQUIRE(revised.diagnostics.size() == 1);
     CHECK(revised.diagnostics.data() == storage);
     CHECK(pending.value->payload.lifecycle.is_active());
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("SV range unchanged captures cancel before target validation", "[unit][sv-recipe][proposal]") {
+    auto song = make_recipe_song();
+    song.charts.front().sv_recipes.push_back(
+        make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {2, 1}));
+    auto history = document_history_t::from(std::move(song));
+    auto pending = make_range_proposal(history, sv_recipe_range_handle_t::end, {measure_id_t{12}, 0});
+    history.document.charts.clear();
+    const auto result = apply_proposal(history, *pending.value);
+    CHECK_FALSE(result.applied);
+    CHECK(result.diagnostics.empty());
+    CHECK(pending.value->payload.lifecycle.status() == proposal_status_t::cancelled);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("SV range changed captures reject a numeric no-op", "[unit][sv-recipe][proposal]") {
+    auto song = make_recipe_song();
+    song.charts.front().sv_recipes.push_back(
+        make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {2, 1}));
+    auto history = document_history_t::from(std::move(song));
+    auto pending = make_range_proposal(history, sv_recipe_range_handle_t::end, {measure_id_t{12}, 0});
+    auto revised = pending.value->revise(history, {}, local_position_t{measure_id_t{12}, 240});
+    REQUIRE(revised.value);
+    pending = std::move(revised);
+    history.document.charts.front().sv_recipes.front().range = pending.value->payload.preview_range;
+    const auto result = apply_proposal(history, *pending.value);
+    CHECK_FALSE(result.applied);
+    CHECK(result.diagnostics.empty());
+    CHECK(pending.value->payload.lifecycle.status() == proposal_status_t::rejected);
     CHECK(history.undo.empty());
 }

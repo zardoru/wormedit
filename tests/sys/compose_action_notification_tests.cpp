@@ -3,6 +3,7 @@
 #include "sys/application_command_dispatch.h"
 #include "sys/compose_actions.h"
 #include "sys/compose_area_actions.h"
+#include "sys/compose_quantize_request.h"
 #include "sys/compose_input.h"
 #include "sys/compose_scroll_geometry.h"
 #include "sys/recipe_form.h"
@@ -2605,4 +2606,169 @@ TEST_CASE("Late lane-layout rejection rebinds an already materialized virtual me
     const auto entries = fixture.entries();
     require_action(entries.size() == 1);
     check_action(entries.front().severity == notification_severity_t::warning);
+}
+
+TEST_CASE("Compose unknown and unsupported enum routes reject once without binding",
+          "[compose-action-notifications][route-parity]") {
+    action_notification_fixture_t fixture;
+    const auto kind = GENERATE(static_cast<WormUiComposeActionKind>(255),
+                               WORM_UI_COMPOSE_ACTION_REMOVE_SEMANTIC_LAYER,
+                               WORM_UI_COMPOSE_ACTION_SUGGEST_SOUND_GROUPS);
+    fixture.workspace.song = song_id_t{99};
+    const auto revision = fixture.history.document.revision;
+    check_action(fixture.dispatch(fixture.action(kind)) == "Compose action was rejected.");
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().message == "Compose action was rejected.");
+    check_action(entries.front().source == notification_source_t::input);
+    check_action(entries.front().severity == notification_severity_t::warning);
+    check_action(entries.front().count == 1);
+}
+
+TEST_CASE("Compose area clear side effect retains precedence across enum groups",
+          "[compose-action-notifications][route-parity]") {
+    const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_NONE,
+                               WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS,
+                               WORM_UI_COMPOSE_ACTION_TOGGLE_Y_LOCK,
+                               static_cast<WormUiComposeActionKind>(255));
+    action_notification_fixture_t fixture;
+    fixture.state.retained_selection_range =
+        position_span_t{{measure_id_t{1}, 0}, {measure_id_t{1}, 480}};
+    fixture.state.retained_canvas_selection_range = canvas_row_span_t{0, 480};
+    auto action = fixture.action(kind);
+    action.compose_area_clear_requested = true;
+    action.compose_quantize_divisions = 4;
+    const auto revision = fixture.history.document.revision;
+    const auto message = fixture.dispatch(action);
+    const bool is_quantize_setting = kind == WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS;
+    check_action(fixture.state.retained_selection_range.has_value() == is_quantize_setting);
+    check_action(fixture.state.retained_canvas_selection_range.has_value() == is_quantize_setting);
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
+    if (kind == WORM_UI_COMPOSE_ACTION_NONE) {
+        check_action(message.empty());
+        check_action(fixture.entries().empty());
+        check_action(fixture.center.current_line() == nullptr);
+    } else if (is_quantize_setting) {
+        require_action(static_cast<bool>(fixture.application.project.quantize.quantize_editor));
+        check_action(fixture.application.project.quantize.quantize_editor->request.divisions == 4);
+    } else if (kind == WORM_UI_COMPOSE_ACTION_TOGGLE_Y_LOCK) {
+        check_action(fixture.application.project.compose_view.y_lock);
+    } else {
+        check_action(message == "Compose action was rejected.");
+        const auto entries = fixture.entries();
+        require_action(entries.size() == 1);
+        check_action(entries.front().count == 1);
+    }
+}
+
+TEST_CASE("Compose quantize special route records one report and one bound mutation",
+          "[compose-action-notifications][route-parity]") {
+    const auto timing_focus = GENERATE(false, true);
+    action_notification_fixture_t fixture;
+    fixture.history.document.charts.front().measures.front().notes = {
+        {.id = object_id_t{4}, .position = {measure_id_t{1}, 130}, .lane = lane_id_t{1}}};
+    fixture.state.selected_notes = {object_id_t{4}};
+    fixture.state.retained_selection_range =
+        position_span_t{{measure_id_t{1}, 0}, {measure_id_t{1}, 480}};
+    fixture.application.project.compose_view.compose_timing_focus = timing_focus;
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE);
+    action.compose_area_clear_requested = true;
+    action.compose_quantize_divisions = 4;
+    const auto message = fixture.dispatch(action);
+    check_action(fixture.history.undo.size() == (timing_focus ? 0 : 1));
+    check_action(fixture.state.retained_selection_range.has_value() == timing_focus);
+    check_action(fixture.application.project.quantize.quantize_applied_report.has_value() == !timing_focus);
+    if (!timing_focus) {
+        check_action(message == "Selected objects quantized.");
+        check_action(fixture.history.document.charts.front().measures.front().notes.front().position.row == 240);
+        check_action(fixture.workspace.document_revision == fixture.history.document.revision);
+        check_action(fixture.workspace.history.undo_depth == 1);
+        check_action(fixture.application.project.quantize.quantize_applied_report->total_rows == 1);
+    } else {
+        check_action(message == compose_quantize_idle_message);
+        check_action(fixture.history.document.charts.front().measures.front().notes.front().position.row == 130);
+    }
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().message == message);
+    check_action(entries.front().count == 1);
+}
+
+TEST_CASE("Compose BMS kinds retain the workspace-only view rejection",
+          "[compose-action-notifications][route-parity]") {
+    const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE,
+                               WORM_UI_COMPOSE_ACTION_EDIT_BMS_BRANCH_STATEMENT,
+                               WORM_UI_COMPOSE_ACTION_CREATE_BMS_BRANCH_BLOCK);
+    action_notification_fixture_t fixture;
+    check_action(fixture.dispatch(fixture.action(kind)) ==
+          "BMS branch actions must use the workspace action boundary.");
+    check_action(fixture.history.undo.empty());
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().source == notification_source_t::format);
+    check_action(entries.front().severity == notification_severity_t::warning);
+    check_action(entries.front().count == 1);
+}
+
+TEST_CASE("Compose note-menu and palette routes retain their distinct session effects",
+          "[compose-action-notifications][route-parity]") {
+    const auto palette = GENERATE(false, true);
+    action_notification_fixture_t fixture;
+    auto& semantic = fixture.application.project.semantic_layer;
+    semantic.note_layer_menu_chart = fixture.state.chart;
+    semantic.note_layer_menu_revision = fixture.history.document.revision;
+    semantic.note_layer_menu_row_count = 5;
+    semantic.semantic_layer_target = layer_id_t{42};
+    semantic.semantic_layer_solo_active = true;
+    fixture.workspace.song = song_id_t{99}; // Session routes must not attempt a document rebind.
+    const auto message = fixture.dispatch(fixture.action(palette
+        ? WORM_UI_COMPOSE_ACTION_SELECT_NO_SEMANTIC_LAYER
+        : WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU));
+    check_action(message == (palette ? "Semantic-layer target: No layer" : ""));
+    check_action(semantic.note_layer_menu_row_count == (palette ? 5 : 0));
+    check_action(semantic.semantic_layer_target_none == palette);
+    check_action(semantic.semantic_layer_target.has_value() == !palette);
+    check_action(semantic.semantic_layer_solo_active == !palette);
+    check_action(fixture.history.undo.empty());
+    check_action(fixture.history.document.revision == 1);
+    const auto entries = fixture.entries();
+    require_action(entries.size() == (palette ? 1 : 0));
+    if (palette) {
+        check_action(entries.front().source == notification_source_t::input);
+        check_action(entries.front().count == 1);
+    }
+}
+
+TEST_CASE("Compose nested marker and resource groups retain domain rejection at the view boundary",
+          "[compose-action-notifications][route-parity]") {
+    const auto route = GENERATE(
+        std::pair{WORM_UI_COMPOSE_ACTION_DELETE_BEAT_BOOKMARK,
+                  "Choose a beat-anchored bookmark before editing it."},
+        std::pair{WORM_UI_COMPOSE_ACTION_DELETE_BEAT_SECTION,
+                  "Choose a beat-anchored section before editing it."},
+        std::pair{WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_BOOKMARK,
+                  "Choose an audio-time bookmark before editing it."},
+        std::pair{WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_SECTION,
+                  "Choose an audio-time section before editing it."},
+        std::pair{WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET,
+                  "Resource import used an unknown catalog role."},
+        std::pair{WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE,
+                  "The selected resource role cannot be placed in the chart."});
+    action_notification_fixture_t fixture;
+    fixture.workspace.song = song_id_t{99};
+    auto action = fixture.action(route.first);
+    action.compose_resource_role = 255;
+    check_action(fixture.dispatch(action) == route.second);
+    check_action(fixture.history.undo.empty());
+    check_action(fixture.history.document.revision == 1);
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().message == route.second);
+    check_action(entries.front().severity == notification_severity_t::warning);
+    check_action(entries.front().source == (route.first == WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET
+        ? notification_source_t::import_ : notification_source_t::edit));
+    check_action(entries.front().count == 1);
 }

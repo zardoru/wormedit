@@ -1023,6 +1023,155 @@ void seed_layer_commands(TimingInsertFixture& fixture, bool locked = false) {
 }
 }
 
+TEST_CASE("Application route groups retain their own missing-context rejection",
+          "[sys][application_commands][route-parity]") {
+    using kind_t = application_command_kind_t;
+    const auto route = GENERATE(
+        std::pair{kind_t::edit_tool_select, "Select requires the active Compose chart."},
+        std::pair{kind_t::edit_note_kind, "Note kind requires the active Compose chart."},
+        std::pair{kind_t::measures_insert_before, "Measure editing requires the active Compose chart."},
+        std::pair{kind_t::transport_loop_selection, "Select a committed area to loop playback."},
+        std::pair{kind_t::transport_play_pause, "Chart preview is unavailable."},
+        std::pair{kind_t::transport_external_play_start, "External player is unavailable."},
+        std::pair{kind_t::edit_move_to_bgm, "Move to BGM requires selected notes on an editable BMS chart."},
+        std::pair{kind_t::edit_copy, "Clipboard requires the active Compose chart."},
+        std::pair{kind_t::edit_delete, "Delete requires the active Compose chart."},
+        std::pair{kind_t::selection_select_all, "Selection command requires the active Compose chart."},
+        std::pair{kind_t::navigation_next_snap, "Snap navigation requires the active Compose chart."},
+        std::pair{kind_t::navigation_go_to_bookmark, "Bookmark chooser requires the active Compose chart."},
+        std::pair{kind_t::view_open_layers, "Dock command requires the active Compose chart."},
+        std::pair{kind_t::navigation_next_bookmark, "Bookmark commands require the active Compose chart."},
+        std::pair{kind_t::timing_insert_bpm, "Timing insertion requires the active Compose chart."},
+        std::pair{kind_t::timing_toggle_lock, "Timing Lock requires Compose with Timing focus."},
+        std::pair{kind_t::semantic_layer_select_slot, "Layer selection requires the active Compose chart."},
+        std::pair{kind_t::semantic_layer_apply, "Choose a semantic layer and select playable notes first."});
+    INFO(static_cast<int>(route.first));
+    TimingInsertFixture fixture;
+    fixture.compose_state.reset();
+    const auto revision = fixture.fixture.history.document.revision;
+    const auto result = fixture.invoke(route.first);
+    check_layer_command(!(result.accepted));
+    require_layer_command(result.diagnostics.size() == 1);
+    check_layer_command(result.diagnostics.front().message == route.second);
+    check_layer_command(fixture.fixture.history.document.revision == revision);
+    check_layer_command(fixture.fixture.history.undo.empty());
+    fixture.center.drain_inbox(wormedit::notification_time_t{});
+    require_layer_command(fixture.center.current_line());
+    check_layer_command(fixture.center.current_line()->message == route.second);
+    check_layer_command(fixture.center.current_line()->count == 1);
+}
+
+TEST_CASE("Application unknown and outer-frame commands retain unsupported fallback",
+          "[sys][application_commands][route-parity]") {
+    const auto kind = GENERATE(static_cast<application_command_kind_t>(9999),
+                              application_command_kind_t::document_new_project,
+                              application_command_kind_t::workspace_options,
+                              application_command_kind_t::workspace_command_menu);
+    TimingInsertFixture fixture;
+    const auto revision = fixture.fixture.history.document.revision;
+    const auto result = fixture.invoke(kind);
+    check_layer_command(!(result.accepted));
+    require_layer_command(result.diagnostics.size() == 1);
+    check_layer_command(result.diagnostics.front().message == "Command is not implemented by the application.");
+    fixture.center.drain_inbox(wormedit::notification_time_t{});
+    const auto entries = fixture.center.snapshot(4);
+    require_layer_command(entries.size() == 1);
+    check_layer_command(entries.front().message == result.diagnostics.front().message);
+    check_layer_command(entries.front().source == wormedit::notification_source_t::system);
+    check_layer_command(entries.front().count == 1);
+    check_layer_command(fixture.fixture.history.document.revision == revision);
+    check_layer_command(fixture.fixture.history.undo.empty());
+}
+
+TEST_CASE("Application history and measure feedback precedes a failed workspace bind",
+          "[sys][application_commands][route-parity][notifications]") {
+    using namespace wormedit;
+    const auto kind = GENERATE(application_command_kind_t::history_undo,
+                              application_command_kind_t::history_redo,
+                              application_command_kind_t::measures_insert_before,
+                              application_command_kind_t::measures_insert_after,
+                              application_command_kind_t::measures_split_at_cursor);
+    TimingInsertFixture fixture;
+    auto& history = fixture.fixture.history;
+    require_layer_command(apply_semantic_layer_edit(history,
+        insert_edit_t<semantic_layer_edit_value_t>{.chart = chart_id_t{7},
+            .value = {.name = "Seed"}}).applied);
+    if (kind == application_command_kind_t::history_redo)
+        require_layer_command(undo_document_command(history));
+    fixture.workspace.song = song_id_t{99};
+    const auto result = fixture.invoke(kind);
+    check_layer_command(!(result.accepted));
+    require_layer_command(result.diagnostics.size() == 1);
+    check_layer_command(result.diagnostics.front().code == diagnostic_code_t::invalid_id);
+    fixture.center.drain_inbox(notification_time_t{});
+    const auto entries = fixture.center.snapshot(4);
+    require_layer_command(entries.size() == 2);
+    check_layer_command(entries.front().source == notification_source_t::document);
+    check_layer_command(entries.front().severity == notification_severity_t::error);
+    check_layer_command(entries.front().message == "workspace cannot be rebound to a different song identity");
+    check_layer_command(entries.back().source == notification_source_t::edit);
+    check_layer_command(entries.back().severity == notification_severity_t::success);
+    check_layer_command(entries.front().count == 1);
+    check_layer_command(entries.back().count == 1);
+    check_layer_command(entries.front().post_sequence > entries.back().post_sequence);
+}
+
+TEST_CASE("Application semantic feedback follows successful binding and accepts unchanged membership",
+          "[sys][application_commands][route-parity][notifications]") {
+    using namespace wormedit;
+    const auto mode = GENERATE(0, 1, 2); // applied, failed bind, semantic no-op
+    TimingInsertFixture fixture;
+    seed_layer_commands(fixture);
+    fixture.compose_state->selected_notes = {object_id_t{1}};
+    fixture.application_state.project.semantic_layer.semantic_layer_target = layer_id_t{7};
+    if (mode != 2)
+        fixture.application_state.project.semantic_layer.semantic_layer_target = layer_id_t{8};
+    if (mode != 0) fixture.workspace.song = song_id_t{99};
+    const auto revision = fixture.fixture.history.document.revision;
+    const auto result = fixture.invoke(application_command_kind_t::semantic_layer_apply);
+    check_layer_command(result.accepted == (mode != 1));
+    check_layer_command(fixture.fixture.history.undo.size() == (mode == 2 ? 0 : 1));
+    check_layer_command((fixture.fixture.history.document.revision == revision) == (mode == 2));
+    if (mode == 0) {
+        check_layer_command(fixture.workspace.document_revision == fixture.fixture.history.document.revision);
+        check_layer_command(fixture.workspace.history.undo_depth == 1);
+    }
+    fixture.center.drain_inbox(notification_time_t{});
+    const auto entries = fixture.center.snapshot(4);
+    require_layer_command(entries.size() == 1);
+    check_layer_command(entries.front().count == 1);
+    check_layer_command(entries.front().message == (mode == 0 ? "Semantic-layer membership updated."
+        : mode == 1 ? "workspace cannot be rebound to a different song identity"
+                    : "Semantic-layer membership was unchanged."));
+    check_layer_command(entries.front().source == (mode == 1 ? notification_source_t::document
+                                              : notification_source_t::edit));
+    check_layer_command(entries.front().severity == (mode == 0 ? notification_severity_t::success
+        : mode == 1 ? notification_severity_t::error : notification_severity_t::info));
+}
+
+TEST_CASE("Application tab commands require applied switches and preserve repeated-tab behavior",
+          "[sys][application_commands][route-parity]") {
+    using namespace wormedit;
+    const auto mode = GENERATE(0, 1, 2); // same tab, disabled tab, stale binding
+    TimingInsertFixture fixture;
+    if (mode == 2) --fixture.workspace.document_revision;
+    const auto revision = fixture.fixture.history.document.revision;
+    const auto result = fixture.invoke(mode == 1 ? application_command_kind_t::workspace_open_storyboard
+                                                 : application_command_kind_t::workspace_open_compose);
+    check_layer_command(result.accepted == (mode == 0));
+    check_layer_command(result.diagnostics.empty() == (mode == 0));
+    check_layer_command(fixture.workspace.active_tab == workspace_tab_t::compose);
+    check_layer_command(fixture.fixture.history.document.revision == revision);
+    check_layer_command(fixture.fixture.history.undo.empty());
+    fixture.center.drain_inbox(notification_time_t{});
+    const auto entries = fixture.center.snapshot(4);
+    require_layer_command(entries.size() == 1);
+    check_layer_command(entries.front().count == 1);
+    check_layer_command(entries.front().source == notification_source_t::input);
+    check_layer_command(entries.front().message == (mode == 0 ? "Workspace tab changed."
+        : mode == 1 ? "storyboard editing is not available yet" : stale_action_message("Workspace action")));
+}
+
 TEST_CASE("Application No layer command clears selection and disables other membership operations",
           "[unit][sys][application_commands][semantic-layer]") {
     using namespace wormedit;

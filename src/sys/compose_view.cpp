@@ -2616,7 +2616,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
 auto toggle_compose_audio_offset_lock(const WormUiWorkspaceAction& action,
     const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
     application_command_state_t& application, compose_scene_cache_t& cache,
-    std::optional<wormedit::audio_offset_drag_t>& drag,
+    std::optional<wormedit::proposal_t<wormedit::audio_offset_drag_t>>& drag,
     std::optional<wormedit::workspace_tab_t>& drag_tab) -> std::string {
     if (workspace.active_tab != wormedit::workspace_tab_t::compose || !workspace.selected_chart)
         return "Audio offset lock ignored because the chart or document revision changed.";

@@ -53,7 +53,7 @@ auto add_frame_delta(signed_rational_t offset, std::int64_t frames, std::uint32_
 
 } // namespace
 
-auto audio_offset_drag_t::from(const song_document_t& document, chart_id_t chart,
+auto audio_offset_drag_t::propose(const song_document_t& document, chart_id_t chart,
                                std::uint32_t sample_rate, bool timing_locked)
     -> audio_offset_drag_outcome_t {
     audio_offset_drag_outcome_t result;
@@ -76,16 +76,18 @@ auto audio_offset_drag_t::from(const song_document_t& document, chart_id_t chart
         return result;
     }
     return {.value =
-                audio_offset_drag_t{
+                proposal_t<audio_offset_drag_t>{
                     .stamp = chart_stamp_t::from(document, chart),
-                    .sample_rate = sample_rate,
-                    .original_offset_seconds = selected->beat_zero_audio_offset_seconds,
-                    .proposed_offset_seconds = selected->beat_zero_audio_offset_seconds,
-                },
+                    .payload = {
+                        .sample_rate = sample_rate,
+                        .original_offset_seconds = selected->beat_zero_audio_offset_seconds,
+                        .proposed_offset_seconds = selected->beat_zero_audio_offset_seconds,
+                    }},
             .diagnostics = {}};
 }
 
-auto audio_offset_drag_t::revise(const song_document_t& document, std::int64_t delta_frames,
+auto audio_offset_drag_t::revise(const chart_stamp_t& stamp, const song_document_t& document,
+                                 std::int64_t delta_frames,
                                  bool timing_locked) const -> audio_offset_drag_outcome_t {
     audio_offset_drag_outcome_t result;
     const auto& drag = *this;
@@ -95,9 +97,9 @@ auto audio_offset_drag_t::revise(const song_document_t& document, std::int64_t d
                   "audio offset dragging is disabled while timing is locked"));
         return result;
     }
-    if (!drag.stamp.document.is_current(document, document_identity_policy_t::revision_only))
+    if (!stamp.document.is_current(document, document_identity_policy_t::revision_only))
         return {.value = std::nullopt, .diagnostics = {error(diagnostic_code_t::invalid_id, stale_action_message("Audio offset drag"))}};
-    const auto* selected = document.find_chart(drag.stamp.chart);
+    const auto* selected = document.find_chart(stamp.chart);
     if (selected == nullptr ||
         selected->beat_zero_audio_offset_seconds != drag.original_offset_seconds) {
         result.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
@@ -115,7 +117,8 @@ auto audio_offset_drag_t::revise(const song_document_t& document, std::int64_t d
     auto updated = drag;
     updated.delta_frames = delta_frames;
     updated.proposed_offset_seconds = *proposed;
-    return {.value = std::move(updated), .diagnostics = {}};
+    return {.value = proposal_t<audio_offset_drag_t>{.stamp = stamp, .payload = std::move(updated)},
+            .diagnostics = {}};
 }
 
 auto apply_audio_offset_edit(document_history_t& history, chart_id_t chart,
@@ -159,17 +162,17 @@ auto apply_audio_offset_edit(document_command_transaction_t& transaction,
     return transaction.commit("Set audio offset");
 }
 
-auto apply_audio_offset_drag(document_history_t& history, const audio_offset_drag_t& drag,
+auto apply_audio_offset_drag(document_history_t& history, const proposal_t<audio_offset_drag_t>& drag,
                               bool timing_locked) -> document_command_result_t {
-    auto transaction = document_command_transaction_t::from(history, drag.stamp,
-        "Audio offset drag", document_identity_policy_t::revision_only);
+    auto transaction = drag.transaction(history, "Audio offset drag",
+                                        document_identity_policy_t::revision_only);
     if (!transaction.is_ready()) return transaction.finish_without_commit();
     const auto* selected = transaction.source_chart(drag.stamp.chart);
     if (selected == nullptr ||
-        selected->beat_zero_audio_offset_seconds != drag.original_offset_seconds)
+        selected->beat_zero_audio_offset_seconds != drag.payload.original_offset_seconds)
         return transaction.reject(diagnostic_code_t::invalid_id,
                                   "audio offset drag no longer matches the selected chart");
-    return apply_audio_offset_edit(transaction, drag.stamp.chart, drag.proposed_offset_seconds,
+    return apply_audio_offset_edit(transaction, drag.stamp.chart, drag.payload.proposed_offset_seconds,
                                    timing_locked);
 }
 

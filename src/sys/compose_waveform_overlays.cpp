@@ -411,7 +411,7 @@ void build_compose_proposed_grid_view(flattened_workspace_t& flattened,
 
 namespace {
 
-auto audio_offset_drag_matches(const std::optional<audio_offset_drag_t>& drag,
+auto audio_offset_drag_matches(const std::optional<proposal_t<audio_offset_drag_t>>& drag,
                                const std::optional<workspace_tab_t>& drag_tab,
                                const workspace_controller_t& workspace,
                                const document_history_t& history) -> bool {
@@ -471,16 +471,16 @@ void populate_audio_offset_overlay(flattened_workspace_t& flattened,
                                    const workspace_controller_t& workspace,
                                    compose_scene_cache_t& cache,
                                    const editor_interaction_state_t* interaction,
-                                   const std::optional<audio_offset_drag_t>& drag,
+                                   const std::optional<proposal_t<audio_offset_drag_t>>& drag,
                                    const std::optional<workspace_tab_t>& drag_tab,
                                    const audio::waveform_analysis_result_t* waveform_analysis) {
     if (!audio_offset_drag_matches(drag, drag_tab, workspace, history)) return;
     flattened.view.compose.waveform_offset_drag_active = true;
-    if (cache.timing.proposed_offset_seconds != drag->proposed_offset_seconds)
+    if (cache.timing.proposed_offset_seconds != drag->payload.proposed_offset_seconds)
         rebuild_offset_timing_index(cache, history, *workspace.selected_chart,
-                                    drag->proposed_offset_seconds);
+                                    drag->payload.proposed_offset_seconds);
     build_offset_grid_view(flattened, cache, history, workspace, interaction);
-    update_proposed_beat_zero(flattened, *drag, waveform_analysis);
+    update_proposed_beat_zero(flattened, drag->payload, waveform_analysis);
 }
 
 auto beat_fit_drag_matches(const compose_scene_cache_t& cache,
@@ -606,7 +606,7 @@ void populate_tap_apply_overlay(flattened_workspace_t& flattened,
     if (chart == nullptr) return;
     build_compose_proposed_grid_view(flattened, cache, *chart, *cache.timing.marker_timing_index,
                                   *cache.timing.tap_preview_timing, *interaction);
-    const audio_offset_drag_t offset{.stamp = proposal.stamp, .sample_rate = proposal.sample_rate,
+    const audio_offset_drag_t offset{.sample_rate = proposal.sample_rate,
         .proposed_offset_seconds = proposal.beat_zero_audio_offset_seconds};
     update_proposed_beat_zero(flattened, offset, analysis);
     flattened.view.compose.waveform_offset_drag_active = true;
@@ -617,7 +617,7 @@ void populate_compose_waveform_overlays(
     bool overview_available, flattened_workspace_t& flattened,
     document_history_t& history, const workspace_controller_t& workspace,
     compose_scene_cache_t& cache, editor_interaction_state_t* interaction,
-    const std::optional<audio_offset_drag_t>& audio_offset_drag,
+    const std::optional<proposal_t<audio_offset_drag_t>>& audio_offset_drag,
     const std::optional<workspace_tab_t>& audio_offset_drag_tab,
     const audio::waveform_analysis_result_t* waveform_analysis) {
     if (!overview_available) return;

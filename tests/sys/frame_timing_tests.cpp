@@ -2735,7 +2735,7 @@ TEST_CASE("Offset lock action rejects stale binding without clearing captured ed
     WormUiWorkspaceAction action{};
     action.compose_input_chart_id = fixture.interaction->chart.value;
     action.compose_input_document_revision = fixture.history.document.revision + 1;
-    std::optional<audio_offset_drag_t> drag{audio_offset_drag_t{}};
+    std::optional<proposal_t<audio_offset_drag_t>> drag{proposal_t<audio_offset_drag_t>{}};
     std::optional<workspace_tab_t> tab{workspace_tab_t::compose};
     const auto message = toggle_compose_audio_offset_lock(action, fixture.history, *fixture.binding.workspace,
         fixture.application, fixture.cache, drag, tab);
@@ -2815,11 +2815,11 @@ TEST_CASE("Offset locking takes precedence over a captured release and never rep
           "[sys][offset-lock]") {
     compose_test_fixture_t fixture;
     fixture.project();
-    auto begun = audio_offset_drag_t::from(fixture.history.document, chart_id_t{1}, 48000);
+    auto begun = audio_offset_drag_t::propose(fixture.history.document, chart_id_t{1}, 48000);
     REQUIRE(begun.value);
-    auto updated = begun.value->revise(fixture.history.document, 4800);
+    auto updated = begun.value->payload.revise(begun.value->stamp, fixture.history.document, 4800);
     REQUIRE(updated.value);
-    std::optional<audio_offset_drag_t> drag{updated.value};
+    std::optional<proposal_t<audio_offset_drag_t>> drag{updated.value};
     std::optional<workspace_tab_t> tab = workspace_tab_t::compose;
     fixture.cache.timing.offset_fit_drag = compose_scene_cache_t::offset_fit_drag_t{};
     fixture.cache.timing.beat_fit_drag = beat_interval_drag_t{};

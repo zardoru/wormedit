@@ -14,7 +14,7 @@ void populate_compose_waveform_overlays(
     bool overview_available, flattened_workspace_t& flattened,
     document_history_t& history, const workspace_controller_t& workspace,
     compose_scene_cache_t& cache, editor_interaction_state_t* interaction,
-    const std::optional<audio_offset_drag_t>& audio_offset_drag,
+    const std::optional<proposal_t<audio_offset_drag_t>>& audio_offset_drag,
     const std::optional<workspace_tab_t>& audio_offset_drag_tab,
     const audio::waveform_analysis_result_t* waveform_analysis);
 

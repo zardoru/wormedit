@@ -35,7 +35,7 @@ struct workspace_frame_view_args_t {
     const workspace_view_t& workspace;
     std::optional<chart_id_t> selected_chart;
     bool timing_locked{};
-    const std::optional<audio_offset_drag_t>& audio_offset_drag;
+    const std::optional<proposal_t<audio_offset_drag_t>>& audio_offset_drag;
     workspace_frame_transport_t transport;
     player_preview_presenter_t& player_preview_presenter;
     bool player_preview_visible{};

@@ -2164,7 +2164,7 @@ struct application_t::implementation_t {
         sound_drop_transaction_t sound_drop_transaction{};
         std::vector<sound_drop_batch_t> pending_resource_batches{};
         bga_dock_runtime_t bga_dock_runtime{};
-        std::optional<audio_offset_drag_t> audio_offset_drag{};
+        std::optional<proposal_t<audio_offset_drag_t>> audio_offset_drag{};
         std::optional<workspace_tab_t> audio_offset_drag_tab{};
         timing_scene_cache_t timing_scene_cache{};
         runtime::timing_edit_t timing_edit{};
@@ -2622,12 +2622,12 @@ struct application_t::implementation_t {
         const auto timing_locked = context.timing_locked;
         if (!drag || !drag_tab || *drag_tab != workspace.active_tab ||
             !drag->stamp.is_current(*workspace.selected_chart, action.audio_offset_drag_document_revision) ||
-            drag->sample_rate != *context.selected_sample_rate) {
+            drag->payload.sample_rate != *context.selected_sample_rate) {
             return clear_audio_offset_drag(
                 context, "Audio offset drag has no matching captured transaction.");
         }
-        const auto updated = drag->revise(
-            history.document, action.audio_offset_drag_delta_frames, timing_locked);
+        const auto updated = drag->payload.revise(
+            drag->stamp, history.document, action.audio_offset_drag_delta_frames, timing_locked);
         if (!updated.ok() || !updated.value) {
             drag.reset();
             drag_tab.reset();
@@ -2806,7 +2806,7 @@ struct application_t::implementation_t {
     auto begin_audio_offset_drag_action(AudioOffsetDragContext& context) -> std::string {
         using namespace wormedit;
         const auto begun =
-            audio_offset_drag_t::from(session.history.document, *session.workspace.selected_chart,
+            audio_offset_drag_t::propose(session.history.document, *session.workspace.selected_chart,
                                     *context.selected_sample_rate, context.timing_locked);
         views.audio_offset_drag = begun.ok() ? begun.value : std::nullopt;
         views.audio_offset_drag_tab =
@@ -3396,14 +3396,14 @@ struct application_t::implementation_t {
                 "Finish or cancel the active audio offset drag before nudging.");
         }
         const auto begun =
-            audio_offset_drag_t::from(session.history.document, *session.workspace.selected_chart,
+            audio_offset_drag_t::propose(session.history.document, *session.workspace.selected_chart,
                                     *context.selected_sample_rate, context.timing_locked);
         if (!begun.ok() || !begun.value) {
             return post_audio_offset_diagnostic(context, begun.diagnostics,
                                                 "Audio offset nudge could not start.",
                                                 notification_severity_t::warning);
         }
-        const auto updated = begun.value->revise(session.history.document,
+        const auto updated = begun.value->payload.revise(begun.value->stamp, session.history.document,
                                                       context.action.audio_offset_drag_delta_frames,
                                                       context.timing_locked);
         if (!updated.ok() || !updated.value) {

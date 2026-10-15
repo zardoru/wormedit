@@ -27,7 +27,7 @@ struct defaults_t {
     project_identity_t project_identity;
     application_command_state_t application_command_state{};
     stepmania_export_policy_t stepmania_export_policy{};
-    std::optional<audio_offset_drag_t> audio_offset_drag{};
+    std::optional<proposal_t<audio_offset_drag_t>> audio_offset_drag{};
     std::optional<workspace_tab_t> audio_offset_drag_tab{};
     command_registry_t command_registry{};
     std::optional<editor_interaction_state_t> compose_interaction_state{};

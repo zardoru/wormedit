@@ -13,6 +13,15 @@ using namespace wormedit;
 
 namespace {
 
+void require_export_bake(const sv_recipe_export_bake_outcome_t& result) {
+    REQUIRE(result.value);
+    REQUIRE(result.diagnostics.empty());
+}
+
+void check_export_bake_rejection(const sv_recipe_export_bake_outcome_t& result) {
+    CHECK_FALSE((result.value && result.diagnostics.empty()));
+}
+
 auto make_recipe_chart() -> chart_document_t {
     return {
         .id = chart_id_t{10},
@@ -210,19 +219,19 @@ TEST_CASE("export baking materializes ordinary events only in a detached chart c
     chart.sv_recipes.push_back(recipe);
 
     const auto baked = bake_sv_recipes_for_export(chart);
-    REQUIRE(baked);
-    REQUIRE(baked.chart->sv_recipes.empty());
-    REQUIRE(baked.chart->scrolls.size() == 3);
-    CHECK((baked.chart->scrolls[0].multiplier == signed_rational_t{1, 1}));
-    CHECK((baked.chart->scrolls[1].multiplier == signed_rational_t{3, 2}));
-    CHECK((baked.chart->scrolls[2].multiplier == signed_rational_t{1, 1}));
+    require_export_bake(baked);
+    REQUIRE(baked.value->sv_recipes.empty());
+    REQUIRE(baked.value->scrolls.size() == 3);
+    CHECK((baked.value->scrolls[0].multiplier == signed_rational_t{1, 1}));
+    CHECK((baked.value->scrolls[1].multiplier == signed_rational_t{3, 2}));
+    CHECK((baked.value->scrolls[2].multiplier == signed_rational_t{1, 1}));
     CHECK(chart.scrolls.empty());
     CHECK(chart.sv_recipes.size() == 1);
 
     auto malformed = chart;
     malformed.sv_recipes.front().range.end = {measure_id_t{11}, 0};
     const auto rejected = bake_sv_recipes_for_export(malformed);
-    CHECK_FALSE(rejected);
+    check_export_bake_rejection(rejected);
     CHECK_FALSE(rejected.diagnostics.empty());
 }
 
@@ -608,10 +617,10 @@ TEST_CASE("materializing a recipe replaces it with ordinary events in one undo s
     auto expected = song.charts.front();
     expected.sv_recipes.front().enabled = true;
     const auto baked = bake_sv_recipes_for_export(expected);
-    REQUIRE(baked);
+    require_export_bake(baked);
     for (std::size_t index = 0; index < after.scrolls.size(); ++index) {
-        CHECK(after.scrolls[index].position == baked.chart->scrolls[index].position);
-        CHECK(after.scrolls[index].multiplier == baked.chart->scrolls[index].multiplier);
+        CHECK(after.scrolls[index].position == baked.value->scrolls[index].position);
+        CHECK(after.scrolls[index].multiplier == baked.value->scrolls[index].multiplier);
     }
     REQUIRE(undo_document_command(history));
     CHECK(history.document.charts.front().sv_recipes.size() == 1);
@@ -656,7 +665,7 @@ TEST_CASE("Lua expression recipes are stored and validated but never sampled",
     CHECK_FALSE(sampled);
     CHECK(sampled.diagnostics.front().code == diagnostic_code_t::unsupported_feature);
     chart.sv_recipes.push_back(recipe);
-    CHECK_FALSE(bake_sv_recipes_for_export(chart));
+    check_export_bake_rejection(bake_sv_recipes_for_export(chart));
 
     auto stray = make_linear_recipe(recipe_id_t{22}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {2, 1});
     stray.expression_source = "return 2";
@@ -765,9 +774,9 @@ TEST_CASE("SV shared export bake retains chart and strict legacy warning rejecti
         .diagnostics = {{.severity = diagnostic_severity_t::warning,
             .code = diagnostic_code_t::unsupported_feature, .message = "warning"}}};
     CHECK(bake.ok());
-    const auto baked = sv_recipe_export_bake_result_t::from(std::move(bake));
-    CHECK_FALSE(baked);
-    CHECK(baked.chart.has_value());
+    const auto baked = std::move(bake);
+    check_export_bake_rejection(baked);
+    CHECK(baked.value.has_value());
 }
 
 TEST_CASE("SV primary sample factory retains exact curve points", "[unit][sv-recipe][results]") {
@@ -786,7 +795,7 @@ TEST_CASE("SV primary compilation factory retains the output family", "[unit][sv
 }
 
 TEST_CASE("SV primary bake factory publishes a chart without recipes", "[unit][sv-recipe][results]") {
-    const auto bake = sv_recipe_export_bake_result_t::from(make_recipe_chart());
+    const auto bake = bake_sv_recipes_for_export(make_recipe_chart());
     REQUIRE(bake.ok());
     REQUIRE(bake.value.has_value());
     CHECK(bake.value->sv_recipes.empty());

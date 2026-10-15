@@ -62,16 +62,6 @@ struct sv_recipe_compilation_t {
 };
 
 using sv_recipe_export_bake_outcome_t = diagnosed_t<std::optional<chart_document_t>>;
-struct sv_recipe_export_bake_result_t {
-    [[nodiscard]] static auto from(const chart_document_t& chart) -> sv_recipe_export_bake_outcome_t;
-    [[nodiscard]] static auto from(sv_recipe_export_bake_outcome_t&& outcome) -> sv_recipe_export_bake_result_t;
-    std::optional<chart_document_t> chart;
-    diagnostic_list_t diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return chart.has_value() && diagnostics.empty();
-    }
-};
 
 enum class sv_recipe_draft_status_t {
     inactive,
@@ -149,7 +139,7 @@ void cancel_sv_recipe_draft(sv_recipe_draft_t& draft) noexcept;
 // ordinary instantaneous scroll events; SPEEDS recipes become ordinary speed
 // events. The source chart remains parametric and unchanged.
 [[nodiscard]] auto bake_sv_recipes_for_export(const chart_document_t& chart)
-    -> sv_recipe_export_bake_result_t;
+    -> sv_recipe_export_bake_outcome_t;
 
 template <> struct chart_edit_value_traits_t<sv_recipe_t> {
     using id_type = recipe_id_t;

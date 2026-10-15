@@ -40,10 +40,10 @@ auto build_recipe_areas_view(const chart_document_t& chart, const measure_index_
                            .enabled = recipe.enabled,
                            .begin_row = *begin,
                            .end_row = *end};
-        const auto sampled = sample_sv_recipe(chart, recipe);
-        area.evaluable = static_cast<bool>(sampled) && !sampled.points.empty();
+        const auto sampled = sv_recipe_samples_t::from(chart, recipe);
+        area.evaluable = sampled.diagnostics.empty() && !sampled.value.points.empty();
         if (area.evaluable) {
-            for (const auto& point : sampled.points)
+            for (const auto& point : sampled.value.points)
                 area.points.push_back({point.absolute_row, point.value});
         }
         result.areas.push_back(std::move(area));

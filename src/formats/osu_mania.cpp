@@ -2171,7 +2171,7 @@ auto select_osu_chart(const song_document_t& song, const osu_mania_write_options
 
 template <typename fail_t>
 auto validate_and_bake_osu_chart(const song_document_t& song, const chart_document_t& chart,
-                                 fail_t&& fail) -> sv_recipe_export_bake_result_t {
+                                 fail_t&& fail) -> sv_recipe_export_bake_outcome_t {
     const auto validation = validate_document(song);
     const auto invalid = std::ranges::find_if(validation, [](const auto& diagnostic) {
         return diagnostic.severity == diagnostic_severity_t::error;
@@ -2180,7 +2180,7 @@ auto validate_and_bake_osu_chart(const song_document_t& song, const chart_docume
         fail(osu_mania_write_diagnostic_code_t::invalid_document,
              "document failed core validation: " + invalid->message, "chart");
     auto baked = bake_sv_recipes_for_export(chart);
-    if (!baked)
+    if (!baked.value || !baked.diagnostics.empty())
         fail(osu_mania_write_diagnostic_code_t::unrepresentable_position,
              "SV recipe export bake failed: " + baked.diagnostics.front().message, "scrolls");
     return baked;
@@ -3301,7 +3301,7 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
         const bool lazer_profile = output_profile == osu_mania_file_profile_t::lazer_v128;
 
         auto baked_chart = validate_and_bake_osu_chart(song, *chart, fail);
-        chart = &*baked_chart.chart;
+        chart = &*baked_chart.value;
         auto storyboard_output = prepare_osu_storyboard(song, options, fail);
         validate_osu_chart_features(*chart, options, fail, warn);
         auto geometry = build_osu_export_geometry(*chart, options, fail);

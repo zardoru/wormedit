@@ -25,7 +25,6 @@ auto apply_sv_recipe_transaction(document_command_transaction_t& transaction,
                                  const sv_recipe_edit_action_t& action)
     -> document_command_result_t;
 
-
 constexpr long double maximum_parameter_magnitude = 1'000'000.0L;
 constexpr long double maximum_curve_output = 1'000'000'000.0L;
 constexpr std::uint64_t maximum_parameter_denominator = 1'000'000'000ULL;
@@ -711,13 +710,13 @@ struct recipe_sample_set_t {
 auto append_recipe_sample(const chart_document_t& chart, const sv_recipe_t& recipe,
                           recipe_sample_set_t& samples,
                           diagnostic_list_t& diagnostics) -> bool {
-    const auto sample = sample_sv_recipe(chart, recipe);
-    if (!sample) {
+    const auto sample = sv_recipe_samples_t::from(chart, recipe);
+    if (!sample.diagnostics.empty()) {
         diagnostics.insert(diagnostics.end(), sample.diagnostics.begin(), sample.diagnostics.end());
         return false;
     }
     samples.recipes.push_back(&recipe);
-    for (const auto& point : sample.points) {
+    for (const auto& point : sample.value.points) {
         samples.rows.insert(point.absolute_row);
     }
     return true;
@@ -1196,13 +1195,13 @@ auto allocate_transient_id(std::uint64_t& next_id) -> std::optional<object_id_t>
 auto compiled_points_for_export(chart_document_t& chart, sv_recipe_output_t output,
                                 diagnostic_list_t& diagnostics)
     -> std::optional<std::vector<sv_recipe_point_t>> {
-    const auto compiled = compile_sv_recipes(chart, output);
-    if (!compiled) {
+    const auto compiled = sv_recipe_compiled_output_t::from(chart, output);
+    if (!compiled.diagnostics.empty()) {
         diagnostics.insert(diagnostics.end(), compiled.diagnostics.begin(),
                            compiled.diagnostics.end());
         return std::nullopt;
     }
-    return compiled.points;
+    return compiled.value.points;
 }
 
 auto bake_scroll_events(chart_document_t& chart, const measure_index_t& index,
@@ -1277,10 +1276,7 @@ auto bake_speed_events(chart_document_t& chart, const measure_index_t& index,
 
 } // namespace
 
-auto sv_recipe_export_bake_result_t::from(sv_recipe_export_bake_outcome_t&& outcome) -> sv_recipe_export_bake_result_t {
-    return {.chart = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
-auto sv_recipe_export_bake_result_t::from(const chart_document_t& chart) -> sv_recipe_export_bake_outcome_t {
+auto bake_sv_recipes_for_export(const chart_document_t& chart) -> sv_recipe_export_bake_outcome_t {
     sv_recipe_export_bake_outcome_t result{};
     auto baked = chart;
     if (std::ranges::none_of(baked.sv_recipes, &sv_recipe_t::enabled)) {
@@ -1324,10 +1320,6 @@ auto sv_recipe_export_bake_result_t::from(const chart_document_t& chart) -> sv_r
     baked.sv_recipes.clear();
     result.value = std::move(baked);
     return result;
-}
-
-auto bake_sv_recipes_for_export(const chart_document_t& chart) -> sv_recipe_export_bake_result_t {
-    return sv_recipe_export_bake_result_t::from(sv_recipe_export_bake_result_t::from(chart));
 }
 
 auto begin_sv_recipe_range_drag(const document_history_t& history, chart_id_t chart_id,
@@ -1682,7 +1674,7 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
     scratch.sv_recipes = {*recipe};
     scratch.sv_recipes.front().enabled = true;
     auto baked = bake_sv_recipes_for_export(scratch);
-    if (!baked) {
+    if (!baked.value || !baked.diagnostics.empty()) {
         context.result.diagnostics.insert(context.result.diagnostics.end(),
                                           baked.diagnostics.begin(), baked.diagnostics.end());
         if (context.result.diagnostics.empty())
@@ -1690,10 +1682,10 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
                    "SV recipe could not be materialized");
         return;
     }
-    mark_materialized_events(baked.chart->scrolls, next_event_source_order(chart.scrolls));
-    mark_materialized_events(baked.chart->speeds, next_event_source_order(chart.speeds));
-    chart.scrolls = std::move(baked.chart->scrolls);
-    chart.speeds = std::move(baked.chart->speeds);
+    mark_materialized_events(baked.value->scrolls, next_event_source_order(chart.scrolls));
+    mark_materialized_events(baked.value->speeds, next_event_source_order(chart.speeds));
+    chart.scrolls = std::move(baked.value->scrolls);
+    chart.speeds = std::move(baked.value->speeds);
     std::erase_if(chart.sv_recipes, [&](const auto& item) { return item.id == edit.id; });
     context.label = "Materialize SV recipe";
     context.changed = true;
@@ -1710,7 +1702,6 @@ template <typename Edit>
 void sv_recipe_edit_context_t::operator()(const Edit& edit) {
     apply_recipe_operation(*this, edit);
 }
-
 
 auto apply_sv_recipe_transaction(document_command_transaction_t& transaction,
                                  const sv_recipe_edit_action_t& action)

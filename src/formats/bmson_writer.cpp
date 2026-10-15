@@ -899,11 +899,11 @@ auto bake_selected_chart(const song_document_t& song, const chart_document_t& se
         fail(bmson_write_diagnostic_code_t::invalid_document,
              "document failed core validation: " + validation.front().message, "$");
     const auto baked = bake_sv_recipes_for_export(selected);
-    if (!baked)
+    if (!baked.value || !baked.diagnostics.empty())
         fail(bmson_write_diagnostic_code_t::unrepresentable_number,
              "SV recipe export bake failed: " + baked.diagnostics.front().message,
              "$.scroll_events");
-    return *baked.chart;
+    return *baked.value;
 }
 
 void report_bmson_chart_losses(const chart_document_t& chart,

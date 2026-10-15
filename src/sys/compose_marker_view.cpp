@@ -701,10 +701,10 @@ void populate_compose_recipe_areas(
         if (previewing) {
             // The unapplied candidate replaces the stored values in this area's graph.
             previewed = stored_area;
-            const auto sampled = wormedit::sample_sv_recipe(chart, preview->candidate);
-            previewed.evaluable = static_cast<bool>(sampled) && !sampled.points.empty();
+            const auto sampled = wormedit::sv_recipe_samples_t::from(chart, preview->candidate);
+            previewed.evaluable = sampled.diagnostics.empty() && !sampled.value.points.empty();
             previewed.points.clear();
-            for (const auto& point : sampled.points)
+            for (const auto& point : sampled.value.points)
                 previewed.points.push_back({point.absolute_row, point.value});
             shown = &previewed;
         }

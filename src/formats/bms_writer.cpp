@@ -3283,12 +3283,12 @@ auto write_bms(const song_document_t& song, bms_write_options_t options) -> bms_
         const auto had_active_recipes = std::ranges::any_of(
             chart->sv_recipes, [](const auto& recipe) { return recipe.enabled; });
         auto baked_chart = bake_sv_recipes_for_export(*chart);
-        if (!baked_chart) {
+        if (!baked_chart.value || !baked_chart.diagnostics.empty()) {
             fail(bms_write_diagnostic_code_t::unrepresentable_number,
                  "SV recipe export bake failed: " + baked_chart.diagnostics.front().message,
                  "$.charts[].sv_recipes");
         }
-        chart = &*baked_chart.chart;
+        chart = &*baked_chart.value;
 
         if (!options.output_encoding.has_value() && options.preserve_unchanged_source &&
             song.charts.size() == 1 && !had_active_recipes &&

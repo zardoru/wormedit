@@ -2276,13 +2276,13 @@ class stepmania_writer_t {
     baked_charts_.reserve(charts_.size());
     for (const auto* chart : charts_) {
         auto baked = bake_sv_recipes_for_export(*chart);
-        if (!baked) {
+        if (!baked.value || !baked.diagnostics.empty()) {
             report(stepmania_write_diagnostic_code_t::unrepresentable_position,
                    "SV recipe export bake failed: " + baked.diagnostics.front().message,
                    "SCROLLS/SPEEDS");
             return false;
         }
-        baked_charts_.push_back(std::move(*baked.chart));
+        baked_charts_.push_back(std::move(*baked.value));
     }
     charts_.clear();
     charts_.reserve(baked_charts_.size());

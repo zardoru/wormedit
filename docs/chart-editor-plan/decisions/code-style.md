@@ -117,6 +117,25 @@ it in new code even before the card lands.
   stb_image and SDL3 already cover their formats and utilities. A new hand-written binary or
   file-format parser needs a stated reason in this file.
 
+## Repetition and scaffolding (owner, 2026-10-15)
+
+- **Rule of three, by shape:** before adding a type, handler, job or action, find its siblings by
+  what they do, not by name. If yours would be the third with the same skeleton (guards, stamp
+  checks, unwraps, lifecycle status, poll/wait plumbing, preamble), extract the shared runner,
+  shell or trait first and write only the part that differs; if that is out of your scope, stop
+  and report it. A reader should reach the work (how it works, what it proposes, when it is valid,
+  the commit) without unwrapping ceremony.
+- **Every scaffold has a removal owner:** a temporary adapter, forwarder or compatibility alias
+  is allowed only with the card that deletes it, named in a comment beside it
+  (`// Temporary: removed by T-NNN`). Unowned scaffolds are bugs.
+- **Complexity is not a reason to fragment:** when a function exceeds the cognitive-complexity
+  limit because of boilerplate, move the boilerplate into the shared owner instead of splitting
+  the function into single-use fragments.
+- **Ratchets:** `cmake/ceremony_ratchet.txt` lists known ceremony patterns with a maximum count;
+  the `documentation.ceremony_ratchet` test fails when a count grows. Lower the maximum in the same
+  commit that lowers a count; raising one needs the owner's approval. When an audit finds a new
+  ceremony pattern, add a row.
+
 ## Files and folders
 
 - Group files in folders by subsystem and keep the file-name prefix
@@ -139,4 +158,4 @@ it in new code even before the card lands.
 vocabularies translated by hand? 4. A query that should be a member? 5. A local outcome or result
 type, or a failure builder? 6. State with no owner? 7. A fact written in two places, or a list
 position crossing the ABI? 8. A context unpacked and rebuilt? 9. A name breaking the table above?
-10. Hand-rolled code a dependency provides? 11. Background work with its own generation, in-flight or poll/wait plumbing instead of the async shell?
+10. Hand-rolled code a dependency provides? 11. Background work with its own generation, in-flight or poll/wait plumbing instead of the async shell? 12. A third copy of a skeleton instead of a shared runner? 13. A scaffold without a removal card? 14. A ratchet count raised?

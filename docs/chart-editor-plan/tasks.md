@@ -140,13 +140,14 @@ every number above T-628.
 10. A card whose status is `blocked-on-user` starts with a **STOP** step naming the [open question](decisions/open-questions.md) or missing input. Do not implement the provisional default unless the user says so.
 11. A card whose status starts with `deferred` is a late-stage ambition. Never pick it up while choosing work; start it only when the user names its ID. Its original status is kept in parentheses for when it is un-deferred.
 12. A card whose status starts with `partial` has landed code that does not yet meet its **Outcome**, and the card carries a **Done so far** and a **Remaining** list. It can be picked up like a `ready` card: start from **Remaining**, not from step 1, and keep both lists current. Cards that wait on it stay blocked until it is `done`.
+13. Run `ctest --test-dir build -R '^documentation\.'`, which includes the ceremony ratchet: a known ceremony pattern may not grow, and a lowered count lowers its maximum in `cmake/ceremony_ratchet.txt` in the same commit. Follow the code-style section "Repetition and scaffolding" (rule of three by shape; every scaffold names its removal card).
 
 ## Standard wiring pattern for a new UI action
 
 Most frontend cards follow the same four-hop path; cards say "wire it through
 the standard pattern" instead of repeating it.
 
-1. **Core:** a revision-checked command in `include/wormedit/core/<area>.h` / `src/core/<area>.cpp` that takes `document_history_t&` and an expected revision, and rejects atomically. Test it in `tests/core/<area>_tests.cpp`.
+1. **Core:** a command in `include/wormedit/core/<area>.h` / `src/core/<area>.cpp` that runs through `document_command_transaction_t` (staged edits through `proposal_t`; the stamp is checked once at the boundary, see code-style.md) and rejects atomically. Test it in `tests/core/<area>_tests.cpp`.
 2. **Contract:** a new enumerator in `src/ui/frontend.h` (for Compose, next to `WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL`) plus any scalar view fields. Only plain C types cross this boundary.
 3. **Application:** a `case` in the matching dispatcher (`src/sys/compose_actions.cpp`, `src/sys/metadata_actions.cpp`, or `src/sys/timing_edit_runtime.cpp`) that calls the core command, and view projection in `src/sys/compose_view.cpp`, `src/sys/metadata_view_projection.cpp`, or `src/sys/timing_view.cpp`.
 4. **Frontend:** a widget in the owning Nuklear unit (`src/ui/nuklear/compose_inspector.cpp`, `compose_toolbar.cpp`, `metadata_panel.cpp`, `timing_panel.cpp`, …) that sets the action. Frontend-local state goes in the matching `*_state.cpp` and is tested in `tests/ui/`.
@@ -169,7 +170,8 @@ Copy this shape for every new card. Every heading is mandatory. The
 - **Invariants:** data that must stay lossless, deterministic, or cross-platform.
 - **Reject/failure behavior:** what must be unchanged after a bad input or failed step.
 - **Verify:** exact commands with the expected result.
-- **Out of scope:** adjacent work that belongs to another card.
+- **Target shape:** (recommended for refactors) a short code sketch of what one migrated owner looks like when done, and the grep that proves the ceremony is gone.
+- **Out of scope:** adjacent work that belongs to another card. Each exclusion names the card that owns it, or the evidence that it needs no work (owner, 2026-10-15: unchecked "already shared" exclusions hid the gesture lifecycle).
 ```
 
 ## Standard verification commands

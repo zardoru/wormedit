@@ -700,6 +700,13 @@ if(BUILD_TESTING)
             -P "${CMAKE_SOURCE_DIR}/cmake/check_chart_editor_docs.cmake"
     )
     set_tests_properties(documentation.chart_editor_state PROPERTIES LABELS "unit;documentation")
+    add_test(
+        NAME documentation.ceremony_ratchet
+        COMMAND "${CMAKE_COMMAND}"
+            -DWORMEDIT_SOURCE_ROOT=${CMAKE_SOURCE_DIR}
+            -P "${CMAKE_SOURCE_DIR}/cmake/check_ceremony_ratchet.cmake"
+    )
+    set_tests_properties(documentation.ceremony_ratchet PROPERTIES LABELS "unit;documentation")
 endif()
 
 if(WORMEDIT_BUILD_APP AND WORMEDIT_ENABLE_AUDIO_DECODER)

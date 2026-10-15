@@ -2871,8 +2871,20 @@ void share_quantize_grid_with_snap(compose_action_context_t& context, std::uint6
             .insert_or_assign(context.state.chart.value, divisions);
 }
 
-auto apply_quantize_settings_from_action(compose_action_context_t& context)
+struct apply_compose_quantize_settings_action_t {
+    auto operator==(const apply_compose_quantize_settings_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<apply_compose_quantize_settings_action_t, compose_action_context_t>);
+
+auto apply_compose_quantize_settings_action_t::validate(compose_action_context_t&) const
     -> std::optional<compose_action_outcome_t> {
+    return std::nullopt;
+}
+
+auto apply_compose_quantize_settings_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
     auto& editor = quantize_editor_for(context);
     const auto request = quantize_request_from_action(context.action, {});
     if (!request)
@@ -2887,14 +2899,31 @@ auto apply_quantize_settings_from_action(compose_action_context_t& context)
                                           notification_source_t::input);
 }
 
-auto select_quantize_preset(compose_action_context_t& context) -> compose_action_outcome_t {
+struct select_compose_quantize_preset_action_t {
+    decltype(WormUiWorkspaceAction::compose_quantize_preset_index) index{};
+    const quantization_preset_t* selected_preset{};
+    auto operator==(const select_compose_quantize_preset_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<select_compose_quantize_preset_action_t, compose_action_context_t>);
+
+auto select_compose_quantize_preset_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
-    const auto index = context.action.compose_quantize_preset_index;
+    index = context.action.compose_quantize_preset_index;
     if (index >= context.environment.document.history.document.quantization_presets.size())
         return compose_action_outcome_t::blocked(
             "The selected quantization preset is no longer available.",
             notification_source_t::edit);
-    const auto& preset = context.environment.document.history.document.quantization_presets[index];
+    selected_preset = &context.environment.document.history.document.quantization_presets[index];
+    return std::nullopt;
+}
+
+auto select_compose_quantize_preset_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
+    const auto& preset = *selected_preset;
     auto& editor = quantize_editor_for(context);
     editor.request = {.divisions = preset.divisions, .space = preset.space, .tie = preset.tie,
                       .collisions = quantization_collision_t::reject, .holds = preset.holds};
@@ -2926,23 +2955,37 @@ auto validate_quantize_preset_save(const compose_action_context_t& context,
     return std::nullopt;
 }
 
-auto save_quantize_preset(compose_action_context_t& context) -> compose_action_outcome_t {
-    constexpr std::string_view rebind_failure =
-        "Quantization preset saved, but workspace rebinding failed.";
+struct save_compose_quantize_preset_action_t {
+    std::optional<quantize_request_t> request{};
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<save_compose_quantize_preset_action_t, compose_action_context_t>);
+
+auto save_compose_quantize_preset_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
     const auto length = strnlen(context.action.compose_quantize_preset_name,
                                 sizeof(context.action.compose_quantize_preset_name));
-    const auto request = quantize_request_from_action(context.action, {});
+    request = quantize_request_from_action(context.action, {});
     if (const auto error = validate_quantize_preset_save(context, length, request))
         return compose_action_outcome_t::blocked(*error, notification_source_t::edit);
-    auto proposed = context.environment.document.history.document;
+    return std::nullopt;
+}
+
+auto save_compose_quantize_preset_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
+    constexpr std::string_view rebind_failure =
+        "Quantization preset saved, but workspace rebinding failed.";
+    auto transaction = document_command_transaction_t::from(context.environment.document.history);
+    auto& proposed = transaction.copy_document();
     proposed.quantization_presets.push_back({
         .name = context.action.compose_quantize_preset_name,
         .divisions = request->divisions, .space = request->space,
         .tie = request->tie, .holds = request->holds});
     const auto index = proposed.quantization_presets.size() - 1;
-    auto committed = commit_document_command(context.environment.document.history,
-                                                   std::move(proposed), "Save quantization preset");
+    auto committed = transaction.commit("Save quantization preset");
     if (!committed)
         return committed.diagnostics.empty()
                    ? compose_action_outcome_t::blocked("Quantization preset could not be saved.",
@@ -2962,20 +3005,35 @@ auto save_quantize_preset(compose_action_context_t& context) -> compose_action_o
     return outcome;
 }
 
-auto delete_quantize_preset(compose_action_context_t& context) -> compose_action_outcome_t {
-    constexpr std::string_view rebind_failure =
-        "Quantization preset deleted, but workspace rebinding failed.";
+struct delete_compose_quantize_preset_action_t {
+    decltype(WormUiWorkspaceAction::compose_quantize_preset_index) index{};
+    auto operator==(const delete_compose_quantize_preset_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<delete_compose_quantize_preset_action_t, compose_action_context_t>);
+
+auto delete_compose_quantize_preset_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
-    const auto index = context.action.compose_quantize_preset_index;
+    index = context.action.compose_quantize_preset_index;
     if (index >= context.environment.document.history.document.quantization_presets.size())
         return compose_action_outcome_t::blocked(
             "The selected quantization preset is no longer available.",
             notification_source_t::edit);
-    auto proposed = context.environment.document.history.document;
+    return std::nullopt;
+}
+
+auto delete_compose_quantize_preset_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
+    constexpr std::string_view rebind_failure =
+        "Quantization preset deleted, but workspace rebinding failed.";
+    auto transaction = document_command_transaction_t::from(context.environment.document.history);
+    auto& proposed = transaction.copy_document();
     proposed.quantization_presets.erase(proposed.quantization_presets.begin() +
                                         static_cast<std::ptrdiff_t>(index));
-    auto committed = commit_document_command(
-        context.environment.document.history, std::move(proposed), "Delete quantization preset");
+    auto committed = transaction.commit("Delete quantization preset");
     if (!committed)
         return committed.diagnostics.empty()
                    ? compose_action_outcome_t::blocked("Quantization preset could not be deleted.",
@@ -2997,11 +3055,19 @@ auto delete_quantize_preset(compose_action_context_t& context) -> compose_action
     return outcome;
 }
 
-auto rename_quantize_preset(compose_action_context_t& context) -> compose_action_outcome_t {
-    constexpr std::string_view rebind_failure =
-        "Quantization preset renamed, but workspace rebinding failed.";
+struct rename_compose_quantize_preset_action_t {
+    decltype(WormUiWorkspaceAction::compose_quantize_preset_index) index{};
+    std::string_view name{};
+    auto operator==(const rename_compose_quantize_preset_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<rename_compose_quantize_preset_action_t, compose_action_context_t>);
+
+auto rename_compose_quantize_preset_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
-    const auto index = context.action.compose_quantize_preset_index;
+    index = context.action.compose_quantize_preset_index;
     const auto& presets = context.environment.document.history.document.quantization_presets;
     if (index >= presets.size())
         return compose_action_outcome_t::blocked(
@@ -3013,7 +3079,7 @@ auto rename_quantize_preset(compose_action_context_t& context) -> compose_action
         return compose_action_outcome_t::blocked(
             "Enter a name for the quantization preset (maximum 64 bytes).",
             notification_source_t::edit);
-    const std::string_view name(context.action.compose_quantize_preset_name, length);
+    name = std::string_view(context.action.compose_quantize_preset_name, length);
     for (std::size_t other = 0; other < presets.size(); ++other)
         if (other != index && presets[other].name == name)
             return compose_action_outcome_t::blocked("A quantization preset already has that name.",
@@ -3022,10 +3088,18 @@ auto rename_quantize_preset(compose_action_context_t& context) -> compose_action
         return compose_action_outcome_t::from("Quantization preset name was unchanged.",
                                               notification_severity_t::info,
                                               notification_source_t::edit);
-    auto proposed = context.environment.document.history.document;
+    return std::nullopt;
+}
+
+auto rename_compose_quantize_preset_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
+    constexpr std::string_view rebind_failure =
+        "Quantization preset renamed, but workspace rebinding failed.";
+    auto transaction = document_command_transaction_t::from(context.environment.document.history);
+    auto& proposed = transaction.copy_document();
     proposed.quantization_presets[index].name = name;
-    auto committed = commit_document_command(
-        context.environment.document.history, std::move(proposed), "Rename quantization preset");
+    auto committed = transaction.commit("Rename quantization preset");
     if (!committed)
         return committed.diagnostics.empty()
                    ? compose_action_outcome_t::blocked("Quantization preset could not be renamed.",
@@ -3042,8 +3116,16 @@ auto rename_quantize_preset(compose_action_context_t& context) -> compose_action
     return outcome;
 }
 
-auto set_edit_snap_from_badge(compose_action_context_t& context, std::uint64_t divisions)
-    -> compose_action_outcome_t {
+struct set_compose_edit_snap_action_t {
+    std::uint64_t divisions{};
+    auto operator==(const set_compose_edit_snap_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<set_compose_edit_snap_action_t, compose_action_context_t>);
+
+auto set_compose_edit_snap_action_t::validate(compose_action_context_t& context) const
+    -> std::optional<compose_action_outcome_t> {
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before changing snapping."))
         return *blocked;
@@ -3055,6 +3137,11 @@ auto set_edit_snap_from_badge(compose_action_context_t& context, std::uint64_t d
         context.state.supported_snap_denominators.end())
         return compose_action_outcome_t::blocked("This chart cannot snap to that grid.",
                                                  notification_source_t::edit);
+    return std::nullopt;
+}
+
+auto set_compose_edit_snap_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
     auto result =
         wormedit::dispatch_editor_action(context.environment.document.history, context.state,
                                          wormedit::set_edit_snap_action_t{divisions});
@@ -3092,7 +3179,17 @@ auto selected_snap_positions(const chart_document_t& chart, const editor_interac
     return positions;
 }
 
-auto find_selection_snap(compose_action_context_t& context) -> compose_action_outcome_t {
+struct find_compose_selection_snap_action_t {
+    std::uint64_t divisions{};
+    std::vector<std::uint64_t> previous{};
+    auto operator==(const find_compose_selection_snap_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) -> compose_action_outcome_t;
+};
+static_assert(compose_action<find_compose_selection_snap_action_t, compose_action_context_t>);
+
+auto find_compose_selection_snap_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
     if (context.action.compose_input_project_id !=
         context.environment.document.history.document.id.value)
         return compose_action_outcome_t::blocked(
@@ -3118,44 +3215,62 @@ auto find_selection_snap(compose_action_context_t& context) -> compose_action_ou
     if (!fitting)
         return compose_action_outcome_t::blocked(
             "Select notes or BGM events to find a fitting snap.", notification_source_t::edit);
-    auto divisions = *fitting;
+    divisions = *fitting;
     // Downbeats/thirds use familiar quarter/triplet grids when those contain every point.
     if (divisions < 4 && chart->divisions_per_standard_measure % (divisions * 4) == 0)
         divisions *= 4;
-    auto previous = context.state.supported_snap_denominators;
+    previous = context.state.supported_snap_denominators;
+    return std::nullopt;
+}
+
+auto find_compose_selection_snap_action_t::perform(compose_action_context_t& context)
+    -> compose_action_outcome_t {
     if (std::ranges::find(previous, divisions) == previous.end())
         context.state.supported_snap_denominators.push_back(divisions);
-    auto result = set_edit_snap_from_badge(context, divisions);
+    auto result = run_compose_action(set_compose_edit_snap_action_t{.divisions = divisions}, context);
     if (context.state.active_snap_denominator != divisions)
         context.state.supported_snap_denominators = std::move(previous);
     return result;
+}
+
+struct toggle_compose_quantize_preview_action_t {
+    auto operator==(const toggle_compose_quantize_preview_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t&) const -> std::optional<compose_action_outcome_t> {
+        return std::nullopt;
+    }
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<toggle_compose_quantize_preview_action_t, compose_action_context_t>);
+
+auto toggle_compose_quantize_preview_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    invoke_compose_quantize_command(true, context.environment.document.history, context.state,
+                                    context.environment.editor.commands);
+    return compose_action_outcome_t::from(
+        context.environment.editor.commands.project.quantize.quantize_editor->preview_enabled
+            ? "Quantize preview enabled."
+            : "Quantize preview disabled.",
+        notification_severity_t::info, notification_source_t::input);
 }
 
 auto dispatch_quantize_preset_action(compose_action_context_t& context)
     -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
     const auto kind = context.action.compose_action;
-    if (kind == WORM_UI_COMPOSE_ACTION_TOGGLE_QUANTIZE_PREVIEW) {
-        invoke_compose_quantize_command(true, context.environment.document.history, context.state,
-                                        context.environment.editor.commands);
-        return compose_action_outcome_t::from(
-            context.environment.editor.commands.project.quantize.quantize_editor->preview_enabled
-                ? "Quantize preview enabled."
-                : "Quantize preview disabled.",
-            notification_severity_t::info, notification_source_t::input);
-    }
+    if (kind == WORM_UI_COMPOSE_ACTION_TOGGLE_QUANTIZE_PREVIEW)
+        return run_compose_action(toggle_compose_quantize_preview_action_t{}, context);
     if (kind == WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP)
-        return set_edit_snap_from_badge(context, context.action.compose_snap_denominator);
-    if (kind == WORM_UI_COMPOSE_ACTION_FIND_FITTING_SNAP) return find_selection_snap(context);
+        return run_compose_action(set_compose_edit_snap_action_t{.divisions = context.action.compose_snap_denominator}, context);
+    if (kind == WORM_UI_COMPOSE_ACTION_FIND_FITTING_SNAP) return run_compose_action(find_compose_selection_snap_action_t{}, context);
     if (kind == WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS)
-        return apply_quantize_settings_from_action(context);
+        return run_compose_action(apply_compose_quantize_settings_action_t{}, context);
     if (kind == WORM_UI_COMPOSE_ACTION_SELECT_QUANTIZE_PRESET)
-        return select_quantize_preset(context);
-    if (kind == WORM_UI_COMPOSE_ACTION_SAVE_QUANTIZE_PRESET) return save_quantize_preset(context);
+        return run_compose_action(select_compose_quantize_preset_action_t{}, context);
+    if (kind == WORM_UI_COMPOSE_ACTION_SAVE_QUANTIZE_PRESET) return run_compose_action(save_compose_quantize_preset_action_t{}, context);
     if (kind == WORM_UI_COMPOSE_ACTION_DELETE_QUANTIZE_PRESET)
-        return delete_quantize_preset(context);
+        return run_compose_action(delete_compose_quantize_preset_action_t{}, context);
     if (kind == WORM_UI_COMPOSE_ACTION_RENAME_QUANTIZE_PRESET)
-        return rename_quantize_preset(context);
+        return run_compose_action(rename_compose_quantize_preset_action_t{}, context);
     return std::nullopt;
 }
 

@@ -464,28 +464,12 @@ auto quantize_editor_for(compose_action_context_t& context)
 
 void share_quantize_grid_with_snap(compose_action_context_t& context, std::uint64_t divisions);
 
-auto apply_quantize_settings_from_action(compose_action_context_t& context)
-    -> std::optional<compose_action_outcome_t>;
-
-auto select_quantize_preset(compose_action_context_t& context) -> compose_action_outcome_t;
-
 auto validate_quantize_preset_save(const compose_action_context_t& context, std::size_t name_length,
                                    const std::optional<wormedit::quantize_request_t>& request)
     -> std::optional<std::string>;
 
-auto save_quantize_preset(compose_action_context_t& context) -> compose_action_outcome_t;
-
-auto delete_quantize_preset(compose_action_context_t& context) -> compose_action_outcome_t;
-
-auto rename_quantize_preset(compose_action_context_t& context) -> compose_action_outcome_t;
-
-auto set_edit_snap_from_badge(compose_action_context_t& context, std::uint64_t divisions)
-    -> compose_action_outcome_t;
-
 auto selected_snap_positions(const chart_document_t& chart, const editor_interaction_state_t& state)
     -> std::vector<local_position_t>;
-
-auto find_selection_snap(compose_action_context_t& context) -> compose_action_outcome_t;
 
 auto dispatch_quantize_preset_action(compose_action_context_t& context)
     -> std::optional<compose_action_outcome_t>;

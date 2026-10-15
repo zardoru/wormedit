@@ -13,11 +13,17 @@ auto recipe_form_target(compose_action_context_t& context) -> std::optional<reci
     return recipe_form_target_t{&*chart, &*recipe};
 }
 
-compose_action_outcome_t propose_recipe_form_action(compose_action_context_t& context) {
-    const auto target = recipe_form_target(context);
+auto propose_recipe_form_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
+    target = recipe_form_target(context);
     if (!target)
         return compose_action_outcome_t::blocked(
             "SV recipe form ignored because the recipe or the document changed.");
+    return std::nullopt;
+}
+
+auto propose_recipe_form_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
     auto& previous = context.environment.editor.commands.project.timing_recipe.recipe_preview;
     auto preview = recipe_form_preview_t::revise(
         previous ? std::move(*previous) : recipe_form_outcome_t{},
@@ -35,13 +41,19 @@ compose_action_outcome_t propose_recipe_form_action(compose_action_context_t& co
     return compose_action_outcome_t::from(status, severity, source);
 }
 
-compose_action_outcome_t apply_recipe_form_action(compose_action_context_t& context) {
-    const auto target = recipe_form_target(context);
+auto apply_recipe_form_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
+    target = recipe_form_target(context);
     if (!target)
         return compose_action_outcome_t::blocked(
             "SV recipe form ignored because the recipe or the document changed.");
     if (context.environment.editor.commands.project.timing_recipe.timing_locked)
         return compose_action_outcome_t::blocked("Timing is locked.");
+    return std::nullopt;
+}
+
+auto apply_recipe_form_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
     bool applied = false;
     auto severity = notification_severity_t::warning;
     auto status = wormedit::sys::apply_recipe_form(
@@ -55,5 +67,17 @@ compose_action_outcome_t apply_recipe_form_action(compose_action_context_t& cont
     outcome.rebind_failure = "SV recipe updated, but workspace rebinding failed.";
     outcome.rebind_failure_policy = compose_rebind_failure_policy_t::message_only;
     return outcome;
+}
+auto clear_recipe_form_preview_action_t::validate(compose_action_context_t&) const
+    -> std::optional<compose_action_outcome_t> {
+    return std::nullopt;
+}
+
+auto clear_recipe_form_preview_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    context.environment.editor.commands.project.timing_recipe.recipe_preview.reset();
+    return compose_action_outcome_t::from("SV recipe preview cleared.",
+                                          notification_severity_t::hint,
+                                          notification_source_t::input);
 }
 } // namespace wormedit::sys::compose_action_detail

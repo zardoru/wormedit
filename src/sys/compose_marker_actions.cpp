@@ -11,15 +11,11 @@ dispatch_compose_marker_action(compose_action_context_t& context) {
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER)
         return run_compose_action(set_cursor_measure_meter_action_t{}, context);
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_PREVIEW_SV_RECIPE_FORM)
-        return propose_recipe_form_action(context);
+        return run_compose_action(propose_recipe_form_action_t{}, context);
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_SV_RECIPE_FORM)
-        return apply_recipe_form_action(context);
-    if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_CLEAR_SV_RECIPE_PREVIEW) {
-        context.environment.editor.commands.project.timing_recipe.recipe_preview.reset();
-        return compose_action_outcome_t::from("SV recipe preview cleared.",
-                                              notification_severity_t::hint,
-                                              notification_source_t::input);
-    }
+        return run_compose_action(apply_recipe_form_action_t{}, context);
+    if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_CLEAR_SV_RECIPE_PREVIEW)
+        return run_compose_action(clear_recipe_form_preview_action_t{}, context);
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS)
         return run_compose_action(edit_cursor_measure_action_t{.command = cursor_measure_command_t::remove_with_contents}, context);
     if (const auto transform = selection_transform_for(context.action.compose_action))

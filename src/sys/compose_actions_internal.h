@@ -348,13 +348,33 @@ static_assert(compose_action<edit_cursor_measure_action_t, compose_action_contex
 struct recipe_form_target_t {
     const chart_document_t* chart{};
     const sv_recipe_t* recipe{};
+    auto operator==(const recipe_form_target_t&) const -> bool = default;
 };
 
 auto recipe_form_target(compose_action_context_t& context) -> std::optional<recipe_form_target_t>;
 
-compose_action_outcome_t propose_recipe_form_action(compose_action_context_t& context);
+struct propose_recipe_form_action_t {
+    std::optional<recipe_form_target_t> target;
+    auto operator==(const propose_recipe_form_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<propose_recipe_form_action_t, compose_action_context_t>);
 
-compose_action_outcome_t apply_recipe_form_action(compose_action_context_t& context);
+struct apply_recipe_form_action_t {
+    std::optional<recipe_form_target_t> target;
+    auto operator==(const apply_recipe_form_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<apply_recipe_form_action_t, compose_action_context_t>);
+
+struct clear_recipe_form_preview_action_t {
+    auto operator==(const clear_recipe_form_preview_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<clear_recipe_form_preview_action_t, compose_action_context_t>);
 
 struct set_cursor_measure_meter_action_t {
     auto operator==(const set_cursor_measure_meter_action_t&) const -> bool = default;

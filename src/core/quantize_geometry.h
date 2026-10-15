@@ -9,7 +9,7 @@
 
 namespace wormedit::detail {
 
-// Call-local lookup borrowing an index produced by build_measure_index. Entries
+// Call-local lookup borrowing an index produced by measure_index_t::from. Entries
 // remain in authored order; duplicate-ID lookup retains the first entry.
 class quantize_geometry_t {
 public:

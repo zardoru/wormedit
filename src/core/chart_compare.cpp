@@ -230,7 +230,7 @@ auto append_projection_layouts(chart_compare_work_t& work, chart_projection_t& p
                                     segment.id);
             }
         }
-        const auto row = absolute_row(projection.measures, segment.position);
+        const auto row = projection.measures.row_of(segment.position);
         if (!row) {
             return fail_compare(work, diagnostic_code_t::row_out_of_range,
                                 "chart comparison layout starts outside chart geometry",
@@ -281,14 +281,14 @@ auto append_chart_projection(chart_compare_work_t& work, chart_id_t chart_id) ->
         return fail_compare(work, diagnostic_code_t::invalid_resolution,
                             "chart comparison cannot use a chart with zero resolution");
     }
-    const auto built = build_measure_index(*chart);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built)) {
-        work.result.diagnostics.insert(work.result.diagnostics.end(), diagnostics->begin(),
-                                       diagnostics->end());
+    const auto built = measure_index_t::from(*chart);
+    if (!built) {
+        work.result.diagnostics.insert(work.result.diagnostics.end(), built.error().begin(),
+                                       built.error().end());
         return false;
     }
     chart_projection_t projection{.chart = &*chart,
-                                  .measures = std::get<measure_index_t>(built),
+                                  .measures = *built,
                                   .layouts = {},
                                   .notes = {}};
     work.candidates.push_back(
@@ -353,7 +353,7 @@ auto append_note_label(chart_compare_work_t& work, const note_t& note,
 auto append_note_endpoint(chart_compare_work_t& work, chart_projection_t& projection,
                           const note_t& note, local_position_t local,
                           chart_compare_note_part_t part) -> bool {
-    const auto row = absolute_row(projection.measures, local);
+    const auto row = projection.measures.row_of(local);
     if (!row) {
         return fail_compare(work, diagnostic_code_t::row_out_of_range,
                             "chart comparison note endpoint is outside chart geometry", note.id);
@@ -401,8 +401,8 @@ auto append_note(chart_compare_work_t& work, chart_projection_t& projection,
         return append_note_endpoint(work, projection, note, note.position,
                                     chart_compare_note_part_t::point);
     }
-    const auto begin = absolute_row(projection.measures, note.position);
-    const auto end = note.end ? absolute_row(projection.measures, *note.end)
+    const auto begin = projection.measures.row_of(note.position);
+    const auto end = note.end ? projection.measures.row_of(*note.end)
                               : std::optional<std::uint64_t>{};
     if (!begin || !end || *end <= *begin) {
         return fail_compare(work, diagnostic_code_t::invalid_hold,

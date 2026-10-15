@@ -2747,7 +2747,7 @@ TEST_CASE("Converted BMS taps and holds export in their original conditional sco
     require_bgm_export(wormedit::move_notes_to_bgm(history,
                                                  chart, ids, std::nullopt));
     const auto native = wormedit::write_native_project(history.document);
-    require_bgm_export(native.bytes);
+    require_bgm_export(native.value);
     const auto written = wormedit::write_bms(history.document);
     INFO((written.diagnostics.empty() ? "no diagnostic" : written.diagnostics.front().message));
     require_bgm_export(written.bytes);
@@ -2759,7 +2759,7 @@ TEST_CASE("Converted BMS taps and holds export in their original conditional sco
     require_bgm_export(reparsed.song);
     CHECK(conversion_chart_object_counts(reparsed.song->charts.front()) ==
           std::pair<std::size_t, std::size_t>{0, 1});
-    CHECK(wormedit::write_native_project(history.document).bytes == native.bytes);
+    CHECK(wormedit::write_native_project(history.document).value == native.value);
     if (conditional) {
         options.branch_choices.front().selected_value = 2;
         const auto inactive = parse(*written.bytes, options);

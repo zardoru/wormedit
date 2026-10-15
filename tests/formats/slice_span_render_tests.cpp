@@ -203,9 +203,9 @@ auto sliced_pcm_song(bool off_period = false) -> song_document_t {
     std::string text = R"({"version":"1.0.0","info":{"title":"PCM slices","artist":"test","mode_hint":"beat-7k","resolution":240,"init_bpm":120},"lines":[{"y":0},{"y":960}],"sound_channels":[{"name":"stem.wav","notes":[{"x":1,"y":0,"c":false},{"x":1,"y":240,"c":true},{"x":0,"y":480,"c":false}]}]})";
     if (off_period) text.replace(text.find("\"y\":240"), 7, "\"y\":241");
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
-    require_span(parsed.song.has_value());
-    require_span(!parsed.has_errors());
-    return *parsed.song;
+    require_span(parsed.value.has_value());
+    require_span(parsed.ok());
+    return *parsed.value;
 }
 
 auto sliced_preview_pcm(const song_document_t& song, const std::filesystem::path& directory)
@@ -261,9 +261,9 @@ TEST_CASE("sliced BMSON conversion reimport matches production preview PCM",
         {fixture.directory, fixture.directory / "out", {}}));
     const auto& bytes = converted.outputs.front().bytes;
     const auto parsed = parse_osu_mania_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
-    require_span(parsed.song.has_value());
+    require_span(parsed.value.has_value());
     check_pcm_tolerance(sliced_preview_pcm(song, fixture.directory),
-        sliced_preview_pcm(*parsed.song, fixture.directory / "out"));
+        sliced_preview_pcm(*parsed.value, fixture.directory / "out"));
     check_span(song.charts.front().sound_channels.size() == 1);
 }
 
@@ -300,7 +300,7 @@ void check_native_conversion_pcm(bool off_period, bool bms = false) {
     const auto& bytes = converted.outputs.front().bytes;
     const auto raw = std::as_bytes(std::span{bytes.data(), bytes.size()});
     const auto extension = std::filesystem::path{converted.outputs.front().suggested_filename}.extension().string();
-    const auto reimported = bms ? parse_bms_bytes(raw, {.file_extension = extension, .lane_profile_id = request.target_profile}).song : parse_osu_mania_bytes(raw).song;
+    const auto reimported = bms ? parse_bms_bytes(raw, {.file_extension = extension, .lane_profile_id = request.target_profile}).song : parse_osu_mania_bytes(raw).value;
     require_span(reimported.has_value());
     require_span(authored_note_count(*reimported) == authored_note_count(song));
     check_pcm_tolerance(sliced_preview_pcm(song, fixture.directory),

@@ -142,8 +142,8 @@ TEST_CASE("recovery controller exposes backend-neutral bounded rows and typed ac
     REQUIRE(saved_as.value.action_result.has_value());
     REQUIRE(saved_as.value.action_result->applied);
     const auto saved_document = parse_native_project(read_text(save_as));
-    REQUIRE(saved_document.song.has_value());
-    CHECK(saved_document.song->revision == 6);
+    REQUIRE(saved_document.value.has_value());
+    CHECK(saved_document.value->revision == 6);
     CHECK(read_text(primary) == primary_before);
 
     const auto attempted_primary_overwrite =

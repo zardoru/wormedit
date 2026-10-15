@@ -67,7 +67,7 @@ auto explicit_merge(const lane_migration_proposal_t& defaults, lane_id_t from,
     return mapping;
 }
 
-auto parse_bmson_fixture(std::string_view name) -> bmson_parse_result_t {
+auto parse_bmson_fixture(std::string_view name) -> bmson_parse_outcome_t {
     std::ifstream stream(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bmson" / name,
                          std::ios::binary);
     const std::string source{std::istreambuf_iterator<char>(stream),
@@ -466,8 +466,8 @@ TEST_CASE("lane migration handles many ordered notes without reporting collision
 TEST_CASE("lane migration keeps an imported BMSON note and retained event together",
           "[unit][core][lane-migration][bmson]") {
     auto parsed = parse_bmson_fixture("slicing-and-mixed-sounds.bmson");
-    REQUIRE(parsed.song.has_value());
-    auto& source = parsed.song->charts.front();
+    REQUIRE(parsed.value.has_value());
+    auto& source = parsed.value->charts.front();
     auto* note = find_linked_note(source);
     REQUIRE(note != nullptr);
     const auto note_id = note->id;
@@ -475,7 +475,7 @@ TEST_CASE("lane migration keeps an imported BMSON note and retained event togeth
     const auto old_lane = note->lane;
     const auto target = profile_with_new_lane_ids(source, 10'000);
     const auto mapping = rank_mapping(source, target.layout);
-    auto history = document_history_t::from(*parsed.song);
+    auto history = document_history_t::from(*parsed.value);
     const auto preview = propose_lane_migration(history.document, history.document.revision,
                                                 source.id, target, mapping);
     REQUIRE(preview);
@@ -492,15 +492,15 @@ TEST_CASE("lane migration keeps an imported BMSON note and retained event togeth
 TEST_CASE("lane migration confirms dropping a linked BMSON pair together",
           "[unit][core][lane-migration][bmson]") {
     auto parsed = parse_bmson_fixture("slicing-and-mixed-sounds.bmson");
-    REQUIRE(parsed.song.has_value());
-    auto& source = parsed.song->charts.front();
+    REQUIRE(parsed.value.has_value());
+    auto& source = parsed.value->charts.front();
     const auto* note = find_linked_note(source);
     REQUIRE(note != nullptr);
     const auto note_id = note->id;
     const auto event_id = *note->sound_channel_event;
     const auto target = profile_with_new_lane_ids(source, 20'000);
     const auto mapping = rank_mapping(source, target.layout, note->lane);
-    auto history = document_history_t::from(*parsed.song);
+    auto history = document_history_t::from(*parsed.value);
     const auto preview = propose_lane_migration(history.document, history.document.revision,
                                                 source.id, target, mapping);
     REQUIRE(preview);
@@ -516,10 +516,10 @@ TEST_CASE("lane migration confirms dropping a linked BMSON pair together",
 TEST_CASE("lane migration collision sweep includes unlinked playable BMSON events",
           "[unit][core][lane-migration][bmson]") {
     auto parsed = parse_bmson_fixture("slicing-and-mixed-sounds.bmson");
-    REQUIRE(parsed.song.has_value());
-    auto& chart = parsed.song->charts.front();
+    REQUIRE(parsed.value.has_value());
+    auto& chart = parsed.value->charts.front();
     const auto fixture = add_unlinked_collision_event(chart);
-    REQUIRE(validate_document(*parsed.song).empty());
+    REQUIRE(validate_document(*parsed.value).empty());
 
     const auto target = profile_with_new_lane_ids(chart, 30'000);
     auto mapping = rank_mapping(chart, target.layout, {},
@@ -528,7 +528,7 @@ TEST_CASE("lane migration collision sweep includes unlinked playable BMSON event
                                           &lane_migration_mapping_t::source_lane);
     REQUIRE(note_mapping != mapping.end());
     note_mapping->target_lane = target.layout.lanes.front().id;
-    auto history = document_history_t::from(*parsed.song);
+    auto history = document_history_t::from(*parsed.value);
     const auto preview = propose_lane_migration(history.document, history.document.revision,
                                                 chart.id, target, mapping);
     REQUIRE(preview);

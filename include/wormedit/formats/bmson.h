@@ -54,20 +54,12 @@ struct bmson_parse_options_t {
 };
 
 using bmson_parse_outcome_t = diagnosed_t<std::optional<song_document_t>, std::vector<bmson_parse_diagnostic_t>>;
-struct bmson_parse_result_t {
-    [[nodiscard]] static auto from(std::span<const std::byte> bytes, bmson_parse_options_t options = {}) -> bmson_parse_outcome_t;
-    [[nodiscard]] static auto from(bmson_parse_outcome_t&& outcome) -> bmson_parse_result_t;
-    std::optional<song_document_t> song;
-    std::vector<bmson_parse_diagnostic_t> diagnostics;
-
-    [[nodiscard]] auto has_errors() const -> bool;
-};
 
 // Imports strict UTF-8 BMSON 1.0 bytes into Wormedit's loss-aware document.
 // Original JSON bytes are retained through format metadata for unchanged saves.
 [[nodiscard]] auto parse_bmson_bytes(std::span<const std::byte> bytes,
                                      bmson_parse_options_t options = {})
-    -> bmson_parse_result_t;
+    -> bmson_parse_outcome_t;
 
 struct bmson_write_diagnostic_t {
     diagnostic_severity_t severity{diagnostic_severity_t::error};
@@ -84,19 +76,11 @@ struct bmson_write_options_t {
 };
 
 using bmson_write_outcome_t = diagnosed_t<std::optional<std::string>, std::vector<bmson_write_diagnostic_t>>;
-struct bmson_write_result_t {
-    [[nodiscard]] static auto from(const song_document_t& song, bmson_write_options_t options = {}) -> bmson_write_outcome_t;
-    [[nodiscard]] static auto from(bmson_write_outcome_t&& outcome) -> bmson_write_result_t;
-    std::optional<std::string> json;
-    std::vector<bmson_write_diagnostic_t> diagnostics;
-
-    [[nodiscard]] auto has_errors() const -> bool;
-};
 
 // Exports one chart as BMSON 1.0 JSON. Positions and durations are represented exactly;
 // unsupported document features are reported instead of being silently discarded.
 [[nodiscard]] auto write_bmson(const song_document_t& song,
                                bmson_write_options_t options = {})
-    -> bmson_write_result_t;
+    -> bmson_write_outcome_t;
 
 } // namespace wormedit

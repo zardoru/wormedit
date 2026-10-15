@@ -2686,9 +2686,9 @@ void t422_check_selection(const t422_fixture_t& fixture,
 
 auto t422_native_bytes(const song_document_t& song) -> std::string {
     const auto encoded = write_native_project(song);
-    if (!encoded.bytes)
+    if (!encoded.value)
         throw std::runtime_error("T422 native snapshot serialization failed");
-    return *encoded.bytes;
+    return *encoded.value;
 }
 
 void t422_check_unmodified(const t422_fixture_t& fixture, std::string_view bytes,

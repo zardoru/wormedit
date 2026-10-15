@@ -620,7 +620,7 @@ auto validate_reimport(conversion_context_t& context, const conversion_output_t&
     switch (output.target) {
     case format_family_t::native_project: {
         const auto parsed = parse_native_project(output.bytes);
-        if (parsed.song && !parsed.has_errors())
+        if (parsed.value && parsed.ok())
             return true;
         append_target_diagnostics(context.result, parsed.diagnostics, output.target, output.chart,
                                   loss_policy_t::warn);
@@ -651,7 +651,7 @@ auto validate_reimport(conversion_context_t& context, const conversion_output_t&
             {.profile = write.profile,
              .source_timing_syntax = write.target_timing_syntax,
              .source_implementation_profile = write.target_implementation_profile});
-        if (parsed.song && !parsed.has_errors())
+        if (parsed.value && parsed.ok())
             return true;
         append_target_diagnostics(context.result, parsed.diagnostics, output.target, output.chart,
                                   loss_policy_t::warn);
@@ -659,7 +659,7 @@ auto validate_reimport(conversion_context_t& context, const conversion_output_t&
     }
     case format_family_t::osu_mania: {
         const auto parsed = parse_osu_mania_bytes(byte_span(output.bytes));
-        if (parsed.song && !parsed.has_errors())
+        if (parsed.value && parsed.ok())
             return true;
         append_target_diagnostics(context.result, parsed.diagnostics, output.target, output.chart,
                                   loss_policy_t::warn);
@@ -667,7 +667,7 @@ auto validate_reimport(conversion_context_t& context, const conversion_output_t&
     }
     case format_family_t::bmson: {
         const auto parsed = parse_bmson_bytes(byte_span(output.bytes));
-        if (parsed.song && !parsed.has_errors())
+        if (parsed.value && parsed.ok())
             return true;
         append_target_diagnostics(context.result, parsed.diagnostics, output.target, output.chart,
                                   loss_policy_t::warn);
@@ -797,7 +797,7 @@ void write_native_output(conversion_context_t& context, const song_document_t& p
     const auto written = write_native_project(prepared);
     append_target_diagnostics(context.result, written.diagnostics, context.request.target,
                               std::nullopt, context.request.loss_policy);
-    append_conversion_output(context, prepared, std::nullopt, ".wormedit", written.bytes, nullptr);
+    append_conversion_output(context, prepared, std::nullopt, ".wormedit", written.value, nullptr);
 }
 
 void write_bms_outputs(conversion_context_t& context, const song_document_t& prepared,
@@ -870,7 +870,7 @@ auto write_stepmania_output(conversion_context_t& context, const song_document_t
     const auto extension =
         context.request.stepmania->file_profile == stepmania_profile_t::sm ? ".sm" : ".ssc";
     append_conversion_output(
-        context, prepared, context.request.chart, extension, written.text,
+        context, prepared, context.request.chart, extension, written.value,
         context.request.chart ? selected_chart(prepared, *context.request.chart) : nullptr);
     return resolved;
 }
@@ -902,7 +902,7 @@ void write_osu_outputs(conversion_context_t& context, const song_document_t& pre
         const auto written = write_osu_mania(prepared, {.profile = profile, .chart = chart_id});
         append_target_diagnostics(context.result, written.diagnostics, context.request.target,
                                   chart_id, context.request.loss_policy);
-        append_conversion_output(context, prepared, chart_id, ".osu", written.text,
+        append_conversion_output(context, prepared, chart_id, ".osu", written.value,
                                  selected_chart(prepared, chart_id));
     }
 }
@@ -920,7 +920,7 @@ void write_bmson_outputs(conversion_context_t& context, const song_document_t& p
         const auto written = write_bmson(prepared, {.chart = chart_id});
         append_target_diagnostics(context.result, written.diagnostics, context.request.target,
                                   chart_id, context.request.loss_policy);
-        append_conversion_output(context, prepared, chart_id, ".bmson", written.json,
+        append_conversion_output(context, prepared, chart_id, ".bmson", written.value,
                                  selected_chart(prepared, chart_id));
     }
 }

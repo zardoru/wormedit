@@ -63,6 +63,6 @@ using migration_outcome_t = result_t<migration_status_t, error_t<migration_statu
                                                         native_project_limits_t limits,
                                                         std::uint32_t target_version,
                                                         std::span<const migration_t> table)
-    -> native_project_parse_result_t;
+    -> native_project_parse_outcome_t;
 
 } // namespace wormedit::native_project_internal

@@ -439,14 +439,14 @@ auto has_only_crlf_line_endings(std::string_view text) -> bool {
 
 auto native_roundtrip(document_history_t history) -> document_history_t {
     const auto written = write_native_project(history.document);
-    if (!written.bytes) {
+    if (!written.value) {
         throw std::runtime_error("edited BMS fixture did not serialize to native project");
     }
-    const auto parsed = parse_native_project(*written.bytes);
-    if (!parsed.song) {
+    const auto parsed = parse_native_project(*written.value);
+    if (!parsed.value) {
         throw std::runtime_error("edited BMS fixture did not reload from native project");
     }
-    return document_history_t::from(*parsed.song);
+    return document_history_t::from(*parsed.value);
 }
 
 auto parse_branch_fixture(std::string_view text, text_encoding_t encoding = text_encoding_t::utf8)

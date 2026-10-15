@@ -229,7 +229,7 @@ auto stepmania_music_case_fallback_exports_resolved_path() -> bool {
         opened.document->resources.front().target_identities.front().identifier != "Song.OGG")
         return false;
     const auto written = wormedit::write_stepmania(*opened.document);
-    return written.text && written.text->find("#MUSIC:song.ogg;") != std::string::npos;
+    return written.value && written.value->find("#MUSIC:song.ogg;") != std::string::npos;
 }
 
 } // namespace
@@ -261,17 +261,17 @@ TEST_CASE("BMSON import creates channel layers and native open preserves authore
     check_bmson_condition(channel_membership_matches(chart));
 
     const auto with_layers = wormedit::write_bmson(*imported.document);
-    require_bmson_condition(with_layers.json);
+    require_bmson_condition(with_layers.value);
     auto without_layers = *imported.document;
     clear_layer_membership(without_layers);
     const auto without_layer_data = wormedit::write_bmson(without_layers);
-    require_bmson_condition(without_layer_data.json);
-    check_bmson_condition(with_layers.json == without_layer_data.json);
+    require_bmson_condition(without_layer_data.value);
+    check_bmson_condition(with_layers.value == without_layer_data.value);
 
     temporary_project_file_t native{".wormedit"};
     const auto saved = wormedit::write_native_project(*imported.document);
-    require_bmson_condition(saved.bytes);
-    native.write(*saved.bytes);
+    require_bmson_condition(saved.value);
+    native.write(*saved.value);
     const auto reopened = wormedit::sys::open_project_file(native.path);
     INFO(reopened.error);
     require_bmson_condition(reopened.document);
@@ -281,8 +281,8 @@ TEST_CASE("BMSON import creates channel layers and native open preserves authore
 
     temporary_project_file_t native_without_layers{".wormedit"};
     const auto unlayered_saved = wormedit::write_native_project(without_layers);
-    require_bmson_condition(unlayered_saved.bytes);
-    native_without_layers.write(*unlayered_saved.bytes);
+    require_bmson_condition(unlayered_saved.value);
+    native_without_layers.write(*unlayered_saved.value);
     const auto unlayered_reopened = wormedit::sys::open_project_file(native_without_layers.path);
     INFO(unlayered_reopened.error);
     require_bmson_condition(unlayered_reopened.document);
@@ -544,9 +544,9 @@ TEST_CASE("opening a native project preserves its saved document identity",
         fixture("bmson", "zero-resolution-default.bmson"));
     REQUIRE(imported.document.has_value());
     const auto serialized = wormedit::write_native_project(*imported.document);
-    REQUIRE(serialized.bytes.has_value());
+    REQUIRE(serialized.value.has_value());
     temporary_project_file_t file{".wormedit"};
-    file.write(*serialized.bytes);
+    file.write(*serialized.value);
 
     const auto opened = wormedit::sys::open_project_file(file.path);
     INFO(opened.error);
@@ -579,19 +579,19 @@ TEST_CASE("BMSON beat source x lanes survive export and native project reopen",
 
     const auto exported = wormedit::write_bmson(*imported.document);
     INFO((exported.diagnostics.empty() ? "" : exported.diagnostics.front().message));
-    require_bmson_condition(exported.json);
+    require_bmson_condition(exported.value);
     const auto reimported = wormedit::parse_bmson_bytes(
-        std::as_bytes(std::span{exported.json->data(), exported.json->size()}));
-    require_bmson_condition(reimported.song);
-    const auto& exported_chart = reimported.song->charts.front();
+        std::as_bytes(std::span{exported.value->data(), exported.value->size()}));
+    require_bmson_condition(reimported.value);
+    const auto& exported_chart = reimported.value->charts.front();
     require_bmson_condition(exported_chart.measures.front().notes.size() == 2);
     check_bmson_condition(exported_chart.measures.front().notes[0].lane.value == 100008);
     check_bmson_condition(exported_chart.measures.front().notes[1].lane.value == 100001);
 
     temporary_project_file_t native{".wormedit"};
     const auto saved = wormedit::write_native_project(*imported.document);
-    require_bmson_condition(saved.bytes);
-    native.write(*saved.bytes);
+    require_bmson_condition(saved.value);
+    native.write(*saved.value);
     const auto reopened = wormedit::sys::open_project_file(native.path);
     INFO(reopened.error);
     require_bmson_condition(reopened.document);
@@ -726,9 +726,9 @@ TEST_CASE("native load normalizes empty lane keys without making an edit", "[pro
     REQUIRE(imported.document);
     imported.document->charts.front().input_profile = {};
     const auto saved = wormedit::write_native_project(*imported.document);
-    REQUIRE(saved.bytes);
+    REQUIRE(saved.value);
     temporary_project_file_t file{".wormedit"};
-    file.write(*saved.bytes);
+    file.write(*saved.value);
     const auto opened = wormedit::sys::open_project_file(file.path);
     REQUIRE(opened.document);
     check_normalized_native_document(*opened.document, imported.document->revision);
@@ -739,9 +739,9 @@ TEST_CASE("native load preserves deliberately unbound custom profiles", "[projec
     REQUIRE(imported.document);
     imported.document->charts.front().input_profile = {.profile_id = "custom-unbound"};
     const auto saved = wormedit::write_native_project(*imported.document);
-    REQUIRE(saved.bytes);
+    REQUIRE(saved.value);
     temporary_project_file_t file{".wormedit"};
-    file.write(*saved.bytes);
+    file.write(*saved.value);
     const auto opened = wormedit::sys::open_project_file(file.path);
     REQUIRE(opened.document);
     CHECK(opened.document->charts.front().input_profile.profile_id == "custom-unbound");
@@ -777,9 +777,9 @@ TEST_CASE("project opening keeps imported BMS lane profiles", "[project-open][de
         std::as_bytes(std::span{source.data(), source.size()}), options);
     REQUIRE(parsed.song);
     const auto saved = wormedit::write_native_project(*parsed.song);
-    REQUIRE(saved.bytes);
+    REQUIRE(saved.value);
     temporary_project_file_t file{".wormedit"};
-    file.write(*saved.bytes);
+    file.write(*saved.value);
     const auto opened = wormedit::sys::open_project_file(file.path);
     REQUIRE(opened.document);
     check_preserved_input_profile(parsed.song->charts.front().input_profile,
@@ -796,8 +796,8 @@ auto load_validation_fixture() -> wormedit::sys::project_open_result_t {
 
 auto native_bytes(const wormedit::song_document_t& document) -> std::string {
     const auto saved = wormedit::write_native_project(document);
-    REQUIRE(saved.bytes);
-    return *saved.bytes;
+    REQUIRE(saved.value);
+    return *saved.value;
 }
 
 void misfile_last_note(wormedit::song_document_t& document) {
@@ -1039,9 +1039,9 @@ TEST_CASE("Native audio availability refreshes saved flags and aliases without a
     alias.target_identities.clear();
     document.resources.push_back(alias);
     const auto saved = wormedit::write_native_project(document);
-    require_open_audio(saved.bytes.has_value());
+    require_open_audio(saved.value.has_value());
     const auto path = directory.path / "availability.wormedit";
-    std::ofstream(path) << *saved.bytes;
+    std::ofstream(path) << *saved.value;
     const auto opened = wormedit::sys::open_project_file(path);
     INFO(opened.error);
     require_open_audio(opened.document.has_value());

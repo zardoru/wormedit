@@ -50,14 +50,6 @@ struct stepmania_parse_options_t {
 };
 
 using stepmania_parse_outcome_t = diagnosed_t<std::optional<song_document_t>, std::vector<stepmania_parse_diagnostic_t>>;
-struct stepmania_parse_result_t {
-    [[nodiscard]] static auto from(std::span<const std::byte> bytes, stepmania_parse_options_t options = {}) -> stepmania_parse_outcome_t;
-    [[nodiscard]] static auto from(stepmania_parse_outcome_t&& outcome) -> stepmania_parse_result_t;
-    std::optional<song_document_t> song;
-    std::vector<stepmania_parse_diagnostic_t> diagnostics;
-
-    [[nodiscard]] auto has_errors() const -> bool;
-};
 
 // Parses a complete .sm or .ssc source transactionally. SSC is bounded to
 // audited v0.83 semantics (with missing VERSION defaulting to 0.83); named
@@ -65,7 +57,7 @@ struct stepmania_parse_result_t {
 // fields and each #NOTEDATA block remain separately addressable.
 [[nodiscard]] auto parse_stepmania_bytes(std::span<const std::byte> bytes,
                                          stepmania_parse_options_t options = {})
-    -> stepmania_parse_result_t;
+    -> stepmania_parse_outcome_t;
 
 enum class stepmania_write_diagnostic_code_t {
     missing_chart,
@@ -99,14 +91,6 @@ struct stepmania_write_options_t {
 };
 
 using stepmania_write_outcome_t = diagnosed_t<std::optional<std::string>, std::vector<stepmania_write_diagnostic_t>>;
-struct stepmania_write_result_t {
-    [[nodiscard]] static auto from(const song_document_t& song, stepmania_write_options_t options = {}) -> stepmania_write_outcome_t;
-    [[nodiscard]] static auto from(stepmania_write_outcome_t&& outcome) -> stepmania_write_result_t;
-    std::optional<std::string> text;
-    std::vector<stepmania_write_diagnostic_t> diagnostics;
-
-    [[nodiscard]] auto has_errors() const -> bool;
-};
 
 enum class stepmania_export_policy_error_t {
     none,
@@ -136,6 +120,6 @@ struct stepmania_export_policy_result_t {
 // annotations are surfaced as loss diagnostics rather than silently dropped.
 [[nodiscard]] auto write_stepmania(const song_document_t& song,
                                    stepmania_write_options_t options = {})
-    -> stepmania_write_result_t;
+    -> stepmania_write_outcome_t;
 
 } // namespace wormedit

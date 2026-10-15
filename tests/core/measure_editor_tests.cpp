@@ -626,8 +626,8 @@ TEST_CASE("Measure split supports imported BMS without moving exported later hea
 TEST_CASE("Measure split preserves retained BMSON source heads and tails", "[core][measure-editor][measure-split]") {
     const std::string source = R"({"version":"1.0.0","info":{"title":"split","mode_hint":"beat-7k","init_bpm":120,"resolution":240},"lines":[{"y":0},{"y":960},{"y":1920}],"sound_channels":[{"name":"kick.wav","notes":[{"x":1,"y":240,"l":480,"c":false},{"x":0,"y":600,"l":600,"c":false}]}]})";
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{source.data(),source.size()}));
-    REQUIRE(parsed.song);
-    auto history = document_history_t::from(*parsed.song);
+    REQUIRE(parsed.value);
+    auto history = document_history_t::from(*parsed.value);
     const auto& chart = history.document.charts.front();
     const auto id = chart.id; const auto measure = chart.measures.front().id;
     REQUIRE(apply_measure_edit(
@@ -643,10 +643,10 @@ TEST_CASE("Measure split preserves retained BMSON source heads and tails", "[cor
     check_audio_extent(absolute_row(rows,events[1].position) == 600);
     check_audio_extent(absolute_row(rows,*events[1].end) == 1200);
     const auto written = write_bmson(history.document);
-    REQUIRE(written.json);
-    const auto reloaded = parse_bmson_bytes(std::as_bytes(std::span{written.json->data(),written.json->size()}));
-    REQUIRE(reloaded.song);
-    check_audio_extent(validate_document(*reloaded.song).empty());
+    REQUIRE(written.value);
+    const auto reloaded = parse_bmson_bytes(std::as_bytes(std::span{written.value->data(),written.value->size()}));
+    REQUIRE(reloaded.value);
+    check_audio_extent(validate_document(*reloaded.value).empty());
 }
 
 namespace {
@@ -689,7 +689,7 @@ auto pause_conversion_preserves_times(bool resize, pause_kind_t kind) -> bool {
     if (!undo_document_command(history)) return false;
     auto restored = history.document;
     restored.revision = original.revision;
-    return write_native_project(restored).bytes == write_native_project(original).bytes;
+    return write_native_project(restored).value == write_native_project(original).value;
 }
 auto pause_conversion_boundaries() -> bool {
     auto song = measure_song();
@@ -780,19 +780,19 @@ auto pause_conversion_rejects_atomically(unsigned scenario) -> bool {
     default: break;
     }
     auto history = document_history_t::from(song);
-    const auto before = write_native_project(history.document).bytes;
+    const auto before = write_native_project(history.document).value;
     const auto result = apply_measure_edit(
         history,
         convert_range_to_pause_action_t{
             chart.id, {{measure_id_t{11}, 0}, {measure_id_t{11}, 48}}, pause_kind_t::stop, true});
     return !result.applied && !result.diagnostics.empty() && history.undo.empty() &&
-        write_native_project(history.document).bytes == before;
+        write_native_project(history.document).value == before;
 }
 auto pause_conversion_bmson_aliases() -> bool {
     const std::string source_bytes = R"({"version":"1.0.0","info":{"title":"convert","mode_hint":"beat-7k","init_bpm":120,"resolution":240},"lines":[{"y":0},{"y":960},{"y":1920}],"sound_channels":[{"name":"kick.wav","notes":[{"x":1,"y":240,"l":480,"c":false},{"x":0,"y":840,"l":480,"c":false}]}]})";
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{source_bytes.data(), source_bytes.size()}));
-    if (!parsed.song) return false;
-    auto history = document_history_t::from(*parsed.song);
+    if (!parsed.value) return false;
+    auto history = document_history_t::from(*parsed.value);
     const auto& source = history.document.charts.front();
     const auto measure = source.measures.front().id;
     const auto resolution = source.divisions_per_standard_measure;

@@ -4219,8 +4219,8 @@ TEST_CASE("Delete routes a linked BMSON BGM marker through its sound channel",
     const std::string bytes{std::istreambuf_iterator<char>(input),
                             std::istreambuf_iterator<char>()};
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
-    REQUIRE(parsed.song);
-    auto song = *parsed.song;
+    REQUIRE(parsed.value);
+    auto song = *parsed.value;
     song.audio_assets.front().stream = {48'000, 2, 200'000, true};
     auto history = document_history_t::from(std::move(song));
     const auto& chart = history.document.charts.front();
@@ -5756,8 +5756,8 @@ void feedback_require(const T& value,
 }
 auto feedback_document_bytes(const song_document_t& document) -> std::string {
     const auto encoded = write_native_project(document);
-    feedback_require(encoded.bytes);
-    return *encoded.bytes;
+    feedback_require(encoded.value);
+    return *encoded.value;
 }
 struct move_feedback_fixture_t {
     document_history_t history;
@@ -6842,16 +6842,16 @@ struct stem_delete_fixture_t {
         std::ifstream input(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bmson" / "published-vox-slicing.bmson", std::ios::binary);
         const std::string bytes{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
         auto parsed = parse_bmson_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
-        feedback_require(parsed.song);
-        parsed.song->audio_assets.front().stream = {48000, 2, 200000, true};
-        auto& chart = parsed.song->charts.front();
+        feedback_require(parsed.value);
+        parsed.value->audio_assets.front().stream = {48000, 2, 200000, true};
+        auto& chart = parsed.value->charts.front();
         const auto note = chart.measures.front().notes.front();
         stem = note.id;
         source_event = *note.sound_channel_event;
         chart.bgm_source_lanes.push_back({.id = object_id_t{90002}, .name = "Ordinary", .source_order = 99});
         chart.measures.back().notes.push_back({.id = object_id_t{90000}, .position = {chart.measures.back().id, 0}, .lane = note.lane});
         chart.measures.back().bgm_events.push_back({.id = object_id_t{90001}, .position = {chart.measures.back().id, 0}, .source_lane = object_id_t{90002}});
-        history = document_history_t::from(std::move(*parsed.song));
+        history = document_history_t::from(std::move(*parsed.value));
         const std::array snaps{std::uint64_t{4}};
         auto setup = editor_interaction_state_t::from(history, history.document.charts.front().id, note.lane, note.position, snaps, 4);
         feedback_require(setup);
@@ -7031,7 +7031,7 @@ TEST_CASE("Scratch presentation picking follows SP7 right view without changing 
         {.id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = scratch}};
     auto history = document_history_t::from(std::move(song));
     const auto before = write_native_project(history.document);
-    REQUIRE(before.bytes);
+    REQUIRE(before.value);
     constexpr std::array snaps{std::uint64_t{4}};
     const auto setup = editor_interaction_state_t::from(history, chart_id_t{1}, profile.layout.lanes.front().id,
         {measure_id_t{1}, 0}, snaps, 4);
@@ -7040,7 +7040,7 @@ TEST_CASE("Scratch presentation picking follows SP7 right view without changing 
     state.viewport_height_pixels = 600;
     state.scratch_on_right = {true, std::nullopt};
     check_scratch_pick(history, state, scratch);
-    CHECK(write_native_project(history.document).bytes == before.bytes);
+    CHECK(write_native_project(history.document).value == before.value);
     CHECK(history.undo.empty());
 }
 

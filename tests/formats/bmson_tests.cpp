@@ -31,13 +31,13 @@ auto read_binary(const std::filesystem::path& path) -> std::vector<std::byte> {
     return bytes;
 }
 
-auto fixture(std::string_view name) -> wormedit::bmson_parse_result_t {
+auto fixture(std::string_view name) -> wormedit::bmson_parse_outcome_t {
     return wormedit::parse_bmson_bytes(
         read_binary(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bmson" / name));
 }
 
 auto parse_text(std::string_view source, wormedit::bmson_parse_options_t options = {})
-    -> wormedit::bmson_parse_result_t {
+    -> wormedit::bmson_parse_outcome_t {
     return wormedit::parse_bmson_bytes(std::as_bytes(std::span{source.data(), source.size()}),
                                        std::move(options));
 }
@@ -49,7 +49,7 @@ auto absolute(const wormedit::chart_document_t& chart, wormedit::local_position_
     return wormedit::absolute_row(std::get<wormedit::measure_index_t>(index), position);
 }
 
-auto has_error_code(const wormedit::bmson_parse_result_t& result,
+auto has_error_code(const wormedit::bmson_parse_outcome_t& result,
                     wormedit::bmson_parse_diagnostic_code_t code) -> bool {
     return std::ranges::any_of(result.diagnostics, [&](const auto& diagnostic) {
         return diagnostic.severity == wormedit::diagnostic_severity_t::error &&
@@ -173,22 +173,22 @@ auto hybrid_fixture_is_classified_and_lossless() -> bool {
     const auto source = fixture_text("hybrid-three-stems-200-keysounds.bmson");
     const auto original_json = nlohmann::json::parse(source);
     const auto parsed = parse_text(source);
-    if (!parsed.song || parsed.song->charts.empty()) return false;
-    const auto& chart = parsed.song->charts.front();
+    if (!parsed.value || parsed.value->charts.empty()) return false;
+    const auto& chart = parsed.value->charts.front();
     const auto stems = std::ranges::count_if(chart.bgm_source_lanes,
         [](const auto& lane) { return lane.stem_channel.has_value(); });
     const auto packed_columns = chart.bgm_source_lanes.size() - static_cast<std::size_t>(stems);
-    const auto stem_resources = std::ranges::count_if(parsed.song->resources,
+    const auto stem_resources = std::ranges::count_if(parsed.value->resources,
         [](const auto& resource) { return resource.sound_kind == sound_kind_t::stem; });
-    const auto keysounds = std::ranges::count_if(parsed.song->resources,
+    const auto keysounds = std::ranges::count_if(parsed.value->resources,
         [](const auto& resource) { return resource.sound_kind == sound_kind_t::keysound; });
     if (chart.sound_channels.size() != 203 || stems != 3 || packed_columns != 1 ||
         stem_resources != 3 || keysounds != 200 ||
         !channel_events_are_unique(chart, raw_channel_note_count(original_json)) ||
         !packed_events_use_chart_lanes(chart)) return false;
-    const auto written = write_bmson(*parsed.song);
-    return written.json && !written.has_errors() && *written.json == source &&
-        nlohmann::json::parse(*written.json) == original_json;
+    const auto written = write_bmson(*parsed.value);
+    return written.value && written.ok() && *written.value == source &&
+        nlohmann::json::parse(*written.value) == original_json;
 }
 
 auto continuation_controls_stem_classification() -> bool {
@@ -199,15 +199,15 @@ auto continuation_controls_stem_classification() -> bool {
         {"name":"stem.wav","notes":[{"x":1,"y":0,"c":false},
           {"x":1,"y":240,"c":true}]}
       ]})");
-    if (!parsed.song || parsed.song->charts.empty()) return false;
-    const auto& chart = parsed.song->charts.front();
+    if (!parsed.value || parsed.value->charts.empty()) return false;
+    const auto& chart = parsed.value->charts.front();
     if (chart.sound_channels.size() != 2 || chart.bgm_source_lanes.size() != 1 ||
         chart.bgm_source_lanes.front().stem_channel != chart.sound_channels[1].id) return false;
-    const auto playable = std::ranges::find(parsed.song->resources, std::string{"playable.wav"},
+    const auto playable = std::ranges::find(parsed.value->resources, std::string{"playable.wav"},
         &resource_entry_t::name);
-    const auto stem = std::ranges::find(parsed.song->resources, std::string{"stem.wav"},
+    const auto stem = std::ranges::find(parsed.value->resources, std::string{"stem.wav"},
         &resource_entry_t::name);
-    return playable != parsed.song->resources.end() && stem != parsed.song->resources.end() &&
+    return playable != parsed.value->resources.end() && stem != parsed.value->resources.end() &&
         playable->sound_kind == sound_kind_t::keysound && stem->sound_kind == sound_kind_t::stem;
 }
 
@@ -257,17 +257,17 @@ TEST_CASE("BMSON 1.0 fixtures retain source bytes and valid document structure",
                             "null-resolution-default.bmson", "omitted-resolution-default.bmson"}) {
         DYNAMIC_SECTION(name) {
             const auto result = fixture(name);
-            REQUIRE(result.song.has_value());
-            CHECK_FALSE(result.has_errors());
-            CHECK(wormedit::validate_document(*result.song).empty());
-            REQUIRE(result.song->metadata.format_groups.size() == 1);
-            const auto& song_source = result.song->metadata.format_groups.front().encoding;
+            REQUIRE(result.value.has_value());
+            CHECK(result.ok());
+            CHECK(wormedit::validate_document(*result.value).empty());
+            REQUIRE(result.value->metadata.format_groups.size() == 1);
+            const auto& song_source = result.value->metadata.format_groups.front().encoding;
             CHECK(song_source.detected == wormedit::text_encoding_t::utf8);
             CHECK(song_source.unchanged_since_import);
             REQUIRE(song_source.original_bytes);
-            REQUIRE(result.song->charts.size() == 1);
-            REQUIRE(result.song->charts.front().metadata.format_groups.size() == 1);
-            CHECK(result.song->charts.front().metadata.format_groups.front().encoding.original_bytes ==
+            REQUIRE(result.value->charts.size() == 1);
+            REQUIRE(result.value->charts.front().metadata.format_groups.size() == 1);
+            CHECK(result.value->charts.front().metadata.format_groups.front().encoding.original_bytes ==
                   song_source.original_bytes);
         }
     }
@@ -276,8 +276,8 @@ TEST_CASE("BMSON 1.0 fixtures retain source bytes and valid document structure",
 TEST_CASE("BMSON pulse geometry, bar lines, timing and mixed sound slices are materialized",
           "[unit][format][bmson]") {
     const auto result = fixture("slicing-and-mixed-sounds.bmson");
-    REQUIRE(result.song.has_value());
-    const auto& chart = result.song->charts.front();
+    REQUIRE(result.value.has_value());
+    const auto& chart = result.value->charts.front();
     CHECK(chart.divisions_per_standard_measure == 960);
     REQUIRE(chart.measures.size() == 3);
     CHECK((chart.measures[0].definition.length == wormedit::rational_t{1, 1}));
@@ -323,11 +323,11 @@ TEST_CASE("BMSON pulse geometry, bar lines, timing and mixed sound slices are ma
     CHECK(absolute(chart, hold->position) == 960);
     REQUIRE(hold->end.has_value());
     CHECK(absolute(chart, *hold->end) == 1440);
-    CHECK(result.song->visual_assets.size() == 1);
+    CHECK(result.value->visual_assets.size() == 1);
     REQUIRE(chart.bga_events.size() == 1);
     CHECK(chart.bga_events.front().kind == wormedit::visual_event_kind_t::background);
 
-    auto mismatched_resource = *result.song;
+    auto mismatched_resource = *result.value;
     REQUIRE(mismatched_resource.resources.size() >= 2);
     auto& mismatched_note = mismatched_resource.charts.front().measures.front().notes.front();
     const auto original_resource = *mismatched_note.sound;
@@ -347,8 +347,8 @@ TEST_CASE("BMSON non-playable x-zero hold projects its exact semantic end",
     const auto parsed = parse_text(R"({"version":"1.0.0","info":{"init_bpm":120},
       "lines":[{"y":960}],
       "sound_channels":[{"name":"stem.wav","notes":[{"x":0,"y":900,"l":180}]}]})");
-    require_bmson_condition(parsed.song);
-    const auto& chart = parsed.song->charts.front();
+    require_bmson_condition(parsed.value);
+    const auto& chart = parsed.value->charts.front();
     require_bmson_condition(chart.sound_channels.size() == 1);
     require_bmson_condition(chart.sound_channels.front().events.size() == 1);
     require_bmson_condition(chart.measures.front().bgm_events.size() == 1);
@@ -368,8 +368,8 @@ TEST_CASE("BMSON non-playable x-zero hold projects its exact semantic end",
 TEST_CASE("BMSON published slicing derives exact shared source-frame ranges",
           "[unit][format][bmson][slicing]") {
     const auto parsed = fixture("published-vox-slicing.bmson");
-    REQUIRE(parsed.song.has_value());
-    const auto& chart = parsed.song->charts.front();
+    REQUIRE(parsed.value.has_value());
+    const auto& chart = parsed.value->charts.front();
     REQUIRE(chart.sound_channels.size() == 1);
 
     const auto slices = wormedit::derive_sound_channel_slices(
@@ -410,8 +410,8 @@ TEST_CASE("BMSON published slicing derives exact shared source-frame ranges",
 TEST_CASE("BMSON continuation collisions normalize to restart while preserving source spelling",
           "[unit][format][bmson]") {
     const auto result = fixture("conflicting-continuation-flags.bmson");
-    REQUIRE(result.song.has_value());
-    const auto& channel = result.song->charts.front().sound_channels.front();
+    REQUIRE(result.value.has_value());
+    const auto& channel = result.value->charts.front().sound_channels.front();
     REQUIRE(channel.events.size() == 3);
     CHECK_FALSE(channel.events[0].continuation);
     CHECK_FALSE(channel.events[1].continuation);
@@ -427,8 +427,8 @@ TEST_CASE("BMSON resolution zero null and omission all select 240 and retain spe
              std::pair{"null-resolution-default.bmson", "null"},
              std::pair{"omitted-resolution-default.bmson", "<omitted>"}}) {
         const auto result = fixture(name);
-        REQUIRE(result.song.has_value());
-        const auto& chart = result.song->charts.front();
+        REQUIRE(result.value.has_value());
+        const auto& chart = result.value->charts.front();
         CHECK(chart.divisions_per_standard_measure == 960);
         const auto& fields = chart.metadata.format_groups.front().ordered_fields;
         const auto resolution = std::ranges::find(fields, std::string("resolution"),
@@ -447,11 +447,11 @@ TEST_CASE("BMSON same-source channels share one audio asset while retaining inde
         {"name":"same.wav","notes":[{"x":0,"y":240,"c":true}]}
       ]
     })");
-    REQUIRE(result.song.has_value());
-    CHECK_FALSE(result.has_errors());
-    CHECK(result.song->audio_assets.size() == 1);
-    CHECK(result.song->resources.size() == 2);
-    const auto& chart = result.song->charts.front();
+    REQUIRE(result.value.has_value());
+    CHECK(result.ok());
+    CHECK(result.value->audio_assets.size() == 1);
+    CHECK(result.value->resources.size() == 2);
+    const auto& chart = result.value->charts.front();
     REQUIRE(chart.measures.front().bgm_events.size() == 2);
     REQUIRE(chart.measures[0].bgm_events[0].sound.has_value());
     REQUIRE(chart.measures[0].bgm_events[1].sound.has_value());
@@ -461,20 +461,20 @@ TEST_CASE("BMSON same-source channels share one audio asset while retaining inde
     REQUIRE(bgm2.sound_channel_event.has_value());
     CHECK(bgm1.sound_channel_event != bgm2.sound_channel_event);
     const auto resource_asset = [&](wormedit::resource_id_t resource) {
-        const auto found = std::ranges::find(result.song->resources, resource,
+        const auto found = std::ranges::find(result.value->resources, resource,
                                              &wormedit::resource_entry_t::id);
-        REQUIRE(found != result.song->resources.end());
+        REQUIRE(found != result.value->resources.end());
         return found->asset;
     };
     CHECK(resource_asset(*bgm1.sound) == resource_asset(*bgm2.sound));
-    CHECK(wormedit::validate_document(*result.song).empty());
+    CHECK(wormedit::validate_document(*result.value).empty());
 }
 
 TEST_CASE("BMSON non-playable source-channel events use lane zero but playable events cannot",
           "[unit][format][bmson]") {
     const auto bgm = fixture("published-vox-slicing.bmson");
-    REQUIRE(bgm.song.has_value());
-    const auto& chart = bgm.song->charts.front();
+    REQUIRE(bgm.value.has_value());
+    const auto& chart = bgm.value->charts.front();
     const auto& bgm_channel = chart.sound_channels.front();
     const auto bgm_event = std::ranges::find_if(bgm_channel.events,
                                                 [](const auto& event) { return !event.playable; });
@@ -486,9 +486,9 @@ TEST_CASE("BMSON non-playable source-channel events use lane zero but playable e
     REQUIRE(semantic_bgm != chart.measures.end());
     REQUIRE(semantic_bgm->bgm_events.front().sound_channel_event.has_value());
     CHECK(*semantic_bgm->bgm_events.front().sound_channel_event == bgm_event->id);
-    CHECK(wormedit::validate_document(*bgm.song).empty());
+    CHECK(wormedit::validate_document(*bgm.value).empty());
 
-    auto invalid = *bgm.song;
+    auto invalid = *bgm.value;
     auto& playable = invalid.charts.front().sound_channels.front().events.front();
     REQUIRE(playable.playable);
     playable.lane = {};
@@ -497,7 +497,7 @@ TEST_CASE("BMSON non-playable source-channel events use lane zero but playable e
         return diagnostic.code == wormedit::diagnostic_code_t::unknown_lane;
     }));
 
-    auto dangling_link = *bgm.song;
+    auto dangling_link = *bgm.value;
     const auto linked_measure = std::ranges::find_if(dangling_link.charts.front().measures,
                                                      [](const auto& measure) {
                                                          return !measure.bgm_events.empty();
@@ -509,7 +509,7 @@ TEST_CASE("BMSON non-playable source-channel events use lane zero but playable e
         return diagnostic.code == wormedit::diagnostic_code_t::invalid_id;
     }));
 
-    auto wrong_role = *bgm.song;
+    auto wrong_role = *bgm.value;
     const auto playable_event = std::ranges::find_if(
         wrong_role.charts.front().sound_channels.front().events,
         [](const auto& event) { return event.playable; });
@@ -525,7 +525,7 @@ TEST_CASE("BMSON non-playable source-channel events use lane zero but playable e
         return diagnostic.code == wormedit::diagnostic_code_t::invalid_id;
     }));
 
-    auto duplicate_link = *bgm.song;
+    auto duplicate_link = *bgm.value;
     const auto duplicate_measure = std::ranges::find_if(duplicate_link.charts.front().measures,
                                                         [](const auto& measure) {
                                                             return !measure.bgm_events.empty();
@@ -543,22 +543,22 @@ TEST_CASE("BMSON non-playable source-channel events use lane zero but playable e
 TEST_CASE("BMSON malformed pulse and resolution fixtures produce typed errors",
           "[unit][format][bmson]") {
     const auto wrong_resolution = fixture("negative-wrong-resolution-type.bmson");
-    CHECK_FALSE(wrong_resolution.song.has_value());
+    CHECK_FALSE(wrong_resolution.value.has_value());
     CHECK(has_error_code(wrong_resolution, wormedit::bmson_parse_diagnostic_code_t::invalid_type));
     for (const auto name : {"negative-pulse-position.bmson", "negative-fractional-pulse-position.bmson"}) {
         const auto result = fixture(name);
-        CHECK_FALSE(result.song.has_value());
+        CHECK_FALSE(result.value.has_value());
         CHECK_FALSE(result.diagnostics.empty());
         CHECK(result.diagnostics.front().byte_offset.has_value());
     }
     const auto overflow = fixture("negative-overflow-pulse-position.bmson");
-    CHECK_FALSE(overflow.song.has_value());
+    CHECK_FALSE(overflow.value.has_value());
     CHECK(has_error_code(overflow, wormedit::bmson_parse_diagnostic_code_t::integer_out_of_range));
     const auto negative_resolution = parse_text(
         R"({"version":"1.0.0","info":{"init_bpm":120,"resolution":-240}})");
-    REQUIRE(negative_resolution.song.has_value());
-    CHECK(negative_resolution.song->charts.front().divisions_per_standard_measure == 960);
-    const auto& fields = negative_resolution.song->charts.front().metadata.format_groups.front().ordered_fields;
+    REQUIRE(negative_resolution.value.has_value());
+    CHECK(negative_resolution.value->charts.front().divisions_per_standard_measure == 960);
+    const auto& fields = negative_resolution.value->charts.front().metadata.format_groups.front().ordered_fields;
     const auto resolution = std::ranges::find(fields, std::string("resolution"),
                                                &std::pair<std::string, std::string>::first);
     REQUIRE(resolution != fields.end());
@@ -570,16 +570,16 @@ TEST_CASE("BMSON reader enforces source bounds and rejects malformed JSON withou
     wormedit::bmson_parse_options_t options;
     options.max_source_bytes = 4;
     const auto too_large = parse_text("{\"x\":1}", options);
-    CHECK_FALSE(too_large.song.has_value());
+    CHECK_FALSE(too_large.value.has_value());
     CHECK(has_error_code(too_large, wormedit::bmson_parse_diagnostic_code_t::invalid_value));
 
     const auto malformed = parse_text("{\"version\":\"1.0.0\",}");
-    CHECK_FALSE(malformed.song.has_value());
+    CHECK_FALSE(malformed.value.has_value());
     CHECK(has_error_code(malformed, wormedit::bmson_parse_diagnostic_code_t::invalid_json));
 
     const auto enormous_number = parse_text(
         R"({"version":"1.0.0","info":{"init_bpm":1e1000000}})");
-    CHECK_FALSE(enormous_number.song.has_value());
+    CHECK_FALSE(enormous_number.value.has_value());
     CHECK_FALSE(enormous_number.diagnostics.empty());
 }
 
@@ -588,8 +588,8 @@ TEST_CASE("BMSON JSON parser retains exact spans and enforces structural limits"
     constexpr std::string_view exact_source =
         R"({"version":"1.0.0","info":{"init_bpm":120},"bpm_events":[ { "y" : 0, "bpm" : 1.20e2 } ]})";
     const auto exact = parse_text(exact_source);
-    REQUIRE(exact.song.has_value());
-    const auto& chart = exact.song->charts.front();
+    REQUIRE(exact.value.has_value());
+    const auto& chart = exact.value->charts.front();
     REQUIRE(chart.bpms.size() == 1);
     CHECK(chart.bpms.front().provenance.source_spelling == R"({ "y" : 0, "bpm" : 1.20e2 })");
     CHECK((chart.bpms.front().beats_per_minute == wormedit::signed_rational_t{120, 1}));
@@ -597,7 +597,7 @@ TEST_CASE("BMSON JSON parser retains exact spans and enforces structural limits"
     const std::string duplicate_source =
         R"({"version":"1.0.0","info":{"init_bpm":120,"init_bpm":121}})";
     const auto duplicate = parse_text(duplicate_source);
-    CHECK_FALSE(duplicate.song.has_value());
+    CHECK_FALSE(duplicate.value.has_value());
     CHECK(has_error_code(duplicate, wormedit::bmson_parse_diagnostic_code_t::invalid_json));
     REQUIRE_FALSE(duplicate.diagnostics.empty());
     REQUIRE(duplicate.diagnostics.front().byte_offset.has_value());
@@ -607,20 +607,20 @@ TEST_CASE("BMSON JSON parser retains exact spans and enforces structural limits"
     depth_options.max_nesting_depth = 0;
     const auto too_deep = parse_text(R"({"version":"1.0.0","info":{"init_bpm":120}})",
                                      depth_options);
-    CHECK_FALSE(too_deep.song.has_value());
+    CHECK_FALSE(too_deep.value.has_value());
     CHECK(has_error_code(too_deep, wormedit::bmson_parse_diagnostic_code_t::invalid_json));
 
     wormedit::bmson_parse_options_t value_options;
     value_options.max_json_values = 1;
     const auto too_many = parse_text(R"({"version":"1.0.0","info":{"init_bpm":120}})",
                                      value_options);
-    CHECK_FALSE(too_many.song.has_value());
+    CHECK_FALSE(too_many.value.has_value());
     CHECK(has_error_code(too_many, wormedit::bmson_parse_diagnostic_code_t::invalid_json));
 
     std::string invalid_utf8 = R"({"version":"1.0.0","info":{"init_bpm":120},"x":" )";
     invalid_utf8.push_back(static_cast<char>(0xff));
     const auto invalid_encoding = parse_text(invalid_utf8);
-    CHECK_FALSE(invalid_encoding.song.has_value());
+    CHECK_FALSE(invalid_encoding.value.has_value());
     CHECK(has_error_code(invalid_encoding, wormedit::bmson_parse_diagnostic_code_t::invalid_json));
 }
 
@@ -628,8 +628,8 @@ TEST_CASE("BMSON fixed beat modes use canonical x positions and reject out-of-ra
           "[unit][format][bmson]") {
     const auto default_mode = parse_text(
         R"({"version":"1.0.0","info":{"init_bpm":120},"sound_channels":[{"name":"a.wav","notes":[{"x":8,"y":0}]}]})");
-    require_bmson_condition(default_mode.song.has_value());
-    const auto& default_chart = default_mode.song->charts.front();
+    require_bmson_condition(default_mode.value.has_value());
+    const auto& default_chart = default_mode.value->charts.front();
     require_bmson_condition(default_chart.lane_layouts.size() == 1);
     check_bmson_condition(default_chart.lane_layouts.front().layout.display_name == "beat-7k");
     require_bmson_condition(default_chart.lane_layouts.front().layout.lanes.size() == 8);
@@ -640,13 +640,13 @@ TEST_CASE("BMSON fixed beat modes use canonical x positions and reject out-of-ra
 
     const auto default_out_of_range = parse_text(
         R"({"version":"1.0.0","info":{"init_bpm":120},"sound_channels":[{"name":"a.wav","notes":[{"x":9,"y":0}]}]})");
-    CHECK_FALSE(default_out_of_range.song.has_value());
+    CHECK_FALSE(default_out_of_range.value.has_value());
     check_bmson_condition(has_error_code(default_out_of_range, wormedit::bmson_parse_diagnostic_code_t::invalid_value));
 
     const auto beat_5k = parse_text(
         R"({"version":"1.0.0","info":{"init_bpm":120,"mode_hint":"beat-5k"},"sound_channels":[{"name":"a.wav","notes":[{"x":8,"y":0}]}]})");
-    require_bmson_condition(beat_5k.song.has_value());
-    const auto& beat_5k_layout = beat_5k.song->charts.front().lane_layouts.front().layout;
+    require_bmson_condition(beat_5k.value.has_value());
+    const auto& beat_5k_layout = beat_5k.value->charts.front().lane_layouts.front().layout;
     require_bmson_condition(beat_5k_layout.lanes.size() == 6);
     check_bmson_condition(beat_5k_layout.lanes.front().id.value == 100008);
     check_bmson_condition(beat_5k_layout.lanes.front().role == wormedit::lane_role_t::scratch);
@@ -655,8 +655,8 @@ TEST_CASE("BMSON fixed beat modes use canonical x positions and reject out-of-ra
 
     const auto beat_10k = parse_text(
         R"({"version":"1.0.0","info":{"init_bpm":120,"mode_hint":"beat-10k"},"sound_channels":[{"name":"a.wav","notes":[{"x":16,"y":0}]}]})");
-    require_bmson_condition(beat_10k.song.has_value());
-    const auto& beat_10k_chart = beat_10k.song->charts.front();
+    require_bmson_condition(beat_10k.value.has_value());
+    const auto& beat_10k_chart = beat_10k.value->charts.front();
     require_bmson_condition(beat_10k_chart.lane_layouts.front().layout.lanes.size() == 12);
     require_bmson_condition(beat_10k_chart.measures.front().notes.size() == 1);
     check_bmson_condition(beat_10k_chart.measures.front().notes.front().lane.value == 100016);
@@ -698,8 +698,8 @@ TEST_CASE("BMSON imported beat and popn modes receive their display colors",
         source.append(hint);
         source.append(R"("},"sound_channels":[]})");
         const auto parsed = parse_text(source);
-        require_bmson_condition(parsed.song);
-        const auto& lanes = parsed.song->charts.front().lane_layouts.front().layout.lanes;
+        require_bmson_condition(parsed.value);
+        const auto& lanes = parsed.value->charts.front().lane_layouts.front().layout.lanes;
         require_bmson_condition(lanes.size() == expected.size());
         for (std::size_t index = 0; index < expected.size(); ++index) {
             check_bmson_condition(lanes[index].display_order == index);
@@ -712,8 +712,8 @@ TEST_CASE("BMSON generic 24K and 48K modes retain their fixed keyboard geometry"
           "[unit][format][bmson][layout]") {
     const auto generic_24 = parse_text(
         R"({"version":"1.0.0","info":{"init_bpm":120,"mode_hint":"generic-24keys"},"sound_channels":[{"name":"a.wav","notes":[{"x":24,"y":0}]}]})");
-    REQUIRE(generic_24.song.has_value());
-    const auto& layout_24 = generic_24.song->charts.front().lane_layouts.front().layout;
+    REQUIRE(generic_24.value.has_value());
+    const auto& layout_24 = generic_24.value->charts.front().lane_layouts.front().layout;
     CHECK(layout_24.profile_id == "bmson-generic-24keys");
     CHECK(layout_24.lanes.size() == 24);
     CHECK(layout_24.bmson_generic_keys_only);
@@ -721,8 +721,8 @@ TEST_CASE("BMSON generic 24K and 48K modes retain their fixed keyboard geometry"
 
     const auto generic_48 = parse_text(
         R"({"version":"1.0.0","info":{"init_bpm":120,"mode_hint":"generic-48keys"},"sound_channels":[{"name":"a.wav","notes":[{"x":48,"y":0}]}]})");
-    REQUIRE(generic_48.song.has_value());
-    const auto& layout_48 = generic_48.song->charts.front().lane_layouts.front().layout;
+    REQUIRE(generic_48.value.has_value());
+    const auto& layout_48 = generic_48.value->charts.front().lane_layouts.front().layout;
     CHECK(layout_48.profile_id == "bmson-generic-48keys");
     CHECK(layout_48.lanes.size() == 48);
     CHECK(layout_48.bmson_generic_keys_only);
@@ -732,40 +732,40 @@ TEST_CASE("BMSON generic 24K and 48K modes retain their fixed keyboard geometry"
 
     const auto invalid = parse_text(
         R"({"version":"1.0.0","info":{"init_bpm":120,"mode_hint":"generic-24keys"},"sound_channels":[{"name":"a.wav","notes":[{"x":25,"y":0}]}]})");
-    CHECK_FALSE(invalid.song.has_value());
+    CHECK_FALSE(invalid.value.has_value());
 }
 
 TEST_CASE("BMSON x null is BGM and resource paths normalize both separators safely",
           "[unit][format][bmson]") {
     const auto bgm = parse_text(
         R"({"version":"1.0.0","info":{"init_bpm":120},"sound_channels":[{"name":"sub\\folder/tone.wav","notes":[{"x":null,"y":0}]}]})");
-    REQUIRE(bgm.song.has_value());
-    REQUIRE(bgm.song->audio_assets.size() == 1);
-    CHECK(bgm.song->audio_assets.front().source_path.generic_string() == "sub/folder/tone.wav");
-    REQUIRE(bgm.song->resources.size() == 1);
-    CHECK(bgm.song->resources.front().provenance.source_spelling ==
+    REQUIRE(bgm.value.has_value());
+    REQUIRE(bgm.value->audio_assets.size() == 1);
+    CHECK(bgm.value->audio_assets.front().source_path.generic_string() == "sub/folder/tone.wav");
+    REQUIRE(bgm.value->resources.size() == 1);
+    CHECK(bgm.value->resources.front().provenance.source_spelling ==
           R"("sub\\folder/tone.wav")");
-    REQUIRE(bgm.song->charts.front().measures.front().bgm_events.size() == 1);
-    const auto& source_event = bgm.song->charts.front().sound_channels.front().events.front();
+    REQUIRE(bgm.value->charts.front().measures.front().bgm_events.size() == 1);
+    const auto& source_event = bgm.value->charts.front().sound_channels.front().events.front();
     CHECK_FALSE(source_event.playable);
     CHECK_FALSE(source_event.lane);
 
     const auto nul_path = parse_text(
         R"({"version":"1.0.0","info":{"init_bpm":120},"sound_channels":[{"name":"tone\u0000.wav","notes":[]}]})");
-    CHECK_FALSE(nul_path.song.has_value());
+    CHECK_FALSE(nul_path.value.has_value());
     CHECK(has_error_code(nul_path, wormedit::bmson_parse_diagnostic_code_t::invalid_value));
 
     const auto traversal = parse_text(
         R"({"version":"1.0.0","info":{"init_bpm":120},"sound_channels":[{"name":"sub\\..\\tone.wav","notes":[]}]})");
-    CHECK_FALSE(traversal.song.has_value());
+    CHECK_FALSE(traversal.value.has_value());
     CHECK(has_error_code(traversal, wormedit::bmson_parse_diagnostic_code_t::invalid_value));
 }
 
 TEST_CASE("unknown BMSON modes retain generic piano colors", "[unit][format][bmson][layout]") {
     const auto parsed = parse_text(R"({"version":"1.0.0","info":{"init_bpm":120,
         "mode_hint":"unknown"},"sound_channels":[{"name":"a.wav","notes":[{"x":3,"y":0}]}]})");
-    require_bmson_condition(parsed.song);
-    const auto& layout = parsed.song->charts.front().lane_layouts.front().layout;
+    require_bmson_condition(parsed.value);
+    const auto& layout = parsed.value->charts.front().lane_layouts.front().layout;
     check_bmson_condition(layout.profile_id == "bmson-generic-nkeys");
     check_bmson_condition(layout.lanes[0].key_color == wormedit::lane_key_color_t::white);
     check_bmson_condition(layout.lanes[1].key_color == wormedit::lane_key_color_t::black);
@@ -775,8 +775,8 @@ TEST_CASE("unknown BMSON modes retain generic piano colors", "[unit][format][bms
 TEST_CASE("BMSON exact decimals reduce before intermediate overflow", "[formats][helpers]") {
     const auto parsed = parse_text(
         R"({"version":"1.0.0","info":{"init_bpm":92233720368547758070e-1}})");
-    REQUIRE(parsed.song);
-    CHECK((parsed.song->charts.front().bpms.front().beats_per_minute ==
+    REQUIRE(parsed.value);
+    CHECK((parsed.value->charts.front().bpms.front().beats_per_minute ==
            wormedit::signed_rational_t{INT64_MAX, 1}));
 }
 
@@ -795,9 +795,9 @@ TEST_CASE("BMSON shared parse warnings remain independent of document presence",
     wormedit::bmson_parse_outcome_t parsed{.diagnostics = {{.severity = wormedit::diagnostic_severity_t::warning,
         .code = wormedit::bmson_parse_diagnostic_code_t::unresolved_resource, .message = "warning", .json_path = "$.info"}}};
     CHECK(parsed.ok());
-    const auto legacy = wormedit::bmson_parse_result_t::from(std::move(parsed));
-    CHECK_FALSE(legacy.has_errors());
-    CHECK_FALSE(legacy.song);
+    const auto legacy = std::move(parsed);
+    CHECK(legacy.ok());
+    CHECK_FALSE(legacy.value);
     CHECK(legacy.diagnostics.front().json_path == "$.info");
 }
 
@@ -806,8 +806,8 @@ TEST_CASE("BMSON shared write warnings retain serialized bytes", "[unit][bmson][
         .diagnostics = {{.severity = wormedit::diagnostic_severity_t::warning,
             .code = wormedit::bmson_write_diagnostic_code_t::invalid_document, .message = "warning", .json_path = "$"}}};
     CHECK(written.ok());
-    const auto legacy = wormedit::bmson_write_result_t::from(std::move(written));
-    CHECK_FALSE(legacy.has_errors());
-    CHECK(legacy.json == "{}");
+    const auto legacy = std::move(written);
+    CHECK(legacy.ok());
+    CHECK(legacy.value == "{}");
     CHECK(legacy.diagnostics.front().message == "warning");
 }

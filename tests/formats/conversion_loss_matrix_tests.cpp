@@ -78,9 +78,9 @@ auto load_fixture(const std::filesystem::path& path) -> std::optional<wormedit::
             ? wormedit::stepmania_timing_syntax_t::legacy_negative_stop
             : wormedit::stepmania_timing_syntax_t::legacy_negative_bpm;
         auto parsed = wormedit::parse_stepmania_bytes(bytes, options);
-        if (parsed.has_errors())
+        if (!parsed.ok())
             return std::nullopt;
-        return std::move(parsed.song);
+        return std::move(parsed.value);
     }
     return wormedit::sys::open_project_file(path).document;
 }
@@ -220,8 +220,8 @@ void check_slice_matrix(bool value) { CHECK(value); }
 auto fractional_autoplay_song() -> wormedit::song_document_t {
     const std::string text = R"({"version":"1.0.0","info":{"title":"fractional autoplay","artist":"test","mode_hint":"beat-7k","resolution":240,"init_bpm":120},"sound_channels":[{"name":"tone.wav","notes":[{"x":0,"y":1,"c":false}]}]})";
     const auto parsed = wormedit::parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
-    REQUIRE(parsed.song.has_value());
-    return *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    return *parsed.value;
 }
 auto sample_timestamp_loss(const wormedit::conversion_result_t& result) -> bool {
     return std::ranges::any_of(result.diagnostics, [](const auto& diagnostic) {
@@ -257,8 +257,8 @@ namespace {
 auto bmson_song(const std::string& text) -> wormedit::song_document_t {
     const auto parsed =
         wormedit::parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
-    REQUIRE(parsed.song.has_value());
-    return *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    return *parsed.value;
 }
 
 auto stepmania_request(const wormedit::song_document_t& song, wormedit::stepmania_profile_t profile)

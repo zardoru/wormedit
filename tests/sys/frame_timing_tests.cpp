@@ -6850,7 +6850,7 @@ TEST_CASE("BGM mute and additive solo are session-only and refresh cached lane h
     };
     fixture.project();
     const auto before = write_native_project(fixture.history.document);
-    expect_compose_test(before.bytes.has_value());
+    expect_compose_test(before.value.has_value());
     auto toggle = [&](WormUiComposeInputKind kind, std::uint64_t lane) {
         auto action = bgm_mix_test_action(fixture, kind, lane);
         (void)dispatch_compose_bgm_mix_inputs(action, fixture.history, *fixture.binding.workspace, fixture.application);
@@ -6872,7 +6872,7 @@ TEST_CASE("BGM mute and additive solo are session-only and refresh cached lane h
     toggle(WORM_UI_COMPOSE_INPUT_BGM_SOLO, 80002);
     expect_compose_test(applied.empty());
     const auto after = write_native_project(fixture.history.document);
-    expect_compose_test(after.bytes == before.bytes);
+    expect_compose_test(after.value == before.value);
     expect_compose_test(fixture.history.undo.empty());
     fixture.application.project.bgm.bgm_lane_mix[1].solo.insert(99999);
     expect_compose_test(compose_bgm_muted_lanes(fixture.history.document.charts.front(),

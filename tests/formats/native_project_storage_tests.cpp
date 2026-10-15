@@ -73,9 +73,9 @@ TEST_CASE("native project storage validates before atomically replacing a primar
     const auto updated = wormedit::publish_native_project_atomic(primary, valid_song(3));
     REQUIRE(updated.published);
     const auto parsed = wormedit::parse_native_project(read_text(primary));
-    REQUIRE(parsed.song.has_value());
-    CHECK(parsed.song->id == wormedit::song_id_t{417});
-    CHECK(parsed.song->revision == 3);
+    REQUIRE(parsed.value.has_value());
+    CHECK(parsed.value->id == wormedit::song_id_t{417});
+    CHECK(parsed.value->revision == 3);
     CHECK_FALSE(read_text(primary) == old_bytes);
 
     auto invalid_song = valid_song(4);
@@ -83,7 +83,7 @@ TEST_CASE("native project storage validates before atomically replacing a primar
     const auto rejected = wormedit::publish_native_project_atomic(primary, invalid_song);
     CHECK_FALSE(rejected.published);
     CHECK(rejected.has_errors());
-    CHECK(read_text(primary) == *wormedit::write_native_project(valid_song(3)).bytes);
+    CHECK(read_text(primary) == *wormedit::write_native_project(valid_song(3)).value);
 }
 
 TEST_CASE("temporary native-project files are unique and share the destination directory",
@@ -515,8 +515,8 @@ TEST_CASE("recovery actions revalidate scan identity and save-as never replaces 
         scan, candidate_index, action_t::save_as_new_project, save_options);
     REQUIRE(saved_as.applied);
     const auto reopened = wormedit::parse_native_project(read_text(save_as));
-    REQUIRE(reopened.song.has_value());
-    CHECK(reopened.song->revision == 6);
+    REQUIRE(reopened.value.has_value());
+    CHECK(reopened.value->revision == 6);
     CHECK(read_text(primary) == primary_before);
 
     const auto existing_destination = wormedit::apply_native_project_recovery_action(

@@ -27,8 +27,8 @@ auto chart_fixture() -> wormedit::chart_document_t {
                             std::istreambuf_iterator<char>()};
     const auto parsed =
         wormedit::parse_bmson_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
-    REQUIRE(parsed.song);
-    return parsed.song->charts.front();
+    REQUIRE(parsed.value);
+    return parsed.value->charts.front();
 }
 
 auto pulse_waveform() -> wormedit::audio::waveform_t {

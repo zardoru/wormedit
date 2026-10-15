@@ -16,7 +16,7 @@
 
 namespace {
 
-auto bmson_fixture(std::string_view name) -> wormedit::bmson_parse_result_t {
+auto bmson_fixture(std::string_view name) -> wormedit::bmson_parse_outcome_t {
     std::ifstream stream(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bmson" / name,
                          std::ios::binary);
     const std::string text{std::istreambuf_iterator<char>(stream),
@@ -24,7 +24,7 @@ auto bmson_fixture(std::string_view name) -> wormedit::bmson_parse_result_t {
     return wormedit::parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
 }
 
-auto published_fixture() -> wormedit::bmson_parse_result_t {
+auto published_fixture() -> wormedit::bmson_parse_outcome_t {
     return bmson_fixture("published-vox-slicing.bmson");
 }
 
@@ -64,8 +64,8 @@ auto is_silent_audition(const wormedit::song_document_t& song, wormedit::chart_i
 TEST_CASE("audition resolver maps published BMSON slices into normalized transport frames",
           "[unit][audio][audition-resolver][bmson]") {
     auto parsed = published_fixture();
-    REQUIRE(parsed.song.has_value());
-    auto song = *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    auto song = *parsed.value;
     auto& chart = song.charts.front();
     REQUIRE(chart.sound_channels.size() == 1);
     const auto asset = chart.sound_channels.front().source_clip.source;
@@ -125,8 +125,8 @@ TEST_CASE("audition resolver maps published BMSON slices into normalized transpo
 TEST_CASE("audition resolver isolates BGM slices and falls back to whole unlinked resources",
           "[unit][audio][audition-resolver][fallback]") {
     auto parsed = published_fixture();
-    REQUIRE(parsed.song.has_value());
-    auto song = *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    auto song = *parsed.value;
     auto& chart = song.charts.front();
     const auto asset = chart.sound_channels.front().source_clip.source;
     const auto audio_asset =
@@ -216,8 +216,8 @@ TEST_CASE("BMSON draft audition separates stale revision from unknown marker rej
 TEST_CASE("BMSON draft audition resolves a staged region without editing the song",
           "[unit][audio][audition-resolver][bmson]") {
     auto parsed = published_fixture();
-    REQUIRE(parsed.song.has_value());
-    auto song = *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    auto song = *parsed.value;
     const auto& chart = song.charts.front();
     const auto& channel = chart.sound_channels.front();
     const auto asset = channel.source_clip.source;
@@ -297,8 +297,8 @@ TEST_CASE("BMSON draft audition resolves a staged region without editing the son
 TEST_CASE("audition resolver layers fused BMSON channels and enforces its layer bound",
           "[unit][audio][audition-resolver][polyphony]") {
     auto parsed = bmson_fixture("slicing-and-mixed-sounds.bmson");
-    REQUIRE(parsed.song.has_value());
-    auto song = *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    auto song = *parsed.value;
     auto& chart = song.charts.front();
     REQUIRE(chart.sound_channels.size() == 2);
     for (auto& asset : song.audio_assets) {
@@ -346,8 +346,8 @@ TEST_CASE("audition resolver layers fused BMSON channels and enforces its layer 
 TEST_CASE("preview binding resolver indexes exact BMSON slices for one schedule batch",
           "[unit][audio][audition-resolver][preview]") {
     auto parsed = published_fixture();
-    REQUIRE(parsed.song.has_value());
-    auto song = *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    auto song = *parsed.value;
     auto& chart = song.charts.front();
     const auto asset = chart.sound_channels.front().source_clip.source;
     auto audio_asset = std::ranges::find(song.audio_assets, asset, &wormedit::audio_asset_t::id);
@@ -414,8 +414,8 @@ TEST_CASE("preview binding resolver indexes exact BMSON slices for one schedule 
 TEST_CASE("preview points past the end of a short sample stay silent while the rest still plays",
           "[unit][audio][audition-resolver][preview]") {
     auto parsed = published_fixture();
-    REQUIRE(parsed.song.has_value());
-    auto song = *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    auto song = *parsed.value;
     auto& chart = song.charts.front();
     const auto asset = chart.sound_channels.front().source_clip.source;
     const auto audio_asset = std::ranges::find(song.audio_assets, asset, &wormedit::audio_asset_t::id);
@@ -454,8 +454,8 @@ TEST_CASE("preview points past the end of a short sample stay silent while the r
 TEST_CASE("preview binding resolver can leave unavailable audio silent without losing the chart",
           "[unit][audio][audition-resolver][preview]") {
     auto parsed = published_fixture();
-    REQUIRE(parsed.song.has_value());
-    auto song = *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    auto song = *parsed.value;
     const auto& chart = song.charts.front();
     const auto& note = chart.measures.front().notes.front();
     REQUIRE(note.sound.has_value());
@@ -483,8 +483,8 @@ TEST_CASE("preview binding resolver can leave unavailable audio silent without l
 TEST_CASE("preview binding resolver keeps available audio alongside silent chart objects",
           "[unit][audio][audition-resolver][preview]") {
     auto parsed = bmson_fixture("slicing-and-mixed-sounds.bmson");
-    REQUIRE(parsed.song.has_value());
-    auto song = *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    auto song = *parsed.value;
     auto& chart = song.charts.front();
     REQUIRE(song.audio_assets.size() >= 2);
     for (auto& asset : song.audio_assets) {
@@ -519,8 +519,8 @@ TEST_CASE("preview binding resolver keeps available audio alongside silent chart
 TEST_CASE("preview binding resolver expands one canonical fused object atomically",
           "[unit][audio][audition-resolver][preview][polyphony]") {
     auto parsed = bmson_fixture("slicing-and-mixed-sounds.bmson");
-    REQUIRE(parsed.song.has_value());
-    auto song = *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    auto song = *parsed.value;
     auto& chart = song.charts.front();
     std::vector<wormedit::audio::audition_source_binding_t> bindings;
     for (std::size_t index = 0; index < song.audio_assets.size(); ++index) {

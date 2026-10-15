@@ -24,8 +24,8 @@ auto parse_song(const std::string& channels) -> wormedit::song_document_t {
       "sound_channels":[)" + channels + "]}";
     const auto parsed = wormedit::parse_bmson_bytes(
         std::as_bytes(std::span{json.data(), json.size()}));
-    REQUIRE(parsed.song);
-    return *parsed.song;
+    REQUIRE(parsed.value);
+    return *parsed.value;
 }
 
 auto derive(const wormedit::song_document_t& song,
@@ -119,13 +119,13 @@ TEST_CASE("sound_slice rule 5: a BGM note sharing a pulse with a playable note i
     CHECK(count_bgm_events(song) == 1);
 
     const auto written = wormedit::write_bmson(song);
-    REQUIRE(written.json);
-    CHECK_FALSE(written.has_errors());
+    REQUIRE(written.value);
+    CHECK(written.ok());
     const auto reparsed = wormedit::parse_bmson_bytes(std::as_bytes(
-        std::span{written.json->data(), written.json->size()}));
-    REQUIRE(reparsed.song);
-    CHECK(count_events(*reparsed.song, true) == 1);
-    CHECK(count_bgm_events(*reparsed.song) == 1);
+        std::span{written.value->data(), written.value->size()}));
+    REQUIRE(reparsed.value);
+    CHECK(count_events(*reparsed.value, true) == 1);
+    CHECK(count_bgm_events(*reparsed.value) == 1);
 }
 
 TEST_CASE("sound_slice rule 6: fused notes at one lane and pulse need equal hold lengths",
@@ -134,7 +134,7 @@ TEST_CASE("sound_slice rule 6: fused notes at one lane and pulse need equal hold
         {"x":1,"y":0,"l":240,"c":false}]},{"name":"b.wav","notes":[
         {"x":1,"y":0,"l":480,"c":false}]})");
     const auto written = wormedit::write_bmson(song);
-    CHECK(written.has_errors());
+    CHECK(!written.ok());
     CHECK_FALSE(written.diagnostics.empty());
 }
 
@@ -144,15 +144,15 @@ TEST_CASE("sound_slice rule 7: equal hold lengths fuse across channels and expor
         {"x":1,"y":0,"l":240,"c":false}]},{"name":"b.wav","notes":[
         {"x":1,"y":0,"l":240,"c":false}]})");
     const auto written = wormedit::write_bmson(song);
-    REQUIRE(written.json);
-    CHECK_FALSE(written.has_errors());
+    REQUIRE(written.value);
+    CHECK(written.ok());
 }
 
 TEST_CASE("sound_slice rule 8: duplicate notes at one lane and pulse in one channel are rejected",
           "[unit][core][bmson][slice-rules][negative]") {
     const auto song = parse_song(R"({"name":"a.wav","notes":[
         {"x":1,"y":0,"l":0,"c":false},{"x":1,"y":0,"l":0,"c":true}]})");
-    CHECK(wormedit::write_bmson(song).has_errors());
+    CHECK(!wormedit::write_bmson(song).ok());
 }
 
 TEST_CASE("sound_slice rule 9: an empty channel has no slices", "[unit][core][bmson][slice-rules]") {

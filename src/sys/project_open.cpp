@@ -19,7 +19,6 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -326,27 +325,31 @@ void resolve_stepmania_music(song_document_t& document,
     apply_audio_missing(document, missing);
 }
 
-template <typename ParseResult>
-void take_parsed_document(ParseResult parsed, std::string_view format,
-                          project_open_result_t& result) {
-    if (parsed.song && !parsed.has_errors()) {
-        if constexpr (std::is_same_v<ParseResult, osu_mania_parse_result_t>) {
-            for (const auto& diagnostic : parsed.diagnostics) {
+enum class import_warning_policy_t { discard, retain };
+
+template <typename Diagnostics>
+void take_parsed_document(std::optional<song_document_t>&& document,
+                          const Diagnostics& diagnostics, std::string_view format,
+                          project_open_result_t& result,
+                          import_warning_policy_t warning_policy = import_warning_policy_t::discard) {
+    if (document && !diagnostic_queries::has_errors(diagnostics)) {
+        if (warning_policy == import_warning_policy_t::retain) {
+            for (const auto& diagnostic : diagnostics) {
                 if (diagnostic.severity == diagnostic_severity_t::warning)
                     result.warnings.push_back(diagnostic.message);
             }
         }
-        result.document = std::move(parsed.song);
+        result.document = std::move(document);
         return;
     }
-    const auto error = std::find_if(parsed.diagnostics.begin(), parsed.diagnostics.end(),
+    const auto error = std::find_if(diagnostics.begin(), diagnostics.end(),
                                     [](const auto& item) {
                                         return item.severity == diagnostic_severity_t::error;
                                     });
-    const auto detail = error != parsed.diagnostics.end()
+    const auto detail = error != diagnostics.end()
                             ? error->message
-                            : parsed.diagnostics.empty() ? "No document was produced."
-                                                         : parsed.diagnostics.front().message;
+                            : diagnostics.empty() ? "No document was produced."
+                                                  : diagnostics.front().message;
     result.error = std::string(format) + " could not be opened: " + detail;
 }
 
@@ -354,7 +357,8 @@ void parse_selected_file(std::string_view extension, const std::string& source,
                          std::optional<text_encoding_t> encoding_override,
                          project_open_result_t& result) {
     if (extension == ".wormedit") {
-        take_parsed_document(parse_native_project(source), "Native project", result);
+        auto parsed = parse_native_project(source);
+        take_parsed_document(std::move(parsed.value), parsed.diagnostics, "Native project", result);
         result.native_project = result.document.has_value();
         if (result.document) mark_audio_availability(*result.document, result.asset_base);
         return;
@@ -372,7 +376,7 @@ void parse_selected_file(std::string_view extension, const std::string& source,
                        diagnostic.message.find("without a UTF-8 BOM is ambiguous") !=
                            std::string::npos;
             });
-        take_parsed_document(std::move(parsed), "BMS chart", result);
+        take_parsed_document(std::move(parsed.song), parsed.diagnostics, "BMS chart", result);
         if (result.document) {
             resolve_audio_assets(*result.document, result.asset_base, result.warnings);
             resolve_visual_assets(*result.document, result.asset_base, result.warnings);
@@ -380,7 +384,8 @@ void parse_selected_file(std::string_view extension, const std::string& source,
     } else if (extension == ".bmson") {
         auto options = bmson_parse_options_t{};
         options.asset_base_directory = result.asset_base;
-        take_parsed_document(parse_bmson_bytes(bytes, std::move(options)), "BMSON chart", result);
+        auto parsed = parse_bmson_bytes(bytes, std::move(options));
+        take_parsed_document(std::move(parsed.value), parsed.diagnostics, "BMSON chart", result);
         if (result.document) {
             const auto initialized = create_bmson_sound_channel_layers(
                 result.document->charts.front());
@@ -395,8 +400,8 @@ void parse_selected_file(std::string_view extension, const std::string& source,
         options.profile = extension == ".ssc" ? stepmania_profile_t::ssc
                                                 : stepmania_profile_t::sm;
         options.asset_base_directory = result.asset_base;
-        take_parsed_document(parse_stepmania_bytes(bytes, std::move(options)),
-                             "StepMania chart", result);
+        auto parsed = parse_stepmania_bytes(bytes, std::move(options));
+        take_parsed_document(std::move(parsed.value), parsed.diagnostics, "StepMania chart", result);
         if (result.document) {
             mark_audio_availability(*result.document, result.asset_base);
             resolve_stepmania_music(*result.document, result.asset_base, result.warnings);
@@ -404,8 +409,9 @@ void parse_selected_file(std::string_view extension, const std::string& source,
     } else if (extension == ".osu") {
         auto options = osu_mania_parse_options_t{};
         options.asset_base_directory = result.asset_base;
-        take_parsed_document(parse_osu_mania_bytes(bytes, std::move(options)), "osu!mania chart",
-                             result);
+        auto parsed = parse_osu_mania_bytes(bytes, std::move(options));
+        take_parsed_document(std::move(parsed.value), parsed.diagnostics, "osu!mania chart",
+                             result, import_warning_policy_t::retain);
         if (result.document) mark_audio_availability(*result.document, result.asset_base);
     }
 }

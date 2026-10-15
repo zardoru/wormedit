@@ -764,7 +764,7 @@ TEST_CASE("replacement layer assignments keep one membership and restore origina
     for (const auto& note : history.document.charts.front().measures.front().notes)
         check_membership(static_cast<bool>(note.semantic_layers == std::vector{layer_id_t{8}}));
     require_membership(static_cast<bool>(undo_document_command(history)));
-    check_membership(static_cast<bool>(write_native_project(history.document).bytes == write_native_project(song).bytes));
+    check_membership(static_cast<bool>(write_native_project(history.document).value == write_native_project(song).value));
 }
 
 TEST_CASE("replacement layer assignments reject locked source layers atomically",
@@ -778,7 +778,7 @@ TEST_CASE("replacement layer assignments reject locked source layers atomically"
                      chart_id_t{2}, layer_id_t{8}, {object_id_t{21}, object_id_t{20}}});
     check_membership(static_cast<bool>(!(result)));
     check_membership(static_cast<bool>(has_code(result, diagnostic_code_t::unsupported_feature)));
-    check_membership(static_cast<bool>(write_native_project(history.document).bytes == write_native_project(song).bytes));
+    check_membership(static_cast<bool>(write_native_project(history.document).value == write_native_project(song).value));
     check_membership(static_cast<bool>(history.undo.empty()));
 }
 
@@ -794,7 +794,7 @@ TEST_CASE("replacement layer paint toggles only the target and replaces other me
     check_membership(static_cast<bool>(history.document.charts.front().measures.front().notes.front().semantic_layers == std::vector{layer_id_t{8}}));
     check_membership(static_cast<bool>(history.document.charts.front().measures.front().notes.back().semantic_layers.empty()));
     require_membership(static_cast<bool>(undo_document_command(history)));
-    check_membership(static_cast<bool>(write_native_project(history.document).bytes == write_native_project(song).bytes));
+    check_membership(static_cast<bool>(write_native_project(history.document).value == write_native_project(song).value));
 }
 
 TEST_CASE("replacement membership batch checks a shared layer catalog once",
@@ -848,7 +848,7 @@ TEST_CASE("Selected sound layers propagate chart-wide while preserving explicit 
           "[unit][core][semantic-layer][selected-sound-layers]") {
     auto history = document_history_t::from(selected_sound_layer_song());
     const auto original = write_native_project(history.document);
-    REQUIRE(original.bytes);
+    REQUIRE(original.value);
     const auto applied = add_selected_sounds_to_semantic_layer(
         history,
         {chart_id_t{2}, layer_id_t{8}, {object_id_t{20}, object_id_t{26}}, {object_id_t{23}}});
@@ -867,14 +867,14 @@ TEST_CASE("Selected sound layers propagate chart-wide while preserving explicit 
     check_selected_sounds(validate_document(history.document).empty());
     check_selected_sounds(history.undo.size() == 1);
     const auto written = write_native_project(history.document);
-    REQUIRE(written.bytes);
-    const auto round_trip = parse_native_project(*written.bytes);
-    REQUIRE(round_trip.song);
-    check_selected_sounds(round_trip.song->charts.front().sound_layer_defaults.front().layers ==
+    REQUIRE(written.value);
+    const auto round_trip = parse_native_project(*written.value);
+    REQUIRE(round_trip.value);
+    check_selected_sounds(round_trip.value->charts.front().sound_layer_defaults.front().layers ==
                           std::vector{layer_id_t{7}, layer_id_t{8}});
     REQUIRE(undo_document_command(history));
     const auto undone = write_native_project(history.document);
-    REQUIRE(undone.bytes);
+    REQUIRE(undone.value);
     // Undo changes the document revision; compare the restored content directly.
     check_selected_sounds(history.document.charts.front().sound_layer_defaults.front().layers ==
                           std::vector{layer_id_t{7}});

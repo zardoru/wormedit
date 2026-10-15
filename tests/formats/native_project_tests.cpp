@@ -49,10 +49,10 @@ auto fixture_path(std::string_view family, std::string_view name) -> std::filesy
 auto rich_bmson_song() -> wormedit::song_document_t {
     const auto bytes = read_binary(fixture_path("bmson", "slicing-and-mixed-sounds.bmson"));
     auto parsed = wormedit::parse_bmson_bytes(bytes);
-    if (!parsed.song.has_value()) {
+    if (!parsed.value.has_value()) {
         return {};
     }
-    auto song = std::move(*parsed.song);
+    auto song = std::move(*parsed.value);
     song.revision = 42;
     song.metadata.ordered_search_tags = {"vocal", "challenge"};
     auto& chart = song.charts.front();
@@ -214,33 +214,33 @@ auto bms_layer_export_matches() -> export_parity_result_t {
 auto bmson_layer_export_matches() -> export_parity_result_t {
     const auto bytes = read_binary(fixture_path("bmson", "slicing-and-mixed-sounds.bmson"));
     auto imported = wormedit::parse_bmson_bytes(bytes);
-    if (!imported.song) return {.diagnostic = "BMSON fixture did not parse"};
-    if (!prepare_bgm_event(*imported.song, false))
+    if (!imported.value) return {.diagnostic = "BMSON fixture did not parse"};
+    if (!prepare_bgm_event(*imported.value, false))
         return {.diagnostic = "BMSON fixture has no usable BGM event"};
-    auto layered = *imported.song;
+    auto layered = *imported.value;
     if (!prepare_bgm_event(layered, true))
         return {.diagnostic = "Could not assign the BGM semantic layer"};
-    const auto plain = wormedit::write_bmson(*imported.song);
+    const auto plain = wormedit::write_bmson(*imported.value);
     const auto tagged = wormedit::write_bmson(layered);
-    if (!plain.json || !tagged.json) {
-        const auto& diagnostics = plain.json ? tagged.diagnostics : plain.diagnostics;
+    if (!plain.value || !tagged.value) {
+        const auto& diagnostics = plain.value ? tagged.diagnostics : plain.diagnostics;
         return {.diagnostic = diagnostics.empty() ? "BMSON writer returned no output"
                                                    : diagnostics.front().message};
     }
-    return {.matches = *plain.json == *tagged.json};
+    return {.matches = *plain.value == *tagged.value};
 }
 
 auto empty_group_schema_keeps_previous_bytes() -> bool {
     const auto song = rich_bmson_song();
-    const auto written = wormedit::native_project_write_result_t::from(wormedit::native_project_write_result_t::from(song));
-    REQUIRE(written.bytes);
-    CHECK(written.bytes->find("sound_groups") == std::string::npos);
-    CHECK(written.bytes->find("sound_group\"") == std::string::npos);
-    const auto parsed = wormedit::native_project_parse_result_t::from(wormedit::native_project_parse_result_t::from(*written.bytes));
-    REQUIRE(parsed.song);
-    const auto rewritten = wormedit::write_native_project(*parsed.song);
-    REQUIRE(rewritten.bytes);
-    CHECK(*rewritten.bytes == *written.bytes);
+    const auto written = wormedit::write_native_project(song);
+    REQUIRE(written.value);
+    CHECK(written.value->find("sound_groups") == std::string::npos);
+    CHECK(written.value->find("sound_group\"") == std::string::npos);
+    const auto parsed = wormedit::parse_native_project(*written.value);
+    REQUIRE(parsed.value);
+    const auto rewritten = wormedit::write_native_project(*parsed.value);
+    REQUIRE(rewritten.value);
+    CHECK(*rewritten.value == *written.value);
     return true;
 }
 
@@ -254,16 +254,16 @@ auto populated_sound_group_round_trips() -> bool {
     song.sound_groups = {{.id = wormedit::sound_group_id_t{700}, .name = "Percussion"}};
     sound->sound_group = wormedit::sound_group_id_t{700};
     const auto written = wormedit::write_native_project(song);
-    REQUIRE(written.bytes);
-    const auto parsed = wormedit::parse_native_project(*written.bytes);
-    REQUIRE(parsed.song);
-    CHECK(parsed.song->sound_groups == song.sound_groups);
-    const auto parsed_sound = std::ranges::find_if(parsed.song->resources,
+    REQUIRE(written.value);
+    const auto parsed = wormedit::parse_native_project(*written.value);
+    REQUIRE(parsed.value);
+    CHECK(parsed.value->sound_groups == song.sound_groups);
+    const auto parsed_sound = std::ranges::find_if(parsed.value->resources,
         [](const auto& resource) {
             return std::ranges::find(resource.roles, wormedit::resource_role_t::sample) !=
                    resource.roles.end();
         });
-    REQUIRE(parsed_sound != parsed.song->resources.end());
+    REQUIRE(parsed_sound != parsed.value->resources.end());
     CHECK(parsed_sound->sound_group == wormedit::sound_group_id_t{700});
     return true;
 }
@@ -275,8 +275,8 @@ auto legacy_schema3_bms_document() -> nlohmann::json {
         std::as_bytes(std::span{source.data(), source.size()}));
     if (!imported.song) return {};
     const auto written = wormedit::write_native_project(*imported.song);
-    if (!written.bytes) return {};
-    auto legacy = nlohmann::json::parse(*written.bytes);
+    if (!written.value) return {};
+    auto legacy = nlohmann::json::parse(*written.value);
     auto& events = legacy["document"]["charts"][0]["bga_events"];
     for (auto& event : events) {
         if (event["kind"] == std::uint64_t{5}) event["kind"] = std::uint64_t{2};
@@ -287,8 +287,8 @@ auto legacy_schema3_bms_document() -> nlohmann::json {
 
 auto schema3_migrates_layer2_by_provenance(const nlohmann::json& legacy) -> bool {
     const auto migrated = wormedit::parse_native_project(legacy.dump());
-    if (!migrated.song) return false;
-    const auto& events = migrated.song->charts.front().bga_events;
+    if (!migrated.value) return false;
+    const auto& events = migrated.value->charts.front().bga_events;
     return events.size() == 3 && events[1].kind == wormedit::visual_event_kind_t::layer &&
            events[2].kind == wormedit::visual_event_kind_t::layer2;
 }
@@ -297,26 +297,26 @@ auto schema3_without_provenance_keeps_legacy_layer(nlohmann::json legacy) -> boo
     auto& event = legacy["document"]["charts"][0]["bga_events"][2];
     event["provenance"]["source_field"] = "legacy visual layer";
     const auto migrated = wormedit::parse_native_project(legacy.dump());
-    return migrated.song && migrated.song->charts.front().bga_events[2].kind ==
+    return migrated.value && migrated.value->charts.front().bga_events[2].kind ==
                                 wormedit::visual_event_kind_t::layer;
 }
 
 auto writing_schema3_keeps_layer2_provenance(nlohmann::json legacy) -> bool {
     const auto parsed = wormedit::parse_native_project(legacy.dump());
-    if (!parsed.song) return false;
-    auto song = *parsed.song;
+    if (!parsed.value) return false;
+    auto song = *parsed.value;
     song.schema_version = 3;
     for (auto& event : song.charts.front().bga_events) {
         if (event.provenance.source_field.starts_with("0A slot "))
             event.kind = wormedit::visual_event_kind_t::layer;
     }
     const auto written = wormedit::write_native_project(song);
-    if (!written.bytes) return false;
-    const auto document = nlohmann::json::parse(*written.bytes);
+    if (!written.value) return false;
+    const auto document = nlohmann::json::parse(*written.value);
     if (document["document"]["charts"][0]["bga_events"][2]["kind"] != std::uint64_t{5})
         return false;
-    const auto roundtrip = wormedit::parse_native_project(*written.bytes);
-    return roundtrip.song && roundtrip.song->charts.front().bga_events[2].kind ==
+    const auto roundtrip = wormedit::parse_native_project(*written.value);
+    return roundtrip.value && roundtrip.value->charts.front().bga_events[2].kind ==
                                  wormedit::visual_event_kind_t::layer2;
 }
 
@@ -400,8 +400,8 @@ auto schema4_stem_lanes_migrate_by_source_order() -> bool {
     if (song.charts.empty() || song.charts.front().sound_channels.size() < 2) return false;
     restore_legacy_channel_lanes(song.charts.front());
     const auto written = wormedit::write_native_project(song);
-    if (!written.bytes) return false;
-    auto root = nlohmann::json::parse(*written.bytes);
+    if (!written.value) return false;
+    auto root = nlohmann::json::parse(*written.value);
     auto& chart = root["document"]["charts"][0];
     auto& lanes = chart["bgm_source_lanes"];
     const auto& channels = chart["sound_channels"];
@@ -413,9 +413,9 @@ auto schema4_stem_lanes_migrate_by_source_order() -> bool {
     }
     root["document"]["schema_version"] = 4;
     const auto migrated = wormedit::parse_native_project(root.dump());
-    if (!migrated.song || migrated.song->charts.front().bgm_source_lanes.size() != lanes.size())
+    if (!migrated.value || migrated.value->charts.front().bgm_source_lanes.size() != lanes.size())
         return false;
-    const auto& result = migrated.song->charts.front();
+    const auto& result = migrated.value->charts.front();
     for (std::size_t index = 0; index < lanes.size(); ++index) {
         const auto order = lanes[index]["source_order"].get<std::size_t>();
         const auto& actual = result.bgm_source_lanes[index];
@@ -433,43 +433,43 @@ auto bms_schema4_migration_keeps_unlinked_lanes() -> bool {
         std::as_bytes(std::span{source.data(), source.size()}));
     if (!imported.song || imported.song->charts.empty()) return false;
     const auto written = wormedit::write_native_project(*imported.song);
-    if (!written.bytes) return false;
-    auto root = nlohmann::json::parse(*written.bytes);
+    if (!written.value) return false;
+    auto root = nlohmann::json::parse(*written.value);
     auto& chart = root["document"]["charts"][0];
     for (auto& lane : chart["bgm_source_lanes"]) lane.erase("stem_channel");
     root["document"]["schema_version"] = 4;
     const auto migrated = wormedit::parse_native_project(root.dump());
-    if (!migrated.song) return false;
+    if (!migrated.value) return false;
     const auto& before = imported.song->charts.front().bgm_source_lanes;
-    const auto& after = migrated.song->charts.front().bgm_source_lanes;
+    const auto& after = migrated.value->charts.front().bgm_source_lanes;
     if (before.size() != after.size()) return false;
     for (std::size_t index = 0; index < before.size(); ++index)
         if (before[index].id != after[index].id || before[index].name != after[index].name ||
             before[index].source_order != after[index].source_order || after[index].stem_channel)
             return false;
-    return migrated.song->charts.front().source_family == wormedit::format_family_t::bms;
+    return migrated.value->charts.front().source_family == wormedit::format_family_t::bms;
 }
 
 auto invalid_stem_links_are_named_and_rejected() -> bool {
     const auto song = make_explicit_stem_song();
     const auto written = wormedit::write_native_project(song);
-    if (!written.bytes) return false;
-    auto root = nlohmann::json::parse(*written.bytes);
+    if (!written.value) return false;
+    auto root = nlohmann::json::parse(*written.value);
     auto& lanes = root["document"]["charts"][0]["bgm_source_lanes"];
     lanes[0]["stem_channel"] = std::uint64_t{999999999};
     const auto missing = wormedit::parse_native_project(root.dump());
-    if (missing.song || missing.diagnostics.empty()) return false;
+    if (missing.value || missing.diagnostics.empty()) return false;
     const auto names_missing = std::ranges::any_of(missing.diagnostics, [](const auto& diagnostic) {
         return diagnostic.message.find("Stem lane") != std::string::npos &&
                diagnostic.message.find("Chart") != std::string::npos;
     });
     if (!names_missing) return false;
 
-    root = nlohmann::json::parse(*written.bytes);
+    root = nlohmann::json::parse(*written.value);
     root["document"]["charts"][0]["bgm_source_lanes"][1]["stem_channel"] =
         root["document"]["charts"][0]["bgm_source_lanes"][0]["stem_channel"];
     const auto ambiguous = wormedit::parse_native_project(root.dump());
-    return !ambiguous.song && !ambiguous.diagnostics.empty() &&
+    return !ambiguous.value && !ambiguous.diagnostics.empty() &&
         std::ranges::any_of(ambiguous.diagnostics, [](const auto& diagnostic) {
             return diagnostic.message.find("Packed column") != std::string::npos &&
                    diagnostic.message.find("Chart") != std::string::npos;
@@ -480,23 +480,23 @@ auto explicit_stem_round_trip_is_lossless() -> bool {
     const auto song = make_explicit_stem_song();
     if (song.charts.empty() || !wormedit::validate_document(song).empty()) return false;
     const auto written = wormedit::write_native_project(song);
-    if (!written.bytes) return false;
-    const auto json = nlohmann::json::parse(*written.bytes);
+    if (!written.value) return false;
+    const auto json = nlohmann::json::parse(*written.value);
     const auto& lanes = json["document"]["charts"][0]["bgm_source_lanes"];
     if (json["document"]["schema_version"] != 6 || lanes.size() != 3 ||
         !lanes[0].contains("stem_channel") || lanes[1].contains("stem_channel") ||
         !lanes[2].contains("stem_channel")) return false;
-    const auto parsed = wormedit::parse_native_project(*written.bytes);
-    if (!parsed.song || parsed.song->charts.empty()) return false;
-    const auto& actual = parsed.song->charts.front();
+    const auto parsed = wormedit::parse_native_project(*written.value);
+    if (!parsed.value || parsed.value->charts.empty()) return false;
+    const auto& actual = parsed.value->charts.front();
     if (actual.sound_channels.size() != song.charts.front().sound_channels.size() ||
         !actual.sound_channels.back().events.empty() || actual.bgm_source_lanes.size() != 3)
         return false;
     if (actual.bgm_source_lanes[0].stem_channel != actual.sound_channels.front().id ||
         actual.bgm_source_lanes[1].stem_channel ||
         actual.bgm_source_lanes[2].stem_channel != actual.sound_channels.back().id) return false;
-    const auto rewritten = wormedit::write_native_project(*parsed.song);
-    return rewritten.bytes && *rewritten.bytes == *written.bytes;
+    const auto rewritten = wormedit::write_native_project(*parsed.value);
+    return rewritten.value && *rewritten.value == *written.value;
 }
 
 } // namespace
@@ -517,75 +517,75 @@ TEST_CASE("native project deterministically round-trips rich editor state",
     REQUIRE(wormedit::validate_document(round_trip_song).empty());
 
     const auto written = wormedit::write_native_project(round_trip_song);
-    REQUIRE(written.bytes.has_value());
-    CHECK_FALSE(written.has_errors());
-    CHECK(written.bytes->find("\"wormedit-project\"") != std::string::npos);
-    CHECK(written.bytes->find("\"generator_recipes\"") != std::string::npos);
-    CHECK(written.bytes->find("\"semantic_layers\"") != std::string::npos);
-    CHECK(written.bytes->find("\"sound_channel_event\"") != std::string::npos);
+    REQUIRE(written.value.has_value());
+    CHECK(written.ok());
+    CHECK(written.value->find("\"wormedit-project\"") != std::string::npos);
+    CHECK(written.value->find("\"generator_recipes\"") != std::string::npos);
+    CHECK(written.value->find("\"semantic_layers\"") != std::string::npos);
+    CHECK(written.value->find("\"sound_channel_event\"") != std::string::npos);
 
-    const auto parsed = wormedit::parse_native_project(*written.bytes);
-    REQUIRE(parsed.song.has_value());
-    CHECK_FALSE(parsed.has_errors());
-    CHECK(parsed.song->revision == 42);
-    CHECK(parsed.song->charts.front().semantic_layers.front().name == "Vocals");
+    const auto parsed = wormedit::parse_native_project(*written.value);
+    REQUIRE(parsed.value.has_value());
+    CHECK(parsed.ok());
+    CHECK(parsed.value->revision == 42);
+    CHECK(parsed.value->charts.front().semantic_layers.front().name == "Vocals");
     const auto has_layered_bgm = std::ranges::any_of(
-        parsed.song->charts.front().measures, [](const auto& measure) {
+        parsed.value->charts.front().measures, [](const auto& measure) {
             return std::ranges::any_of(measure.bgm_events, [](const auto& event) {
                 return event.semantic_layers == std::vector{wormedit::layer_id_t{900}};
             });
         });
     CHECK(has_layered_bgm);
-    CHECK(parsed.song->midi_assets.front().events.front().data ==
+    CHECK(parsed.value->midi_assets.front().events.front().data ==
           std::vector<std::byte>{std::byte{0x90}, std::byte{0x3c}, std::byte{0x7f}});
-    REQUIRE_FALSE(parsed.song->generator_recipes.empty());
-    CHECK(parsed.song->generator_recipes.front().source_path.generic_string() ==
+    REQUIRE_FALSE(parsed.value->generator_recipes.empty());
+    CHECK(parsed.value->generator_recipes.front().source_path.generic_string() ==
           "scripts/pattern.lua");
-    CHECK(parsed.song->output_groups.front().relative_output_path.generic_string() ==
+    CHECK(parsed.value->output_groups.front().relative_output_path.generic_string() ==
           "exports/chart.bmson");
-    CHECK(parsed.song->charts.front().bookmarks.back().audio_milliseconds == 1250);
+    CHECK(parsed.value->charts.front().bookmarks.back().audio_milliseconds == 1250);
     const auto& original_note = song.charts.front().measures.front().notes.front();
-    const auto& parsed_note = parsed.song->charts.front().measures.front().notes.front();
+    const auto& parsed_note = parsed.value->charts.front().measures.front().notes.front();
     CHECK(parsed_note.sound_channel_event == original_note.sound_channel_event);
-    REQUIRE(parsed.song->charts.front().sv_recipes.size() == 1);
-    CHECK(parsed.song->charts.front().sv_recipes.front().id == wormedit::recipe_id_t{10000});
-    CHECK(parsed.song->charts.front().sv_recipes.front().enabled);
-    REQUIRE(parsed.song->charts.front().sections.back().beat_span.has_value());
+    REQUIRE(parsed.value->charts.front().sv_recipes.size() == 1);
+    CHECK(parsed.value->charts.front().sv_recipes.front().id == wormedit::recipe_id_t{10000});
+    CHECK(parsed.value->charts.front().sv_recipes.front().enabled);
+    REQUIRE(parsed.value->charts.front().sections.back().beat_span.has_value());
     REQUIRE(song.charts.front().sections.back().beat_span.has_value());
-    CHECK(parsed.song->charts.front().sections.back().beat_span->begin ==
+    CHECK(parsed.value->charts.front().sections.back().beat_span->begin ==
           song.charts.front().sections.back().beat_span->begin);
-    CHECK(parsed.song->charts.front().sections.back().beat_span->end ==
+    CHECK(parsed.value->charts.front().sections.back().beat_span->end ==
           song.charts.front().sections.back().beat_span->end);
-    REQUIRE(parsed.song->storyboards.front().model.has_value());
-    REQUIRE(parsed.song->storyboards.front().model->sprites.size() == 1);
-    REQUIRE(parsed.song->storyboards.front().model->sprites.front().nodes.size() == 1);
-    CHECK(parsed.song->storyboards.front().model->sprites.front().nodes.front().kind ==
+    REQUIRE(parsed.value->storyboards.front().model.has_value());
+    REQUIRE(parsed.value->storyboards.front().model->sprites.size() == 1);
+    REQUIRE(parsed.value->storyboards.front().model->sprites.front().nodes.size() == 1);
+    CHECK(parsed.value->storyboards.front().model->sprites.front().nodes.front().kind ==
           wormedit::storyboard_node_kind_t::loop);
-    CHECK(parsed.song->storyboards.front()
+    CHECK(parsed.value->storyboards.front()
               .model->sprites.front()
               .nodes.front()
               .children.front()
               .kind == wormedit::storyboard_node_kind_t::loop);
-    CHECK(parsed.song->storyboards.front().model->retained_top_level_lines.size() == 2);
-    const auto emitted_storyboard = wormedit::emit_osb(*parsed.song->storyboards.front().model);
+    CHECK(parsed.value->storyboards.front().model->retained_top_level_lines.size() == 2);
+    const auto emitted_storyboard = wormedit::emit_osb(*parsed.value->storyboards.front().model);
     REQUIRE(emitted_storyboard.value);
     const auto reparsed_storyboard = wormedit::parse_osb(*emitted_storyboard.value);
     REQUIRE(reparsed_storyboard.value);
-    CHECK(wormedit::storyboard_semantically_equal(*parsed.song->storyboards.front().model,
+    CHECK(wormedit::storyboard_semantically_equal(*parsed.value->storyboards.front().model,
                                                   *reparsed_storyboard.value));
 
-    const auto rewritten = wormedit::write_native_project(*parsed.song);
-    REQUIRE(rewritten.bytes.has_value());
-    CHECK(*rewritten.bytes == *written.bytes);
+    const auto rewritten = wormedit::write_native_project(*parsed.value);
+    REQUIRE(rewritten.value.has_value());
+    CHECK(*rewritten.value == *written.value);
 
-    auto legacy_links = nlohmann::json::parse(*written.bytes);
+    auto legacy_links = nlohmann::json::parse(*written.value);
     for (auto& measure : legacy_links["document"]["charts"][0]["measures"]) {
         for (auto& note : measure["notes"]) note.erase("sound_channel_event");
         for (auto& event : measure["bgm_events"]) event.erase("sound_channel_event");
     }
     const auto parsed_legacy_links = wormedit::parse_native_project(legacy_links.dump());
-    REQUIRE(parsed_legacy_links.song.has_value());
-    for (const auto& measure : parsed_legacy_links.song->charts.front().measures) {
+    REQUIRE(parsed_legacy_links.value.has_value());
+    for (const auto& measure : parsed_legacy_links.value->charts.front().measures) {
         CHECK(std::ranges::none_of(measure.notes, [](const auto& note) {
             return note.sound_channel_event.has_value();
         }));
@@ -602,59 +602,59 @@ TEST_CASE("native schema 6 preserves BGM tails and upgrades absent legacy ends",
     auto& event = song.charts.front().measures.front().bgm_events.front();
     event.end = wormedit::local_position_t{song.charts.front().measures.front().id, 1};
     const auto written = wormedit::write_native_project(song);
-    require_bmson_condition(written.bytes.has_value());
-    auto root = nlohmann::json::parse(*written.bytes);
+    require_bmson_condition(written.value.has_value());
+    auto root = nlohmann::json::parse(*written.value);
     check_bmson_condition(root["document"]["schema_version"] == 6);
     require_bmson_condition(root["document"]["charts"][0]["measures"][0]["bgm_events"][0]["end"]
                                 .is_object());
     const auto parsed = wormedit::parse_native_project(root.dump());
-    require_bmson_condition(parsed.song.has_value());
-    check_bmson_condition(parsed.song->charts.front().measures.front().bgm_events.front().end ==
+    require_bmson_condition(parsed.value.has_value());
+    check_bmson_condition(parsed.value->charts.front().measures.front().bgm_events.front().end ==
                           event.end);
 
     auto absent = root;
     absent["document"]["charts"][0]["measures"][0]["bgm_events"][0].erase("end");
     const auto parsed_absent = wormedit::parse_native_project(absent.dump());
-    require_bmson_condition(parsed_absent.song.has_value());
-    check_bmson_condition(!parsed_absent.song->charts.front().measures.front().bgm_events.front().end);
+    require_bmson_condition(parsed_absent.value.has_value());
+    check_bmson_condition(!parsed_absent.value->charts.front().measures.front().bgm_events.front().end);
 
     auto legacy = root;
     legacy["document"]["schema_version"] = 5;
     legacy["document"]["charts"][0]["measures"][0]["bgm_events"][0].erase("end");
     const auto upgraded = wormedit::parse_native_project(legacy.dump());
-    require_bmson_condition(upgraded.song.has_value());
-    check_bmson_condition(upgraded.song->schema_version == 6);
-    check_bmson_condition(!upgraded.song->charts.front().measures.front().bgm_events.front().end);
+    require_bmson_condition(upgraded.value.has_value());
+    check_bmson_condition(upgraded.value->schema_version == 6);
+    check_bmson_condition(!upgraded.value->charts.front().measures.front().bgm_events.front().end);
 
     auto legacy_with_end = root;
     legacy_with_end["document"]["schema_version"] = 5;
     const auto upgraded_with_end = wormedit::parse_native_project(legacy_with_end.dump());
-    require_bmson_condition(upgraded_with_end.song.has_value());
-    check_bmson_condition(upgraded_with_end.song->charts.front().measures.front().bgm_events.front().end ==
+    require_bmson_condition(upgraded_with_end.value.has_value());
+    check_bmson_condition(upgraded_with_end.value->charts.front().measures.front().bgm_events.front().end ==
                           event.end);
 
     auto malformed = root;
     malformed["document"]["charts"][0]["measures"][0]["bgm_events"][0]["end"] =
         {{"measure", "bad"}, {"row", 1}};
-    check_bmson_condition(!wormedit::parse_native_project(malformed.dump()).song);
+    check_bmson_condition(!wormedit::parse_native_project(malformed.dump()).value);
     auto unknown = root;
     unknown["document"]["charts"][0]["measures"][0]["bgm_events"][0]["unrecognized"] = true;
-    check_bmson_condition(!wormedit::parse_native_project(unknown.dump()).song);
+    check_bmson_condition(!wormedit::parse_native_project(unknown.dump()).value);
     auto nonpositive = root;
     nonpositive["document"]["charts"][0]["measures"][0]["bgm_events"][0]["end"] =
         root["document"]["charts"][0]["measures"][0]["bgm_events"][0]["position"];
-    check_bmson_condition(!wormedit::parse_native_project(nonpositive.dump()).song);
+    check_bmson_condition(!wormedit::parse_native_project(nonpositive.dump()).value);
     auto outside = root;
     outside["document"]["charts"][0]["measures"][0]["bgm_events"][0]["end"]["measure"] =
         9'999'999;
-    check_bmson_condition(!wormedit::parse_native_project(outside.dump()).song);
+    check_bmson_condition(!wormedit::parse_native_project(outside.dump()).value);
     auto row_outside = root;
     row_outside["document"]["charts"][0]["measures"][0]["bgm_events"][0]["end"]["row"] =
         9'999'999;
-    check_bmson_condition(!wormedit::parse_native_project(row_outside.dump()).song);
+    check_bmson_condition(!wormedit::parse_native_project(row_outside.dump()).value);
     auto earlier = root;
     earlier["document"]["charts"][0]["measures"][0]["bgm_events"][0]["end"]["row"] = 0;
-    check_bmson_condition(!wormedit::parse_native_project(earlier.dump()).song);
+    check_bmson_condition(!wormedit::parse_native_project(earlier.dump()).value);
 }
 
 TEST_CASE("native projects round-trip explicit stem and packed lanes, including empty stems",
@@ -693,10 +693,10 @@ TEST_CASE("native projects round-trip quantization presets",
           "[unit][format][native-project][quantize-preset]") {
     const auto song = rich_bmson_song();
     const auto written = wormedit::write_native_project(song);
-    REQUIRE(written.bytes.has_value());
-    const auto parsed = wormedit::parse_native_project(*written.bytes);
-    REQUIRE(parsed.song.has_value());
-    CHECK(parsed.song->quantization_presets == song.quantization_presets);
+    REQUIRE(written.value.has_value());
+    const auto parsed = wormedit::parse_native_project(*written.value);
+    REQUIRE(parsed.value.has_value());
+    CHECK(parsed.value->quantization_presets == song.quantization_presets);
 }
 
 TEST_CASE("native projects persist SV recipes but accept older documents without them",
@@ -704,8 +704,8 @@ TEST_CASE("native projects persist SV recipes but accept older documents without
     auto song = rich_bmson_song();
     REQUIRE(wormedit::validate_document(song).empty());
     const auto written = wormedit::write_native_project(song);
-    REQUIRE(written.bytes.has_value());
-    auto serialized = nlohmann::json::parse(*written.bytes);
+    REQUIRE(written.value.has_value());
+    auto serialized = nlohmann::json::parse(*written.value);
     const auto& recipe_json = serialized["document"]["charts"][0]["sv_recipes"][0];
     CHECK(recipe_json.contains("range"));
     CHECK(recipe_json.contains("sampling"));
@@ -715,17 +715,17 @@ TEST_CASE("native projects persist SV recipes but accept older documents without
     auto legacy = serialized;
     legacy["document"]["charts"][0].erase("sv_recipes");
     const auto parsed_legacy = wormedit::parse_native_project(legacy.dump());
-    REQUIRE(parsed_legacy.song.has_value());
-    CHECK(parsed_legacy.song->charts.front().sv_recipes.empty());
-    const auto migrated = wormedit::write_native_project(*parsed_legacy.song);
-    REQUIRE(migrated.bytes.has_value());
-    const auto migrated_json = nlohmann::json::parse(*migrated.bytes);
+    REQUIRE(parsed_legacy.value.has_value());
+    CHECK(parsed_legacy.value->charts.front().sv_recipes.empty());
+    const auto migrated = wormedit::write_native_project(*parsed_legacy.value);
+    REQUIRE(migrated.value.has_value());
+    const auto migrated_json = nlohmann::json::parse(*migrated.value);
     CHECK(migrated_json["document"]["charts"][0]["sv_recipes"].empty());
 
     auto invalid_enum = serialized;
     invalid_enum["document"]["charts"][0]["sv_recipes"][0]["output"] = 255;
     const auto rejected = wormedit::parse_native_project(invalid_enum.dump());
-    CHECK_FALSE(rejected.song.has_value());
+    CHECK_FALSE(rejected.value.has_value());
     CHECK(has_code(rejected.diagnostics,
                    wormedit::native_project_diagnostic_code_t::invalid_document));
 
@@ -733,7 +733,7 @@ TEST_CASE("native projects persist SV recipes but accept older documents without
     oversized_count["document"]["charts"][0]["sv_recipes"][0]["sampling"]["fixed_point_count"] =
         std::uint64_t{1} << 40U;
     const auto rejected_count = wormedit::parse_native_project(oversized_count.dump());
-    CHECK_FALSE(rejected_count.song.has_value());
+    CHECK_FALSE(rejected_count.value.has_value());
     CHECK(has_code(rejected_count.diagnostics,
                    wormedit::native_project_diagnostic_code_t::malformed_json));
 }
@@ -742,37 +742,37 @@ TEST_CASE("native project reads legacy storyboards without a structured model",
           "[unit][format][native-project][storyboard][compatibility]") {
     const auto song = rich_bmson_song();
     const auto written = wormedit::write_native_project(song);
-    REQUIRE(written.bytes.has_value());
+    REQUIRE(written.value.has_value());
 
-    auto legacy_json = nlohmann::json::parse(*written.bytes);
+    auto legacy_json = nlohmann::json::parse(*written.value);
     legacy_json["document"]["storyboards"][0].erase("model");
     const auto parsed = wormedit::parse_native_project(legacy_json.dump());
-    REQUIRE(parsed.song.has_value());
-    CHECK_FALSE(parsed.song->storyboards.front().model.has_value());
-    CHECK(parsed.song->storyboards.front().retained_source_lines ==
+    REQUIRE(parsed.value.has_value());
+    CHECK_FALSE(parsed.value->storyboards.front().model.has_value());
+    CHECK(parsed.value->storyboards.front().retained_source_lines ==
           song.storyboards.front().retained_source_lines);
 
-    const auto migrated = wormedit::write_native_project(*parsed.song);
-    REQUIRE(migrated.bytes.has_value());
-    const auto reparsed = wormedit::parse_native_project(*migrated.bytes);
-    REQUIRE(reparsed.song.has_value());
-    CHECK_FALSE(reparsed.song->storyboards.front().model.has_value());
-    CHECK(reparsed.song->storyboards.front().retained_source_lines ==
+    const auto migrated = wormedit::write_native_project(*parsed.value);
+    REQUIRE(migrated.value.has_value());
+    const auto reparsed = wormedit::parse_native_project(*migrated.value);
+    REQUIRE(reparsed.value.has_value());
+    CHECK_FALSE(reparsed.value->storyboards.front().model.has_value());
+    CHECK(reparsed.value->storyboards.front().retained_source_lines ==
           song.storyboards.front().retained_source_lines);
-    const auto rewritten = wormedit::write_native_project(*reparsed.song);
-    REQUIRE(rewritten.bytes.has_value());
-    CHECK(*rewritten.bytes == *migrated.bytes);
+    const auto rewritten = wormedit::write_native_project(*reparsed.value);
+    REQUIRE(rewritten.value.has_value());
+    CHECK(*rewritten.value == *migrated.value);
 
     legacy_json["document"]["storyboards"][0]["future_field"] = true;
     const auto unknown = wormedit::parse_native_project(legacy_json.dump());
-    CHECK_FALSE(unknown.song.has_value());
+    CHECK_FALSE(unknown.value.has_value());
     CHECK(
         has_code(unknown.diagnostics, wormedit::native_project_diagnostic_code_t::malformed_json));
 
     legacy_json["document"]["storyboards"][0].erase("future_field");
     legacy_json["document"]["storyboards"][0].erase("name");
     const auto missing_required_field = wormedit::parse_native_project(legacy_json.dump());
-    CHECK_FALSE(missing_required_field.song.has_value());
+    CHECK_FALSE(missing_required_field.value.has_value());
     CHECK(has_code(missing_required_field.diagnostics,
                    wormedit::native_project_diagnostic_code_t::malformed_json));
 }
@@ -791,7 +791,7 @@ TEST_CASE("native storyboard models validate enums, paths, and loop depth",
         .command.opcode = static_cast<wormedit::storyboard_opcode_t>(255);
     CHECK_FALSE(wormedit::validate_document(invalid_opcode_song).empty());
     const auto invalid_opcode_write = wormedit::write_native_project(invalid_opcode_song);
-    CHECK_FALSE(invalid_opcode_write.bytes.has_value());
+    CHECK_FALSE(invalid_opcode_write.value.has_value());
     CHECK(has_code(invalid_opcode_write.diagnostics,
                    wormedit::native_project_diagnostic_code_t::invalid_document));
 
@@ -799,7 +799,7 @@ TEST_CASE("native storyboard models validate enums, paths, and loop depth",
     long_path_song.storyboards.front().model->sprites.front().path.assign(4 * 1024 + 1, 'p');
     CHECK_FALSE(wormedit::validate_document(long_path_song).empty());
     const auto long_path_write = wormedit::write_native_project(long_path_song);
-    CHECK_FALSE(long_path_write.bytes.has_value());
+    CHECK_FALSE(long_path_write.value.has_value());
     CHECK(has_code(long_path_write.diagnostics,
                    wormedit::native_project_diagnostic_code_t::invalid_document));
 
@@ -818,7 +818,7 @@ TEST_CASE("native storyboard models validate enums, paths, and loop depth",
     destination->push_back(std::move(retained));
     CHECK_FALSE(wormedit::validate_document(deep_song).empty());
     const auto deep_write = wormedit::write_native_project(deep_song);
-    CHECK_FALSE(deep_write.bytes.has_value());
+    CHECK_FALSE(deep_write.value.has_value());
     CHECK(has_code(deep_write.diagnostics,
                    wormedit::native_project_diagnostic_code_t::invalid_document));
 }
@@ -833,10 +833,10 @@ TEST_CASE("native project retains BMS source bytes and complete control trees",
     REQUIRE(imported.song->charts.front().bms_control_tree.has_value());
 
     const auto written = wormedit::write_native_project(*imported.song);
-    REQUIRE(written.bytes.has_value());
-    const auto reparsed = wormedit::parse_native_project(*written.bytes);
-    REQUIRE(reparsed.song.has_value());
-    const auto& chart = reparsed.song->charts.front();
+    REQUIRE(written.value.has_value());
+    const auto reparsed = wormedit::parse_native_project(*written.value);
+    REQUIRE(reparsed.value.has_value());
+    const auto& chart = reparsed.value->charts.front();
     REQUIRE(chart.bms_control_tree.has_value());
     CHECK(chart.bms_control_tree->children.size() ==
           imported.song->charts.front().bms_control_tree->children.size());
@@ -844,146 +844,146 @@ TEST_CASE("native project retains BMS source bytes and complete control trees",
     REQUIRE(chart.metadata.format_groups.front().encoding.original_bytes != nullptr);
     CHECK(*chart.metadata.format_groups.front().encoding.original_bytes == source);
 
-    const auto rewritten = wormedit::write_native_project(*reparsed.song);
-    REQUIRE(rewritten.bytes.has_value());
-    CHECK(*rewritten.bytes == *written.bytes);
+    const auto rewritten = wormedit::write_native_project(*reparsed.value);
+    REQUIRE(rewritten.value.has_value());
+    CHECK(*rewritten.value == *written.value);
 }
 
 TEST_CASE("native project rejects malformed, unsupported, over-limit, and invalid payloads",
           "[unit][format][native-project][negative]") {
     const auto malformed = wormedit::parse_native_project("{");
-    CHECK_FALSE(malformed.song.has_value());
+    CHECK_FALSE(malformed.value.has_value());
     CHECK(has_code(malformed.diagnostics,
                    wormedit::native_project_diagnostic_code_t::malformed_json));
 
     const auto song = rich_bmson_song();
     const auto written = wormedit::write_native_project(song);
-    REQUIRE(written.bytes.has_value());
+    REQUIRE(written.value.has_value());
 
-    auto unsupported_json = nlohmann::json::parse(*written.bytes);
+    auto unsupported_json = nlohmann::json::parse(*written.value);
     unsupported_json["format_version"] = 2;
     const auto unsupported = wormedit::parse_native_project(unsupported_json.dump());
-    CHECK_FALSE(unsupported.song.has_value());
+    CHECK_FALSE(unsupported.value.has_value());
     CHECK(has_code(unsupported.diagnostics,
                    wormedit::native_project_diagnostic_code_t::unsupported_version));
 
-    auto unsupported_document_json = nlohmann::json::parse(*written.bytes);
+    auto unsupported_document_json = nlohmann::json::parse(*written.value);
     unsupported_document_json["document"]["schema_version"] = 7;
     const auto unsupported_document =
         wormedit::parse_native_project(unsupported_document_json.dump());
-    CHECK_FALSE(unsupported_document.song.has_value());
+    CHECK_FALSE(unsupported_document.value.has_value());
     CHECK(has_code(unsupported_document.diagnostics,
                    wormedit::native_project_diagnostic_code_t::unsupported_version));
 
-    auto invalid_json = nlohmann::json::parse(*written.bytes);
+    auto invalid_json = nlohmann::json::parse(*written.value);
     invalid_json["document"]["charts"][0]["source_family"] = 999;
     const auto invalid = wormedit::parse_native_project(invalid_json.dump());
-    CHECK_FALSE(invalid.song.has_value());
+    CHECK_FALSE(invalid.value.has_value());
     CHECK(has_code(invalid.diagnostics,
                    wormedit::native_project_diagnostic_code_t::invalid_document));
 
-    auto invalid_storyboard_kind_json = nlohmann::json::parse(*written.bytes);
+    auto invalid_storyboard_kind_json = nlohmann::json::parse(*written.value);
     invalid_storyboard_kind_json["document"]["storyboards"][0]["model"]["sprites"][0]["nodes"][0]
                                 ["kind"] = 255;
     const auto invalid_storyboard_kind =
         wormedit::parse_native_project(invalid_storyboard_kind_json.dump());
-    CHECK_FALSE(invalid_storyboard_kind.song.has_value());
+    CHECK_FALSE(invalid_storyboard_kind.value.has_value());
     CHECK(has_code(invalid_storyboard_kind.diagnostics,
                    wormedit::native_project_diagnostic_code_t::invalid_document));
 
-    auto invalid_storyboard_opcode_json = nlohmann::json::parse(*written.bytes);
+    auto invalid_storyboard_opcode_json = nlohmann::json::parse(*written.value);
     invalid_storyboard_opcode_json["document"]["storyboards"][0]["model"]["sprites"][0]["nodes"][0]
                                   ["children"][0]["children"][0]["command"]["opcode"] = 255;
     const auto invalid_storyboard_opcode =
         wormedit::parse_native_project(invalid_storyboard_opcode_json.dump());
-    CHECK_FALSE(invalid_storyboard_opcode.song.has_value());
+    CHECK_FALSE(invalid_storyboard_opcode.value.has_value());
     CHECK(has_code(invalid_storyboard_opcode.diagnostics,
                    wormedit::native_project_diagnostic_code_t::invalid_document));
 
-    auto integer_storyboard_position_json = nlohmann::json::parse(*written.bytes);
+    auto integer_storyboard_position_json = nlohmann::json::parse(*written.value);
     integer_storyboard_position_json["document"]["storyboards"][0]["model"]["sprites"][0]["x"] =
         320;
     const auto integer_storyboard_position =
         wormedit::parse_native_project(integer_storyboard_position_json.dump());
-    CHECK_FALSE(integer_storyboard_position.song.has_value());
+    CHECK_FALSE(integer_storyboard_position.value.has_value());
     CHECK(has_code(integer_storyboard_position.diagnostics,
                    wormedit::native_project_diagnostic_code_t::malformed_json));
 
-    auto integer_storyboard_value_json = nlohmann::json::parse(*written.bytes);
+    auto integer_storyboard_value_json = nlohmann::json::parse(*written.value);
     integer_storyboard_value_json["document"]["storyboards"][0]["model"]["sprites"][0]["nodes"][0]
                                  ["children"][0]["children"][0]["command"]["from"][0] = 0;
     const auto integer_storyboard_value =
         wormedit::parse_native_project(integer_storyboard_value_json.dump());
-    CHECK_FALSE(integer_storyboard_value.song.has_value());
+    CHECK_FALSE(integer_storyboard_value.value.has_value());
     CHECK(has_code(integer_storyboard_value.diagnostics,
                    wormedit::native_project_diagnostic_code_t::malformed_json));
 
-    auto oversized_storyboard_time_json = nlohmann::json::parse(*written.bytes);
+    auto oversized_storyboard_time_json = nlohmann::json::parse(*written.value);
     oversized_storyboard_time_json["document"]["storyboards"][0]["model"]["sprites"][0]["nodes"][0]
                                   ["children"][0]["children"][0]["command"]["start_time_ms"] =
                                       18'446'744'073'709'551'615ULL;
     const auto oversized_storyboard_time =
         wormedit::parse_native_project(oversized_storyboard_time_json.dump());
-    CHECK_FALSE(oversized_storyboard_time.song.has_value());
+    CHECK_FALSE(oversized_storyboard_time.value.has_value());
     CHECK(has_code(oversized_storyboard_time.diagnostics,
                    wormedit::native_project_diagnostic_code_t::malformed_json));
 
-    auto oversized_storyboard_path_json = nlohmann::json::parse(*written.bytes);
+    auto oversized_storyboard_path_json = nlohmann::json::parse(*written.value);
     oversized_storyboard_path_json["document"]["storyboards"][0]["model"]["sprites"][0]["path"] =
         std::string(4 * 1024 + 1, 'p');
     const auto oversized_storyboard_path =
         wormedit::parse_native_project(oversized_storyboard_path_json.dump());
-    CHECK_FALSE(oversized_storyboard_path.song.has_value());
+    CHECK_FALSE(oversized_storyboard_path.value.has_value());
     CHECK(has_code(oversized_storyboard_path.diagnostics,
                    wormedit::native_project_diagnostic_code_t::invalid_document));
 
-    auto fractional_integer_json = nlohmann::json::parse(*written.bytes);
+    auto fractional_integer_json = nlohmann::json::parse(*written.value);
     fractional_integer_json["document"]["schema_version"] = 1.5;
     const auto fractional_integer = wormedit::parse_native_project(fractional_integer_json.dump());
-    CHECK_FALSE(fractional_integer.song.has_value());
+    CHECK_FALSE(fractional_integer.value.has_value());
     CHECK(has_code(fractional_integer.diagnostics,
                    wormedit::native_project_diagnostic_code_t::malformed_json));
 
-    auto negative_id_json = nlohmann::json::parse(*written.bytes);
+    auto negative_id_json = nlohmann::json::parse(*written.value);
     negative_id_json["document"]["id"] = -1;
     const auto negative_id = wormedit::parse_native_project(negative_id_json.dump());
-    CHECK_FALSE(negative_id.song.has_value());
+    CHECK_FALSE(negative_id.value.has_value());
     CHECK(has_code(negative_id.diagnostics,
                    wormedit::native_project_diagnostic_code_t::malformed_json));
 
-    auto unknown_field_json = nlohmann::json::parse(*written.bytes);
+    auto unknown_field_json = nlohmann::json::parse(*written.value);
     unknown_field_json["document"]["future_field"] = true;
     const auto unknown_field = wormedit::parse_native_project(unknown_field_json.dump());
-    CHECK_FALSE(unknown_field.song.has_value());
+    CHECK_FALSE(unknown_field.value.has_value());
     CHECK(has_code(unknown_field.diagnostics,
                    wormedit::native_project_diagnostic_code_t::malformed_json));
 
-    auto unknown_envelope_field_json = nlohmann::json::parse(*written.bytes);
+    auto unknown_envelope_field_json = nlohmann::json::parse(*written.value);
     unknown_envelope_field_json["future_envelope_field"] = true;
     const auto unknown_envelope_field =
         wormedit::parse_native_project(unknown_envelope_field_json.dump());
-    CHECK_FALSE(unknown_envelope_field.song.has_value());
+    CHECK_FALSE(unknown_envelope_field.value.has_value());
     CHECK(has_code(unknown_envelope_field.diagnostics,
                    wormedit::native_project_diagnostic_code_t::malformed_json));
 
     wormedit::native_project_limits_t byte_limit;
-    byte_limit.maximum_source_bytes = written.bytes->size() - 1;
-    const auto over_limit = wormedit::parse_native_project(*written.bytes, byte_limit);
-    CHECK_FALSE(over_limit.song.has_value());
+    byte_limit.maximum_source_bytes = written.value->size() - 1;
+    const auto over_limit = wormedit::parse_native_project(*written.value, byte_limit);
+    CHECK_FALSE(over_limit.value.has_value());
     CHECK(has_code(over_limit.diagnostics,
                    wormedit::native_project_diagnostic_code_t::resource_limit));
 
     wormedit::native_project_limits_t node_limit;
     node_limit.maximum_json_nodes = 4;
-    const auto too_many_nodes = wormedit::parse_native_project(*written.bytes, node_limit);
-    CHECK_FALSE(too_many_nodes.song.has_value());
+    const auto too_many_nodes = wormedit::parse_native_project(*written.value, node_limit);
+    CHECK_FALSE(too_many_nodes.value.has_value());
     CHECK(has_code(too_many_nodes.diagnostics,
                    wormedit::native_project_diagnostic_code_t::resource_limit));
 
     wormedit::native_project_limits_t depth_limit;
     depth_limit.maximum_nesting_depth = 1;
     const auto deep_write = wormedit::write_native_project(song, depth_limit);
-    CHECK_FALSE(deep_write.bytes.has_value());
+    CHECK_FALSE(deep_write.value.has_value());
     CHECK(has_code(deep_write.diagnostics,
                    wormedit::native_project_diagnostic_code_t::resource_limit));
 }
@@ -1018,7 +1018,7 @@ auto failing_migration(nlohmann::json&) -> std::string {
 
 auto legacy_project_bytes() -> std::string {
     const auto written = wormedit::write_native_project(rich_bmson_song());
-    auto root = nlohmann::json::parse(*written.bytes);
+    auto root = nlohmann::json::parse(*written.value);
     root["document"]["schema_version"] = 1;
     root["document"]["legacy_title"] = "old";
     return root.dump();
@@ -1031,8 +1031,8 @@ TEST_CASE("native project migrations: the current schema passes through the defa
     CHECK(internal::default_migrations().front().from_version == 1);
     CHECK(internal::default_migrations().back().from_version == 5);
     const auto written = wormedit::write_native_project(rich_bmson_song());
-    REQUIRE(written.bytes.has_value());
-    auto document = nlohmann::json::parse(*written.bytes).at("document");
+    REQUIRE(written.value.has_value());
+    auto document = nlohmann::json::parse(*written.value).at("document");
     REQUIRE(document.at("schema_version") == 6);
     const auto before = document;
     const auto outcome = internal::migrate_document(document, 6, internal::default_migrations());
@@ -1043,49 +1043,49 @@ TEST_CASE("native project migrations: the current schema passes through the defa
 TEST_CASE("native project migrations: schema 1 documents gain current default fields",
           "[unit][format][native-project][migration][sv-recipe]") {
     const auto written = wormedit::write_native_project(rich_bmson_song());
-    REQUIRE(written.bytes.has_value());
-    auto root = nlohmann::json::parse(*written.bytes);
+    REQUIRE(written.value.has_value());
+    auto root = nlohmann::json::parse(*written.value);
     auto& recipe = root["document"]["charts"][0]["sv_recipes"][0];
     recipe.erase("expression_source");
     root["document"]["schema_version"] = 1;
 
     const auto parsed = wormedit::parse_native_project(root.dump());
-    REQUIRE(parsed.song.has_value());
-    CHECK(parsed.song->schema_version == 6);
-    CHECK(parsed.song->charts.front().sv_recipes.front().expression_source.empty());
-    const auto rewritten = wormedit::write_native_project(*parsed.song);
-    REQUIRE(rewritten.bytes.has_value());
+    REQUIRE(parsed.value.has_value());
+    CHECK(parsed.value->schema_version == 6);
+    CHECK(parsed.value->charts.front().sv_recipes.front().expression_source.empty());
+    const auto rewritten = wormedit::write_native_project(*parsed.value);
+    REQUIRE(rewritten.value.has_value());
 
     // A schema 1 file with malformed recipe structure still rejects.
     auto malformed = root;
     malformed["document"]["charts"][0]["sv_recipes"] = 5;
-    CHECK_FALSE(wormedit::parse_native_project(malformed.dump()).song.has_value());
+    CHECK_FALSE(wormedit::parse_native_project(malformed.dump()).value.has_value());
 }
 
 TEST_CASE("native project schema 1 migration supplies empty quantization presets",
           "[unit][format][native-project][migration][quantize-preset]") {
     const auto written = wormedit::write_native_project(rich_bmson_song());
-    REQUIRE(written.bytes.has_value());
-    auto root = nlohmann::json::parse(*written.bytes);
+    REQUIRE(written.value.has_value());
+    auto root = nlohmann::json::parse(*written.value);
     root["document"].erase("quantization_presets");
     root["document"]["schema_version"] = 1;
     const auto parsed = wormedit::parse_native_project(root.dump());
-    REQUIRE(parsed.song.has_value());
-    CHECK(parsed.song->quantization_presets.empty());
+    REQUIRE(parsed.value.has_value());
+    CHECK(parsed.value->quantization_presets.empty());
 }
 
 TEST_CASE("native project schema 2 migration adds an empty preset list",
           "[unit][format][native-project][migration][quantize-preset]") {
     const auto written = wormedit::write_native_project(rich_bmson_song());
-    REQUIRE(written.bytes.has_value());
-    auto root = nlohmann::json::parse(*written.bytes);
+    REQUIRE(written.value.has_value());
+    auto root = nlohmann::json::parse(*written.value);
     root["document"].erase("quantization_presets");
     root["document"]["schema_version"] = 2;
 
     const auto parsed = wormedit::parse_native_project(root.dump());
-    REQUIRE(parsed.song.has_value());
-    CHECK(parsed.song->schema_version == 6);
-    CHECK(parsed.song->quantization_presets.empty());
+    REQUIRE(parsed.value.has_value());
+    CHECK(parsed.value->schema_version == 6);
+    CHECK(parsed.value->quantization_presets.empty());
 }
 
 TEST_CASE("native project upgrades schema 2 in-memory documents without losing presets",
@@ -1093,12 +1093,12 @@ TEST_CASE("native project upgrades schema 2 in-memory documents without losing p
     auto song = rich_bmson_song();
     song.schema_version = 2;
     const auto written = wormedit::write_native_project(song);
-    REQUIRE(written.bytes.has_value());
-    const auto root = nlohmann::json::parse(*written.bytes);
+    REQUIRE(written.value.has_value());
+    const auto root = nlohmann::json::parse(*written.value);
     CHECK(root["document"]["schema_version"] == 6);
-    const auto parsed = wormedit::parse_native_project(*written.bytes);
-    REQUIRE(parsed.song.has_value());
-    CHECK(parsed.song->quantization_presets == song.quantization_presets);
+    const auto parsed = wormedit::parse_native_project(*written.value);
+    REQUIRE(parsed.value.has_value());
+    CHECK(parsed.value->quantization_presets == song.quantization_presets);
 }
 
 TEST_CASE("native schema 3 migration recovers Layer 2 only from BMS 0A provenance",
@@ -1118,13 +1118,13 @@ TEST_CASE("native project rejects preset names with embedded null bytes",
           "[unit][format][native-project][quantize-preset][negative]") {
     auto song = rich_bmson_song();
     const auto written = wormedit::write_native_project(song);
-    REQUIRE(written.bytes.has_value());
+    REQUIRE(written.value.has_value());
     const std::string name("Grid\0hidden", 11);
     song.quantization_presets.front().name = name;
-    CHECK_FALSE(wormedit::write_native_project(song).bytes.has_value());
-    auto root = nlohmann::json::parse(*written.bytes);
+    CHECK_FALSE(wormedit::write_native_project(song).value.has_value());
+    auto root = nlohmann::json::parse(*written.value);
     root["document"]["quantization_presets"][0]["name"] = name;
-    CHECK_FALSE(wormedit::parse_native_project(root.dump()).song.has_value());
+    CHECK_FALSE(wormedit::parse_native_project(root.dump()).value.has_value());
 }
 
 TEST_CASE("native project rejects duplicate or invalid quantization presets",
@@ -1132,19 +1132,19 @@ TEST_CASE("native project rejects duplicate or invalid quantization presets",
     auto song = rich_bmson_song();
     song.quantization_presets.push_back(song.quantization_presets.front());
     const auto duplicate_write = wormedit::write_native_project(song);
-    CHECK_FALSE(duplicate_write.bytes.has_value());
+    CHECK_FALSE(duplicate_write.value.has_value());
 
     const auto valid_write = wormedit::write_native_project(rich_bmson_song());
-    REQUIRE(valid_write.bytes.has_value());
-    auto duplicate_json = nlohmann::json::parse(*valid_write.bytes);
+    REQUIRE(valid_write.value.has_value());
+    auto duplicate_json = nlohmann::json::parse(*valid_write.value);
     auto& presets = duplicate_json["document"]["quantization_presets"];
     presets.push_back(presets.front());
-    CHECK_FALSE(wormedit::parse_native_project(duplicate_json.dump()).song.has_value());
+    CHECK_FALSE(wormedit::parse_native_project(duplicate_json.dump()).value.has_value());
 
     auto valid = rich_bmson_song();
     valid.quantization_presets.front().divisions = 0;
     const auto invalid_write = wormedit::write_native_project(valid);
-    CHECK_FALSE(invalid_write.bytes.has_value());
+    CHECK_FALSE(invalid_write.value.has_value());
 }
 
 TEST_CASE("native project migrations: a legacy document migrates through the injected table",
@@ -1154,15 +1154,15 @@ TEST_CASE("native project migrations: a legacy document migrates through the inj
 
     // The released table does not know the extra field, so the legacy document is rejected.
     const auto rejected = wormedit::parse_native_project(bytes);
-    CHECK_FALSE(rejected.song.has_value());
+    CHECK_FALSE(rejected.value.has_value());
 
     const auto migrated =
         internal::parse_native_project_with_migrations(bytes, {}, 2, table);
-    REQUIRE(migrated.song.has_value());
-    CHECK(migrated.song->schema_version == 2);
-    const auto rewritten = wormedit::write_native_project(*migrated.song);
-    REQUIRE(rewritten.bytes.has_value());
-    CHECK(rewritten.bytes == wormedit::write_native_project(rich_bmson_song()).bytes);
+    REQUIRE(migrated.value.has_value());
+    CHECK(migrated.value->schema_version == 2);
+    const auto rewritten = wormedit::write_native_project(*migrated.value);
+    REQUIRE(rewritten.value.has_value());
+    CHECK(rewritten.value == wormedit::write_native_project(rich_bmson_song()).value);
 }
 
 TEST_CASE("native project migrations: steps run in order and stop at the target",
@@ -1207,7 +1207,7 @@ TEST_CASE("native project migrations: a failing step publishes no document",
     const std::array<internal::migration_t, 1> table{{{1, &failing_migration}}};
     const auto result =
         internal::parse_native_project_with_migrations(legacy_project_bytes(), {}, 2, table);
-    CHECK_FALSE(result.song.has_value());
+    CHECK_FALSE(result.value.has_value());
     CHECK(has_code(result.diagnostics,
                    wormedit::native_project_diagnostic_code_t::invalid_document));
 
@@ -1225,15 +1225,15 @@ TEST_CASE("native projects store lane key colors, derive them for older files, a
     layout.profile_id = "bme-7k-outside-scratch";
     layout.lanes.front().key_color = wormedit::lane_key_color_t::black;
     const auto written = wormedit::write_native_project(song);
-    REQUIRE(written.bytes.has_value());
-    const auto serialized = nlohmann::json::parse(*written.bytes);
+    REQUIRE(written.value.has_value());
+    const auto serialized = nlohmann::json::parse(*written.value);
     const auto& lanes_json =
         serialized["document"]["charts"][0]["lane_layouts"][0]["layout"]["lanes"];
     CHECK(lanes_json[0]["key_color"] == static_cast<int>(wormedit::lane_key_color_t::black));
 
-    const auto round_trip = wormedit::parse_native_project(*written.bytes);
-    REQUIRE(round_trip.song.has_value());
-    CHECK(round_trip.song->charts.front().lane_layouts.front().layout.lanes.front().key_color ==
+    const auto round_trip = wormedit::parse_native_project(*written.value);
+    REQUIRE(round_trip.value.has_value());
+    CHECK(round_trip.value->charts.front().lane_layouts.front().layout.lanes.front().key_color ==
           wormedit::lane_key_color_t::black);
 
     auto legacy = serialized;
@@ -1241,8 +1241,8 @@ TEST_CASE("native projects store lane key colors, derive them for older files, a
         lane.erase("key_color");
     }
     const auto parsed_legacy = wormedit::parse_native_project(legacy.dump());
-    REQUIRE(parsed_legacy.song.has_value());
-    const auto& derived = parsed_legacy.song->charts.front().lane_layouts.front().layout;
+    REQUIRE(parsed_legacy.value.has_value());
+    const auto& derived = parsed_legacy.value->charts.front().lane_layouts.front().layout;
     CHECK(std::ranges::all_of(derived.lanes, [](const auto& lane) {
         return lane.key_color != wormedit::lane_key_color_t::pms_red;
     }));
@@ -1250,7 +1250,7 @@ TEST_CASE("native projects store lane key colors, derive them for older files, a
     auto invalid = serialized;
     invalid["document"]["charts"][0]["lane_layouts"][0]["layout"]["lanes"][0]["key_color"] = 99;
     const auto rejected = wormedit::parse_native_project(invalid.dump());
-    CHECK_FALSE(rejected.song.has_value());
+    CHECK_FALSE(rejected.value.has_value());
 }
 
 TEST_CASE(
@@ -1263,10 +1263,10 @@ TEST_CASE(
         source += R"("},"sound_channels":[]})";
         const auto imported =
             wormedit::parse_bmson_bytes(std::as_bytes(std::span{source.data(), source.size()}));
-        require_bmson_condition(imported.song);
-        const auto saved = wormedit::write_native_project(*imported.song);
-        require_bmson_condition(saved.bytes);
-        auto old_project = nlohmann::json::parse(*saved.bytes);
+        require_bmson_condition(imported.value);
+        const auto saved = wormedit::write_native_project(*imported.value);
+        require_bmson_condition(saved.value);
+        auto old_project = nlohmann::json::parse(*saved.value);
         auto& lanes_json =
             old_project["document"]["charts"][0]["lane_layouts"][0]["layout"]["lanes"];
         for (auto& lane : lanes_json) {
@@ -1280,8 +1280,8 @@ TEST_CASE(
         });
         lanes_json = sorted_lanes;
         const auto repaired = wormedit::parse_native_project(old_project.dump());
-        require_bmson_condition(repaired.song);
-        const auto& layout = repaired.song->charts.front().lane_layouts.front().layout;
+        require_bmson_condition(repaired.value);
+        const auto& layout = repaired.value->charts.front().lane_layouts.front().layout;
         constexpr std::uint32_t key_count = 7;
         require_bmson_condition(layout.lanes.size() == (mode == std::string_view{"beat-14k"} ? 16U : 8U));
         const auto scratch = std::ranges::find(layout.lanes, wormedit::lane_id_t{100008},
@@ -1320,8 +1320,8 @@ TEST_CASE(
         }
     }
     const auto retained = wormedit::parse_native_project(authored.dump());
-    require_bmson_condition(retained.song);
-    const auto& retained_layout = retained.song->charts.front().lane_layouts.front().layout;
+    require_bmson_condition(retained.value);
+    const auto& retained_layout = retained.value->charts.front().lane_layouts.front().layout;
     const auto retained_scratch = std::ranges::find(
         retained_layout.lanes, wormedit::lane_id_t{100008}, &wormedit::lane_definition_t::id);
     const auto authored_color = std::ranges::find(
@@ -1373,10 +1373,10 @@ auto legacy_bgm_song() -> wormedit::song_document_t {
 TEST_CASE("native projects saved with per-line BGM lanes and 00 events load as columns",
           "[unit][format][native-project][bgm-columns]") {
     const auto written = wormedit::write_native_project(legacy_bgm_song());
-    REQUIRE(written.bytes.has_value());
-    const auto parsed = wormedit::parse_native_project(*written.bytes);
-    REQUIRE(parsed.song.has_value());
-    const auto& chart = parsed.song->charts.front();
+    REQUIRE(written.value.has_value());
+    const auto parsed = wormedit::parse_native_project(*written.value);
+    REQUIRE(parsed.value.has_value());
+    const auto& chart = parsed.value->charts.front();
 
     REQUIRE(chart.bgm_source_lanes.size() == 2);
     CHECK(chart.bgm_source_lanes[0].name == "BGM 1");
@@ -1390,7 +1390,7 @@ TEST_CASE("native projects saved with per-line BGM lanes and 00 events load as c
     CHECK(chart.measures[1].bgm_events.front().source_lane == chart.bgm_source_lanes[0].id);
     CHECK(chart.measures[0].bgm_events[1].source_lane == chart.bgm_source_lanes[1].id);
 
-    auto again = *parsed.song;
+    auto again = *parsed.value;
     CHECK_FALSE(wormedit::native_project_internal::normalize_legacy_bms_bgm(again));
 }
 
@@ -1429,14 +1429,14 @@ TEST_CASE("native projects round-trip Lua expression recipes",
     recipe.expression_source = "return 1 + 0.5 * math.sin(t * math.pi)";
     REQUIRE(wormedit::validate_document(song).empty());
     const auto written = wormedit::write_native_project(song);
-    REQUIRE(written.bytes.has_value());
-    auto serialized = nlohmann::json::parse(*written.bytes);
+    REQUIRE(written.value.has_value());
+    auto serialized = nlohmann::json::parse(*written.value);
     CHECK(serialized["document"]["charts"][0]["sv_recipes"][0]["expression_source"] ==
           recipe.expression_source);
 
-    const auto reparsed = wormedit::parse_native_project(*written.bytes);
-    REQUIRE(reparsed.song.has_value());
-    const auto& loaded = reparsed.song->charts.front().sv_recipes.front();
+    const auto reparsed = wormedit::parse_native_project(*written.value);
+    REQUIRE(reparsed.value.has_value());
+    const auto& loaded = reparsed.value->charts.front().sv_recipes.front();
     CHECK(loaded.curve == wormedit::sv_recipe_curve_t::lua_expression);
     CHECK(loaded.expression_source == recipe.expression_source);
 }
@@ -1446,23 +1446,23 @@ TEST_CASE("native projects persist sound kind and tags only when set",
     auto song = unclassified_bmson_song();
     REQUIRE_FALSE(song.resources.empty());
     const auto plain = wormedit::write_native_project(song);
-    REQUIRE(plain.bytes.has_value());
-    CHECK(plain.bytes->find("\"sound_kind\"") == std::string::npos);
-    CHECK(plain.bytes->find("\"tags\"") == std::string::npos);
-    const auto legacy = wormedit::parse_native_project(*plain.bytes);
-    REQUIRE(legacy.song.has_value());
-    CHECK(legacy.song->resources.front().sound_kind == wormedit::sound_kind_t::unspecified);
-    CHECK(legacy.song->resources.front().tags.empty());
+    REQUIRE(plain.value.has_value());
+    CHECK(plain.value->find("\"sound_kind\"") == std::string::npos);
+    CHECK(plain.value->find("\"tags\"") == std::string::npos);
+    const auto legacy = wormedit::parse_native_project(*plain.value);
+    REQUIRE(legacy.value.has_value());
+    CHECK(legacy.value->resources.front().sound_kind == wormedit::sound_kind_t::unspecified);
+    CHECK(legacy.value->resources.front().tags.empty());
 
     song.resources.front().sound_kind = wormedit::sound_kind_t::stem;
     song.resources.front().tags = {"drums", "Loop"};
     const auto written = wormedit::write_native_project(song);
-    REQUIRE(written.bytes.has_value());
-    const auto parsed = wormedit::parse_native_project(*written.bytes);
-    REQUIRE(parsed.song.has_value());
-    CHECK(parsed.song->resources.front().sound_kind == wormedit::sound_kind_t::stem);
-    CHECK(parsed.song->resources.front().tags == std::vector<std::string>{"drums", "Loop"});
-    CHECK(*wormedit::write_native_project(*parsed.song).bytes == *written.bytes);
+    REQUIRE(written.value.has_value());
+    const auto parsed = wormedit::parse_native_project(*written.value);
+    REQUIRE(parsed.value.has_value());
+    CHECK(parsed.value->resources.front().sound_kind == wormedit::sound_kind_t::stem);
+    CHECK(parsed.value->resources.front().tags == std::vector<std::string>{"drums", "Loop"});
+    CHECK(*wormedit::write_native_project(*parsed.value).value == *written.value);
 }
 
 TEST_CASE("native projects persist chart sound layer defaults only when set",
@@ -1473,58 +1473,58 @@ TEST_CASE("native projects persist chart sound layer defaults only when set",
     chart.semantic_layers.push_back({.id = wormedit::layer_id_t{700}, .name = "Vocal"});
     chart.semantic_layers.push_back({.id = wormedit::layer_id_t{800}, .name = "Drums"});
     const auto plain = wormedit::write_native_project(song);
-    REQUIRE(plain.bytes.has_value());
-    CHECK(plain.bytes->find("\"sound_layer_defaults\"") == std::string::npos);
-    const auto legacy = wormedit::parse_native_project(*plain.bytes);
-    REQUIRE(legacy.song.has_value());
-    CHECK(legacy.song->charts.front().sound_layer_defaults.empty());
+    REQUIRE(plain.value.has_value());
+    CHECK(plain.value->find("\"sound_layer_defaults\"") == std::string::npos);
+    const auto legacy = wormedit::parse_native_project(*plain.value);
+    REQUIRE(legacy.value.has_value());
+    CHECK(legacy.value->charts.front().sound_layer_defaults.empty());
 
     chart.sound_layer_defaults = {{.resource = song.resources.front().id,
                                    .layers = {wormedit::layer_id_t{800}, wormedit::layer_id_t{700}}}};
     const auto written = wormedit::write_native_project(song);
-    REQUIRE(written.bytes.has_value());
-    const auto parsed = wormedit::parse_native_project(*written.bytes);
-    REQUIRE(parsed.song.has_value());
-    CHECK(parsed.song->charts.front().sound_layer_defaults == chart.sound_layer_defaults);
-    CHECK(*wormedit::write_native_project(*parsed.song).bytes == *written.bytes);
+    REQUIRE(written.value.has_value());
+    const auto parsed = wormedit::parse_native_project(*written.value);
+    REQUIRE(parsed.value.has_value());
+    CHECK(parsed.value->charts.front().sound_layer_defaults == chart.sound_layer_defaults);
+    CHECK(*wormedit::write_native_project(*parsed.value).value == *written.value);
 }
 
 TEST_CASE("native BMSON color repair preserves authored lane order", "[unit][format][native-project][key-color]") {
     const std::string source = R"({"version":"1.0.0","info":{"init_bpm":120,
         "mode_hint":"beat-5k"},"sound_channels":[]})";
     const auto imported = wormedit::parse_bmson_bytes(std::as_bytes(std::span{source.data(), source.size()}));
-    require_bmson_condition(imported.song);
-    const auto saved = wormedit::write_native_project(*imported.song);
-    require_bmson_condition(saved.bytes);
-    auto project = nlohmann::json::parse(*saved.bytes);
+    require_bmson_condition(imported.value);
+    const auto saved = wormedit::write_native_project(*imported.value);
+    require_bmson_condition(saved.value);
+    auto project = nlohmann::json::parse(*saved.value);
     auto& lanes = project["document"]["charts"][0]["lane_layouts"][0]["layout"]["lanes"];
     for (auto& lane : lanes) lane["key_color"] = static_cast<int>(wormedit::lane_key_color_t::generic);
     lanes[0]["display_order"] = 77;
     const auto reopened = wormedit::parse_native_project(project.dump());
-    require_bmson_condition(reopened.song);
-    check_bmson_condition(reopened.song->charts.front().lane_layouts.front().layout.lanes[0].display_order == 77);
+    require_bmson_condition(reopened.value);
+    check_bmson_condition(reopened.value->charts.front().lane_layouts.front().layout.lanes[0].display_order == 77);
 }
 
 TEST_CASE("native project rejects malformed UTF-8 preset names", "[unit][format][native-project][negative]") {
     auto song = rich_bmson_song();
     song.quantization_presets.front().name = "\xc0\x80";
-    CHECK_FALSE(wormedit::write_native_project(song).bytes.has_value());
+    CHECK_FALSE(wormedit::write_native_project(song).value.has_value());
 }
 
 namespace {
-auto has_warning_native_codec_adapters() -> bool {
+auto has_warning_native_codec_outcomes() -> bool {
     const wormedit::native_project_diagnostic_t warning{wormedit::diagnostic_severity_t::warning,
         wormedit::native_project_diagnostic_code_t::invalid_document, "warning", "$.document"};
     wormedit::native_project_write_outcome_t written{.value = std::string{"bytes"}, .diagnostics = {warning}};
     wormedit::native_project_parse_outcome_t parsed{.diagnostics = {warning}};
     if (!written.ok() || !parsed.ok()) return false;
-    const auto raw_write = wormedit::native_project_write_result_t::from(std::move(written));
-    const auto raw_parse = wormedit::native_project_parse_result_t::from(std::move(parsed));
-    return raw_write.bytes.has_value() && !raw_write.has_errors() && !raw_parse.song &&
-        !raw_parse.has_errors() && raw_write.diagnostics.size() == 1 && raw_parse.diagnostics.size() == 1 &&
+    const auto raw_write = std::move(written);
+    const auto raw_parse = std::move(parsed);
+    return raw_write.value.has_value() && raw_write.ok() && !raw_parse.value &&
+        raw_parse.ok() && raw_write.diagnostics.size() == 1 && raw_parse.diagnostics.size() == 1 &&
         raw_write.diagnostics.front().message == "warning" && raw_parse.diagnostics.front().path == "$.document";
 }
 } // namespace
-TEST_CASE("native-codec adapters retain warning severity independently of payload presence", "[core][native-project][results]") {
-    CHECK(has_warning_native_codec_adapters());
+TEST_CASE("native-codec outcomes retain warning severity independently of payload presence", "[core][native-project][results]") {
+    CHECK(has_warning_native_codec_outcomes());
 }

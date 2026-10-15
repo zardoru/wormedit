@@ -237,8 +237,8 @@ auto sound_import_song() -> wormedit::song_document_t {
     const std::string bytes{std::istreambuf_iterator<char>(stream),
                             std::istreambuf_iterator<char>()};
     const auto parsed = wormedit::parse_bmson_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
-    REQUIRE(parsed.song);
-    return *parsed.song;
+    REQUIRE(parsed.value);
+    return *parsed.value;
 }
 
 struct SoundImportDispatchFixture {
@@ -961,7 +961,7 @@ TEST_CASE("application command selection clear invokes producer-owned cursor res
           "[unit][sys][application_commands][notifications]") {
     TimingInsertFixture fixture;
     int restored{};
-    const auto original = wormedit::write_native_project(fixture.fixture.history.document).bytes;
+    const auto original = wormedit::write_native_project(fixture.fixture.history.document).value;
     fixture.application_state.services.transport_inline_active = [] { return true; };
     fixture.application_state.services.transport_cancel_restore = [&] {
         ++restored;
@@ -975,7 +975,7 @@ TEST_CASE("application command selection clear invokes producer-owned cursor res
     const auto entries = fixture.center.snapshot(4);
     REQUIRE(entries.size() == 1);
     CHECK(entries.front().message == "Chart preview stopped; cursor restored.");
-    CHECK(wormedit::write_native_project(fixture.fixture.history.document).bytes == original);
+    CHECK(wormedit::write_native_project(fixture.fixture.history.document).value == original);
 }
 
 TEST_CASE("application command notification severity preserves original rejection diagnostic",
@@ -1044,12 +1044,12 @@ TEST_CASE("Application layer commands replace membership and reject locked sourc
         TimingInsertFixture fixture;
         seed_layer_commands(fixture, locked);
         fixture.application_state.project.semantic_layer.semantic_layer_target = layer_id_t{8};
-        const auto original = write_native_project(fixture.fixture.history.document).bytes;
+        const auto original = write_native_project(fixture.fixture.history.document).value;
         const auto result = fixture.invoke(application_command_kind_t::semantic_layer_apply);
         check_layer_command(result.value == !locked);
         if (locked) {
             check_layer_command(fixture.latest_message().find("locked") != std::string::npos);
-            check_layer_command(write_native_project(fixture.fixture.history.document).bytes == original);
+            check_layer_command(write_native_project(fixture.fixture.history.document).value == original);
         } else {
             const auto& notes = fixture.fixture.history.document.charts.front().measures.front().notes;
             check_layer_command(notes[0].semantic_layers == std::vector{layer_id_t{8}});
@@ -1112,7 +1112,7 @@ TEST_CASE("next marker reaches an audio-time bookmark through the timing index",
 #else
 namespace {
 void check_area_unchanged(const AreaFixture& fixture, const std::optional<std::string>& original) {
-    CHECK(wormedit::write_native_project(fixture.history.document).bytes == original);
+    CHECK(wormedit::write_native_project(fixture.history.document).value == original);
     CHECK(fixture.history.undo.empty());
     CHECK(fixture.state.selected_notes ==
           std::vector<wormedit::object_id_t>{wormedit::object_id_t{1}});
@@ -1128,7 +1128,7 @@ TEST_CASE("Compose area resizing snaps only the moving edge and leaves edits and
           "[unit][sys][commands]") {
     using namespace wormedit;
     AreaFixture fixture;
-    const auto original = wormedit::write_native_project(fixture.history.document).bytes;
+    const auto original = wormedit::write_native_project(fixture.history.document).value;
     REQUIRE(original);
     const auto selected = fixture.state.selected_objects;
     fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET;
@@ -1142,7 +1142,7 @@ TEST_CASE("Compose area edge crossing normalizes rows and cancellation restores 
           "[unit][sys][commands]") {
     using namespace wormedit;
     AreaFixture fixture;
-    const auto original = wormedit::write_native_project(fixture.history.document).bytes;
+    const auto original = wormedit::write_native_project(fixture.history.document).value;
     REQUIRE(original);
     const auto selected = fixture.state.selected_objects;
     fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET;
@@ -1156,14 +1156,14 @@ TEST_CASE("Compose area edge crossing normalizes rows and cancellation restores 
     fixture.action.compose_area_end_row = 480;
     CHECK(fixture.dispatch() == "Area resize canceled.");
     check_original_area(fixture);
-    CHECK(wormedit::write_native_project(fixture.history.document).bytes == original);
+    CHECK(wormedit::write_native_project(fixture.history.document).value == original);
     CHECK(fixture.state.selected_objects == selected);
 }
 
 TEST_CASE("Compose area actions reject stale sources and extreme rows atomically",
           "[unit][sys][commands]") {
     AreaFixture fixture;
-    const auto original = wormedit::write_native_project(fixture.history.document).bytes;
+    const auto original = wormedit::write_native_project(fixture.history.document).value;
     REQUIRE(original);
     const auto range = fixture.state.retained_selection_range;
     fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET;
@@ -1177,7 +1177,7 @@ TEST_CASE("Compose area actions reject stale sources and extreme rows atomically
         fixture.action.compose_area_end_row = std::numeric_limits<std::uint64_t>::max();
     }
     CHECK(fixture.dispatch() != "Selected area resized.");
-    CHECK(wormedit::write_native_project(fixture.history.document).bytes == original);
+    CHECK(wormedit::write_native_project(fixture.history.document).value == original);
     CHECK(fixture.state.retained_selection_range == range);
     CHECK(fixture.history.undo.empty());
 }
@@ -1216,7 +1216,7 @@ TEST_CASE("Compose area resizing retains virtual canvas rows without materializi
     fixture.history.document.charts.front().source_family = format_family_t::bms;
     fixture.state.retained_selection_range.reset();
     fixture.state.retained_canvas_selection_range = canvas_row_span_t{2400, 4800};
-    const auto original = wormedit::write_native_project(fixture.history.document).bytes;
+    const auto original = wormedit::write_native_project(fixture.history.document).value;
     REQUIRE(original);
     fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET;
     fixture.action.compose_area_virtual = true;
@@ -1228,18 +1228,18 @@ TEST_CASE("Compose area resizing retains virtual canvas rows without materializi
     check_area_unchanged(fixture, original);
     fixture.action.compose_area_end_row = 960000;
     CHECK(fixture.dispatch() != "Selected area resized.");
-    CHECK(wormedit::write_native_project(fixture.history.document).bytes == original);
+    CHECK(wormedit::write_native_project(fixture.history.document).value == original);
 }
 
 TEST_CASE("Compose area deletion rejects unsupported timing atomically", "[unit][sys][commands]") {
     AreaFixture fixture;
     fixture.history.document.charts.front().bpms[1].position.row = 240;
-    const auto original = wormedit::write_native_project(fixture.history.document).bytes;
+    const auto original = wormedit::write_native_project(fixture.history.document).value;
     REQUIRE(original);
     CHECK_FALSE(compose_area_delete_supported(fixture.history, fixture.state));
     fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_DELETE;
     CHECK(fixture.dispatch().find("notes and BGM only") != std::string::npos);
-    CHECK(wormedit::write_native_project(fixture.history.document).bytes == original);
+    CHECK(wormedit::write_native_project(fixture.history.document).value == original);
     CHECK(fixture.history.undo.empty());
 }
 
@@ -1430,7 +1430,7 @@ TEST_CASE("Minimap mapping converts rates offsets snaps and chart endpoints with
     const auto measures = wormedit::build_measure_index(chart);
     REQUIRE(timing);
     REQUIRE(std::holds_alternative<wormedit::measure_index_t>(measures));
-    const auto before = wormedit::write_native_project(fixture.history.document).bytes;
+    const auto before = wormedit::write_native_project(fixture.history.document).value;
     const auto early = compose_minimap_target(0, 48001, 48000, 44100, *timing.index,
         std::get<wormedit::measure_index_t>(measures), 4);
     REQUIRE(early);
@@ -1448,7 +1448,7 @@ TEST_CASE("Minimap mapping converts rates offsets snaps and chart endpoints with
     CHECK(target->snapped_row == 240);
     REQUIRE(move_compose_minimap_cursor(fixture.history, fixture.state, std::get<wormedit::measure_index_t>(measures), *timing.index, *target));
     CHECK((fixture.state.cursor == wormedit::local_position_t{wormedit::measure_id_t{1}, 240}));
-    CHECK(wormedit::write_native_project(fixture.history.document).bytes == before);
+    CHECK(wormedit::write_native_project(fixture.history.document).value == before);
     const auto clamped = compose_minimap_target(1, 72001, 48000, 44100, *timing.index,
         std::get<wormedit::measure_index_t>(measures), 4, 44100);
     REQUIRE(clamped);
@@ -1758,7 +1758,7 @@ TEST_CASE("Compose No layer assigns mixed selection in one step and binds target
     for (const auto& note : fixture.history.document.charts.front().measures.front().notes)
         check_membership(static_cast<bool>(note.semantic_layers.empty()));
     require_membership(static_cast<bool>(undo_document_command(fixture.history)));
-    check_membership(static_cast<bool>(write_native_project(fixture.history.document).bytes == write_native_project(original).bytes));
+    check_membership(static_cast<bool>(write_native_project(fixture.history.document).value == write_native_project(original).value));
 }
 
 TEST_CASE("Compose semantic-layer assignment includes selected BGM events with selected notes",
@@ -1811,7 +1811,7 @@ TEST_CASE("Compose rejected clear and replacement preserve target and selection"
         check_membership(static_cast<bool>(!(none)));
         check_membership(static_cast<bool>(target == layer_id_t{7}));
         check_membership(static_cast<bool>(fixture.state.selected_notes == selection));
-        check_membership(static_cast<bool>(write_native_project(fixture.history.document).bytes == write_native_project(original).bytes));
+        check_membership(static_cast<bool>(write_native_project(fixture.history.document).value == write_native_project(original).value));
         check_membership(static_cast<bool>(fixture.history.undo.empty()));
     }
 }
@@ -1832,7 +1832,7 @@ TEST_CASE("Compose No layer paint clears mixed memberships once and undo restore
     for (const auto& note : fixture.history.document.charts.front().measures.front().notes)
         check_membership(static_cast<bool>(note.semantic_layers.empty()));
     require_membership(static_cast<bool>(undo_document_command(fixture.history)));
-    check_membership(static_cast<bool>(write_native_project(fixture.history.document).bytes == write_native_project(original).bytes));
+    check_membership(static_cast<bool>(write_native_project(fixture.history.document).value == write_native_project(original).value));
 }
 
 TEST_CASE("Compose No layer paint rejects locked membership and exposes status diagnostic",
@@ -1849,7 +1849,7 @@ TEST_CASE("Compose No layer paint rejects locked membership and exposes status d
     require_membership(static_cast<bool>(!(result.diagnostics.empty())));
     check_membership(static_cast<bool>(result.diagnostics.front().message.find("locked") != std::string::npos));
     check_membership(static_cast<bool>(!(fixture.state.pending_semantic_layer_paint_gesture)));
-    check_membership(static_cast<bool>(write_native_project(fixture.history.document).bytes == write_native_project(original).bytes));
+    check_membership(static_cast<bool>(write_native_project(fixture.history.document).value == write_native_project(original).value));
     check_membership(static_cast<bool>(fixture.history.undo.empty()));
     check_membership(static_cast<bool>(fixture.state.selected_notes.size() == 2));
 }
@@ -2388,19 +2388,19 @@ TEST_CASE("Edit menu Delete stages stem and ordinary removal atomically",
         f.compose_state->selected_objects.push_back({editor_selection_object_kind_t::bgm_event, object_id_t{33}});
     }
     require_layer_command(validate_document(history.document).empty());
-    const auto before = write_native_project(history.document).bytes;
+    const auto before = write_native_project(history.document).value;
     const auto selection = f.compose_state->selected_objects;
     const auto result = f.invoke(application_command_kind_t::edit_delete);
     check_layer_command(result.value != blocked);
     check_layer_command(history.undo.size() == (blocked ? 0 : 1));
     if (blocked) {
-        check_layer_command(write_native_project(history.document).bytes == before);
+        check_layer_command(write_native_project(history.document).value == before);
         check_layer_command(f.compose_state->selected_objects == selection);
     } else {
         check_layer_command(history.document.charts.front().measures.front().notes.empty());
         check_layer_command(history.document.charts.front().measures.front().bgm_events.size() == 1);
         require_layer_command(undo_document_command(history));
-        check_layer_command(write_native_project(history.document).bytes == before);
+        check_layer_command(write_native_project(history.document).value == before);
     }
 }
 #endif
@@ -2544,7 +2544,7 @@ TEST_CASE("Registered Delete removes mixed notes timing Kiai and recipe with one
     add_selection_spans(f);
     f.application_state.project.timing_recipe.recipe_selected = 300;
     f.compose_state->selected_objects.push_back({editor_selection_object_kind_t::bpm_event, object_id_t{102}});
-    const auto original = write_native_project(f.fixture.history.document).bytes;
+    const auto original = write_native_project(f.fixture.history.document).value;
     selection_require(original.has_value());
     selection_require(invoke_selection_command(f, "edit.delete").value.is_invoked());
     const auto& chart = f.fixture.history.document.charts.front();
@@ -2556,7 +2556,7 @@ TEST_CASE("Registered Delete removes mixed notes timing Kiai and recipe with one
     selection_check(f.application_state.project.timing_recipe.recipe_selected == 0);
     selection_check(f.fixture.history.undo.size() == 1);
     selection_require(undo_document_command(f.fixture.history));
-    selection_check(write_native_project(f.fixture.history.document).bytes == original);
+    selection_check(write_native_project(f.fixture.history.document).value == original);
 }
 
 TEST_CASE("Registered Cut rejects a late stem deletion without publishing timing or clipboard",
@@ -2589,16 +2589,16 @@ TEST_CASE("Registered Cut rejects a late stem deletion without publishing timing
     selection_require(static_cast<bool>(commit_document_command(history, std::move(metadata_edit), "Metadata edit")));
     selection_require(undo_document_command(history));
     selection_require(history.redo.size() == 1);
-    const auto redo_bytes = write_native_project(history.redo.front().after).bytes;
-    const auto original = write_native_project(history.document).bytes;
+    const auto redo_bytes = write_native_project(history.redo.front().after).value;
+    const auto original = write_native_project(history.document).value;
     const auto selected = f.compose_state->selected_objects;
     const auto next_revision = history.next_revision;
     selection_check(!invoke_selection_command(f, "edit.cut").value.is_invoked());
-    selection_check(write_native_project(history.document).bytes == original);
+    selection_check(write_native_project(history.document).value == original);
     selection_check(history.undo.empty());
     selection_check(history.next_revision == next_revision);
     selection_require(history.redo.size() == 1);
-    selection_check(write_native_project(history.redo.front().after).bytes == redo_bytes);
+    selection_check(write_native_project(history.redo.front().after).value == redo_bytes);
     selection_check(f.compose_state->selected_objects == selected);
     selection_check(f.application_state.project.timing_recipe.kiai_selected_head == 200);
     selection_require(f.application_state.project.clipboard.chart_clipboard.has_value());
@@ -2616,7 +2616,7 @@ TEST_CASE("Registered Delete handles a span-only Kiai or recipe selection",
     f.compose_state->selected_notes.clear(); f.compose_state->selected_objects.clear();
     f.application_state.project.timing_recipe.kiai_selected_head = recipe ? 0 : 200;
     f.application_state.project.timing_recipe.recipe_selected = recipe ? 300 : 0;
-    const auto original = write_native_project(f.fixture.history.document).bytes;
+    const auto original = write_native_project(f.fixture.history.document).value;
     selection_require(invoke_selection_command(f, "edit.delete").value.is_invoked());
     const auto& chart = f.fixture.history.document.charts.front();
     selection_check(chart.kiai.empty() == !recipe);
@@ -2624,7 +2624,7 @@ TEST_CASE("Registered Delete handles a span-only Kiai or recipe selection",
     selection_check(chart.measures.front().notes.size() == 3);
     selection_check(f.fixture.history.undo.size() == 1);
     selection_require(undo_document_command(f.fixture.history));
-    selection_check(write_native_project(f.fixture.history.document).bytes == original);
+    selection_check(write_native_project(f.fixture.history.document).value == original);
 }
 
 TEST_CASE("Registered Cut publishes mixed copied objects with one Undo and Redo",
@@ -2633,7 +2633,7 @@ TEST_CASE("Registered Cut publishes mixed copied objects with one Undo and Redo"
     TimingInsertFixture f;
     add_selection_spans(f);
     f.compose_state->selected_objects.push_back({editor_selection_object_kind_t::bpm_event, object_id_t{102}});
-    const auto original = write_native_project(f.fixture.history.document).bytes;
+    const auto original = write_native_project(f.fixture.history.document).value;
     selection_require(invoke_selection_command(f, "edit.cut").value.is_invoked());
     selection_require(f.application_state.project.clipboard.chart_clipboard.has_value());
     selection_check(f.application_state.project.clipboard.chart_clipboard->objects.size() == 4);
@@ -2644,11 +2644,11 @@ TEST_CASE("Registered Cut publishes mixed copied objects with one Undo and Redo"
     selection_check(chart.kiai.empty());
     selection_check(chart.sv_recipes.size() == 1);
     selection_check(f.fixture.history.undo.size() == 1);
-    const auto cut = write_native_project(f.fixture.history.document).bytes;
+    const auto cut = write_native_project(f.fixture.history.document).value;
     selection_require(undo_document_command(f.fixture.history));
-    selection_check(write_native_project(f.fixture.history.document).bytes == original);
+    selection_check(write_native_project(f.fixture.history.document).value == original);
     selection_require(redo_document_command(f.fixture.history));
-    selection_check(write_native_project(f.fixture.history.document).bytes == cut);
+    selection_check(write_native_project(f.fixture.history.document).value == cut);
 }
 
 TEST_CASE("Registered Delete and Cut reject locked mixed selection atomically",
@@ -2660,10 +2660,10 @@ TEST_CASE("Registered Delete and Cut reject locked mixed selection atomically",
     f.application_state.project.timing_recipe.timing_locked = true;
     f.application_state.project.clipboard.chart_clipboard = chart_clipboard_t{song_id_t{999}, chart_id_t{999}, {}};
     f.compose_state->selected_objects.push_back({editor_selection_object_kind_t::bpm_event, object_id_t{102}});
-    const auto original = write_native_project(f.fixture.history.document).bytes;
+    const auto original = write_native_project(f.fixture.history.document).value;
     const auto selection = f.compose_state->selected_objects;
     selection_check(!invoke_selection_command(f, id).value.is_invoked());
-    selection_check(write_native_project(f.fixture.history.document).bytes == original);
+    selection_check(write_native_project(f.fixture.history.document).value == original);
     selection_check(f.fixture.history.undo.empty());
     selection_check(f.compose_state->selected_objects == selection);
     selection_check(f.application_state.project.timing_recipe.kiai_selected_head == 200);
@@ -2676,10 +2676,10 @@ TEST_CASE("Registered Cut rejects unsupported recipe clipboard without dropping 
     TimingInsertFixture f;
     add_selection_spans(f);
     f.application_state.project.timing_recipe.recipe_selected = 300;
-    const auto original = write_native_project(f.fixture.history.document).bytes;
+    const auto original = write_native_project(f.fixture.history.document).value;
     selection_check(!invoke_selection_command(f, "edit.cut").value.is_invoked());
     selection_check(f.latest_message().find("SV recipes cannot be copied") != std::string::npos);
-    selection_check(write_native_project(f.fixture.history.document).bytes == original);
+    selection_check(write_native_project(f.fixture.history.document).value == original);
     selection_check(f.fixture.history.undo.empty());
     selection_check(f.application_state.project.timing_recipe.recipe_selected == 300);
 }
@@ -2699,10 +2699,10 @@ TEST_CASE("Registered menu verbs reject paste and pending gestures atomically", 
     f.application_state.services.transport_set_loop_selection = [&](auto, auto, auto, auto, bool) { ++calls; return true; };
     if (owner == 1) f.application_state.project.clipboard.paste_session = application_command_state_t::paste_session_t{};
     else if (owner == 0) f.compose_state->pending_note_duration_gesture.emplace();
-    const auto original = write_native_project(f.fixture.history.document).bytes;
+    const auto original = write_native_project(f.fixture.history.document).value;
     const auto selected = f.compose_state->selected_notes;
     selection_check(!invoke_selection_command(f, id, owner == 2).value.is_invoked());
-    selection_check(write_native_project(f.fixture.history.document).bytes == original);
+    selection_check(write_native_project(f.fixture.history.document).value == original);
     selection_check(f.compose_state->selected_notes == selected);
     selection_check(f.fixture.history.undo.empty());
     selection_check(calls == 0);
@@ -2755,12 +2755,12 @@ TEST_CASE("Registered loop toggle disables without a retained area and shares re
 
 TEST_CASE("Registered measure insert shares Split guards and retains one Undo", "[sys][gesture-verbs]") {
     TimingInsertFixture f;
-    const auto before = wormedit::write_native_project(f.fixture.history.document).bytes;
+    const auto before = wormedit::write_native_project(f.fixture.history.document).value;
     selection_require(invoke_selection_command(f, "measures.insert_before").value.is_invoked());
     selection_check(f.fixture.history.document.charts.front().measures.size() == 3);
     selection_check(f.fixture.history.undo.size() == 1);
     selection_require(wormedit::undo_document_command(f.fixture.history));
-    selection_check(wormedit::write_native_project(f.fixture.history.document).bytes == before);
+    selection_check(wormedit::write_native_project(f.fixture.history.document).value == before);
 }
 
 TEST_CASE("Registered BGM move consumes chart order and rejects Timing focus", "[sys][gesture-verbs]") {

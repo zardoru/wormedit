@@ -1175,9 +1175,9 @@ TEST_CASE("BMSON editor export publishes sliced audio and reports conversion los
     std::filesystem::create_directories(directory);
     const std::string text = R"({"version":"1.0.0","info":{"title":"Editor slices","artist":"test","mode_hint":"beat-7k","resolution":240,"init_bpm":120},"lines":[{"y":0},{"y":960}],"sound_channels":[{"name":"stem.wav","notes":[{"x":1,"y":0,"c":false},{"x":1,"y":240,"c":true},{"x":0,"y":480,"l":120,"c":false}]}]})";
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
-    require_action(parsed.song.has_value());
-    require_action_false(parsed.has_errors());
-    fixture.history = document_history_t::from(*parsed.song);
+    require_action(parsed.value.has_value());
+    require_action_false(!parsed.ok());
+    fixture.history = document_history_t::from(*parsed.value);
     if (other_selected_chart) {
         const auto added = apply_new_chart_command(fixture.history);
         INFO((added.command.diagnostics.empty() ? "" : added.command.diagnostics.front().message));
@@ -1247,9 +1247,9 @@ TEST_CASE("BMSON editor BMS export materializes silent gameplay in private stagi
     std::filesystem::create_directories(directory);
     const std::string text = R"({"version":"1.0.0","info":{"title":"Silent gameplay","artist":"test","mode_hint":"beat-7k","resolution":240,"init_bpm":120},"lines":[{"y":0},{"y":960}],"sound_channels":[]})";
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
-    require_action(parsed.song.has_value());
-    require_action_false(parsed.has_errors());
-    fixture.history = document_history_t::from(*parsed.song);
+    require_action(parsed.value.has_value());
+    require_action_false(!parsed.ok());
+    fixture.history = document_history_t::from(*parsed.value);
     auto& chart = fixture.history.document.charts.front();
     const auto& lanes = chart.lane_layouts.front().layout.lanes;
     const auto lane = std::ranges::find(lanes, lane_role_t::playable, &lane_definition_t::role);
@@ -1493,8 +1493,8 @@ TEST_CASE("BMSON lane_mode dispatcher shares channel and sound targets with atom
     action_notification_fixture_t fixture;
     const std::string text = R"({"version":"1.0.0","info":{"title":"Modes","artist":"test","mode_hint":"beat-7k","resolution":240,"init_bpm":120},"lines":[{"y":0},{"y":960}],"sound_channels":[{"name":"stem.wav","notes":[{"x":0,"y":0,"c":false},{"x":0,"y":240,"c":true}]}]})";
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
-    require_action(parsed.song.has_value());
-    fixture.history = document_history_t::from(*parsed.song);
+    require_action(parsed.value.has_value());
+    fixture.history = document_history_t::from(*parsed.value);
     fixture.workspace = *workspace_controller_t::from(fixture.history).workspace;
     fixture.workspace.active_tab = sounds_tab ? workspace_tab_t::audio_slices : workspace_tab_t::compose;
     fixture.state.chart = fixture.history.document.charts.front().id;

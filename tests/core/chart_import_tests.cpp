@@ -35,8 +35,8 @@ auto parse_sm_fixture(std::string_view name) -> song_document_t {
                         std::ios::binary);
     const std::string bytes{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
     const auto parsed = parse_stepmania_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
-    REQUIRE(parsed.song.has_value());
-    return *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    return *parsed.value;
 }
 
 auto parse_bms_text(std::string_view text) -> song_document_t {

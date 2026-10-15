@@ -28,8 +28,8 @@ auto fixture() -> wormedit::song_document_t {
                             std::istreambuf_iterator<char>()};
     const auto parsed = wormedit::parse_bmson_bytes(
         std::as_bytes(std::span{bytes.data(), bytes.size()}));
-    REQUIRE(parsed.song.has_value());
-    return *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    return *parsed.value;
 }
 
 auto first_measure_position(const wormedit::song_document_t& song, std::uint64_t row)
@@ -354,10 +354,10 @@ auto layered_bmson_tap_roundtrip_is_stable() -> bool {
         note->sound_channel_event != source_id) return false;
     const auto revision = history.document.revision;
     const auto stable = wormedit::write_native_project(history.document);
-    if (!stable.bytes || wormedit::assign_bmson_sound_event(history, chart_id,
+    if (!stable.value || wormedit::assign_bmson_sound_event(history, chart_id,
         marker_id, lane).applied || history.document.revision != revision) return false;
     const auto unchanged = wormedit::write_native_project(history.document);
-    if (!unchanged.bytes || *unchanged.bytes != *stable.bytes) return false;
+    if (!unchanged.value || *unchanged.value != *stable.value) return false;
     if (!wormedit::assign_bmson_sound_event(history, chart_id, marker_id,
                                              std::nullopt)) return false;
     const auto restored = std::ranges::find_if(history.document.charts.front().measures,
@@ -475,14 +475,14 @@ auto assignment_rejects_hold_layout_role(wormedit::lane_role_t role, bool at_tra
     auto history = wormedit::document_history_t::from(std::move(song));
     const auto revision = history.document.revision;
     const auto before = wormedit::write_native_project(history.document);
-    if (!before.bytes) return false;
+    if (!before.value) return false;
     const auto result = wormedit::assign_bmson_sound_event(history,
         history.document.charts.front().id, marker.id, lane);
     const auto after = wormedit::write_native_project(history.document);
     return !result && !result.diagnostics.empty() &&
         result.diagnostics.front().code == wormedit::diagnostic_code_t::unknown_lane &&
-        history.document.revision == revision && history.undo.empty() && after.bytes &&
-        *after.bytes == *before.bytes;
+        history.document.revision == revision && history.undo.empty() && after.value &&
+        *after.value == *before.value;
 }
 
 auto tap_assignment_rejects_hold_span(int tail_offset) -> bool {
@@ -573,11 +573,11 @@ TEST_CASE("BMSON linked sound can move between BGM and a playable lane",
     CHECK(source->playable);
     CHECK(source->lane == lane);
     const auto written = wormedit::write_bmson(history.document);
-    REQUIRE(written.json);
+    REQUIRE(written.value);
     const auto reparsed = wormedit::parse_bmson_bytes(
-        std::as_bytes(std::span{written.json->data(), written.json->size()}));
-    REQUIRE(reparsed.song);
-    CHECK(reparsed.song->charts.front().measures[measure_index].bgm_events.empty());
+        std::as_bytes(std::span{written.value->data(), written.value->size()}));
+    REQUIRE(reparsed.value);
+    CHECK(reparsed.value->charts.front().measures[measure_index].bgm_events.empty());
 
     REQUIRE(wormedit::assign_bmson_sound_event(history, chart_id, bgm.id,
                                                std::nullopt));
@@ -794,7 +794,7 @@ TEST_CASE("BMSON marker moves translate linked hold ends across measures",
     expect_bmson_core(*tail_head_row < index.total_rows &&
                       index.total_rows - *tail_head_row < hold_length);
     const auto unchanged = wormedit::write_native_project(history.document);
-    expect_bmson_core(unchanged.bytes.has_value());
+    expect_bmson_core(unchanged.value.has_value());
     const auto rejected_tail = wormedit::move_bmson_bgm_marker(
         history, chart_id, original.id, tail_overflow);
     expect_bmson_core(!rejected_tail && !rejected_tail.diagnostics.empty() &&
@@ -802,7 +802,7 @@ TEST_CASE("BMSON marker moves translate linked hold ends across measures",
     expect_bmson_core(history.document.revision == moved_revision);
     expect_bmson_core(history.undo.size() == 1);
     const auto after_reject = wormedit::write_native_project(history.document);
-    expect_bmson_core(after_reject.bytes && *after_reject.bytes == *unchanged.bytes);
+    expect_bmson_core(after_reject.value && *after_reject.value == *unchanged.value);
     expect_bmson_core(wormedit::move_bmson_bgm_marker(history, chart_id, original.id,
                                             original.position));
     const auto reversed = std::ranges::find_if(history.document.charts.front().measures,
@@ -1007,11 +1007,11 @@ TEST_CASE("BMSON tap assignment creates a source BGM lane when needed",
     CHECK(changed.measures.front().bgm_events.front().sound_channel_event ==
           note.sound_channel_event);
     const auto written = wormedit::write_bmson(history.document);
-    REQUIRE(written.json);
+    REQUIRE(written.value);
     const auto reparsed = wormedit::parse_bmson_bytes(
-        std::as_bytes(std::span{written.json->data(), written.json->size()}));
-    REQUIRE(reparsed.song);
-    CHECK(reparsed.song->charts.front().measures.front().bgm_events.size() == 1);
+        std::as_bytes(std::span{written.value->data(), written.value->size()}));
+    REQUIRE(reparsed.value);
+    CHECK(reparsed.value->charts.front().measures.front().bgm_events.size() == 1);
 }
 
 TEST_CASE("BMSON restart toggle updates one channel pulse and survives export and undo",
@@ -1045,11 +1045,11 @@ TEST_CASE("BMSON restart toggle updates one channel pulse and survives export an
     REQUIRE(slices);
     CHECK(slices.slices.back().restart);
     const auto written = wormedit::write_bmson(history.document);
-    REQUIRE(written.json.has_value());
+    REQUIRE(written.value.has_value());
     const auto reparsed = wormedit::parse_bmson_bytes(
-        std::as_bytes(std::span{written.json->data(), written.json->size()}));
-    REQUIRE(reparsed.song.has_value());
-    CHECK_FALSE(reparsed.song->charts.front().sound_channels.front().events.back().continuation);
+        std::as_bytes(std::span{written.value->data(), written.value->size()}));
+    REQUIRE(reparsed.value.has_value());
+    CHECK_FALSE(reparsed.value->charts.front().sound_channels.front().events.back().continuation);
 
     REQUIRE(wormedit::undo_document_command(history));
     CHECK(history.document.charts.front().sound_channels.front().events.back().continuation);
@@ -1093,11 +1093,11 @@ TEST_CASE("BMSON BGM marker move preserves source link and rejects channel colli
     CHECK(slices.slices.back().absolute_row > 0);
 
     const auto written = wormedit::write_bmson(history.document);
-    REQUIRE(written.json.has_value());
+    REQUIRE(written.value.has_value());
     const auto reparsed = wormedit::parse_bmson_bytes(
-        std::as_bytes(std::span{written.json->data(), written.json->size()}));
-    REQUIRE(reparsed.song.has_value());
-    CHECK(reparsed.song->charts.front().sound_channels.front().events.back().position == target);
+        std::as_bytes(std::span{written.value->data(), written.value->size()}));
+    REQUIRE(reparsed.value.has_value());
+    CHECK(reparsed.value->charts.front().sound_channels.front().events.back().position == target);
 
     CHECK_FALSE(wormedit::move_bmson_bgm_marker(
         history, chart_id, bgm.id,
@@ -1141,11 +1141,11 @@ TEST_CASE("BMSON BGM marker deletion removes its source event and is undoable",
     }));
     CHECK(wormedit::validate_document(history.document).empty());
     const auto written = wormedit::write_bmson(history.document);
-    REQUIRE(written.json.has_value());
+    REQUIRE(written.value.has_value());
     const auto reparsed = wormedit::parse_bmson_bytes(
-        std::as_bytes(std::span{written.json->data(), written.json->size()}));
-    REQUIRE(reparsed.song.has_value());
-    CHECK(reparsed.song->charts.front().sound_channels.front().events.size() ==
+        std::as_bytes(std::span{written.value->data(), written.value->size()}));
+    REQUIRE(reparsed.value.has_value());
+    CHECK(reparsed.value->charts.front().sound_channels.front().events.size() ==
           initial_sound_event_count - 1);
     CHECK_FALSE(wormedit::delete_bmson_bgm_marker(history, chart_id, bgm.id));
     REQUIRE(wormedit::undo_document_command(history));
@@ -1198,11 +1198,11 @@ TEST_CASE("BMSON marker insertion links a new source pulse and BGM in one undoab
         return slice.restart && std::ranges::find(slice.events, source.id) != slice.events.end();
     }));
     const auto written = wormedit::write_bmson(history.document);
-    REQUIRE(written.json.has_value());
+    REQUIRE(written.value.has_value());
     const auto reparsed = wormedit::parse_bmson_bytes(
-        std::as_bytes(std::span{written.json->data(), written.json->size()}));
-    REQUIRE(reparsed.song.has_value());
-    CHECK(std::ranges::any_of(reparsed.song->charts.front().sound_channels.front().events,
+        std::as_bytes(std::span{written.value->data(), written.value->size()}));
+    REQUIRE(reparsed.value.has_value());
+    CHECK(std::ranges::any_of(reparsed.value->charts.front().sound_channels.front().events,
                               [&](const auto& event) {
                                   return event.position == target && !event.playable &&
                                          !event.continuation;
@@ -1281,11 +1281,11 @@ TEST_CASE("BMSON marker batch validates every pulse and commits one history step
     }
     CHECK(wormedit::validate_document(history.document).empty());
     const auto written = wormedit::write_bmson(history.document);
-    REQUIRE(written.json.has_value());
+    REQUIRE(written.value.has_value());
     const auto reparsed = wormedit::parse_bmson_bytes(
-        std::as_bytes(std::span{written.json->data(), written.json->size()}));
-    REQUIRE(reparsed.song.has_value());
-    CHECK(reparsed.song->charts.front().sound_channels.front().events.size() ==
+        std::as_bytes(std::span{written.value->data(), written.value->size()}));
+    REQUIRE(reparsed.value.has_value());
+    CHECK(reparsed.value->charts.front().sound_channels.front().events.size() ==
           source_count + markers.size());
     CHECK_FALSE(
         wormedit::insert_bmson_sound_markers(history, chart_id, reference, markers));
@@ -1353,11 +1353,11 @@ TEST_CASE("BMSON marker batch assigns playable and BGM slices atomically",
     }));
     CHECK(wormedit::validate_document(history.document).empty());
     const auto written = wormedit::write_bmson(history.document);
-    REQUIRE(written.json);
+    REQUIRE(written.value);
     const auto reparsed = wormedit::parse_bmson_bytes(
-        std::as_bytes(std::span{written.json->data(), written.json->size()}));
-    REQUIRE(reparsed.song);
-    const auto& round_trip = reparsed.song->charts.front();
+        std::as_bytes(std::span{written.value->data(), written.value->size()}));
+    REQUIRE(reparsed.value);
+    const auto& round_trip = reparsed.value->charts.front();
     CHECK(std::ranges::any_of(round_trip.measures.front().notes, [&](const auto& note) {
         return note.position == markers.front().position;
     }));
@@ -1521,11 +1521,11 @@ TEST_CASE("Packed BMSON stroke places three cells in one undo step and exports",
     CHECK(wormedit::validate_document(f.history.document).empty());
     const auto written = wormedit::write_bmson(f.history.document);
     INFO((written.diagnostics.empty() ? "no diagnostic" : written.diagnostics.front().message));
-    REQUIRE(written.json);
+    REQUIRE(written.value);
     const auto reparsed = wormedit::parse_bmson_bytes(
-        std::as_bytes(std::span{written.json->data(), written.json->size()}));
-    REQUIRE(reparsed.song);
-    CHECK(total_channel_events(reparsed.song->charts.front()) == total_channel_events(chart));
+        std::as_bytes(std::span{written.value->data(), written.value->size()}));
+    REQUIRE(reparsed.value);
+    CHECK(total_channel_events(reparsed.value->charts.front()) == total_channel_events(chart));
     REQUIRE(wormedit::undo_document_command(f.history));
     CHECK(f.history.document.charts.front().sound_channels.size() == channels);
     CHECK(total_channel_events(f.history.document.charts.front()) == events);
@@ -1607,16 +1607,16 @@ TEST_CASE("Packed BMSON single-click channel exports and reparses without duplic
         first_measure_position(history.document, 90)));
     const auto written = wormedit::write_bmson(history.document);
     INFO((written.diagnostics.empty() ? "no diagnostic" : written.diagnostics.front().message));
-    expect_bmson_core(written.json);
+    expect_bmson_core(written.value);
     const auto reparsed = wormedit::parse_bmson_bytes(
-        std::as_bytes(std::span{written.json->data(), written.json->size()}));
-    expect_bmson_core(reparsed.song);
-    CHECK(total_channel_events(reparsed.song->charts.front()) == before + 1);
-    CHECK(reparsed.song->charts.front().sound_channels.back().events.front().position.row == 90);
+        std::as_bytes(std::span{written.value->data(), written.value->size()}));
+    expect_bmson_core(reparsed.value);
+    CHECK(total_channel_events(reparsed.value->charts.front()) == before + 1);
+    CHECK(reparsed.value->charts.front().sound_channels.back().events.front().position.row == 90);
     expect_bmson_core(wormedit::undo_document_command(history));
     CHECK(total_channel_events(history.document.charts.front()) == before);
     expect_bmson_core(wormedit::redo_document_command(history));
-    expect_bmson_core(wormedit::write_bmson(history.document).json);
+    expect_bmson_core(wormedit::write_bmson(history.document).value);
 }
 
 namespace {
@@ -1759,13 +1759,13 @@ TEST_CASE("BMSON stem entry reassigns a same-row pulse instead of creating a cho
     expect_bmson_core(wormedit::validate_document(history.document).empty());
     expect_bmson_core(history.undo.size() == 2);
     const auto written = wormedit::write_bmson(history.document);
-    expect_bmson_core(written.json.has_value());
-    if (!written.json) return;
+    expect_bmson_core(written.value.has_value());
+    if (!written.value) return;
     const auto reparsed = wormedit::parse_bmson_bytes(
-        std::as_bytes(std::span{written.json->data(), written.json->size()}));
-    expect_bmson_core(reparsed.song.has_value());
-    if (!reparsed.song) return;
-    expect_bmson_core(std::ranges::count_if(reparsed.song->charts.front().measures.front().notes,
+        std::as_bytes(std::span{written.value->data(), written.value->size()}));
+    expect_bmson_core(reparsed.value.has_value());
+    if (!reparsed.value) return;
+    expect_bmson_core(std::ranges::count_if(reparsed.value->charts.front().measures.front().notes,
         [&](const auto& note) { return note.position == position; }) == 1);
     expect_bmson_core(static_cast<bool>(wormedit::undo_document_command(history)));
     const auto& restored = history.document.charts.front().measures.front().notes;
@@ -1900,5 +1900,5 @@ TEST_CASE("Mouse stem placement shares decoded span classification and clears fa
     }
     auto restored = history.document;
     restored.revision = before.revision;
-    expect_bmson_core(wormedit::write_native_project(restored).bytes == wormedit::write_native_project(before).bytes);
+    expect_bmson_core(wormedit::write_native_project(restored).value == wormedit::write_native_project(before).value);
 }

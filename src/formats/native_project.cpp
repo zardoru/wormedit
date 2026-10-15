@@ -1301,11 +1301,7 @@ auto is_json_nodes_within(const json& root, std::size_t maximum_nodes, std::size
     return true;
 }
 
-auto has_errors(const std::vector<native_project_diagnostic_t>& diagnostics) -> bool {
-    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-        return diagnostic.severity == diagnostic_severity_t::error;
-    });
-}
+
 
 auto graph_diagnostic_text(const diagnostic_t& diagnostic) -> std::string {
     auto message = diagnostic.message;
@@ -1329,18 +1325,7 @@ auto migration_diagnostic_code(native_project_internal::migration_status_t statu
 
 } // namespace
 
-auto native_project_write_result_t::has_errors() const -> bool {
-    return wormedit::has_errors(diagnostics);
-}
-
-auto native_project_parse_result_t::has_errors() const -> bool {
-    return wormedit::has_errors(diagnostics);
-}
-
-auto native_project_write_result_t::from(native_project_write_outcome_t&& outcome) -> native_project_write_result_t {
-    return {.bytes = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
-auto native_project_write_result_t::from(const song_document_t& song, native_project_limits_t limits)
+auto write_native_project(const song_document_t& song, native_project_limits_t limits)
     -> native_project_write_outcome_t {
     native_project_write_outcome_t result{};
     if (song.schema_version < 2 || song.schema_version > native_project_schema_version) {
@@ -1409,19 +1394,9 @@ auto native_project_write_result_t::from(const song_document_t& song, native_pro
     return result;
 }
 
-auto write_native_project(const song_document_t& song, native_project_limits_t limits) -> native_project_write_result_t {
-    return native_project_write_result_t::from(native_project_write_result_t::from(song, limits));
-}
-
-auto native_project_parse_result_t::from(native_project_parse_outcome_t&& outcome) -> native_project_parse_result_t {
-    return {.song = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
-auto native_project_parse_result_t::from(std::string_view bytes, native_project_limits_t limits) -> native_project_parse_outcome_t {
+auto parse_native_project(std::string_view bytes, native_project_limits_t limits) -> native_project_parse_outcome_t {
     return native_project_internal::build_native_project_parse(bytes, limits, native_project_schema_version,
         native_project_internal::default_migrations());
-}
-auto parse_native_project(std::string_view bytes, native_project_limits_t limits) -> native_project_parse_result_t {
-    return native_project_parse_result_t::from(native_project_parse_result_t::from(bytes, limits));
 }
 
 namespace native_project_internal {
@@ -1538,8 +1513,8 @@ auto build_native_project_parse(std::string_view bytes, native_project_limits_t 
 }
 
 auto parse_native_project_with_migrations(std::string_view bytes, native_project_limits_t limits,
-    std::uint32_t target_version, std::span<const migration_t> table) -> native_project_parse_result_t {
-    return native_project_parse_result_t::from(build_native_project_parse(bytes, limits, target_version, table));
+    std::uint32_t target_version, std::span<const migration_t> table) -> native_project_parse_outcome_t {
+    return build_native_project_parse(bytes, limits, target_version, table);
 }
 
 } // namespace native_project_internal

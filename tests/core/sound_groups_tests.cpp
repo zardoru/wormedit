@@ -115,31 +115,31 @@ auto add_group_to_one_sample(document_history_t& history) -> void {
 auto grouped_bmson_outputs() -> std::pair<std::string, std::string> {
     const auto bytes = read_fixture("bmson/slicing-and-mixed-sounds.bmson");
     const auto imported = parse_bmson_bytes(bytes);
-    REQUIRE(imported.song);
-    const auto before = write_bmson(*imported.song);
-    REQUIRE_FALSE(before.has_errors());
-    REQUIRE(before.json);
-    auto history = document_history_t::from(*imported.song);
+    REQUIRE(imported.value);
+    const auto before = write_bmson(*imported.value);
+    REQUIRE_FALSE(!before.ok());
+    REQUIRE(before.value);
+    auto history = document_history_t::from(*imported.value);
     const auto state_before = sound_group_invariants(history.document);
     add_group_to_one_sample(history);
     REQUIRE(sound_group_invariants(history.document) == state_before);
     const auto after = write_bmson(history.document);
-    REQUIRE_FALSE(after.has_errors());
-    REQUIRE(after.json);
-    return {*before.json, *after.json};
+    REQUIRE_FALSE(!after.ok());
+    REQUIRE(after.value);
+    return {*before.value, *after.value};
 }
 
 auto old_project_roundtrip_is_stable() -> bool {
     auto song = group_song();
     const auto old_bytes = write_native_project(song);
-    REQUIRE(old_bytes.bytes);
-    CHECK(old_bytes.bytes->find("sound_groups") == std::string::npos);
-    CHECK(old_bytes.bytes->find("sound_group\"") == std::string::npos);
-    const auto parsed_old = parse_native_project(*old_bytes.bytes);
-    REQUIRE(parsed_old.song);
-    const auto rewritten_old = write_native_project(*parsed_old.song);
-    REQUIRE(rewritten_old.bytes);
-    CHECK(*rewritten_old.bytes == *old_bytes.bytes);
+    REQUIRE(old_bytes.value);
+    CHECK(old_bytes.value->find("sound_groups") == std::string::npos);
+    CHECK(old_bytes.value->find("sound_group\"") == std::string::npos);
+    const auto parsed_old = parse_native_project(*old_bytes.value);
+    REQUIRE(parsed_old.value);
+    const auto rewritten_old = write_native_project(*parsed_old.value);
+    REQUIRE(rewritten_old.value);
+    CHECK(*rewritten_old.value == *old_bytes.value);
     return true;
 }
 
@@ -148,11 +148,11 @@ auto populated_group_roundtrip_is_stable() -> bool {
     song.sound_groups = {{.id = sound_group_id_t{11}, .name = "Drums"}};
     song.resources[0].sound_group = sound_group_id_t{11};
     const auto written = write_native_project(song);
-    REQUIRE(written.bytes);
-    const auto parsed = parse_native_project(*written.bytes);
-    REQUIRE(parsed.song);
-    CHECK(parsed.song->sound_groups == song.sound_groups);
-    CHECK(parsed.song->resources[0].sound_group == sound_group_id_t{11});
+    REQUIRE(written.value);
+    const auto parsed = parse_native_project(*written.value);
+    REQUIRE(parsed.value);
+    CHECK(parsed.value->sound_groups == song.sound_groups);
+    CHECK(parsed.value->resources[0].sound_group == sound_group_id_t{11});
     return true;
 }
 

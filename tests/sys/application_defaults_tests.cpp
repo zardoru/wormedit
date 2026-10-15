@@ -29,9 +29,9 @@ auto valid_initial_layout(const wormedit::song_document_t& document, std::uint32
 }
 
 auto supported_exports(const wormedit::song_document_t& document, std::uint32_t lanes) -> bool {
-    if (!wormedit::write_osu_mania(document).text) return false;
+    if (!wormedit::write_osu_mania(document).value) return false;
     if (lanes == 9 || lanes == 14) return true;
-    return wormedit::write_stepmania(document).text.has_value();
+    return wormedit::write_stepmania(document).value.has_value();
 }
 
 auto valid_audio_project(const wormedit::song_document_t& document,

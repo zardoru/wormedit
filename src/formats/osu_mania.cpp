@@ -1572,15 +1572,7 @@ auto append_osu_event_resources(chart_document_t& chart,
 
 } // namespace
 
-auto osu_mania_parse_result_t::has_errors() const -> bool {
-    return diagnostic_queries::has_errors(diagnostics);
-}
-
-auto osu_mania_parse_result_t::from(osu_mania_parse_outcome_t&& outcome) -> osu_mania_parse_result_t {
-    return {.song = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto osu_mania_parse_result_t::from(std::span<const std::byte> bytes, osu_mania_parse_options_t options)
+auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_options_t options)
     -> osu_mania_parse_outcome_t {
     osu_mania_parse_outcome_t result{};
     const auto fail = [&](osu_mania_parse_diagnostic_code_t code, std::string message,
@@ -3285,15 +3277,7 @@ auto serialize_osu_bookmarks(const chart_document_t& chart, const measure_index_
 
 } // namespace
 
-auto osu_mania_write_result_t::has_errors() const -> bool {
-    return diagnostic_queries::has_errors(diagnostics);
-}
-
-auto osu_mania_write_result_t::from(osu_mania_write_outcome_t&& outcome) -> osu_mania_write_result_t {
-    return {.text = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto osu_mania_write_result_t::from(const song_document_t& song, osu_mania_write_options_t options)
+auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t options)
     -> osu_mania_write_outcome_t {
     osu_mania_write_outcome_t result{};
     const auto fail = [&](osu_mania_write_diagnostic_code_t code, std::string message,
@@ -3452,14 +3436,6 @@ auto osu_mania_write_result_t::from(const song_document_t& song, osu_mania_write
                                       .field = "document"});
     }
     return result;
-}
-
-auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_options_t options) -> osu_mania_parse_result_t {
-    return osu_mania_parse_result_t::from(osu_mania_parse_result_t::from(bytes, std::move(options)));
-}
-
-auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t options) -> osu_mania_write_result_t {
-    return osu_mania_write_result_t::from(osu_mania_write_result_t::from(song, std::move(options)));
 }
 
 } // namespace wormedit

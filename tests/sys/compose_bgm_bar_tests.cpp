@@ -31,8 +31,8 @@ auto chart_fixture() -> chart_document_t {
                          std::ios::binary);
     const std::string bytes{std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
-    REQUIRE(parsed.song);
-    return parsed.song->charts.front();
+    REQUIRE(parsed.value);
+    return parsed.value->charts.front();
 }
 
 } // namespace

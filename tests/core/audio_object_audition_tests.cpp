@@ -21,8 +21,8 @@ auto fixture_song() -> wormedit::song_document_t {
                            std::istreambuf_iterator<char>()};
     const auto parsed =
         wormedit::parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
-    REQUIRE(parsed.song.has_value());
-    return *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    return *parsed.value;
 }
 
 auto binding(wormedit::asset_id_t asset) -> wormedit::audio::audition_source_binding_t {

@@ -32,8 +32,8 @@ auto make_reset_fixture() -> reset_fixture_t {
         {"x":0,"y":960,"l":0,"c":true}]}]})";
     const auto parsed = wormedit::parse_bmson_bytes(
         std::as_bytes(std::span{json.data(), json.size()}));
-    REQUIRE(parsed.song);
-    reset_fixture_t fixture{wormedit::document_history_t::from(*parsed.song)};
+    REQUIRE(parsed.value);
+    reset_fixture_t fixture{wormedit::document_history_t::from(*parsed.value)};
     fixture.chart = fixture.history.document.charts.front().id;
     fixture.history.document.audio_assets.front().stream = {48'000, 2, 200'000, true};
     const auto& events = fixture.history.document.charts.front().sound_channels.front().events;
@@ -52,8 +52,8 @@ auto make_reset_fixture() -> reset_fixture_t {
 
 auto export_json(const wormedit::document_history_t& history) -> std::string {
     const auto written = wormedit::write_bmson(history.document);
-    REQUIRE(written.json);
-    return *written.json;
+    REQUIRE(written.value);
+    return *written.value;
 }
 
 void require_set_restart(reset_fixture_t& fixture, bool restart) {
@@ -129,8 +129,8 @@ void check_exported_restart(const reset_fixture_t& fixture, bool restart) {
     const auto json = export_json(fixture.history);
     const auto reparsed = wormedit::parse_bmson_bytes(
         std::as_bytes(std::span{json.data(), json.size()}));
-    REQUIRE(reparsed.song);
-    const auto& events = reparsed.song->charts.front().sound_channels.front().events;
+    REQUIRE(reparsed.value);
+    const auto& events = reparsed.value->charts.front().sound_channels.front().events;
     for (const auto& event : events) {
         if (event.position.row == 240) CHECK(event.continuation == !restart);
     }

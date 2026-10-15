@@ -161,7 +161,7 @@ TEST_CASE("Chart delete removes group memberships and restores them on undo", "[
 TEST_CASE("Chart management rejects invalid destinations", "[unit][core][chart-editor]") {
     auto history = document_history_t::from(chart_song());
     const auto before = write_native_project(history.document);
-    require_chart(before.bytes.has_value());
+    require_chart(before.value.has_value());
     expect_chart(!static_cast<bool>(apply_delete_chart_command(history, chart_id_t{2})));
     expect_chart(!static_cast<bool>(apply_duplicate_chart_command(history, chart_id_t{999})));
     expect_chart(!static_cast<bool>(apply_reorder_chart_command(history, chart_id_t{2}, 1)));
@@ -169,7 +169,7 @@ TEST_CASE("Chart management rejects invalid destinations", "[unit][core][chart-e
     expect_chart(static_cast<bool>(history.document.revision == 4));
     expect_chart(static_cast<bool>(history.undo.empty()));
     expect_chart(static_cast<bool>(history.document.charts.front().metadata.name == "Normal"));
-    expect_chart(write_native_project(history.document).bytes == before.bytes);
+    expect_chart(write_native_project(history.document).value == before.value);
 }
 
 TEST_CASE("Chart duplication rejects exhausted IDs and invalid proposed documents", "[unit][core][chart-editor]") {
@@ -265,8 +265,8 @@ auto four_key_template_song() -> song_document_t {
     constexpr std::string_view bytes = "#VERSION:0.83;\n#TITLE:Template;\n#BPMS:0=120;\n#NOTEDATA:;\n#CHARTNAME:Active4K;\n#STEPSTYPE:dance-single;\n#DIFFICULTY:Hard;\n#METER:8;\n#NOTES:\n1000\n0000\n0100\n0000\n;\n";
     auto parsed = parse_stepmania_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}),
         {.profile = stepmania_profile_t::ssc});
-    require_chart(parsed.song.has_value() && !parsed.has_errors());
-    auto song = std::move(*parsed.song);
+    require_chart(parsed.value.has_value() && parsed.ok());
+    auto song = std::move(*parsed.value);
     song.revision = 4;
     song.charts[0].divisions_per_standard_measure = 3840;
     song.charts[0].beat_zero_audio_offset_seconds = {-7, 20};
@@ -337,7 +337,7 @@ TEST_CASE("New chart templates the initial layout without copying later measure 
 TEST_CASE("Output group CRUD is atomic and undoable without altering chart content", "[unit][output-groups]") {
     auto history = document_history_t::from(chart_song());
     history.document.output_groups.clear();
-    const auto before = write_native_project(history.document).bytes;
+    const auto before = write_native_project(history.document).value;
     const auto initial_revision = history.document.revision;
     output_group_t group{.name = "Release", .family = format_family_t::bmson,
         .charts = {chart_id_t{2}}, .relative_output_path = "exports/chart.bmson"};
@@ -359,7 +359,7 @@ TEST_CASE("Output group CRUD is atomic and undoable without altering chart conte
     auto unchanged = history.document;
     unchanged.output_groups.clear();
     unchanged.revision = initial_revision;
-    expect_chart(write_native_project(unchanged).bytes == before);
+    expect_chart(write_native_project(unchanged).value == before);
 }
 
 TEST_CASE("Output group edits reject unsafe paths stale contexts and invalid memberships atomically", "[unit][output-groups]") {

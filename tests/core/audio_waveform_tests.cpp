@@ -410,17 +410,17 @@ void check_detail_window(const waveform_t& waveform, const wormedit::timing_inde
     CHECK(window->frames_per_pixel < 1.0);
 }
 
-void check_aligned_samples(const aligned_waveform_result_t& projected) {
+void check_aligned_samples(const aligned_waveform_outcome_t& projected) {
     REQUIRE(projected);
-    REQUIRE_FALSE(projected.rows.empty());
-    CHECK(projected.rows.front().sample_point);
-    CHECK(projected.rows.front().samples[0] == -0.75f);
+    REQUIRE_FALSE(projected->rows.empty());
+    CHECK(projected->rows.front().sample_point);
+    CHECK(projected->rows.front().samples[0] == -0.75f);
 }
 
-void check_aligned_sample_bounds(const aligned_waveform_result_t& projected) {
-    CHECK(projected.rows.front().samples[1] == 0.25f);
-    CHECK(projected.rows.front().y_pixels >= 0.0);
-    CHECK(projected.rows.back().y_pixels < 8.0);
+void check_aligned_sample_bounds(const aligned_waveform_outcome_t& projected) {
+    CHECK(projected->rows.front().samples[1] == 0.25f);
+    CHECK(projected->rows.front().y_pixels >= 0.0);
+    CHECK(projected->rows.back().y_pixels < 8.0);
 }
 
 void check_aligned_fallback(const waveform_t& waveform, const wormedit::timing_index_t& timing,

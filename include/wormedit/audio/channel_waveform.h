@@ -17,7 +17,7 @@ struct channel_waveform_source_geometry_t {
 build_channel_waveform_view(const waveform_t& waveform, const chart_document_t& chart,
                          const sound_channel_t& channel, const timing_index_t& timing,
                          aligned_waveform_request_t request,
-                         channel_waveform_source_geometry_t source) -> aligned_waveform_result_t;
+                         channel_waveform_source_geometry_t source) -> aligned_waveform_outcome_t;
 
 // Accepts a revision-bound slice derivation so interactive scrolling and zoom
 // need only reproject peaks, not rebuild all channel cuts.
@@ -25,13 +25,13 @@ build_channel_waveform_view(const waveform_t& waveform, const chart_document_t& 
 build_channel_waveform_view(const waveform_t& waveform, const sound_channel_t& channel,
                          const timing_index_t& timing, aligned_waveform_request_t request,
                          const sound_slice_result_t& slices,
-                         channel_waveform_source_geometry_t source) -> aligned_waveform_result_t;
+                         channel_waveform_source_geometry_t source) -> aligned_waveform_outcome_t;
 
 // Display path: shared forward clock and bounded row/slice pyramid reads.
 // The timing_index_t overloads remain the exact inverse reference path.
 [[nodiscard]] auto build_channel_waveform_view(const waveform_t& waveform,
     const sound_channel_t& channel, const display_row_table_t& table,
     aligned_waveform_request_t request, const sound_slice_result_t& slices,
-    channel_waveform_source_geometry_t source) -> aligned_waveform_result_t;
+    channel_waveform_source_geometry_t source) -> aligned_waveform_outcome_t;
 
 } // namespace wormedit::audio

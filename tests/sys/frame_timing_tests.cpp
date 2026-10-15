@@ -1056,7 +1056,7 @@ void compare_cached_envelope_source(envelope_projection_fixture_t& fixture) {
         &fixture.blocks, fixture.style);
     expect_gpu_work(static_cast<bool>(reference));
     std::size_t index = 0;
-    for (const auto& row : reference.rows) {
+    for (const auto& row : reference->rows) {
         const auto y = row.y_pixels - 1;
         if (y < 0 || y > height) continue;
         expect_gpu_work(index < fixture.flattened.compose.waveform.row.size());
@@ -1541,7 +1541,7 @@ void check_clock_projection(const audio::waveform_t& waveform, const timing_inde
     const auto result = audio::build_composed_aligned_waveform_view(waveform, nullptr, timing,
                                                                request, nullptr, {});
     REQUIRE(result);
-    for (const auto& row : result.rows) {
+    for (const auto& row : result->rows) {
         const auto pixel = std::floor(row.y_pixels);
         const auto begin = reference_frame(timing, (scroll + pixel) * 5, false, waveform);
         const auto end = reference_frame(timing, (scroll + pixel + 1) * 5, true, waveform);
@@ -3970,11 +3970,11 @@ TEST_CASE("Compose waveform arena preserves every row at the maximum output capa
             .pixels_per_standard_measure=view.pixels_per_standard_measure,
             .maximum_rows=WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY});
     expect_waveform_arena(static_cast<bool>(reference));
-    expect_waveform_arena(reference.rows.size() == WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY);
-    expect_waveform_arena(view.waveform_row_count == reference.rows.size());
-    for (std::size_t index=0; index<reference.rows.size(); ++index) {
+    expect_waveform_arena(reference->rows.size() == WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY);
+    expect_waveform_arena(view.waveform_row_count == reference->rows.size());
+    for (std::size_t index=0; index<reference->rows.size(); ++index) {
         const auto& row = view.waveform_rows[index];
-        const auto& expected = reference.rows[index];
+        const auto& expected = reference->rows[index];
         expect_waveform_arena(row.y_pixels == expected.y_pixels);
         expect_waveform_arena(std::ranges::equal(row.absolute_peak, expected.absolute_peak));
         expect_waveform_arena(std::ranges::equal(row.rms, expected.rms));

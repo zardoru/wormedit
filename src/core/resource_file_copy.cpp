@@ -59,13 +59,13 @@ auto file_bytes_equal(const std::filesystem::path& first, const std::filesystem:
 }
 
 auto published_identity(const std::filesystem::path& path)
-    -> std::optional<project_asset_copy_result_t::published_identity_t> {
+    -> std::optional<project_asset_copy_receipt_t::published_identity_t> {
     namespace fs = std::filesystem;
     std::error_code error;
     const auto status = fs::symlink_status(path, error);
     if (error || fs::is_symlink(status) || !fs::is_regular_file(status))
         return std::nullopt;
-    project_asset_copy_result_t::published_identity_t identity;
+    project_asset_copy_receipt_t::published_identity_t identity;
 #if defined(_WIN32)
     const HANDLE handle = CreateFileW(
         path.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
@@ -94,8 +94,8 @@ auto published_identity(const std::filesystem::path& path)
     return error ? std::nullopt : std::optional{identity};
 }
 
-auto published_identity_equal(const project_asset_copy_result_t::published_identity_t& first,
-                              const project_asset_copy_result_t::published_identity_t& second)
+auto published_identity_equal(const project_asset_copy_receipt_t::published_identity_t& first,
+                              const project_asset_copy_receipt_t::published_identity_t& second)
     -> bool {
     return first == second;
 }
@@ -121,7 +121,7 @@ auto is_existing_copy_directory_safe(const std::filesystem::path& project_direct
 
 auto discard_unlinked_copy(const project_asset_copy_request_t& request,
                            const std::filesystem::path& relative_directory,
-                           const project_asset_copy_result_t& copy) -> bool {
+                           const project_asset_copy_receipt_t& copy) -> bool {
     namespace fs = std::filesystem;
     if (copy.status != project_asset_copy_status_t::copied || !copy.published_identity ||
         !request.project_directory.is_absolute() || !is_valid_relative(relative_directory) ||
@@ -557,12 +557,12 @@ auto inspect_export_asset_copy(const export_asset_copy_request_t& request, std::
 }
 
 auto discard_unlinked_project_asset_copy(const project_asset_copy_request_t& request,
-                                         const project_asset_copy_result_t& copy) -> bool {
+                                         const project_asset_copy_receipt_t& copy) -> bool {
     return discard_unlinked_copy(request, "assets", copy);
 }
 
 auto discard_unlinked_export_asset_copy(const export_asset_copy_request_t& request,
-                                        const project_asset_copy_result_t& copy) -> bool {
+                                        const project_asset_copy_receipt_t& copy) -> bool {
     const auto directory = export_asset_directory(request.relative_output_path);
     if (!directory)
         return false;

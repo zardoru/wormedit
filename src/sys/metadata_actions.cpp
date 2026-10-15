@@ -322,7 +322,7 @@ auto dispatch_lane_profile_apply(document_history_t& history, workspace_controll
     metadata_drop.clear_lane_profile_preview();
     if (!proposal.value)
         return {notification_severity_t::error, "Lane migration preview data was changed after proposal."};
-    auto result = apply_lane_migration(history, *proposal.value, true);
+    auto result = apply_proposal(history, *proposal.value, true);
     if (!result) return {notification_severity_t::error, result.payload.message};
     auto feedback = publish_metadata_edit(std::move(result.command), workspace, history);
     if (feedback.severity == notification_severity_t::success)

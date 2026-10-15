@@ -154,7 +154,7 @@ void check_default_drop_preview(const lane_migration_proposal_outcome_t& preview
 
 void check_drop_requires_confirmation(document_history_t& history,
                                       const lane_migration_proposal_outcome_t& preview) {
-    CHECK(apply_lane_migration(history, *preview.value, false).payload.issue ==
+    CHECK(apply_proposal(history, *preview.value, false).payload.issue ==
           lane_migration_issue_t::drop_confirmation_required);
     CHECK(history.document.charts.front().measures[0].notes.size() == 2);
 }
@@ -282,7 +282,7 @@ void check_retained_collision_rejected(document_history_t& history,
                                        const retained_collision_fixture_t& fixture) {
     CHECK(preview.value->payload.report.collision_count > 0);
     CHECK(has_retained_collision_witness(preview, fixture));
-    CHECK(apply_lane_migration(history, *preview.value, false).payload.issue ==
+    CHECK(apply_proposal(history, *preview.value, false).payload.issue ==
           lane_migration_issue_t::lane_collision);
 }
 
@@ -314,7 +314,7 @@ TEST_CASE("lane migration previews drops and changes all segments in one undoabl
     check_default_drop_preview(preview);
     check_drop_requires_confirmation(history, preview);
 
-    const auto applied = apply_lane_migration(history, *preview.value, true);
+    const auto applied = apply_proposal(history, *preview.value, true);
     REQUIRE(applied);
     check_migrated_segments(history.document.charts.front(), *target);
     check_drop_undo(history);
@@ -336,7 +336,7 @@ TEST_CASE("lane migration reports and applies a noncolliding many-to-one mapping
     REQUIRE(preview.value);
     check_noncolliding_merge_preview(preview);
     auto history = document_history_t::from(song);
-    REQUIRE(apply_lane_migration(history, *preview.value, false));
+    REQUIRE(apply_proposal(history, *preview.value, false));
     check_merged_notes(history.document.charts.front(), target_lanes[0].id);
 }
 
@@ -357,7 +357,7 @@ TEST_CASE("lane migration rejects inclusive hold-tail collisions created by a la
     REQUIRE(preview.value);
     check_hold_tail_witness(preview);
     auto history = document_history_t::from(song);
-    CHECK(apply_lane_migration(history, *preview.value, false).payload.issue == lane_migration_issue_t::lane_collision);
+    CHECK(apply_proposal(history, *preview.value, false).payload.issue == lane_migration_issue_t::lane_collision);
     CHECK(history.document.charts.front().measures.front().notes.size() == 2);
 }
 
@@ -373,13 +373,13 @@ TEST_CASE("lane migration rejects modified previews and another song at matching
     other.id = song_id_t{9};
     check_lane_staleness(lane_migration_proposal_t::propose(song, song.revision + 1, chart_id_t{2}, *target));
     auto other_history = document_history_t::from(other);
-    test::check_stale_action_message(apply_lane_migration(other_history, *preview.value, false).payload.message, "Lane migration");
-    CHECK(apply_lane_migration(other_history, *preview.value, false).payload.issue ==
+    test::check_stale_action_message(apply_proposal(other_history, *preview.value, false).payload.message, "Lane migration");
+    CHECK(apply_proposal(other_history, *preview.value, false).payload.issue ==
           lane_migration_issue_t::stale_revision);
 
     auto history = document_history_t::from(song);
     preview.value->payload.target.layout.display_name = "tampered";
-    CHECK(apply_lane_migration(history, *preview.value, false).payload.issue ==
+    CHECK(apply_proposal(history, *preview.value, false).payload.issue ==
           lane_migration_issue_t::invalid_mapping);
     CHECK(history.document.charts.front().lane_layouts.front().layout.display_name ==
           song.charts.front().lane_layouts.front().layout.display_name);
@@ -396,7 +396,7 @@ TEST_CASE("lane migration rejects source drift even when document revision is re
     const auto source_lane = ordered(history.document.charts.front().lane_layouts.front().layout).front().id;
     add_note(history.document.charts.front(), object_id_t{61}, source_lane,
              {measure_id_t{3}, 0});
-    CHECK(apply_lane_migration(history, *preview.value, false).payload.issue ==
+    CHECK(apply_proposal(history, *preview.value, false).payload.issue ==
           lane_migration_issue_t::stale_revision);
     CHECK(history.document.charts.front().measures.front().notes.size() == 1);
 }
@@ -491,7 +491,7 @@ TEST_CASE("lane migration keeps an imported BMSON note and retained event togeth
     REQUIRE(preview.value);
     check_no_linked_drops(preview);
 
-    const auto applied = apply_lane_migration(history, *preview.value, false);
+    const auto applied = apply_proposal(history, *preview.value, false);
     REQUIRE(applied);
     const auto& migrated = history.document.charts.front();
     const auto& moved_note = require_note(migrated, note_id);
@@ -515,9 +515,9 @@ TEST_CASE("lane migration confirms dropping a linked BMSON pair together",
                                                 source.id, target, mapping);
     REQUIRE(preview.value);
     check_linked_drop_preview(preview, note_id, event_id);
-    CHECK(apply_lane_migration(history, *preview.value, false).payload.issue ==
+    CHECK(apply_proposal(history, *preview.value, false).payload.issue ==
           lane_migration_issue_t::drop_confirmation_required);
-    REQUIRE(apply_lane_migration(history, *preview.value, true));
+    REQUIRE(apply_proposal(history, *preview.value, true));
     const auto& migrated = history.document.charts.front();
     check_linked_pair_removed(migrated, note_id, event_id);
     CHECK(validate_document(history.document).empty());
@@ -565,7 +565,7 @@ TEST_CASE("lane migration preserves parsed BMS branch hold channel identity",
     const auto safe_preview = lane_migration_proposal_t::propose(
         safe_history.document, safe_history.document.revision, chart.id, target, safe_mapping);
     REQUIRE(safe_preview.value);
-    REQUIRE(apply_lane_migration(safe_history, *safe_preview.value, false));
+    REQUIRE(apply_proposal(safe_history, *safe_preview.value, false));
     const auto& safe_chart = safe_history.document.charts.front();
     const auto safe_note = std::ranges::find(safe_chart.measures.front().notes, hold_id,
                                              &note_t::id);
@@ -615,7 +615,7 @@ TEST_CASE("Sealed lane migration stamp changes stay tamper errors before stalene
         chart_id_t{2}, *target);
     REQUIRE(proposal.value);
     ++proposal.value->stamp.document.revision;
-    const auto result = apply_lane_migration(history, *proposal.value, false);
+    const auto result = apply_proposal(history, *proposal.value, false);
     CHECK(result.payload.issue == lane_migration_issue_t::invalid_mapping);
     CHECK(result.payload.message == "Lane migration preview data was changed after proposal.");
     CHECK(result.command.diagnostics.empty());
@@ -662,5 +662,22 @@ TEST_CASE("Lane proposal revision keeps canonical tampering before expiry",
     original.value->payload.target.layout.display_name = "tampered";
     const auto rejected = original.value->revise(history.document, *target);
     check_lane_issue(rejected, lane_migration_issue_t::invalid_mapping);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Lane migration publication keeps typed failure and command diagnostics",
+          "[unit][core][lane-migration][proposal-stamp]") {
+    auto history = document_history_t::from(migration_song());
+    const auto target = make_osu_mania_profile(5);
+    REQUIRE(target);
+    const auto proposal = lane_migration_proposal_t::propose(history.document, history.document.revision,
+        chart_id_t{2}, *target);
+    REQUIRE(proposal.value);
+    // Unrelated invalid timing fails document publication after canonical lane validation.
+    history.document.charts.front().bpms.front().beats_per_minute = {0, 1};
+    const auto result = apply_proposal(history, *proposal.value, false);
+    CHECK_FALSE(result.command.applied);
+    CHECK(result.payload.issue == lane_migration_issue_t::invalid_mapping);
+    CHECK_FALSE(result.command.diagnostics.empty());
     CHECK(history.undo.empty());
 }

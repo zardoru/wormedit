@@ -62,8 +62,8 @@ static auto apply_cursor_navigation_target(cursor_navigation_context_t& context,
         if (!target || state.hold()->anchor_canvas_row ||
             std::ranges::any_of(state.additional_keyboard_holds(),
                                 [](const auto& hold) { return hold.anchor_canvas_row.has_value(); }))
-            return update_gesture<hold_gesture_t>(context.edit, canvas_row);
-        return update_gesture<hold_gesture_t>(context.edit, *target);
+            return revise_gesture<hold_gesture_t>(context.edit, canvas_row);
+        return revise_gesture<hold_gesture_t>(context.edit, *target);
     }
     auto proposed = state;
     place_cursor_on_canvas_row(proposed, target, canvas_row);

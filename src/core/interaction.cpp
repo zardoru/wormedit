@@ -1249,8 +1249,8 @@ auto preserve_keyboard_hold_after_scroll(editor_edit_context_t& context,
     const auto cursor_row = *proposed.cursor_canvas_row(context.scope.measures);
     context.state = proposed;
     const auto updated = canvas_hold
-                             ? update_gesture<hold_gesture_t>(context, cursor_row)
-                             : update_gesture<hold_gesture_t>(context, proposed.cursor);
+                             ? revise_gesture<hold_gesture_t>(context, cursor_row)
+                             : revise_gesture<hold_gesture_t>(context, proposed.cursor);
     if (!updated)
         context.state = before;
     return updated;
@@ -1434,7 +1434,7 @@ auto keyboard_entry_plan_t::apply(editor_edit_context_t& context) const -> edito
 // Materialization is private preparation. Authored and virtual requests run the
 // same placement verb, then publish the prepared document as one history entry.
 
-auto pending_semantic_layer_paint_gesture_t::update(editor_edit_context_t& context,
+auto pending_semantic_layer_paint_gesture_t::revise(editor_edit_context_t& context,
     std::optional<editor_selection_object_t> target) -> diagnostic_list_t {
     if (!target) return {};
     if (target->kind != editor_selection_object_kind_t::note &&
@@ -1743,19 +1743,19 @@ auto handle(editor_edit_context_t& context, const begin_hold_action_t& typed_act
 
 auto handle(editor_edit_context_t& context, const update_hold_preview_action_t& typed_action)
     -> editor_interaction_result_t {
-    return update_gesture<hold_gesture_t>(context, typed_action);
+    return revise_gesture<hold_gesture_t>(context, typed_action);
 }
 
 auto handle(editor_edit_context_t& context, const commit_hold_action_t& typed_action)
     -> editor_interaction_result_t {
-    return commit_gesture<hold_gesture_t>(context, editor_gesture_commit_view_policy_t::captured, typed_action);
+    return apply_gesture<hold_gesture_t>(context, editor_gesture_apply_view_policy_t::captured, typed_action);
 }
 
 auto handle(editor_edit_context_t& context,
             const begin_lane_key_hold_gesture_action_t& typed_action)
     -> editor_interaction_result_t {
     if (const auto* holds = context.state.gesture<hold_gesture_t>(); holds && holds->is_keyboard())
-        return update_gesture<hold_gesture_t>(context, typed_action);
+        return revise_gesture<hold_gesture_t>(context, typed_action);
     return begin_gesture<hold_gesture_t>(context, hold_start_t::from(context.state, typed_action));
 }
 
@@ -1763,7 +1763,7 @@ auto handle(editor_edit_context_t& context,
             const release_lane_key_hold_gesture_action_t& typed_action)
     -> editor_interaction_result_t {
     if (!context.state.hold()) return editor_interaction_result_t::from(context.history, context.state);
-    return commit_gesture<hold_gesture_t>(context, editor_gesture_commit_view_policy_t::captured, typed_action);
+    return apply_gesture<hold_gesture_t>(context, editor_gesture_apply_view_policy_t::captured, typed_action);
 }
 
 auto handle(editor_edit_context_t& context,
@@ -1791,7 +1791,7 @@ auto handle(editor_edit_context_t& context,
             context.history, context.state,
             cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::modifier_released});
     }
-    return update_gesture<hold_gesture_t>(context, typed_action);
+    return revise_gesture<hold_gesture_t>(context, typed_action);
 }
 
 auto handle(editor_edit_context_t& context,
@@ -1806,7 +1806,7 @@ auto handle(editor_edit_context_t& context,
             context.history, context.state,
             cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::modifier_released});
     }
-    return commit_gesture<hold_gesture_t>(context, editor_gesture_commit_view_policy_t::captured, typed_action);
+    return apply_gesture<hold_gesture_t>(context, editor_gesture_apply_view_policy_t::captured, typed_action);
 }
 
 auto handle(editor_edit_context_t& context,
@@ -1823,11 +1823,11 @@ auto handle(editor_edit_context_t& context,
     std::optional<editor_selection_object_t> target;
     if (request.bgm_event)
         target = editor_selection_object_t{editor_selection_object_kind_t::bgm_event, *request.bgm_event};
-    else if (request.note || request.phase != editor_gesture_phase_t::commit)
+    else if (request.note || request.operation != proposal_operation_t::apply)
         target = editor_selection_object_t{editor_selection_object_kind_t::note, request.note};
-    if (request.phase == editor_gesture_phase_t::commit)
-        return commit_gesture<pending_semantic_layer_paint_gesture_t>(context, target);
-    return update_gesture<pending_semantic_layer_paint_gesture_t>(context, target);
+    if (request.operation == proposal_operation_t::apply)
+        return apply_gesture<pending_semantic_layer_paint_gesture_t>(context, target);
+    return revise_gesture<pending_semantic_layer_paint_gesture_t>(context, target);
 }
 
 
@@ -1839,9 +1839,9 @@ auto handle(editor_edit_context_t& context, const begin_editor_area_selection_ac
 auto handle(editor_edit_context_t& context, const update_editor_area_selection_action_t& request)
     -> editor_interaction_result_t {
     if (!request.pointer_captured) return cancel_pointer_gesture(context);
-    if (request.phase == editor_gesture_phase_t::commit)
-        return commit_gesture<pending_editor_area_selection_t>(context, request.x_pixels, request.y_pixels);
-    return update_gesture<pending_editor_area_selection_t>(context, request.x_pixels, request.y_pixels);
+    if (request.operation == proposal_operation_t::apply)
+        return apply_gesture<pending_editor_area_selection_t>(context, request.x_pixels, request.y_pixels);
+    return revise_gesture<pending_editor_area_selection_t>(context, request.x_pixels, request.y_pixels);
 }
 
 auto handle(editor_edit_context_t&, const cancel_editor_area_selection_action_t&)
@@ -1853,7 +1853,7 @@ auto handle(editor_edit_context_t&, const cancel_editor_area_selection_action_t&
 auto handle(editor_edit_context_t& context, const space_range_selection_action_t& action)
     -> editor_interaction_result_t {
     if (context.state.gesture<pending_space_range_selection_t>())
-        return commit_gesture<pending_space_range_selection_t>(context, editor_gesture_commit_view_policy_t::captured);
+        return apply_gesture<pending_space_range_selection_t>(context, editor_gesture_apply_view_policy_t::captured);
     return begin_gesture<pending_space_range_selection_t>(context, action);
 }
 
@@ -1908,10 +1908,10 @@ auto handle(editor_edit_context_t& context, const begin_note_duration_gesture_ac
 
 auto handle(editor_edit_context_t& context, const update_note_duration_gesture_action_t& action)
     -> editor_interaction_result_t {
-    if (action.phase == editor_gesture_phase_t::commit) {
-        return commit_gesture<pending_note_duration_gesture_t>(context, action.reference_end);
+    if (action.operation == proposal_operation_t::apply) {
+        return apply_gesture<pending_note_duration_gesture_t>(context, action.reference_end);
     }
-    return update_gesture<pending_note_duration_gesture_t>(context, action.reference_end);
+    return revise_gesture<pending_note_duration_gesture_t>(context, action.reference_end);
 }
 
 auto handle(editor_edit_context_t& context, const begin_note_move_gesture_action_t& action)
@@ -1921,12 +1921,12 @@ auto handle(editor_edit_context_t& context, const begin_note_move_gesture_action
 
 auto handle(editor_edit_context_t& context, const update_note_move_gesture_action_t& action)
     -> editor_interaction_result_t {
-    if (action.phase == editor_gesture_phase_t::commit) {
-        return commit_gesture<pending_note_move_gesture_t>(context, action.reference_position, action.reference_lane,
+    if (action.operation == proposal_operation_t::apply) {
+        return apply_gesture<pending_note_move_gesture_t>(context, action.reference_position, action.reference_lane,
                                          action.to_bgm, action.preferred_bgm_lane,
                                          action.virtual_bgm_row);
     }
-    return update_gesture<pending_note_move_gesture_t>(context, action.reference_position, action.reference_lane,
+    return revise_gesture<pending_note_move_gesture_t>(context, action.reference_position, action.reference_lane,
                                     action.to_bgm, action.preferred_bgm_lane,
                                     action.virtual_bgm_row);
 }
@@ -1939,13 +1939,13 @@ auto handle(editor_edit_context_t& context, const begin_note_paint_gesture_actio
 auto handle(editor_edit_context_t& context, const update_note_paint_gesture_action_t& action)
     -> editor_interaction_result_t {
     if (!action.pointer_captured) return cancel_pointer_gesture(context);
-    return update_gesture<pending_note_paint_gesture_t>(context, action.lane, action.position, std::nullopt);
+    return revise_gesture<pending_note_paint_gesture_t>(context, action.lane, action.position, std::nullopt);
 }
 
 auto handle(editor_edit_context_t& context, const end_note_paint_gesture_action_t& action)
     -> editor_interaction_result_t {
     if (!action.pointer_captured) return cancel_pointer_gesture(context);
-    return commit_gesture<pending_note_paint_gesture_t>(context, action.lane, action.position,
+    return apply_gesture<pending_note_paint_gesture_t>(context, action.lane, action.position,
                                                        action.source_geometry);
 }
 

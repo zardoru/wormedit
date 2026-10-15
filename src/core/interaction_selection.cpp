@@ -595,7 +595,7 @@ auto pending_space_range_selection_t::begin(editor_edit_context_t& context,
 
 namespace wormedit {
 using namespace interaction_detail;
-auto pending_space_range_selection_t::update(editor_edit_context_t& context) -> diagnostic_list_t {
+auto pending_space_range_selection_t::revise(editor_edit_context_t& context) -> diagnostic_list_t {
     const auto& pending = *this;
     const auto& history = context.history;
     if (pending.hit_index == nullptr)
@@ -715,7 +715,7 @@ auto pending_editor_area_selection_t::begin(editor_edit_context_t& context,
 
 namespace wormedit {
 using namespace interaction_detail;
-auto pending_editor_area_selection_t::update(editor_edit_context_t& context,
+auto pending_editor_area_selection_t::revise(editor_edit_context_t& context,
     double x_pixels, double y_pixels) -> diagnostic_list_t {
     auto& history = context.history;
     auto& state = context.state;

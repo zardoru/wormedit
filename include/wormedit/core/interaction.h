@@ -195,11 +195,9 @@ struct begin_note_duration_gesture_action_t {
     object_id_t reference_note;
 };
 
-enum class editor_gesture_phase_t { update, commit };
-
 struct update_note_duration_gesture_action_t {
     local_position_t reference_end;
-    editor_gesture_phase_t phase{editor_gesture_phase_t::update};
+    proposal_operation_t operation{proposal_operation_t::revise};
 };
 
 // Translate the selected notes and BGM events by the snapped delta between the
@@ -219,7 +217,7 @@ struct update_note_move_gesture_action_t {
     std::optional<object_id_t> preferred_bgm_lane;
     // Absolute destination in the unmaterialized BMS tail (BGM reference only).
     std::optional<std::uint64_t> virtual_bgm_row;
-    editor_gesture_phase_t phase{editor_gesture_phase_t::update};
+    proposal_operation_t operation{proposal_operation_t::revise};
 };
 
 struct note_paint_target_t {
@@ -329,7 +327,7 @@ struct update_editor_area_selection_action_t {
     double x_pixels{};
     double y_pixels{};
     bool pointer_captured{true};
-    editor_gesture_phase_t phase{editor_gesture_phase_t::update};
+    proposal_operation_t operation{proposal_operation_t::revise};
 };
 
 struct cancel_editor_area_selection_action_t {};
@@ -384,7 +382,7 @@ struct update_semantic_layer_paint_gesture_action_t {
     object_id_t note;
     bool pointer_captured{true};
     std::optional<object_id_t> bgm_event;
-    editor_gesture_phase_t phase{editor_gesture_phase_t::update};
+    proposal_operation_t operation{proposal_operation_t::revise};
 };
 
 struct paint_cell_key_t {
@@ -521,7 +519,7 @@ struct pending_hold_t {
     [[nodiscard]] static auto from(editor_edit_context_t&, const hold_start_t&)
         -> diagnosed_t<std::optional<pending_hold_t>>;
     [[nodiscard]] auto validate_start(const editor_edit_context_t&) const -> diagnostic_list_t;
-    [[nodiscard]] auto update(editor_edit_context_t&, local_position_t) -> diagnostic_list_t;
+    [[nodiscard]] auto revise(editor_edit_context_t&, local_position_t) -> diagnostic_list_t;
     [[nodiscard]] auto apply(editor_edit_context_t&, local_position_t,
                              std::optional<bmson_source_geometry_t>) const -> editor_interaction_result_t;
     auto operator==(const pending_hold_t&) const -> bool = default;
@@ -544,7 +542,7 @@ struct keyboard_entry_plan_t {
 class hold_gesture_t {
 public:
     static constexpr auto kind = editor_gesture_kind_t::hold;
-    static constexpr auto update_message = update_hold_preview_action_t::missing_gesture_message;
+    static constexpr auto revision_message = update_hold_preview_action_t::missing_gesture_message;
     explicit hold_gesture_t(pending_hold_t primary) : primary_(std::move(primary)) {}
     hold_gesture_t(std::optional<pending_hold_t> primary, std::vector<pending_hold_t> additional)
         : primary_(std::move(primary)), additional_(std::move(additional)) {}
@@ -560,19 +558,19 @@ public:
     }
     void discard_primary() { primary_.reset(); }
     [[nodiscard]] static auto can_restore_begin(const hold_start_t&) -> bool;
-    template<class Action> [[nodiscard]] static constexpr auto can_restore_update(const Action&) -> bool {
+    template<class Action> [[nodiscard]] static constexpr auto can_restore_revision(const Action&) -> bool {
         return std::same_as<Action, begin_lane_key_hold_gesture_action_t> || std::same_as<Action, std::uint64_t>;
     }
     [[nodiscard]] static auto begin(editor_edit_context_t&, const hold_start_t&)
         -> diagnosed_t<std::optional<hold_gesture_t>>;
-    [[nodiscard]] auto update(editor_edit_context_t&, const begin_lane_key_hold_gesture_action_t&) -> diagnostic_list_t;
-    [[nodiscard]] auto update(editor_edit_context_t&, const update_hold_preview_action_t&) -> diagnostic_list_t;
-    [[nodiscard]] auto update(editor_edit_context_t&, const update_alt_pointer_hold_gesture_action_t&) -> diagnostic_list_t;
-    [[nodiscard]] auto update(editor_edit_context_t&, local_position_t) -> diagnostic_list_t;
-    [[nodiscard]] auto update(editor_edit_context_t&, std::uint64_t canvas_row) -> diagnostic_list_t;
-    [[nodiscard]] auto update(editor_edit_context_t&, const commit_hold_action_t&) -> diagnostic_list_t;
-    [[nodiscard]] auto update(editor_edit_context_t&, const release_lane_key_hold_gesture_action_t&) -> diagnostic_list_t;
-    [[nodiscard]] auto update(editor_edit_context_t&, const release_alt_pointer_hold_gesture_action_t&) -> diagnostic_list_t;
+    [[nodiscard]] auto revise(editor_edit_context_t&, const begin_lane_key_hold_gesture_action_t&) -> diagnostic_list_t;
+    [[nodiscard]] auto revise(editor_edit_context_t&, const update_hold_preview_action_t&) -> diagnostic_list_t;
+    [[nodiscard]] auto revise(editor_edit_context_t&, const update_alt_pointer_hold_gesture_action_t&) -> diagnostic_list_t;
+    [[nodiscard]] auto revise(editor_edit_context_t&, local_position_t) -> diagnostic_list_t;
+    [[nodiscard]] auto revise(editor_edit_context_t&, std::uint64_t canvas_row) -> diagnostic_list_t;
+    [[nodiscard]] auto revise(editor_edit_context_t&, const commit_hold_action_t&) -> diagnostic_list_t;
+    [[nodiscard]] auto revise(editor_edit_context_t&, const release_lane_key_hold_gesture_action_t&) -> diagnostic_list_t;
+    [[nodiscard]] auto revise(editor_edit_context_t&, const release_alt_pointer_hold_gesture_action_t&) -> diagnostic_list_t;
     [[nodiscard]] auto apply(editor_edit_context_t&) -> editor_interaction_result_t;
     auto operator==(const hold_gesture_t&) const -> bool = default;
 private:
@@ -583,7 +581,7 @@ private:
         std::optional<bmson_source_geometry_t> geometry;
         auto operator==(const release_t&) const -> bool = default;
     };
-    [[nodiscard]] auto update_primary(editor_edit_context_t&, local_position_t, bool keep_visible) -> diagnostic_list_t;
+    [[nodiscard]] auto revise_primary(editor_edit_context_t&, local_position_t, bool keep_visible) -> diagnostic_list_t;
     [[nodiscard]] auto selected_hold(lane_id_t) const -> const pending_hold_t*;
     void remove_hold(lane_id_t);
     std::optional<pending_hold_t> primary_;
@@ -618,7 +616,7 @@ struct note_duration_preview_t {
 
 struct pending_note_duration_gesture_t {
     static constexpr auto kind = editor_gesture_kind_t::duration;
-    static constexpr std::string_view update_message = "duration gesture update requires an active gesture";
+    static constexpr std::string_view revision_message = "duration gesture update requires an active gesture";
     object_id_t reference_note;
     std::vector<object_id_t> notes;
     local_position_t preview_end;
@@ -626,7 +624,7 @@ struct pending_note_duration_gesture_t {
 
     [[nodiscard]] static auto begin(editor_edit_context_t&, object_id_t)
         -> diagnosed_t<std::optional<pending_note_duration_gesture_t>>;
-    [[nodiscard]] auto update(editor_edit_context_t&, local_position_t) -> diagnostic_list_t;
+    [[nodiscard]] auto revise(editor_edit_context_t&, local_position_t) -> diagnostic_list_t;
     [[nodiscard]] auto apply(editor_edit_context_t&) const -> editor_interaction_result_t;
     auto operator==(const pending_note_duration_gesture_t&) const -> bool = default;
 };
@@ -669,7 +667,7 @@ struct note_move_bgm_lane_preview_t {
 
 struct pending_note_move_gesture_t {
     static constexpr auto kind = editor_gesture_kind_t::move;
-    static constexpr auto update_message = "note move update requires an active gesture";
+    static constexpr auto revision_message = "note move update requires an active gesture";
     object_id_t reference_note;
     std::vector<object_id_t> notes;
     local_position_t preview_position;
@@ -687,7 +685,7 @@ struct pending_note_move_gesture_t {
 
     [[nodiscard]] static auto begin(editor_edit_context_t&, object_id_t, bool displace_to_bgm = false)
         -> diagnosed_t<std::optional<pending_note_move_gesture_t>>;
-    [[nodiscard]] auto update(editor_edit_context_t&, local_position_t, lane_id_t, bool,
+    [[nodiscard]] auto revise(editor_edit_context_t&, local_position_t, lane_id_t, bool,
                               std::optional<object_id_t>, std::optional<std::uint64_t>) -> diagnostic_list_t;
     [[nodiscard]] auto apply(editor_edit_context_t&) const -> editor_interaction_result_t;
     auto operator==(const pending_note_move_gesture_t&) const -> bool = default;
@@ -695,7 +693,7 @@ struct pending_note_move_gesture_t {
 
 struct pending_note_paint_gesture_t {
     static constexpr auto kind = editor_gesture_kind_t::paint;
-    static constexpr auto update_message = "note paint update requires an active gesture";
+    static constexpr auto revision_message = "note paint update requires an active gesture";
     std::shared_ptr<const std::vector<note_paint_target_t>> targets;
     std::unordered_set<paint_cell_key_t, paint_cell_hash_t> visited;
     lane_id_t last_lane;
@@ -708,7 +706,7 @@ struct pending_note_paint_gesture_t {
 
     [[nodiscard]] static auto begin(editor_edit_context_t&, const begin_note_paint_gesture_action_t&)
         -> diagnosed_t<std::optional<pending_note_paint_gesture_t>>;
-    [[nodiscard]] auto update(editor_edit_context_t&, lane_id_t, local_position_t,
+    [[nodiscard]] auto revise(editor_edit_context_t&, lane_id_t, local_position_t,
                               std::optional<bmson_source_geometry_t>) -> diagnostic_list_t;
     [[nodiscard]] auto apply(editor_edit_context_t&) const -> editor_interaction_result_t;
     auto operator==(const pending_note_paint_gesture_t&) const -> bool = default;
@@ -722,7 +720,7 @@ struct note_paint_gesture_preview_t {
 
 struct pending_semantic_layer_paint_gesture_t {
     static constexpr auto kind = editor_gesture_kind_t::semantic_paint;
-    static constexpr auto update_message = "semantic-layer paint update requires an active gesture";
+    static constexpr auto revision_message = "semantic-layer paint update requires an active gesture";
     layer_id_t layer;
     std::shared_ptr<const std::vector<object_id_t>> notes;
     std::shared_ptr<const std::vector<object_id_t>> bgm_events;
@@ -733,7 +731,7 @@ struct pending_semantic_layer_paint_gesture_t {
 
     [[nodiscard]] static auto begin(editor_edit_context_t&, const begin_semantic_layer_paint_gesture_action_t&)
         -> diagnosed_t<std::optional<pending_semantic_layer_paint_gesture_t>>;
-    [[nodiscard]] auto update(editor_edit_context_t&, std::optional<editor_selection_object_t>) -> diagnostic_list_t;
+    [[nodiscard]] auto revise(editor_edit_context_t&, std::optional<editor_selection_object_t>) -> diagnostic_list_t;
     [[nodiscard]] auto apply(editor_edit_context_t&) const -> editor_interaction_result_t;
     auto operator==(const pending_semantic_layer_paint_gesture_t&) const -> bool = default;
 };
@@ -760,7 +758,7 @@ struct editor_area_selection_preview_t {
 
 struct pending_editor_area_selection_t {
     static constexpr auto kind = editor_gesture_kind_t::area;
-    static constexpr auto update_message = "area selection update requires an active gesture";
+    static constexpr auto revision_message = "area selection update requires an active gesture";
     static constexpr bool needs_initial_view = true;
     std::shared_ptr<const editor_hit_test_index_t> hit_index;
     double anchor_x_pixels{};
@@ -777,14 +775,14 @@ struct pending_editor_area_selection_t {
 
     [[nodiscard]] static auto begin(editor_edit_context_t&, const begin_editor_area_selection_action_t&)
         -> diagnosed_t<std::optional<pending_editor_area_selection_t>>;
-    [[nodiscard]] auto update(editor_edit_context_t&, double x_pixels, double y_pixels) -> diagnostic_list_t;
+    [[nodiscard]] auto revise(editor_edit_context_t&, double x_pixels, double y_pixels) -> diagnostic_list_t;
     [[nodiscard]] auto apply(editor_edit_context_t&) const -> editor_interaction_result_t;
     auto operator==(const pending_editor_area_selection_t&) const -> bool = default;
 };
 
 struct pending_space_range_selection_t {
     static constexpr auto kind = editor_gesture_kind_t::range;
-    static constexpr auto update_message = "Space range selection update requires an active gesture";
+    static constexpr auto revision_message = "Space range selection update requires an active gesture";
     static constexpr bool needs_initial_view = true;
     std::shared_ptr<const editor_hit_test_index_t> hit_index;
     local_position_t anchor;
@@ -795,7 +793,7 @@ struct pending_space_range_selection_t {
 
     [[nodiscard]] static auto begin(editor_edit_context_t&, const space_range_selection_action_t&)
         -> diagnosed_t<std::optional<pending_space_range_selection_t>>;
-    [[nodiscard]] auto update(editor_edit_context_t&) -> diagnostic_list_t;
+    [[nodiscard]] auto revise(editor_edit_context_t&) -> diagnostic_list_t;
     [[nodiscard]] auto apply(editor_edit_context_t&) const -> editor_interaction_result_t;
     auto operator==(const pending_space_range_selection_t&) const -> bool = default;
 };

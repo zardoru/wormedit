@@ -62,7 +62,7 @@ TEST_CASE("Duration core update retires stale captures", "[core][active-gesture]
     auto context = fixture.context();
     REQUIRE(begin_gesture<pending_note_duration_gesture_t>(context, object_id_t{101}));
     ++fixture.history.document.revision;
-    const auto stale = update_gesture<pending_note_duration_gesture_t>(context, local_position_t{measure_id_t{1}, 480});
+    const auto stale = revise_gesture<pending_note_duration_gesture_t>(context, local_position_t{measure_id_t{1}, 480});
     CHECK_FALSE(stale);
     test::check_stale_action_message(stale.diagnostics, "Editor gesture");
     fixture.check_capture_ended(0);
@@ -72,8 +72,8 @@ TEST_CASE("Duration release updates then commits once", "[core][active-gesture]"
     auto fixture = gesture_fixture_t::from();
     auto context = fixture.context();
     REQUIRE(begin_gesture<pending_note_duration_gesture_t>(context, object_id_t{101}));
-    REQUIRE(update_gesture<pending_note_duration_gesture_t>(context, local_position_t{measure_id_t{1}, 240}));
-    const auto released = commit_gesture<pending_note_duration_gesture_t>(context, local_position_t{measure_id_t{1}, 480});
+    REQUIRE(revise_gesture<pending_note_duration_gesture_t>(context, local_position_t{measure_id_t{1}, 240}));
+    const auto released = apply_gesture<pending_note_duration_gesture_t>(context, local_position_t{measure_id_t{1}, 480});
     REQUIRE(released);
     CHECK(released.document_changed);
     fixture.check_capture_ended(1);
@@ -93,7 +93,7 @@ TEST_CASE("Gesture cancellation clears the capture without a command", "[core][a
 TEST_CASE("Gesture updates require an active capture", "[core][active-gesture]") {
     auto fixture = gesture_fixture_t::from();
     auto context = fixture.context();
-    const auto missing = update_gesture<pending_note_duration_gesture_t>(context,
+    const auto missing = revise_gesture<pending_note_duration_gesture_t>(context,
         local_position_t{measure_id_t{1}, 240});
     CHECK_FALSE(missing);
     REQUIRE(missing.diagnostics.size() == 1);
@@ -105,9 +105,9 @@ TEST_CASE("Gesture terminal errors clear captures and ordinary update errors ret
     auto context = fixture.context();
     REQUIRE(begin_gesture<pending_note_duration_gesture_t>(context, object_id_t{101}));
     const auto invalid_end = local_position_t{measure_id_t{99}, 0};
-    CHECK_FALSE(update_gesture<pending_note_duration_gesture_t>(context, invalid_end));
+    CHECK_FALSE(revise_gesture<pending_note_duration_gesture_t>(context, invalid_end));
     CHECK((fixture.state).is_pending());
-    CHECK_FALSE(commit_gesture<pending_note_duration_gesture_t>(context, invalid_end));
+    CHECK_FALSE(apply_gesture<pending_note_duration_gesture_t>(context, invalid_end));
     fixture.check_capture_ended(0);
 }
 
@@ -118,7 +118,7 @@ TEST_CASE("Gesture kind mismatch retains the original capture", "[core][active-g
     auto fixture = gesture_fixture_t::from();
     auto context = fixture.context();
     REQUIRE(begin_gesture<pending_note_move_gesture_t>(context, object_id_t{101}, false));
-    const auto rejected = update_gesture<pending_note_duration_gesture_t>(context,
+    const auto rejected = revise_gesture<pending_note_duration_gesture_t>(context,
         local_position_t{measure_id_t{1}, 240});
     CHECK_FALSE(rejected);
     CHECK(fixture.state.gesture<pending_note_move_gesture_t>() != nullptr);
@@ -140,7 +140,7 @@ TEST_CASE("Paint projection retains targets without copying capture bookkeeping"
     REQUIRE((capture && preview));
     const auto& paint = std::get<note_paint_gesture_preview_t>(*preview);
     CHECK(paint.targets == capture->targets);
-    REQUIRE(update_gesture<pending_note_paint_gesture_t>(context, lane_id_t{1},
+    REQUIRE(revise_gesture<pending_note_paint_gesture_t>(context, lane_id_t{1},
         local_position_t{measure_id_t{1}, 480}, std::nullopt));
     CHECK((paint.targets->size() == 1 && capture->targets->size() == 2));
 }
@@ -156,7 +156,7 @@ TEST_CASE("Semantic paint commits without a final sampled target", "[core][activ
     REQUIRE(begin_gesture<pending_semantic_layer_paint_gesture_t>(context,
         begin_semantic_layer_paint_gesture_action_t{.layer = layer_id_t{7}, .note = object_id_t{101}}));
     CHECK_FALSE(build_editor_gesture_preview(fixture.state.active_gesture));
-    const auto committed = commit_gesture<pending_semantic_layer_paint_gesture_t>(context,
+    const auto committed = apply_gesture<pending_semantic_layer_paint_gesture_t>(context,
         std::optional<editor_selection_object_t>{});
     REQUIRE(committed);
     CHECK(committed.document_changed);
@@ -174,7 +174,7 @@ TEST_CASE("Area selection uses a borrowed dispatch view and ends without a docum
     context.initial_view = &std::get<editor_interaction_view_model_t>(initial);
     REQUIRE(begin_gesture<pending_editor_area_selection_t>(context,
         begin_editor_area_selection_action_t{.x_pixels = 10, .y_pixels = 0.5, .field_width_pixels = 100}));
-    REQUIRE(commit_gesture<pending_editor_area_selection_t>(context, 20.0, 0.5));
+    REQUIRE(apply_gesture<pending_editor_area_selection_t>(context, 20.0, 0.5));
     fixture.check_capture_ended(0);
 }
 
@@ -223,8 +223,8 @@ TEST_CASE("Space commits its captured range preview without a document edit", "[
     auto context = fixture.context();
     context.initial_view = &std::get<editor_interaction_view_model_t>(initial);
     const auto objects = context.initial_view->gesture<space_range_selection_preview_t>()->objects;
-    REQUIRE(commit_gesture<pending_space_range_selection_t>(context,
-        editor_gesture_commit_view_policy_t::captured));
+    REQUIRE(apply_gesture<pending_space_range_selection_t>(context,
+        editor_gesture_apply_view_policy_t::captured));
     CHECK(fixture.state.selected_objects == *objects);
     fixture.check_capture_ended(0);
 }
@@ -254,7 +254,7 @@ TEST_CASE("Hold core updates retire stale captures", "[core][active-gesture]") {
     auto context = fixture.context();
     REQUIRE(begin_gesture<hold_gesture_t>(context, hold_start_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 240}}));
     ++fixture.history.document.revision;
-    const auto stale = update_gesture<hold_gesture_t>(context, update_hold_preview_action_t{{measure_id_t{1}, 480}});
+    const auto stale = revise_gesture<hold_gesture_t>(context, update_hold_preview_action_t{{measure_id_t{1}, 480}});
     CHECK_FALSE(stale);
     test::check_stale_action_message(stale.diagnostics, "Editor gesture");
     CHECK_FALSE((fixture.state).is_pending());
@@ -281,11 +281,11 @@ TEST_CASE("Direct gesture calls validate a replacement capture on a reused conte
     auto fixture = gesture_fixture_t::from();
     auto context = fixture.context();
     REQUIRE(begin_gesture<pending_note_duration_gesture_t>(context, object_id_t{101}));
-    REQUIRE(update_gesture<pending_note_duration_gesture_t>(context, local_position_t{measure_id_t{1}, 240}));
+    REQUIRE(revise_gesture<pending_note_duration_gesture_t>(context, local_position_t{measure_id_t{1}, 240}));
     auto* stored = gesture_storage<pending_note_duration_gesture_t>(&*fixture.state.active_gesture);
     REQUIRE(stored);
     stored->stamp.revision = fixture.history.document.revision + 1;
-    const auto stale = update_gesture<pending_note_duration_gesture_t>(context, local_position_t{measure_id_t{1}, 480});
+    const auto stale = revise_gesture<pending_note_duration_gesture_t>(context, local_position_t{measure_id_t{1}, 480});
     CHECK_FALSE(stale);
     test::check_stale_action_message(stale.diagnostics, "Editor gesture");
     fixture.check_capture_ended(0);

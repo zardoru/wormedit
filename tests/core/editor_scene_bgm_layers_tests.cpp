@@ -102,7 +102,7 @@ auto end_bgm_paint(document_history_t& history, editor_interaction_state_t& stat
                                   update_semantic_layer_paint_gesture_action_t{
                                       .note = object_id_t{},
                                       .pointer_captured = true,
-                                      .phase = wormedit::editor_gesture_phase_t::commit});
+                                      .operation = wormedit::proposal_operation_t::apply});
 }
 
 auto bgm_width_chart() -> chart_document_t {

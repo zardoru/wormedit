@@ -10,7 +10,7 @@ concept editor_gesture = requires(Gesture& gesture, editor_edit_context_t& conte
     { Gesture::begin(context, begin_argument) }
         -> std::same_as<diagnosed_t<std::optional<Gesture>>>;
     { Gesture::kind } -> std::convertible_to<editor_gesture_kind_t>;
-    { gesture.update(context, arguments...) } -> std::same_as<diagnostic_list_t>;
+    { gesture.revise(context, arguments...) } -> std::same_as<diagnostic_list_t>;
     { gesture.apply(context) } -> std::same_as<editor_interaction_result_t>;
 };
 
@@ -78,13 +78,13 @@ void refresh_gesture_stamp(editor_edit_context_t& context) {
 }
 
 template<class Gesture, class... Arguments>
-[[nodiscard]] auto gesture_update_message(const Arguments&...) -> std::string_view {
+[[nodiscard]] auto gesture_revision_message(const Arguments&...) -> std::string_view {
     if constexpr (sizeof...(Arguments) == 1) {
         using argument_type = std::tuple_element_t<0, std::tuple<Arguments...>>;
         if constexpr (requires { argument_type::missing_gesture_message; })
             return argument_type::missing_gesture_message;
     }
-    return Gesture::update_message;
+    return Gesture::revision_message;
 }
 
 template<class Gesture, class... Arguments>
@@ -95,7 +95,7 @@ template<class Gesture, class... Arguments>
     auto* gesture = context.state.gesture<Gesture>();
     if (!gesture)
         return std::unexpected{interaction_detail::diagnostic_result(context.history, context.state,
-            {error(diagnostic_code_t::invalid_hold, std::string(gesture_update_message<Gesture>(arguments...)))})};
+            {error(diagnostic_code_t::invalid_hold, std::string(gesture_revision_message<Gesture>(arguments...)))})};
     return gesture;
 }
 
@@ -151,18 +151,18 @@ template<class Gesture, class... Arguments>
 }
 
 template<class Gesture, class... Arguments> requires requires(Gesture& gesture, editor_edit_context_t& context, Arguments... arguments) {
-    { gesture.update(context, arguments...) } -> std::same_as<diagnostic_list_t>;
+    { gesture.revise(context, arguments...) } -> std::same_as<diagnostic_list_t>;
     { gesture.apply(context) } -> std::same_as<editor_interaction_result_t>;
 }
-[[nodiscard]] auto update_gesture(editor_edit_context_t& context, Arguments&&... arguments)
+[[nodiscard]] auto revise_gesture(editor_edit_context_t& context, Arguments&&... arguments)
     -> editor_interaction_result_t {
     auto active = require_active_gesture<Gesture>(context, arguments...);
     if (!active) return std::move(active.error());
     bool can_restore{};
-    if constexpr (requires { Gesture::can_restore_update(arguments...); })
-        can_restore = Gesture::can_restore_update(arguments...);
+    if constexpr (requires { Gesture::can_restore_revision(arguments...); })
+        can_restore = Gesture::can_restore_revision(arguments...);
     editor_gesture_state_transaction_t transaction(context, can_restore);
-    auto diagnostics = (*active)->update(context, std::forward<Arguments>(arguments)...);
+    auto diagnostics = (*active)->revise(context, std::forward<Arguments>(arguments)...);
     if (diagnostic_queries::has_errors(diagnostics)) {
         transaction.rollback();
         return interaction_detail::diagnostic_result(context.history, context.state, std::move(diagnostics));
@@ -171,29 +171,29 @@ template<class Gesture, class... Arguments> requires requires(Gesture& gesture, 
 }
 
 template<class Gesture, class... Arguments> requires requires(Gesture& gesture, editor_edit_context_t& context, Arguments... arguments) {
-    { gesture.update(context, arguments...) } -> std::same_as<diagnostic_list_t>;
+    { gesture.revise(context, arguments...) } -> std::same_as<diagnostic_list_t>;
     { gesture.apply(context) } -> std::same_as<editor_interaction_result_t>;
 }
-[[nodiscard]] auto commit_gesture(editor_edit_context_t& context, Arguments&&... arguments)
+[[nodiscard]] auto apply_gesture(editor_edit_context_t& context, Arguments&&... arguments)
     -> editor_interaction_result_t {
-    auto updated = update_gesture<Gesture>(context, std::forward<Arguments>(arguments)...);
-    return finish_gesture<Gesture>(context, static_cast<bool>(updated), std::move(updated.diagnostics));
+    auto revised = revise_gesture<Gesture>(context, std::forward<Arguments>(arguments)...);
+    return finish_gesture<Gesture>(context, static_cast<bool>(revised), std::move(revised.diagnostics));
 }
 
-enum class editor_gesture_commit_view_policy_t { rebuild, captured };
+enum class editor_gesture_apply_view_policy_t { rebuild, captured };
 
 template<class Gesture, class... Arguments> requires requires(Gesture& gesture, editor_edit_context_t& context, Arguments... arguments) {
-    { gesture.update(context, arguments...) } -> std::same_as<diagnostic_list_t>;
+    { gesture.revise(context, arguments...) } -> std::same_as<diagnostic_list_t>;
     { gesture.apply(context) } -> std::same_as<editor_interaction_result_t>;
 }
-[[nodiscard]] auto commit_gesture(editor_edit_context_t& context, editor_gesture_commit_view_policy_t policy,
+[[nodiscard]] auto apply_gesture(editor_edit_context_t& context, editor_gesture_apply_view_policy_t policy,
                                   Arguments&&... arguments) -> editor_interaction_result_t {
-    if (policy == editor_gesture_commit_view_policy_t::rebuild)
-        return commit_gesture<Gesture>(context, std::forward<Arguments>(arguments)...);
+    if (policy == editor_gesture_apply_view_policy_t::rebuild)
+        return apply_gesture<Gesture>(context, std::forward<Arguments>(arguments)...);
     auto active = require_active_gesture<Gesture>(context, arguments...);
     if (!active)
         return finish_gesture<Gesture>(context, false, std::move(active.error().diagnostics));
-    auto diagnostics = (*active)->update(context, std::forward<Arguments>(arguments)...);
+    auto diagnostics = (*active)->revise(context, std::forward<Arguments>(arguments)...);
     const auto is_valid = !diagnostic_queries::has_errors(diagnostics);
     return finish_gesture<Gesture>(context, is_valid, std::move(diagnostics));
 }

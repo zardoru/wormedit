@@ -25,7 +25,7 @@ auto pending_note_duration_gesture_t::begin(editor_edit_context_t& context, obje
     }};
 }
 
-auto pending_note_duration_gesture_t::update(editor_edit_context_t& context, local_position_t requested_end)
+auto pending_note_duration_gesture_t::revise(editor_edit_context_t& context, local_position_t requested_end)
     -> diagnostic_list_t {
     const auto& state = context.state;
     const auto* reference = context.scope.chart.find_note(reference_note);
@@ -178,7 +178,7 @@ auto pending_note_move_gesture_t::begin(editor_edit_context_t& context, object_i
         .displace_to_bgm = displace_to_bgm,
     }};
 }
-auto pending_note_move_gesture_t::update(editor_edit_context_t& context, local_position_t requested_position,
+auto pending_note_move_gesture_t::revise(editor_edit_context_t& context, local_position_t requested_position,
                               lane_id_t requested_lane, bool requested_to_bgm,
                               std::optional<object_id_t> requested_bgm_lane,
                               std::optional<std::uint64_t> requested_bgm_row)
@@ -291,7 +291,7 @@ auto add_measure_grid_paint_path(editor_edit_context_t& context, lane_id_t lane,
     }
 }
 
-auto pending_note_paint_gesture_t::update(editor_edit_context_t& context, lane_id_t lane,
+auto pending_note_paint_gesture_t::revise(editor_edit_context_t& context, lane_id_t lane,
                                          local_position_t position,
                                          std::optional<bmson_source_geometry_t> geometry)
     -> diagnostic_list_t {
@@ -598,7 +598,7 @@ auto pending_hold_t::validate_start(const editor_edit_context_t& context) const 
         "pending hold start is stale after a document or snap change")};
 }
 
-auto pending_hold_t::update(editor_edit_context_t& context, local_position_t target) -> diagnostic_list_t {
+auto pending_hold_t::revise(editor_edit_context_t& context, local_position_t target) -> diagnostic_list_t {
     auto diagnostics = validate_start(context);
     if (!diagnostics.empty()) return diagnostics;
     const auto resolved = resolve_row_placement(context.scope.chart, context.scope.measures,
@@ -631,7 +631,7 @@ auto hold_gesture_t::begin(editor_edit_context_t& context, const hold_start_t& s
     return {.value = hold_gesture_t{std::move(*planned.value)}};
 }
 
-auto hold_gesture_t::update(editor_edit_context_t& context, const begin_lane_key_hold_gesture_action_t& action)
+auto hold_gesture_t::revise(editor_edit_context_t& context, const begin_lane_key_hold_gesture_action_t& action)
     -> diagnostic_list_t {
     if (!is_keyboard())
         return {error(diagnostic_code_t::invalid_hold,
@@ -652,11 +652,11 @@ auto hold_gesture_t::update(editor_edit_context_t& context, const begin_lane_key
     return {};
 }
 
-auto hold_gesture_t::update_primary(editor_edit_context_t& context, local_position_t position,
+auto hold_gesture_t::revise_primary(editor_edit_context_t& context, local_position_t position,
     bool keep_visible) -> diagnostic_list_t {
-    if (!primary_) return {error(diagnostic_code_t::invalid_hold, update_message)};
+    if (!primary_) return {error(diagnostic_code_t::invalid_hold, revision_message)};
     editor_gesture_state_transaction_t transaction(context, keep_visible);
-    auto diagnostics = primary_->update(context, position);
+    auto diagnostics = primary_->revise(context, position);
     if (!diagnostics.empty()) return diagnostics;
     place_cursor_at(context.state, primary_->preview_end.value_or(primary_->position));
     context.state.active_lane = primary_->lane;
@@ -669,19 +669,19 @@ auto hold_gesture_t::update_primary(editor_edit_context_t& context, local_positi
     return {};
 }
 
-auto hold_gesture_t::update(editor_edit_context_t& context, const update_hold_preview_action_t& action)
-    -> diagnostic_list_t { return update_primary(context, action.position, false); }
+auto hold_gesture_t::revise(editor_edit_context_t& context, const update_hold_preview_action_t& action)
+    -> diagnostic_list_t { return revise_primary(context, action.position, false); }
 
-auto hold_gesture_t::update(editor_edit_context_t& context, const update_alt_pointer_hold_gesture_action_t& action)
+auto hold_gesture_t::revise(editor_edit_context_t& context, const update_alt_pointer_hold_gesture_action_t& action)
     -> diagnostic_list_t {
     if (!primary_ || primary_->gesture_source != hold_gesture_source_t::alt_pointer)
         return {error(diagnostic_code_t::invalid_hold, action.missing_gesture_message)};
-    auto diagnostics = update_primary(context, action.position, false);
+    auto diagnostics = revise_primary(context, action.position, false);
     if (diagnostics.empty()) primary_->preview_canvas_row.reset();
     return diagnostics;
 }
 
-auto hold_gesture_t::update(editor_edit_context_t& context, local_position_t position) -> diagnostic_list_t {
+auto hold_gesture_t::revise(editor_edit_context_t& context, local_position_t position) -> diagnostic_list_t {
     if (!primary_) return {};
     if (!is_keyboard())
         return {error(diagnostic_code_t::invalid_hold,
@@ -690,16 +690,16 @@ auto hold_gesture_t::update(editor_edit_context_t& context, local_position_t pos
     place_cursor_at(context.state, context.state.cursor);
     for (std::size_t i = 0; i < additional_.size(); ++i) {
         std::swap(*primary_, additional_[i]);
-        auto diagnostics = update_primary(context, position, true);
+        auto diagnostics = revise_primary(context, position, true);
         auto& current = *context.state.gesture<hold_gesture_t>();
         std::swap(*current.primary_, current.additional_[i]);
         if (!diagnostics.empty()) return diagnostics;
     }
     transaction.accept();
-    return update_primary(context, position, true);
+    return revise_primary(context, position, true);
 }
 
-auto hold_gesture_t::update(editor_edit_context_t& context, std::uint64_t row) -> diagnostic_list_t {
+auto hold_gesture_t::revise(editor_edit_context_t& context, std::uint64_t row) -> diagnostic_list_t {
     if (!primary_ || !has_chart_virtual_tail(context.scope.chart))
         return {error(diagnostic_code_t::invalid_hold, "canvas hold movement requires a BMS lane key")};
     primary_->preview_canvas_row = row;
@@ -727,13 +727,13 @@ void hold_gesture_t::remove_hold(lane_id_t lane) {
     }
 }
 
-auto hold_gesture_t::update(editor_edit_context_t&, const commit_hold_action_t& action) -> diagnostic_list_t {
+auto hold_gesture_t::revise(editor_edit_context_t&, const commit_hold_action_t& action) -> diagnostic_list_t {
     if (!primary_) return {error(diagnostic_code_t::invalid_hold, action.missing_gesture_message)};
     release_ = release_t{.lane = primary_->lane, .position = action.position, .geometry = action.source_geometry};
     return {};
 }
 
-auto hold_gesture_t::update(editor_edit_context_t& context, const release_alt_pointer_hold_gesture_action_t& action)
+auto hold_gesture_t::revise(editor_edit_context_t& context, const release_alt_pointer_hold_gesture_action_t& action)
     -> diagnostic_list_t {
     if (!primary_ || primary_->gesture_source != hold_gesture_source_t::alt_pointer)
         return {error(diagnostic_code_t::invalid_hold, action.missing_gesture_message)};
@@ -744,7 +744,7 @@ auto hold_gesture_t::update(editor_edit_context_t& context, const release_alt_po
     return {};
 }
 
-auto hold_gesture_t::update(editor_edit_context_t& context, const release_lane_key_hold_gesture_action_t& action)
+auto hold_gesture_t::revise(editor_edit_context_t& context, const release_lane_key_hold_gesture_action_t& action)
     -> diagnostic_list_t {
     if (!primary_) return {error(diagnostic_code_t::invalid_hold, "released lane key has no pending hold")};
     const auto lane = action.lane.value == 0 ? primary_->lane : action.lane;
@@ -1015,9 +1015,9 @@ auto validate_active_gesture_action(const document_history_t& history,
     return diagnostic_result(
         history, state, {error(diagnostic_code_t::invalid_hold, gesture_finish_message(*blocked))});
 }
-template <class Action> auto is_committing_action(const editor_interaction_action_t& action) -> bool {
-    const auto* update = std::get_if<Action>(&action);
-    return update && update->phase == editor_gesture_phase_t::commit;
+template <class Action> auto is_applying_action(const editor_interaction_action_t& action) -> bool {
+    const auto* request = std::get_if<Action>(&action);
+    return request && request->operation == proposal_operation_t::apply;
 }
 
 auto is_terminal_editor_gesture_action(const editor_interaction_state_t& state,
@@ -1026,8 +1026,8 @@ auto is_terminal_editor_gesture_action(const editor_interaction_state_t& state,
            std::holds_alternative<place_virtual_bms_hold_action_t>(action) ||
            std::holds_alternative<release_alt_pointer_hold_gesture_action_t>(action) ||
            std::holds_alternative<release_lane_key_hold_gesture_action_t>(action) ||
-           is_committing_action<update_note_duration_gesture_action_t>(action) ||
-           is_committing_action<update_note_move_gesture_action_t>(action) ||
+           is_applying_action<update_note_duration_gesture_action_t>(action) ||
+           is_applying_action<update_note_move_gesture_action_t>(action) ||
            std::holds_alternative<end_note_paint_gesture_action_t>(action) ||
            std::holds_alternative<update_semantic_layer_paint_gesture_action_t>(action) ||
            std::holds_alternative<update_editor_area_selection_action_t>(action) ||

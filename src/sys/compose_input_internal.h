@@ -405,8 +405,8 @@ auto update_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_
                                           false,
                                           lane,
                                           virtual_row,
-                                          releasing ? editor_gesture_phase_t::commit
-                                                    : editor_gesture_phase_t::update});
+                                          releasing ? proposal_operation_t::apply
+                                                    : proposal_operation_t::revise});
     if (!result.accepted)
         return compose_input_family_result_t::from(
             result.diagnostics.empty() ? "Selected-object move could not be applied."
@@ -831,8 +831,8 @@ auto update_alt_pointer_gesture(const WormUiComposeInputAction& input,
     if (state.gesture<wormedit::pending_note_duration_gesture_t>()) {
         result = dispatch_editor_action(history, state,
                                         update_note_duration_gesture_action_t{
-                                            *position, releasing ? editor_gesture_phase_t::commit
-                                                                 : editor_gesture_phase_t::update});
+                                            *position, releasing ? proposal_operation_t::apply
+                                                                 : proposal_operation_t::revise});
         accepted = releasing ? (result.document_changed ? "Note duration committed."
                                                         : "Note resize released.")
                              : "Note resize preview updated.";
@@ -1081,7 +1081,7 @@ auto dispatch_note_move_gesture(const WormUiComposeInputAction& input,
                 .to_bgm = input.note_move_to_bgm,
                 .preferred_bgm_lane =
                     input.lane_id ? std::optional{object_id_t{input.lane_id}} : std::nullopt,
-                .phase = wormedit::editor_gesture_phase_t::commit});
+                .operation = wormedit::proposal_operation_t::apply});
         accepted =
             result.document_changed ? "Selected notes moved." : "Selected-note move released.";
     }
@@ -1165,7 +1165,7 @@ auto dispatch_compose_selection_input(
                                             .x_pixels = input.x_pixels,
                                             .y_pixels = input_source_y(input.y_pixels),
                                             .pointer_captured = true,
-                                            .phase = wormedit::editor_gesture_phase_t::commit});
+                                            .operation = wormedit::proposal_operation_t::apply});
         accepted = "Area selection committed.";
         break;
     case WORM_UI_COMPOSE_INPUT_SPACE_RANGE_SELECTION:

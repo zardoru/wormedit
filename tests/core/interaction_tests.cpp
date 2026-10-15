@@ -727,7 +727,7 @@ TEST_CASE("area selection in virtual BMS space excludes authored boundary events
         update_editor_area_selection_action_t{.x_pixels = 190.0,
                                               .y_pixels = 100.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit});
+                                              .operation = wormedit::proposal_operation_t::apply});
     REQUIRE(empty);
     CHECK(state.selected_objects.empty());
     CHECK_FALSE(state.retained_selection_range);
@@ -744,7 +744,7 @@ TEST_CASE("area selection in virtual BMS space excludes authored boundary events
         update_editor_area_selection_action_t{.x_pixels = 190.0,
                                               .y_pixels = 50.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit});
+                                              .operation = wormedit::proposal_operation_t::apply});
     REQUIRE(crossing);
     CHECK((state.selected_objects == std::vector<editor_selection_object_t>{
                                          {editor_selection_object_kind_t::bgm_event,
@@ -1468,7 +1468,7 @@ TEST_CASE("area selection normalizes all drag directions and applies replace, ad
                                        .x_pixels = drag[2],
                                        .y_pixels = drag[3],
                                        .pointer_captured = true,
-                                       .phase = wormedit::editor_gesture_phase_t::commit});
+                                       .operation = wormedit::proposal_operation_t::apply});
         REQUIRE(committed);
         CHECK(committed.view->selected_notes ==
               std::vector<object_id_t>{object_id_t{101}, object_id_t{102}});
@@ -1495,7 +1495,7 @@ TEST_CASE("area selection normalizes all drag directions and applies replace, ad
                                           .x_pixels = 190.0,
                                           .y_pixels = 50.0,
                                           .pointer_captured = true,
-                                          .phase = wormedit::editor_gesture_phase_t::commit});
+                                          .operation = wormedit::proposal_operation_t::apply});
     };
     const auto added = select_first(editor_area_selection_mode_t::add);
     REQUIRE(added);
@@ -1515,7 +1515,7 @@ TEST_CASE("area selection normalizes all drag directions and applies replace, ad
         update_editor_area_selection_action_t{.x_pixels = 190.0,
                                               .y_pixels = 75.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit});
+                                              .operation = wormedit::proposal_operation_t::apply});
     REQUIRE(cleared);
     CHECK(state.selected_notes.empty());
 }
@@ -1753,7 +1753,7 @@ TEST_CASE("area and Space selection address scoped BGM, timing, and BGA objects 
         update_editor_area_selection_action_t{.x_pixels = 180.0,
                                               .y_pixels = 49.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit});
+                                              .operation = wormedit::proposal_operation_t::apply});
     REQUIRE(area_commit);
     CHECK(state.selected_notes.empty());
     CHECK(state.selected_objects.size() == 11);
@@ -1769,7 +1769,7 @@ TEST_CASE("area and Space selection address scoped BGM, timing, and BGA objects 
         update_editor_area_selection_action_t{.x_pixels = 180.0,
                                               .y_pixels = 49.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit}));
+                                              .operation = wormedit::proposal_operation_t::apply}));
     CHECK(state.selected_objects.size() == 10);
     CHECK(std::ranges::none_of(state.selected_objects, [](const auto& object) {
         return object.kind == editor_selection_object_kind_t::bgm_event;
@@ -1783,7 +1783,7 @@ TEST_CASE("area and Space selection address scoped BGM, timing, and BGA objects 
         update_editor_area_selection_action_t{.x_pixels = 180.0,
                                               .y_pixels = 49.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit}));
+                                              .operation = wormedit::proposal_operation_t::apply}));
     CHECK(state.selected_objects.size() == 11);
 
     const auto before_cancel = state.selected_objects;
@@ -2098,7 +2098,7 @@ TEST_CASE("area selection maps through zoom and scroll and intersects cross-meas
         update_editor_area_selection_action_t{.x_pixels = 190.0,
                                               .y_pixels = *body_end,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit});
+                                              .operation = wormedit::proposal_operation_t::apply});
     REQUIRE(selected_body);
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
     CHECK(history.document.revision == 1);
@@ -2117,7 +2117,7 @@ TEST_CASE("area selection maps through zoom and scroll and intersects cross-meas
         update_editor_area_selection_action_t{.x_pixels = 190.0,
                                               .y_pixels = *tail_y,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit});
+                                              .operation = wormedit::proposal_operation_t::apply});
     REQUIRE(selected_tail);
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
 }
@@ -2164,7 +2164,7 @@ TEST_CASE("area selection capture loss cancels and stale revisions preserve comm
         update_editor_area_selection_action_t{.x_pixels = 290.0,
                                               .y_pixels = 100.0,
                                               .pointer_captured = false,
-                                              .phase = wormedit::editor_gesture_phase_t::commit});
+                                              .operation = wormedit::proposal_operation_t::apply});
     REQUIRE(capture_lost_on_release);
     CHECK_FALSE(static_cast<bool>(state.gesture<wormedit::pending_editor_area_selection_t>()));
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
@@ -2181,7 +2181,7 @@ TEST_CASE("area selection capture loss cancels and stale revisions preserve comm
         update_editor_area_selection_action_t{.x_pixels = 290.0,
                                               .y_pixels = 100.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit});
+                                              .operation = wormedit::proposal_operation_t::apply});
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
     test::check_stale_action_message(stale.diagnostics, "Editor gesture");
@@ -2423,7 +2423,7 @@ TEST_CASE("semantic-layer paint visits mixed notes once and commits one undoable
                                update_semantic_layer_paint_gesture_action_t{
                                    .note = object_id_t{},
                                    .pointer_captured = true,
-                                   .phase = wormedit::editor_gesture_phase_t::commit});
+                                   .operation = wormedit::proposal_operation_t::apply});
     require_layer_brush(committed);
     check_layer_brush(committed.document_changed);
     check_no_layer_brush(state.gesture<wormedit::pending_semantic_layer_paint_gesture_t>() != nullptr);
@@ -2438,7 +2438,7 @@ TEST_CASE("semantic-layer paint visits mixed notes once and commits one undoable
                                update_semantic_layer_paint_gesture_action_t{
                                    .note = object_id_t{102},
                                    .pointer_captured = true,
-                                   .phase = wormedit::editor_gesture_phase_t::commit});
+                                   .operation = wormedit::proposal_operation_t::apply});
     require_layer_brush(unchanged);
     check_no_layer_brush(unchanged.document_changed);
     check_layer_brush(history.undo.size() == 1);
@@ -2470,7 +2470,7 @@ TEST_CASE("semantic-layer remove preserves nonmembers and repeated strokes creat
         require_layer_brush(
             dispatch_editor_action(history, state,
                                    update_semantic_layer_paint_gesture_action_t{
-                                       .phase = wormedit::editor_gesture_phase_t::commit}));
+                                       .operation = wormedit::proposal_operation_t::apply}));
         check_layer_brush(history.undo.size() == 1);
         check_layer_brush(find_note(history, object_id_t{101})->semantic_layers.empty());
         check_layer_brush(find_note(history, object_id_t{102})->semantic_layers.empty());
@@ -3715,7 +3715,7 @@ TEST_CASE("tail drag previews and commits the same exact duration delta for a se
     const auto committed = dispatch_editor_action(
         history, state,
         update_note_duration_gesture_action_t{.reference_end = {measure_id_t{1}, 480},
-                                              .phase = wormedit::editor_gesture_phase_t::commit});
+                                              .operation = wormedit::proposal_operation_t::apply});
     REQUIRE(committed);
     CHECK(committed.document_changed);
     CHECK_FALSE(state.gesture<pending_note_duration_gesture_t>() != nullptr);
@@ -3738,7 +3738,7 @@ TEST_CASE("tail drag previews and commits the same exact duration delta for a se
     const auto collapsed = dispatch_editor_action(
         history, state,
         update_note_duration_gesture_action_t{.reference_end = {measure_id_t{1}, 0},
-                                              .phase = wormedit::editor_gesture_phase_t::commit});
+                                              .operation = wormedit::proposal_operation_t::apply});
     REQUIRE(collapsed);
     CHECK(find_note(history, object_id_t{101})->kind == note_kind_t::tap);
     CHECK(find_note(history, object_id_t{102})->end == local_position_t{measure_id_t{1}, 240});
@@ -3825,7 +3825,7 @@ TEST_CASE("selected note moves preview and commit one snapped translation",
     const auto committed = dispatch_editor_action(
         history, state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{2}, 0},
-                                          .phase = wormedit::editor_gesture_phase_t::commit});
+                                          .operation = wormedit::proposal_operation_t::apply});
     REQUIRE(committed);
     CHECK(committed.document_changed);
     CHECK_FALSE(state.gesture<pending_note_move_gesture_t>() != nullptr);
@@ -3907,7 +3907,7 @@ TEST_CASE("selected note moves translate playable lane columns atomically",
         history, state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{2}, 0},
                                           .reference_lane = lane_id_t{2},
-                                          .phase = wormedit::editor_gesture_phase_t::commit});
+                                          .operation = wormedit::proposal_operation_t::apply});
     REQUIRE(committed);
     CHECK(find_note(history, object_id_t{101})->lane == lane_id_t{2});
     CHECK(find_note(history, object_id_t{102})->lane == lane_id_t{3});
@@ -4439,7 +4439,7 @@ auto resize_through_duration_gesture(document_history_t& history,
     return dispatch_editor_action(
         history, state,
         update_note_duration_gesture_action_t{.reference_end = end,
-                                              .phase = wormedit::editor_gesture_phase_t::commit});
+                                              .operation = wormedit::proposal_operation_t::apply});
 }
 }
 
@@ -4555,7 +4555,7 @@ void commit_global_first_note(global_marquee_fixture_t& fixture,
         update_editor_area_selection_action_t{.x_pixels = 190.0,
                                               .y_pixels = 50.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit}));
+                                              .operation = wormedit::proposal_operation_t::apply}));
 }
 } // namespace
 
@@ -4646,7 +4646,7 @@ TEST_CASE("global marquee selects only the intersected BGM lane using typed geom
         update_editor_area_selection_action_t{.x_pixels = 355.0,
                                               .y_pixels = 55.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit}));
+                                              .operation = wormedit::proposal_operation_t::apply}));
     CHECK((fixture.state.selected_objects == std::vector<editor_selection_object_t>{
         {editor_selection_object_kind_t::bgm_event, object_id_t{201}}}));
     CHECK(fixture.state.selected_notes.empty());
@@ -4663,7 +4663,7 @@ TEST_CASE("global marquee in the timing rail excludes same-row BGM and playable 
         update_editor_area_selection_action_t{.x_pixels = 45.0,
                                               .y_pixels = 55.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit}));
+                                              .operation = wormedit::proposal_operation_t::apply}));
     CHECK((fixture.state.selected_objects == std::vector<editor_selection_object_t>{
         {editor_selection_object_kind_t::bpm_event, object_id_t{203}}}));
     CHECK(fixture.state.selected_notes.empty());
@@ -4711,7 +4711,7 @@ void check_global_projection_change_rejected(double editor_interaction_state_t::
         update_editor_area_selection_action_t{.x_pixels = 355.0,
                                               .y_pixels = 55.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit}));
+                                              .operation = wormedit::proposal_operation_t::apply}));
     CHECK(fixture.state.selected_notes == std::vector<object_id_t>{object_id_t{102}});
     CHECK(fixture.history.undo.empty());
 }
@@ -4729,7 +4729,7 @@ TEST_CASE("global marquee keeps the captured source anchor when viewport scroll 
         update_editor_area_selection_action_t{.x_pixels = 355.0,
                                               .y_pixels = 31.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit}));
+                                              .operation = wormedit::proposal_operation_t::apply}));
     CHECK((fixture.state.selected_objects == std::vector<editor_selection_object_t>{
         {editor_selection_object_kind_t::bgm_event, object_id_t{201}}}));
     CHECK(fixture.history.document.revision == 1);
@@ -5201,7 +5201,7 @@ TEST_CASE("a rejected note move into a warp ends the gesture without a ghost",
         history, state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{2}, 480},
                                           .reference_lane = lane_id_t{1},
-                                          .phase = wormedit::editor_gesture_phase_t::commit});
+                                          .operation = wormedit::proposal_operation_t::apply});
     CHECK_FALSE(released);
     CHECK_FALSE(state.gesture<pending_note_move_gesture_t>() != nullptr);
     CHECK(history.document.charts.front().measures.back().notes.front().position ==
@@ -5271,7 +5271,7 @@ TEST_CASE("DP hit testing and area selection keep stage-local lanes together",
         update_editor_area_selection_action_t{.x_pixels = 199.0,
                                               .y_pixels = 50.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit}));
+                                              .operation = wormedit::proposal_operation_t::apply}));
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{201}, object_id_t{202}});
 }
 
@@ -5308,7 +5308,7 @@ void check_retained_area_snap(bool snap) {
         update_editor_area_selection_action_t{.x_pixels = 190.0,
                                               .y_pixels = 100.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit}));
+                                              .operation = wormedit::proposal_operation_t::apply}));
     check_retained_drag_range(history, state, snap);
 }
 }
@@ -5599,7 +5599,7 @@ auto drag_note(document_history_t& history, editor_interaction_state_t& state, l
         history, state,
         update_note_move_gesture_action_t{.reference_position = to,
                                           .reference_lane = lane,
-                                          .phase = wormedit::editor_gesture_phase_t::commit});
+                                          .operation = wormedit::proposal_operation_t::apply});
 }
 } // namespace
 
@@ -5816,7 +5816,7 @@ void check_feedback_rejected_release(move_feedback_fixture_t& fixture, local_pos
         fixture.history, fixture.state,
         update_note_move_gesture_action_t{.reference_position = target,
                                           .reference_lane = lane,
-                                          .phase = wormedit::editor_gesture_phase_t::commit});
+                                          .operation = wormedit::proposal_operation_t::apply});
     feedback_check(!result);
     feedback_check(!result.document_changed);
     feedback_check(!fixture.state.gesture<pending_note_move_gesture_t>());
@@ -5870,7 +5870,7 @@ TEST_CASE("move conflict recovery commits final geometry with hold spacing and o
     const auto release = dispatch_editor_action(
         fixture.history, fixture.state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{1}, 240},
-                                          .phase = wormedit::editor_gesture_phase_t::commit});
+                                          .operation = wormedit::proposal_operation_t::apply});
     feedback_require(release);
     feedback_check(release.document_changed);
     feedback_check(fixture.history.document.revision == fixture.original.revision + 1);
@@ -5981,7 +5981,7 @@ TEST_CASE("move geometry keeps exact integer rows above floating point precision
     feedback_require(dispatch_editor_action(
         fixture.history, fixture.state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{1}, row + 100},
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     feedback_check(find_note(fixture.history, object_id_t{101})->position.row == row + 100);
     feedback_check(find_note(fixture.history, object_id_t{101})->end->row == row + 104);
     feedback_check(fixture.history.undo.size() == 1);
@@ -6060,7 +6060,7 @@ TEST_CASE("move illegal lanes retain all geometry and recover before release",
         fixture.history, fixture.state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{1}, 0},
                                           .reference_lane = lane_id_t{2},
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     feedback_check(fixture.history.undo.size() == 1);
 }
 
@@ -6113,7 +6113,7 @@ TEST_CASE("move warp conflicts remain accepted previews and clear on recovery",
     feedback_require(dispatch_editor_action(
         fixture.history, fixture.state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{2}, 720},
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     feedback_check(fixture.history.undo.size() == 1);
 }
 
@@ -6130,7 +6130,7 @@ TEST_CASE("move release validates its actual final cell and outside chart cancel
         const auto release = dispatch_editor_action(
             fixture.history, fixture.state,
             update_note_move_gesture_action_t{.reference_position = {measure_id_t{99}, 0},
-                                              .phase = wormedit::editor_gesture_phase_t::commit});
+                                              .operation = wormedit::proposal_operation_t::apply});
         feedback_check(!release);
         feedback_check(!fixture.state.gesture<pending_note_move_gesture_t>());
         check_feedback_no_document_change(fixture);
@@ -6271,7 +6271,7 @@ TEST_CASE("BGM drag commits row delta and tail in exactly one undo step",
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{2}, 0},
                                           .reference_lane = {},
                                           .to_bgm = true,
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     const auto* event = bgm_move_event(history, object_id_t{102});
     feedback_require(event);
     feedback_check(event->position == local_position_t{measure_id_t{2}, 0});
@@ -6309,7 +6309,7 @@ TEST_CASE("Move displacement allocates occupants to BGM and preserves hold tails
         history, state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{1}, 480},
                                           .reference_lane = lane_id_t{1},
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     feedback_check(find_note(history, object_id_t{101})->position == local_position_t{measure_id_t{1}, 480});
     const auto* event = bgm_move_event(history, object_id_t{102});
     feedback_require(event);
@@ -6338,7 +6338,7 @@ TEST_CASE("A displacement with no permitted BGM capacity rejects the whole move"
         history, state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{1}, 480},
                                           .reference_lane = lane_id_t{1},
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     feedback_check(!state.gesture<pending_note_move_gesture_t>());
     feedback_check(history.undo.empty() && feedback_document_bytes(history.document) == original);
 }
@@ -6371,7 +6371,7 @@ TEST_CASE("Dragging a retained BMSON hold into BGM shifts its source head and ta
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{1}, 480},
                                           .reference_lane = {},
                                           .to_bgm = true,
-                                          .phase = wormedit::editor_gesture_phase_t::commit});
+                                          .operation = wormedit::proposal_operation_t::apply});
     for (const auto& diagnostic : released.diagnostics) UNSCOPED_INFO(diagnostic.message);
     feedback_require(released);
     const auto* event = bgm_move_event(history, object_id_t{101});
@@ -6409,7 +6409,7 @@ TEST_CASE("Selected-note BGM drop shifts the whole cohort and ignores playable o
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{1}, 240},
                                           .reference_lane = {},
                                           .to_bgm = true,
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     for (const auto& preview : pending.bgm_preview) {
         const auto* event = bgm_move_event(history, preview.note);
         feedback_require(event);
@@ -6496,7 +6496,7 @@ TEST_CASE("Mixed dragging from either kind translates heads and tails with one U
     feedback_require(dispatch_editor_action(
         history, state,
         update_note_move_gesture_action_t{.reference_position = target,
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     feedback_check(find_note(history, object_id_t{101})->position == local_position_t{measure_id_t{1}, 240});
     const auto* bgm = bgm_move_event(history, object_id_t{301});
     feedback_require(bgm);
@@ -6532,7 +6532,7 @@ TEST_CASE("Mixed dragging rejects either part's collision atomically and clears 
     feedback_check(!dispatch_editor_action(
         history, state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{1}, 240},
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     feedback_check(feedback_document_bytes(history.document) == feedback_document_bytes(song));
     feedback_check(state.selected_objects == selected);
     feedback_check(history.undo.empty() && !state.gesture<pending_note_move_gesture_t>());
@@ -6551,7 +6551,7 @@ TEST_CASE("Mixed Y-lock preserves both rows while note lane changes remain avail
         history, state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{2}, 0},
                                           .reference_lane = lane_id_t{2},
-                                          .phase = wormedit::editor_gesture_phase_t::commit});
+                                          .operation = wormedit::proposal_operation_t::apply});
     feedback_require(result);
     feedback_check(find_note(history, object_id_t{101})->position == local_position_t{measure_id_t{1}, 0});
     feedback_check(find_note(history, object_id_t{101})->lane == lane_id_t{from_bgm ? 1U : 2U});
@@ -6575,7 +6575,7 @@ TEST_CASE("Mixed drag vacates selected BGM rows together and rejects translated 
     const auto result = dispatch_editor_action(
         history, state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{1}, 240},
-                                          .phase = wormedit::editor_gesture_phase_t::commit});
+                                          .operation = wormedit::proposal_operation_t::apply});
     feedback_check(result.accepted != overflow);
     feedback_check(history.undo.size() == (overflow ? 0 : 1));
     feedback_check(!state.gesture<pending_note_move_gesture_t>());
@@ -6611,7 +6611,7 @@ TEST_CASE("Mixed BMSON drag preserves the retained stem point or rejects both pa
     const auto result = dispatch_editor_action(
         history, state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{1}, 240},
-                                          .phase = wormedit::editor_gesture_phase_t::commit});
+                                          .operation = wormedit::proposal_operation_t::apply});
     feedback_check(result.accepted != collision);
     feedback_check(history.undo.size() == (collision ? 0 : 1));
     const auto* moved = bgm_move_event(history, object_id_t{301});
@@ -6669,7 +6669,7 @@ TEST_CASE("Single BGM horizontal moves share the gesture and preserve tails unde
                                           .reference_lane = {},
                                           .to_bgm = false,
                                           .preferred_bgm_lane = target.preferred_bgm_lane,
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     const auto* moved = bgm_move_event(history, object_id_t{301});
     feedback_check(moved->position == local_position_t{measure_id_t{1}, 480});
     feedback_check(moved->end == local_position_t{measure_id_t{1}, 720});
@@ -6699,7 +6699,7 @@ TEST_CASE("Single BGM collision previews the actual newly allocated lane before 
                                           .reference_lane = {},
                                           .to_bgm = false,
                                           .preferred_bgm_lane = object_id_t{300},
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     feedback_check(bgm_move_event(history, object_id_t{301})->source_lane == lane);
     feedback_check(history.undo.size() == 1);
     feedback_require(undo_document_command(history));
@@ -6729,7 +6729,7 @@ TEST_CASE("Single BGM virtual move previews without materializing and restores e
                                           .to_bgm = false,
                                           .preferred_bgm_lane = object_id_t{300},
                                           .virtual_bgm_row = requested_row,
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     const auto index = std::get<measure_index_t>(build_measure_index(history.document.charts.front()));
     const auto* moved = bgm_move_event(history, object_id_t{301});
     feedback_check(absolute_row(index, moved->position) == 2400);
@@ -6763,7 +6763,7 @@ TEST_CASE("Single BGM invalid lane and virtual overflow reject atomically and re
                                           .to_bgm = false,
                                           .preferred_bgm_lane = invalid.preferred_bgm_lane,
                                           .virtual_bgm_row = invalid.virtual_bgm_row,
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     feedback_check(!state.gesture<pending_note_move_gesture_t>() && history.undo.empty());
     feedback_check(feedback_document_bytes(history.document) == original);
 }
@@ -6796,7 +6796,7 @@ TEST_CASE("Single stem BGM uses shared move policy and rejects virtual targets w
             .to_bgm = false,
             .preferred_bgm_lane = object_id_t{310},
             .virtual_bgm_row = virtual_target ? std::optional<std::uint64_t>{2400} : std::nullopt,
-            .phase = wormedit::editor_gesture_phase_t::commit});
+            .operation = wormedit::proposal_operation_t::apply});
     feedback_check(moved.accepted != virtual_target);
     const auto* event = bgm_move_event(history, object_id_t{301});
     feedback_check(event->source_lane == object_id_t{300} && event->sound_channel_event == object_id_t{402});
@@ -6823,7 +6823,7 @@ TEST_CASE("Single BGM cancel and stale release discard shared previews without m
                                               .to_bgm = false,
                                               .preferred_bgm_lane = object_id_t{300},
                                               .virtual_bgm_row = 2400,
-                                              .phase = wormedit::editor_gesture_phase_t::commit}));
+                                              .operation = wormedit::proposal_operation_t::apply}));
     } else feedback_require(dispatch_editor_action(history, state, cancel_editor_gesture_action_t{}));
     feedback_check(!state.gesture<pending_note_move_gesture_t>() && history.undo.empty());
     feedback_check(history.document.charts.front().measures.size() == 2);
@@ -7064,7 +7064,7 @@ TEST_CASE("Scratch presentation selected drag translates adjacent visual columns
         history, state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{2}, 0},
                                           .reference_lane = lane_id_t{1},
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     check_scratch_move_commit(history);
 }
 
@@ -7340,7 +7340,7 @@ TEST_CASE("pointer gesture clocks preserve equal-revision project replacement an
     CHECK(original.active_gesture == replacement.active_gesture);
     const auto applied = dispatch_editor_action(history, original,
         update_note_duration_gesture_action_t{.reference_end = {measure_id_t{1}, 480},
-                                              .phase = editor_gesture_phase_t::commit});
+                                              .operation = proposal_operation_t::apply});
     check_replaced_project_duration(applied, history);
 }
 

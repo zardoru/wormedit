@@ -2,6 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <chrono>
 #include <latch>
 #include <memory>
@@ -204,4 +205,36 @@ TEST_CASE("async job may release owned-input work without waiting or cancelling"
     scheduler.shutdown();
     check_async(released_without_waiting);
     check_async(!cancelled);
+}
+
+TEST_CASE("async job moves current work and generations for single and multiple flight bounds",
+          "[unit][async-job]") {
+    for (const auto maximum : std::array<std::size_t, 2>{1, 2}) {
+        wormedit::task_scheduler_t scheduler{1, 2};
+        job_t source{scheduler, maximum, "invalid", "capacity", "missing"};
+        const auto first = source.request(capture({.value = 42}), 17, work);
+        require_async(static_cast<bool>(first));
+        job_t moved{std::move(source)};
+        check_async(!source.is_busy());
+        check_async(!source.wait());
+        const auto completed = moved.wait();
+        require_async(completed.has_value());
+        require_async(completed->has_value());
+        check_async(completed->value().generation == *first);
+        check_async(completed->value().identity == 17);
+        check_async(*completed->value().payload == 42);
+        const auto second = moved.request(capture({.value = 43}), 18, work);
+        require_async(static_cast<bool>(second));
+        check_async(*second == *first + 1);
+        job_t assigned{scheduler, maximum, "invalid", "capacity", "missing"};
+        assigned = std::move(moved);
+        check_async(!moved.is_busy());
+        const auto next = assigned.wait();
+        require_async(next.has_value());
+        require_async(next->has_value());
+        check_async(next->value().generation == *second);
+        check_async(next->value().identity == 18);
+        check_async(*next->value().payload == 43);
+        check_async(!assigned.poll());
+    }
 }

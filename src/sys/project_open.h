@@ -11,7 +11,7 @@
 
 namespace wormedit::sys {
 
-struct project_chart_runtime_t;
+class project_chart_runtime_t;
 
 struct pending_import_t {
     std::string audio_project_path;

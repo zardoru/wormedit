@@ -487,7 +487,7 @@ auto validation_error(const diagnostic_list_t& diagnostics) -> std::string {
 void begin_project_session(project_identity_t& current, project_chart_runtime_t& charts,
                            project_identity_t replacement) {
     const auto generation = charts.session_generation + 1;
-    charts = {.session_generation = generation};
+    charts = project_chart_runtime_t{generation};
     current.session_loaded = replacement.session_loaded;
     current.native_project_loaded = replacement.native_project_loaded;
     current.fresh_blank_project = replacement.fresh_blank_project;

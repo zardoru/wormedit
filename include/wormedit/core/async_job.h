@@ -5,6 +5,7 @@
 #include <wormedit/core/task_graph.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -88,19 +89,33 @@ template <class Request, class Payload, class Identity> class async_job_t {
                 std::string_view missing_payload_message,
                 async_job_destruction_policy_t destruction =
                     async_job_destruction_policy_t::cancel_and_wait)
-        : scheduler_(scheduler), maximum_in_flight_(maximum_in_flight),
+        : scheduler_(&scheduler), maximum_in_flight_(maximum_in_flight),
           invalid_message_(invalid_message), capacity_message_(capacity_message),
           missing_payload_message_(missing_payload_message), destruction_(destruction) {
-        workers_.reserve(maximum_in_flight_);
+        if (maximum_in_flight_ > 1)
+            workers_.reserve(maximum_in_flight_);
     }
     ~async_job_t() {
         if (destruction_ == async_job_destruction_policy_t::cancel_and_wait)
             shutdown();
     }
+    // Transfer the work without moving its captured inputs or reallocating storage.
+    // Borrowed resources must still outlive the receiving job.
+    async_job_t(async_job_t&& other) {
+        swap(other);
+    }
+    auto operator=(async_job_t&& other) -> async_job_t& {
+        if (this != &other) {
+            async_job_t replacement{std::move(other)};
+            swap(replacement);
+        }
+        return *this;
+    }
     void shutdown() {
         cancel();
-        for (const auto& worker : workers_)
+        for (const auto& worker : active_workers())
             static_cast<void>(worker.graph.wait());
+        single_worker_.reset();
         workers_.clear();
     }
     async_job_t(const async_job_t&) = delete;
@@ -113,8 +128,8 @@ template <class Request, class Payload, class Identity> class async_job_t {
         if (maximum_in_flight_ == 0)
             return std::unexpected(error_t<async_job_start_status_t>{
                 async_job_start_status_t::invalid_request, std::string(invalid_message_)});
-        std::erase_if(workers_, std::mem_fn(&worker_t::is_terminal));
-        if (workers_.size() >= maximum_in_flight_)
+        discard_terminal_workers();
+        if (active_workers().size() >= maximum_in_flight_)
             return std::unexpected(error_t<async_job_start_status_t>{
                 async_job_start_status_t::capacity_exceeded, std::string(capacity_message_)});
         task_graph_t graph{1};
@@ -131,7 +146,7 @@ template <class Request, class Payload, class Identity> class async_job_t {
         if (!task)
             return std::unexpected(error_t<async_job_start_status_t>{
                 async_job_start_status_t::scheduler_rejected, task.error().message});
-        auto submitted = scheduler_.begin(std::move(graph));
+        auto submitted = scheduler_->begin(std::move(graph));
         if (!submitted)
             return std::unexpected(error_t<async_job_start_status_t>{
                 submitted.error().code == task_error_code_t::capacity_exceeded
@@ -143,35 +158,39 @@ template <class Request, class Payload, class Identity> class async_job_t {
         if (++last_generation_ == 0)
             ++last_generation_;
         current_generation_ = last_generation_;
-        workers_.push_back({.generation = last_generation_,
-                            .identity = std::move(identity),
-                            .graph = std::move(*submitted),
-                            .task = *task});
+        append_worker({.generation = last_generation_,
+                       .identity = std::move(identity),
+                       .graph = std::move(*submitted),
+                       .task = *task});
         return last_generation_;
     }
 
     [[nodiscard]] auto poll() -> std::optional<completion_t> {
         std::optional<completion_t> completion;
-        for (auto worker = workers_.begin(); worker != workers_.end();) {
-            auto result = worker->graph.outcome(worker->task);
+        auto workers = active_workers();
+        for (std::size_t index = 0; index < workers.size();) {
+            auto& worker = workers[index];
+            auto result = worker.graph.outcome(worker.task);
             if (!result) {
-                ++worker;
+                ++index;
                 continue;
             }
-            if (worker->generation == current_generation_) {
+            if (worker.generation == current_generation_) {
                 completion = async_job_completion_value_t<Identity, Payload>::from(
-                    worker->generation, std::move(worker->identity), std::move(*result),
+                    worker.generation, std::move(worker.identity), std::move(*result),
                     missing_payload_message_);
                 current_generation_ = 0;
             }
-            worker = workers_.erase(worker);
+            erase_worker(index);
+            workers = active_workers();
         }
         return completion;
     }
     // For tests and orderly shutdown, never the UI frame loop.
     [[nodiscard]] auto wait() -> std::optional<completion_t> {
-        const auto worker = std::ranges::find(workers_, current_generation_, &worker_t::generation);
-        if (worker == workers_.end() || !worker->graph.wait())
+        auto workers = active_workers();
+        const auto worker = std::ranges::find(workers, current_generation_, &worker_t::generation);
+        if (worker == workers.end() || !worker->graph.wait())
             return std::nullopt;
         return poll();
     }
@@ -179,11 +198,14 @@ template <class Request, class Payload, class Identity> class async_job_t {
         async_job_cancel_policy_t policy = async_job_cancel_policy_t::discard_completion) noexcept {
         if (policy == async_job_cancel_policy_t::discard_completion)
             current_generation_ = 0;
-        for (const auto& worker : workers_)
+        for (const auto& worker : active_workers())
             worker.graph.cancel();
     }
     [[nodiscard]] auto is_busy() const noexcept -> bool {
         return current_generation_ != 0;
+    }
+    [[nodiscard]] auto is_bound_to(const task_scheduler_t& scheduler) const noexcept -> bool {
+        return scheduler_ == &scheduler;
     }
 
   private:
@@ -196,14 +218,54 @@ template <class Request, class Payload, class Identity> class async_job_t {
             return graph.outcome(task).has_value();
         }
     };
-    task_scheduler_t& scheduler_;
+    // Single-flight UI owners need no heap allocation for job bookkeeping.
+    [[nodiscard]] auto active_workers() noexcept -> std::span<worker_t> {
+        if (maximum_in_flight_ == 1)
+            return single_worker_ ? std::span{&*single_worker_, std::size_t{1}}
+                                  : std::span<worker_t>{};
+        return std::span{workers_};
+    }
+    void discard_terminal_workers() {
+        if (maximum_in_flight_ == 1) {
+            if (single_worker_ && single_worker_->is_terminal())
+                single_worker_.reset();
+            return;
+        }
+        std::erase_if(workers_, std::mem_fn(&worker_t::is_terminal));
+    }
+    void append_worker(worker_t&& worker) {
+        if (maximum_in_flight_ == 1)
+            single_worker_.emplace(std::move(worker));
+        else
+            workers_.push_back(std::move(worker));
+    }
+    void erase_worker(std::size_t index) {
+        if (maximum_in_flight_ == 1)
+            single_worker_.reset();
+        else
+            workers_.erase(workers_.begin() + static_cast<std::ptrdiff_t>(index));
+    }
+    void swap(async_job_t& other) {
+        std::swap(scheduler_, other.scheduler_);
+        std::swap(maximum_in_flight_, other.maximum_in_flight_);
+        std::swap(invalid_message_, other.invalid_message_);
+        std::swap(capacity_message_, other.capacity_message_);
+        std::swap(missing_payload_message_, other.missing_payload_message_);
+        std::swap(destruction_, other.destruction_);
+        std::swap(last_generation_, other.last_generation_);
+        std::swap(current_generation_, other.current_generation_);
+        std::swap(single_worker_, other.single_worker_);
+        std::swap(workers_, other.workers_);
+    }
+    task_scheduler_t* scheduler_{};
     std::size_t maximum_in_flight_{};
     std::string_view invalid_message_;
     std::string_view capacity_message_;
     std::string_view missing_payload_message_;
-    async_job_destruction_policy_t destruction_;
+    async_job_destruction_policy_t destruction_{async_job_destruction_policy_t::cancel_and_wait};
     std::uint64_t last_generation_{};
     std::uint64_t current_generation_{};
+    std::optional<worker_t> single_worker_;
     std::vector<worker_t> workers_;
 };
 

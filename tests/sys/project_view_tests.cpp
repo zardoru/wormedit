@@ -1,6 +1,10 @@
 #include "sys/project_view.h"
-#include <wormedit/core/chart_editor.h>
 #include <catch2/catch_test_macros.hpp>
+#include <chrono>
+#include <latch>
+#include <semaphore>
+#include <thread>
+#include <wormedit/core/chart_editor.h>
 
 using namespace wormedit;
 using namespace wormedit::sys;
@@ -275,8 +279,11 @@ TEST_CASE("Project conversion preview runs through the worker service and retire
         .session_generation = runtime.session_generation};
     const auto before = history.document.revision;
     (void)apply_project_output_group_ui_action(runtime, history, action, scheduler);
-    require_project(static_cast<bool>(runtime.preview_graph));
-    require_project(runtime.preview_graph.wait());
+    require_project(runtime.preview_job() && runtime.preview_job()->is_busy());
+    for (int attempt = 0; attempt < 1000 && runtime.preview_job()->is_busy(); ++attempt) {
+        build_project_chart_view(runtime, history.document, view);
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
     build_project_chart_view(runtime, history.document, view);
     expect_project(std::string_view{view.output_groups[0].preview_status}.starts_with("Preview: 1 file"));
     expect_project(history.document.revision == before);
@@ -284,6 +291,47 @@ TEST_CASE("Project conversion preview runs through the worker service and retire
     (void)apply_project_output_group_ui_action(runtime, history, action, scheduler);
     ++history.document.revision;
     build_project_chart_view(runtime, history.document, view);
-    expect_project(!runtime.preview_graph);
+    expect_project(!runtime.preview_job());
     expect_project(std::string_view{view.output_groups[0].preview_status} == "Preview not run");
+}
+
+TEST_CASE("Project preview session reset releases queued work without cancellation or waiting",
+          "[unit][project-view][output-groups]") {
+    auto history = document_history_t::from(project_song());
+    history.document.output_groups[0].family = format_family_t::native_project;
+    history.document.output_groups[0].relative_output_path = "exports/song.wormedit";
+    project_chart_runtime_t runtime;
+    std::latch started{1}, release{1};
+    task_scheduler_t scheduler{1, 2};
+    task_graph_t blocker{1};
+    const auto task = blocker.create_task(
+        {}, [&started, &release](std::span<const task_result_t>, std::stop_token) {
+            started.count_down();
+            release.wait();
+            return task_result_t::success();
+        });
+    require_project(static_cast<bool>(task));
+    auto submitted = scheduler.begin(std::move(blocker));
+    require_project(static_cast<bool>(submitted));
+    started.wait();
+    const WormUiProjectOutputGroupAction action{.kind = WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW,
+                                                .project_id = history.document.id.value,
+                                                .document_revision = history.document.revision,
+                                                .session_generation = runtime.session_generation};
+    const auto result = apply_project_output_group_ui_action(runtime, history, action, scheduler);
+    const auto before_reset = scheduler.outstanding_tasks();
+    std::binary_semaphore reset_done{0};
+    std::jthread resetter([&runtime, &reset_done] {
+        runtime = {};
+        reset_done.release();
+    });
+    const auto reset_without_waiting = reset_done.try_acquire_for(std::chrono::seconds{1});
+    const auto after_reset = scheduler.outstanding_tasks();
+    release.count_down();
+    resetter.join();
+    scheduler.shutdown();
+    expect_project(result.status == "Conversion preview started.");
+    expect_project(before_reset == 2);
+    expect_project(reset_without_waiting);
+    expect_project(after_reset == 2);
 }

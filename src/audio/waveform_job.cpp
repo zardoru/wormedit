@@ -13,7 +13,7 @@ waveform_job_t::waveform_job_t(decoded_source_registry_t& sources, decoded_block
                                waveform_cache_t& waveforms, task_scheduler_t& scheduler,
                                std::size_t maximum_in_flight_jobs)
     : async_job_t(scheduler, std::min(maximum_in_flight_jobs, maximum_waveform_jobs),
-                  "waveform analysis request is incomplete",
+                  invalid_request_message_,
                   "waveform analysis jobs have not reached cancellation checkpoints",
                   "waveform analysis worker returned no typed result"),
       sources_(sources), blocks_(blocks), waveforms_(waveforms) {}
@@ -29,7 +29,7 @@ auto waveform_job_t::request(asset_id_t asset, std::uint32_t frames_per_bin,
                              waveform_analysis_options_t options) -> async_job_start_outcome_t {
     if (!asset || frames_per_bin == 0) {
         return std::unexpected(error_t<async_job_start_status_t>{
-            async_job_start_status_t::invalid_request, "waveform analysis request is incomplete"});
+            async_job_start_status_t::invalid_request, invalid_request_message_});
     }
     return async_job_t::request(
         [this, asset, frames_per_bin, options] {

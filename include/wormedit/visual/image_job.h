@@ -101,6 +101,9 @@ class image_job_t
                                image_job_options_t options = {}) -> async_job_start_outcome_t;
 
   private:
+    static constexpr const char* invalid_request_message_ =
+        "image decode request is empty or exceeds its configured bounds";
+
     image_cache_t& cache_;
     std::size_t maximum_sources_per_request_{};
 };

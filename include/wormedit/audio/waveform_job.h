@@ -40,6 +40,9 @@ class waveform_job_t
         -> async_job_start_outcome_t;
 
   private:
+    static constexpr const char* invalid_request_message_ =
+        "waveform analysis request is incomplete";
+
     [[nodiscard]] static auto analyze(const waveform_request_t& request, std::stop_token stop)
         -> work_outcome_t;
 

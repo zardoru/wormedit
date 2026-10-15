@@ -1,11 +1,12 @@
 #pragma once
 
+#include "ui/frontend.h"
+#include <map>
+#include <optional>
+#include <wormedit/core/async_job.h>
 #include <wormedit/core/document.h>
 #include <wormedit/core/metadata_editor.h>
 #include <wormedit/core/notifications.h>
-#include "ui/frontend.h"
-#include <map>
-#include <wormedit/core/task_graph.h>
 
 #include <cstdint>
 #include <string>
@@ -60,7 +61,22 @@ struct project_chart_command_result_t {
 [[nodiscard]] auto apply_project_chart_command(document_history_t& history,
     const project_chart_command_t& action) -> project_chart_command_result_t;
 
-struct project_chart_runtime_t {
+struct output_preview_request_t {
+    song_document_t document;
+    output_group_t group;
+};
+struct output_preview_identity_t {
+    async_job_project_identity_t document;
+    std::size_t index{};
+    auto operator==(const output_preview_identity_t&) const -> bool = default;
+};
+using output_preview_job_t =
+    async_job_t<output_preview_request_t, std::string, output_preview_identity_t>;
+
+class project_chart_runtime_t {
+  public:
+    project_chart_runtime_t() = default;
+    explicit project_chart_runtime_t(std::uint64_t generation) : session_generation(generation) {}
     std::uint64_t session_generation{1};
     project_chart_table_cache_t cache;
     std::vector<WormUiProjectChartRow> rows;
@@ -71,10 +87,14 @@ struct project_chart_runtime_t {
     std::vector<std::string> output_group_paths;
     song_id_t output_group_song;
     uint64_t output_group_revision{};
-    task_graph_handle_t preview_graph;
-    task_id_t preview_task;
-    size_t preview_index{};
+    [[nodiscard]] auto preview_job() noexcept -> output_preview_job_t* {
+        return preview_job_ ? &*preview_job_ : nullptr;
+    }
+    [[nodiscard]] auto preview_job(task_scheduler_t& scheduler) -> output_preview_job_t&;
+    void cancel_preview();
 
+  private:
+    std::optional<output_preview_job_t> preview_job_;
 };
 struct project_chart_ui_result_t {
     std::string status;

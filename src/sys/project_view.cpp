@@ -205,22 +205,37 @@ void publish_row_error(project_chart_runtime_t& runtime, const WormUiProjectChar
 }
 } // namespace
 
+auto project_chart_runtime_t::preview_job(task_scheduler_t& scheduler) -> output_preview_job_t& {
+    if (!preview_job_ || (!preview_job_->is_busy() && !preview_job_->is_bound_to(scheduler)))
+        preview_job_.emplace(scheduler, 1, "Preview failed.",
+                             "scheduler outstanding-task capacity exceeded", "Preview failed.",
+                             async_job_destruction_policy_t::release);
+    return *preview_job_;
+}
+
+void project_chart_runtime_t::cancel_preview() {
+    if (preview_job_) {
+        preview_job_->cancel();
+        preview_job_.reset();
+    }
+}
+
 namespace {
 void poll_output_group_preview(project_chart_runtime_t& runtime, const song_document_t& doc) {
     if (runtime.output_group_song != doc.id || runtime.output_group_revision != doc.revision) {
-        runtime.preview_graph.cancel();
-        runtime.preview_graph = {};
+        runtime.cancel_preview();
         runtime.output_group_status.assign(doc.output_groups.size(), "Preview not run");
         runtime.output_group_song = doc.id;
         runtime.output_group_revision = doc.revision;
     }
-    if (!runtime.preview_graph) return;
-    const auto result = runtime.preview_graph.outcome(runtime.preview_task);
+    if (!runtime.preview_job())
+        return;
+    const auto result = runtime.preview_job()->poll();
     if (!result) return;
-    const auto text = task_value_cast<std::string>(*result);
-    runtime.output_group_status[runtime.preview_index] = text ? *text :
-        (!result->has_value() ? result->error().cause.message : "Preview failed.");
-    runtime.preview_graph = {};
+    const auto index =
+        result->has_value() ? result->value().identity.index : result->error().identity.index;
+    runtime.output_group_status[index] =
+        result->has_value() ? *result->value().payload : result->error().cause.message;
 }
 void build_output_group_view(project_chart_runtime_t& runtime, const song_document_t& doc,
                              WormUiSetupView& view) {
@@ -261,23 +276,26 @@ auto output_preview(const song_document_t& doc, const output_group_t& group) -> 
     return "Preview: " + std::to_string(result.outputs.size()) + " file(s), " +
         std::to_string(losses) + " conversion warning(s).";
 }
+auto run_output_preview(const output_preview_request_t& request, std::stop_token stop)
+    -> output_preview_job_t::work_outcome_t {
+    if (stop.stop_requested())
+        return std::unexpected(
+            error_t<task_error_code_t>{task_error_code_t::cancelled, "Preview cancelled."});
+    return output_preview(request.document, request.group);
+}
 auto start_output_preview(project_chart_runtime_t& runtime, const song_document_t& doc,
     size_t index, task_scheduler_t& scheduler) -> project_chart_ui_result_t {
     poll_output_group_preview(runtime, doc);
-    if (runtime.preview_graph) return {.status = "Wait for the current conversion preview."};
-    task_graph_t graph{1};
-    const auto added = graph.create_task({}, [snapshot = doc, group = doc.output_groups[index]](
-        std::span<const task_result_t>, std::stop_token stop) {
-        if (stop.stop_requested()) return task_result_t::failure(task_error_code_t::cancelled, "Preview cancelled.");
-        return task_result_t::success(wormedit::task_value_t::from<std::string>(
-            std::make_shared<const std::string>(output_preview(snapshot, group))));
-    });
-    if (!added) return {.status = added.error().message};
-    auto submitted = scheduler.begin(std::move(graph));
-    if (!submitted) return {.status = submitted.error().message};
-    runtime.preview_graph = std::move(submitted.value());
-    runtime.preview_task = *added;
-    runtime.preview_index = index;
+    if (runtime.preview_job() && runtime.preview_job()->is_busy())
+        return {.status = "Wait for the current conversion preview."};
+    const auto started = runtime.preview_job(scheduler).request(
+        [&doc, index] {
+            return output_preview_request_t{.document = doc, .group = doc.output_groups[index]};
+        },
+        {.document = {.project = doc.id, .document_revision = doc.revision}, .index = index},
+        run_output_preview);
+    if (!started)
+        return {.status = started.error().message};
     runtime.output_group_status[index] = "Preview running…";
     return {.status = "Conversion preview started.", .severity = notification_severity_t::info};
 }

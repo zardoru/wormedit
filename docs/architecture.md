@@ -38,9 +38,11 @@ There are two paths in and one way to change the document.
   per-feature outcomes *(T-633)*.
 
 Not everything reaches the transaction. View-only actions such as zoom, scroll, selection, tool
-switches and filters change interaction or UI state and stop at dispatch. Background work, such as
-decoding, analysis, export and autosave, runs through one async shell and publishes its result back
-on the UI thread *(T-635)*.
+switches and filters change interaction or UI state and stop at dispatch. Waveform analysis,
+visual decoding, resource-copy and inspection requests, and conversion previews run through
+`async_job_t` and publish their results on the UI thread. Autosave, transactional import/export,
+and queue/progress services retain their domain lifecycles and publication rules; see
+[async task scheduling](async-task-scheduling.md).
 
 ## Adding a chart edit
 

@@ -78,8 +78,8 @@ struct video_decode_request_t {
 // Runs at most a bounded number of seek/decode requests off the UI thread.
 // Starting a request cancels older generations; only the newest generation is
 // observable, even if an interrupted FFmpeg call takes time to unwind.
-class video_frame_job_t
-    : public async_job_t<video_decode_request_t, video_job_outcome_t, async_job_project_identity_t> {
+class video_frame_job_t : public async_job_t<video_decode_request_t, video_job_outcome_t,
+                                             async_job_project_identity_t> {
   public:
     video_frame_job_t(video_frame_cache_t& cache, task_scheduler_t& scheduler,
                       std::size_t maximum_in_flight_jobs = 2);
@@ -90,13 +90,17 @@ class video_frame_job_t
 
     [[nodiscard]] auto request(song_id_t project, std::uint64_t document_revision,
                                resolved_visual_asset_t source, video_preview_clock_t clock,
-                               video_frame_decode_limits_t limits = {}) -> async_job_start_outcome_t;
+                               video_frame_decode_limits_t limits = {})
+        -> async_job_start_outcome_t;
 
   private:
+    static constexpr const char* invalid_request_message_ =
+        "video frame request has invalid identity or timing";
+
     [[nodiscard]] auto decode_uncached_frame(const video_decode_request_t& request,
                                              std::stop_token stop) -> video_frame_decode_result_t;
-    [[nodiscard]] static auto run_decode(const video_decode_request_t& request, std::stop_token stop)
-        -> work_outcome_t;
+    [[nodiscard]] static auto run_decode(const video_decode_request_t& request,
+                                         std::stop_token stop) -> work_outcome_t;
 
     video_frame_cache_t& cache_;
     std::mutex session_mutex_;

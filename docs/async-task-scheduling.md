@@ -67,6 +67,29 @@ The default cancellation policy discards the current completion immediately;
 advisory owners can explicitly retain it to collect cancellation feedback. Default
 teardown cancels and waits, protecting workers that borrow owner state. Owners
 whose requests own all their inputs can explicitly release handles on destruction
-to preserve nonblocking session reset. Their existing scheduler shutdown remains
+without cancelling or waiting, preserving nonblocking session reset. Their existing
+scheduler shutdown remains
 responsible for joining workers. These policies do not change scheduler capacity,
 priorities, cooperative stop points, or domain cleanup/publication rules.
+
+
+Single-flight handle records live inline; larger bounds reserve vector storage at
+construction. Lazy single-flight owners construct the shell in place without a
+heap allocation for the shell or its handle list. Moves transfer outstanding
+handles and generations. Referenced resources must still outlive the receiving
+job.
+
+These existing services retain explicit scheduler orchestration and domain policy:
+
+- Playing waveform detail (`waveform_analysis_runtime.cpp`) remains busy after
+  cancellation until terminal collection, with its existing null-payload failure handling.
+- Published output export (`output_group_export_t`) reports files even if the
+  editor document changes after publication.
+- Metadata import-copy (`metadata_asset_t`) retains receipts for orphan cleanup
+  after the shared copy scheduler joins.
+- Autosave (`native_project_autosave_loop_t`) serializes coordinator progress,
+  deferred explicit saves, retry and session changes.
+- Audition source probes drain a registry queue with fan-out and synchronized
+  failure exchange.
+- Resident loading (`resident_sample_loader_t`) owns progress, priorities and
+  budget retries; it cancels old work before attempting replacement submission.

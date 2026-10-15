@@ -163,7 +163,7 @@ image_job_t::image_job_t(image_cache_t& cache, task_scheduler_t& scheduler,
                          std::size_t maximum_sources_per_request,
                          std::size_t maximum_in_flight_jobs)
     : async_job_t(scheduler, std::min(maximum_in_flight_jobs, hard_maximum_image_jobs),
-                  "image decode request is empty or exceeds its configured bounds",
+                  invalid_request_message_,
                   "image decode jobs have not reached cancellation checkpoints",
                   "image decode worker returned no typed result"),
       cache_(cache), maximum_sources_per_request_(
@@ -175,7 +175,8 @@ auto image_job_t::request(song_id_t project, std::uint64_t document_revision,
     if (!project || document_revision == 0 || sources.empty() ||
         maximum_sources_per_request_ == 0 || sources.size() > maximum_sources_per_request_ ||
         options.maximum_result_rgba_bytes == 0) {
-        return std::unexpected(error_t<async_job_start_status_t>{image_job_start_status_t::invalid_request, "image decode request is empty or exceeds its configured bounds"});
+        return std::unexpected(error_t<async_job_start_status_t>{
+            image_job_start_status_t::invalid_request, invalid_request_message_});
     }
     return async_job_t::request(
         [this, project, document_revision, sources, options] {

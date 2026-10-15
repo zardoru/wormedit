@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ui/frontend.h"
+#include <wormedit/core/result.h>
 
 #include <SDL3/SDL_events.h>
 
@@ -29,13 +30,12 @@ struct sound_drop_batch_t {
     sound_drop_origin_t origin;
     std::vector<std::string> paths;
     std::string reason;
-
-    [[nodiscard]] auto accepted() const noexcept -> bool { return reason.empty(); }
 };
+using sound_drop_outcome_t = result_t<sound_drop_batch_t, sound_drop_batch_t>;
 
 struct sound_drop_event_result_t {
     bool consumed{};
-    std::optional<sound_drop_batch_t> completed;
+    std::optional<sound_drop_outcome_t> completed;
 };
 
 // Retains one SDL file-drop transaction across event polls. The caller reports
@@ -51,7 +51,7 @@ class sound_drop_transaction_t {
         return handle(event, origin, over_sound_list ? resource_drop_target_t::sounds
                                                    : resource_drop_target_t::none);
     }
-    [[nodiscard]] auto cancel() -> std::optional<sound_drop_batch_t>;
+    [[nodiscard]] auto cancel() -> std::optional<sound_drop_outcome_t>;
     [[nodiscard]] auto is_active() const noexcept -> bool { return active_; }
     [[nodiscard]] auto is_claimed() const noexcept -> bool { return claimed_; }
 
@@ -59,7 +59,7 @@ class sound_drop_transaction_t {
     void begin(const sound_drop_origin_t& origin);
     void note_origin(const sound_drop_origin_t& origin);
     void append_path(const char* path);
-    [[nodiscard]] auto finish(const sound_drop_origin_t& origin) -> sound_drop_batch_t;
+    [[nodiscard]] auto finish(const sound_drop_origin_t& origin) -> sound_drop_outcome_t;
     [[nodiscard]] auto handle_begin(const SDL_Event& event,
                                    const sound_drop_origin_t& origin) -> sound_drop_event_result_t;
     [[nodiscard]] auto handle_position(const SDL_Event& event,

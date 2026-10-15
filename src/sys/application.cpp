@@ -1420,15 +1420,15 @@ auto stage_dropped_sound_slots(const wormedit::song_document_t& document,
 
 void import_dropped_resources(bool session_loaded, wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace,
-    std::vector<wormedit::sys::sound_drop_batch_t>& batches, wormedit::notification_sink_t& notifications) {
+    std::vector<wormedit::sys::sound_drop_outcome_t>& batches, wormedit::notification_sink_t& notifications) {
     WormUiKeysoundDockRequest dock{};
     worm_ui_frontend_keysound_dock_request(&dock);
     for (const auto& batch : batches) {
-        const auto& origin = batch.origin;
-        if (!batch.accepted()) {
-            notifications.post(wormedit::notification_severity_t::warning, wormedit::notification_source_t::import_, batch.reason);
+        if (!batch.has_value()) {
+            notifications.post(wormedit::notification_severity_t::warning, wormedit::notification_source_t::import_, batch.error().reason);
             continue;
         }
+        const auto& origin = batch.value().origin;
         const bool slots_mode = workspace.active_tab == wormedit::workspace_tab_t::compose && dock.slots_mode;
         if (!session_loaded || !workspace.selected_chart ||
             origin.project_id != history.document.id.value ||
@@ -1440,10 +1440,10 @@ void import_dropped_resources(bool session_loaded, wormedit::document_history_t&
             continue;
         }
         if (origin.target == wormedit::sys::resource_drop_target_t::bga)
-            static_cast<void>(wormedit::sys::import_bga_files(history, workspace, *workspace.selected_chart, batch.paths, notifications));
+            static_cast<void>(wormedit::sys::import_bga_files(history, workspace, *workspace.selected_chart, batch.value().paths, notifications));
         else if (origin.slots_mode)
-            static_cast<void>(stage_dropped_sound_slots(history.document, *workspace.selected_chart, origin.first_slot, batch.paths, notifications));
-        else static_cast<void>(stage_sound_import(history.document, *workspace.selected_chart, batch.paths, notifications));
+            static_cast<void>(stage_dropped_sound_slots(history.document, *workspace.selected_chart, origin.first_slot, batch.value().paths, notifications));
+        else static_cast<void>(stage_sound_import(history.document, *workspace.selected_chart, batch.value().paths, notifications));
     }
     batches.clear();
 }
@@ -2164,7 +2164,7 @@ struct application_t::implementation_t {
         notification_history_runtime_t notification_history{};
         WormUiNotificationAction pending_notification{};
         sound_drop_transaction_t sound_drop_transaction{};
-        std::vector<sound_drop_batch_t> pending_resource_batches{};
+        std::vector<sound_drop_outcome_t> pending_resource_batches{};
         bga_dock_runtime_t bga_dock_runtime{};
         std::optional<audio_offset_drag_t> audio_offset_drag{};
         std::optional<workspace_tab_t> audio_offset_drag_tab{};
@@ -2474,13 +2474,13 @@ struct application_t::implementation_t {
         const auto audio = wormedit::sys::inspect_audio_for_project(path);
         if (!audio) {
             post_project_feedback(wormedit::notification_severity_t::error,
-                                  wormedit::notification_source_t::import_, audio.error);
+                                  wormedit::notification_source_t::import_, audio.error().error);
             session.project_identity.pending_import.audio_project_path.clear();
             return;
         }
         auto document = wormedit::sys::make_audio_project_document(
-            wormedit::sys::create_session_project_id(), audio.source_path, audio.title, audio.artist,
-            layout_id, audio.stream);
+            wormedit::sys::create_session_project_id(), audio.value().source_path, audio.value().title, audio.value().artist,
+            layout_id, audio.value().stream);
         if (!document) {
             post_project_feedback(wormedit::notification_severity_t::error,
                                   wormedit::notification_source_t::import_,
@@ -2488,7 +2488,7 @@ struct application_t::implementation_t {
             return;
         }
         if (!replace_project_session(std::move(*document), true, true, false, {},
-                                     audio.source_path.parent_path()))
+                                     audio.value().source_path.parent_path()))
             return;
         for (const auto& chart : session.history.document.charts)
             remember_snap_denominator(commands, chart.id,
@@ -3002,36 +3002,36 @@ struct application_t::implementation_t {
                                   : std::optional{kind};
         auto opened = wormedit::sys::open_project_file(action.project_path, encoding);
         if (!opened) {
-            post_project_feedback(opened.needs_encoding_choice
+            post_project_feedback(opened.error().needs_encoding_choice
                                       ? wormedit::notification_severity_t::warning
                                       : wormedit::notification_severity_t::error,
-                                  wormedit::notification_source_t::import_, opened.error);
-            if (opened.needs_encoding_choice)
+                                  wormedit::notification_source_t::import_, opened.error().error);
+            if (opened.error().needs_encoding_choice)
                 session.project_identity.pending_import.bms_encoding_path = action.project_path;
             else if (encoding)
                 session.project_identity.pending_import.bms_encoding_path.clear();
             return;
         }
-        auto document = std::move(*opened.document);
-        if (!opened.native_project)
+        auto document = std::move(*opened.value().document);
+        if (!opened.value().native_project)
             document.id = wormedit::sys::create_session_project_id();
-        if (replace_project_session(std::move(document), true, true, opened.native_project,
-                                    opened.native_project ? opened.source_path
+        if (replace_project_session(std::move(document), true, true, opened.value().native_project,
+                                    opened.value().native_project ? opened.value().source_path
                                                           : std::filesystem::path{},
-                                    opened.asset_base)) {
-            remember_project_file(preferences.program_preferences, opened.source_path,
+                                    opened.value().asset_base)) {
+            remember_project_file(preferences.program_preferences, opened.value().source_path,
                                   platform.notification_sink);
             session.project_identity.external_player_source_path =
-                opened.native_project ? std::filesystem::path{} : opened.source_path;
+                opened.value().native_project ? std::filesystem::path{} : opened.value().source_path;
             post_project_feedback(wormedit::notification_severity_t::success,
-                                  opened.native_project ? wormedit::notification_source_t::document
+                                  opened.value().native_project ? wormedit::notification_source_t::document
                                                         : wormedit::notification_source_t::import_,
-                                  opened.native_project
-                                      ? "Project opened: " + opened.source_path.string()
-                                      : "Chart imported from " + opened.source_path.string() +
+                                  opened.value().native_project
+                                      ? "Project opened: " + opened.value().source_path.string()
+                                      : "Chart imported from " + opened.value().source_path.string() +
                                             ". Save it as a project.");
-            if (!opened.warnings.empty()) {
-                auto warning = wormedit::sys::project_import_warning(opened.warnings);
+            if (!opened.value().warnings.empty()) {
+                auto warning = wormedit::sys::project_import_warning(opened.value().warnings);
                 post_project_feedback(wormedit::notification_severity_t::warning,
                                       wormedit::notification_source_t::import_,
                                       std::move(warning.message), warning.detail);

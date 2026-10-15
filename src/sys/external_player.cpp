@@ -71,6 +71,7 @@ auto argument_template_for(const external_player_definition_t& player,
 struct file_identity_t {
     std::uint64_t volume{};
     std::uint64_t file{};
+    auto operator==(const file_identity_t&) const -> bool = default;
 };
 
 auto file_identity(const std::filesystem::path& path) -> std::optional<file_identity_t> {
@@ -99,11 +100,13 @@ auto preview_path(const std::filesystem::path& source) -> std::filesystem::path 
     return source.parent_path() / ("___wormedit_preview" + extension);
 }
 
-struct exclusive_write_result_t {
+struct exclusive_write_error_t {
     std::string error;
     std::optional<file_identity_t> identity;
     bool created{};
+    auto operator==(const exclusive_write_error_t&) const -> bool = default;
 };
+using exclusive_write_outcome_t = result_t<file_identity_t, exclusive_write_error_t>;
 
 auto read_open_file_identity(std::FILE* file) -> std::optional<file_identity_t> {
 #ifdef _WIN32
@@ -121,23 +124,25 @@ auto read_open_file_identity(std::FILE* file) -> std::optional<file_identity_t> 
 }
 
 auto write_exclusive(const std::filesystem::path& path, std::string_view bytes)
-    -> exclusive_write_result_t {
+    -> exclusive_write_outcome_t {
 #ifdef _WIN32
     auto* file = _wfopen(path.c_str(), L"wbx");
 #else
     auto* file = std::fopen(path.c_str(), "wbx");
 #endif
-    if (!file) return {.error = "Cannot exclusively create file: " + path.string()};
+    if (!file) return std::unexpected(exclusive_write_error_t{
+        .error = "Cannot exclusively create file: " + path.string()});
     const auto identity = read_open_file_identity(file);
     const bool complete = identity && std::fwrite(bytes.data(), 1, bytes.size(), file) == bytes.size();
     const bool closed = std::fclose(file) == 0;
-    return {.error = complete && closed ? std::string{} : "Writing file failed.",
-            .identity = identity, .created = true};
+    if (complete && closed) return *identity;
+    return std::unexpected(exclusive_write_error_t{
+        .error = "Writing file failed.", .identity = identity, .created = true});
 }
 
 void remove_owned(const std::filesystem::path& path, const file_identity_t& owned) noexcept {
     const auto identity = file_identity(path);
-    if (identity && identity->volume == owned.volume && identity->file == owned.file) {
+    if (identity && *identity == owned) {
         std::error_code error;
         std::filesystem::remove(path, error);
     }
@@ -197,9 +202,9 @@ auto save_external_player_preferences(const std::filesystem::path& path,
     auto temporary = path;
     temporary += ".tmp-" + std::to_string(nonce);
     const auto written = write_exclusive(temporary, output.str());
-    if (!written.error.empty()) {
-        if (written.identity) remove_owned(temporary, *written.identity);
-        return written.error;
+    if (!written) {
+        if (written.error().identity) remove_owned(temporary, *written.error().identity);
+        return written.error().error;
     }
     std::error_code error;
 #ifdef _WIN32
@@ -209,7 +214,7 @@ auto save_external_player_preferences(const std::filesystem::path& path,
     std::filesystem::rename(temporary, path, error);
 #endif
     if (error) {
-        remove_owned(temporary, *written.identity);
+        remove_owned(temporary, *written);
         return "Cannot replace external-player preferences: " + error.message();
     }
     return {};
@@ -260,10 +265,11 @@ auto external_player_t::prepare_preview(const song_document_t& song, chart_id_t 
                                                            : error->message};
     }
     const auto created = write_exclusive(result.preview_path, *written.bytes);
-    result.error = created.error;
-    if (!created.created) return result;
-    if (!created.identity) return {.error = "External preview file ownership could not be established."};
-    temporary_files_.push_back({result.preview_path, created.identity->volume, created.identity->file, nullptr});
+    result.error = created ? std::string{} : created.error().error;
+    if (!created && !created.error().created) return result;
+    const auto identity = created ? std::optional{*created} : created.error().identity;
+    if (!identity) return {.error = "External preview file ownership could not be established."};
+    temporary_files_.push_back({result.preview_path, identity->volume, identity->file, nullptr});
     if (!result.error.empty()) {
         remove_temporary(temporary_files_.back());
         temporary_files_.pop_back();

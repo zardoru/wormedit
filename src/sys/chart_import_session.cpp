@@ -80,10 +80,11 @@ void chart_import_load(chart_import_session_t& session, const std::filesystem::p
     session.source.reset();
     session.selected.clear();
     session.error.clear();
-    auto opened = open_project_file(path);
+    auto opened_outcome = open_project_file(path);
+    auto& opened = opened_outcome ? *opened_outcome : opened_outcome.error();
     if (opened.needs_encoding_choice) {
         session.error = "This chart needs a text encoding choice. Open it as a project once to pick one.";
-    } else if (!opened) {
+    } else if (!opened_outcome) {
         session.error = opened.error.empty() ? std::string{"The chart file could not be read."} : opened.error;
     } else if (opened.document->charts.empty()) {
         session.error = "The file contains no charts.";

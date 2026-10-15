@@ -526,28 +526,29 @@ auto is_supported_project_file_extension(const std::filesystem::path& path) -> b
 
 auto open_project_file(const std::filesystem::path& selected_path,
                        std::optional<text_encoding_t> encoding_override)
-    -> project_open_result_t {
+    -> project_open_outcome_t {
     project_open_result_t result;
     if (selected_path.empty()) {
         result.error = "Choose a project or chart file.";
-        return result;
+        return std::unexpected(std::move(result));
     }
     const auto extension = lowercase_extension(selected_path);
     const auto limit = supported_source_limit(extension);
     if (limit == 0) {
         result.error = "Unsupported project or chart file extension.";
-        return result;
+        return std::unexpected(std::move(result));
     }
     std::error_code error;
     result.source_path = std::filesystem::absolute(selected_path, error);
     if (error) {
         result.error = "Could not resolve the selected file path: " + error.message();
-        return result;
+        return std::unexpected(std::move(result));
     }
     result.asset_base = result.source_path.parent_path();
     auto source = read_bounded_file(result.source_path, limit, result.error);
     if (source) parse_selected_file(extension, *source, encoding_override, result);
     validate_opened_document(result);
+    if (!result.document) return std::unexpected(std::move(result));
     return result;
 }
 

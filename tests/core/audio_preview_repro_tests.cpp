@@ -282,12 +282,12 @@ void resolve_repro_bindings(repro_chart_t& chart) {
 auto load_repro_chart(const std::filesystem::path& path) -> repro_chart_t {
     const auto opened = sys::open_project_file(path);
     REQUIRE(opened);
-    REQUIRE(opened.document);
-    REQUIRE_FALSE(opened.document->charts.empty());
+    REQUIRE(opened.value().document);
+    REQUIRE_FALSE(opened.value().document->charts.empty());
     auto result = repro_chart_t{};
     result.path = path;
-    result.asset_base = opened.asset_base;
-    result.document = *opened.document;
+    result.asset_base = opened.value().asset_base;
+    result.document = *opened.value().document;
     const auto& chart = result.document.charts.front();
     const auto measure_build = build_measure_index(chart);
     REQUIRE(std::holds_alternative<measure_index_t>(measure_build));

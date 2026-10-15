@@ -20,12 +20,12 @@ auto fixture(std::string_view name) -> std::filesystem::path {
 auto tagged_audio_matches(std::string_view extension) -> bool {
     const auto imported = wormedit::sys::inspect_audio_for_project(
         fixture(std::string{"tagged-project."} + std::string{extension}));
-    if (!imported || !imported.duration_seconds || !imported.stream.frame_count)
+    if (!imported || !imported.value().duration_seconds || !imported.value().stream.frame_count)
         return false;
-    return imported.title == "Título 雪" && imported.artist == "Björk" &&
-           *imported.duration_seconds > 0.1 && *imported.duration_seconds < 1.0 &&
-           imported.stream.sample_rate == 44'100 && imported.stream.channels == 2 &&
-           *imported.stream.frame_count > 0;
+    return imported.value().title == "Título 雪" && imported.value().artist == "Björk" &&
+           *imported.value().duration_seconds > 0.1 && *imported.value().duration_seconds < 1.0 &&
+           imported.value().stream.sample_rate == 44'100 && imported.value().stream.channels == 2 &&
+           *imported.value().stream.frame_count > 0;
 }
 
 TEST_CASE("Audio project import reads embedded Unicode title and artist from MP3 and Ogg",
@@ -38,8 +38,8 @@ TEST_CASE("Audio project import falls back to the file stem without title tags",
           "[unit][sys][audio-project-import]") {
     const auto result = wormedit::sys::inspect_audio_for_project(fixture("keysound-c4.ogg"));
     REQUIRE(result);
-    CHECK(result.title == "keysound-c4");
-    CHECK(result.artist.empty());
+    CHECK(result.value().title == "keysound-c4");
+    CHECK(result.value().artist.empty());
 }
 
 #else
@@ -47,10 +47,10 @@ TEST_CASE("Audio project import succeeds without FFmpeg and leaves metadata empt
           "[unit][sys][audio-project-import]") {
     const auto result = wormedit::sys::inspect_audio_for_project(fixture("tagged-project.ogg"));
     REQUIRE(result);
-    CHECK(result.title.empty());
-    CHECK(result.artist.empty());
-    CHECK(result.error.empty());
-    CHECK(result.duration_seconds.has_value());
+    CHECK(result.value().title.empty());
+    CHECK(result.value().artist.empty());
+    CHECK(result.value().error.empty());
+    CHECK(result.value().duration_seconds.has_value());
 }
 #endif
 
@@ -66,8 +66,8 @@ auto tagged_audio_creates_selectable_project() -> bool {
     using namespace wormedit;
     const auto imported = sys::inspect_audio_for_project(fixture("tagged-project.ogg"));
     if (!imported) return false;
-    auto document = sys::make_audio_project_document(song_id_t{42}, imported.source_path,
-                                                imported.title, imported.artist, 4, imported.stream);
+    auto document = sys::make_audio_project_document(song_id_t{42}, imported.value().source_path,
+                                                imported.value().title, imported.value().artist, 4, imported.value().stream);
     if (!document || document->audio_assets.size() != 1) return false;
     if (document->metadata.title != "Título 雪" || document->metadata.artist != "Björk" ||
         document->charts.size() != 1 || document->charts.front().lane_layouts.size() != 1 ||

@@ -87,25 +87,25 @@ auto has_audio_signature(const std::filesystem::path& path, std::string_view ext
 } // namespace
 
 auto inspect_audio_for_project(const std::filesystem::path& source_path)
-    -> audio_project_import_result_t {
+    -> audio_project_import_outcome_t {
     audio_project_import_result_t result;
     result.source_path = source_path;
     const auto extension = text_util::lowercase_extension(source_path);
     if (extension != ".mp3" && extension != ".ogg") {
         result.error = "Select an MP3 or Ogg Vorbis audio file.";
-        return result;
+        return std::unexpected(std::move(result));
     }
     if (!can_read_audio_file(source_path)) {
         result.error = "Could not read the audio file.";
-        return result;
+        return std::unexpected(std::move(result));
     }
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     audio::decoder_t decoder;
-    if (!decoder.open(source_path, &result.error)) return result;
+    if (!decoder.open(source_path, &result.error)) return std::unexpected(std::move(result));
     const auto info = decoder.info();
     if (!info || info->source_sample_rate == 0) {
         result.error = "Could not inspect the audio stream.";
-        return result;
+        return std::unexpected(std::move(result));
     }
     result.stream = {.sample_rate = info->source_sample_rate,
                      .channels = info->source_channel_count,
@@ -116,14 +116,13 @@ auto inspect_audio_for_project(const std::filesystem::path& source_path)
 #else
     if (!has_audio_signature(source_path, extension)) {
         result.error = "The file does not appear to contain supported audio.";
-        return result;
+        return std::unexpected(std::move(result));
     }
 #endif
 #if defined(WORMEDIT_HAS_FFMPEG)
     prefill_metadata(source_path, result);
 #endif
     result.error.clear();
-    result.valid = true;
     return result;
 }
 

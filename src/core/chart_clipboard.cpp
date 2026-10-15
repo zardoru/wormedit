@@ -728,23 +728,21 @@ auto chart_paste_proposal_t::revise(const chart_stamp_t& stamp, const song_docum
     return propose(document, stamp.chart, clipboard, anchor, stamp.document.revision);
 }
 
-auto apply_chart_paste(document_history_t& history, proposal_t<chart_paste_proposal_t>&& pending)
-    -> document_command_result_t {
-    auto& proposal = pending.payload;
-    auto transaction = pending.transaction(history, "Chart paste proposal",
-        document_identity_policy_t::revision_only);
-    if (!transaction.is_ready()) return transaction.finish_without_commit();
-    if (pending.stamp.document.project != history.document.id)
-        return transaction.reject(diagnostic_code_t::collision,
-                                  "Clipboard resources belong to another project.");
-    if (proposal.report.objects.empty()) return transaction.finish_without_commit();
-    if (!transaction.source_chart(pending.stamp.chart))
-        return transaction.reject(diagnostic_code_t::collision, "The selected chart no longer exists.");
+auto chart_paste_proposal_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope) &&
+    -> diagnosed_t<std::optional<std::string>> {
+    auto& transaction = scope.transaction();
+    const auto& stamp = scope.captured_stamp();
+    if (stamp.document.project != transaction.document().id)
+        return {.diagnostics = {error(diagnostic_code_t::collision,
+            "Clipboard resources belong to another project.")}};
+    if (report.objects.empty()) return {};
+    if (!transaction.source_chart(stamp.chart))
+        return {.diagnostics = {error(diagnostic_code_t::collision, "The selected chart no longer exists.")}};
     auto& proposed = transaction.copy_document();
-    const auto chart = proposed.find_chart(pending.stamp.chart);
-    for (auto& object : proposal.report.objects) append_paste_object(*chart, std::move(object));
-    append_stem_events(*chart, proposal.stem_events);
-    return transaction.commit("Paste chart objects");
+    const auto chart = proposed.find_chart(stamp.chart);
+    for (auto& object : report.objects) append_paste_object(*chart, std::move(object));
+    append_stem_events(*chart, stem_events);
+    return {.value = "Paste chart objects"};
 }
 
 auto paste_chart_clipboard(document_history_t& history, chart_id_t chart_id,
@@ -755,6 +753,6 @@ auto paste_chart_clipboard(document_history_t& history, chart_id_t chart_id,
         transaction.outcome.diagnostics.push_back(std::move(static_cast<diagnostic_t&>(prepared.error())));
         return transaction.finish_without_commit();
     }
-    return apply_chart_paste(history, std::move(*prepared));
+    return apply_proposal(history, std::move(*prepared));
 }
 } // namespace wormedit

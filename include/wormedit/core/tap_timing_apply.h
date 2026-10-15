@@ -16,7 +16,7 @@ struct tap_timing_apply_proposal_t {
     [[nodiscard]] static auto validate_apply(bool timing_locked = false) -> diagnostic_list_t;
     [[nodiscard]] auto prepare_document(const song_document_t&, chart_id_t) const
         -> std::optional<song_document_t>;
-    [[nodiscard]] auto apply(document_command_transaction_t&, chart_id_t,
+    [[nodiscard]] auto apply(proposal_edit_scope_t<chart_stamp_t>&,
                              bool timing_locked = false) const
         -> diagnosed_t<std::optional<std::string>>;
 

@@ -29,20 +29,39 @@ struct proposal_apply_policy_t {
     auto operator==(const proposal_apply_policy_t&) const -> bool = default;
 };
 
-// A prepared edit supplies its Undo label; an empty value is a no-op.
-template<class Edit, class... Arguments>
-concept proposal_edit = requires(Edit&& edit, document_command_transaction_t& transaction,
-                                 Arguments&&... arguments) {
-    { std::forward<Edit>(edit).apply(transaction, std::forward<Arguments>(arguments)...) }
-        -> std::same_as<diagnosed_t<std::optional<std::string>>>;
+// Numeric edits and captured proposals borrow their transaction for one dispatch.
+class document_edit_scope_t {
+public:
+    explicit document_edit_scope_t(document_command_transaction_t& transaction) : transaction_(transaction) {}
+    [[nodiscard]] auto transaction() const noexcept -> document_command_transaction_t& { return transaction_; }
+private:
+    document_command_transaction_t& transaction_;
 };
 
+template<class Stamp> class proposal_edit_scope_t : public document_edit_scope_t {
+public:
+    proposal_edit_scope_t(document_command_transaction_t& transaction, const Stamp& captured)
+        : document_edit_scope_t(transaction), captured_stamp_(captured) {}
+    [[nodiscard]] auto captured_stamp() const noexcept -> const Stamp& { return captured_stamp_; }
+private:
+    const Stamp& captured_stamp_;
+};
+
+// A prepared edit supplies its Undo label; an empty value is a no-op.
+template<class Edit, class Scope, class... Arguments>
+concept proposal_edit = std::derived_from<Scope, document_edit_scope_t> &&
+    requires(Edit&& edit, Scope& scope, Arguments&&... arguments) {
+        { std::forward<Edit>(edit).apply(scope, std::forward<Arguments>(arguments)...) }
+            -> std::same_as<diagnosed_t<std::optional<std::string>>>;
+    };
+
 // Synchronous edits and captured proposals share ready/error/no-op/publication policy.
-template<class Edit, class... Arguments> requires proposal_edit<Edit, Arguments...>
-[[nodiscard]] auto apply_proposal_edit(document_command_transaction_t& transaction,
+template<class Edit, class Scope, class... Arguments> requires proposal_edit<Edit, Scope, Arguments...>
+[[nodiscard]] auto apply_proposal_edit(Scope& scope,
     Edit&& edit, Arguments&&... arguments) -> document_command_result_t {
+    auto& transaction = scope.transaction();
     if (!transaction.is_ready()) return transaction.finish_without_commit();
-    auto prepared = std::forward<Edit>(edit).apply(transaction, std::forward<Arguments>(arguments)...);
+    auto prepared = std::forward<Edit>(edit).apply(scope, std::forward<Arguments>(arguments)...);
     proposal_detail::append_diagnostics(transaction.outcome.diagnostics, std::move(prepared.diagnostics));
     const bool can_commit = prepared.value.has_value() &&
         !diagnostic_queries::has_errors(transaction.outcome.diagnostics);
@@ -52,6 +71,9 @@ template<class Edit, class... Arguments> requires proposal_edit<Edit, Arguments.
 
 // Applicable state has one stamp; diagnostics belong to the build/revision outcome.
 template <class Payload, class Stamp = chart_stamp_t> struct proposal_t {
+    using payload_type = Payload;
+    using stamp_type = Stamp;
+
     Stamp stamp;
     Payload payload;
 
@@ -90,28 +112,34 @@ template <class Payload, class Stamp = chart_stamp_t> struct proposal_t {
     }
 };
 
-template<class Payload, class Stamp, class... Arguments>
-    requires requires { Payload::apply_policy; }
+template<class Pending>
+concept applicable_proposal = requires {
+    typename std::remove_cvref_t<Pending>::payload_type;
+    typename std::remove_cvref_t<Pending>::stamp_type;
+    requires std::same_as<std::remove_cvref_t<Pending>,
+        proposal_t<typename std::remove_cvref_t<Pending>::payload_type,
+                   typename std::remove_cvref_t<Pending>::stamp_type>>;
+    std::remove_cvref_t<Pending>::payload_type::apply_policy;
+};
+
+template<class Pending, class... Arguments> requires applicable_proposal<Pending>
 [[nodiscard]] auto apply_proposal(document_history_t& history,
-    const proposal_t<Payload, Stamp>& pending, Arguments&&... arguments) -> document_command_result_t {
+    Pending&& pending, Arguments&&... arguments) -> document_command_result_t {
     diagnostic_list_t preflight;
     if constexpr (requires { pending.payload.validate_apply(arguments...); }) {
         preflight = pending.payload.validate_apply(arguments...);
         if (diagnostic_queries::has_errors(preflight))
             return document_command_transaction_t::rejection(history.document.revision, std::move(preflight));
     }
-    const auto& policy = Payload::apply_policy;
+    const auto& policy = std::remove_cvref_t<Pending>::payload_type::apply_policy;
     auto transaction = pending.transaction(history, policy.stale_label, policy.identity, policy.stale_code);
     if constexpr (requires { pending.payload.validate_apply(arguments...); }) {
         proposal_detail::append_diagnostics(preflight, std::move(transaction.outcome.diagnostics));
         transaction.outcome.diagnostics = std::move(preflight);
     }
-    if constexpr (std::same_as<Stamp, chart_stamp_t>)
-        return apply_proposal_edit(transaction, pending.payload,
-                                   pending.stamp.chart, std::forward<Arguments>(arguments)...);
-    else
-        return apply_proposal_edit(transaction, pending.payload,
-                                   std::forward<Arguments>(arguments)...);
+    proposal_edit_scope_t<typename std::remove_cvref_t<Pending>::stamp_type> scope{transaction, pending.stamp};
+    return apply_proposal_edit(scope, std::forward<Pending>(pending).payload,
+                               std::forward<Arguments>(arguments)...);
 }
 
 template <class Payload, class Stamp = chart_stamp_t, class Diagnostics = diagnostic_list_t>

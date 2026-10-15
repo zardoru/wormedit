@@ -499,7 +499,7 @@ TEST_CASE("Captured paste batches apply exact proposal IDs with one Undo record"
     expect(proposal.value.has_value());
     expect(proposal.value->stamp == chart_stamp_t::from(history.document, chart_id_t{2}));
     const auto expected_id = std::get<note_t>(proposal.value->payload.report.objects.front()).id;
-    const auto result = apply_chart_paste(history, std::move(*proposal.value));
+    const auto result = apply_proposal(history, std::move(*proposal.value));
     expect(result.applied);
     expect(history.document.charts.back().measures.front().notes.front().id == expected_id);
     expect(history.undo.size() == 1);
@@ -515,7 +515,7 @@ TEST_CASE("Captured paste expires by revision before publishing any object",
         {measure_id_t{1}, 120}, history.document.revision);
     expect(proposal.value.has_value());
     ++history.document.revision;
-    const auto result = apply_chart_paste(history, std::move(*proposal.value));
+    const auto result = apply_proposal(history, std::move(*proposal.value));
     expect(!result.applied);
     expect(result.diagnostics.size() == 1);
     test::check_stale_action_message(result.diagnostics, "Chart paste proposal");
@@ -531,7 +531,7 @@ TEST_CASE("Captured paste retains its separate clipboard-project provenance reje
         {measure_id_t{1}, 120}, history.document.revision);
     expect(proposal.value.has_value());
     history.document.id = song_id_t{99};
-    const auto result = apply_chart_paste(history, std::move(*proposal.value));
+    const auto result = apply_proposal(history, std::move(*proposal.value));
     expect(!result.applied);
     expect(result.diagnostics.size() == 1);
     expect(result.diagnostics.front().code == diagnostic_code_t::collision);
@@ -584,7 +584,7 @@ TEST_CASE("Empty captured paste batches return before document publication",
         {measure_id_t{1}, 120}, history.document.revision);
     REQUIRE(proposal.value);
     proposal.value->payload.report.objects.clear();
-    const auto result = apply_chart_paste(history, std::move(*proposal.value));
+    const auto result = apply_proposal(history, std::move(*proposal.value));
     expect(!result.applied);
     expect(result.diagnostics.empty());
     expect(history.undo.empty());

@@ -191,8 +191,9 @@ struct bpm_operation_visitor_t {
 struct bpm_transaction_edit_t {
     const bpm_edit_action_t& action;
     bpm_edit_limits_t limits;
-    [[nodiscard]] auto apply(document_command_transaction_t& transaction) const
+    [[nodiscard]] auto apply(document_edit_scope_t& scope) const
         -> diagnosed_t<std::optional<std::string>> {
+        auto& transaction = scope.transaction();
         auto& result = transaction.outcome;
         if (limits.maximum_bpm_events == 0) {
             reject(result, diagnostic_code_t::invalid_resolution, "BPM event cap must be positive");
@@ -287,14 +288,16 @@ auto step_bpm_by_one(signed_rational_t bpm, bpm_step_direction_t direction)
 auto apply_bpm_edit(document_history_t& history,
     const bpm_edit_action_t& action, bpm_edit_limits_t limits) -> document_command_result_t {
     auto transaction = document_command_transaction_t::from(history);
-    return apply_proposal_edit(transaction, bpm_transaction_edit_t{.action = action, .limits = limits});
+    document_edit_scope_t scope{transaction};
+    return apply_proposal_edit(scope, bpm_transaction_edit_t{.action = action, .limits = limits});
 }
 
 // Temporary: removed by T-637; native_chart_edit_action.h still dispatches into existing transactions.
 auto apply_bpm_edit(document_command_transaction_t& transaction,
                     const bpm_edit_action_t& action, bpm_edit_limits_t limits)
     -> document_command_result_t {
-    return apply_proposal_edit(transaction, bpm_transaction_edit_t{.action = action, .limits = limits});
+    document_edit_scope_t scope{transaction};
+    return apply_proposal_edit(scope, bpm_transaction_edit_t{.action = action, .limits = limits});
 }
 
 namespace {
@@ -612,11 +615,13 @@ auto beat_interval_drag_t::validate_apply(bool timing_locked) const -> diagnosti
     return {};
 }
 
-auto beat_interval_drag_t::apply(document_command_transaction_t& transaction, chart_id_t chart,
+auto beat_interval_drag_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope,
                                 bool) const -> diagnosed_t<std::optional<std::string>> {
+    auto& transaction = scope.transaction();
+    const auto& stamp = scope.captured_stamp();
+    const auto chart = stamp.chart;
     const auto& drag = *this;
     const auto& document = transaction.document();
-    const auto stamp = chart_stamp_t::from(document, chart);
     auto updated = revise_beat_interval_values(document, stamp, drag, proposed_sample_frame);
     if ((updated.value && updated.diagnostics.empty()) && snap_active)
         updated = revise_beat_interval_bpm_values(document, stamp, drag, proposed_bpm,
@@ -636,7 +641,7 @@ auto beat_interval_drag_t::apply(document_command_transaction_t& transaction, ch
         : bpm_edit_action_t{wormedit::update_edit_t<bpm_edit_value_t>{
               .chart = chart, .id = bpm_event,
               .value = bpm_edit_value_t::from(original_bpm_position, timing_bpm_value_t{proposed_bpm})}};
-    return bpm_transaction_edit_t{.action = action, .limits = {}}.apply(transaction);
+    return bpm_transaction_edit_t{.action = action, .limits = {}}.apply(scope);
 }
 
 } // namespace wormedit

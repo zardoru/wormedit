@@ -14,9 +14,10 @@ struct metadata_payload_t {
         .stale_label = "Title proposal"};
     std::string title;
 
-    auto apply(document_command_transaction_t& transaction, bool is_rejected_after_edit = false,
+    auto apply(proposal_edit_scope_t<document_stamp_t>& scope, bool is_rejected_after_edit = false,
                bool is_rejected_by_transaction = false) const
         -> diagnosed_t<std::optional<std::string>> {
+        auto& transaction = scope.transaction();
         if (title.empty())
             return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Title is empty.")}};
         if (transaction.document().metadata.title == title) return {};
@@ -45,6 +46,24 @@ struct metadata_payload_t {
         return propose(document, std::move(title));
     }
 };
+
+struct consuming_title_t {
+    static constexpr proposal_apply_policy_t apply_policy{
+        .stale_label = "Consuming title", .identity = document_identity_policy_t::revision_only};
+    std::unique_ptr<std::string> title;
+    auto apply(proposal_edit_scope_t<document_stamp_t>& scope) &&
+        -> diagnosed_t<std::optional<std::string>> {
+        auto& transaction = scope.transaction();
+        if (scope.captured_stamp().project != transaction.document().id)
+            return {.diagnostics = {error(diagnostic_code_t::collision, "Title belongs to another project.")}};
+        auto consumed = std::move(title);
+        transaction.copy_document().metadata.title = std::move(*consumed);
+        return {.value = "Consume title"};
+    }
+};
+static_assert(!std::copy_constructible<consuming_title_t>);
+static_assert(proposal_edit<consuming_title_t, proposal_edit_scope_t<document_stamp_t>>);
+static_assert(!proposal_edit<consuming_title_t&, proposal_edit_scope_t<document_stamp_t>>);
 
 // State-machine revisions may reject the original state while returning no proposal.
 struct mutable_payload_t {
@@ -335,5 +354,33 @@ TEST_CASE("Proposal runner preserves transaction rejection", "[core][proposal]")
     CHECK(result.diagnostics == expected);
     CHECK(history.document.metadata.title.empty());
     CHECK(history.document.revision == revision);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Shared proposals preserve consuming payloads without a copy", "[core][proposal]") {
+    auto history = make_history();
+    proposal_t<consuming_title_t, document_stamp_t> pending{
+        .stamp = document_stamp_t::from(history.document),
+        .payload = {.title = std::make_unique<std::string>("Consumed")}};
+    REQUIRE(apply_proposal(history, std::move(pending)));
+    CHECK_FALSE(pending.payload.title);
+    CHECK(history.document.metadata.title == "Consumed");
+    CHECK(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.metadata.title.empty());
+}
+
+TEST_CASE("Shared proposal scopes retain captured provenance before consuming", "[core][proposal]") {
+    auto history = make_history();
+    proposal_t<consuming_title_t, document_stamp_t> pending{
+        .stamp = document_stamp_t::from(history.document),
+        .payload = {.title = std::make_unique<std::string>("Consumed")}};
+    history.document.id = song_id_t{2};
+    const auto rejected = apply_proposal(history, std::move(pending));
+    CHECK_FALSE(rejected.applied);
+    REQUIRE(rejected.diagnostics.size() == 1);
+    CHECK(rejected.diagnostics.front().message == "Title belongs to another project.");
+    REQUIRE(pending.payload.title);
+    CHECK(*pending.payload.title == "Consumed");
     CHECK(history.undo.empty());
 }

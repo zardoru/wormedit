@@ -127,7 +127,8 @@ struct audio_offset_edit_t {
     signed_rational_t offset;
     bool is_timing_locked{};
 
-    [[nodiscard]] auto apply(document_command_transaction_t& transaction) const -> diagnosed_t<std::optional<std::string>> {
+    [[nodiscard]] auto apply(document_edit_scope_t& scope) const -> diagnosed_t<std::optional<std::string>> {
+        auto& transaction = scope.transaction();
         if (is_timing_locked)
             return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
                 "audio offset editing is disabled while timing is locked")}};
@@ -153,18 +154,22 @@ auto apply_audio_offset_edit(document_history_t& history, chart_id_t chart,
                              signed_rational_t offset_seconds, bool timing_locked)
     -> document_command_result_t {
     auto transaction = document_command_transaction_t::from(history);
-    return apply_proposal_edit(transaction,
+    document_edit_scope_t scope{transaction};
+    return apply_proposal_edit(scope,
         audio_offset_edit_t{.chart = chart, .offset = offset_seconds, .is_timing_locked = timing_locked});
 }
 
-auto audio_offset_drag_t::apply(document_command_transaction_t& transaction, chart_id_t chart,
+auto audio_offset_drag_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope,
                                 bool timing_locked) const -> diagnosed_t<std::optional<std::string>> {
+    auto& transaction = scope.transaction();
+    const auto& stamp = scope.captured_stamp();
+    const auto chart = stamp.chart;
     const auto* selected = transaction.source_chart(chart);
     if (selected == nullptr || selected->beat_zero_audio_offset_seconds != original_offset_seconds)
         return {.diagnostics = {error(diagnostic_code_t::invalid_id,
             "audio offset drag no longer matches the selected chart")}};
     return audio_offset_edit_t{.chart = chart, .offset = proposed_offset_seconds,
-                              .is_timing_locked = timing_locked}.apply(transaction);
+                              .is_timing_locked = timing_locked}.apply(scope);
 }
 
 } // namespace wormedit

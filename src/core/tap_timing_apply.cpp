@@ -232,9 +232,11 @@ auto tap_timing_apply_proposal_t::validate_apply(bool timing_locked) -> diagnost
     return {};
 }
 
-auto tap_timing_apply_proposal_t::apply(document_command_transaction_t& transaction,
-                                       chart_id_t chart, bool) const
+auto tap_timing_apply_proposal_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope, bool) const
     -> diagnosed_t<std::optional<std::string>> {
+    auto& transaction = scope.transaction();
+    const auto& stamp = scope.captured_stamp();
+    const auto chart = stamp.chart;
     auto proposed = prepare_document(transaction.document(), chart);
     if (!proposed)
         return {.diagnostics = {error(diagnostic_code_t::invalid_id,

@@ -95,6 +95,11 @@ using chart_paste_outcome_t =
     proposal_outcome_t<chart_paste_proposal_t, chart_stamp_t, chart_paste_diagnostics_t>;
 
 struct chart_paste_proposal_t {
+    static constexpr proposal_apply_policy_t apply_policy{
+        .stale_label = "Chart paste proposal", .identity = document_identity_policy_t::revision_only};
+    // Consumes a revision-bound object batch and publishes it once.
+    [[nodiscard]] auto apply(proposal_edit_scope_t<chart_stamp_t>& scope) &&
+        -> diagnosed_t<std::optional<std::string>>;
     [[nodiscard]] static auto propose(const song_document_t& document, chart_id_t chart,
         const chart_clipboard_t& clipboard, local_position_t anchor,
         std::uint64_t expected_revision) -> chart_paste_outcome_t;
@@ -114,10 +119,6 @@ static_assert(staged_proposal<chart_paste_proposal_t,
 
 using chart_paste_preview_view_t =
     proposal_preview_view_t<chart_paste_proposal_t, chart_stamp_t, chart_paste_diagnostics_t>;
-
-// Consumes a revision-bound object batch and publishes it once.
-[[nodiscard]] auto apply_chart_paste(document_history_t& history, proposal_t<chart_paste_proposal_t>&& proposal)
-    -> document_command_result_t;
 
 [[nodiscard]] auto paste_chart_clipboard(document_history_t& history,
     chart_id_t chart, const chart_clipboard_t& clipboard, local_position_t anchor) -> document_command_result_t;

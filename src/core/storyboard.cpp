@@ -1111,15 +1111,9 @@ class osb_parser_t {
 
 } // namespace
 
-auto storyboard_parse_result_t::from(storyboard_parse_outcome_t&& outcome) -> storyboard_parse_result_t {
-    return {.document = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
-auto storyboard_parse_result_t::from(std::string_view text, storyboard_parse_options_t options)
+auto parse_osb(std::string_view text, storyboard_parse_options_t options)
     -> storyboard_parse_outcome_t {
     return osb_parser_t{options}.parse(text);
-}
-auto parse_osb(std::string_view text, storyboard_parse_options_t options) -> storyboard_parse_result_t {
-    return storyboard_parse_result_t::from(storyboard_parse_result_t::from(text, options));
 }
 
 namespace {
@@ -1229,10 +1223,7 @@ auto emit_osb_top_item(std::string& output, const storyboard_document_model_t& d
 
 } // namespace
 
-auto storyboard_emit_result_t::from(storyboard_emit_outcome_t&& outcome) -> storyboard_emit_result_t {
-    return {.text = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
-auto storyboard_emit_result_t::from(const storyboard_document_model_t& document, std::size_t maximum_output_bytes)
+auto emit_osb(const storyboard_document_model_t& document, std::size_t maximum_output_bytes)
     -> storyboard_emit_outcome_t {
     storyboard_emit_outcome_t result{};
     const auto items = make_osb_top_items(document, result);
@@ -1258,9 +1249,6 @@ auto storyboard_emit_result_t::from(const storyboard_document_model_t& document,
     return result;
 }
 
-auto emit_osb(const storyboard_document_model_t& document, std::size_t maximum_output_bytes) -> storyboard_emit_result_t {
-    return storyboard_emit_result_t::from(storyboard_emit_result_t::from(document, maximum_output_bytes));
-}
 
 namespace {
 
@@ -1367,10 +1355,7 @@ auto schedule_event_less(const storyboard_event_t& left, const storyboard_event_
 
 } // namespace
 
-auto storyboard_schedule_result_t::from(storyboard_schedule_outcome_t&& outcome) -> storyboard_schedule_result_t {
-    return {.schedule = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
-auto storyboard_schedule_result_t::from(const storyboard_document_model_t& document,
+auto compile_storyboard_schedule(const storyboard_document_model_t& document,
                                  storyboard_schedule_options_t options)
     -> storyboard_schedule_outcome_t {
     storyboard_schedule_outcome_t result{};
@@ -1402,10 +1387,6 @@ auto storyboard_schedule_result_t::from(const storyboard_document_model_t& docum
     return result;
 }
 
-auto compile_storyboard_schedule(const storyboard_document_model_t& document,
-    storyboard_schedule_options_t options) -> storyboard_schedule_result_t {
-    return storyboard_schedule_result_t::from(storyboard_schedule_result_t::from(document, options));
-}
 
 auto storyboard_event_cursor_t::start(const storyboard_schedule_t& schedule, std::int64_t time_ms)
     -> storyboard_cursor_status_t {
@@ -1434,10 +1415,6 @@ auto storyboard_event_cursor_t::seek(std::int64_t time_ms) -> storyboard_cursor_
     return storyboard_cursor_status_t::ready;
 }
 
-auto storyboard_cursor_result_t::from(storyboard_cursor_outcome_t&& outcome) noexcept -> storyboard_cursor_result_t {
-    if (!outcome) return {.status = outcome.error()};
-    return {.status = storyboard_cursor_status_t::ready, .events = *outcome};
-}
 auto storyboard_event_cursor_t::advance_events(std::int64_t exclusive_end_time_ms) noexcept
     -> storyboard_cursor_outcome_t {
     if (!active_ || schedule_ == nullptr)
@@ -1454,9 +1431,6 @@ auto storyboard_event_cursor_t::advance_events(std::int64_t exclusive_end_time_m
     return std::span<const storyboard_event_t>{schedule_->events}.subspan(begin, head_ - begin);
 }
 
-auto storyboard_event_cursor_t::advance(std::int64_t exclusive_end_time_ms) noexcept -> storyboard_cursor_result_t {
-    return storyboard_cursor_result_t::from(advance_events(exclusive_end_time_ms));
-}
 
 void storyboard_event_cursor_t::stop() noexcept {
     schedule_ = nullptr;
@@ -1465,14 +1439,7 @@ void storyboard_event_cursor_t::stop() noexcept {
     active_ = false;
 }
 
-auto storyboard_evaluation_result_t::from(storyboard_evaluation_outcome_t&& outcome) -> storyboard_evaluation_result_t {
-    const auto failed = !outcome.has_value();
-    auto effect = failed ? std::move(outcome.error()) : std::move(*outcome);
-    return {.value = effect.value, .diagnostic = std::move(effect.diagnostic),
-        .start_time_ms = effect.start_time_ms, .source_order = effect.source_order,
-        .visit_order = effect.visit_order, .failed = failed};
-}
-auto storyboard_evaluation_result_t::from(const storyboard_sprite_t& sprite, storyboard_opcode_t opcode,
+auto evaluate_storyboard_property(const storyboard_sprite_t& sprite, storyboard_opcode_t opcode,
                                   std::int64_t time_ms, std::size_t maximum_nesting)
     -> storyboard_evaluation_outcome_t {
     evaluation_context_t context;
@@ -1491,10 +1458,6 @@ auto storyboard_evaluation_result_t::from(const storyboard_sprite_t& sprite, sto
     return effect;
 }
 
-auto evaluate_storyboard_property(const storyboard_sprite_t& sprite, storyboard_opcode_t opcode,
-    std::int64_t time_ms, std::size_t maximum_nesting) -> storyboard_evaluation_result_t {
-    return storyboard_evaluation_result_t::from(storyboard_evaluation_result_t::from(sprite, opcode, time_ms, maximum_nesting));
-}
 
 auto storyboard_semantically_equal(const storyboard_document_model_t& left,
                                    const storyboard_document_model_t& right) -> bool {

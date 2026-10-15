@@ -98,7 +98,7 @@ auto storyboard_preview_index_t::from(const storyboard_document_model_t& documen
                                     storyboard_schedule_options_t options)
     -> storyboard_preview_index_outcome_t {
     storyboard_preview_index_outcome_t result{};
-    auto schedule = storyboard_schedule_result_t::from(document, options);
+    auto schedule = compile_storyboard_schedule(document, options);
     if (!schedule.value) {
         result.diagnostics = std::move(schedule.diagnostics);
         return result;
@@ -152,11 +152,7 @@ auto build_storyboard_preview_index(const storyboard_document_model_t& document,
     return storyboard_preview_index_result_t::from(storyboard_preview_index_t::from(document, options));
 }
 
-auto storyboard_frame_result_t::from(storyboard_frame_outcome_t&& outcome) -> storyboard_frame_result_t {
-    auto effect = outcome ? std::move(*outcome) : std::move(outcome.error());
-    return {.instances = effect.instances, .diagnostic = std::move(effect.diagnostic), .arena_error = effect.arena_error};
-}
-auto storyboard_frame_result_t::from(const storyboard_document_model_t& document,
+auto evaluate_storyboard_frame(const storyboard_document_model_t& document,
                                const storyboard_preview_index_t& index, std::int64_t time_ms,
                                storyboard_frame_arena_t& arena, storyboard_frame_options_t options)
     -> storyboard_frame_outcome_t {
@@ -200,7 +196,7 @@ auto storyboard_frame_result_t::from(const storyboard_document_model_t& document
         const auto& sprite = document.sprites[source.sprite_index];
         using evaluator_t = storyboard_evaluation_outcome_t (*)(const storyboard_sprite_t&,
             storyboard_opcode_t, std::int64_t, std::size_t);
-        const auto evaluate = std::bind_front(std::bind_back(static_cast<evaluator_t>(&storyboard_evaluation_result_t::from),
+        const auto evaluate = std::bind_front(std::bind_back(static_cast<evaluator_t>(&evaluate_storyboard_property),
             time_ms, options.maximum_nesting), std::cref(sprite));
         const auto fade = evaluate(storyboard_opcode_t::fade);
         const auto move = evaluate(storyboard_opcode_t::move);
@@ -235,10 +231,5 @@ auto storyboard_frame_result_t::from(const storyboard_document_model_t& document
     return result;
 }
 
-auto evaluate_storyboard_frame(const storyboard_document_model_t& document,
-    const storyboard_preview_index_t& index, std::int64_t time_ms, storyboard_frame_arena_t& arena,
-    storyboard_frame_options_t options) -> storyboard_frame_result_t {
-    return storyboard_frame_result_t::from(storyboard_frame_result_t::from(document, index, time_ms, arena, options));
-}
 
 } // namespace wormedit

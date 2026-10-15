@@ -155,12 +155,12 @@ auto resident_sample_store_t::reserve(const resident_request_t& request)
         ++over_budget_count_;
         return {resident_load_status_t::over_budget, {}};
     }
-    auto appended = arena_.append(bytes, alignof(float));
+    auto appended = arena_.append_span(bytes, alignof(float));
     if (!appended) {
         ++failed_count_;
         return {resident_load_status_t::decode_failed, {}};
     }
-    return {resident_load_status_t::loaded, std::move(appended.span)};
+    return {resident_load_status_t::loaded, std::move(*appended)};
 }
 
 void resident_sample_store_t::discard(const append_arena_span_t& span) {
@@ -239,12 +239,12 @@ auto resident_sample_store_t::compact_locked() -> bool {
     std::ranges::sort(order, [&](std::size_t left, std::size_t right) {
         return contents_.at(keys[left]).order < contents_.at(keys[right]).order;
     });
-    auto compacted = arena_.compact(spans, order);
+    auto compacted = arena_.build_compaction(spans, order);
     if (!compacted)
         return false;
     for (std::size_t index = 0; index < keys.size(); ++index)
-        contents_.at(keys[index]).span = std::move(compacted.remap[index]);
-    arena_ = std::move(compacted.arena);
+        contents_.at(keys[index]).span = std::move(compacted->remap[index]);
+    arena_ = std::move(compacted->arena);
     ++compactions_;
     return true;
 }

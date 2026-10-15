@@ -20,7 +20,6 @@ namespace wormedit {
 // until reset(); reset keeps committed chunks for reuse on the next frame. The
 // implementation is the generic frame arena in <wormedit/core/arena.h>.
 using storyboard_arena_error_t = arena_error_t;
-using storyboard_arena_allocation_t = arena_allocation_t;
 using storyboard_arena_options_t = arena_options_t;
 using storyboard_frame_arena_t = frame_arena_t;
 
@@ -128,34 +127,16 @@ struct storyboard_parse_options_t {
 };
 
 using storyboard_parse_outcome_t = diagnosed_t<std::optional<storyboard_document_model_t>, std::vector<storyboard_diagnostic_t>>;
-struct storyboard_parse_result_t {
-    [[nodiscard]] static auto from(std::string_view text, storyboard_parse_options_t options = {}) -> storyboard_parse_outcome_t;
-    [[nodiscard]] static auto from(storyboard_parse_outcome_t&& outcome) -> storyboard_parse_result_t;
-    std::optional<storyboard_document_model_t> document;
-    std::vector<storyboard_diagnostic_t> diagnostics;
 
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return document.has_value();
-    }
-};
 
 using storyboard_emit_outcome_t = diagnosed_t<std::optional<std::string>, std::vector<storyboard_diagnostic_t>>;
-struct storyboard_emit_result_t {
-    [[nodiscard]] static auto from(const storyboard_document_model_t& document, std::size_t maximum_output_bytes = 16 * 1024 * 1024) -> storyboard_emit_outcome_t;
-    [[nodiscard]] static auto from(storyboard_emit_outcome_t&& outcome) -> storyboard_emit_result_t;
-    std::optional<std::string> text;
-    std::vector<storyboard_diagnostic_t> diagnostics;
 
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return text.has_value();
-    }
-};
 
 [[nodiscard]] auto parse_osb(std::string_view text, storyboard_parse_options_t options = {})
-    -> storyboard_parse_result_t;
+    -> storyboard_parse_outcome_t;
 [[nodiscard]] auto emit_osb(const storyboard_document_model_t& document,
                             std::size_t maximum_output_bytes = 16 * 1024 * 1024)
-    -> storyboard_emit_result_t;
+    -> storyboard_emit_outcome_t;
 
 struct storyboard_event_t {
     std::int64_t time_ms{};
@@ -179,23 +160,14 @@ struct storyboard_schedule_t {
 };
 
 using storyboard_schedule_outcome_t = diagnosed_t<std::optional<storyboard_schedule_t>, std::vector<storyboard_diagnostic_t>>;
-struct storyboard_schedule_result_t {
-    [[nodiscard]] static auto from(const storyboard_document_model_t& document, storyboard_schedule_options_t options = {}) -> storyboard_schedule_outcome_t;
-    [[nodiscard]] static auto from(storyboard_schedule_outcome_t&& outcome) -> storyboard_schedule_result_t;
-    std::optional<storyboard_schedule_t> schedule;
-    std::vector<storyboard_diagnostic_t> diagnostics;
 
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return schedule.has_value();
-    }
-};
 
 // Compile only authored root-level boundaries. A loop is represented by its
 // envelope; its repeated child boundaries remain structural and are evaluated
 // from the loop tree. This keeps compilation bounded by authored node count.
 [[nodiscard]] auto compile_storyboard_schedule(const storyboard_document_model_t& document,
                                                storyboard_schedule_options_t options = {})
-    -> storyboard_schedule_result_t;
+    -> storyboard_schedule_outcome_t;
 
 enum class storyboard_cursor_status_t : std::uint8_t {
     ready,
@@ -205,11 +177,7 @@ enum class storyboard_cursor_status_t : std::uint8_t {
 };
 
 using storyboard_cursor_outcome_t = result_t<std::span<const storyboard_event_t>, storyboard_cursor_status_t>;
-struct storyboard_cursor_result_t {
-    [[nodiscard]] static auto from(storyboard_cursor_outcome_t&& outcome) noexcept -> storyboard_cursor_result_t;
-    storyboard_cursor_status_t status{storyboard_cursor_status_t::not_started};
-    std::span<const storyboard_event_t> events;
-};
+
 
 // The schedule must outlive this cursor. seek() is logarithmic; advance() only
 // reads forward and updates one index, with no erase, relink, or allocation.
@@ -219,8 +187,7 @@ class storyboard_event_cursor_t {
         -> storyboard_cursor_status_t;
     [[nodiscard]] auto seek(std::int64_t time_ms) -> storyboard_cursor_status_t;
     [[nodiscard]] auto advance_events(std::int64_t exclusive_end_time_ms) noexcept -> storyboard_cursor_outcome_t;
-    [[nodiscard]] auto advance(std::int64_t exclusive_end_time_ms) noexcept
-        -> storyboard_cursor_result_t;
+
     void stop() noexcept;
 
     [[nodiscard]] auto head_index() const noexcept -> std::size_t {
@@ -251,24 +218,14 @@ struct storyboard_evaluation_effect_t {
     auto operator==(const storyboard_evaluation_effect_t&) const -> bool = default;
 };
 using storyboard_evaluation_outcome_t = result_t<storyboard_evaluation_effect_t, storyboard_evaluation_effect_t>;
-struct storyboard_evaluation_result_t {
-    [[nodiscard]] static auto from(const storyboard_sprite_t& sprite, storyboard_opcode_t opcode,
-        std::int64_t time_ms, std::size_t maximum_nesting = 128) -> storyboard_evaluation_outcome_t;
-    [[nodiscard]] static auto from(storyboard_evaluation_outcome_t&& outcome) -> storyboard_evaluation_result_t;
-    storyboard_value_t value;
-    storyboard_diagnostic_t diagnostic;
-    std::int64_t start_time_ms{};
-    std::uint64_t source_order{};
-    std::uint64_t visit_order{};
-    bool failed{};
-};
+
 
 // Evaluates one property at an exact OSB millisecond. The last started command
 // in source order wins, and loop iteration selection uses division/modulo.
 [[nodiscard]] auto evaluate_storyboard_property(const storyboard_sprite_t& sprite,
                                                 storyboard_opcode_t opcode, std::int64_t time_ms,
                                                 std::size_t maximum_nesting = 128)
-    -> storyboard_evaluation_result_t;
+    -> storyboard_evaluation_outcome_t;
 
 // Semantic comparison ignores source-order labels and blank-only formatting
 // lines, but compares retained directive text and authored loop structure.

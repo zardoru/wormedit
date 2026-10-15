@@ -27,21 +27,7 @@ enum class arena_error_t : std::uint8_t {
 
 using arena_allocation_outcome_t = result_t<void*, arena_error_t>;
 
-struct arena_allocation_t {
-    [[nodiscard]] static auto from(arena_allocation_outcome_t outcome) noexcept
-        -> arena_allocation_t {
-        if (!outcome)
-            return {.data = nullptr, .error = outcome.error()};
-        return {.data = *outcome, .error = arena_error_t::none};
-    }
 
-    void* data{};
-    arena_error_t error{arena_error_t::none};
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return data != nullptr;
-    }
-};
 
 struct arena_options_t {
     std::size_t chunk_bytes{64 * 1024};
@@ -82,19 +68,7 @@ class chunk_arena_core_t {
     };
     using allocation_outcome_t = result_t<allocation_location_t, arena_error_t>;
 
-    struct allocation_t {
-        [[nodiscard]] static auto from(allocation_outcome_t outcome) noexcept -> allocation_t {
-            if (!outcome)
-                return {.data = nullptr, .error = outcome.error(), .chunk_index = 0, .offset = 0};
-            return {.data = outcome->data, .error = arena_error_t::none,
-                    .chunk_index = outcome->chunk_index, .offset = outcome->offset};
-        }
 
-        std::byte* data{};
-        arena_error_t error{arena_error_t::none};
-        std::size_t chunk_index{};
-        std::size_t offset{};
-    };
 
     // A null resource means std::pmr::new_delete_resource(). The resource must
     // outlive every chunk, including chunks kept alive by append-arena handles.
@@ -109,8 +83,7 @@ class chunk_arena_core_t {
 
     [[nodiscard]] auto allocate(std::size_t size, std::size_t alignment,
                                 arena_fit_policy_t policy) noexcept -> allocation_outcome_t;
-    [[nodiscard]] auto allocate_bytes(std::size_t size, std::size_t alignment,
-                                      arena_fit_policy_t policy) noexcept -> allocation_t;
+
     // Rewinds every chunk to empty and keeps it committed.
     void rewind() noexcept;
     // Raises the allocation ceiling without moving or releasing existing chunks.
@@ -160,9 +133,7 @@ class frame_arena_t {
     [[nodiscard]] auto allocate(std::size_t size,
                                 std::size_t alignment = alignof(void*)) noexcept
         -> arena_allocation_outcome_t;
-    [[nodiscard]] auto allocate_bytes(std::size_t size,
-                                      std::size_t alignment = alignof(void*)) noexcept
-        -> arena_allocation_t;
+
     void reset() noexcept;
 
     [[nodiscard]] auto object_count() const noexcept -> std::size_t;
@@ -188,21 +159,7 @@ struct append_arena_span_t {
 
 using append_arena_outcome_t = result_t<append_arena_span_t, arena_error_t>;
 
-struct append_arena_result_t {
-    [[nodiscard]] static auto from(append_arena_outcome_t&& outcome) noexcept
-        -> append_arena_result_t {
-        if (!outcome)
-            return {.span = {}, .error = outcome.error()};
-        return {.span = std::move(*outcome), .error = arena_error_t::none};
-    }
 
-    append_arena_span_t span;
-    arena_error_t error{arena_error_t::none};
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return error == arena_error_t::none;
-    }
-};
 
 enum class arena_compaction_error_t : std::uint8_t {
     none,
@@ -220,7 +177,6 @@ struct arena_compaction_failure_t {
 struct append_arena_snapshot_t;
 using append_arena_compaction_outcome_t =
     result_t<append_arena_snapshot_t, arena_compaction_failure_t>;
-struct append_arena_compaction_t;
 
 // Append-only storage: spans never move or get reused. Callers report
 // replaced data with mark_stale(); compact() copies the live spans into a
@@ -239,8 +195,7 @@ class append_arena_t {
     [[nodiscard]] auto append_span(std::size_t size,
                                    std::size_t alignment = alignof(void*)) noexcept
         -> append_arena_outcome_t;
-    [[nodiscard]] auto append(std::size_t size, std::size_t alignment = alignof(void*)) noexcept
-        -> append_arena_result_t;
+
     // Adds payload bytes to the stale count, clamped to appended payload.
     // Alignment padding is physical usage, not live or stale payload.
     void mark_stale(std::size_t bytes) noexcept;
@@ -262,9 +217,7 @@ class append_arena_t {
     [[nodiscard]] auto build_compaction(std::span<const append_arena_span_t> live_spans,
                                         std::span<const std::size_t> order = {}) const noexcept
         -> append_arena_compaction_outcome_t;
-    [[nodiscard]] auto compact(std::span<const append_arena_span_t> live_spans,
-                               std::span<const std::size_t> order = {}) const noexcept
-        -> append_arena_compaction_t;
+
 
   private:
     [[nodiscard]] auto has_allocation(const append_arena_span_t& span) const noexcept -> bool;
@@ -280,29 +233,6 @@ struct append_arena_snapshot_t {
     std::vector<append_arena_span_t> remap;
 };
 
-struct append_arena_compaction_t {
-    [[nodiscard]] static auto from(append_arena_compaction_outcome_t&& outcome,
-                                  arena_options_t options,
-                                  std::pmr::memory_resource* resource) noexcept
-        -> append_arena_compaction_t {
-        if (!outcome)
-            return {.arena = append_arena_t{options, resource},
-                    .remap = std::move(outcome.error().remap),
-                    .error = outcome.error().code,
-                    .allocation_error = outcome.error().allocation_error};
-        return {.arena = std::move(outcome->arena), .remap = std::move(outcome->remap),
-                .error = arena_compaction_error_t::none,
-                .allocation_error = arena_error_t::none};
-    }
 
-    append_arena_t arena;
-    std::vector<append_arena_span_t> remap;
-    arena_compaction_error_t error{arena_compaction_error_t::none};
-    arena_error_t allocation_error{arena_error_t::none};
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return error == arena_compaction_error_t::none;
-    }
-};
 
 } // namespace wormedit

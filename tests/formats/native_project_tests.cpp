@@ -116,7 +116,7 @@ auto rich_bmson_song() -> wormedit::song_document_t {
         .id = wormedit::storyboard_id_t{905},
         .name = "Main",
         .retained_source_lines = {"Sprite,Background,Centre,background.png"},
-        .model = parsed_storyboard.document,
+        .model = parsed_storyboard.value,
     });
     const auto first_measure = chart.measures.front().id;
     chart.sv_recipes.push_back({
@@ -568,11 +568,11 @@ TEST_CASE("native project deterministically round-trips rich editor state",
               .kind == wormedit::storyboard_node_kind_t::loop);
     CHECK(parsed.song->storyboards.front().model->retained_top_level_lines.size() == 2);
     const auto emitted_storyboard = wormedit::emit_osb(*parsed.song->storyboards.front().model);
-    REQUIRE(emitted_storyboard);
-    const auto reparsed_storyboard = wormedit::parse_osb(*emitted_storyboard.text);
-    REQUIRE(reparsed_storyboard);
+    REQUIRE(emitted_storyboard.value);
+    const auto reparsed_storyboard = wormedit::parse_osb(*emitted_storyboard.value);
+    REQUIRE(reparsed_storyboard.value);
     CHECK(wormedit::storyboard_semantically_equal(*parsed.song->storyboards.front().model,
-                                                  *reparsed_storyboard.document));
+                                                  *reparsed_storyboard.value));
 
     const auto rewritten = wormedit::write_native_project(*parsed.song);
     REQUIRE(rewritten.bytes.has_value());

@@ -63,28 +63,28 @@ TEST_CASE("storyboard preview evaluates a bounded renderer-neutral frame",
     CHECK(built.index->sources[1].sprite_index == 0);
 
     storyboard_frame_arena_t arena;
-    const auto frame = storyboard_frame_result_t::from(storyboard_frame_result_t::from(document, *built.index, 150, arena));
+    const auto frame = evaluate_storyboard_frame(document, *built.index, 150, arena);
     REQUIRE(frame);
-    REQUIRE(frame.instances.size() == 2);
-    CHECK(frame.instances[0].path == "back.png");
-    CHECK(frame.instances[0].layer_order == 0);
-    CHECK(frame.instances[1].path == "front.png");
-    CHECK(frame.instances[1].layer_order == 3);
-    CHECK(frame.instances[1].x == 60.0);
-    CHECK(frame.instances[1].y == 60.0);
-    CHECK(frame.instances[1].opacity == 0.5);
-    CHECK(frame.instances[1].scale_x == 1.5);
-    CHECK(frame.instances[1].scale_y == 3.0);
-    CHECK(frame.instances[1].red == 130.0);
-    CHECK(frame.instances[1].green == 100.0);
-    CHECK(frame.instances[1].blue == 110.0);
+    REQUIRE(frame->instances.size() == 2);
+    CHECK(frame->instances[0].path == "back.png");
+    CHECK(frame->instances[0].layer_order == 0);
+    CHECK(frame->instances[1].path == "front.png");
+    CHECK(frame->instances[1].layer_order == 3);
+    CHECK(frame->instances[1].x == 60.0);
+    CHECK(frame->instances[1].y == 60.0);
+    CHECK(frame->instances[1].opacity == 0.5);
+    CHECK(frame->instances[1].scale_x == 1.5);
+    CHECK(frame->instances[1].scale_y == 3.0);
+    CHECK(frame->instances[1].red == 130.0);
+    CHECK(frame->instances[1].green == 100.0);
+    CHECK(frame->instances[1].blue == 110.0);
 
     const auto before = evaluate_storyboard_frame(document, *built.index, 99, arena);
     REQUIRE(before);
-    CHECK(before.instances.empty());
+    CHECK(before->instances.empty());
     const auto after = evaluate_storyboard_frame(document, *built.index, 201, arena);
     REQUIRE(after);
-    CHECK(after.instances.empty());
+    CHECK(after->instances.empty());
 }
 
 TEST_CASE("storyboard preview rejects stale, ambiguous, and over-capacity state",
@@ -104,25 +104,22 @@ TEST_CASE("storyboard preview rejects stale, ambiguous, and over-capacity state"
     const auto capped =
         evaluate_storyboard_frame(duplicate, *built.index, 5, arena, {.maximum_instances = 1});
     CHECK_FALSE(capped);
-    REQUIRE(capped.diagnostic.has_value());
-    CHECK(capped.diagnostic->code == storyboard_diagnostic_code_t::capacity_exceeded);
+    REQUIRE(capped.error().diagnostic.has_value());
+    CHECK(capped.error().diagnostic->code == storyboard_diagnostic_code_t::capacity_exceeded);
 
     auto stale = *built.index;
     stale.sources.front().stable_id = 99;
     const auto rejected = evaluate_storyboard_frame(duplicate, stale, 5, arena);
     CHECK_FALSE(rejected);
-    REQUIRE(rejected.diagnostic.has_value());
-    CHECK(rejected.diagnostic->code == storyboard_diagnostic_code_t::invalid_model);
+    REQUIRE(rejected.error().diagnostic.has_value());
+    CHECK(rejected.error().diagnostic->code == storyboard_diagnostic_code_t::invalid_model);
 }
 
 TEST_CASE("storyboard frame expected preserves quiet empty success", "[core][storyboard][preview][results]") {
     const storyboard_document_model_t document;
     const storyboard_preview_index_t index;
     storyboard_frame_arena_t arena;
-    auto frame = storyboard_frame_result_t::from(document, index, 0, arena);
+    auto frame = evaluate_storyboard_frame(document, index, 0, arena);
     REQUIRE(frame);
     CHECK(frame->instances.empty());
-    const auto legacy = storyboard_frame_result_t::from(std::move(frame));
-    CHECK(legacy);
-    CHECK(legacy.instances.empty());
 }

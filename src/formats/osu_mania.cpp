@@ -659,7 +659,7 @@ auto parse_embedded_storyboard(const std::vector<source_line_t>& lines,
     auto parsed = parse_osb(source, {.maximum_input_bytes = options.max_source_bytes,
                                      .maximum_lines = line_limit,
                                      .maximum_nodes = node_limit});
-    if (!parsed.document) {
+    if (!parsed.value) {
         const auto index = parsed.diagnostics.empty() || parsed.diagnostics.front().line == 0
                                ? std::size_t{0}
                                : std::min(parsed.diagnostics.front().line - 1, orders.size() - 1);
@@ -679,7 +679,7 @@ auto parse_embedded_storyboard(const std::vector<source_line_t>& lines,
         return order == 0 || order > orders.size() ? std::size_t{}
                                                    : orders[static_cast<std::size_t>(order - 1)];
     };
-    auto& model = *parsed.document;
+    auto& model = *parsed.value;
     for (const auto& sprite : model.sprites)
         validate_storyboard_indentation(sprite.nodes, lines, 1, fail);
     for (auto& sprite : model.sprites) {
@@ -2261,7 +2261,7 @@ auto emit_and_validate_osu_storyboard(const storyboard_document_model_t& model,
                                       const osu_mania_write_options_t& options, fail_t&& fail)
     -> std::optional<std::string> {
     const auto emitted = emit_osb(model, options.max_output_bytes);
-    if (!emitted) {
+    if (!emitted.value) {
         const bool bounded = std::ranges::any_of(emitted.diagnostics, [](const auto& diagnostic) {
             return diagnostic.code == storyboard_diagnostic_code_t::capacity_exceeded ||
                    diagnostic.code == storyboard_diagnostic_code_t::node_limit ||
@@ -2271,12 +2271,12 @@ auto emit_and_validate_osu_storyboard(const storyboard_document_model_t& model,
                      : osu_mania_write_diagnostic_code_t::unsupported_feature,
              "structured storyboard cannot be emitted within the OSB limits", "storyboards");
     }
-    const auto reparsed = parse_osb(*emitted.text,
+    const auto reparsed = parse_osb(*emitted.value,
                                     {.maximum_input_bytes = options.max_output_bytes,
                                      .maximum_lines = options.max_lines,
                                      .maximum_nodes =
                                          std::min<std::size_t>(options.max_events, 250'000)});
-    if (!reparsed.document) {
+    if (!reparsed.value) {
         const bool bounded = std::ranges::any_of(reparsed.diagnostics, [](const auto& diagnostic) {
             return diagnostic.code == storyboard_diagnostic_code_t::input_too_large ||
                    diagnostic.code == storyboard_diagnostic_code_t::line_limit ||
@@ -2288,11 +2288,11 @@ auto emit_and_validate_osu_storyboard(const storyboard_document_model_t& model,
                      : osu_mania_write_diagnostic_code_t::unsupported_feature,
              "emitted storyboard exceeds the configured re-import bounds", "storyboards");
     }
-    if (!storyboard_semantically_equal(model, *reparsed.document))
+    if (!storyboard_semantically_equal(model, *reparsed.value))
         fail(osu_mania_write_diagnostic_code_t::unsupported_feature,
              "structured storyboard does not semantically re-import from emitted OSB",
              "storyboards");
-    return *emitted.text;
+    return *emitted.value;
 }
 
 template <typename fail_t>

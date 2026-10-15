@@ -67,9 +67,9 @@ template<class T>
     static_assert(std::is_trivially_copyable_v<T>);
     if (capacity == 0 || capacity > std::numeric_limits<std::size_t>::max() / sizeof(T))
         return {};
-    const auto allocation = arena.allocate_bytes(capacity * sizeof(T), alignof(T));
+    const auto allocation = arena.allocate(capacity * sizeof(T), alignof(T));
     if (!allocation) return {};
-    return frame_span<T>{std::span<T>{static_cast<T*>(allocation.data), capacity}};
+    return frame_span<T>{std::span<T>{static_cast<T*>(*allocation), capacity}};
 }
 // Returns null on arena exhaustion; the publishing unit sets its existing
 // truncation flag instead of exposing an unterminated or partial label.

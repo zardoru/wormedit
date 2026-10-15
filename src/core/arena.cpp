@@ -155,10 +155,6 @@ auto chunk_arena_core_t::allocate(std::size_t size, std::size_t alignment,
     return commit(chunks_.size() - 1, *begin, size);
 }
 
-auto chunk_arena_core_t::allocate_bytes(std::size_t size, std::size_t alignment,
-                                        arena_fit_policy_t policy) noexcept -> allocation_t {
-    return allocation_t::from(allocate(size, alignment, policy));
-}
 
 void chunk_arena_core_t::rewind() noexcept {
     for (auto& chunk : chunks_)
@@ -208,10 +204,6 @@ auto frame_arena_t::allocate(std::size_t size, std::size_t alignment) noexcept
     return allocation->data;
 }
 
-auto frame_arena_t::allocate_bytes(std::size_t size, std::size_t alignment) noexcept
-    -> arena_allocation_t {
-    return arena_allocation_t::from(allocate(size, alignment));
-}
 
 void frame_arena_t::reset() noexcept {
     if (core_)
@@ -264,10 +256,6 @@ auto append_arena_t::append_span(std::size_t size, std::size_t alignment) noexce
                                .alignment = alignment};
 }
 
-auto append_arena_t::append(std::size_t size, std::size_t alignment) noexcept
-    -> append_arena_result_t {
-    return append_arena_result_t::from(append_span(size, alignment));
-}
 
 void append_arena_t::mark_stale(std::size_t bytes) noexcept {
     stale_bytes_ = bytes > payload_bytes_ - stale_bytes_ ? payload_bytes_ : stale_bytes_ + bytes;
@@ -369,11 +357,5 @@ auto append_arena_t::build_compaction(std::span<const append_arena_span_t> live_
     return result;
 }
 
-auto append_arena_t::compact(std::span<const append_arena_span_t> live_spans,
-                             std::span<const std::size_t> order) const noexcept
-    -> append_arena_compaction_t {
-    return append_arena_compaction_t::from(build_compaction(live_spans, order), core_.options(),
-                                           core_.resource());
-}
 
 } // namespace wormedit

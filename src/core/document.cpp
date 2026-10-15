@@ -1524,7 +1524,7 @@ auto validate_song_unique_ids(document_validation_work_t& work) -> void {
         work.diagnostics, work.song.storyboards,
         [](const auto& storyboard) { return storyboard.id; }, "storyboard");
     for (const auto& storyboard : work.song.storyboards) {
-        if (storyboard.model.has_value() && !emit_osb(*storyboard.model)) {
+        if (storyboard.model.has_value() && !emit_osb(*storyboard.model).value) {
             add_diagnostic(work.diagnostics, diagnostic_code_t::unsupported_feature,
                            "storyboard model is invalid or exceeds the bounded OSB limits");
         }

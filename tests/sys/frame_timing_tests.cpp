@@ -3082,9 +3082,9 @@ TEST_CASE("Persistent Compose static source owns geometry across frame arena res
     const std::string timing_detail = timing.detail;
     fixture.flattened = {};
     arena.reset();
-    const auto overwritten = arena.allocate_bytes(4096, alignof(char));
+    const auto overwritten = arena.allocate(4096, alignof(char));
     expect_compose_test(static_cast<bool>(overwritten));
-    std::memset(overwritten.data, 0xA5, 4096);
+    std::memset(*overwritten, 0xA5, 4096);
     expect_compose_test(stored->compose.note[0].note_id == before.note_id);
     expect_compose_test(stored->compose.note[0].bounds.top == before.bounds.top);
     expect_compose_test(std::strcmp(stored->compose.note[0].sound_label, label.c_str()) == 0);
@@ -3214,14 +3214,14 @@ TEST_CASE("Compose geometry spans live in the supplied arena and account indepen
     expect_compose_test(untouched.owned_arena_committed_bytes() == 0);
     compose_test_fixture_t fixture(geometry_arena_song());
     wormedit::frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
-    const auto begin = arena.allocate_bytes(1, alignof(char));
+    const auto begin = arena.allocate(1, alignof(char));
     project_geometry_arena(fixture, arena);
-    const auto end = arena.allocate_bytes(1, alignof(char));
+    const auto end = arena.allocate(1, alignof(char));
     expect_compose_test(static_cast<bool>(begin) && static_cast<bool>(end));
     expect_compose_test(fixture.flattened.view.compose.scene_available && !fixture.flattened.view.compose.truncated);
     check_geometry_view_spans(fixture.flattened);
-    const auto first = reinterpret_cast<std::uintptr_t>(begin.data);
-    const auto last = reinterpret_cast<std::uintptr_t>(end.data);
+    const auto first = reinterpret_cast<std::uintptr_t>(*begin);
+    const auto last = reinterpret_cast<std::uintptr_t>(*end);
     check_geometry_between(fixture.flattened.compose.band, first, last);
     check_geometry_between(fixture.flattened.compose.lane, first, last);
     check_geometry_between(fixture.flattened.compose.hold, first, last);
@@ -3401,16 +3401,16 @@ void check_grid_cache_parity(std::uint32_t direction, format_family_t family) {
 TEST_CASE("Compose paired grid spans belong to frame and independent static arenas", "[sys][frame-arena][compose-grid]") {
     compose_test_fixture_t fixture(geometry_arena_song());
     wormedit::frame_arena_t arena;
-    const auto begin = arena.allocate_bytes(1, alignof(char));
+    const auto begin = arena.allocate(1, alignof(char));
     project_geometry_arena(fixture, arena);
-    const auto end = arena.allocate_bytes(1, alignof(char));
+    const auto end = arena.allocate(1, alignof(char));
     expect_compose_test(static_cast<bool>(begin) && static_cast<bool>(end));
     expect_compose_test(!fixture.flattened.compose.grid.line.empty());
     check_grid_pairs(fixture.flattened);
     check_geometry_between(fixture.flattened.compose.grid.line,
-        reinterpret_cast<std::uintptr_t>(begin.data), reinterpret_cast<std::uintptr_t>(end.data));
+        reinterpret_cast<std::uintptr_t>(*begin), reinterpret_cast<std::uintptr_t>(*end));
     check_geometry_between(fixture.flattened.compose.grid.row,
-        reinterpret_cast<std::uintptr_t>(begin.data), reinterpret_cast<std::uintptr_t>(end.data));
+        reinterpret_cast<std::uintptr_t>(*begin), reinterpret_cast<std::uintptr_t>(*end));
     const auto source = fixture.cache.scene.static_scene_storage;
     expect_compose_test(source != nullptr);
     expect_compose_test(source->compose.grid.line.data() != fixture.flattened.compose.grid.line.data());
@@ -3420,9 +3420,9 @@ TEST_CASE("Compose paired grid spans belong to frame and independent static aren
     check_grid_pairs(moved);
     fixture.flattened = {};
     arena.reset();
-    const auto overwrite = arena.allocate_bytes(4096, alignof(char));
+    const auto overwrite = arena.allocate(4096, alignof(char));
     expect_compose_test(static_cast<bool>(overwrite));
-    std::memset(overwrite.data, 0xA5, 4096);
+    std::memset(*overwrite, 0xA5, 4096);
     expect_compose_test(source->compose.grid.line[0].y_pixels == line.y_pixels);
     expect_compose_test(source->compose.grid.row[0] == row);
     expect_compose_test(fixture.cache.scene.static_scene_accounted_bytes >=
@@ -4079,11 +4079,11 @@ TEST_CASE("Compose marker arrays and strings belong to the supplied arena throug
     compose_test_fixture_t fixture(marker_arena_song());
     const auto chart = fixture.history.document.charts.front();
     wormedit::frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
-    const auto begin = arena.allocate_bytes(1, 1);
+    const auto begin = arena.allocate(1, 1);
     project_geometry_arena(fixture, arena);
-    const auto end = arena.allocate_bytes(1, 1);
+    const auto end = arena.allocate(1, 1);
     REQUIRE((begin && end));
-    const auto first = reinterpret_cast<std::uintptr_t>(begin.data), last = reinterpret_cast<std::uintptr_t>(end.data);
+    const auto first = reinterpret_cast<std::uintptr_t>(*begin), last = reinterpret_cast<std::uintptr_t>(*end);
     check_marker_text_addresses(fixture.flattened.compose.bookmark, first, last);
     check_marker_text_addresses(fixture.flattened.compose.section, first, last);
     check_marker_text_addresses(fixture.flattened.compose.audio_marker.bookmark, first, last);

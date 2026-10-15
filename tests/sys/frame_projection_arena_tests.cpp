@@ -1085,11 +1085,11 @@ TEST_CASE("Compose branch arena preserves source values independently through mo
 TEST_CASE("Compose branch spans and diagnostic strings belong to supplied arena", "[sys][frame-arena][compose-branch]") {
     auto model = branch_arena_model();
     frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
-    const auto first = arena.allocate_bytes(1, 1);
+    const auto first = arena.allocate(1, 1);
     auto frame = project_branch_arena(model, &arena);
-    const auto last = arena.allocate_bytes(1, 1);
+    const auto last = arena.allocate(1, 1);
     REQUIRE((first && last));
-    check_branch_in_arena(frame, reinterpret_cast<std::uintptr_t>(first.data), reinterpret_cast<std::uintptr_t>(last.data));
+    check_branch_in_arena(frame, reinterpret_cast<std::uintptr_t>(*first), reinterpret_cast<std::uintptr_t>(*last));
     check_frame_storage(frame.view.compose.branch_rows == frame.compose.branch.row.data());
     check_frame_storage(frame.view.compose.branch_choices == frame.compose.branch.choice.data());
     frame = {};

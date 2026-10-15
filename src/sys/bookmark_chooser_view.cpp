@@ -100,24 +100,24 @@ auto matches_query(std::string_view label, std::string_view query) -> bool {
 
 auto bookmark_navigation_t::build_bookmark_chooser_view(const song_document_t& document, chart_id_t chart_id,
                               std::size_t first_row, std::size_t row_limit, std::string_view query)
-    -> bookmark_chooser_projection_t {
+    -> bookmark_chooser_outcome_t {
     bookmark_chooser_projection_t result{.chart = chart_id,
                                          .document_revision = document.revision,
                                          .first_row = first_row,
                                          .row_limit = row_limit};
     if (row_limit == 0) {
         result.status = "Bookmark chooser page size must be positive.";
-        return result;
+        return std::unexpected(std::move(result));
     }
     const auto* chart = document.find_chart(chart_id);
     if (!chart) {
         result.status = "Bookmark chooser requires an active chart.";
-        return result;
+        return std::unexpected(std::move(result));
     }
     const auto measure_build = build_measure_index(*chart);
     if (!std::holds_alternative<measure_index_t>(measure_build)) {
         result.status = "Bookmark positions could not be resolved.";
-        return result;
+        return std::unexpected(std::move(result));
     }
     const auto& measures = std::get<measure_index_t>(measure_build);
     const auto timing_build = build_timing_index(*chart, {.allow_bounded_clock = true});

@@ -26,18 +26,21 @@ auto visual(std::uint64_t frame, std::uint64_t object, std::uint64_t resource,
 
 void check_layer2_state(bool value) { CHECK(value); }
 
-void check_rejected_window(const bga_preview_advance_result_t& rejected,
-                           const bga_layer_state_t& previous) {
-    CHECK(rejected.status == bga_preview_status_t::non_monotonic_window);
-    CHECK(rejected.events.empty());
-    CHECK(rejected.layers == previous);
+void check_rejected_window(const bga_preview_advance_outcome_t& rejected,
+                           const bga_layer_state_t& previous,
+                           const bga_layer_state_t& current) {
+    REQUIRE_FALSE(rejected);
+    CHECK(rejected.error() == bga_preview_status_t::non_monotonic_window);
+    CHECK(current == previous);
 }
 
-void check_resumed_window(const bga_preview_advance_result_t& resumed) {
-    REQUIRE(resumed.events.size() == 1);
-    REQUIRE(resumed.layers.background);
-    CHECK(resumed.events.front().object == object_id_t{2});
-    CHECK(resumed.layers.background->resource == resource_id_t{12});
+void check_resumed_window(const bga_preview_advance_outcome_t& resumed,
+                          const bga_layer_state_t& current) {
+    REQUIRE(resumed);
+    REQUIRE(resumed->size() == 1);
+    REQUIRE(current.background);
+    CHECK(resumed->front().object == object_id_t{2});
+    CHECK(current.background->resource == resource_id_t{12});
 }
 
 auto schedule() -> preview_schedule_t {
@@ -56,7 +59,7 @@ TEST_CASE("BGA preview queue rejects schedules beyond its configured capacity",
     };
 
     bga_preview_queue_t queue{2};
-    CHECK(queue.start(chart).status == bga_preview_status_t::capacity_exceeded);
+    CHECK(queue.begin(chart) == std::unexpected(bga_preview_status_t::capacity_exceeded));
     CHECK_FALSE(queue.current_layers({1}).has_value());
 }
 
@@ -66,15 +69,21 @@ TEST_CASE("BGA preview queue accepts Layer 2 without mapping it onto the Layer s
     chart.bga = {visual(0, 1, 1, visual_event_kind_t::layer2, 3, 0)};
 
     bga_preview_queue_t queue;
-    const auto started = queue.start(chart);
-    check_layer2_state(started.status == bga_preview_status_t::ready);
-    REQUIRE(started.token);
-    const auto advanced = queue.advance(*started.token, 1);
-    REQUIRE(advanced.layers.layer2.has_value());
-    check_layer2_state(advanced.layers.layer2->resource == resource_id_t{1});
-    check_layer2_state(!started.layers.layer.has_value());
-    check_layer2_state(queue.seek(*started.token, 1).layers.layer2 == advanced.layers.layer2);
-    check_layer2_state(!queue.restart(*started.token).layers.layer2.has_value());
+    const auto started = queue.begin(chart);
+    check_layer2_state(started.has_value());
+    REQUIRE(started);
+    const auto started_layers = queue.current_layers(*started).value();
+    const auto advanced = queue.advance_events(*started, 1);
+    const auto advanced_layers = queue.current_layers(*started).value();
+    REQUIRE(advanced_layers.layer2.has_value());
+    check_layer2_state(advanced_layers.layer2->resource == resource_id_t{1});
+    check_layer2_state(!started_layers.layer.has_value());
+    const auto sought = queue.reposition(*started, 1);
+    REQUIRE(sought);
+    check_layer2_state(queue.current_layers(*sought).value().layer2 == advanced_layers.layer2);
+    const auto stale_restart = queue.reposition(*started, 0);
+    check_layer2_state(stale_restart == std::unexpected(bga_preview_status_t::stale_generation));
+    check_layer2_state(!queue.current_layers(*started).has_value());
 }
 
 TEST_CASE("BGA preview queue preserves compiled simultaneous draw/source order",
@@ -90,49 +99,52 @@ TEST_CASE("BGA preview queue preserves compiled simultaneous draw/source order",
     };
 
     bga_preview_queue_t queue;
-    const auto started = queue.start(chart);
+    const auto started = queue.begin(chart);
     REQUIRE(started);
 
-    const auto before = queue.advance(*started.token, 7);
-    REQUIRE(before.status == bga_preview_status_t::ready);
-    CHECK(before.events.empty());
-    CHECK_FALSE(before.layers.background.has_value());
+    const auto before = queue.advance_events(*started, 7);
+    REQUIRE(before.has_value());
+    const auto before_layers = queue.current_layers(*started).value();
+    CHECK(before.value().empty());
+    CHECK_FALSE(before_layers.background.has_value());
 
-    const auto at = queue.advance(*started.token, 8);
-    REQUIRE(at.status == bga_preview_status_t::ready);
-    REQUIRE(at.events.size() == chart.bga.size());
-    CHECK(at.events.data() == chart.bga.data());
+    const auto at = queue.advance_events(*started, 8);
+    REQUIRE(at.has_value());
+    const auto at_layers = queue.current_layers(*started).value();
+    REQUIRE(at.value().size() == chart.bga.size());
+    CHECK(at.value().data() == chart.bga.data());
     for (std::size_t index = 0; index < chart.bga.size(); ++index) {
-        CHECK(at.events[index].sample_frame == chart.bga[index].sample_frame);
-        CHECK(at.events[index].object == chart.bga[index].object);
-        CHECK(at.events[index].resource == chart.bga[index].resource);
-        CHECK(at.events[index].kind == chart.bga[index].kind);
-        CHECK(at.events[index].draw_order == chart.bga[index].draw_order);
-        CHECK(at.events[index].source_order == chart.bga[index].source_order);
+        CHECK(at.value()[index].sample_frame == chart.bga[index].sample_frame);
+        CHECK(at.value()[index].object == chart.bga[index].object);
+        CHECK(at.value()[index].resource == chart.bga[index].resource);
+        CHECK(at.value()[index].kind == chart.bga[index].kind);
+        CHECK(at.value()[index].draw_order == chart.bga[index].draw_order);
+        CHECK(at.value()[index].source_order == chart.bga[index].source_order);
     }
-    REQUIRE(at.layers.background.has_value());
-    CHECK(at.layers.background->resource == resource_id_t{12});
-    REQUIRE(at.layers.poor.has_value());
-    CHECK(at.layers.poor->resource == resource_id_t{20});
-    REQUIRE(at.layers.layer.has_value());
-    CHECK(at.layers.layer->resource == resource_id_t{30});
-    REQUIRE(at.layers.video.has_value());
-    CHECK(at.layers.video->resource == resource_id_t{40});
-    REQUIRE(at.layers.storyboard.has_value());
-    CHECK(at.layers.storyboard->resource == resource_id_t{50});
+    REQUIRE(at_layers.background.has_value());
+    CHECK(at_layers.background->resource == resource_id_t{12});
+    REQUIRE(at_layers.poor.has_value());
+    CHECK(at_layers.poor->resource == resource_id_t{20});
+    REQUIRE(at_layers.layer.has_value());
+    CHECK(at_layers.layer->resource == resource_id_t{30});
+    REQUIRE(at_layers.video.has_value());
+    CHECK(at_layers.video->resource == resource_id_t{40});
+    REQUIRE(at_layers.storyboard.has_value());
+    CHECK(at_layers.storyboard->resource == resource_id_t{50});
 
-    const auto drained = queue.advance(*started.token, 9);
-    CHECK(drained.events.empty());
-    REQUIRE(drained.layers.background.has_value());
-    CHECK(drained.layers.background->resource == at.layers.background->resource);
-    REQUIRE(drained.layers.poor.has_value());
-    CHECK(drained.layers.poor->resource == at.layers.poor->resource);
-    REQUIRE(drained.layers.layer.has_value());
-    CHECK(drained.layers.layer->resource == at.layers.layer->resource);
-    REQUIRE(drained.layers.video.has_value());
-    CHECK(drained.layers.video->resource == at.layers.video->resource);
-    REQUIRE(drained.layers.storyboard.has_value());
-    CHECK(drained.layers.storyboard->resource == at.layers.storyboard->resource);
+    const auto drained = queue.advance_events(*started, 9);
+    const auto drained_layers = queue.current_layers(*started).value();
+    CHECK(drained.value().empty());
+    REQUIRE(drained_layers.background.has_value());
+    CHECK(drained_layers.background->resource == at_layers.background->resource);
+    REQUIRE(drained_layers.poor.has_value());
+    CHECK(drained_layers.poor->resource == at_layers.poor->resource);
+    REQUIRE(drained_layers.layer.has_value());
+    CHECK(drained_layers.layer->resource == at_layers.layer->resource);
+    REQUIRE(drained_layers.video.has_value());
+    CHECK(drained_layers.video->resource == at_layers.video->resource);
+    REQUIRE(drained_layers.storyboard.has_value());
+    CHECK(drained_layers.storyboard->resource == at_layers.storyboard->resource);
 }
 
 TEST_CASE("BGA preview seek restores prior layer state and starts a fresh generation",
@@ -148,51 +160,56 @@ TEST_CASE("BGA preview seek restores prior layer state and starts a fresh genera
     };
 
     bga_preview_queue_t queue;
-    const auto started = queue.start(chart, 6);
+    const auto started = queue.begin(chart, 6);
     REQUIRE(started);
-    REQUIRE(started.layers.background.has_value());
-    CHECK(started.layers.background->resource == resource_id_t{11});
-    REQUIRE(started.layers.poor.has_value());
-    CHECK(started.layers.poor->resource == resource_id_t{20});
-    REQUIRE(started.layers.layer.has_value());
-    CHECK(started.layers.layer->resource == resource_id_t{30});
-    REQUIRE(started.layers.video.has_value());
-    CHECK(started.layers.video->resource == resource_id_t{40});
-    REQUIRE(started.layers.storyboard.has_value());
-    CHECK(started.layers.storyboard->resource == resource_id_t{50});
-    CHECK(queue.advance(*started.token, 7).events.empty());
+    const auto started_layers = queue.current_layers(*started).value();
+    REQUIRE(started_layers.background.has_value());
+    CHECK(started_layers.background->resource == resource_id_t{11});
+    REQUIRE(started_layers.poor.has_value());
+    CHECK(started_layers.poor->resource == resource_id_t{20});
+    REQUIRE(started_layers.layer.has_value());
+    CHECK(started_layers.layer->resource == resource_id_t{30});
+    REQUIRE(started_layers.video.has_value());
+    CHECK(started_layers.video->resource == resource_id_t{40});
+    REQUIRE(started_layers.storyboard.has_value());
+    CHECK(started_layers.storyboard->resource == resource_id_t{50});
+    CHECK(queue.advance_events(*started, 7).value().empty());
 
-    const auto sought = queue.seek(*started.token, 7);
+    const auto sought = queue.reposition(*started, 7);
     REQUIRE(sought);
-    CHECK(sought.token != started.token);
-    REQUIRE(sought.layers.background.has_value());
-    CHECK(sought.layers.background->resource == resource_id_t{11});
-    const auto at_seven = queue.advance(*sought.token, 8);
-    REQUIRE(at_seven.events.size() == 1);
-    CHECK(at_seven.events.front().resource == resource_id_t{12});
-    CHECK(at_seven.layers.background->resource == resource_id_t{12});
-    CHECK(queue.advance(*started.token, 9).status == bga_preview_status_t::stale_generation);
+    const auto sought_layers = queue.current_layers(*sought).value();
+    CHECK(sought != started);
+    REQUIRE(sought_layers.background.has_value());
+    CHECK(sought_layers.background->resource == resource_id_t{11});
+    const auto at_seven = queue.advance_events(*sought, 8);
+    const auto at_seven_layers = queue.current_layers(*sought).value();
+    REQUIRE(at_seven.value().size() == 1);
+    CHECK(at_seven.value().front().resource == resource_id_t{12});
+    CHECK(at_seven_layers.background->resource == resource_id_t{12});
+    CHECK(queue.advance_events(*started, 9) == std::unexpected(bga_preview_status_t::stale_generation));
 
-    const auto restarted = queue.restart(*sought.token);
+    const auto restarted = queue.reposition(*sought, 0);
     REQUIRE(restarted);
-    CHECK(restarted.token != sought.token);
-    CHECK_FALSE(restarted.layers.background.has_value());
-    CHECK_FALSE(restarted.layers.poor.has_value());
-    CHECK_FALSE(restarted.layers.layer.has_value());
-    CHECK_FALSE(restarted.layers.video.has_value());
-    CHECK_FALSE(restarted.layers.storyboard.has_value());
-    const auto from_zero = queue.advance(*restarted.token, 3);
-    REQUIRE(from_zero.events.size() == 1);
-    CHECK(from_zero.events.front().resource == resource_id_t{11});
+    const auto restarted_layers = queue.current_layers(*restarted).value();
+    CHECK(restarted != sought);
+    CHECK_FALSE(restarted_layers.background.has_value());
+    CHECK_FALSE(restarted_layers.poor.has_value());
+    CHECK_FALSE(restarted_layers.layer.has_value());
+    CHECK_FALSE(restarted_layers.video.has_value());
+    CHECK_FALSE(restarted_layers.storyboard.has_value());
+    const auto from_zero = queue.advance_events(*restarted, 3);
+    REQUIRE(from_zero.value().size() == 1);
+    CHECK(from_zero.value().front().resource == resource_id_t{11});
 
     queue.stop();
-    CHECK(queue.advance(*restarted.token, 10).status == bga_preview_status_t::not_started);
-    CHECK_FALSE(queue.current_layers(*restarted.token).has_value());
+    CHECK(queue.advance_events(*restarted, 10) == std::unexpected(bga_preview_status_t::not_started));
+    CHECK_FALSE(queue.current_layers(*restarted).has_value());
 
-    const auto new_session = queue.start(chart);
+    const auto new_session = queue.begin(chart);
     REQUIRE(new_session);
-    CHECK(new_session.token != restarted.token);
-    CHECK_FALSE(new_session.layers.background.has_value());
+    const auto new_session_layers = queue.current_layers(*new_session).value();
+    CHECK(new_session != restarted);
+    CHECK_FALSE(new_session_layers.background.has_value());
 }
 
 TEST_CASE("BGA preview queue rejects invalid and non-monotonic advancement",
@@ -200,21 +217,21 @@ TEST_CASE("BGA preview queue rejects invalid and non-monotonic advancement",
     auto invalid_rate = schedule();
     invalid_rate.sample_rate = 0;
     bga_preview_queue_t queue;
-    CHECK(queue.start(invalid_rate).status == bga_preview_status_t::invalid_schedule);
+    CHECK(queue.begin(invalid_rate) == std::unexpected(bga_preview_status_t::invalid_schedule));
 
     auto unsorted = schedule();
     unsorted.bga = {
         visual(2, 1, 1, visual_event_kind_t::background, 0, 0),
         visual(1, 2, 2, visual_event_kind_t::layer, 2, 1),
     };
-    CHECK(queue.start(unsorted).status == bga_preview_status_t::invalid_schedule);
+    CHECK(queue.begin(unsorted) == std::unexpected(bga_preview_status_t::invalid_schedule));
 
     auto chart = schedule();
     chart.bga = {visual(1, 1, 1, visual_event_kind_t::background, 0, 0)};
-    const auto started = queue.start(chart);
+    const auto started = queue.begin(chart);
     REQUIRE(started);
-    REQUIRE(queue.advance(*started.token, 3).status == bga_preview_status_t::ready);
-    CHECK(queue.advance(*started.token, 2).status == bga_preview_status_t::non_monotonic_window);
+    REQUIRE(queue.advance_events(*started, 3).has_value());
+    CHECK(queue.advance_events(*started, 2) == std::unexpected(bga_preview_status_t::non_monotonic_window));
 }
 
 TEST_CASE("BGA seek rejects stale generations without moving the active cursor",
@@ -225,15 +242,15 @@ TEST_CASE("BGA seek rejects stale generations without moving the active cursor",
         visual(3, 2, 2, visual_event_kind_t::layer, 2, 1),
     };
     bga_preview_queue_t queue;
-    const auto started = queue.start(chart);
+    const auto started = queue.begin(chart);
     REQUIRE(started);
-    const auto sought = queue.seek(*started.token, 2);
+    const auto sought = queue.reposition(*started, 2);
     REQUIRE(sought);
 
-    CHECK(queue.seek(*started.token, 3).status == bga_preview_status_t::stale_generation);
-    const auto pending = queue.advance(*sought.token, 4);
-    REQUIRE(pending.events.size() == 1);
-    CHECK(pending.events.front().resource == resource_id_t{2});
+    CHECK(queue.reposition(*started, 3) == std::unexpected(bga_preview_status_t::stale_generation));
+    const auto pending = queue.advance_events(*sought, 4);
+    REQUIRE(pending.value().size() == 1);
+    CHECK(pending.value().front().resource == resource_id_t{2});
 }
 
 TEST_CASE("BGA preview rejected windows retain layers without consuming events",
@@ -244,14 +261,15 @@ TEST_CASE("BGA preview rejected windows retain layers without consuming events",
         visual(2, 2, 12, visual_event_kind_t::background, 0, 1),
     };
     bga_preview_queue_t queue;
-    const auto started = queue.start(chart);
+    const auto started = queue.begin(chart);
     REQUIRE(started);
-    const auto first = queue.advance(*started.token, 1);
-    REQUIRE(first.layers.background);
-    const auto rejected = queue.advance(*started.token, 0);
-    check_rejected_window(rejected, first.layers);
-    const auto resumed = queue.advance(*started.token, 3);
-    check_resumed_window(resumed);
+    const auto first = queue.advance_events(*started, 1);
+    const auto first_layers = queue.current_layers(*started).value();
+    REQUIRE(first_layers.background);
+    const auto rejected = queue.advance_events(*started, 0);
+    check_rejected_window(rejected, first_layers, queue.current_layers(*started).value());
+    const auto resumed = queue.advance_events(*started, 3);
+    check_resumed_window(resumed, queue.current_layers(*started).value());
 }
 
 TEST_CASE("BGA preview stale windows return an empty layer snapshot",
@@ -259,11 +277,12 @@ TEST_CASE("BGA preview stale windows return an empty layer snapshot",
     auto chart = schedule();
     chart.bga = {visual(0, 1, 11, visual_event_kind_t::background, 0, 0)};
     bga_preview_queue_t queue;
-    const auto started = queue.start(chart);
+    const auto started = queue.begin(chart);
     REQUIRE(started);
-    (void)queue.advance(*started.token, 1);
-    const auto stale = queue.advance({started.token->generation + 1}, 2);
-    CHECK(stale.status == bga_preview_status_t::stale_generation);
-    CHECK(stale.events.empty());
-    CHECK(stale.layers == bga_layer_state_t{});
+    (void)queue.advance_events(*started, 1);
+    const auto stale = queue.advance_events({started->generation + 1}, 2);
+    const auto stale_layers = queue.current_layers({started->generation + 1}).value_or(bga_layer_state_t{});
+    CHECK(stale == std::unexpected(bga_preview_status_t::stale_generation));
+    CHECK_FALSE(stale.has_value());
+    CHECK(stale_layers == bga_layer_state_t{});
 }

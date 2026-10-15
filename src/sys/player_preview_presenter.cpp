@@ -317,12 +317,12 @@ auto prepare_player_preview_index(const Context& context) -> bool {
     }
     state.visual_schedule = std::move(*schedule.schedule);
     state.visual_queue.emplace();
-    const auto started = state.visual_queue->start(*state.visual_schedule);
+    const auto started = state.visual_queue->begin(*state.visual_schedule);
     if (!started) {
         state.status = "The visual preview schedule could not be started.";
         return false;
     }
-    state.visual_token = started.token;
+    state.visual_token = *started;
     return true;
 }
 
@@ -346,38 +346,35 @@ auto prepare_player_preview_storyboards(const Context& context) -> bool {
 }
 
 template <typename Context>
-auto advance_player_preview(const Context& context) {
+auto advance_player_preview(const Context& context) -> bga_preview_advance_outcome_t {
     auto& state = context.state;
-    using result_t = decltype(state.visual_queue->advance(*state.visual_token,
-                                                          context.sample_frame + 1));
     if (context.sample_frame == std::numeric_limits<std::uint64_t>::max()) {
         fail_player_preview(context, "The player-preview frame exceeds the visual cursor range.");
-        return result_t{};
+        return std::unexpected(bga_preview_status_t::not_started);
     }
-    auto visual = state.visual_queue->advance(*state.visual_token, context.sample_frame + 1);
-    if (visual.status == bga_preview_status_t::non_monotonic_window) {
-        const auto sought = state.visual_queue->seek(*state.visual_token, context.sample_frame);
+    auto visual = state.visual_queue->advance_events(*state.visual_token, context.sample_frame + 1);
+    if (visual == std::unexpected(bga_preview_status_t::non_monotonic_window)) {
+        const auto sought = state.visual_queue->reposition(*state.visual_token, context.sample_frame);
         if (sought) {
-            state.visual_token = sought.token;
-            visual = state.visual_queue->advance(*state.visual_token, context.sample_frame + 1);
+            state.visual_token = *sought;
+            visual = state.visual_queue->advance_events(*state.visual_token, context.sample_frame + 1);
         }
     }
-    if (visual.status != bga_preview_status_t::ready) {
+    if (!visual) {
         fail_player_preview(context, "The visual preview cursor could not resolve this frame.");
         return visual;
     }
     return visual;
 }
 
-template <typename Visual>
 struct player_preview_frame_t {
-    Visual visual;
+    bga_layer_state_t visual;
     std::vector<storyboard_draw_instance_t> storyboard_instances;
 };
 
 template <typename Context>
 auto prepare_player_preview_frame(const Context& context)
-    -> std::optional<player_preview_frame_t<decltype(advance_player_preview(context))>> {
+    -> std::optional<player_preview_frame_t> {
     auto& state = context.state;
     if (!prepare_player_preview_index(context)) {
         fail_player_preview(context, state.status);
@@ -390,13 +387,15 @@ auto prepare_player_preview_frame(const Context& context)
         return std::nullopt;
     }
     auto visual = advance_player_preview(context);
-    if (visual.status != bga_preview_status_t::ready) return std::nullopt;
+    if (!visual) return std::nullopt;
     const auto time_ms = transport_milliseconds(context.sample_frame, context.sample_rate);
     if (!time_ms) {
         fail_player_preview(context, "The player-preview frame exceeds the storyboard time range.");
         return std::nullopt;
     }
-    player_preview_frame_t<decltype(visual)> frame{std::move(visual), {}};
+    // advance_events accepted this token; no queue operation intervenes before this snapshot.
+    auto layers = state.visual_queue->current_layers(*state.visual_token);
+    player_preview_frame_t frame{.visual = std::move(*layers), .storyboard_instances = {}};
     std::string storyboard_error;
     if (!evaluate_storyboards(context.history.document, state.storyboards, *time_ms,
                               frame.storyboard_instances, storyboard_error)) {
@@ -633,8 +632,8 @@ void publish_player_preview_scene(const Context& context, const auto& scene) {
     view.storyboard_sprite_count = state.storyboard_sprites.size();
 }
 
-template <typename Context, typename Frame>
-auto present_player_preview_frame(const Context& context, const Frame& frame) -> bool {
+template <typename Context>
+auto present_player_preview_frame(const Context& context, const player_preview_frame_t& frame) -> bool {
     auto& state = context.state;
     auto& view = context.view;
     const auto scene = player_preview_scene_t::from(
@@ -646,7 +645,7 @@ auto present_player_preview_frame(const Context& context, const Frame& frame) ->
                        .pixels_per_beat = 82.0,
                        .skin = context.skin,
                        .visual_fit = visual_fit_policy_t::contain,
-                       .visual_layers = frame.visual.layers,
+                       .visual_layers = frame.visual,
                        .storyboard_instances = frame.storyboard_instances,
                        .maximum_visible_notes = WORM_UI_PLAYER_PREVIEW_NOTE_CAPACITY,
                        .maximum_storyboard_instances = WORM_UI_PLAYER_PREVIEW_STORYBOARD_CAPACITY});

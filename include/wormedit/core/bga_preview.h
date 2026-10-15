@@ -43,32 +43,9 @@ using bga_preview_position_outcome_t = result_t<bga_preview_token_t, bga_preview
 using bga_preview_advance_outcome_t =
     result_t<std::span<const preview_visual_event_t>, bga_preview_status_t>;
 
-struct bga_preview_position_result_t {
-    [[nodiscard]] static auto from(const bga_preview_position_outcome_t& outcome,
-                                   const bga_layer_state_t& layers)
-        -> bga_preview_position_result_t;
-
-    bga_preview_status_t status{bga_preview_status_t::not_started};
-    std::optional<bga_preview_token_t> token;
-    bga_layer_state_t layers;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == bga_preview_status_t::ready && token.has_value();
-    }
-};
-
-struct bga_preview_advance_result_t {
-    [[nodiscard]] static auto from(const bga_preview_advance_outcome_t& outcome,
-                                   const bga_layer_state_t& layers) -> bga_preview_advance_result_t;
-
-    bga_preview_status_t status{bga_preview_status_t::not_started};
-    std::span<const preview_visual_event_t> events;
-    bga_layer_state_t layers;
-};
-
 // Renderer-neutral cursor over the immutable BGA schedule. The schedule must
 // outlive this consumer's active session. Calls are made by one control/render
-// thread: begin/seek may allocate index storage, while advance only changes the
+// thread: begin/reposition may allocate index storage, while advance only changes the
 // queue head and current layer values.
 class bga_preview_queue_t {
   public:
@@ -84,17 +61,8 @@ class bga_preview_queue_t {
     [[nodiscard]] auto advance_events(bga_preview_token_t token, std::uint64_t exclusive_end_frame)
         -> bga_preview_advance_outcome_t;
 
-    [[nodiscard]] auto start(const preview_schedule_t& schedule, std::uint64_t sample_frame = 0)
-        -> bga_preview_position_result_t;
-    [[nodiscard]] auto seek(bga_preview_token_t token, std::uint64_t sample_frame)
-        -> bga_preview_position_result_t;
-    [[nodiscard]] auto restart(bga_preview_token_t token) -> bga_preview_position_result_t {
-        return seek(token, 0);
-    }
     void stop() noexcept;
 
-    [[nodiscard]] auto advance(bga_preview_token_t token, std::uint64_t exclusive_end_frame)
-        -> bga_preview_advance_result_t;
     [[nodiscard]] auto current_layers(bga_preview_token_t token) const noexcept
         -> std::optional<bga_layer_state_t>;
 

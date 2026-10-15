@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/result.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -30,8 +31,8 @@ struct bookmark_chooser_projection_t {
     std::size_t row_limit{};
     std::vector<bookmark_chooser_row_t> rows;
     std::string status;
-
-    [[nodiscard]] explicit operator bool() const noexcept { return status.empty(); }
 };
+using bookmark_chooser_outcome_t =
+    result_t<bookmark_chooser_projection_t, bookmark_chooser_projection_t>;
 
 } // namespace wormedit::sys

@@ -138,8 +138,8 @@ auto dispatch_bmson_razor_input(const WormUiComposeInputAction& input,
         const auto already_staged =
             draft && draft->stamp.is_current(history.document, state.chart,
                 wormedit::document_identity_policy_t::revision_only) &&
-            draft->reference == reference &&
-            std::ranges::any_of(draft->markers,
+            draft->payload.reference == reference &&
+            std::ranges::any_of(draft->payload.markers,
                                 [&](const auto& marker) { return marker.position == *position; });
         const auto status = already_staged
                                 ? std::string{"BMSON razor stroke started on a staged pulse."}
@@ -148,8 +148,8 @@ auto dispatch_bmson_razor_input(const WormUiComposeInputAction& input,
         severity = staged_input_severity(already_staged, severity);
         const auto& staged = application_state.project.compose_gesture.bmson_marker_draft;
         if (staged && staged->stamp.is_current(history.document, state.chart,
-                document_identity_policy_t::revision_only) && staged->reference == reference &&
-            std::ranges::any_of(staged->markers,
+                document_identity_policy_t::revision_only) && staged->payload.reference == reference &&
+            std::ranges::any_of(staged->payload.markers,
                                 [&](const auto& marker) { return marker.position == *position; })) {
             stroke = application_command_state_t::bmson_razor_stroke_t{
                 .stamp = chart_stamp_t::from(history.document, state.chart),
@@ -169,7 +169,7 @@ auto dispatch_bmson_razor_input(const WormUiComposeInputAction& input,
     pending.reserve(path.positions.size());
     for (const auto candidate : path.positions) {
         const auto& draft = application_state.project.compose_gesture.bmson_marker_draft;
-        if (draft && std::ranges::any_of(draft->markers, [&](const auto& marker) {
+        if (draft && std::ranges::any_of(draft->payload.markers, [&](const auto& marker) {
                 return marker.position == candidate;
             })) {
             continue;
@@ -182,12 +182,12 @@ auto dispatch_bmson_razor_input(const WormUiComposeInputAction& input,
         return "BMSON razor remains on staged grid cells.";
     }
     const auto before = application_state.project.compose_gesture.bmson_marker_draft
-                            ? application_state.project.compose_gesture.bmson_marker_draft->markers.size()
+                            ? application_state.project.compose_gesture.bmson_marker_draft->payload.markers.size()
                             : 0;
     const auto status =
         propose_bmson_bgm_markers(history, state, application_state, reference, pending, &severity);
     if (application_state.project.compose_gesture.bmson_marker_draft &&
-        application_state.project.compose_gesture.bmson_marker_draft->markers.size() == before + pending.size()) {
+        application_state.project.compose_gesture.bmson_marker_draft->payload.markers.size() == before + pending.size()) {
         stroke->last_position = *position;
     }
     return status;
@@ -534,7 +534,7 @@ auto dispatch_bmson_compose_input(const WormUiWorkspaceAction& ui_action,
     }
     case WORM_UI_COMPOSE_INPUT_BMSON_AUDITION_DRAFT: {
         const auto& draft = application_state.project.compose_gesture.bmson_marker_draft;
-        if (!draft || input.object_id == 0 || input.object_id > draft->markers.size())
+        if (!draft || input.object_id == 0 || input.object_id > draft->payload.markers.size())
             return compose_input_family_result_t::from(
                 "The BMSON region audition request expired.");
         if (!draft->stamp.is_current(history.document, state.chart,
@@ -542,7 +542,7 @@ auto dispatch_bmson_compose_input(const WormUiWorkspaceAction& ui_action,
             return compose_input_family_result_t::from(
                 wormedit::stale_action_message("BMSON region audition"));
         scene_cache.frame.draft_audition_request = bmson_draft_audition_request_t{
-            draft->stamp.chart, draft->stamp.document.revision, draft->reference, draft->markers,
+            draft->stamp.chart, draft->stamp.document.revision, draft->payload.reference, draft->payload.markers,
             static_cast<std::size_t>(input.object_id - 1)};
         return compose_input_family_result_t::continue_batch(
             "Preparing staged BMSON region audition.");

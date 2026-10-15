@@ -542,14 +542,14 @@ void build_compose_marker_draft_view(const compose_scene_projection_context_t& p
     if (!draft || projection.inputs.scope.pixels_per_row <= 0.0)
         return;
     const auto* reference =
-        projection.inputs.scope.chart_scope.chart.find_bgm_event(draft->reference);
+        projection.inputs.scope.chart_scope.chart.find_bgm_event(draft->payload.reference);
     if (!reference)
         return;
     const auto lane = std::ranges::find_if(projection.scene.bgm_lanes, [&](const auto& candidate) {
         return candidate.source_lane == reference->source_lane;
     });
     const auto* bounds = lane == projection.scene.bgm_lanes.end() ? nullptr : &lane->bounds;
-    for (const auto& marker : draft->markers)
+    for (const auto& marker : draft->payload.markers)
         build_compose_draft_marker_view(projection, marker, bounds);
 }
 

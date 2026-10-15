@@ -744,7 +744,7 @@ apply_bmson_marker_batch(compose_action_context_t& context) {
         return std::move(*blocked);
     }
     auto& draft = context.environment.editor.commands.project.compose_gesture.bmson_marker_draft;
-    if (!draft || draft->markers.empty()) {
+    if (!draft || draft->payload.markers.empty()) {
         draft.reset();
         return compose_action_outcome_t::blocked(
             "The BMSON marker batch is no longer available for this chart revision.",
@@ -755,8 +755,8 @@ apply_bmson_marker_batch(compose_action_context_t& context) {
         return compose_action_outcome_t::blocked(stale_action_message("BMSON marker batch"),
                                                  notification_source_t::edit);
     }
-    auto transaction = document_command_transaction_t::from(
-        context.environment.document.history, draft->stamp, "BMSON marker batch",
+    auto transaction = draft->transaction(
+        context.environment.document.history, "BMSON marker batch",
         document_identity_policy_t::revision_only);
     if (!transaction.is_ready()) {
         draft.reset();
@@ -764,7 +764,7 @@ apply_bmson_marker_batch(compose_action_context_t& context) {
                                                  notification_source_t::edit);
     }
     auto inserted = insert_bmson_sound_markers(transaction, draft->stamp.chart,
-                                                    draft->reference, draft->markers);
+                                                    draft->payload.reference, draft->payload.markers);
     if (!inserted.diagnostics.empty())
         return compose_action_outcome_t::from(
             std::move(inserted),

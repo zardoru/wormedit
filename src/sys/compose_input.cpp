@@ -138,6 +138,83 @@ auto validate_bmson_marker_draft(
 
 } // namespace compose_input_detail
 
+auto application_command_state_t::bmson_marker_draft_t::propose(
+    const wormedit::document_history_t& history, const wormedit::editor_interaction_state_t& state,
+    wormedit::object_id_t reference,
+    std::span<const wormedit::bmson_sound_marker_insertion_t> markers)
+    -> bmson_marker_draft_outcome_t {
+    std::optional<bmson_marker_draft_proposal_t> previous;
+    return revise(history, state, previous, reference, markers);
+}
+
+auto application_command_state_t::bmson_marker_draft_t::revise(
+    const wormedit::document_history_t& history, const wormedit::editor_interaction_state_t& state,
+    std::optional<bmson_marker_draft_proposal_t>& draft, wormedit::object_id_t reference,
+    std::span<const wormedit::bmson_sound_marker_insertion_t> markers)
+    -> bmson_marker_draft_outcome_t {
+    using namespace wormedit;
+    if (markers.empty()) {
+        return {.diagnostics = diagnostic_t{.severity = diagnostic_severity_t::info,
+            .code = diagnostic_code_t::invalid_stage, .message = "BMSON razor remains on the current snapped row."}};
+    }
+    if (state.selected_objects.size() != 1 ||
+        state.selected_objects.front().kind != editor_selection_object_kind_t::bgm_event ||
+        state.selected_objects.front().id != reference) {
+        return {.diagnostics = diagnostic_t{.severity = diagnostic_severity_t::warning,
+            .code = diagnostic_code_t::invalid_stage, .message = "Select one BMSON BGM marker to choose its sound channel."}};
+    }
+    const auto* chart = history.document.find_chart(state.chart);
+    if (chart == nullptr || chart->source_family != format_family_t::bmson) {
+        return {.diagnostics = diagnostic_t{.severity = diagnostic_severity_t::warning,
+            .code = diagnostic_code_t::invalid_stage, .message = "The selected chart is not a BMSON chart."}};
+    }
+    if (auto validation = validate_bmson_marker_positions(*chart, markers);
+        !validation.empty()) {
+        return {.diagnostics = diagnostic_t{.severity = diagnostic_severity_t::warning,
+            .code = diagnostic_code_t::invalid_stage, .message = std::move(validation)}};
+    }
+    const auto [semantic, channel] = find_bmson_marker_channel(*chart, reference);
+    if (!semantic || !semantic->sound_channel_event) {
+        return {.diagnostics = diagnostic_t{.severity = diagnostic_severity_t::warning,
+            .code = diagnostic_code_t::invalid_stage, .message = "The selected BGM marker has no retained BMSON sound event."}};
+    }
+    if (!channel) {
+        return {.diagnostics = diagnostic_t{.severity = diagnostic_severity_t::warning,
+            .code = diagnostic_code_t::invalid_stage, .message = "The selected BMSON sound channel is unavailable."}};
+    }
+    if (auto validation = validate_bmson_marker_channel(*channel, markers);
+        !validation.empty()) {
+        return {.diagnostics = diagnostic_t{.severity = diagnostic_severity_t::warning,
+            .code = diagnostic_code_t::invalid_stage, .message = std::move(validation)}};
+    }
+    if (draft && !draft->stamp.is_current(history.document, state.chart,
+                                  document_identity_policy_t::revision_only)) {
+        draft.reset();
+    }
+    if (draft && draft->payload.reference != reference) {
+        return {.diagnostics = diagnostic_t{.severity = diagnostic_severity_t::warning,
+            .code = diagnostic_code_t::invalid_stage, .message = "Commit or cancel the current BMSON marker batch before choosing another channel."}};
+    }
+    if (auto validation = validate_bmson_marker_draft(draft ? &draft->payload : nullptr, markers);
+        !validation.empty()) {
+        return {.diagnostics = diagnostic_t{.severity = diagnostic_severity_t::warning,
+            .code = diagnostic_code_t::invalid_stage, .message = std::move(validation)}};
+    }
+    auto pending = draft ? std::move(*draft) : bmson_marker_draft_proposal_t{
+        .stamp = chart_stamp_t::from(history.document, state.chart),
+        .payload = {.reference = reference}};
+    pending.payload.markers.insert(pending.payload.markers.end(), markers.begin(), markers.end());
+    return {.value = std::move(pending)};
+}
+
+auto application_command_state_t::bmson_marker_draft_t::revise(
+    wormedit::chart_stamp_t captured, std::vector<wormedit::bmson_sound_marker_insertion_t> prepared)
+    -> bmson_marker_draft_outcome_t {
+    markers = std::move(prepared);
+    return {.value = bmson_marker_draft_proposal_t{
+        .stamp = captured, .payload = std::move(*this)}};
+}
+
 auto propose_bmson_bgm_markers(const wormedit::document_history_t& history,
                              const wormedit::editor_interaction_state_t& state,
                              application_command_state_t& application_state,
@@ -145,54 +222,15 @@ auto propose_bmson_bgm_markers(const wormedit::document_history_t& history,
                              std::span<const wormedit::bmson_sound_marker_insertion_t> markers,
                              wormedit::notification_severity_t* severity) -> std::string {
     if (severity) *severity = wormedit::notification_severity_t::warning;
-    using namespace wormedit;
-    if (markers.empty()) {
-        if (severity) *severity = notification_severity_t::hint;
-        return "BMSON razor remains on the current snapped row.";
-    }
-    if (state.selected_objects.size() != 1 ||
-        state.selected_objects.front().kind != editor_selection_object_kind_t::bgm_event ||
-        state.selected_objects.front().id != reference) {
-        return "Select one BMSON BGM marker to choose its sound channel.";
-    }
-    const auto* chart = history.document.find_chart(state.chart);
-    if (chart == nullptr || chart->source_family != format_family_t::bmson) {
-        return "The selected chart is not a BMSON chart.";
-    }
-    if (const auto validation = validate_bmson_marker_positions(*chart, markers);
-        !validation.empty()) {
-        return validation;
-    }
-    const auto [semantic, channel] = find_bmson_marker_channel(*chart, reference);
-    if (!semantic || !semantic->sound_channel_event) {
-        return "The selected BGM marker has no retained BMSON sound event.";
-    }
-    if (!channel) {
-        return "The selected BMSON sound channel is unavailable.";
-    }
-    if (const auto validation = validate_bmson_marker_channel(*channel, markers);
-        !validation.empty()) {
-        return validation;
-    }
     auto& draft = application_state.project.compose_gesture.bmson_marker_draft;
-    if (draft && !draft->stamp.is_current(history.document, state.chart,
-                                  document_identity_policy_t::revision_only)) {
-        draft.reset();
+    auto revised = application_command_state_t::bmson_marker_draft_t::revise(
+        history, state, draft, reference, markers);
+    if (!revised.value) {
+        if (severity && markers.empty()) *severity = wormedit::notification_severity_t::hint;
+        return revised.diagnostics ? std::move(revised.diagnostics->message) : std::string{};
     }
-    if (draft && draft->reference != reference) {
-        return "Commit or cancel the current BMSON marker batch before choosing another channel.";
-    }
-    if (const auto validation = validate_bmson_marker_draft(draft ? &*draft : nullptr, markers);
-        !validation.empty()) {
-        return validation;
-    }
-    if (!draft) {
-        draft = application_command_state_t::bmson_marker_draft_t{
-            .stamp = chart_stamp_t::from(history.document, state.chart),
-            .reference = reference, .markers = {}};
-    }
-    draft->markers.insert(draft->markers.end(), markers.begin(), markers.end());
-    if (severity) *severity = notification_severity_t::hint;
+    draft = std::move(revised.value);
+    if (severity) *severity = wormedit::notification_severity_t::hint;
     return markers.size() == 1 ? "BMSON marker staged at the exact snapped row."
                                : "BMSON razor segment staged at exact snapped rows.";
 }
@@ -515,12 +553,12 @@ auto revise_bmson_draft_marker(const WormUiComposeInputAction& input,
         return compose_input_family_result_t::from(
             "Finish or cancel the active Compose gesture before editing a staged BMSON region.");
     auto& draft = application_state.project.compose_gesture.bmson_marker_draft;
-    if (!draft || input.object_id == 0 || input.object_id > draft->markers.size())
+    if (!draft || input.object_id == 0 || input.object_id > draft->payload.markers.size())
         return compose_input_family_result_t::from("The staged BMSON region edit expired.");
     if (!draft->stamp.is_current(history.document, state.chart,
                                   document_identity_policy_t::revision_only))
         return compose_input_family_result_t::from(stale_action_message("BMSON region edit"));
-    auto proposed = draft->markers;
+    auto proposed = draft->payload.markers;
     const auto index = static_cast<std::size_t>(input.object_id - 1);
     if (input.kind == WORM_UI_COMPOSE_INPUT_BMSON_REMOVE_DRAFT) {
         proposed.erase(proposed.begin() + index);
@@ -543,7 +581,7 @@ auto revise_bmson_draft_marker(const WormUiComposeInputAction& input,
     }
     auto temporary = wormedit::document_history_t::from(history.document, 1);
     const auto checked = insert_bmson_sound_markers(temporary,
-                                                    draft->stamp.chart, draft->reference, proposed);
+                                                    draft->stamp.chart, draft->payload.reference, proposed);
     if (!checked)
         return compose_input_family_result_t::stop_with_feedback(
             checked.diagnostics.empty() ? "Staged BMSON region edit could not be validated."
@@ -552,7 +590,8 @@ auto revise_bmson_draft_marker(const WormUiComposeInputAction& input,
                 ? notification_severity_t::warning
                 : to_notification_severity(checked.diagnostics.front().severity),
             notification_source_t::edit);
-    draft->markers = std::move(proposed);
+    auto revised = draft->payload.revise(draft->stamp, std::move(proposed));
+    draft = std::move(revised.value);
     const auto message = input.kind == WORM_UI_COMPOSE_INPUT_BMSON_REMOVE_DRAFT
                              ? "Staged BMSON region removed."
                          : input.kind == WORM_UI_COMPOSE_INPUT_BMSON_TOGGLE_DRAFT_RESTART

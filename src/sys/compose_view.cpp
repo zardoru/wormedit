@@ -1077,12 +1077,12 @@ void populate_compose_staged_draft(flattened_workspace_t& flattened,
                                    application_command_state_t& application_state,
                                    WormUiComposeView& view) {
     if (!application_state.project.compose_gesture.bmson_marker_draft) return;
-    view.staged_bmson_marker_count = application_state.project.compose_gesture.bmson_marker_draft->markers.size();
+    view.staged_bmson_marker_count = application_state.project.compose_gesture.bmson_marker_draft->payload.markers.size();
     flattened.compose.bmson_draft_playable_lane.clear();
     flattened.compose.bmson_draft_restart.clear();
     flattened.compose.bmson_draft_playable_lane.reserve(view.staged_bmson_marker_count);
     flattened.compose.bmson_draft_restart.reserve(view.staged_bmson_marker_count);
-    for (const auto& marker : application_state.project.compose_gesture.bmson_marker_draft->markers) {
+    for (const auto& marker : application_state.project.compose_gesture.bmson_marker_draft->payload.markers) {
         flattened.compose.bmson_draft_playable_lane.push_back(
             marker.playable_lane.value_or(wormedit::lane_id_t{}).value);
         flattened.compose.bmson_draft_restart.push_back(marker.restart ? 1 : 0);

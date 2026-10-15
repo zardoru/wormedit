@@ -319,3 +319,17 @@ TEST_CASE("Rejected proposal reports retain stamped transaction rejection feedba
     test::check_stale_action_message(transaction.outcome.diagnostics, "Editor report");
     CHECK(history.undo.empty());
 }
+
+TEST_CASE("Shared proposal outcomes support inline single diagnostics", "[core][proposal]") {
+    using outcome_t = proposal_outcome_t<metadata_payload_t, document_stamp_t,
+        std::optional<diagnostic_t>>;
+    outcome_t outcome;
+    CHECK(outcome.ok());
+    outcome.diagnostics = error(diagnostic_code_t::invalid_stage, "Rejected inline.");
+    CHECK_FALSE(outcome.ok());
+    CHECK_FALSE(outcome.value);
+    outcome.diagnostics->severity = diagnostic_severity_t::warning;
+    CHECK(outcome.ok());
+    outcome.diagnostics.reset();
+    CHECK(outcome.ok());
+}

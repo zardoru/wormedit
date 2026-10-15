@@ -38,6 +38,7 @@
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/workspace.h>
 #include <wormedit/formats/bms.h>
+#include <wormedit/formats/bmson.h>
 #include <wormedit/formats/native_project.h>
 #if defined(__unix__) || defined(__APPLE__)
 #include <time.h>
@@ -2365,9 +2366,9 @@ TEST_CASE("Captured BMSON draft edits and auditions reject stale revisions indep
         std::pair{WORM_UI_COMPOSE_INPUT_BMSON_AUDITION_DRAFT, std::string_view{"BMSON region audition"}});
     compose_test_fixture_t fixture{kiai_test_song()};
     fixture.project();
-    fixture.application.project.compose_gesture.bmson_marker_draft = application_command_state_t::bmson_marker_draft_t{
+    fixture.application.project.compose_gesture.bmson_marker_draft = application_command_state_t::bmson_marker_draft_proposal_t{
         .stamp = chart_stamp_t::from(fixture.history.document, fixture.interaction->chart),
-        .reference = object_id_t{42}, .markers = {bmson_sound_marker_insertion_t{}}};
+        .payload = {.reference = object_id_t{42}, .markers = {bmson_sound_marker_insertion_t{}}}};
     ++fixture.application.project.compose_gesture.bmson_marker_draft->stamp.document.revision;
     auto action = kiai_input(fixture, request.first, 1);
     test::check_stale_action_message(dispatch_paste_action(fixture, action), request.second);
@@ -7198,4 +7199,83 @@ TEST_CASE("Timing stage borrowed owner survives rejected and repaired revisions"
         std::move(*editor.stage), history, timing_bpm_value_t{{150, 1}}, false);
     CHECK(borrowed->value.has_value());
     CHECK(history.undo.empty());
+}
+
+namespace {
+struct bmson_marker_fixture_t {
+    document_history_t history;
+    editor_interaction_state_t state;
+    object_id_t reference;
+
+    static auto from() -> bmson_marker_fixture_t {
+        constexpr std::string_view text = R"({"version":"1.0.0","info":{"title":"Markers","artist":"test","mode_hint":"beat-7k","resolution":240,"init_bpm":120},"lines":[{"y":0},{"y":960}],"sound_channels":[{"name":"stem.wav","notes":[{"x":0,"y":0,"c":false}]}]})";
+        auto parsed = parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
+        REQUIRE(parsed.song);
+        bmson_marker_fixture_t fixture{.history = document_history_t::from(std::move(*parsed.song))};
+        const auto& chart = fixture.history.document.charts.front();
+        fixture.reference = chart.measures.front().bgm_events.front().id;
+        fixture.state.chart = chart.id;
+        fixture.state.selected_objects.push_back({editor_selection_object_kind_t::bgm_event,
+                                                  fixture.reference});
+        return fixture;
+    }
+};
+} // namespace
+
+TEST_CASE("Rejected BMSON marker construction allocates only its existing feedback string",
+          "[sys][bmson-marker][proposal-shape]") {
+    document_history_t history;
+    editor_interaction_state_t state;
+    const std::array markers{bmson_sound_marker_insertion_t{}};
+    allocations = 0;
+    count_allocations = true;
+    auto rejected = application_command_state_t::bmson_marker_draft_t::propose(
+        history, state, object_id_t{42}, markers);
+    count_allocations = false;
+    const auto counted = allocations;
+    CHECK_FALSE(rejected.value);
+    REQUIRE(rejected.diagnostics);
+    CHECK(counted == 1);
+    CHECK(rejected.diagnostics->message == "Select one BMSON BGM marker to choose its sound channel.");
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("A rejected BMSON marker append keeps the prior valid batch and its storage",
+          "[sys][bmson-marker][proposal-shape]") {
+    auto fixture = bmson_marker_fixture_t::from();
+    const auto measure = fixture.history.document.charts.front().measures.front().id;
+    const std::array markers{bmson_sound_marker_insertion_t{{measure, 120}, false}};
+    auto proposed = application_command_state_t::bmson_marker_draft_t::propose(
+        fixture.history, fixture.state, fixture.reference, markers);
+    REQUIRE(proposed.value);
+    auto prior = std::move(proposed.value);
+    const auto* storage = prior->payload.markers.data();
+    const auto rejected = application_command_state_t::bmson_marker_draft_t::revise(
+        fixture.history, fixture.state, prior, fixture.reference, markers);
+    CHECK_FALSE(rejected.value);
+    REQUIRE(rejected.diagnostics);
+    CHECK(rejected.diagnostics->message == "That BMSON pulse is already staged.");
+    CHECK(prior->payload.markers.size() == 1);
+    CHECK(prior->payload.markers.data() == storage);
+}
+
+TEST_CASE("BMSON proposal adoption moves markers prepared by the existing native scratch check",
+          "[sys][bmson-marker][proposal-shape]") {
+    auto fixture = bmson_marker_fixture_t::from();
+    const auto measure = fixture.history.document.charts.front().measures.front().id;
+    const std::array markers{bmson_sound_marker_insertion_t{{measure, 120}, false}};
+    auto proposed = application_command_state_t::bmson_marker_draft_t::propose(
+        fixture.history, fixture.state, fixture.reference, markers);
+    REQUIRE(proposed.value);
+    auto prepared = proposed.value->payload.markers;
+    prepared.front().restart = true;
+    auto temporary = document_history_t::from(fixture.history.document, 1);
+    REQUIRE(insert_bmson_sound_markers(temporary, proposed.value->stamp.chart,
+                                     fixture.reference, prepared));
+    const auto* storage = prepared.data();
+    const auto revised = proposed.value->payload.revise(proposed.value->stamp, std::move(prepared));
+    REQUIRE(revised.value);
+    CHECK(revised.value->payload.markers.data() == storage);
+    CHECK(revised.value->payload.markers.front().restart);
+    CHECK(fixture.history.undo.empty());
 }

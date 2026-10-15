@@ -4,6 +4,8 @@
 
 #include <cstddef>
 #include <optional>
+#include <ranges>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -72,8 +74,9 @@ using diagnostic_list_t = std::vector<diagnostic_t>;
 
 namespace diagnostic_queries {
 
-template <class Diagnostic>
-[[nodiscard]] auto has_errors(const std::vector<Diagnostic>& diagnostics) -> bool {
+[[nodiscard]] auto has_errors(const auto& diagnostics) -> bool
+    requires std::ranges::input_range<decltype(diagnostics)>
+{
     for (const auto& diagnostic : diagnostics) {
         if constexpr (requires { diagnostic.severity; }) {
             if (diagnostic.severity == diagnostic_severity_t::error) return true;
@@ -83,6 +86,12 @@ template <class Diagnostic>
         }
     }
     return false;
+}
+
+// A single failure can stay inline on an event path; use the same severity rule.
+template <class Diagnostic>
+[[nodiscard]] auto has_errors(const std::optional<Diagnostic>& diagnostic) -> bool {
+    return diagnostic && has_errors(std::span<const Diagnostic>{&*diagnostic, 1});
 }
 
 } // namespace diagnostic_queries

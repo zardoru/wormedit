@@ -2330,7 +2330,7 @@ TEST_CASE("Captured BMSON marker batches share stale feedback and keep missing t
         draft->stamp = chart_stamp_t::from(fixture.history.document,
             kind == 3 ? chart_id_t{99} : fixture.state.chart);
         draft->stamp.document.revision -= kind == 2 ? 1 : 0;
-        if (kind != 1) draft->markers.push_back({.position = {measure_id_t{1}, 120}});
+        if (kind != 1) draft->payload.markers.push_back({.position = {measure_id_t{1}, 120}});
     }
     const auto action = fixture.action(WORM_UI_COMPOSE_ACTION_COMMIT_STAGED_BMSON_BGM);
     const auto response = fixture.dispatch(action);

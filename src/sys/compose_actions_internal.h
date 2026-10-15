@@ -409,12 +409,7 @@ auto catalog_semantic_layer_by_id(const wormedit::chart_document_t& chart, worme
     -> const wormedit::semantic_layer_t*;
 
 std::optional<compose_action_outcome_t>
-add_selected_compose_sounds_to_layer(compose_action_context_t& context);
-
-std::optional<compose_action_outcome_t>
 dispatch_compose_note_menu_action(compose_action_context_t& context);
-
-std::optional<compose_action_outcome_t> choose_no_semantic_layer(compose_action_context_t& context);
 
 std::optional<compose_action_outcome_t>
 dispatch_semantic_layer_palette_action(compose_action_context_t& context);

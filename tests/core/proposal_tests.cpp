@@ -10,7 +10,20 @@ using namespace wormedit;
 namespace {
 
 struct metadata_payload_t {
+    static constexpr proposal_apply_policy_t apply_policy{
+        .stale_label = "Title proposal"};
     std::string title;
+
+    auto apply(document_command_transaction_t& transaction, bool is_rejected_after_edit = false) const
+        -> diagnosed_t<std::optional<std::string>> {
+        if (title.empty())
+            return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Title is empty.")}};
+        if (transaction.document().metadata.title == title) return {};
+        transaction.copy_document().metadata.title = title;
+        if (is_rejected_after_edit)
+            return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Prepared title rejected.")}};
+        return {.value = "Set title"};
+    }
 
     auto operator==(const metadata_payload_t&) const -> bool = default;
 
@@ -108,27 +121,10 @@ void check_failed_title(const proposal_outcome_t<metadata_payload_t, document_st
     CHECK(outcome.diagnostics.front().code == diagnostic_code_t::invalid_id);
 }
 
-void check_unpublished_title(const document_history_t& history,
-                             const document_command_transaction_t& transaction) {
-    CHECK_FALSE(transaction.has_copy());
-    CHECK(history.document.metadata.title.empty());
-    CHECK(history.undo.empty());
-}
-
 void check_published_title(const document_history_t& history) {
     CHECK(history.document.metadata.title == "Proposed");
     REQUIRE(history.undo.size() == 1);
     CHECK(history.undo.front().label == "Set title");
-}
-
-void apply_title_proposal(document_history_t& history,
-                          const proposal_t<metadata_payload_t, document_stamp_t>& proposal) {
-    auto transaction = proposal.transaction(history, "Set title");
-    REQUIRE(transaction.is_ready());
-    check_unpublished_title(history, transaction);
-    transaction.copy_document().metadata.title = proposal.payload.title;
-    CHECK(history.document.metadata.title.empty());
-    REQUIRE(transaction.commit("Set title"));
 }
 
 } // namespace
@@ -181,7 +177,7 @@ TEST_CASE("Shared proposals publish through the lazy command transaction", "[cor
     const auto built = metadata_payload_t::propose(history.document, "Proposed");
     REQUIRE(built.value.has_value());
     CHECK(built.value->is_current(history));
-    apply_title_proposal(history, *built.value);
+    REQUIRE(apply_proposal(history, *built.value));
     check_published_title(history);
     CHECK_FALSE(built.value->is_current(history));
     REQUIRE(undo_document_command(history));
@@ -281,5 +277,45 @@ TEST_CASE("Compose action performance follows one successful validation", "[core
     CHECK(context.validated == 1);
     CHECK(context.performed == 1);
     CHECK(outcome.diagnostics.empty());
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Proposal runner rejects expiry before an edit", "[core][proposal]") {
+    auto history = make_history();
+    const auto built = metadata_payload_t::propose(history.document, "Proposed");
+    REQUIRE(built.value);
+    ++history.document.revision;
+    const auto result = apply_proposal(history, *built.value);
+    CHECK_FALSE(result.applied);
+    test::check_stale_action_message(result.diagnostics, "Title proposal");
+    CHECK(history.document.metadata.title.empty());
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Proposal runner discards rejected prepared changes", "[core][proposal]") {
+    auto history = make_history();
+    const auto revision = history.document.revision;
+    const auto built = metadata_payload_t::propose(history.document, "Proposed");
+    REQUIRE(built.value);
+    const auto result = apply_proposal(history, *built.value, true);
+    CHECK_FALSE(result.applied);
+    const diagnostic_list_t expected{error(diagnostic_code_t::invalid_id, "Prepared title rejected.")};
+    CHECK(result.diagnostics == expected);
+    CHECK(history.document.metadata.title.empty());
+    CHECK(history.document.revision == revision);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Proposal runner leaves no-op captures reusable without history", "[core][proposal]") {
+    auto history = make_history();
+    history.document.metadata.title = "Proposed";
+    const auto revision = history.document.revision;
+    const auto built = metadata_payload_t::propose(history.document, "Proposed");
+    REQUIRE(built.value);
+    const auto result = apply_proposal(history, *built.value);
+    CHECK_FALSE(result.applied);
+    CHECK(result.diagnostics.empty());
+    CHECK(built.value->is_current(history));
+    CHECK(history.document.revision == revision);
     CHECK(history.undo.empty());
 }

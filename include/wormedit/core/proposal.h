@@ -5,11 +5,40 @@
 
 #include <concepts>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 
 namespace wormedit {
+
+struct proposal_apply_policy_t {
+    std::string_view stale_label;
+    document_identity_policy_t identity{document_identity_policy_t::project_and_revision};
+    diagnostic_code_t stale_code{diagnostic_code_t::invalid_id};
+    auto operator==(const proposal_apply_policy_t&) const -> bool = default;
+};
+
+// A prepared edit supplies its Undo label; an empty value is a no-op.
+template<class Edit, class... Arguments>
+concept proposal_edit = requires(Edit&& edit, document_command_transaction_t& transaction,
+                                 Arguments&&... arguments) {
+    { std::forward<Edit>(edit).apply(transaction, std::forward<Arguments>(arguments)...) }
+        -> std::same_as<diagnosed_t<std::optional<std::string>>>;
+};
+
+// Synchronous edits and captured proposals share ready/error/no-op/publication policy.
+template<class Edit, class... Arguments> requires proposal_edit<Edit, Arguments...>
+[[nodiscard]] auto apply_proposal_edit(document_command_transaction_t& transaction,
+    Edit&& edit, Arguments&&... arguments) -> document_command_result_t {
+    if (!transaction.is_ready()) return transaction.finish_without_commit();
+    auto prepared = std::forward<Edit>(edit).apply(transaction, std::forward<Arguments>(arguments)...);
+    const bool has_changes = prepared.ok() && prepared.value.has_value();
+    transaction.outcome.diagnostics = std::move(prepared.diagnostics);
+    if (!has_changes) return transaction.finish_without_commit();
+    return transaction.commit(std::move(*prepared.value));
+}
 
 // Applicable state has one stamp; diagnostics belong to the build/revision outcome.
 template <class Payload, class Stamp = chart_stamp_t> struct proposal_t {
@@ -50,6 +79,20 @@ template <class Payload, class Stamp = chart_stamp_t> struct proposal_t {
         return document_command_transaction_t::from(history, stamp, label, policy, stale_code);
     }
 };
+
+template<class Payload, class Stamp, class... Arguments>
+    requires requires { Payload::apply_policy; }
+[[nodiscard]] auto apply_proposal(document_history_t& history,
+    const proposal_t<Payload, Stamp>& pending, Arguments&&... arguments) -> document_command_result_t {
+    const auto& policy = Payload::apply_policy;
+    auto transaction = pending.transaction(history, policy.stale_label, policy.identity, policy.stale_code);
+    if constexpr (std::same_as<Stamp, chart_stamp_t>)
+        return apply_proposal_edit(transaction, pending.payload,
+                                   pending.stamp.chart, std::forward<Arguments>(arguments)...);
+    else
+        return apply_proposal_edit(transaction, pending.payload,
+                                   std::forward<Arguments>(arguments)...);
+}
 
 template <class Payload, class Stamp = chart_stamp_t, class Diagnostics = diagnostic_list_t>
 using proposal_outcome_t = diagnosed_t<std::optional<proposal_t<Payload, Stamp>>, Diagnostics>;

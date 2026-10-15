@@ -33,7 +33,7 @@ auto offset_fit_commit_is_exact_and_undoable() -> bool {
     constexpr std::int64_t target_later_frames = 137;
     const auto preview = begun.value->revise(history.document, target_later_frames);
     if (!preview.value.has_value() || preview.value->payload.delta_frames != target_later_frames) return false;
-    const auto committed = apply_audio_offset_drag(history, *preview.value);
+    const auto committed = apply_proposal(history, *preview.value);
     if (!committed || history.document.charts.front().beat_zero_audio_offset_seconds !=
                           signed_rational_t{24'137, 48'000} ||
         history.document.charts.front().bpms.front().beats_per_minute != original_bpm) return false;
@@ -85,7 +85,7 @@ TEST_CASE("audio offset drag remains sample-frame exact and commits atomically",
     REQUIRE(earlier.value.has_value());
     CHECK(earlier.value->payload.proposed_offset_seconds == signed_rational_t{-1, 2});
 
-    const auto committed = apply_audio_offset_drag(history, *later.value);
+    const auto committed = apply_proposal(history, *later.value);
     REQUIRE(committed);
     CHECK(history.document.charts.front().beat_zero_audio_offset_seconds ==
           signed_rational_t{1, 1});
@@ -115,7 +115,7 @@ TEST_CASE("audio offset drag rejects stale locked invalid and overflowing reques
     const auto begun = audio_offset_drag_t::propose(history.document, chart_id_t{2}, 48'000);
     REQUIRE(begun.value.has_value());
 
-    const auto locked_commit = apply_audio_offset_drag(history, *begun.value, true);
+    const auto locked_commit = apply_proposal(history, *begun.value, true);
     CHECK_FALSE(locked_commit);
     CHECK(has_code(locked_commit.diagnostics, diagnostic_code_t::unsupported_feature));
     CHECK(history.document.revision == 9);
@@ -151,7 +151,7 @@ TEST_CASE("Offset proposal stamps preserve equal-revision project replacement",
     REQUIRE(revised.value.has_value());
     CHECK(revised.value->stamp == chart_stamp_t::from(history.document, chart_id_t{2}));
     history.document.id = song_id_t{99};
-    CHECK(apply_audio_offset_drag(history, *revised.value).applied);
+    CHECK(apply_proposal(history, *revised.value).applied);
     CHECK(history.document.charts.front().beat_zero_audio_offset_seconds == signed_rational_t{3, 5});
     CHECK(history.undo.size() == 1);
 }
@@ -162,7 +162,7 @@ TEST_CASE("Offset Apply keeps captured expiry before timing lock",
     const auto begun = audio_offset_drag_t::propose(history.document, chart_id_t{2}, 48'000);
     REQUIRE(begun.value.has_value());
     ++history.document.revision;
-    const auto result = apply_audio_offset_drag(history, *begun.value, true);
+    const auto result = apply_proposal(history, *begun.value, true);
     REQUIRE(result.diagnostics.size() == 1);
     CHECK(result.diagnostics.front().code == diagnostic_code_t::invalid_id);
     test::check_stale_action_message(result.diagnostics, "Audio offset drag");
@@ -176,7 +176,7 @@ TEST_CASE("Offset Apply keeps original-offset drift separate and ahead of lock",
     const auto begun = audio_offset_drag_t::propose(history.document, chart_id_t{2}, 48'000);
     REQUIRE(begun.value.has_value());
     history.document.charts.front().beat_zero_audio_offset_seconds = {1, 3};
-    const auto result = apply_audio_offset_drag(history, *begun.value, true);
+    const auto result = apply_proposal(history, *begun.value, true);
     REQUIRE(result.diagnostics.size() == 1);
     CHECK(result.diagnostics.front().message == "audio offset drag no longer matches the selected chart");
     CHECK(result.diagnostics.front().code == diagnostic_code_t::invalid_id);

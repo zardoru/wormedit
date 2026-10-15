@@ -11,6 +11,12 @@ namespace wormedit {
 // derived from the captured original offset, so pointer sampling frequency
 // cannot accumulate rounding error.
 struct audio_offset_drag_t {
+    static constexpr proposal_apply_policy_t apply_policy{
+        .stale_label = "Audio offset drag",
+        .identity = document_identity_policy_t::revision_only};
+    [[nodiscard]] auto apply(document_command_transaction_t&, chart_id_t,
+                             bool timing_locked = false) const -> diagnosed_t<std::optional<std::string>>;
+
     [[nodiscard]] static auto propose(const song_document_t& document, chart_id_t chart,
                                   std::uint32_t sample_rate, bool timing_locked = false)
         -> proposal_outcome_t<audio_offset_drag_t>;
@@ -33,19 +39,9 @@ static_assert(staged_proposal<audio_offset_drag_t,
 
 using audio_offset_drag_outcome_t = proposal_outcome_t<audio_offset_drag_t>;
 
-[[nodiscard]] auto apply_audio_offset_drag(document_history_t& history,
-                                            const proposal_t<audio_offset_drag_t>& drag,
-                                            bool timing_locked = false)
-    -> document_command_result_t;
-
 // Shared exact command for numeric Metadata edits and completed waveform drags.
 [[nodiscard]] auto apply_audio_offset_edit(document_history_t& history, chart_id_t chart,
                                            signed_rational_t offset_seconds,
                                            bool timing_locked = false) -> document_command_result_t;
-
-// Uses the ready transaction supplied by a captured offset proposal.
-[[nodiscard]] auto apply_audio_offset_edit(document_command_transaction_t& transaction,
-    chart_id_t chart, signed_rational_t offset_seconds, bool timing_locked = false)
-    -> document_command_result_t;
 
 } // namespace wormedit

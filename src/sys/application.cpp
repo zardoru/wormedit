@@ -2634,7 +2634,7 @@ struct application_t::implementation_t {
             return post_audio_offset_feedback(context, notification_severity_t::warning,
                                               "Invalid audio offset drag action.");
         }
-        const auto committed = apply_audio_offset_drag(history, *drag, timing_locked);
+        const auto committed = apply_proposal(history, *drag, timing_locked);
         drag.reset();
         drag_tab.reset();
         if (!committed.applied) {
@@ -3401,7 +3401,7 @@ struct application_t::implementation_t {
                                                 notification_severity_t::warning);
         }
         const auto committed =
-            apply_audio_offset_drag(session.history, *updated.value, context.timing_locked);
+            apply_proposal(session.history, *updated.value, context.timing_locked);
         if (!committed.applied) {
             return post_audio_offset_diagnostic(context, committed.diagnostics,
                                                 "Audio offset was unchanged.",

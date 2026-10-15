@@ -121,59 +121,50 @@ auto audio_offset_drag_t::revise(const chart_stamp_t& stamp, const song_document
             .diagnostics = {}};
 }
 
+namespace {
+struct audio_offset_edit_t {
+    chart_id_t chart;
+    signed_rational_t offset;
+    bool is_timing_locked{};
+
+    [[nodiscard]] auto apply(document_command_transaction_t& transaction) const -> diagnosed_t<std::optional<std::string>> {
+        if (is_timing_locked)
+            return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+                "audio offset editing is disabled while timing is locked")}};
+        if (offset.denominator == 0)
+            return {.diagnostics = {error(diagnostic_code_t::invalid_rational,
+                "audio offset must be an exact signed rational")}};
+        auto& proposed = transaction.copy_document();
+        const auto selected = proposed.find_chart(chart);
+        if (!chart || selected == nullptr)
+            return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                "audio offset edit refers to an unknown chart")}};
+        if (selected->beat_zero_audio_offset_seconds == offset) return {};
+        selected->beat_zero_audio_offset_seconds = offset;
+        if (!extend_native_charts_to_audio_end(proposed))
+            return {.diagnostics = {error(diagnostic_code_t::invalid_measure,
+                "Offset edit would exceed the audio chart measure limits")}};
+        return {.value = "Set audio offset"};
+    }
+};
+} // namespace
+
 auto apply_audio_offset_edit(document_history_t& history, chart_id_t chart,
                              signed_rational_t offset_seconds, bool timing_locked)
     -> document_command_result_t {
     auto transaction = document_command_transaction_t::from(history);
-    return apply_audio_offset_edit(transaction, chart, offset_seconds, timing_locked);
+    return apply_proposal_edit(transaction,
+        audio_offset_edit_t{.chart = chart, .offset = offset_seconds, .is_timing_locked = timing_locked});
 }
 
-auto apply_audio_offset_edit(document_command_transaction_t& transaction,
-                             chart_id_t chart, signed_rational_t offset_seconds, bool timing_locked)
-    -> document_command_result_t {
-    if (!transaction.is_ready()) return transaction.finish_without_commit();
-    auto& result = transaction.outcome;
-    if (timing_locked) {
-        result.diagnostics.push_back(
-            error(diagnostic_code_t::unsupported_feature,
-                  "audio offset editing is disabled while timing is locked"));
-        return transaction.finish_without_commit();
-    }
-    if (offset_seconds.denominator == 0) {
-        result.diagnostics.push_back(error(diagnostic_code_t::invalid_rational,
-                                           "audio offset must be an exact signed rational"));
-        return transaction.finish_without_commit();
-    }
-    auto& proposed = transaction.copy_document();
-    const auto selected = proposed.find_chart(chart);
-    if (!chart || selected == nullptr) {
-        result.diagnostics.push_back(
-            error(diagnostic_code_t::invalid_id, "audio offset edit refers to an unknown chart"));
-        return transaction.finish_without_commit();
-    }
-    if (selected->beat_zero_audio_offset_seconds == offset_seconds)
-        return transaction.finish_without_commit();
-    selected->beat_zero_audio_offset_seconds = offset_seconds;
-    if (!extend_native_charts_to_audio_end(proposed)) {
-        result.diagnostics.push_back(error(diagnostic_code_t::invalid_measure,
-                                           "Offset edit would exceed the audio chart measure limits"));
-        return transaction.finish_without_commit();
-    }
-    return transaction.commit("Set audio offset");
-}
-
-auto apply_audio_offset_drag(document_history_t& history, const proposal_t<audio_offset_drag_t>& drag,
-                              bool timing_locked) -> document_command_result_t {
-    auto transaction = drag.transaction(history, "Audio offset drag",
-                                        document_identity_policy_t::revision_only);
-    if (!transaction.is_ready()) return transaction.finish_without_commit();
-    const auto* selected = transaction.source_chart(drag.stamp.chart);
-    if (selected == nullptr ||
-        selected->beat_zero_audio_offset_seconds != drag.payload.original_offset_seconds)
-        return transaction.reject(diagnostic_code_t::invalid_id,
-                                  "audio offset drag no longer matches the selected chart");
-    return apply_audio_offset_edit(transaction, drag.stamp.chart, drag.payload.proposed_offset_seconds,
-                                   timing_locked);
+auto audio_offset_drag_t::apply(document_command_transaction_t& transaction, chart_id_t chart,
+                                bool timing_locked) const -> diagnosed_t<std::optional<std::string>> {
+    const auto* selected = transaction.source_chart(chart);
+    if (selected == nullptr || selected->beat_zero_audio_offset_seconds != original_offset_seconds)
+        return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+            "audio offset drag no longer matches the selected chart")}};
+    return audio_offset_edit_t{.chart = chart, .offset = proposed_offset_seconds,
+                              .is_timing_locked = timing_locked}.apply(transaction);
 }
 
 } // namespace wormedit
